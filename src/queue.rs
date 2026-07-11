@@ -1,6 +1,7 @@
 /// Queue engine: a pure Rust module (no GTK, no DB) for track queuing, playback order,
 /// shuffle, and repeat modes. Uses Fisher-Yates shuffle via fastrand for determinism.
-///
+use tracing::warn;
+
 /// Repeat mode for the queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Repeat {
@@ -37,6 +38,7 @@ impl Queue {
 
     /// Set the queue to a list of track IDs and start playback at `start_index`.
     /// If `start_index` is out of range, it is clamped to the last track (or None if empty).
+    /// If shuffle is active, re-shuffle the new order while keeping the start_index track as current.
     pub fn set_tracks(&mut self, ids: Vec<i64>, start_index: usize) {
         self.ids = ids;
         let len = self.ids.len();
@@ -50,6 +52,33 @@ impl Queue {
         } else {
             Some(start_index.min(len - 1))
         };
+
+        // If shuffle is sticky, re-shuffle the new order while keeping current track in place
+        if self.shuffled && len > 0 {
+            if let Some(current_pos) = self.pos {
+                // Remember the current track's track-index
+                let current_track_slot = self.order.get(current_pos).copied();
+
+                // Fisher-Yates shuffle: permute indices
+                let n = self.order.len();
+                for i in (1..n).rev() {
+                    let j = fastrand::usize(0..=i);
+                    self.order.swap(i, j);
+                }
+
+                // Move current track back to its position
+                if let Some(track_slot) = current_track_slot {
+                    if let Some(pos) = self.order.iter().position(|&idx| idx == track_slot) {
+                        self.order.swap(current_pos, pos);
+                    } else {
+                        warn!(
+                            "Current track slot {} not found in order after shuffle",
+                            track_slot
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// Get the ID of the currently playing track, if any.
@@ -120,9 +149,19 @@ impl Queue {
 
     /// Move to the previous track (user pressed previous button).
     /// At the first track, stay on the first track.
+    /// If queue is exhausted (pos == None) and queue is non-empty, resume at the last track.
+    /// Empty queue returns None.
     pub fn previous(&mut self) -> Option<i64> {
         match self.pos {
-            None => None,
+            None => {
+                // Queue exhausted; if non-empty, resume at the last track
+                if !self.order.is_empty() {
+                    self.pos = Some(self.order.len() - 1);
+                    self.current()
+                } else {
+                    None
+                }
+            }
             Some(idx) => {
                 if idx == 0 {
                     // Already at the first track; stay here.
@@ -143,7 +182,18 @@ impl Queue {
             // Currently linear; shuffle while keeping current track in place.
             self.shuffled = true;
             if let Some(current_pos) = self.pos {
-                let current_id_idx = self.order[current_pos];
+                // Remember the current track's track-index (defensive: use .get())
+                let current_track_slot = match self.order.get(current_pos) {
+                    Some(&slot) => slot,
+                    None => {
+                        warn!(
+                            "Current position {} out of bounds for order vec of len {}",
+                            current_pos,
+                            self.order.len()
+                        );
+                        return;
+                    }
+                };
 
                 // Fisher-Yates shuffle: permute indices, but skip current track.
                 let n = self.order.len();
@@ -153,7 +203,7 @@ impl Queue {
                 }
 
                 // Move current track back to its position.
-                if let Some(pos) = self.order.iter().position(|&idx| idx == current_id_idx) {
+                if let Some(pos) = self.order.iter().position(|&idx| idx == current_track_slot) {
                     self.order.swap(current_pos, pos);
                 }
             } else {
@@ -167,13 +217,13 @@ impl Queue {
         } else if !on && self.shuffled {
             // Currently shuffled; restore linear order.
             self.shuffled = false;
-            let current_id_idx = self.pos.and_then(|idx| self.order.get(idx).copied());
+            let current_track_slot = self.pos.and_then(|idx| self.order.get(idx).copied());
 
             // Restore linear order.
             self.order = (0..self.ids.len()).collect();
 
             // Update position to follow the current track's linear index.
-            if let Some(id_idx) = current_id_idx {
+            if let Some(id_idx) = current_track_slot {
                 self.pos = Some(id_idx);
             }
         }
@@ -450,5 +500,142 @@ mod tests {
     fn test_default_repeat_is_off() {
         let q = Queue::new();
         assert_eq!(q.repeat(), Repeat::Off);
+    }
+
+    // Fix 1: Sticky shuffle across set_tracks
+    #[test]
+    fn test_shuffle_sticky_across_set_tracks() {
+        fastrand::seed(42);
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 1);
+        q.set_shuffle(true);
+        assert!(q.is_shuffled());
+
+        // set_tracks with shuffle still on should re-shuffle the new order
+        // and keep the chosen start_index track as current
+        q.set_tracks(vec![100, 200, 300, 400], 2);
+        assert!(
+            q.is_shuffled(),
+            "shuffle should remain active after set_tracks"
+        );
+        assert_eq!(
+            q.current(),
+            Some(300),
+            "should be at the chosen start_index track"
+        );
+
+        // Verify we can do a full pass through all 4 tracks
+        q.set_repeat(Repeat::All);
+        let mut visited = HashSet::new();
+        if let Some(track) = q.current() {
+            visited.insert(track);
+        }
+        // Collect exactly 4 advances (one full cycle of 4 tracks)
+        for _ in 0..4 {
+            if let Some(track) = q.advance_auto() {
+                visited.insert(track);
+            }
+        }
+        assert_eq!(
+            visited.len(),
+            4,
+            "should visit all 4 tracks in exactly one pass"
+        );
+        assert!(visited.contains(&100));
+        assert!(visited.contains(&200));
+        assert!(visited.contains(&300));
+        assert!(visited.contains(&400));
+    }
+
+    #[test]
+    fn test_shuffle_sticky_then_disable() {
+        fastrand::seed(42);
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 1);
+        q.set_shuffle(true);
+        assert!(q.is_shuffled());
+        assert_eq!(q.current(), Some(20));
+
+        q.set_shuffle(false);
+        assert!(!q.is_shuffled());
+        assert_eq!(
+            q.current(),
+            Some(20),
+            "current track should be preserved after disabling shuffle"
+        );
+    }
+
+    // Fix 2: previous() after exhaustion (pos == None)
+    #[test]
+    fn test_previous_after_exhaustion_non_empty() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 0);
+        q.set_repeat(Repeat::Off);
+
+        // Advance to the end and exhaust the queue
+        q.advance_auto(); // -> 20
+        q.advance_auto(); // -> 30
+        q.advance_auto(); // -> None (exhausted)
+        assert_eq!(q.current(), None);
+
+        // previous() should resume at the LAST track of the current order
+        let result = q.previous();
+        assert_eq!(
+            result,
+            Some(30),
+            "previous() after exhaustion should resume at the last track"
+        );
+        assert_eq!(q.current(), Some(30));
+    }
+
+    #[test]
+    fn test_previous_after_exhaustion_empty_queue() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![], 0);
+        assert_eq!(q.current(), None);
+
+        // previous() on empty queue should return None
+        assert_eq!(q.previous(), None);
+    }
+
+    // Fix 5: Strengthen shuffle-visits-all test to check strict property
+    #[test]
+    fn test_shuffle_visits_all_exactly_once_per_pass() {
+        fastrand::seed(42);
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40, 50], 0);
+        q.set_repeat(Repeat::All);
+        q.set_shuffle(true);
+
+        // Collect ids in a single pass: exactly n advances from current
+        let n = 5;
+        let mut ids_in_pass = Vec::new();
+
+        if let Some(track) = q.current() {
+            ids_in_pass.push(track);
+        }
+
+        // Advance exactly n-1 more times for a total of n tracks
+        for _ in 0..(n - 1) {
+            if let Some(track) = q.advance_auto() {
+                ids_in_pass.push(track);
+            }
+        }
+
+        // The pass should contain exactly n ids, each unique
+        assert_eq!(
+            ids_in_pass.len(),
+            n,
+            "should collect exactly {} ids in one pass",
+            n
+        );
+
+        // Create the full expected multiset
+        let expected: HashSet<i64> = vec![10, 20, 30, 40, 50].into_iter().collect();
+        let collected: HashSet<i64> = ids_in_pass.into_iter().collect();
+        assert_eq!(
+            collected, expected,
+            "should visit each track exactly once in a single pass"
+        );
     }
 }
