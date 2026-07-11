@@ -33,6 +33,7 @@ use crate::library;
 use crate::library::scanner::{ScanError, ScanReport};
 
 use super::player_controller::PlayerController;
+use super::playlist_io;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::strings;
@@ -113,6 +114,10 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
         .build();
 
     let scan_button = gtk4::Button::with_label(strings::SCAN_FOLDER);
+    // Stage 3 Task 7: global "Import playlist…" entry, same header-button
+    // shape as "Scan folder…" — see `wire_import_button`'s doc comment
+    // (`ui::playlist_io`) for the dialog flow this drives.
+    let import_button = gtk4::Button::with_label(strings::IMPORT_PLAYLIST);
 
     // Visible only while the split view is collapsed (see `wire_sidebar_
     // toggle`) — at full width both panes already show side by side, so
@@ -128,6 +133,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     header.set_title_widget(Some(&window_title));
     header.pack_start(&search_entry);
     header.pack_end(&scan_button);
+    header.pack_end(&import_button);
 
     // The player is created eagerly at window build (not lazily on first
     // activation): construction is cheap (one playbin, no I/O), the
@@ -441,7 +447,36 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
         track_list.clone(),
         sidebar.clone(),
     );
-    arm_smoke_rescan(&scan_button, &toast_overlay, db_path, track_list, sidebar);
+    arm_smoke_rescan(
+        &scan_button,
+        &toast_overlay,
+        db_path,
+        track_list.clone(),
+        sidebar.clone(),
+    );
+
+    // Stage 3 Task 7: wired last among the header buttons, after every
+    // widget/callback it needs (`track_list`, `sidebar`, `window_title`,
+    // `show_content_if_collapsed`) already exists — same reasoning as
+    // `wire_scan_button`'s own placement.
+    playlist_io::wire_import_button(
+        &import_button,
+        &window,
+        &toast_overlay,
+        conn.clone(),
+        track_list.clone(),
+        sidebar.clone(),
+        window_title.clone(),
+        show_content_if_collapsed.clone(),
+    );
+    playlist_io::arm_smoke_m3u(
+        conn.clone(),
+        &toast_overlay,
+        track_list,
+        sidebar,
+        window_title,
+        show_content_if_collapsed,
+    );
 
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)

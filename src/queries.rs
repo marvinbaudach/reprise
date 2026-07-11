@@ -895,6 +895,50 @@ pub fn query_import_error_count(conn: &Connection) -> Result<i64, rusqlite::Erro
     conn.query_row("SELECT count(*) FROM import_errors", [], |r| r.get(0))
 }
 
+/// Looks up a track's id by its exact, parameterized `path` (Stage 3 Task 7:
+/// M3U import matches each parsed/resolved path line against this). `None`
+/// if no track has that exact path — not an error; the caller (`ui::
+/// playlist_io::import_playlist`) treats an unmatched path as "not found",
+/// counted but not added.
+pub fn track_id_for_path(conn: &Connection, path: &str) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT id FROM tracks WHERE path = ?1",
+        rusqlite::params![path],
+        |r| r.get(0),
+    )
+    .optional()
+}
+
+/// Loads every track in playlist `playlist_id`, in playlist order
+/// (`playlist_tracks.position` ascending), with no window/page limit —
+/// distinct from `query_track_window`'s `Playlist` arm, which is capped at
+/// `MAX_WINDOW_LIMIT` for one `ColumnView` page. Stage 3 Task 7 (M3U export)
+/// needs every track the playlist has, in order, in one call; reusing the
+/// windowed query would mean the caller paging through in a loop for no
+/// benefit at the scale a single playlist reaches. Missing tracks (`missing
+/// = 1`) are excluded, matching every other playlist-facing query in this
+/// module (a track that vanished from disk shouldn't be written into an
+/// exported M3U with a dead path). Capped at `QUEUE_LIMIT` for defense in
+/// depth, same reasoning as `query_track_ids`'s per-source caps.
+pub fn query_playlist_tracks_full(
+    conn: &Connection,
+    playlist_id: i64,
+) -> Result<Vec<Track>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, \
+         tracks.album_artist, tracks.year, tracks.track_no, tracks.genre, \
+         tracks.duration_ms, tracks.bitrate_kbps, tracks.rating, tracks.play_count, \
+         tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing, \
+         tracks.file_size, tracks.device, tracks.inode, pt.position \
+         FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
+         WHERE pt.playlist_id = ?1 AND tracks.missing = 0 \
+         ORDER BY pt.position ASC LIMIT {QUEUE_LIMIT}"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params![playlist_id], row_to_playlist_track)?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1826,5 +1870,62 @@ mod tests {
         )
         .unwrap();
         assert_eq!(query_import_error_count(&conn).unwrap(), 2);
+    }
+
+    // -- track_id_for_path / query_playlist_tracks_full (Stage 3 Task 7) ---
+
+    #[test]
+    fn track_id_for_path_finds_exact_match() {
+        let conn = seeded_conn_with_tracks(3);
+        let id = track_id_for_path(&conn, "/x/2.flac").unwrap();
+        assert_eq!(id, Some(2));
+    }
+
+    #[test]
+    fn track_id_for_path_returns_none_for_unknown_path() {
+        let conn = seeded_conn_with_tracks(3);
+        let id = track_id_for_path(&conn, "/nowhere/x.flac").unwrap();
+        assert_eq!(id, None);
+    }
+
+    #[test]
+    fn track_id_for_path_does_not_substring_match() {
+        // A LIKE-style partial match would be wrong here: this must be an
+        // exact match only.
+        let conn = seeded_conn_with_tracks(3);
+        let id = track_id_for_path(&conn, "/x/2").unwrap();
+        assert_eq!(id, None);
+    }
+
+    #[test]
+    fn playlist_tracks_full_returns_all_rows_in_position_order() {
+        let mut conn = seeded_conn_with_tracks(5);
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
+        playlists::add_tracks(&mut conn, playlist_id, &[3, 1, 5, 2]).unwrap();
+
+        let tracks = query_playlist_tracks_full(&conn, playlist_id).unwrap();
+        let ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
+        assert_eq!(ids, vec![3, 1, 5, 2]);
+    }
+
+    #[test]
+    fn playlist_tracks_full_excludes_missing_tracks() {
+        let mut conn = seeded_conn_with_tracks(3);
+        conn.execute("UPDATE tracks SET missing = 1 WHERE id = 2", [])
+            .unwrap();
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
+        playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+
+        let tracks = query_playlist_tracks_full(&conn, playlist_id).unwrap();
+        let ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
+        assert_eq!(ids, vec![1, 3]);
+    }
+
+    #[test]
+    fn playlist_tracks_full_empty_playlist_returns_empty() {
+        let conn = seeded_conn_with_tracks(3);
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
+        let tracks = query_playlist_tracks_full(&conn, playlist_id).unwrap();
+        assert!(tracks.is_empty());
     }
 }

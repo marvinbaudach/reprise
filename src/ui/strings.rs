@@ -246,3 +246,41 @@ pub fn playlist_drop_add_failed_toast(name: &str) -> String {
 pub fn playlist_reorder_failed_toast() -> String {
     "Could not reorder playlist".to_string()
 }
+
+// M3U import/export (src/ui/playlist_io.rs, src/ui/sidebar_export.rs,
+// Stage 3 Task 7): a global "Import playlist…" headerbar button and a
+// per-playlist "Export playlist…" sidebar context-menu action.
+
+pub const IMPORT_PLAYLIST: &str = "Import playlist…";
+pub const EXPORT_PLAYLIST: &str = "Export playlist…";
+pub const IMPORT_PLAYLIST_DIALOG_TITLE: &str = "Import Playlist";
+pub const EXPORT_PLAYLIST_DIALOG_TITLE: &str = "Export Playlist";
+/// Name shown for the `gtk::FileFilter` restricting the import dialog to
+/// `.m3u`/`.m3u8` files.
+pub const M3U_FILE_FILTER_NAME: &str = "M3U Playlists";
+/// Fallback playlist name when an imported `.m3u` file's name can't be used
+/// as-is (empty file stem, or a non-UTF-8 stem lossily decoded down to
+/// nothing meaningful).
+pub const IMPORTED_PLAYLIST_FALLBACK_NAME: &str = "Imported playlist";
+
+/// Toast shown after a successful import: `matched` of `total` path lines in
+/// the `.m3u` file resolved to a track already in the library.
+pub fn playlist_imported_toast(name: &str, matched: usize, total: usize) -> String {
+    format!("Imported {name}: {matched} of {total} tracks matched")
+}
+
+/// Toast shown when reading or parsing the chosen `.m3u` file fails, or the
+/// new playlist can't be created/populated in the database.
+pub fn playlist_import_failed_toast() -> String {
+    "Could not import playlist".to_string()
+}
+
+/// Toast shown after a successful export.
+pub fn playlist_exported_toast(name: &str) -> String {
+    format!("Exported {name}")
+}
+
+/// Toast shown when writing the exported `.m3u` file fails.
+pub fn playlist_export_failed_toast(name: &str) -> String {
+    format!("Could not export \"{name}\"")
+}
