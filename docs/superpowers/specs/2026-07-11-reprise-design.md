@@ -535,16 +535,30 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
 - **Lyrics:** Anzeige von Songtexten im Detail-Panel; Quellen: eingebettete
   Tags (USLT/Vorbis `LYRICS`, von lofty lesbar), `.lrc`-Dateien neben der
   Musikdatei, später Online-Quellen über dasselbe Provider-Trait.
-- **Geräte-Synchronisation** (aktualisiert nach Mockup 7c, „grobe
-  Richtung"): primär über eine **Begleit-App im WLAN** — Kopplung per
-  QR-Code, unterstützt Android **und iOS**; Sync-Regeln: ausgewählte
-  Playlists synchronisieren, Bewertungen & Wiedergabezähler in beide
-  Richtungen abgleichen, „nur im WLAN", optionales Transkodieren für
-  Mobilgeräte (z. B. FLAC → Opus 128 kbit/s, via GStreamer).
+- **Begleit-App (Android) + Geräte-Synchronisation** (aktualisiert nach
+  Mockup 7c und Nutzer-Idee 2026-07-11, „grobe Richtung"): Der Nutzer
+  plant eine **eigene Android-Musik-App als Begleit-App**. Sie kann
+  zweierlei:
+  1. **Remote-Steuerung:** Reprise auf dem PC vom Handy aus steuern
+     (Play/Pause/Next/Seek/Lautstärke, aktueller Titel + Cover,
+     Warteschlange). Architektonisch günstig: Alle Transportbefehle
+     laufen bereits durch eine zentrale Controller-/MPRIS-Schicht — ein
+     Remote-Modul exponiert dieselben Kommandos über ein
+     LAN-Protokoll (gepaart, lokal, kein Cloud-Dienst).
+  2. **Kabellose Synchronisation** über WLAN — Kopplung per QR-Code;
+     Sync-Regeln: ausgewählte Playlists, Bewertungen & Wiedergabezähler
+     in beide Richtungen, „nur im WLAN", optionales Transkodieren
+     (z. B. FLAC → Opus 128 kbit/s, via GStreamer). iOS-Unterstützung
+     der Begleit-App bleibt angedacht (Mockup 7c).
+  Sicherheit: Kopplung explizit (QR + Bestätigung), Kommunikation nur
+  im lokalen Netz, verschlüsselt; das Modul fordert die
+  Netzwerk-Berechtigung im Flatpak erst an, wenn es aktiviert wird.
   MTP/gvfs bzw. USB-Massenspeicher (wie in Rhythmbox) als Fallback für
   Geräte ohne Begleit-App. Gekoppelte Geräte erscheinen als Liste im
   Tab „Synchronisation" (vom Modul eingehängt) mit „Jetzt
   synchronisieren"/„Entfernen"; eigener Sidebar-Eintrag „Geräte".
+  Die Android-App selbst ist ein eigenes Projekt (eigenes Repo/eigene
+  Planung) — Reprise-seitig zählt hier das Protokoll + die Module.
 - **Scrobbling (Last.fm/Libre.fm)** — erstes Modul nach dem MVP
   (priorisiert), damit die Hörhistorie beim Umstieg schnell weiterläuft
 - **Musik-Radar** — zweites Modul nach dem MVP (priorisiert):
