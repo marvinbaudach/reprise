@@ -21,6 +21,10 @@ pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
     };
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
+    // Cheap insurance for future concurrent writers (e.g. a scan worker
+    // thread's own `Connection` writing while the UI thread reads): wait up
+    // to 5s for a lock instead of failing immediately with `SQLITE_BUSY`.
+    conn.pragma_update(None, "busy_timeout", 5000)?;
     Ok(conn)
 }
 
@@ -80,5 +84,14 @@ mod tests {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn open_sets_busy_timeout() {
+        let conn = open(None).unwrap();
+        let busy_timeout_ms: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(busy_timeout_ms, 5000);
     }
 }

@@ -206,6 +206,14 @@ fn wire_scan_button(
     let scan_button_handle = scan_button.clone();
 
     scan_button.connect_clicked(move |_| {
+        // Disable synchronously, before the async dialog even opens: a
+        // second click landing while the first dialog is still up must not
+        // be able to spawn a second dialog (and thus a second concurrent
+        // scan worker against the same DB). Every exit path below that does
+        // *not* hand off to `spawn_scan` must re-enable the button; the
+        // `spawn_scan` path re-enables it itself once the scan finishes.
+        scan_button_handle.set_sensitive(false);
+
         let dialog = gtk4::FileDialog::builder()
             .title(strings::SCAN_DIALOG_TITLE)
             .modal(true)
@@ -232,6 +240,7 @@ fn wire_scan_button(
                     } else {
                         tracing::error!(%error, "scan folder dialog failed");
                     }
+                    scan_button.set_sensitive(true);
                     return;
                 }
             };
@@ -239,6 +248,7 @@ fn wire_scan_button(
                 tracing::warn!(
                     "selected folder has no local filesystem path; cannot scan"
                 );
+                scan_button.set_sensitive(true);
                 return;
             };
 
@@ -259,9 +269,13 @@ fn wire_scan_button(
 /// its label to "Scanning…", runs `library::scanner::scan_folder` on a
 /// `std::thread` against a *separate* `rusqlite::Connection` opened from
 /// `db_path` (a `Connection` cannot cross threads), then marshals the result
-/// back onto the GTK main thread over an `async_channel` — the same
-/// bridge pattern `player_controller.rs` uses for `PlayerEvent`s. On
-/// success: re-enable the button, reload the track list and status line. On
+/// back onto the GTK main thread over an `async_channel` — the same bridge
+/// pattern `player_controller.rs` uses for `PlayerEvent`s, except the
+/// receive side here is a single one-shot `recv().await` rather than
+/// `player_controller.rs`'s long-lived drain loop: this channel is
+/// `bounded(1)` and carries exactly one message (the scan's final result),
+/// not a stream of events. On success: re-enable the button, reload the
+/// track list and status line. On
 /// failure: re-enable the button, log at `error!`, and surface an
 /// `adw::Toast` — the app stays fully usable either way (fault tolerance: a
 /// scan failure must never wedge the UI or crash the app).
