@@ -100,6 +100,22 @@ CREATE TABLE smart_playlists (
 );
 "#;
 
+/// Schema v4 (Stage 3 Task 8 — folder watcher): a minimal key/value settings
+/// table. Its first (and, as of this task, only) consumer is `library::
+/// settings::{get_setting, set_setting}`, which store the last-scanned
+/// library folder under the key `"library_root"` so the watcher knows what
+/// to watch on startup without the user re-picking a folder every launch.
+/// Deliberately generic (`key`/`value` both `TEXT`) rather than a dedicated
+/// `library_root TEXT` column on some singleton row — a key/value table needs
+/// no further migration the next time the app wants to persist one more
+/// small scalar setting.
+const SCHEMA_V4: &str = r#"
+CREATE TABLE settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -141,6 +157,11 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         }
         conn.pragma_update(None, "user_version", 3)?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 4 {
+        conn.execute_batch(SCHEMA_V4)?;
+        conn.pragma_update(None, "user_version", 4)?;
+    }
     Ok(())
 }
 
@@ -160,7 +181,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 
     /// Builds a v1 DB by hand (SCHEMA_V1 + `user_version = 1`, exactly what a
@@ -185,7 +206,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3); // Now goes to v3
+        assert_eq!(version, 4); // Now goes to v4
 
         let (title, rating, play_count, added_at, file_size, device, inode): (
             String,
@@ -227,7 +248,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 3); // Now v3
+        assert_eq!(version_after_second_run, 4); // Now v4
     }
 
     #[test]
@@ -259,7 +280,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4); // walks all the way to the current schema version
 
         // Verify tables exist.
         let playlists_exist: bool = conn
@@ -383,5 +404,68 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    /// v3→v4 migration (Stage 3 Task 8 — folder watcher): the `settings`
+    /// table is created, existing data (a track row, a playlist) survives
+    /// untouched, and a second `migrate` call is idempotent (doesn't try to
+    /// `CREATE TABLE settings` again).
+    #[test]
+    fn migrate_v3_to_v4_creates_settings_table_preserves_data_and_is_idempotent() {
+        let conn = open(None).unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute_batch(SCHEMA_V2).unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        conn.execute_batch(SCHEMA_V3).unwrap();
+        conn.pragma_update(None, "user_version", 3).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/a.flac', 'A', 'B', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO playlists (id, name, position) VALUES (1, 'My Playlist', 0)",
+            [],
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 4);
+
+        let settings_exist: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(settings_exist);
+
+        // Pre-existing data survived untouched.
+        let title: String = conn
+            .query_row(
+                "SELECT title FROM tracks WHERE path = '/x/a.flac'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "A");
+        let playlist_name: String = conn
+            .query_row("SELECT name FROM playlists WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(playlist_name, "My Playlist");
+
+        // Second migrate() call must not fail (would error: "table settings
+        // already exists" if the ALTER/CREATE ran a second time).
+        migrate(&conn).unwrap();
+        let version_after_second_run: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version_after_second_run, 4);
     }
 }

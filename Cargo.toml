@@ -23,6 +23,10 @@ gtk4 = { version = "0.11.4", features = ["v4_22"] }
 libadwaita = { version = "0.9.2", features = ["v1_9", "gtk_v4_22"] }
 async-channel = "2.5.0"
 fastrand = "2"
+# Stage 3 Task 8: folder watcher (real-time library updates). The default
+# Linux backend is inotify; the "recommended" watcher constructor picks it
+# automatically and supports recursive watches, which is all this task needs.
+notify = "8"
 # Default features ("async-io" + "blocking-api") are kept: "async-io" is
 # zbus's own lightweight internal reactor for the blocking API, not a
 # competing app-wide async runtime — the `tokio` feature (the thing Stage 2

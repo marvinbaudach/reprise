@@ -112,6 +112,16 @@ fn main() -> glib::ExitCode {
             Ok(report) => tracing::info!(?report, "dev scan complete"),
             Err(error) => tracing::error!(%error, "dev scan failed"),
         }
+        // Stage 3 Task 8: persist this as the library root, exactly like a
+        // real "Scan folder…" click does (`ui::window::run_scan`), so
+        // `ui::window::build`'s startup check finds it and arms the watcher
+        // on it — the dev hook otherwise has no way to reach that behavior,
+        // since it runs before any window (and thus any watcher) exists.
+        if let Err(error) =
+            library::settings::set_setting(&conn, library::settings::LIBRARY_ROOT_KEY, &dir)
+        {
+            tracing::error!(%error, "failed to persist library root for dev scan hook");
+        }
     }
 
     app.connect_activate(move |app| {
@@ -125,7 +135,7 @@ fn main() -> glib::ExitCode {
             window.present();
             return;
         }
-        ui::window::build(app, &conn, path.clone());
+        ui::window::build(app, &conn, &path);
     });
 
     // No custom CLI arguments exist yet, so `run()` (which reads

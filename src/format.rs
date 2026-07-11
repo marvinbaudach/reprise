@@ -89,6 +89,43 @@ pub fn format_thousands(n: i64) -> String {
     }
 }
 
+/// Formats a Unix timestamp (seconds since the epoch, UTC) as `YYYY-MM-DD
+/// HH:MM` — used by the import-errors panel's "Time" column (`ui::import_
+/// errors_view`, Stage 3 Task 8). Always UTC (this app has no timezone/
+/// locale dependency yet) — consistent and unambiguous is more important
+/// here than local-time convenience for a low-traffic diagnostic column.
+/// Negative input (clock skew, a malformed row) is clamped to the epoch
+/// itself rather than panicking, matching this module's other clamp-not-
+/// panic conventions.
+pub fn format_unix_timestamp(secs: i64) -> String {
+    let secs = secs.max(0);
+    let days = secs / 86_400;
+    let time_of_day = secs % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    let hour = time_of_day / 3600;
+    let minute = (time_of_day % 3600) / 60;
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}")
+}
+
+/// Days-since-epoch (1970-01-01) to a proleptic-Gregorian `(year, month,
+/// day)` triple. Howard Hinnant's well-known `civil_from_days` algorithm
+/// (<http://howardhinnant.github.io/date_algorithms.html>), reproduced by
+/// hand rather than pulling in a date/time crate dependency for the one
+/// column that needs it.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = (z - era * 146_097) as u64; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let month = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32; // [1, 12]
+    let year = if month <= 2 { y + 1 } else { y };
+    (year, month, day)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,5 +205,22 @@ mod tests {
     #[test]
     fn thousands_handles_negative_numbers() {
         assert_eq!(format_thousands(-1_704), "-1,704");
+    }
+
+    #[test]
+    fn unix_timestamp_formats_the_epoch() {
+        assert_eq!(format_unix_timestamp(0), "1970-01-01 00:00");
+    }
+
+    #[test]
+    fn unix_timestamp_formats_a_well_known_value() {
+        // 1_000_000_000 seconds after the epoch is the widely-cited
+        // "one billion seconds" instant, 2001-09-09T01:46:40Z.
+        assert_eq!(format_unix_timestamp(1_000_000_000), "2001-09-09 01:46");
+    }
+
+    #[test]
+    fn unix_timestamp_clamps_negative_input_to_the_epoch() {
+        assert_eq!(format_unix_timestamp(-5), "1970-01-01 00:00");
     }
 }

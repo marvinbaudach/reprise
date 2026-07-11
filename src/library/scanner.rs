@@ -473,6 +473,62 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
     Ok(report)
 }
 
+/// Marks `missing = 1` for every currently-not-missing track whose `path` is
+/// under `root` AND whose file no longer exists on disk. Returns the count
+/// of rows newly marked (an already-`missing` row is left alone and not
+/// recounted, even if its file is still gone).
+///
+/// ## Call this AFTER `scan_folder(root)`, never before
+///
+/// The folder watcher (`library::watcher`) runs this immediately after an
+/// incremental `scan_folder(root)` on every debounce firing, in that order,
+/// deliberately: a file that was renamed/moved within `root` is reconciled
+/// by `scan_folder`'s move detection first (the row's `path` column is
+/// updated to the new location, history intact), so by the time this
+/// function runs, a row whose recorded `path` no longer exists really was
+/// deleted, not just relocated. Running this *before* the scan would
+/// transiently — and wrongly — flag a moved-but-not-yet-rescanned file as
+/// missing.
+///
+/// ## Component-wise prefix check, not string/SQL `LIKE`
+///
+/// "Under `root`" is decided by `Path::starts_with`, which compares path
+/// *components*, not raw bytes: a track at `/music/foobar/x.flac` does NOT
+/// count as being under `/music/foo`, which a naive string/`LIKE 'foo%'`
+/// prefix check would incorrectly include. This is also what keeps this
+/// function from ever touching a track outside `root` — the guarantee a
+/// future multi-folder library depends on — even when that other track's
+/// file has also vanished from disk; only a scan/watch of *that* track's own
+/// root is ever responsible for marking it.
+///
+/// A full scan over non-missing tracks (no index supports a path-prefix
+/// search) — acceptable at the library sizes this app targets, and no
+/// heavier than the sidebar/status-bar's own full-table aggregate queries.
+pub fn mark_vanished_under_root(conn: &Connection, root: &Path) -> Result<u32, ScanError> {
+    let candidates: Vec<(i64, String)> = {
+        let mut stmt = conn.prepare("SELECT id, path FROM tracks WHERE missing = 0")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        rows
+    };
+
+    let mut marked = 0u32;
+    for (id, path_str) in candidates {
+        let path = Path::new(&path_str);
+        if !path.starts_with(root) || path.exists() {
+            continue;
+        }
+        conn.execute(
+            "UPDATE tracks SET missing = 1 WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
+        marked += 1;
+        tracing::info!(path = %path_str, "watcher: marked vanished track missing");
+    }
+    Ok(marked)
+}
+
 // Stage 3 Task 1: the test suite moved to its own file purely to keep this
 // file under the project's 800-line rule — see `scanner_tests.rs`'s module
 // doc comment.

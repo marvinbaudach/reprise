@@ -211,6 +211,31 @@ pub fn create_playlist_and_add(
     Ok((playlist_id, inserted))
 }
 
+/// "Remove from library" menu action (Stage 3 Task 8, reachable only while
+/// viewing `ViewSource::Missing`): deletes each of `ids` via `queries::
+/// remove_missing_track` — a DATABASE-ONLY delete, never a file on disk (see
+/// that function's doc comment for the full guarantee and its defensive
+/// `missing = 1` guard). Returns the number of rows actually deleted; a
+/// track that somehow wasn't/isn't-anymore missing is silently skipped, not
+/// an error. A no-op (`Ok(0)`, no connection borrow) for an empty `ids`
+/// slice.
+pub fn remove_missing_selected(
+    conn: &Rc<RefCell<Connection>>,
+    ids: &[i64],
+) -> Result<u32, rusqlite::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let conn = conn.borrow();
+    let mut removed = 0u32;
+    for &id in ids {
+        if crate::queries::remove_missing_track(&conn, id)? {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -621,5 +646,50 @@ mod tests {
         let (playlist_id, inserted) = create_playlist_and_add(&conn, "Empty", &[]).unwrap();
         assert!(playlist_id > 0);
         assert_eq!(inserted, 0);
+    }
+
+    fn mark_missing(conn: &Rc<RefCell<Connection>>, id: i64) {
+        conn.borrow()
+            .execute("UPDATE tracks SET missing = 1 WHERE id = ?1", params![id])
+            .unwrap();
+    }
+
+    #[test]
+    fn remove_missing_selected_deletes_missing_rows() {
+        let conn = seeded_conn_with_tracks(3);
+        mark_missing(&conn, 1);
+        mark_missing(&conn, 3);
+
+        let removed = remove_missing_selected(&conn, &[1, 3]).unwrap();
+
+        assert_eq!(removed, 2);
+        let count: i64 = conn
+            .borrow()
+            .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "only the untouched track (id 2) survives");
+    }
+
+    #[test]
+    fn remove_missing_selected_skips_a_track_that_is_not_missing() {
+        let conn = seeded_conn_with_tracks(2);
+        mark_missing(&conn, 1);
+        // id 2 is left alone (still missing = 0).
+
+        let removed = remove_missing_selected(&conn, &[1, 2]).unwrap();
+
+        assert_eq!(removed, 1, "only the actually-missing track is removed");
+        let count: i64 = conn
+            .borrow()
+            .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn remove_missing_selected_empty_ids_is_a_no_op() {
+        let conn = seeded_conn_with_tracks(2);
+        let removed = remove_missing_selected(&conn, &[]).unwrap();
+        assert_eq!(removed, 0);
     }
 }

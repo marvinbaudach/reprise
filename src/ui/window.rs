@@ -19,7 +19,7 @@
 //! the toggle drives (see `wire_sidebar_toggle`).
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::gio::prelude::*;
@@ -31,6 +31,8 @@ use rusqlite::Connection;
 
 use crate::library;
 use crate::library::scanner::{ScanError, ScanReport};
+use crate::library::settings;
+use crate::library::watcher::{self, WatcherHandle};
 
 use super::player_controller::PlayerController;
 use super::playlist_io;
@@ -89,10 +91,12 @@ const SMOKE_RESCAN_ENV_VAR: &str = "REPRISE_SMOKE_RESCAN";
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database connection; the UI layer owns it single-threaded
 /// (via `Rc<RefCell<_>>`) and reads through it via `track_list::TrackList`.
-/// `db_path` is the same connection's on-disk path, handed to each
-/// scan-worker thread so it can open its own `Connection` rather than
-/// sharing this one across threads (`rusqlite::Connection` isn't `Send`).
-pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: PathBuf) {
+/// `db_path` is the same connection's on-disk path; every call site inside
+/// this function only ever needs to *clone* it into an owned `PathBuf` for a
+/// scan-worker thread or the watcher (both open their own `Connection` over
+/// it rather than sharing this one across threads — `rusqlite::Connection`
+/// isn't `Send`), so this takes a borrow rather than owning it outright.
+pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &Path) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(strings::APP_NAME)
@@ -164,6 +168,16 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
             None => 0,
         }
     }));
+
+    // Stage 3 Task 8: at most one folder watcher runs at a time. `None`
+    // until either the startup check below finds a persisted `library_root`
+    // or a scan (button click, "Rescan library" menu action, or the
+    // `REPRISE_SMOKE_RESCAN` hook) completes and (re)arms it on the freshly
+    // scanned folder — see `start_or_restart_watcher`. Replacing the stored
+    // `Some(handle)` drops the previous one first (assignment order), which
+    // stops its background thread and unregisters its OS-level watch before
+    // the new one is armed.
+    let watcher_state: Rc<RefCell<Option<WatcherHandle>>> = Rc::new(RefCell::new(None));
 
     let on_activate: OnActivate = {
         let player = player.clone();
@@ -327,6 +341,57 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
             ),
         });
     }
+    {
+        // Stage 3 Task 8: "Remove from library" (Missing source only)
+        // deletes rows outright — the Missing badge count can only ever
+        // shrink from that, exactly like the missing-marking trigger above,
+        // so this is wired the same way.
+        let sidebar_weak = Rc::downgrade(&sidebar);
+        track_list.set_on_library_mutated(move || match sidebar_weak.upgrade() {
+            Some(sidebar) => sidebar.refresh("track removed from library"),
+            None => tracing::warn!("sidebar is gone; skipping refresh after a library removal"),
+        });
+    }
+    {
+        // Stage 3 Task 8: the ImportErrors source's own Retry/Dismiss
+        // actions change the Import-errors badge count — a fifth sidebar-
+        // refresh trigger alongside scan completion, playlist CRUD,
+        // missing-marking, and context-menu playlist mutation (see `Sidebar
+        // ::refresh`'s doc comment).
+        let sidebar_weak = Rc::downgrade(&sidebar);
+        track_list.set_on_import_errors_mutated(move || match sidebar_weak.upgrade() {
+            Some(sidebar) => sidebar.refresh("import error mutated"),
+            None => {
+                tracing::warn!("sidebar is gone; skipping refresh after an import-error mutation");
+            }
+        });
+    }
+    {
+        // Stage 3 Task 8: "Rescan library" (Missing source context menu)
+        // re-runs the persisted library root through the exact same scan
+        // flow "Scan folder…" uses — see `trigger_rescan_of_library_root`.
+        // `track_list` stays decoupled from the scan machinery/settings
+        // table itself, same decoupling-via-closure seam as `on_play_
+        // selected`/`on_queue_selected` above.
+        let conn = conn.clone();
+        let scan_button = scan_button.clone();
+        let toast_overlay = toast_overlay.clone();
+        let db_path = db_path.to_path_buf();
+        let track_list_for_rescan = track_list.clone();
+        let sidebar_for_rescan = sidebar.clone();
+        let watcher_state = watcher_state.clone();
+        track_list.set_on_rescan_library(move || {
+            trigger_rescan_of_library_root(
+                &conn,
+                &scan_button,
+                &toast_overlay,
+                db_path.clone(),
+                track_list_for_rescan.clone(),
+                sidebar_for_rescan.clone(),
+                &watcher_state,
+            );
+        });
+    }
 
     // Built here — before the sidebar-selection wiring just below, rather
     // than after it — specifically so that wiring can see `split_view`: see
@@ -443,17 +508,47 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
         &scan_button,
         &window,
         &toast_overlay,
-        db_path.clone(),
+        db_path.to_path_buf(),
         track_list.clone(),
         sidebar.clone(),
+        watcher_state.clone(),
     );
     arm_smoke_rescan(
         &scan_button,
         &toast_overlay,
-        db_path,
+        db_path.to_path_buf(),
         track_list.clone(),
         sidebar.clone(),
+        watcher_state.clone(),
     );
+
+    // Stage 3 Task 8: if a folder has ever been scanned before (this launch
+    // or a previous one — `library_root` is persisted in the `settings`
+    // table), start the watcher on it immediately so live updates work from
+    // the very first frame, without the user re-scanning just to re-arm it.
+    // No persisted root yet (a fresh install) is the ordinary, expected case
+    // — logged at debug, not a warning.
+    {
+        let root = {
+            let conn = conn.borrow();
+            settings::get_setting(&conn, settings::LIBRARY_ROOT_KEY)
+        };
+        match root {
+            Ok(Some(root)) => start_or_restart_watcher(
+                &watcher_state,
+                &PathBuf::from(root),
+                db_path.to_path_buf(),
+                Rc::downgrade(&track_list),
+                Rc::downgrade(&sidebar),
+            ),
+            Ok(None) => {
+                tracing::debug!("no persisted library root; watcher not started at startup");
+            }
+            Err(error) => {
+                tracing::error!(%error, "failed to read persisted library root at startup");
+            }
+        }
+    }
 
     // Stage 3 Task 7: wired last among the header buttons, after every
     // widget/callback it needs (`track_list`, `sidebar`, `window_title`,
@@ -603,6 +698,7 @@ fn arm_smoke_rescan(
     db_path: PathBuf,
     track_list: Rc<TrackList>,
     sidebar: Rc<Sidebar>,
+    watcher_state: Rc<RefCell<Option<WatcherHandle>>>,
 ) {
     let Ok(dir) = std::env::var(SMOKE_RESCAN_ENV_VAR) else {
         return;
@@ -618,6 +714,7 @@ fn arm_smoke_rescan(
             toast_overlay,
             track_list,
             sidebar,
+            watcher_state,
         );
     });
 }
@@ -634,6 +731,7 @@ fn wire_scan_button(
     db_path: PathBuf,
     track_list: Rc<TrackList>,
     sidebar: Rc<Sidebar>,
+    watcher_state: Rc<RefCell<Option<WatcherHandle>>>,
 ) {
     let window = window.clone();
     let toast_overlay = toast_overlay.clone();
@@ -659,6 +757,7 @@ fn wire_scan_button(
         let track_list = track_list.clone();
         let sidebar = sidebar.clone();
         let scan_button = scan_button_handle.clone();
+        let watcher_state = watcher_state.clone();
 
         glib::spawn_future_local(async move {
             let folder = match dialog.select_folder_future(Some(&window)).await {
@@ -690,9 +789,61 @@ fn wire_scan_button(
                 toast_overlay,
                 track_list,
                 sidebar,
+                watcher_state,
             );
         });
     });
+}
+
+/// "Rescan library" (Stage 3 Task 8, Missing-source context menu action):
+/// re-runs the persisted library root (`library::settings::LIBRARY_ROOT_
+/// KEY`) through the exact same `spawn_scan` flow "Scan folder…" uses, minus
+/// the folder-picker dialog — mirrors `arm_smoke_rescan`'s reasoning for
+/// reusing `spawn_scan` directly. Guards against firing a second concurrent
+/// scan while `scan_button` shows one is already running (its `is_
+/// sensitive()` is the same flag `spawn_scan` toggles), and surfaces a toast
+/// rather than silently doing nothing when no folder has ever been scanned.
+fn trigger_rescan_of_library_root(
+    conn: &Rc<RefCell<Connection>>,
+    scan_button: &gtk4::Button,
+    toast_overlay: &adw::ToastOverlay,
+    db_path: PathBuf,
+    track_list: Rc<TrackList>,
+    sidebar: Rc<Sidebar>,
+    watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
+) {
+    if !scan_button.is_sensitive() {
+        tracing::debug!("rescan library: a scan is already running; ignoring");
+        toast_overlay.add_toast(adw::Toast::new(&strings::scan_already_running_toast()));
+        return;
+    }
+
+    let root = {
+        let conn = conn.borrow();
+        settings::get_setting(&conn, settings::LIBRARY_ROOT_KEY)
+    };
+    let root = match root {
+        Ok(Some(root)) => PathBuf::from(root),
+        Ok(None) => {
+            toast_overlay.add_toast(adw::Toast::new(&strings::no_library_root_to_rescan_toast()));
+            return;
+        }
+        Err(error) => {
+            tracing::error!(%error, "rescan library: failed to read persisted library root");
+            toast_overlay.add_toast(adw::Toast::new(&strings::no_library_root_to_rescan_toast()));
+            return;
+        }
+    };
+
+    spawn_scan(
+        root,
+        db_path,
+        scan_button.clone(),
+        toast_overlay.clone(),
+        track_list,
+        sidebar,
+        watcher_state.clone(),
+    );
 }
 
 /// Starts a background scan of `folder`: disables `scan_button` and swaps
@@ -720,6 +871,7 @@ fn spawn_scan(
     toast_overlay: adw::ToastOverlay,
     track_list: Rc<TrackList>,
     sidebar: Rc<Sidebar>,
+    watcher_state: Rc<RefCell<Option<WatcherHandle>>>,
 ) {
     scan_button.set_sensitive(false);
     scan_button.set_label(strings::SCANNING);
@@ -727,8 +879,14 @@ fn spawn_scan(
 
     let (sender, receiver) = async_channel::bounded::<Result<ScanReport, ScanError>>(1);
 
+    // Cloned (not moved) here: the worker thread below consumes its own
+    // copies, while the `glib::spawn_future_local` block further down still
+    // needs `folder`/`db_path` afterward to (re)arm the watcher on exactly
+    // the folder that was just scanned.
+    let thread_folder = folder.clone();
+    let thread_db_path = db_path.clone();
     std::thread::spawn(move || {
-        let result = run_scan(&db_path, &folder);
+        let result = run_scan(&thread_db_path, &thread_folder);
         if let Err(error) = sender.send_blocking(result) {
             // The only way `send_blocking` fails on a bounded(1) channel
             // whose one send is happening right here is a closed receiver —
@@ -749,6 +907,17 @@ fn spawn_scan(
                 tracing::info!(?report, "scan complete");
                 track_list.reload();
                 sidebar.refresh("scan completed");
+                // Stage 3 Task 8: (re)arm the watcher on the folder just
+                // scanned — covers both a brand-new root and a rescan of the
+                // one already being watched (the latter just replaces the
+                // watch with an equivalent one; harmless).
+                start_or_restart_watcher(
+                    &watcher_state,
+                    &folder,
+                    db_path,
+                    Rc::downgrade(&track_list),
+                    Rc::downgrade(&sidebar),
+                );
             }
             Ok(Err(error)) => {
                 tracing::error!(%error, "scan failed");
@@ -772,9 +941,85 @@ fn spawn_scan(
 
 /// Runs on the scan worker thread: opens and migrates its own `Connection`
 /// over `db_path` (never the UI's `Rc<RefCell<Connection>>` — see the
-/// module doc comment on `spawn_scan`), then scans `folder` through it.
+/// module doc comment on `spawn_scan`), scans `folder` through it, then
+/// persists `folder` as the library root (`library::settings::LIBRARY_ROOT_
+/// KEY`) so the watcher knows what to watch on the next launch even before
+/// this scan's result reaches the UI thread. A persistence failure is logged
+/// but does not fail the scan itself — the scan's own result is what matters
+/// most; the watcher simply won't auto-start next launch if this write
+/// didn't stick.
 fn run_scan(db_path: &std::path::Path, folder: &std::path::Path) -> Result<ScanReport, ScanError> {
     let mut worker_conn = crate::db::open(Some(db_path))?;
     crate::db::migrate(&worker_conn)?;
-    library::scanner::scan_folder(&mut worker_conn, folder)
+    let report = library::scanner::scan_folder(&mut worker_conn, folder)?;
+    if let Err(error) = settings::set_setting(
+        &worker_conn,
+        settings::LIBRARY_ROOT_KEY,
+        &folder.to_string_lossy(),
+    ) {
+        tracing::error!(%error, "failed to persist library root after scan");
+    }
+    Ok(report)
+}
+
+/// (Re)starts the folder watcher on `root` (Stage 3 Task 8): builds a fresh
+/// `async_channel`, starts `library::watcher::start` with a sender closure as
+/// its `on_event` callback (called on the watcher's own background thread —
+/// see that function's doc comment), stores the resulting handle in
+/// `watcher_state` (dropping — and thereby stopping — any previous watcher,
+/// via plain assignment; see `watcher_state`'s own doc comment in `build`),
+/// and spawns a long-lived local future that drains the receiver for the
+/// rest of the app's lifetime, reloading the track list and refreshing the
+/// sidebar on every reconcile. `track_list`/`sidebar` are `Weak` (not strong
+/// `Rc`s): this drain loop runs indefinitely and must never be the thing
+/// keeping either alive past the window's own lifetime — the same reasoning
+/// as every other long-lived cross-widget callback in this module (e.g.
+/// `player.set_track_list_reload`).
+fn start_or_restart_watcher(
+    watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
+    root: &Path,
+    db_path: PathBuf,
+    track_list: std::rc::Weak<TrackList>,
+    sidebar: std::rc::Weak<Sidebar>,
+) {
+    let (sender, receiver) = async_channel::unbounded::<watcher::WatchEvent>();
+
+    let handle = watcher::start(root, db_path, move |event| {
+        if let Err(error) = sender.send_blocking(event) {
+            tracing::warn!(%error, "watcher event dropped: UI receiver is gone");
+        }
+    });
+    match &handle {
+        Some(_) => tracing::info!(root = %root.display(), "watcher started"),
+        None => tracing::warn!(
+            root = %root.display(),
+            "watcher unavailable; continuing without live updates"
+        ),
+    }
+    // Plain assignment: any previous `Some(handle)` stored here is dropped
+    // right here, before the new one takes its place — see `WatcherHandle`'s
+    // `Drop` impl for what that stops.
+    *watcher_state.borrow_mut() = handle;
+
+    glib::spawn_future_local(async move {
+        while let Ok(event) = receiver.recv().await {
+            tracing::info!(
+                added = event.report.added,
+                updated = event.report.updated,
+                moved = event.report.moved,
+                errors = event.report.errors,
+                vanished = event.vanished,
+                "watcher: reconciling UI after live library update"
+            );
+            match track_list.upgrade() {
+                Some(track_list) => track_list.reload(),
+                None => tracing::warn!("watcher: track list reload skipped: track list is gone"),
+            }
+            match sidebar.upgrade() {
+                Some(sidebar) => sidebar.refresh("watcher reconcile"),
+                None => tracing::warn!("watcher: sidebar refresh skipped: sidebar is gone"),
+            }
+        }
+        tracing::debug!("watcher: event receiver closed; exiting UI drain loop");
+    });
 }

@@ -162,6 +162,74 @@ pub const CONTEXT_MENU_ADD_TO_PLAYLIST: &str = "Add to playlist";
 pub const CONTEXT_MENU_NEW_PLAYLIST: &str = "New playlist…";
 pub const CONTEXT_MENU_REMOVE_FROM_PLAYLIST: &str = "Remove from playlist";
 
+// Problem-source actions (src/ui/track_list_context_menu.rs, src/ui/
+// import_errors_view.rs, Stage 3 Task 8): the Missing/Import-errors sidebar
+// sources become actionable — "Rescan library"/"Remove from library" for a
+// missing track, "Retry"/"Dismiss" for an import-error row.
+
+/// Missing-source context menu item: re-runs a scan of the persisted library
+/// root (`library::settings::LIBRARY_ROOT_KEY`) — a reappeared file clears
+/// `missing` via the scanner's existing restore path.
+pub const CONTEXT_MENU_RESCAN_LIBRARY: &str = "Rescan library";
+/// Missing-source context menu item: deletes the selected row(s) from the
+/// database outright (never the file on disk — see `queries::remove_
+/// missing_track`'s doc comment).
+pub const CONTEXT_MENU_REMOVE_FROM_LIBRARY: &str = "Remove from library";
+
+/// Toast shown when "Rescan library" is invoked but no library folder has
+/// ever been scanned/persisted yet (`library::settings::LIBRARY_ROOT_KEY`
+/// unset) — nothing to rescan.
+pub fn no_library_root_to_rescan_toast() -> String {
+    "No library folder to rescan yet — use \"Scan folder…\" first".to_string()
+}
+
+/// Toast shown when "Rescan library" is invoked while a scan (from any
+/// trigger — the header button, a previous rescan, or this same action) is
+/// already running.
+pub fn scan_already_running_toast() -> String {
+    "A scan is already running".to_string()
+}
+
+/// Toast for the "Remove from library" context-menu action — plural-correct,
+/// same convention as the playlist-mutation toasts above.
+pub fn tracks_removed_from_library_toast(count: usize) -> String {
+    let noun = if count == 1 {
+        STATUS_TRACK_SINGULAR
+    } else {
+        STATUS_TRACK_PLURAL
+    };
+    format!("{count} {noun} removed from library")
+}
+
+/// Toast shown when `queries::remove_missing_track` fails while handling
+/// the context menu's "Remove from library" action.
+pub fn tracks_removed_from_library_failed_toast() -> String {
+    "Could not remove tracks from library".to_string()
+}
+
+// Import-errors panel (src/ui/import_errors_view.rs, Stage 3 Task 8): a
+// dedicated three-column (path/reason/time) view for the `import_errors`
+// table, since its rows aren't `Track`s and don't fit the shared
+// title/artist/… `ColumnView`.
+
+pub const IMPORT_ERROR_COLUMN_PATH: &str = "Path";
+pub const IMPORT_ERROR_COLUMN_REASON: &str = "Reason";
+pub const IMPORT_ERROR_COLUMN_TIME: &str = "Time";
+/// "Retry" re-scans just that one path (`library::scanner::scan_folder`
+/// against the single file); success clears the row, failure refreshes its
+/// `reason`/`occurred_at`.
+pub const IMPORT_ERROR_RETRY: &str = "Retry";
+/// "Dismiss" deletes the `import_errors` row itself — never a file, never
+/// the (nonexistent, for this row) `tracks` row.
+pub const IMPORT_ERROR_DISMISS: &str = "Dismiss";
+
+/// Toast shown when a "Retry" scan itself fails to run (a `ScanError`, not
+/// "the file is still unreadable" — that case just leaves/updates the
+/// `import_errors` row, which the panel's own refresh already shows).
+pub fn import_error_retry_failed_toast() -> String {
+    "Could not retry — see the log for details".to_string()
+}
+
 /// Toast for the "Add to queue" context-menu action — plural-correct
 /// (reuses `STATUS_TRACK_SINGULAR`/`STATUS_TRACK_PLURAL` rather than
 /// hardcoding "track"/"tracks" a second time).
