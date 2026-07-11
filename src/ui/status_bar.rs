@@ -96,6 +96,26 @@ impl StatusBar {
             }
         }
     }
+
+    /// Shows a simple "{n} tracks" line for a non-`Library` `ViewSource`
+    /// (Stage 3 Task 3): no total-duration/"N of M" library context, since
+    /// those describe the *whole* library (see `query_library_stats`'s doc
+    /// comment), not e.g. one playlist or the missing-files view — full
+    /// per-source stats (duration, etc.) are left to a later stage; this is
+    /// the "simplest coherent behavior" the task calls for. `count <= 0`
+    /// hides the label, matching `refresh`'s empty-library behavior: the
+    /// empty-state placeholder already communicates "nothing here" for that
+    /// case, so a zeroed status line would be redundant.
+    pub fn refresh_for_source_count(&self, count: i64) {
+        if count <= 0 {
+            self.label.set_visible(false);
+            return;
+        }
+        let text = format_source_status_text(count);
+        tracing::debug!(text = %text, "status line updated (source count)");
+        self.label.set_text(&text);
+        self.label.set_visible(true);
+    }
 }
 
 impl Default for StatusBar {
@@ -135,6 +155,18 @@ fn format_status_text(
         strings::STATUS_SEPARATOR,
         format_total_duration(total_duration_ms)
     )
+}
+
+/// Pure text-formatting core of `refresh_for_source_count` — same
+/// unit-testable-without-a-widget pattern as `format_status_text`, just
+/// without the duration/"N of M" pieces that only make sense library-wide.
+fn format_source_status_text(count: i64) -> String {
+    let track_word = if count == 1 {
+        strings::STATUS_TRACK_SINGULAR
+    } else {
+        strings::STATUS_TRACK_PLURAL
+    };
+    format!("{} {track_word}", format_thousands(count))
 }
 
 #[cfg(test)]
@@ -177,5 +209,18 @@ mod tests {
             text,
             "1,234 of 5,678 tracks · 4 days, 6 hours and 28 minutes"
         );
+    }
+
+    /// Stage 3 Task 3: the non-Library "{n} tracks" status line has none of
+    /// the duration/"N of M" pieces `format_status_text` produces.
+    #[test]
+    fn source_status_text_formats_plural_and_singular() {
+        assert_eq!(format_source_status_text(42), "42 tracks");
+        assert_eq!(format_source_status_text(1), "1 track");
+    }
+
+    #[test]
+    fn source_status_text_comma_formats_over_a_thousand() {
+        assert_eq!(format_source_status_text(1_234), "1,234 tracks");
     }
 }

@@ -22,6 +22,7 @@ use super::player_controller::PlayerController;
 use super::status_bar::StatusBar;
 use super::strings;
 use super::track_list::{OnActivate, TrackList};
+use super::view_source::ViewSource;
 
 /// Debounce delay between the last keystroke in the search entry and the
 /// track-list reload it triggers, so fast typing doesn't fire a query per
@@ -109,12 +110,38 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
 
     let status_bar = StatusBar::new();
 
+    // Stage 3 Task 3: the Queue source reads the current playback queue's
+    // ids (in play order) from the controller rather than a SQL `WHERE`
+    // clause (see `queries.rs`'s module doc). `player` already exists at
+    // this point (built above), so this can be a plain constructor
+    // parameter — unlike `toast_overlay`, which needs post-construction
+    // injection because it's built *after* `track_list` (see that field's
+    // doc comment in `player_controller.rs`). `None` (GStreamer unavailable)
+    // degrades to an always-empty queue view, matching every other
+    // player-unavailable degradation in this function.
+    let queue_ids_provider = {
+        let player = player.clone();
+        move || match &player {
+            Some(controller) => controller.queue_ids_snapshot(),
+            None => Vec::new(),
+        }
+    };
+
     let track_list = {
         let status_bar = status_bar.clone();
         let conn_for_status = conn.clone();
-        Rc::new(TrackList::new(conn.clone(), on_activate, move |filter| {
-            status_bar.refresh(&conn_for_status, filter);
-        }))
+        Rc::new(TrackList::new(
+            conn.clone(),
+            on_activate,
+            move |source, count, filter| {
+                if matches!(source, ViewSource::Library) {
+                    status_bar.refresh(&conn_for_status, filter);
+                } else {
+                    status_bar.refresh_for_source_count(count as i64);
+                }
+            },
+            queue_ids_provider,
+        ))
     };
 
     let toolbar_view = adw::ToolbarView::new();

@@ -42,6 +42,7 @@ use rusqlite::Connection;
 
 use crate::models::Track;
 use crate::queries;
+use crate::ui::view_source::ViewSource;
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
 /// page size (`track_list.rs`'s former `WINDOW_LIMIT`), now used as the unit
@@ -61,9 +62,14 @@ mod imp {
     #[derive(Default)]
     pub struct ModelState {
         pub total: u32,
+        pub source: ViewSource,
         pub sort_field: String,
         pub sort_dir: String,
         pub filter: String,
+        /// Only meaningful when `source == ViewSource::Queue` — see
+        /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
+        /// for every other source.
+        pub queue_ids: Vec<i64>,
         pub cache: BTreeMap<u32, Vec<Track>>,
     }
 
@@ -120,13 +126,24 @@ impl TrackListModel {
         obj
     }
 
-    /// Re-counts rows for `(sort_field, sort_dir, filter)`, clears the
-    /// window cache, and fires `items_changed(0, old_total, new_total)`.
-    /// Mutates and drops the `state` borrow *before* emitting the signal:
-    /// `items_changed` can synchronously re-enter this object (`GtkColumnView`
-    /// / `NoSelection` typically re-read `n_items`/`item` right away), so no
-    /// borrow may still be held when it fires.
-    pub fn set_query(&self, sort_field: &str, sort_dir: &str, filter: &str) {
+    /// Re-counts rows for `(source, sort_field, sort_dir, filter)`, clears
+    /// the window cache, and fires `items_changed(0, old_total, new_total)`.
+    /// `queue_ids` is only meaningful (and only read) when `source ==
+    /// ViewSource::Queue` (see `queries::query_track_window`'s doc comment
+    /// for why the Queue source needs an explicit id list rather than a
+    /// `WHERE` clause); every other source ignores it, so callers may pass
+    /// `&[]`. Mutates and drops the `state` borrow *before* emitting the
+    /// signal: `items_changed` can synchronously re-enter this object
+    /// (`GtkColumnView`/`NoSelection` typically re-read `n_items`/`item`
+    /// right away), so no borrow may still be held when it fires.
+    pub fn set_query(
+        &self,
+        source: &ViewSource,
+        sort_field: &str,
+        sort_dir: &str,
+        filter: &str,
+        queue_ids: &[i64],
+    ) {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
@@ -136,10 +153,10 @@ impl TrackListModel {
 
         let new_total = {
             let conn_ref = conn.borrow();
-            match queries::query_track_count(&conn_ref, filter) {
+            match queries::query_track_count(&conn_ref, source, filter, queue_ids) {
                 Ok(n) => n.max(0) as u32,
                 Err(error) => {
-                    tracing::error!(%error, sort_field, sort_dir, filter, "failed to count tracks for query");
+                    tracing::error!(%error, source = %source.label(), sort_field, sort_dir, filter, "failed to count tracks for query");
                     0
                 }
             }
@@ -147,15 +164,18 @@ impl TrackListModel {
 
         {
             let mut state = self.imp().state.borrow_mut();
+            state.source = source.clone();
             state.sort_field = sort_field.to_string();
             state.sort_dir = sort_dir.to_string();
             state.filter = filter.to_string();
+            state.queue_ids = queue_ids.to_vec();
             state.total = new_total;
             state.cache.clear();
         }
 
         tracing::debug!(
             total = new_total,
+            source = %source.label(),
             sort_field,
             sort_dir,
             filter,
@@ -194,12 +214,14 @@ impl TrackListModel {
             return None;
         };
 
-        let (sort_field, sort_dir, filter) = {
+        let (source, sort_field, sort_dir, filter, queue_ids) = {
             let state = self.imp().state.borrow();
             (
+                state.source.clone(),
                 state.sort_field.clone(),
                 state.sort_dir.clone(),
                 state.filter.clone(),
+                state.queue_ids.clone(),
             )
         };
 
@@ -207,11 +229,13 @@ impl TrackListModel {
             let mut conn = conn.borrow_mut();
             queries::query_track_window(
                 &mut conn,
+                &source,
                 &sort_field,
                 &sort_dir,
                 &filter,
                 i64::from(window_start),
                 i64::from(WINDOW_SIZE),
+                &queue_ids,
             )
         };
 
@@ -325,14 +349,14 @@ mod tests {
     fn set_query_updates_n_items_from_count() {
         let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
         assert_eq!(model.n_items(), 0);
-        model.set_query("title", "asc", "");
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         assert_eq!(model.n_items(), 3);
     }
 
     #[test]
     fn set_query_applies_filter_to_count_and_rows() {
         let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
-        model.set_query("title", "asc", "zu");
+        model.set_query(&ViewSource::Library, "title", "asc", "zu", &[]);
         assert_eq!(model.n_items(), 1);
         assert_eq!(model.track_at(0).unwrap().title, "Zulu");
     }
@@ -340,7 +364,7 @@ mod tests {
     #[test]
     fn track_at_loads_in_sorted_order() {
         let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
-        model.set_query("title", "asc", "");
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         assert_eq!(model.track_at(0).unwrap().title, "Alpha");
         assert_eq!(model.track_at(1).unwrap().title, "Mid");
         assert_eq!(model.track_at(2).unwrap().title, "Zulu");
@@ -349,16 +373,16 @@ mod tests {
     #[test]
     fn track_at_out_of_range_returns_none() {
         let model = seeded_model(&[("Alpha", "BBB")]);
-        model.set_query("title", "asc", "");
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         assert!(model.track_at(5).is_none());
     }
 
     #[test]
     fn set_query_clears_stale_cache_between_queries() {
         let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB")]);
-        model.set_query("title", "asc", "");
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         assert_eq!(model.track_at(0).unwrap().title, "Alpha");
-        model.set_query("title", "desc", "");
+        model.set_query(&ViewSource::Library, "title", "desc", "", &[]);
         assert_eq!(model.track_at(0).unwrap().title, "Zulu");
     }
 
@@ -372,7 +396,7 @@ mod tests {
     fn track_at_spans_multiple_windows_in_sorted_order() {
         const ROW_COUNT: u32 = 450;
         let model = seeded_model_bulk(ROW_COUNT);
-        model.set_query("title", "asc", "");
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         assert_eq!(model.n_items(), ROW_COUNT);
 
         assert_eq!(model.track_at(0).unwrap().title, bulk_title(0));
@@ -385,7 +409,7 @@ mod tests {
     #[test]
     fn invalidate_window_at_forces_a_fresh_read_of_that_row() {
         let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB")]);
-        model.set_query("title", "asc", "");
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         assert_eq!(model.track_at(0).unwrap().rating, 0);
 
         // Mutate the underlying row directly (simulating a rating write
@@ -407,7 +431,7 @@ mod tests {
     #[test]
     fn invalidate_window_at_out_of_range_is_a_no_op() {
         let model = seeded_model(&[("Alpha", "BBB")]);
-        model.set_query("title", "asc", "");
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         // Must not panic.
         model.invalidate_window_at(5);
     }
@@ -423,7 +447,7 @@ mod tests {
         const ROW_COUNT: u32 = 1700;
         const WINDOW_COUNT: u32 = 9;
         let model = seeded_model_bulk(ROW_COUNT);
-        model.set_query("title", "asc", "");
+        model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
 
         for window in 0..WINDOW_COUNT {
             let position = window * WINDOW_SIZE;
@@ -442,5 +466,57 @@ mod tests {
             cached.contains(&(8 * WINDOW_SIZE)),
             "just-loaded window 8 should be present"
         );
+    }
+
+    /// Stage 3 Task 3: `set_query`/`track_at` must plumb a non-Library
+    /// `ViewSource` through to `queries::query_track_window`/`query_track_
+    /// count` unchanged — exercised here end-to-end through the model
+    /// (`queries.rs`'s own test module covers each source's SQL directly).
+    #[test]
+    fn set_query_with_missing_source_shows_only_missing_rows() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (t, missing) in [("Alpha", 0), ("Beta", 1)] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, added_at, missing) \
+                 VALUES (?1, ?2, '', 0, ?3)",
+                rusqlite::params![format!("/x/{t}.flac"), t, missing],
+            )
+            .unwrap();
+        }
+        let model = TrackListModel::new(Rc::new(RefCell::new(conn)));
+
+        model.set_query(&ViewSource::Missing, "title", "asc", "", &[]);
+        assert_eq!(model.n_items(), 1);
+        assert_eq!(model.track_at(0).unwrap().title, "Beta");
+    }
+
+    /// `ViewSource::Queue` reads its rows from the `queue_ids` param, not
+    /// from any `WHERE` clause — this pins that `set_query`/`track_at`
+    /// actually thread that slice through to `queries::query_track_window`
+    /// and preserve its order.
+    #[test]
+    fn set_query_with_queue_source_follows_queue_ids_order() {
+        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
+        let ids: Vec<i64> = {
+            let conn = model.imp().conn.borrow().clone().unwrap();
+            let conn = conn.borrow();
+            let mut stmt = conn
+                .prepare("SELECT id FROM tracks ORDER BY title")
+                .unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        // ids sorted by title are [Alpha, Mid, Zulu]; reverse them so the
+        // Queue order is the opposite of any column sort.
+        let queue_ids: Vec<i64> = ids.into_iter().rev().collect();
+
+        model.set_query(&ViewSource::Queue, "ignored", "ignored", "", &queue_ids);
+        assert_eq!(model.n_items(), 3);
+        assert_eq!(model.track_at(0).unwrap().title, "Zulu");
+        assert_eq!(model.track_at(1).unwrap().title, "Mid");
+        assert_eq!(model.track_at(2).unwrap().title, "Alpha");
     }
 }
