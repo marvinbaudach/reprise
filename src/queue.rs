@@ -319,19 +319,24 @@ impl Queue {
     /// Bounds: an empty queue, or `from`/`to` out of range (`>= order.len()`),
     /// is a logged no-op rather than a panic — matching every other
     /// out-of-range guard on this type (`set_shuffle`'s pos guard, etc.).
-    /// `from == to` is also a no-op (nothing to move).
-    pub fn move_item(&mut self, from: usize, to: usize) {
+    /// `from == to` is also a no-op (nothing to move). Returns whether a move
+    /// actually happened — `false` for any of the no-op cases above, `true`
+    /// otherwise — so `ui::player_controller::PlayerController::move_queue_
+    /// item` (and, through it, `ui::track_list_dnd`'s queue-reorder drop
+    /// handler) can report a degraded/no-op outcome as failure rather than
+    /// success (Stage 3 Task 6 review finding #3).
+    pub fn move_item(&mut self, from: usize, to: usize) -> bool {
         let len = self.order.len();
         if len == 0 {
             warn!("move_item: queue is empty; no-op");
-            return;
+            return false;
         }
         if from >= len || to >= len {
             warn!(from, to, len, "move_item: index out of range; no-op");
-            return;
+            return false;
         }
         if from == to {
-            return;
+            return false;
         }
 
         // Remember the *track*'s identity (its `ids`-index), not its current
@@ -339,12 +344,13 @@ impl Queue {
         // about to shift.
         let current_track_slot = self.pos.map(|idx| self.order[idx]);
 
-        let moved = self.order.remove(from);
-        self.order.insert(to, moved);
+        let entry = self.order.remove(from);
+        self.order.insert(to, entry);
 
         if let Some(track_slot) = current_track_slot {
             self.pos = self.order.iter().position(|&idx| idx == track_slot);
         }
+        true
     }
 
     /// Every queued track id in current play order — reflecting shuffle, if

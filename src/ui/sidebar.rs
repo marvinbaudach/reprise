@@ -54,6 +54,11 @@
 //! pattern documented project-wide, e.g. `player_controller.rs`'s "Queue
 //! borrow discipline" section), so no such reentrant chain ever overlaps two
 //! borrows of the same `RefCell` either.
+//!
+//! The playlist row's drop target/drop-handling logic lives in the sibling
+//! `ui::sidebar_dnd` module (split out to keep this file under 800 lines,
+//! mirroring `track_list.rs`/`track_list_dnd.rs`) — hence `Shared`/`conn`/
+//! `rebuild`/`show_toast`/`on_tracks_added` being `pub(super)`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -68,6 +73,7 @@ use rusqlite::Connection;
 use crate::format::format_thousands;
 use crate::library::playlists;
 use crate::queries;
+use crate::ui::sidebar_dnd;
 use crate::ui::strings;
 use crate::view_source::ViewSource;
 
@@ -89,8 +95,13 @@ type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
 
-struct Shared {
-    conn: Rc<RefCell<Connection>>,
+/// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
+/// sidebar_dnd` — see this file's `## Playlist drop target lives in sidebar_
+/// dnd` module-doc section) rather than fully private, same reasoning/shape
+/// as `track_list.rs`/`track_list_dnd.rs`. Only the fields that module
+/// actually needs are `pub(super)` individually below.
+pub(super) struct Shared {
+    pub(super) conn: Rc<RefCell<Connection>>,
     listbox: gtk4::ListBox,
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
@@ -139,12 +150,11 @@ struct Shared {
     /// reload` so the track list picks up the new rows immediately in the
     /// (uncommon but real) case where the currently-viewed playlist is the
     /// very one just dropped onto. This sidebar already refreshes its own
-    /// counts directly (`rebuild`, called from the drop handler itself, same
-    /// as `create_playlist_and_select`) — this callback is the *other*
-    /// direction (sidebar mutation -> track list refresh), the mirror image
-    /// of `track_list.rs`'s `on_playlist_mutated` (track list mutation ->
-    /// sidebar refresh).
-    on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
+    /// counts directly (`rebuild`, called from the drop handler itself) —
+    /// this callback is the *other* direction (sidebar mutation -> track
+    /// list refresh), the mirror image of `track_list.rs`'s `on_playlist_
+    /// mutated` (track list mutation -> sidebar refresh).
+    pub(super) on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
     /// The window, for the "New playlist" `AlertDialog`'s parent. `WeakRef`
     /// so the sidebar can never keep the window alive past its natural
     /// lifetime (same shape as `TrackList::toast_overlay`).
@@ -259,6 +269,17 @@ impl Sidebar {
         self.shared.toast_overlay.set(Some(overlay));
     }
 
+    /// Drives the same drop-handling sequence `sidebar_dnd::wire_playlist_
+    /// drop_target`'s real `connect_drop` closure runs (see `sidebar_dnd::
+    /// handle_playlist_drop`'s doc comment) for callers that can't
+    /// synthesize a pointer drag. `window.rs` wires this to `TrackList::
+    /// set_on_sidebar_playlist_drop`, which `ui::track_list_dnd_smoke`'s
+    /// `REPRISE_SMOKE_DND=addplaylist:<name>` hook calls (Stage 3 Task 6
+    /// review finding #1). Returns whether anything was actually added.
+    pub fn handle_playlist_drop(&self, playlist_id: i64, playlist_name: &str, ids: &[i64]) -> bool {
+        sidebar_dnd::handle_playlist_drop(&self.shared, playlist_id, playlist_name, ids)
+    }
+
     /// Re-runs every count/list query and rebuilds the row set, preserving
     /// whichever source is currently selected. `reason` is a short,
     /// human-readable label logged alongside the rebuild counter (see
@@ -304,7 +325,7 @@ impl Sidebar {
 /// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
 /// wired or it's gone — mirrors `track_list.rs`/`player_controller.rs`'s
 /// `show_toast` (same seam, same degrade behavior).
-fn show_toast(shared: &Shared, text: &str) {
+pub(super) fn show_toast(shared: &Shared, text: &str) {
     match shared.toast_overlay.upgrade() {
         Some(overlay) => overlay.add_toast(adw::Toast::new(text)),
         None => {
@@ -332,7 +353,7 @@ fn show_toast(shared: &Shared, text: &str) {
 /// (reason)"` debug log (`shared.refresh_count`) — see `Sidebar::refresh`'s
 /// doc comment for the full trigger inventory this makes verifiable in
 /// headless E2E output.
-fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
+pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
     let refresh_number = shared.refresh_count.get() + 1;
     shared.refresh_count.set(refresh_number);
     tracing::debug!(
@@ -527,90 +548,18 @@ fn append_header(listbox: &gtk4::ListBox, text: &str) {
 
 /// Builds one navigation row (title + optional right-aligned count) and
 /// registers it in `shared.rows` against `source`. Playlist rows additionally
-/// get a drag-and-drop drop target (Stage 3 Task 6) — see `wire_playlist_
-/// drop_target`'s doc comment.
+/// get a drag-and-drop drop target (Stage 3 Task 6) — see `sidebar_dnd::
+/// wire_playlist_drop_target`'s doc comment.
 fn add_row(shared: &Rc<Shared>, source: ViewSource, title: &str, count: Option<i64>) {
     let row = build_nav_row(title, count);
     if let ViewSource::Playlist(playlist_id) = source {
-        wire_playlist_drop_target(shared, &row, playlist_id, title);
+        sidebar_dnd::wire_playlist_drop_target(shared, &row, playlist_id, title);
     }
     shared.listbox.append(&row);
     shared
         .rows
         .borrow_mut()
         .push((row, source, title.to_string()));
-}
-
-/// Attaches a `gtk::DropTarget` to a playlist row (Stage 3 Task 6's DoD half:
-/// "playlists fillable via drag and drop"): accepts the same `String`
-/// drag-payload format `ui::track_list_dnd::wire_row_dnd`'s drag source
-/// produces (see that module's `## Content payload format` section — the
-/// reorder-position half of the payload is irrelevant here, only `ids`
-/// matters), appends every dragged id to `playlist_id` via `library::
-/// playlists::add_tracks`, and — on success — refreshes this sidebar's own
-/// counts (`rebuild`, same as `create_playlist_and_select`), shows a toast,
-/// and notifies `on_tracks_added` so the track list can pick up the change
-/// too (see that field's doc comment for why). A parse failure (malformed/
-/// foreign payload) or an empty id list is a silent no-op — dropping
-/// something this row doesn't understand should never produce a toast or a
-/// log line at drop time, only `ui::track_list_dnd::parse_drag_payload`
-/// itself (already exercised by that module's own tests) needs to reason
-/// about *why* a payload didn't parse.
-fn wire_playlist_drop_target(
-    shared: &Rc<Shared>,
-    row: &gtk4::ListBoxRow,
-    playlist_id: i64,
-    playlist_name: &str,
-) {
-    let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::COPY);
-
-    let shared = shared.clone();
-    let playlist_name = playlist_name.to_string();
-    drop_target.connect_drop(move |_target, value, _x, _y| {
-        let Ok(payload_str) = value.get::<String>() else {
-            return false;
-        };
-        let Some(payload) = crate::ui::track_list_dnd::parse_drag_payload(&payload_str) else {
-            return false;
-        };
-        if payload.ids.is_empty() {
-            return false;
-        }
-
-        let result = {
-            let mut conn = shared.conn.borrow_mut();
-            playlists::add_tracks(&mut conn, playlist_id, &payload.ids)
-        };
-        match result {
-            Ok(inserted) => {
-                tracing::info!(
-                    playlist_id,
-                    inserted,
-                    "tracks added to playlist via drag and drop"
-                );
-                rebuild(&shared, None, "tracks added via drag and drop");
-                show_toast(
-                    &shared,
-                    &strings::tracks_added_to_playlist_toast(inserted as usize, &playlist_name),
-                );
-                let callback = shared.on_tracks_added.borrow().clone();
-                if let Some(callback) = callback {
-                    callback();
-                }
-                true
-            }
-            Err(error) => {
-                tracing::error!(%error, playlist_id, "failed to add tracks to playlist via drag and drop");
-                show_toast(
-                    &shared,
-                    &strings::playlist_drop_add_failed_toast(&playlist_name),
-                );
-                false
-            }
-        }
-    });
-
-    row.add_controller(drop_target);
 }
 
 /// Builds the widget tree for one navigation row: a title label (start-

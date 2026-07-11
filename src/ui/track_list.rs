@@ -71,6 +71,7 @@ use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd;
+use crate::ui::track_list_dnd_smoke;
 use crate::ui::track_list_model::TrackListModel;
 use crate::view_source::ViewSource;
 
@@ -233,8 +234,15 @@ type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize)>;
 /// selected` doc comment.
 type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
 /// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
-/// comment.
-type OnQueueReorder = Rc<dyn Fn(usize, usize)>;
+/// comment. Returns whether the move actually happened (`false` for a
+/// degraded no-op, e.g. no player wired — see `Shared::on_queue_reorder`'s
+/// doc comment), which `ui::track_list_dnd`'s drop handler propagates as its
+/// own result rather than reporting success just because a callback was
+/// present (Stage 3 Task 6 review finding #3).
+type OnQueueReorder = Rc<dyn Fn(usize, usize) -> bool>;
+/// Sidebar drag-and-drop "add to playlist" callback — see the `Shared::on_
+/// sidebar_playlist_drop` doc comment.
+type OnSidebarPlaylistDrop = Rc<dyn Fn(i64, &str, &[i64]) -> bool>;
 
 /// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -341,8 +349,27 @@ pub(super) struct Shared {
     /// move_queue_item`. Same seam shape as `on_play_selected`/`on_queue_
     /// selected`: `window.rs` wires this once the controller exists, and
     /// `ui::track_list_dnd`'s queue-reorder drop handler is the only caller
-    /// (see that module's doc comment for the full drag/drop design).
+    /// (see that module's doc comment for the full drag/drop design). Returns
+    /// whether the move actually happened — `window.rs`'s wiring returns
+    /// `false` when no player is available at all, exactly like `Queue::
+    /// move_item`'s own no-op cases (Stage 3 Task 6 review finding #3), so a
+    /// degraded environment reports failure rather than a false "moved".
     pub(super) on_queue_reorder: RefCell<Option<OnQueueReorder>>,
+    /// Sidebar drag-and-drop "add to playlist" callback (Stage 3 Task 6
+    /// review finding #1), injected via `TrackList::set_on_sidebar_playlist_
+    /// drop` — wraps `Sidebar::handle_playlist_drop`, the same function the
+    /// sidebar's own `gtk::DropTarget` calls for a real pointer drag. This
+    /// seam exists purely so `ui::track_list_dnd`'s `REPRISE_SMOKE_DND=
+    /// addplaylist:<name>` hook can drive the *exact* sidebar drop-handling
+    /// sequence (DB write, sidebar rebuild + toast, `on_tracks_added` ->
+    /// this track list's own reload) instead of calling `library::
+    /// playlists::add_tracks` directly and only proving the database write —
+    /// `ui::track_list_dnd` has no other way to reach `Sidebar`'s private
+    /// state, exactly the same "no direct handle across widgets" reason
+    /// `on_playlist_mutated`/`on_queue_reorder` are callbacks rather than
+    /// direct calls. Takes `(playlist_id, playlist_name, ids)` and returns
+    /// whether anything was actually added.
+    pub(super) on_sidebar_playlist_drop: RefCell<Option<OnSidebarPlaylistDrop>>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -415,6 +442,7 @@ impl TrackList {
             on_queue_selected: RefCell::new(None),
             on_playlist_mutated: RefCell::new(None),
             on_queue_reorder: RefCell::new(None),
+            on_sidebar_playlist_drop: RefCell::new(None),
         });
 
         let title_column = append_column(
@@ -493,7 +521,7 @@ impl TrackList {
         arm_smoke_source(&shared);
         arm_smoke_sort_column(&column_view, &title_column, &artist_column);
         track_list_context_menu::arm_smoke_menu_action(&shared);
-        track_list_dnd::arm_smoke_dnd(&shared);
+        track_list_dnd_smoke::arm_smoke_dnd(&shared);
 
         Self { shared }
     }
@@ -566,8 +594,18 @@ impl TrackList {
     /// Injects the queue drag-reorder callback (Stage 3 Task 6) — see the
     /// `Shared::on_queue_reorder` doc comment. `window.rs` wires this to
     /// `PlayerController::move_queue_item`.
-    pub fn set_on_queue_reorder(&self, callback: impl Fn(usize, usize) + 'static) {
+    pub fn set_on_queue_reorder(&self, callback: impl Fn(usize, usize) -> bool + 'static) {
         *self.shared.on_queue_reorder.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Injects the sidebar "add to playlist" drag-and-drop callback (Stage 3
+    /// Task 6 review finding #1) — see the `Shared::on_sidebar_playlist_drop`
+    /// doc comment. `window.rs` wires this to `Sidebar::handle_playlist_drop`.
+    pub fn set_on_sidebar_playlist_drop(
+        &self,
+        callback: impl Fn(i64, &str, &[i64]) -> bool + 'static,
+    ) {
+        *self.shared.on_sidebar_playlist_drop.borrow_mut() = Some(Rc::new(callback));
     }
 }
 
