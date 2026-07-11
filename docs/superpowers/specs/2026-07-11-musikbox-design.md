@@ -58,6 +58,10 @@ Nachfolger:
 - Sortiereinstellungen: Sortierung (Spalte + Richtung) wird pro Ansicht
   gespeichert; sinnvolle Sekundär-Sortierung (Album → Track-Nr.,
   Interpret → Album → Track-Nr.)
+- Spalten-Popover am Listenkopf (Design-Screens des Nutzers): Checkbox-
+  Liste „Spalten anzeigen" mit Drag-Griffen zum Umsortieren; „Titel" ist
+  fixiert. Verfügbare Spalten: Titel, Interpret, Album, Jahr, Länge,
+  Bewertung (Standard an) sowie Genre, Wiedergaben, Bitrate (Standard aus)
 - 10-Band-Equalizer mit Presets (GStreamer `equalizer-10bands`),
   ein-/ausschaltbar, Einstellungen werden gespeichert
 - ReplayGain-Lautstärkeangleichung (GStreamer `rgvolume`): liest
@@ -161,9 +165,9 @@ Liste, aber ohne Fremd-Plugin-API:
   Sidebar-Einträge, Kontextmenü-Aktionen, Einstellungs-Seiten,
   Detail-Panel-Tabs, Audio-Pipeline-Elemente.
 - In den Einstellungen gibt es eine **Modul-Liste mit An/Aus-Schaltern**
-  (wie Rhythmbox' Plugins-Tab); Zustand in der `settings`-Tabelle.
-  Equalizer und ReplayGain sind die ersten Module und beweisen das System
-  im MVP.
+  (UI-Name: „Plugins", wie Rhythmbox); Zustand in der `settings`-Tabelle.
+  Equalizer, ReplayGain und MPRIS sind die ersten Module (alle im MVP,
+  standardmäßig an) und beweisen das System.
 - Eine echte **Fremd-Plugin-API** (zur Laufzeit ladbar, z. B. WASM) bleibt
   spätere Ausbaustufe und setzt auf denselben Erweiterungspunkten auf.
 
@@ -187,7 +191,7 @@ und Suche laufen als SQL im Backend. Damit skaliert die Liste auf 100k+ Titel.
 ```sql
 tracks(
   id, path UNIQUE, title, artist, album, album_artist,
-  year, track_no, genre, duration_ms,
+  year, track_no, genre, duration_ms, bitrate_kbps,
   rating,            -- 0–5, 0 = unbewertet
   play_count, last_played_at, added_at,
   file_mtime,        -- für inkrementellen Rescan
@@ -244,29 +248,42 @@ läuft auf Wayland ohne Compositor-Abhängigkeit.
 
 ### Einstellungen
 
-Ein **modernes Einstellungsmenü** — keine schlichte Dialog-Box, sondern
-eine eigene Ansicht im 2a-Look (Zahnrad in der Headerbar öffnet sie):
-Kategorien-Sidebar links, Inhaltsbereich rechts, Suchfeld über den
-Einstellungen, jede Änderung wirkt sofort ohne Neustart. Kategorien:
+Ein **modernes Einstellungsmenü** nach den Design-Screens des Nutzers
+(Referenz-Mockups vom 2026-07-11): modaler Dialog im 2a-Look mit
+**Tab-Leiste oben** — Wiedergabe · Darstellung · Layout · Bibliothek ·
+Plugins · Synchronisation. Jede Änderung wirkt sofort ohne Neustart.
 
-- **Darstellung:** Playerleiste unten (2a, Standard) / oben in der
-  Headerbar (1a) / schwebende Insel (1c) — umgesetzt als eine
-  `PlayerBar`-Komponente, die an drei Layout-Slots gerendert wird.
-  Farbschema dunkel (Standard) / hell (1b) / System folgen; beide Schemata
-  sind vollständige Token-Sets in `tokens.css`, der Blur-Look funktioniert
-  in beiden.
-- **Spalten & Sortierung:** einzelne Spalten ein-/ausblenden (auch per
-  Rechtsklick auf den Spaltenkopf), Spaltenbreiten per Drag,
-  Standard-Sortierung (Spalte + Richtung) und Sekundär-Sortierung;
-  alles wird pro Ansicht gespeichert.
+- **Wiedergabe:** Equalizer (10 Bänder als Slider, Presets Flat/Rock/Pop/…,
+  Ein/Aus), ReplayGain (Modus Titel / Album / Aus, Fallback-Verstärkung),
+  Verhalten am Titelende.
+- **Darstellung:** Farbschema dunkel (Standard) / hell (1b) / System
+  folgen; beide Schemata sind vollständige Token-Sets in `tokens.css`,
+  der Blur-Look funktioniert in beiden.
+- **Layout** (eigener Tab, wie im Mockup):
+  - *Wiedergabeleiste:* Auswahl über drei visuelle Vorschau-Karten
+    „Oben / Unten / Schwebend" (1a / 2a / 1c); eine `PlayerBar`-Komponente
+    rendert in den gewählten Layout-Slot.
+  - *Fensteraufbau:* Seitenleiste anzeigen (an/aus), Statusleiste anzeigen
+    (Titelanzahl, Gesamtdauer, Speicher; an/aus).
+  - *Listendichte:* Komfortabel / Standard / Kompakt.
+  - *Spalten:* „Sichtbare Spalten" mit Bearbeiten-Aktion (öffnet dasselbe
+    Spalten-Popover wie am Listenkopf).
 - **Bibliothek:** Ordner verwalten (hinzufügen/entfernen), Rescan,
   Rhythmbox-Import.
-- **Wiedergabe:** Equalizer (10 Bänder als Slider, Presets Flat/Rock/Pop/…,
-  Ein/Aus-Schalter), ReplayGain (Modus Titel / Album / Aus,
-  Fallback-Verstärkung für Dateien ohne Tags).
-- **Module:** Liste aller Module mit An/Aus-Schaltern und Kurzbeschreibung
-  (wie Rhythmbox' Plugins-Tab); Module können hier eigene
-  Einstellungs-Seiten einhängen.
+- **Plugins** (so heißt das Modulsystem im UI): Liste der Module mit
+  Name, Kurzbeschreibung, An/Aus-Schalter und — wo vorhanden —
+  „Konfigurieren…"-Button für die moduleigene Einstellungsseite
+  (z. B. Equalizer, später Scrobbler mit Konto-Status „angemeldet als …").
+  Der Bereich „Plugin installieren…" (`~/.config/musikbox/plugins`) aus
+  dem Mockup ist für die spätere Fremd-Plugin-API reserviert und im MVP
+  noch nicht sichtbar.
+- **Synchronisation:** erscheint erst mit dem Android-Sync-Modul
+  (Tab wird von dem Modul über den Erweiterungspunkt eingehängt).
+
+Das **Spalten-Popover am Listenkopf** (Mockup 1): Button rechts außen in
+der Kopfzeile öffnet „Spalten anzeigen" — Checkboxen mit Drag-Griffen zum
+Umsortieren, „Titel" fixiert; Standard-Spalten an, Genre/Wiedergaben/
+Bitrate zuschaltbar.
 
 Alle Einstellungen persistiert in einer `settings`-Tabelle (Key-Value) in
 der SQLite-DB; beim Start geladen, Änderungen wirken sofort ohne Neustart.
@@ -323,7 +340,10 @@ Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
   als Massenspeicher erkennen, ausgewählte Playlists/Titel aufs Gerät
   kopieren, Playlist-Export als M3U, Abgleich (nur Neues übertragen,
   Verwaistes optional entfernen). Erkennt angeschlossene Geräte über
-  udev/gvfs; erscheint als eigener Sidebar-Eintrag „Geräte".
+  udev/gvfs; erscheint als eigener Sidebar-Eintrag „Geräte" und hängt
+  den Tab „Synchronisation" ins Einstellungsmenü ein. Optionales
+  Transkodieren beim Übertragen (z. B. FLAC → Opus 128 kbit/s,
+  „spart Speicherplatz auf dem Gerät", via GStreamer).
 - **Scrobbling (Last.fm/Libre.fm)** — erstes Modul nach dem MVP
   (priorisiert), damit die Hörhistorie beim Umstieg schnell weiterläuft
 - **Musik-Radar** — zweites Modul nach dem MVP (priorisiert):
@@ -341,6 +361,8 @@ Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
 - Podcasts, Internetradio — jeweils als eigenes Modul über die
   bestehenden Erweiterungspunkte
 - Crossfade (GStreamer), Online-Cover-Suche (über `MetadataProvider`)
+- Discord Rich Presence (aktuellen Titel im Discord-Status zeigen) —
+  kleines Modul, aus den Design-Screens des Nutzers übernommen
 - Fremd-Plugin-API: zur Laufzeit ladbare Plugins von Dritten (z. B. WASM)
   auf Basis derselben Erweiterungspunkte
 - Regel-Editor für Smart Playlists
