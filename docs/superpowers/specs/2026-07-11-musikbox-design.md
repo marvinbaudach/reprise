@@ -1,7 +1,7 @@
 # Musikbox — Design-Dokument
 
 **Datum:** 2026-07-11
-**Status:** Entwurf — wartet auf finale Nutzer-Review
+**Status:** Vom Nutzer freigegeben (2026-07-11)
 
 ## Zusammenfassung
 
