@@ -70,6 +70,7 @@ use crate::queries;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list_context_menu;
+use crate::ui::track_list_dnd;
 use crate::ui::track_list_model::TrackListModel;
 use crate::view_source::ViewSource;
 
@@ -231,6 +232,9 @@ type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize)>;
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
+/// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
+/// comment.
+type OnQueueReorder = Rc<dyn Fn(usize, usize)>;
 
 /// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -332,6 +336,13 @@ pub(super) struct Shared {
     /// menu, exactly as they already do for changes made from the sidebar's
     /// own "New playlist" dialog.
     pub(super) on_playlist_mutated: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Queue drag-reorder callback (Stage 3 Task 6), injected via
+    /// `TrackList::set_on_queue_reorder` — wraps `PlayerController::
+    /// move_queue_item`. Same seam shape as `on_play_selected`/`on_queue_
+    /// selected`: `window.rs` wires this once the controller exists, and
+    /// `ui::track_list_dnd`'s queue-reorder drop handler is the only caller
+    /// (see that module's doc comment for the full drag/drop design).
+    pub(super) on_queue_reorder: RefCell<Option<OnQueueReorder>>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -403,6 +414,7 @@ impl TrackList {
             on_play_selected: RefCell::new(None),
             on_queue_selected: RefCell::new(None),
             on_playlist_mutated: RefCell::new(None),
+            on_queue_reorder: RefCell::new(None),
         });
 
         let title_column = append_column(
@@ -481,6 +493,7 @@ impl TrackList {
         arm_smoke_source(&shared);
         arm_smoke_sort_column(&column_view, &title_column, &artist_column);
         track_list_context_menu::arm_smoke_menu_action(&shared);
+        track_list_dnd::arm_smoke_dnd(&shared);
 
         Self { shared }
     }
@@ -549,6 +562,37 @@ impl TrackList {
     pub fn set_on_playlist_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_playlist_mutated.borrow_mut() = Some(Rc::new(callback));
     }
+
+    /// Injects the queue drag-reorder callback (Stage 3 Task 6) — see the
+    /// `Shared::on_queue_reorder` doc comment. `window.rs` wires this to
+    /// `PlayerController::move_queue_item`.
+    pub fn set_on_queue_reorder(&self, callback: impl Fn(usize, usize) + 'static) {
+        *self.shared.on_queue_reorder.borrow_mut() = Some(Rc::new(callback));
+    }
+}
+
+/// Whether the track list's current state allows a drag-reorder *within* a
+/// playlist view (Stage 3 Task 6) — the true-position rule's guard, mirroring
+/// `ui::track_actions`'s "Remove from playlist" reasoning one step further:
+/// removal can always resolve the true `pt.position` of whatever row is
+/// selected (via `Track::playlist_position`), no matter the sort/filter, so it
+/// stays correct under any view state. A *reorder* drag has no such
+/// escape hatch — dropping a row "between rows 2 and 3" is only a meaningful,
+/// unambiguous instruction when the on-screen row order already *is*
+/// `pt.position` order (the playlist's own default, the `"playlist_order"`
+/// sentinel) with no search filter thinning out which rows are even visible.
+/// Under a column-header sort or a live filter, "between the two visible
+/// rows" doesn't correspond to any single well-defined target position in the
+/// full unsorted/unfiltered list, so this returns `false` and `ui::track_
+/// list_dnd`'s reorder-drop handler must treat the drag as a no-op rather
+/// than guess. `false` for every non-Playlist source too (Library/Smart/
+/// Missing/ImportErrors have no `pt.position` to reorder in the first place;
+/// Queue has its own reorder path, gated separately — see that module's doc
+/// comment for why Queue never needs this guard at all).
+pub(super) fn playlist_reorder_allowed(shared: &Shared) -> bool {
+    matches!(*shared.source.borrow(), ViewSource::Playlist(_))
+        && shared.sort.borrow().field == PLAYLIST_ORDER_SORT_FIELD
+        && shared.filter.borrow().trim().is_empty()
 }
 
 /// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
@@ -623,6 +667,9 @@ fn append_column(
             &shared,
             &column_view_for_setup,
         );
+        // Stage 3 Task 6: drag-source (fill a playlist / reorder) and
+        // drop-target (reorder) — see `ui::track_list_dnd`'s doc comment.
+        track_list_dnd::wire_row_dnd(&label, item, &shared);
         item.set_child(Some(&label));
     });
 
@@ -696,6 +743,9 @@ fn append_rating_column(
                 &shared,
                 &column_view,
             );
+            // Stage 3 Task 6: same drag-source/drop-target wiring as the
+            // five text columns — see `ui::track_list_dnd`'s doc comment.
+            track_list_dnd::wire_row_dnd(&rating_widget, item, &shared);
             item.set_child(Some(&rating_widget));
         });
     }

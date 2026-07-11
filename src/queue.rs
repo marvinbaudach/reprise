@@ -302,6 +302,51 @@ impl Queue {
         }
     }
 
+    /// Moves the track at `order` index `from` to index `to` (Stage 3 Task 6:
+    /// drag-reorder within the Queue view). Like `library::playlists::
+    /// move_position`, but operating on the in-memory `order` vec instead of
+    /// SQL rows — `ui::track_list_dnd`'s queue-reorder drop handler is the
+    /// caller, via `ui::player_controller::PlayerController::move_queue_item`.
+    ///
+    /// The *currently playing* track must stay current after the move (same
+    /// contract as `set_shuffle`'s current-track preservation): this looks up
+    /// the track by its stable identity (the `ids`-index stored at `order[pos]`),
+    /// not by numeric index, since the move can shift which `order` slot the
+    /// current track sits in — including when the move crosses over it (e.g.
+    /// moving an earlier track to a later index shifts the current track's own
+    /// index down by one).
+    ///
+    /// Bounds: an empty queue, or `from`/`to` out of range (`>= order.len()`),
+    /// is a logged no-op rather than a panic — matching every other
+    /// out-of-range guard on this type (`set_shuffle`'s pos guard, etc.).
+    /// `from == to` is also a no-op (nothing to move).
+    pub fn move_item(&mut self, from: usize, to: usize) {
+        let len = self.order.len();
+        if len == 0 {
+            warn!("move_item: queue is empty; no-op");
+            return;
+        }
+        if from >= len || to >= len {
+            warn!(from, to, len, "move_item: index out of range; no-op");
+            return;
+        }
+        if from == to {
+            return;
+        }
+
+        // Remember the *track*'s identity (its `ids`-index), not its current
+        // numeric position in `order` — that position is exactly what's
+        // about to shift.
+        let current_track_slot = self.pos.map(|idx| self.order[idx]);
+
+        let moved = self.order.remove(from);
+        self.order.insert(to, moved);
+
+        if let Some(track_slot) = current_track_slot {
+            self.pos = self.order.iter().position(|&idx| idx == track_slot);
+        }
+    }
+
     /// Every queued track id in current play order — reflecting shuffle, if
     /// active — used by `ViewSource::Queue` (Stage 3 Task 3): `ui::
     /// player_controller::queue_ids_snapshot` clones this out so the "Queue"
@@ -805,6 +850,118 @@ mod tests {
     }
 
     // Fix 5: Strengthen shuffle-visits-all test to check strict property
+    // Stage 3 Task 6: `move_item` (queue drag-reorder).
+
+    #[test]
+    fn move_item_forward_keeps_current_track_current() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40], 1); // current = 20
+        assert_eq!(q.current(), Some(20));
+
+        q.move_item(0, 2); // move 10 from index 0 to index 2
+        assert_eq!(q.ids_in_order(), vec![20, 30, 10, 40]);
+        assert_eq!(
+            q.current(),
+            Some(20),
+            "current track must stay current even though its index shifted"
+        );
+    }
+
+    #[test]
+    fn move_item_backward_keeps_current_track_current() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40], 3); // current = 40
+        assert_eq!(q.current(), Some(40));
+
+        q.move_item(3, 0); // move 40 from index 3 to index 0
+        assert_eq!(q.ids_in_order(), vec![40, 10, 20, 30]);
+        assert_eq!(q.current(), Some(40));
+    }
+
+    #[test]
+    fn move_item_of_the_current_track_itself_keeps_it_current() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 1); // current = 20
+        q.move_item(1, 2);
+        assert_eq!(q.ids_in_order(), vec![10, 30, 20]);
+        assert_eq!(
+            q.current(),
+            Some(20),
+            "moving the current track itself must still leave it current"
+        );
+    }
+
+    #[test]
+    fn move_item_same_index_is_a_no_op() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 1);
+        q.move_item(1, 1);
+        assert_eq!(q.ids_in_order(), vec![10, 20, 30]);
+        assert_eq!(q.current(), Some(20));
+    }
+
+    #[test]
+    fn move_item_out_of_range_from_is_a_no_op() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 0);
+        q.move_item(99, 1);
+        assert_eq!(q.ids_in_order(), vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn move_item_out_of_range_to_is_a_no_op() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 0);
+        q.move_item(0, 99);
+        assert_eq!(q.ids_in_order(), vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn move_item_on_empty_queue_is_a_no_op() {
+        let mut q = Queue::new();
+        q.move_item(0, 1);
+        assert!(q.is_empty());
+        assert_eq!(q.current(), None);
+    }
+
+    #[test]
+    fn move_item_preserves_current_when_queue_is_exhausted() {
+        // pos == None (exhausted, not empty) must stay None after a move
+        // that doesn't touch the current-track bookkeeping at all.
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 0);
+        q.set_repeat(Repeat::Off);
+        q.advance_auto(); // -> 20
+        q.advance_auto(); // -> 30
+        q.advance_auto(); // -> None (exhausted)
+        assert_eq!(q.current(), None);
+
+        q.move_item(0, 2);
+        assert_eq!(q.ids_in_order(), vec![20, 30, 10]);
+        assert_eq!(q.current(), None, "exhausted queue must stay exhausted");
+    }
+
+    #[test]
+    fn move_item_reflects_in_shuffled_order_too() {
+        fastrand::seed(42);
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40, 50], 0);
+        q.set_shuffle(true);
+        let current_before = q.current();
+
+        let before = q.ids_in_order();
+        q.move_item(0, 4);
+        let after = q.ids_in_order();
+
+        assert_eq!(after.len(), 5);
+        assert_eq!(after[4], before[0], "the moved track lands at index 4");
+        assert_eq!(
+            q.current(),
+            current_before,
+            "current track survives a move under shuffle too"
+        );
+    }
+
     #[test]
     fn test_shuffle_visits_all_exactly_once_per_pass() {
         fastrand::seed(42);

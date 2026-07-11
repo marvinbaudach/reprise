@@ -699,6 +699,19 @@ impl PlayerController {
     pub(super) fn queue_ids_snapshot(&self) -> Vec<i64> {
         self.queue.borrow().ids_in_order()
     }
+
+    /// Queue drag-reorder (Stage 3 Task 6): moves the queued track at index
+    /// `from` to index `to` via `queue::Queue::move_item` — see that method's
+    /// doc comment for the current-track-preservation contract and
+    /// out-of-range/no-op handling (never panics). `ui::track_list_dnd`'s
+    /// queue-reorder drop handler calls this via `TrackList::set_on_queue_
+    /// reorder`, then reloads the track list itself so the Queue view picks
+    /// up the new order — this method only mutates queue state, the same
+    /// "state mutation only, caller decides what to refresh" contract as
+    /// `append_to_queue`.
+    pub(super) fn move_queue_item(&self, from: usize, to: usize) {
+        self.queue.borrow_mut().move_item(from, to);
+    }
 }
 
 /// Wires the bar's user-input signals to player calls. Each closure holds a

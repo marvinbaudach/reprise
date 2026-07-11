@@ -296,6 +296,18 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
         });
     }
     {
+        // Stage 3 Task 6: queue drag-reorder — see `ui::track_list_dnd`'s
+        // doc comment. Same decoupling-via-closure seam as `on_play_
+        // selected`/`on_queue_selected` just above.
+        let player = player.clone();
+        track_list.set_on_queue_reorder(move |from, to| match &player {
+            Some(player) => player.move_queue_item(from, to),
+            None => {
+                tracing::warn!("player unavailable; ignoring queue drag-reorder");
+            }
+        });
+    }
+    {
         // `Weak`, not a strong `Rc`: mirrors the `sidebar_weak`/`track_list_
         // weak` pattern already used for `player.set_track_list_reload`
         // just above — `track_list` must not keep `sidebar` alive past its
@@ -375,6 +387,20 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     {
         let show_content_if_collapsed = show_content_if_collapsed.clone();
         sidebar.set_on_show_content(move || show_content_if_collapsed());
+    }
+    {
+        // Stage 3 Task 6: the mirror image of `track_list.set_on_playlist_
+        // mutated` above — a drag-and-drop drop onto a sidebar playlist row
+        // mutates the playlist from the *sidebar* side, so the track list
+        // needs the reload here instead (covers the edge case where the
+        // playlist just dropped onto is also the one currently on screen).
+        // `Weak`, not a strong `Rc`, same reasoning as every other cross-
+        // widget callback in this function.
+        let track_list_weak = Rc::downgrade(&track_list);
+        sidebar.set_on_tracks_added(move || match track_list_weak.upgrade() {
+            Some(track_list) => track_list.reload(),
+            None => tracing::warn!("track list reload skipped: track list is gone"),
+        });
     }
 
     window.set_content(Some(&split_view));
