@@ -48,3 +48,28 @@ pub const REPEAT: &str = "Repeat";
 // (src/ui/track_list.rs) and as the RatingWidget's tooltip
 // (src/ui/rating.rs).
 pub const RATING: &str = "Rating";
+
+// Playback fault tolerance (src/ui/player_controller.rs, Stage 2 Task 5): a
+// physically deleted or otherwise unplayable queued file must never crash or
+// dead-end the app — it surfaces here as a toast instead.
+
+/// Toast shown when a queued track's file no longer exists on disk: the
+/// underlying row has just been marked `missing` in the DB (see
+/// `queries::mark_track_missing`) and will disappear from the track list on
+/// its next reload.
+pub fn file_missing_toast(title: &str) -> String {
+    format!("File not found — marked as missing: {title}")
+}
+
+/// Toast shown when a queued track's file exists but playback still failed
+/// (e.g. corrupt/unsupported content) — the track is skipped, but *not*
+/// marked missing, since the file itself is still there.
+pub fn could_not_play_toast(title: &str) -> String {
+    format!("Could not play {title} — skipping")
+}
+
+/// Toast shown when the skip-loop guard (`should_stop_skipping`) trips:
+/// auto-skip gives up after enough consecutive unplayable tracks rather than
+/// spinning through an entire broken queue.
+pub const PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE: &str =
+    "Playback stopped — too many unplayable tracks";

@@ -134,6 +134,23 @@ pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>, db_path: Pat
     let toast_overlay = adw::ToastOverlay::new();
     toast_overlay.set_child(Some(&toolbar_view));
 
+    // Stage 2 Task 5 fault-tolerance seam: the toast overlay and the track
+    // list are both built after the controller (see `PlayerController::
+    // new`'s call above and the module doc comment on `set_toast_overlay`/
+    // `set_track_list_reload`), so they're injected here instead of being
+    // constructor parameters. The reload closure captures a `Weak<TrackList>`
+    // — never a strong `Rc` — so the controller can't form an `Rc` cycle with
+    // `track_list`'s own strong `Rc<PlayerController>` (held by its
+    // `on_activate` closure).
+    if let Some(player) = &player {
+        player.set_toast_overlay(&toast_overlay);
+        let track_list_weak = Rc::downgrade(&track_list);
+        player.set_track_list_reload(move || match track_list_weak.upgrade() {
+            Some(track_list) => track_list.reload(),
+            None => tracing::warn!("track list reload skipped: track list is gone"),
+        });
+    }
+
     window.set_content(Some(&toast_overlay));
 
     wire_search(&search_entry, track_list.clone());

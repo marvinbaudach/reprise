@@ -257,6 +257,22 @@ pub fn query_track_summary(
     .optional()
 }
 
+/// Marks track `track_id` as missing (Stage 2 Task 5: a physically deleted
+/// file must never crash or dead-end the app — this is the DB-side half of
+/// that guarantee). Every windowed/count/id query in this module already
+/// filters `WHERE missing = 0` (see `build_track_query`/`build_track_ids_
+/// query`/`query_track_count`), so the row disappears from the library view
+/// and from a freshly-seeded queue on the very next reload, without deleting
+/// the row itself — ratings/play history/etc. are preserved for when a
+/// future "missing files" sidebar source (Stage 3) lets it resurface.
+pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE tracks SET missing = 1 WHERE id = ?1",
+        rusqlite::params![track_id],
+    )?;
+    Ok(())
+}
+
 /// Aggregates library-wide stats over all non-missing tracks. Powers the
 /// status line (`ui::status_bar`).
 pub fn query_library_stats(conn: &Connection) -> Result<LibraryStats, rusqlite::Error> {
@@ -470,6 +486,59 @@ mod tests {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
         assert!(query_track_summary(&conn, 999).unwrap().is_none());
+    }
+
+    #[test]
+    fn mark_track_missing_sets_the_flag() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/a.flac', 'A', '', 0)",
+            [],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks", [], |r| r.get(0))
+            .unwrap();
+
+        mark_track_missing(&conn, id).unwrap();
+
+        let missing: i64 = conn
+            .query_row(
+                "SELECT missing FROM tracks WHERE id = ?1",
+                rusqlite::params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(missing, 1);
+    }
+
+    #[test]
+    fn mark_track_missing_excludes_from_count_and_ids() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/a.flac', 'A', '', 0)",
+            [],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks", [], |r| r.get(0))
+            .unwrap();
+
+        assert_eq!(query_track_count(&conn, "").unwrap(), 1);
+        assert_eq!(
+            query_track_ids(&conn, "title", "asc", "").unwrap(),
+            vec![id]
+        );
+
+        mark_track_missing(&conn, id).unwrap();
+
+        assert_eq!(query_track_count(&conn, "").unwrap(), 0);
+        assert_eq!(
+            query_track_ids(&conn, "title", "asc", "").unwrap(),
+            Vec::<i64>::new()
+        );
     }
 
     #[test]
