@@ -655,6 +655,32 @@ impl PlayerController {
         }
     }
 
+    /// "Add to queue" context-menu action (Stage 3 Task 5): appends `ids` to
+    /// the end of the current queue via `Queue::append_tracks` — see that
+    /// method's doc comment for the exact append/no-auto-start semantics —
+    /// without ever calling `play_track_id`. A no-op for an empty `ids`
+    /// slice. If the queue was previously empty, the transport buttons are
+    /// re-enabled to match its now-non-empty state (the same re-derivation
+    /// `play_track_id` already does on every successful playback start), but
+    /// no track starts playing: `ui::track_actions::queue_selected_ids`
+    /// guards the empty case, and the queue itself only forms a `pos` of
+    /// `Some(0)` for bookkeeping (see `Queue::append_tracks`) — playback
+    /// stays exactly as it was. Borrow discipline: `append_tracks`/`is_
+    /// empty` each run inside their own statement, so no `queue` borrow is
+    /// alive across the `bar.set_transport_enabled` call (see the module's
+    /// `## Queue borrow discipline` doc section).
+    pub(super) fn append_to_queue(&self, ids: &[i64]) {
+        if ids.is_empty() {
+            tracing::debug!("append to queue: nothing to add; ignoring");
+            return;
+        }
+        self.queue.borrow_mut().append_tracks(ids);
+        let queue_len = self.queue.borrow().len();
+        let queue_has_tracks = queue_len > 0;
+        self.bar.set_transport_enabled(queue_has_tracks);
+        tracing::info!(added = ids.len(), queue_len, "tracks added to queue");
+    }
+
     /// Snapshot of every queued track id in current play order (Stage 3
     /// Task 3's `ViewSource::Queue` seam — see `queue::Queue::ids_in_order`'s
     /// doc comment). `track_list.rs`'s queue-ids provider closure (wired in

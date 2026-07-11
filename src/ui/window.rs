@@ -270,6 +270,45 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     // Same reason again: the sidebar is built before `toast_overlay` exists.
     sidebar.set_toast_overlay(&toast_overlay);
 
+    // Stage 3 Task 5: context menu action wiring. `track_list` stays
+    // decoupled from `PlayerController`/`Sidebar` themselves (same
+    // decoupling-via-closure seam as `on_activate`/`queue_ids_provider`
+    // above) — these three closures are the only place that bridges them.
+    // `window` already exists (built at the top of this function), so `set_
+    // window` could technically be a constructor parameter, but every other
+    // post-construction seam on `track_list` is wired here too, so this
+    // keeps all of them in one place.
+    track_list.set_window(&window);
+    {
+        let player = player.clone();
+        track_list.set_on_play_selected(move |ids, start_index| match &player {
+            Some(player) => player.play_from_view(ids, start_index),
+            None => tracing::warn!("player unavailable; ignoring context menu play action"),
+        });
+    }
+    {
+        let player = player.clone();
+        track_list.set_on_queue_selected(move |ids| match &player {
+            Some(player) => player.append_to_queue(&ids),
+            None => {
+                tracing::warn!("player unavailable; ignoring context menu add-to-queue action");
+            }
+        });
+    }
+    {
+        // `Weak`, not a strong `Rc`: mirrors the `sidebar_weak`/`track_list_
+        // weak` pattern already used for `player.set_track_list_reload`
+        // just above — `track_list` must not keep `sidebar` alive past its
+        // natural lifetime.
+        let sidebar_weak = Rc::downgrade(&sidebar);
+        track_list.set_on_playlist_mutated(move || match sidebar_weak.upgrade() {
+            Some(sidebar) => sidebar.refresh("context menu playlist change"),
+            None => tracing::warn!(
+                "sidebar is gone; skipping refresh after context menu playlist change"
+            ),
+        });
+    }
+
     // Built here — before the sidebar-selection wiring just below, rather
     // than after it — specifically so that wiring can see `split_view`: see
     // this function's doc comment note on Stage 3 Task 4 review finding #1.

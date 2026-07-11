@@ -265,6 +265,13 @@ impl Sidebar {
     ///    calls through `PlayerController::reload_track_list` after a
     ///    successful `mark_track_missing`) — the only thing that can flip the
     ///    Missing badge outside of a scan.
+    /// 4. **Context-menu playlist mutation** (Stage 3 Task 5) —
+    ///    `window.rs`'s `track_list.set_on_playlist_mutated` closure, called
+    ///    by `track_list.rs`'s `notify_playlist_mutated` after "Add to
+    ///    playlist" (existing or newly created), and "Remove from playlist"
+    ///    each succeed — playlist track counts (and, for a new playlist, the
+    ///    playlist row itself) can change from that menu exactly as they can
+    ///    from this sidebar's own "New playlist" dialog.
     ///
     /// See the module doc's `## Reentrancy` section for why a rebuild
     /// triggered by this very sidebar's own selection (via `create_playlist_
