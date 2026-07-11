@@ -9,5 +9,6 @@ pub mod strings;
 pub mod track_actions;
 pub mod track_list;
 pub mod track_list_context_menu;
+pub mod track_list_dnd;
 pub mod track_list_model;
 pub mod window;

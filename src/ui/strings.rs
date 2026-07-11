@@ -218,3 +218,31 @@ pub fn playlist_remove_tracks_failed_toast() -> String {
 pub fn playlist_remove_tracks_unresolvable_toast() -> String {
     "Could not remove — reload the playlist and try again".to_string()
 }
+
+// Drag and drop (src/ui/track_list_dnd.rs, src/ui/sidebar.rs, Stage 3 Task 6):
+// dragging the current selection onto a sidebar playlist row to add tracks,
+// and reordering within a playlist/the queue view.
+
+/// The drag icon's label text (`gtk::WidgetPaintable`-wrapped `Label`),
+/// shown under the pointer while dragging — plural-correct, same convention
+/// as the context menu's toasts.
+pub fn drag_tracks_label(count: usize) -> String {
+    let noun = if count == 1 {
+        STATUS_TRACK_SINGULAR
+    } else {
+        STATUS_TRACK_PLURAL
+    };
+    format!("{count} {noun}")
+}
+
+/// Toast shown when dropping the current selection onto a sidebar playlist
+/// row fails (`library::playlists::add_tracks` error).
+pub fn playlist_drop_add_failed_toast(name: &str) -> String {
+    format!("Could not add tracks to \"{name}\"")
+}
+
+/// Toast shown when `library::playlists::move_position` fails while handling
+/// an in-list playlist drag-reorder.
+pub fn playlist_reorder_failed_toast() -> String {
+    "Could not reorder playlist".to_string()
+}

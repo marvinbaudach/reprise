@@ -148,8 +148,11 @@ pub(super) fn wire_context_menu_gesture(
 }
 
 /// Reads `shared.selection`'s current selection as row positions, in
-/// ascending order (`gtk::Bitset` iteration order).
-fn current_selection_positions(shared: &Rc<Shared>) -> Vec<u32> {
+/// ascending order (`gtk::Bitset` iteration order). `pub(super)` (not
+/// private): `ui::track_list_dnd`'s drag-prepare handler reuses this exact
+/// same read to decide whether a drag starting on an already-selected row
+/// should carry the *whole* selection — see that module's doc comment.
+pub(super) fn current_selection_positions(shared: &Rc<Shared>) -> Vec<u32> {
     let bitset = shared.selection.selection();
     let Some((mut iter, first)) = gtk4::BitsetIter::init_first(&bitset) else {
         return Vec::new();

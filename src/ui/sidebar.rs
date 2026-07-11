@@ -134,6 +134,17 @@ struct Shared {
     /// on_show_content`'s doc comment) — never to a source switch or reload,
     /// so re-tapping the current row is free of any query cost.
     on_show_content: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Invoked after a drag-and-drop drop onto a playlist row successfully
+    /// adds tracks (Stage 3 Task 6) — `window.rs` wires this to `TrackList::
+    /// reload` so the track list picks up the new rows immediately in the
+    /// (uncommon but real) case where the currently-viewed playlist is the
+    /// very one just dropped onto. This sidebar already refreshes its own
+    /// counts directly (`rebuild`, called from the drop handler itself, same
+    /// as `create_playlist_and_select`) — this callback is the *other*
+    /// direction (sidebar mutation -> track list refresh), the mirror image
+    /// of `track_list.rs`'s `on_playlist_mutated` (track list mutation ->
+    /// sidebar refresh).
+    on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
     /// The window, for the "New playlist" `AlertDialog`'s parent. `WeakRef`
     /// so the sidebar can never keep the window alive past its natural
     /// lifetime (same shape as `TrackList::toast_overlay`).
@@ -188,6 +199,7 @@ impl Sidebar {
             new_playlist_row: RefCell::new(None),
             on_select: RefCell::new(None),
             on_show_content: RefCell::new(None),
+            on_tracks_added: RefCell::new(None),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
             refresh_count: Cell::new(0),
@@ -230,6 +242,14 @@ impl Sidebar {
     /// content page forward if the split view is collapsed" closure.
     pub fn set_on_show_content(&self, callback: impl Fn() + 'static) {
         *self.shared.on_show_content.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Sets the callback invoked after a drag-and-drop drop onto a playlist
+    /// row successfully adds tracks (Stage 3 Task 6) — see `Shared::on_
+    /// tracks_added`'s doc comment. `window.rs` wires this to `TrackList::
+    /// reload`.
+    pub fn set_on_tracks_added(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_tracks_added.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the window's toast overlay, once it exists (built after the
@@ -506,14 +526,91 @@ fn append_header(listbox: &gtk4::ListBox, text: &str) {
 }
 
 /// Builds one navigation row (title + optional right-aligned count) and
-/// registers it in `shared.rows` against `source`.
+/// registers it in `shared.rows` against `source`. Playlist rows additionally
+/// get a drag-and-drop drop target (Stage 3 Task 6) — see `wire_playlist_
+/// drop_target`'s doc comment.
 fn add_row(shared: &Rc<Shared>, source: ViewSource, title: &str, count: Option<i64>) {
     let row = build_nav_row(title, count);
+    if let ViewSource::Playlist(playlist_id) = source {
+        wire_playlist_drop_target(shared, &row, playlist_id, title);
+    }
     shared.listbox.append(&row);
     shared
         .rows
         .borrow_mut()
         .push((row, source, title.to_string()));
+}
+
+/// Attaches a `gtk::DropTarget` to a playlist row (Stage 3 Task 6's DoD half:
+/// "playlists fillable via drag and drop"): accepts the same `String`
+/// drag-payload format `ui::track_list_dnd::wire_row_dnd`'s drag source
+/// produces (see that module's `## Content payload format` section — the
+/// reorder-position half of the payload is irrelevant here, only `ids`
+/// matters), appends every dragged id to `playlist_id` via `library::
+/// playlists::add_tracks`, and — on success — refreshes this sidebar's own
+/// counts (`rebuild`, same as `create_playlist_and_select`), shows a toast,
+/// and notifies `on_tracks_added` so the track list can pick up the change
+/// too (see that field's doc comment for why). A parse failure (malformed/
+/// foreign payload) or an empty id list is a silent no-op — dropping
+/// something this row doesn't understand should never produce a toast or a
+/// log line at drop time, only `ui::track_list_dnd::parse_drag_payload`
+/// itself (already exercised by that module's own tests) needs to reason
+/// about *why* a payload didn't parse.
+fn wire_playlist_drop_target(
+    shared: &Rc<Shared>,
+    row: &gtk4::ListBoxRow,
+    playlist_id: i64,
+    playlist_name: &str,
+) {
+    let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::COPY);
+
+    let shared = shared.clone();
+    let playlist_name = playlist_name.to_string();
+    drop_target.connect_drop(move |_target, value, _x, _y| {
+        let Ok(payload_str) = value.get::<String>() else {
+            return false;
+        };
+        let Some(payload) = crate::ui::track_list_dnd::parse_drag_payload(&payload_str) else {
+            return false;
+        };
+        if payload.ids.is_empty() {
+            return false;
+        }
+
+        let result = {
+            let mut conn = shared.conn.borrow_mut();
+            playlists::add_tracks(&mut conn, playlist_id, &payload.ids)
+        };
+        match result {
+            Ok(inserted) => {
+                tracing::info!(
+                    playlist_id,
+                    inserted,
+                    "tracks added to playlist via drag and drop"
+                );
+                rebuild(&shared, None, "tracks added via drag and drop");
+                show_toast(
+                    &shared,
+                    &strings::tracks_added_to_playlist_toast(inserted as usize, &playlist_name),
+                );
+                let callback = shared.on_tracks_added.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+                true
+            }
+            Err(error) => {
+                tracing::error!(%error, playlist_id, "failed to add tracks to playlist via drag and drop");
+                show_toast(
+                    &shared,
+                    &strings::playlist_drop_add_failed_toast(&playlist_name),
+                );
+                false
+            }
+        }
+    });
+
+    row.add_controller(drop_target);
 }
 
 /// Builds the widget tree for one navigation row: a title label (start-
