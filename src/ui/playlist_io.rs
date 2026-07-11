@@ -74,7 +74,10 @@ const SMOKE_M3U_ENV_VAR: &str = "REPRISE_SMOKE_M3U";
 /// Result of a successful [`import_playlist`] call.
 #[derive(Debug, Clone)]
 pub struct ImportOutcome {
-    pub playlist_id: i64,
+    /// `None` when zero path lines matched a library track — no playlist is
+    /// created in that case (see [`import_playlist`]'s doc comment), so
+    /// there's nothing to switch the track list to.
+    pub playlist_id: Option<i64>,
     pub name: String,
     /// How many of the file's path lines resolved to a track already in the
     /// library.
@@ -107,10 +110,15 @@ pub enum ExportError {
 
 /// Reads and parses `file_path` as an M3U playlist, matches every path line
 /// against the library (see the module doc's `## Path resolution` section),
-/// and creates a new playlist named after the file's stem containing every
-/// match, in file order. Always creates the playlist (even a 0-of-N import
-/// still gets an empty playlist) — matching the task brief's "N of M
-/// matched" toast contract, which needs a playlist to switch to either way.
+/// and — if at least one path matched — creates a new playlist named after
+/// the file's stem containing every match, in file order, via
+/// `library::playlists::create_with_tracks` (playlist creation and track
+/// insertion happen atomically: a failure partway rolls back both, never
+/// leaving an orphaned empty playlist row). If *zero* path lines matched, no
+/// playlist is created at all — an all-bogus or empty `.m3u` file shouldn't
+/// leave a permanent, unremovable-by-undo empty playlist behind;
+/// [`ImportOutcome::playlist_id`] is `None` in that case and the caller shows
+/// a "0 of N matched" toast without switching the track list anywhere.
 pub fn import_playlist(
     conn: &Rc<RefCell<Connection>>,
     file_path: &Path,
@@ -138,14 +146,16 @@ pub fn import_playlist(
     let matched = matched_ids.len();
 
     let name = playlist_name_from_file(file_path);
-    let playlist_id = {
-        let conn_ref = conn.borrow();
-        playlists::create(&conn_ref, &name)?
-    };
-    {
+    let playlist_id = if matched_ids.is_empty() {
+        None
+    } else {
         let mut conn_ref = conn.borrow_mut();
-        playlists::add_tracks(&mut conn_ref, playlist_id, &matched_ids)?;
-    }
+        Some(playlists::create_with_tracks(
+            &mut conn_ref,
+            &name,
+            &matched_ids,
+        )?)
+    };
 
     Ok(ImportOutcome {
         playlist_id,
@@ -343,11 +353,14 @@ pub fn wire_import_button(
     });
 }
 
-/// Applies an [`import_playlist`] result to the UI: on success, refreshes
-/// the sidebar (the new playlist row), switches the track list straight to
-/// it (mirrors `ui::sidebar`'s own "New playlist" → select-it behavior),
-/// updates the headerbar title, brings the content page forward if the
-/// split view is collapsed, and shows the "Imported N of M" toast. On
+/// Applies an [`import_playlist`] result to the UI. On success with at least
+/// one matched track, refreshes the sidebar (the new playlist row), switches
+/// the track list straight to it (mirrors `ui::sidebar`'s own "New playlist"
+/// → select-it behavior), updates the headerbar title, brings the content
+/// page forward if the split view is collapsed, and shows the "Imported N of
+/// M" toast. On success with zero matched tracks, no playlist was created
+/// (see [`import_playlist`]'s doc comment) — the sidebar/track-list/title
+/// are left untouched and a "0 of N matched" toast is shown instead. On
 /// failure, logs and shows a generic failure toast. Shared by the real
 /// dialog callback ([`wire_import_button`]) and the `REPRISE_SMOKE_M3U=
 /// import:<path>` hook ([`arm_smoke_m3u`]).
@@ -370,8 +383,14 @@ fn apply_import_result(
                 outcome.matched,
                 outcome.total
             );
+            let Some(playlist_id) = outcome.playlist_id else {
+                toast_overlay.add_toast(adw::Toast::new(
+                    &strings::playlist_import_zero_matched_toast(&outcome.name, outcome.total),
+                ));
+                return;
+            };
             sidebar.refresh("playlist imported");
-            track_list.set_source(ViewSource::Playlist(outcome.playlist_id));
+            track_list.set_source(ViewSource::Playlist(playlist_id));
             window_title.set_title(&outcome.name);
             show_content_if_collapsed();
             toast_overlay.add_toast(adw::Toast::new(&strings::playlist_imported_toast(
@@ -623,6 +642,122 @@ mod tests {
         let outcome = import_playlist(&conn, &m3u_path).unwrap();
         assert_eq!(outcome.matched, 1);
         assert_eq!(outcome.total, 1);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// TDD regression for the "0-of-N-matched should not create a playlist"
+    /// finding: an all-bogus `.m3u` file (no path line matches any library
+    /// track) must not leave an empty, unremovable playlist behind.
+    #[test]
+    fn import_playlist_zero_matched_creates_no_playlist() {
+        let conn = seeded_conn();
+        {
+            let c = conn.borrow();
+            c.execute(
+                "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
+                 VALUES (1, '/music/a.flac', 'A', 'Artist A', 3000, 0)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let dir =
+            std::env::temp_dir().join(format!("reprise-m3u-test-zero-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let m3u_path = dir.join("Bogus.m3u");
+        std::fs::write(
+            &m3u_path,
+            "#EXTM3U\n/music/nowhere.flac\n/music/also-nowhere.flac\n",
+        )
+        .unwrap();
+
+        let before_count: i64 = conn
+            .borrow()
+            .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
+            .unwrap();
+
+        let outcome = import_playlist(&conn, &m3u_path).unwrap();
+        assert_eq!(outcome.matched, 0);
+        assert_eq!(outcome.total, 2);
+        assert_eq!(outcome.playlist_id, None);
+
+        let after_count: i64 = conn
+            .borrow()
+            .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            before_count, after_count,
+            "zero-matched import must not create a playlist row"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// TDD regression for the "non-UTF-8 import" robustness gap: a `.m3u`
+    /// file with one valid path line plus a trailing invalid-UTF-8 byte must
+    /// still import successfully (lossy-decode, not panic/error) and still
+    /// match the valid line.
+    #[test]
+    fn import_playlist_handles_non_utf8_bytes_via_lossy_decode() {
+        let conn = seeded_conn();
+        {
+            let c = conn.borrow();
+            c.execute(
+                "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
+                 VALUES (1, '/music/a.flac', 'A', 'Artist A', 3000, 0)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let dir =
+            std::env::temp_dir().join(format!("reprise-m3u-test-nonutf8-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let m3u_path = dir.join("bad-encoding.m3u");
+        // Valid ASCII header + path line, then a lone 0xFF byte (invalid as
+        // any UTF-8 sequence) on its own line — simulates a filesystem/tag
+        // encoding glitch in one entry without corrupting the whole file.
+        let mut bytes = b"#EXTM3U\n/music/a.flac\n".to_vec();
+        bytes.push(0xFF);
+        bytes.push(b'\n');
+        std::fs::write(&m3u_path, &bytes).unwrap();
+
+        let outcome = import_playlist(&conn, &m3u_path).unwrap();
+        assert_eq!(outcome.matched, 1, "the valid path line should still match");
+        assert!(outcome.playlist_id.is_some());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// TDD regression for the "file-read error" robustness gap: a path that
+    /// doesn't exist on disk must return `Err(ImportError::Io(_))`, not
+    /// panic.
+    #[test]
+    fn import_playlist_nonexistent_path_returns_io_error() {
+        let conn = seeded_conn();
+        let path = std::env::temp_dir().join(format!(
+            "reprise-m3u-does-not-exist-{}.m3u",
+            std::process::id()
+        ));
+
+        let result = import_playlist(&conn, &path);
+        assert!(matches!(result, Err(ImportError::Io(_))));
+    }
+
+    /// Same robustness gap, other failure shape: a path that exists but is a
+    /// directory (not a regular file) must also return `Err(ImportError::
+    /// Io(_))`, not panic — `std::fs::read` fails on a directory with an
+    /// "Is a directory" `io::Error`.
+    #[test]
+    fn import_playlist_directory_path_returns_io_error() {
+        let conn = seeded_conn();
+        let dir =
+            std::env::temp_dir().join(format!("reprise-m3u-test-dirpath-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let result = import_playlist(&conn, &dir);
+        assert!(matches!(result, Err(ImportError::Io(_))));
 
         std::fs::remove_dir_all(&dir).ok();
     }

@@ -269,6 +269,13 @@ pub fn playlist_imported_toast(name: &str, matched: usize, total: usize) -> Stri
     format!("Imported {name}: {matched} of {total} tracks matched")
 }
 
+/// Toast shown when an import matched zero of `total` path lines — no
+/// playlist is created in that case (see `ui::playlist_io::import_playlist`'s
+/// doc comment), so this explicitly calls out that nothing was added.
+pub fn playlist_import_zero_matched_toast(name: &str, total: usize) -> String {
+    format!("Imported {name}: 0 of {total} tracks matched — nothing added")
+}
+
 /// Toast shown when reading or parsing the chosen `.m3u` file fails, or the
 /// new playlist can't be created/populated in the database.
 pub fn playlist_import_failed_toast() -> String {
