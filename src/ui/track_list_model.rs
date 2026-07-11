@@ -159,7 +159,7 @@ impl TrackListModel {
             sort_field,
             sort_dir,
             filter,
-            "model query set total={new_total}"
+            "model query set"
         );
 
         self.items_changed(0, old_total, new_total);
@@ -170,6 +170,11 @@ impl TrackListModel {
     /// miss. `None` on an out-of-range position or a query failure — never
     /// panics.
     pub fn track_at(&self, position: u32) -> Option<Track> {
+        let total = self.imp().state.borrow().total;
+        if position >= total {
+            return None;
+        }
+
         let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
         let offset_in_window = (position - window_start) as usize;
 
@@ -235,6 +240,14 @@ impl TrackListModel {
 
         track
     }
+
+    /// Test-only accessor exposing the set of currently cached window-start
+    /// keys, so eviction behavior can be asserted without reaching into
+    /// private state. Not part of the public API.
+    #[cfg(test)]
+    fn cached_windows(&self) -> Vec<u32> {
+        self.imp().state.borrow().cache.keys().copied().collect()
+    }
 }
 
 #[cfg(test)]
@@ -250,6 +263,34 @@ mod tests {
                 rusqlite::params![format!("/x/{t}.flac"), t, a],
             )
             .unwrap();
+        }
+        TrackListModel::new(Rc::new(RefCell::new(conn)))
+    }
+
+    /// Sortable, zero-padded title for row `i` (e.g. `track-00042`), used by
+    /// the bulk-seeding tests below so the expected sort order is a trivial
+    /// function of the row index.
+    fn bulk_title(i: u32) -> String {
+        format!("track-{i:05}")
+    }
+
+    /// Seeds `count` rows in a single transaction (fast even for thousands
+    /// of rows) with titles from `bulk_title`, so ascending title sort order
+    /// matches ascending insertion/index order.
+    fn seeded_model_bulk(count: u32) -> TrackListModel {
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        {
+            let tx = conn.transaction().unwrap();
+            for i in 0..count {
+                let title = bulk_title(i);
+                tx.execute(
+                    "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
+                    rusqlite::params![format!("/x/{i:05}.flac"), title, "Bulk Artist"],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
         }
         TrackListModel::new(Rc::new(RefCell::new(conn)))
     }
@@ -293,5 +334,57 @@ mod tests {
         assert_eq!(model.track_at(0).unwrap().title, "Alpha");
         model.set_query("title", "desc", "");
         assert_eq!(model.track_at(0).unwrap().title, "Zulu");
+    }
+
+    /// Regression test: all prior tests seeded <=3 rows, so every `track_at`
+    /// call stayed inside window 0 and never exercised the window-boundary
+    /// math (`window_start`/`offset_in_window`) for a second or later
+    /// window. Seed >200 rows (WINDOW_SIZE) so position 200 falls in window
+    /// 1 and position 449 falls in window 2, and check both land on the
+    /// title the sort order predicts.
+    #[test]
+    fn track_at_spans_multiple_windows_in_sorted_order() {
+        const ROW_COUNT: u32 = 450;
+        let model = seeded_model_bulk(ROW_COUNT);
+        model.set_query("title", "asc", "");
+        assert_eq!(model.n_items(), ROW_COUNT);
+
+        assert_eq!(model.track_at(0).unwrap().title, bulk_title(0));
+        assert_eq!(model.track_at(200).unwrap().title, bulk_title(200));
+        assert_eq!(model.track_at(449).unwrap().title, bulk_title(449));
+
+        assert!(model.track_at(ROW_COUNT).is_none());
+    }
+
+    /// Regression test: eviction (`MAX_CACHED_WINDOWS` = 8, drop the
+    /// lowest-indexed cached window) was never exercised because no test
+    /// touched more than one window. Seed 1700 rows (9 windows) and touch
+    /// one position per window in ascending order so the 9th touch forces
+    /// an eviction; assert the cache holds exactly 8 windows, window 0 was
+    /// evicted, and the just-loaded window 8 is present.
+    #[test]
+    fn track_at_evicts_lowest_window_past_cache_capacity() {
+        const ROW_COUNT: u32 = 1700;
+        const WINDOW_COUNT: u32 = 9;
+        let model = seeded_model_bulk(ROW_COUNT);
+        model.set_query("title", "asc", "");
+
+        for window in 0..WINDOW_COUNT {
+            let position = window * WINDOW_SIZE;
+            assert_eq!(
+                model.track_at(position).unwrap().title,
+                bulk_title(position)
+            );
+        }
+
+        let mut cached = model.cached_windows();
+        cached.sort_unstable();
+        assert_eq!(cached.len(), MAX_CACHED_WINDOWS);
+        assert_eq!(cached, vec![200, 400, 600, 800, 1000, 1200, 1400, 1600]);
+        assert!(!cached.contains(&0), "window 0 should have been evicted");
+        assert!(
+            cached.contains(&(8 * WINDOW_SIZE)),
+            "just-loaded window 8 should be present"
+        );
     }
 }

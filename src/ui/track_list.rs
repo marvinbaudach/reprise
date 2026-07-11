@@ -478,7 +478,7 @@ fn reload(shared: &Rc<Shared>) {
     let count = shared.model.n_items() as usize;
     apply_empty_state(shared, empty_state_for(count, has_filter));
 
-    tracing::info!(count, field = %sort.field, dir = %sort.dir, filter = %filter, "loaded {count} tracks");
+    tracing::info!(count, field = %sort.field, dir = %sort.dir, filter = %filter, "query matched {count} tracks");
 
     (shared.on_reload)();
 }
