@@ -170,8 +170,9 @@ impl PlayerController {
 
         let queue_len = self.queue.borrow().len();
         tracing::info!(queue_len, start_index, "queue set from view");
-        self.bar
-            .set_transport_enabled(!self.queue.borrow().is_empty());
+
+        let queue_is_empty = self.queue.borrow().is_empty();
+        self.bar.set_transport_enabled(!queue_is_empty);
 
         let current = self.queue.borrow().current();
         match current {
@@ -314,6 +315,7 @@ impl PlayerController {
     /// stopped state even when stopping the pipeline errors out.
     fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
+        self.bar.set_transport_enabled(false);
         match self.player.stop() {
             Ok(()) => {}
             Err(error) => {
