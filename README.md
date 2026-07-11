@@ -3,23 +3,44 @@
 A native GTK4/libadwaita music player for GNOME — a spiritual successor to
 Rhythmbox.
 
-Reprise is in early development (stage 1: the audible core — playback,
-library scanning, and the SQLite-backed track database). Stage 1 currently
-provides:
+Reprise is in early development (currently stage 3 of the MVP plan). What
+works today:
 
-- A GTK4/libadwaita application window (header bar, search entry, status
-  line).
-- Folder scanning into the SQLite track database: runs in the background,
-  is incremental on repeat scans, and logs per-file import errors instead of
-  aborting the scan.
-- A sortable track list (title, artist, album, year, length, rating) backed
-  by a windowed SQL query, with live search-as-you-type filtering.
-- Playback via GStreamer: double-click a track to play it.
-- A bottom player bar: play/pause, seek, and volume.
-- A status line reporting track count and total library duration.
+- GTK4/libadwaita window with navigation sidebar (library, playlists,
+  smart playlists, problem sources with badges), search, and status line.
+- Folder scanning into a SQLite track database: background, incremental,
+  per-file import-error log, and **move detection** — relocated or renamed
+  files/albums keep their ratings, play counts, and added dates.
+- A sortable, windowed track list that scales to large libraries.
+- Playback via GStreamer with a full queue: auto-advance, shuffle, repeat
+  (off/all/one), previous/next; robust against deleted or broken files
+  (mark missing, toast, auto-skip — never a crash).
+- Clickable star ratings and play-count tracking (50%-listened threshold).
+- MPRIS integration: GNOME quick settings, lock screen, media keys.
+- A bottom player bar: play/pause, seek, time display, and volume.
 
-There is no library-management UI beyond scan-and-browse yet (no playlists,
-tagging, or editing).
+In development (stage 3): manual and smart playlists in the UI, context
+menu with multi-select, drag & drop, M3U import/export, folder watching,
+keyboard shortcuts.
+
+## Relation to Rhythmbox
+
+Reprise deliberately walks in Rhythmbox's footsteps: the column-based
+library view, smart playlists, the play queue, and the planned
+`rhythmdb.xml` import (ratings, play counts, playlists) all come from
+there. Rhythmbox has served GNOME users for over two decades — Reprise
+exists because its GTK3 codebase has made a GTK4 future difficult, not
+because it wasn't good.
+
+A snapshot for perspective (counted 2026-07-11, `wc -l` over the upstream
+git checkouts): Rhythmbox is ~165,000 lines of C (plus ~9,000 lines of
+Python plugins and ~11,000 lines of UI XML); Reprise currently implements
+its core listening workflow in ~8,600 lines of Rust (plus ~4,000 lines of
+tests). That is not a like-for-like comparison — Rhythmbox does far more
+today (podcasts, internet radio, DAAP sharing, CD ripping, device sync, a
+plugin ecosystem) — but it illustrates what a fresh start on a modern
+stack (Rust, SQL-backed views, GTK4's data widgets) buys: the essentials
+fit in a codebase one person can read.
 
 ## Development
 
