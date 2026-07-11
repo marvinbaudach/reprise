@@ -4,6 +4,8 @@ mod library;
 mod models;
 mod player;
 mod queries;
+#[allow(dead_code)] // wired in stage-2 Task 4
+mod queue;
 mod ui;
 
 use std::cell::RefCell;
