@@ -24,6 +24,12 @@
 //!   query being built actually joins `playlist_tracks AS pt` — i.e. only
 //!   for the `Playlist` source — which holds because `track_list.rs` is the
 //!   sole place that decides which sort field accompanies which source.
+//!   Every row also carries its true `pt.position` in `Track::playlist_
+//!   position` (via `row_to_playlist_track`) regardless of `ORDER BY` —
+//!   the fix for "remove from playlist" targeting the wrong row once a
+//!   column sort or live search filter makes on-screen order diverge from
+//!   `pt.position`; see that field's doc comment and `ui::track_actions::
+//!   remove_selected_from_playlist`.
 //! - **Smart(id)**: loads the `SmartPlaylist` row, ANDs `library::playlists::
 //!   smart_rules_to_sql`'s WHERE fragment with `missing = 0` and the live
 //!   search filter, and orders/limits by the smart playlist's *own*
@@ -230,6 +236,14 @@ pub fn build_track_ids_query(sort_field: &str, sort_dir: &str, has_filter: bool)
 /// `missing = 0` is applied here too: a track that later vanishes from disk
 /// drops out of every playlist's view and resurfaces only in the dedicated
 /// `Missing` source, exactly like the library view.
+///
+/// The trailing `pt.position` column (index 20, read by `row_to_playlist_
+/// track`) is the durable fix for the "remove from playlist deletes the
+/// wrong row" bug: it surfaces each row's *true* `playlist_tracks.position`
+/// regardless of what `ORDER BY` this query used, so `ui::track_actions::
+/// remove_selected_from_playlist` can resolve a selected on-screen row back
+/// to the position `library::playlists::remove_positions` actually needs —
+/// see `Track::playlist_position`'s doc comment.
 fn build_playlist_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 4);
@@ -238,7 +252,7 @@ fn build_playlist_track_query(sort_field: &str, sort_dir: &str, has_filter: bool
          tracks.album_artist, tracks.year, tracks.track_no, tracks.genre, \
          tracks.duration_ms, tracks.bitrate_kbps, tracks.rating, tracks.play_count, \
          tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing, \
-         tracks.file_size, tracks.device, tracks.inode \
+         tracks.file_size, tracks.device, tracks.inode, pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?3 AND tracks.missing = 0{filter_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
@@ -267,7 +281,19 @@ fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         file_size: r.get(17)?,
         device: r.get(18)?,
         inode: r.get(19)?,
+        playlist_position: None,
     })
+}
+
+/// Same 20-column shape as `row_to_track`, plus a trailing `pt.position`
+/// column (index 20) — used only by `query_track_window_playlist`, the one
+/// query that actually joins `playlist_tracks AS pt`. See `Track::
+/// playlist_position`'s doc comment for why this is the sole populating
+/// call site.
+fn row_to_playlist_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
+    let mut track = row_to_track(r)?;
+    track.playlist_position = Some(r.get(20)?);
+    Ok(track)
 }
 
 fn row_to_id(r: &rusqlite::Row) -> rusqlite::Result<i64> {
@@ -394,10 +420,13 @@ fn query_track_window_playlist(
     let rows = if has_filter {
         stmt.query_map(
             rusqlite::params![limit, offset, playlist_id, like],
-            row_to_track,
+            row_to_playlist_track,
         )?
     } else {
-        stmt.query_map(rusqlite::params![limit, offset, playlist_id], row_to_track)?
+        stmt.query_map(
+            rusqlite::params![limit, offset, playlist_id],
+            row_to_playlist_track,
+        )?
     };
     rows.collect()
 }

@@ -81,6 +81,14 @@ const RESPONSE_CREATE: &str = "create";
 ///   stable across the scratch databases headless E2E runs seed fresh each
 ///   time) and calls `track_actions::add_selected_to_playlist`, logging "N
 ///   tracks added".
+/// - `remove-from-playlist`: calls `handle_remove_from_playlist` with the
+///   selected rows' raw *positions* (not ids) — the one form that exercises
+///   `ui::track_actions::remove_selected_from_playlist`'s durable position-
+///   resolution fix (Task 5 Fix Round 1). Combine with `track_list.rs`'s
+///   `REPRISE_SMOKE_SOURCE=playlist:<name>` and `REPRISE_SMOKE_FILTER=<text>`
+///   hooks to drive a sorted-or-filtered playlist view headlessly, then
+///   inspect `playlist_tracks` directly (e.g. via `sqlite3`) to confirm the
+///   *visible* row was removed, not whatever sits at `pt.position 0`.
 ///
 /// Usage: `REPRISE_SCAN_DIR=… REPRISE_SMOKE_MENU_ACTION=queue
 ///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
@@ -432,7 +440,12 @@ fn handle_remove_from_playlist(shared: &Rc<Shared>, positions: &[u32]) {
         );
         return;
     }
-    match track_actions::remove_selected_from_playlist(&shared.conn, playlist_id, positions) {
+    match track_actions::remove_selected_from_playlist(
+        &shared.conn,
+        playlist_id,
+        positions,
+        &shared.model,
+    ) {
         Ok(removed) => {
             tracing::info!(
                 playlist_id,
@@ -446,7 +459,21 @@ fn handle_remove_from_playlist(shared: &Rc<Shared>, positions: &[u32]) {
             );
             reload(shared);
         }
-        Err(error) => {
+        Err(track_actions::RemoveFromPlaylistError::Unresolvable) => {
+            // Safety backstop (see `ui::track_actions`'s module doc): abort
+            // the whole remove rather than guess. Nothing was deleted, so
+            // there's nothing to reload — just tell the user what happened.
+            tracing::warn!(
+                playlist_id,
+                "context menu: could not resolve true playlist positions for the selected \
+                 row(s); aborting remove entirely rather than guessing"
+            );
+            show_toast(
+                shared,
+                &strings::playlist_remove_tracks_unresolvable_toast(),
+            );
+        }
+        Err(track_actions::RemoveFromPlaylistError::Db(error)) => {
             tracing::error!(
                 %error,
                 playlist_id,
@@ -564,6 +591,18 @@ pub(super) fn arm_smoke_menu_action(shared: &Rc<Shared>) {
             return;
         }
         shared.selection.select_range(0, row_count, true);
+
+        if value == ACTION_REMOVE_FROM_PLAYLIST {
+            // Positions, not ids — exercises the exact same position-
+            // resolution path a real right-click "Remove from playlist"
+            // uses (see `ui::track_actions`'s module doc), so this is what
+            // lets the hook drive the Fix Round 1 sorted/filtered-playlist
+            // E2E check headlessly.
+            let positions = current_selection_positions(&shared);
+            handle_remove_from_playlist(&shared, &positions);
+            return;
+        }
+
         let ids = current_selection_ids(&shared);
 
         if value == "queue" {

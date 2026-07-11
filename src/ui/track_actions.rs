@@ -20,24 +20,40 @@
 //! against a real instance with no display needed — see that module's own
 //! test module for the same pattern.
 //!
-//! ## Remove from playlist: positions, not ids
+//! ## Remove from playlist: true `pt.position`, not view row index (Fix
+//! Round 1)
 //!
 //! Manual playlists allow duplicates (the same track added twice — see
 //! `library::playlists::add_tracks`'s doc comment). Removing by id would
 //! delete *every* occurrence of a duplicated track instead of just the rows
-//! the user selected, so [`remove_selected_from_playlist`] forwards the raw
-//! ColumnView row positions straight to `library::playlists::
-//! remove_positions`. This is exactly right whenever the playlist view is
-//! showing its own default order (`track_list.rs`'s forced `"playlist_
-//! order"` sort for `ViewSource::Playlist`, via `default_sort_for_source`)
-//! with no search filter active — the common case, and the only one this
-//! task's brief calls for. A column-header sort or an active search filter
-//! while viewing a playlist would make the row's on-screen position diverge
-//! from its `playlist_tracks.position`, which would remove the wrong row(s)
-//! — a known, documented limitation (see the Task 5 report for the full
-//! discussion) rather than something this task closes off, since fixing it
-//! would require plumbing `playlist_tracks.position` through `queries.rs`/
-//! `models::Track` for every source, well beyond this task's scope.
+//! the user selected, so [`remove_selected_from_playlist`] must resolve
+//! *positions*, not ids — but the positions it resolves to are each
+//! selected row's true `playlist_tracks.position`, never the raw ColumnView
+//! row index passed in.
+//!
+//! An earlier version of this function forwarded the raw view row index
+//! straight to `library::playlists::remove_positions`, which only happened
+//! to be correct when the playlist view showed its own default order
+//! (`track_list.rs`'s forced `"playlist_order"` sort) with no search filter
+//! active. The moment a column-header sort or a live search filter made the
+//! on-screen row order diverge from `pt.position` — both shipped,
+//! reachable features — this deleted the wrong row(s): silent data loss,
+//! reported as success ("N tracks removed"). See the Task 5 report's "Fix
+//! Round 1" section for the full incident.
+//!
+//! The fix: every `Track` a `Playlist` source query returns now carries its
+//! true `pt.position` in `models::Track::playlist_position` (`queries.rs`'s
+//! `row_to_playlist_track`, populated regardless of the query's `ORDER BY`
+//! or filter). `remove_selected_from_playlist` resolves each selected
+//! *view* position to that field via `TrackListModel::track_at` before
+//! calling `remove_positions` — so it's correct under any sort, any filter,
+//! with duplicates, always. If any selected row's `playlist_position`
+//! cannot be resolved (`track_at` returns `None`, or the row isn't a
+//! playlist row at all — both should be unreachable in practice, since this
+//! is only ever called while viewing a real `ViewSource::Playlist`), the
+//! *entire* remove is aborted with [`RemoveFromPlaylistError::Unresolvable`]
+//! and nothing is deleted — a remove is all-correct-or-nothing, never a
+//! best-effort guess.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -115,20 +131,62 @@ pub fn add_selected_to_playlist(
     playlists::add_tracks(&mut conn, playlist_id, ids)
 }
 
+/// Error from [`remove_selected_from_playlist`] — see the module doc's
+/// `## Remove from playlist` section.
+#[derive(Debug, thiserror::Error)]
+pub enum RemoveFromPlaylistError {
+    /// The underlying `library::playlists::remove_positions` call failed.
+    #[error(transparent)]
+    Db(#[from] rusqlite::Error),
+    /// Safety backstop: at least one selected view row's true `playlist_
+    /// tracks.position` could not be resolved via `model`. Nothing was
+    /// removed — a remove is all-correct-or-nothing, never a best-effort
+    /// guess at which rows the caller meant.
+    #[error("could not resolve a selected row's true playlist position")]
+    Unresolvable,
+}
+
 /// "Remove from playlist" menu action — see the module doc's `## Remove from
-/// playlist` section for why this takes raw row *positions*, not ids.
-/// Returns the number of rows removed, or the underlying error. A no-op
-/// (`Ok(0)`) for an empty `positions` slice.
+/// playlist` section for why `positions` (raw ColumnView view-row indices,
+/// *not* ids) are resolved through `model` to each row's true `playlist_
+/// tracks.position` before reaching `library::playlists::remove_positions`,
+/// rather than being forwarded as-is. Returns the number of rows removed on
+/// success. A no-op (`Ok(0)`, no connection borrow, no model lookups) for an
+/// empty `positions` slice.
 pub fn remove_selected_from_playlist(
     conn: &Rc<RefCell<Connection>>,
     playlist_id: i64,
     positions: &[u32],
-) -> Result<u32, rusqlite::Error> {
+    model: &TrackListModel,
+) -> Result<u32, RemoveFromPlaylistError> {
     if positions.is_empty() {
         return Ok(0);
     }
+
+    let mut true_positions = Vec::with_capacity(positions.len());
+    for &view_position in positions {
+        let resolved = model
+            .track_at(view_position)
+            .and_then(|track| track.playlist_position)
+            .and_then(|position| u32::try_from(position).ok());
+        let Some(true_position) = resolved else {
+            tracing::warn!(
+                view_position,
+                playlist_id,
+                "remove-from-playlist: could not resolve the true playlist position for a \
+                 selected row; aborting the whole remove rather than guessing"
+            );
+            return Err(RemoveFromPlaylistError::Unresolvable);
+        };
+        true_positions.push(true_position);
+    }
+
     let mut conn = conn.borrow_mut();
-    playlists::remove_positions(&mut conn, playlist_id, positions)
+    Ok(playlists::remove_positions(
+        &mut conn,
+        playlist_id,
+        &true_positions,
+    )?)
 }
 
 /// "Add to playlist -> New playlist…" menu action: creates a playlist named
@@ -156,6 +214,7 @@ pub fn create_playlist_and_add(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gtk4::prelude::ListModelExt;
     use rusqlite::params;
 
     /// Seeds a fresh in-memory DB with `count` tracks (ids 1..=count) and a
@@ -276,7 +335,11 @@ mod tests {
     /// positions 0 and 2); removing "by position 2" must remove only that
     /// occurrence, leaving the other instance (position 0) intact — using
     /// ids instead of positions could not express this at all (an id-based
-    /// remove would have to delete both, or neither).
+    /// remove would have to delete both, or neither). The view here is the
+    /// playlist's own default order (`"playlist_order"`, no filter), so view
+    /// row 2 and true `pt.position` 2 coincide — this pins that the
+    /// resolve-through-the-model step is a no-op (identity) in the common
+    /// case, not just in the sorted/filtered cases covered below.
     #[test]
     fn remove_selected_from_playlist_uses_positions_not_ids_for_duplicates() {
         let conn = seeded_conn_with_tracks(5);
@@ -286,8 +349,16 @@ mod tests {
             // Track id 1 appears at both position 0 and position 2.
             playlists::add_tracks(&mut conn_mut, playlist_id, &[1, 2, 1, 3]).unwrap();
         }
+        let model = TrackListModel::new(conn.clone());
+        model.set_query(
+            &crate::view_source::ViewSource::Playlist(playlist_id),
+            "playlist_order",
+            "asc",
+            "",
+            &[],
+        );
 
-        let removed = remove_selected_from_playlist(&conn, playlist_id, &[2]).unwrap();
+        let removed = remove_selected_from_playlist(&conn, playlist_id, &[2], &model).unwrap();
         assert_eq!(removed, 1);
 
         let track_ids: Vec<i64> = conn
@@ -305,6 +376,216 @@ mod tests {
         assert_eq!(track_ids, vec![1, 2, 3]);
     }
 
+    /// Seeds a fresh in-memory DB, creates playlist `"P1"`, and appends five
+    /// tracks (titles A..E, ids 1..5, appended in that order so `pt.position`
+    /// == id - 1) with artists chosen so an artist-ascending sort produces a
+    /// *different* row order than `pt.position` — the exact divergence
+    /// `remove_selected_from_playlist` must handle correctly (see the module
+    /// doc's `## Remove from playlist` section). Artist order (ascending,
+    /// `COLLATE NOCASE`) is Alpha < Beta < Delta < Epsilon < Zeta, i.e.
+    /// track C < E < B < D < A — matching this task's bug report's own
+    /// repro (`[A,B,C,D,E]` -> `[C,A,E,B,D]` on an Artist header click:
+    /// track C lands first either way). Returns `(conn, playlist_id)`.
+    fn seeded_playlist_with_divergent_artist_order() -> (Rc<RefCell<Connection>>, i64) {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        let tracks = [
+            (1, "A", "Zeta"),
+            (2, "B", "Delta"),
+            (3, "C", "Alpha"),
+            (4, "D", "Epsilon"),
+            (5, "E", "Beta"),
+        ];
+        for (id, title, artist) in tracks {
+            conn.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
+                params![id, format!("/x/{id}.flac"), title, artist],
+            )
+            .unwrap();
+        }
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+        {
+            let mut conn_mut = conn.borrow_mut();
+            playlists::add_tracks(&mut conn_mut, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
+        }
+        (conn, playlist_id)
+    }
+
+    /// Current surviving track ids for `playlist_id`, in `pt.position` order.
+    fn playlist_track_ids_in_position_order(
+        conn: &Rc<RefCell<Connection>>,
+        playlist_id: i64,
+    ) -> Vec<i64> {
+        conn.borrow()
+            .prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(params![playlist_id], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    /// Regression for the Task 5 Fix Round 1 data-loss bug: the playlist is
+    /// `[A,B,C,D,E]` at `pt.position` 0..4; the user has clicked the Artist
+    /// column header, so the view shows track C (id 3, true `pt.position`
+    /// 2) first. Selecting the first *visible* row and invoking "Remove
+    /// from playlist" must remove track C — not whatever happens to sit at
+    /// `pt.position` 0 (track A, id 1). This is exercised end-to-end through
+    /// a real `TrackListModel` queried in artist-ascending order (never
+    /// assuming which id lands at view row 0 — that's read back from the
+    /// model itself, exactly like `track_list_context_menu.rs`'s real
+    /// call path), so the test fails if the durable fix's data flow (`Track::
+    /// playlist_position` -> `remove_selected_from_playlist`'s model lookup)
+    /// is missing or wrong in either direction.
+    #[test]
+    fn remove_selected_from_playlist_removes_the_visible_row_not_position_zero() {
+        let (conn, playlist_id) = seeded_playlist_with_divergent_artist_order();
+
+        let model = TrackListModel::new(conn.clone());
+        model.set_query(
+            &crate::view_source::ViewSource::Playlist(playlist_id),
+            "artist",
+            "asc",
+            "",
+            &[],
+        );
+        // Read back which track is actually visible at view row 0, rather
+        // than hardcoding the expected id — this is exactly what a real
+        // right-click-first-row selection resolves to.
+        let visible_row_zero_id = model.track_at(0).unwrap().id;
+        assert_eq!(
+            visible_row_zero_id, 3,
+            "sanity check: artist order should put track C (id 3) first"
+        );
+
+        let removed = remove_selected_from_playlist(&conn, playlist_id, &[0], &model).unwrap();
+        assert_eq!(removed, 1);
+
+        let remaining = playlist_track_ids_in_position_order(&conn, playlist_id);
+        assert!(
+            !remaining.contains(&visible_row_zero_id),
+            "the row visibly selected under the artist sort (track C, id 3) must be removed, \
+             not whatever track happens to sit at pt.position 0"
+        );
+        assert_eq!(
+            remaining,
+            vec![1, 2, 4, 5],
+            "the other four tracks must survive, renumbered contiguously"
+        );
+    }
+
+    /// Non-contiguous multi-row remove under a sort, mirroring the Fix
+    /// Round 1 headless E2E run: artist-ascending view order is C (true
+    /// position 2), E (position 4), B (position 1), D (position 3), A
+    /// (position 0). Selecting view rows 0 and 2 (C and B) selects true
+    /// positions `{2, 1}` — non-contiguous *and* out of ascending order —
+    /// which must still all be removed correctly and the remainder
+    /// renumbered gaplessly (`library::playlists::remove_positions`'s own
+    /// invariant, exercised here through the model-resolution layer on top
+    /// of it rather than assumed).
+    #[test]
+    fn remove_selected_from_playlist_removes_non_contiguous_true_positions_when_sorted() {
+        let (conn, playlist_id) = seeded_playlist_with_divergent_artist_order();
+
+        let model = TrackListModel::new(conn.clone());
+        model.set_query(
+            &crate::view_source::ViewSource::Playlist(playlist_id),
+            "artist",
+            "asc",
+            "",
+            &[],
+        );
+        // View order (artist ascending): C, E, B, D, A.
+        let view_row_0_id = model.track_at(0).unwrap().id;
+        let view_row_2_id = model.track_at(2).unwrap().id;
+        assert_eq!(
+            (view_row_0_id, view_row_2_id),
+            (3, 2),
+            "sanity check: C then B"
+        );
+
+        let removed = remove_selected_from_playlist(&conn, playlist_id, &[0, 2], &model).unwrap();
+        assert_eq!(removed, 2);
+
+        let remaining = playlist_track_ids_in_position_order(&conn, playlist_id);
+        assert_eq!(
+            remaining,
+            vec![1, 4, 5],
+            "tracks A, D, E survive (their original relative pt.position order), \
+             renumbered 0..2; C and B are gone"
+        );
+    }
+
+    /// Same divergence, driven by a live search filter instead of a column
+    /// sort: filtering to "Delta" (track B's artist, and nothing else's
+    /// title/artist/album/genre) drops every other track from the view
+    /// entirely, so the filtered view's row 0 (track B, true position
+    /// `pt.position == 1`) no longer lines up with the view's row 0 index
+    /// either. Selecting it and removing must still remove track B
+    /// specifically.
+    #[test]
+    fn remove_selected_from_playlist_removes_the_visible_row_under_a_live_filter() {
+        let (conn, playlist_id) = seeded_playlist_with_divergent_artist_order();
+
+        let model = TrackListModel::new(conn.clone());
+        // Default playlist order, but filtered down to track B alone —
+        // still in pt.position order, so the filtered view's row 0 is
+        // track B (pt.position 1).
+        model.set_query(
+            &crate::view_source::ViewSource::Playlist(playlist_id),
+            "playlist_order",
+            "asc",
+            "Delta",
+            &[],
+        );
+        assert_eq!(model.n_items(), 1, "filter should isolate track B alone");
+        let visible_row_zero_id = model.track_at(0).unwrap().id;
+        assert_eq!(visible_row_zero_id, 2, "track B is id 2");
+
+        let removed = remove_selected_from_playlist(&conn, playlist_id, &[0], &model).unwrap();
+        assert_eq!(removed, 1);
+
+        let remaining = playlist_track_ids_in_position_order(&conn, playlist_id);
+        assert_eq!(
+            remaining,
+            vec![1, 3, 4, 5],
+            "only track B (id 2, true pt.position 1) is removed; the rest survive, renumbered"
+        );
+    }
+
+    /// Safety backstop: if a selected view position cannot be resolved to a
+    /// true playlist position (e.g. it's out of range for the model's
+    /// current query), the whole remove must abort with nothing deleted —
+    /// never guess. See the module doc's `## Remove from playlist` section.
+    #[test]
+    fn remove_selected_from_playlist_aborts_entirely_on_an_unresolvable_position() {
+        let (conn, playlist_id) = seeded_playlist_with_divergent_artist_order();
+        let model = TrackListModel::new(conn.clone());
+        model.set_query(
+            &crate::view_source::ViewSource::Playlist(playlist_id),
+            "playlist_order",
+            "asc",
+            "",
+            &[],
+        );
+
+        // Position 1 resolves fine; position 99 is out of range and cannot
+        // be resolved. The whole batch must be rejected — not a partial
+        // remove of just position 1.
+        let result = remove_selected_from_playlist(&conn, playlist_id, &[1, 99], &model);
+        assert!(matches!(result, Err(RemoveFromPlaylistError::Unresolvable)));
+
+        let remaining = playlist_track_ids_in_position_order(&conn, playlist_id);
+        assert_eq!(
+            remaining,
+            vec![1, 2, 3, 4, 5],
+            "nothing must be removed when any selected row is unresolvable"
+        );
+    }
+
     #[test]
     fn remove_selected_from_playlist_empty_positions_is_a_no_op() {
         let conn = seeded_conn_with_tracks(3);
@@ -313,7 +594,10 @@ mod tests {
             let mut conn_mut = conn.borrow_mut();
             playlists::add_tracks(&mut conn_mut, playlist_id, &[1, 2, 3]).unwrap();
         }
-        let removed = remove_selected_from_playlist(&conn, playlist_id, &[]).unwrap();
+        // An empty selection never touches the model — a fresh, unqueried
+        // one is fine here.
+        let model = TrackListModel::new(conn.clone());
+        let removed = remove_selected_from_playlist(&conn, playlist_id, &[], &model).unwrap();
         assert_eq!(removed, 0);
     }
 
