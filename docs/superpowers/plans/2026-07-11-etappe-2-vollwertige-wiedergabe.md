@@ -199,10 +199,12 @@
 
 ## Verifikation Etappe 2 (Definition of Done)
 
-- [ ] `cargo test` grün, `cargo clippy --all-targets -- -D warnings` + `cargo fmt --check` sauber
-- [ ] Headless: 250-Track-Bibliothek lädt (Windowing), Auto-Advance über 3 Titel, Repeat-All-Wrap, kaputter/gelöschter Titel → missing + Skip ohne Crash, MPRIS Play/Pause/Next via busctl, NoResults via SMOKE_FILTER
-- [ ] sqlite3-Checks: play_count nach EOS, rating persistiert, missing gesetzt
-- [ ] Move-Detection: Album-Ordner umbenennen + Rescan → `moved=N`, Bewertungen/Play Counts/added_at erhalten, keine Duplikate (Task-8-Testcases + E2E)
-- [ ] **Manuell (Nutzer):** Medientasten + GNOME-Schnellmenü steuern Reprise (MPRIS), Sterne klicken fühlt sich richtig an, Shuffle/Repeat-Buttons, große echte Bibliothek scrollt flüssig
+**✅ ETAPPE 2 ABGESCHLOSSEN (2026-07-11)** — alle headless-prüfbaren Punkte von der finalen Whole-Branch-Review unabhängig verifiziert (6 eigene E2E-Läufe); manuelle Nutzer-Checks ausstehend:
+
+- [x] `cargo test` grün (121 + 1 ignored), `cargo clippy --all-targets -- -D warnings` + `cargo fmt --check` sauber
+- [x] Headless: 250-Track-Bibliothek lädt (Windowing), Auto-Advance über 3 Titel, Repeat-All-Wrap, gelöschter Titel → missing + Skip ohne Crash, MPRIS Play/Pause/Next/Stop via busctl, NoResults via SMOKE_FILTER
+- [x] sqlite3-Checks: play_count nach EOS, rating persistiert, missing gesetzt — und Restore beim Rescan am alten Pfad (Close-out-Fix)
+- [x] Move-Detection: Album-Ordner umbenannt + Rescan → `moved=3, added=0`, Bewertungen/Play Counts/added_at erhalten, keine Duplikate
+- [ ] **Manuell (Nutzer):** Medientasten + GNOME-Schnellmenü/Sperrbildschirm steuern Reprise, Sterne klicken (inkl. Löschen per Re-Klick), Shuffle/Repeat-Button-Gefühl und Icon-Zustände, große echte Bibliothek scrollt flüssig, Album verschieben + Rescan behält Bewertungen
 
 **Nicht in Etappe 2:** Sidebar (Playlisten/Warteschlangen-Ansicht/Fehlende Dateien), Browse-Leiste, Cover, Rhythmbox-Import, Tag-Editor, Löschen, Watcher, Einstellungs-Dialog (inkl. Layout-Optionen), EQ/ReplayGain, gettext, Flatpak.
