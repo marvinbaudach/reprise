@@ -1,6 +1,12 @@
 use crate::models::Track;
 use rusqlite::Connection;
 
+/// Global constraint: window queries never return more rows than this in one
+/// page, regardless of what the caller requests. SQLite treats a negative
+/// `LIMIT` as "unlimited", so this also protects against a bad UI-side page
+/// size from turning into a full-table scan. Limits capped.
+const MAX_WINDOW_LIMIT: i64 = 500;
+
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryStats {
@@ -14,7 +20,10 @@ pub struct LibraryStats {
 
 const SORT_WHITELIST: [(&str, &str); 6] = [
     ("title", "title COLLATE NOCASE"),
-    ("artist", "artist COLLATE NOCASE, album COLLATE NOCASE, track_no"),
+    (
+        "artist",
+        "artist COLLATE NOCASE, album COLLATE NOCASE, track_no",
+    ),
     ("album", "album COLLATE NOCASE, track_no"),
     ("year", "year"),
     ("duration_ms", "duration_ms"),
@@ -82,6 +91,7 @@ pub fn query_track_window(
     offset: i64,
     limit: i64,
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
     let sql = build_track_query(sort_field, sort_dir, has_filter);
     let mut stmt = conn.prepare(&sql)?;
@@ -145,5 +155,29 @@ mod tests {
         let rows = query_track_window(&mut conn, "title", "asc", "zu", 0, 10).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "Zulu");
+    }
+
+    #[test]
+    fn window_limit_is_clamped() {
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for t in ["Alpha", "Beta", "Gamma"] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, '', 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t],
+            )
+            .unwrap();
+        }
+
+        // SQLite treats a negative LIMIT as "unlimited"; clamped to 0, a
+        // negative caller-supplied limit must return no rows.
+        let rows = query_track_window(&mut conn, "title", "asc", "", 0, -1).unwrap();
+        assert_eq!(rows.len(), 0);
+
+        // A limit far above MAX_WINDOW_LIMIT is clamped down to the cap,
+        // which still comfortably covers this small fixture set, so all
+        // rows are returned rather than the query becoming unbounded.
+        let rows = query_track_window(&mut conn, "title", "asc", "", 0, 10_000).unwrap();
+        assert_eq!(rows.len(), 3);
     }
 }

@@ -126,7 +126,10 @@ mod tests {
 
     #[test]
     fn total_duration_formats_hours_and_minutes() {
-        assert_eq!(format_total_duration(90 * 60 * 1000), "1 hour and 30 minutes");
+        assert_eq!(
+            format_total_duration(90 * 60 * 1000),
+            "1 hour and 30 minutes"
+        );
     }
 
     #[test]

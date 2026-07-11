@@ -245,9 +245,7 @@ fn wire_scan_button(
                 }
             };
             let Some(path) = folder.path() else {
-                tracing::warn!(
-                    "selected folder has no local filesystem path; cannot scan"
-                );
+                tracing::warn!("selected folder has no local filesystem path; cannot scan");
                 scan_button.set_sensitive(true);
                 return;
             };

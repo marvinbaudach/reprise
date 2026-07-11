@@ -8,7 +8,7 @@ pub const SCAN_FOLDER: &str = "Scan folder…";
 pub const EMPTY_LIBRARY_TITLE: &str = "No music yet";
 pub const EMPTY_LIBRARY_DESCRIPTION: &str = "Scan a folder to build your library";
 pub const NO_RESULTS_TITLE: &str = "No results";
-pub const NO_RESULTS_DESCRIPTION: &str = "Try a different search.";
+pub const NO_RESULTS_DESCRIPTION: &str = "Try a different search";
 
 // Scan flow (src/ui/window.rs).
 pub const SCAN_DIALOG_TITLE: &str = "Select Music Folder";

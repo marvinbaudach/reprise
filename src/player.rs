@@ -97,7 +97,9 @@ impl Player {
         let on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync> = Arc::from(on_event);
 
         // Bus watch: report end-of-stream and errors to the callback.
-        let bus = playbin.bus().ok_or_else(|| PlayerError::Gst("no bus".into()))?;
+        let bus = playbin
+            .bus()
+            .ok_or_else(|| PlayerError::Gst("no bus".into()))?;
         let bus_event = on_event.clone();
         let bus_watch = bus
             .add_watch(move |_, msg| {
@@ -131,7 +133,10 @@ impl Player {
                     .query_duration::<gst::ClockTime>()
                     .map(|t| t.mseconds() as i64)
                     .unwrap_or(0);
-                (*tick_event)(PlayerEvent::Position { position_ms, duration_ms });
+                (*tick_event)(PlayerEvent::Position {
+                    position_ms,
+                    duration_ms,
+                });
             }
         });
 

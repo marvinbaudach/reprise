@@ -42,8 +42,7 @@ pub fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
     let tagged = lofty::read_from_path(path).map_err(|e| ScanError::Tags(e.to_string()))?;
     let props = tagged.properties();
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
-    let get =
-        |f: &dyn Fn(&lofty::tag::Tag) -> Option<String>| tag.and_then(f).unwrap_or_default();
+    let get = |f: &dyn Fn(&lofty::tag::Tag) -> Option<String>| tag.and_then(f).unwrap_or_default();
     Ok(TrackMeta {
         title: get(&|t| t.title().map(|s| s.to_string())),
         artist: get(&|t| t.artist().map(|s| s.to_string())),
@@ -194,8 +193,7 @@ mod tests {
     use lofty::tag::{Tag, TagType};
 
     fn fixture_copy(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/sine.flac");
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
         let dst = dir.join(name);
         std::fs::copy(&src, &dst).unwrap();
         dst
@@ -214,7 +212,8 @@ mod tests {
         tag.set_year(2019);
         tag.set_track(9);
         tag.set_genre("Deathcore".into());
-        tag.save_to_path(&file, lofty::config::WriteOptions::default()).unwrap();
+        tag.save_to_path(&file, lofty::config::WriteOptions::default())
+            .unwrap();
 
         let meta = read_meta(&file).unwrap();
         assert_eq!(meta.title, "Beast of Darkness");
@@ -400,6 +399,9 @@ mod tests {
         let errs: i64 = conn
             .query_row("SELECT count(*) FROM import_errors", [], |r| r.get(0))
             .unwrap();
-        assert!(errs >= 1, "traversal error must be recorded in import_errors");
+        assert!(
+            errs >= 1,
+            "traversal error must be recorded in import_errors"
+        );
     }
 }

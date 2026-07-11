@@ -83,6 +83,16 @@ fn main() -> glib::ExitCode {
     let app = adw::Application::builder().application_id(APP_ID).build();
 
     app.connect_activate(move |app| {
+        // GApplication is single-instance: a second `reprise` launch forwards
+        // `activate` to this (the primary) process instead of spawning a new
+        // one. Without this guard, a second launch would build a second
+        // window, PlayerController, playbin, and ticker thread all sharing
+        // the same database connection.
+        if let Some(window) = app.active_window() {
+            tracing::debug!("presenting existing window");
+            window.present();
+            return;
+        }
         ui::window::build(app, conn.clone(), path.clone());
     });
 
