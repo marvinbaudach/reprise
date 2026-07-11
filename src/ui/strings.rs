@@ -145,3 +145,67 @@ pub const CREATE: &str = "Create";
 pub fn playlist_create_failed_toast(name: &str) -> String {
     format!("Could not create playlist \"{name}\"")
 }
+
+// Track list context menu (src/ui/track_list.rs, Stage 3 Task 5): row
+// actions on the current selection — Play, Add to queue, Add to playlist
+// (submenu of existing playlists plus "New playlist…"), and — only while
+// viewing a playlist — Remove from playlist.
+
+pub const CONTEXT_MENU_PLAY: &str = "Play";
+pub const CONTEXT_MENU_ADD_TO_QUEUE: &str = "Add to queue";
+pub const CONTEXT_MENU_ADD_TO_PLAYLIST: &str = "Add to playlist";
+/// Leaf item at the bottom of the "Add to playlist" submenu — ellipsis
+/// matches this file's convention for menu items that open a dialog (e.g.
+/// `SCAN_FOLDER`), unlike the sidebar's plain "New playlist" row label
+/// (`SIDEBAR_NEW_PLAYLIST`), which doesn't open a dialog directly from a
+/// menu context.
+pub const CONTEXT_MENU_NEW_PLAYLIST: &str = "New playlist…";
+pub const CONTEXT_MENU_REMOVE_FROM_PLAYLIST: &str = "Remove from playlist";
+
+/// Toast for the "Add to queue" context-menu action — plural-correct
+/// (reuses `STATUS_TRACK_SINGULAR`/`STATUS_TRACK_PLURAL` rather than
+/// hardcoding "track"/"tracks" a second time).
+pub fn tracks_added_to_queue_toast(count: usize) -> String {
+    let noun = if count == 1 {
+        STATUS_TRACK_SINGULAR
+    } else {
+        STATUS_TRACK_PLURAL
+    };
+    format!("{count} {noun} added to queue")
+}
+
+/// Toast for the "Add to playlist" context-menu action — used for both an
+/// existing playlist and one just created via "New playlist…", since the
+/// outcome reads identically either way. Plural-correct, same convention as
+/// `tracks_added_to_queue_toast`.
+pub fn tracks_added_to_playlist_toast(count: usize, playlist_name: &str) -> String {
+    let noun = if count == 1 {
+        STATUS_TRACK_SINGULAR
+    } else {
+        STATUS_TRACK_PLURAL
+    };
+    format!("{count} {noun} added to {playlist_name}")
+}
+
+/// Toast for the "Remove from playlist" context-menu action — plural-correct,
+/// same convention as the two toasts above.
+pub fn tracks_removed_from_playlist_toast(count: usize) -> String {
+    let noun = if count == 1 {
+        STATUS_TRACK_SINGULAR
+    } else {
+        STATUS_TRACK_PLURAL
+    };
+    format!("{count} {noun} removed from playlist")
+}
+
+/// Toast shown when `library::playlists::add_tracks` fails while handling
+/// the context menu's "Add to playlist" action (existing playlist).
+pub fn playlist_add_tracks_failed_toast(name: &str) -> String {
+    format!("Could not add tracks to \"{name}\"")
+}
+
+/// Toast shown when `library::playlists::remove_positions` fails while
+/// handling the context menu's "Remove from playlist" action.
+pub fn playlist_remove_tracks_failed_toast() -> String {
+    "Could not remove tracks from playlist".to_string()
+}

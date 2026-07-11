@@ -6,6 +6,8 @@ pub mod rating;
 pub mod sidebar;
 pub mod status_bar;
 pub mod strings;
+pub mod track_actions;
 pub mod track_list;
+pub mod track_list_context_menu;
 pub mod track_list_model;
 pub mod window;

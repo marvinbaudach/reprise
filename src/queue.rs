@@ -263,6 +263,45 @@ impl Queue {
         self.ids.is_empty()
     }
 
+    /// Appends `new_ids` to the end of the queue (Stage 3 Task 5's "Add to
+    /// queue" context-menu action) — deliberately not a re-run of `set_
+    /// tracks` (which replaces the whole queue and resets/reshuffles it).
+    /// The current track (`pos`) is left untouched: appending is purely
+    /// additive. Both the linear and shuffled cases append the new ids to
+    /// the *tail* of `order` in the order given, rather than weaving them
+    /// into an existing shuffled prefix — "add to end" is a deliberate,
+    /// predictable action, not an invitation to reshuffle. A no-op for an
+    /// empty `new_ids` slice (nothing to append).
+    ///
+    /// If the queue was truly empty before this call (`ids` had zero
+    /// elements — the only case `Queue`'s own invariant ties to `pos ==
+    /// None`), the appended tracks become the queue and `pos` becomes
+    /// `Some(0)` so the invariant holds again. This does *not* apply to a
+    /// queue that is merely *exhausted* (`pos == None` but `ids` already
+    /// non-empty, e.g. `Repeat::Off` ran off the end) — appending more
+    /// tracks there must not silently resurrect a position, since nothing
+    /// asked for playback to resume. Either way, this method never starts
+    /// playback itself; it only updates queue state. Whether/when to
+    /// actually start playing is entirely the caller's decision (see `ui::
+    /// player_controller::PlayerController::append_to_queue`, which never
+    /// calls play for this action, matching the Rhythmbox-style "add to
+    /// queue" contract).
+    pub fn append_tracks(&mut self, new_ids: &[i64]) {
+        if new_ids.is_empty() {
+            return;
+        }
+
+        let was_empty = self.ids.is_empty();
+        let start_idx = self.ids.len();
+        self.ids.extend_from_slice(new_ids);
+        let new_len = self.ids.len();
+        self.order.extend(start_idx..new_len);
+
+        if was_empty {
+            self.pos = Some(0);
+        }
+    }
+
     /// Every queued track id in current play order — reflecting shuffle, if
     /// active — used by `ViewSource::Queue` (Stage 3 Task 3): `ui::
     /// player_controller::queue_ids_snapshot` clones this out so the "Queue"
@@ -547,6 +586,99 @@ mod tests {
     fn test_default_repeat_is_off() {
         let q = Queue::new();
         assert_eq!(q.repeat(), Repeat::Off);
+    }
+
+    // Stage 3 Task 5: `append_tracks` ("Add to queue" context-menu action).
+
+    #[test]
+    fn append_tracks_to_empty_queue_populates_it_at_index_zero() {
+        let mut q = Queue::new();
+        q.append_tracks(&[10, 20]);
+        assert_eq!(q.len(), 2);
+        assert_eq!(q.current(), Some(10));
+        assert_eq!(q.ids_in_order(), vec![10, 20]);
+    }
+
+    #[test]
+    fn append_tracks_appends_to_end_of_linear_order_without_moving_current() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![1, 2, 3], 1);
+        assert_eq!(q.current(), Some(2));
+
+        q.append_tracks(&[4, 5]);
+
+        assert_eq!(q.current(), Some(2), "current track must be unaffected");
+        assert_eq!(q.ids_in_order(), vec![1, 2, 3, 4, 5]);
+        assert_eq!(q.len(), 5);
+    }
+
+    #[test]
+    fn append_tracks_appends_to_tail_of_shuffled_order() {
+        fastrand::seed(7);
+        let mut q = Queue::new();
+        q.set_tracks(vec![1, 2, 3], 0);
+        q.set_shuffle(true);
+        let before = q.ids_in_order();
+        let current_before = q.current();
+
+        q.append_tracks(&[100, 200]);
+
+        let after = q.ids_in_order();
+        assert_eq!(after.len(), 5);
+        // The first 3 entries (the pre-existing shuffled order) are
+        // untouched; the two new ids land at the tail, in append order —
+        // not woven into the shuffled prefix.
+        assert_eq!(&after[..3], &before[..]);
+        assert_eq!(&after[3..], &[100, 200]);
+        assert_eq!(
+            q.current(),
+            current_before,
+            "current track must be unaffected"
+        );
+        assert!(q.is_shuffled(), "shuffle state must be unaffected");
+    }
+
+    #[test]
+    fn append_tracks_empty_slice_is_a_no_op() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![1, 2], 1);
+        assert_eq!(q.current(), Some(2));
+
+        q.append_tracks(&[]);
+
+        assert_eq!(q.len(), 2);
+        assert_eq!(q.current(), Some(2));
+    }
+
+    #[test]
+    fn append_tracks_on_empty_queue_with_empty_slice_stays_empty() {
+        let mut q = Queue::new();
+        q.append_tracks(&[]);
+        assert!(q.is_empty());
+        assert_eq!(q.current(), None);
+    }
+
+    #[test]
+    fn append_tracks_after_exhaustion_does_not_resume_playback_state() {
+        // pos == None can also happen mid-life (queue exhausted after
+        // Repeat::Off ran out) — appending here must NOT resurrect `pos` to
+        // point at the newly appended tail, since `ids` is non-empty
+        // already; only the "was truly empty" case forces `pos = Some(0)`.
+        let mut q = Queue::new();
+        q.set_tracks(vec![1, 2], 0);
+        q.set_repeat(Repeat::Off);
+        q.advance_auto(); // -> 2
+        q.advance_auto(); // -> None (exhausted)
+        assert_eq!(q.current(), None);
+
+        q.append_tracks(&[3, 4]);
+
+        assert_eq!(
+            q.current(),
+            None,
+            "an exhausted (but non-empty) queue's position must stay exhausted"
+        );
+        assert_eq!(q.ids_in_order(), vec![1, 2, 3, 4]);
     }
 
     #[test]

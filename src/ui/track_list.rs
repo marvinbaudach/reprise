@@ -19,6 +19,28 @@
 //! would add boilerplate without behavior). `TrackListModel` (see
 //! `track_list_model.rs`) is the one place that constructs these boxes.
 //!
+//! ## Context menu + multi-select (Stage 3 Task 5)
+//!
+//! The `ColumnView`'s selection model is `gtk::MultiSelection`, not `gtk::
+//! NoSelection` (every earlier stage's choice, when nothing needed
+//! selection state at all) — the context menu acts on every selected row,
+//! not just the one under the pointer. The `Shared::selection` handle built
+//! alongside it is what every context-menu action reads its target
+//! positions from. The menu itself — the secondary-click `GestureClick`
+//! wiring, the `gio::Menu`/`PopoverMenu`, the `"tracklist"` `gio::
+//! SimpleAction` group, and the `REPRISE_SMOKE_MENU_ACTION` dev hook — lives
+//! in the sibling module `ui::track_list_context_menu` (split out the same
+//! way `player_controller.rs` split into `mpris_mirror.rs`/`playback_
+//! faults.rs`, Stage 3 Task 1), which reaches back into this module's
+//! `Shared`/`reload`/`show_toast` via `pub(super)`. This module still owns
+//! `Shared` itself and calls that sibling's `wire_context_menu_gesture` from
+//! each column's `connect_setup` and its `wire_context_menu_actions`/`arm_
+//! smoke_menu_action` from `TrackList::new`. The pure-ish *logic* the menu's
+//! actions invoke — mapping selected positions to track ids, and the
+//! playlist/queue mutations themselves — lives in `ui::track_actions`
+//! instead, so it's testable without a display; see that module's doc
+//! comment for the full position→id/remove-by-position design.
+//!
 //! ## Sorting: per-column `CustomSorter` as a click signal only
 //!
 //! `GtkColumnView` headers only become clickable/toggle-sortable once a
@@ -47,6 +69,7 @@ use crate::models::Track;
 use crate::queries;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
+use crate::ui::track_list_context_menu;
 use crate::ui::track_list_model::TrackListModel;
 use crate::view_source::ViewSource;
 
@@ -179,13 +202,36 @@ pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize)>;
 /// `window.rs` needs all three.
 type OnReload = Box<dyn Fn(&ViewSource, usize, &str)>;
 
-struct Shared {
-    model: TrackListModel,
+/// Context-menu "Play" action callback — see the `Shared::on_play_selected`
+/// doc comment.
+type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize)>;
+/// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
+/// selected` doc comment.
+type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
+
+/// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
+/// track_list_context_menu` — see that module's doc comment) rather than
+/// fully private: Stage 3 Task 5 splits the context-menu logic out into a
+/// sibling module exactly the way `player_controller.rs` split its MPRIS
+/// mirror and fault-tolerance logic into `mpris_mirror.rs`/`playback_
+/// faults.rs` (Stage 3 Task 1) — same reasoning, same visibility shape. Only
+/// the fields that module actually needs are marked `pub(super)`
+/// individually below; everything else stays private to this file.
+pub(super) struct Shared {
+    pub(super) model: TrackListModel,
+    /// The `ColumnView`'s selection model (Stage 3 Task 5) — every context-
+    /// menu action reads its target row positions from here (`selection()`/
+    /// `is_selected()`/`select_range()`), and `wire_context_menu_gesture`'s
+    /// GNOME-convention reselect-if-not-selected step writes to it. Kept as
+    /// its own field (not re-derived by downcasting `column_view.model()`
+    /// on every use) since `TrackList::new` already builds the concrete
+    /// `gtk::MultiSelection` directly.
+    pub(super) selection: gtk4::MultiSelection,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
     /// without reaching into the model's private state.
-    conn: Rc<RefCell<Connection>>,
+    pub(super) conn: Rc<RefCell<Connection>>,
     stack: gtk4::Stack,
     /// The single empty-state placeholder widget. Its title/description/icon
     /// are mutated in place by `apply_empty_state` rather than swapping in a
@@ -197,7 +243,7 @@ struct Shared {
     /// showing — defaults to `ViewSource::Library`. Set via `TrackList::
     /// set_source` (and the `REPRISE_SMOKE_SOURCE` hook); read by `reload`
     /// and `queue_ids_for_activation`.
-    source: RefCell<ViewSource>,
+    pub(super) source: RefCell<ViewSource>,
     /// Supplies the current queue's track ids, in play order, when `source`
     /// is `ViewSource::Queue` — see `queries::query_track_window`'s doc
     /// comment for why that source needs an explicit id list. Wired once at
@@ -234,6 +280,35 @@ struct Shared {
     /// not a strong reference, so `TrackList` can never keep the window
     /// alive past its natural lifetime.
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    /// The main window, injected post-construction via `TrackList::set_
+    /// window` — same seam shape as `toast_overlay` above. Needed as the
+    /// parent for the context menu's "New playlist…" `AdwAlertDialog`
+    /// (`show_new_playlist_dialog` below — mirrors `ui::sidebar`'s own
+    /// dialog of the same shape). `WeakRef`, not a strong reference, for the
+    /// same reason as `toast_overlay`.
+    pub(super) window: glib::WeakRef<adw::ApplicationWindow>,
+    /// Context-menu "Play" action callback (Stage 3 Task 5), injected via
+    /// `TrackList::set_on_play_selected` — wraps `PlayerController::
+    /// play_from_view` without this module depending on that type directly
+    /// (same decoupling-via-closure seam as `on_activate`/`queue_ids_
+    /// provider`). `RefCell<Option<Rc<dyn Fn>>>`, not a plain field set at
+    /// construction, since the player controller is built by `window.rs`
+    /// independently of `TrackList` and wired in afterwards.
+    pub(super) on_play_selected: RefCell<Option<OnPlaySelected>>,
+    /// Context-menu "Add to queue" action callback, injected via
+    /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
+    /// append_to_queue`. Same seam shape as `on_play_selected`.
+    pub(super) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    /// Invoked after any context-menu action that mutates a playlist's
+    /// membership (add to an existing playlist, add to a brand new one, or
+    /// remove) — injected via `TrackList::set_on_playlist_mutated`, wired by
+    /// `window.rs` to `Sidebar::refresh` (a new trigger alongside the three
+    /// already listed in that method's doc comment: scan completion,
+    /// playlist CRUD from the sidebar itself, and missing-marking). Sidebar
+    /// track counts must stay in sync with playlist changes made from this
+    /// menu, exactly as they already do for changes made from the sidebar's
+    /// own "New playlist" dialog.
+    pub(super) on_playlist_mutated: RefCell<Option<Rc<dyn Fn()>>>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -257,7 +332,11 @@ impl TrackList {
         queue_ids_provider: impl Fn() -> Vec<i64> + 'static,
     ) -> Self {
         let model = TrackListModel::new(conn.clone());
-        let selection = gtk4::NoSelection::new(Some(model.clone()));
+        // `gtk::MultiSelection`, not `gtk::NoSelection` (Stage 3 Task 5):
+        // the context menu acts on every selected row, not just the one
+        // under the pointer — see the module doc's `## Context menu +
+        // multi-select` section.
+        let selection = gtk4::MultiSelection::new(Some(model.clone()));
 
         let column_view = gtk4::ColumnView::builder()
             .model(&selection)
@@ -265,46 +344,6 @@ impl TrackList {
             .show_column_separators(true)
             .build();
 
-        append_column(
-            &column_view,
-            "title",
-            strings::COLUMN_TITLE,
-            0.0,
-            false,
-            |t| t.title.clone(),
-        );
-        let artist_column = append_column(
-            &column_view,
-            "artist",
-            strings::COLUMN_ARTIST,
-            0.0,
-            false,
-            |t| t.artist.clone(),
-        );
-        append_column(
-            &column_view,
-            "album",
-            strings::COLUMN_ALBUM,
-            0.0,
-            false,
-            |t| t.album.clone(),
-        );
-        append_column(
-            &column_view,
-            "year",
-            strings::COLUMN_YEAR,
-            0.0,
-            false,
-            |t| t.year.map(|y| y.to_string()).unwrap_or_default(),
-        );
-        append_column(
-            &column_view,
-            "duration_ms",
-            strings::COLUMN_LENGTH,
-            1.0,
-            true,
-            |t| format_duration(t.duration_ms),
-        );
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
             .vexpand(true)
@@ -318,8 +357,15 @@ impl TrackList {
         stack.add_named(&scrolled, Some(STACK_PAGE_LIST));
         stack.set_visible_child_name(STACK_PAGE_EMPTY);
 
+        // Built here, before any column is appended — unlike every stage
+        // before Task 5, which built columns first: each column's `connect_
+        // setup` now also wires its cell's context-menu gesture, which needs
+        // `&shared` (see `wire_context_menu_gesture`). Nothing else in
+        // `Shared` depends on the columns existing first, so this reorder
+        // has no other consequence.
         let shared = Rc::new(Shared {
             model,
+            selection: selection.clone(),
             conn,
             stack,
             empty_page,
@@ -330,7 +376,57 @@ impl TrackList {
             on_activate,
             on_reload: Box::new(on_reload),
             toast_overlay: glib::WeakRef::new(),
+            window: glib::WeakRef::new(),
+            on_play_selected: RefCell::new(None),
+            on_queue_selected: RefCell::new(None),
+            on_playlist_mutated: RefCell::new(None),
         });
+
+        append_column(
+            &column_view,
+            &shared,
+            "title",
+            strings::COLUMN_TITLE,
+            0.0,
+            false,
+            |t| t.title.clone(),
+        );
+        let artist_column = append_column(
+            &column_view,
+            &shared,
+            "artist",
+            strings::COLUMN_ARTIST,
+            0.0,
+            false,
+            |t| t.artist.clone(),
+        );
+        append_column(
+            &column_view,
+            &shared,
+            "album",
+            strings::COLUMN_ALBUM,
+            0.0,
+            false,
+            |t| t.album.clone(),
+        );
+        append_column(
+            &column_view,
+            &shared,
+            "year",
+            strings::COLUMN_YEAR,
+            0.0,
+            false,
+            |t| t.year.map(|y| y.to_string()).unwrap_or_default(),
+        );
+        append_column(
+            &column_view,
+            &shared,
+            "duration_ms",
+            strings::COLUMN_LENGTH,
+            1.0,
+            true,
+            |t| format_duration(t.duration_ms),
+        );
 
         // Built after `shared` exists (unlike the other columns above): its
         // click handler needs `shared.conn`/`shared.model` to persist a
@@ -354,11 +450,13 @@ impl TrackList {
         column_view.sort_by_column(Some(&artist_column), gtk4::SortType::Ascending);
 
         wire_activate(&column_view, &shared);
+        track_list_context_menu::wire_context_menu_actions(&column_view, &shared);
 
         reload(&shared);
         arm_smoke_activate(&shared);
         arm_smoke_filter(&shared);
         arm_smoke_source(&shared);
+        track_list_context_menu::arm_smoke_menu_action(&shared);
 
         Self { shared }
     }
@@ -398,13 +496,42 @@ impl TrackList {
     pub fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
         self.shared.toast_overlay.set(Some(overlay));
     }
+
+    /// Injects the main window, once it exists — see the `Shared::window`
+    /// doc comment for why this can't be a constructor parameter and what
+    /// it's used for (the context menu's "New playlist…" dialog parent).
+    pub fn set_window(&self, window: &adw::ApplicationWindow) {
+        self.shared.window.set(Some(window));
+    }
+
+    /// Injects the context menu's "Play" action callback (Stage 3 Task 5) —
+    /// see the `Shared::on_play_selected` doc comment. `window.rs` wires
+    /// this to `PlayerController::play_from_view` once the controller
+    /// exists.
+    pub fn set_on_play_selected(&self, callback: impl Fn(Vec<i64>, usize) + 'static) {
+        *self.shared.on_play_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Injects the context menu's "Add to queue" action callback — see the
+    /// `Shared::on_queue_selected` doc comment. `window.rs` wires this to
+    /// `PlayerController::append_to_queue`.
+    pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
+        *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Injects the callback invoked after any context-menu action that
+    /// mutates a playlist's membership — see the `Shared::on_playlist_
+    /// mutated` doc comment. `window.rs` wires this to `Sidebar::refresh`.
+    pub fn set_on_playlist_mutated(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_playlist_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
 }
 
 /// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
 /// wired or it's gone — mirrors `player_controller.rs`'s `show_toast` (same
 /// seam, same degrade behavior), not shared code: the two owning types are
 /// otherwise unrelated and this is a two-line `WeakRef::upgrade` match.
-fn show_toast(shared: &Shared, text: &str) {
+pub(super) fn show_toast(shared: &Shared, text: &str) {
     match shared.toast_overlay.upgrade() {
         Some(overlay) => overlay.add_toast(adw::Toast::new(text)),
         None => {
@@ -434,9 +561,13 @@ fn build_status_page() -> adw::StatusPage {
 /// label with the "numeric" style class (tabular figures, GNOME convention
 /// for right-aligned numeric columns such as file sizes/durations). Returns
 /// the built column so `TrackList::new` can set the initial sort indicator
-/// on the artist column.
+/// on the artist column. `shared`/`column_view` are threaded through to
+/// `wire_context_menu_gesture` (Stage 3 Task 5) so a secondary click on this
+/// column's cells opens the row context menu — see that function's doc
+/// comment.
 fn append_column(
     column_view: &gtk4::ColumnView,
+    shared: &Rc<Shared>,
     sort_id: &'static str,
     title: &str,
     xalign: f32,
@@ -445,6 +576,8 @@ fn append_column(
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
 
+    let shared = shared.clone();
+    let column_view_for_setup = column_view.clone();
     factory.connect_setup(move |_, obj| {
         let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
             tracing::warn!("track list column setup: object is not a ListItem");
@@ -460,6 +593,12 @@ fn append_column(
         if right_align {
             label.add_css_class("numeric");
         }
+        track_list_context_menu::wire_context_menu_gesture(
+            &label,
+            item,
+            &shared,
+            &column_view_for_setup,
+        );
         item.set_child(Some(&label));
     });
 
@@ -513,14 +652,29 @@ fn append_rating_column(
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
 
-    factory.connect_setup(move |_, obj| {
-        let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
-            tracing::warn!("rating column setup: object is not a ListItem");
-            return;
-        };
-        let rating_widget = RatingWidget::new();
-        item.set_child(Some(&rating_widget));
-    });
+    {
+        let shared = shared.clone();
+        let column_view = column_view.clone();
+        factory.connect_setup(move |_, obj| {
+            let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+                tracing::warn!("rating column setup: object is not a ListItem");
+                return;
+            };
+            let rating_widget = RatingWidget::new();
+            // Secondary-click (button 3) context menu (Stage 3 Task 5) —
+            // the rating column's own stars only ever respond to primary-
+            // button clicks (`gtk::Button`'s default), so this can never
+            // steal a rating click. See `wire_context_menu_gesture`'s doc
+            // comment.
+            track_list_context_menu::wire_context_menu_gesture(
+                &rating_widget,
+                item,
+                &shared,
+                &column_view,
+            );
+            item.set_child(Some(&rating_widget));
+        });
+    }
 
     {
         let shared = shared.clone();
@@ -997,7 +1151,7 @@ fn arm_smoke_source(shared: &Rc<Shared>) {
 /// `TrackListModel::set_query`. Switches the stack to whichever page
 /// `empty_state_for` selects for the resulting row count, filter state, and
 /// source.
-fn reload(shared: &Rc<Shared>) {
+pub(super) fn reload(shared: &Rc<Shared>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
