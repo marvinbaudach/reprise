@@ -328,6 +328,56 @@ Design-Tokens (Farben, Typo, Abstände, Radien, Blur-Stärken) zentral in
 Tabellenzeile. UI-Sprache Deutsch; alle Strings zentral in einem
 Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
 
+## Sicherheit
+
+Reprise verarbeitet nicht vertrauenswürdige Eingaben (fremde Audiodateien,
+Tags, XML) und soll als Flatpak in die Welt — Sicherheit ist Teil des
+Designs, nicht Nachrüstung:
+
+- **Tauri-Härtung:** strikte CSP (kein Remote-Content, keine externen
+  Skripte), Capabilities auf das Minimum beschränkt (nur tatsächlich
+  genutzte Plugins/Befehle), kein Remote-IPC-Zugriff.
+- **IPC-Eingaben validieren:** alle Command-Parameter werden backendseitig
+  geprüft — Sortierfelder nur per Whitelist, SQL ausschließlich
+  parametrisiert (nie String-Konkatenation), Limits gedeckelt.
+- **Pfad-Disziplin:** Der Player öffnet nur Dateien, die aus der eigenen
+  Datenbank stammen; gescannt wird nur, was der Nutzer explizit als
+  Bibliotheksordner gewählt hat. Keine rohen Frontend-Pfade ins
+  Dateisystem ohne Abgleich gegen die DB.
+- **Unsichere Parser isoliert:** Tag-Parsing (lofty) und XML-Import
+  (rhythmdb) sind memory-safe Rust; Parserfehler werden als Importfehler
+  behandelt, nie als Absturz. Beim XML-Import keine externen Entities.
+- **Flatpak-Sandbox:** minimale Berechtigungen (`xdg-music`, weitere
+  Ordner nur via XDG-Portal), kein Netzwerkzugriff im MVP — erst Module
+  wie Scrobbling/Radar fordern ihn an und machen das im Modul-UI
+  transparent.
+- **Keine Telemetrie.** Reprise sendet nichts nach Hause.
+- **Dependency-Hygiene:** `cargo audit` und `npm audit` im Release-Prozess
+  (Etappe 6), Abhängigkeits-Updates vor jedem Release.
+
+## GNOME-Integration (Dock/Taskleiste)
+
+Reprise soll sich wie eine native GNOME-App anfühlen:
+
+- **Desktop-Eintrag + Icon:** `.desktop`-Datei und App-Icon (hicolor, inkl.
+  symbolischem Icon); die Wayland-App-ID entspricht exakt dem
+  Desktop-Dateinamen (`org.reprise.Reprise`), damit GNOME das Fenster im
+  Dock korrekt gruppiert, das richtige Icon zeigt und „Zu Favoriten
+  hinzufügen" funktioniert.
+- **Mediensteuerung in der Shell:** über MPRIS erscheint Reprise im
+  GNOME-Schnellmenü und auf dem Sperrbildschirm mit Cover, Titel und
+  Transport-Tasten; Medientasten wirken global. GNOME hat bewusst keine
+  Tray-Icons — MPRIS *ist* dort die Taskleisten-Integration für Player;
+  die optionale Hintergrund-Wiedergabe stützt sich darauf.
+- **Benachrichtigungen** bei Titelwechsel über XDG-Notification-Portal
+  (bereits im MVP).
+- **Portale statt Direktzugriff:** Datei-/Ordnerdialoge über
+  XDG-Desktop-Portale — funktioniert sauber in der Flatpak-Sandbox.
+- **Farbschema „System folgen"** liest die GNOME-Voreinstellung
+  (dark/light) über das Settings-Portal.
+- **Dateimanager:** MIME-Zuordnungen der Audioformate in der Desktop-Datei
+  („Öffnen mit Reprise", bereits im MVP).
+
 ## Fehlerbehandlung
 
 - Scanner überspringt defekte/unlesbare Dateien und protokolliert sie in
