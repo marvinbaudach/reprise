@@ -116,6 +116,29 @@ const SMOKE_FILTER_ENV_VAR: &str = "REPRISE_SMOKE_FILTER";
 ///  xvfb-run -a cargo run`.
 const SMOKE_SOURCE_ENV_VAR: &str = "REPRISE_SMOKE_SOURCE";
 
+/// Dev/verification hook (permanent, like the other `REPRISE_SMOKE_*` hooks
+/// above; added for the Task 5 Fix Round 1 "remove from playlist targets the
+/// wrong row" data-loss fix): when set to `"title"` or `"artist"`,
+/// programmatically calls `GtkColumnView::sort_by_column` on that column —
+/// the exact same call a real column-header click triggers (see the initial
+/// `column_view.sort_by_column(Some(&artist_column), …)` call in `TrackList::
+/// new`) — so a headless E2E run can put the track list into a sort other
+/// than a playlist source's own forced `"playlist_order"` default, and then
+/// exercise `REPRISE_SMOKE_MENU_ACTION=remove-from-playlist` (`ui::track_
+/// list_context_menu`) against the resulting divergent view: this is the
+/// only way to drive "remove from a *sorted* playlist view" headlessly,
+/// since there is no supported way to synthesize a real pointer click on a
+/// column header. Registered to run *after* `REPRISE_SMOKE_SOURCE` (see the
+/// arming order in `TrackList::new`), so a `playlist:<name>` switch's own
+/// forced default sort has already applied before this overrides it —
+/// matching what a real user does (open a playlist, then click a header).
+///
+/// Usage: `REPRISE_SCAN_DIR=… REPRISE_SMOKE_SOURCE=playlist:P
+///  REPRISE_SMOKE_SORT_COLUMN=title
+///  REPRISE_SMOKE_MENU_ACTION=remove-from-playlist REPRISE_SMOKE_QUIT=1
+///  xvfb-run -a cargo run`.
+const SMOKE_SORT_COLUMN_ENV_VAR: &str = "REPRISE_SMOKE_SORT_COLUMN";
+
 /// Icon shown on the empty-library placeholder (nothing has been scanned
 /// in yet).
 const ICON_EMPTY_LIBRARY: &str = "folder-music-symbolic";
@@ -382,7 +405,7 @@ impl TrackList {
             on_playlist_mutated: RefCell::new(None),
         });
 
-        append_column(
+        let title_column = append_column(
             &column_view,
             &shared,
             "title",
@@ -456,6 +479,7 @@ impl TrackList {
         arm_smoke_activate(&shared);
         arm_smoke_filter(&shared);
         arm_smoke_source(&shared);
+        arm_smoke_sort_column(&column_view, &title_column, &artist_column);
         track_list_context_menu::arm_smoke_menu_action(&shared);
 
         Self { shared }
@@ -1144,6 +1168,45 @@ fn arm_smoke_source(shared: &Rc<Shared>) {
         let label = shared.source.borrow().label();
         let rows = shared.model.n_items();
         tracing::info!(source = %label, rows, "view source set to {label} ({rows} rows)");
+    });
+}
+
+/// Arms the `REPRISE_SMOKE_SORT_COLUMN` hook (see `SMOKE_SORT_COLUMN_ENV_
+/// VAR`): one idle callback that calls `GtkColumnView::sort_by_column` on
+/// the matching column, exactly like a real column-header click. Registered
+/// after `arm_smoke_source` (see the arming order in `TrackList::new`) so a
+/// prior `REPRISE_SMOKE_SOURCE=playlist:<name>` switch's own forced default
+/// sort has already landed before this overrides it. Only `"title"`/
+/// `"artist"` are recognized today — the two columns `TrackList::new` already
+/// keeps a handle to (`artist_column` for the initial-sort call above); an
+/// unrecognized value is logged and ignored rather than silently doing
+/// nothing.
+fn arm_smoke_sort_column(
+    column_view: &gtk4::ColumnView,
+    title_column: &gtk4::ColumnViewColumn,
+    artist_column: &gtk4::ColumnViewColumn,
+) {
+    let Ok(field) = std::env::var(SMOKE_SORT_COLUMN_ENV_VAR) else {
+        return;
+    };
+    let column = match field.as_str() {
+        "title" => title_column.clone(),
+        "artist" => artist_column.clone(),
+        _ => {
+            tracing::warn!(
+                field,
+                "{SMOKE_SORT_COLUMN_ENV_VAR} set to an unrecognized column id; ignoring"
+            );
+            return;
+        }
+    };
+    let column_view = column_view.clone();
+    glib::idle_add_local_once(move || {
+        tracing::info!(
+            field,
+            "{SMOKE_SORT_COLUMN_ENV_VAR} set: applying programmatic column sort"
+        );
+        column_view.sort_by_column(Some(&column), gtk4::SortType::Ascending);
     });
 }
 

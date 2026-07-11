@@ -209,3 +209,12 @@ pub fn playlist_add_tracks_failed_toast(name: &str) -> String {
 pub fn playlist_remove_tracks_failed_toast() -> String {
     "Could not remove tracks from playlist".to_string()
 }
+
+/// Toast shown when `ui::track_actions::remove_selected_from_playlist`
+/// returns `RemoveFromPlaylistError::Unresolvable` — the safety backstop
+/// for when a selected row's true playlist position couldn't be resolved.
+/// Nothing was removed; this tells the user to reload rather than silently
+/// reporting success or failure with no explanation.
+pub fn playlist_remove_tracks_unresolvable_toast() -> String {
+    "Could not remove — reload the playlist and try again".to_string()
+}

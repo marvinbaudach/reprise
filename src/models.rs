@@ -24,4 +24,15 @@ pub struct Track {
     pub file_size: i64,
     pub device: Option<i64>,
     pub inode: Option<i64>,
+    /// The row's true `playlist_tracks.position` — `Some(pos)` only when this
+    /// `Track` came from `queries::query_track_window`'s `ViewSource::
+    /// Playlist` branch (`row_to_playlist_track`), `None` for every other
+    /// source. This is the durable fix for Stage 3 Task 5's "remove from
+    /// playlist deletes the wrong row" bug: a playlist view's on-screen row
+    /// order diverges from `pt.position` the moment a column-header sort or
+    /// a live search filter is active, so `ui::track_actions::
+    /// remove_selected_from_playlist` must resolve each selected *view* row
+    /// to its true `pt.position` via this field rather than assuming the two
+    /// coincide — see that function's doc comment.
+    pub playlist_position: Option<i64>,
 }
