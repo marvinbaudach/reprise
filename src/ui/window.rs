@@ -1,8 +1,22 @@
-//! Builds the main application window: a libadwaita `ToolbarView` with a
-//! header bar (search entry + scan button) over the track list, a status
-//! line + the player bar as stacked bottom bars, and an `adw::ToastOverlay`
-//! wrapping everything so scan errors can surface a toast (see
-//! `wire_scan_button`).
+//! Builds the main application window: an `adw::NavigationSplitView` (Stage
+//! 3 Task 4) whose sidebar page holds `ui::sidebar::Sidebar` and whose
+//! content page holds the pre-existing libadwaita `ToolbarView` — a header
+//! bar (search entry + scan button) over the track list, a status line + the
+//! player bar as stacked bottom bars, and an `adw::ToastOverlay` wrapping
+//! everything so scan errors can surface a toast (see `wire_scan_button`).
+//!
+//! ## Sidebar toggle
+//!
+//! `AdwNavigationSplitView` collapses into a push/pop navigation stack at
+//! narrow widths on its own (Adwaita default behavior — this module doesn't
+//! fight it: `adw::HeaderBar` embedded in a page inside that stack shows its
+//! own back button automatically). The headerbar also gets an explicit
+//! `sidebar-show-symbolic` toggle button, visible only while collapsed, so
+//! the sidebar can be brought back without relying solely on that automatic
+//! back button. `NavigationSplitView` has no `show-sidebar` property (that's
+//! `AdwOverlaySplitView`'s API) — the closest analog is `show-content`
+//! (`set_show_content(false)` returns to the sidebar page), which is what
+//! the toggle drives (see `wire_sidebar_toggle`).
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -19,6 +33,7 @@ use crate::library;
 use crate::library::scanner::{ScanError, ScanReport};
 
 use super::player_controller::PlayerController;
+use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::strings;
 use super::track_list::{OnActivate, TrackList};
@@ -70,7 +85,12 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
         .height_request(MIN_HEIGHT)
         .build();
 
-    let window_title = adw::WindowTitle::new(strings::APP_NAME, "");
+    // Headerbar title follows the currently selected `ViewSource` (Stage 3
+    // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and
+    // `Sidebar`'s own default initial source, so this is set directly here
+    // rather than through a round trip via `Sidebar::set_on_select` (not
+    // wired until after `TrackList` exists — see that method's doc comment).
+    let window_title = adw::WindowTitle::new(strings::SIDEBAR_MUSIC, "");
 
     let search_entry = gtk4::SearchEntry::builder()
         .placeholder_text(strings::SEARCH_PLACEHOLDER)
@@ -78,7 +98,17 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
 
     let scan_button = gtk4::Button::with_label(strings::SCAN_FOLDER);
 
+    // Visible only while the split view is collapsed (see `wire_sidebar_
+    // toggle`) — at full width both panes already show side by side, so
+    // there is nothing to toggle.
+    let sidebar_toggle = gtk4::ToggleButton::builder()
+        .icon_name("sidebar-show-symbolic")
+        .tooltip_text(strings::SIDEBAR_TOGGLE)
+        .visible(false)
+        .build();
+
     let header = adw::HeaderBar::new();
+    header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
     header.pack_start(&search_entry);
     header.pack_end(&scan_button);
@@ -97,6 +127,19 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
             None
         }
     };
+
+    // Built right after `player` (needed for the Queue row's counter) and
+    // before `TrackList` (whose `on_reload` hook calls `sidebar.refresh()` —
+    // see below), so both can hold a plain `Rc<Sidebar>` clone rather than
+    // needing the `Weak`-then-upgrade dance a construction-order cycle would
+    // otherwise force.
+    let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
+        let player = player.clone();
+        move || match &player {
+            Some(controller) => controller.queue_ids_snapshot().len(),
+            None => 0,
+        }
+    }));
 
     let on_activate: OnActivate = {
         let player = player.clone();
@@ -130,6 +173,13 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     let track_list = {
         let status_bar = status_bar.clone();
         let conn_for_status = conn.clone();
+        // Stage 3 Task 4: the same `on_reload` seam `status_bar` already used
+        // now also refreshes the sidebar's counts/badges — covers the scan-
+        // completion reload the task calls for, and every other reload
+        // (search, sort, source switch) besides; see `Sidebar::refresh`'s doc
+        // comment for why re-running it that often is safe (it preserves
+        // whatever's currently selected rather than resetting it).
+        let sidebar_for_reload = sidebar.clone();
         Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
@@ -139,6 +189,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
                 } else {
                     status_bar.refresh_for_source_count(count as i64);
                 }
+                sidebar_for_reload.refresh();
             },
             queue_ids_provider,
         ))
@@ -181,8 +232,39 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     // reason as the player's toast overlay above — `track_list` is built
     // before `toast_overlay` exists.
     track_list.set_toast_overlay(&toast_overlay);
+    // Same reason again: the sidebar is built before `toast_overlay` exists.
+    sidebar.set_toast_overlay(&toast_overlay);
 
-    window.set_content(Some(&toast_overlay));
+    // Stage 3 Task 4: sidebar selection drives the track list's source and
+    // the headerbar title. Wired here (after `track_list` and `window_title`
+    // both exist) rather than at `Sidebar::new` time — see `Sidebar::
+    // set_on_select`'s doc comment for why the sidebar's own initial
+    // selection doesn't need to round-trip through this callback.
+    {
+        let track_list = track_list.clone();
+        let window_title = window_title.clone();
+        sidebar.set_on_select(move |source, title| {
+            track_list.set_source(source);
+            window_title.set_title(&title);
+        });
+    }
+
+    let sidebar_page = adw::NavigationPage::builder()
+        .title(strings::APP_NAME)
+        .child(sidebar.widget())
+        .build();
+    let content_page = adw::NavigationPage::builder()
+        .title(strings::APP_NAME)
+        .child(&toast_overlay)
+        .build();
+
+    let split_view = adw::NavigationSplitView::builder()
+        .sidebar(&sidebar_page)
+        .content(&content_page)
+        .build();
+    wire_sidebar_toggle(&sidebar_toggle, &split_view);
+
+    window.set_content(Some(&split_view));
 
     wire_search(&search_entry, track_list.clone());
     wire_scan_button(&scan_button, &window, &toast_overlay, db_path, track_list);
@@ -207,6 +289,32 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
 
     tracing::info!("main window built");
     window.present();
+}
+
+/// Wires the headerbar's `sidebar-show-symbolic` toggle to `split_view` (see
+/// the module doc's `## Sidebar toggle` section): visible only while
+/// collapsed, and its `clicked` state drives `set_show_content` — the
+/// closest `AdwNavigationSplitView` analog to "show the sidebar pane" (it
+/// has no `show-sidebar` property, unlike `AdwOverlaySplitView`). Every
+/// collapse-state flip also resets the toggle to inactive/content-showing,
+/// so it starts predictable rather than inheriting whatever a previous wide-
+/// layout selection happened to leave.
+fn wire_sidebar_toggle(sidebar_toggle: &gtk4::ToggleButton, split_view: &adw::NavigationSplitView) {
+    sidebar_toggle.set_visible(split_view.is_collapsed());
+
+    {
+        let split_view = split_view.clone();
+        sidebar_toggle.connect_toggled(move |button| {
+            split_view.set_show_content(!button.is_active());
+        });
+    }
+    {
+        let sidebar_toggle = sidebar_toggle.clone();
+        split_view.connect_collapsed_notify(move |split_view| {
+            sidebar_toggle.set_visible(split_view.is_collapsed());
+            sidebar_toggle.set_active(false);
+        });
+    }
 }
 
 /// Wires the header's `SearchEntry` to `track_list`: every `search-changed`

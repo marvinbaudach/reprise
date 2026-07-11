@@ -114,3 +114,34 @@ pub const PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE: &str =
 pub fn rating_save_failed_toast(title: &str) -> String {
     format!("Could not save rating for {title}")
 }
+
+// Sidebar (src/ui/sidebar.rs, Stage 3 Task 4): navigation section headers,
+// row labels, and the "New playlist" dialog. Section headers are given in
+// the design mockup's all-caps form directly (not upper-cased at render
+// time) since that's the exact copy the mockup shows, not a text-transform.
+
+pub const SIDEBAR_SECTION_LIBRARY: &str = "LIBRARY";
+pub const SIDEBAR_SECTION_PLAYLISTS: &str = "PLAYLISTS";
+pub const SIDEBAR_SECTION_SMART: &str = "SMART";
+
+pub const SIDEBAR_MUSIC: &str = "Music";
+pub const SIDEBAR_QUEUE: &str = "Queue";
+pub const SIDEBAR_NEW_PLAYLIST: &str = "New playlist";
+pub const SIDEBAR_IMPORT_ERRORS: &str = "Import errors";
+pub const SIDEBAR_MISSING_FILES: &str = "Missing files";
+
+/// Tooltip/accessible name for the headerbar's sidebar-visibility toggle
+/// (only shown once the `AdwNavigationSplitView` collapses at narrow
+/// widths).
+pub const SIDEBAR_TOGGLE: &str = "Toggle sidebar";
+
+pub const NEW_PLAYLIST_DIALOG_HEADING: &str = "New playlist";
+pub const NEW_PLAYLIST_ENTRY_PLACEHOLDER: &str = "Playlist name";
+pub const CANCEL: &str = "Cancel";
+pub const CREATE: &str = "Create";
+
+/// Toast shown when `library::playlists::create` fails while handling the
+/// sidebar's "New playlist" dialog.
+pub fn playlist_create_failed_toast(name: &str) -> String {
+    format!("Could not create playlist \"{name}\"")
+}
