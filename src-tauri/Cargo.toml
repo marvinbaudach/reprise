@@ -26,4 +26,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror = "2"
+walkdir = "2"
+lofty = "0.22"
+
+[dev-dependencies]
+tempfile = "3"
 
