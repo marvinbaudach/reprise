@@ -261,8 +261,10 @@ sind als Einstellungen wählbar. Drei Zonen im Standard-Layout:
    „Alle Felder durchsuchen" oben. Einblendbare **Browse-Leiste**
    (Rhythmbox' „Browse"): drei Filterspalten Genre / Interpret / Album
    über der Titelliste, Auswahl filtert kaskadierend und kombiniert sich
-   mit der Suche. Fußzeile mit Gesamtstatistik
-   („1.704 Titel, 4 Tage, 6 Std. 28 Min., 43,4 GB").
+   mit der Suche. **Statusleiste** unten mit den Zahlen der *aktuellen
+   Ansicht* — Bibliothek, Playlist oder Suchergebnis: Titelanzahl,
+   Gesamtdauer, Speichergröße („1.704 Titel, 4 Tage, 6 Std. 28 Min.,
+   43,4 GB"; bei aktivem Filter: „42 von 1.704 Titeln").
    Laufender Titel ist farblich hervorgehoben (Akzentzeile).
 3. **Playerleiste unten** (Spotify-Stil) — Cover + Titel/Interpret links,
    Transport (Zurück/Play/Weiter) + Seekbar mit Zeitanzeige mittig,
