@@ -1,7 +1,27 @@
-# Tauri + React + Typescript
+# Reprise
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+A native GTK4/libadwaita music player for GNOME — a spiritual successor to
+Rhythmbox.
 
-## Recommended IDE Setup
+Reprise is in early development (stage 1: the audible core — playback,
+library scanning, and the SQLite-backed track database). There is no UI yet;
+`cargo run` currently just opens and migrates the database.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Requirements
+
+- Rust (stable, edition 2021)
+- GTK 4.22+ and libadwaita 1.9+ development packages
+- GStreamer, including the plugins needed for your audio formats (e.g.
+  `gst-plugins-base`, `gst-plugins-good`)
+
+## Build & run
+
+```sh
+cargo build
+cargo run
+cargo test
+```
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).

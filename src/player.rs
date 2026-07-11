@@ -48,6 +48,7 @@ const POSITION_TICK_INTERVAL: Duration = Duration::from_millis(500);
 
 pub struct Player {
     playbin: gst::Element,
+    on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync + 'static>,
     // Must be held: dropping the guard removes the bus watch again.
     _bus_watch: gst::bus::BusWatchGuard,
 }
@@ -116,6 +117,7 @@ impl Player {
 
         Ok(Self {
             playbin,
+            on_event,
             _bus_watch: bus_watch,
         })
     }
@@ -129,6 +131,7 @@ impl Player {
         self.playbin
             .set_state(gst::State::Playing)
             .map_err(|e| PlayerError::Gst(e.to_string()))?;
+        (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Playing));
         Ok(())
     }
 
@@ -140,6 +143,7 @@ impl Player {
         self.playbin
             .set_state(next.0)
             .map_err(|e| PlayerError::Gst(e.to_string()))?;
+        (self.on_event)(PlayerEvent::StateChanged(next.1));
         Ok(next.1)
     }
 
@@ -159,8 +163,9 @@ impl Player {
     pub fn stop(&self) -> Result<(), PlayerError> {
         self.playbin
             .set_state(gst::State::Null)
-            .map(|_| ())
-            .map_err(|e| PlayerError::Gst(e.to_string()))
+            .map_err(|e| PlayerError::Gst(e.to_string()))?;
+        (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Stopped));
+        Ok(())
     }
 }
 
@@ -174,5 +179,45 @@ mod tests {
         assert!(uri.starts_with("file:///home/marvin/Music/"));
         assert!(uri.contains("J%C3%B3ga%20(Live).flac"));
         assert!(path_to_uri("relativ/pfad.mp3").is_err());
+    }
+
+    /// End-to-end proof that the callback plumbing actually reaches the UI
+    /// layer: `play()` must emit `StateChanged(Playing)` and `stop()` must
+    /// emit `StateChanged(Stopped)`. Runs headless via `REPRISE_AUDIO_SINK`
+    /// (fakesink), which GStreamer supports without a real audio device.
+    /// This is the only test in the crate that touches process environment,
+    /// so there is no cross-test race to guard against.
+    #[test]
+    fn play_and_stop_emit_state_changed_events() {
+        std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+
+        let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
+        let player = Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap();
+
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+        player.play(path).unwrap();
+
+        let playing_timeout = Duration::from_secs(5);
+        let event = rx
+            .recv_timeout(playing_timeout)
+            .expect("expected a StateChanged(Playing) event within timeout");
+        assert!(matches!(
+            event,
+            PlayerEvent::StateChanged(PlaybackState::Playing)
+        ));
+
+        player.stop().unwrap();
+        let event = rx
+            .recv_timeout(playing_timeout)
+            .expect("expected a StateChanged(Stopped) event within timeout");
+        assert!(matches!(
+            event,
+            PlayerEvent::StateChanged(PlaybackState::Stopped)
+        ));
+
+        std::env::remove_var(AUDIO_SINK_ENV_VAR);
     }
 }
