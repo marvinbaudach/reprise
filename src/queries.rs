@@ -91,7 +91,7 @@ pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> 
     format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing \
+         file_mtime, missing, file_size, device, inode \
          FROM tracks WHERE missing = 0{filter_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
     )
@@ -131,6 +131,9 @@ fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         added_at: r.get(14)?,
         file_mtime: r.get(15)?,
         missing: r.get::<_, i64>(16)? != 0,
+        file_size: r.get(17)?,
+        device: r.get(18)?,
+        inode: r.get(19)?,
     })
 }
 
