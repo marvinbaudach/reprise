@@ -55,6 +55,9 @@ Nachfolger:
 - Layout-Einstellungen: Position der Playerleiste (unten / oben in der
   Headerbar / schwebende Insel — die Varianten 2a, 1a, 1c aus dem PDF),
   Farbschema (dunkel / hell), sichtbare Spalten und Spaltenbreiten
+- Sortiereinstellungen: Sortierung (Spalte + Richtung) wird pro Ansicht
+  gespeichert; sinnvolle Sekundär-Sortierung (Album → Track-Nr.,
+  Interpret → Album → Track-Nr.)
 - 10-Band-Equalizer mit Presets (GStreamer `equalizer-10bands`),
   ein-/ausschaltbar, Einstellungen werden gespeichert
 - ReplayGain-Lautstärkeangleichung (GStreamer `rgvolume`): liest
@@ -241,23 +244,29 @@ läuft auf Wayland ohne Compositor-Abhängigkeit.
 
 ### Einstellungen
 
-Ein Einstellungs-Dialog (Zahnrad in der Headerbar) mit:
+Ein **modernes Einstellungsmenü** — keine schlichte Dialog-Box, sondern
+eine eigene Ansicht im 2a-Look (Zahnrad in der Headerbar öffnet sie):
+Kategorien-Sidebar links, Inhaltsbereich rechts, Suchfeld über den
+Einstellungen, jede Änderung wirkt sofort ohne Neustart. Kategorien:
 
-- **Playerleiste:** unten (2a, Standard) / oben in der Headerbar (1a) /
-  schwebende Insel (1c). Umgesetzt als eine `PlayerBar`-Komponente, die an
-  drei Layout-Slots gerendert wird — keine drei Implementierungen.
-- **Farbschema:** dunkel (Standard) / hell (1b) / System folgen. Beide
-  Schemata sind vollständige Token-Sets in `tokens.css`; der Blur-Look
-  funktioniert in beiden.
-- **Spalten:** einzelne Spalten ein-/ausblenden (Rechtsklick auf den
-  Spaltenkopf), Spaltenbreiten per Drag, beides wird gespeichert.
-- **Bibliotheksordner** verwalten (hinzufügen/entfernen).
-- **Equalizer:** 10 Bänder als Slider, Presets (Flat, Rock, Pop, …),
-  Ein/Aus-Schalter; Werte werden gespeichert.
-- **ReplayGain:** Modus Titel / Album / Aus; Fallback-Verstärkung für
-  Dateien ohne ReplayGain-Tags.
+- **Darstellung:** Playerleiste unten (2a, Standard) / oben in der
+  Headerbar (1a) / schwebende Insel (1c) — umgesetzt als eine
+  `PlayerBar`-Komponente, die an drei Layout-Slots gerendert wird.
+  Farbschema dunkel (Standard) / hell (1b) / System folgen; beide Schemata
+  sind vollständige Token-Sets in `tokens.css`, der Blur-Look funktioniert
+  in beiden.
+- **Spalten & Sortierung:** einzelne Spalten ein-/ausblenden (auch per
+  Rechtsklick auf den Spaltenkopf), Spaltenbreiten per Drag,
+  Standard-Sortierung (Spalte + Richtung) und Sekundär-Sortierung;
+  alles wird pro Ansicht gespeichert.
+- **Bibliothek:** Ordner verwalten (hinzufügen/entfernen), Rescan,
+  Rhythmbox-Import.
+- **Wiedergabe:** Equalizer (10 Bänder als Slider, Presets Flat/Rock/Pop/…,
+  Ein/Aus-Schalter), ReplayGain (Modus Titel / Album / Aus,
+  Fallback-Verstärkung für Dateien ohne Tags).
 - **Module:** Liste aller Module mit An/Aus-Schaltern und Kurzbeschreibung
-  (wie Rhythmbox' Plugins-Tab).
+  (wie Rhythmbox' Plugins-Tab); Module können hier eigene
+  Einstellungs-Seiten einhängen.
 
 Alle Einstellungen persistiert in einer `settings`-Tabelle (Key-Value) in
 der SQLite-DB; beim Start geladen, Änderungen wirken sofort ohne Neustart.
@@ -317,6 +326,18 @@ Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
   udev/gvfs; erscheint als eigener Sidebar-Eintrag „Geräte".
 - **Scrobbling (Last.fm/Libre.fm)** — erstes Modul nach dem MVP
   (priorisiert), damit die Hörhistorie beim Umstieg schnell weiterläuft
+- **Musik-Radar** — zweites Modul nach dem MVP (priorisiert):
+  1. *Fehlende Alben:* Abgleich der Bibliotheks-Interpreten gegen deren
+     Discografie via MusicBrainz (Release-Groups); meldet Alben, die in
+     der Bibliothek fehlen — als Nachkauf-Liste.
+  2. *Kommende Veröffentlichungen:* angekündigte Alben mit Datum in der
+     Zukunft, als Vormerk-Liste.
+  3. *Konzerte & Touren:* Termine von Bibliotheks-Interpreten in der Nähe
+     (Anbieter z. B. Bandsintown); der Ort wird manuell in den
+     Einstellungen gesetzt — keine Standortabfrage.
+  Eigener Sidebar-Eintrag „Radar" mit Benachrichtigungs-Badge; Ergebnisse
+  werden lokal gecacht, API-Zugriffe rate-limitiert im Hintergrund.
+  Interpreten einzeln stummschaltbar.
 - Podcasts, Internetradio — jeweils als eigenes Modul über die
   bestehenden Erweiterungspunkte
 - Crossfade (GStreamer), Online-Cover-Suche (über `MetadataProvider`)
