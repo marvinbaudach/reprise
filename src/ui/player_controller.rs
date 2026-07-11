@@ -396,6 +396,26 @@ impl PlayerController {
                 match self.player.play(&summary.path) {
                     Ok(()) => {
                         self.consecutive_skips.set(0);
+                        // Stage-2 close-out: `reset_to_stopped` disables the
+                        // prev/next transport buttons, and MPRIS's
+                        // `Previous`/`Play` commands can resume playback from
+                        // Stopped straight through this arm (see
+                        // `apply_mpris_command`) without ever going through
+                        // `set_queue`/`play_from_view`, the only other call
+                        // sites that re-enable them. Re-deriving and applying
+                        // the enabled state here, on every successful
+                        // playback start, keeps the on-screen buttons in
+                        // sync with MPRIS-driven transitions too — hoisted
+                        // into its own statement first so no `queue` borrow
+                        // is alive across the `set_transport_enabled` call
+                        // (see the module's `## Queue borrow discipline` doc
+                        // section).
+                        let queue_has_tracks = !self.queue.borrow().is_empty();
+                        self.bar.set_transport_enabled(queue_has_tracks);
+                        tracing::debug!(
+                            queue_has_tracks,
+                            "transport buttons re-enabled after playback start"
+                        );
                         // Stage 2 Task 6: reflect the new track's metadata
                         // immediately rather than waiting for the
                         // `StateChanged(Playing)` event `play()` also just
