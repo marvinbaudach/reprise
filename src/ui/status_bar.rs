@@ -1,20 +1,22 @@
 //! The slim, right-aligned status line shown above the player bar (design
-//! mockup 7a): `"{n} tracks · {total duration}"`, e.g.
-//! `"1,704 tracks · 4 days, 6 hours and 28 minutes"`.
-//!
-//! Always summarizes the *whole* library, never the active search filter —
-//! `queries::LibraryStats::filtered_count` is reserved for a future
-//! "N of M tracks" treatment and stays `None` for now, so filtering doesn't
-//! change what this line shows. Storage size (e.g. "43.4 GB") is out of
-//! scope: the schema has no file-size column yet (a later stage).
+//! mockup 7a): `"{n} tracks · {total duration}"` with no filter active, e.g.
+//! `"1,704 tracks · 4 days, 6 hours and 28 minutes"`; `"{filtered} of {n}
+//! tracks · {total duration}"` while a search filter is active, e.g. "42 of
+//! 1,704 tracks · 4 days, 6 hours and 28 minutes" — the duration always
+//! describes the *whole* library, never just the filtered rows (see
+//! `queries::query_library_stats`'s doc comment). Storage size (e.g.
+//! "43.4 GB") is out of scope: the schema has no file-size column yet (a
+//! later stage).
 //!
 //! ## Refresh triggers
 //!
-//! `refresh` re-runs `queries::query_library_stats` and updates the label.
-//! `window.rs` calls it after every `TrackList` reload (via the `on_reload`
-//! hook threaded into `TrackList::new` — covers initial load, search, and
-//! sort-header clicks in one place) and again after a scan completes, so the
-//! count/duration never go stale relative to what's on screen.
+//! `refresh` re-runs `queries::query_library_stats` (passing the current
+//! search filter) and updates the label. `window.rs` calls it after every
+//! `TrackList` reload — via the `on_reload` hook threaded into
+//! `TrackList::new`, which now also carries the filter string that was just
+//! applied (covers initial load, search, sort-header clicks, and the reload
+//! after a scan completes, all in one place) — so the count/duration never
+//! go stale relative to what's on screen.
 //!
 //! ## Empty library
 //!
@@ -69,14 +71,18 @@ impl StatusBar {
     /// (or hides it, for an empty library — see the module doc comment).
     /// Query failures are logged and treated the same as an empty library:
     /// hide rather than show stale or partial text.
-    pub fn refresh(&self, conn: &Rc<RefCell<Connection>>) {
+    pub fn refresh(&self, conn: &Rc<RefCell<Connection>>, filter: &str) {
         let stats = {
             let conn = conn.borrow();
-            queries::query_library_stats(&conn)
+            queries::query_library_stats(&conn, filter)
         };
         match stats {
             Ok(stats) if stats.track_count > 0 => {
-                let text = format_status_text(stats.track_count, stats.total_duration_ms);
+                let text = format_status_text(
+                    stats.track_count,
+                    stats.total_duration_ms,
+                    stats.filtered_count,
+                );
                 tracing::debug!(text = %text, "status line updated");
                 self.label.set_text(&text);
                 self.label.set_visible(true);
@@ -99,17 +105,33 @@ impl Default for StatusBar {
 }
 
 /// Pure text-formatting core of `refresh`, split out so the exact copy
-/// (pluralization, separator placement) is unit-testable without a live GTK
-/// widget — same pattern as `track_list::empty_state_for`.
-fn format_status_text(track_count: i64, total_duration_ms: i64) -> String {
+/// (pluralization, separator placement, filtered-count prefix) is
+/// unit-testable without a live GTK widget — same pattern as `track_list::
+/// empty_state_for`. `track_count`/`total_duration_ms` always describe the
+/// whole library; `filtered_count` — `queries::LibraryStats::filtered_count`,
+/// passed straight through — controls only whether an "N of " prefix is
+/// shown ahead of the (always library-wide) track count, never which count
+/// decides singular/plural wording (that stays keyed off `track_count`, so
+/// "42 of 1,704 tracks" and "1,704 tracks" pluralize identically).
+fn format_status_text(
+    track_count: i64,
+    total_duration_ms: i64,
+    filtered_count: Option<i64>,
+) -> String {
     let track_word = if track_count == 1 {
         strings::STATUS_TRACK_SINGULAR
     } else {
         strings::STATUS_TRACK_PLURAL
     };
+    let count_text = match filtered_count {
+        Some(filtered) => strings::status_filtered_of_total(
+            &format_thousands(filtered),
+            &format_thousands(track_count),
+        ),
+        None => format_thousands(track_count),
+    };
     format!(
-        "{} {track_word}{}{}",
-        format_thousands(track_count),
+        "{count_text} {track_word}{}{}",
         strings::STATUS_SEPARATOR,
         format_total_duration(total_duration_ms)
     )
@@ -121,13 +143,25 @@ mod tests {
 
     #[test]
     fn formats_plural_track_count_with_separator() {
-        let text = format_status_text(1_704, ((4 * 24 + 6) * 60 + 28) * 60 * 1000);
+        let text = format_status_text(1_704, ((4 * 24 + 6) * 60 + 28) * 60 * 1000, None);
         assert_eq!(text, "1,704 tracks · 4 days, 6 hours and 28 minutes");
     }
 
     #[test]
     fn formats_singular_track_count() {
-        let text = format_status_text(1, 90 * 60 * 1000);
+        let text = format_status_text(1, 90 * 60 * 1000, None);
         assert_eq!(text, "1 track · 1 hour and 30 minutes");
+    }
+
+    #[test]
+    fn formats_filtered_count_as_n_of_m() {
+        let text = format_status_text(1_704, ((4 * 24 + 6) * 60 + 28) * 60 * 1000, Some(42));
+        assert_eq!(text, "42 of 1,704 tracks · 4 days, 6 hours and 28 minutes");
+    }
+
+    #[test]
+    fn formats_zero_match_filter() {
+        let text = format_status_text(1_704, ((4 * 24 + 6) * 60 + 28) * 60 * 1000, Some(0));
+        assert_eq!(text, "0 of 1,704 tracks · 4 days, 6 hours and 28 minutes");
     }
 }

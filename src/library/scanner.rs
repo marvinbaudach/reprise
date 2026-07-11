@@ -13,8 +13,7 @@ pub enum ScanError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Default, serde::Serialize)]
-#[serde(rename_all = "camelCase")] // frontend expects skippedUnchanged
+#[derive(Debug, Default)]
 pub struct ScanReport {
     pub added: u32,
     pub updated: u32,

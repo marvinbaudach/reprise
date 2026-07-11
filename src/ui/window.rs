@@ -112,8 +112,8 @@ pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>, db_path: Pat
     let track_list = {
         let status_bar = status_bar.clone();
         let conn_for_status = conn.clone();
-        Rc::new(TrackList::new(conn.clone(), on_activate, move || {
-            status_bar.refresh(&conn_for_status);
+        Rc::new(TrackList::new(conn.clone(), on_activate, move |filter| {
+            status_bar.refresh(&conn_for_status, filter);
         }))
     };
 
@@ -154,15 +154,7 @@ pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>, db_path: Pat
     window.set_content(Some(&toast_overlay));
 
     wire_search(&search_entry, track_list.clone());
-    wire_scan_button(
-        &scan_button,
-        &window,
-        &toast_overlay,
-        conn,
-        db_path,
-        track_list,
-        status_bar,
-    );
+    wire_scan_button(&scan_button, &window, &toast_overlay, db_path, track_list);
 
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
@@ -226,10 +218,8 @@ fn wire_scan_button(
     scan_button: &gtk4::Button,
     window: &adw::ApplicationWindow,
     toast_overlay: &adw::ToastOverlay,
-    conn: Rc<RefCell<Connection>>,
     db_path: PathBuf,
     track_list: Rc<TrackList>,
-    status_bar: StatusBar,
 ) {
     let window = window.clone();
     let toast_overlay = toast_overlay.clone();
@@ -253,8 +243,6 @@ fn wire_scan_button(
         let toast_overlay = toast_overlay.clone();
         let db_path = db_path.clone();
         let track_list = track_list.clone();
-        let status_bar = status_bar.clone();
-        let conn = conn.clone();
         let scan_button = scan_button_handle.clone();
 
         glib::spawn_future_local(async move {
@@ -280,15 +268,7 @@ fn wire_scan_button(
                 return;
             };
 
-            spawn_scan(
-                path,
-                db_path,
-                scan_button,
-                toast_overlay,
-                track_list,
-                status_bar,
-                conn,
-            );
+            spawn_scan(path, db_path, scan_button, toast_overlay, track_list);
         });
     });
 }
@@ -302,19 +282,18 @@ fn wire_scan_button(
 /// receive side here is a single one-shot `recv().await` rather than
 /// `player_controller.rs`'s long-lived drain loop: this channel is
 /// `bounded(1)` and carries exactly one message (the scan's final result),
-/// not a stream of events. On success: re-enable the button, reload the
-/// track list and status line. On
-/// failure: re-enable the button, log at `error!`, and surface an
-/// `adw::Toast` — the app stays fully usable either way (fault tolerance: a
-/// scan failure must never wedge the UI or crash the app).
+/// not a stream of events. On success: re-enable the button and reload the
+/// track list (`TrackList::reload`'s `on_reload` hook keeps the status line
+/// in sync too — see its doc comment — so this doesn't refresh it a second
+/// time itself). On failure: re-enable the button, log at `error!`, and
+/// surface an `adw::Toast` — the app stays fully usable either way (fault
+/// tolerance: a scan failure must never wedge the UI or crash the app).
 fn spawn_scan(
     folder: PathBuf,
     db_path: PathBuf,
     scan_button: gtk4::Button,
     toast_overlay: adw::ToastOverlay,
     track_list: Rc<TrackList>,
-    status_bar: StatusBar,
-    conn: Rc<RefCell<Connection>>,
 ) {
     scan_button.set_sensitive(false);
     scan_button.set_label(strings::SCANNING);
@@ -343,7 +322,6 @@ fn spawn_scan(
             Ok(Ok(report)) => {
                 tracing::info!(?report, "scan complete");
                 track_list.reload();
-                status_bar.refresh(&conn);
             }
             Ok(Err(error)) => {
                 tracing::error!(%error, "scan failed");
