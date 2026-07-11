@@ -69,6 +69,22 @@ const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
 /// Usage: `REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=8 xvfb-run -a cargo run`.
 const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
 
+/// Dev/verification hook (permanent, like the others in this module and in
+/// `track_list.rs`): when set to a directory, arms a one-shot idle callback
+/// that calls `spawn_scan` directly — the exact function a real "Scan
+/// folder…" click hands off to — once the main loop is up, skipping the
+/// portal `gtk::FileDialog` folder picker (not headlessly drivable). Added
+/// for Stage 3 Task 4 review finding #2's verification: `main.rs`'s
+/// `REPRISE_SCAN_DIR` runs its scan *before* the window/sidebar even exist,
+/// so it can never appear as its own "sidebar refresh #N (scan completed)"
+/// log line — this hook fires after everything is built and wired, so it
+/// does, giving headless E2E a real, attributable post-launch scan to grep
+/// for.
+///
+/// Usage: `REPRISE_SCAN_DIR=<fixtures> REPRISE_SMOKE_RESCAN=<dir2>
+/// REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
+const SMOKE_RESCAN_ENV_VAR: &str = "REPRISE_SMOKE_RESCAN";
+
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database connection; the UI layer owns it single-threaded
 /// (via `Rc<RefCell<_>>`) and reads through it via `track_list::TrackList`.
@@ -129,10 +145,12 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     };
 
     // Built right after `player` (needed for the Queue row's counter) and
-    // before `TrackList` (whose `on_reload` hook calls `sidebar.refresh()` —
-    // see below), so both can hold a plain `Rc<Sidebar>` clone rather than
-    // needing the `Weak`-then-upgrade dance a construction-order cycle would
-    // otherwise force.
+    // before `TrackList` and `spawn_scan`/`player.set_track_list_reload`
+    // (both hold an `Rc<Sidebar>`/`Weak<Sidebar>` to call `refresh` from
+    // their own specific triggers — see `Sidebar::refresh`'s doc comment for
+    // the trigger inventory), so every later site can just clone/downgrade
+    // this one `Rc` rather than needing a construction-order-driven `Weak`-
+    // then-upgrade dance.
     let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
         let player = player.clone();
         move || match &player {
@@ -173,13 +191,18 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     let track_list = {
         let status_bar = status_bar.clone();
         let conn_for_status = conn.clone();
-        // Stage 3 Task 4: the same `on_reload` seam `status_bar` already used
-        // now also refreshes the sidebar's counts/badges — covers the scan-
-        // completion reload the task calls for, and every other reload
-        // (search, sort, source switch) besides; see `Sidebar::refresh`'s doc
-        // comment for why re-running it that often is safe (it preserves
-        // whatever's currently selected rather than resetting it).
-        let sidebar_for_reload = sidebar.clone();
+        // This `on_reload` hook fires on *every* reload — initial load,
+        // search-filter debounce, sort-header click, and plain source
+        // switch, besides the scan-completion one — so it's kept to the one
+        // thing that's cheap and correct at that frequency: the status
+        // line. Stage 3 Task 4's review (finding #2) caught an earlier
+        // version of this closure also calling `sidebar.refresh()` here,
+        // which meant a full `ListBox` teardown/rebuild plus five DB queries
+        // on every debounced keystroke and every column-sort click. The
+        // sidebar now refreshes only from its own specific triggers — see
+        // `Sidebar::refresh`'s doc comment for the trigger inventory, and
+        // `spawn_scan`'s success arm / the `player.set_track_list_reload`
+        // closure just below for two of the three call sites.
         Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
@@ -189,7 +212,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
                 } else {
                     status_bar.refresh_for_source_count(count as i64);
                 }
-                sidebar_for_reload.refresh();
             },
             queue_ids_provider,
         ))
@@ -216,16 +238,29 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     // list are both built after the controller (see `PlayerController::
     // new`'s call above and the module doc comment on `set_toast_overlay`/
     // `set_track_list_reload`), so they're injected here instead of being
-    // constructor parameters. The reload closure captures a `Weak<TrackList>`
-    // — never a strong `Rc` — so the controller can't form an `Rc` cycle with
-    // `track_list`'s own strong `Rc<PlayerController>` (held by its
-    // `on_activate` closure).
+    // constructor parameters. The reload closure captures `Weak<TrackList>`/
+    // `Weak<Sidebar>` — never strong `Rc`s — so the controller can't form an
+    // `Rc` cycle with `track_list`'s own strong `Rc<PlayerController>` (held
+    // by its `on_activate` closure). This is also sidebar-refresh trigger #3
+    // from `Sidebar::refresh`'s doc comment (Stage 3 Task 4 review finding
+    // #2c): `PlayerController::reload_track_list` is called from exactly one
+    // place — `playback_faults.rs`'s `handle_unplayable_track`, after a
+    // successful `mark_track_missing` — so refreshing the sidebar here,
+    // alongside the track-list reload, is the specific "Missing badge can
+    // have changed" hook rather than a blanket one.
     if let Some(player) = &player {
         player.set_toast_overlay(&toast_overlay);
         let track_list_weak = Rc::downgrade(&track_list);
-        player.set_track_list_reload(move || match track_list_weak.upgrade() {
-            Some(track_list) => track_list.reload(),
-            None => tracing::warn!("track list reload skipped: track list is gone"),
+        let sidebar_weak = Rc::downgrade(&sidebar);
+        player.set_track_list_reload(move || {
+            match track_list_weak.upgrade() {
+                Some(track_list) => track_list.reload(),
+                None => tracing::warn!("track list reload skipped: track list is gone"),
+            }
+            match sidebar_weak.upgrade() {
+                Some(sidebar) => sidebar.refresh("track marked missing"),
+                None => tracing::warn!("sidebar refresh skipped: sidebar is gone"),
+            }
         });
     }
     // Stage 3 Task 1 backlog item (a): same post-construction injection
@@ -235,20 +270,12 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
     // Same reason again: the sidebar is built before `toast_overlay` exists.
     sidebar.set_toast_overlay(&toast_overlay);
 
-    // Stage 3 Task 4: sidebar selection drives the track list's source and
-    // the headerbar title. Wired here (after `track_list` and `window_title`
-    // both exist) rather than at `Sidebar::new` time — see `Sidebar::
-    // set_on_select`'s doc comment for why the sidebar's own initial
-    // selection doesn't need to round-trip through this callback.
-    {
-        let track_list = track_list.clone();
-        let window_title = window_title.clone();
-        sidebar.set_on_select(move |source, title| {
-            track_list.set_source(source);
-            window_title.set_title(&title);
-        });
-    }
-
+    // Built here — before the sidebar-selection wiring just below, rather
+    // than after it — specifically so that wiring can see `split_view`: see
+    // this function's doc comment note on Stage 3 Task 4 review finding #1.
+    // Both `sidebar_page` and `content_page`'s children (`sidebar.widget()`,
+    // `toast_overlay`) already exist by this point, so this reorder has no
+    // other dependency to satisfy.
     let sidebar_page = adw::NavigationPage::builder()
         .title(strings::APP_NAME)
         .child(sidebar.widget())
@@ -264,10 +291,68 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
         .build();
     wire_sidebar_toggle(&sidebar_toggle, &split_view);
 
+    // Stage 3 Task 4: sidebar selection drives the track list's source and
+    // the headerbar title. Wired here (after `track_list` and `window_title`
+    // both exist) rather than at `Sidebar::new` time — see `Sidebar::
+    // set_on_select`'s doc comment for why the sidebar's own initial
+    // selection doesn't need to round-trip through this callback.
+    //
+    // Stage 3 Task 4 review finding #1: in collapsed/narrow-window mode,
+    // `NavigationSplitView` shows only one of its two pages at a time
+    // (`show-content` false = sidebar page, true = content page). Selecting
+    // a row used to switch the underlying source but never flip that
+    // property, leaving the user staring at the sidebar page after their tap
+    // registered. `show_content_if_collapsed` is the fix, shared (via `Rc<dyn
+    // Fn()>`) between `on_select` (fires on an actual source change) and
+    // `Sidebar::set_on_show_content` (fires on every row activation,
+    // including re-activating the already-selected row — see that method's
+    // doc comment for why `on_select` alone can't cover a re-tap). A `Weak`
+    // upgrade, not a strong capture: `split_view` is about to be handed to
+    // `window.set_content` below, and neither callback needs to keep it
+    // alive past the window's own lifetime.
+    let show_content_if_collapsed: Rc<dyn Fn()> = {
+        let split_view_weak = split_view.downgrade();
+        Rc::new(move || match split_view_weak.upgrade() {
+            Some(split_view) => {
+                if split_view.is_collapsed() {
+                    split_view.set_show_content(true);
+                }
+            }
+            None => tracing::warn!(
+                "split view is gone; cannot show content pane after sidebar navigation"
+            ),
+        })
+    };
+    {
+        let track_list = track_list.clone();
+        let window_title = window_title.clone();
+        let show_content_if_collapsed = show_content_if_collapsed.clone();
+        sidebar.set_on_select(move |source, title| {
+            track_list.set_source(source);
+            window_title.set_title(&title);
+            show_content_if_collapsed();
+        });
+    }
+    {
+        let show_content_if_collapsed = show_content_if_collapsed.clone();
+        sidebar.set_on_show_content(move || show_content_if_collapsed());
+    }
+
     window.set_content(Some(&split_view));
 
     wire_search(&search_entry, track_list.clone());
-    wire_scan_button(&scan_button, &window, &toast_overlay, db_path, track_list);
+    // Cloned (not moved) here: `arm_smoke_rescan` below needs its own
+    // `db_path`/`track_list`/`sidebar` to call `spawn_scan` with, the same
+    // way a real button click would.
+    wire_scan_button(
+        &scan_button,
+        &window,
+        &toast_overlay,
+        db_path.clone(),
+        track_list.clone(),
+        sidebar.clone(),
+    );
+    arm_smoke_rescan(&scan_button, &toast_overlay, db_path, track_list, sidebar);
 
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
@@ -348,6 +433,36 @@ fn wire_search(search_entry: &gtk4::SearchEntry, track_list: Rc<TrackList>) {
     });
 }
 
+/// Arms the `REPRISE_SMOKE_RESCAN` hook (see `SMOKE_RESCAN_ENV_VAR`'s doc
+/// comment): one idle callback, deferred so it runs once the main loop is up
+/// (matching `track_list.rs`'s `arm_smoke_*` hooks), that calls `spawn_scan`
+/// with the given directory — exactly what `wire_scan_button`'s click
+/// handler does after a folder is chosen, minus the dialog.
+fn arm_smoke_rescan(
+    scan_button: &gtk4::Button,
+    toast_overlay: &adw::ToastOverlay,
+    db_path: PathBuf,
+    track_list: Rc<TrackList>,
+    sidebar: Rc<Sidebar>,
+) {
+    let Ok(dir) = std::env::var(SMOKE_RESCAN_ENV_VAR) else {
+        return;
+    };
+    tracing::info!(dir = %dir, "{SMOKE_RESCAN_ENV_VAR} set: arming headless post-launch rescan");
+    let scan_button = scan_button.clone();
+    let toast_overlay = toast_overlay.clone();
+    glib::idle_add_local_once(move || {
+        spawn_scan(
+            PathBuf::from(dir),
+            db_path,
+            scan_button,
+            toast_overlay,
+            track_list,
+            sidebar,
+        );
+    });
+}
+
 /// Wires the header's "Scan folder…" button: a click opens a portal-friendly
 /// `gtk::FileDialog` folder picker; a chosen folder starts a background scan
 /// (see `spawn_scan`). Dismissing the dialog without choosing a folder is a
@@ -359,6 +474,7 @@ fn wire_scan_button(
     toast_overlay: &adw::ToastOverlay,
     db_path: PathBuf,
     track_list: Rc<TrackList>,
+    sidebar: Rc<Sidebar>,
 ) {
     let window = window.clone();
     let toast_overlay = toast_overlay.clone();
@@ -382,6 +498,7 @@ fn wire_scan_button(
         let toast_overlay = toast_overlay.clone();
         let db_path = db_path.clone();
         let track_list = track_list.clone();
+        let sidebar = sidebar.clone();
         let scan_button = scan_button_handle.clone();
 
         glib::spawn_future_local(async move {
@@ -407,7 +524,14 @@ fn wire_scan_button(
                 return;
             };
 
-            spawn_scan(path, db_path, scan_button, toast_overlay, track_list);
+            spawn_scan(
+                path,
+                db_path,
+                scan_button,
+                toast_overlay,
+                track_list,
+                sidebar,
+            );
         });
     });
 }
@@ -421,10 +545,13 @@ fn wire_scan_button(
 /// receive side here is a single one-shot `recv().await` rather than
 /// `player_controller.rs`'s long-lived drain loop: this channel is
 /// `bounded(1)` and carries exactly one message (the scan's final result),
-/// not a stream of events. On success: re-enable the button and reload the
+/// not a stream of events. On success: re-enable the button, reload the
 /// track list (`TrackList::reload`'s `on_reload` hook keeps the status line
 /// in sync too — see its doc comment — so this doesn't refresh it a second
-/// time itself). On failure: re-enable the button, log at `error!`, and
+/// time itself), and refresh the sidebar (trigger #1 from `Sidebar::
+/// refresh`'s doc comment — a scan can add tracks/playlists and clear
+/// import-error/missing counts, none of which the narrowed `on_reload` hook
+/// covers any more). On failure: re-enable the button, log at `error!`, and
 /// surface an `adw::Toast` — the app stays fully usable either way (fault
 /// tolerance: a scan failure must never wedge the UI or crash the app).
 fn spawn_scan(
@@ -433,6 +560,7 @@ fn spawn_scan(
     scan_button: gtk4::Button,
     toast_overlay: adw::ToastOverlay,
     track_list: Rc<TrackList>,
+    sidebar: Rc<Sidebar>,
 ) {
     scan_button.set_sensitive(false);
     scan_button.set_label(strings::SCANNING);
@@ -461,6 +589,7 @@ fn spawn_scan(
             Ok(Ok(report)) => {
                 tracing::info!(?report, "scan complete");
                 track_list.reload();
+                sidebar.refresh("scan completed");
             }
             Ok(Err(error)) => {
                 tracing::error!(%error, "scan failed");
