@@ -708,9 +708,13 @@ impl PlayerController {
     /// reorder`, then reloads the track list itself so the Queue view picks
     /// up the new order — this method only mutates queue state, the same
     /// "state mutation only, caller decides what to refresh" contract as
-    /// `append_to_queue`.
-    pub(super) fn move_queue_item(&self, from: usize, to: usize) {
-        self.queue.borrow_mut().move_item(from, to);
+    /// `append_to_queue`. Returns `Queue::move_item`'s own bool verbatim, so
+    /// a no-op move (empty queue, out-of-range index, `from == to`) is
+    /// reported as `false` rather than the caller assuming success just
+    /// because a player was available to ask (Stage 3 Task 6 review finding
+    /// #3).
+    pub(super) fn move_queue_item(&self, from: usize, to: usize) -> bool {
+        self.queue.borrow_mut().move_item(from, to)
     }
 }
 

@@ -304,6 +304,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
             Some(player) => player.move_queue_item(from, to),
             None => {
                 tracing::warn!("player unavailable; ignoring queue drag-reorder");
+                false
             }
         });
     }
@@ -400,6 +401,29 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
         sidebar.set_on_tracks_added(move || match track_list_weak.upgrade() {
             Some(track_list) => track_list.reload(),
             None => tracing::warn!("track list reload skipped: track list is gone"),
+        });
+    }
+    {
+        // Stage 3 Task 6 review finding #1: lets `ui::track_list_dnd`'s
+        // `REPRISE_SMOKE_DND=addplaylist:<name>` hook drive the exact same
+        // drop-handling sequence a real pointer drag onto a sidebar playlist
+        // row runs (DB write, sidebar rebuild + toast, `on_tracks_added` ->
+        // the `sidebar.set_on_tracks_added` reload just above) instead of
+        // calling `library::playlists::add_tracks` directly — see `Sidebar::
+        // handle_playlist_drop`'s doc comment. `Weak`, not a strong `Rc`,
+        // same reasoning as every other cross-widget callback in this
+        // function.
+        let sidebar_weak = Rc::downgrade(&sidebar);
+        track_list.set_on_sidebar_playlist_drop(move |playlist_id, playlist_name, ids| {
+            match sidebar_weak.upgrade() {
+                Some(sidebar) => sidebar.handle_playlist_drop(playlist_id, playlist_name, ids),
+                None => {
+                    tracing::warn!(
+                        "sidebar is gone; cannot dispatch simulated sidebar playlist drop"
+                    );
+                    false
+                }
+            }
         });
     }
 

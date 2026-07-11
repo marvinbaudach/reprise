@@ -83,6 +83,16 @@
 //! still be dropped on a sidebar playlist row to *add* them all), it simply
 //! never carries a `reorder_position` — see [`format_drag_payload`]'s doc
 //! comment.
+//!
+//! ## The `REPRISE_SMOKE_DND` hook lives in a sibling module
+//!
+//! The dev/verification hook that drives this module's drop handlers without
+//! a real pointer gesture (`REPRISE_SMOKE_DND=addplaylist:<name>` etc.) is
+//! `track_list_dnd_smoke`, not this file — split out (Stage 3 Task 6 review
+//! finding #2) purely to keep this file under the project's 800-line rule.
+//! It calls [`handle_playlist_reorder_drop`]/[`handle_queue_reorder_drop`]
+//! (`pub(super)` for exactly that reason), the same functions the real drop
+//! targets [`wire_row_dnd`] wires call.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -365,8 +375,10 @@ fn handle_reorder_drop(
 /// too (not just at drag-prepare time): the view's sort/filter state could
 /// in principle change between a drag starting and its drop landing (a
 /// column-header click mid-drag is exotic but not impossible), so the guard
-/// is enforced on both ends rather than trusted from one.
-fn handle_playlist_reorder_drop(
+/// is enforced on both ends rather than trusted from one. `pub(super)`: also
+/// called directly by `track_list_dnd_smoke`'s `reorderplaylist:<from>-<to>`
+/// hook.
+pub(super) fn handle_playlist_reorder_drop(
     shared: &Rc<Shared>,
     playlist_id: i64,
     payload: &DragPayload,
@@ -430,8 +442,9 @@ fn handle_playlist_reorder_drop(
 /// "Reorder within the queue" drop handler — no `playlist_reorder_allowed`-
 /// style guard needed at all (see the module doc's `## The TRUE-position
 /// rule` section: the Queue view's row order always *is* the queue's own
-/// play order, unconditionally).
-fn handle_queue_reorder_drop(
+/// play order, unconditionally). `pub(super)`: also called directly by
+/// `track_list_dnd_smoke`'s `reorderqueue:<from>-<to>` hook.
+pub(super) fn handle_queue_reorder_drop(
     shared: &Rc<Shared>,
     payload: &DragPayload,
     target_view_position: u32,
@@ -446,10 +459,24 @@ fn handle_queue_reorder_drop(
     let callback = shared.on_queue_reorder.borrow().clone();
     match callback {
         Some(callback) => {
-            callback(from, to);
-            tracing::info!(from, to, "queue reordered via drag and drop");
-            reload(shared);
-            true
+            // Stage 3 Task 6 review finding #3: propagate the callback's own
+            // report of whether it actually moved anything (`window.rs`'s
+            // wiring returns `false` when no player is available at all,
+            // exactly like `Queue::move_item`'s own no-op cases) — a
+            // degraded no-op must report failure, not success, just because
+            // a callback happened to be wired.
+            let moved = callback(from, to);
+            if moved {
+                tracing::info!(from, to, "queue reordered via drag and drop");
+                reload(shared);
+            } else {
+                tracing::debug!(
+                    from,
+                    to,
+                    "queue reorder drop callback reported no-op; not reloading"
+                );
+            }
+            moved
         }
         None => {
             tracing::warn!(
@@ -460,208 +487,13 @@ fn handle_queue_reorder_drop(
     }
 }
 
-/// Dev/verification hook (permanent, like the other `REPRISE_SMOKE_*`
-/// hooks): pointer drag gestures aren't headless-drivable, so this invokes
-/// the *same* underlying functions the real drop handlers call, once the
-/// initial load has run and the main loop is idle. Three forms:
-///
-/// - `addplaylist:<name>`: selects the first two rows (mirrors `track_list_
-///   context_menu`'s `REPRISE_SMOKE_MENU_ACTION=playlist:<name>`, which this
-///   deliberately parallels) and calls `library::playlists::add_tracks`
-///   directly against the playlist named `<name>` (looked up the same
-///   name-fallback way every other smoke hook resolves a playlist — ids
-///   aren't stable across the scratch databases headless E2E runs seed
-///   fresh each time), then reloads and notifies `on_playlist_mutated` (the
-///   same sidebar-refresh trigger the context menu's "add to playlist" uses)
-///   so a full run also exercises the sidebar-refresh side, not just the
-///   database write.
-/// - `reorderplaylist:<from>-<to>`: `from`/`to` are *view* positions — this
-///   builds the exact `DragPayload` a real single-row drag from view
-///   position `from` to view position `to` would produce (via `reorder_
-///   position_for_drag`, the identical resolution a real drag-prepare uses)
-///   and calls [`handle_playlist_reorder_drop`] — so this is what proves the
-///   TRUE-position rule under a sorted/filtered view: combine with `track_
-///   list.rs`'s `REPRISE_SMOKE_SORT_COLUMN` hook first, and this must then
-///   no-op (guard blocks it) rather than move the wrong row.
-/// - `reorderqueue:<from>-<to>`: `from`/`to` are queue indices (== Queue view
-///   positions, unconditionally); builds the matching payload and calls
-///   [`handle_queue_reorder_drop`].
-///
-/// Usage: `REPRISE_SCAN_DIR=… REPRISE_SMOKE_DND=addplaylist:MyList
-///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
-const SMOKE_DND_ENV_VAR: &str = "REPRISE_SMOKE_DND";
-/// Number of leading rows the `addplaylist:` form selects — mirrors `track_
-/// list_context_menu`'s `SMOKE_MENU_ACTION_ROW_COUNT` (2 tracks is enough to
-/// prove a multi-id drag payload resolves and inserts correctly).
-const SMOKE_DND_ADD_ROW_COUNT: u32 = 2;
-
-pub(super) fn arm_smoke_dnd(shared: &Rc<Shared>) {
-    let Ok(value) = std::env::var(SMOKE_DND_ENV_VAR) else {
-        return;
-    };
-    tracing::info!(value = %value, "{SMOKE_DND_ENV_VAR} set: arming programmatic drag-and-drop simulation");
-    let shared = shared.clone();
-    glib::idle_add_local_once(move || {
-        if let Some(name) = value.strip_prefix("addplaylist:") {
-            smoke_add_to_playlist(&shared, name);
-        } else if let Some(range) = value.strip_prefix("reorderplaylist:") {
-            smoke_reorder_playlist(&shared, range);
-        } else if let Some(range) = value.strip_prefix("reorderqueue:") {
-            smoke_reorder_queue(&shared, range);
-        } else {
-            tracing::warn!(value = %value, "{SMOKE_DND_ENV_VAR}: unrecognized value; ignoring");
-        }
-    });
-}
-
-/// Parses `"<from>-<to>"` (both forms of the hook) into a `(u32, u32)` pair
-/// of view positions. `None` (caller warns) for anything else.
-fn parse_from_to(range: &str) -> Option<(u32, u32)> {
-    let (from, to) = range.split_once('-')?;
-    Some((from.parse().ok()?, to.parse().ok()?))
-}
-
-/// `addplaylist:<name>` — see [`arm_smoke_dnd`]'s doc comment.
-fn smoke_add_to_playlist(shared: &Rc<Shared>, name: &str) {
-    let row_count = shared.model.n_items().min(SMOKE_DND_ADD_ROW_COUNT);
-    if row_count == 0 {
-        tracing::warn!("{SMOKE_DND_ENV_VAR}: track list is empty; nothing to add");
-        return;
-    }
-    shared.selection.select_range(0, row_count, true);
-    let positions = track_list_context_menu::current_selection_positions(shared);
-    let ids = track_actions::selected_track_ids(&positions, &shared.model);
-
-    let Some(playlist_id) = resolve_smoke_dnd_playlist_by_name(shared, name) else {
-        tracing::warn!(
-            name,
-            "{SMOKE_DND_ENV_VAR}: no playlist found with this name"
-        );
-        return;
-    };
-
-    let result = {
-        let mut conn = shared.conn.borrow_mut();
-        playlists::add_tracks(&mut conn, playlist_id, &ids)
-    };
-    match result {
-        Ok(inserted) => {
-            tracing::info!(
-                playlist_id,
-                inserted,
-                "{SMOKE_DND_ENV_VAR}: tracks added to playlist via simulated drop"
-            );
-            // Deliberately doesn't invoke `shared.on_playlist_mutated` here:
-            // that callback exists for the *context menu*'s "add to
-            // playlist" action (`track_list_context_menu.rs`), a genuinely
-            // different code path. The real drag-to-sidebar drop's own
-            // refresh happens entirely inside `ui::sidebar`'s drop handler
-            // (`rebuild`, then `Shared::on_tracks_added` to reach back into
-            // this track list) — this module has no handle on `Sidebar`'s
-            // `Shared` to call the equivalent of that from here, so this
-            // smoke form only proves the database write (`library::
-            // playlists::add_tracks`), exactly like the E2E's own sqlite
-            // assertion does. `reload` still runs so a full interactive run
-            // shows the new rows immediately if this playlist happens to be
-            // the one currently on screen.
-            reload(shared);
-        }
-        Err(error) => {
-            tracing::error!(
-                %error,
-                playlist_id,
-                "{SMOKE_DND_ENV_VAR}: failed to add tracks to playlist"
-            );
-        }
-    }
-}
-
-/// `reorderplaylist:<from>-<to>` — see [`arm_smoke_dnd`]'s doc comment.
-fn smoke_reorder_playlist(shared: &Rc<Shared>, range: &str) {
-    let Some((from, to)) = parse_from_to(range) else {
-        tracing::warn!(
-            range,
-            "{SMOKE_DND_ENV_VAR}: malformed reorderplaylist range; ignoring"
-        );
-        return;
-    };
-    let ViewSource::Playlist(playlist_id) = shared.source.borrow().clone() else {
-        tracing::warn!("{SMOKE_DND_ENV_VAR}: reorderplaylist requested outside a playlist source");
-        return;
-    };
-    let Some(dragged_id) = shared.model.track_at(from).map(|t| t.id) else {
-        tracing::warn!(
-            from,
-            "{SMOKE_DND_ENV_VAR}: no track at the 'from' view position"
-        );
-        return;
-    };
-    let allowed = playlist_reorder_allowed(shared);
-    let source = shared.source.borrow().clone();
-    let reorder_position = reorder_position_for_drag(&shared.model, &source, allowed, from);
-    let payload = DragPayload {
-        ids: vec![dragged_id],
-        reorder_position,
-    };
-    let moved = handle_playlist_reorder_drop(shared, playlist_id, &payload, to);
-    tracing::info!(
-        playlist_id,
-        from,
-        to,
-        moved,
-        "{SMOKE_DND_ENV_VAR}: reorderplaylist simulated drop result"
-    );
-}
-
-/// `reorderqueue:<from>-<to>` — see [`arm_smoke_dnd`]'s doc comment.
-fn smoke_reorder_queue(shared: &Rc<Shared>, range: &str) {
-    let Some((from, to)) = parse_from_to(range) else {
-        tracing::warn!(
-            range,
-            "{SMOKE_DND_ENV_VAR}: malformed reorderqueue range; ignoring"
-        );
-        return;
-    };
-    if !matches!(*shared.source.borrow(), ViewSource::Queue) {
-        tracing::warn!("{SMOKE_DND_ENV_VAR}: reorderqueue requested outside the queue source");
-        return;
-    }
-    let Some(dragged_id) = shared.model.track_at(from).map(|t| t.id) else {
-        tracing::warn!(
-            from,
-            "{SMOKE_DND_ENV_VAR}: no track at the 'from' view position"
-        );
-        return;
-    };
-    let payload = DragPayload {
-        ids: vec![dragged_id],
-        reorder_position: Some(i64::from(from)),
-    };
-    let moved = handle_queue_reorder_drop(shared, &payload, to);
-    tracing::info!(
-        from,
-        to,
-        moved,
-        "{SMOKE_DND_ENV_VAR}: reorderqueue simulated drop result"
-    );
-}
-
-/// Looks up a playlist id by exact name for the `addplaylist:<name>` form of
-/// the hook — same reasoning (and same shape) as `track_list_context_menu`'s
-/// `resolve_smoke_menu_action_playlist`/`track_list.rs`'s `resolve_smoke_
-/// source_playlist_by_name`: playlist ids aren't stable across the scratch
-/// databases headless E2E runs seed fresh each time. `None` (caller warns) if
-/// the lookup fails or no playlist has that exact name; picks the first by
-/// position on a name collision, same as the other two lookups.
-fn resolve_smoke_dnd_playlist_by_name(shared: &Rc<Shared>, name: &str) -> Option<i64> {
-    let conn = shared.conn.borrow();
-    let all = playlists::list(&conn)
-        .inspect_err(|error| {
-            tracing::error!(%error, name, "failed to list playlists for smoke-dnd name lookup");
-        })
-        .ok()?;
-    all.into_iter().find(|p| p.name == name).map(|p| p.id)
-}
+// The `REPRISE_SMOKE_DND` dev/verification hook (three forms: `addplaylist:
+// <name>`, `reorderplaylist:<from>-<to>`, `reorderqueue:<from>-<to>`) lives
+// in the sibling `track_list_dnd_smoke` module — split out so this file
+// stays under the project's 800-line file-size rule (Stage 3 Task 6 review
+// finding #2). It calls back into this module's `handle_playlist_reorder_
+// drop`/`handle_queue_reorder_drop` (both `pub(super)`), the same functions
+// the real drop targets wired by [`wire_row_dnd`] call.
 
 #[cfg(test)]
 mod tests {
@@ -865,19 +697,5 @@ mod tests {
             reorder_position: Some(3),
         };
         assert!(resolve_reorder_target(&payload, 3).is_none());
-    }
-
-    // ## parse_from_to (smoke hook range parsing)
-
-    #[test]
-    fn parse_from_to_parses_a_valid_range() {
-        assert_eq!(parse_from_to("0-2"), Some((0, 2)));
-    }
-
-    #[test]
-    fn parse_from_to_rejects_malformed_ranges() {
-        assert_eq!(parse_from_to("nope"), None);
-        assert_eq!(parse_from_to("1-2-3"), None);
-        assert_eq!(parse_from_to("-1-2"), None);
     }
 }
