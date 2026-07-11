@@ -74,6 +74,7 @@ use crate::format::format_thousands;
 use crate::library::playlists;
 use crate::queries;
 use crate::ui::sidebar_dnd;
+use crate::ui::sidebar_export;
 use crate::ui::strings;
 use crate::view_source::ViewSource;
 
@@ -155,10 +156,12 @@ pub(super) struct Shared {
     /// list refresh), the mirror image of `track_list.rs`'s `on_playlist_
     /// mutated` (track list mutation -> sidebar refresh).
     pub(super) on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
-    /// The window, for the "New playlist" `AlertDialog`'s parent. `WeakRef`
-    /// so the sidebar can never keep the window alive past its natural
-    /// lifetime (same shape as `TrackList::toast_overlay`).
-    window: glib::WeakRef<adw::ApplicationWindow>,
+    /// The window, for the "New playlist" `AlertDialog`'s parent, and (Stage
+    /// 3 Task 7) `ui::sidebar_export`'s "Export playlist…" `gtk::FileDialog`
+    /// parent — hence `pub(super)`, mirroring `conn`/`on_tracks_added`
+    /// above. `WeakRef` so the sidebar can never keep the window alive past
+    /// its natural lifetime (same shape as `TrackList::toast_overlay`).
+    pub(super) window: glib::WeakRef<adw::ApplicationWindow>,
     /// Injected post-construction once `window.rs` builds it (same seam
     /// shape as `TrackList::toast_overlay`) — surfaces a failed playlist
     /// creation as a toast rather than only a log line.
@@ -549,11 +552,14 @@ fn append_header(listbox: &gtk4::ListBox, text: &str) {
 /// Builds one navigation row (title + optional right-aligned count) and
 /// registers it in `shared.rows` against `source`. Playlist rows additionally
 /// get a drag-and-drop drop target (Stage 3 Task 6) — see `sidebar_dnd::
-/// wire_playlist_drop_target`'s doc comment.
+/// wire_playlist_drop_target`'s doc comment — and a right-click "Export
+/// playlist…" context menu (Stage 3 Task 7) — see `sidebar_export::
+/// wire_playlist_context_menu`'s doc comment.
 fn add_row(shared: &Rc<Shared>, source: ViewSource, title: &str, count: Option<i64>) {
     let row = build_nav_row(title, count);
     if let ViewSource::Playlist(playlist_id) = source {
         sidebar_dnd::wire_playlist_drop_target(shared, &row, playlist_id, title);
+        sidebar_export::wire_playlist_context_menu(shared, &row, playlist_id, title);
     }
     shared.listbox.append(&row);
     shared
