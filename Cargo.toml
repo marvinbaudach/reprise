@@ -22,6 +22,14 @@ gtk4 = { version = "0.11.4", features = ["v4_22"] }
 libadwaita = { version = "0.9.2", features = ["v1_9", "gtk_v4_22"] }
 async-channel = "2.5.0"
 fastrand = "2"
+# Default features ("async-io" + "blocking-api") are kept: "async-io" is
+# zbus's own lightweight internal reactor for the blocking API, not a
+# competing app-wide async runtime — the `tokio` feature (the thing Stage 2
+# Task 6's "no tokio" constraint actually rules out) is off by default and
+# stays off. See src/mpris.rs's module doc comment for the thread model this
+# enables (a dedicated OS thread using zbus::blocking, no integration with
+# glib's MainContext needed for MPRIS itself).
+zbus = "5"
 
 [dev-dependencies]
 tempfile = "3"
