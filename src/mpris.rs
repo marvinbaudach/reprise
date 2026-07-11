@@ -349,21 +349,33 @@ fn metadata_differs(a: &MprisState, b: &MprisState) -> bool {
         || a.duration_ms != b.duration_ms
 }
 
-/// `CanPlay`: whether calling `Play` would do something. True once there is
-/// a current or resumable track (`track_id` set, e.g. paused) or somewhere
-/// the queue could jump to and start (`can_next`/`can_prev`, which mirror
-/// "queue is non-empty" — see the `MprisState` doc comment) and playback
-/// isn't already in progress.
+/// `CanPlay`: whether this player has anything it could play at all — a
+/// current/resumable track (`track_id` set) or somewhere the queue could
+/// jump to and start (`can_next`/`can_prev`, which mirror "queue is
+/// non-empty" — see the `MprisState` doc comment).
+///
+/// Deliberately **independent of the current playback status** (field bug,
+/// Stage 3): the MPRIS spec says CanPlay "is related to whether there is a
+/// 'current track': its value should not depend on whether the track is
+/// currently paused or playing", and GNOME Shell enforces exactly that
+/// reading — its `MprisSource` (js/ui/mpris.js) filters the media widget's
+/// player list by `CanPlay` and emits `player-removed` the moment it flips
+/// false. The previous `status != Playing && …` implementation therefore
+/// made the lock-screen/quick-settings media controls *vanish the moment
+/// playback started* and reappear only while paused.
 fn can_play(state: &MprisState) -> bool {
-    state.status != MprisPlaybackStatus::Playing
-        && (state.track_id.is_some() || state.can_next || state.can_prev)
+    state.track_id.is_some() || state.can_next || state.can_prev
 }
 
-/// `CanPause`: whether calling `Pause` would do something — only while
-/// actively playing (pausing an already-paused or stopped player is a
-/// no-op `PlayerController::mpris_pause` already short-circuits).
+/// `CanPause`: whether there is a current track that could be paused. Like
+/// `can_play` (see there for the field bug), this is an intrinsic property
+/// of having a track loaded, not of the current playing/paused status —
+/// per spec, "its value should not depend on whether the track is
+/// currently paused or playing". A `Pause` call while already paused or
+/// stopped is simply a no-op `PlayerController::mpris_pause`
+/// short-circuits.
 fn can_pause(state: &MprisState) -> bool {
-    state.status == MprisPlaybackStatus::Playing
+    state.track_id.is_some()
 }
 
 /// Builds the MPRIS `Metadata` dict (`a{sv}`) from `state`. Empty
@@ -604,9 +616,13 @@ mod tests {
         assert_eq!(MprisPlaybackStatus::Stopped.as_str(), "Stopped");
     }
 
+    /// Regression test for the lock-screen field bug: GNOME Shell removes a
+    /// player from the media widget the moment `CanPlay` goes false, so it
+    /// must stay true while a track is loaded — playing or paused alike
+    /// (CanPlay is intrinsic to having a current track, per spec).
     #[test]
-    fn can_play_false_while_already_playing() {
-        assert!(!can_play(&playing_state()));
+    fn can_play_true_while_playing_with_a_track() {
+        assert!(can_play(&playing_state()));
     }
 
     #[test]
@@ -642,19 +658,26 @@ mod tests {
         assert!(!can_play(&state));
     }
 
+    /// `CanPause` is intrinsic to having a track loaded (spec: independent
+    /// of playing/paused status), not a "would Pause do something" flag.
     #[test]
-    fn can_pause_only_while_playing() {
+    fn can_pause_true_whenever_a_track_is_loaded() {
         assert!(can_pause(&playing_state()));
         let paused = MprisState {
             status: MprisPlaybackStatus::Paused,
             ..playing_state()
         };
-        assert!(!can_pause(&paused));
-        let stopped = MprisState {
-            status: MprisPlaybackStatus::Stopped,
+        assert!(can_pause(&paused));
+    }
+
+    #[test]
+    fn can_pause_false_with_no_track_loaded() {
+        let no_track = MprisState {
+            track_id: None,
             ..playing_state()
         };
-        assert!(!can_pause(&stopped));
+        assert!(!can_pause(&no_track));
+        assert!(!can_pause(&MprisState::default()));
     }
 
     #[test]

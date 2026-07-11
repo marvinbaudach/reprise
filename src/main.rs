@@ -12,6 +12,7 @@ mod view_source;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::gio;
 use gtk4::glib;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -60,6 +61,36 @@ fn main() -> glib::ExitCode {
     init_logging();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Reprise");
 
+    let app = adw::Application::builder().application_id(APP_ID).build();
+
+    // Primary-vs-secondary is decided *before* the database is touched
+    // (field finding, Stage 3): GApplication is single-instance, and a
+    // second `reprise` launch only forwards `activate` to the primary
+    // process — it has no business opening (and taking sqlite locks on)
+    // the database it will never use, and previously it also exited with
+    // zero user-visible feedback. `register()` is the explicit,
+    // documented way to settle instance uniqueness ahead of `run()`
+    // (which registers idempotently again later); after it,
+    // `is_remote()` says which side this process is. This seam is chosen
+    // over moving the DB open into a `connect_startup` closure because it
+    // keeps the existing synchronous `Rc<RefCell<Connection>>` plumbing
+    // into `connect_activate` untouched — and it gives the secondary a
+    // natural place to say goodbye out loud.
+    if let Err(error) = app.register(gio::Cancellable::NONE) {
+        // No session bus (or another registration failure): uniqueness
+        // can't be established, so behave as a standalone primary — the
+        // same degraded-but-working mode GApplication itself falls back
+        // to when `run()`'s own registration fails.
+        tracing::warn!(%error, "could not register with the session bus; continuing standalone");
+    }
+    if app.is_remote() {
+        tracing::info!("Reprise is already running — presenting the existing window");
+        // Forwards `activate` to the primary instance and returns once
+        // that's done — the primary's activate handler (below, but running
+        // in the *other* process) presents its window.
+        return app.run();
+    }
+
     let path = db_path();
     tracing::info!(db_path = %path.display(), "opening database");
     let conn = db::open(Some(&path)).expect("failed to open database");
@@ -83,12 +114,10 @@ fn main() -> glib::ExitCode {
         }
     }
 
-    let app = adw::Application::builder().application_id(APP_ID).build();
-
     app.connect_activate(move |app| {
-        // GApplication is single-instance: a second `reprise` launch forwards
-        // `activate` to this (the primary) process instead of spawning a new
-        // one. Without this guard, a second launch would build a second
+        // A second `reprise` launch forwards `activate` here (see the
+        // `is_remote()` check above for the secondary's side of this).
+        // Without this guard, a forwarded activate would build a second
         // window, PlayerController, playbin, and ticker thread all sharing
         // the same database connection.
         if let Some(window) = app.active_window() {
