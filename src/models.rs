@@ -17,4 +17,11 @@ pub struct Track {
     pub added_at: i64,
     pub file_mtime: i64,
     pub missing: bool,
+    /// Schema v2 (Stage 2 Task 8 — scanner move detection): filesystem
+    /// identity captured on every insert/update, used to recognize a
+    /// relocated file on rescan. `device`/`inode` are `None` for a row that
+    /// predates v2 and hasn't been rescanned since.
+    pub file_size: i64,
+    pub device: Option<i64>,
+    pub inode: Option<i64>,
 }
