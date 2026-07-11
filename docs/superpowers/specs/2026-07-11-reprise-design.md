@@ -223,6 +223,7 @@ tracks(
   rating,            -- 0–5, 0 = unbewertet
   play_count, last_played_at, added_at,
   file_mtime,        -- für inkrementellen Rescan
+  file_size, device, inode,  -- Move-Detection (Schema v2)
   missing            -- Datei verschwunden: markieren, nicht löschen
 )
 playlists(id, name, position)
@@ -239,6 +240,22 @@ settings(key PRIMARY KEY, value)   -- Layout, Farbschema, Spalten, Ordner,
 - Play Count/`last_played_at` werden erhöht, wenn ein Titel überwiegend
   abgespielt wurde (Schwelle: >50 % gehört).
 - Inkrementeller Rescan: nur Dateien mit geänderter `file_mtime` neu lesen.
+- **Move-Detection (Nutzer-Anforderung 2026-07-11):** Verschobene oder
+  umbenannte Dateien/Alben werden beim Rescan **wiedererkannt statt als neu
+  behandelt** — Bewertungen, Play Counts, `added_at` und `last_played_at`
+  bleiben erhalten, nur der Pfad (und ggf. Tags/mtime) wird aktualisiert.
+  Abgleich zweistufig, Kandidaten sind ausschließlich Zeilen, deren alter
+  Pfad nicht mehr existiert (oder die `missing` sind):
+  1. **(device, inode)-Treffer** — exakt für `mv`/Umbenennen innerhalb
+     eines Dateisystems (Inode bleibt beim Verschieben erhalten);
+  2. **Fingerprint-Treffer** — Titel + Interpret + Album + Dauer (±2 s) +
+     Dateigröße, für Verschiebungen über Dateisystemgrenzen (kopieren +
+     löschen). Nur bei **genau einem** Kandidaten; bei Mehrdeutigkeit
+     (identische Duplikate) wird konservativ neu angelegt und die
+     Ambiguität geloggt — niemals raten.
+  Der `ScanReport` weist verschobene Titel separat aus (`moved`). Die
+  Echtzeit-Erkennung über den Watcher (notify) nutzt später dieselbe
+  Logik.
 - Ordner-Überwachung: notify-Events (angelegt/geändert/gelöscht/umbenannt)
   werden entprellt (Debounce) und in dieselbe Rescan-Logik gespeist wie der
   manuelle Scan. Schreibt der eigene Tag-Editor eine Datei, wird das

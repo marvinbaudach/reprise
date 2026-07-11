@@ -164,11 +164,45 @@
 
 ---
 
+### Task 8: Scanner-Move-Detection — verschobene Alben behalten ihre Metadaten
+
+> Nutzer-Anforderung 2026-07-11: „wenn ich ein Album verschiebe, sollte der
+> Scanner das finden und die Musik sollte in meiner Datenbank erhalten
+> bleiben mit dem neuen Ortsverweis anstatt es als neue Dateien zu sehen
+> ohne meine gespeicherten Meta-Daten." — **wichtig: explizite Testcases.**
+
+**Files:**
+- Modify: `src/db.rs` (Schema v2), `src/library/scanner.rs` (Move-Logik + Tests), `src/models.rs` (neue Felder)
+
+**Interfaces:**
+- Produces:
+  - Schema-v2-Migration (idempotent, `PRAGMA user_version` 1→2): `ALTER TABLE tracks ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0` / `device INTEGER` / `inode INTEGER`; Index `idx_tracks_dev_inode ON tracks(device, inode)`
+  - Scanner erfasst `file_size`/`device`/`inode` (`std::os::unix::fs::MetadataExt`: `size()`, `dev()`, `ino()`) bei Insert/Update
+  - Neuer Rescan-Zweig für unbekannte Pfade — VOR dem Insert:
+    1. `SELECT` Kandidat via `(device, inode)` unter Zeilen, deren alter Pfad nicht mehr existiert (`!Path::new(&old_path).exists()`) oder `missing = 1` → **Move**: `UPDATE tracks SET path=?, file_mtime=?, file_size=?, missing=0` + Tag-Felder refresh; `rating`/`play_count`/`added_at`/`last_played_at` unangetastet
+    2. sonst Fingerprint: genau EIN Kandidat mit gleichem `title`+`artist`+`album`, `ABS(duration_ms - ?) <= 2000`, gleicher `file_size`, alter Pfad weg → Move wie oben; MEHRERE Kandidaten → kein Move (Ambiguität `tracing::warn!`), normal einfügen
+    3. sonst normaler Insert (wie bisher)
+  - `ScanReport` + Feld `moved: u32`; beim Move zusätzlich alten `import_errors`-Eintrag des neuen UND alten Pfads räumen (bestehende Lifecycle-Helfer)
+
+- [ ] **Step 1 (TDD — die vom Nutzer geforderten Testcases, zuerst schreiben, RED bestätigen):**
+  - `move_via_rename_preserves_metadata`: Fixture-Kopie scannen → `rating=5, play_count=7` via SQL setzen → Datei mit `std::fs::rename` in einen NEUEN Unterordner verschieben (Inode bleibt) → Rescan → Assertions: gleiche Zeilen-`id`, neuer `path`, `rating=5`, `play_count=7`, `added_at` unverändert, `report.moved == 1`, `report.added == 0`, Gesamtzahl Zeilen unverändert
+  - `move_via_copy_delete_preserves_metadata` (Fingerprint-Pfad, simuliert Cross-Filesystem): Datei **kopieren + Original löschen** (Inode ändert sich!) → Rescan → gleiche Assertions wie oben
+  - `ambiguous_duplicates_are_not_guessed`: ZWEI identische Kopien (gleicher Fingerprint) scannen, beide löschen, EINE neue Kopie an neuem Ort → Rescan → `moved == 0`, `added == 1`, warn-Log; die alten Zeilen bleiben (missing-Markierung ist Watcher-/Etappe-3-Thema)
+  - `unchanged_files_are_not_matched_as_moves`: normale Bibliothek, nichts verschoben → Rescan → `moved == 0`, `skipped_unchanged` wie bisher
+  - Migrations-Test: v1-DB (Schema per SQL-Snapshot anlegen, user_version=1) → `migrate` → v2-Spalten vorhanden, Daten intakt, zweiter Lauf idempotent
+- [ ] **Step 2:** Schema v2 + Metadaten-Erfassung implementieren; bestehende Tests müssen unverändert grün bleiben (Upsert-Preservation-Test!). 
+- [ ] **Step 3:** Move-Logik implementieren → alle neuen Tests GREEN; `cargo clippy`/`fmt` sauber.
+- [ ] **Step 4:** Headless-E2E: Bibliothek scannen → App zu → Album-Ordner umbenennen → App mit `REPRISE_SCAN_DIR` auf denselben Root → Log `moved=N added=0`; sqlite3: `path` aktualisiert, `rating` erhalten.
+- [ ] **Step 5:** Commit `feat: scanner move detection — relocated files keep ratings, play counts, and added date`
+
+---
+
 ## Verifikation Etappe 2 (Definition of Done)
 
 - [ ] `cargo test` grün, `cargo clippy --all-targets -- -D warnings` + `cargo fmt --check` sauber
 - [ ] Headless: 250-Track-Bibliothek lädt (Windowing), Auto-Advance über 3 Titel, Repeat-All-Wrap, kaputter/gelöschter Titel → missing + Skip ohne Crash, MPRIS Play/Pause/Next via busctl, NoResults via SMOKE_FILTER
 - [ ] sqlite3-Checks: play_count nach EOS, rating persistiert, missing gesetzt
+- [ ] Move-Detection: Album-Ordner umbenennen + Rescan → `moved=N`, Bewertungen/Play Counts/added_at erhalten, keine Duplikate (Task-8-Testcases + E2E)
 - [ ] **Manuell (Nutzer):** Medientasten + GNOME-Schnellmenü steuern Reprise (MPRIS), Sterne klicken fühlt sich richtig an, Shuffle/Repeat-Buttons, große echte Bibliothek scrollt flüssig
 
 **Nicht in Etappe 2:** Sidebar (Playlisten/Warteschlangen-Ansicht/Fehlende Dateien), Browse-Leiste, Cover, Rhythmbox-Import, Tag-Editor, Löschen, Watcher, Einstellungs-Dialog (inkl. Layout-Optionen), EQ/ReplayGain, gettext, Flatpak.
