@@ -42,7 +42,7 @@ use rusqlite::Connection;
 
 use crate::models::Track;
 use crate::queries;
-use crate::ui::view_source::ViewSource;
+use crate::view_source::ViewSource;
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
 /// page size (`track_list.rs`'s former `WINDOW_LIMIT`), now used as the unit
