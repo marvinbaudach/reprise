@@ -76,8 +76,16 @@ Nachfolger:
 - Internes Modulsystem mit An/Aus-Liste in den Einstellungen (wie
   Rhythmbox' Plugins-Tab); Equalizer und ReplayGain sind die ersten Module
 - Rhythmbox-Import: `rhythmdb.xml` (Bewertungen, Play Counts, zuletzt
-  gespielt) und `playlists.xml`, mit Pfad-Abgleich gegen die gescannte
-  Bibliothek und Import-Bericht (Anzahl übernommen / nicht zugeordnet)
+  gespielt, hinzugefügt am) und `playlists.xml`. Dreistufiger Abgleich:
+  1. exakter Pfad-Treffer (URI-dekodiert) gegen die gescannte Bibliothek;
+  2. Dateien außerhalb der Bibliotheksordner werden einzeln aufgenommen
+     (Rhythmbox erlaubt Import von überall), häufige Fremd-Ordner werden
+     als neue Bibliotheksordner vorgeschlagen;
+  3. tote Pfade werden per Fuzzy-Abgleich (Titel + Interpret + Album +
+     Dauer ±2 s) gerettet, falls die Datei woanders wieder auftaucht.
+  Import-Bericht: übernommen / einzeln importiert / gerettet / nicht
+  auffindbar. Radio-Streams (`iradio`-Einträge) werden aufgehoben und dem
+  späteren Radio-Modul bereitgestellt.
 - Browse-Leiste wie in Rhythmbox: einblendbare Filterspalten
   Genre / Interpret / Album über der Titelliste, kombinierbar mit der Suche
 - Cover-Art-Pipeline: eingebettete Cover (lofty) und Bilddateien im
