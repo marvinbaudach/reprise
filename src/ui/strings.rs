@@ -17,3 +17,9 @@ pub const COLUMN_ALBUM: &str = "Album";
 pub const COLUMN_YEAR: &str = "Year";
 pub const COLUMN_LENGTH: &str = "Length";
 pub const COLUMN_RATING: &str = "Rating";
+
+// Player bar (src/ui/player_bar.rs).
+pub const PLAY: &str = "Play";
+pub const PAUSE: &str = "Pause";
+pub const PLAYBACK_POSITION: &str = "Playback position";
+pub const VOLUME: &str = "Volume";

@@ -70,6 +70,15 @@ impl Player {
             let sink = gst::ElementFactory::make(&sink_name)
                 .build()
                 .map_err(|e| PlayerError::Gst(e.to_string()))?;
+            // Pace the override sink against the pipeline clock (if it has a
+            // `sync` property): `fakesink` defaults to sync=false, which
+            // would consume an entire track as fast as it decodes — EOS
+            // after milliseconds, no position ticks — making headless runs
+            // behave nothing like real playback. Real audio sinks default to
+            // sync=true anyway, so this only affects test sinks.
+            if sink.find_property("sync").is_some() {
+                sink.set_property("sync", true);
+            }
             tracing::info!(sink = %sink_name, "REPRISE_AUDIO_SINK override active");
             playbin.set_property("audio-sink", &sink);
         }

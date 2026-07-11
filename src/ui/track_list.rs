@@ -51,6 +51,18 @@ const WINDOW_OFFSET: i64 = 0;
 const STACK_PAGE_EMPTY: &str = "empty";
 const STACK_PAGE_LIST: &str = "list";
 
+/// Dev/verification hook (permanent, like `REPRISE_SCAN_DIR` and
+/// `REPRISE_SMOKE_QUIT`): when set, the first row is activated
+/// programmatically — through the exact same `on_activate` path a
+/// double-click takes — once the initial load has run and the main loop is
+/// idle. Combined with `REPRISE_SCAN_DIR` (populate), `REPRISE_AUDIO_SINK=
+/// fakesink` (no audio device) and `REPRISE_SMOKE_QUIT` (exit), this enables
+/// the full headless play-a-track E2E:
+///
+/// `REPRISE_SCAN_DIR=… REPRISE_SMOKE_ACTIVATE=1 REPRISE_AUDIO_SINK=fakesink
+///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`
+const SMOKE_ACTIVATE_ENV_VAR: &str = "REPRISE_SMOKE_ACTIVATE";
+
 /// Icon shown on the empty-library placeholder (nothing has been scanned
 /// in yet).
 const ICON_EMPTY_LIBRARY: &str = "folder-music-symbolic";
@@ -112,6 +124,12 @@ impl Default for SortState {
     }
 }
 
+/// Callback invoked with an activated row's `Track` (double-click/Enter on a
+/// row, or the `REPRISE_SMOKE_ACTIVATE` hook). Provided by `window::build`,
+/// which routes it to the player — the track list itself stays free of any
+/// playback knowledge.
+pub type OnActivate = Box<dyn Fn(&Track)>;
+
 struct Shared {
     conn: Rc<RefCell<Connection>>,
     store: gio::ListStore,
@@ -122,6 +140,9 @@ struct Shared {
     empty_page: adw::StatusPage,
     sort: RefCell<SortState>,
     filter: RefCell<String>,
+    /// Shared by `wire_activate` (user activation) and the smoke-activate
+    /// hook so both take the identical code path.
+    on_activate: OnActivate,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -132,8 +153,9 @@ pub struct TrackList {
 
 impl TrackList {
     /// Builds the track list and performs the initial load (unfiltered,
-    /// default sort). `conn` is the shared UI-owned database connection.
-    pub fn new(conn: Rc<RefCell<Connection>>) -> Self {
+    /// default sort). `conn` is the shared UI-owned database connection;
+    /// `on_activate` receives the `Track` of every activated row.
+    pub fn new(conn: Rc<RefCell<Connection>>, on_activate: OnActivate) -> Self {
         let store = gio::ListStore::new::<glib::BoxedAnyObject>();
         let selection = gtk4::NoSelection::new(Some(store.clone()));
 
@@ -212,12 +234,14 @@ impl TrackList {
             empty_page,
             sort: RefCell::new(SortState::default()),
             filter: RefCell::new(String::new()),
+            on_activate,
         });
 
         wire_sort_clicks(&column_view, &shared);
-        wire_activate(&column_view);
+        wire_activate(&column_view, &shared);
 
         reload(&shared);
+        arm_smoke_activate(&shared);
 
         Self { shared }
     }
@@ -374,11 +398,11 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
     reload(shared);
 }
 
-/// Row activation (double-click or Enter on a focused row). The player lands
-/// in Task 9 — for now this is just an observable log line. No shared state
-/// is needed yet; `Rc<Shared>` will be cloned into this closure again once
-/// there's a player to hand the activated track to.
-fn wire_activate(column_view: &gtk4::ColumnView) {
+/// Row activation (double-click or Enter on a focused row): resolve the
+/// row's `Track` and hand it to the `on_activate` callback (which
+/// `window::build` routes to the player).
+fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
+    let shared = shared.clone();
     column_view.connect_activate(move |view, position| {
         let Some(model) = view.model() else {
             return;
@@ -393,6 +417,32 @@ fn wire_activate(column_view: &gtk4::ColumnView) {
         };
         let track = boxed.borrow::<Track>();
         tracing::info!(path = %track.path, "activate track");
+        (shared.on_activate)(&track);
+    });
+}
+
+/// Arms the `REPRISE_SMOKE_ACTIVATE` hook (see `SMOKE_ACTIVATE_ENV_VAR`):
+/// one idle callback, deferred so it runs once the main loop is up rather
+/// than in the middle of window construction, that pushes the first row
+/// through the same `on_activate` path as a real double-click.
+fn arm_smoke_activate(shared: &Rc<Shared>) {
+    if std::env::var(SMOKE_ACTIVATE_ENV_VAR).is_err() {
+        return;
+    }
+    tracing::info!("{SMOKE_ACTIVATE_ENV_VAR} set: arming first-row activation");
+    let shared = shared.clone();
+    glib::idle_add_local_once(move || {
+        let Some(item) = shared.store.item(0) else {
+            tracing::warn!("{SMOKE_ACTIVATE_ENV_VAR}: track list is empty; nothing to activate");
+            return;
+        };
+        let Some(boxed) = item.downcast_ref::<glib::BoxedAnyObject>() else {
+            tracing::warn!("{SMOKE_ACTIVATE_ENV_VAR}: item is not a BoxedAnyObject<Track>");
+            return;
+        };
+        let track = boxed.borrow::<Track>();
+        tracing::info!(path = %track.path, "{SMOKE_ACTIVATE_ENV_VAR}: activating first row");
+        (shared.on_activate)(&track);
     });
 }
 

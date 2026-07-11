@@ -2,10 +2,6 @@ mod db;
 mod format;
 mod library;
 mod models;
-// `player` is not yet called from anywhere (it lands in Task 9); silence
-// dead-code warnings for the whole module rather than weakening it item by
-// item. Remove this attribute once `window.rs`/`track_list.rs` wire it in.
-#[allow(dead_code)]
 mod player;
 mod queries;
 mod ui;

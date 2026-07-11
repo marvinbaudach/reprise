@@ -1,6 +1,7 @@
 //! Builds the main application window: a libadwaita `ToolbarView` with a
-//! header bar (search entry + scan button) over the track list. Scanning
-//! (the disabled header button) is wired up in Task 10.
+//! header bar (search entry + scan button) over the track list, and the
+//! player bar as the bottom bar. Scanning (the disabled header button) is
+//! wired up in Task 10.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,8 +12,9 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use rusqlite::Connection;
 
+use super::player_controller::PlayerController;
 use super::strings;
-use super::track_list::TrackList;
+use super::track_list::{OnActivate, TrackList};
 
 /// Debounce delay between the last keystroke in the search entry and the
 /// track-list reload it triggers, so fast typing doesn't fire a query per
@@ -64,11 +66,38 @@ pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>) {
     header.pack_start(&search_entry);
     header.pack_end(&scan_button);
 
-    let track_list = TrackList::new(conn);
+    // The player is created eagerly at window build (not lazily on first
+    // activation): construction is cheap (one playbin, no I/O), the
+    // `REPRISE_AUDIO_SINK` override keeps headless environments working, and
+    // eager creation means the bottom bar exists — greyed out — from the
+    // first frame. If GStreamer is unavailable the app degrades to a library
+    // browser: error logged, no player bar, activations warn (fault
+    // tolerance: never crash over a missing subsystem).
+    let player = match PlayerController::new() {
+        Ok(controller) => Some(controller),
+        Err(error) => {
+            tracing::error!(%error, "player unavailable: playback disabled");
+            None
+        }
+    };
+
+    let on_activate: OnActivate = {
+        let player = player.clone();
+        Box::new(move |track| match &player {
+            Some(player) => player.play_track(track),
+            None => {
+                tracing::warn!(path = %track.path, "player unavailable; ignoring activation");
+            }
+        })
+    };
+    let track_list = TrackList::new(conn, on_activate);
 
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(track_list.widget()));
+    if let Some(player) = &player {
+        toolbar_view.add_bottom_bar(player.bar_widget());
+    }
 
     window.set_content(Some(&toolbar_view));
 
