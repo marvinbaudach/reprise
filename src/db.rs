@@ -72,6 +72,34 @@ ALTER TABLE tracks ADD COLUMN inode INTEGER;
 CREATE INDEX idx_tracks_dev_inode ON tracks(device, inode);
 "#;
 
+/// Schema v3 (Stage 3 Task 2 — playlist backend): adds manual and smart
+/// playlists. Manual playlists store ordered track references with duplicate
+/// permission (like Rhythmbox). Smart playlists filter tracks via a rules
+/// JSON document (field/op/value, AND-joined) with sort and limit options.
+/// Both types support arbitrary `position` ordering (0-indexed, gapless, kept
+/// contiguous across operations).
+const SCHEMA_V3: &str = r#"
+CREATE TABLE playlists (
+  id       INTEGER PRIMARY KEY,
+  name     TEXT NOT NULL,
+  position INTEGER NOT NULL
+);
+CREATE TABLE playlist_tracks (
+  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  track_id    INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  position    INTEGER NOT NULL,
+  PRIMARY KEY (playlist_id, position)
+);
+CREATE TABLE smart_playlists (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  rules_json TEXT NOT NULL,
+  sort_field TEXT NOT NULL,
+  sort_dir   TEXT NOT NULL,
+  limit_count INTEGER
+);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -90,6 +118,26 @@ pub fn migrate(conn: &Connection) -> Result<(), DbError> {
     if version < 2 {
         conn.execute_batch(SCHEMA_V2)?;
         conn.pragma_update(None, "user_version", 2)?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 3 {
+        conn.execute_batch(SCHEMA_V3)?;
+        // Seed three default smart playlists (only if none exist — idempotent).
+        let smart_playlist_count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM smart_playlists", [], |r| r.get(0))?;
+        if smart_playlist_count == 0 {
+            conn.execute_batch(
+                r#"
+INSERT INTO smart_playlists (name, rules_json, sort_field, sort_dir, limit_count)
+VALUES ('Recently played', '[{"field":"last_played_at","op":"not-null"}]', 'last_played_at', 'desc', 50);
+INSERT INTO smart_playlists (name, rules_json, sort_field, sort_dir, limit_count)
+VALUES ('Top rated', '[{"field":"rating","op":">=","value":4}]', 'rating', 'desc', NULL);
+INSERT INTO smart_playlists (name, rules_json, sort_field, sort_dir, limit_count)
+VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
+                "#,
+            )?;
+        }
+        conn.pragma_update(None, "user_version", 3)?;
     }
     Ok(())
 }
@@ -110,7 +158,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 
     /// Builds a v1 DB by hand (SCHEMA_V1 + `user_version = 1`, exactly what a
@@ -135,7 +183,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3); // Now goes to v3
 
         let (title, rating, play_count, added_at, file_size, device, inode): (
             String,
@@ -177,7 +225,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 2);
+        assert_eq!(version_after_second_run, 3); // Now v3
     }
 
     #[test]
@@ -187,5 +235,151 @@ mod tests {
             .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
             .unwrap();
         assert_eq!(busy_timeout_ms, 5000);
+    }
+
+    /// v2→v3 migration: playlists tables created, smart playlists seeded
+    /// exactly once, foreign keys cascade correctly.
+    #[test]
+    fn migrate_v2_to_v3_creates_playlist_tables_and_seeds_smart_playlists() {
+        let conn = open(None).unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute_batch(SCHEMA_V2).unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        // Verify v2 state before migration.
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+
+        migrate(&conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 3);
+
+        // Verify tables exist.
+        let playlists_exist: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='playlists')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(playlists_exist);
+
+        let playlist_tracks_exist: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='playlist_tracks')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(playlist_tracks_exist);
+
+        let smart_playlists_exist: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='smart_playlists')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(smart_playlists_exist);
+
+        // Verify three smart playlists were seeded.
+        let smart_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM smart_playlists", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(smart_count, 3);
+
+        // Verify seed names and rules.
+        let (name1, rules1): (String, String) = conn
+            .query_row(
+                "SELECT name, rules_json FROM smart_playlists ORDER BY id LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(name1, "Recently played");
+        assert_eq!(rules1, r#"[{"field":"last_played_at","op":"not-null"}]"#);
+
+        // Second migration must be idempotent (no duplicate inserts).
+        migrate(&conn).unwrap();
+        let smart_count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM smart_playlists", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(smart_count_after, 3);
+    }
+
+    /// Foreign key cascade: delete track → its playlist_tracks rows gone.
+    #[test]
+    fn migrate_v3_foreign_keys_cascade_on_track_delete() {
+        let conn = open(None).unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO playlists (id, name, position) VALUES (1, 'My Playlist', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (1, 1, 0)",
+            [],
+        )
+        .unwrap();
+
+        // Delete the track.
+        conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
+
+        // Playlist entry should be gone (FK cascade).
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM playlist_tracks WHERE track_id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    /// Foreign key cascade: delete playlist → its playlist_tracks rows gone.
+    #[test]
+    fn migrate_v3_foreign_keys_cascade_on_playlist_delete() {
+        let conn = open(None).unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO playlists (id, name, position) VALUES (1, 'My Playlist', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (1, 1, 0)",
+            [],
+        )
+        .unwrap();
+
+        // Delete the playlist.
+        conn.execute("DELETE FROM playlists WHERE id = 1", [])
+            .unwrap();
+
+        // Playlist entries should be gone (FK cascade).
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }
