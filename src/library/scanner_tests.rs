@@ -599,3 +599,108 @@ fn traversal_error_in_unreadable_dir_is_recorded_not_dropped() {
         "traversal error must be recorded in import_errors"
     );
 }
+
+// -- mark_vanished_under_root (Stage 3 Task 8 — folder watcher) ------------
+//
+// TDD per the task brief: these tests were written before `mark_vanished_
+// under_root` existed. See that function's doc comment in `scanner.rs` for
+// the component-wise (not string/LIKE) prefix check and why the watcher
+// always runs this *after* an incremental `scan_folder(root)`.
+
+fn missing_flag(conn: &Connection, id: i64) -> i64 {
+    conn.query_row("SELECT missing FROM tracks WHERE id = ?1", [id], |r| {
+        r.get(0)
+    })
+    .unwrap()
+}
+
+#[test]
+fn mark_vanished_under_root_leaves_a_present_file_untouched() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = fixture_copy(tmp.path(), "a.flac");
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    scan_folder(&mut conn, tmp.path()).unwrap();
+    let (id, ..) = row_by_path(&conn, &path);
+
+    let marked = mark_vanished_under_root(&conn, tmp.path()).unwrap();
+
+    assert_eq!(marked, 0);
+    assert_eq!(missing_flag(&conn, id), 0);
+}
+
+#[test]
+fn mark_vanished_under_root_marks_a_deleted_file_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = fixture_copy(tmp.path(), "a.flac");
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    scan_folder(&mut conn, tmp.path()).unwrap();
+    let (id, ..) = row_by_path(&conn, &path);
+
+    std::fs::remove_file(&path).unwrap();
+    let marked = mark_vanished_under_root(&conn, tmp.path()).unwrap();
+
+    assert_eq!(marked, 1);
+    assert_eq!(missing_flag(&conn, id), 1);
+}
+
+/// A track whose path lives outside `root` must never be touched, even if
+/// its own file has also vanished — that track belongs to some other
+/// watcher/root (the future multi-folder-library guarantee), which is
+/// responsible for marking it missing itself.
+#[test]
+fn mark_vanished_under_root_ignores_a_track_outside_root_even_if_its_file_is_gone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let watched_root = tmp.path().join("watched");
+    let other_root = tmp.path().join("other");
+    std::fs::create_dir(&watched_root).unwrap();
+    std::fs::create_dir(&other_root).unwrap();
+
+    let watched_path = fixture_copy(&watched_root, "in-root.flac");
+    let other_path = fixture_copy(&other_root, "outside-root.flac");
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    scan_folder(&mut conn, &watched_root).unwrap();
+    scan_folder(&mut conn, &other_root).unwrap();
+    let (watched_id, ..) = row_by_path(&conn, &watched_path);
+    let (other_id, ..) = row_by_path(&conn, &other_path);
+
+    // Both files vanish, but only `watched_root` is passed in.
+    std::fs::remove_file(&watched_path).unwrap();
+    std::fs::remove_file(&other_path).unwrap();
+
+    let marked = mark_vanished_under_root(&conn, &watched_root).unwrap();
+
+    assert_eq!(marked, 1, "only the in-root track is marked");
+    assert_eq!(missing_flag(&conn, watched_id), 1);
+    assert_eq!(
+        missing_flag(&conn, other_id),
+        0,
+        "a track outside the watched root must never be touched"
+    );
+}
+
+/// An already-missing track must not be recounted (and its `missing` flag,
+/// already `1`, is left as-is) — the watcher only wants to know how many
+/// tracks were *newly* marked on this pass.
+#[test]
+fn mark_vanished_under_root_does_not_recount_an_already_missing_track() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = fixture_copy(tmp.path(), "a.flac");
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    scan_folder(&mut conn, tmp.path()).unwrap();
+    let (id, ..) = row_by_path(&conn, &path);
+
+    std::fs::remove_file(&path).unwrap();
+    let first = mark_vanished_under_root(&conn, tmp.path()).unwrap();
+    assert_eq!(first, 1);
+
+    // Second pass: the same track is already missing=1, so it must not be
+    // counted again even though its file is still gone.
+    let second = mark_vanished_under_root(&conn, tmp.path()).unwrap();
+    assert_eq!(second, 0);
+    assert_eq!(missing_flag(&conn, id), 1);
+}

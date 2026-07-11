@@ -67,6 +67,7 @@ use crate::format::format_duration;
 use crate::library::stats;
 use crate::models::Track;
 use crate::queries;
+use crate::ui::import_errors_view::ImportErrorsView;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list_context_menu;
@@ -77,6 +78,11 @@ use crate::view_source::ViewSource;
 
 const STACK_PAGE_EMPTY: &str = "empty";
 const STACK_PAGE_LIST: &str = "list";
+/// Stage 3 Task 8: the ImportErrors source's dedicated path/reason/time panel
+/// (`ui::import_errors_view::ImportErrorsView`) — a third `gtk::Stack` page,
+/// shown instead of `STACK_PAGE_LIST` only while `ViewSource::ImportErrors`
+/// is selected and has rows (see `apply_empty_state`'s `List` arm).
+const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
 
 /// Dev/verification hook (permanent, like `REPRISE_SCAN_DIR` and
 /// `REPRISE_SMOKE_QUIT`): when set, the first row is activated
@@ -370,6 +376,28 @@ pub(super) struct Shared {
     /// direct calls. Takes `(playlist_id, playlist_name, ids)` and returns
     /// whether anything was actually added.
     pub(super) on_sidebar_playlist_drop: RefCell<Option<OnSidebarPlaylistDrop>>,
+    /// Stage 3 Task 8: the ImportErrors source's dedicated panel — see
+    /// `STACK_PAGE_IMPORT_ERRORS`'s doc comment. Built once, alongside every
+    /// other widget, and refreshed (not rebuilt) on every `reload()` while
+    /// this source is selected.
+    import_errors_view: ImportErrorsView,
+    /// "Rescan library" (Missing-source context menu item, Stage 3 Task 8):
+    /// injected via `TrackList::set_on_rescan_library` — wraps `ui::window`'s
+    /// scan flow against the persisted library root without this module
+    /// depending on the scan machinery/settings table directly (same
+    /// decoupling-via-closure seam as `on_play_selected`/`on_queue_
+    /// selected`).
+    pub(super) on_rescan_library: RefCell<Option<Rc<dyn Fn()>>>,
+    /// "Remove from library" (Missing-source context menu item, Stage 3 Task
+    /// 8): injected via `TrackList::set_on_library_mutated` — `window.rs`
+    /// wires this to `Sidebar::refresh`, since the Missing badge count can
+    /// only ever shrink from this action.
+    pub(super) on_library_mutated: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Invoked after the ImportErrors panel's own Retry/Dismiss actions
+    /// mutate `import_errors` — injected via `TrackList::set_on_import_
+    /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the
+    /// Import-errors badge count just changed).
+    pub(super) on_import_errors_mutated: RefCell<Option<Rc<dyn Fn()>>>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -413,9 +441,15 @@ impl TrackList {
 
         let empty_page = build_status_page();
 
+        // Stage 3 Task 8: built before the stack so its widget can be added
+        // as a third page alongside empty/list — see `STACK_PAGE_IMPORT_
+        // ERRORS`'s doc comment.
+        let import_errors_view = ImportErrorsView::new(conn.clone());
+
         let stack = gtk4::Stack::new();
         stack.add_named(&empty_page, Some(STACK_PAGE_EMPTY));
         stack.add_named(&scrolled, Some(STACK_PAGE_LIST));
+        stack.add_named(import_errors_view.widget(), Some(STACK_PAGE_IMPORT_ERRORS));
         stack.set_visible_child_name(STACK_PAGE_EMPTY);
 
         // Built here, before any column is appended — unlike every stage
@@ -443,7 +477,31 @@ impl TrackList {
             on_playlist_mutated: RefCell::new(None),
             on_queue_reorder: RefCell::new(None),
             on_sidebar_playlist_drop: RefCell::new(None),
+            import_errors_view,
+            on_rescan_library: RefCell::new(None),
+            on_library_mutated: RefCell::new(None),
+            on_import_errors_mutated: RefCell::new(None),
         });
+
+        // Stage 3 Task 8: the panel's own Retry/Dismiss actions must both
+        // refresh this `TrackList`'s stack-page/count decision (via `reload`,
+        // which also re-refreshes the panel — cheap, and consistent with
+        // this module's general tolerance for a redundant-but-harmless extra
+        // refresh) and let `window.rs` know the Import-errors badge count may
+        // have changed. `Weak`: this callback lives as long as the panel
+        // widget itself (owned by `shared`), so an `Rc` here would be a
+        // self-referential cycle keeping `shared` alive forever.
+        {
+            let shared_weak = Rc::downgrade(&shared);
+            shared
+                .import_errors_view
+                .set_on_mutated(move || match shared_weak.upgrade() {
+                    Some(shared) => notify_import_errors_mutated_and_reload(&shared),
+                    None => tracing::warn!(
+                        "import errors panel: mutated callback fired after track list was dropped"
+                    ),
+                });
+        }
 
         let title_column = append_column(
             &column_view,
@@ -560,6 +618,11 @@ impl TrackList {
     /// to log-only if the upgrade ever fails.
     pub fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
         self.shared.toast_overlay.set(Some(overlay));
+        // Stage 3 Task 8: the ImportErrors panel has its own toast overlay
+        // seam (for a failed Retry) — forwarded here rather than injected
+        // separately, since `window.rs` already calls this one method at the
+        // right point in construction.
+        self.shared.import_errors_view.set_toast_overlay(overlay);
     }
 
     /// Injects the main window, once it exists — see the `Shared::window`
@@ -606,6 +669,45 @@ impl TrackList {
         callback: impl Fn(i64, &str, &[i64]) -> bool + 'static,
     ) {
         *self.shared.on_sidebar_playlist_drop.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Injects the "Rescan library" context-menu action callback (Missing
+    /// source, Stage 3 Task 8) — see the `Shared::on_rescan_library` doc
+    /// comment. `window.rs` wires this to `trigger_rescan_of_library_root`.
+    pub fn set_on_rescan_library(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_rescan_library.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Injects the callback invoked after "Remove from library" deletes rows
+    /// (Missing source, Stage 3 Task 8) — see the `Shared::on_library_
+    /// mutated` doc comment. `window.rs` wires this to `Sidebar::refresh`.
+    pub fn set_on_library_mutated(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_library_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Injects the callback invoked after the ImportErrors panel's own
+    /// Retry/Dismiss actions mutate `import_errors` (Stage 3 Task 8) — see
+    /// the `Shared::on_import_errors_mutated` doc comment. `window.rs` wires
+    /// this to `Sidebar::refresh`.
+    pub fn set_on_import_errors_mutated(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_import_errors_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
+}
+
+/// Clone-out-then-call `on_import_errors_mutated` (hoisted per this
+/// project's `RefCell` callback discipline), then `reload` — the panel's own
+/// `refresh()` already updated its rows before this callback fired (see
+/// `import_errors_view.rs`'s `notify_mutated_and_refresh`), but only `reload`
+/// re-derives this `TrackList`'s stack-page decision (e.g. switching to the
+/// "nothing here" empty page once the last error is dismissed).
+fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
+    reload(shared);
+    let callback = shared.on_import_errors_mutated.borrow().clone();
+    match callback {
+        Some(callback) => callback(),
+        None => tracing::warn!(
+            "import errors panel: mutated but no on_import_errors_mutated callback is wired"
+        ),
     }
 }
 
@@ -1254,7 +1356,15 @@ fn arm_smoke_source(shared: &Rc<Shared>) {
         tracing::info!(value = %text, "{SMOKE_SOURCE_ENV_VAR} set: applying programmatic view-source switch");
         set_source_and_reload(&shared, source);
         let label = shared.source.borrow().label();
-        let rows = shared.model.n_items();
+        // Stage 3 Task 8: the ImportErrors source's rows live in `import_
+        // errors_view`, not `shared.model` (which is always empty for this
+        // source — see `reload`'s own branch) — mirror that here so this
+        // log line reports the real row count instead of a stale 0.
+        let rows = if matches!(*shared.source.borrow(), ViewSource::ImportErrors) {
+            shared.import_errors_view.refresh() as u32
+        } else {
+            shared.model.n_items()
+        };
         tracing::info!(source = %label, rows, "view source set to {label} ({rows} rows)");
     });
 }
@@ -1318,7 +1428,15 @@ pub(super) fn reload(shared: &Rc<Shared>) {
         .model
         .set_query(&source, &sort.field, &sort.dir, &filter, &queue_ids);
 
-    let count = shared.model.n_items() as usize;
+    // Stage 3 Task 8: the ImportErrors source's rows live in `import_errors_
+    // view`, not `shared.model` (which `queries.rs` always resolves to an
+    // empty window/count for this source — see its module doc's `ImportErrors`
+    // section) — so its row count comes from refreshing that panel instead.
+    let count = if matches!(source, ViewSource::ImportErrors) {
+        shared.import_errors_view.refresh()
+    } else {
+        shared.model.n_items() as usize
+    };
     apply_empty_state(shared, empty_state_for(count, has_filter, &source));
 
     tracing::info!(
@@ -1343,7 +1461,15 @@ pub(super) fn reload(shared: &Rc<Shared>) {
 fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
     match state {
         EmptyState::List => {
-            shared.stack.set_visible_child_name(STACK_PAGE_LIST);
+            // Stage 3 Task 8: the ImportErrors source's populated page is the
+            // dedicated panel, not the shared `ColumnView` page — every other
+            // source keeps using `STACK_PAGE_LIST` exactly as before.
+            let page = if matches!(*shared.source.borrow(), ViewSource::ImportErrors) {
+                STACK_PAGE_IMPORT_ERRORS
+            } else {
+                STACK_PAGE_LIST
+            };
+            shared.stack.set_visible_child_name(page);
         }
         EmptyState::EmptyLibrary => {
             shared.empty_page.set_icon_name(Some(ICON_EMPTY_LIBRARY));

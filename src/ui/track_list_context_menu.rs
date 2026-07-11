@@ -105,6 +105,10 @@ const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
 const ACTION_ADD_TO_PLAYLIST: &str = "add-to-playlist";
 const ACTION_NEW_PLAYLIST: &str = "new-playlist";
 const ACTION_REMOVE_FROM_PLAYLIST: &str = "remove-from-playlist";
+/// Stage 3 Task 8: Missing-source-only actions — see `build_context_menu_
+/// model`'s `ViewSource::Missing` arm.
+const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
+const ACTION_REMOVE_FROM_LIBRARY: &str = "remove-from-library";
 /// The action group name every `"tracklist.*"` detailed-action string below
 /// refers to — inserted once on `column_view` by `wire_context_menu_actions`.
 const ACTION_GROUP_NAME: &str = "tracklist";
@@ -226,6 +230,24 @@ fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
         menu.append_section(None, &remove_section);
     }
 
+    // Stage 3 Task 8: the Missing source's problem-source actions — "Rescan
+    // library" acts on the persisted library root regardless of selection
+    // (so it's offered even with nothing selected), "Remove from library"
+    // acts on the current selection, exactly like "Remove from playlist"
+    // above.
+    if matches!(*shared.source.borrow(), ViewSource::Missing) {
+        let missing_section = gio::Menu::new();
+        missing_section.append(
+            Some(strings::CONTEXT_MENU_RESCAN_LIBRARY),
+            Some(&format!("{ACTION_GROUP_NAME}.{ACTION_RESCAN_LIBRARY}")),
+        );
+        missing_section.append(
+            Some(strings::CONTEXT_MENU_REMOVE_FROM_LIBRARY),
+            Some(&format!("{ACTION_GROUP_NAME}.{ACTION_REMOVE_FROM_LIBRARY}")),
+        );
+        menu.append_section(None, &missing_section);
+    }
+
     menu
 }
 
@@ -296,6 +318,23 @@ pub(super) fn wire_context_menu_actions(column_view: &gtk4::ColumnView, shared: 
         });
     }
     action_group.add_action(&remove_action);
+
+    let rescan_library_action = gio::SimpleAction::new(ACTION_RESCAN_LIBRARY, None);
+    {
+        let shared = shared.clone();
+        rescan_library_action.connect_activate(move |_, _| handle_rescan_library(&shared));
+    }
+    action_group.add_action(&rescan_library_action);
+
+    let remove_from_library_action = gio::SimpleAction::new(ACTION_REMOVE_FROM_LIBRARY, None);
+    {
+        let shared = shared.clone();
+        remove_from_library_action.connect_activate(move |_, _| {
+            let ids = current_selection_ids(&shared);
+            handle_remove_from_library(&shared, &ids);
+        });
+    }
+    action_group.add_action(&remove_from_library_action);
 
     column_view.insert_action_group(ACTION_GROUP_NAME, Some(&action_group));
 }
@@ -484,6 +523,62 @@ fn handle_remove_from_playlist(shared: &Rc<Shared>, positions: &[u32]) {
             );
             show_toast(shared, &strings::playlist_remove_tracks_failed_toast());
         }
+    }
+}
+
+/// "Rescan library" action handler (`ACTION_RESCAN_LIBRARY`, Missing source
+/// only, Stage 3 Task 8) — hoisted clone-out then call, per this project's
+/// `RefCell` callback discipline; `window.rs`'s `trigger_rescan_of_library_
+/// root` (wired via `TrackList::set_on_rescan_library`) owns the actual scan
+/// flow and its own toasts, so there is nothing further to do here on
+/// either outcome.
+fn handle_rescan_library(shared: &Rc<Shared>) {
+    let callback = shared.on_rescan_library.borrow().clone();
+    match callback {
+        Some(callback) => callback(),
+        None => tracing::warn!(
+            "context menu: rescan-library fired but no on_rescan_library callback is wired"
+        ),
+    }
+}
+
+/// "Remove from library" action handler (`ACTION_REMOVE_FROM_LIBRARY`,
+/// Missing source only, Stage 3 Task 8) — see `ui::track_actions::remove_
+/// missing_selected`'s doc comment for the DB-only delete guarantee. A no-op
+/// for an empty selection.
+fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]) {
+    if ids.is_empty() {
+        tracing::debug!(
+            "context menu: remove-from-library requested with nothing selected; ignoring"
+        );
+        return;
+    }
+    match track_actions::remove_missing_selected(&shared.conn, ids) {
+        Ok(removed) => {
+            tracing::info!(removed, "context menu: tracks removed from library");
+            notify_library_mutated(shared);
+            show_toast(
+                shared,
+                &strings::tracks_removed_from_library_toast(removed as usize),
+            );
+            reload(shared);
+        }
+        Err(error) => {
+            tracing::error!(%error, "context menu: failed to remove tracks from library");
+            show_toast(shared, &strings::tracks_removed_from_library_failed_toast());
+        }
+    }
+}
+
+/// Clone-out-then-call `on_library_mutated` (Stage 3 Task 8) — see the
+/// `Shared::on_library_mutated` doc comment in `track_list.rs`.
+fn notify_library_mutated(shared: &Rc<Shared>) {
+    let callback = shared.on_library_mutated.borrow().clone();
+    match callback {
+        Some(callback) => callback(),
+        None => tracing::warn!(
+            "context menu: library mutated but no on_library_mutated callback is wired"
+        ),
     }
 }
 

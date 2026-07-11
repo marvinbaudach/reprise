@@ -855,6 +855,28 @@ pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqli
     Ok(())
 }
 
+/// "Remove from library" (Stage 3 Task 8's Missing-source action): deletes
+/// `track_id`'s row outright. This is a DATABASE-ONLY delete — it never
+/// touches the file on disk, which is the whole point of the app's "we never
+/// delete your files" promise; there is nothing to delete here anyway, since
+/// this action only exists for a track already flagged `missing` (the file
+/// is already gone from disk by definition).
+///
+/// The `WHERE ... AND missing = 1` guard is a defensive belt-and-braces
+/// check, not just `WHERE id = ?1`: it makes this call a no-op (`Ok(false)`)
+/// against a track that somehow isn't actually missing any more (e.g. a
+/// rescan raced ahead of a stale Missing-view selection and restored the
+/// file), rather than silently deleting a live library row's history because
+/// the UI's idea of "this row is missing" was one reload out of date.
+/// Returns whether a row was actually deleted.
+pub fn remove_missing_track(conn: &Connection, track_id: i64) -> Result<bool, rusqlite::Error> {
+    let deleted = conn.execute(
+        "DELETE FROM tracks WHERE id = ?1 AND missing = 1",
+        rusqlite::params![track_id],
+    )?;
+    Ok(deleted > 0)
+}
+
 /// Aggregates library-wide stats over all non-missing tracks. Powers the
 /// status line (`ui::status_bar`). `track_count`/`total_duration_ms` always
 /// describe the *whole* library, regardless of `filter` — only `filtered_
@@ -893,6 +915,50 @@ pub fn query_library_stats(
 /// the "Import errors" badge count.
 pub fn query_import_error_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
     conn.query_row("SELECT count(*) FROM import_errors", [], |r| r.get(0))
+}
+
+/// One `import_errors` row, as rendered by the ImportErrors source (Stage 3
+/// Task 8: this task builds the real backing query/columns the module doc's
+/// `ImportErrors` section describes — `path`/`reason`/`occurred_at`, the
+/// exact three columns `import_errors` has always had).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportErrorRow {
+    pub id: i64,
+    pub path: String,
+    pub reason: String,
+    pub occurred_at: i64,
+}
+
+/// Loads every `import_errors` row, most recent first (`occurred_at DESC`,
+/// falling back to `id DESC` for same-second ties so the ordering is
+/// deterministic) — capped at `QUEUE_LIMIT` for the same defense-in-depth
+/// reason every other unbounded list query in this module is.
+pub fn query_import_errors(conn: &Connection) -> Result<Vec<ImportErrorRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT id, path, reason, occurred_at FROM import_errors \
+         ORDER BY occurred_at DESC, id DESC LIMIT {QUEUE_LIMIT}"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |r| {
+        Ok(ImportErrorRow {
+            id: r.get(0)?,
+            path: r.get(1)?,
+            reason: r.get(2)?,
+            occurred_at: r.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// "Dismiss" action (Stage 3 Task 8's ImportErrors source): deletes one
+/// `import_errors` row by id. This never touches `tracks` or any file on
+/// disk — it only clears the recorded failure itself.
+pub fn delete_import_error(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "DELETE FROM import_errors WHERE id = ?1",
+        rusqlite::params![id],
+    )?;
+    Ok(())
 }
 
 /// Looks up a track's id by its exact, parameterized `path` (Stage 3 Task 7:
@@ -1870,6 +1936,110 @@ mod tests {
         )
         .unwrap();
         assert_eq!(query_import_error_count(&conn).unwrap(), 2);
+    }
+
+    #[test]
+    fn query_import_errors_returns_rows_most_recent_first() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/a.flac', 'bad tag', 100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/b.flac', 'io error', 200)",
+            [],
+        )
+        .unwrap();
+
+        let rows = query_import_errors(&conn).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].path, "/x/b.flac");
+        assert_eq!(rows[0].reason, "io error");
+        assert_eq!(rows[0].occurred_at, 200);
+        assert_eq!(rows[1].path, "/x/a.flac");
+    }
+
+    #[test]
+    fn query_import_errors_empty_table_returns_empty_vec() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        assert!(query_import_errors(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_import_error_removes_only_the_given_row() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/a.flac', 'bad tag', 100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/b.flac', 'io error', 200)",
+            [],
+        )
+        .unwrap();
+        let rows = query_import_errors(&conn).unwrap();
+        let to_delete = rows.iter().find(|r| r.path == "/x/a.flac").unwrap().id;
+
+        delete_import_error(&conn, to_delete).unwrap();
+
+        let remaining = query_import_errors(&conn).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].path, "/x/b.flac");
+    }
+
+    #[test]
+    fn remove_missing_track_deletes_a_missing_row() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, added_at, missing) \
+             VALUES ('/x/a.flac', 'A', '', 0, 1)",
+            [],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks", [], |r| r.get(0))
+            .unwrap();
+
+        let removed = remove_missing_track(&conn, id).unwrap();
+
+        assert!(removed);
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    /// Defensive guard: a track that is NOT (or no longer) missing must
+    /// survive a `remove_missing_track` call untouched — see that function's
+    /// doc comment for why this guard exists (a stale Missing-view selection
+    /// racing a rescan that just restored the file).
+    #[test]
+    fn remove_missing_track_is_a_no_op_when_the_track_is_not_missing() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, added_at, missing) \
+             VALUES ('/x/a.flac', 'A', '', 0, 0)",
+            [],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks", [], |r| r.get(0))
+            .unwrap();
+
+        let removed = remove_missing_track(&conn, id).unwrap();
+
+        assert!(!removed);
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "the non-missing row must survive untouched");
     }
 
     // -- track_id_for_path / query_playlist_tracks_full (Stage 3 Task 7) ---

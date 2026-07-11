@@ -1,3 +1,4 @@
+pub mod import_errors_view;
 pub mod mpris_mirror;
 pub mod playback_faults;
 pub mod player_bar;
