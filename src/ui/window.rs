@@ -36,6 +36,7 @@ use crate::library::watcher::{self, WatcherHandle};
 
 use super::player_controller::PlayerController;
 use super::playlist_io;
+use super::shortcuts;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::strings;
@@ -501,6 +502,14 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     window.set_content(Some(&split_view));
 
     wire_search(&search_entry, track_list.clone());
+    // Stage 3 Task 9: Space/Ctrl+F/Escape. Wired here, right after `wire_
+    // search` — `search_entry` and `track_list` are both fully built and
+    // wired to each other by this point, and `player`/`window`/`app` all
+    // already exist too, so nothing about shortcut wiring needs to wait for
+    // anything still to come. `track_list` is passed by reference (it's
+    // still needed further down: `wire_scan_button`, `arm_smoke_rescan`, and
+    // eventually a final move into `playlist_io::arm_smoke_m3u`).
+    shortcuts::wire(app, &window, &search_entry, &track_list, player.clone());
     // Cloned (not moved) here: `arm_smoke_rescan` below needs its own
     // `db_path`/`track_list`/`sidebar` to call `spawn_scan` with, the same
     // way a real button click would.
@@ -982,6 +991,19 @@ fn start_or_restart_watcher(
     track_list: std::rc::Weak<TrackList>,
     sidebar: std::rc::Weak<Sidebar>,
 ) {
+    // Task 9 review fold-in: drop any previous watcher *before* starting the
+    // new one, not after. The old code let a fresh `watcher::start` (which
+    // arms its own OS-level watch) run first and only replaced `*watcher_
+    // state.borrow_mut()` with the new handle afterward — the assignment's
+    // right-hand side (the new handle) is fully constructed before the old
+    // value is dropped, so for the brief window between `watcher::start`
+    // returning and the assignment landing, two watchers were both alive and
+    // watching (the old one not yet stopped, the new one already started).
+    // `.take()` here drops (and thereby stops — see `WatcherHandle`'s `Drop`
+    // impl) the previous watcher immediately, before `watcher::start` for the
+    // new one is even called, so at most one watcher is ever alive at a time.
+    watcher_state.borrow_mut().take();
+
     let (sender, receiver) = async_channel::unbounded::<watcher::WatchEvent>();
 
     let handle = watcher::start(root, db_path, move |event| {
@@ -996,9 +1018,6 @@ fn start_or_restart_watcher(
             "watcher unavailable; continuing without live updates"
         ),
     }
-    // Plain assignment: any previous `Some(handle)` stored here is dropped
-    // right here, before the new one takes its place — see `WatcherHandle`'s
-    // `Drop` impl for what that stops.
     *watcher_state.borrow_mut() = handle;
 
     glib::spawn_future_local(async move {

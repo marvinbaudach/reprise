@@ -190,25 +190,31 @@ pub fn remove_selected_from_playlist(
 }
 
 /// "Add to playlist -> New playlist…" menu action: creates a playlist named
-/// `name` and immediately appends `ids` to it, in one connection borrow.
-/// Returns `(new_playlist_id, inserted_count)` on success. A creation
-/// failure short-circuits before any `add_tracks` call is attempted (`?`
-/// propagates `playlists::create`'s error); `add_tracks` is only skipped
-/// (returning `Ok((id, 0))`) if `ids` is empty — a playlist can legitimately
-/// be created via this path with nothing selected, though `track_list.rs`'s
-/// menu only offers this action when the selection is non-empty.
+/// `name` and appends `ids` to it, in one transaction — via `library::
+/// playlists::create_with_tracks`, the same transactional primitive
+/// `ui::playlist_io`'s M3U import already uses. Returns `(new_playlist_id,
+/// inserted_count)` on success.
+///
+/// Task 9 review fold-in: this used to call `playlists::create` and `add_
+/// tracks` as two separate statements — if `add_tracks` failed partway
+/// (e.g. an id that no longer exists, tripping the `playlist_tracks.
+/// track_id` foreign key), the `create` had already committed, leaving an
+/// orphaned empty playlist behind with no rows and no way for the caller to
+/// clean it up (the error return gives it no id). `create_with_tracks` wraps
+/// both steps in one transaction, so a failure at either step rolls back the
+/// whole thing — no orphan, ever. `ids.is_empty()` is still a legitimate
+/// success case (`create_with_tracks` itself treats an empty slice as
+/// "create only," matching this function's prior behavior exactly), though
+/// `track_list.rs`'s menu only offers this action when the selection is
+/// non-empty.
 pub fn create_playlist_and_add(
     conn: &Rc<RefCell<Connection>>,
     name: &str,
     ids: &[i64],
 ) -> Result<(i64, u32), rusqlite::Error> {
     let mut conn = conn.borrow_mut();
-    let playlist_id = playlists::create(&conn, name)?;
-    if ids.is_empty() {
-        return Ok((playlist_id, 0));
-    }
-    let inserted = playlists::add_tracks(&mut conn, playlist_id, ids)?;
-    Ok((playlist_id, inserted))
+    let playlist_id = playlists::create_with_tracks(&mut conn, name, ids)?;
+    Ok((playlist_id, ids.len() as u32))
 }
 
 /// "Remove from library" menu action (Stage 3 Task 8, reachable only while
@@ -638,6 +644,29 @@ mod tests {
         let created = playlists.iter().find(|p| p.id == playlist_id).unwrap();
         assert_eq!(created.name, "New Playlist");
         assert_eq!(created.track_count, 2);
+    }
+
+    /// Task 9 review fold-in regression: mirrors `library::playlists`'s own
+    /// `create_with_tracks_rolls_back_playlist_row_on_fk_violation` test, one
+    /// layer up — proves the transactional adoption actually reaches this
+    /// function's callers (the "New playlist…" context-menu action), not
+    /// just the primitive it now calls. A `track_id` that doesn't exist
+    /// (9999, never inserted by `seeded_conn_with_tracks`) trips the
+    /// `playlist_tracks.track_id` foreign key partway through the insert
+    /// loop; before this fix (separate `playlists::create` + `add_tracks`
+    /// calls), the `create` half would have already committed, leaving an
+    /// orphaned empty playlist row behind. With `create_with_tracks`, the
+    /// whole thing rolls back — no playlist row survives at all.
+    #[test]
+    fn create_playlist_and_add_rolls_back_playlist_row_on_a_bad_track_id() {
+        let conn = seeded_conn_with_tracks(3);
+        let before = playlists::list(&conn.borrow()).unwrap().len();
+
+        let result = create_playlist_and_add(&conn, "Bad Playlist", &[1, 9999]);
+        assert!(result.is_err());
+
+        let after = playlists::list(&conn.borrow()).unwrap().len();
+        assert_eq!(before, after, "no playlist row should survive the rollback");
     }
 
     #[test]

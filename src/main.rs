@@ -33,6 +33,35 @@ pub(crate) const APP_ID: &str = "org.reprise.Reprise";
 /// Usage: `REPRISE_SCAN_DIR=/path/to/music cargo run`.
 const SCAN_DIR_ENV_VAR: &str = "REPRISE_SCAN_DIR";
 
+/// Dev/verification hook (permanent, like `REPRISE_SCAN_DIR`, which this
+/// runs immediately after): when set to a playlist name, creates a manual
+/// playlist with that name and seeds it with every track the scan above just
+/// found — via `library::playlists::create_with_tracks`, the same
+/// transactional primitive the "New playlist…" context-menu action and the
+/// M3U importer both use — so a headless E2E can exercise a real,
+/// non-trivial playlist (source switch, forced `playlist_order` sort,
+/// playback order) without a human driving the "New playlist" dialog (an
+/// `AdwAlertDialog`, not headlessly drivable any more than a
+/// `gtk::FileDialog` is).
+///
+/// Seeded in **descending title order** (`ORDER BY title DESC`), not
+/// insertion/id order: the library's own default view sorts ascending, so
+/// this guarantees the playlist's order is the *reverse* of what the
+/// library view would show — a headless run that activates row 0 of each
+/// and gets two different tracks is discriminating proof that a `Playlist`
+/// source's forced `"playlist_order"` sort (`ui::track_list`'s `default_
+/// sort_for_source`) is actually driving playback, not a coincidence of
+/// both views agreeing on some other order.
+///
+/// Requires `REPRISE_SCAN_DIR` (or a prior run's already-scanned database)
+/// so there is a library to seed from; a request against an empty library is
+/// harmless (`create_with_tracks` with an empty id slice still creates the
+/// playlist, just with no tracks — logged, not treated as an error).
+///
+/// Usage: `REPRISE_SCAN_DIR=/path/to/music REPRISE_SMOKE_SEED_PLAYLIST="My
+/// Mix" cargo run`.
+const SEED_PLAYLIST_ENV_VAR: &str = "REPRISE_SMOKE_SEED_PLAYLIST";
+
 /// The on-disk database path (honors `XDG_DATA_HOME` via `dirs::data_dir`,
 /// which is how headless E2E runs point the app at a scratch database
 /// without touching `~/.local/share/reprise`). `pub` so `ui::window` can
@@ -55,6 +84,28 @@ fn init_logging() {
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .init();
+}
+
+/// Backs the `REPRISE_SMOKE_SEED_PLAYLIST` hook (see `SEED_PLAYLIST_ENV_VAR`'s
+/// doc comment for why descending title order): reads every track id
+/// currently in the library, then creates `name` with them via `library::
+/// playlists::create_with_tracks`. Returns `(playlist_id, track_count)`.
+fn seed_playlist_from_library(
+    conn: &mut rusqlite::Connection,
+    name: &str,
+) -> rusqlite::Result<(i64, usize)> {
+    let mut statement = conn.prepare("SELECT id FROM tracks ORDER BY title DESC")?;
+    let ids: Vec<i64> = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    // Dropped explicitly, before the `&mut Connection` borrow below: `conn.
+    // prepare` above borrowed `conn` immutably for `statement`'s lifetime,
+    // and `create_with_tracks` needs a `&mut Connection` — the two borrows
+    // can't overlap.
+    drop(statement);
+    let count = ids.len();
+    let playlist_id = library::playlists::create_with_tracks(conn, name, &ids)?;
+    Ok((playlist_id, count))
 }
 
 fn main() -> glib::ExitCode {
@@ -121,6 +172,24 @@ fn main() -> glib::ExitCode {
             library::settings::set_setting(&conn, library::settings::LIBRARY_ROOT_KEY, &dir)
         {
             tracing::error!(%error, "failed to persist library root for dev scan hook");
+        }
+    }
+
+    if let Ok(name) = std::env::var(SEED_PLAYLIST_ENV_VAR) {
+        tracing::info!(
+            name = %name,
+            "{SEED_PLAYLIST_ENV_VAR} set: seeding a playlist from the current library"
+        );
+        let mut conn = conn.borrow_mut();
+        match seed_playlist_from_library(&mut conn, &name) {
+            Ok((playlist_id, count)) => tracing::info!(
+                playlist_id,
+                count,
+                "{SEED_PLAYLIST_ENV_VAR}: playlist seeded"
+            ),
+            Err(error) => {
+                tracing::error!(%error, "{SEED_PLAYLIST_ENV_VAR}: failed to seed playlist");
+            }
         }
     }
 

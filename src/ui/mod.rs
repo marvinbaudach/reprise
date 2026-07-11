@@ -5,6 +5,7 @@ pub mod player_bar;
 pub mod player_controller;
 pub mod playlist_io;
 pub mod rating;
+pub mod shortcuts;
 pub mod sidebar;
 pub mod sidebar_dnd;
 pub mod sidebar_export;
