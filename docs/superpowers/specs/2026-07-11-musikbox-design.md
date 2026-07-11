@@ -33,6 +33,13 @@ Nachfolger:
 - Vertraute Rhythmbox-Konzepte bleiben erhalten (Spaltenbibliothek,
   intelligente Playlists, Warteschlange, Missing Files, Modul-Schalter),
   in modernem Gewand.
+- **Grundsatz „rührt deine Dateien nicht an":** Musikbox verschiebt,
+  benennt oder verändert Musikdateien niemals ungefragt. Schreibzugriffe
+  passieren ausschließlich auf explizite Nutzeraktion (Tag-Editor,
+  Papierkorb-Löschen) — nie automatisch.
+- **Performance als Versprechen:** flüssig bei 100k+ Titeln, schneller
+  Start, Suche tippt sich verzögerungsfrei — die Hauptkritik an
+  Rhythmbox (träge bei großen Bibliotheken) ist der Maßstab.
 
 ## Ziele und Nicht-Ziele
 
@@ -83,6 +90,14 @@ Nachfolger:
 - Datei-Assoziation + Single-Instance: „Öffnen mit Musikbox" aus dem
   Dateimanager; ein zweiter Start reicht die Dateien an die laufende
   Instanz weiter
+- Erster-Start-Assistent: Musikordner wählen; vorhandene Rhythmbox-Daten
+  werden automatisch erkannt („Rhythmbox gefunden — Bibliothek, Bewertungen
+  und Playlists jetzt übernehmen?") und per Ein-Klick importiert
+- Sitzung wiederherstellen: Warteschlange, aktueller Titel und Position
+  überleben einen Neustart
+- M3U-Playlist-Import und -Export (Interop mit anderen Playern)
+- Hintergrund-Wiedergabe: optional spielt Musik beim Schließen des
+  Fensters weiter (Einstellung; Steuerung dann über MPRIS/Medientasten)
 
 ### Bewusst NICHT im MVP
 
@@ -365,6 +380,10 @@ Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
   kleines Modul, aus den Design-Screens des Nutzers übernommen
 - Fremd-Plugin-API: zur Laufzeit ladbare Plugins von Dritten (z. B. WASM)
   auf Basis derselben Erweiterungspunkte
+- Alben-Grid-Ansicht: Cover-Wand als zweite Ansicht neben der
+  Spaltenliste („Musik als Kunstform", nicht nur Tabelle)
+- Import aus Clementine/Strawberry — erweitert die Umsteiger-Zielgruppe
+  über Rhythmbox hinaus
 - Regel-Editor für Smart Playlists
 - Bewertungen optional in Dateitags exportieren
 - macOS-Port bleibt durch den Tauri-Stack theoretisch möglich
