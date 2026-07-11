@@ -39,6 +39,10 @@ pub enum SmartRulesError {
     UnknownField(String),
     #[error("unknown operator: {0}")]
     UnknownOperator(String),
+    #[error("missing value: {0}")]
+    MissingValue(String),
+    #[error("invalid value: {0}")]
+    InvalidValue(String),
 }
 
 /// Single rule in the smart playlist rules array: { field, op, value? }.
@@ -338,54 +342,59 @@ pub fn smart_rules_to_sql(
         // Build the WHERE fragment for this rule.
         let where_frag = match rule.op.as_str() {
             "=" => {
-                let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::UnknownOperator("= requires value".to_string())
-                })?;
+                let val = rule
+                    .value
+                    .ok_or_else(|| SmartRulesError::MissingValue("= requires value".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} = ?", rule.field)
             }
             "!=" => {
                 let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::UnknownOperator("!= requires value".to_string())
+                    SmartRulesError::MissingValue("!= requires value".to_string())
                 })?;
                 params.push(json_value_to_sql(&val));
                 format!("{} != ?", rule.field)
             }
             ">=" => {
                 let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::UnknownOperator(">= requires value".to_string())
+                    SmartRulesError::MissingValue(">= requires value".to_string())
                 })?;
                 params.push(json_value_to_sql(&val));
                 format!("{} >= ?", rule.field)
             }
             "<=" => {
                 let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::UnknownOperator("<= requires value".to_string())
+                    SmartRulesError::MissingValue("<= requires value".to_string())
                 })?;
                 params.push(json_value_to_sql(&val));
                 format!("{} <= ?", rule.field)
             }
             ">" => {
-                let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::UnknownOperator("> requires value".to_string())
-                })?;
+                let val = rule
+                    .value
+                    .ok_or_else(|| SmartRulesError::MissingValue("> requires value".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} > ?", rule.field)
             }
             "<" => {
-                let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::UnknownOperator("< requires value".to_string())
-                })?;
+                let val = rule
+                    .value
+                    .ok_or_else(|| SmartRulesError::MissingValue("< requires value".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} < ?", rule.field)
             }
             "contains" => {
                 let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::UnknownOperator("contains requires value".to_string())
+                    SmartRulesError::MissingValue("contains requires value".to_string())
                 })?;
-                let s = val.as_str().unwrap_or("");
-                // Escape % and _ for LIKE.
-                let escaped = s.replace("%", "\\%").replace("_", "\\_");
+                let s = val.as_str().ok_or_else(|| {
+                    SmartRulesError::InvalidValue("contains value must be a string".to_string())
+                })?;
+                // Escape backslash first, then % and _ for LIKE.
+                let escaped = s
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_");
                 params.push(rusqlite::types::Value::Text(format!("%{escaped}%")));
                 format!("{} LIKE ? ESCAPE '\\'", rule.field)
             }
@@ -454,7 +463,6 @@ pub fn list_smart(conn: &Connection) -> Result<Vec<SmartPlaylist>, rusqlite::Err
     Ok(result)
 }
 
-#[allow(dead_code)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -608,7 +616,6 @@ mod tests {
 
     #[test]
     fn list_playlists_includes_track_count() {
-        let _conn = seeded_conn();
         let mut m_conn = crate::db::open(None).unwrap();
         crate::db::migrate(&m_conn).unwrap();
         // Set up same test data
@@ -839,13 +846,13 @@ mod tests {
     }
 
     #[test]
-    fn move_position_out_of_range_is_noop() {
+    fn move_position_out_of_range_is_noop_old() {
         let mut conn = seeded_conn();
         let id = create(&conn, "P1").unwrap();
         add_tracks(&mut conn, id, &[1, 2, 3]).unwrap();
         let result = move_position(&mut conn, id, 10, 1);
         // Should be Ok but no-op
-        assert!(result.is_ok() || result.is_err()); // Implementation logs warning, may return err
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -900,8 +907,112 @@ mod tests {
     }
 
     #[test]
+    fn smart_rules_to_sql_contains_backslash_escaping() {
+        // Test that a user value with backslash is fully escaped (no live wildcards).
+        let json = r#"[{"field":"title","op":"contains","value":"a\\%"}]"#;
+        let (_where_clause, params) = smart_rules_to_sql(json).unwrap();
+        if let rusqlite::types::Value::Text(s) = &params[0] {
+            // After proper escaping: a\ becomes a\\ (escaped), % becomes \% (escaped)
+            // Result pattern should be %a\\\\%\%%
+            assert!(s.contains("\\\\"));
+            assert!(s.contains("\\%"));
+        }
+    }
+
+    #[test]
+    fn smart_rules_to_sql_contains_non_string_value_error() {
+        // Contains operator with numeric value should error, not degrade to %%
+        let json = r#"[{"field":"title","op":"contains","value":42}]"#;
+        let result = smart_rules_to_sql(json);
+        assert!(matches!(result, Err(SmartRulesError::InvalidValue(_))));
+    }
+
+    #[test]
+    fn smart_rules_to_sql_missing_value_on_equals() {
+        let json = r#"[{"field":"title","op":"="}]"#;
+        let result = smart_rules_to_sql(json);
+        assert!(matches!(result, Err(SmartRulesError::MissingValue(_))));
+    }
+
+    #[test]
+    fn smart_rules_to_sql_missing_value_on_not_equals() {
+        let json = r#"[{"field":"artist","op":"!="}]"#;
+        let result = smart_rules_to_sql(json);
+        assert!(matches!(result, Err(SmartRulesError::MissingValue(_))));
+    }
+
+    #[test]
+    fn smart_rules_to_sql_missing_value_on_gte() {
+        let json = r#"[{"field":"rating","op":">="}]"#;
+        let result = smart_rules_to_sql(json);
+        assert!(matches!(result, Err(SmartRulesError::MissingValue(_))));
+    }
+
+    #[test]
+    fn smart_rules_to_sql_missing_value_on_lte() {
+        let json = r#"[{"field":"rating","op":"<="}]"#;
+        let result = smart_rules_to_sql(json);
+        assert!(matches!(result, Err(SmartRulesError::MissingValue(_))));
+    }
+
+    #[test]
+    fn smart_rules_to_sql_missing_value_on_gt() {
+        let json = r#"[{"field":"duration_ms","op":">"}]"#;
+        let result = smart_rules_to_sql(json);
+        assert!(matches!(result, Err(SmartRulesError::MissingValue(_))));
+    }
+
+    #[test]
+    fn smart_rules_to_sql_missing_value_on_lt() {
+        let json = r#"[{"field":"duration_ms","op":"<"}]"#;
+        let result = smart_rules_to_sql(json);
+        assert!(matches!(result, Err(SmartRulesError::MissingValue(_))));
+    }
+
+    #[test]
+    fn smart_rules_to_sql_missing_value_on_contains() {
+        let json = r#"[{"field":"title","op":"contains"}]"#;
+        let result = smart_rules_to_sql(json);
+        assert!(matches!(result, Err(SmartRulesError::MissingValue(_))));
+    }
+
+    #[test]
+    fn move_position_out_of_range_unchanged() {
+        let mut conn = seeded_conn();
+        let id = create(&conn, "P1").unwrap();
+        add_tracks(&mut conn, id, &[1, 2, 3]).unwrap();
+
+        // Get initial track order
+        let initial_tracks: Vec<i64> = conn
+            .prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(params![id], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        // Move out of range
+        let result = move_position(&mut conn, id, 10, 1);
+        assert!(result.is_ok());
+
+        // Verify tracks are unchanged
+        let final_tracks: Vec<i64> = conn
+            .prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(params![id], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(initial_tracks, final_tracks);
+    }
+
+    #[test]
     fn smart_rules_to_sql_unknown_field_error() {
-        let json = r#"[{"field":"unknown_field","op":"=","value":"x"}]"#;
+        let json = r#"[{"field":"title; DROP TABLE tracks--","op":"=","value":"x"}]"#;
         let result = smart_rules_to_sql(json);
         assert!(matches!(result, Err(SmartRulesError::UnknownField(_))));
     }

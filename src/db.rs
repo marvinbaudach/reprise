@@ -123,6 +123,8 @@ pub fn migrate(conn: &Connection) -> Result<(), DbError> {
     if version < 3 {
         conn.execute_batch(SCHEMA_V3)?;
         // Seed three default smart playlists (only if none exist — idempotent).
+        // This check is defensive-only; it runs exactly once per DB by version gate
+        // and deleted seeds are never resurrected (by design).
         let smart_playlist_count: i64 =
             conn.query_row("SELECT COUNT(*) FROM smart_playlists", [], |r| r.get(0))?;
         if smart_playlist_count == 0 {
