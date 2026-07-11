@@ -860,10 +860,8 @@ pub fn query_library_stats(
 
 /// Bare count of rows in `import_errors` (the last scan's import failures) —
 /// see the module doc's `ImportErrors` section for why this is the only
-/// piece of that source this task builds. Not called from production code
-/// yet: it's built ahead of a future sidebar badge (Task 4/8's job to wire
-/// up), so it's exercised only by this module's own tests for now.
-#[allow(dead_code)]
+/// piece of that source this task builds. Used by `ui::sidebar` (Task 4) for
+/// the "Import errors" badge count.
 pub fn query_import_error_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
     conn.query_row("SELECT count(*) FROM import_errors", [], |r| r.get(0))
 }

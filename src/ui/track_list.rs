@@ -376,12 +376,10 @@ impl TrackList {
     }
 
     /// Switches which `ViewSource` the list is showing and reloads (Stage 3
-    /// Task 3). Task 4's sidebar will be the primary caller; for now the
-    /// `REPRISE_SMOKE_SOURCE` hook (`arm_smoke_source`) calls the private
-    /// `set_source_and_reload` directly instead (no live `TrackList` handle
-    /// to call a public method on at that point), so this public wrapper
-    /// itself has no caller yet.
-    #[allow(dead_code)]
+    /// Task 3). Called by `ui::sidebar`'s row-selection callback (Task 4);
+    /// the `REPRISE_SMOKE_SOURCE` hook (`arm_smoke_source`) still calls the
+    /// private `set_source_and_reload` directly instead (no live `TrackList`
+    /// handle to call a public method on at that point).
     pub fn set_source(&self, source: ViewSource) {
         set_source_and_reload(&self.shared, source);
     }
@@ -923,6 +921,30 @@ fn parse_smoke_source(value: &str) -> Option<ViewSource> {
     }
 }
 
+/// Fallback for `REPRISE_SMOKE_SOURCE=playlist:<name>` (Stage 3 Task 4):
+/// playlist ids aren't stable across the scratch databases headless E2E runs
+/// seed fresh each time, so once `parse_smoke_source` fails to parse the text
+/// after `playlist:` as an id, this looks the playlist up by exact name via
+/// `library::playlists::list` instead. Only tried for the `playlist:` prefix
+/// — smart playlist ids ARE stable (the three seeds are created once, at
+/// migration, never re-created by a test), so `smart:<id>` never needs a
+/// name-based fallback. Returns `None` (caller warns and ignores) if the
+/// prefix doesn't match, the lookup query fails, or no playlist has that
+/// exact name.
+fn resolve_smoke_source_playlist_by_name(shared: &Rc<Shared>, value: &str) -> Option<ViewSource> {
+    let name = value.strip_prefix("playlist:")?;
+    let conn = shared.conn.borrow();
+    let playlists = crate::library::playlists::list(&conn)
+        .inspect_err(|error| {
+            tracing::error!(%error, name, "failed to list playlists for smoke-source name lookup");
+        })
+        .ok()?;
+    playlists
+        .into_iter()
+        .find(|p| p.name == name)
+        .map(|p| ViewSource::Playlist(p.id))
+}
+
 /// Arms the `REPRISE_SMOKE_SOURCE` hook (see `SMOKE_SOURCE_ENV_VAR`): one
 /// idle callback, deferred so it runs once the main loop is up (matching
 /// `arm_smoke_activate`/`arm_smoke_filter`), that switches the track list to
@@ -932,20 +954,27 @@ fn parse_smoke_source(value: &str) -> Option<ViewSource> {
 /// `source=queue` after an activation), the queue is already populated by
 /// the time this callback runs — GLib dispatches same-priority idle
 /// callbacks in the order they were registered.
+///
+/// Values `parse_smoke_source` can't parse directly (today: only
+/// `playlist:<name>`, since ids aren't stable across scratch DBs — see
+/// `resolve_smoke_source_playlist_by_name`) fall back to a by-name playlist
+/// lookup before giving up.
 fn arm_smoke_source(shared: &Rc<Shared>) {
     let Ok(text) = std::env::var(SMOKE_SOURCE_ENV_VAR) else {
         return;
     };
-    let Some(source) = parse_smoke_source(&text) else {
-        tracing::warn!(
-            value = %text,
-            "{SMOKE_SOURCE_ENV_VAR} set to an unrecognized value; ignoring"
-        );
-        return;
-    };
-    tracing::info!(value = %text, "{SMOKE_SOURCE_ENV_VAR} set: arming programmatic view-source switch");
     let shared = shared.clone();
     glib::idle_add_local_once(move || {
+        let source = parse_smoke_source(&text)
+            .or_else(|| resolve_smoke_source_playlist_by_name(&shared, &text));
+        let Some(source) = source else {
+            tracing::warn!(
+                value = %text,
+                "{SMOKE_SOURCE_ENV_VAR} set to an unrecognized value; ignoring"
+            );
+            return;
+        };
+        tracing::info!(value = %text, "{SMOKE_SOURCE_ENV_VAR} set: applying programmatic view-source switch");
         set_source_and_reload(&shared, source);
         let label = shared.source.borrow().label();
         let rows = shared.model.n_items();

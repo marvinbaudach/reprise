@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 
 /// Summary of a manual playlist (name, id, track count).
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct PlaylistSummary {
     pub id: i64,
     pub name: String,
@@ -22,11 +21,9 @@ pub struct PlaylistSummary {
 #[derive(Debug, Clone)]
 pub struct SmartPlaylist {
     pub id: i64,
-    /// Not read yet outside tests: `queries.rs`'s `ViewSource::Smart`
-    /// handling only needs `rules_json`/`sort_field`/`sort_dir`/
-    /// `limit_count`. Task 4's sidebar will display this alongside `list`'s
-    /// `PlaylistSummary.name`.
-    #[allow(dead_code)]
+    /// Displayed by `ui::sidebar` (Task 4) alongside `list`'s
+    /// `PlaylistSummary.name`; `queries.rs`'s `ViewSource::Smart` handling
+    /// itself only needs `rules_json`/`sort_field`/`sort_dir`/`limit_count`.
     pub name: String,
     pub rules_json: String,
     pub sort_field: String,
@@ -62,7 +59,6 @@ struct Rule {
 /// Creates a manual playlist with the given name and returns its new id.
 /// Positions are assigned sequentially (new playlist gets `max(position) + 1`).
 /// Empty or whitespace-only name is accepted (backend is dumb; UI validates).
-#[allow(dead_code)]
 pub fn create(conn: &Connection, name: &str) -> Result<i64, rusqlite::Error> {
     let trimmed = name.trim();
     let insert_name = if trimmed.is_empty() {
@@ -108,7 +104,6 @@ pub fn delete(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
 
 /// Lists all manual playlists, ordered by position (ascending).
 /// Includes track count for each (0 if empty).
-#[allow(dead_code)]
 pub fn list(conn: &Connection) -> Result<Vec<PlaylistSummary>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, COALESCE(COUNT(pt.track_id), 0) as track_count \
