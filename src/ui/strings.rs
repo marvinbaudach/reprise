@@ -30,7 +30,9 @@ pub const COLUMN_ARTIST: &str = "Artist";
 pub const COLUMN_ALBUM: &str = "Album";
 pub const COLUMN_YEAR: &str = "Year";
 pub const COLUMN_LENGTH: &str = "Length";
-pub const COLUMN_RATING: &str = "Rating";
+// The Rating column's header reuses `RATING` below rather than having its
+// own `COLUMN_RATING` const — the column header and the `RatingWidget`
+// tooltip (src/ui/rating.rs) are the same word, so one const serves both.
 
 // Player bar (src/ui/player_bar.rs).
 pub const PLAY: &str = "Play";
@@ -38,5 +40,7 @@ pub const PAUSE: &str = "Pause";
 pub const PLAYBACK_POSITION: &str = "Playback position";
 pub const VOLUME: &str = "Volume";
 
-// Rating widget (src/ui/rating.rs).
+// Rating: used both as the track list's Rating column header
+// (src/ui/track_list.rs) and as the RatingWidget's tooltip
+// (src/ui/rating.rs).
 pub const RATING: &str = "Rating";

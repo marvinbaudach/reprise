@@ -448,7 +448,7 @@ fn append_rating_column(
     });
 
     let column = gtk4::ColumnViewColumn::builder()
-        .title(strings::COLUMN_RATING)
+        .title(strings::RATING)
         .factory(&factory)
         .resizable(true)
         .build();

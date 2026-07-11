@@ -33,8 +33,25 @@
 //! through `set_on_changed`'s callback — it has no knowledge of
 //! `library::stats` or any `rusqlite::Connection`. `track_list.rs` is the
 //! only place that turns a click into a persisted write.
+//!
+//! ## No `RefCell` borrow ever spans an external/GTK call
+//!
+//! `track_list.rs`'s `on_changed` callback runs a chain that is *not*
+//! guaranteed to stay inside this module: sqlite write
+//! (`stats::set_rating`) → `TrackListModel::invalidate_window_at` →
+//! `GListModel::items_changed`. If `GtkColumnView` reacts to that signal
+//! synchronously — rebinding the very row being clicked — it calls back
+//! into `set_on_changed` on this exact widget while the click handler that
+//! triggered it all is still on the stack. `handle_click` therefore never
+//! holds the `on_changed` `Ref`/`RefMut` while invoking the callback: it
+//! clones the `Rc<dyn Fn(i32)>` out of the `RefCell` in a single
+//! expression, letting the borrow drop before the callback (and everything
+//! it might reentrantly trigger) runs. The same discipline applies to any
+//! future code here that touches GTK or calls out of the widget — no
+//! `RefCell` borrow may still be alive at that point.
 
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
@@ -55,6 +72,10 @@ const ICON_NON_STARRED: &str = "non-starred-symbolic";
 /// why both live off this one constant.
 const STAR_SIZE: i32 = 16;
 
+/// Shared alias for the click-reporting callback's storage type — see the
+/// `on_changed` field doc comment for why it's `Rc`-wrapped and `Option`al.
+type OnChangedCallback = Option<Rc<dyn Fn(i32)>>;
+
 mod imp {
     use super::*;
     use gtk4::subclass::prelude::*;
@@ -63,9 +84,15 @@ mod imp {
         pub stars: RefCell<Vec<gtk4::Image>>,
         pub rating: Cell<i32>,
         /// Replaced wholesale by `set_on_changed` on every list-item
-        /// rebind; starts as a no-op so a stray click before the first
-        /// `set_on_changed` call can never panic on an empty `Option`.
-        pub on_changed: RefCell<Box<dyn Fn(i32)>>,
+        /// rebind; `None` before the first `set_on_changed` call, so a
+        /// stray click that arrives before then is simply a no-op instead
+        /// of needing a placeholder closure.
+        ///
+        /// `Rc`, not `Box`: `handle_click` needs to clone the callback out
+        /// of the `RefCell` and drop the borrow before invoking it (see the
+        /// module doc comment), which requires a cheaply-cloneable handle
+        /// rather than owned-in-place storage.
+        pub on_changed: RefCell<OnChangedCallback>,
     }
 
     impl Default for RatingWidget {
@@ -73,7 +100,7 @@ mod imp {
             Self {
                 stars: RefCell::new(Vec::new()),
                 rating: Cell::new(0),
-                on_changed: RefCell::new(Box::new(|_| {})),
+                on_changed: RefCell::new(None),
             }
         }
     }
@@ -147,7 +174,15 @@ impl RatingWidget {
             clicked_star
         };
         self.set_rating(new_rating);
-        (self.imp().on_changed.borrow())(new_rating);
+        // Clone the callback out of the `RefCell` first — this borrow ends
+        // when the `let` statement completes — so no borrow is held while
+        // the callback (and whatever it reentrantly triggers, up to and
+        // including a synchronous `set_on_changed` on this same widget) is
+        // running. See the module doc comment.
+        let callback = self.imp().on_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(new_rating);
+        }
     }
 
     /// Sets the displayed rating without invoking the `on_changed`
@@ -177,7 +212,18 @@ impl RatingWidget {
     /// currently shown — the widget instance itself is recycled across
     /// many rows as the list scrolls (see the module doc comment).
     pub fn set_on_changed(&self, f: impl Fn(i32) + 'static) {
-        *self.imp().on_changed.borrow_mut() = Box::new(f);
+        *self.imp().on_changed.borrow_mut() = Some(Rc::new(f));
+    }
+
+    /// Test-only seam for driving the click handler without a real
+    /// `GestureClick` event, so tests can exercise `handle_click`'s
+    /// reentrancy behavior headlessly. `index` is a 1-based star index (see
+    /// `star_index_for_x`); it is converted back to an x-coordinate so the
+    /// call goes through the exact same code path a real click would.
+    #[cfg(test)]
+    pub fn click_star_for_test(&self, index: i32) {
+        let x = (f64::from(index) - 0.5) * f64::from(STAR_SIZE);
+        self.handle_click(x);
     }
 }
 
@@ -220,5 +266,43 @@ mod tests {
     #[test]
     fn star_index_clamps_past_last_star() {
         assert_eq!(star_index_for_x(1000.0), 5);
+    }
+
+    /// Regression test for the `BorrowMutError` described in the module doc
+    /// comment: a click callback that reentrantly calls `set_on_changed` on
+    /// the same widget (simulating GTK synchronously rebinding the just-
+    /// clicked row) must not panic. Needs a real GTK/GDK display, so it's
+    /// `#[ignore]`d by default — run with `xvfb-run -a cargo test --
+    /// --ignored reentrant`.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn reentrant_set_on_changed_does_not_panic() {
+        if gtk4::init().is_err() {
+            eprintln!(
+                "skipping reentrant_set_on_changed_does_not_panic: gtk4::init() failed \
+                 (no display available)"
+            );
+            return;
+        }
+
+        let widget = RatingWidget::new();
+        let widget_weak = widget.downgrade();
+        widget.set_on_changed(move |_| {
+            let Some(widget) = widget_weak.upgrade() else {
+                return;
+            };
+            // Simulates `connect_bind` reacting synchronously to this same
+            // callback's side effects (e.g. a DB write triggering a model
+            // `items_changed`) and reinstalling a fresh callback — while
+            // `handle_click` is still on the stack below us.
+            widget.set_on_changed(|_| {});
+        });
+
+        // Pre-fix, `handle_click` held a `Ref` on `on_changed` for the
+        // whole statement that invokes the callback above, so the
+        // reentrant `set_on_changed` call's `borrow_mut()` panicked with
+        // `BorrowMutError`. Post-fix, the borrow is dropped before the
+        // callback runs, so this completes cleanly.
+        widget.click_star_for_test(3);
     }
 }
