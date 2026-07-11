@@ -60,6 +60,14 @@ struct Rule {
 /// Positions are assigned sequentially (new playlist gets `max(position) + 1`).
 /// Empty or whitespace-only name is accepted (backend is dumb; UI validates).
 pub fn create(conn: &Connection, name: &str) -> Result<i64, rusqlite::Error> {
+    create_playlist_row(conn, name)
+}
+
+/// Shared insert logic behind [`create`] and [`create_with_tracks`] — takes a
+/// plain `&Connection` so it can run either standalone (`create`) or against
+/// a `&Transaction` via deref coercion (`create_with_tracks`), without
+/// nesting a second `BEGIN` inside an already-open transaction.
+fn create_playlist_row(conn: &Connection, name: &str) -> Result<i64, rusqlite::Error> {
     let trimmed = name.trim();
     let insert_name = if trimmed.is_empty() {
         name.to_string()
@@ -141,8 +149,22 @@ pub fn add_tracks(
     }
 
     let tx = conn.transaction()?;
+    let inserted = append_tracks_rows(&tx, playlist_id, track_ids)?;
+    tx.commit()?;
+    Ok(inserted)
+}
 
-    let max_position: i64 = tx
+/// Shared per-row append logic behind [`add_tracks`] and
+/// [`create_with_tracks`] — see [`create_playlist_row`]'s doc comment for why
+/// this takes a plain `&Connection` rather than managing its own transaction.
+/// Caller is responsible for the empty-slice short circuit (both callers
+/// already have their own reason to check it first).
+fn append_tracks_rows(
+    conn: &Connection,
+    playlist_id: i64,
+    track_ids: &[i64],
+) -> Result<u32, rusqlite::Error> {
+    let max_position: i64 = conn
         .query_row(
             "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id = ?1",
             params![playlist_id],
@@ -153,15 +175,36 @@ pub fn add_tracks(
     let mut inserted = 0u32;
     for (i, &track_id) in track_ids.iter().enumerate() {
         let position = max_position + 1 + i as i64;
-        tx.execute(
+        conn.execute(
             "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
             params![playlist_id, track_id, position],
         )?;
         inserted += 1;
     }
-
-    tx.commit()?;
     Ok(inserted)
+}
+
+/// Atomically creates a manual playlist named `name` and appends `track_ids`
+/// to it in a single transaction: create → append → commit, with any failure
+/// (e.g. a `track_id` that violates the `playlist_tracks.track_id` foreign
+/// key) rolling back *both* — no orphaned empty playlist row is left behind.
+/// Prefer this over a separate `create` + `add_tracks` pair whenever the two
+/// must succeed or fail together (e.g. M3U import — see `ui::playlist_io::
+/// import_playlist`). Existing callers that don't need this guarantee (e.g.
+/// "New playlist" from the track list context menu) keep using `create` and
+/// `add_tracks` directly.
+pub fn create_with_tracks(
+    conn: &mut Connection,
+    name: &str,
+    track_ids: &[i64],
+) -> Result<i64, rusqlite::Error> {
+    let tx = conn.transaction()?;
+    let playlist_id = create_playlist_row(&tx, name)?;
+    if !track_ids.is_empty() {
+        append_tracks_rows(&tx, playlist_id, track_ids)?;
+    }
+    tx.commit()?;
+    Ok(playlist_id)
 }
 
 /// Removes tracks at the specified positions and renumbers the remaining
@@ -701,6 +744,78 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(track_ids, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn create_with_tracks_creates_playlist_and_appends_in_one_call() {
+        let mut conn = seeded_conn();
+        let id = create_with_tracks(&mut conn, "Mix", &[1, 2, 3]).unwrap();
+
+        let name: String = conn
+            .query_row(
+                "SELECT name FROM playlists WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "Mix");
+
+        let track_ids: Vec<i64> = conn
+            .prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(params![id], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(track_ids, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn create_with_tracks_empty_slice_creates_empty_playlist() {
+        let mut conn = seeded_conn();
+        let id = create_with_tracks(&mut conn, "Empty", &[]).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    /// TDD regression for the import non-atomicity finding: if the append
+    /// step fails partway (here, a `track_id` that doesn't exist, tripping
+    /// the `playlist_tracks.track_id` foreign key), the whole transaction
+    /// rolls back — no orphaned empty playlist row is left in `playlists`.
+    #[test]
+    fn create_with_tracks_rolls_back_playlist_row_on_fk_violation() {
+        let mut conn = seeded_conn();
+        let before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
+            .unwrap();
+
+        // Track id 9999 doesn't exist in the seeded data (only 1..=5) — the
+        // second insert should trip the foreign key and roll back the first.
+        let result = create_with_tracks(&mut conn, "Bad Playlist", &[1, 9999]);
+        assert!(result.is_err());
+
+        let after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(before, after, "no playlist row should survive the rollback");
+
+        let name_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM playlists WHERE name = 'Bad Playlist'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(name_exists, 0);
     }
 
     #[test]
