@@ -380,11 +380,30 @@ Reprise soll sich wie eine native GNOME-App anfühlen:
 
 ## Fehlerbehandlung
 
+**Grundsatz Fehlertoleranz:** Zustände außerhalb der App — Dateisystem,
+Tags, GStreamer, D-Bus — dürfen Reprise niemals zum Absturz bringen.
+Die Bibliothek ist eine *Sicht* auf das Dateisystem, keine Garantie:
+Dateien können jederzeit verschwinden, umbenannt oder unlesbar werden,
+auch zwischen Klick und Ausführung. Jede externe Operation liefert ein
+`Result` und wird behandelt und gemeldet; `unwrap()`/`expect()` sind
+außerhalb von Tests und Startup tabu.
+
 - Scanner überspringt defekte/unlesbare Dateien und protokolliert sie in
   einer `import_errors`-Tabelle (Pfad, Grund, Zeitpunkt); sichtbar als
   Sidebar-Quelle „Importfehler", Scan-Ergebnis meldet die Anzahl.
 - Verschwundene Dateien werden als `missing` markiert, nicht gelöscht
   (Bewertungen/Statistiken bleiben erhalten; analog Rhythmbox „Missing Files").
+- **Datei beim Abspielversuch weg** (gerade physisch gelöscht oder
+  umbenannt): kein Absturz — Titel sofort als `missing` markieren,
+  Toast („Datei nicht gefunden"), automatisch weiter mit dem nächsten
+  Titel der Warteschlange; der Watcher bestätigt die Änderung asynchron.
+- **Datei verschwindet während der Wiedergabe:** der bereits geöffnete
+  Stream spielt unter Linux in der Regel bis zum Ende (offener
+  File-Handle); meldet GStreamer stattdessen einen Bus-Fehler, greift
+  dieselbe Skip-Logik. Die `missing`-Markierung kommt über den Watcher.
+- `missing`-Titel werden im UI ausgegraut mit Hinweis-Symbol gezeigt,
+  nicht versteckt; Abspielen/Tag-Bearbeiten sind deaktiviert,
+  „erneut suchen" und „aus Bibliothek entfernen" bleiben verfügbar.
 - Typisierte Fehler (`thiserror`) über die IPC-Grenze als strukturierte
   Fehlerobjekte; im UI nutzerfreundlich als Toast, Details im Log.
 - Abspielfehler (defekte Datei): Titel überspringen, Toast, weiter mit

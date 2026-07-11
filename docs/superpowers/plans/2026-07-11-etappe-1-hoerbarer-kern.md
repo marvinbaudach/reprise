@@ -19,6 +19,7 @@
 - Immutabilität im Frontend: neue Objekte statt Mutation (Zustand-Store: `set({...})`)
 - Dateien < 800 Zeilen, Funktionen klein, frühe Returns
 - Fehler nie verschlucken: Rust `thiserror` + `Result`, Frontend `console.error` + (ab Etappe 4) Toast
+- Fehlertoleranz (Spec-Abschnitt „Fehlerbehandlung"): externe Zustände (Dateisystem, GStreamer) dürfen die App nie crashen — kein `unwrap()`/`expect()` außerhalb von Tests und `run()`-Startup; `play_track` auf eine fehlende oder defekte Datei liefert `Err` bzw. einen GStreamer-Bus-Fehler, der als `player:state` `stopped` mit Fehlermeldung ans Frontend geht (Task 5), niemals einen Panic
 - Commit-Format: `<type>: <beschreibung>` (feat, fix, refactor, docs, test, chore), keine Attribution
 - DB-Pfad zur Laufzeit: `~/.local/share/reprise/reprise.db`; Tests nutzen In-Memory-DB
 - Rust edition 2021; TypeScript strict
