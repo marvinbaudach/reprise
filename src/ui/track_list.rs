@@ -64,6 +64,20 @@ const STACK_PAGE_LIST: &str = "list";
 ///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`
 const SMOKE_ACTIVATE_ENV_VAR: &str = "REPRISE_SMOKE_ACTIVATE";
 
+/// Dev/verification hook (permanent, like `REPRISE_SMOKE_ACTIVATE`): when
+/// set to a non-empty string, that string is applied as the search filter —
+/// through `set_filter_and_reload`, the exact same filter-apply step
+/// `TrackList::set_filter` (the typed-search path) ends in, just invoked
+/// directly instead of via `window.rs`'s 200ms keystroke-debounce timer,
+/// since there's no keystroke to debounce here — once the initial load has
+/// run and the main loop is idle. Combined with `REPRISE_SCAN_DIR`
+/// (populate) and `REPRISE_SMOKE_QUIT` (exit), this drives the `NoResults`
+/// empty state and the filtered "N of M tracks" status line headlessly:
+///
+/// `REPRISE_SCAN_DIR=… REPRISE_SMOKE_FILTER=nomatch REPRISE_SMOKE_QUIT=1
+///  xvfb-run -a cargo run`
+const SMOKE_FILTER_ENV_VAR: &str = "REPRISE_SMOKE_FILTER";
+
 /// Icon shown on the empty-library placeholder (nothing has been scanned
 /// in yet).
 const ICON_EMPTY_LIBRARY: &str = "folder-music-symbolic";
@@ -144,11 +158,17 @@ struct Shared {
     on_activate: OnActivate,
     /// Invoked at the end of every `reload()` — initial load, search-filter
     /// changes, sort-header clicks, and the explicit `TrackList::reload()`
-    /// call `window.rs` makes after a scan completes. `window.rs` uses this
-    /// single hook to keep `status_bar::StatusBar` in sync rather than
-    /// scattering refresh calls across every place that can trigger a
-    /// reload.
-    on_reload: Box<dyn Fn()>,
+    /// call `window.rs` makes after a scan completes — with the filter
+    /// string that reload just ran against. `window.rs` uses this single
+    /// hook to keep `status_bar::StatusBar` in sync (including the filtered
+    /// "N of M tracks" line, which needs to know the active filter) rather
+    /// than scattering refresh calls, each re-deriving the filter, across
+    /// every place that can trigger a reload. This is the seam chosen over
+    /// exposing a `TrackList::filter() -> String` getter: `reload` already
+    /// has the current filter in a local variable at the one call site that
+    /// invokes this hook, so threading it through the callback avoids a
+    /// second borrow of `shared.filter` for the same value.
+    on_reload: Box<dyn Fn(&str)>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -166,7 +186,7 @@ impl TrackList {
     pub fn new(
         conn: Rc<RefCell<Connection>>,
         on_activate: OnActivate,
-        on_reload: impl Fn() + 'static,
+        on_reload: impl Fn(&str) + 'static,
     ) -> Self {
         let model = TrackListModel::new(conn.clone());
         let selection = gtk4::NoSelection::new(Some(model.clone()));
@@ -266,6 +286,7 @@ impl TrackList {
 
         reload(&shared);
         arm_smoke_activate(&shared);
+        arm_smoke_filter(&shared);
 
         Self { shared }
     }
@@ -279,8 +300,7 @@ impl TrackList {
     /// Sets the live-search filter and reloads. Called from `window.rs`
     /// after its own debounce timer fires.
     pub fn set_filter(&self, text: &str) {
-        *self.shared.filter.borrow_mut() = text.to_string();
-        reload(&self.shared);
+        set_filter_and_reload(&self.shared, text);
     }
 
     /// Re-runs the current sort/filter query and refreshes the list without
@@ -639,6 +659,31 @@ fn arm_smoke_activate(shared: &Rc<Shared>) {
     });
 }
 
+/// Sets `shared.filter` and reloads — the one place that mutates the filter
+/// before reloading, shared by `TrackList::set_filter` (the typed-search
+/// path, reached via `window.rs`'s debounce timer) and the
+/// `REPRISE_SMOKE_FILTER` dev hook (`arm_smoke_filter`), so both apply a new
+/// filter through the identical code path.
+fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
+    *shared.filter.borrow_mut() = text.to_string();
+    reload(shared);
+}
+
+/// Arms the `REPRISE_SMOKE_FILTER` hook (see `SMOKE_FILTER_ENV_VAR`): one
+/// idle callback, deferred so it runs once the main loop is up (matching
+/// `arm_smoke_activate`), that applies the env var's value as the search
+/// filter via `set_filter_and_reload`.
+fn arm_smoke_filter(shared: &Rc<Shared>) {
+    let Ok(text) = std::env::var(SMOKE_FILTER_ENV_VAR) else {
+        return;
+    };
+    tracing::info!(filter = %text, "{SMOKE_FILTER_ENV_VAR} set: arming programmatic filter");
+    let shared = shared.clone();
+    glib::idle_add_local_once(move || {
+        set_filter_and_reload(&shared, &text);
+    });
+}
+
 /// Re-runs the query against the current sort/filter state via
 /// `TrackListModel::set_query`. Switches the stack to whichever page
 /// `empty_state_for` selects for the resulting row count and filter state.
@@ -654,7 +699,7 @@ fn reload(shared: &Rc<Shared>) {
 
     tracing::info!(count, field = %sort.field, dir = %sort.dir, filter = %filter, "query matched {count} tracks");
 
-    (shared.on_reload)();
+    (shared.on_reload)(&filter);
 }
 
 /// Applies an `EmptyState` decision to the widget tree. For the two empty

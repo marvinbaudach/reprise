@@ -21,14 +21,12 @@ const MAX_WINDOW_LIMIT: i64 = 500;
 /// tracks".
 pub const QUEUE_LIMIT: i64 = 10_000;
 
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub struct LibraryStats {
     pub track_count: i64,
     pub total_duration_ms: i64,
-    // Reserved for a future filtered/active-view count (e.g. status bar showing
-    // "N of M tracks" while a filter is applied). Always None until a filter
-    // parameter is threaded through query_library_stats.
+    /// `Some(n)` while a search filter is active (status line shows "N of M
+    /// tracks"), `None` when it isn't. See `query_library_stats`.
     pub filtered_count: Option<i64>,
 }
 
@@ -279,19 +277,34 @@ pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqli
 }
 
 /// Aggregates library-wide stats over all non-missing tracks. Powers the
-/// status line (`ui::status_bar`).
-pub fn query_library_stats(conn: &Connection) -> Result<LibraryStats, rusqlite::Error> {
-    conn.query_row(
+/// status line (`ui::status_bar`). `track_count`/`total_duration_ms` always
+/// describe the *whole* library, regardless of `filter` — only `filtered_
+/// count` reacts to it, becoming `Some(query_track_count(conn, filter))` when
+/// `filter` is non-empty (trimmed) and `None` otherwise, so a status line
+/// with no active search reads exactly as it did before `filter` existed.
+/// Reuses `query_track_count` rather than duplicating its `WHERE`/`LIKE`
+/// clause here, so the filtered count shown in the status line can never
+/// disagree with the row count the track list itself found for that same
+/// filter.
+pub fn query_library_stats(
+    conn: &Connection,
+    filter: &str,
+) -> Result<LibraryStats, rusqlite::Error> {
+    let (track_count, total_duration_ms) = conn.query_row(
         "SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE missing = 0",
         [],
-        |r| {
-            Ok(LibraryStats {
-                track_count: r.get(0)?,
-                total_duration_ms: r.get(1)?,
-                filtered_count: None,
-            })
-        },
-    )
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let filtered_count = if filter.trim().is_empty() {
+        None
+    } else {
+        Some(query_track_count(conn, filter)?)
+    };
+    Ok(LibraryStats {
+        track_count,
+        total_duration_ms,
+        filtered_count,
+    })
 }
 
 #[cfg(test)]
@@ -545,6 +558,70 @@ mod tests {
             query_track_ids(&conn, "title", "asc", "").unwrap(),
             Vec::<i64>::new()
         );
+    }
+
+    #[test]
+    fn library_stats_without_filter_has_none_filtered_count_and_full_totals() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
+                 VALUES (?1, ?2, ?3, 1000, 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t, a],
+            )
+            .unwrap();
+        }
+
+        let stats = query_library_stats(&conn, "").unwrap();
+        assert_eq!(stats.track_count, 3);
+        assert_eq!(stats.total_duration_ms, 3000);
+        assert_eq!(stats.filtered_count, None);
+    }
+
+    #[test]
+    fn library_stats_with_filter_matches_query_track_count_and_keeps_totals_unfiltered() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
+                 VALUES (?1, ?2, ?3, 1000, 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t, a],
+            )
+            .unwrap();
+        }
+
+        let stats = query_library_stats(&conn, "zu").unwrap();
+        // Totals stay unfiltered even though a filter is active.
+        assert_eq!(stats.track_count, 3);
+        assert_eq!(stats.total_duration_ms, 3000);
+        assert_eq!(
+            stats.filtered_count,
+            Some(query_track_count(&conn, "zu").unwrap())
+        );
+        assert_eq!(stats.filtered_count, Some(1));
+    }
+
+    #[test]
+    fn library_stats_missing_rows_excluded_from_both_counts() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, duration_ms, added_at, missing) \
+             VALUES ('/x/a.flac', 'A', '', 1000, 0, 1)",
+            [],
+        )
+        .unwrap();
+
+        let unfiltered = query_library_stats(&conn, "").unwrap();
+        assert_eq!(unfiltered.track_count, 0);
+        assert_eq!(unfiltered.total_duration_ms, 0);
+        assert_eq!(unfiltered.filtered_count, None);
+
+        let filtered = query_library_stats(&conn, "A").unwrap();
+        assert_eq!(filtered.track_count, 0);
+        assert_eq!(filtered.filtered_count, Some(0));
     }
 
     #[test]

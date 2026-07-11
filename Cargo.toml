@@ -2,19 +2,18 @@
 name = "reprise"
 version = "0.1.0"
 description = "A native GTK4 music player, successor to Rhythmbox"
-authors = ["you"]
+authors = ["Marvin Baudach"]
 edition = "2021"
 license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror = "2"
 walkdir = "2"
 lofty = "0.22"
-dirs = "5"
+dirs = "6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 gstreamer = "0.25"
