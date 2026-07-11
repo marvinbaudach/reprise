@@ -130,16 +130,22 @@ impl PlayerController {
         }
     }
 
-    /// Stops the pipeline and forces the bar into the stopped/empty state.
-    /// The bar is updated directly (not just via the `StateChanged(Stopped)`
-    /// event `stop()` emits) so the UI still lands in a consistent state
-    /// even if `stop()` itself fails.
+    /// Stops the pipeline and ensures the bar lands in the stopped/empty
+    /// state. On success this relies entirely on the `StateChanged(Stopped)`
+    /// event `stop()` emits — routed back here through `apply_event` — so
+    /// the bar isn't reset twice. If `stop()` itself fails, though, that
+    /// event never fires, so the bar is reset directly right here instead:
+    /// the UI must still land in a consistent stopped state even when
+    /// stopping the pipeline errors out.
     fn reset_to_stopped(&self) {
-        if let Err(error) = self.player.stop() {
-            tracing::error!(%error, "failed to stop player during reset");
+        match self.player.stop() {
+            Ok(()) => {}
+            Err(error) => {
+                tracing::error!(%error, "failed to stop player during reset");
+                self.bar.set_state(PlaybackState::Stopped);
+                self.bar.clear_track();
+            }
         }
-        self.bar.set_state(PlaybackState::Stopped);
-        self.bar.clear_track();
     }
 }
 

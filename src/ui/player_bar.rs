@@ -5,12 +5,26 @@
 //! `PlayerBar` owns every widget it displays; callers (see
 //! `player_controller.rs`) only interact with it through the `set_*`/
 //! `connect_*` methods below, never by reaching into its widgets directly.
-//! That keeps the seek-scale feedback-loop guard (`updating_scale`) a private
-//! implementation detail instead of something every caller has to remember
-//! to respect: `set_position` (programmatic, from position ticks/track
-//! changes) and the user dragging the scale both end up calling
-//! `gtk::Range::set_value`/firing `value-changed`, and only the latter should
-//! trigger a seek.
+//! That keeps the seek scale's two feedback-loop guards private
+//! implementation details instead of something every caller has to remember
+//! to respect:
+//!
+//! 1. **Programmatic-vs-user updates** (`updating_scale`): `set_position`
+//!    (called from position ticks/track changes) and the user moving the
+//!    scale both end up firing `value-changed`, and only the latter should
+//!    trigger a seek. `updating_scale` is `true` for the whole duration of
+//!    `set_position`'s `gtk::Range::set_value` call, so `connect_seek`'s
+//!    handler can tell the two apart.
+//! 2. **Ticks-during-drag** (`dragging`): position ticks arrive every
+//!    500 ms regardless of what the user is doing. Without tracking whether
+//!    the user currently has the pointer down on the scale, a tick mid-drag
+//!    would call `set_value` and visibly yank the handle back to the actual
+//!    playback position out from under the user's cursor. A `GestureClick`
+//!    added alongside the scale's own built-in slider dragging (see
+//!    `connect_seek`) brackets "pointer down" .. "pointer up"; while
+//!    `dragging` is `true`, `set_position` skips `set_value` (and
+//!    `set_range`) entirely, and releasing fires exactly one seek to
+//!    wherever the user left the handle.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -59,6 +73,16 @@ pub struct PlayerBar {
     /// value, so `connect_seek`'s handler can tell a programmatic update
     /// apart from the user dragging the scale. See the module doc comment.
     updating_scale: Rc<Cell<bool>>,
+    /// True while the user has the pointer down on `scale` (between a
+    /// `GestureClick` press and its matching release/cancel — wired in
+    /// `connect_seek`). Checked by `set_position` so a mid-drag position
+    /// tick can't yank the handle. See the module doc comment.
+    dragging: Rc<Cell<bool>>,
+    /// The `duration_ms` passed to the most recent `set_position` call, so
+    /// it can skip `scale.set_range` when the duration hasn't actually
+    /// changed (it's static per track — this is only ever a real change on
+    /// a track switch, not on every 500 ms tick).
+    last_duration_ms: Cell<i64>,
 }
 
 impl PlayerBar {
@@ -126,6 +150,8 @@ impl PlayerBar {
             scale,
             volume_button,
             updating_scale: Rc::new(Cell::new(false)),
+            dragging: Rc::new(Cell::new(false)),
+            last_duration_ms: Cell::new(0),
         }
     }
 
@@ -164,25 +190,46 @@ impl PlayerBar {
         }));
         self.bar.set_sensitive(state != PlaybackState::Stopped);
         if state == PlaybackState::Stopped {
+            // Force-clear any stale drag state: e.g. the track finishes or
+            // errors out while the user still has the pointer down on the
+            // scale, so there's no `released`/`cancel` to clear it via the
+            // normal `connect_seek` path. Without this, `set_position` below
+            // would (correctly, per its own contract) skip resetting the
+            // handle because it thinks a drag is still in progress.
+            self.dragging.set(false);
             self.set_position(0, 0);
         }
     }
 
     /// Updates the seek scale and time labels for a `Position` event.
-    /// Reentrancy-safe against `connect_seek`'s handler: GTK fires
-    /// `value-changed` synchronously from `set_value`, and `updating_scale`
-    /// is `true` for that whole call, so the handler recognizes this as a
-    /// programmatic update rather than a user drag and skips seeking.
+    ///
+    /// Two guards apply here (see the module doc comment for the full
+    /// rationale): reentrancy against `connect_seek`'s handler
+    /// (`updating_scale`, set for the duration of *both* `set_range` and
+    /// `set_value` below — `set_range` alone can fire `value-changed` too,
+    /// by clamping the current value into the new bounds, so it needs the
+    /// same guard as `set_value`), and suppression of the handle-yanking
+    /// `set_range`/`set_value` calls while the user is actively dragging
+    /// (`dragging`). The time labels are deliberately *not* suppressed
+    /// while dragging: they keep showing the true elapsed/remaining
+    /// playback time, which stays accurate and doesn't visibly jump around
+    /// the way the handle would.
     pub fn set_position(&self, position_ms: i64, duration_ms: i64) {
         let duration_ms = duration_ms.max(0);
         let position_ms = position_ms.clamp(0, duration_ms);
 
-        self.updating_scale.set(true);
-        // A zero-length range would make the scale's drag handle meaningless
-        // (and GTK dislikes a max == min range); floor it at 1 ms.
-        self.scale.set_range(0.0, duration_ms.max(1) as f64);
-        self.scale.set_value(position_ms as f64);
-        self.updating_scale.set(false);
+        if should_apply_position_tick(self.dragging.get()) {
+            self.updating_scale.set(true);
+            if should_update_range(self.last_duration_ms.get(), duration_ms) {
+                self.last_duration_ms.set(duration_ms);
+                // A zero-length range would make the scale's drag handle
+                // meaningless (and GTK dislikes a max == min range); floor
+                // it at 1 ms.
+                self.scale.set_range(0.0, duration_ms.max(1) as f64);
+            }
+            self.scale.set_value(position_ms as f64);
+            self.updating_scale.set(false);
+        }
 
         self.position_label.set_text(&format_duration(position_ms));
         self.duration_label.set_text(&format_duration(duration_ms));
@@ -196,16 +243,66 @@ impl PlayerBar {
     }
 
     /// Wires the seek scale: `f` is called with the target position in
-    /// milliseconds only when the *user* moves the scale, never when
-    /// `set_position`/`set_state` update it programmatically.
+    /// milliseconds whenever the user changes it — but never for
+    /// programmatic updates (`set_position`/`set_state`, guarded by
+    /// `updating_scale`), and, for pointer drags/clicks specifically, only
+    /// once, on release (guarded by `dragging`; see the module doc comment).
+    /// Concretely: a pointer drag or click-to-position jump seeks exactly
+    /// once, to wherever the user let go; keyboard (arrow-key) or
+    /// scroll-wheel adjustments — which never touch `dragging` — still seek
+    /// immediately on each `value-changed`, same as before this fix.
     pub fn connect_seek<F: Fn(i64) + 'static>(&self, f: F) {
+        let f = Rc::new(f);
+
         let updating_scale = self.updating_scale.clone();
+        let dragging = self.dragging.clone();
+        let value_changed_f = Rc::clone(&f);
         self.scale.connect_value_changed(move |scale| {
-            if updating_scale.get() {
+            if updating_scale.get() || dragging.get() {
                 return;
             }
-            f(scale.value() as i64);
+            value_changed_f(scale.value() as i64);
         });
+
+        // A `GestureClick` added alongside the scale's own built-in
+        // slider-drag handling. GTK4 lets multiple independent (ungrouped)
+        // controllers observe the same widget — one gesture claiming a
+        // sequence doesn't deny others on the same widget — so this purely
+        // brackets "pointer down" .. "pointer up" without interfering with
+        // how the handle actually moves; that's still entirely GtkRange's
+        // own doing.
+        let click = gtk4::GestureClick::new();
+
+        let press_dragging = self.dragging.clone();
+        click.connect_pressed(move |_, _, _, _| {
+            press_dragging.set(true);
+        });
+
+        // Shared by `released` and `cancel`: both end the drag the same
+        // way — clear the flag and fire exactly one seek to wherever the
+        // scale's value ended up. A `cancel` (sequence denied, e.g. an
+        // ancestor widget claims it as a scroll) is rare for this scale
+        // (it doesn't sit inside anything that pans), but handling it keeps
+        // `dragging` from ever getting stuck `true` if it happens.
+        let end_drag: Rc<dyn Fn()> = {
+            let dragging = self.dragging.clone();
+            let scale = self.scale.downgrade();
+            let f = Rc::clone(&f);
+            Rc::new(move || {
+                dragging.set(false);
+                if let Some(scale) = scale.upgrade() {
+                    f(scale.value() as i64);
+                }
+            })
+        };
+
+        let released_end_drag = Rc::clone(&end_drag);
+        click.connect_released(move |_, _, _, _| released_end_drag());
+
+        let cancel_end_drag = Rc::clone(&end_drag);
+        click.connect_cancel(move |_, _| cancel_end_drag());
+
+        self.scale.add_controller(click);
     }
 
     /// Wires the volume button: `f` is called with a `0.0..=1.0` value on
@@ -231,4 +328,48 @@ fn build_track_label() -> gtk4::Label {
     label.set_ellipsize(pango::EllipsizeMode::End);
     label.set_xalign(0.0);
     label
+}
+
+/// Whether a position tick should move the scale's handle — pulled out of
+/// `set_position` as a pure predicate purely so the drag guard (see the
+/// module doc comment) can be unit tested without spinning up any GTK
+/// widgets, following the same `empty_state_for`-style pattern already used
+/// in `track_list.rs`.
+fn should_apply_position_tick(dragging: bool) -> bool {
+    !dragging
+}
+
+/// Whether `set_position` needs to touch `scale.set_range` at all — only
+/// when the duration actually changed since the last call (it's static per
+/// track, so this is normally `false` on every tick but the first after a
+/// track change). Pure for the same reason as `should_apply_position_tick`.
+fn should_update_range(last_duration_ms: i64, duration_ms: i64) -> bool {
+    duration_ms != last_duration_ms
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn position_tick_applies_when_not_dragging() {
+        assert!(should_apply_position_tick(false));
+    }
+
+    #[test]
+    fn position_tick_suppressed_while_dragging() {
+        assert!(!should_apply_position_tick(true));
+    }
+
+    #[test]
+    fn range_updates_when_duration_changes() {
+        assert!(should_update_range(0, 180_000));
+        assert!(should_update_range(180_000, 0));
+    }
+
+    #[test]
+    fn range_update_skipped_when_duration_unchanged() {
+        assert!(!should_update_range(180_000, 180_000));
+        assert!(!should_update_range(0, 0));
+    }
 }

@@ -76,7 +76,18 @@ impl Player {
             // after milliseconds, no position ticks — making headless runs
             // behave nothing like real playback. Real audio sinks default to
             // sync=true anyway, so this only affects test sinks.
-            if sink.find_property("sync").is_some() {
+            //
+            // `find_property` only confirms a property named "sync" exists,
+            // not that it's a `bool` — `set_property` panics on a type
+            // mismatch. This path only runs for developer-chosen
+            // `REPRISE_AUDIO_SINK` overrides (never in production), but an
+            // exotic element with an unrelated "sync" property (wrong type)
+            // must not be able to crash a headless dev run, so check the
+            // property's declared type before setting it.
+            let has_bool_sync = sink
+                .find_property("sync")
+                .is_some_and(|pspec| pspec.value_type() == gst::glib::Type::BOOL);
+            if has_bool_sync {
                 sink.set_property("sync", true);
             }
             tracing::info!(sink = %sink_name, "REPRISE_AUDIO_SINK override active");
