@@ -11,8 +11,13 @@ GNOME-Puristen bevorzugen natives GTK; damit entfallen auch Glasoptik und
 die PDF-Layout-Varianten (`Musikplayer.pdf` ist als Designreferenz obsolet).
 Die Bibliotheksansicht orientiert sich an Rhythmbox (sortierbare
 Spaltenliste via `GtkColumnView` für große Bibliotheken), das visuelle
-Design folgt der **GNOME HIG** mit Adwaita-Widgets: Playerleiste fest
-unten, Hell/Dunkel folgt automatisch dem System.
+Design folgt der **GNOME HIG** mit Adwaita-Widgets — Richtung gemäß dem
+GTK4-Mockup des Nutzers (`docs/design/2026-07-11-designmock-gtk4.pdf`,
+ausdrücklich „grobe Richtung, keine genaue Vorgabe"): dunkles, flaches
+Layout, Navigations-Seitenleiste, Playerleiste standardmäßig unten
+(Position per Einstellung: oben / unten / schwebend — Nutzer-Entscheidung
+2026-07-11, ersetzt die zwischenzeitliche HIG-Verschlankung), Farbschema
+Dunkel / Hell / System via `AdwStyleManager`.
 
 **Plattform-Entscheidung:** Linux-only, endgültig (Nutzer: „werde es eh nie
 portieren"). GStreamer als Audio-Engine — dieselbe Engine wie Rhythmbox.
@@ -60,10 +65,12 @@ Nachfolger:
 - Tag-Editor: Metadaten (Titel, Interpret, Album, Album-Interpret, Jahr,
   Track-Nr., Genre) bearbeiten und via lofty in die Datei schreiben
 - MPRIS-Integration (GNOME-Mediensteuerung, Medientasten)
-- Ansichts-Einstellungen: sichtbare Spalten und Spaltenbreiten
-  (Spalten-Popover am Listenkopf); Hell/Dunkel folgt dem System via
-  libadwaita — Layout-Varianten und Glasoptik sind mit dem GTK4-Pivot
-  entfallen (HIG-konform verschlankt, Nutzer-Entscheidung 2026-07-11)
+- Layout-Einstellungen (zurückgeholt per Nutzer-Entscheidung 2026-07-11,
+  Mockup 7b): Position der Playerleiste (oben / unten / schwebend, über
+  visuelle Vorschau-Karten), Seitenleiste und Statusleiste ein-/ausblendbar,
+  Listendichte (Komfortabel / Standard / Kompakt), sichtbare Spalten und
+  Spaltenbreiten (Spalten-Popover am Listenkopf); Farbschema Dunkel /
+  Hell / System (`AdwStyleManager`). Nur die Glasoptik bleibt gestrichen.
 - Sortiereinstellungen: Sortierung (Spalte + Richtung) wird pro Ansicht
   gespeichert; sinnvolle Sekundär-Sortierung (Album → Track-Nr.,
   Interpret → Album → Track-Nr.)
@@ -240,8 +247,25 @@ settings(key PRIMARY KEY, value)   -- Layout, Farbschema, Spalten, Ordner,
 
 ## UI — GNOME HIG, Adwaita
 
-Natives libadwaita-Design (der frühere 2a-/Glasoptik-Ansatz aus dem PDF ist
-mit dem GTK4-Pivot entfallen). Drei Zonen im festen Layout:
+Natives libadwaita-Design (der frühere 2a-/Glasoptik-Ansatz ist mit dem
+GTK4-Pivot entfallen). **Designreferenz:** GTK4-Mockup des Nutzers
+(`docs/design/2026-07-11-designmock-gtk4.pdf`, „grobe Richtung"):
+
+- *Hauptfenster (7a):* flache Headerbar (Ansichtstitel mittig, Suche und
+  Menü rechts); Navigations-Seitenleiste mit Zählern/Badges; Spaltenliste
+  mit Sterne-Bewertungen; laufender Titel als Akzentzeile mit
+  Wiedergabe-Glyphe; schlanke Statuszeile unten rechts über der
+  Playerleiste („1.704 Titel · 4 Tage, 6 Std. 28 Min. · 43,4 GB" —
+  Mittelpunkt-Trenner); Playerleiste: links Titel (fett) + „Interpret —
+  Album · Jahr", mittig Shuffle/Zurück/**runder Akzent-Play-Button**/
+  Weiter/Repeat mit Seekbar in voller Breite darunter, rechts
+  Warteschlangen-Knopf + Lautstärke.
+- *Sidebar-Eintrag „Neuigkeiten"* mit Zähler-Badge (im Mockup): das ist
+  der UI-Name des Radar-Moduls in der Seitenleiste.
+- *Einstellungen (7b/7c):* AdwPreferences-Stil — View-Switcher oben,
+  Boxed Lists mit Schaltern, Karten-Auswahl für die Playerleisten-Position.
+
+Drei Zonen im Standard-Layout:
 
 1. **Sidebar links** — Abschnitte BIBLIOTHEK (Musik, Warteschlange),
    PLAYLISTEN, INTELLIGENT; jeweils mit Track-Zähler. „Neue Playlist"-Aktion.
@@ -277,16 +301,21 @@ unterscheidet: „nur aus Bibliothek" vs. „Datei in den Papierkorb".
 
 ### Einstellungen
 
-**`AdwPreferencesDialog`** mit Seiten — Wiedergabe · Bibliothek · Plugins
+**`AdwPreferencesDialog`** mit Seiten (View-Switcher oben, Mockup 7b/7c) —
+Wiedergabe · Darstellung · Layout · Bibliothek · Plugins
 (· Synchronisation, erst mit dem Sync-Modul). Jede Änderung wirkt sofort
-ohne Neustart. Die früheren Tabs „Darstellung" und „Layout" sind mit dem
-HIG-Pivot entfallen: Hell/Dunkel folgt via libadwaita automatisch dem
-System, die Playerleiste sitzt fest unten, Fensterzustand merkt sich die
-App ohne Einstellung.
+ohne Neustart.
 
 - **Wiedergabe:** Equalizer (10 Bänder als Slider, Presets Flat/Rock/Pop/…,
   Ein/Aus), ReplayGain (Modus Titel / Album / Aus, Fallback-Verstärkung),
   Verhalten am Titelende.
+- **Darstellung:** Farbschema Dunkel / Hell / System (`AdwStyleManager`).
+- **Layout** (Mockup 7b): Playerleisten-Position über drei visuelle
+  Vorschau-Karten „Oben / Unten / Schwebend" (Standard: unten; technisch
+  `ToolbarView`-Top-/Bottom-Bar bzw. `GtkOverlay` für schwebend);
+  Seitenleiste anzeigen (an/aus), Statusleiste anzeigen (an/aus);
+  Listendichte Komfortabel / Standard / Kompakt; „Sichtbare Spalten" mit
+  Bearbeiten-Aktion (öffnet dasselbe Spalten-Popover wie am Listenkopf).
 - **Bibliothek:** Ordner verwalten (hinzufügen/entfernen), Rescan,
   Rhythmbox-Import.
 - **Plugins** (so heißt das Modulsystem im UI): Liste der Module mit
@@ -489,14 +518,16 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
 - **Lyrics:** Anzeige von Songtexten im Detail-Panel; Quellen: eingebettete
   Tags (USLT/Vorbis `LYRICS`, von lofty lesbar), `.lrc`-Dateien neben der
   Musikdatei, später Online-Quellen über dasselbe Provider-Trait.
-- **Android-Synchronisation** (wie in Rhythmbox): Gerät via MTP/gvfs oder
-  als Massenspeicher erkennen, ausgewählte Playlists/Titel aufs Gerät
-  kopieren, Playlist-Export als M3U, Abgleich (nur Neues übertragen,
-  Verwaistes optional entfernen). Erkennt angeschlossene Geräte über
-  udev/gvfs; erscheint als eigener Sidebar-Eintrag „Geräte" und hängt
-  den Tab „Synchronisation" ins Einstellungsmenü ein. Optionales
-  Transkodieren beim Übertragen (z. B. FLAC → Opus 128 kbit/s,
-  „spart Speicherplatz auf dem Gerät", via GStreamer).
+- **Geräte-Synchronisation** (aktualisiert nach Mockup 7c, „grobe
+  Richtung"): primär über eine **Begleit-App im WLAN** — Kopplung per
+  QR-Code, unterstützt Android **und iOS**; Sync-Regeln: ausgewählte
+  Playlists synchronisieren, Bewertungen & Wiedergabezähler in beide
+  Richtungen abgleichen, „nur im WLAN", optionales Transkodieren für
+  Mobilgeräte (z. B. FLAC → Opus 128 kbit/s, via GStreamer).
+  MTP/gvfs bzw. USB-Massenspeicher (wie in Rhythmbox) als Fallback für
+  Geräte ohne Begleit-App. Gekoppelte Geräte erscheinen als Liste im
+  Tab „Synchronisation" (vom Modul eingehängt) mit „Jetzt
+  synchronisieren"/„Entfernen"; eigener Sidebar-Eintrag „Geräte".
 - **Scrobbling (Last.fm/Libre.fm)** — erstes Modul nach dem MVP
   (priorisiert), damit die Hörhistorie beim Umstieg schnell weiterläuft
 - **Musik-Radar** — zweites Modul nach dem MVP (priorisiert):

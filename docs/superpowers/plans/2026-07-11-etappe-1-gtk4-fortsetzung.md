@@ -94,7 +94,7 @@
 **Schritte:**
 - [ ] **Step 1:** **TDD:** `format_total_duration(ms)` in `src/format.rs` — Rhythmbox-Englisch: `"4 days, 6 hours and 28 minutes"`, `"1 hour and 30 minutes"`, `"5 minutes"`, `"2 days and 5 minutes"` (0 h), Unsinn/0 → `"0 minutes"`; Singular/Plural day/hour/minute; letzter Teil mit " and "
 - [ ] **Step 2:** Scan-Button aktivieren: `gtk::FileDialog::select_folder` (XDG-Portal-fähig) → Scan in `std::thread` mit eigener DB-Connection (Pfad), Fortschritt/Ergebnis (`ScanReport`) via Channel auf den UI-Thread; Button zeigt „Scanning…" und ist währenddessen disabled; danach Liste + Stats neu laden; Fehler → Log + `adw::Toast`
-- [ ] **Step 3:** `status_bar.rs`: unten (über der Playerleiste bzw. als deren Teil, HIG-konform schlicht): "1,704 tracks, 4 days, 6 hours and 28 minutes" aus `queries::query_library_stats` + `format_total_duration`; aktualisiert nach Scan/Filter
+- [ ] **Step 3:** `status_bar.rs`: schlanke Statuszeile rechtsbündig über der Playerleiste (Design-Mockup 7a): "1,704 tracks · 4 days, 6 hours and 28 minutes" (Mittelpunkt-Trenner; Speichergröße „43,4 GB" folgt in einer späteren Etappe — braucht eine size-Spalte im Schema) aus `queries::query_library_stats` + `format_total_duration`; aktualisiert nach Scan/Filter
 - [ ] **Step 4:** Headless-E2E: Fixture-Ordner (2 valide Kopien + 1 defekte Datei) → `xvfb-run` Smoke-Lauf: scan → Log „2 added, 1 error" → Liste 2 Titel → Aktivierung → playing → EOS. `sqlite3`-Check: `import_errors` hat 1 Zeile. `cargo test && cargo clippy --all-targets` grün/sauber
 - [ ] **Step 5:** Commit: `feat: scan flow with folder dialog, background scanning, and status bar — stage 1 complete`
 
