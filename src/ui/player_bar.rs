@@ -24,7 +24,12 @@
 //!    `connect_seek`) brackets "pointer down" .. "pointer up"; while
 //!    `dragging` is `true`, `set_position` skips `set_value` (and
 //!    `set_range`) entirely, and releasing fires exactly one seek to
-//!    wherever the user left the handle.
+//!    wherever the user left the handle. That guard's `pressed` handler
+//!    must run at GTK's CAPTURE propagation phase, not the default BUBBLE —
+//!    see the comment on `click.set_propagation_phase(..)` in `connect_seek`
+//!    for why (a plain click-to-jump on the trough otherwise fires a seek
+//!    on press too, before `dragging` is set, doubling up with the seek on
+//!    release).
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -246,11 +251,14 @@ impl PlayerBar {
     /// milliseconds whenever the user changes it — but never for
     /// programmatic updates (`set_position`/`set_state`, guarded by
     /// `updating_scale`), and, for pointer drags/clicks specifically, only
-    /// once, on release (guarded by `dragging`; see the module doc comment).
-    /// Concretely: a pointer drag or click-to-position jump seeks exactly
-    /// once, to wherever the user let go; keyboard (arrow-key) or
-    /// scroll-wheel adjustments — which never touch `dragging` — still seek
-    /// immediately on each `value-changed`, same as before this fix.
+    /// once, on release (guarded by `dragging`; see the module doc comment
+    /// and the capture-phase note on the `GestureClick` below). Concretely:
+    /// a pointer drag or click-to-position jump seeks exactly once, to
+    /// wherever the user let go — including a plain click on the trough,
+    /// which GTK jumps to synchronously on press when
+    /// `gtk-primary-button-warps-slider` is set (the GNOME default); keyboard
+    /// (arrow-key) and scroll-wheel adjustments — which never touch
+    /// `dragging` — still seek immediately on each `value-changed`.
     pub fn connect_seek<F: Fn(i64) + 'static>(&self, f: F) {
         let f = Rc::new(f);
 
@@ -273,6 +281,26 @@ impl PlayerBar {
         // own doing.
         let click = gtk4::GestureClick::new();
 
+        // CAPTURE, not the default BUBBLE: GtkRange registers its own
+        // internal click gesture on `scale` first, also at BUBBLE phase, and
+        // (with the GNOME default `gtk-primary-button-warps-slider=true`) a
+        // primary click on the trough jumps the handle synchronously inside
+        // that internal gesture's press handler
+        // (`gtk_range_click_gesture_pressed` in upstream gtk/gtkrange.c),
+        // firing `value-changed` on press — *before* a same-phase (BUBBLE)
+        // `pressed` handler here would get to set `dragging`. A single event
+        // is dispatched through capture phase (root→target), then bubble
+        // phase (target→root), in that order, so a CAPTURE-phase controller
+        // on this same widget always runs before any BUBBLE-phase one for
+        // the same press. That flips `dragging` true first, so the
+        // synchronous jump-on-press's `value-changed` is correctly
+        // suppressed by `connect_value_changed` below instead of sneaking
+        // through as an extra seek. Deliberately not
+        // `set_state(EventSequenceState::Claimed)`-ing the press: GTK's own
+        // click-to-jump / drag-start handling must still run normally
+        // afterward — this gesture only ever *observes*, never consumes.
+        click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+
         let press_dragging = self.dragging.clone();
         click.connect_pressed(move |_, _, _, _| {
             press_dragging.set(true);
@@ -284,6 +312,21 @@ impl PlayerBar {
         // ancestor widget claims it as a scroll) is rare for this scale
         // (it doesn't sit inside anything that pans), but handling it keeps
         // `dragging` from ever getting stuck `true` if it happens.
+        //
+        // Reading `scale.value()` here is safe even though this whole
+        // gesture (including this `released` callback) runs at CAPTURE
+        // phase, i.e. *before* GtkRange's own BUBBLE-phase release handling
+        // for the same release event: GTK dispatches one event at a time,
+        // fully through capture→target→bubble, before the next event is
+        // even generated. Whatever moves the value for this gesture — the
+        // click-to-jump on press, or the continuous updates GtkRange applies
+        // as separate motion events arrive during an actual drag — happens
+        // as earlier, already-fully-dispatched events, strictly before this
+        // release event exists at all. So by the time *any* handler for
+        // `released` runs, ours included, `scale.value()` already holds
+        // GTK's final applied position; our phase relative to GtkRange's own
+        // release handler (which doesn't touch the value — it only ends the
+        // internal drag/grab state) doesn't matter here.
         let end_drag: Rc<dyn Fn()> = {
             let dragging = self.dragging.clone();
             let scale = self.scale.downgrade();
