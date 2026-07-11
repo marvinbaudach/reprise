@@ -261,10 +261,13 @@ impl PlayerBar {
     /// activation with data already in hand from the `Track` (see
     /// `player_controller.rs`) — no extra DB query needed.
     pub fn set_track(&self, title: &str, artist: &str) {
-        // A track change ends any drag-in-progress as far as this bar is
-        // concerned — part of the belt-and-braces reset story for the
-        // `dragging` guard (see the module doc comment).
-        self.dragging.set(false);
+        // Only clear the drag guard if no gesture is currently active.
+        // If the user is mid-drag while a track auto-advances (e.g. EOS),
+        // keep the guard set so the next position tick doesn't yank the
+        // handle — the gesture's own end-of-drag signals will clear it.
+        if should_clear_drag_guard_on_track_change(self.seek_gesture_is_active()) {
+            self.dragging.set(false);
+        }
         self.title_label.set_text(title);
         self.artist_label.set_text(artist);
     }
@@ -273,8 +276,11 @@ impl PlayerBar {
     /// no track active. Queueing (auto-advance) is a later stage; see the
     /// module doc comment in `track_list.rs`.
     pub fn clear_track(&self) {
-        // Same unconditional guard reset as `set_track` — see there.
-        self.dragging.set(false);
+        // Same gesture-activity guard as `set_track` — only clear the drag
+        // guard if no drag is currently in progress.
+        if should_clear_drag_guard_on_track_change(self.seek_gesture_is_active()) {
+            self.dragging.set(false);
+        }
         self.title_label.set_text("");
         self.artist_label.set_text("");
     }
@@ -598,6 +604,15 @@ fn should_apply_position_tick(dragging: bool) -> bool {
     !dragging
 }
 
+/// Whether `set_track`/`clear_track` should clear the `dragging` flag: only
+/// when the seek gesture is not currently active. If the user is mid-drag
+/// while a track auto-advances (e.g. EOS), keeping the flag set prevents
+/// the next `set_position` tick from yanking the handle; the gesture's
+/// own end-of-drag signals will clear it properly.
+fn should_clear_drag_guard_on_track_change(gesture_active: bool) -> bool {
+    !gesture_active
+}
+
 /// Whether `set_position` should treat the `dragging` guard as stuck and
 /// reset it: the flag says a drag is in progress, but the gesture that owns
 /// the flag isn't actually tracking any pointer sequence — so no end-of-drag
@@ -639,6 +654,14 @@ mod tests {
         // No guard set — nothing to heal, regardless of gesture state.
         assert!(!should_self_heal(false, false));
         assert!(!should_self_heal(false, true));
+    }
+
+    #[test]
+    fn drag_guard_clears_only_when_gesture_inactive() {
+        // Gesture still active (user mid-drag): guard must stay set.
+        assert!(!should_clear_drag_guard_on_track_change(true));
+        // Gesture no longer active: guard can be safely cleared.
+        assert!(should_clear_drag_guard_on_track_change(false));
     }
 
     #[test]

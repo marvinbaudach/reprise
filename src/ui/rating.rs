@@ -84,9 +84,13 @@ const RATING_MIN: i32 = 0;
 const RATING_MAX: i32 = STAR_COUNT;
 
 /// Filled star glyph (U+2605) — shown for star positions `<= rating`.
+/// Single-codepoint symbol; stays here rather than strings.rs (see module
+/// doc comment in strings.rs).
 const STAR_FILLED_GLYPH: &str = "\u{2605}";
 /// Outline star glyph (U+2606) — shown for star positions `> rating`, and
 /// additionally dimmed via [`STAR_OUTLINE_CSS_CLASS`].
+/// Single-codepoint symbol; stays here rather than strings.rs (see module
+/// doc comment in strings.rs).
 const STAR_OUTLINE_GLYPH: &str = "\u{2606}";
 /// De-emphasizes the outline glyph — the same generic Adwaita "dim" class
 /// `player_bar.rs` already uses for its inactive repeat state.
@@ -171,6 +175,9 @@ impl RatingWidget {
                 // "flat" style class).
                 button.set_has_frame(false);
                 button.set_valign(gtk4::Align::Center);
+                // Accessible tooltip for screen readers.
+                let action_name = strings::rate_n_stars(star);
+                button.set_tooltip_text(Some(&action_name));
 
                 let widget = self.downgrade();
                 button.connect_clicked(move |_| {
