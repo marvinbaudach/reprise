@@ -1,14 +1,11 @@
-// `player` and `library::scanner` are not yet called from the UI (player
-// lands in Task 9, the scan-folder UI in Task 10; `library::scanner` is only
-// reachable today through the REPRISE_SCAN_DIR dev hook below and its own
-// tests). Silence dead-code warnings for that not-yet-wired-up surface
-// rather than weakening it; narrow further as each task wires its module in.
-#![allow(dead_code)]
-
 mod db;
 mod format;
 mod library;
 mod models;
+// `player` is not yet called from anywhere (it lands in Task 9); silence
+// dead-code warnings for the whole module rather than weakening it item by
+// item. Remove this attribute once `window.rs`/`track_list.rs` wire it in.
+#[allow(dead_code)]
 mod player;
 mod queries;
 mod ui;

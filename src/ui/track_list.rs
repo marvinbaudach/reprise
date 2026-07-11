@@ -33,6 +33,7 @@ use std::rc::Rc;
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
+use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::format::format_duration;
@@ -50,6 +51,13 @@ const WINDOW_OFFSET: i64 = 0;
 const STACK_PAGE_EMPTY: &str = "empty";
 const STACK_PAGE_LIST: &str = "list";
 
+/// Icon shown on the empty-library placeholder (nothing has been scanned
+/// in yet).
+const ICON_EMPTY_LIBRARY: &str = "folder-music-symbolic";
+/// Icon shown when a search filter matched zero rows — distinct from the
+/// empty-library icon so the two states also read differently at a glance.
+const ICON_NO_RESULTS: &str = "system-search-symbolic";
+
 /// Ratings are stored as a plain `i32` with no CHECK constraint; clamp to a
 /// sane star-count range so corrupt/out-of-range data can never make the
 /// label render an absurd number of stars.
@@ -61,10 +69,36 @@ const RATING_MAX: i32 = 5;
 /// in `strings.rs`).
 const RATING_STAR: &str = "★";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SortState {
     field: String,
     dir: String,
+}
+
+/// Which page of the track-list `Stack` should be visible, and (for the two
+/// empty variants) which copy the shared `StatusPage` should carry. A plain
+/// enum decided by a pure function (`empty_state_for`) so the selection
+/// logic is unit-testable without a running GTK application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmptyState {
+    /// The library itself has no tracks yet (no filter active either).
+    EmptyLibrary,
+    /// The library has tracks, but the active search filter matched none.
+    NoResults,
+    /// At least one row to show — the populated list page.
+    List,
+}
+
+/// Pure decision of which empty state (or the populated list) applies for a
+/// given result-row count and whether a search filter is currently active.
+/// Kept side-effect free and separate from `reload`/`apply_empty_state` so
+/// it can be unit tested directly instead of only through a live GTK stack.
+fn empty_state_for(row_count: usize, has_filter: bool) -> EmptyState {
+    match (row_count, has_filter) {
+        (0, false) => EmptyState::EmptyLibrary,
+        (0, true) => EmptyState::NoResults,
+        _ => EmptyState::List,
+    }
 }
 
 /// Default sort: artist ascending, matching the secondary-order convention
@@ -82,6 +116,10 @@ struct Shared {
     conn: Rc<RefCell<Connection>>,
     store: gio::ListStore,
     stack: gtk4::Stack,
+    /// The single empty-state placeholder widget. Its title/description/icon
+    /// are mutated in place by `apply_empty_state` rather than swapping in a
+    /// third stack page — see that function's doc comment.
+    empty_page: adw::StatusPage,
     sort: RefCell<SortState>,
     filter: RefCell<String>,
 }
@@ -160,7 +198,7 @@ impl TrackList {
             .hexpand(true)
             .build();
 
-        let empty_page = adw_status_page();
+        let empty_page = build_status_page();
 
         let stack = gtk4::Stack::new();
         stack.add_named(&empty_page, Some(STACK_PAGE_EMPTY));
@@ -171,12 +209,13 @@ impl TrackList {
             conn,
             store,
             stack,
+            empty_page,
             sort: RefCell::new(SortState::default()),
             filter: RefCell::new(String::new()),
         });
 
         wire_sort_clicks(&column_view, &shared);
-        wire_activate(&column_view, &shared);
+        wire_activate(&column_view);
 
         reload(&shared);
 
@@ -197,17 +236,18 @@ impl TrackList {
     }
 }
 
-/// Builds the empty-library placeholder shown while the current window (the
-/// unfiltered library, or a search with no matches) has zero rows.
-fn adw_status_page() -> gtk4::Widget {
-    use libadwaita as adw;
+/// Builds the shared empty-state placeholder, initially carrying the
+/// empty-library copy (the state `TrackList::new`'s first `reload()` will
+/// normally confirm, since there's no library yet on first launch).
+/// `apply_empty_state` swaps its title/description/icon in place for the
+/// no-results case rather than building a second widget.
+fn build_status_page() -> adw::StatusPage {
     adw::StatusPage::builder()
-        .icon_name("folder-music-symbolic")
+        .icon_name(ICON_EMPTY_LIBRARY)
         .title(strings::EMPTY_LIBRARY_TITLE)
         .description(strings::EMPTY_LIBRARY_DESCRIPTION)
         .vexpand(true)
         .build()
-        .upcast()
 }
 
 /// Builds one `ColumnViewColumn` bound to a `SignalListItemFactory` that
@@ -316,17 +356,29 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
         gtk4::SortType::Descending => "desc",
         _ => "asc",
     };
-    *shared.sort.borrow_mut() = SortState {
+    let new_sort = SortState {
         field: id.to_string(),
         dir: dir.to_string(),
     };
+
+    // A single header click can fire both `primary-sort-column-notify` and
+    // `primary-sort-order-notify` (e.g. switching to a new column changes
+    // both which column is primary and its initial direction). Both land
+    // here; only reload once the (field, dir) pair has actually changed so
+    // one click can't trigger two identical SQL queries.
+    if *shared.sort.borrow() == new_sort {
+        return;
+    }
+
+    *shared.sort.borrow_mut() = new_sort;
     reload(shared);
 }
 
 /// Row activation (double-click or Enter on a focused row). The player lands
-/// in Task 9 — for now this is just an observable log line.
-fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
-    let shared = shared.clone();
+/// in Task 9 — for now this is just an observable log line. No shared state
+/// is needed yet; `Rc<Shared>` will be cloned into this closure again once
+/// there's a player to hand the activated track to.
+fn wire_activate(column_view: &gtk4::ColumnView) {
     column_view.connect_activate(move |view, position| {
         let Some(model) = view.model() else {
             return;
@@ -341,18 +393,16 @@ fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         };
         let track = boxed.borrow::<Track>();
         tracing::info!(path = %track.path, "activate track");
-        // Touching `shared` keeps its clone alive for the closure's lifetime
-        // and documents that future tasks (player wiring) will use it.
-        let _ = &shared;
     });
 }
 
 /// Re-runs the windowed query against the current sort/filter state and
-/// replaces the `ListStore` contents. Shows the empty placeholder whenever
-/// the result set (library or filtered view) has zero rows.
+/// replaces the `ListStore` contents. Switches the stack to whichever page
+/// `empty_state_for` selects for the resulting row count and filter state.
 fn reload(shared: &Rc<Shared>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
+    let has_filter = !filter.trim().is_empty();
 
     let tracks = {
         let mut conn = shared.conn.borrow_mut();
@@ -382,11 +432,64 @@ fn reload(shared: &Rc<Shared>) {
     }
 
     let count = tracks.len();
-    shared.stack.set_visible_child_name(if count == 0 {
-        STACK_PAGE_EMPTY
-    } else {
-        STACK_PAGE_LIST
-    });
+    apply_empty_state(shared, empty_state_for(count, has_filter));
 
     tracing::info!(count, field = %sort.field, dir = %sort.dir, filter = %filter, "loaded {count} tracks");
+}
+
+/// Applies an `EmptyState` decision to the widget tree. For the two empty
+/// variants this mutates the single shared `StatusPage`'s title,
+/// description, and icon in place before switching the stack to it, rather
+/// than maintaining a third stack page — the empty page's layout role
+/// (centered icon + title + description, `vexpand`) never changes, only its
+/// copy does, so swapping three properties on one widget is simpler than
+/// building and switching between two near-identical `StatusPage`s.
+fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
+    match state {
+        EmptyState::List => {
+            shared.stack.set_visible_child_name(STACK_PAGE_LIST);
+        }
+        EmptyState::EmptyLibrary => {
+            shared.empty_page.set_icon_name(Some(ICON_EMPTY_LIBRARY));
+            shared.empty_page.set_title(strings::EMPTY_LIBRARY_TITLE);
+            shared
+                .empty_page
+                .set_description(Some(strings::EMPTY_LIBRARY_DESCRIPTION));
+            shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
+        }
+        EmptyState::NoResults => {
+            shared.empty_page.set_icon_name(Some(ICON_NO_RESULTS));
+            shared.empty_page.set_title(strings::NO_RESULTS_TITLE);
+            shared
+                .empty_page
+                .set_description(Some(strings::NO_RESULTS_DESCRIPTION));
+            shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
+        }
+    }
+    // Debug level (not info): this fires on every reload, including every
+    // keystroke-debounced search, so it would be noisy at the default log
+    // level — but it's exactly what a headless run needs to assert which
+    // empty state (if any) is currently shown.
+    tracing::debug!(?state, "track list empty-state page selected");
+}
+
+#[cfg(test)]
+mod empty_state_tests {
+    use super::*;
+
+    #[test]
+    fn empty_library_when_no_rows_and_no_filter() {
+        assert_eq!(empty_state_for(0, false), EmptyState::EmptyLibrary);
+    }
+
+    #[test]
+    fn no_results_when_no_rows_and_filter_active() {
+        assert_eq!(empty_state_for(0, true), EmptyState::NoResults);
+    }
+
+    #[test]
+    fn list_when_rows_present_regardless_of_filter() {
+        assert_eq!(empty_state_for(3, false), EmptyState::List);
+        assert_eq!(empty_state_for(3, true), EmptyState::List);
+    }
 }
