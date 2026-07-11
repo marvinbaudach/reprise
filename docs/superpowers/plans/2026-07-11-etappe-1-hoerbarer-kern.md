@@ -1,5 +1,10 @@
 # Reprise — Etappe 1: Hörbarer Kern — Implementation Plan
 
+> **SUPERSEDED AB TASK 6 (2026-07-11):** Frontend-Pivot auf natives GTK4 +
+> libadwaita — Tasks 6–9 dieses Plans (React-Frontend) entfallen. Tasks 1–5
+> wurden umgesetzt (Commits bis `91e6067`). Fortsetzung:
+> `2026-07-11-etappe-1-gtk4-fortsetzung.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eine startbare Tauri-2-App „Reprise", die einen Musikordner scannt (Tags via lofty → SQLite), die Titel in einer sortierbaren Spaltenliste zeigt und per Doppelklick über GStreamer abspielt — mit Playerleiste (Play/Pause, Seekbar, Lautstärke, Zeitanzeige) und Statusleiste.

@@ -5,16 +5,17 @@
 
 ## Zusammenfassung
 
-Ein Musikplayer für Linux (GNOME/Wayland). Die Bibliotheksansicht orientiert
-sich an Rhythmbox (sortierbare Spaltenliste für große Bibliotheken), das
-visuelle Design folgt Variante **2a** aus `Musikplayer.pdf` (dunkles Schema,
-Playerleiste unten im Spotify-Stil, Blur-/Glow-Optik) und ist per
-Einstellungen auf die anderen PDF-Varianten umschaltbar.
+Ein Musikplayer für Linux (GNOME/Wayland) als **native GTK4/libadwaita-App**.
+**Frontend-Pivot 2026-07-11:** Web-Technologie (Tauri + React) verworfen —
+GNOME-Puristen bevorzugen natives GTK; damit entfallen auch Glasoptik und
+die PDF-Layout-Varianten (`Musikplayer.pdf` ist als Designreferenz obsolet).
+Die Bibliotheksansicht orientiert sich an Rhythmbox (sortierbare
+Spaltenliste via `GtkColumnView` für große Bibliotheken), das visuelle
+Design folgt der **GNOME HIG** mit Adwaita-Widgets: Playerleiste fest
+unten, Hell/Dunkel folgt automatisch dem System.
 
-**Plattform-Entscheidung:** Linux-only-Fokus. Eine macOS-Portierung ist kein
-Ziel mehr (Nutzer-Entscheidung: unwahrscheinlich, dass portiert wird) — der
-Tauri-Stack hält sie theoretisch offen, aber sie beeinflusst keine
-Entscheidungen. Konsequenz: GStreamer als Audio-Engine statt Rodio/Symphonia.
+**Plattform-Entscheidung:** Linux-only, endgültig (Nutzer: „werde es eh nie
+portieren"). GStreamer als Audio-Engine — dieselbe Engine wie Rhythmbox.
 
 ## Positionierung: Rhythmbox-Nachfolger
 
@@ -59,9 +60,10 @@ Nachfolger:
 - Tag-Editor: Metadaten (Titel, Interpret, Album, Album-Interpret, Jahr,
   Track-Nr., Genre) bearbeiten und via lofty in die Datei schreiben
 - MPRIS-Integration (GNOME-Mediensteuerung, Medientasten)
-- Layout-Einstellungen: Position der Playerleiste (unten / oben in der
-  Headerbar / schwebende Insel — die Varianten 2a, 1a, 1c aus dem PDF),
-  Farbschema (dunkel / hell), sichtbare Spalten und Spaltenbreiten
+- Ansichts-Einstellungen: sichtbare Spalten und Spaltenbreiten
+  (Spalten-Popover am Listenkopf); Hell/Dunkel folgt dem System via
+  libadwaita — Layout-Varianten und Glasoptik sind mit dem GTK4-Pivot
+  entfallen (HIG-konform verschlankt, Nutzer-Entscheidung 2026-07-11)
 - Sortiereinstellungen: Sortierung (Spalte + Richtung) wird pro Ansicht
   gespeichert; sinnvolle Sekundär-Sortierung (Album → Track-Nr.,
   Interpret → Album → Track-Nr.)
@@ -126,53 +128,48 @@ Nichts davon verbaut die Architektur — alle Punkte sind später ergänzbar.
 
 | Schicht | Wahl | Begründung |
 |---|---|---|
-| Shell | Tauri 2 | Natives Wayland-Fenster (WebKitGTK), Rust-Backend, volle Designfreiheit für den 2a-Look |
-| Backend | Rust | Scanner, Datenbank, Audio, MPRIS |
+| UI | GTK4 + libadwaita (gtk4-rs) | Native GNOME-App, HIG-konform; `GtkColumnView` ist genau das Widget für 100k+-Spaltenlisten (System: GTK 4.22, adw 1.9) |
+| Backend | Rust | Scanner, Datenbank, Audio, MPRIS — ein Prozess, eine Sprache |
 | Audio | GStreamer (gstreamer-rs, playbin3) | Auf Linux triviale Systemabhängigkeit; jedes Format, Gapless und ReplayGain eingebaut — dieselbe Engine wie Rhythmbox |
 | Tags | lofty | Einheitliches Tag-Lesen und -Schreiben über alle Formate |
-| Watcher | notify | Plattformübergreifende Ordner-Überwachung (inotify/FSEvents) |
+| Watcher | notify | Ordner-Überwachung (inotify) |
 | Löschen | trash | Dateien in den Papierkorb statt endgültig löschen |
 | Datenbank | SQLite (rusqlite) | Bewertungen und Statistiken liegen in der App-Datenbank (Entscheidung: keine Tag-Schreibzugriffe) |
 | MPRIS | zbus | D-Bus-Anbindung für GNOME-Mediensteuerung und Medientasten |
-| Frontend | React + TypeScript + Vite | Volle Designfreiheit für den 2a-Look |
-| Listen | TanStack Virtual | Virtuelles Scrolling der Spaltenansicht |
-| State | Zustand | Leichtgewichtig, passt zu IPC-Event-Modell |
+| i18n | gettext (Quellsprache Englisch) | GNOME-Standard; Community-Übersetzungen als `.po`-Dateien |
 
-Verworfene Alternativen: **GTK4/libadwaita** (beste GNOME-Integration und
-natives GtkColumnView, aber das PDF-Design — Blur, Glow, Layout-Varianten —
-ist in GTK-CSS nicht umsetzbar; es würde eine Adwaita-Interpretation);
-**Electron** (RAM-Overhead, Node statt Rust); **Rodio/Symphonia** (war für
-macOS-Portabilität gewählt; nach der Linux-only-Entscheidung schlägt
-GStreamer es klar: Gapless, ReplayGain, Equalizer, alle Formate eingebaut).
+Verworfene Alternativen: **Tauri 2 + React** (ursprüngliche Wahl — einziger
+Grund war die Designfreiheit für die PDF-Glasoptik; mit dem Verzicht auf
+Glasoptik und Portierbarkeit blieb kein Vorteil gegenüber nativem GTK.
+Pivot 2026-07-11, rechtzeitig vor Frontend-Beginn — der Rust-Backend-Code
+aus der Tauri-Phase wurde übernommen); **Electron** (RAM-Overhead, Node
+statt Rust); **Rodio/Symphonia** (GStreamer bringt Gapless, ReplayGain,
+Equalizer und alle Formate frei Haus).
 
 ## Architektur
 
 ```text
-reprise/
-├── src-tauri/                  Rust-Backend
-│   └── src/
-│       ├── library/            Scanner (walkdir + lofty), SQLite-Zugriff,
-│       │                       Watcher (notify), Tag-Schreiben, Löschen (trash),
-│       │                       Rhythmbox-Import (rhythmdb.xml, playlists.xml),
-│       │                       Cover-Extraktion + Thumbnail-Cache
-│       ├── player/             GStreamer playbin3: Play/Pause/Seek, Gapless
-│       │                       (about-to-finish), Lautstärke; audio-filter-
-│       │                       Kette: rgvolume (ReplayGain) → equalizer-10bands
-│       ├── queue/              Warteschlange, Shuffle, Repeat
-│       ├── playlists/          Manuell + intelligent (Regeln → SQL)
-│       ├── mpris/              zbus: GNOME-Mediensteuerung, Medientasten
-│       └── ipc/                Tauri-Commands + Event-Definitionen
-└── src/                        React-Frontend
-    ├── components/
-    │   ├── sidebar/            Bibliothek / Playlisten / Intelligent
-    │   ├── browse-bar/         Filterspalten Genre / Interpret / Album
-    │   ├── track-table/        Spaltenansicht, Sortierung, Sternebewertung
-    │   ├── player-bar/         Infos, Transport, Lautstärke — rendert in den
-    │   │                       Slot der gewählten Layout-Variante
-    │   └── ui/                 Buttons, Slider, Stars, Toast
-    ├── hooks/                  usePlayerEvents, useTrackWindow
-    ├── lib/                    IPC-Wrapper, Formatierung, Farb-Extraktion
-    └── styles/                 tokens.css, typography.css, global.css
+reprise/                        eine Rust-Crate (kein npm, kein Webview)
+├── src/
+│   ├── main.rs                 AdwApplication, Fenster, App-ID org.reprise.Reprise
+│   ├── db.rs / models.rs       SQLite + Migrationen (aus der Tauri-Phase übernommen)
+│   ├── queries.rs              Track-Windowing (Sortier-Whitelist, Filter, Stats)
+│   ├── library/                Scanner (walkdir + lofty), Watcher (notify),
+│   │                           Tag-Schreiben, Löschen (trash), Rhythmbox-Import,
+│   │                           Cover-Extraktion + Thumbnail-Cache
+│   ├── player.rs               GStreamer playbin3: Play/Pause/Seek, Gapless,
+│   │                           audio-filter-Kette rgvolume → equalizer-10bands;
+│   │                           Events als glib-Signale/Callbacks
+│   ├── queue/                  Warteschlange, Shuffle, Repeat
+│   ├── playlists/              Manuell + intelligent (Regeln → SQL)
+│   ├── mpris/                  zbus: GNOME-Mediensteuerung, Medientasten
+│   └── ui/                     GTK-Widgets: Hauptfenster, Sidebar
+│                               (AdwNavigationSplitView), Track-Liste
+│                               (GtkColumnView + eigenes GListModel),
+│                               Playerleiste (GtkActionBar), Browse-Leiste,
+│                               Dialoge (AdwDialog/AdwAlertDialog),
+│                               Einstellungen (AdwPreferencesDialog)
+└── data/                       .desktop, Icons, GSettings-Schema, po/ (gettext)
 ```
 
 ### Modulsystem (Rhythmbox-Plugin-Gedanke, intern)
@@ -194,20 +191,21 @@ Liste, aber ohne Fremd-Plugin-API:
 - Eine echte **Fremd-Plugin-API** (zur Laufzeit ladbar, z. B. WASM) bleibt
   spätere Ausbaustufe und setzt auf denselben Erweiterungspunkten auf.
 
-### Kommunikation (IPC)
+### Datenfluss (ein Prozess statt IPC)
 
-- **Frontend → Backend:** Tauri-Commands, z. B. `scan_folder`, `get_track_window`
-  (Sortierung + Filter + Offset/Limit), `play_track`, `seek`, `set_rating`,
-  `create_playlist`, `queue_add`, `update_tags`, `delete_tracks`
-  (`from_library` | `to_trash`), `set_eq_bands`, `set_replaygain_mode`,
-  `get_settings` / `set_setting`, `import_rhythmbox`.
-- **Backend → Frontend:** Tauri-Events, z. B. `player:position` (Tick),
-  `player:track-changed`, `player:state`, `library:scan-progress`,
-  `library:changed`.
+- **UI → Backend:** direkte Rust-Aufrufe (gleicher Prozess). Lange
+  Operationen (Scan, Import) laufen in Worker-Threads; Ergebnisse und
+  Fortschritt kommen über `glib::MainContext`-Channels zurück auf den
+  GTK-Main-Thread.
+- **Player → UI:** GStreamer-Bus-Watch läuft im GLib-MainLoop der App;
+  Zustands-/Positions-/EOS-Ereignisse erreichen die Widgets als
+  Callbacks/Signale. Der GTK-Main-Thread blockiert nie auf Audio.
 
-Das Frontend hält nie die ganze Bibliothek im Speicher: Die Tabelle fordert
-über `get_track_window` nur den sichtbaren Ausschnitt an; Sortieren, Filtern
-und Suche laufen als SQL im Backend. Damit skaliert die Liste auf 100k+ Titel.
+Die UI hält nie die ganze Bibliothek im Speicher: Ein eigenes `GListModel`
+hinter dem `GtkColumnView` fordert über die Query-Schicht (`queries.rs`)
+nur Fenster an; Sortieren, Filtern und Suche laufen als SQL (Sortierfelder
+per Whitelist, alles parametrisiert). Damit skaliert die Liste auf 100k+
+Titel.
 
 ## Datenmodell (SQLite)
 
@@ -240,10 +238,10 @@ settings(key PRIMARY KEY, value)   -- Layout, Farbschema, Spalten, Ordner,
   resultierende Watcher-Event ignoriert (Pfad kurzzeitig auf Ignorierliste),
   damit kein doppelter Rescan entsteht.
 
-## UI — visuelle Vorlage 2a, konfigurierbar
+## UI — GNOME HIG, Adwaita
 
-Das PDF enthält vier Layout-Varianten; **2a ist der Standard**, die anderen
-sind als Einstellungen wählbar. Drei Zonen im Standard-Layout:
+Natives libadwaita-Design (der frühere 2a-/Glasoptik-Ansatz aus dem PDF ist
+mit dem GTK4-Pivot entfallen). Drei Zonen im festen Layout:
 
 1. **Sidebar links** — Abschnitte BIBLIOTHEK (Musik, Warteschlange),
    PLAYLISTEN, INTELLIGENT; jeweils mit Track-Zähler. „Neue Playlist"-Aktion.
@@ -277,32 +275,18 @@ bei Mehrfachauswahl werden gemeinsame Felder (z. B. Album, Interpret)
 gesammelt bearbeitet. Löschen immer mit Bestätigungsdialog, der klar
 unterscheidet: „nur aus Bibliothek" vs. „Datei in den Papierkorb".
 
-**Blur-Look:** ambienter Farb-Glow, extrahiert aus dem Cover des laufenden
-Titels, hinter halbtransparenten Flächen mit `backdrop-filter`. Reines CSS —
-läuft auf Wayland ohne Compositor-Abhängigkeit.
-
 ### Einstellungen
 
-Ein **modernes Einstellungsmenü** nach den Design-Screens des Nutzers
-(Referenz-Mockups vom 2026-07-11): modaler Dialog im 2a-Look mit
-**Tab-Leiste oben** — Wiedergabe · Darstellung · Layout · Bibliothek ·
-Plugins · Synchronisation. Jede Änderung wirkt sofort ohne Neustart.
+**`AdwPreferencesDialog`** mit Seiten — Wiedergabe · Bibliothek · Plugins
+(· Synchronisation, erst mit dem Sync-Modul). Jede Änderung wirkt sofort
+ohne Neustart. Die früheren Tabs „Darstellung" und „Layout" sind mit dem
+HIG-Pivot entfallen: Hell/Dunkel folgt via libadwaita automatisch dem
+System, die Playerleiste sitzt fest unten, Fensterzustand merkt sich die
+App ohne Einstellung.
 
 - **Wiedergabe:** Equalizer (10 Bänder als Slider, Presets Flat/Rock/Pop/…,
   Ein/Aus), ReplayGain (Modus Titel / Album / Aus, Fallback-Verstärkung),
   Verhalten am Titelende.
-- **Darstellung:** Farbschema dunkel (Standard) / hell (1b) / System
-  folgen; beide Schemata sind vollständige Token-Sets in `tokens.css`,
-  der Blur-Look funktioniert in beiden.
-- **Layout** (eigener Tab, wie im Mockup):
-  - *Wiedergabeleiste:* Auswahl über drei visuelle Vorschau-Karten
-    „Oben / Unten / Schwebend" (1a / 2a / 1c); eine `PlayerBar`-Komponente
-    rendert in den gewählten Layout-Slot.
-  - *Fensteraufbau:* Seitenleiste anzeigen (an/aus), Statusleiste anzeigen
-    (Titelanzahl, Gesamtdauer, Speicher; an/aus).
-  - *Listendichte:* Komfortabel / Standard / Kompakt.
-  - *Spalten:* „Sichtbare Spalten" mit Bearbeiten-Aktion (öffnet dasselbe
-    Spalten-Popover wie am Listenkopf).
 - **Bibliothek:** Ordner verwalten (hinzufügen/entfernen), Rescan,
   Rhythmbox-Import.
 - **Plugins** (so heißt das Modulsystem im UI): Liste der Module mit
@@ -322,17 +306,17 @@ Bitrate zuschaltbar.
 
 Alle Einstellungen persistiert in einer `settings`-Tabelle (Key-Value) in
 der SQLite-DB; beim Start geladen, Änderungen wirken sofort ohne Neustart.
+Spaltenkonfiguration (Sichtbarkeit, Reihenfolge, Breiten) ebenso.
 
-Design-Tokens (Farben, Typo, Abstände, Radien, Blur-Stärken) zentral in
-`tokens.css`. Bewertung als klickbare 5-Sterne-Komponente direkt in der
-Tabellenzeile. **UI-Sprache Englisch** (Quellsprache — Community-Projekt; Entscheidung
-2026-07-11, ersetzt die frühere Festlegung auf Deutsch). Alle Strings
-zentral in einem Strings-Modul abgelegt, i18n-fähig: **Mehrsprachigkeit
-ist fest eingeplant** (zuerst Deutsch), die Sprache folgt dann dem
-System-Locale und ist in den Einstellungen übersteuerbar. Auch Commits,
-Code-Kommentare und Log-/Fehlermeldungen sind englisch. Deutsche
-UI-Zitate in diesem Dokument sind illustrativ — implementiert wird
-englisch.
+Optik kommt von Adwaita; eigenes CSS nur minimal und HIG-verträglich.
+Bewertung als klickbares 5-Sterne-Widget direkt in der Tabellenzeile. **UI-Sprache Englisch** (Quellsprache — Community-Projekt; Entscheidung
+2026-07-11, ersetzt die frühere Festlegung auf Deutsch). **Mehrsprachigkeit
+ist fest eingeplant:** via gettext (GNOME-Standard), Übersetzungen als
+`.po`-Dateien, zuerst Deutsch; die Sprache folgt dem System-Locale. Bis
+zur gettext-Einführung liegen alle UI-Strings zentral in einem
+Strings-Modul (englisch). Auch Commits, Code-Kommentare und
+Log-/Fehlermeldungen sind englisch. Deutsche UI-Zitate in diesem Dokument
+sind illustrativ — implementiert wird englisch.
 
 ## Sicherheit
 
@@ -340,12 +324,13 @@ Reprise verarbeitet nicht vertrauenswürdige Eingaben (fremde Audiodateien,
 Tags, XML) und soll als Flatpak in die Welt — Sicherheit ist Teil des
 Designs, nicht Nachrüstung:
 
-- **Tauri-Härtung:** strikte CSP (kein Remote-Content, keine externen
-  Skripte), Capabilities auf das Minimum beschränkt (nur tatsächlich
-  genutzte Plugins/Befehle), kein Remote-IPC-Zugriff.
-- **IPC-Eingaben validieren:** alle Command-Parameter werden backendseitig
-  geprüft — Sortierfelder nur per Whitelist, SQL ausschließlich
-  parametrisiert (nie String-Konkatenation), Limits gedeckelt.
+- **Kein Webview:** native GTK-App ohne Browser-Engine — die gesamte
+  Webview-Angriffsfläche (CSP, Remote-Content, JS-Injection) existiert
+  nicht mehr (die Tauri-Härtung der ursprünglichen Architektur ist damit
+  gegenstandslos).
+- **Eingaben validieren:** alle UI→Backend-Aufrufe prüfen Parameter —
+  Sortierfelder nur per Whitelist, SQL ausschließlich parametrisiert
+  (nie String-Konkatenation), Limits gedeckelt.
 - **Pfad-Disziplin:** Der Player öffnet nur Dateien, die aus der eigenen
   Datenbank stammen; gescannt wird nur, was der Nutzer explizit als
   Bibliotheksordner gewählt hat. Keine rohen Frontend-Pfade ins
@@ -379,8 +364,8 @@ Reprise soll sich wie eine native GNOME-App anfühlen:
   (bereits im MVP).
 - **Portale statt Direktzugriff:** Datei-/Ordnerdialoge über
   XDG-Desktop-Portale — funktioniert sauber in der Flatpak-Sandbox.
-- **Farbschema „System folgen"** liest die GNOME-Voreinstellung
-  (dark/light) über das Settings-Portal.
+- **Farbschema** folgt via libadwaita automatisch der GNOME-Einstellung
+  (dark/light) — keine eigene Logik nötig.
 - **Dateimanager:** MIME-Zuordnungen der Audioformate in der Desktop-Datei
   („Öffnen mit Reprise", bereits im MVP).
 
@@ -445,12 +430,10 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
   über das Dock ist nachträglich alles nachlesbar.
 - **Panic-Hook:** Panics landen mit Backtrace in der Logdatei, nicht nur
   auf stderr.
-- **Frontend eingebunden:** schlanker Logger in `src/lib/log.ts`;
-  `console.*` bleibt für die DevTools, Fehler werden zusätzlich per IPC
-  (`log_frontend`) ins Backend-Log gespiegelt — eine gemeinsame
-  Zeitachse für beide Seiten. WebKit-DevTools in Debug-Builds per
-  Shortcut erreichbar (Tauri-`devtools`-Feature); in Release-Builds
-  über eine Umgebungsvariable zuschaltbar.
+- **UI-Diagnose:** GTK Inspector (`GTK_DEBUG=interactive`) für
+  Widget-Debugging; `G_MESSAGES_DEBUG=all` schaltet GLib-/GTK-interne
+  Meldungen zu. Da alles ein Prozess ist, landet ohnehin alles in
+  einer Zeitachse im tracing-Log.
 - **GStreamer-Diagnose:** `GST_DEBUG` wirkt unverändert durch
   (System-GStreamer), z. B. `GST_DEBUG=playbin:5` für Pipeline-Analyse.
 - **Grenzen:** Logs bleiben lokal (keine Telemetrie, siehe „Sicherheit");
@@ -465,10 +448,10 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
   Lösch-Pfade (nur DB vs. Papierkorb), Rhythmbox-Import
   (XML-Parsing, Pfad-Abgleich, Rating-Übernahme), Browse-Facetten-Queries
   (kaskadierende Filter + Suche kombiniert).
-- **Vitest + React Testing Library:** Sternebewertung, Suche/Filter,
-  Tabellen-Sortierung, Player-Bar-Zustände, Tag-Editor-Dialog
-  (Einzel-/Mehrfachauswahl), Lösch-Bestätigung.
-- E2E (WebDriver/tauri-driver) erst nach dem MVP.
+- **UI-Schicht:** Logik lebt testbar im Backend (Query-Schicht,
+  Format-Helfer, Player-Zustandsmaschine — alles Rust-Unit-Tests);
+  GTK-Widget-Verhalten wird schlank gehalten und headless (Xvfb)
+  verifiziert. E2E-Automatisierung erst nach dem MVP.
 
 ## Spätere Ausbaustufen
 
@@ -479,8 +462,10 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
   im Frontend — im MVP existiert nur die lokale Implementierung
   (Alben des Interpreten aus der eigenen Bibliothek).
 
-  *Design des Interpreten-Panels (Referenz-Mockup vom 2026-07-11):*
-  Das Panel öffnet rechts neben der Titelliste (schließbar), im 2a-Look:
+  *Design des Interpreten-Panels (Referenz-Mockup vom 2026-07-11; mit dem
+  GTK4-Pivot als Adwaita-Interpretation — gleiche Inhalte und Aktionen,
+  native Widgets/`AdwPreferencesGroup`-artige Karten statt Glas-Look):*
+  Das Panel öffnet rechts neben der Titelliste (schließbar):
   - **Kopf:** Interpreten-Bild (Quelle über den `MetadataProvider`,
     z. B. Fanart.tv/Wikimedia via MusicBrainz-Relationen; lokal
     gecacht, Fallback: Platzhalter aus Initialen), Interpreten-Name,
@@ -541,9 +526,9 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
 - Import aus Clementine/Strawberry — erweitert die Umsteiger-Zielgruppe
   über Rhythmbox hinaus
 - Regel-Editor für Smart Playlists
-- Mehrsprachige Oberfläche (i18n): Übersetzungen auf Basis des zentralen
-  Strings-Moduls, zuerst Deutsch; Sprachwahl folgt dem System-Locale,
-  übersteuerbar in den Einstellungen
+- Mehrsprachige Oberfläche (i18n): gettext-Übersetzungen als `.po`-Dateien
+  (GNOME-Standard, community-freundlich), zuerst Deutsch; Sprachwahl folgt
+  dem System-Locale
 - Bewertungen optional in Dateitags exportieren
-- macOS-Port bleibt durch den Tauri-Stack theoretisch möglich
-  (GStreamer und MPRIS wären zu ersetzen), ist aber kein Ziel
+- (macOS-Port: endgültig gestrichen — Nutzer-Entscheidung 2026-07-11,
+  „werde es eh nie portieren"; GTK4-Pivot besiegelt das)
