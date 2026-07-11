@@ -1,11 +1,5 @@
 use crate::models::Track;
 use rusqlite::Connection;
-use std::sync::Mutex;
-use tauri::State;
-
-pub struct AppState {
-    pub db: Mutex<Connection>,
-}
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,7 +8,7 @@ pub struct LibraryStats {
     pub total_duration_ms: i64,
     // Reserved for a future filtered/active-view count (e.g. status bar showing
     // "N of M tracks" while a filter is applied). Always None until a filter
-    // parameter is threaded through get_library_stats.
+    // parameter is threaded through query_library_stats.
     pub filtered_count: Option<i64>,
 }
 
@@ -100,58 +94,8 @@ pub fn query_track_window(
     rows.collect()
 }
 
-#[tauri::command]
-pub fn get_track_window(
-    state: State<AppState>,
-    sort_field: String,
-    sort_dir: String,
-    filter: String,
-    offset: i64,
-    limit: i64,
-) -> Result<Vec<Track>, String> {
-    let mut conn = state.db.lock().map_err(|e| {
-        tracing::error!("failed to lock database connection: {e}");
-        e.to_string()
-    })?;
-    query_track_window(
-        &mut conn,
-        &sort_field,
-        &sort_dir,
-        &filter,
-        offset,
-        limit.min(500),
-    )
-    .map_err(|e| {
-        tracing::error!(sort_field = %sort_field, sort_dir = %sort_dir, "get_track_window failed: {e}");
-        e.to_string()
-    })
-}
-
-#[tauri::command]
-pub fn scan_music_folder(
-    state: State<AppState>,
-    root: String,
-) -> Result<crate::library::scanner::ScanReport, String> {
-    tracing::info!(folder = %root, "starting library scan");
-    let mut conn = state.db.lock().map_err(|e| {
-        tracing::error!("failed to lock database connection: {e}");
-        e.to_string()
-    })?;
-    let report = crate::library::scanner::scan_folder(&mut conn, std::path::Path::new(&root))
-        .map_err(|e| {
-            tracing::error!(folder = %root, "scan_music_folder failed: {e}");
-            e.to_string()
-        })?;
-    tracing::info!(?report, "library scan finished");
-    Ok(report)
-}
-
-#[tauri::command]
-pub fn get_library_stats(state: State<AppState>) -> Result<LibraryStats, String> {
-    let conn = state.db.lock().map_err(|e| {
-        tracing::error!("failed to lock database connection: {e}");
-        e.to_string()
-    })?;
+/// Aggregates library-wide stats over all non-missing tracks.
+pub fn query_library_stats(conn: &Connection) -> Result<LibraryStats, rusqlite::Error> {
     conn.query_row(
         "SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE missing = 0",
         [],
@@ -163,10 +107,6 @@ pub fn get_library_stats(state: State<AppState>) -> Result<LibraryStats, String>
             })
         },
     )
-    .map_err(|e| {
-        tracing::error!("get_library_stats failed: {e}");
-        e.to_string()
-    })
 }
 
 #[cfg(test)]

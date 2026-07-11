@@ -1,10 +1,15 @@
-pub mod db;
-pub mod ipc;
-pub mod library;
-pub mod models;
-pub mod player;
+// This binary currently only opens and migrates the database at startup; the
+// GTK4 UI that will call into `queries`, `player`, and `library::scanner` is
+// built in a later task. Silence dead-code warnings for that not-yet-wired-up
+// surface rather than weakening it.
+#![allow(dead_code)]
 
-use ipc::AppState;
+mod db;
+mod library;
+mod models;
+mod player;
+mod queries;
+
 use tracing_subscriber::EnvFilter;
 
 fn db_path() -> std::path::PathBuf {
@@ -25,8 +30,7 @@ fn init_logging() {
         .init();
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+fn main() {
     init_logging();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Reprise");
 
@@ -35,22 +39,5 @@ pub fn run() {
     let conn = db::open(Some(&path)).expect("failed to open database");
     db::migrate(&conn).expect("database migration failed");
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .manage(AppState {
-            db: std::sync::Mutex::new(conn),
-        })
-        .manage(player::PlayerState(std::sync::Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![
-            ipc::get_track_window,
-            ipc::scan_music_folder,
-            ipc::get_library_stats,
-            player::play_track,
-            player::toggle_pause,
-            player::seek_to,
-            player::set_volume,
-            player::stop,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running Reprise");
+    tracing::info!("database ready");
 }
