@@ -39,9 +39,9 @@ pub enum SmartRulesError {
     UnknownField(String),
     #[error("unknown operator: {0}")]
     UnknownOperator(String),
-    #[error("missing value: {0}")]
+    #[error("operator {0} requires a value")]
     MissingValue(String),
-    #[error("invalid value: {0}")]
+    #[error("invalid value for operator {0}")]
     InvalidValue(String),
 }
 
@@ -344,52 +344,52 @@ pub fn smart_rules_to_sql(
             "=" => {
                 let val = rule
                     .value
-                    .ok_or_else(|| SmartRulesError::MissingValue("= requires value".to_string()))?;
+                    .ok_or_else(|| SmartRulesError::MissingValue("=".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} = ?", rule.field)
             }
             "!=" => {
-                let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::MissingValue("!= requires value".to_string())
-                })?;
+                let val = rule
+                    .value
+                    .ok_or_else(|| SmartRulesError::MissingValue("!=".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} != ?", rule.field)
             }
             ">=" => {
-                let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::MissingValue(">= requires value".to_string())
-                })?;
+                let val = rule
+                    .value
+                    .ok_or_else(|| SmartRulesError::MissingValue(">=".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} >= ?", rule.field)
             }
             "<=" => {
-                let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::MissingValue("<= requires value".to_string())
-                })?;
+                let val = rule
+                    .value
+                    .ok_or_else(|| SmartRulesError::MissingValue("<=".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} <= ?", rule.field)
             }
             ">" => {
                 let val = rule
                     .value
-                    .ok_or_else(|| SmartRulesError::MissingValue("> requires value".to_string()))?;
+                    .ok_or_else(|| SmartRulesError::MissingValue(">".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} > ?", rule.field)
             }
             "<" => {
                 let val = rule
                     .value
-                    .ok_or_else(|| SmartRulesError::MissingValue("< requires value".to_string()))?;
+                    .ok_or_else(|| SmartRulesError::MissingValue("<".to_string()))?;
                 params.push(json_value_to_sql(&val));
                 format!("{} < ?", rule.field)
             }
             "contains" => {
-                let val = rule.value.ok_or_else(|| {
-                    SmartRulesError::MissingValue("contains requires value".to_string())
-                })?;
-                let s = val.as_str().ok_or_else(|| {
-                    SmartRulesError::InvalidValue("contains value must be a string".to_string())
-                })?;
+                let val = rule
+                    .value
+                    .ok_or_else(|| SmartRulesError::MissingValue("contains".to_string()))?;
+                let s = val
+                    .as_str()
+                    .ok_or_else(|| SmartRulesError::InvalidValue("contains".to_string()))?;
                 // Escape backslash first, then % and _ for LIKE.
                 let escaped = s
                     .replace('\\', "\\\\")
@@ -846,16 +846,6 @@ mod tests {
     }
 
     #[test]
-    fn move_position_out_of_range_is_noop_old() {
-        let mut conn = seeded_conn();
-        let id = create(&conn, "P1").unwrap();
-        add_tracks(&mut conn, id, &[1, 2, 3]).unwrap();
-        let result = move_position(&mut conn, id, 10, 1);
-        // Should be Ok but no-op
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn smart_rules_to_sql_empty_rules() {
         let (where_clause, params) = smart_rules_to_sql("[]").unwrap();
         assert_eq!(where_clause, "1=1");
@@ -909,14 +899,17 @@ mod tests {
     #[test]
     fn smart_rules_to_sql_contains_backslash_escaping() {
         // Test that a user value with backslash is fully escaped (no live wildcards).
+        // Input: "a\\%" in JSON → represents string value a\% (one backslash, one percent)
+        // After escaping: backslash → \\, percent → \%, result: a\\\%
+        // After wrapping wildcards: %a\\\%%
+        // In Rust source string literal: "%a\\\\\\%%"
         let json = r#"[{"field":"title","op":"contains","value":"a\\%"}]"#;
         let (_where_clause, params) = smart_rules_to_sql(json).unwrap();
-        if let rusqlite::types::Value::Text(s) = &params[0] {
-            // After proper escaping: a\ becomes a\\ (escaped), % becomes \% (escaped)
-            // Result pattern should be %a\\\\%\%%
-            assert!(s.contains("\\\\"));
-            assert!(s.contains("\\%"));
-        }
+        let expected = "%a\\\\\\%%";
+        let rusqlite::types::Value::Text(s) = &params[0] else {
+            panic!("expected text param")
+        };
+        assert_eq!(s, expected);
     }
 
     #[test]
