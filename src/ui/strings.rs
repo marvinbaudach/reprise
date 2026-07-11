@@ -1,6 +1,10 @@
 //! Centralized English UI strings. All user-facing text in the `ui` module
 //! must come from here rather than being inlined at call sites — this keeps
 //! translation and copy review a one-file affair.
+//!
+//! Single-codepoint glyphs (e.g. rating stars ★/☆) whose meaning is purely
+//! positional and do not participate in translation may live at their use
+//! site rather than here.
 
 pub const APP_NAME: &str = "Reprise";
 pub const SEARCH_PLACEHOLDER: &str = "Search all fields";
@@ -64,6 +68,16 @@ pub const REPEAT: &str = "Repeat";
 // (src/ui/track_list.rs) and as the RatingWidget's tooltip
 // (src/ui/rating.rs).
 pub const RATING: &str = "Rating";
+
+/// Accessible name for a rating star button (1-based). Returns
+/// "Rate 1 star" for n=1, "Rate N stars" for n>1.
+pub fn rate_n_stars(n: i32) -> String {
+    if n == 1 {
+        "Rate 1 star".to_string()
+    } else {
+        format!("Rate {n} stars")
+    }
+}
 
 // Playback fault tolerance (src/ui/player_controller.rs, Stage 2 Task 5): a
 // physically deleted or otherwise unplayable queued file must never crash or
