@@ -930,7 +930,11 @@ fn parse_smoke_source(value: &str) -> Option<ViewSource> {
 /// migration, never re-created by a test), so `smart:<id>` never needs a
 /// name-based fallback. Returns `None` (caller warns and ignores) if the
 /// prefix doesn't match, the lookup query fails, or no playlist has that
-/// exact name.
+/// exact name. Names aren't required to be unique (`playlists::create`
+/// doesn't enforce it) — if more than one playlist shares `name`, this logs
+/// a warning and still picks the first one by `playlists::list`'s `ORDER BY
+/// position ASC` (good enough for a headless-only smoke hook, but flagged so
+/// duplicate names don't resolve silently and ambiguously).
 fn resolve_smoke_source_playlist_by_name(shared: &Rc<Shared>, value: &str) -> Option<ViewSource> {
     let name = value.strip_prefix("playlist:")?;
     let conn = shared.conn.borrow();
@@ -939,10 +943,17 @@ fn resolve_smoke_source_playlist_by_name(shared: &Rc<Shared>, value: &str) -> Op
             tracing::error!(%error, name, "failed to list playlists for smoke-source name lookup");
         })
         .ok()?;
-    playlists
-        .into_iter()
-        .find(|p| p.name == name)
-        .map(|p| ViewSource::Playlist(p.id))
+    let mut matches = playlists.into_iter().filter(|p| p.name == name);
+    let first = matches.next()?;
+    let remaining = matches.count();
+    if remaining > 0 {
+        tracing::warn!(
+            name,
+            match_count = remaining + 1,
+            "multiple playlists share this name; picking the first by position"
+        );
+    }
+    Some(ViewSource::Playlist(first.id))
 }
 
 /// Arms the `REPRISE_SMOKE_SOURCE` hook (see `SMOKE_SOURCE_ENV_VAR`): one

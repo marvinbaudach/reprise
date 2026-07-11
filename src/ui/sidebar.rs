@@ -30,30 +30,32 @@
 //! parameter) so a routine counts refresh never silently changes what's on
 //! screen.
 //!
-//! ## Reentrancy: selecting a row can, deep in the call stack, rebuild this
+//! ## Reentrancy: a forced rebuild can, deep in the call stack, rebuild this
 //! same sidebar
 //!
-//! Selecting a row invokes `Shared::on_select`, which (via `window.rs`)
-//! calls `TrackList::set_source` → `reload()` → `TrackList`'s `on_reload`
-//! hook → `Sidebar::refresh()` → `rebuild()` — all synchronously, before the
-//! original `row-selected` signal handler returns. `rebuild` clearing the
-//! `ListBox` deselects the just-selected row (a `None` emission, ignored by
-//! `wire_row_selected`'s early return) and then re-selects the same logical
-//! source on a freshly built row — a *different* `ListBoxRow` GObject, so
-//! `row-selected` fires again for it. Without care this would loop forever:
-//! each notify triggers another `rebuild`, which re-selects and re-notifies.
-//! `wire_row_selected` breaks the cycle by comparing the newly selected
-//! row's `ViewSource` against `shared.current_source`'s already-stored value
-//! — equal means "nothing actually changed", so the recursion bottoms out
-//! after exactly one nested `rebuild` every time, whether the underlying GTK
-//! selection signal happens to fire synchronously or gets deferred to a
-//! later main-loop turn. Every `RefCell` borrow in this module is also
-//! scoped to end before any call that could re-enter (the pattern
-//! documented project-wide, e.g. `player_controller.rs`'s "Queue borrow
-//! discipline" section), so this reentrant chain never overlaps two borrows
-//! of the same `RefCell` either.
+//! `create_playlist_and_select` calls `rebuild(shared, Some(new_playlist))`,
+//! which selects the new playlist's row and — because that's a genuine
+//! source change — notifies `on_select`, which (via `window.rs`) calls
+//! `TrackList::set_source` → `reload()`. Nothing downstream of that reload
+//! calls back into `Sidebar::refresh`/`rebuild` any more (see `refresh`'s
+//! doc comment for why: Stage 3 Task 4's review found the sidebar wired into
+//! `TrackList`'s generic `on_reload` hook, rebuilding on every search
+//! keystroke and sort click — removed; `refresh` is now called only from the
+//! three specific triggers listed there), so this particular chain no longer
+//! re-enters. The general hazard remains worth documenting because `rebuild`
+//! itself still tears down and rebuilds every row and re-selects whatever's
+//! current: if a future caller ever *does* feed a rebuild back from
+//! `on_select`, `wire_row_selected`'s dedup-by-value check (comparing the
+//! newly selected row's `ViewSource` against `shared.current_source`'s
+//! already-stored value, not row identity — a fresh `rebuild` always
+//! produces a *different* `ListBoxRow` GObject even for "the same" source)
+//! is what stops that from looping forever. Every `RefCell` borrow in this
+//! module is also scoped to end before any call that could re-enter (the
+//! pattern documented project-wide, e.g. `player_controller.rs`'s "Queue
+//! borrow discipline" section), so no such reentrant chain ever overlaps two
+//! borrows of the same `RefCell` either.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -120,6 +122,18 @@ struct Shared {
     /// convention (cheap to clone out before calling — see the module doc's
     /// `## Reentrancy` section).
     on_select: RefCell<Option<OnSelect>>,
+    /// Invoked whenever a navigation row is *activated* (click/Enter) —
+    /// including re-activating the row that's already selected, which fires
+    /// `row-activated` but **not** `row-selected` again (see `wire_row_
+    /// selected`'s dedup-by-value check). `on_select` alone can't cover that
+    /// case: a user who backed out to the sidebar in collapsed mode without
+    /// picking a *different* source needs tapping the same row again to
+    /// bring the content page back, and `on_select` only fires on an actual
+    /// source change. `window.rs` wires this to the same "show content if
+    /// collapsed" logic it feeds `on_select`'s callback (see `Sidebar::set_
+    /// on_show_content`'s doc comment) — never to a source switch or reload,
+    /// so re-tapping the current row is free of any query cost.
+    on_show_content: RefCell<Option<Rc<dyn Fn()>>>,
     /// The window, for the "New playlist" `AlertDialog`'s parent. `WeakRef`
     /// so the sidebar can never keep the window alive past its natural
     /// lifetime (same shape as `TrackList::toast_overlay`).
@@ -128,6 +142,13 @@ struct Shared {
     /// shape as `TrackList::toast_overlay`) — surfaces a failed playlist
     /// creation as a toast rather than only a log line.
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    /// Counts every `rebuild` call (routine refresh or forced selection
+    /// alike), logged alongside each call's `reason` — see `rebuild`'s
+    /// tracing line and `Sidebar::refresh`'s doc comment for the trigger
+    /// inventory this exists to make visible in headless E2E logs (Stage 3
+    /// Task 4 review finding #2: the sidebar was rebuilding on every search
+    /// keystroke/sort click before that trigger was narrowed).
+    refresh_count: Cell<u64>,
 }
 
 /// Handle to the built sidebar widget (a `ScrolledWindow` wrapping the
@@ -166,14 +187,16 @@ impl Sidebar {
             rows: RefCell::new(Vec::new()),
             new_playlist_row: RefCell::new(None),
             on_select: RefCell::new(None),
+            on_show_content: RefCell::new(None),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
+            refresh_count: Cell::new(0),
         });
 
         wire_row_selected(&shared);
         wire_row_activated(&shared);
 
-        rebuild(&shared, Some(ViewSource::default()));
+        rebuild(&shared, Some(ViewSource::default()), "initial build");
 
         Self { shared, root }
     }
@@ -200,6 +223,15 @@ impl Sidebar {
         *self.shared.on_select.borrow_mut() = Some(Rc::new(callback));
     }
 
+    /// Sets the callback invoked whenever a navigation row is *activated*,
+    /// whether or not that changes the selected source — see `Shared::on_
+    /// show_content`'s doc comment for why this is a separate seam from
+    /// `set_on_select`. `window.rs` wires both to the same "bring the
+    /// content page forward if the split view is collapsed" closure.
+    pub fn set_on_show_content(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_show_content.borrow_mut() = Some(Rc::new(callback));
+    }
+
     /// Injects the window's toast overlay, once it exists (built after the
     /// sidebar — same post-construction seam as `TrackList::set_toast_
     /// overlay`).
@@ -208,13 +240,37 @@ impl Sidebar {
     }
 
     /// Re-runs every count/list query and rebuilds the row set, preserving
-    /// whichever source is currently selected. Called from `TrackList`'s
-    /// `on_reload` hook (every reload: initial load, search, sort, source
-    /// switch, and the explicit reload after a scan completes) — see the
-    /// module doc's `## Reentrancy` section for why a reload triggered by
-    /// this very sidebar's own selection is safe to feed back into it.
-    pub fn refresh(&self) {
-        rebuild(&self.shared, None);
+    /// whichever source is currently selected. `reason` is a short,
+    /// human-readable label logged alongside the rebuild counter (see
+    /// `rebuild`'s tracing line) so headless E2E runs can confirm exactly
+    /// which triggers actually fired.
+    ///
+    /// ## Trigger inventory (Stage 3 Task 4 review finding #2)
+    ///
+    /// This must be called ONLY when something the sidebar displays (counts,
+    /// playlists, smart lists, badges) can actually have changed — never on
+    /// a routine `TrackList` reload (search-filter debounce, sort-header
+    /// click, plain source switch), which is why this is *not* wired into
+    /// `TrackList`'s generic `on_reload` hook. The known call sites:
+    ///
+    /// 1. **Scan completion** — `window.rs`'s `spawn_scan` success arm, after
+    ///    `track_list.reload()`: a scan can add tracks/playlists and clear
+    ///    import-error/missing counts.
+    /// 2. **Playlist CRUD** — `create_playlist_and_select` in this file calls
+    ///    `rebuild` directly (not through this method) since it already needs
+    ///    the forced-selection path; any future playlist-mutating site should
+    ///    do the same.
+    /// 3. **Missing-marking** — `window.rs`'s `player.set_track_list_reload`
+    ///    closure (the seam `playback_faults.rs`'s `handle_unplayable_track`
+    ///    calls through `PlayerController::reload_track_list` after a
+    ///    successful `mark_track_missing`) — the only thing that can flip the
+    ///    Missing badge outside of a scan.
+    ///
+    /// See the module doc's `## Reentrancy` section for why a rebuild
+    /// triggered by this very sidebar's own selection (via `create_playlist_
+    /// and_select`) is still safe to feed back into it.
+    pub fn refresh(&self, reason: &str) {
+        rebuild(&self.shared, None, reason);
     }
 }
 
@@ -239,8 +295,25 @@ fn show_toast(shared: &Shared, text: &str) {
 ///   playlist (switch straight to it).
 /// - `None`: silently re-select whatever `shared.current_source` already
 ///   was, suppressing `on_select` — a routine counts refresh must never
-///   change what's on screen or trigger a redundant reload.
-fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>) {
+///   change what's on screen or trigger a redundant reload. If that source's
+///   row no longer exists (e.g. a smart list emptied out, or the Missing/
+///   Import-errors row disappeared because its count hit zero), falls back
+///   to selecting `Library` instead of leaving nothing selected — see the
+///   fallback logic below.
+///
+/// `reason` is a short human-readable label for the `"sidebar refresh #N
+/// (reason)"` debug log (`shared.refresh_count`) — see `Sidebar::refresh`'s
+/// doc comment for the full trigger inventory this makes verifiable in
+/// headless E2E output.
+fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
+    let refresh_number = shared.refresh_count.get() + 1;
+    shared.refresh_count.set(refresh_number);
+    tracing::debug!(
+        refresh_number,
+        reason,
+        "sidebar refresh #{refresh_number} ({reason})"
+    );
+
     // One connection borrow, dropped before any row/selection work below —
     // no GTK/notify call happens while this is alive.
     let (music_count, missing_count, import_error_count, playlist_rows, smart_rows) = {
@@ -342,9 +415,55 @@ fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>) {
     // object — `wire_row_selected`'s dedup-by-value check (comparing the
     // `ViewSource`, not row identity) is what decides whether that actually
     // notifies `on_select`, not anything done here.
-    let select_source = force_select.unwrap_or_else(|| shared.current_source.borrow().clone());
-    if let Some(row) = find_row(shared, &select_source) {
+    let requested_source = force_select.unwrap_or_else(|| shared.current_source.borrow().clone());
+    let requested_row = find_row(shared, &requested_source);
+    let (select_source, fell_back) =
+        resolve_select_source(requested_source.clone(), requested_row.is_some());
+    if fell_back {
+        // The previously (or forced-)selected source's row is gone — e.g. a
+        // smart list/playlist that vanished, or a problem-source row whose
+        // count just dropped to zero. Leaving nothing selected would strand
+        // the user on a source `TrackList` still thinks is current (Stage 3
+        // Task 4 review finding #3). `resolve_select_source` already decided
+        // Library is the fallback; `requested_source` (not `Library`, since
+        // it's the very source that just failed to resolve) compares
+        // unequal to `shared.current_source`'s stored value, so `wire_row_
+        // selected`'s dedup-by-value guard does NOT suppress the reselect
+        // below: it notifies `on_select` like any real switch, which is
+        // exactly what's needed to also move `TrackList` off the vanished
+        // source.
+        tracing::debug!(
+            vanished_source = %requested_source.label(),
+            "selected source vanished; falling back to Library"
+        );
+    }
+    // Library's row always exists (added unconditionally above), so this is
+    // only ever `None` in the non-fallback branch (`requested_row` reused,
+    // no second `find_row` scan needed for the common case).
+    let row_to_select = if fell_back {
+        find_row(shared, &select_source)
+    } else {
+        requested_row
+    };
+    if let Some(row) = row_to_select {
         shared.listbox.select_row(Some(&row));
+    }
+}
+
+/// Pure decision behind the vanished-source fallback (Stage 3 Task 4 review
+/// finding #3): given the source `rebuild` would like to (re)select and
+/// whether a row for it still exists, decides what to actually select.
+/// Returns `(source_to_select, fell_back)`, where `fell_back` is `true` when
+/// `requested` no longer has a row and `Library` was substituted instead.
+/// Kept free of `Shared`/GTK so it's unit-testable without a live `ListBox`
+/// (see the `resolve_select_source_tests` module at the end of this file —
+/// grouped there, not right below this function, per `clippy::items_after_
+/// test_module`).
+fn resolve_select_source(requested: ViewSource, row_exists: bool) -> (ViewSource, bool) {
+    if row_exists {
+        (requested, false)
+    } else {
+        (ViewSource::Library, true)
     }
 }
 
@@ -494,10 +613,20 @@ fn wire_row_selected(shared: &Rc<Shared>) {
     });
 }
 
-/// Wires the `ListBox`'s `row-activated` signal, used only by the "New
-/// playlist" row (the one non-selectable-but-activatable row): every other
-/// row is selectable, so a click there fires `row-selected` instead (handled
-/// by `wire_row_selected`) and this handler no-ops for it.
+/// Wires the `ListBox`'s `row-activated` signal. Every navigation row is
+/// both selectable *and* activatable (GTK's default), so a click on one
+/// fires this alongside `row-selected` — but `row-selected` only notifies on
+/// an actual source change (see `wire_row_selected`'s dedup-by-value check),
+/// so re-activating the row that's already selected (re-tapping it after
+/// backing out to the sidebar in collapsed mode, or pressing Enter on it)
+/// fires `row-activated` alone. Stage 3 Task 4 review finding #1: that case
+/// needs to bring the content page forward too, so every navigation row
+/// (found in `shared.rows`) invokes `on_show_content` here unconditionally —
+/// cheap and idempotent (`window.rs`'s callback only flips `show-content`
+/// when the split view is collapsed), so firing it redundantly alongside a
+/// real `on_select`-driven switch is harmless. The "New playlist" row (non-
+/// selectable, so it never appears in `shared.rows`) is handled separately:
+/// it opens the dialog instead.
 fn wire_row_activated(shared: &Rc<Shared>) {
     let listbox = shared.listbox.clone();
     let shared = shared.clone();
@@ -505,6 +634,17 @@ fn wire_row_activated(shared: &Rc<Shared>) {
         let is_new_playlist_row = shared.new_playlist_row.borrow().as_ref() == Some(row);
         if is_new_playlist_row {
             show_new_playlist_dialog(&shared);
+            return;
+        }
+        let is_nav_row = shared.rows.borrow().iter().any(|(r, _, _)| r == row);
+        if is_nav_row {
+            // Hoisted clone-out before calling, per this project's `RefCell`
+            // callback discipline (same reasoning as `wire_row_selected`'s
+            // `on_select` clone-out just above).
+            let callback = shared.on_show_content.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
         }
     });
 }
@@ -569,11 +709,37 @@ fn create_playlist_and_select(shared: &Rc<Shared>, name: &str) {
     match created {
         Ok(id) => {
             tracing::info!(id, name, "playlist created");
-            rebuild(shared, Some(ViewSource::Playlist(id)));
+            rebuild(shared, Some(ViewSource::Playlist(id)), "playlist created");
         }
         Err(error) => {
             tracing::error!(%error, name, "failed to create playlist");
             show_toast(shared, &strings::playlist_create_failed_toast(name));
         }
+    }
+}
+
+#[cfg(test)]
+mod resolve_select_source_tests {
+    use super::*;
+
+    #[test]
+    fn keeps_requested_source_when_its_row_still_exists() {
+        let (source, fell_back) = resolve_select_source(ViewSource::Playlist(3), true);
+        assert_eq!(source, ViewSource::Playlist(3));
+        assert!(!fell_back);
+    }
+
+    #[test]
+    fn falls_back_to_library_when_requested_row_is_gone() {
+        let (source, fell_back) = resolve_select_source(ViewSource::Missing, false);
+        assert_eq!(source, ViewSource::Library);
+        assert!(fell_back);
+    }
+
+    #[test]
+    fn falls_back_to_library_when_a_smart_list_vanished() {
+        let (source, fell_back) = resolve_select_source(ViewSource::Smart(7), false);
+        assert_eq!(source, ViewSource::Library);
+        assert!(fell_back);
     }
 }
