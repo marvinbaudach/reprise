@@ -838,33 +838,47 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
     }
 }
 
+/// Pure decision of what the active sort should become when the track list
+/// switches from a state currently sorted by `current` to `target` —
+/// factored out of `set_source_and_reload` (like `default_sort_for_source`,
+/// which it builds on) so the *whole* switch matrix is unit-testable,
+/// including the previously-untested leaving-a-playlist reset arm:
+///
+/// - `target` forces a default of its own (today: `Playlist` →
+///   `"playlist_order"`) → that default wins, whatever was active.
+/// - `target` forces nothing, but `current` is the `"playlist_order"`
+///   sentinel → reset to `SortState::default()`: the sentinel only
+///   resolves to valid SQL inside a query that joins `playlist_tracks`,
+///   so it must never leak into any other source's query.
+/// - otherwise → `current` is kept as-is; a column-header click's sort
+///   deliberately survives source switches (matching pre-Stage-3 behavior
+///   for Library/Missing/… hops).
+fn resolve_sort_on_switch(current: &SortState, target: &ViewSource) -> SortState {
+    match default_sort_for_source(target) {
+        Some(sort) => sort,
+        None if current.field == PLAYLIST_ORDER_SORT_FIELD => SortState::default(),
+        None => current.clone(),
+    }
+}
+
 /// Sets `shared.source` and reloads — the one place that mutates the source
 /// before reloading, shared by `TrackList::set_source` and the `REPRISE_
 /// SMOKE_SOURCE` dev hook (`arm_smoke_source`), so both switch sources
 /// through the identical code path.
 ///
-/// Also resolves `shared.sort` via `default_sort_for_source` (CRITICAL fix,
-/// review round 1): without this, switching to a `Playlist` source reloaded
-/// with whatever sort was already active (`SortState::default()`'s artist/
-/// asc on first switch), never the playlist's own `pt.position` order — the
-/// `"playlist_order"` sentinel existed in `queries.rs`'s whitelist but was
-/// only ever exercised by that module's own unit tests, never by the live
-/// UI path. A column-header click (`on_sorter_changed`) still overrides
-/// this temporarily, exactly as before.
+/// Also resolves `shared.sort` via `resolve_sort_on_switch` (CRITICAL fix,
+/// review round 1; see that function for the full matrix): without this,
+/// switching to a `Playlist` source reloaded with whatever sort was
+/// already active (`SortState::default()`'s artist/asc on first switch),
+/// never the playlist's own `pt.position` order — the `"playlist_order"`
+/// sentinel existed in `queries.rs`'s whitelist but was only ever
+/// exercised by that module's own unit tests, never by the live UI path.
+/// A column-header click (`on_sorter_changed`) still overrides this
+/// temporarily, exactly as before.
 fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
-    match default_sort_for_source(&source) {
-        Some(sort) => *shared.sort.borrow_mut() = sort,
-        None => {
-            // Leaving a playlist (or switching between two non-playlist
-            // sources while a stale playlist sort somehow lingers): drop the
-            // sentinel back to the general default rather than let it leak
-            // into a source whose query never joins `playlist_tracks`.
-            let leaving_playlist_sort = shared.sort.borrow().field == PLAYLIST_ORDER_SORT_FIELD;
-            if leaving_playlist_sort {
-                *shared.sort.borrow_mut() = SortState::default();
-            }
-        }
-    }
+    // Hoisted so the `sort` borrow ends before the `borrow_mut` below.
+    let new_sort = resolve_sort_on_switch(&shared.sort.borrow(), &source);
+    *shared.sort.borrow_mut() = new_sort;
     *shared.source.borrow_mut() = source;
     reload(shared);
 }
@@ -1119,8 +1133,9 @@ mod default_sort_for_source_tests {
     }
 
     /// Every non-Playlist source has no forced default of its own — the
-    /// caller (`set_source_and_reload`) is responsible for resetting away
-    /// from a lingering playlist sentinel in this case, not this function.
+    /// caller (`set_source_and_reload`, via `resolve_sort_on_switch`) is
+    /// responsible for resetting away from a lingering playlist sentinel in
+    /// this case, not this function.
     #[test]
     fn non_playlist_sources_have_no_forced_default() {
         assert_eq!(default_sort_for_source(&ViewSource::Library), None);
@@ -1128,5 +1143,104 @@ mod default_sort_for_source_tests {
         assert_eq!(default_sort_for_source(&ViewSource::Queue), None);
         assert_eq!(default_sort_for_source(&ViewSource::Missing), None);
         assert_eq!(default_sort_for_source(&ViewSource::ImportErrors), None);
+    }
+}
+
+/// The full source-switch sort matrix for `resolve_sort_on_switch` — the
+/// exact logic `set_source_and_reload` applies to `shared.sort` before
+/// every reload, including the previously-untested leaving-a-playlist
+/// reset arm (Stage 3 re-review follow-up).
+#[cfg(test)]
+mod resolve_sort_on_switch_tests {
+    use super::*;
+
+    fn playlist_order_sort() -> SortState {
+        SortState {
+            field: PLAYLIST_ORDER_SORT_FIELD.to_string(),
+            dir: "asc".to_string(),
+        }
+    }
+
+    fn header_click_sort() -> SortState {
+        SortState {
+            field: "title".to_string(),
+            dir: "desc".to_string(),
+        }
+    }
+
+    #[test]
+    fn library_to_playlist_forces_playlist_order() {
+        assert_eq!(
+            resolve_sort_on_switch(&SortState::default(), &ViewSource::Playlist(1)),
+            playlist_order_sort()
+        );
+    }
+
+    #[test]
+    fn playlist_to_playlist_keeps_forcing_playlist_order() {
+        // Switching between two playlists: the sentinel is re-applied (and
+        // any header-click override from the first playlist is dropped —
+        // the second playlist starts in its own default order).
+        assert_eq!(
+            resolve_sort_on_switch(&playlist_order_sort(), &ViewSource::Playlist(2)),
+            playlist_order_sort()
+        );
+        assert_eq!(
+            resolve_sort_on_switch(&header_click_sort(), &ViewSource::Playlist(2)),
+            playlist_order_sort()
+        );
+    }
+
+    /// The reset arm this module exists to pin down: leaving a playlist
+    /// while the `"playlist_order"` sentinel is active must fall back to
+    /// the general default — the sentinel only resolves to valid SQL in a
+    /// query that joins `playlist_tracks`.
+    #[test]
+    fn playlist_to_library_resets_sentinel_to_default() {
+        assert_eq!(
+            resolve_sort_on_switch(&playlist_order_sort(), &ViewSource::Library),
+            SortState::default()
+        );
+    }
+
+    #[test]
+    fn playlist_sentinel_resets_for_every_non_playlist_target() {
+        for target in [
+            ViewSource::Library,
+            ViewSource::Smart(1),
+            ViewSource::Queue,
+            ViewSource::Missing,
+            ViewSource::ImportErrors,
+        ] {
+            assert_eq!(
+                resolve_sort_on_switch(&playlist_order_sort(), &target),
+                SortState::default(),
+                "sentinel must not leak into {target:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn library_to_missing_keeps_current_sort() {
+        assert_eq!(
+            resolve_sort_on_switch(&SortState::default(), &ViewSource::Missing),
+            SortState::default()
+        );
+    }
+
+    /// A column-header click inside a playlist overrides the sentinel; on
+    /// leaving the playlist that (non-sentinel) sort survives — only the
+    /// sentinel itself is reset, matching pre-Stage-3 behavior where a
+    /// header-click sort persisted across Library/Missing/… hops.
+    #[test]
+    fn header_click_override_survives_leaving_a_playlist() {
+        assert_eq!(
+            resolve_sort_on_switch(&header_click_sort(), &ViewSource::Library),
+            header_click_sort()
+        );
+        assert_eq!(
+            resolve_sort_on_switch(&header_click_sort(), &ViewSource::Queue),
+            header_click_sort()
+        );
     }
 }
