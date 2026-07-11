@@ -72,6 +72,23 @@ const RESPONSE_CREATE: &str = "create";
 /// Task 5 report) — once the initial load has run and the main loop is
 /// idle. Two accepted forms:
 ///
+/// - `play`: calls `handle_play` — the exact same handler `ACTION_PLAY`'s
+///   `gio::SimpleAction` invokes — which starts playback at the first
+///   selected row via `on_play_selected` (`PlayerController::play_from_
+///   view`), with every other selected row queued right behind it. Added for
+///   Stage 3 Task 9's closing E2E: `arm_smoke_menu_action` is armed *after*
+///   `track_list.rs`'s `arm_smoke_source` (construction order in `TrackList::
+///   new`), so — unlike `REPRISE_SMOKE_ACTIVATE`, whose own idle callback is
+///   armed *before* `arm_smoke_source` and therefore always fires against
+///   whatever source was active at construction (`ViewSource::Library`),
+///   never a source a same-run `REPRISE_SMOKE_SOURCE` switch just applied —
+///   this form reliably starts playback against the *current* (possibly
+///   just-switched) source, e.g. combined with `REPRISE_SMOKE_SOURCE=
+///   playlist:<name>` to prove playback follows a playlist's own order
+///   headlessly. This also closes a pre-existing coverage gap: before this
+///   form existed, the "Play" context-menu action had no smoke-hook coverage
+///   at all (only "Add to queue"/"Add to playlist"/"Remove from playlist"
+///   did).
 /// - `queue`: calls `track_actions::queue_selected_ids` then
 ///   `PlayerController::append_to_queue` (via `on_queue_selected`), logging
 ///   "N tracks added to queue".
@@ -702,6 +719,11 @@ pub(super) fn arm_smoke_menu_action(shared: &Rc<Shared>) {
         }
 
         let ids = current_selection_ids(&shared);
+
+        if value == "play" {
+            handle_play(&shared, &ids);
+            return;
+        }
 
         if value == "queue" {
             handle_add_to_queue(&shared, &ids);

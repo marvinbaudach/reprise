@@ -268,6 +268,13 @@ pub(super) struct Shared {
     /// on every use) since `TrackList::new` already builds the concrete
     /// `gtk::MultiSelection` directly.
     pub(super) selection: gtk4::MultiSelection,
+    /// The `ColumnView` widget itself (Stage 3 Task 9): kept so `TrackList::
+    /// focus_track_list` can move keyboard focus onto it directly, rather
+    /// than relying on `widget()`'s outer `gtk::Stack` to delegate focus to
+    /// the right descendant on its own — see that method's doc comment for
+    /// why the Escape shortcut (`ui::shortcuts`) needs a precise handle
+    /// rather than "whatever's focusable in the current stack page."
+    column_view: gtk4::ColumnView,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
@@ -461,6 +468,7 @@ impl TrackList {
         let shared = Rc::new(Shared {
             model,
             selection: selection.clone(),
+            column_view: column_view.clone(),
             conn,
             stack,
             empty_page,
@@ -588,6 +596,18 @@ impl TrackList {
     /// switches between the empty placeholder and the populated list).
     pub fn widget(&self) -> &gtk4::Stack {
         &self.shared.stack
+    }
+
+    /// Moves keyboard focus onto the track list's `ColumnView` (Stage 3 Task
+    /// 9): the second stage of the Escape shortcut (`ui::shortcuts`) hands
+    /// focus back here once the search entry's text is already clear.
+    /// Returns whether GTK actually granted focus (`gtk::Widget::grab_
+    /// focus`'s own return value, e.g. `false` if the column view isn't
+    /// currently mapped/visible) — the caller logs a `false` rather than
+    /// treating it as fatal, matching every other best-effort focus move in
+    /// this codebase.
+    pub fn focus_track_list(&self) -> bool {
+        self.shared.column_view.grab_focus()
     }
 
     /// Sets the live-search filter and reloads. Called from `window.rs`

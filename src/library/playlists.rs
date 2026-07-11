@@ -189,10 +189,12 @@ fn append_tracks_rows(
 /// (e.g. a `track_id` that violates the `playlist_tracks.track_id` foreign
 /// key) rolling back *both* — no orphaned empty playlist row is left behind.
 /// Prefer this over a separate `create` + `add_tracks` pair whenever the two
-/// must succeed or fail together (e.g. M3U import — see `ui::playlist_io::
-/// import_playlist`). Existing callers that don't need this guarantee (e.g.
-/// "New playlist" from the track list context menu) keep using `create` and
-/// `add_tracks` directly.
+/// must succeed or fail together. Callers: M3U import (`ui::playlist_io::
+/// import_playlist`), the "New playlist…" track-list context-menu action
+/// (`ui::track_actions::create_playlist_and_add` — adopted in Task 9's
+/// review fold-in; it used to call `create` + `add_tracks` separately, which
+/// could leave an orphaned empty playlist behind on a partial failure), and
+/// the `REPRISE_SMOKE_SEED_PLAYLIST` headless dev hook (`main.rs`).
 pub fn create_with_tracks(
     conn: &mut Connection,
     name: &str,
