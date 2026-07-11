@@ -1,11 +1,25 @@
 use crate::models::Track;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 /// Global constraint: window queries never return more rows than this in one
 /// page, regardless of what the caller requests. SQLite treats a negative
 /// `LIMIT` as "unlimited", so this also protects against a bad UI-side page
 /// size from turning into a full-table scan. Limits capped.
 const MAX_WINDOW_LIMIT: i64 = 500;
+
+/// Hard cap on how many track ids `query_track_ids` will ever return in one
+/// call. This is a *separate* constant from `MAX_WINDOW_LIMIT` on purpose:
+/// `query_track_ids` powers the queue (Stage 2 Task 4 — "play this whole
+/// view"), which legitimately wants every matching id, not one `ColumnView`
+/// page. `MAX_WINDOW_LIMIT` (500) is sized for a UI page; a queue is
+/// reasonably built from a much larger library, but still must not turn a
+/// huge/unfiltered library into an unbounded query. 10,000 tracks is a very
+/// large personal library and a small `Vec<i64>` (~80 KB) even at the cap.
+/// Callers should compare the returned `Vec`'s length against this constant
+/// via `is_queue_capped` and log a warning when it's capped, since the `Vec`
+/// alone can't distinguish "capped" from "library has exactly this many
+/// tracks".
+pub const QUEUE_LIMIT: i64 = 10_000;
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,11 +62,14 @@ fn filter_clause(has_filter: bool, param_index: u8) -> String {
     }
 }
 
-/// Builds the parameterized SELECT for a library window. `sort_field` is only
-/// ever used to look up an entry in `SORT_WHITELIST` — it is never interpolated
-/// into the SQL string directly, so caller input cannot inject arbitrary SQL.
-/// Unknown sort fields silently fall back to sorting by title.
-pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
+/// Resolves `sort_field`/`sort_dir` to a whitelisted `ORDER BY` expression
+/// and direction keyword. Shared by `build_track_query` and
+/// `build_track_ids_query` so the two queries can never disagree about what
+/// a given sort field/direction means. `sort_field` is only ever used as a
+/// lookup key into `SORT_WHITELIST` — never interpolated into SQL directly —
+/// so caller input cannot inject arbitrary SQL. Unknown sort fields silently
+/// fall back to sorting by title.
+fn order_expr_and_dir(sort_field: &str, sort_dir: &str) -> (&'static str, &'static str) {
     let order_expr = SORT_WHITELIST
         .iter()
         .find(|(k, _)| *k == sort_field)
@@ -63,6 +80,15 @@ pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> 
     } else {
         "ASC"
     };
+    (order_expr, dir)
+}
+
+/// Builds the parameterized SELECT for a library window. `sort_field` is only
+/// ever used to look up an entry in `SORT_WHITELIST` — it is never interpolated
+/// into the SQL string directly, so caller input cannot inject arbitrary SQL.
+/// Unknown sort fields silently fall back to sorting by title.
+pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
+    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 3);
     format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
@@ -70,6 +96,21 @@ pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> 
          file_mtime, missing \
          FROM tracks WHERE missing = 0{filter_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
+    )
+}
+
+/// Builds the parameterized `SELECT id` for the queue seam
+/// (`query_track_ids`): every id matching `(sort_field, sort_dir, filter)`,
+/// capped at `QUEUE_LIMIT` — a literal, not a bound parameter, since it's a
+/// fixed Rust-side constant rather than caller input (nothing to inject).
+/// Shares `order_expr_and_dir`/`filter_clause` with `build_track_query` so
+/// the queue's ordering can never drift from the track list's.
+pub fn build_track_ids_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
+    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
+    let filter_clause = filter_clause(has_filter, 1);
+    format!(
+        "SELECT id FROM tracks WHERE missing = 0{filter_clause} \
+         ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}"
     )
 }
 
@@ -133,6 +174,87 @@ pub fn query_track_count(conn: &Connection, filter: &str) -> Result<i64, rusqlit
     } else {
         conn.query_row(&sql, [], |r| r.get(0))
     }
+}
+
+/// Returns every non-missing track id matching `(sort_field, sort_dir,
+/// filter)`, in that sort order, capped at `QUEUE_LIMIT`. This is the queue
+/// seam (Stage 2 Task 4): activating a row queues "the whole current view"
+/// by resolving it to this id list rather than the `MAX_WINDOW_LIMIT`-capped
+/// `query_track_window` (which is sized for one `ColumnView` page, not a
+/// playback queue). The `Vec` alone can't tell the caller whether it was
+/// truncated by the cap — compare its length with `is_queue_capped` and log
+/// a warning if so.
+pub fn query_track_ids(
+    conn: &Connection,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let has_filter = !filter.trim().is_empty();
+    let sql = build_track_ids_query(sort_field, sort_dir, has_filter);
+    let mut stmt = conn.prepare(&sql)?;
+    let like = format!("%{}%", filter.trim());
+    let rows = if has_filter {
+        stmt.query_map(rusqlite::params![like], row_to_id)?
+    } else {
+        stmt.query_map([], row_to_id)?
+    };
+    rows.collect()
+}
+
+fn row_to_id(r: &rusqlite::Row) -> rusqlite::Result<i64> {
+    r.get(0)
+}
+
+/// Whether a `query_track_ids` result of this length was (probably) capped
+/// by `QUEUE_LIMIT`. Treats the exact-boundary case (`len == QUEUE_LIMIT`)
+/// as capped: the alternative — a library with *exactly* `QUEUE_LIMIT`
+/// matching tracks — is indistinguishable from a truncated one without a
+/// second `COUNT(*)` query, and logging one harmless extra warning on that
+/// rare exact-fit case is a better tradeoff than silently missing a real
+/// truncation.
+pub fn is_queue_capped(len: usize) -> bool {
+    len as i64 >= QUEUE_LIMIT
+}
+
+/// The subset of a track's columns the player bar and queue playback path
+/// need: the file to hand `Player::play`, the title/artist to show, and the
+/// duration play-tracking's 50%-listened check requires
+/// (`library::stats::should_count_play`). Deliberately narrower than the
+/// full `Track` (no rating/play_count/etc. — the bar doesn't display those),
+/// avoiding the cost of loading and holding the columns nothing here reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackSummary {
+    pub path: String,
+    pub title: String,
+    pub artist: String,
+    pub duration_ms: i64,
+}
+
+/// Resolves one track id to its `TrackSummary` — the queue's per-track
+/// playback step (`play_track_id` in `ui::player_controller`) calls this for
+/// every auto-advance/next/previous, and Stage 2 Task 5's skip-on-missing-
+/// file logic is documented to reuse it too. `Ok(None)` for an id with no
+/// matching row (e.g. deleted between queueing and playback) — never an
+/// error; the caller decides how to degrade (skip/stop), matching every
+/// other fallible path in this module.
+pub fn query_track_summary(
+    conn: &Connection,
+    id: i64,
+) -> Result<Option<TrackSummary>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT path, title, artist, duration_ms FROM tracks WHERE id = ?1",
+        rusqlite::params![id],
+        |r| {
+            Ok(TrackSummary {
+                path: r.get(0)?,
+                title: r.get(1)?,
+                artist: r.get(2)?,
+                duration_ms: r.get(3)?,
+            })
+        },
+    )
+    .optional()
 }
 
 /// Aggregates library-wide stats over all non-missing tracks. Powers the
@@ -234,6 +356,120 @@ mod tests {
         )
         .unwrap();
         assert_eq!(query_track_count(&conn, "").unwrap(), 0);
+    }
+
+    #[test]
+    fn track_ids_follow_whitelist_sort_order() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t, a],
+            )
+            .unwrap();
+        }
+        let ids = query_track_ids(&conn, "title", "asc", "").unwrap();
+        assert_eq!(ids.len(), 3);
+
+        // "Alpha" < "Mid" < "Zulu" by title (COLLATE NOCASE) — assert the
+        // exact id order directly against the same ORDER BY expression
+        // `SORT_WHITELIST` uses for "title".
+        let by_title: Vec<i64> = {
+            let mut stmt = conn
+                .prepare("SELECT id FROM tracks ORDER BY title COLLATE NOCASE ASC")
+                .unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(ids, by_title);
+    }
+
+    #[test]
+    fn track_ids_apply_filter() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t, a],
+            )
+            .unwrap();
+        }
+        let ids = query_track_ids(&conn, "title", "asc", "zu").unwrap();
+        assert_eq!(ids.len(), 1);
+
+        let expected_id: i64 = conn
+            .query_row("SELECT id FROM tracks WHERE title = 'Zulu'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(ids[0], expected_id);
+    }
+
+    #[test]
+    fn track_ids_excludes_missing_rows() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, added_at, missing) \
+             VALUES ('/x/a.flac', 'A', '', 0, 1)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            query_track_ids(&conn, "title", "asc", "").unwrap(),
+            Vec::<i64>::new()
+        );
+    }
+
+    #[test]
+    fn track_ids_query_is_capped_at_queue_limit() {
+        // Inserting QUEUE_LIMIT+1 rows just to prove the cap would make this
+        // test slow and heavy for no extra confidence — the cap is a single
+        // hardcoded `LIMIT` in the generated SQL, so asserting it's present
+        // with the right value in `build_track_ids_query`'s output is the
+        // pragmatic, fast way to pin the behavior. The boundary logic for
+        // *detecting* a truncated result (`is_queue_capped`) is exercised
+        // directly below instead of via a 10,001-row fixture.
+        let sql = build_track_ids_query("title", "asc", false);
+        assert!(sql.contains(&format!("LIMIT {QUEUE_LIMIT}")));
+    }
+
+    #[test]
+    fn is_queue_capped_detects_the_boundary() {
+        assert!(!is_queue_capped((QUEUE_LIMIT - 1) as usize));
+        assert!(is_queue_capped(QUEUE_LIMIT as usize));
+    }
+
+    #[test]
+    fn track_summary_found_returns_expected_fields() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
+             VALUES ('/x/a.flac', 'A Title', 'An Artist', 123456, 0)",
+            [],
+        )
+        .unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks", [], |r| r.get(0))
+            .unwrap();
+
+        let summary = query_track_summary(&conn, id).unwrap().unwrap();
+        assert_eq!(summary.path, "/x/a.flac");
+        assert_eq!(summary.title, "A Title");
+        assert_eq!(summary.artist, "An Artist");
+        assert_eq!(summary.duration_ms, 123456);
+    }
+
+    #[test]
+    fn track_summary_not_found_returns_none() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        assert!(query_track_summary(&conn, 999).unwrap().is_none());
     }
 
     #[test]

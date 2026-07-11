@@ -44,6 +44,7 @@ use rusqlite::Connection;
 use crate::format::format_duration;
 use crate::library::stats;
 use crate::models::Track;
+use crate::queries;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list_model::TrackListModel;
@@ -113,11 +114,16 @@ impl Default for SortState {
     }
 }
 
-/// Callback invoked with an activated row's `Track` (double-click/Enter on a
-/// row, or the `REPRISE_SMOKE_ACTIVATE` hook). Provided by `window::build`,
-/// which routes it to the player — the track list itself stays free of any
-/// playback knowledge.
-pub type OnActivate = Box<dyn Fn(&Track)>;
+/// Callback invoked on row activation (double-click/Enter on a row, or the
+/// `REPRISE_SMOKE_ACTIVATE` hook). Provided by `window::build`, which routes
+/// it to the player — the track list itself stays free of any playback
+/// knowledge. Alongside the activated row's `Track` (for logging/fallback,
+/// see the `None` player branch in `window::build`), it also carries the
+/// full queue this activation should start: `ids` is every track id in the
+/// activated row's current sort/filter view (via `queue_ids_for_activation`)
+/// and `start_index` is the activated row's position within that list —
+/// together, exactly `PlayerController::play_from_view`'s parameters.
+pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize)>;
 
 struct Shared {
     model: TrackListModel,
@@ -542,8 +548,9 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
 }
 
 /// Row activation (double-click or Enter on a focused row): resolve the
-/// row's `Track` via `TrackListModel::track_at` and hand it to the
-/// `on_activate` callback (which `window::build` routes to the player).
+/// row's `Track` via `TrackListModel::track_at`, build its queue via
+/// `queue_ids_for_activation`, and hand both to the `on_activate` callback
+/// (which `window::build` routes to the player).
 fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
     let shared = shared.clone();
     column_view.connect_activate(move |_view, position| {
@@ -552,8 +559,63 @@ fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
             return;
         };
         tracing::info!(path = %track.path, "activate track");
-        (shared.on_activate)(&track);
+        let (ids, start_index) = queue_ids_for_activation(&shared, position, track.id);
+        (shared.on_activate)(&track, ids, start_index);
     });
+}
+
+/// Builds the `(ids, start_index)` pair `OnActivate` carries: every track id
+/// in the activated row's *current* sort/filter view, via
+/// `queries::query_track_ids` — deliberately not `TrackListModel::
+/// track_at`/`query_track_window`, which are windowed and capped at
+/// `MAX_WINDOW_LIMIT` (500, sized for one `ColumnView` page) rather than a
+/// whole playback queue (`QUEUE_LIMIT`, 10,000). `shared.sort`/`shared.
+/// filter` are read here rather than reaching into `TrackListModel`'s
+/// private state (see the module doc comment on why the model's `imp()`
+/// state isn't exposed) — `Shared` is the one place both the model's query
+/// and this activation path already agree on the current sort/filter, so
+/// it's the natural seam for a second query using the same state.
+///
+/// `position` doubles as `start_index` into `ids`: activation always uses
+/// the unfiltered-by-cap ordering, so the row the user clicked is always the
+/// same index in this ids list as it is in the `ColumnView` — as long as the
+/// query wasn't truncated by `QUEUE_LIMIT` before reaching that row, which
+/// `is_queue_capped` can't fully rule out but is exceedingly unlikely (a
+/// 10,000+ track library with the activated row past the cap). On a query
+/// failure, degrades to a single-track queue (`[activated_id]`, index 0) so
+/// the click still plays something instead of silently doing nothing.
+fn queue_ids_for_activation(
+    shared: &Rc<Shared>,
+    position: u32,
+    activated_id: i64,
+) -> (Vec<i64>, usize) {
+    let sort = shared.sort.borrow().clone();
+    let filter = shared.filter.borrow().clone();
+
+    let ids = {
+        let conn = shared.conn.borrow();
+        queries::query_track_ids(&conn, &sort.field, &sort.dir, &filter)
+    };
+
+    match ids {
+        Ok(ids) => {
+            if queries::is_queue_capped(ids.len()) {
+                tracing::warn!(
+                    limit = queries::QUEUE_LIMIT,
+                    "queue capped at {} tracks",
+                    queries::QUEUE_LIMIT
+                );
+            }
+            (ids, position as usize)
+        }
+        Err(error) => {
+            tracing::error!(
+                %error,
+                "failed to build queue ids for activation; falling back to a single-track queue"
+            );
+            (vec![activated_id], 0)
+        }
+    }
 }
 
 /// Arms the `REPRISE_SMOKE_ACTIVATE` hook (see `SMOKE_ACTIVATE_ENV_VAR`):
@@ -572,7 +634,8 @@ fn arm_smoke_activate(shared: &Rc<Shared>) {
             return;
         };
         tracing::info!(path = %track.path, "{SMOKE_ACTIVATE_ENV_VAR}: activating first row");
-        (shared.on_activate)(&track);
+        let (ids, start_index) = queue_ids_for_activation(&shared, 0, track.id);
+        (shared.on_activate)(&track, ids, start_index);
     });
 }
 

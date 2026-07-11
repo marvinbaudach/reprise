@@ -39,6 +39,10 @@ pub const PLAY: &str = "Play";
 pub const PAUSE: &str = "Pause";
 pub const PLAYBACK_POSITION: &str = "Playback position";
 pub const VOLUME: &str = "Volume";
+pub const SHUFFLE: &str = "Shuffle";
+pub const PREVIOUS: &str = "Previous";
+pub const NEXT: &str = "Next";
+pub const REPEAT: &str = "Repeat";
 
 // Rating: used both as the track list's Rating column header
 // (src/ui/track_list.rs) and as the RatingWidget's tooltip

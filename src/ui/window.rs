@@ -42,7 +42,16 @@ const MIN_HEIGHT: i32 = 600;
 ///
 /// Usage: `REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
 const SMOKE_QUIT_ENV_VAR: &str = "REPRISE_SMOKE_QUIT";
-const SMOKE_QUIT_DELAY_SECS: u32 = 3;
+const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
+/// Overrides `SMOKE_QUIT_DELAY_SECS_DEFAULT` — added for Stage 2 Task 4's
+/// queue E2E, which needs to observe several auto-advances (each a fixture
+/// track's full playback) before the window closes; the 3-second default
+/// (sized for the plain startup/shutdown smoke test) is too short for that.
+/// Every other `REPRISE_SMOKE_QUIT=1` caller is unaffected — unset, this
+/// keeps the original 3-second delay.
+///
+/// Usage: `REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=8 xvfb-run -a cargo run`.
+const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database connection; the UI layer owns it single-threaded
@@ -90,8 +99,8 @@ pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>, db_path: Pat
 
     let on_activate: OnActivate = {
         let player = player.clone();
-        Box::new(move |track| match &player {
-            Some(player) => player.play_track(track),
+        Box::new(move |track, ids, start_index| match &player {
+            Some(player) => player.play_from_view(ids, start_index),
             None => {
                 tracing::warn!(path = %track.path, "player unavailable; ignoring activation");
             }
@@ -139,13 +148,17 @@ pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>, db_path: Pat
     );
 
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
+        let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(SMOKE_QUIT_DELAY_SECS_DEFAULT);
         tracing::info!(
-            delay_secs = SMOKE_QUIT_DELAY_SECS,
+            delay_secs,
             "{} set: arming headless smoke-quit timer",
             SMOKE_QUIT_ENV_VAR
         );
         let smoke_window = window.clone();
-        glib::timeout_add_seconds_local(SMOKE_QUIT_DELAY_SECS, move || {
+        glib::timeout_add_seconds_local(delay_secs, move || {
             tracing::info!("smoke-quit timer fired: closing main window");
             smoke_window.close();
             glib::ControlFlow::Break
