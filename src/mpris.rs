@@ -83,15 +83,14 @@ use zbus::names::InterfaceName;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 use zbus::{fdo, interface};
 
+use crate::APP_ID;
+
 /// Well-known bus name this app claims — must match the MPRIS spec's
 /// `org.mpris.MediaPlayer2.<name>` convention (GNOME Shell and friends
 /// discover media players by enumerating names under this prefix).
 pub const BUS_NAME: &str = "org.mpris.MediaPlayer2.reprise";
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const IDENTITY: &str = "Reprise";
-/// Must match the app's `.desktop` file id / `APP_ID` in `main.rs` — MPRIS
-/// clients use this to look up the app's icon/launcher entry.
-const DESKTOP_ENTRY: &str = "org.reprise.Reprise";
 
 /// Interface name literals duplicated as both the `#[interface(name = ..)]`
 /// macro attribute (which requires a string literal, not a `const`
@@ -433,12 +432,9 @@ fn insert_owned(metadata: &mut HashMap<String, OwnedValue>, key: &str, value: Va
 /// expose. `CanQuit`/`CanRaise` are `false` "for now" per the task brief:
 /// this app has no in-process quit/raise action wired to MPRIS yet (YAGNI —
 /// revisit alongside a future lock-screen polish pass). `HasTrackList`/
-/// `SupportedUriSchemes`/`SupportedMimeTypes` are technically also part of
-/// the spec's base interface but out of this task's explicit scope; see the
-/// implementation report's self-review for the resulting gap against a
-/// strict MPRIS validator (functionally harmless for GNOME Shell's media
-/// widget and `busctl`, which only need `Identity`/`DesktopEntry` plus the
-/// `Player` interface this module also serves).
+/// `SupportedUriSchemes`/`SupportedMimeTypes` are optional per the spec
+/// and implemented below as required constants (no track list UI; no URI
+/// scheme or MIME type filtering needed).
 struct MprisRoot;
 
 #[interface(name = "org.mpris.MediaPlayer2")]
@@ -460,7 +456,22 @@ impl MprisRoot {
 
     #[zbus(property)]
     fn desktop_entry(&self) -> String {
-        DESKTOP_ENTRY.to_string()
+        APP_ID.to_string()
+    }
+
+    #[zbus(property)]
+    fn has_track_list(&self) -> bool {
+        false
+    }
+
+    #[zbus(property)]
+    fn supported_uri_schemes(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    #[zbus(property)]
+    fn supported_mime_types(&self) -> Vec<String> {
+        Vec::new()
     }
 }
 

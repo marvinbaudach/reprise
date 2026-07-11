@@ -17,8 +17,8 @@ use libadwaita::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 /// GNOME application ID; must match the `.desktop` file and D-Bus name used
-/// for GNOME integration.
-const APP_ID: &str = "org.reprise.Reprise";
+/// for GNOME integration. Shared with `mpris` module for MPRIS `DesktopEntry`.
+pub(crate) const APP_ID: &str = "org.reprise.Reprise";
 
 /// Dev/verification hook (not a user-facing feature): when set, a folder is
 /// scanned into the database synchronously at startup, before the window is
