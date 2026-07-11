@@ -119,6 +119,25 @@
 
 ---
 
+### Task 10: MPRIS-Vollausbau — Shuffle, Repeat, Position/Seek (Nutzer-Anforderung 2026-07-11)
+
+> Nutzer zeigt GNOME-Media-Controls-Popup (Shuffle | Prev | Play | Next | Repeat + Positions-Slider): „du hast bisher glaube nur vor und zurück und play und pause. gern erweitern wie hier."
+
+**Files:**
+- Modify: `src/mpris.rs`, `src/ui/mpris_mirror.rs`, `src/ui/player_controller.rs` (Seek-Methode + Shuffle/Repeat-Setter für externe Kommandos), `src/player.rs` (nur falls Positions-Abfrage-Seam fehlt)
+
+**Kern:**
+- **Position/Seek:** `Position`-Property (µs, read via Spiegel — der 500-ms-Tick aktualisiert ihn bereits), `CanSeek = true`, Methoden `Seek(offset_µs)` und `SetPosition(trackid, position_µs)` (trackid-Abgleich gegen den aktuellen — Mismatch = ignorieren laut Spec), **`Seeked`-Signal** nach jedem erfolgreichen Seek (auch app-internen! Der Slider im Shell-Popup verlässt sich darauf)
+- **Shuffle** (b, read/write): read aus Queue-Zustand via Spiegel; write → MprisCommand::SetShuffle(bool) → bestehende Controller-Methode (Bar-ToggleButton muss folgen — programmatischer Set-Guard jetzt nötig, der in E2-Task 4 per YAGNI übersprungen wurde!)
+- **LoopStatus** (s, read/write): "None"/"Playlist"/"Track" ↔ Repeat::Off/All/One, beide Richtungen; ungültige Strings → zbus-Fehler, nicht Panik
+- **Pflicht-Properties nachziehen** (Backlog aus E2-Final-Review): `Rate`/`MinimumRate`/`MaximumRate` (je 1.0), `Volume` (read/write → set_volume; read aus Spiegel)
+- PropertiesChanged für die neuen Properties über den bestehenden Diff-Poll (Position ist von PropertiesChanged AUSGENOMMEN laut MPRIS-Spec — nur Seeked signalisiert Sprünge; Doku-Kommentar!)
+- `mpris:artUrl` bleibt Etappe 4 (Cover-Pipeline) — das Platzhalter-Icon im Popup füllt sich dann
+
+**Verifikation (headless, dbus-run-session + busctl):** get Position steigt zwischen zwei Abfragen; `SetPosition` → Seeked-Signal (busctl monitor) + Position springt; Shuffle set true → get true + Queue-Log; LoopStatus "Playlist" → Repeat All im Log; Volume 0.5 → Player-Log. TDD für die reine Mapping-Logik (LoopStatus↔Repeat, µs↔ms). Commit: `feat: full MPRIS surface — position/seek, shuffle, loop status, rate and volume`
+
+---
+
 ## Verifikation Etappe 3 (Definition of Done)
 
 - [ ] Gates: `cargo test` grün, clippy `-D warnings` + fmt + `cargo audit` sauber; alle Dateien < 800 Zeilen
