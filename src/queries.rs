@@ -228,6 +228,10 @@ pub struct TrackSummary {
     pub path: String,
     pub title: String,
     pub artist: String,
+    /// Stage 2 Task 6 (MPRIS): feeds `Metadata`'s `xesam:album`. Not used by
+    /// the player bar (which only shows title/artist), so it went unused
+    /// here until MPRIS needed it.
+    pub album: String,
     pub duration_ms: i64,
 }
 
@@ -243,14 +247,15 @@ pub fn query_track_summary(
     id: i64,
 ) -> Result<Option<TrackSummary>, rusqlite::Error> {
     conn.query_row(
-        "SELECT path, title, artist, duration_ms FROM tracks WHERE id = ?1",
+        "SELECT path, title, artist, album, duration_ms FROM tracks WHERE id = ?1",
         rusqlite::params![id],
         |r| {
             Ok(TrackSummary {
                 path: r.get(0)?,
                 title: r.get(1)?,
                 artist: r.get(2)?,
-                duration_ms: r.get(3)?,
+                album: r.get(3)?,
+                duration_ms: r.get(4)?,
             })
         },
     )
@@ -465,8 +470,8 @@ mod tests {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
         conn.execute(
-            "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
-             VALUES ('/x/a.flac', 'A Title', 'An Artist', 123456, 0)",
+            "INSERT INTO tracks (path, title, artist, album, duration_ms, added_at) \
+             VALUES ('/x/a.flac', 'A Title', 'An Artist', 'An Album', 123456, 0)",
             [],
         )
         .unwrap();
@@ -478,6 +483,7 @@ mod tests {
         assert_eq!(summary.path, "/x/a.flac");
         assert_eq!(summary.title, "A Title");
         assert_eq!(summary.artist, "An Artist");
+        assert_eq!(summary.album, "An Album");
         assert_eq!(summary.duration_ms, 123456);
     }
 

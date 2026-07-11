@@ -2,6 +2,7 @@ mod db;
 mod format;
 mod library;
 mod models;
+mod mpris;
 mod player;
 mod queries;
 mod queue;
