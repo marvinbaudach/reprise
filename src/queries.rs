@@ -30,6 +30,24 @@ const SORT_WHITELIST: [(&str, &str); 6] = [
     ("rating", "rating"),
 ];
 
+/// Shared LIKE-filter clause on `(title, artist, album, genre)`, parameterized
+/// by the positional index of the bound `?N` placeholder: `build_track_query`
+/// binds the filter as the third parameter (after `LIMIT`/`OFFSET`), while
+/// `query_track_count` has no limit/offset and binds it as the first. Both
+/// build their WHERE clause through this one function so the filtered
+/// columns and LIKE semantics can never drift apart between the count and
+/// the rows it describes (DRY).
+fn filter_clause(has_filter: bool, param_index: u8) -> String {
+    if has_filter {
+        format!(
+            " AND (title LIKE ?{i} OR artist LIKE ?{i} OR album LIKE ?{i} OR genre LIKE ?{i})",
+            i = param_index
+        )
+    } else {
+        String::new()
+    }
+}
+
 /// Builds the parameterized SELECT for a library window. `sort_field` is only
 /// ever used to look up an entry in `SORT_WHITELIST` — it is never interpolated
 /// into the SQL string directly, so caller input cannot inject arbitrary SQL.
@@ -45,11 +63,7 @@ pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> 
     } else {
         "ASC"
     };
-    let filter_clause = if has_filter {
-        " AND (title LIKE ?3 OR artist LIKE ?3 OR album LIKE ?3 OR genre LIKE ?3)"
-    } else {
-        ""
-    };
+    let filter_clause = filter_clause(has_filter, 3);
     format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
@@ -104,6 +118,23 @@ pub fn query_track_window(
     rows.collect()
 }
 
+/// Counts non-missing tracks matching `filter`, using the identical LIKE
+/// clause `build_track_query` applies (via `filter_clause`) so the count and
+/// the windowed rows it describes can never disagree about which rows match.
+pub fn query_track_count(conn: &Connection, filter: &str) -> Result<i64, rusqlite::Error> {
+    let has_filter = !filter.trim().is_empty();
+    let sql = format!(
+        "SELECT count(*) FROM tracks WHERE missing = 0{}",
+        filter_clause(has_filter, 1)
+    );
+    if has_filter {
+        let like = format!("%{}%", filter.trim());
+        conn.query_row(&sql, rusqlite::params![like], |r| r.get(0))
+    } else {
+        conn.query_row(&sql, [], |r| r.get(0))
+    }
+}
+
 /// Aggregates library-wide stats over all non-missing tracks. Powers the
 /// status line (`ui::status_bar`).
 pub fn query_library_stats(conn: &Connection) -> Result<LibraryStats, rusqlite::Error> {
@@ -155,6 +186,54 @@ mod tests {
         let rows = query_track_window(&mut conn, "title", "asc", "zu", 0, 10).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "Zulu");
+    }
+
+    #[test]
+    fn count_is_zero_for_empty_db() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        assert_eq!(query_track_count(&conn, "").unwrap(), 0);
+    }
+
+    #[test]
+    fn count_matches_inserted_rows() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t, a],
+            )
+            .unwrap();
+        }
+        assert_eq!(query_track_count(&conn, "").unwrap(), 3);
+    }
+
+    #[test]
+    fn count_applies_filter() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t, a],
+            )
+            .unwrap();
+        }
+        assert_eq!(query_track_count(&conn, "zu").unwrap(), 1);
+    }
+
+    #[test]
+    fn count_excludes_missing_rows() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, added_at, missing) \
+             VALUES ('/x/a.flac', 'A', '', 0, 1)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(query_track_count(&conn, "").unwrap(), 0);
     }
 
     #[test]

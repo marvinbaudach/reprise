@@ -1,36 +1,41 @@
-//! The sortable, searchable track list: a `GtkColumnView` backed by a
-//! `gio::ListStore` that is refilled from `queries::query_track_window` on
-//! every sort/search change — SQL stays the single source of truth for
-//! ordering and filtering, GTK never re-sorts the model itself.
+//! The sortable, searchable track list: a `GtkColumnView` backed by
+//! `track_list_model::TrackListModel`, a lazy `gio::ListModel` that fetches
+//! `WINDOW_SIZE`-row SQL windows from `queries::query_track_window` on demand
+//! — SQL stays the single source of truth for ordering and filtering, GTK
+//! never re-sorts the model itself, and the whole result set is never held
+//! in memory at once.
 //!
 //! ## Row data: `glib::BoxedAnyObject`, not a GObject subclass
 //!
-//! `models::Track` is a plain Rust struct. Wrapping it for `gio::ListStore`
-//! only requires *something* that is `IsA<glib::Object>`; a full
-//! `glib::Object` subclass with GObject properties would be needed if the
-//! bound widgets had to react to property-level `notify::` signals (e.g. for
-//! in-place editing) or if the object needed to cross an FFI/property-binding
-//! boundary. Neither applies here — the factory callbacks just read a
-//! `Track` once per bind — so `glib::BoxedAnyObject::new(track)` is the
-//! simplest correct approach and there is no separate `track_object.rs`
-//! module (a bespoke wrapper type would add boilerplate without behavior).
+//! `models::Track` is a plain Rust struct. Returning it from
+//! `gio::ListModel::item()` only requires *something* that is
+//! `IsA<glib::Object>`; a full `glib::Object` subclass with GObject
+//! properties would be needed if the bound widgets had to react to
+//! property-level `notify::` signals (e.g. for in-place editing) or if the
+//! object needed to cross an FFI/property-binding boundary. Neither applies
+//! here — the factory callbacks just read a `Track` once per bind — so
+//! `glib::BoxedAnyObject::new(track)` is the simplest correct approach and
+//! there is no separate `track_object.rs` module (a bespoke wrapper type
+//! would add boilerplate without behavior). `TrackListModel` (see
+//! `track_list_model.rs`) is the one place that constructs these boxes.
 //!
 //! ## Sorting: per-column `CustomSorter` as a click signal only
 //!
 //! `GtkColumnView` headers only become clickable/toggle-sortable once a
 //! column has a non-null `sorter`. This module gives every column a
 //! `gtk::CustomSorter` whose compare function always returns `Equal` — it
-//! never actually reorders the `gio::ListStore` — purely so GTK renders the
-//! sort indicator and emits sort-order changes on click. The real ordering
-//! is decided by SQL: clicking a header changes `ColumnView`'s aggregate
+//! never actually reorders `TrackListModel` — purely so GTK renders the sort
+//! indicator and emits sort-order changes on click. The real ordering is
+//! decided by SQL: clicking a header changes `ColumnView`'s aggregate
 //! `ColumnViewSorter` (`primary-sort-column`/`primary-sort-order`), which
 //! this module observes, maps back to a whitelisted `queries` sort field via
-//! `ColumnViewColumn::id()`, and uses to re-run `query_track_window`.
+//! `ColumnViewColumn::id()`, and uses to re-run the model's query via
+//! `TrackListModel::set_query`.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk4::gio;
+use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -38,15 +43,8 @@ use rusqlite::Connection;
 
 use crate::format::format_duration;
 use crate::models::Track;
-use crate::queries;
 use crate::ui::strings;
-
-/// Stage-1 window size (per the brief): a single fixed page of rows loaded
-/// on every reload, always starting at offset 0. Full gapless virtualization
-/// (loading additional pages as the user scrolls) is stage 2 and not
-/// implemented here.
-const WINDOW_LIMIT: i64 = 200;
-const WINDOW_OFFSET: i64 = 0;
+use crate::ui::track_list_model::TrackListModel;
 
 const STACK_PAGE_EMPTY: &str = "empty";
 const STACK_PAGE_LIST: &str = "list";
@@ -131,8 +129,7 @@ impl Default for SortState {
 pub type OnActivate = Box<dyn Fn(&Track)>;
 
 struct Shared {
-    conn: Rc<RefCell<Connection>>,
-    store: gio::ListStore,
+    model: TrackListModel,
     stack: gtk4::Stack,
     /// The single empty-state placeholder widget. Its title/description/icon
     /// are mutated in place by `apply_empty_state` rather than swapping in a
@@ -169,8 +166,8 @@ impl TrackList {
         on_activate: OnActivate,
         on_reload: impl Fn() + 'static,
     ) -> Self {
-        let store = gio::ListStore::new::<glib::BoxedAnyObject>();
-        let selection = gtk4::NoSelection::new(Some(store.clone()));
+        let model = TrackListModel::new(conn);
+        let selection = gtk4::NoSelection::new(Some(model.clone()));
 
         let column_view = gtk4::ColumnView::builder()
             .model(&selection)
@@ -186,7 +183,7 @@ impl TrackList {
             false,
             |t| t.title.clone(),
         );
-        append_column(
+        let artist_column = append_column(
             &column_view,
             "artist",
             strings::COLUMN_ARTIST,
@@ -241,8 +238,7 @@ impl TrackList {
         stack.set_visible_child_name(STACK_PAGE_EMPTY);
 
         let shared = Rc::new(Shared {
-            conn,
-            store,
+            model,
             stack,
             empty_page,
             sort: RefCell::new(SortState::default()),
@@ -252,6 +248,18 @@ impl TrackList {
         });
 
         wire_sort_clicks(&column_view, &shared);
+
+        // Sets the initial sort indicator (artist ascending) on the column
+        // header. `SortState::default()` is already `artist`/`asc`, so the
+        // `primary-sort-column`/`primary-sort-order` notify signals this
+        // triggers land in `on_sorter_changed`, compute the same
+        // (field, dir) pair already stored in `shared.sort`, and the dedup
+        // guard there (`if *shared.sort.borrow() == new_sort { return; }`)
+        // short-circuits before it would call `reload` — so this call fires
+        // zero SQL queries. The one and only initial load below still runs
+        // exactly once.
+        column_view.sort_by_column(Some(&artist_column), gtk4::SortType::Ascending);
+
         wire_activate(&column_view, &shared);
 
         reload(&shared);
@@ -300,7 +308,9 @@ fn build_status_page() -> adw::StatusPage {
 /// `queries` sort field name, stashed on the column via `set_id` so header
 /// clicks can be mapped back to it. `right_align` additionally marks the
 /// label with the "numeric" style class (tabular figures, GNOME convention
-/// for right-aligned numeric columns such as file sizes/durations).
+/// for right-aligned numeric columns such as file sizes/durations). Returns
+/// the built column so `TrackList::new` can set the initial sort indicator
+/// on the artist column.
 fn append_column(
     column_view: &gtk4::ColumnView,
     sort_id: &'static str,
@@ -308,7 +318,7 @@ fn append_column(
     xalign: f32,
     right_align: bool,
     render: impl Fn(&Track) -> String + 'static,
-) {
+) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
 
     factory.connect_setup(move |_, obj| {
@@ -357,12 +367,13 @@ fn append_column(
     column.set_id(Some(sort_id));
 
     // Dummy sorter: makes the header clickable/toggleable without ever
-    // reordering the ListStore itself (SQL is the sort source of truth —
-    // see module doc comment).
+    // reordering the model itself (SQL is the sort source of truth — see
+    // module doc comment).
     let never_sorts = gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal);
     column.set_sorter(Some(&never_sorts));
 
     column_view.append_column(&column);
+    column
 }
 
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps
@@ -420,23 +431,15 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
 }
 
 /// Row activation (double-click or Enter on a focused row): resolve the
-/// row's `Track` and hand it to the `on_activate` callback (which
-/// `window::build` routes to the player).
+/// row's `Track` via `TrackListModel::track_at` and hand it to the
+/// `on_activate` callback (which `window::build` routes to the player).
 fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
     let shared = shared.clone();
-    column_view.connect_activate(move |view, position| {
-        let Some(model) = view.model() else {
-            return;
-        };
-        let Some(item) = model.item(position) else {
+    column_view.connect_activate(move |_view, position| {
+        let Some(track) = shared.model.track_at(position) else {
             tracing::warn!(position, "track list activate: no item at position");
             return;
         };
-        let Some(boxed) = item.downcast_ref::<glib::BoxedAnyObject>() else {
-            tracing::warn!("track list activate: item is not a BoxedAnyObject<Track>");
-            return;
-        };
-        let track = boxed.borrow::<Track>();
         tracing::info!(path = %track.path, "activate track");
         (shared.on_activate)(&track);
     });
@@ -453,56 +456,26 @@ fn arm_smoke_activate(shared: &Rc<Shared>) {
     tracing::info!("{SMOKE_ACTIVATE_ENV_VAR} set: arming first-row activation");
     let shared = shared.clone();
     glib::idle_add_local_once(move || {
-        let Some(item) = shared.store.item(0) else {
+        let Some(track) = shared.model.track_at(0) else {
             tracing::warn!("{SMOKE_ACTIVATE_ENV_VAR}: track list is empty; nothing to activate");
             return;
         };
-        let Some(boxed) = item.downcast_ref::<glib::BoxedAnyObject>() else {
-            tracing::warn!("{SMOKE_ACTIVATE_ENV_VAR}: item is not a BoxedAnyObject<Track>");
-            return;
-        };
-        let track = boxed.borrow::<Track>();
         tracing::info!(path = %track.path, "{SMOKE_ACTIVATE_ENV_VAR}: activating first row");
         (shared.on_activate)(&track);
     });
 }
 
-/// Re-runs the windowed query against the current sort/filter state and
-/// replaces the `ListStore` contents. Switches the stack to whichever page
+/// Re-runs the query against the current sort/filter state via
+/// `TrackListModel::set_query`. Switches the stack to whichever page
 /// `empty_state_for` selects for the resulting row count and filter state.
 fn reload(shared: &Rc<Shared>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let has_filter = !filter.trim().is_empty();
 
-    let tracks = {
-        let mut conn = shared.conn.borrow_mut();
-        queries::query_track_window(
-            &mut conn,
-            &sort.field,
-            &sort.dir,
-            &filter,
-            WINDOW_OFFSET,
-            WINDOW_LIMIT,
-        )
-    };
+    shared.model.set_query(&sort.field, &sort.dir, &filter);
 
-    let tracks = match tracks {
-        Ok(tracks) => tracks,
-        Err(error) => {
-            tracing::error!(%error, field = %sort.field, dir = %sort.dir, "failed to load track window");
-            return;
-        }
-    };
-
-    shared.store.remove_all();
-    for track in &tracks {
-        shared
-            .store
-            .append(&glib::BoxedAnyObject::new(track.clone()));
-    }
-
-    let count = tracks.len();
+    let count = shared.model.n_items() as usize;
     apply_empty_state(shared, empty_state_for(count, has_filter));
 
     tracing::info!(count, field = %sort.field, dir = %sort.dir, filter = %filter, "loaded {count} tracks");
