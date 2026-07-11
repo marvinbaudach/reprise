@@ -384,13 +384,48 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: Pa
 /// collapse-state flip also resets the toggle to inactive/content-showing,
 /// so it starts predictable rather than inheriting whatever a previous wide-
 /// layout selection happened to leave.
+///
+/// The relationship between `toggle.active` and `split_view.show_content` is
+/// kept two-way so the toggle state stays in sync when `show_content` changes
+/// through other paths (auto-navigation on row select via `show_content_if_
+/// collapsed`, Adwaita's built-in back button, or other external changes).
+/// Semantics: `toggle.active = true` → sidebar shown → `show_content = false`;
+/// `toggle.active = false` → content shown → `show_content = true`. Three
+/// entry paths all update the toggle in ONE press each:
+/// 1. User toggle press → fires `toggled` → calls `set_show_content`
+/// 2. Auto-nav on row select → calls `set_show_content` → fires `show_content_notify` → sets toggle
+/// 3. Adwaita back button → calls `set_show_content` → fires `show_content_notify` → sets toggle
+///
+/// A guard (`Rc<Cell<bool>>`) prevents signal feedback loops: the user's
+/// `toggled` handler checks the guard at start and skips if set (the toggle
+/// is being updated programmatically); the `show_content_notify` handler sets
+/// the guard before calling `set_active`, which would fire `toggled`, so the
+/// handler's check catches it and returns early.
 fn wire_sidebar_toggle(sidebar_toggle: &gtk4::ToggleButton, split_view: &adw::NavigationSplitView) {
     sidebar_toggle.set_visible(split_view.is_collapsed());
 
+    let updating_toggle: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
+
     {
         let split_view = split_view.clone();
+        let updating_toggle = updating_toggle.clone();
         sidebar_toggle.connect_toggled(move |button| {
+            // Skip if this toggle update is programmatic (from `show_content_notify`).
+            if updating_toggle.get() {
+                return;
+            }
             split_view.set_show_content(!button.is_active());
+        });
+    }
+    {
+        let sidebar_toggle = sidebar_toggle.clone();
+        let updating_toggle = updating_toggle.clone();
+        split_view.connect_show_content_notify(move |split_view| {
+            // Guard against the toggle's `toggled` signal firing during `set_active` below.
+            updating_toggle.set(true);
+            // Semantics: toggle.active = !show_content
+            sidebar_toggle.set_active(!split_view.shows_content());
+            updating_toggle.set(false);
         });
     }
     {
