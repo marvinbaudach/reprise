@@ -52,8 +52,8 @@ const SORT_WHITELIST: [(&str, &str); 6] = [
 fn filter_clause(has_filter: bool, param_index: u8) -> String {
     if has_filter {
         format!(
-            " AND (title LIKE ?{i} OR artist LIKE ?{i} OR album LIKE ?{i} OR genre LIKE ?{i})",
-            i = param_index
+            " AND (title LIKE ?{param_index} OR artist LIKE ?{param_index} \
+             OR album LIKE ?{param_index} OR genre LIKE ?{param_index})"
         )
     } else {
         String::new()
@@ -71,8 +71,7 @@ fn order_expr_and_dir(sort_field: &str, sort_dir: &str) -> (&'static str, &'stat
     let order_expr = SORT_WHITELIST
         .iter()
         .find(|(k, _)| *k == sort_field)
-        .map(|(_, v)| *v)
-        .unwrap_or("title COLLATE NOCASE");
+        .map_or("title COLLATE NOCASE", |(_, v)| *v);
     let dir = if sort_dir.eq_ignore_ascii_case("desc") {
         "DESC"
     } else {

@@ -1,0 +1,183 @@
+//! Fault-tolerance and auto-skip logic for `PlayerController` (Stage 2 Task
+//! 5; split out of `player_controller.rs` in Stage 3 Task 1 — see that
+//! module's `## Fault tolerance` and `## Toast + track-list-reload seam` doc
+//! sections for the parts of the story that stayed there: the two call sites
+//! that funnel into `handle_unplayable_track` below (`play_track_id`'s
+//! `Player::play` failure branch and `apply_event`'s `PlayerEvent::Error`
+//! arm), and the toast-overlay/track-list-reload fields and methods this
+//! module calls through rather than owning itself).
+//!
+//! ## What lives here
+//!
+//! - `handle_unplayable_track`: diagnoses a playback failure for a track id
+//!   (file missing vs. file exists but won't play) and reports it (mark +
+//!   toast, or toast-only), then always hands off to `skip_after_failure`.
+//! - `skip_after_failure`: the one shared skip-loop guard — advances the
+//!   queue and retries, or gives up once `should_stop_skipping` says the
+//!   chain is bounded by the queue's own length.
+//! - `should_stop_skipping`: the pure decision the guard consults.
+//!
+//! ## Seam: `pub(super)`
+//!
+//! Sibling of `player_controller` under `ui` — same reasoning as `mpris_
+//! mirror.rs`'s doc comment (read it for the full rationale). This module
+//! reaches into `PlayerController`'s `conn`, `queue`, and `consecutive_skips`
+//! fields (all `pub(super)` on the struct in `player_controller.rs`) and
+//! calls its `play_track_id`, `show_toast`, `reload_track_list`, and `reset_
+//! to_stopped` methods (all `pub(super)` there too). `player_controller.rs`
+//! still owns every field; this module only ever borrows `&self`.
+//!
+//! ## Queue borrow discipline
+//!
+//! Same invariant as `player_controller.rs`'s `## Queue borrow discipline`
+//! doc section. `skip_after_failure` reads `queue.borrow().len()` and later
+//! `queue.borrow_mut().next_manual()` each inside their own `let` statement,
+//! so no borrow is alive when `play_track_id`/`reset_to_stopped` — both of
+//! which can synchronously trigger further `PlayerEvent`s — run afterward.
+
+use crate::queries;
+use crate::ui::player_controller::PlayerController;
+use crate::ui::strings;
+
+impl PlayerController {
+    /// Diagnoses and reports a playback failure for `id` (shared by
+    /// `player_controller.rs`'s `play_track_id` `Player::play` failure
+    /// branch and its `apply_event`'s `PlayerEvent::Error` arm — see this
+    /// module's doc comment), then always calls `skip_after_failure` to move
+    /// on. Re-resolves `id`'s `TrackSummary` independently (rather than
+    /// requiring callers to pass one in) so both call sites can share this
+    /// one function even though only `play_track_id` already has a summary
+    /// in hand — one extra small `SELECT` on the failure path is a non-issue
+    /// next to never crashing.
+    pub(super) fn handle_unplayable_track(&self, id: i64) {
+        let summary = {
+            let conn = self.conn.borrow();
+            queries::query_track_summary(&conn, id)
+        };
+
+        match summary {
+            Ok(Some(summary)) => {
+                if std::path::Path::new(&summary.path).exists() {
+                    tracing::error!(
+                        track_id = id,
+                        path = %summary.path,
+                        title = %summary.title,
+                        "playback failed for a file that still exists; skipping"
+                    );
+                    self.show_toast(&strings::could_not_play_toast(&summary.title));
+                } else {
+                    tracing::error!(
+                        track_id = id,
+                        path = %summary.path,
+                        title = %summary.title,
+                        "file no longer exists on disk; marking missing and skipping"
+                    );
+                    let mark_result = {
+                        let conn = self.conn.borrow();
+                        queries::mark_track_missing(&conn, id)
+                    };
+                    match mark_result {
+                        Ok(()) => {
+                            self.show_toast(&strings::file_missing_toast(&summary.title));
+                            self.reload_track_list();
+                        }
+                        Err(error) => {
+                            // The row still shows in the list, but playback
+                            // already failed and is about to be skipped — the
+                            // user still needs to know *something* went
+                            // wrong, so fall back to the generic toast rather
+                            // than showing nothing.
+                            tracing::error!(%error, track_id = id, "failed to mark track missing");
+                            self.show_toast(&strings::could_not_play_toast(&summary.title));
+                        }
+                    }
+                }
+            }
+            Ok(None) => {
+                tracing::warn!(
+                    track_id = id,
+                    "playback failed and the track's row is already gone; skipping without marking"
+                );
+            }
+            Err(error) => {
+                tracing::error!(%error, track_id = id, "failed to resolve track after a playback failure");
+            }
+        }
+
+        self.skip_after_failure();
+    }
+
+    /// The one shared skip-loop guard (Stage 2 Task 5 — see this module's
+    /// doc comment): increments `consecutive_skips`, then either advances the
+    /// queue and plays the next track, or — once `should_stop_skipping` says
+    /// the chain is bounded by the queue's own length — gives up, toasts,
+    /// and resets to stopped instead of spinning through an entirely-broken
+    /// queue forever. Borrow discipline: `len()` and (further down) `next_
+    /// manual()` each run inside their own `let` statement, so no `queue`
+    /// borrow is alive when `play_track_id`/`reset_to_stopped` run — see
+    /// this module's `## Queue borrow discipline` doc section.
+    pub(super) fn skip_after_failure(&self) {
+        let queue_len = self.queue.borrow().len();
+        let skips = self.consecutive_skips.get() + 1;
+        self.consecutive_skips.set(skips);
+
+        if should_stop_skipping(skips, queue_len) {
+            tracing::error!(
+                skips,
+                queue_len,
+                "too many consecutive unplayable tracks; stopping playback"
+            );
+            self.consecutive_skips.set(0);
+            self.reset_to_stopped();
+            self.show_toast(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE);
+            return;
+        }
+
+        let next = self.queue.borrow_mut().next_manual();
+        match next {
+            Some(next_id) => self.play_track_id(next_id),
+            None => {
+                self.consecutive_skips.set(0);
+                self.reset_to_stopped();
+            }
+        }
+    }
+}
+
+/// The skip-loop guard's pure decision (Stage 2 Task 5 — see this module's
+/// doc comment): whether `skip_after_failure` should give up rather than
+/// skip to yet another track. `true` once `consecutive_skips` has reached
+/// `queue_len` (an upper bound; if Repeat::Off and playback started
+/// mid-queue, `next_manual` reaching the physical end may trigger an earlier
+/// stop) or when the queue is empty to begin with (nothing to skip to at
+/// all). Pure (no `Queue`/GTK/DB access) so it's unit-testable directly.
+fn should_stop_skipping(consecutive_skips: usize, queue_len: usize) -> bool {
+    queue_len == 0 || consecutive_skips >= queue_len
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_stop_skipping_table() {
+        // (consecutive_skips, queue_len, expected)
+        let cases = [
+            (0, 0, true),  // empty queue: nothing to skip to, stop immediately
+            (1, 0, true),  // empty queue always stops, regardless of skips
+            (0, 3, false), // no skips yet: keep going
+            (1, 3, false), // fewer skips than the queue is long: keep going
+            (2, 3, false), // still fewer than queue_len: keep going
+            (3, 3, true),  // skips == queue_len: bounded, stop
+            (4, 3, true),  // skips > queue_len: definitely stop
+            (1, 1, true),  // single-track queue: one skip already exhausts it
+        ];
+        for (skips, queue_len, expected) in cases {
+            assert_eq!(
+                should_stop_skipping(skips, queue_len),
+                expected,
+                "should_stop_skipping({skips}, {queue_len}) should be {expected}"
+            );
+        }
+    }
+}

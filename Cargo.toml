@@ -32,3 +32,21 @@ zbus = "5"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Stage 3 Task 1: curated pedantic-lint selection, hardened to `warn` here so
+# `cargo clippy --all-targets -- -D warnings` (the gate every commit must
+# pass — see docs/superpowers/plans/2026-07-11-etappe-3-bibliothek-
+# organisieren.md's Global Constraints) turns them into hard errors. Each one
+# targets a real class of mistake this codebase cares about: needless_pass_by_
+# value/redundant_closure_for_method_calls (unnecessary clones/indirection),
+# semicolon_if_nothing_returned/uninlined_format_args (consistency across a
+# codebase with many `tracing!`/`format!` call sites), map_unwrap_or (prefer
+# map_or over an unwrap_or after map, which can panic-shaped-read), and
+# unnested_or_patterns (readability in match arms).
+[lints.clippy]
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+map_unwrap_or = "warn"
+unnested_or_patterns = "warn"

@@ -1,3 +1,5 @@
+pub mod mpris_mirror;
+pub mod playback_faults;
 pub mod player_bar;
 pub mod player_controller;
 pub mod rating;

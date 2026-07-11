@@ -169,6 +169,14 @@ struct Shared {
     /// invokes this hook, so threading it through the callback avoids a
     /// second borrow of `shared.filter` for the same value.
     on_reload: Box<dyn Fn(&str)>,
+    /// Stage 3 Task 1 (a): the window's toast overlay, injected post-
+    /// construction via `TrackList::set_toast_overlay` — same seam shape as
+    /// `PlayerController::toast_overlay` (see that module's `## Toast +
+    /// track-list-reload seam` doc section): built in `window::build` after
+    /// `TrackList::new`, so it can't be a constructor parameter. `WeakRef`,
+    /// not a strong reference, so `TrackList` can never keep the window
+    /// alive past its natural lifetime.
+    toast_overlay: glib::WeakRef<adw::ToastOverlay>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -259,6 +267,7 @@ impl TrackList {
             filter: RefCell::new(String::new()),
             on_activate,
             on_reload: Box::new(on_reload),
+            toast_overlay: glib::WeakRef::new(),
         });
 
         // Built after `shared` exists (unlike the other columns above): its
@@ -308,6 +317,27 @@ impl TrackList {
     /// newly added tracks show up without disturbing an active search.
     pub fn reload(&self) {
         reload(&self.shared);
+    }
+
+    /// Injects the window's toast overlay, once it exists — see the
+    /// `Shared::toast_overlay` doc comment for why this can't be a
+    /// constructor parameter. Stored as a `WeakRef`; `show_toast` degrades
+    /// to log-only if the upgrade ever fails.
+    pub fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
+        self.shared.toast_overlay.set(Some(overlay));
+    }
+}
+
+/// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
+/// wired or it's gone — mirrors `player_controller.rs`'s `show_toast` (same
+/// seam, same degrade behavior), not shared code: the two owning types are
+/// otherwise unrelated and this is a two-line `WeakRef::upgrade` match.
+fn show_toast(shared: &Shared, text: &str) {
+    match shared.toast_overlay.upgrade() {
+        Some(overlay) => overlay.add_toast(adw::Toast::new(text)),
+        None => {
+            tracing::warn!(text, "toast overlay is gone; degrading to log-only");
+        }
     }
 }
 
@@ -447,10 +477,11 @@ fn append_rating_column(
             rating_widget.set_rating(track.rating);
 
             let track_id = track.id;
+            let title = track.title.clone();
             let position = item.position();
             let shared = shared.clone();
             rating_widget.set_on_changed(move |new_rating| {
-                on_rating_changed(&shared, track_id, position, new_rating);
+                on_rating_changed(&shared, track_id, &title, position, new_rating);
             });
         });
     }
@@ -492,14 +523,19 @@ fn append_rating_column(
 
 /// Persists a rating change via `library::stats::set_rating` and, on
 /// success, invalidates the model's cached copy of the affected row (see
-/// `TrackListModel::invalidate_window_at`) so a subsequent read — e.g.
-/// scrolling away and back — sees the freshly written value rather than the
-/// stale in-memory clone. A write failure is logged and otherwise swallowed
-/// (fault tolerance: a rating write must never crash or wedge the UI); the
+/// `TrackListModel::invalidate_window_at`). A write failure is logged and,
+/// since Stage 3 Task 1 (backlog item a), also surfaced as a toast: the
 /// displayed rating already reflects the click (`RatingWidget::set_rating`
-/// ran before this is called), so the user sees no visible inconsistency
-/// unless they scroll away and back before the next successful write.
-fn on_rating_changed(shared: &Rc<Shared>, track_id: i64, position: u32, new_rating: i32) {
+/// ran first), so without a toast the user couldn't tell the write didn't
+/// persist until scrolling away and back; never crashes or wedges the UI
+/// either way (fault tolerance).
+fn on_rating_changed(
+    shared: &Rc<Shared>,
+    track_id: i64,
+    title: &str,
+    position: u32,
+    new_rating: i32,
+) {
     tracing::debug!(track_id, position, new_rating, "rating changed");
     let result = {
         let conn = shared.conn.borrow();
@@ -508,7 +544,8 @@ fn on_rating_changed(shared: &Rc<Shared>, track_id: i64, position: u32, new_rati
     match result {
         Ok(()) => shared.model.invalidate_window_at(position),
         Err(error) => {
-            tracing::error!(%error, track_id, new_rating, "failed to persist rating change")
+            tracing::error!(%error, track_id, new_rating, "failed to persist rating change");
+            show_toast(shared, &strings::rating_save_failed_toast(title));
         }
     }
 }

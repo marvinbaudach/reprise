@@ -180,7 +180,6 @@ impl Queue {
     pub fn set_shuffle(&mut self, on: bool) {
         if on && !self.shuffled {
             // Currently linear; shuffle while keeping current track in place.
-            self.shuffled = true;
             if let Some(current_pos) = self.pos {
                 // Remember the current track's track-index (defensive: use .get())
                 let current_track_slot = match self.order.get(current_pos) {
@@ -191,9 +190,17 @@ impl Queue {
                             current_pos,
                             self.order.len()
                         );
+                        // Guard failed: bail out BEFORE flipping `shuffled`,
+                        // not after (Stage 3 Task 1) — this branch is
+                        // unreachable under the struct's own invariant
+                        // (`pos < order.len()` always), but setting
+                        // `shuffled = true` here first would have desynced
+                        // the flag from the order actually still being
+                        // linear, had it ever been reached.
                         return;
                     }
                 };
+                self.shuffled = true;
 
                 // Fisher-Yates shuffle: permute indices, but skip current track.
                 let n = self.order.len();
@@ -207,7 +214,9 @@ impl Queue {
                     self.order.swap(current_pos, pos);
                 }
             } else {
-                // No current track; just shuffle normally.
+                // No current track; just shuffle normally. No guard to fail
+                // here, so `shuffled` is set unconditionally.
+                self.shuffled = true;
                 let n = self.order.len();
                 for i in (1..n).rev() {
                     let j = fastrand::usize(0..=i);
@@ -427,6 +436,29 @@ mod tests {
         assert_eq!(q.pos, Some(1)); // Should be at linear index 1
     }
 
+    /// Stage 3 Task 1 backlog fix: `set_shuffle`'s defensive `pos`-out-of-
+    /// bounds guard must bail out BEFORE flipping `shuffled`, not after —
+    /// otherwise an (unreachable under the struct's own invariant, but still
+    /// worth pinning) early return would leave `shuffled` desynced from the
+    /// order actually still being linear. Forces the invariant-violating
+    /// state directly (same-module test, so private fields are reachable)
+    /// rather than trying to construct it through the public API, which
+    /// can't produce it at all.
+    #[test]
+    fn set_shuffle_guard_failure_does_not_desync_shuffled_flag() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 0);
+        q.pos = Some(99); // out of bounds for `order` (len 3)
+
+        q.set_shuffle(true);
+
+        assert!(
+            !q.is_shuffled(),
+            "guard failure must leave `shuffled` false, matching the order \
+             actually still being unshuffled"
+        );
+    }
+
     // Test 8: next_manual at end
     #[test]
     fn test_next_manual_end_repeat_off() {
@@ -626,8 +658,7 @@ mod tests {
         assert_eq!(
             ids_in_pass.len(),
             n,
-            "should collect exactly {} ids in one pass",
-            n
+            "should collect exactly {n} ids in one pass"
         );
 
         // Create the full expected multiset

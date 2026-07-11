@@ -95,7 +95,7 @@ fn main() -> glib::ExitCode {
             window.present();
             return;
         }
-        ui::window::build(app, conn.clone(), path.clone());
+        ui::window::build(app, &conn, path.clone());
     });
 
     // No custom CLI arguments exist yet, so `run()` (which reads

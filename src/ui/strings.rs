@@ -82,3 +82,14 @@ pub fn could_not_play_toast(title: &str) -> String {
 /// spinning through an entire broken queue.
 pub const PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE: &str =
     "Playback stopped — too many unplayable tracks";
+
+// Rating write failures (src/ui/track_list.rs, Stage 3 Task 1 backlog item a):
+// the on-screen rating already updated by the time the write is attempted, so
+// a failure needs a toast, not just a log line, or the user has no way to
+// know it didn't actually persist.
+
+/// Toast shown when persisting a rating change (`library::stats::set_rating`)
+/// fails.
+pub fn rating_save_failed_toast(title: &str) -> String {
+    format!("Could not save rating for {title}")
+}

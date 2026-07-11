@@ -194,7 +194,7 @@ pub type SharedMprisState = Arc<Mutex<MprisState>>;
 fn read_state(state: &SharedMprisState) -> MprisState {
     state
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
 }
 
@@ -208,7 +208,7 @@ pub fn start() -> (SharedMprisState, async_channel::Receiver<MprisCommand>) {
     let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
 
     let thread_state = state.clone();
-    std::thread::spawn(move || run(thread_state, sender));
+    std::thread::spawn(move || run(&thread_state, sender));
 
     (state, receiver)
 }
@@ -216,8 +216,11 @@ pub fn start() -> (SharedMprisState, async_channel::Receiver<MprisCommand>) {
 /// The MPRIS thread's entire body: connect, claim the name, serve both
 /// interfaces, then poll-diff forever. Every fallible step logs a
 /// `tracing::warn!` and returns (never panics) on failure — see the
-/// module's `## Failure is never fatal` doc section.
-fn run(state: SharedMprisState, commands: async_channel::Sender<MprisCommand>) {
+/// module's `## Failure is never fatal` doc section. Takes `state` by
+/// reference: this function only ever clones it (into `MprisPlayer`) or
+/// borrows it further (into `poll_and_emit_changes`), never needs to own it
+/// itself — the owning `Arc` stays with `start`'s thread closure.
+fn run(state: &SharedMprisState, commands: async_channel::Sender<MprisCommand>) {
     let player_iface = MprisPlayer {
         state: state.clone(),
         commands,
@@ -227,7 +230,7 @@ fn run(state: SharedMprisState, commands: async_channel::Sender<MprisCommand>) {
         .and_then(|builder| builder.name(BUS_NAME))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, MprisRoot))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, player_iface))
-        .and_then(|builder| builder.build());
+        .and_then(connection::Builder::build);
     let connection = match connection {
         Ok(connection) => connection,
         Err(error) => {
@@ -262,7 +265,7 @@ fn run(state: SharedMprisState, commands: async_channel::Sender<MprisCommand>) {
         "MPRIS: bus name claimed, serving org.mpris.MediaPlayer2 and .Player"
     );
 
-    poll_and_emit_changes(&state, &iface_ref);
+    poll_and_emit_changes(state, &iface_ref);
 }
 
 /// Loops forever (this is the entire lifetime of the MPRIS thread once
