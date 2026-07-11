@@ -87,6 +87,7 @@ fn file_stat(path: &Path) -> (i64, i64, i64) {
 
 /// A DB row that is a *candidate* to be the pre-move identity of a file at
 /// an unknown path: `id`/`path` to perform the move `UPDATE` against.
+#[derive(Debug, PartialEq)]
 struct MoveCandidate {
     id: i64,
     path: String,
@@ -105,6 +106,20 @@ struct MoveLookup<'a> {
     duration_ms: i64,
     file_size: i64,
 }
+
+/// Return type for tag_param_values: (title, artist, album, album_artist,
+/// year, track_no, genre, duration_ms, bitrate_kbps).
+type TagParams<'a> = (
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    Option<i32>,
+    Option<i32>,
+    &'a str,
+    i64,
+    Option<i32>,
+);
 
 /// Filters raw SQL matches down to *valid* move candidates: rows whose old
 /// path is gone from disk, or which are already flagged `missing`. This
@@ -200,6 +215,24 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
+/// Extracts tag-derived column values in the canonical order used by both
+/// move-UPDATE and INSERT/upsert statements: title, artist, album, album_artist,
+/// year, track_no, genre, duration_ms, bitrate_kbps. Having a single source
+/// for this ordering ensures that adding/removing columns is a one-place change.
+fn tag_param_values<'a>(title: &'a str, meta: &'a TrackMeta) -> TagParams<'a> {
+    (
+        title,
+        &meta.artist,
+        &meta.album,
+        &meta.album_artist,
+        meta.year,
+        meta.track_no,
+        &meta.genre,
+        meta.duration_ms,
+        meta.bitrate_kbps,
+    )
+}
+
 pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, ScanError> {
     let mut report = ScanReport::default();
     let tx = conn.transaction()?;
@@ -293,6 +326,17 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
                     // existing row by id. rating/play_count/added_at/
                     // last_played_at are deliberately absent from this SET
                     // clause — that's the whole point of move detection.
+                    let (
+                        title_p,
+                        artist_p,
+                        album_p,
+                        album_artist_p,
+                        year_p,
+                        track_no_p,
+                        genre_p,
+                        duration_ms_p,
+                        bitrate_kbps_p,
+                    ) = tag_param_values(&title, &meta);
                     tx.execute(
                         "UPDATE tracks SET path=?1, title=?2, artist=?3, album=?4,
                            album_artist=?5, year=?6, track_no=?7, genre=?8, duration_ms=?9,
@@ -301,15 +345,15 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
                          WHERE id=?15",
                         rusqlite::params![
                             path_str,
-                            title,
-                            meta.artist,
-                            meta.album,
-                            meta.album_artist,
-                            meta.year,
-                            meta.track_no,
-                            meta.genre,
-                            meta.duration_ms,
-                            meta.bitrate_kbps,
+                            title_p,
+                            artist_p,
+                            album_p,
+                            album_artist_p,
+                            year_p,
+                            track_no_p,
+                            genre_p,
+                            duration_ms_p,
+                            bitrate_kbps_p,
                             mtime,
                             file_size,
                             device,
@@ -327,6 +371,17 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
                     )?;
                     report.moved += 1;
                 } else {
+                    let (
+                        title_p,
+                        artist_p,
+                        album_p,
+                        album_artist_p,
+                        year_p,
+                        track_no_p,
+                        genre_p,
+                        duration_ms_p,
+                        bitrate_kbps_p,
+                    ) = tag_param_values(&title, &meta);
                     tx.execute(
                         "INSERT INTO tracks (path, title, artist, album, album_artist, year,
                            track_no, genre, duration_ms, bitrate_kbps, added_at, file_mtime,
@@ -338,15 +393,15 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
                            file_mtime=?12, missing=0, file_size=?13, device=?14, inode=?15",
                         rusqlite::params![
                             path_str,
-                            title,
-                            meta.artist,
-                            meta.album,
-                            meta.album_artist,
-                            meta.year,
-                            meta.track_no,
-                            meta.genre,
-                            meta.duration_ms,
-                            meta.bitrate_kbps,
+                            title_p,
+                            artist_p,
+                            album_p,
+                            album_artist_p,
+                            year_p,
+                            track_no_p,
+                            genre_p,
+                            duration_ms_p,
+                            bitrate_kbps_p,
                             now_unix(),
                             mtime,
                             file_size,
@@ -595,6 +650,72 @@ mod tests {
         assert_eq!(still_rating, survivor_rating);
         assert_eq!(still_play_count, survivor_play_count);
         assert_eq!(still_added_at, survivor_added_at);
+    }
+
+    /// Two rows with identical (device, inode) both have paths that no longer
+    /// exist on disk (via direct SQL mutation), making both valid candidates
+    /// for device/inode-based move detection. When find_move_candidate is
+    /// called directly with those fake device/inode values, it must refuse
+    /// to guess and return Ok(None), leaving both rows untouched. Pins the
+    /// device/inode ambiguity branch (line ~148-155 in find_move_candidate).
+    #[test]
+    fn ambiguous_device_inode_candidates_are_not_guessed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path_a = fixture_copy(tmp.path(), "a.flac");
+        tag_file(&path_a, "Dev Inode Ambiguity", "Some Artist", "Some Album");
+        let path_b = fixture_copy(tmp.path(), "b.flac");
+        tag_file(&path_b, "Dev Inode Ambiguity", "Some Artist", "Some Album");
+
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+        assert_eq!(r1.added, 2);
+
+        // Manually set both rows to identical fake device/inode and non-existent paths
+        // so they both become valid candidates (path no longer exists).
+        conn.execute(
+            "UPDATE tracks SET device = 7777, inode = 8888, path = '/gone/a.flac' WHERE id = 1",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE tracks SET device = 7777, inode = 8888, path = '/gone/b.flac' WHERE id = 2",
+            [],
+        )
+        .unwrap();
+
+        // Get the fixture file_size for the lookup (inode won't match real file).
+        let (file_size, _, _) = file_stat(&path_a);
+
+        // Call find_move_candidate directly with the fake device/inode to hit the
+        // ambiguity branch. Both rows match device=7777, inode=8888, so both are
+        // initially selected by the SQL query, then filtered to validity (both paths
+        // gone). With 2 valid candidates, the function must warn and return Ok(None).
+        let tx = conn.transaction().unwrap();
+        let lookup = MoveLookup {
+            device: 7777,
+            inode: 8888,
+            title: "Dev Inode Ambiguity",
+            artist: "Some Artist",
+            album: "Some Album",
+            duration_ms: 1000,
+            file_size,
+        };
+        let result = find_move_candidate(&tx, &lookup).unwrap();
+        assert_eq!(
+            result, None,
+            "must return None when device/inode candidates are ambiguous"
+        );
+
+        // Verify both rows are still untouched (not guessed).
+        let path_1: String = tx
+            .query_row("SELECT path FROM tracks WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        let path_2: String = tx
+            .query_row("SELECT path FROM tracks WHERE id = 2", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(path_1, "/gone/a.flac");
+        assert_eq!(path_2, "/gone/b.flac");
     }
 
     /// A rescan over an untouched library must not match anything as moved —
