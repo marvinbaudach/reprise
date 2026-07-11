@@ -325,8 +325,14 @@ der SQLite-DB; beim Start geladen, Änderungen wirken sofort ohne Neustart.
 
 Design-Tokens (Farben, Typo, Abstände, Radien, Blur-Stärken) zentral in
 `tokens.css`. Bewertung als klickbare 5-Sterne-Komponente direkt in der
-Tabellenzeile. UI-Sprache Deutsch; alle Strings zentral in einem
-Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
+Tabellenzeile. **UI-Sprache Englisch** (Quellsprache — Community-Projekt; Entscheidung
+2026-07-11, ersetzt die frühere Festlegung auf Deutsch). Alle Strings
+zentral in einem Strings-Modul abgelegt, i18n-fähig: **Mehrsprachigkeit
+ist fest eingeplant** (zuerst Deutsch), die Sprache folgt dann dem
+System-Locale und ist in den Einstellungen übersteuerbar. Auch Commits,
+Code-Kommentare und Log-/Fehlermeldungen sind englisch. Deutsche
+UI-Zitate in diesem Dokument sind illustrativ — implementiert wird
+englisch.
 
 ## Sicherheit
 
@@ -535,6 +541,9 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
 - Import aus Clementine/Strawberry — erweitert die Umsteiger-Zielgruppe
   über Rhythmbox hinaus
 - Regel-Editor für Smart Playlists
+- Mehrsprachige Oberfläche (i18n): Übersetzungen auf Basis des zentralen
+  Strings-Moduls, zuerst Deutsch; Sprachwahl folgt dem System-Locale,
+  übersteuerbar in den Einstellungen
 - Bewertungen optional in Dateitags exportieren
 - macOS-Port bleibt durch den Tauri-Stack theoretisch möglich
   (GStreamer und MPRIS wären zu ersetzen), ist aber kein Ziel

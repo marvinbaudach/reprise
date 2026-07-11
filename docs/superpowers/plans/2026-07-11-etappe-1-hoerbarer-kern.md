@@ -14,7 +14,12 @@
 
 - Projektpfad: `/home/marvin/Projects/reprise` (Git-Repo existiert, Branch `main`)
 - Lizenz: GPL-3.0 (LICENSE-Datei in Task 1)
-- UI-Sprache Deutsch; alle UI-Strings zentral in `src/lib/strings.ts` — keine Literale in Komponenten
+- **SPRACH-OVERRIDE (2026-07-11, ersetzt „UI-Sprache Deutsch"): Alles Englisch** — Commit-Messages, Code-Kommentare, Log-/Fehlermeldungen und UI-Strings. Deutsche Strings in den Code-Blöcken der Tasks unten werden beim Implementieren ins Englische übersetzt; Tests prüfen die englischen Werte. Kanonische Übersetzungen:
+  - `STRINGS`: appName "Reprise", searchPlaceholder "Search all fields", scanFolder "Scan folder…", columns Title / Artist / Album / Year / Length / Rating, play "Play", pause "Pause", playerPosition "Playback position", volume "Volume", statusTracks → `` `${n.toLocaleString("en-US")} tracks` ``
+  - `formatTotalDuration` im Rhythmbox-Englisch: "4 days, 6 hours and 28 minutes", "1 hour and 30 minutes", "5 minutes" (Singular/Plural: day/days, hour/hours, minute/minutes; nur vorhandene Teile, letzter Teil mit "and" angebunden, Null-/Unsinn-Eingabe → "0 minutes")
+  - Rust-Fehlertexte z. B. "Datenbankfehler: {0}" → "database error: {0}", "Tags unlesbar: {0}" → "unreadable tags: {0}", "Ungültiger Pfad: {0}" → "invalid path: {0}", `expect`-Texte in `run()` englisch
+  - Commit-Messages der Tasks: Task 2 "feat: SQLite schema v1 (tracks, import_errors) with idempotent migration", Task 3 "feat: library scanner with lofty tags, incremental rescan, and import-error log", Task 4 "feat: IPC commands scan_music_folder, get_track_window (SQL windowing), get_library_stats", Task 5 "feat: GStreamer player (playbin3) with play/pause/seek/volume and position events", Task 6 "feat: frontend foundation — strings, formatting, typed IPC wrappers, design tokens", Task 7 "feat: sortable track table with double-click playback", Task 8 "feat: bottom player bar (2a) with play/pause, seekbar, time, and volume", Task 9 "feat: scan flow with folder dialog, live search, and status bar — stage 1 complete"
+  - Alle UI-Strings zentral in `src/lib/strings.ts` — keine Literale in Komponenten; Englisch ist die i18n-Quellsprache, weitere Sprachen folgen später
 - Reprise verändert Musikdateien NIEMALS ungefragt (Etappe 1 schreibt ausschließlich lesend, außer im Test-Roundtrip auf Fixture-Kopien)
 - Immutabilität im Frontend: neue Objekte statt Mutation (Zustand-Store: `set({...})`)
 - Dateien < 800 Zeilen, Funktionen klein, frühe Returns
