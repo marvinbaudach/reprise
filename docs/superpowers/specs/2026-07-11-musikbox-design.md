@@ -223,6 +223,7 @@ tracks(
 playlists(id, name, position)
 playlist_tracks(playlist_id, track_id, position)
 smart_playlists(id, name, rules_json, sort_field, sort_dir, limit_count)
+import_errors(id, path, reason, occurred_at)  -- Sidebar-Quelle „Importfehler"
 settings(key PRIMARY KEY, value)   -- Layout, Farbschema, Spalten, Ordner,
                                    -- EQ, ReplayGain, Modul-Schalter
 ```
@@ -246,6 +247,15 @@ sind als Einstellungen wählbar. Drei Zonen im Standard-Layout:
 
 1. **Sidebar links** — Abschnitte BIBLIOTHEK (Musik, Warteschlange),
    PLAYLISTEN, INTELLIGENT; jeweils mit Track-Zähler. „Neue Playlist"-Aktion.
+   Dazu zwei **Problem-Quellen wie in Rhythmbox**, die nur erscheinen,
+   wenn sie Einträge haben (mit Zähler-Badge):
+   - *Importfehler:* Dateien, die Scanner oder Rhythmbox-Import nicht
+     verarbeiten konnten — als Liste mit Pfad und verständlichem Grund
+     (defekt, Format nicht unterstützt, keine Leserechte …). Aktionen:
+     erneut versuchen, im Dateimanager zeigen, Eintrag verwerfen.
+   - *Fehlende Dateien:* als `missing` markierte Titel (Datei verschwunden,
+     Statistiken bleiben erhalten). Aktionen: erneut suchen, aus
+     Bibliothek entfernen.
 2. **Hauptbereich** — Spaltenansicht: Titel / Interpret / Album / Jahr /
    Länge / Bewertung. Klick auf Spaltenkopf sortiert. Suchfeld
    „Alle Felder durchsuchen" oben. Einblendbare **Browse-Leiste**
@@ -318,8 +328,9 @@ Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
 
 ## Fehlerbehandlung
 
-- Scanner überspringt defekte/unlesbare Dateien und protokolliert sie;
-  Scan-Ergebnis meldet Anzahl übersprungener Dateien.
+- Scanner überspringt defekte/unlesbare Dateien und protokolliert sie in
+  einer `import_errors`-Tabelle (Pfad, Grund, Zeitpunkt); sichtbar als
+  Sidebar-Quelle „Importfehler", Scan-Ergebnis meldet die Anzahl.
 - Verschwundene Dateien werden als `missing` markiert, nicht gelöscht
   (Bewertungen/Statistiken bleiben erhalten; analog Rhythmbox „Missing Files").
 - Typisierte Fehler (`thiserror`) über die IPC-Grenze als strukturierte
