@@ -59,7 +59,7 @@ const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
 /// `db_path` is the same connection's on-disk path, handed to each
 /// scan-worker thread so it can open its own `Connection` rather than
 /// sharing this one across threads (`rusqlite::Connection` isn't `Send`).
-pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>, db_path: PathBuf) {
+pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: PathBuf) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(strings::APP_NAME)
@@ -150,6 +150,10 @@ pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>, db_path: Pat
             None => tracing::warn!("track list reload skipped: track list is gone"),
         });
     }
+    // Stage 3 Task 1 backlog item (a): same post-construction injection
+    // reason as the player's toast overlay above — `track_list` is built
+    // before `toast_overlay` exists.
+    track_list.set_toast_overlay(&toast_overlay);
 
     window.set_content(Some(&toast_overlay));
 

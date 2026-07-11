@@ -163,18 +163,16 @@ impl Player {
             let element = {
                 let guard = tick_playbin
                     .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 guard.clone()
             };
             if element.current_state() == gst::State::Playing {
                 let position_ms = element
                     .query_position::<gst::ClockTime>()
-                    .map(|t| t.mseconds() as i64)
-                    .unwrap_or(0);
+                    .map_or(0, |t| t.mseconds() as i64);
                 let duration_ms = element
                     .query_duration::<gst::ClockTime>()
-                    .map(|t| t.mseconds() as i64)
-                    .unwrap_or(0);
+                    .map_or(0, |t| t.mseconds() as i64);
                 (*tick_event)(PlayerEvent::Position {
                     position_ms,
                     duration_ms,
@@ -237,7 +235,7 @@ impl Player {
         let playbin = self
             .playbin
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         playbin
             .set_state(gst::State::Null)
             .map_err(|e| PlayerError::Gst(e.to_string()))?;
@@ -263,7 +261,7 @@ impl Player {
         let mut playbin = self
             .playbin
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // Transition the old playbin to Null before discarding it to ensure
         // proper resource cleanup (decoders, file descriptors, buffers).
@@ -285,7 +283,7 @@ impl Player {
         let playbin = self
             .playbin
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let next = match playbin.current_state() {
             gst::State::Playing => (gst::State::Paused, PlaybackState::Paused),
             _ => (gst::State::Playing, PlaybackState::Playing),
@@ -302,7 +300,7 @@ impl Player {
         let playbin = self
             .playbin
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         playbin
             .seek_simple(
                 gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
@@ -315,7 +313,7 @@ impl Player {
         let playbin = self
             .playbin
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         playbin.set_property("volume", volume.clamp(0.0, 1.0));
     }
 
@@ -323,7 +321,7 @@ impl Player {
         let playbin = self
             .playbin
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         playbin
             .set_state(gst::State::Null)
             .map_err(|e| PlayerError::Gst(e.to_string()))?;
@@ -376,7 +374,7 @@ mod tests {
     fn play_and_stop_emit_state_changed_events() {
         let _guard = AUDIO_SINK_TEST_LOCK
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
         let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
@@ -418,7 +416,7 @@ mod tests {
     fn play_recovers_after_a_failed_attempt() {
         let _guard = AUDIO_SINK_TEST_LOCK
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
         let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();

@@ -164,4 +164,18 @@ mod tests {
         let text = format_status_text(1_704, ((4 * 24 + 6) * 60 + 28) * 60 * 1000, Some(0));
         assert_eq!(text, "0 of 1,704 tracks · 4 days, 6 hours and 28 minutes");
     }
+
+    /// Stage 3 Task 1 backlog item (c): both halves of the "N of M" prefix
+    /// must be comma-formatted once they cross 1,000 — the existing filtered-
+    /// count tests above only exercise `filtered_count < 1000` (0, 42),
+    /// leaving `format_thousands(filtered)`'s thousands-separator path on the
+    /// *filtered* number untested.
+    #[test]
+    fn formats_filtered_count_over_a_thousand_with_comma() {
+        let text = format_status_text(5_678, ((4 * 24 + 6) * 60 + 28) * 60 * 1000, Some(1_234));
+        assert_eq!(
+            text,
+            "1,234 of 5,678 tracks · 4 days, 6 hours and 28 minutes"
+        );
+    }
 }

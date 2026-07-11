@@ -1,6 +1,18 @@
 //! Bridges `Player` (whose events fire on GStreamer bus-watch and ticker
 //! threads) to the GTK main thread and the `PlayerBar` widgets.
 //!
+//! Stage 3 Task 1 split this file's MPRIS mirror/command logic out into
+//! `mpris_mirror.rs` and its fault-tolerance/auto-skip logic out into
+//! `playback_faults.rs`. Both are `impl PlayerController` blocks living in
+//! sibling modules under `ui` — not separate types — so `PlayerController`
+//! still has exactly one owner for every field: this file. See each
+//! module's own doc comment for what moved there and the `pub(super)` seam
+//! (fields/methods marked visible to `ui` and its descendants) that makes
+//! reaching into this struct from a sibling module possible. This file
+//! remains the canonical description of the borrow-discipline invariant
+//! itself (`## Queue borrow discipline` below), since `queue` is, and
+//! stays, a field owned here.
+//!
 //! ## Event marshalling: `async-channel` + `glib::spawn_future_local`
 //!
 //! Every GTK widget call must happen on the main thread, but `Player::new`'s
@@ -45,51 +57,32 @@
 //! starts playback) can synchronously trigger `PlayerEvent`s and eventually
 //! another `apply_event`/queue call, so **no `queue` borrow may still be
 //! alive when `play_track_id`, `reset_to_stopped`, or any other
-//! player/GTK-facing call runs.** Every call site here follows the same
-//! shape: read the one `Option<i64>`/value it needs out of the queue in a
-//! single expression (a `let x = queue.borrow_mut().method();` statement, or
-//! an explicit `{ }` block when more than one queue call is needed), which
-//! drops the borrow at the end of that statement/block — *before* the next
-//! statement calls out. Unlike the two prior bugs, no explicit `Rc::clone`-
-//! out step is needed here: `Queue`'s methods return owned `Option<i64>`/
-//! `Repeat` values, not references into the `RefCell`'s contents, so the
-//! borrow's temporary scope is inherently the only thing to manage.
+//! player/GTK-facing call runs.** Every call site — in this file and in
+//! `mpris_mirror.rs`/`playback_faults.rs`, which both borrow `queue` too —
+//! follows the same shape: read the one `Option<i64>`/value it needs out of
+//! the queue in a single expression (a `let x = queue.borrow_mut().method();`
+//! statement, or an explicit `{ }` block when more than one queue call is
+//! needed), which drops the borrow at the end of that statement/block —
+//! *before* the next statement calls out. Unlike the two prior bugs, no
+//! explicit `Rc::clone`-out step is needed here: `Queue`'s methods return
+//! owned `Option<i64>`/`Repeat` values, not references into the `RefCell`'s
+//! contents, so the borrow's temporary scope is inherently the only thing to
+//! manage.
 //!
 //! ## Fault tolerance: toast, missing flag, and auto-skip (Stage 2 Task 5)
 //!
-//! A physically deleted or otherwise unplayable queued file must never crash
-//! or dead-end the app. `play_track_id`'s `Player::play` failure branch and
-//! `apply_event`'s `PlayerEvent::Error` arm (which can fire asynchronously,
-//! after `play_track_id` already returned `Ok`, for the *currently loaded*
-//! track — GStreamer resolves most "file not found"-class errors as an async
-//! bus message, not a synchronous `set_state` failure) both funnel into two
-//! shared helpers instead of duplicating the "diagnose, mark/toast, skip"
-//! sequence (DRY):
-//!
-//! - `handle_unplayable_track(id)` re-resolves `id`'s `TrackSummary` (title +
-//!   path) and decides, via a cheap `std::path::Path::exists` check on the
-//!   resolved path, which of the two fault classes this is: **file missing**
-//!   (marks the row via `queries::mark_track_missing`, toasts
-//!   `strings::file_missing_toast`, then refreshes the track list — see the
-//!   reload seam below — so the row disappears from view) or **file exists
-//!   but won't play** (corrupt/unsupported content: toasts
-//!   `strings::could_not_play_toast`, does *not* mark anything missing). An
-//!   `Ok(None)`/`Err` resolution (the row itself is already gone, or the
-//!   query failed) has no title/path to show a toast with, so those cases
-//!   log and skip without a toast or a redundant `mark_track_missing` call.
-//! - `skip_after_failure()` is the one shared skip-loop-guard: it increments
-//!   `consecutive_skips` (a `Cell<usize>`, reset to 0 on every *successful*
-//!   `play_track_id` playback start — including a successful skip landing on
-//!   a good track), then consults the pure `should_stop_skipping` (bounded by
-//!   the queue's own length, so a queue of N broken tracks can chain-skip at
-//!   most N times before giving up) to decide between `next_manual()` →
-//!   `play_track_id` (hoisted borrow, same discipline as every other queue
-//!   call site above) and `reset_to_stopped` + the "too many unplayable"
-//!   toast.
+//! Moved to `playback_faults.rs` (Stage 3 Task 1): `handle_unplayable_track`
+//! and `skip_after_failure` are defined there as `impl PlayerController`
+//! methods, called from `play_track_id`'s `Player::play` failure branch and
+//! `apply_event`'s `PlayerEvent::Error` arm below exactly as before. See that
+//! module's doc comment for the full "diagnose, mark/toast, skip" story.
 //!
 //! ### Toast + track-list-reload seam
 //!
-//! Both require reaching widgets the controller doesn't own outright:
+//! Both `handle_unplayable_track` (now in `playback_faults.rs`) and this
+//! file need to reach widgets the controller doesn't own outright — this is
+//! why the two fields below stay here (and their accessor methods are
+//! `pub(super)`, so `playback_faults.rs` can call through them):
 //!
 //! - `toast_overlay: glib::WeakRef<adw::ToastOverlay>` — the overlay is built
 //!   in `window::build` *after* `PlayerController::new` (it wraps the whole
@@ -119,32 +112,32 @@
 //! `mpris::start()` is called once, right after the controller's own `Rc`
 //! exists (see `new`), spawning `mpris.rs`'s dedicated D-Bus thread and
 //! handing back two things this struct holds for the rest of its life:
-//! `mpris_state` (`Arc<Mutex<mpris::MprisState>>`, written here, read by
-//! that thread — see `update_mpris_mirror`) and an `async_channel::
+//! `mpris_state` (`Arc<Mutex<mpris::MprisState>>`, written by `mpris_mirror.
+//! rs`'s `update_mpris_mirror`, read by that thread) and an `async_channel::
 //! Receiver<MprisCommand>`, drained by a second `glib::spawn_future_local`
 //! loop exactly parallel to the `PlayerEvent` drain loop already in `new`
-//! (same `Weak`-controller-upgrade-or-break shape). `update_mpris_mirror` is
-//! the one place that writes `mpris_state`: called from `play_track_id`
-//! (a new track just started), `reset_to_stopped` (playback ended), and
-//! `apply_event`'s `StateChanged` arm (status actually changed) — every real
-//! transition, without needing a call in `TrackFinished` too, since that arm
-//! only ever delegates to `play_track_id`/`reset_to_stopped`, which already
-//! cover it. `now_playing` is a small `RefCell` cache of the currently-
-//! loaded track's title/artist/album/duration (`current_track` already
-//! tracks id/duration but only as a play-tracking high-water-mark key, not
-//! for display) — set alongside `current_track` in `play_track_id`, cleared
-//! alongside `bar.clear_track()` wherever that already runs.
+//! (same `Weak`-controller-upgrade-or-break shape), calling `mpris_mirror.
+//! rs`'s `handle_mpris_command` per command. `now_playing` is a small
+//! `RefCell` cache of the currently-loaded track's title/artist/album/
+//! duration (`current_track` already tracks id/duration but only as a
+//! play-tracking high-water-mark key, not for display) — set alongside
+//! `current_track` in `play_track_id`, cleared alongside `bar.clear_track()`
+//! wherever that already runs. Both fields are `pub(super)` so `mpris_
+//! mirror.rs` (a sibling module, not a descendant of this one) can reach
+//! them — see that module's doc comment for the full mirror-update/command-
+//! handling logic itself, which moved there in Stage 3 Task 1.
 //!
-//! Transport methods `toggle_pause`/`next`/`previous` are shared, named
-//! methods — not inlined in the bar's button closures the way they used to
-//! be — specifically so both `wire_bar_controls` and `handle_mpris_command`
-//! call the same code (DRY): a physical media key and the on-screen button
-//! must behave identically. MPRIS's `Play`/`Pause` are *not* the same as
+//! Transport methods `toggle_pause`/`next`/`previous` stay here, `pub(super)`
+//! so `mpris_mirror.rs`'s `handle_mpris_command` can call them too — not
+//! inlined in the bar's button closures the way they used to be —
+//! specifically so both `wire_bar_controls` and `handle_mpris_command` call
+//! the same code (DRY): a physical media key and the on-screen button must
+//! behave identically. MPRIS's `Play`/`Pause` are *not* the same as
 //! `toggle_pause`, though (`PlayPause` is): the MPRIS spec has `Play`
 //! start-or-resume and `Pause` pause, each a no-op if already in that state,
-//! whereas the bar only ever has one button that alternates — see
-//! `mpris_play`/`mpris_pause`, which consult `mpris_state`'s own `status`
-//! (already kept current by `update_mpris_mirror`) to decide whether
+//! whereas the bar only ever has one button that alternates — see `mpris_
+//! mirror.rs`'s `mpris_play`/`mpris_pause`, which consult `mpris_state`'s own
+//! `status` (kept current by `update_mpris_mirror`) to decide whether
 //! `toggle_pause`/`play_track_id` actually apply, rather than adding a new
 //! `Player` query method just for this.
 
@@ -156,12 +149,12 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::library::stats;
-use crate::mpris::{self, MprisCommand, MprisPlaybackStatus, MprisState, SharedMprisState};
+use crate::mpris::{self, MprisPlaybackStatus, SharedMprisState};
 use crate::player::{PlaybackState, Player, PlayerError, PlayerEvent};
 use crate::queries;
 use crate::queue::{Queue, Repeat};
+use crate::ui::mpris_mirror::mpris_status_from_playback_state;
 use crate::ui::player_bar::PlayerBar;
-use crate::ui::strings;
 
 /// Dev/verification hook (permanent, like `REPRISE_SCAN_DIR`/`REPRISE_
 /// SMOKE_QUIT`/`REPRISE_SMOKE_ACTIVATE`): when set to `"all"`, forces
@@ -182,9 +175,11 @@ pub struct PlayerController {
     player: Player,
     bar: PlayerBar,
     /// The UI-owned database connection, shared with `track_list.rs` (see
-    /// `window::build`) — used only to write play-count updates via
-    /// `library::stats::record_play`.
-    conn: Rc<RefCell<Connection>>,
+    /// `window::build`) — used to write play-count updates via `library::
+    /// stats::record_play`, and (via `playback_faults.rs`, `pub(super)` so
+    /// that sibling module can reach it) to resolve/mark tracks on a
+    /// playback failure.
+    pub(super) conn: Rc<RefCell<Connection>>,
     /// `(track_id, duration_ms)` of the track currently loaded, set by
     /// `play_track_id` and cleared once play tracking has been evaluated for
     /// it (see `evaluate_play_tracking`). `None` when no track is loaded.
@@ -196,10 +191,11 @@ pub struct PlayerController {
     max_position_ms: Cell<i64>,
     /// The playback queue (Stage 2 Task 3/4): track order, shuffle, and
     /// repeat mode. `play_from_view` seeds it; `TrackFinished`/the
-    /// previous/next buttons step through it. See the module's `## Queue
-    /// borrow discipline` doc section for the rule every call site here
-    /// follows.
-    queue: RefCell<Queue>,
+    /// previous/next buttons step through it. `pub(super)` so `mpris_mirror.
+    /// rs` and `playback_faults.rs` can borrow it too — see the module's
+    /// `## Queue borrow discipline` doc section for the rule every call site
+    /// (in any of the three files) follows.
+    pub(super) queue: RefCell<Queue>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -208,30 +204,35 @@ pub struct PlayerController {
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
-    /// every `Player::play` success; incremented by `skip_after_failure`,
-    /// which consults `should_stop_skipping` against this value and the
+    /// every `Player::play` success; incremented by `playback_faults.rs`'s
+    /// `skip_after_failure` (`pub(super)` so that sibling module can reach
+    /// it), which consults `should_stop_skipping` against this value and the
     /// queue's length to bound the skip chain. See the module's `## Fault
     /// tolerance` doc section.
-    consecutive_skips: Cell<usize>,
+    pub(super) consecutive_skips: Cell<usize>,
     /// Shared with `mpris.rs`'s D-Bus thread — see the module's `## MPRIS`
-    /// doc section. Written by `update_mpris_mirror`, never read directly
-    /// here (the MPRIS thread is the only reader).
-    mpris_state: SharedMprisState,
+    /// doc section. Written by `mpris_mirror.rs`'s `update_mpris_mirror`,
+    /// never read directly here (the MPRIS thread is the only reader).
+    /// `pub(super)` so that sibling module can reach it.
+    pub(super) mpris_state: SharedMprisState,
     /// Title/artist/album/duration of the currently-loaded track, for
-    /// `update_mpris_mirror` to build `mpris::MprisState`'s `Metadata`
-    /// fields from — see the module's `## MPRIS` doc section for why this
-    /// duplicates `current_track`'s id/duration rather than reusing it.
-    now_playing: RefCell<Option<NowPlaying>>,
+    /// `mpris_mirror.rs`'s `update_mpris_mirror` to build `mpris::MprisState`'s
+    /// `Metadata` fields from — see the module's `## MPRIS` doc section for
+    /// why this duplicates `current_track`'s id/duration rather than reusing
+    /// it. `pub(super)` so that sibling module can reach it.
+    pub(super) now_playing: RefCell<Option<NowPlaying>>,
 }
 
-/// See `PlayerController::now_playing`'s doc comment.
+/// See `PlayerController::now_playing`'s doc comment. Fields are `pub(super)`
+/// (like `now_playing` itself) so `mpris_mirror.rs`'s `update_mpris_mirror`
+/// can read them to build `mpris::MprisState`'s `Metadata` fields.
 #[derive(Debug, Clone)]
-struct NowPlaying {
-    id: i64,
-    title: String,
-    artist: String,
-    album: String,
-    duration_ms: i64,
+pub(super) struct NowPlaying {
+    pub(super) id: i64,
+    pub(super) title: String,
+    pub(super) artist: String,
+    pub(super) album: String,
+    pub(super) duration_ms: i64,
 }
 
 impl PlayerController {
@@ -290,8 +291,8 @@ impl PlayerController {
 
         // Mirrors the drain loop above exactly (see the module's `## MPRIS`
         // doc section): a `Weak` controller reference, broken FIFO drain of
-        // one `async_channel::Receiver`, one event/command applied per
-        // iteration.
+        // one `async_channel::Receiver`, one command applied per iteration
+        // via `mpris_mirror.rs`'s `handle_mpris_command`.
         let weak = Rc::downgrade(&controller);
         glib::spawn_future_local(async move {
             while let Ok(command) = mpris_receiver.recv().await {
@@ -319,10 +320,11 @@ impl PlayerController {
     }
 
     /// Injects the callback that refreshes the track list after a track is
-    /// marked missing (see `handle_unplayable_track`), once the track list
-    /// exists. `window::build` supplies a closure over a `Weak<TrackList>`,
-    /// not a strong `Rc` — see the module's `## Toast + track-list-reload
-    /// seam` doc section for why a strong reference here would leak.
+    /// marked missing (see `playback_faults.rs`'s `handle_unplayable_track`),
+    /// once the track list exists. `window::build` supplies a closure over a
+    /// `Weak<TrackList>`, not a strong `Rc` — see the module's `## Toast +
+    /// track-list-reload seam` doc section for why a strong reference here
+    /// would leak.
     pub fn set_track_list_reload(&self, reload: impl Fn() + 'static) {
         *self.reload_track_list.borrow_mut() = Some(Rc::new(reload));
     }
@@ -358,21 +360,23 @@ impl PlayerController {
     /// playback — the one place that actually calls `Player::play`, shared
     /// by `play_from_view` and every queue-stepping call site
     /// (`TrackFinished`'s auto-advance, the previous/next buttons,
-    /// `skip_after_failure`'s auto-skip) so the "resolve, evaluate prior play
-    /// tracking, start playback, handle failure" sequence exists exactly once
-    /// (DRY). Ends the previous track's listening session first
-    /// (`evaluate_play_tracking`, same as the old per-`Track` `play_track`
-    /// did) — a queue step is still a track switch. On success, resets
-    /// `consecutive_skips` to 0 (Stage 2 Task 5: a good track breaks any
-    /// skip chain in progress). On a `Player::play` failure, hands off to
-    /// `handle_unplayable_track` (diagnose missing-vs-corrupt, mark/toast,
-    /// then auto-skip via `skip_after_failure`) rather than resetting
-    /// outright — see the module's `## Fault tolerance` doc section. A
-    /// missing DB row or a query failure has no title/path to build a toast
-    /// from, so those two cases just log and go straight to
+    /// `playback_faults.rs`'s `skip_after_failure` auto-skip) so the
+    /// "resolve, evaluate prior play tracking, start playback, handle
+    /// failure" sequence exists exactly once (DRY). Ends the previous
+    /// track's listening session first (`evaluate_play_tracking`, same as
+    /// the old per-`Track` `play_track` did) — a queue step is still a track
+    /// switch. On success, resets `consecutive_skips` to 0 (Stage 2 Task 5:
+    /// a good track breaks any skip chain in progress). On a `Player::play`
+    /// failure, hands off to `playback_faults.rs`'s `handle_unplayable_track`
+    /// (diagnose missing-vs-corrupt, mark/toast, then auto-skip via `skip_
+    /// after_failure`) rather than resetting outright — see that module's
+    /// doc comment. A missing DB row or a query failure has no title/path to
+    /// build a toast from, so those two cases just log and go straight to
     /// `skip_after_failure` (still counted against the skip-loop guard, so a
-    /// queue of entirely-vanished rows can't spin forever either).
-    fn play_track_id(&self, id: i64) {
+    /// queue of entirely-vanished rows can't spin forever either). `pub
+    /// (super)` so `mpris_mirror.rs`'s `mpris_play` and `playback_faults.rs`'s
+    /// `skip_after_failure` can call it too.
+    pub(super) fn play_track_id(&self, id: i64) {
         self.evaluate_play_tracking();
 
         let summary = {
@@ -400,16 +404,16 @@ impl PlayerController {
                         // prev/next transport buttons, and MPRIS's
                         // `Previous`/`Play` commands can resume playback from
                         // Stopped straight through this arm (see
-                        // `apply_mpris_command`) without ever going through
-                        // `set_queue`/`play_from_view`, the only other call
-                        // sites that re-enable them. Re-deriving and applying
-                        // the enabled state here, on every successful
-                        // playback start, keeps the on-screen buttons in
-                        // sync with MPRIS-driven transitions too — hoisted
-                        // into its own statement first so no `queue` borrow
-                        // is alive across the `set_transport_enabled` call
-                        // (see the module's `## Queue borrow discipline` doc
-                        // section).
+                        // `mpris_mirror.rs`'s `handle_mpris_command`) without
+                        // ever going through `set_queue`/`play_from_view`,
+                        // the only other call sites that re-enable them.
+                        // Re-deriving and applying the enabled state here, on
+                        // every successful playback start, keeps the
+                        // on-screen buttons in sync with MPRIS-driven
+                        // transitions too — hoisted into its own statement
+                        // first so no `queue` borrow is alive across the
+                        // `set_transport_enabled` call (see the module's
+                        // `## Queue borrow discipline` doc section).
                         let queue_has_tracks = !self.queue.borrow().is_empty();
                         self.bar.set_transport_enabled(queue_has_tracks);
                         tracing::debug!(
@@ -444,115 +448,13 @@ impl PlayerController {
         }
     }
 
-    /// Diagnoses and reports a playback failure for `id` (shared by
-    /// `play_track_id`'s `Player::play` failure branch and `apply_event`'s
-    /// `PlayerEvent::Error` arm — see the module's `## Fault tolerance` doc
-    /// section), then always calls `skip_after_failure` to move on. Re-
-    /// resolves `id`'s `TrackSummary` independently (rather than requiring
-    /// callers to pass one in) so both call sites can share this one
-    /// function even though only `play_track_id` already has a summary in
-    /// hand — one extra small `SELECT` on the failure path is a non-issue
-    /// next to never crashing.
-    fn handle_unplayable_track(&self, id: i64) {
-        let summary = {
-            let conn = self.conn.borrow();
-            queries::query_track_summary(&conn, id)
-        };
-
-        match summary {
-            Ok(Some(summary)) => {
-                if std::path::Path::new(&summary.path).exists() {
-                    tracing::error!(
-                        track_id = id,
-                        path = %summary.path,
-                        title = %summary.title,
-                        "playback failed for a file that still exists; skipping"
-                    );
-                    self.show_toast(&strings::could_not_play_toast(&summary.title));
-                } else {
-                    tracing::error!(
-                        track_id = id,
-                        path = %summary.path,
-                        title = %summary.title,
-                        "file no longer exists on disk; marking missing and skipping"
-                    );
-                    let mark_result = {
-                        let conn = self.conn.borrow();
-                        queries::mark_track_missing(&conn, id)
-                    };
-                    match mark_result {
-                        Ok(()) => {
-                            self.show_toast(&strings::file_missing_toast(&summary.title));
-                            self.reload_track_list();
-                        }
-                        Err(error) => {
-                            // The row still shows in the list, but playback
-                            // already failed and is about to be skipped — the
-                            // user still needs to know *something* went
-                            // wrong, so fall back to the generic toast rather
-                            // than showing nothing.
-                            tracing::error!(%error, track_id = id, "failed to mark track missing");
-                            self.show_toast(&strings::could_not_play_toast(&summary.title));
-                        }
-                    }
-                }
-            }
-            Ok(None) => {
-                tracing::warn!(
-                    track_id = id,
-                    "playback failed and the track's row is already gone; skipping without marking"
-                );
-            }
-            Err(error) => {
-                tracing::error!(%error, track_id = id, "failed to resolve track after a playback failure");
-            }
-        }
-
-        self.skip_after_failure();
-    }
-
-    /// The one shared skip-loop guard (Stage 2 Task 5 — see the module's
-    /// `## Fault tolerance` doc section): increments `consecutive_skips`,
-    /// then either advances the queue and plays the next track, or — once
-    /// `should_stop_skipping` says the chain is bounded by the queue's own
-    /// length — gives up, toasts, and resets to stopped instead of spinning
-    /// through an entirely-broken queue forever. Borrow discipline: `len()`
-    /// and (further down) `next_manual()` each run inside their own `let`
-    /// statement, so no `queue` borrow is alive when `play_track_id`/
-    /// `reset_to_stopped` run — see the module's `## Queue borrow
-    /// discipline` doc section.
-    fn skip_after_failure(&self) {
-        let queue_len = self.queue.borrow().len();
-        let skips = self.consecutive_skips.get() + 1;
-        self.consecutive_skips.set(skips);
-
-        if should_stop_skipping(skips, queue_len) {
-            tracing::error!(
-                skips,
-                queue_len,
-                "too many consecutive unplayable tracks; stopping playback"
-            );
-            self.consecutive_skips.set(0);
-            self.reset_to_stopped();
-            self.show_toast(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE);
-            return;
-        }
-
-        let next = self.queue.borrow_mut().next_manual();
-        match next {
-            Some(next_id) => self.play_track_id(next_id),
-            None => {
-                self.consecutive_skips.set(0);
-                self.reset_to_stopped();
-            }
-        }
-    }
-
     /// Shows `text` as an `adw::Toast` on the window's toast overlay, if one
     /// has been wired via `set_toast_overlay` and is still alive — degrades
     /// to a warn log otherwise (never unwraps the `WeakRef` upgrade). See the
-    /// module's `## Toast + track-list-reload seam` doc section.
-    fn show_toast(&self, text: &str) {
+    /// module's `## Toast + track-list-reload seam` doc section. `pub(super)`
+    /// so `playback_faults.rs`'s `handle_unplayable_track`/`skip_after_
+    /// failure` can call it too.
+    pub(super) fn show_toast(&self, text: &str) {
         match self.toast_overlay.upgrade() {
             Some(overlay) => overlay.add_toast(adw::Toast::new(text)),
             None => {
@@ -569,8 +471,9 @@ impl PlayerController {
     /// the `queue` borrow discipline elsewhere in this file (see the
     /// module's `## Toast + track-list-reload seam` doc section for why this
     /// one field can currently never be re-entered, but the hoist keeps the
-    /// same shape regardless).
-    fn reload_track_list(&self) {
+    /// same shape regardless). `pub(super)` so `playback_faults.rs`'s
+    /// `handle_unplayable_track` can call it too.
+    pub(super) fn reload_track_list(&self) {
         let reload = self.reload_track_list.borrow().clone();
         match reload {
             Some(reload) => reload(),
@@ -658,11 +561,11 @@ impl PlayerController {
                 // Stage 2 Task 5: this can fire asynchronously for the
                 // *currently loaded* queue track (e.g. GStreamer resolving a
                 // "file not found"/decode error after `play_track_id`
-                // already returned `Ok`) — see the module's `## Fault
-                // tolerance` doc section. Only treat it as a per-track
-                // failure (diagnose + toast + auto-skip) when there is a
-                // current track to attribute it to; otherwise fall back to
-                // the pre-Task-5 behavior (log + reset) rather than guessing.
+                // already returned `Ok`) — see `playback_faults.rs`'s doc
+                // comment. Only treat it as a per-track failure (diagnose +
+                // toast + auto-skip) when there is a current track to
+                // attribute it to; otherwise fall back to the pre-Task-5
+                // behavior (log + reset) rather than guessing.
                 match self.current_track.get() {
                     Some((id, _)) => {
                         tracing::error!(%message, track_id = id, "player error during queue track playback");
@@ -689,8 +592,10 @@ impl PlayerController {
     /// through `apply_event` — so the bar isn't reset twice. If `stop()`
     /// itself fails, though, that event never fires, so the bar is reset
     /// directly right here instead: the UI must still land in a consistent
-    /// stopped state even when stopping the pipeline errors out.
-    fn reset_to_stopped(&self) {
+    /// stopped state even when stopping the pipeline errors out. `pub
+    /// (super)` so `mpris_mirror.rs`'s `handle_mpris_command`/`mpris_play`
+    /// and `playback_faults.rs`'s `skip_after_failure` can call it too.
+    pub(super) fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
         self.bar.set_transport_enabled(false);
         // Stage 2 Task 6: cleared and mirrored unconditionally, before
@@ -712,66 +617,12 @@ impl PlayerController {
         }
     }
 
-    /// Recomputes the MPRIS mirror from current controller state and writes
-    /// it into the shared `Arc<Mutex<mpris::MprisState>>` — see the module's
-    /// `## MPRIS` doc section for the full list of call sites and why they
-    /// cover every real transition. `status` is passed in rather than read
-    /// from anywhere: callers always already know it more directly (the
-    /// `PlayerEvent::StateChanged` payload, or the status `play_track_id`/
-    /// `reset_to_stopped` are about to put the player into) than this
-    /// function could re-derive it.
-    ///
-    /// `can_next`/`can_prev` both mirror `queue.is_empty()`'s negation — the
-    /// same granularity `PlayerBar::set_transport_enabled` already uses
-    /// (see `play_from_view`): this app doesn't compute a finer "not at the
-    /// first/last track" distinction anywhere else either, so MPRIS clients
-    /// see exactly the same enabled/disabled transport state the on-screen
-    /// buttons do, rather than inventing new semantics here.
-    ///
-    /// Borrow discipline: `queue.borrow()` is read and dropped inside this
-    /// one statement; nothing after it calls back into `queue`, `player`, or
-    /// GTK, so there's no re-entrancy hazard here the way there is at the
-    /// other call sites documented in the module's `## Queue borrow
-    /// discipline` section — the shape is kept consistent anyway.
-    fn update_mpris_mirror(&self, status: MprisPlaybackStatus) {
-        let queue_has_tracks = !self.queue.borrow().is_empty();
-        let now_playing = self.now_playing.borrow().clone();
-
-        let new_state = match now_playing {
-            Some(track) => MprisState {
-                status,
-                track_id: Some(track.id),
-                title: track.title,
-                artist: track.artist,
-                album: track.album,
-                duration_ms: track.duration_ms,
-                can_next: queue_has_tracks,
-                can_prev: queue_has_tracks,
-            },
-            None => MprisState {
-                status,
-                track_id: None,
-                title: String::new(),
-                artist: String::new(),
-                album: String::new(),
-                duration_ms: 0,
-                can_next: queue_has_tracks,
-                can_prev: queue_has_tracks,
-            },
-        };
-
-        let mut mirror = self
-            .mpris_state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *mirror = new_state;
-    }
-
     /// Toggles play/pause on the player — shared by the bar's play/pause
     /// button and MPRIS's `PlayPause` method (see the module's `## MPRIS`
     /// doc section). Logs and no-ops on failure, matching the prior inline
-    /// button-closure behavior.
-    fn toggle_pause(&self) {
+    /// button-closure behavior. `pub(super)` so `mpris_mirror.rs` can call it
+    /// too.
+    pub(super) fn toggle_pause(&self) {
         if let Err(error) = self.player.toggle_pause() {
             tracing::error!(%error, "toggle play/pause failed");
         }
@@ -782,8 +633,9 @@ impl PlayerController {
     /// MPRIS's `Previous` method. Borrow discipline: `previous()` runs
     /// inside this one `let` statement, so the borrow drops before
     /// `play_track_id`/`reset_to_stopped` run — see the module's `## Queue
-    /// borrow discipline` doc section.
-    fn previous(&self) {
+    /// borrow discipline` doc section. `pub(super)` so `mpris_mirror.rs` can
+    /// call it too.
+    pub(super) fn previous(&self) {
         let previous = self.queue.borrow_mut().previous();
         match previous {
             Some(id) => self.play_track_id(id),
@@ -793,74 +645,14 @@ impl PlayerController {
 
     /// Steps the queue to the next track and plays it (or resets to stopped
     /// if there is none) — shared by the bar's next button and MPRIS's
-    /// `Next` method. Same borrow discipline as `previous`.
-    fn next(&self) {
+    /// `Next` method. Same borrow discipline as `previous`. `pub(super)` so
+    /// `mpris_mirror.rs` can call it too.
+    pub(super) fn next(&self) {
         let next = self.queue.borrow_mut().next_manual();
         match next {
             Some(id) => self.play_track_id(id),
             None => self.reset_to_stopped(),
         }
-    }
-
-    /// Dispatches one command received from `mpris.rs`'s D-Bus thread (see
-    /// the module's `## MPRIS` doc section) — the MPRIS drain loop's only
-    /// caller. `Stop` maps directly to `reset_to_stopped` (MPRIS has no
-    /// weaker "pause and forget position" stop semantics to preserve here);
-    /// `Next`/`Previous` map directly to the same named methods the bar
-    /// buttons call. `Play`/`Pause`/`PlayPause` need their own small
-    /// handling — see `mpris_play`/`mpris_pause`'s doc comments for why they
-    /// aren't just `toggle_pause`.
-    fn handle_mpris_command(&self, command: MprisCommand) {
-        match command {
-            MprisCommand::Play => self.mpris_play(),
-            MprisCommand::Pause => self.mpris_pause(),
-            MprisCommand::PlayPause => self.toggle_pause(),
-            MprisCommand::Stop => self.reset_to_stopped(),
-            MprisCommand::Next => self.next(),
-            MprisCommand::Previous => self.previous(),
-        }
-    }
-
-    /// MPRIS `Play`: per spec, starts or resumes playback — unlike
-    /// `PlayPause`, it must not stop an already-playing track. Reads the
-    /// current status from the MPRIS mirror (kept current by `update_mpris_
-    /// mirror`) rather than adding a new `Player` query method purely for
-    /// this: paused resumes via `toggle_pause`; stopped starts the queue's
-    /// current track via `play_track_id`, if there is one; already playing
-    /// is a no-op.
-    fn mpris_play(&self) {
-        match self.mpris_status() {
-            MprisPlaybackStatus::Playing => {}
-            MprisPlaybackStatus::Paused => self.toggle_pause(),
-            MprisPlaybackStatus::Stopped => {
-                let current = self.queue.borrow().current();
-                match current {
-                    Some(id) => self.play_track_id(id),
-                    None => {
-                        tracing::debug!("MPRIS Play: queue is empty; nothing to play");
-                    }
-                }
-            }
-        }
-    }
-
-    /// MPRIS `Pause`: per spec, pauses — a no-op unless currently playing
-    /// (unlike `PlayPause`, must not *resume* a paused track). See `mpris_
-    /// play`'s doc comment for why this reads the mirror rather than adding
-    /// a new `Player` query method.
-    fn mpris_pause(&self) {
-        if self.mpris_status() == MprisPlaybackStatus::Playing {
-            self.toggle_pause();
-        }
-    }
-
-    /// The MPRIS mirror's current `status` field — poisoned-recovery lock,
-    /// same pattern `player.rs` uses everywhere it locks a mutex.
-    fn mpris_status(&self) -> MprisPlaybackStatus {
-        self.mpris_state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .status
     }
 }
 
@@ -943,18 +735,6 @@ fn wire_bar_controls(controller: &Rc<PlayerController>) {
     });
 }
 
-/// Maps `player::PlaybackState` to `mpris::MprisPlaybackStatus` — the one
-/// explicit conversion between the two (see the module's `## MPRIS` doc
-/// section for why they're deliberately separate types). Pure, so it's
-/// unit-testable directly like `cycle_repeat`/`should_stop_skipping` below.
-fn mpris_status_from_playback_state(state: PlaybackState) -> MprisPlaybackStatus {
-    match state {
-        PlaybackState::Playing => MprisPlaybackStatus::Playing,
-        PlaybackState::Paused => MprisPlaybackStatus::Paused,
-        PlaybackState::Stopped => MprisPlaybackStatus::Stopped,
-    }
-}
-
 /// Cycles the repeat mode in the mockup's button order: Off -> All -> One ->
 /// Off. Pure (no `Queue`/GTK access) so it's unit-testable directly.
 fn cycle_repeat(current: Repeat) -> Repeat {
@@ -963,18 +743,6 @@ fn cycle_repeat(current: Repeat) -> Repeat {
         Repeat::All => Repeat::One,
         Repeat::One => Repeat::Off,
     }
-}
-
-/// The skip-loop guard's pure decision (Stage 2 Task 5 — see the module's
-/// `## Fault tolerance` doc section): whether `skip_after_failure` should
-/// give up rather than skip to yet another track. `true` once
-/// `consecutive_skips` has reached `queue_len` (an upper bound; if Repeat::Off
-/// and playback started mid-queue, `next_manual` reaching the physical end
-/// may trigger an earlier stop) or when the queue is empty to begin with
-/// (nothing to skip to at all). Pure (no `Queue`/GTK/DB access) so it's
-/// unit-testable directly.
-fn should_stop_skipping(consecutive_skips: usize, queue_len: usize) -> bool {
-    queue_len == 0 || consecutive_skips >= queue_len
 }
 
 /// Arms `REPRISE_SMOKE_REPEAT=all` (see the const's doc comment above):
@@ -1007,8 +775,7 @@ fn arm_smoke_repeat(controller: &Rc<PlayerController>) {
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 #[cfg(test)]
@@ -1016,47 +783,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mpris_status_mirrors_playback_state() {
-        assert_eq!(
-            mpris_status_from_playback_state(PlaybackState::Playing),
-            MprisPlaybackStatus::Playing
-        );
-        assert_eq!(
-            mpris_status_from_playback_state(PlaybackState::Paused),
-            MprisPlaybackStatus::Paused
-        );
-        assert_eq!(
-            mpris_status_from_playback_state(PlaybackState::Stopped),
-            MprisPlaybackStatus::Stopped
-        );
-    }
-
-    #[test]
     fn cycle_repeat_goes_off_all_one_off() {
         assert_eq!(cycle_repeat(Repeat::Off), Repeat::All);
         assert_eq!(cycle_repeat(Repeat::All), Repeat::One);
         assert_eq!(cycle_repeat(Repeat::One), Repeat::Off);
-    }
-
-    #[test]
-    fn should_stop_skipping_table() {
-        // (consecutive_skips, queue_len, expected)
-        let cases = [
-            (0, 0, true),  // empty queue: nothing to skip to, stop immediately
-            (1, 0, true),  // empty queue always stops, regardless of skips
-            (0, 3, false), // no skips yet: keep going
-            (1, 3, false), // fewer skips than the queue is long: keep going
-            (2, 3, false), // still fewer than queue_len: keep going
-            (3, 3, true),  // skips == queue_len: bounded, stop
-            (4, 3, true),  // skips > queue_len: definitely stop
-            (1, 1, true),  // single-track queue: one skip already exhausts it
-        ];
-        for (skips, queue_len, expected) in cases {
-            assert_eq!(
-                should_stop_skipping(skips, queue_len),
-                expected,
-                "should_stop_skipping({skips}, {queue_len}) should be {expected}"
-            );
-        }
     }
 }
