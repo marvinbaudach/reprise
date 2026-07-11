@@ -64,14 +64,31 @@ Nachfolger:
 - Rhythmbox-Import: `rhythmdb.xml` (Bewertungen, Play Counts, zuletzt
   gespielt) und `playlists.xml`, mit Pfad-Abgleich gegen die gescannte
   Bibliothek und Import-Bericht (Anzahl übernommen / nicht zugeordnet)
+- Browse-Leiste wie in Rhythmbox: einblendbare Filterspalten
+  Genre / Interpret / Album über der Titelliste, kombinierbar mit der Suche
+- Cover-Art-Pipeline: eingebettete Cover (lofty) und Bilddateien im
+  Albumordner (`cover.*`, `folder.*`), Thumbnail-Cache auf Platte
+- Drag & Drop: Titel in Playlists ziehen, Warteschlange und Playlists
+  per Drag umsortieren
+- Tastatur-Shortcuts: u. a. Leertaste Play/Pause, Strg+F Suche,
+  Entf Löschen-Dialog, Pfeiltasten-Navigation in der Liste
+- GNOME-Benachrichtigung bei Titelwechsel (Cover, Titel, Interpret)
+- Datei-Assoziation + Single-Instance: „Öffnen mit Musikbox" aus dem
+  Dateimanager; ein zweiter Start reicht die Dateien an die laufende
+  Instanz weiter
 
 ### Bewusst NICHT im MVP
 
-- Podcasts, Internetradio, Last.fm/Libre.fm-Scrobbling
+- Last.fm/Libre.fm-Scrobbling — aber **priorisiert als erstes Modul direkt
+  nach dem MVP** (der Nutzer scrobbelt aktiv; die Lücke soll kurz bleiben)
+- Podcasts, Internetradio
 - Schreiben von *Bewertungen* in Dateitags (Ratings bleiben in der DB;
   der Tag-Editor schreibt nur die klassischen Metadaten)
 - Regel-Editor für intelligente Playlists (die drei vordefinierten zuerst;
   das Regelsystem ist aber von Anfang an generisch)
+- Rhythmbox-Altlasten, die bewusst nicht übernommen werden:
+  CD rippen/brennen, DAAP-Sharing, FM-Radio, IM-Status
+- Crossfade und Online-Cover-Suche: spätere Module
 
 Nichts davon verbaut die Architektur — alle Punkte sind später ergänzbar.
 
@@ -106,7 +123,8 @@ musikbox/
 │   └── src/
 │       ├── library/            Scanner (walkdir + lofty), SQLite-Zugriff,
 │       │                       Watcher (notify), Tag-Schreiben, Löschen (trash),
-│       │                       Rhythmbox-Import (rhythmdb.xml, playlists.xml)
+│       │                       Rhythmbox-Import (rhythmdb.xml, playlists.xml),
+│       │                       Cover-Extraktion + Thumbnail-Cache
 │       ├── player/             GStreamer playbin3: Play/Pause/Seek, Gapless
 │       │                       (about-to-finish), Lautstärke; audio-filter-
 │       │                       Kette: rgvolume (ReplayGain) → equalizer-10bands
@@ -117,6 +135,7 @@ musikbox/
 └── src/                        React-Frontend
     ├── components/
     │   ├── sidebar/            Bibliothek / Playlisten / Intelligent
+    │   ├── browse-bar/         Filterspalten Genre / Interpret / Album
     │   ├── track-table/        Spaltenansicht, Sortierung, Sternebewertung
     │   ├── player-bar/         Infos, Transport, Lautstärke — rendert in den
     │   │                       Slot der gewählten Layout-Variante
@@ -199,7 +218,10 @@ sind als Einstellungen wählbar. Drei Zonen im Standard-Layout:
    PLAYLISTEN, INTELLIGENT; jeweils mit Track-Zähler. „Neue Playlist"-Aktion.
 2. **Hauptbereich** — Spaltenansicht: Titel / Interpret / Album / Jahr /
    Länge / Bewertung. Klick auf Spaltenkopf sortiert. Suchfeld
-   „Alle Felder durchsuchen" oben. Fußzeile mit Gesamtstatistik
+   „Alle Felder durchsuchen" oben. Einblendbare **Browse-Leiste**
+   (Rhythmbox' „Browse"): drei Filterspalten Genre / Interpret / Album
+   über der Titelliste, Auswahl filtert kaskadierend und kombiniert sich
+   mit der Suche. Fußzeile mit Gesamtstatistik
    („1.704 Titel, 4 Tage, 6 Std. 28 Min., 43,4 GB").
    Laufender Titel ist farblich hervorgehoben (Akzentzeile).
 3. **Playerleiste unten** (Spotify-Stil) — Cover + Titel/Interpret links,
@@ -270,7 +292,8 @@ Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
   Tag-Schreiben (Roundtrip lesen→schreiben→lesen), Smart-Playlist-Übersetzung
   Regeln→SQL, Queue-Logik (Shuffle/Repeat/Next), Play-Count-Schwelle,
   Lösch-Pfade (nur DB vs. Papierkorb), Rhythmbox-Import
-  (XML-Parsing, Pfad-Abgleich, Rating-Übernahme).
+  (XML-Parsing, Pfad-Abgleich, Rating-Übernahme), Browse-Facetten-Queries
+  (kaskadierende Filter + Suche kombiniert).
 - **Vitest + React Testing Library:** Sternebewertung, Suche/Filter,
   Tabellen-Sortierung, Player-Bar-Zustände, Tag-Editor-Dialog
   (Einzel-/Mehrfachauswahl), Lösch-Bestätigung.
@@ -292,8 +315,11 @@ Strings-Modul abgelegt (i18n-fähig, ohne Framework-Overhead jetzt).
   kopieren, Playlist-Export als M3U, Abgleich (nur Neues übertragen,
   Verwaistes optional entfernen). Erkennt angeschlossene Geräte über
   udev/gvfs; erscheint als eigener Sidebar-Eintrag „Geräte".
-- Scrobbling (Last.fm/Libre.fm), Podcasts, Internetradio — jeweils als
-  eigenes Modul über die bestehenden Erweiterungspunkte
+- **Scrobbling (Last.fm/Libre.fm)** — erstes Modul nach dem MVP
+  (priorisiert), damit die Hörhistorie beim Umstieg schnell weiterläuft
+- Podcasts, Internetradio — jeweils als eigenes Modul über die
+  bestehenden Erweiterungspunkte
+- Crossfade (GStreamer), Online-Cover-Suche (über `MetadataProvider`)
 - Fremd-Plugin-API: zur Laufzeit ladbare Plugins von Dritten (z. B. WASM)
   auf Basis derselben Erweiterungspunkte
 - Regel-Editor für Smart Playlists
