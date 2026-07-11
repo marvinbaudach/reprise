@@ -143,6 +143,13 @@ struct Shared {
     /// Shared by `wire_activate` (user activation) and the smoke-activate
     /// hook so both take the identical code path.
     on_activate: OnActivate,
+    /// Invoked at the end of every `reload()` — initial load, search-filter
+    /// changes, sort-header clicks, and the explicit `TrackList::reload()`
+    /// call `window.rs` makes after a scan completes. `window.rs` uses this
+    /// single hook to keep `status_bar::StatusBar` in sync rather than
+    /// scattering refresh calls across every place that can trigger a
+    /// reload.
+    on_reload: Box<dyn Fn()>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -154,8 +161,14 @@ pub struct TrackList {
 impl TrackList {
     /// Builds the track list and performs the initial load (unfiltered,
     /// default sort). `conn` is the shared UI-owned database connection;
-    /// `on_activate` receives the `Track` of every activated row.
-    pub fn new(conn: Rc<RefCell<Connection>>, on_activate: OnActivate) -> Self {
+    /// `on_activate` receives the `Track` of every activated row; `on_reload`
+    /// is called after every reload (see the `Shared::on_reload` doc
+    /// comment).
+    pub fn new(
+        conn: Rc<RefCell<Connection>>,
+        on_activate: OnActivate,
+        on_reload: impl Fn() + 'static,
+    ) -> Self {
         let store = gio::ListStore::new::<glib::BoxedAnyObject>();
         let selection = gtk4::NoSelection::new(Some(store.clone()));
 
@@ -235,6 +248,7 @@ impl TrackList {
             sort: RefCell::new(SortState::default()),
             filter: RefCell::new(String::new()),
             on_activate,
+            on_reload: Box::new(on_reload),
         });
 
         wire_sort_clicks(&column_view, &shared);
@@ -256,6 +270,13 @@ impl TrackList {
     /// after its own debounce timer fires.
     pub fn set_filter(&self, text: &str) {
         *self.shared.filter.borrow_mut() = text.to_string();
+        reload(&self.shared);
+    }
+
+    /// Re-runs the current sort/filter query and refreshes the list without
+    /// changing either — used by `window.rs` after a scan completes, so
+    /// newly added tracks show up without disturbing an active search.
+    pub fn reload(&self) {
         reload(&self.shared);
     }
 }
@@ -485,6 +506,8 @@ fn reload(shared: &Rc<Shared>) {
     apply_empty_state(shared, empty_state_for(count, has_filter));
 
     tracing::info!(count, field = %sort.field, dir = %sort.dir, filter = %filter, "loaded {count} tracks");
+
+    (shared.on_reload)();
 }
 
 /// Applies an `EmptyState` decision to the widget tree. For the two empty

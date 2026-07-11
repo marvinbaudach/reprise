@@ -1,10 +1,6 @@
 use crate::models::Track;
 use rusqlite::Connection;
 
-// Reserved for the status-bar work (not yet wired into any UI module);
-// silence dead-code warnings for this struct and its query until that lands
-// rather than removing code that the spec already calls for.
-#[allow(dead_code)]
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryStats {
@@ -98,9 +94,8 @@ pub fn query_track_window(
     rows.collect()
 }
 
-/// Aggregates library-wide stats over all non-missing tracks. Not yet called
-/// from the UI — reserved for the status-bar work (see `LibraryStats`).
-#[allow(dead_code)]
+/// Aggregates library-wide stats over all non-missing tracks. Powers the
+/// status line (`ui::status_bar`).
 pub fn query_library_stats(conn: &Connection) -> Result<LibraryStats, rusqlite::Error> {
     conn.query_row(
         "SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE missing = 0",

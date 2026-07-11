@@ -21,13 +21,21 @@ const APP_ID: &str = "org.reprise.Reprise";
 /// Dev/verification hook (not a user-facing feature): when set, a folder is
 /// scanned into the database synchronously at startup, before the window is
 /// shown, so headless tests (`xvfb-run`) can populate the library without a
-/// human driving the (not yet built — Task 10) scan-folder UI. Mirrors the
+/// human driving the folder-picker dialog (`ui::window`'s "Scan folder…"
+/// button) — a `gtk::FileDialog` portal prompt can't be driven headlessly,
+/// so this hook remains the permanent E2E path for scanning. Mirrors the
 /// `REPRISE_SMOKE_QUIT` pattern in `ui::window`.
 ///
 /// Usage: `REPRISE_SCAN_DIR=/path/to/music cargo run`.
 const SCAN_DIR_ENV_VAR: &str = "REPRISE_SCAN_DIR";
 
-fn db_path() -> std::path::PathBuf {
+/// The on-disk database path (honors `XDG_DATA_HOME` via `dirs::data_dir`,
+/// which is how headless E2E runs point the app at a scratch database
+/// without touching `~/.local/share/reprise`). `pub` so `ui::window` can
+/// hand the same path to scan-worker threads (Task 10): each worker opens
+/// its own `rusqlite::Connection` over this path rather than sharing the
+/// UI's `Rc<RefCell<Connection>>` across threads.
+pub fn db_path() -> std::path::PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("reprise/reprise.db")
@@ -75,7 +83,7 @@ fn main() -> glib::ExitCode {
     let app = adw::Application::builder().application_id(APP_ID).build();
 
     app.connect_activate(move |app| {
-        ui::window::build(app, conn.clone());
+        ui::window::build(app, conn.clone(), path.clone());
     });
 
     // No custom CLI arguments exist yet, so `run()` (which reads

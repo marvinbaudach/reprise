@@ -10,6 +10,20 @@ pub const EMPTY_LIBRARY_DESCRIPTION: &str = "Scan a folder to build your library
 pub const NO_RESULTS_TITLE: &str = "No results";
 pub const NO_RESULTS_DESCRIPTION: &str = "Try a different search.";
 
+// Scan flow (src/ui/window.rs).
+pub const SCAN_DIALOG_TITLE: &str = "Select Music Folder";
+pub const SCANNING: &str = "Scanning…";
+/// Prefix for the error toast shown after a failed scan; the underlying
+/// `ScanError`'s `Display` text is appended by the caller.
+pub const SCAN_FAILED_PREFIX: &str = "Scan failed: ";
+
+// Status bar (src/ui/status_bar.rs).
+pub const STATUS_TRACK_SINGULAR: &str = "track";
+pub const STATUS_TRACK_PLURAL: &str = "tracks";
+/// Middle-dot separator between the track count and total duration, per the
+/// design mockup (e.g. "1,704 tracks · 4 days, 6 hours and 28 minutes").
+pub const STATUS_SEPARATOR: &str = " · ";
+
 // Track list column headers (src/ui/track_list.rs).
 pub const COLUMN_TITLE: &str = "Title";
 pub const COLUMN_ARTIST: &str = "Artist";
