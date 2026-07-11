@@ -397,6 +397,40 @@ Reprise soll sich wie eine native GNOME-App anfühlen:
 - Löschen: Papierkorb-Fehler (z. B. Netzlaufwerk ohne Trash) werden gemeldet;
   es wird nie endgültig gelöscht, ohne dass der Nutzer das explizit wählt.
 
+## Logging & Diagnose
+
+Reprise soll sich aus der Konsole heraus vollständig beobachten lassen —
+wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
+
+- **Framework:** `tracing` + `tracing-subscriber` (EnvFilter). Die Konsole
+  (stderr) zeigt standardmäßig `INFO`; Feinsteuerung pro Modul über die
+  Umgebungsvariable `REPRISE_LOG` (z. B.
+  `REPRISE_LOG=reprise::library=debug,reprise::player=trace`), dazu das
+  CLI-Flag `--verbose`/`-v` als Abkürzung für Debug-Level.
+- **Start-Banner:** Version + Git-Commit, Pfade (DB, Einstellungen, Logs),
+  GStreamer- und WebKitGTK-Version, Session-Typ (Wayland/X11) — die
+  Infos, die in jedem Bug-Report als Erstes fehlen.
+- **Was geloggt wird:** jeder IPC-Command mit Dauer (Debug-Level,
+  Parameter gekürzt), Scanner-Fortschritt und Importfehler,
+  Watcher-Events, Player-Zustandswechsel und GStreamer-Bus-Fehler,
+  DB-Migrationen. Fehler immer mit Kontext (`WARN`/`ERROR`) — passend
+  zum Grundsatz „Fehler nie verschlucken".
+- **Logdatei:** zusätzlich zur Konsole nach `~/.local/state/reprise/logs/`
+  mit täglicher Rotation und begrenzter Aufbewahrung — auch bei Start
+  über das Dock ist nachträglich alles nachlesbar.
+- **Panic-Hook:** Panics landen mit Backtrace in der Logdatei, nicht nur
+  auf stderr.
+- **Frontend eingebunden:** schlanker Logger in `src/lib/log.ts`;
+  `console.*` bleibt für die DevTools, Fehler werden zusätzlich per IPC
+  (`log_frontend`) ins Backend-Log gespiegelt — eine gemeinsame
+  Zeitachse für beide Seiten. WebKit-DevTools in Debug-Builds per
+  Shortcut erreichbar (Tauri-`devtools`-Feature); in Release-Builds
+  über eine Umgebungsvariable zuschaltbar.
+- **GStreamer-Diagnose:** `GST_DEBUG` wirkt unverändert durch
+  (System-GStreamer), z. B. `GST_DEBUG=playbin:5` für Pipeline-Analyse.
+- **Grenzen:** Logs bleiben lokal (keine Telemetrie, siehe „Sicherheit");
+  keine sensiblen Inhalte über lokale Dateipfade hinaus.
+
 ## Testing
 
 - **Rust-Unit-Tests:** Scanner (Tag-Parsing, inkrementeller Rescan,
@@ -419,6 +453,29 @@ Reprise soll sich wie eine native GNOME-App anfühlen:
   `MetadataProvider`-Trait im Backend und ein aufklappbares Detail-Panel
   im Frontend — im MVP existiert nur die lokale Implementierung
   (Alben des Interpreten aus der eigenen Bibliothek).
+
+  *Design des Interpreten-Panels (Referenz-Mockup vom 2026-07-11):*
+  Das Panel öffnet rechts neben der Titelliste (schließbar), im 2a-Look:
+  - **Kopf:** Interpreten-Bild (Quelle über den `MetadataProvider`,
+    z. B. Fanart.tv/Wikimedia via MusicBrainz-Relationen; lokal
+    gecacht, Fallback: Platzhalter aus Initialen), Interpreten-Name,
+    Status-Badges „Aktiv" (grüner Punkt) und „Auf Tour"; Meta-Zeile
+    „142 Titel in deiner Bibliothek · Deathcore · seit 2018" —
+    Bibliotheks-Zähler lokal, Genre und Gründungsjahr via MusicBrainz.
+  - **Neue Veröffentlichung:** Karte mit Albumtitel und Erscheinungsdatum
+    („Album · erscheint 26. Sep 2026"), Aktion „Vormerken" — speist die
+    Vormerk-Liste des Radar-Moduls.
+  - **Tour <Jahr>:** Terminliste (Datum, Stadt, Venue); Termine in der
+    Nähe werden hervorgehoben („In deiner Nähe · 23 km", Ort aus den
+    Radar-Einstellungen) und bieten einen „Tickets"-Button (externer
+    Link zum Anbieter).
+  - **Fußzeile:** Quellen und Cache-Alter („Quellen: MusicBrainz ·
+    Bandsintown · aktualisiert vor 3 Std.").
+
+  Das Panel kombiniert lokale Bibliotheksdaten mit Radar-Daten:
+  Interpreten-Infos und Musik-Radar teilen sich Provider-Trait und
+  lokalen Cache — das Panel ist neben dem Sidebar-Eintrag „Radar" die
+  zweite Oberfläche derselben Daten.
 - **Lyrics:** Anzeige von Songtexten im Detail-Panel; Quellen: eingebettete
   Tags (USLT/Vorbis `LYRICS`, von lofty lesbar), `.lrc`-Dateien neben der
   Musikdatei, später Online-Quellen über dasselbe Provider-Trait.
@@ -443,7 +500,10 @@ Reprise soll sich wie eine native GNOME-App anfühlen:
      Einstellungen gesetzt — keine Standortabfrage.
   Eigener Sidebar-Eintrag „Radar" mit Benachrichtigungs-Badge; Ergebnisse
   werden lokal gecacht, API-Zugriffe rate-limitiert im Hintergrund.
-  Interpreten einzeln stummschaltbar.
+  Interpreten einzeln stummschaltbar. Dieselben Daten erscheinen
+  zusätzlich im Interpreten-Detail-Panel (siehe „Interpreten-/Album-
+  Infos" oben: Neue Veröffentlichung mit „Vormerken", Tourtermine mit
+  Nähe-Hinweis).
 - Podcasts, Internetradio — jeweils als eigenes Modul über die
   bestehenden Erweiterungspunkte
 - Crossfade (GStreamer), Online-Cover-Suche (über `MetadataProvider`)

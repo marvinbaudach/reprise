@@ -24,6 +24,7 @@
 - Rust edition 2021; TypeScript strict
 - Systemvoraussetzungen (Manjaro): `webkit2gtk-4.1`, `gstreamer`, `gst-plugins-base`, `gst-plugins-good`, `gst-plugins-bad`, `base-devel`, `nodejs`/`npm` — Task 1 prüft sie
 - Sicherheit (Spec-Abschnitt „Sicherheit"): strikte CSP ohne Remote-Quellen (Task 1), Capabilities minimal halten (nur `core:default` + explizit hinzugefügte Plugins), SQL nur parametrisiert, Sortierfelder per Whitelist (Task 4), Limits gedeckelt, keine Telemetrie
+- Logging von Anfang an (Spec-Abschnitt „Logging & Diagnose"): `tracing = "0.1"` + `tracing-subscriber = { version = "0.3", features = ["env-filter"] }`, initialisiert in Task 4 in `run()` (Konsole/stderr, Default `INFO`, Steuerung via `REPRISE_LOG`); IPC-Commands, Scanner und Player loggen Fehler mit Kontext statt sie nur als String zurückzugeben — Logdatei, Panic-Hook und `log_frontend` folgen in einer späteren Etappe
 
 ---
 
