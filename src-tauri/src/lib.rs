@@ -2,6 +2,7 @@ pub mod db;
 pub mod ipc;
 pub mod library;
 pub mod models;
+pub mod player;
 
 use ipc::AppState;
 use tracing_subscriber::EnvFilter;
@@ -39,10 +40,16 @@ pub fn run() {
         .manage(AppState {
             db: std::sync::Mutex::new(conn),
         })
+        .manage(player::PlayerState(std::sync::Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             ipc::get_track_window,
             ipc::scan_music_folder,
             ipc::get_library_stats,
+            player::play_track,
+            player::toggle_pause,
+            player::seek_to,
+            player::set_volume,
+            player::stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Reprise");
