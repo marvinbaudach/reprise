@@ -78,7 +78,7 @@ use std::collections::HashMap;
 
 use crate::library::playlists::{self, SmartPlaylist};
 use crate::models::Track;
-use crate::ui::view_source::ViewSource;
+use crate::view_source::ViewSource;
 use rusqlite::{Connection, OptionalExtension};
 
 /// Global constraint: window queries never return more rows than this in one
@@ -469,6 +469,17 @@ fn query_track_window_queue(
         .query_map(rusqlite::params_from_iter(slice.iter()), row_to_track)?
         .collect::<Result<_, _>>()?;
 
+    // invariant: an id in `ids` with no matching `tracks` row is silently
+    // dropped here (via `filter_map`), so this window's row count can be
+    // *less* than `slice.len()` — which `query_track_count`'s `Queue` arm
+    // does not account for (it returns `queue_ids.len()` verbatim). This is
+    // unreachable today: nothing in this codebase hard-deletes a `tracks`
+    // row (`mark_track_missing` only flips a flag), so every id ever placed
+    // in a queue keeps resolving to a row for the queue's lifetime. If a
+    // future feature adds a hard-delete path, `query_track_count`'s `Queue`
+    // arm must switch from `queue_ids.len()` to actually counting matched
+    // rows, or the two will disagree (see `queue_count_matches_window_row_
+    // count_when_all_ids_resolve` below, which pins today's no-drop case).
     let mut by_id: HashMap<i64, Track> = rows.into_iter().map(|t| (t.id, t)).collect();
     Ok(slice.iter().filter_map(|id| by_id.remove(id)).collect())
 }
@@ -612,6 +623,15 @@ pub fn query_track_count(
         ViewSource::Missing => query_track_count_missing(conn, filter),
         ViewSource::Playlist(id) => query_track_count_playlist(conn, *id, filter),
         ViewSource::Smart(id) => query_track_count_smart(conn, *id, filter),
+        // invariant: this assumes every id in `queue_ids` still resolves to
+        // a live `tracks` row — true today since nothing hard-deletes rows
+        // (`mark_track_missing` only flips a flag) — so `queue_ids.len()`
+        // and `query_track_window_queue`'s actual row count always agree.
+        // `query_track_window_queue` already silently drops any id with no
+        // matching row (see its own `invariant:` comment); if a future
+        // hard-delete path is added, this arm must count matched rows
+        // instead of trusting `queue_ids.len()` verbatim, or the two will
+        // desync (a `ColumnView` reporting more rows than it can render).
         ViewSource::Queue => Ok(queue_ids.len() as i64),
         ViewSource::ImportErrors => Ok(0),
     }
@@ -1523,9 +1543,14 @@ mod tests {
         .unwrap();
         assert_eq!(rows.len(), 10);
 
-        // The full 50-row set, in title order, has "Track 41".."Track 49"
-        // (alphabetically) at the tail — assert against the same fallback
-        // by re-deriving the first 50 titles directly.
+        // Minor fix (review round 1): the previous comment here claimed the
+        // tail of the 50-row set was "Track 41".."Track 49" — that's the
+        // *numeric* tail, not the lexicographic (`COLLATE NOCASE`) one this
+        // query actually produces (e.g. "Track 5" sorts before "Track 50").
+        // Rather than hand-picking (and mis-describing) the expected slice,
+        // re-derive it directly from the same lexicographic string sort Rust
+        // gives `Vec<String>::sort`, matching `title COLLATE NOCASE` for
+        // this all-ASCII fixture.
         let mut all_titles: Vec<String> = (1..=100).map(|i| format!("Track {i}")).collect();
         all_titles.sort();
         let expected = &all_titles[40..50];
@@ -1689,6 +1714,36 @@ mod tests {
             query_track_ids(&conn, &ViewSource::Queue, "x", "x", "", &queue_ids).unwrap(),
             queue_ids
         );
+    }
+
+    /// Defensive regression for the `Queue` count/window invariant noted at
+    /// both `query_track_count`'s `Queue` arm and `query_track_window_queue`:
+    /// when every id in `queue_ids` resolves to a live row (true today, since
+    /// nothing hard-deletes from `tracks`), `query_track_count`'s
+    /// `queue_ids.len()` must equal the actual number of rows a full-window
+    /// `query_track_window` call returns — no behavior change, just pinning
+    /// the assumption so a future hard-delete path trips this test instead
+    /// of silently desyncing the two.
+    #[test]
+    fn queue_count_matches_window_row_count_when_all_ids_resolve() {
+        let mut conn = seeded_conn_with_tracks(5);
+        let queue_ids = vec![5, 4, 3, 2, 1];
+
+        let count = query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap();
+        let rows = query_track_window(
+            &mut conn,
+            &ViewSource::Queue,
+            "ignored",
+            "ignored",
+            "",
+            0,
+            queue_ids.len() as i64,
+            &queue_ids,
+        )
+        .unwrap();
+
+        assert_eq!(count as usize, rows.len());
+        assert_eq!(count as usize, queue_ids.len());
     }
 
     // -- ImportErrors source -------------------------------------------------

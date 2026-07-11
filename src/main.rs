@@ -7,6 +7,7 @@ mod player;
 mod queries;
 mod queue;
 mod ui;
+mod view_source;
 
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -48,7 +48,7 @@ use crate::queries;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list_model::TrackListModel;
-use crate::ui::view_source::ViewSource;
+use crate::view_source::ViewSource;
 
 const STACK_PAGE_EMPTY: &str = "empty";
 const STACK_PAGE_LIST: &str = "list";
@@ -800,11 +800,71 @@ fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
     reload(shared);
 }
 
+/// Mirrors `queries.rs`'s `"playlist_order"` `SORT_WHITELIST` sentinel (see
+/// that module's `Playlist(id)` doc section) — the one sort field this
+/// module ever sets on a source switch rather than a column-header click.
+const PLAYLIST_ORDER_SORT_FIELD: &str = "playlist_order";
+
+/// Pure decision of what `shared.sort` should become when the track list
+/// switches to `source`, *before* the switch's reload runs — factored out of
+/// `set_source_and_reload` so it can be unit tested without building a live
+/// `TrackList` (constructing one requires an initialized GTK display, unlike
+/// this plain function).
+///
+/// `Some(sort)` names the exact default a newly-selected source forces
+/// regardless of whatever sort was previously active: today only `Playlist`
+/// does this, defaulting to `pt.position` order via the `"playlist_order"`
+/// sentinel (see `queries.rs`'s module doc) rather than the general
+/// `SortState::default()` (artist/asc) every other source starts from.
+///
+/// `None` means the new source has no forced default of its own — the
+/// caller (`set_source_and_reload`) then only needs to make sure a
+/// *previous* source's forced default doesn't linger: the `"playlist_order"`
+/// sentinel only resolves to valid SQL inside a query that joins
+/// `playlist_tracks` (i.e. only for `ViewSource::Playlist`), so leaving a
+/// playlist for any other source must reset it back to `SortState::
+/// default()` rather than silently keep sorting by a column expression the
+/// new source's query doesn't select.
+fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
+    match source {
+        ViewSource::Playlist(_) => Some(SortState {
+            field: PLAYLIST_ORDER_SORT_FIELD.to_string(),
+            dir: "asc".to_string(),
+        }),
+        ViewSource::Library | ViewSource::Smart(_) | ViewSource::Queue | ViewSource::Missing => {
+            None
+        }
+        ViewSource::ImportErrors => None,
+    }
+}
+
 /// Sets `shared.source` and reloads — the one place that mutates the source
 /// before reloading, shared by `TrackList::set_source` and the `REPRISE_
 /// SMOKE_SOURCE` dev hook (`arm_smoke_source`), so both switch sources
 /// through the identical code path.
+///
+/// Also resolves `shared.sort` via `default_sort_for_source` (CRITICAL fix,
+/// review round 1): without this, switching to a `Playlist` source reloaded
+/// with whatever sort was already active (`SortState::default()`'s artist/
+/// asc on first switch), never the playlist's own `pt.position` order — the
+/// `"playlist_order"` sentinel existed in `queries.rs`'s whitelist but was
+/// only ever exercised by that module's own unit tests, never by the live
+/// UI path. A column-header click (`on_sorter_changed`) still overrides
+/// this temporarily, exactly as before.
 fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
+    match default_sort_for_source(&source) {
+        Some(sort) => *shared.sort.borrow_mut() = sort,
+        None => {
+            // Leaving a playlist (or switching between two non-playlist
+            // sources while a stale playlist sort somehow lingers): drop the
+            // sentinel back to the general default rather than let it leak
+            // into a source whose query never joins `playlist_tracks`.
+            let leaving_playlist_sort = shared.sort.borrow().field == PLAYLIST_ORDER_SORT_FIELD;
+            if leaving_playlist_sort {
+                *shared.sort.borrow_mut() = SortState::default();
+            }
+        }
+    }
     *shared.source.borrow_mut() = source;
     reload(shared);
 }
@@ -1032,5 +1092,41 @@ mod empty_state_tests {
             empty_state_for(0, false, &ViewSource::Queue),
             EmptyState::EmptyLibrary
         );
+    }
+}
+
+#[cfg(test)]
+mod default_sort_for_source_tests {
+    use super::*;
+
+    /// CRITICAL fix (review round 1): a `Playlist` source must always
+    /// resolve to the `"playlist_order"` sentinel/asc, regardless of the id
+    /// it carries — this is what `set_source_and_reload` now applies to
+    /// `shared.sort` *before* reloading, which is the missing wiring that
+    /// let switching to a playlist silently reload with whatever sort
+    /// (usually artist/asc) was already active instead of `pt.position`.
+    #[test]
+    fn playlist_always_defaults_to_playlist_order_ascending() {
+        for id in [1, 2, 42] {
+            assert_eq!(
+                default_sort_for_source(&ViewSource::Playlist(id)),
+                Some(SortState {
+                    field: "playlist_order".to_string(),
+                    dir: "asc".to_string(),
+                })
+            );
+        }
+    }
+
+    /// Every non-Playlist source has no forced default of its own — the
+    /// caller (`set_source_and_reload`) is responsible for resetting away
+    /// from a lingering playlist sentinel in this case, not this function.
+    #[test]
+    fn non_playlist_sources_have_no_forced_default() {
+        assert_eq!(default_sort_for_source(&ViewSource::Library), None);
+        assert_eq!(default_sort_for_source(&ViewSource::Smart(1)), None);
+        assert_eq!(default_sort_for_source(&ViewSource::Queue), None);
+        assert_eq!(default_sort_for_source(&ViewSource::Missing), None);
+        assert_eq!(default_sort_for_source(&ViewSource::ImportErrors), None);
     }
 }

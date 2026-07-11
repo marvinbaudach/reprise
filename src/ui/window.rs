@@ -22,7 +22,7 @@ use super::player_controller::PlayerController;
 use super::status_bar::StatusBar;
 use super::strings;
 use super::track_list::{OnActivate, TrackList};
-use super::view_source::ViewSource;
+use crate::view_source::ViewSource;
 
 /// Debounce delay between the last keystroke in the search entry and the
 /// track-list reload it triggers, so fast typing doesn't fire a query per
