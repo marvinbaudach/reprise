@@ -262,6 +262,21 @@ impl Queue {
     pub fn is_empty(&self) -> bool {
         self.ids.is_empty()
     }
+
+    /// Every queued track id in current play order — reflecting shuffle, if
+    /// active — used by `ViewSource::Queue` (Stage 3 Task 3): `ui::
+    /// player_controller::queue_ids_snapshot` clones this out so the "Queue"
+    /// track-list view always shows the same order the queue will actually
+    /// play next, not just the ids as they were originally loaded by `set_
+    /// tracks`. `.get()` rather than direct indexing: `order`'s entries are
+    /// always valid indices into `ids` under this struct's own invariant,
+    /// but a defensive skip costs nothing and avoids ever panicking here.
+    pub fn ids_in_order(&self) -> Vec<i64> {
+        self.order
+            .iter()
+            .filter_map(|&idx| self.ids.get(idx).copied())
+            .collect()
+    }
 }
 
 impl Default for Queue {
@@ -532,6 +547,33 @@ mod tests {
     fn test_default_repeat_is_off() {
         let q = Queue::new();
         assert_eq!(q.repeat(), Repeat::Off);
+    }
+
+    #[test]
+    fn ids_in_order_matches_linear_order_when_unshuffled() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 0);
+        assert_eq!(q.ids_in_order(), vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn ids_in_order_reflects_shuffle() {
+        fastrand::seed(42);
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40, 50], 0);
+        q.set_shuffle(true);
+
+        let shuffled = q.ids_in_order();
+        assert_eq!(shuffled.len(), 5);
+        let mut sorted = shuffled.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, vec![10, 20, 30, 40, 50]);
+    }
+
+    #[test]
+    fn ids_in_order_is_empty_for_an_empty_queue() {
+        let q = Queue::new();
+        assert!(q.ids_in_order().is_empty());
     }
 
     // Fix 1: Sticky shuffle across set_tracks

@@ -654,6 +654,25 @@ impl PlayerController {
             None => self.reset_to_stopped(),
         }
     }
+
+    /// Snapshot of every queued track id in current play order (Stage 3
+    /// Task 3's `ViewSource::Queue` seam — see `queue::Queue::ids_in_order`'s
+    /// doc comment). `track_list.rs`'s queue-ids provider closure (wired in
+    /// `window::build`) calls this each time the track list reloads while
+    /// showing the Queue source, so that view always reflects the queue's
+    /// live state (including shuffle) rather than a stale copy. Hoisted
+    /// into its own `let` statement even though nothing here calls back
+    /// into `self` — consistent with every other `queue` access in this
+    /// file (see the module's `## Queue borrow discipline` doc section).
+    /// `pub(super)` so `track_list.rs` (a sibling module under `ui`) can
+    /// call it. No explicit hoisting `let` is needed here (unlike most other
+    /// `queue` accesses in this file): `ids_in_order()` returns an owned
+    /// `Vec`, so the temporary `Ref` this creates already drops at the end
+    /// of this one expression, before the function returns — there's no
+    /// second statement left for it to still be alive across.
+    pub(super) fn queue_ids_snapshot(&self) -> Vec<i64> {
+        self.queue.borrow().ids_in_order()
+    }
 }
 
 /// Wires the bar's user-input signals to player calls. Each closure holds a

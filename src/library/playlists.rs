@@ -20,9 +20,13 @@ pub struct PlaylistSummary {
 /// Smart playlist definition: rules (field/op/value, AND-joined), sort order,
 /// and optional limit.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SmartPlaylist {
     pub id: i64,
+    /// Not read yet outside tests: `queries.rs`'s `ViewSource::Smart`
+    /// handling only needs `rules_json`/`sort_field`/`sort_dir`/
+    /// `limit_count`. Task 4's sidebar will display this alongside `list`'s
+    /// `PlaylistSummary.name`.
+    #[allow(dead_code)]
     pub name: String,
     pub rules_json: String,
     pub sort_field: String,
@@ -296,7 +300,6 @@ pub fn move_position(
 /// Rules are AND-joined. Each rule is validated against whitelisted fields
 /// and operators; unknown field/op returns an error (never silently passes
 /// through — SQL injection surface).
-#[allow(dead_code)]
 pub fn smart_rules_to_sql(
     rules_json: &str,
 ) -> Result<(String, Vec<rusqlite::types::Value>), SmartRulesError> {
@@ -440,7 +443,6 @@ fn json_value_to_sql(v: &serde_json::Value) -> rusqlite::types::Value {
 }
 
 /// Lists all smart playlists.
-#[allow(dead_code)]
 pub fn list_smart(conn: &Connection) -> Result<Vec<SmartPlaylist>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT id, name, rules_json, sort_field, sort_dir, limit_count FROM smart_playlists",

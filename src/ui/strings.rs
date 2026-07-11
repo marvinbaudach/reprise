@@ -10,6 +10,13 @@ pub const EMPTY_LIBRARY_DESCRIPTION: &str = "Scan a folder to build your library
 pub const NO_RESULTS_TITLE: &str = "No results";
 pub const NO_RESULTS_DESCRIPTION: &str = "Try a different search";
 
+// Neutral "nothing here" empty state (src/ui/track_list.rs, Stage 3 Task 3):
+// shown for the Missing/ImportErrors sources when they have no rows and no
+// search filter is active — deliberately not the "no music yet" copy above,
+// which would read oddly for e.g. "no files are currently missing".
+pub const NOTHING_HERE_TITLE: &str = "Nothing here";
+pub const NOTHING_HERE_DESCRIPTION: &str = "This view has no tracks right now";
+
 // Scan flow (src/ui/window.rs).
 pub const SCAN_DIALOG_TITLE: &str = "Select Music Folder";
 pub const SCANNING: &str = "Scanning…";

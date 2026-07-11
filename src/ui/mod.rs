@@ -7,4 +7,5 @@ pub mod status_bar;
 pub mod strings;
 pub mod track_list;
 pub mod track_list_model;
+pub mod view_source;
 pub mod window;
