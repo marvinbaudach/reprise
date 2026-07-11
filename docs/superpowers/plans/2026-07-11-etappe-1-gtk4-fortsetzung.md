@@ -102,9 +102,11 @@
 
 ## Verifikation Etappe 1 (Definition of Done, GTK4-Fassung)
 
-- [ ] `cargo test` grün, `cargo clippy --all-targets` warnungsfrei
-- [ ] Headless-E2E aus Task 10 Step 4 bestanden (scan → list → play → EOS, fakesink)
-- [ ] Zweiter Scan desselben Ordners inkrementell (skipped, nichts verdoppelt)
-- [ ] **Hörprobe durch den Nutzer** (einziger nicht-headless Schritt): `cargo run`, echten Musikordner scannen, Doppelklick → Musik ist hörbar, Seek/Pause/Lautstärke funktionieren
+**✅ ETAPPE 1 ABGESCHLOSSEN (2026-07-11):**
+
+- [x] `cargo test` grün (36/36), `cargo clippy --all-targets -- -D warnings` warnungsfrei
+- [x] Headless-E2E aus Task 10 Step 4 bestanden (scan → list → play → EOS, fakesink; von der finalen Review unabhängig reproduziert)
+- [x] Zweiter Scan desselben Ordners inkrementell (added: 0, skipped_unchanged, keine Duplikate — auch in import_errors)
+- [x] **Hörprobe durch den Nutzer bestanden** („yeah das klappt", 2026-07-11; Log: scan → Playing → track finished → Stopped, 0 Fehler)
 
 **Nicht in Etappe 1** (unverändert): virtuelles Voll-Windowing, Browse-Leiste, Cover, Sidebar, Playlists, Bewertungen setzen, Warteschlange, MPRIS, Rhythmbox-Import, Tag-Editor, Löschen, Watcher, Einstellungen, EQ/ReplayGain, gettext, Flatpak.
