@@ -714,7 +714,7 @@ impl PlayerController {
     /// other call sites documented in the module's `## Queue borrow
     /// discipline` section — the shape is kept consistent anyway.
     fn update_mpris_mirror(&self, status: MprisPlaybackStatus) {
-        let can_control = !self.queue.borrow().is_empty();
+        let queue_has_tracks = !self.queue.borrow().is_empty();
         let now_playing = self.now_playing.borrow().clone();
 
         let new_state = match now_playing {
@@ -725,8 +725,8 @@ impl PlayerController {
                 artist: track.artist,
                 album: track.album,
                 duration_ms: track.duration_ms,
-                can_next: can_control,
-                can_prev: can_control,
+                can_next: queue_has_tracks,
+                can_prev: queue_has_tracks,
             },
             None => MprisState {
                 status,
@@ -735,8 +735,8 @@ impl PlayerController {
                 artist: String::new(),
                 album: String::new(),
                 duration_ms: 0,
-                can_next: can_control,
-                can_prev: can_control,
+                can_next: queue_has_tracks,
+                can_prev: queue_has_tracks,
             },
         };
 
