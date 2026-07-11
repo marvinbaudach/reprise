@@ -42,7 +42,9 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::format::format_duration;
+use crate::library::stats;
 use crate::models::Track;
+use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list_model::TrackListModel;
 
@@ -67,17 +69,6 @@ const ICON_EMPTY_LIBRARY: &str = "folder-music-symbolic";
 /// Icon shown when a search filter matched zero rows — distinct from the
 /// empty-library icon so the two states also read differently at a glance.
 const ICON_NO_RESULTS: &str = "system-search-symbolic";
-
-/// Ratings are stored as a plain `i32` with no CHECK constraint; clamp to a
-/// sane star-count range so corrupt/out-of-range data can never make the
-/// label render an absurd number of stars.
-const RATING_MIN: i32 = 0;
-const RATING_MAX: i32 = 5;
-
-/// Glyph used to render a star rating (not a translatable phrase — a visual
-/// symbol, like the icon names used elsewhere — so it lives here rather than
-/// in `strings.rs`).
-const RATING_STAR: &str = "★";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SortState {
@@ -130,6 +121,11 @@ pub type OnActivate = Box<dyn Fn(&Track)>;
 
 struct Shared {
     model: TrackListModel,
+    /// The same UI-owned connection `TrackList::new` was given, kept here
+    /// too (alongside the clone `TrackListModel` holds internally) so the
+    /// rating column's click handler can write through `library::stats`
+    /// without reaching into the model's private state.
+    conn: Rc<RefCell<Connection>>,
     stack: gtk4::Stack,
     /// The single empty-state placeholder widget. Its title/description/icon
     /// are mutated in place by `apply_empty_state` rather than swapping in a
@@ -166,7 +162,7 @@ impl TrackList {
         on_activate: OnActivate,
         on_reload: impl Fn() + 'static,
     ) -> Self {
-        let model = TrackListModel::new(conn);
+        let model = TrackListModel::new(conn.clone());
         let selection = gtk4::NoSelection::new(Some(model.clone()));
 
         let column_view = gtk4::ColumnView::builder()
@@ -215,15 +211,6 @@ impl TrackList {
             true,
             |t| format_duration(t.duration_ms),
         );
-        append_column(
-            &column_view,
-            "rating",
-            strings::COLUMN_RATING,
-            0.0,
-            false,
-            |t| RATING_STAR.repeat(t.rating.clamp(RATING_MIN, RATING_MAX) as usize),
-        );
-
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
             .vexpand(true)
@@ -239,6 +226,7 @@ impl TrackList {
 
         let shared = Rc::new(Shared {
             model,
+            conn,
             stack,
             empty_page,
             sort: RefCell::new(SortState::default()),
@@ -246,6 +234,14 @@ impl TrackList {
             on_activate,
             on_reload: Box::new(on_reload),
         });
+
+        // Built after `shared` exists (unlike the other columns above): its
+        // click handler needs `shared.conn`/`shared.model` to persist a
+        // rating write and refresh the model's cached row — see
+        // `append_rating_column`'s doc comment. Appended last, so it still
+        // lands as the rightmost column, matching the visual order the
+        // other five columns were just added in.
+        append_rating_column(&column_view, &shared);
 
         wire_sort_clicks(&column_view, &shared);
 
@@ -374,6 +370,121 @@ fn append_column(
 
     column_view.append_column(&column);
     column
+}
+
+/// Builds the interactive `Rating` column: each cell is a `RatingWidget`
+/// (`ui::rating`) instead of a `gtk::Label` — the one column whose factory
+/// writes back to the database on user interaction rather than only
+/// rendering a `Track` field. Requires a fully-built `shared` (its
+/// `conn`/`model` are used by the click handler), which is why
+/// `TrackList::new` calls this after constructing `Shared`, unlike the
+/// other five columns built by `append_column` beforehand.
+fn append_rating_column(
+    column_view: &gtk4::ColumnView,
+    shared: &Rc<Shared>,
+) -> gtk4::ColumnViewColumn {
+    let factory = gtk4::SignalListItemFactory::new();
+
+    factory.connect_setup(move |_, obj| {
+        let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+            tracing::warn!("rating column setup: object is not a ListItem");
+            return;
+        };
+        let rating_widget = RatingWidget::new();
+        item.set_child(Some(&rating_widget));
+    });
+
+    {
+        let shared = shared.clone();
+        factory.connect_bind(move |_, obj| {
+            let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+                tracing::warn!("rating column bind: object is not a ListItem");
+                return;
+            };
+            let Some(rating_widget) = item.child().and_then(|w| w.downcast::<RatingWidget>().ok())
+            else {
+                tracing::warn!("rating column bind: list item child is not a RatingWidget");
+                return;
+            };
+            let Some(boxed) = item
+                .item()
+                .and_then(|o| o.downcast::<glib::BoxedAnyObject>().ok())
+            else {
+                tracing::warn!("rating column bind: item is not a BoxedAnyObject<Track>");
+                return;
+            };
+            let track = boxed.borrow::<Track>();
+            // Programmatic display update only — `RatingWidget::set_rating`
+            // never invokes the `on_changed` callback, so this can never
+            // recurse into `on_rating_changed` below (see the module doc
+            // comment on `ui::rating`).
+            rating_widget.set_rating(track.rating);
+
+            let track_id = track.id;
+            let position = item.position();
+            let shared = shared.clone();
+            rating_widget.set_on_changed(move |new_rating| {
+                on_rating_changed(&shared, track_id, position, new_rating);
+            });
+        });
+    }
+
+    // Recycling guard: on unbind (the row is about to be rebound to a
+    // different `Track`, or the widget dropped off-screen entirely), clear
+    // the callback rather than leaving it pointed at the just-vacated
+    // `(track_id, position)` pair. `connect_bind` always installs a fresh
+    // one before the widget can be interacted with again, so this mainly
+    // closes off a race that's already vanishingly unlikely — but a no-op
+    // closure costs nothing and removes the possibility outright.
+    factory.connect_unbind(move |_, obj| {
+        let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let Some(rating_widget) = item.child().and_then(|w| w.downcast::<RatingWidget>().ok())
+        else {
+            return;
+        };
+        rating_widget.set_on_changed(|_| {});
+    });
+
+    let column = gtk4::ColumnViewColumn::builder()
+        .title(strings::COLUMN_RATING)
+        .factory(&factory)
+        .resizable(true)
+        .build();
+    column.set_id(Some("rating"));
+
+    // Dummy sorter: makes the header clickable/toggleable without ever
+    // reordering the model itself (SQL is the sort source of truth — see
+    // module doc comment).
+    let never_sorts = gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal);
+    column.set_sorter(Some(&never_sorts));
+
+    column_view.append_column(&column);
+    column
+}
+
+/// Persists a rating change via `library::stats::set_rating` and, on
+/// success, invalidates the model's cached copy of the affected row (see
+/// `TrackListModel::invalidate_window_at`) so a subsequent read — e.g.
+/// scrolling away and back — sees the freshly written value rather than the
+/// stale in-memory clone. A write failure is logged and otherwise swallowed
+/// (fault tolerance: a rating write must never crash or wedge the UI); the
+/// displayed rating already reflects the click (`RatingWidget::set_rating`
+/// ran before this is called), so the user sees no visible inconsistency
+/// unless they scroll away and back before the next successful write.
+fn on_rating_changed(shared: &Rc<Shared>, track_id: i64, position: u32, new_rating: i32) {
+    tracing::debug!(track_id, position, new_rating, "rating changed");
+    let result = {
+        let conn = shared.conn.borrow();
+        stats::set_rating(&conn, track_id, new_rating)
+    };
+    match result {
+        Ok(()) => shared.model.invalidate_window_at(position),
+        Err(error) => {
+            tracing::error!(%error, track_id, new_rating, "failed to persist rating change")
+        }
+    }
 }
 
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps

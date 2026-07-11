@@ -23,29 +23,59 @@
 //! controller drops, the next event breaks the loop, the receiver closes,
 //! and the player callback's `try_send` starts failing (logged at warn —
 //! that only happens during teardown).
+//!
+//! ## Play tracking
+//!
+//! `current_track`/`max_position_ms` track, per loaded track, the furthest
+//! playback position observed via `Position` events. Whenever a listening
+//! session ends — the track finishes, playback switches to a different
+//! track, or the player is reset to stopped after an error — an idempotent
+//! `evaluate_play_tracking` call checks `library::stats::should_count_play`
+//! against that high-water mark and `library::stats::record_play`s a play if
+//! it crosses the 50%-listened threshold, then clears the tracked state.
 
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::glib;
+use rusqlite::Connection;
 
+use crate::library::stats;
 use crate::models::Track;
 use crate::player::{PlaybackState, Player, PlayerError, PlayerEvent};
 use crate::ui::player_bar::PlayerBar;
 
 /// Owns the `Player` and its `PlayerBar`, routing user input from the bar to
 /// the player and `PlayerEvent`s from the player back onto the bar (on the
-/// GTK main thread — see the module doc comment).
+/// GTK main thread — see the module doc comment). Also owns play-count
+/// tracking (see the module's `## Play tracking` section below).
 pub struct PlayerController {
     player: Player,
     bar: PlayerBar,
+    /// The UI-owned database connection, shared with `track_list.rs` (see
+    /// `window::build`) — used only to write play-count updates via
+    /// `library::stats::record_play`.
+    conn: Rc<RefCell<Connection>>,
+    /// `(track_id, duration_ms)` of the track currently loaded, set by
+    /// `play_track` from the activated row's `Track` and cleared once play
+    /// tracking has been evaluated for it (see `evaluate_play_tracking`).
+    /// `None` when no track is loaded.
+    current_track: Cell<Option<(i64, i64)>>,
+    /// The highest playback position observed for `current_track` via
+    /// `Position` events — not the most recent one, so seeking backward
+    /// near the end of a track can't cost a listener credit for having
+    /// already passed the 50% mark. Reset to 0 whenever a new track starts.
+    max_position_ms: Cell<i64>,
 }
 
 impl PlayerController {
     /// Builds the player, the bar, and the event bridge between them.
-    /// Returns `Err` if GStreamer is unavailable (no playbin, bad
-    /// `REPRISE_AUDIO_SINK` override, …) — the caller decides how to degrade
-    /// (see `window::build`: library browsing keeps working without a bar).
-    pub fn new() -> Result<Rc<Self>, PlayerError> {
+    /// `conn` is the same UI-owned database connection `track_list.rs`
+    /// holds, used to record plays. Returns `Err` if GStreamer is
+    /// unavailable (no playbin, bad `REPRISE_AUDIO_SINK` override, …) — the
+    /// caller decides how to degrade (see `window::build`: library browsing
+    /// keeps working without a bar).
+    pub fn new(conn: Rc<RefCell<Connection>>) -> Result<Rc<Self>, PlayerError> {
         let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
 
         let player = Player::new(Box::new(move |event| {
@@ -59,6 +89,9 @@ impl PlayerController {
         let controller = Rc::new(Self {
             player,
             bar: PlayerBar::new(),
+            conn,
+            current_track: Cell::new(None),
+            max_position_ms: Cell::new(0),
         });
 
         wire_bar_controls(&controller);
@@ -83,14 +116,48 @@ impl PlayerController {
 
     /// Starts playback of `track` (row activation lands here). The bar's
     /// title/artist come straight from the activated row's `Track` — no
-    /// extra DB query. On failure: log and reset to stopped; the app keeps
-    /// running (fault-tolerance rule — a missing/corrupt file must never
-    /// crash or wedge the UI).
+    /// extra DB query. If another track is already loaded, its play
+    /// tracking is evaluated first (a switch, not a `TrackFinished`/`Stop`,
+    /// is still the end of that track's listening session). On failure to
+    /// start the new track: log and reset to stopped; the app keeps running
+    /// (fault-tolerance rule — a missing/corrupt file must never crash or
+    /// wedge the UI).
     pub fn play_track(&self, track: &Track) {
+        self.evaluate_play_tracking();
+        self.current_track.set(Some((track.id, track.duration_ms)));
+        self.max_position_ms.set(0);
+
         self.bar.set_track(&track.title, &track.artist);
         if let Err(error) = self.player.play(&track.path) {
             tracing::error!(%error, path = %track.path, "failed to start playback");
             self.reset_to_stopped();
+        }
+    }
+
+    /// Evaluates whether the currently loaded track (if any) crossed the
+    /// 50%-listened threshold (`library::stats::should_count_play`) and, if
+    /// so, records a play — then clears the tracked state either way.
+    /// Idempotent: called with no current track, it's a no-op, so every
+    /// call site below (track switch, finish, error/stop) can call it
+    /// unconditionally without risking a double-count.
+    fn evaluate_play_tracking(&self) {
+        let Some((track_id, duration_ms)) = self.current_track.take() else {
+            return;
+        };
+        let max_position_ms = self.max_position_ms.replace(0);
+
+        if !stats::should_count_play(max_position_ms, duration_ms) {
+            return;
+        }
+
+        let conn = self.conn.borrow();
+        match stats::record_play(&conn, track_id, now_unix()) {
+            Ok(()) => {
+                tracing::debug!(track_id, max_position_ms, duration_ms, "play recorded");
+            }
+            Err(error) => {
+                tracing::error!(%error, track_id, "failed to record play");
+            }
         }
     }
 
@@ -115,6 +182,8 @@ impl PlayerController {
                     duration_ms,
                     "player bar: applying position tick"
                 );
+                self.max_position_ms
+                    .set(self.max_position_ms.get().max(position_ms));
                 self.bar.set_position(position_ms, duration_ms);
             }
             PlayerEvent::TrackFinished => {
@@ -131,13 +200,20 @@ impl PlayerController {
     }
 
     /// Stops the pipeline and ensures the bar lands in the stopped/empty
-    /// state. On success this relies entirely on the `StateChanged(Stopped)`
-    /// event `stop()` emits — routed back here through `apply_event` — so
-    /// the bar isn't reset twice. If `stop()` itself fails, though, that
-    /// event never fires, so the bar is reset directly right here instead:
-    /// the UI must still land in a consistent stopped state even when
-    /// stopping the pipeline errors out.
+    /// state. Evaluates play tracking for whatever track was loaded first
+    /// (see `evaluate_play_tracking`) — every path that ends a listening
+    /// session (`TrackFinished`, a player error, and a future explicit
+    /// stop) funnels through here, so this is the one place that needs to
+    /// call it for those cases (`play_track` calls it separately, for the
+    /// track-switch case, since that path never calls `reset_to_stopped`).
+    /// On success the rest of this relies entirely on the
+    /// `StateChanged(Stopped)` event `stop()` emits — routed back here
+    /// through `apply_event` — so the bar isn't reset twice. If `stop()`
+    /// itself fails, though, that event never fires, so the bar is reset
+    /// directly right here instead: the UI must still land in a consistent
+    /// stopped state even when stopping the pipeline errors out.
     fn reset_to_stopped(&self) {
+        self.evaluate_play_tracking();
         match self.player.stop() {
             Ok(()) => {}
             Err(error) => {
@@ -180,4 +256,16 @@ fn wire_bar_controls(controller: &Rc<PlayerController>) {
         };
         controller.player.set_volume(volume);
     });
+}
+
+/// Current time as Unix seconds, for `record_play`'s `last_played_at`.
+/// Mirrors `library::scanner`'s private `now_unix` helper (not made public
+/// there — see that module's doc comment) rather than sharing it, since the
+/// two callers are otherwise unrelated and the function is a single
+/// `SystemTime` call.
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }

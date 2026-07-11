@@ -241,6 +241,32 @@ impl TrackListModel {
         track
     }
 
+    /// Invalidates the cached window covering `position` and fires
+    /// `items_changed(position, 1, 1)` so anything bound to the model
+    /// (`GtkColumnView`/`NoSelection`) re-pulls that exact row via `item()`.
+    /// Used after a rating write (`track_list.rs`): the database now holds
+    /// the new value, but the model's cache still holds the `Track` clone
+    /// from before the write, and dropping the *whole* cache (as
+    /// `set_query` does) would be a much heavier hammer for a one-row
+    /// change. Out-of-range positions are logged and ignored rather than
+    /// panicking, matching every other fallible path on this type.
+    pub fn invalidate_window_at(&self, position: u32) {
+        let total = self.imp().state.borrow().total;
+        if position >= total {
+            tracing::warn!(
+                position,
+                total,
+                "invalidate_window_at: position out of range"
+            );
+            return;
+        }
+
+        let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
+        self.imp().state.borrow_mut().cache.remove(&window_start);
+
+        self.items_changed(position, 1, 1);
+    }
+
     /// Test-only accessor exposing the set of currently cached window-start
     /// keys, so eviction behavior can be asserted without reaching into
     /// private state. Not part of the public API.
@@ -354,6 +380,36 @@ mod tests {
         assert_eq!(model.track_at(449).unwrap().title, bulk_title(449));
 
         assert!(model.track_at(ROW_COUNT).is_none());
+    }
+
+    #[test]
+    fn invalidate_window_at_forces_a_fresh_read_of_that_row() {
+        let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB")]);
+        model.set_query("title", "asc", "");
+        assert_eq!(model.track_at(0).unwrap().rating, 0);
+
+        // Mutate the underlying row directly (simulating a rating write
+        // elsewhere), bypassing the model entirely.
+        {
+            let conn = model.imp().conn.borrow().clone().unwrap();
+            conn.borrow()
+                .execute("UPDATE tracks SET rating = 4 WHERE title = 'Alpha'", [])
+                .unwrap();
+        }
+
+        // Without invalidation the cached clone is still stale.
+        assert_eq!(model.track_at(0).unwrap().rating, 0);
+
+        model.invalidate_window_at(0);
+        assert_eq!(model.track_at(0).unwrap().rating, 4);
+    }
+
+    #[test]
+    fn invalidate_window_at_out_of_range_is_a_no_op() {
+        let model = seeded_model(&[("Alpha", "BBB")]);
+        model.set_query("title", "asc", "");
+        // Must not panic.
+        model.invalidate_window_at(5);
     }
 
     /// Regression test: eviction (`MAX_CACHED_WINDOWS` = 8, drop the

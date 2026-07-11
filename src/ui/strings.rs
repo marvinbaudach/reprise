@@ -37,3 +37,6 @@ pub const PLAY: &str = "Play";
 pub const PAUSE: &str = "Pause";
 pub const PLAYBACK_POSITION: &str = "Playback position";
 pub const VOLUME: &str = "Volume";
+
+// Rating widget (src/ui/rating.rs).
+pub const RATING: &str = "Rating";

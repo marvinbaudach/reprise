@@ -80,7 +80,7 @@ pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>, db_path: Pat
     // first frame. If GStreamer is unavailable the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
-    let player = match PlayerController::new() {
+    let player = match PlayerController::new(conn.clone()) {
         Ok(controller) => Some(controller),
         Err(error) => {
             tracing::error!(%error, "player unavailable: playback disabled");
