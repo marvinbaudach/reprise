@@ -1,10 +1,12 @@
-// The UI (src/ui) is built out incrementally: search wiring lands in Task 9,
-// scanning in Task 10. Until then `queries`, `player`, and `library::scanner`
-// are not yet called from the UI. Silence dead-code warnings for that
-// not-yet-wired-up surface rather than weakening it.
+// `player` and `library::scanner` are not yet called from the UI (player
+// lands in Task 9, the scan-folder UI in Task 10; `library::scanner` is only
+// reachable today through the REPRISE_SCAN_DIR dev hook below and its own
+// tests). Silence dead-code warnings for that not-yet-wired-up surface
+// rather than weakening it; narrow further as each task wires its module in.
 #![allow(dead_code)]
 
 mod db;
+mod format;
 mod library;
 mod models;
 mod player;
@@ -22,6 +24,15 @@ use tracing_subscriber::EnvFilter;
 /// GNOME application ID; must match the `.desktop` file and D-Bus name used
 /// for GNOME integration.
 const APP_ID: &str = "org.reprise.Reprise";
+
+/// Dev/verification hook (not a user-facing feature): when set, a folder is
+/// scanned into the database synchronously at startup, before the window is
+/// shown, so headless tests (`xvfb-run`) can populate the library without a
+/// human driving the (not yet built — Task 10) scan-folder UI. Mirrors the
+/// `REPRISE_SMOKE_QUIT` pattern in `ui::window`.
+///
+/// Usage: `REPRISE_SCAN_DIR=/path/to/music cargo run`.
+const SCAN_DIR_ENV_VAR: &str = "REPRISE_SCAN_DIR";
 
 fn db_path() -> std::path::PathBuf {
     dirs::data_dir()
@@ -55,6 +66,18 @@ fn main() -> glib::ExitCode {
     // Arc/Mutex. Scans (Task 10) open their own connection over the same
     // path instead of sharing this one across threads.
     let conn = Rc::new(RefCell::new(conn));
+
+    if let Ok(dir) = std::env::var(SCAN_DIR_ENV_VAR) {
+        tracing::info!(
+            dir = %dir,
+            "{SCAN_DIR_ENV_VAR} set: running headless dev scan before window shows"
+        );
+        let mut conn = conn.borrow_mut();
+        match library::scanner::scan_folder(&mut conn, std::path::Path::new(&dir)) {
+            Ok(report) => tracing::info!(?report, "dev scan complete"),
+            Err(error) => tracing::error!(%error, "dev scan failed"),
+        }
+    }
 
     let app = adw::Application::builder().application_id(APP_ID).build();
 

@@ -1,6 +1,6 @@
 //! Builds the main application window: a libadwaita `ToolbarView` with a
-//! header bar (search entry + scan button) over a placeholder body. Wired to
-//! real data in later tasks (search in Task 9, scanning in Task 10).
+//! header bar (search entry + scan button) over the track list. Scanning
+//! (the disabled header button) is wired up in Task 10.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -12,6 +12,12 @@ use libadwaita::prelude::*;
 use rusqlite::Connection;
 
 use super::strings;
+use super::track_list::TrackList;
+
+/// Debounce delay between the last keystroke in the search entry and the
+/// track-list reload it triggers, so fast typing doesn't fire a query per
+/// keystroke.
+const SEARCH_DEBOUNCE_MS: u32 = 200;
 
 const DEFAULT_WIDTH: i32 = 1280;
 const DEFAULT_HEIGHT: i32 = 800;
@@ -31,10 +37,9 @@ const SMOKE_QUIT_DELAY_SECS: u32 = 3;
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database connection; the UI layer owns it single-threaded
-/// (via `Rc<RefCell<_>>`) and will read/write through it once search (Task 9)
-/// and scanning (Task 10) are wired up. Unused for now, hence the leading
-/// underscore.
-pub fn build(app: &adw::Application, _conn: Rc<RefCell<Connection>>) {
+/// (via `Rc<RefCell<_>>`) and reads through it via `track_list::TrackList`.
+/// Scanning (Task 10) will write through the same connection.
+pub fn build(app: &adw::Application, conn: Rc<RefCell<Connection>>) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(strings::APP_NAME)
@@ -59,20 +64,15 @@ pub fn build(app: &adw::Application, _conn: Rc<RefCell<Connection>>) {
     header.pack_start(&search_entry);
     header.pack_end(&scan_button);
 
-    // Not yet wired to library::scanner / queries (Tasks 8/10) — placeholder
-    // body shown until the library view exists.
-    let status_page = adw::StatusPage::builder()
-        .icon_name("folder-music-symbolic")
-        .title(strings::EMPTY_LIBRARY_TITLE)
-        .description(strings::EMPTY_LIBRARY_DESCRIPTION)
-        .vexpand(true)
-        .build();
+    let track_list = TrackList::new(conn);
 
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(&header);
-    toolbar_view.set_content(Some(&status_page));
+    toolbar_view.set_content(Some(track_list.widget()));
 
     window.set_content(Some(&toolbar_view));
+
+    wire_search(&search_entry, track_list);
 
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         tracing::info!(
@@ -90,4 +90,35 @@ pub fn build(app: &adw::Application, _conn: Rc<RefCell<Connection>>) {
 
     tracing::info!("main window built");
     window.present();
+}
+
+/// Wires the header's `SearchEntry` to `track_list`: every `search-changed`
+/// emission (GTK already coalesces pure text-composition events for us, but
+/// not typing speed) restarts a 200 ms debounce timer, canceling any timer
+/// still pending, before reloading the track list with the current text as
+/// the filter. `track_list` is moved in and lives for as long as the timer
+/// closure — the window itself owns no other reference to it, so this is
+/// also what keeps it alive for the lifetime of the widget tree.
+fn wire_search(search_entry: &gtk4::SearchEntry, track_list: TrackList) {
+    let track_list = Rc::new(track_list);
+    let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+
+    search_entry.connect_search_changed(move |entry| {
+        if let Some(previous) = pending.borrow_mut().take() {
+            previous.remove();
+        }
+        let text = entry.text().to_string();
+        let track_list = track_list.clone();
+        let pending_for_timeout = pending.clone();
+        let source_id = glib::timeout_add_local(
+            std::time::Duration::from_millis(u64::from(SEARCH_DEBOUNCE_MS)),
+            move || {
+                track_list.set_filter(&text);
+                // The timer fired: nothing left to cancel next time.
+                pending_for_timeout.borrow_mut().take();
+                glib::ControlFlow::Break
+            },
+        );
+        *pending.borrow_mut() = Some(source_id);
+    });
 }
