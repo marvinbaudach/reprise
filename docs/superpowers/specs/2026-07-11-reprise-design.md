@@ -1,4 +1,4 @@
-# Musikbox — Design-Dokument
+# Reprise — Design-Dokument
 
 **Datum:** 2026-07-11
 **Status:** Vom Nutzer freigegeben (2026-07-11)
@@ -19,7 +19,7 @@ Entscheidungen. Konsequenz: GStreamer als Audio-Engine statt Rodio/Symphonia.
 ## Positionierung: Rhythmbox-Nachfolger
 
 Rhythmbox ist faktisch im Wartungsmodus (GTK3; der GTK4-Port ist trotz
-mehrerer Anläufe gescheitert). Musikbox positioniert sich als moderner
+mehrerer Anläufe gescheitert). Reprise positioniert sich als moderner
 Nachfolger:
 
 - **Freie Software, GPL-3.0** — passt zur Rhythmbox-Herkunft und zur
@@ -33,7 +33,7 @@ Nachfolger:
 - Vertraute Rhythmbox-Konzepte bleiben erhalten (Spaltenbibliothek,
   intelligente Playlists, Warteschlange, Missing Files, Modul-Schalter),
   in modernem Gewand.
-- **Grundsatz „rührt deine Dateien nicht an":** Musikbox verschiebt,
+- **Grundsatz „rührt deine Dateien nicht an":** Reprise verschiebt,
   benennt oder verändert Musikdateien niemals ungefragt. Schreibzugriffe
   passieren ausschließlich auf explizite Nutzeraktion (Tag-Editor,
   Papierkorb-Löschen) — nie automatisch.
@@ -95,7 +95,7 @@ Nachfolger:
 - Tastatur-Shortcuts: u. a. Leertaste Play/Pause, Strg+F Suche,
   Entf Löschen-Dialog, Pfeiltasten-Navigation in der Liste
 - GNOME-Benachrichtigung bei Titelwechsel (Cover, Titel, Interpret)
-- Datei-Assoziation + Single-Instance: „Öffnen mit Musikbox" aus dem
+- Datei-Assoziation + Single-Instance: „Öffnen mit Reprise" aus dem
   Dateimanager; ein zweiter Start reicht die Dateien an die laufende
   Instanz weiter
 - Erster-Start-Assistent: Musikordner wählen; vorhandene Rhythmbox-Daten
@@ -148,7 +148,7 @@ GStreamer es klar: Gapless, ReplayGain, Equalizer, alle Formate eingebaut).
 ## Architektur
 
 ```text
-musikbox/
+reprise/
 ├── src-tauri/                  Rust-Backend
 │   └── src/
 │       ├── library/            Scanner (walkdir + lofty), SQLite-Zugriff,
@@ -309,7 +309,7 @@ Plugins · Synchronisation. Jede Änderung wirkt sofort ohne Neustart.
   Name, Kurzbeschreibung, An/Aus-Schalter und — wo vorhanden —
   „Konfigurieren…"-Button für die moduleigene Einstellungsseite
   (z. B. Equalizer, später Scrobbler mit Konto-Status „angemeldet als …").
-  Der Bereich „Plugin installieren…" (`~/.config/musikbox/plugins`) aus
+  Der Bereich „Plugin installieren…" (`~/.config/reprise/plugins`) aus
   dem Mockup ist für die spätere Fremd-Plugin-API reserviert und im MVP
   noch nicht sichtbar.
 - **Synchronisation:** erscheint erst mit dem Android-Sync-Modul
