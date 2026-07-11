@@ -264,6 +264,14 @@ impl Player {
             .playbin
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        // Transition the old playbin to Null before discarding it to ensure
+        // proper resource cleanup (decoders, file descriptors, buffers).
+        // Ignore transition failures since the element is already broken.
+        if let Err(error) = playbin.set_state(gst::State::Null) {
+            tracing::debug!(%error, "old playbin refused Null transition during rebuild (already broken; dropping anyway)");
+        }
+
         *playbin = new_playbin;
         drop(playbin);
 

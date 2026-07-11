@@ -689,9 +689,9 @@ fn cycle_repeat(current: Repeat) -> Repeat {
 /// The skip-loop guard's pure decision (Stage 2 Task 5 — see the module's
 /// `## Fault tolerance` doc section): whether `skip_after_failure` should
 /// give up rather than skip to yet another track. `true` once
-/// `consecutive_skips` has reached `queue_len` (every track in the queue has
-/// now had a chance to fail once — bounding the chain instead of retrying
-/// the same broken tracks forever) or when the queue is empty to begin with
+/// `consecutive_skips` has reached `queue_len` (an upper bound; if Repeat::Off
+/// and playback started mid-queue, `next_manual` reaching the physical end
+/// may trigger an earlier stop) or when the queue is empty to begin with
 /// (nothing to skip to at all). Pure (no `Queue`/GTK/DB access) so it's
 /// unit-testable directly.
 fn should_stop_skipping(consecutive_skips: usize, queue_len: usize) -> bool {
