@@ -273,15 +273,30 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
         }
         let path_str = path.to_string_lossy().to_string();
         let mtime = file_mtime(path);
-        let known_mtime: Option<i64> = tx
+        let known: Option<(i64, i64)> = tx
             .query_row(
-                "SELECT file_mtime FROM tracks WHERE path = ?1",
+                "SELECT file_mtime, missing FROM tracks WHERE path = ?1",
                 [&path_str],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .ok();
+        let known_mtime = known.map(|(file_mtime, _)| file_mtime);
+        let known_missing = known.map(|(_, missing)| missing != 0).unwrap_or(false);
         if known_mtime == Some(mtime) {
-            report.skipped_unchanged += 1;
+            if known_missing {
+                // The file reappeared at its exact recorded path with an
+                // unchanged mtime (NAS remount, restore-from-trash): the
+                // ordinary incremental fast path would otherwise skip it
+                // forever, silently ignoring `missing` — this is the one
+                // case the fast path must NOT take, since the row still
+                // needs `missing` cleared even though nothing else changed.
+                tx.execute("UPDATE tracks SET missing = 0 WHERE path = ?1", [&path_str])?;
+                tx.execute("DELETE FROM import_errors WHERE path = ?1", [&path_str])?;
+                report.updated += 1;
+                tracing::info!(path = %path_str, "restored missing track");
+            } else {
+                report.skipped_unchanged += 1;
+            }
             continue;
         }
         match read_meta(path) {
@@ -887,6 +902,80 @@ mod tests {
         assert_eq!(rating, 4);
         assert_eq!(play_count, 7);
         assert_eq!(added_at, added_at_before);
+    }
+
+    /// A track previously marked `missing` (e.g. by a prior scan that found
+    /// its file gone) that reappears at its *exact recorded path* with an
+    /// *unchanged* mtime (a NAS remount, a restore-from-trash) must have its
+    /// `missing` flag cleared on the next scan. Before this test's fix, the
+    /// incremental fast path (`known_mtime == Some(mtime)`) only checked the
+    /// mtime and skipped the row entirely, silently ignoring `missing` — so
+    /// a restored file stayed invisible/flagged forever even though it was
+    /// right back where the scanner expected it. rating/play_count must
+    /// survive untouched, exactly like the ordinary update path does.
+    #[test]
+    fn restored_file_at_same_path_clears_missing_flag() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = fixture_copy(tmp.path(), "track.flac");
+
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+
+        let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+        assert_eq!(r1.added, 1);
+
+        let path_str = file.to_string_lossy().to_string();
+        conn.execute(
+            "UPDATE tracks SET missing = 1, rating = 4, play_count = 7 WHERE path = ?1",
+            [&path_str],
+        )
+        .unwrap();
+        tx_insert_import_error(&conn, &path_str);
+
+        // The file itself is untouched on disk: same path, same mtime — this
+        // is exactly the "reappeared unchanged" scenario (NAS remount,
+        // restore-from-trash), not a content change.
+        let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+        assert!(
+            r2.updated >= 1,
+            "restoring a missing track must count as an update"
+        );
+
+        let (missing, rating, play_count): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT missing, rating, play_count FROM tracks WHERE path = ?1",
+                [&path_str],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(missing, 0, "missing flag must be cleared on restore");
+        assert_eq!(rating, 4, "rating must survive a restore");
+        assert_eq!(play_count, 7, "play_count must survive a restore");
+
+        let errs: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM import_errors WHERE path = ?1",
+                [&path_str],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            errs, 0,
+            "any stale import_errors row for the restored path must be cleared too"
+        );
+    }
+
+    /// Test-only helper: inserts a stale `import_errors` row for `path`, so
+    /// `restored_file_at_same_path_clears_missing_flag` can assert the
+    /// restore path clears it (mirroring the real-world case where a file
+    /// briefly failed to import before going missing and later being
+    /// restored).
+    fn tx_insert_import_error(conn: &Connection, path: &str) {
+        conn.execute(
+            "INSERT INTO import_errors (path, reason, occurred_at) VALUES (?1, 'stale', 0)",
+            [path],
+        )
+        .unwrap();
     }
 
     /// walkdir traversal errors (e.g. a permission-denied subdirectory) must be

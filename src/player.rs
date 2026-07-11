@@ -345,14 +345,38 @@ mod tests {
         assert!(path_to_uri("relativ/pfad.mp3").is_err());
     }
 
+    /// Guards every test in this module that sets `AUDIO_SINK_ENV_VAR`:
+    /// `std::env::set_var`/`remove_var` affect the whole process, and
+    /// `cargo test` runs tests in this module concurrently by default. Two
+    /// such tests running at once can interleave — one test's `remove_var`
+    /// landing between the other's `set_var` and `build_playbin`'s env
+    /// read — so that `build_playbin` sees no override, builds a *real*
+    /// audio sink, and plays `sine.flac` audibly on the developer's desktop
+    /// (or simply fails to find `fakesink`'s paced-sync behavior headless,
+    /// flaking the test). Each test that touches this env var must acquire
+    /// this lock for its *entire* duration, from the `set_var` through the
+    /// matching `remove_var`, so no two such tests ever overlap.
+    ///
+    /// Poisoned-recovery, not `.unwrap()`: if an earlier test in this lock
+    /// panicked while holding it, the lock is poisoned but the environment
+    /// variable was still cleaned up correctly enough for the next test to
+    /// proceed — refusing to run every subsequent audio-sink test over one
+    /// unrelated panic would be worse than the poisoning itself.
+    static AUDIO_SINK_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     /// End-to-end proof that the callback plumbing actually reaches the UI
     /// layer: `play()` must emit `StateChanged(Playing)` and `stop()` must
     /// emit `StateChanged(Stopped)`. Runs headless via `REPRISE_AUDIO_SINK`
     /// (fakesink), which GStreamer supports without a real audio device.
-    /// This is the only test in the crate that touches process environment,
-    /// so there is no cross-test race to guard against.
+    /// This and `play_recovers_after_a_failed_attempt` are the only tests in
+    /// the crate that touch process environment; both hold
+    /// `AUDIO_SINK_TEST_LOCK` for their full duration to prevent the
+    /// cross-test race documented on that lock.
     #[test]
     fn play_and_stop_emit_state_changed_events() {
+        let _guard = AUDIO_SINK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
         let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
@@ -388,9 +412,13 @@ mod tests {
     /// Stage 2 Task 5 regression test for the wedged-pipeline recovery (see
     /// `Player::play`'s doc comment): a failed `play()` against a
     /// nonexistent file must not take down subsequent, valid `play()` calls
-    /// on the same `Player` instance.
+    /// on the same `Player` instance. Holds `AUDIO_SINK_TEST_LOCK` for its
+    /// full duration — see that lock's doc comment for why.
     #[test]
     fn play_recovers_after_a_failed_attempt() {
+        let _guard = AUDIO_SINK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
         let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
