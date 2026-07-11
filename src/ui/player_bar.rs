@@ -39,10 +39,21 @@ use gtk4::prelude::*;
 
 use crate::format::format_duration;
 use crate::player::PlaybackState;
+use crate::queue::Repeat;
 use crate::ui::strings;
 
 const ICON_PLAY: &str = "media-playback-start-symbolic";
 const ICON_PAUSE: &str = "media-playback-pause-symbolic";
+const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
+const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
+const ICON_NEXT: &str = "media-skip-forward-symbolic";
+const ICON_REPEAT_ALL: &str = "media-playlist-repeat-symbolic";
+const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
+/// Applied to the repeat button while `Repeat::Off`, so it reads as inactive
+/// without a third icon asset — the same generic "de-emphasize" style class
+/// `artist_label` already uses (see `PlayerBar::new`), which GTK's Adwaita
+/// theme renders as reduced-opacity text/icon content on any widget.
+const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 
 /// Icons `gtk::ScaleButton` cycles through by value, lowest first — mirrors
 /// the stock GNOME volume-button icon set (mute/low/medium/high).
@@ -69,7 +80,11 @@ pub struct PlayerBar {
     bar: gtk4::ActionBar,
     title_label: gtk4::Label,
     artist_label: gtk4::Label,
+    shuffle_button: gtk4::ToggleButton,
+    prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
+    next_button: gtk4::Button,
+    repeat_button: gtk4::Button,
     position_label: gtk4::Label,
     duration_label: gtk4::Label,
     scale: gtk4::Scale,
@@ -109,9 +124,34 @@ impl PlayerBar {
         track_box.set_valign(gtk4::Align::Center);
         track_box.set_width_request(TRACK_INFO_WIDTH);
 
+        // Transport strip, mockup order (design mockup 7a): Shuffle | Prev |
+        // Play | Next | Repeat, centered around the seek scale.
+        let shuffle_button = gtk4::ToggleButton::builder()
+            .icon_name(ICON_SHUFFLE)
+            .tooltip_text(strings::SHUFFLE)
+            .valign(gtk4::Align::Center)
+            .build();
+
+        let prev_button = gtk4::Button::from_icon_name(ICON_PREVIOUS);
+        prev_button.set_tooltip_text(Some(strings::PREVIOUS));
+        prev_button.set_valign(gtk4::Align::Center);
+        // No queue to step through until a view has been activated at least
+        // once (see `set_transport_enabled`, called by
+        // `player_controller::PlayerController::play_from_view`).
+        prev_button.set_sensitive(false);
+
         let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
         play_pause_button.set_tooltip_text(Some(strings::PLAY));
         play_pause_button.set_valign(gtk4::Align::Center);
+
+        let next_button = gtk4::Button::from_icon_name(ICON_NEXT);
+        next_button.set_tooltip_text(Some(strings::NEXT));
+        next_button.set_valign(gtk4::Align::Center);
+        next_button.set_sensitive(false);
+
+        let repeat_button = gtk4::Button::from_icon_name(ICON_REPEAT_ALL);
+        repeat_button.set_tooltip_text(Some(strings::REPEAT));
+        repeat_button.set_valign(gtk4::Align::Center);
 
         let position_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
         let duration_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
@@ -124,10 +164,14 @@ impl PlayerBar {
         scale.set_tooltip_text(Some(strings::PLAYBACK_POSITION));
 
         let center_box = gtk4::Box::new(gtk4::Orientation::Horizontal, CENTER_BOX_SPACING);
+        center_box.append(&shuffle_button);
+        center_box.append(&prev_button);
         center_box.append(&play_pause_button);
         center_box.append(&position_label);
         center_box.append(&scale);
         center_box.append(&duration_label);
+        center_box.append(&next_button);
+        center_box.append(&repeat_button);
         center_box.set_hexpand(true);
         center_box.set_valign(gtk4::Align::Center);
 
@@ -145,11 +189,15 @@ impl PlayerBar {
         // player reports a non-stopped state (see `set_state`).
         bar.set_sensitive(false);
 
-        Self {
+        let bar = Self {
             bar,
             title_label,
             artist_label,
+            shuffle_button,
+            prev_button,
             play_pause_button,
+            next_button,
+            repeat_button,
             position_label,
             duration_label,
             scale,
@@ -157,7 +205,10 @@ impl PlayerBar {
             updating_scale: Rc::new(Cell::new(false)),
             dragging: Rc::new(Cell::new(false)),
             last_duration_ms: Cell::new(0),
-        }
+        };
+        // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
+        bar.set_repeat_indicator(Repeat::Off);
+        bar
     }
 
     /// The root widget to embed via `ToolbarView::add_bottom_bar`.
@@ -353,6 +404,67 @@ impl PlayerBar {
     pub fn connect_volume_changed<F: Fn(f64) + 'static>(&self, f: F) {
         self.volume_button
             .connect_value_changed(move |_, value| f(value));
+    }
+
+    /// Wires the previous-track button; `f` is called on every click with no
+    /// arguments — the caller (which owns the `Queue`) decides what
+    /// "previous" resolves to and starts that track's playback itself.
+    pub fn connect_previous<F: Fn() + 'static>(&self, f: F) {
+        self.prev_button.connect_clicked(move |_| f());
+    }
+
+    /// Wires the next-track button; same shape as `connect_previous`.
+    pub fn connect_next<F: Fn() + 'static>(&self, f: F) {
+        self.next_button.connect_clicked(move |_| f());
+    }
+
+    /// Wires the shuffle toggle; `f` is called with the button's new active
+    /// state on every user click. Nothing in this codebase sets
+    /// `shuffle_button`'s state programmatically (yet — Stage 2 settings
+    /// persistence may), so unlike `connect_seek`'s `updating_scale` guard
+    /// there is no reentrancy hazard to guard against here today: `connect_
+    /// toggled` only ever fires from a real user click. If a future caller
+    /// does call `shuffle_button.set_active` programmatically, add an
+    /// `updating_*`-style guard Cell at that point, following the same
+    /// pattern documented on `updating_scale` above — `queue::Queue::
+    /// set_shuffle` is itself idempotent for a same-value call, so a missing
+    /// guard would cause at worst a redundant no-op reshuffle, not a loop.
+    pub fn connect_shuffle_toggled<F: Fn(bool) + 'static>(&self, f: F) {
+        self.shuffle_button
+            .connect_toggled(move |button| f(button.is_active()));
+    }
+
+    /// Wires the repeat button; `f` is called on every click with no
+    /// arguments — the caller cycles the repeat mode and reports the new
+    /// value back via `set_repeat_indicator`.
+    pub fn connect_repeat_clicked<F: Fn() + 'static>(&self, f: F) {
+        self.repeat_button.connect_clicked(move |_| f());
+    }
+
+    /// Enables/disables the previous/next buttons — insensitive whenever the
+    /// queue is empty (nothing to step to), independent of the rest of the
+    /// bar's Playing/Paused/Stopped-driven sensitivity (`set_state`).
+    pub fn set_transport_enabled(&self, enabled: bool) {
+        self.prev_button.set_sensitive(enabled);
+        self.next_button.set_sensitive(enabled);
+    }
+
+    /// Reflects the queue's repeat mode on the repeat button: `All`/`One`
+    /// each get a distinct icon, `Off` reuses the `All` icon dimmed via
+    /// `REPEAT_OFF_CSS_CLASS` (see its doc comment) rather than a third icon
+    /// asset.
+    pub fn set_repeat_indicator(&self, repeat: Repeat) {
+        let (icon, is_off) = match repeat {
+            Repeat::Off => (ICON_REPEAT_ALL, true),
+            Repeat::All => (ICON_REPEAT_ALL, false),
+            Repeat::One => (ICON_REPEAT_ONE, false),
+        };
+        self.repeat_button.set_icon_name(icon);
+        if is_off {
+            self.repeat_button.add_css_class(REPEAT_OFF_CSS_CLASS);
+        } else {
+            self.repeat_button.remove_css_class(REPEAT_OFF_CSS_CLASS);
+        }
     }
 }
 
