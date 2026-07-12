@@ -1,6 +1,11 @@
 //! Selective classic-tag editing. The patch model makes “unchanged” an
 //! explicit state so a multi-selection can never clobber per-track values.
 
+use std::path::Path;
+
+use lofty::prelude::*;
+use lofty::tag::{ItemKey, Tag};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MixedValue<T> {
     Uniform(T),
@@ -77,9 +82,154 @@ pub fn summarize(tags: &[EditableTags]) -> Option<EditableTagSummary> {
     })
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum TagEditError {
+    #[error("tag operation failed: {0}")]
+    Lofty(#[from] lofty::error::LoftyError),
+    #[error("audio format has no writable tag type")]
+    NoWritableTag,
+}
+
+pub fn read_editable_tags(path: &Path) -> Result<EditableTags, TagEditError> {
+    let tagged = lofty::read_from_path(path)?;
+    let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
+    Ok(EditableTags {
+        title: tag
+            .and_then(Accessor::title)
+            .unwrap_or_default()
+            .to_string(),
+        artist: tag
+            .and_then(Accessor::artist)
+            .unwrap_or_default()
+            .to_string(),
+        album: tag
+            .and_then(Accessor::album)
+            .unwrap_or_default()
+            .to_string(),
+        album_artist: tag
+            .and_then(|tag| tag.get_string(&ItemKey::AlbumArtist))
+            .unwrap_or_default()
+            .to_string(),
+        year: tag.and_then(Accessor::year),
+        track_no: tag.and_then(Accessor::track),
+        genre: tag
+            .and_then(Accessor::genre)
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+pub fn apply_patch_to_file(path: &Path, patch: &TagPatch) -> Result<(), TagEditError> {
+    if patch.is_empty() {
+        return Ok(());
+    }
+
+    let mut tagged = lofty::read_from_path(path)?;
+    if tagged.primary_tag().is_none() && tagged.first_tag().is_none() {
+        tagged.insert_tag(Tag::new(tagged.primary_tag_type()));
+    }
+    let tag = if tagged.primary_tag().is_some() {
+        tagged.primary_tag_mut()
+    } else {
+        tagged.first_tag_mut()
+    }
+    .ok_or(TagEditError::NoWritableTag)?;
+
+    if let Some(value) = &patch.title {
+        if value.is_empty() {
+            tag.remove_title();
+        } else {
+            tag.set_title(value.clone());
+        }
+    }
+    if let Some(value) = &patch.artist {
+        if value.is_empty() {
+            tag.remove_artist();
+        } else {
+            tag.set_artist(value.clone());
+        }
+    }
+    if let Some(value) = &patch.album {
+        if value.is_empty() {
+            tag.remove_album();
+        } else {
+            tag.set_album(value.clone());
+        }
+    }
+    if let Some(value) = &patch.album_artist {
+        if value.is_empty() {
+            tag.remove_key(&ItemKey::AlbumArtist);
+        } else {
+            tag.insert_text(ItemKey::AlbumArtist, value.clone());
+        }
+    }
+    if let Some(value) = patch.year {
+        match value {
+            Some(year) => tag.set_year(year),
+            None => tag.remove_year(),
+        }
+    }
+    if let Some(value) = patch.track_no {
+        match value {
+            Some(track_no) => tag.set_track(track_no),
+            None => tag.remove_track(),
+        }
+    }
+    if let Some(value) = &patch.genre {
+        if value.is_empty() {
+            tag.remove_genre();
+        } else {
+            tag.set_genre(value.clone());
+        }
+    }
+
+    tag.save_to_path(path, lofty::config::WriteOptions::default())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
+
+    use lofty::picture::{MimeType, Picture, PictureType};
+    use lofty::tag::ItemKey;
+
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x62, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    fn fixture_copy(dir: &Path, name: &str) -> PathBuf {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        let destination = dir.join(name);
+        std::fs::copy(source, &destination).unwrap();
+        destination
+    }
+
+    fn seed_full_tag(path: &Path) {
+        let mut tagged = lofty::read_from_path(path).unwrap();
+        let tag = tagged.primary_tag_mut().unwrap();
+        tag.set_title("Old title".into());
+        tag.set_artist("Keep artist".into());
+        tag.set_album("Keep album".into());
+        tag.insert_text(ItemKey::AlbumArtist, "Keep album artist".into());
+        tag.set_year(1999);
+        tag.set_track(7);
+        tag.set_genre("Keep genre".into());
+        tag.insert_text(ItemKey::Comment, "Keep comment".into());
+        tag.push_picture(Picture::new_unchecked(
+            PictureType::CoverFront,
+            Some(MimeType::Png),
+            None,
+            TINY_PNG.to_vec(),
+        ));
+        tag.save_to_path(path, lofty::config::WriteOptions::default())
+            .unwrap();
+    }
 
     fn tags(title: &str, artist: &str) -> EditableTags {
         EditableTags {
@@ -114,5 +264,62 @@ mod tests {
             ..TagPatch::default()
         };
         assert!(!patch.is_empty());
+    }
+
+    #[test]
+    fn patch_changes_only_dirty_fields_and_preserves_picture_and_custom_item() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = fixture_copy(dir.path(), "selective.flac");
+        seed_full_tag(&path);
+
+        apply_patch_to_file(
+            &path,
+            &TagPatch {
+                title: Some("New title".into()),
+                ..TagPatch::default()
+            },
+        )
+        .unwrap();
+
+        let tagged = lofty::read_from_path(&path).unwrap();
+        let tag = tagged.primary_tag().unwrap();
+        assert_eq!(tag.title().as_deref(), Some("New title"));
+        assert_eq!(tag.artist().as_deref(), Some("Keep artist"));
+        assert_eq!(tag.album().as_deref(), Some("Keep album"));
+        assert_eq!(tag.year(), Some(1999));
+        assert_eq!(tag.track(), Some(7));
+        assert_eq!(tag.genre().as_deref(), Some("Keep genre"));
+        assert_eq!(tag.get_string(&ItemKey::Comment), Some("Keep comment"));
+        assert_eq!(tag.pictures().len(), 1);
+        assert_eq!(tag.pictures()[0].data(), TINY_PNG);
+    }
+
+    #[test]
+    fn numeric_patch_can_set_and_clear_year_and_track() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = fixture_copy(dir.path(), "numbers.flac");
+        seed_full_tag(&path);
+        apply_patch_to_file(
+            &path,
+            &TagPatch {
+                year: Some(Some(2026)),
+                track_no: Some(None),
+                ..TagPatch::default()
+            },
+        )
+        .unwrap();
+        let tags = read_editable_tags(&path).unwrap();
+        assert_eq!(tags.year, Some(2026));
+        assert_eq!(tags.track_no, None);
+    }
+
+    #[test]
+    fn empty_patch_leaves_file_bytes_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = fixture_copy(dir.path(), "unchanged.flac");
+        seed_full_tag(&path);
+        let before = std::fs::read(&path).unwrap();
+        apply_patch_to_file(&path, &TagPatch::default()).unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), before);
     }
 }
