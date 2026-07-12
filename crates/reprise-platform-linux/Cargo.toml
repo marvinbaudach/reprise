@@ -1,0 +1,24 @@
+[package]
+name = "reprise-platform-linux"
+description = "Linux platform backends for Reprise: GStreamer playback, MPRIS media integration"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reprise-core = { path = "../reprise-core" }
+gstreamer = "0.25"
+# Default features ("async-io" + "blocking-api") are kept: "async-io" is
+# zbus's own lightweight internal reactor for the blocking API, not a
+# competing app-wide async runtime — the `tokio` feature (the thing Stage 2
+# Task 6's "no tokio" constraint actually rules out) is off by default and
+# stays off. See src/mpris.rs's module doc comment for the thread model this
+# enables (a dedicated OS thread using zbus::blocking, no integration with
+# glib's MainContext needed for MPRIS itself).
+zbus = "5"
+async-channel = "2.5.0"
+tracing = "0.1"
+
+[lints]
+workspace = true

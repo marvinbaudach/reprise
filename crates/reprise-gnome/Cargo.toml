@@ -1,0 +1,33 @@
+[package]
+name = "reprise-gnome"
+description = "A native GTK4 music player, successor to Rhythmbox — GNOME frontend"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "reprise"
+path = "src/main.rs"
+
+[dependencies]
+reprise-core = { path = "../reprise-core" }
+reprise-platform-linux = { path = "../reprise-platform-linux" }
+# Partitioned from the pre-split single-crate dependency set (no new deps):
+# the frontend holds `Rc<RefCell<rusqlite::Connection>>` and passes it to
+# core's query layer (14 `Connection` references across the ui layer), and
+# `ui::playlist_io`/`ui::track_actions` define their own thiserror-derived
+# error enums. Both crates are also core dependencies; Cargo unifies them.
+rusqlite = { version = "0.32", features = ["bundled"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+gtk4 = { version = "0.11.4", features = ["v4_22"] }
+libadwaita = { version = "0.9.2", features = ["v1_9", "gtk_v4_22"] }
+async-channel = "2.5.0"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

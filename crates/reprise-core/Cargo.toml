@@ -1,0 +1,36 @@
+[package]
+name = "reprise-core"
+description = "Cross-platform, GUI-free engine for the Reprise music player: library, queue, queries, playback and media-integration contracts"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+thiserror = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+walkdir = "2"
+lofty = "0.22"
+dirs = "6"
+tracing = "0.1"
+# `MediaIntegrationHandles` and the controller channels are typed with
+# async-channel, so it is a core dependency (the platform crates and the
+# frontend share these channel types through core).
+async-channel = "2.5.0"
+fastrand = "2"
+# Stage 3 Task 8: folder watcher (real-time library updates). Kept in core
+# deliberately because `notify` is *itself* the cross-platform abstraction:
+# it selects inotify on Linux, FSEvents on macOS, and ReadDirectoryChangesW
+# on Windows, so the same watcher code compiles for every future frontend's
+# platform. The default Linux backend is inotify; the "recommended" watcher
+# constructor picks it automatically and supports recursive watches, which is
+# all this task needs.
+notify = "8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

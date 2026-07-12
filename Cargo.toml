@@ -1,43 +1,17 @@
-[package]
-name = "reprise"
+[workspace]
+resolver = "2"
+members = [
+    "crates/reprise-core",
+    "crates/reprise-platform-linux",
+    "crates/reprise-gnome",
+]
+default-members = ["crates/reprise-gnome"]
+
+[workspace.package]
 version = "0.1.0"
-description = "A native GTK4 music player, successor to Rhythmbox"
 authors = ["Marvin Baudach"]
 edition = "2021"
 license = "GPL-3.0-or-later"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-rusqlite = { version = "0.32", features = ["bundled"] }
-thiserror = "2"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-walkdir = "2"
-lofty = "0.22"
-dirs = "6"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-gstreamer = "0.25"
-gtk4 = { version = "0.11.4", features = ["v4_22"] }
-libadwaita = { version = "0.9.2", features = ["v1_9", "gtk_v4_22"] }
-async-channel = "2.5.0"
-fastrand = "2"
-# Stage 3 Task 8: folder watcher (real-time library updates). The default
-# Linux backend is inotify; the "recommended" watcher constructor picks it
-# automatically and supports recursive watches, which is all this task needs.
-notify = "8"
-# Default features ("async-io" + "blocking-api") are kept: "async-io" is
-# zbus's own lightweight internal reactor for the blocking API, not a
-# competing app-wide async runtime — the `tokio` feature (the thing Stage 2
-# Task 6's "no tokio" constraint actually rules out) is off by default and
-# stays off. See src/mpris.rs's module doc comment for the thread model this
-# enables (a dedicated OS thread using zbus::blocking, no integration with
-# glib's MainContext needed for MPRIS itself).
-zbus = "5"
-
-[dev-dependencies]
-tempfile = "3"
 
 # Stage 3 Task 1: curated pedantic-lint selection, hardened to `warn` here so
 # `cargo clippy --all-targets -- -D warnings` (the gate every commit must
@@ -48,8 +22,10 @@ tempfile = "3"
 # semicolon_if_nothing_returned/uninlined_format_args (consistency across a
 # codebase with many `tracing!`/`format!` call sites), map_unwrap_or (prefer
 # map_or over an unwrap_or after map, which can panic-shaped-read), and
-# unnested_or_patterns (readability in match arms).
-[lints.clippy]
+# unnested_or_patterns (readability in match arms). Moved to
+# `[workspace.lints]` in Task 6 so the same curated set keeps applying to all
+# three crates after the workspace split.
+[workspace.lints.clippy]
 needless_pass_by_value = "warn"
 redundant_closure_for_method_calls = "warn"
 semicolon_if_nothing_returned = "warn"
