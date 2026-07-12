@@ -325,9 +325,18 @@ Drei Zonen im Standard-Layout:
 
 **Kontextmenü** (Rechtsklick auf Zeile, mit Mehrfachauswahl): Abspielen,
 zur Warteschlange, zu Playlist hinzufügen, Tags bearbeiten, aus Bibliothek
-entfernen, Datei in den Papierkorb. **Tag-Editor** als modaler Dialog;
-bei Mehrfachauswahl werden gemeinsame Felder (z. B. Album, Interpret)
-gesammelt bearbeitet. Löschen immer mit Bestätigungsdialog, der klar
+entfernen, Datei in den Papierkorb. **Tag-Editor** als modaler Dialog. **Mehrfachbearbeitung mehrerer
+selektierter Titel ist Pflicht** (Nutzer-Anforderung 2026-07-12): Bei
+Mehrfachauswahl zeigt der Dialog gemeinsame Werte normal an; Felder, die
+sich zwischen den Titeln unterscheiden, erscheinen mit einem
+Platzhalter „(mehrere Werte)" und bleiben unangetastet. **Nur Felder,
+die der Nutzer aktiv ändert, werden geschrieben** — ein unverändert
+gelassenes „(mehrere Werte)"-Feld darf niemals alle Titel mit einem Wert
+überschreiben (sonst gingen pro-Titel-Werte wie individuelle Titelnamen
+verloren). Das schützt bestehende Metadaten und passt zum Grundsatz
+„rührt deine Dateien nicht ungefragt an". Geschrieben wird pro Datei
+einzeln (lofty), Fehler pro Datei gemeldet; die DB spiegelt danach die
+neuen Tags. Löschen immer mit Bestätigungsdialog, der klar
 unterscheidet: „nur aus Bibliothek" vs. „Datei in den Papierkorb".
 
 ### Einstellungen
