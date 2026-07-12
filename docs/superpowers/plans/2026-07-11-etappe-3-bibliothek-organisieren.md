@@ -140,9 +140,11 @@
 
 ## Verifikation Etappe 3 (Definition of Done)
 
-- [ ] Gates: `cargo test` grün, clippy `-D warnings` + fmt + `cargo audit` sauber; alle Dateien < 800 Zeilen
-- [ ] **Playlist befüllbar über BEIDE Wege** (Nutzer-Kriterium): Kontextmenü (headless: Aktions-Funktion + E2E-Log) UND Drag & Drop (Unit-Tests der Drop-Handler + manueller Check)
-- [ ] Headless: Quellen-Wechsel (Library/Playlist/Smart/Queue/Missing/ImportErrors) via REPRISE_SMOKE_SOURCE; Playlist-Reihenfolge beim Abspielen; Smart-Seeds liefern korrekte Treffer; Watcher add/delete/move (Move-Detection greift live); M3U-Roundtrip
-- [ ] **Manuell (Nutzer):** DnD-Gesten (Befüllen + Umsortieren), Kontextmenü-Gefühl mit Mehrfachauswahl, Sidebar-Navigation, Space/Ctrl+F, Badges erscheinen/verschwinden
+**✅ ETAPPE 3 ABGESCHLOSSEN (2026-07-12)** — finale Whole-Branch-Review + Close-out (kritischer tasksübergreifender Hard-Delete-Bug gefixt) durch; manuelle Nutzer-Checks ausstehend:
+
+- [x] Gates: `cargo test` grün (366 + 1 ignored), clippy `-D warnings` + fmt + `cargo audit` sauber — **AUSNAHME:** „alle Dateien < 800 Zeilen" **NICHT erfüllt** (track_list.rs 1737, window.rs 1044, queries.rs 1007 non-test); **bewusst gewaivt → Refactoring-Etappe (Queue C)**, da Aufteilen kurz vor dem geplanten Gesamt-Refactoring schlechtere Hygiene wäre (zwei Reviewer konkurrierten)
+- [x] **Playlist befüllbar über BEIDE Wege** (Nutzer-Kriterium): Kontextmenü UND Drag & Drop — beide von der finalen Review live durch die echten Handler verifiziert (`inserted=2`, DB lückenlos); wasserdicht gegen Fehlzeilen unter Sortierung/Filter
+- [x] Headless: alle 6 Quellen-Wechsel, Playlist-Reihenfolge, Smart-Seeds korrekt, Watcher add/delete/move live (Move-Detection greift), M3U-Roundtrip, MPRIS-Vollausbau via busctl — alles von der finalen Review unabhängig reproduziert
+- [ ] **Manuell (Nutzer):** DnD-Gesten (Befüllen + Umsortieren), Kontextmenü-Gefühl mit Mehrfachauswahl, Sidebar-Navigation inkl. eingeklapptem Modus, Space/Ctrl+F/Escape per echter Tastatur, Badges erscheinen/verschwinden live, GNOME-Popup/Sperrbildschirm-Controls, hörbare Ausgabe (alles Bisherige lief auf fakesink) + die offenen Field-Fix-Retests (Seekbar, Sterne)
 
 **Nicht in Etappe 3:** Cover, Tag-Editor, Löschen (Papierkorb), Browse-Leiste, Rhythmbox-Import, Erster-Start-Assistent, Session-Restore, Einstellungs-Dialog, EQ/ReplayGain, gettext, Flatpak.
