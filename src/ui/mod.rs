@@ -3,6 +3,7 @@ pub mod mpris_mirror;
 pub mod playback_faults;
 pub mod player_bar;
 pub mod player_controller;
+pub mod player_controller_wiring;
 pub mod playlist_io;
 pub mod rating;
 pub mod shortcuts;

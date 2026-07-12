@@ -1,18 +1,34 @@
 //! MPRIS mirror updates and command handling for `PlayerController` (Stage 2
-//! Task 6; split out of `player_controller.rs` in Stage 3 Task 1 — see that
-//! module's `## MPRIS` doc section for the parts of the MPRIS story that
-//! stayed there: field ownership (`mpris_state`/`now_playing`), starting the
-//! D-Bus thread in `PlayerController::new`, and the drain loop that calls
-//! `handle_mpris_command` below once per received command).
+//! Task 6; split out of `player_controller.rs` in Stage 3 Task 1; extended to
+//! the full Player surface — Position/Seek, Shuffle, LoopStatus, Rate,
+//! Volume — in Stage 3 Task 10. See `player_controller.rs`'s `## MPRIS` doc
+//! section for the parts of the MPRIS story that stayed there: field
+//! ownership (`mpris_state`/`now_playing`/`volume`/`mpris_seek_notify`),
+//! starting the D-Bus thread in `PlayerController::new`, the drain loop that
+//! calls `handle_mpris_command` below once per received command, and the
+//! `seek` method (also called directly by the bar's seek scale) that both
+//! actually seeks and triggers the `Seeked` signal via `notify_mpris_seek`.
 //!
 //! ## What lives here
 //!
 //! - `update_mpris_mirror`: recomputes `mpris::MprisState` from the
 //!   controller's current playback state and writes it into the shared
-//!   `Arc<Mutex<mpris::MprisState>>` the D-Bus thread reads.
-//! - `handle_mpris_command`/`mpris_play`/`mpris_pause`/`mpris_status`: applies
-//!   one `MprisCommand` received from that thread — the MPRIS drain loop's
-//!   only caller.
+//!   `Arc<Mutex<mpris::MprisState>>` the D-Bus thread reads. Covers every
+//!   field except `position_ms` (see its own doc comment) — status, track
+//!   metadata, transport-enabled flags, and (Stage 3 Task 10) `shuffle`/
+//!   `repeat` (read fresh from `Queue` every call) and `volume` (read from
+//!   `PlayerController::volume`, `Player` having no getter of its own).
+//! - `update_mpris_position`/`update_mpris_volume`/`update_mpris_shuffle`/
+//!   `update_mpris_repeat`: narrow, single-field patches to the mirror for
+//!   state that can change *without* a status/track transition — a position
+//!   tick, a volume/shuffle/repeat change from either the bar or MPRIS
+//!   itself. See each function's own doc comment for why a targeted patch
+//!   (not a full `update_mpris_mirror` rebuild) is the right shape for each.
+//! - `notify_mpris_seek`: tells `mpris.rs`'s relay thread to emit `Seeked`.
+//! - `handle_mpris_command`/`mpris_play`/`mpris_pause`/`mpris_status`/
+//!   `mpris_seek_relative`/`mpris_set_shuffle`/`mpris_set_loop`/`mpris_set_
+//!   volume`: applies one `MprisCommand` received from that thread — the
+//!   MPRIS drain loop's only caller.
 //! - `mpris_status_from_playback_state`: the one explicit conversion between
 //!   `player::PlaybackState` and `mpris::MprisPlaybackStatus` (deliberately
 //!   separate types — see `mpris.rs`'s own doc comment for why).
@@ -24,16 +40,16 @@
 //! only extend a private item's visibility to the item's defining module and
 //! that module's descendants, so reaching into `PlayerController`'s
 //! internals from here needs explicit, narrow grants. `player_controller.rs`
-//! marks exactly the fields (`queue`, `mpris_state`, `now_playing`) and
-//! methods (`play_track_id`, `toggle_pause`, `next`, `previous`, `reset_to_
-//! stopped`) this module touches as `pub(super)` — visible throughout `ui`
-//! and its descendants, but no wider (deliberately not `pub(crate)`, let
-//! alone `pub`: nothing outside `ui` needs any of this). `player_controller.
-//! rs` still owns every field outright; this module (like `playback_faults.
-//! rs`) only ever borrows `&self` via `impl PlayerController` blocks defined
-//! here — inherent impls for one type are allowed to span multiple modules/
-//! files within a crate, so no new type or wrapper is needed to split the
-//! behavior out.
+//! marks exactly the fields (`queue`, `mpris_state`, `now_playing`, `volume`,
+//! `mpris_seek_notify`) and methods (`play_track_id`, `toggle_pause`, `next`,
+//! `previous`, `reset_to_stopped`, `seek`) this module touches as
+//! `pub(super)` — visible throughout `ui` and its descendants, but no wider
+//! (deliberately not `pub(crate)`, let alone `pub`: nothing outside `ui`
+//! needs any of this). `player_controller.rs` still owns every field
+//! outright; this module (like `playback_faults.rs`) only ever borrows
+//! `&self` via `impl PlayerController` blocks defined here — inherent impls
+//! for one type are allowed to span multiple modules/files within a crate,
+//! so no new type or wrapper is needed to split the behavior out.
 //!
 //! ## Queue borrow discipline
 //!
@@ -43,12 +59,17 @@
 //! call that can re-enter the player/GTK runs. `mpris_play` reads `queue.
 //! borrow().current()` inside its own `let` statement, dropping the borrow
 //! before the `self.play_track_id(id)` call below it. `update_mpris_mirror`
-//! only ever reads `queue.borrow().is_empty()` inside its own statement and
-//! never calls back out afterward, so it isn't actually a re-entrancy hazard
-//! here — but the hoist-into-one-statement shape is kept consistent anyway.
+//! reads `queue.borrow().is_empty()`/`is_shuffled()`/`repeat()` each inside
+//! their own statement — none of them call back out afterward, so this isn't
+//! actually a re-entrancy hazard here — but the hoist-into-one-statement
+//! shape is kept consistent anyway. `mpris_set_shuffle`/`mpris_set_loop`
+//! mutate the queue and then call a `bar`/mirror update afterward; the same
+//! one-statement-per-queue-call shape applies there too, even though neither
+//! `PlayerBar`'s setters nor the mirror patch functions can re-enter `queue`.
 
-use crate::mpris::{MprisCommand, MprisPlaybackStatus, MprisState};
+use crate::mpris::{self, MprisCommand, MprisPlaybackStatus, MprisState};
 use crate::player::PlaybackState;
+use crate::queue::Repeat;
 use crate::ui::player_controller::PlayerController;
 
 impl PlayerController {
@@ -68,16 +89,47 @@ impl PlayerController {
     /// see exactly the same enabled/disabled transport state the on-screen
     /// buttons do, rather than inventing new semantics here.
     ///
-    /// Borrow discipline: `queue.borrow()` is read and dropped inside this
-    /// one statement; nothing after it calls back into `queue`, `player`, or
-    /// GTK, so there's no re-entrancy hazard here the way there is at the
-    /// other call sites documented in this module's `## Queue borrow
-    /// discipline` section — the shape is kept consistent anyway.
+    /// `shuffle`/`repeat` are read fresh from `Queue` on every call — always
+    /// current, no separate tracking needed. `volume` comes from
+    /// `PlayerController::volume` (see that field's doc comment for why:
+    /// `Player` has no volume getter of its own).
+    ///
+    /// `position_ms` is the one field this function does *not* simply
+    /// re-derive: a status/track transition (this function's only trigger)
+    /// isn't necessarily a position reset — pausing/resuming the *same*
+    /// track must preserve the mirror's current position, not zero it. Only
+    /// an actual track change (or dropping to no track at all) resets it —
+    /// determined here by comparing the *previous* mirror's `track_id`
+    /// against the new one before overwriting. Ordinary position updates
+    /// (the 500 ms tick, a seek) go through `update_mpris_position` instead,
+    /// entirely independently of this function.
+    ///
+    /// Borrow discipline: every `queue.borrow()` here is read and dropped
+    /// inside its own statement; nothing after any of them calls back into
+    /// `queue`, `player`, or GTK, so there's no re-entrancy hazard here the
+    /// way there is at the other call sites documented in this module's
+    /// `## Queue borrow discipline` section — the shape is kept consistent
+    /// anyway.
     pub(super) fn update_mpris_mirror(&self, status: MprisPlaybackStatus) {
         let queue_has_tracks = !self.queue.borrow().is_empty();
+        let is_shuffled = self.queue.borrow().is_shuffled();
+        let repeat = self.queue.borrow().repeat();
         let now_playing = self.now_playing.borrow().clone();
+        let volume = self.volume.get();
 
-        let new_state = match now_playing {
+        let new_track_id = now_playing.as_ref().map(|track| track.id);
+
+        let mut mirror = self
+            .mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let position_ms = if mirror.track_id == new_track_id {
+            mirror.position_ms
+        } else {
+            0
+        };
+
+        *mirror = match now_playing {
             Some(track) => MprisState {
                 status,
                 track_id: Some(track.id),
@@ -87,6 +139,10 @@ impl PlayerController {
                 duration_ms: track.duration_ms,
                 can_next: queue_has_tracks,
                 can_prev: queue_has_tracks,
+                position_ms,
+                shuffle: is_shuffled,
+                repeat,
+                volume,
             },
             None => MprisState {
                 status,
@@ -97,14 +153,112 @@ impl PlayerController {
                 duration_ms: 0,
                 can_next: queue_has_tracks,
                 can_prev: queue_has_tracks,
+                position_ms,
+                shuffle: is_shuffled,
+                repeat,
+                volume,
             },
         };
+    }
 
+    /// Patches only `position_ms` in the shared mirror — called by
+    /// `apply_event`'s `PlayerEvent::Position` arm (every ~500 ms while
+    /// playing) and by `seek` (immediately after a successful seek, so
+    /// `Position` reflects it right away rather than waiting for the next
+    /// tick). Deliberately doesn't touch any other field the way `update_
+    /// mpris_mirror`'s full rebuild does, and — like every write to
+    /// `position_ms` — triggers no `PropertiesChanged` of its own: `Position`
+    /// is exempt from that per the MPRIS spec (see `mpris::MprisState`'s doc
+    /// comment); `Seeked`, not a property notification, is how clients learn
+    /// of jumps (see `notify_mpris_seek`).
+    pub(super) fn update_mpris_position(&self, position_ms: i64) {
         let mut mirror = self
             .mpris_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *mirror = new_state;
+        mirror.position_ms = position_ms;
+    }
+
+    /// Patches only `volume` in the shared mirror — called immediately after
+    /// either the bar's volume control or an MPRIS `Volume` write changes
+    /// `PlayerController::volume`, so the mirror (and thus MPRIS clients,
+    /// once the next poll tick diffs it) reflects the new value without
+    /// waiting for an unrelated status/track transition to refresh it via
+    /// `update_mpris_mirror`.
+    pub(super) fn update_mpris_volume(&self, volume: f64) {
+        let mut mirror = self
+            .mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        mirror.volume = volume;
+    }
+
+    /// Patches only `shuffle` in the shared mirror — same immediacy
+    /// rationale as `update_mpris_volume`, called after every `Queue::set_
+    /// shuffle` regardless of whether the bar or MPRIS triggered it.
+    pub(super) fn update_mpris_shuffle(&self, shuffle: bool) {
+        let mut mirror = self
+            .mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        mirror.shuffle = shuffle;
+    }
+
+    /// Patches only `repeat` in the shared mirror — same immediacy rationale
+    /// as `update_mpris_volume`, called after every `Queue::set_repeat`
+    /// regardless of whether the bar or MPRIS triggered it.
+    pub(super) fn update_mpris_repeat(&self, repeat: Repeat) {
+        let mut mirror = self
+            .mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        mirror.repeat = repeat;
+    }
+
+    /// Seeks to `position_ms` — the one method behind every seek in the app,
+    /// whatever originated it: the bar's seek scale (`player_controller_
+    /// wiring.rs`'s `wire_bar_controls`/`connect_seek` closure) and every
+    /// MPRIS-initiated seek (`Seek`/`SetPosition`, resolved to an absolute
+    /// `position_ms` by `handle_mpris_command` above before calling this)
+    /// all funnel through here (Stage 3 Task 10). One method for both
+    /// origins so the `Seeked` signal — which the MPRIS spec requires after
+    /// *every* successful seek, not just ones MPRIS itself initiated (the
+    /// task brief is explicit: "auch app-internen!") — only has to be wired
+    /// in one place (`notify_mpris_seek`, called from here) instead of at
+    /// every seek call site individually. `pub(super)` so `player_
+    /// controller_wiring.rs` can call it too. Defined here (rather than in
+    /// `player_controller.rs`) since it exists entirely in service of the
+    /// MPRIS `Seeked` story and both helpers it calls already live in this
+    /// file.
+    pub(super) fn seek(&self, position_ms: i64) {
+        match self.player.seek_to(position_ms) {
+            Ok(()) => {
+                self.update_mpris_position(position_ms);
+                self.notify_mpris_seek(position_ms);
+            }
+            Err(error) => {
+                tracing::error!(%error, position_ms, "seek failed");
+            }
+        }
+    }
+
+    /// Tells `mpris.rs`'s dedicated relay thread to emit the `Seeked` signal
+    /// for `position_ms` (converted to µs, MPRIS's unit, via `mpris::ms_to_
+    /// micros`) — called by `seek` after every successful seek, whichever
+    /// side originated it (see `seek`'s doc comment above).
+    /// `try_send` on an unbounded channel only fails once the relay
+    /// thread is gone (app teardown) — logged, not propagated, matching
+    /// every other MPRIS-bound `try_send` in this codebase (see `mpris.rs`'s
+    /// `MprisPlayer::dispatch`).
+    pub(super) fn notify_mpris_seek(&self, position_ms: i64) {
+        let position_us = mpris::ms_to_micros(position_ms);
+        if let Err(error) = self.mpris_seek_notify.try_send(position_us) {
+            tracing::warn!(
+                %error,
+                position_ms,
+                "MPRIS Seeked notification dropped: relay thread is gone"
+            );
+        }
     }
 
     /// Dispatches one command received from `mpris.rs`'s D-Bus thread (see
@@ -114,7 +268,11 @@ impl PlayerController {
     /// here); `Next`/`Previous` map directly to the same named methods the
     /// bar buttons call. `Play`/`Pause`/`PlayPause` need their own small
     /// handling — see `mpris_play`/`mpris_pause`'s doc comments for why they
-    /// aren't just `toggle_pause`.
+    /// aren't just `toggle_pause`. `SetPosition` is already fully resolved
+    /// (trackid-matched, µs→ms converted, clamped) by `mpris.rs`'s `set_
+    /// position` before it ever reaches here, so it goes straight to `seek`
+    /// — the same method `Seek` (via `mpris_seek_relative`) and the bar's
+    /// seek scale all funnel through.
     pub(super) fn handle_mpris_command(&self, command: MprisCommand) {
         match command {
             MprisCommand::Play => self.mpris_play(),
@@ -123,6 +281,11 @@ impl PlayerController {
             MprisCommand::Stop => self.reset_to_stopped(),
             MprisCommand::Next => self.next(),
             MprisCommand::Previous => self.previous(),
+            MprisCommand::Seek(offset_ms) => self.mpris_seek_relative(offset_ms),
+            MprisCommand::SetPosition(position_ms) => self.seek(position_ms),
+            MprisCommand::SetShuffle(on) => self.mpris_set_shuffle(on),
+            MprisCommand::SetLoop(repeat) => self.mpris_set_loop(repeat),
+            MprisCommand::SetVolume(volume) => self.mpris_set_volume(volume),
         }
     }
 
@@ -166,6 +329,74 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status
+    }
+
+    /// MPRIS `Seek(offset_µs)` (already converted to `offset_ms` by `mpris.
+    /// rs`'s `set_position`/`seek` boundary — see `MprisCommand`'s doc
+    /// comment): resolves the *relative* offset against the mirror's current
+    /// `position_ms` into an *absolute* target, clamped to `0..=duration_ms`
+    /// (no upper clamp if `duration_ms` isn't known, i.e. `<= 0`), then hands
+    /// off to `seek` — the same method the bar's seek scale and MPRIS's
+    /// `SetPosition` both use.
+    fn mpris_seek_relative(&self, offset_ms: i64) {
+        let snapshot = self
+            .mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+
+        let mut target_ms = (snapshot.position_ms + offset_ms).max(0);
+        if snapshot.duration_ms > 0 {
+            target_ms = target_ms.min(snapshot.duration_ms);
+        }
+        self.seek(target_ms);
+    }
+
+    /// MPRIS `Shuffle` write: applies it to the queue, then syncs both the
+    /// bar's shuffle toggle (guarded against re-dispatching — see `ui::
+    /// player_bar`'s `set_shuffle_indicator`) and the mirror (immediately,
+    /// via `update_mpris_shuffle` — see that method's doc comment for why,
+    /// rather than waiting for the next unrelated `update_mpris_mirror`
+    /// call) so a client reading `Shuffle` right back sees its own write
+    /// reflected. Borrow discipline: `set_shuffle`/`is_shuffled` each run in
+    /// their own statement — see the module's `## Queue borrow discipline`
+    /// doc section.
+    fn mpris_set_shuffle(&self, on: bool) {
+        self.queue.borrow_mut().set_shuffle(on);
+        let is_shuffled = self.queue.borrow().is_shuffled();
+        self.bar.set_shuffle_indicator(is_shuffled);
+        self.update_mpris_shuffle(is_shuffled);
+        tracing::debug!(is_shuffled, "MPRIS: shuffle set");
+    }
+
+    /// MPRIS `LoopStatus` write (already parsed to `Repeat` by `mpris.rs`'s
+    /// `set_loop_status` — invalid strings never reach here, see that
+    /// method's doc comment): applies it to the queue, then syncs both the
+    /// bar's repeat button and the mirror, same shape as `mpris_set_
+    /// shuffle`. The repeat button needs no reentrancy guard (unlike
+    /// shuffle/volume) — `PlayerBar::set_repeat_indicator` only ever swaps
+    /// an icon/CSS class, which cannot itself fire the button's `clicked`
+    /// signal the way `ToggleButton::set_active`/`ScaleButton::set_value` do.
+    fn mpris_set_loop(&self, repeat: Repeat) {
+        self.queue.borrow_mut().set_repeat(repeat);
+        self.bar.set_repeat_indicator(repeat);
+        self.update_mpris_repeat(repeat);
+        tracing::debug!(?repeat, "MPRIS: loop status set");
+    }
+
+    /// MPRIS `Volume` write (already clamped to `0.0..=1.0` by `mpris.rs`'s
+    /// `set_volume` — see that method's doc comment): applies it to the
+    /// player, the tracked `volume` field (`Player` has no getter of its
+    /// own — see that field's doc comment in `player_controller.rs`), the
+    /// bar's volume control (guarded — see `ui::player_bar`'s `set_volume_
+    /// indicator`), and the mirror, same immediacy shape as `mpris_set_
+    /// shuffle`/`mpris_set_loop`.
+    fn mpris_set_volume(&self, volume: f64) {
+        self.player.set_volume(volume);
+        self.volume.set(volume);
+        self.bar.set_volume_indicator(volume);
+        self.update_mpris_volume(volume);
+        tracing::debug!(volume, "MPRIS: volume set");
     }
 }
 

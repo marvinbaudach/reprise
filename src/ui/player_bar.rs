@@ -143,6 +143,14 @@ pub struct PlayerBar {
     /// changed (it's static per track — this is only ever a real change on
     /// a track switch, not on every 500 ms tick).
     last_duration_ms: Cell<i64>,
+    /// True for the duration of `set_shuffle_indicator`'s `set_active`
+    /// call, so `connect_shuffle_toggled`'s handler can tell a programmatic
+    /// set (MPRIS `Shuffle` write) apart from a real user click. See the
+    /// module doc comment's `Update (Stage 3 Task 10)` note.
+    updating_shuffle: Rc<Cell<bool>>,
+    /// Same guard shape as `updating_shuffle`, for `set_volume_indicator`/
+    /// `connect_volume_changed`.
+    updating_volume: Rc<Cell<bool>>,
 }
 
 impl PlayerBar {
@@ -246,6 +254,8 @@ impl PlayerBar {
             dragging: Rc::new(Cell::new(false)),
             seek_gesture: RefCell::new(None),
             last_duration_ms: Cell::new(0),
+            updating_shuffle: Rc::new(Cell::new(false)),
+            updating_volume: Rc::new(Cell::new(false)),
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
         bar.set_repeat_indicator(Repeat::Off);
@@ -510,10 +520,32 @@ impl PlayerBar {
     }
 
     /// Wires the volume button: `f` is called with a `0.0..=1.0` value on
-    /// every user change.
+    /// every user change, but never for a programmatic set via `set_volume_
+    /// indicator` (guarded by `updating_volume` — same shape as `connect_
+    /// shuffle_toggled`'s `updating_shuffle`, added for the same Stage 3
+    /// Task 10 reason: MPRIS `Volume` writes now set this button
+    /// programmatically, and `gtk::ScaleButton::set_value` fires `value-
+    /// changed` regardless of whether code or the user caused it).
     pub fn connect_volume_changed<F: Fn(f64) + 'static>(&self, f: F) {
+        let updating_volume = self.updating_volume.clone();
+        self.volume_button.connect_value_changed(move |_, value| {
+            if updating_volume.get() {
+                return;
+            }
+            f(value);
+        });
+    }
+
+    /// Sets the volume button's value programmatically — used when an
+    /// MPRIS `Volume` write changes the volume externally (Stage 3 Task
+    /// 10), so the on-screen control follows. Guarded by `updating_volume`
+    /// so this doesn't re-fire `connect_volume_changed`'s callback — see
+    /// that method's doc comment.
+    pub fn set_volume_indicator(&self, volume: f64) {
+        self.updating_volume.set(true);
         self.volume_button
-            .connect_value_changed(move |_, value| f(value));
+            .set_value(volume.clamp(VOLUME_MIN, VOLUME_MAX));
+        self.updating_volume.set(false);
     }
 
     /// Wires the previous-track button; `f` is called on every click with no
@@ -529,19 +561,39 @@ impl PlayerBar {
     }
 
     /// Wires the shuffle toggle; `f` is called with the button's new active
-    /// state on every user click. Nothing in this codebase sets
-    /// `shuffle_button`'s state programmatically (yet — Stage 2 settings
-    /// persistence may), so unlike `connect_seek`'s `updating_scale` guard
-    /// there is no reentrancy hazard to guard against here today: `connect_
-    /// toggled` only ever fires from a real user click. If a future caller
-    /// does call `shuffle_button.set_active` programmatically, add an
-    /// `updating_*`-style guard Cell at that point, following the same
-    /// pattern documented on `updating_scale` above — `queue::Queue::
-    /// set_shuffle` is itself idempotent for a same-value call, so a missing
-    /// guard would cause at worst a redundant no-op reshuffle, not a loop.
+    /// state on every user click, but never for a programmatic set via
+    /// `set_shuffle_indicator` (guarded by `updating_shuffle`, same
+    /// `Rc<Cell<bool>>` shape as `connect_seek`'s `updating_scale`).
+    ///
+    /// Originally (Stage 2 Task 4) this guard was deferred as YAGNI — nothing
+    /// called `shuffle_button.set_active` programmatically yet, so `connect_
+    /// toggled` only ever fired from a real user click, and `queue::Queue::
+    /// set_shuffle`'s idempotence for a same-value call meant a missing guard
+    /// could only cost a redundant no-op reshuffle, not a loop. Stage 3 Task
+    /// 10 needs it for real: MPRIS's `Shuffle` writes now call `set_shuffle_
+    /// indicator`, and without this guard that would immediately re-dispatch
+    /// a `SetShuffle` command right back at the controller — this guard
+    /// removes that round-trip entirely rather than continuing to rely on
+    /// idempotence to make it harmless.
     pub fn connect_shuffle_toggled<F: Fn(bool) + 'static>(&self, f: F) {
-        self.shuffle_button
-            .connect_toggled(move |button| f(button.is_active()));
+        let updating_shuffle = self.updating_shuffle.clone();
+        self.shuffle_button.connect_toggled(move |button| {
+            if updating_shuffle.get() {
+                return;
+            }
+            f(button.is_active());
+        });
+    }
+
+    /// Sets the shuffle toggle's active state programmatically — used when
+    /// an MPRIS `Shuffle` write changes the queue's shuffle state
+    /// externally (Stage 3 Task 10), so the on-screen button follows.
+    /// Guarded by `updating_shuffle` so this doesn't re-fire `connect_
+    /// shuffle_toggled`'s callback — see that method's doc comment.
+    pub fn set_shuffle_indicator(&self, active: bool) {
+        self.updating_shuffle.set(true);
+        self.shuffle_button.set_active(active);
+        self.updating_shuffle.set(false);
     }
 
     /// Wires the repeat button; `f` is called on every click with no
