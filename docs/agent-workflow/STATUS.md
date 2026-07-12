@@ -21,26 +21,25 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     stabilize empty browse-search popup width
-SINCE:    2026-07-12 21:53 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 21:53 CEST: Codex claimed the lock for the browse-popup width regression._
+_As of 2026-07-12 22:01 CEST: Codex released the lock after stabilizing empty browse-popup geometry._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Browse search + rating resort** — Genre/Artist/Album dropdown searches now
-  have GTK's required string expression and substring matching; nonsense text therefore filters
-  their option lists empty. Inline rating edits perform a full query reload when rating-sorted and
-  move immediately, while other sorts retain efficient row invalidation (`01a669e`). Tag-edit fields
-  already reloaded fully. Final gates: 471 passed, 1 ignored; core PURE; audit has only the accepted
-  `paste` advisory.
+- **Last completed:** **Browse empty-search popup geometry** — scoped GTK CSS gives only the three
+  browse dropdown popovers a stable 200px minimum content height, so zero results no longer collapse
+  the popup while result-rich lists may still grow (`3ffdda0`). CSS/parser-isolated startup was clean;
+  real visual confirmation remains manual. Final gates: 472 passed, 1 ignored; core PURE; audit has
+  only the accepted `paste` advisory.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `01a669e`; this coordination-board update follows it.
+- **Feature HEAD:** `3ffdda0`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -58,8 +57,8 @@ _As of 2026-07-12 21:53 CEST: Codex claimed the lock for the browse-popup width 
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
   for files added while the app was closed, current-track table selection, and playable stopped
-  session restoration without autoplay, plus functional browse-option search and rating resorting;
-  all exact user-reported paths have regression coverage.
+  session restoration without autoplay, functional browse-option search, rating resorting, and
+  stable empty browse-popup geometry; all exact user-reported paths have regression coverage.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
