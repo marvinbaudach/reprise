@@ -562,18 +562,31 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
      laufen bereits durch eine zentrale Controller-/MPRIS-Schicht — ein
      Remote-Modul exponiert dieselben Kommandos über ein
      LAN-Protokoll (gepaart, lokal, kein Cloud-Dienst).
-  2. **Kabellose Synchronisation** über WLAN — Kopplung per QR-Code;
-     Sync-Regeln: ausgewählte Playlists, Bewertungen & Wiedergabezähler
-     in beide Richtungen, „nur im WLAN", optionales Transkodieren
-     (z. B. FLAC → Opus 128 kbit/s, via GStreamer). iOS-Unterstützung
-     der Begleit-App bleibt angedacht (Mockup 7c).
-  Sicherheit: Kopplung explizit (QR + Bestätigung), Kommunikation nur
-  im lokalen Netz, verschlüsselt; das Modul fordert die
-  Netzwerk-Berechtigung im Flatpak erst an, wenn es aktiviert wird.
-  MTP/gvfs bzw. USB-Massenspeicher (wie in Rhythmbox) als Fallback für
-  Geräte ohne Begleit-App. Gekoppelte Geräte erscheinen als Liste im
-  Tab „Synchronisation" (vom Modul eingehängt) mit „Jetzt
-  synchronisieren"/„Entfernen"; eigener Sidebar-Eintrag „Geräte".
+  2. **Synchronisation über zwei gleichwertige Wege** (Nutzer-Anforderung
+     2026-07-11 — Kabel ist ausdrücklich kein bloßer Fallback):
+     - **Kabel / USB (MTP, primär):** Gerät per USB anstecken → über
+       MTP (via `libmtp`/gvfs, wie Rhythmbox) erkennen und synchronisieren;
+       für Geräte im Massenspeicher-Modus alternativ direkter
+       Dateisystem-Zugriff. Funktioniert ohne Begleit-App, mit jedem
+       Android-Gerät und vielen MP3-Playern — der zuverlässige,
+       netzwerkunabhängige Standardweg.
+     - **Kabellos über WLAN (Begleit-App):** Kopplung per QR-Code,
+       „nur im WLAN"; für Nutzer, die die Begleit-App installiert haben.
+     Beide Wege teilen dieselben **Sync-Regeln**: ausgewählte Playlists,
+     Bewertungen & Wiedergabezähler in beide Richtungen, optionales
+     Transkodieren (z. B. FLAC → Opus 128 kbit/s, via GStreamer),
+     „nur Neues übertragen / Verwaistes optional entfernen".
+     iOS-Unterstützung der Begleit-App bleibt angedacht (Mockup 7c);
+     iOS-Geräte sind über MTP allerdings nicht klassisch ansteuerbar —
+     dort führt nur der WLAN-Weg.
+  Sicherheit: WLAN-Kopplung explizit (QR + Bestätigung), Kommunikation nur
+  im lokalen Netz, verschlüsselt; das Modul fordert die Netzwerk-
+  Berechtigung im Flatpak erst an, wenn der WLAN-Weg aktiviert wird — der
+  Kabel-Weg braucht kein Netzwerk, nur USB-/MTP-Zugriff (Flatpak-Portal).
+  Angeschlossene und gekoppelte Geräte erscheinen als Liste im Tab
+  „Synchronisation" (vom Modul eingehängt) mit „Jetzt synchronisieren"/
+  „Entfernen"; eigener Sidebar-Eintrag „Geräte" (erkennt USB-Geräte über
+  udev/gvfs automatisch).
   Die Android-App selbst ist ein eigenes Projekt (eigenes Repo/eigene
   Planung) — Reprise-seitig zählt hier das Protokoll + die Module.
 - **Scrobbling (Last.fm/Libre.fm)** — erstes Modul nach dem MVP
