@@ -19,6 +19,7 @@ use crate::ui::view_session::{self, SearchRestoreGuard, TrackViewSnapshot};
 
 const SEED_ENV: &str = "REPRISE_SMOKE_SESSION_SEED";
 const REPORT_ENV: &str = "REPRISE_SMOKE_SESSION_REPORT";
+const PLAY_ENV: &str = "REPRISE_SMOKE_SESSION_PLAY";
 
 pub(super) fn load(conn: &Connection) -> SessionState {
     match std::env::var(SEED_ENV) {
@@ -67,6 +68,10 @@ pub(super) fn restore_runtime(
         search_guard,
         state,
     );
+    if let Some(player) = player {
+        player.notify_restored_current_track();
+        arm_play(player);
+    }
     if std::env::var(REPORT_ENV).is_ok() {
         let playback = player.map_or(MprisPlaybackStatus::Stopped, |player| {
             player.session_playback_status()
@@ -77,6 +82,20 @@ pub(super) fn restore_runtime(
             "session restore report"
         );
     }
+}
+
+fn arm_play(player: &Rc<PlayerController>) {
+    if std::env::var(PLAY_ENV).is_err() {
+        return;
+    }
+    let player = Rc::downgrade(player);
+    glib::idle_add_local_once(move || {
+        let Some(player) = player.upgrade() else {
+            return;
+        };
+        tracing::info!("{PLAY_ENV}: activating restored play button");
+        player.bar.smoke_activate_play_pause();
+    });
 }
 
 pub(super) fn wire_close(

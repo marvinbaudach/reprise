@@ -158,6 +158,8 @@ pub struct PlayerBar {
     /// changed (it's static per track — this is only ever a real change on
     /// a track switch, not on every 500 ms tick).
     last_duration_ms: Cell<i64>,
+    playback_state: Cell<PlaybackState>,
+    queue_has_tracks: Cell<bool>,
     /// True for the duration of `set_shuffle_indicator`'s `set_active`
     /// call, so `connect_shuffle_toggled`'s handler can tell a programmatic
     /// set (MPRIS `Shuffle` write) apart from a real user click. See the
@@ -299,6 +301,8 @@ impl PlayerBar {
             pointer_down: Rc::new(Cell::new(false)),
             seek_gesture: RefCell::new(None),
             last_duration_ms: Cell::new(0),
+            playback_state: Cell::new(PlaybackState::Stopped),
+            queue_has_tracks: Cell::new(false),
             updating_shuffle: Rc::new(Cell::new(false)),
             updating_volume: Rc::new(Cell::new(false)),
             on_expand,
@@ -367,8 +371,9 @@ impl PlayerBar {
     }
 
     /// Applies a `PlaybackState`: swaps the play/pause icon and tooltip, and
-    /// keeps the whole bar insensitive while stopped — a stopped bar has no
-    /// active track to seek, pause, or adjust volume for.
+    /// combines the state with queue availability when deriving sensitivity.
+    /// A stopped restored queue remains playable, but its seek scale stays
+    /// disabled until a track is actually loaded.
     pub fn set_state(&self, state: PlaybackState) {
         let is_playing = state == PlaybackState::Playing;
         self.play_pause_button
@@ -379,7 +384,8 @@ impl PlayerBar {
             strings::text(strings::PLAY)
         };
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
-        self.bar.set_sensitive(state != PlaybackState::Stopped);
+        self.playback_state.set(state);
+        self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
             // Force-clear any stale drag state: e.g. the track finishes or
             // errors out while the user still has the pointer down on the
@@ -457,6 +463,10 @@ impl PlayerBar {
     /// "toggle" means and reports the resulting state back via `set_state`.
     pub fn connect_play_pause<F: Fn() + 'static>(&self, f: F) {
         self.play_pause_button.connect_clicked(move |_| f());
+    }
+
+    pub(super) fn smoke_activate_play_pause(&self) {
+        self.play_pause_button.emit_clicked();
     }
 
     /// Wires the seek scale: `f` is called with the target position in
@@ -712,12 +722,27 @@ impl PlayerBar {
         self.repeat_button.connect_clicked(move |_| f());
     }
 
-    /// Enables/disables the previous/next buttons — insensitive whenever the
-    /// queue is empty (nothing to step to), independent of the rest of the
-    /// bar's Playing/Paused/Stopped-driven sensitivity (`set_state`).
+    /// Updates queue-dependent controls and the stopped bar's resumability.
+    /// Previous/next remain insensitive without a current queue position;
+    /// Play remains usable while stopped when a queue can be resumed.
     pub fn set_transport_enabled(&self, enabled: bool) {
+        self.queue_has_tracks.set(enabled);
         self.prev_button.set_sensitive(enabled);
         self.next_button.set_sensitive(enabled);
+        self.refresh_sensitivity();
+    }
+
+    fn refresh_sensitivity(&self) {
+        let state = self.playback_state.get();
+        let queue_has_tracks = self.queue_has_tracks.get();
+        self.bar
+            .set_sensitive(super::player_bar_state::bar_should_be_sensitive(
+                state,
+                queue_has_tracks,
+            ));
+        self.play_pause_button
+            .set_sensitive(state != PlaybackState::Stopped || queue_has_tracks);
+        self.scale.set_sensitive(state != PlaybackState::Stopped);
     }
 
     /// Reflects the queue's repeat mode on the repeat button: `All`/`One`

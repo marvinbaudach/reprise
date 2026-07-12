@@ -16,15 +16,48 @@
 //! controller.
 
 use crate::ui::player_controller::PlayerController;
+use reprise_core::media_integration::MprisPlaybackStatus;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToggleAction {
+    StartCurrent,
+    TogglePipeline,
+    Noop,
+}
+
+fn toggle_action(status: MprisPlaybackStatus, current_track: Option<i64>) -> ToggleAction {
+    match (status, current_track) {
+        (MprisPlaybackStatus::Stopped, Some(_)) => ToggleAction::StartCurrent,
+        (MprisPlaybackStatus::Stopped, None) => ToggleAction::Noop,
+        (MprisPlaybackStatus::Playing | MprisPlaybackStatus::Paused, _) => {
+            ToggleAction::TogglePipeline
+        }
+    }
+}
 
 impl PlayerController {
-    /// Toggles play/pause on the player — shared by the bar's play/pause
-    /// button and MPRIS's `PlayPause` method (see `player_controller.rs`'s
-    /// `## MPRIS` doc section). Logs and no-ops on failure, matching the
-    /// prior inline button-closure behavior.
+    /// Starts the restored queue's current track while stopped; otherwise
+    /// toggles the already-loaded pipeline. Shared by the bar, Space, and
+    /// MPRIS PlayPause, without ever introducing startup autoplay.
     pub(super) fn toggle_pause(&self) {
-        if let Err(error) = self.player.toggle_pause() {
-            tracing::error!(%error, "toggle play/pause failed");
+        let status = self
+            .mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .status;
+        let current = self.queue.borrow().current();
+        match toggle_action(status, current) {
+            ToggleAction::StartCurrent => {
+                if let Some(id) = current {
+                    self.play_track_id(id);
+                }
+            }
+            ToggleAction::TogglePipeline => {
+                if let Err(error) = self.player.toggle_pause() {
+                    tracing::error!(%error, "toggle play/pause failed");
+                }
+            }
+            ToggleAction::Noop => tracing::debug!("play/pause: queue is empty; nothing to play"),
         }
     }
 
@@ -130,5 +163,22 @@ impl PlayerController {
                 "queue purged of hard-deleted track ids"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stopped_toggle_starts_current_queue_track_without_autoplay() {
+        assert_eq!(
+            toggle_action(MprisPlaybackStatus::Stopped, Some(42)),
+            ToggleAction::StartCurrent
+        );
+        assert_eq!(
+            toggle_action(MprisPlaybackStatus::Stopped, None),
+            ToggleAction::Noop
+        );
     }
 }
