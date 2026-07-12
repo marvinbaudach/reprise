@@ -434,11 +434,21 @@ impl TrackList {
         let title_column = built_columns.title;
         let artist_column = built_columns.artist;
         let column_registry = built_columns.registry;
+        let initial_sort_column = if column_registry.is_visible(ColumnId::Artist) {
+            artist_column.clone()
+        } else {
+            *shared.sort.borrow_mut() = SortState {
+                field: "title".into(),
+                dir: "asc".into(),
+            };
+            title_column.clone()
+        };
 
         wire_sort_clicks(&column_view, &shared);
 
-        // Sets the initial sort indicator (artist ascending) on the column
-        // header. `SortState::default()` is already `artist`/`asc`, so the
+        // Sets the initial sort indicator (artist ascending, or title when
+        // an imported layout hides artist). `shared.sort` already matches
+        // that choice, so the
         // `primary-sort-column`/`primary-sort-order` notify signals this
         // triggers land in `on_sorter_changed`, compute the same
         // (field, dir) pair already stored in `shared.sort`, and the dedup
@@ -446,7 +456,7 @@ impl TrackList {
         // short-circuits before it would call `reload` — so this call fires
         // zero SQL queries. The one and only initial load below still runs
         // exactly once.
-        column_view.sort_by_column(Some(&artist_column), gtk4::SortType::Ascending);
+        column_view.sort_by_column(Some(&initial_sort_column), gtk4::SortType::Ascending);
 
         wire_activate(&column_view, &shared);
         track_list_context_menu::wire_context_menu_actions(&column_view, &shared);
@@ -519,14 +529,22 @@ impl TrackList {
         )?;
         self.column_registry.apply(layout);
         let sort = self.shared.sort.borrow().clone();
-        if let Some(column) =
-            ColumnId::from_sort_field(&sort.field).and_then(|id| self.column_registry.column(id))
-        {
+        let current_id = ColumnId::from_sort_field(&sort.field);
+        let (column, order) = if current_id.is_some_and(|id| self.column_registry.is_visible(id)) {
+            let column = current_id.and_then(|id| self.column_registry.column(id));
             let order = if sort.dir == "desc" {
                 gtk4::SortType::Descending
             } else {
                 gtk4::SortType::Ascending
             };
+            (column, order)
+        } else {
+            (
+                self.column_registry.column(ColumnId::Title),
+                gtk4::SortType::Ascending,
+            )
+        };
+        if let Some(column) = column {
             self.shared.column_view.sort_by_column(Some(column), order);
         }
         Ok(())

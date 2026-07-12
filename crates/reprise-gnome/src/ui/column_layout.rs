@@ -240,6 +240,12 @@ impl ColumnRegistry {
     pub fn column(&self, id: ColumnId) -> Option<&gtk4::ColumnViewColumn> {
         self.columns.get(&id)
     }
+
+    pub fn is_visible(&self, id: ColumnId) -> bool {
+        self.columns
+            .get(&id)
+            .is_some_and(gtk4::ColumnViewColumn::is_visible)
+    }
 }
 
 pub(super) fn build_columns(
