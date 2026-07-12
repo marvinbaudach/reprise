@@ -495,7 +495,17 @@ fn query_track_window_queue(
         return Ok(Vec::new());
     }
 
-    let placeholders = (1..=slice.len())
+    // Resolve each *distinct* id once — a duplicated id must still render
+    // once per occurrence in `slice` (see below), so the id list handed to
+    // `IN (...)` is deduplicated first to keep the query and its parameter
+    // count independent of how many times an id repeats in this page.
+    let distinct_ids: Vec<i64> = slice
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let placeholders = (1..=distinct_ids.len())
         .map(|i| format!("?{i}"))
         .collect::<Vec<_>>()
         .join(",");
@@ -507,7 +517,10 @@ fn query_track_window_queue(
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows: Vec<Track> = stmt
-        .query_map(rusqlite::params_from_iter(slice.iter()), row_to_track)?
+        .query_map(
+            rusqlite::params_from_iter(distinct_ids.iter()),
+            row_to_track,
+        )?
         .collect::<Result<_, _>>()?;
 
     // invariant: an id in `ids` with no matching `tracks` row is silently
@@ -525,8 +538,20 @@ fn query_track_window_queue(
     // can't make a `ColumnView` believe there are more rows than this
     // function will ever render (see `queue_count_matches_window_row_count_
     // when_some_ids_do_not_resolve` below).
-    let mut by_id: HashMap<i64, Track> = rows.into_iter().map(|t| (t.id, t)).collect();
-    Ok(slice.iter().filter_map(|id| by_id.remove(id)).collect())
+    //
+    // A *duplicated* id within `slice` is resolved independently per
+    // occurrence (via `by_id.get(id).cloned()`, never `remove`), so two
+    // copies of the same queued id yield two rows, each in its own slot —
+    // this used to be a `HashMap::remove`-based drain that silently
+    // swallowed every occurrence after the first, desyncing DnD reorder
+    // (which uses view row position as queue index) for every row after the
+    // duplicate. See `queue_window_renders_a_duplicated_id_once_per_
+    // occurrence` below.
+    let by_id: HashMap<i64, Track> = rows.into_iter().map(|t| (t.id, t)).collect();
+    Ok(slice
+        .iter()
+        .filter_map(|id| by_id.get(id).cloned())
+        .collect())
 }
 
 /// Runs the windowed track query for `source`. `queue_ids` is only read for
@@ -661,8 +686,15 @@ fn query_track_count_smart(
 /// comment for the full history). Every occurrence in `queue_ids` is
 /// counted independently (not deduplicated first), matching `query_track_
 /// window_queue`'s own per-slot resolution — a track queued twice that
-/// still exists counts twice, exactly like the window that renders it
-/// twice.
+/// still exists counts twice, and (Stage-3 close-out, dup-id follow-up)
+/// `query_track_window_queue` now genuinely renders it twice too: it used
+/// to resolve slots via a `HashMap::remove`-based drain, which silently
+/// dropped every occurrence of a duplicated id after the first, so this
+/// invariant held for the count but not for the window it was compared
+/// against. Both are now id-resolution-independent-per-slot, so this count
+/// equals the window's row count for any `queue_ids`, duplicates included
+/// — see `queue_window_renders_a_duplicated_id_once_per_occurrence` and
+/// `queue_count_matches_window_row_count_with_a_duplicated_id` below.
 fn query_track_count_queue(conn: &Connection, queue_ids: &[i64]) -> Result<i64, rusqlite::Error> {
     if queue_ids.is_empty() {
         return Ok(0);
@@ -2106,6 +2138,76 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(count as usize, rows.len());
+        assert_eq!(count, 3);
+    }
+
+    /// Stage-3 close-out, dup-id follow-up: the bug this fix closes.
+    /// `query_track_window_queue` used to resolve each window slot via a
+    /// `HashMap::remove`-based drain, so the *second* occurrence of a
+    /// duplicated queue id (e.g. a track added to the queue twice, or
+    /// select-all -> add) found nothing left in the map and was silently
+    /// dropped — the view rendered one row where the queue had two, and
+    /// since queue DnD-reorder uses view row position as queue index, every
+    /// row after the duplicate desynced. Each occurrence must now resolve
+    /// independently, in queue order.
+    #[test]
+    fn queue_window_renders_a_duplicated_id_once_per_occurrence() {
+        let mut conn = seeded_conn_with_tracks(3);
+        let queue_ids = vec![1, 2, 1]; // id 1 queued twice, non-adjacent
+
+        let rows = query_track_window(
+            &mut conn,
+            &ViewSource::Queue,
+            "ignored",
+            "ignored",
+            "",
+            0,
+            queue_ids.len() as i64,
+            &queue_ids,
+        )
+        .unwrap();
+
+        let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
+        assert_eq!(ids, vec![1, 2, 1]);
+    }
+
+    /// The reviewer's specific regression: `query_track_count`'s `Queue` arm
+    /// and `query_track_window_queue` must agree on row count even when the
+    /// queue contains a duplicated id within a single window page. Before
+    /// this fix, count=2 (both occurrences resolve) while the window only
+    /// rendered 1 row (the second occurrence was dropped) — the same
+    /// count-versus-renderable-rows desync class Stage 3 eliminated for
+    /// hard-deleted ids, triggered here by an ordinary duplicate instead.
+    ///
+    /// A duplicate id split across a window *boundary* (`MAX_WINDOW_LIMIT` =
+    /// 500) is not separately exercised here: each window call only ever
+    /// sees its own slice, and this fix resolves every slot in a slice
+    /// independently regardless of where the slice's bounds fall relative to
+    /// other occurrences of the same id elsewhere in `queue_ids` — a
+    /// duplicate straddling a page boundary is just two single-page cases
+    /// (one occurrence per page), each already covered by this test's same
+    /// per-slot, non-draining resolution.
+    #[test]
+    fn queue_count_matches_window_row_count_with_a_duplicated_id() {
+        let mut conn = seeded_conn_with_tracks(3);
+        let queue_ids = vec![1, 2, 1]; // id 1 queued twice
+
+        let count = query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap();
+        let rows = query_track_window(
+            &mut conn,
+            &ViewSource::Queue,
+            "ignored",
+            "ignored",
+            "",
+            0,
+            queue_ids.len() as i64,
+            &queue_ids,
+        )
+        .unwrap();
+        let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
+
+        assert_eq!(ids, vec![1, 2, 1]);
         assert_eq!(count as usize, rows.len());
         assert_eq!(count, 3);
     }
