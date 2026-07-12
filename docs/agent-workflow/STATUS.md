@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     filter browse dropdowns and resort edited ratings
+SINCE:    2026-07-12 21:33 CEST
 ```
 
-_As of 2026-07-12 21:22 CEST: Codex released the lock after fixing stopped-session selection and Play._
+_As of 2026-07-12 21:33 CEST: Codex claimed the lock for browse-search filtering and rating-resort regressions._
 
 ## Current position
 
