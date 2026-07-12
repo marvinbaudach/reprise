@@ -67,8 +67,8 @@
 //! one-statement-per-queue-call shape applies there too, even though neither
 //! `PlayerBar`'s setters nor the mirror patch functions can re-enter `queue`.
 
-use crate::mpris::{self, MprisCommand, MprisPlaybackStatus, MprisState};
-use crate::player::PlaybackState;
+use crate::media_integration::{self, MprisCommand, MprisPlaybackStatus, MprisState};
+use crate::playback::PlaybackState;
 use crate::queue::Repeat;
 use crate::ui::player_controller::PlayerController;
 
@@ -251,7 +251,7 @@ impl PlayerController {
     /// every other MPRIS-bound `try_send` in this codebase (see `mpris.rs`'s
     /// `MprisPlayer::dispatch`).
     pub(super) fn notify_mpris_seek(&self, position_ms: i64) {
-        let position_us = mpris::ms_to_micros(position_ms);
+        let position_us = media_integration::ms_to_micros(position_ms);
         if let Err(error) = self.mpris_seek_notify.try_send(position_us) {
             tracing::warn!(
                 %error,

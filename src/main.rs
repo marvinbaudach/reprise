@@ -1,8 +1,10 @@
 mod db;
 mod format;
 mod library;
+mod media_integration;
 mod models;
 mod mpris;
+mod playback;
 mod player;
 mod queries;
 mod queue;

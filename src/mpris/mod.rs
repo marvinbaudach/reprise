@@ -94,16 +94,7 @@
 
 mod state;
 
-use state::{build_metadata, can_pause, can_play, can_seek, metadata_differs, track_object_path};
-pub use state::{
-    loop_status_to_repeat, micros_to_ms, ms_to_micros, repeat_to_loop_status, MprisCommand,
-    MprisPlaybackStatus, MprisState,
-};
-// `pub(crate)`, not `pub use` alongside the above: `DEFAULT_VOLUME` itself is
-// only `pub(crate)` in `state` (see its doc comment there), so re-exporting
-// it any wider would be a visibility error — crate-visibility is all `ui::
-// player_controller` (its one other user) needs anyway.
-pub(crate) use state::DEFAULT_VOLUME;
+use state::{build_metadata, loop_status_to_repeat, repeat_to_loop_status, track_object_path};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -117,7 +108,10 @@ use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 use zbus::{fdo, interface};
 
-use crate::APP_ID;
+use crate::media_integration::{
+    can_pause, can_play, can_seek, metadata_differs, micros_to_ms, ms_to_micros, read_state,
+    MediaIntegrationHandles, MprisCommand, MprisState, SharedMprisState,
+};
 
 /// Well-known bus name this app claims — must match the MPRIS spec's
 /// `org.mpris.MediaPlayer2.<name>` convention (GNOME Shell and friends
@@ -142,22 +136,6 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// comment.
 const FIXED_RATE: f64 = 1.0;
 
-/// `Arc<Mutex<_>>` handle to the mirror — `Arc` so both `PlayerController`
-/// (writer, GTK main thread) and this module's `MprisPlayer` interface
-/// object (reader, MPRIS thread) can hold it independently of either side's
-/// lifetime.
-pub type SharedMprisState = Arc<Mutex<MprisState>>;
-
-/// Reads `state` through the same poisoned-recovery pattern `player.rs`
-/// uses everywhere it locks: a panic on one side of the mutex must not
-/// poison MPRIS (or the controller) permanently.
-fn read_state(state: &SharedMprisState) -> MprisState {
-    state
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
-}
-
 /// Starts the MPRIS integration: spawns the dedicated D-Bus thread (see the
 /// module's `## Thread model` doc section) and returns the shared state
 /// mirror, the command receiver, and a sender for seek notifications —
@@ -173,19 +151,19 @@ fn read_state(state: &SharedMprisState) -> MprisState {
 /// [`run`]) drains it to emit the `Seeked` signal — see [`run`]'s doc
 /// comment for why that's a separate thread from the `PropertiesChanged`
 /// poll loop.
-pub fn start() -> (
-    SharedMprisState,
-    async_channel::Receiver<MprisCommand>,
-    async_channel::Sender<i64>,
-) {
+pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
     let state: SharedMprisState = Arc::new(Mutex::new(MprisState::default()));
     let (sender, receiver) = async_channel::unbounded::<MprisCommand>();
     let (seek_sender, seek_receiver) = async_channel::unbounded::<i64>();
 
     let thread_state = state.clone();
-    std::thread::spawn(move || run(&thread_state, sender, seek_receiver));
+    std::thread::spawn(move || run(&thread_state, sender, seek_receiver, desktop_entry));
 
-    (state, receiver, seek_sender)
+    MediaIntegrationHandles {
+        shared_state: state,
+        commands: receiver,
+        seek_notify: seek_sender,
+    }
 }
 
 /// The MPRIS thread's entire body: connect, claim the name, serve both
@@ -199,6 +177,7 @@ fn run(
     state: &SharedMprisState,
     commands: async_channel::Sender<MprisCommand>,
     seek_receiver: async_channel::Receiver<i64>,
+    desktop_entry: &'static str,
 ) {
     let player_iface = MprisPlayer {
         state: state.clone(),
@@ -207,7 +186,7 @@ fn run(
 
     let connection = connection::Builder::session()
         .and_then(|builder| builder.name(BUS_NAME))
-        .and_then(|builder| builder.serve_at(OBJECT_PATH, MprisRoot))
+        .and_then(|builder| builder.serve_at(OBJECT_PATH, MprisRoot { desktop_entry }))
         .and_then(|builder| builder.serve_at(OBJECT_PATH, player_iface))
         .and_then(connection::Builder::build);
     let connection = match connection {
@@ -377,7 +356,15 @@ fn emit_property_changes(
 /// `SupportedUriSchemes`/`SupportedMimeTypes` are optional per the spec
 /// and implemented below as required constants (no track list UI; no URI
 /// scheme or MIME type filtering needed).
-struct MprisRoot;
+///
+/// `desktop_entry` is passed in by the frontend (`mpris::start`'s
+/// `desktop_entry` parameter, sourced from the GNOME frontend's `APP_ID`)
+/// rather than read from a `crate::APP_ID` const: the desktop-entry name
+/// belongs to the frontend (a KDE frontend ships its own `.desktop`), so
+/// this platform module must not reach up into it.
+struct MprisRoot {
+    desktop_entry: &'static str,
+}
 
 #[interface(name = "org.mpris.MediaPlayer2")]
 impl MprisRoot {
@@ -398,7 +385,7 @@ impl MprisRoot {
 
     #[zbus(property)]
     fn desktop_entry(&self) -> String {
-        APP_ID.to_string()
+        self.desktop_entry.to_string()
     }
 
     #[zbus(property)]

@@ -4,40 +4,15 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[derive(Debug, thiserror::Error)]
-pub enum PlayerError {
-    #[error("GStreamer: {0}")]
-    Gst(String),
-    #[error("invalid path: {0}")]
-    BadPath(String),
-}
+use crate::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
 
-pub fn path_to_uri(path: &str) -> Result<String, PlayerError> {
+pub fn path_to_uri(path: &str) -> Result<String, PlaybackError> {
     if !path.starts_with('/') {
-        return Err(PlayerError::BadPath(path.into()));
+        return Err(PlaybackError::BadPath(path.into()));
     }
     gst::glib::filename_to_uri(path, None)
         .map(|u| u.to_string())
-        .map_err(|e| PlayerError::BadPath(e.to_string()))
-}
-
-/// Coarse playback state, mirrored from the underlying GStreamer pipeline state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlaybackState {
-    Playing,
-    Paused,
-    Stopped,
-}
-
-/// Events the player reports asynchronously, from the GStreamer bus watch and
-/// the position ticker. The UI layer subscribes to these via the callback
-/// passed to `Player::new`.
-#[derive(Debug, Clone)]
-pub enum PlayerEvent {
-    StateChanged(PlaybackState),
-    Position { position_ms: i64, duration_ms: i64 },
-    TrackFinished,
-    Error(String),
+        .map_err(|e| PlaybackError::BadPath(e.to_string()))
 }
 
 /// Environment variable that, when set, overrides playbin's audio sink
@@ -69,15 +44,15 @@ pub struct Player {
 /// applied, if set. Extracted out of `Player::new` so `Player::rebuild_
 /// playbin` (the wedged-pipeline recovery — see `Player::play`'s doc
 /// comment) can build an identically-configured replacement element.
-fn build_playbin() -> Result<gst::Element, PlayerError> {
+fn build_playbin() -> Result<gst::Element, PlaybackError> {
     let playbin = gst::ElementFactory::make("playbin3")
         .build()
-        .map_err(|e| PlayerError::Gst(e.to_string()))?;
+        .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
 
     if let Ok(sink_name) = std::env::var(AUDIO_SINK_ENV_VAR) {
         let sink = gst::ElementFactory::make(&sink_name)
             .build()
-            .map_err(|e| PlayerError::Gst(e.to_string()))?;
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
         // Pace the override sink against the pipeline clock (if it has a
         // `sync` property): `fakesink` defaults to sync=false, which
         // would consume an entire track as fast as it decodes — EOS
@@ -113,10 +88,10 @@ fn build_playbin() -> Result<gst::Element, PlayerError> {
 fn attach_bus_watch(
     playbin: &gst::Element,
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
-) -> Result<gst::bus::BusWatchGuard, PlayerError> {
+) -> Result<gst::bus::BusWatchGuard, PlaybackError> {
     let bus = playbin
         .bus()
-        .ok_or_else(|| PlayerError::Gst("no bus".into()))?;
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: no bus".into()))?;
     bus.add_watch(move |_, msg| {
         use gst::MessageView;
         match msg.view() {
@@ -132,7 +107,7 @@ fn attach_bus_watch(
         }
         gst::glib::ControlFlow::Continue
     })
-    .map_err(|e| PlayerError::Gst(e.to_string()))
+    .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))
 }
 
 impl Player {
@@ -142,8 +117,8 @@ impl Player {
     /// an `Arc` so both can share it.
     pub fn new(
         on_event: Box<dyn Fn(PlayerEvent) + Send + Sync + 'static>,
-    ) -> Result<Self, PlayerError> {
-        gst::init().map_err(|e| PlayerError::Gst(e.to_string()))?;
+    ) -> Result<Self, PlaybackError> {
+        gst::init().map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
 
         let on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync> = Arc::from(on_event);
 
@@ -187,6 +162,59 @@ impl Player {
         })
     }
 
+    /// One playback attempt on the *current* pipeline: `Null` → set the new
+    /// URI → `Playing`. Shared by `play`'s first attempt and its post-
+    /// rebuild retry (DRY) — see `play`'s doc comment.
+    fn try_play(&self, uri: &str) -> Result<(), PlaybackError> {
+        let playbin = self
+            .playbin
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        playbin
+            .set_state(gst::State::Null)
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+        playbin.set_property("uri", uri);
+        playbin
+            .set_state(gst::State::Playing)
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+        drop(playbin);
+        (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Playing));
+        Ok(())
+    }
+
+    /// Discards the current playbin element and replaces it with a freshly
+    /// built one (see `play`'s `## Wedged-pipeline recovery` doc section),
+    /// re-attaching an equivalent bus watch. The position ticker picks up
+    /// the replacement automatically on its next tick (it reads through the
+    /// same `Arc<Mutex<_>>`, not a stale clone — see the `playbin` field's
+    /// doc comment).
+    fn rebuild_playbin(&self) -> Result<(), PlaybackError> {
+        let new_playbin = build_playbin()?;
+        let new_watch = attach_bus_watch(&new_playbin, self.on_event.clone())?;
+
+        let mut playbin = self
+            .playbin
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        // Transition the old playbin to Null before discarding it to ensure
+        // proper resource cleanup (decoders, file descriptors, buffers).
+        // Ignore transition failures since the element is already broken.
+        if let Err(error) = playbin.set_state(gst::State::Null) {
+            tracing::debug!(%error, "old playbin refused Null transition during rebuild (already broken; dropping anyway)");
+        }
+
+        *playbin = new_playbin;
+        drop(playbin);
+
+        // The old guard's `Drop` removes the old (now-discarded) element's
+        // bus watch — exactly what should happen when it's replaced.
+        let _old_watch = self.bus_watch.replace(new_watch);
+        Ok(())
+    }
+}
+
+impl PlaybackBackend for Player {
     /// Starts playback of `path`. On a `set_state(Playing)` failure, retries
     /// exactly once against a freshly rebuilt pipeline (see `rebuild_
     /// playbin`) before giving up — see the module's `## Wedged-pipeline
@@ -212,7 +240,7 @@ impl Player {
     /// here instead of silently taking every subsequent queue track down
     /// with it, which is the actual fault-tolerance property Task 5 exists
     /// to guarantee (a deleted file must never crash *or dead-end* the app).
-    pub fn play(&self, path: &str) -> Result<(), PlayerError> {
+    fn play(&self, path: &str) -> Result<(), PlaybackError> {
         let uri = path_to_uri(path)?;
         match self.try_play(&uri) {
             Ok(()) => Ok(()),
@@ -228,58 +256,7 @@ impl Player {
         }
     }
 
-    /// One playback attempt on the *current* pipeline: `Null` → set the new
-    /// URI → `Playing`. Shared by `play`'s first attempt and its post-
-    /// rebuild retry (DRY) — see `play`'s doc comment.
-    fn try_play(&self, uri: &str) -> Result<(), PlayerError> {
-        let playbin = self
-            .playbin
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        playbin
-            .set_state(gst::State::Null)
-            .map_err(|e| PlayerError::Gst(e.to_string()))?;
-        playbin.set_property("uri", uri);
-        playbin
-            .set_state(gst::State::Playing)
-            .map_err(|e| PlayerError::Gst(e.to_string()))?;
-        drop(playbin);
-        (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Playing));
-        Ok(())
-    }
-
-    /// Discards the current playbin element and replaces it with a freshly
-    /// built one (see `play`'s `## Wedged-pipeline recovery` doc section),
-    /// re-attaching an equivalent bus watch. The position ticker picks up
-    /// the replacement automatically on its next tick (it reads through the
-    /// same `Arc<Mutex<_>>`, not a stale clone — see the `playbin` field's
-    /// doc comment).
-    fn rebuild_playbin(&self) -> Result<(), PlayerError> {
-        let new_playbin = build_playbin()?;
-        let new_watch = attach_bus_watch(&new_playbin, self.on_event.clone())?;
-
-        let mut playbin = self
-            .playbin
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        // Transition the old playbin to Null before discarding it to ensure
-        // proper resource cleanup (decoders, file descriptors, buffers).
-        // Ignore transition failures since the element is already broken.
-        if let Err(error) = playbin.set_state(gst::State::Null) {
-            tracing::debug!(%error, "old playbin refused Null transition during rebuild (already broken; dropping anyway)");
-        }
-
-        *playbin = new_playbin;
-        drop(playbin);
-
-        // The old guard's `Drop` removes the old (now-discarded) element's
-        // bus watch — exactly what should happen when it's replaced.
-        let _old_watch = self.bus_watch.replace(new_watch);
-        Ok(())
-    }
-
-    pub fn toggle_pause(&self) -> Result<PlaybackState, PlayerError> {
+    fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
         let playbin = self
             .playbin
             .lock()
@@ -290,13 +267,13 @@ impl Player {
         };
         playbin
             .set_state(next.0)
-            .map_err(|e| PlayerError::Gst(e.to_string()))?;
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
         drop(playbin);
         (self.on_event)(PlayerEvent::StateChanged(next.1));
         Ok(next.1)
     }
 
-    pub fn seek_to(&self, position_ms: i64) -> Result<(), PlayerError> {
+    fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError> {
         let playbin = self
             .playbin
             .lock()
@@ -306,10 +283,10 @@ impl Player {
                 gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
                 gst::ClockTime::from_mseconds(position_ms.max(0) as u64),
             )
-            .map_err(|e| PlayerError::Gst(e.to_string()))
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))
     }
 
-    pub fn set_volume(&self, volume: f64) {
+    fn set_volume(&self, volume: f64) {
         let playbin = self
             .playbin
             .lock()
@@ -317,14 +294,14 @@ impl Player {
         playbin.set_property("volume", volume.clamp(0.0, 1.0));
     }
 
-    pub fn stop(&self) -> Result<(), PlayerError> {
+    fn stop(&self) -> Result<(), PlaybackError> {
         let playbin = self
             .playbin
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         playbin
             .set_state(gst::State::Null)
-            .map_err(|e| PlayerError::Gst(e.to_string()))?;
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
         drop(playbin);
         (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Stopped));
         Ok(())
@@ -449,6 +426,48 @@ mod tests {
         assert!(matches!(
             event,
             PlayerEvent::StateChanged(PlaybackState::Playing)
+        ));
+
+        std::env::remove_var(AUDIO_SINK_ENV_VAR);
+    }
+
+    /// Portability seam (refactor Task 5): drives play/stop through
+    /// `Box<dyn PlaybackBackend>` — the exact shape the controller holds — to
+    /// pin that the trait surface alone is enough to operate the backend.
+    #[test]
+    fn playback_backend_trait_object_drives_play_and_stop() {
+        let _guard = AUDIO_SINK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+
+        let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
+        let player = Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap();
+
+        let backend: Box<dyn PlaybackBackend> = Box::new(player);
+
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+        backend.play(path).unwrap();
+
+        let playing_timeout = Duration::from_secs(5);
+        let event = rx
+            .recv_timeout(playing_timeout)
+            .expect("expected a StateChanged(Playing) event within timeout");
+        assert!(matches!(
+            event,
+            PlayerEvent::StateChanged(PlaybackState::Playing)
+        ));
+
+        backend.stop().unwrap();
+        let event = rx
+            .recv_timeout(playing_timeout)
+            .expect("expected a StateChanged(Stopped) event within timeout");
+        assert!(matches!(
+            event,
+            PlayerEvent::StateChanged(PlaybackState::Stopped)
         ));
 
         std::env::remove_var(AUDIO_SINK_ENV_VAR);
