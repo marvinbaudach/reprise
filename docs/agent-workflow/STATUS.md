@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Fix manual-QA playlist interactions (row drag, add/create/remove, new-playlist view)
+SINCE:    2026-07-12 22:08 CEST
 ```
 
-_As of 2026-07-12 22:01 CEST: Codex released the lock after stabilizing empty browse-popup geometry._
+_As of 2026-07-12 22:08 CEST: Codex claimed the lock for playlist interaction regressions found in manual QA._
 
 ## Current position
 
