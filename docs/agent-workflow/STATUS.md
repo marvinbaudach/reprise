@@ -21,23 +21,25 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     GUI-D + release # first-run/session restore, then packaging/i18n
-SINCE:    2026-07-12 15:01 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —               # no local implementation task in flight
+SINCE:    —
 ```
 
-_As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C, GUI-D, and release._
+_As of 2026-07-12 19:35 CEST: Codex completed and released the continuous GUI-B through release lock._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-12-gui-d-onboarding-session.md` (GUI-D, 8 tasks).
-- **Last completed:** **GUI-D** — native first-run wizard plus validated geometry/view/exact-queue
-  session restore without autoplay, through `6d318c6` plus review fix `93622ee`; whole-branch
-  review READY. Final gates: 458 passed, 1 ignored; core PURE; isolated skip/setup smokes and
-  exact two-start session E2E passed. Human wizard/portal/geometry/media-key checks remain.
-- **Current plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **➡️ NEXT:** Release Task 1 — Meson install layer and GNOME identity assets.
-- **Feature HEAD:** `93622ee`. Codex retains the continuous-work lock. Working tree clean.
+- **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
+- **Last completed:** **Release readiness** — Meson install layer and GNOME identity assets,
+  complete gettext/German UI, Flatpak-safe Trash portal, GNOME-50 Flatpak manifest with pinned
+  offline Cargo sources, and repeatable release documentation/checks through `d90607c`; final
+  close-out review READY. Final gates: 461 passed, 1 ignored; core PURE; full release checker,
+  installed German/English startup, first-run regressions, and exact two-start session E2E passed.
+- **Current plan:** none — every planned application and local release-readiness stage is complete.
+- **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
+  `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
+- **Feature HEAD:** `d90607c`; this close-out board update follows it. Working tree clean after commit.
 
 ## Done so far (compact)
 
@@ -51,7 +53,8 @@ _As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C
 - ✅ **GUI-B**: tag editor with multi-select batch edit + confirmed DB-only delete/safe trash.
 - ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
-- ⬜ **Release**: Flatpak/Flathub, gettext (German first), .desktop/AppStream.
+- ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
+  portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
@@ -61,3 +64,10 @@ _As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C
 - `player_bar.rs` (799) and `window.rs` (~791) are edge-tight — next edit to either must extract a
   sibling module, not inline-add.
 - `notify_now_playing` doc comment says "Stage 3 Task 9" (cosmetic; should read GUI-A).
+- Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
+  GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
+- Public release remains externally blocked by the absence of a public immutable source remote
+  and verified ownership appropriate for `org.reprise.Reprise`.
+- Human manual QA remains exactly as listed in `RELEASING.md`: real rendering/pointer/touch,
+  portal picker and Trash visibility, audible codecs, media keys/lock screen, geometry, and
+  screenshots from a populated disposable library.
