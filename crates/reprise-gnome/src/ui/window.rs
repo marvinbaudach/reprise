@@ -36,6 +36,7 @@ use super::cover_download_worker;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::playlist_io;
+use super::primary_menu;
 use super::shortcuts;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
@@ -153,6 +154,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 true
             });
     let cover_download = cover_download_worker::setup(&conn.borrow());
+    primary_menu::install(&header, &window, conn, &cover_download);
 
     let player =
         match PlayerController::new(conn.clone(), mpris_enabled, cover_download.clone(), app) {

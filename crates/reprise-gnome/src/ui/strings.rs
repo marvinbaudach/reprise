@@ -7,6 +7,8 @@
 //! site rather than here.
 
 pub const APP_NAME: &str = "Reprise";
+pub const MAIN_MENU: &str = "Main menu";
+pub const DOWNLOAD_MISSING_COVERS: &str = "Download missing album covers";
 pub const SEARCH_PLACEHOLDER: &str = "Search all fields";
 pub const SCAN_FOLDER: &str = "Scan folder…";
 pub const EMPTY_LIBRARY_TITLE: &str = "No music yet";
