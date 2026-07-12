@@ -2,7 +2,7 @@
 
 use rusqlite::Connection;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BrowseFilter {
     pub genre: Option<String>,
     pub artist: Option<String>,
