@@ -23,6 +23,7 @@ use crate::ui::track_list::{
 };
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd;
+use crate::ui::track_list_row_interaction;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats;
 use reprise_core::models::Track;
@@ -143,6 +144,7 @@ pub(super) fn append_column(
             return;
         };
         let label = gtk4::Label::new(None);
+        track_list_row_interaction::expand_to_cell(&label);
         label.set_xalign(xalign);
         label.set_halign(if right_align {
             gtk4::Align::End
@@ -235,11 +237,6 @@ pub(super) fn append_cover_column(
     shared: &Rc<Shared>,
     loader: &Rc<CoverLoader>,
 ) -> gtk4::ColumnViewColumn {
-    // Reserved for parity with the other column-builders' signature (and any
-    // future need, e.g. reacting to a library rescan) — cover cells need no
-    // per-row DB access today, unlike `append_rating_column`'s write-back.
-    let _ = shared;
-
     let generations: Rc<RefCell<HashMap<usize, Rc<Cell<u64>>>>> =
         Rc::new(RefCell::new(HashMap::new()));
 
@@ -247,14 +244,19 @@ pub(super) fn append_cover_column(
 
     {
         let generations = generations.clone();
+        let shared = shared.clone();
+        let column_view = column_view.clone();
         factory.connect_setup(move |_, obj| {
             let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
                 tracing::warn!("cover column setup: object is not a ListItem");
                 return;
             };
             let image = gtk4::Image::new();
+            track_list_row_interaction::expand_to_cell(&image);
             image.set_pixel_size(32); // 48px cached texture in a 32pt cell — crisp, compact row
             CoverLoader::set_placeholder(&image);
+            track_list_context_menu::wire_context_menu_gesture(&image, item, &shared, &column_view);
+            track_list_dnd::wire_row_dnd(&image, item, &shared);
             generations
                 .borrow_mut()
                 .insert(item.as_ptr() as usize, Rc::new(Cell::new(0u64)));
@@ -342,6 +344,7 @@ pub(super) fn append_rating_column(
                 return;
             };
             let rating_widget = RatingWidget::new();
+            track_list_row_interaction::expand_to_cell(&rating_widget);
             // Secondary-click (button 3) context menu (Stage 3 Task 5) —
             // the rating column's own stars only ever respond to primary-
             // button clicks (`gtk::Button`'s default), so this can never

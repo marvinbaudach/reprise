@@ -23,29 +23,18 @@
 //!
 //! `rebuild` tears down every row and rebuilds the whole list from a fresh
 //! set of queries every time counts might have changed (after a scan, after
-//! playlist CRUD — see `refresh`/`create_playlist_and_select`). This is
+//! playlist CRUD — see `refresh`/`create_playlist_and_stay`). This is
 //! simpler than diffing the previous row set against new data and is cheap
 //! enough at this scale (a handful of playlists/smart lists). The previously
 //! selected source is re-selected afterwards (see `rebuild`'s `force_select`
 //! parameter) so a routine counts refresh never silently changes what's on
 //! screen.
 //!
-//! ## Reentrancy: a forced rebuild can, deep in the call stack, rebuild this
-//! same sidebar
+//! ## Reentrancy
 //!
-//! `create_playlist_and_select` calls `rebuild(shared, Some(new_playlist))`,
-//! which selects the new playlist's row and — because that's a genuine
-//! source change — notifies `on_select`, which (via `window.rs`) calls
-//! `TrackList::set_source` → `reload()`. Nothing downstream of that reload
-//! calls back into `Sidebar::refresh`/`rebuild` any more (see `refresh`'s
-//! doc comment for why: Stage 3 Task 4's review found the sidebar wired into
-//! `TrackList`'s generic `on_reload` hook, rebuilding on every search
-//! keystroke and sort click — removed; `refresh` is now called only from the
-//! three specific triggers listed there), so this particular chain no longer
-//! re-enters. The general hazard remains worth documenting because `rebuild`
-//! itself still tears down and rebuilds every row and re-selects whatever's
-//! current: if a future caller ever *does* feed a rebuild back from
-//! `on_select`, `wire_row_selected`'s dedup-by-value check (comparing the
+//! `rebuild` tears down every row and re-selects the logical current source.
+//! If a future caller feeds that selection back into another rebuild,
+//! `wire_row_selected`'s dedup-by-value check (comparing the
 //! newly selected row's `ViewSource` against `shared.current_source`'s
 //! already-stored value, not row identity — a fresh `rebuild` always
 //! produces a *different* `ListBoxRow` GObject even for "the same" source)
@@ -71,6 +60,7 @@ use rusqlite::Connection;
 use crate::ui::dialogs;
 use crate::ui::sidebar_dnd;
 use crate::ui::sidebar_export;
+use crate::ui::sidebar_playlist_creation;
 use crate::ui::strings;
 use crate::ui::toasts;
 use reprise_core::format::format_thousands;
@@ -113,7 +103,7 @@ pub(super) struct Shared {
     /// `row-activated`.
     new_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
     /// Invoked whenever the logically selected source *changes* (real user
-    /// click, or the programmatic post-create-playlist selection) — never
+    /// click or an explicit forced selection) — never
     /// for a same-source reselect (see `wire_row_selected`'s dedup-by-value
     /// check, not a time-windowed suppress flag: `rebuild` tears down and
     /// rebuilds every row on every refresh, so "the same row" is a new
@@ -223,9 +213,8 @@ impl Sidebar {
         &self.root
     }
 
-    /// Sets the callback invoked whenever the selected source changes (user
-    /// click, or the programmatic select-after-create following "New
-    /// playlist"). `window.rs` wires this once, after `TrackList` exists, to
+    /// Sets the callback invoked whenever the selected source changes.
+    /// `window.rs` wires this once, after `TrackList` exists, to
     /// switch its source and update the headerbar title.
     ///
     /// This can't run the callback for the sidebar's own initial selection
@@ -291,10 +280,8 @@ impl Sidebar {
     /// 1. **Scan completion** — `window.rs`'s `spawn_scan` success arm, after
     ///    `track_list.reload()`: a scan can add tracks/playlists and clear
     ///    import-error/missing counts.
-    /// 2. **Playlist CRUD** — `create_playlist_and_select` in this file calls
-    ///    `rebuild` directly (not through this method) since it already needs
-    ///    the forced-selection path; any future playlist-mutating site should
-    ///    do the same.
+    /// 2. **Playlist CRUD** — `create_playlist_and_stay` in this file calls
+    ///    `rebuild` directly while preserving the current source.
     /// 3. **Missing-marking** — `window.rs`'s `player.set_track_list_reload`
     ///    closure (the seam `playback_faults.rs`'s `handle_unplayable_track`
     ///    calls through `PlayerController::reload_track_list` after a
@@ -713,9 +700,8 @@ fn wire_row_activated(shared: &Rc<Shared>) {
 }
 
 /// Shows the "New playlist" `AdwAlertDialog`: a heading, an entry (Create
-/// disabled until non-blank), and Cancel/Create responses. On Create,
-/// creates the playlist and switches straight to it (`create_playlist_and_
-/// select`).
+/// disabled until non-blank), and Cancel/Create responses. On Create, it
+/// creates the playlist while keeping the current source visible.
 fn show_new_playlist_dialog(shared: &Rc<Shared>) {
     let Some(window) = shared.window.upgrade() else {
         tracing::warn!("sidebar: window is gone; cannot show new-playlist dialog");
@@ -728,17 +714,13 @@ fn show_new_playlist_dialog(shared: &Rc<Shared>) {
         &strings::text(strings::NEW_PLAYLIST_DIALOG_HEADING),
         &strings::text(strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER),
         &strings::text(strings::CREATE),
-        move |name| create_playlist_and_select(&shared, &name),
+        move |name| create_playlist_and_stay(&shared, &name),
     );
 }
 
-/// Creates a playlist named `name` and, on success, rebuilds the sidebar and
-/// switches straight to it (`rebuild`'s `force_select` path, which — unlike
-/// a routine refresh — lets the selection notify fire normally, so `window
-/// .rs` switches the track list and headerbar title to it too). A creation
-/// failure (e.g. a locked/corrupt database) is logged and surfaced as a
-/// toast rather than silently dropped.
-fn create_playlist_and_select(shared: &Rc<Shared>, name: &str) {
+/// Creates a playlist named `name` and refreshes the sidebar without leaving
+/// the current source. A creation failure is logged and surfaced as a toast.
+fn create_playlist_and_stay(shared: &Rc<Shared>, name: &str) {
     let created = {
         let conn = shared.conn.borrow();
         playlists::create(&conn, name)
@@ -746,7 +728,11 @@ fn create_playlist_and_select(shared: &Rc<Shared>, name: &str) {
     match created {
         Ok(id) => {
             tracing::info!(id, name, "playlist created");
-            rebuild(shared, Some(ViewSource::Playlist(id)), "playlist created");
+            rebuild(
+                shared,
+                sidebar_playlist_creation::refresh_target_after_empty_creation(),
+                "playlist created",
+            );
         }
         Err(error) => {
             tracing::error!(%error, name, "failed to create playlist");
