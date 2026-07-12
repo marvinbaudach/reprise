@@ -152,28 +152,32 @@ use crate::library::stats;
 use crate::mpris::{self, MprisPlaybackStatus, SharedMprisState};
 use crate::player::{PlaybackState, Player, PlayerError, PlayerEvent};
 use crate::queries;
-use crate::queue::{Queue, Repeat};
+use crate::queue::Queue;
 use crate::ui::mpris_mirror::mpris_status_from_playback_state;
 use crate::ui::player_bar::PlayerBar;
+use crate::ui::player_controller_wiring;
 
-/// Dev/verification hook (permanent, like `REPRISE_SCAN_DIR`/`REPRISE_
-/// SMOKE_QUIT`/`REPRISE_SMOKE_ACTIVATE`): when set to `"all"`, forces
-/// `Repeat::All` right after the controller (and its queue) are built, so a
-/// headless E2E can observe auto-advance wrapping from the last track back
-/// to the first without a human toggling the repeat button.
-///
-/// Usage: `REPRISE_SMOKE_REPEAT=all REPRISE_SCAN_DIR=… REPRISE_SMOKE_ACTIVATE=1
-///  REPRISE_AUDIO_SINK=fakesink REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
-const SMOKE_REPEAT_ENV_VAR: &str = "REPRISE_SMOKE_REPEAT";
-const SMOKE_REPEAT_ALL_VALUE: &str = "all";
+/// `PlayerController::volume`'s initial value — matches `ui::player_bar`'s
+/// own `VOLUME_DEFAULT` (a separate constant: `player_controller` doesn't
+/// reach into `player_bar`'s private constants, and both simply mean "full
+/// volume until the user/MPRIS says otherwise").
+const DEFAULT_VOLUME: f64 = 1.0;
 
 /// Owns the `Player` and its `PlayerBar`, routing user input from the bar to
 /// the player and `PlayerEvent`s from the player back onto the bar (on the
 /// GTK main thread — see the module doc comment). Also owns play-count
 /// tracking (see the module's `## Play tracking` section below).
 pub struct PlayerController {
-    player: Player,
-    bar: PlayerBar,
+    /// `pub(super)` (Stage 3 Task 10) so `mpris_mirror.rs`'s `seek`/`mpris_
+    /// set_volume` can reach `Player::seek_to`/`set_volume` directly — the
+    /// same `pub(super)` sibling-module seam `queue`/`mpris_state` already
+    /// use (see the module's `## Queue borrow discipline` doc section).
+    pub(super) player: Player,
+    /// `pub(super)` (Stage 3 Task 10) so `mpris_mirror.rs`'s `mpris_set_
+    /// shuffle`/`mpris_set_loop`/`mpris_set_volume` can reach `PlayerBar`'s
+    /// `set_shuffle_indicator`/`set_repeat_indicator`/`set_volume_indicator`
+    /// directly — same reasoning as `player` above.
+    pub(super) bar: PlayerBar,
     /// The UI-owned database connection, shared with `track_list.rs` (see
     /// `window::build`) — used to write play-count updates via `library::
     /// stats::record_play`, and (via `playback_faults.rs`, `pub(super)` so
@@ -221,6 +225,21 @@ pub struct PlayerController {
     /// why this duplicates `current_track`'s id/duration rather than reusing
     /// it. `pub(super)` so that sibling module can reach it.
     pub(super) now_playing: RefCell<Option<NowPlaying>>,
+    /// The last volume value applied via the bar's volume control or an
+    /// MPRIS `Volume` write (Stage 3 Task 10). `Player::set_volume` is
+    /// write-only (no getter), so this is the one source of truth `update_
+    /// mpris_mirror`/`mpris_mirror.rs` read from to populate `mpris::
+    /// MprisState::volume` — the same "controller owns the last-known
+    /// value" shape `current_track`/`now_playing` already use. `pub(super)`
+    /// so that sibling module can reach it.
+    pub(super) volume: Cell<f64>,
+    /// See `mpris::start`'s doc comment: the opposite direction from
+    /// `mpris_receiver` (below, in `new`) — `mpris_mirror.rs`'s `notify_
+    /// mpris_seek` sends the just-seeked position into this after every
+    /// successful `seek`, and `mpris.rs`'s dedicated relay thread drains it
+    /// to emit the `Seeked` signal. `pub(super)` so that sibling module can
+    /// reach it.
+    pub(super) mpris_seek_notify: async_channel::Sender<i64>,
 }
 
 /// See `PlayerController::now_playing`'s doc comment. Fields are `pub(super)`
@@ -260,7 +279,7 @@ impl PlayerController {
         // the fields it feeds), not in `window::build`, since nothing
         // outside this controller needs either handle — see the module's
         // `## MPRIS` doc section.
-        let (mpris_state, mpris_receiver) = mpris::start();
+        let (mpris_state, mpris_receiver, mpris_seek_notify) = mpris::start();
 
         let controller = Rc::new(Self {
             player,
@@ -274,10 +293,12 @@ impl PlayerController {
             consecutive_skips: Cell::new(0),
             mpris_state,
             now_playing: RefCell::new(None),
+            volume: Cell::new(DEFAULT_VOLUME),
+            mpris_seek_notify,
         });
 
-        wire_bar_controls(&controller);
-        arm_smoke_repeat(&controller);
+        player_controller_wiring::wire_bar_controls(&controller);
+        player_controller_wiring::arm_smoke_repeat(&controller);
 
         let weak = Rc::downgrade(&controller);
         glib::spawn_future_local(async move {
@@ -541,6 +562,10 @@ impl PlayerController {
                 self.max_position_ms
                     .set(self.max_position_ms.get().max(position_ms));
                 self.bar.set_position(position_ms, duration_ms);
+                // Stage 3 Task 10: keeps MPRIS's `Position` current between
+                // `update_mpris_mirror` rebuilds — see `update_mpris_
+                // position`'s doc comment.
+                self.update_mpris_position(position_ms);
             }
             PlayerEvent::TrackFinished => {
                 tracing::info!("track finished: advancing queue");
@@ -718,117 +743,6 @@ impl PlayerController {
     }
 }
 
-/// Wires the bar's user-input signals to player calls. Each closure holds a
-/// `Weak` controller reference: the bar is owned *by* the controller, so a
-/// strong reference here would be a leak-guaranteeing Rc cycle.
-fn wire_bar_controls(controller: &Rc<PlayerController>) {
-    let weak = Rc::downgrade(controller);
-    controller.bar.connect_play_pause(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        controller.toggle_pause();
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller.bar.connect_seek(move |position_ms| {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        if let Err(error) = controller.player.seek_to(position_ms) {
-            tracing::error!(%error, position_ms, "seek failed");
-        }
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller.bar.connect_volume_changed(move |volume| {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        controller.player.set_volume(volume);
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller.bar.connect_previous(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        controller.previous();
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller.bar.connect_next(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        controller.next();
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller.bar.connect_shuffle_toggled(move |active| {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        controller.queue.borrow_mut().set_shuffle(active);
-        // Read back the queue's own idea of shuffle state (rather than just
-        // logging `active`) so a log line always reflects what `Queue`
-        // actually did, not just what the button asked for.
-        let is_shuffled = controller.queue.borrow().is_shuffled();
-        tracing::debug!(is_shuffled, "shuffle toggled");
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller.bar.connect_repeat_clicked(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        // Explicit block (not a single statement): reading the current mode
-        // and setting the new one both need the same borrow, so they're
-        // scoped together here — still dropped before `set_repeat_
-        // indicator` (a GTK call) runs after the block. See the module's
-        // `## Queue borrow discipline` doc section.
-        let next_repeat = {
-            let mut queue = controller.queue.borrow_mut();
-            let next_repeat = cycle_repeat(queue.repeat());
-            queue.set_repeat(next_repeat);
-            next_repeat
-        };
-        controller.bar.set_repeat_indicator(next_repeat);
-    });
-}
-
-/// Cycles the repeat mode in the mockup's button order: Off -> All -> One ->
-/// Off. Pure (no `Queue`/GTK access) so it's unit-testable directly.
-fn cycle_repeat(current: Repeat) -> Repeat {
-    match current {
-        Repeat::Off => Repeat::All,
-        Repeat::All => Repeat::One,
-        Repeat::One => Repeat::Off,
-    }
-}
-
-/// Arms `REPRISE_SMOKE_REPEAT=all` (see the const's doc comment above):
-/// forces the queue into `Repeat::All` right after construction and syncs
-/// the bar's repeat indicator to match, so a headless E2E run can observe
-/// auto-advance wrapping from the last queued track back to the first.
-fn arm_smoke_repeat(controller: &Rc<PlayerController>) {
-    let Ok(value) = std::env::var(SMOKE_REPEAT_ENV_VAR) else {
-        return;
-    };
-    if value != SMOKE_REPEAT_ALL_VALUE {
-        tracing::warn!(
-            value,
-            "{SMOKE_REPEAT_ENV_VAR} set to an unrecognized value; ignoring (expected \"{SMOKE_REPEAT_ALL_VALUE}\")"
-        );
-        return;
-    }
-    tracing::info!(
-        "{SMOKE_REPEAT_ENV_VAR}={SMOKE_REPEAT_ALL_VALUE} set: forcing Repeat::All for headless wrap-around E2E"
-    );
-    controller.queue.borrow_mut().set_repeat(Repeat::All);
-    controller.bar.set_repeat_indicator(Repeat::All);
-}
-
 /// Current time as Unix seconds, for `record_play`'s `last_played_at`.
 /// Mirrors `library::scanner`'s private `now_unix` helper (not made public
 /// there — see that module's doc comment) rather than sharing it, since the
@@ -838,16 +752,4 @@ fn now_unix() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cycle_repeat_goes_off_all_one_off() {
-        assert_eq!(cycle_repeat(Repeat::Off), Repeat::All);
-        assert_eq!(cycle_repeat(Repeat::All), Repeat::One);
-        assert_eq!(cycle_repeat(Repeat::One), Repeat::Off);
-    }
 }
