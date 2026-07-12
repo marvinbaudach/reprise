@@ -21,13 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —               # e.g. "GUI-A2 Task 2"
-SINCE:    —               # timestamp when claimed
+OWNER:    codex           # FREE | claude | codex
+TASK:     GUI-A2 Task 2   # e.g. "GUI-A2 Task 2"
+SINCE:    2026-07-12 14:27 CEST
 ```
 
-_As of 2026-07-12 14:13: FREE. Claude paused after handing off; Codex is expected to claim
-GUI-A2 Task 2 next._
+_As of 2026-07-12 14:27 CEST: Codex claimed GUI-A2 Task 2._
 
 ## Current position
 
