@@ -776,3 +776,30 @@ fn mark_vanished_treats_like_metacharacters_in_root_literally() {
 
     assert_eq!(missing_count(&conn), 0);
 }
+
+/// The false-*negative* direction of the metacharacter case (the
+/// data-integrity-critical one): a genuinely vanished file that really lives
+/// under a root containing a LIKE metacharacter (`_`) MUST still be marked
+/// missing. If the prefilter escaped the root wrongly — or not at all — the
+/// escaped pattern `a\_b/%` could fail to match the row's literal
+/// `<base>/a_b/gone.flac` path and silently leave a phantom track behind.
+/// This complements `mark_vanished_treats_like_metacharacters_in_root_literally`
+/// (which only guards the must-*not*-mark direction).
+#[test]
+fn mark_vanished_still_marks_in_root_file_when_root_has_like_metacharacter() {
+    let base = tempfile::tempdir().unwrap();
+    let root = base.path().join("a_b");
+    std::fs::create_dir_all(&root).unwrap();
+
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    // A non-missing row under the metacharacter root whose file never exists.
+    let gone = root.join("gone.flac");
+    insert_raw_track(&conn, &gone);
+    let (id, ..) = row_by_path(&conn, &gone);
+
+    let marked = mark_vanished_under_root(&conn, &root).unwrap();
+
+    assert_eq!(marked, 1, "vanished in-root file must be marked missing");
+    assert_eq!(missing_flag(&conn, id), 1);
+}
