@@ -65,6 +65,7 @@ use reprise_core::view_source::ViewSource;
 
 use super::sidebar::Sidebar;
 use super::strings;
+use super::toasts;
 use super::track_list::TrackList;
 
 /// Env var read by [`arm_smoke_m3u`] — see that function's doc comment for
@@ -384,24 +385,24 @@ fn apply_import_result(
                 outcome.total
             );
             let Some(playlist_id) = outcome.playlist_id else {
-                toast_overlay.add_toast(adw::Toast::new(
+                toasts::show(
+                    toast_overlay,
                     &strings::playlist_import_zero_matched_toast(&outcome.name, outcome.total),
-                ));
+                );
                 return;
             };
             sidebar.refresh("playlist imported");
             track_list.set_source(ViewSource::Playlist(playlist_id));
             window_title.set_title(&outcome.name);
             show_content_if_collapsed();
-            toast_overlay.add_toast(adw::Toast::new(&strings::playlist_imported_toast(
-                &outcome.name,
-                outcome.matched,
-                outcome.total,
-            )));
+            toasts::show(
+                toast_overlay,
+                &strings::playlist_imported_toast(&outcome.name, outcome.matched, outcome.total),
+            );
         }
         Err(error) => {
             tracing::error!(%error, "playlist import failed");
-            toast_overlay.add_toast(adw::Toast::new(&strings::playlist_import_failed_toast()));
+            toasts::show(toast_overlay, &strings::playlist_import_failed_toast());
         }
     }
 }
@@ -477,15 +478,17 @@ pub fn arm_smoke_m3u(
         match export_playlist(&conn, playlist_id, Path::new(path)) {
             Ok(count) => {
                 tracing::info!(playlist_name, count, path, "playlist exported (smoke hook)");
-                toast_overlay.add_toast(adw::Toast::new(&strings::playlist_exported_toast(
-                    playlist_name,
-                )));
+                toasts::show(
+                    &toast_overlay,
+                    &strings::playlist_exported_toast(playlist_name),
+                );
             }
             Err(error) => {
                 tracing::error!(%error, playlist_name, "playlist export failed (smoke hook)");
-                toast_overlay.add_toast(adw::Toast::new(&strings::playlist_export_failed_toast(
-                    playlist_name,
-                )));
+                toasts::show(
+                    &toast_overlay,
+                    &strings::playlist_export_failed_toast(playlist_name),
+                );
             }
         }
     });

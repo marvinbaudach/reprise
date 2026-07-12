@@ -38,6 +38,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::strings;
+use crate::ui::toasts;
 use reprise_core::format::format_unix_timestamp;
 use reprise_core::library::scanner;
 use reprise_core::queries::{self, ImportErrorRow};
@@ -160,7 +161,7 @@ fn build_header_row() -> gtk4::Box {
 /// degrade-to-log behavior when no overlay is wired or it's gone.
 fn show_toast(shared: &Shared, text: &str) {
     match shared.toast_overlay.upgrade() {
-        Some(overlay) => overlay.add_toast(adw::Toast::new(text)),
+        Some(overlay) => toasts::show(&overlay, text),
         None => tracing::warn!(text, "import errors panel: toast overlay is gone; log-only"),
     }
 }
