@@ -30,13 +30,14 @@ _As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-12-gui-c-browse-columns.md` (GUI-C, 7 tasks).
-- **Last completed:** **GUI-C** — cascading Genre/Artist/Album browse bar and explicit read-only
-  Rhythmbox visible-column import, through `e9faba2` plus review fix `1962b4c`; whole-branch
-  review READY. Final gates: 440 passed, 1 ignored; core PURE; isolated browse/import/source
-  smokes passed. Human layout/keyboard/real-GSettings checks remain.
-- **➡️ NEXT:** GUI-D design/spec/plan — first-run wizard plus session restore.
-- **Feature HEAD:** `1962b4c`. Codex retains the continuous-work lock. Working tree clean.
+- **Completed plan:** `docs/superpowers/plans/2026-07-12-gui-d-onboarding-session.md` (GUI-D, 8 tasks).
+- **Last completed:** **GUI-D** — native first-run wizard plus validated geometry/view/exact-queue
+  session restore without autoplay, through `6d318c6` plus review fix `93622ee`; whole-branch
+  review READY. Final gates: 458 passed, 1 ignored; core PURE; isolated skip/setup smokes and
+  exact two-start session E2E passed. Human wizard/portal/geometry/media-key checks remain.
+- **➡️ NEXT:** Release design/spec/plan — Flatpak/Flathub readiness, gettext with German first,
+  desktop entry, icons, AppStream metadata, and sandbox portal hardening.
+- **Feature HEAD:** `93622ee`. Codex retains the continuous-work lock. Working tree clean.
 
 ## Done so far (compact)
 
@@ -49,7 +50,7 @@ _As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C
 - ✅ **GUI-A2**: opt-in online album-cover download via MusicBrainz/Cover Art Archive; default OFF.
 - ✅ **GUI-B**: tag editor with multi-select batch edit + confirmed DB-only delete/safe trash.
 - ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
-- ⬜ **GUI-D**: first-run wizard + session restore.
+- ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ⬜ **Release**: Flatpak/Flathub, gettext (German first), .desktop/AppStream.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
