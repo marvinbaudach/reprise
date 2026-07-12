@@ -1,89 +1,117 @@
 # Reprise
 
-A native GTK4/libadwaita music player for GNOME — a spiritual successor to
-Rhythmbox.
+Reprise is a native GTK4/libadwaita music player for GNOME and a focused,
+modern successor to Rhythmbox. Version 0.1.0 is feature-complete and locally
+release-ready; it has not yet been published to a public source host or
+Flathub.
 
-Reprise has completed its planned application feature stages and is now in
-release-readiness work. What works today:
+## Features
 
-- GTK4/libadwaita window with navigation sidebar (library, playlists,
-  smart playlists, problem sources with badges), search, and status line.
-- Folder scanning into a SQLite track database: background, incremental,
-  per-file import-error log, and **move detection** — relocated or renamed
-  files/albums keep their ratings, play counts, and added dates.
-- A sortable, windowed track list that scales to large libraries.
-- Playback via GStreamer with a full queue: auto-advance, shuffle, repeat
-  (off/all/one), previous/next; robust against deleted or broken files
-  (mark missing, toast, auto-skip — never a crash).
-- Clickable star ratings and play-count tracking (50%-listened threshold).
-- MPRIS integration: GNOME quick settings, lock screen, media keys.
-- A bottom player bar: play/pause, seek, time display, and volume.
-- Manual and smart playlists, multi-select context actions, drag and drop,
-  M3U import/export, folder watching, keyboard shortcuts, album covers,
-  batch tag editing, safe removal/trash, browse facets, first-run setup, and
-  validated no-autoplay session restore.
+- Fast, windowed column view for large local libraries, with search,
+  Genre/Artist/Album browsing, persistent column layouts, ratings, play counts,
+  missing-file and import-error views.
+- Incremental background scanning, live folder watching, and move detection so
+  renamed files keep ratings, play counts, playlist membership, and added dates.
+- GStreamer playback with seek, volume, queue, shuffle, repeat, previous/next,
+  automatic advance, and safe skipping of missing or unplayable tracks.
+- GNOME MPRIS integration for media keys, quick settings, notifications, and
+  lock-screen controls.
+- Manual and smart playlists, multi-select actions, drag and drop, queue
+  reordering, and M3U/M3U8 import and export.
+- Embedded, folder, and cached online album covers plus a full Now Playing view.
+- Multi-track tag editing that writes only fields explicitly changed by the
+  user, confirmed database-only removal, and confirmed move to Trash.
+- First-run setup and validated session restore for window, view, filters,
+  sorting, and exact queue state. Restoring a session never starts playback.
+- Complete English source UI and German gettext translation.
 
-## Relation to Rhythmbox
+Reprise scans `mp3`, `flac`, `ogg`, `opus`, `m4a`, `aac`, and `wav` files.
+Actual decoding is provided by the installed GStreamer runtime and its codec
+plugins, so format support can vary by distribution.
 
-Reprise deliberately walks in Rhythmbox's footsteps: the column-based
-library view, smart playlists, the play queue, and the planned
-`rhythmdb.xml` import (ratings, play counts, playlists) all come from
-there. Rhythmbox has served GNOME users for over two decades — Reprise
-exists because its GTK3 codebase has made a GTK4 future difficult, not
-because it wasn't good.
+## Privacy and file safety
 
-A snapshot for perspective (counted 2026-07-11, `wc -l` over the upstream
-git checkouts): Rhythmbox is ~165,000 lines of C (plus ~9,000 lines of
-Python plugins and ~11,000 lines of UI XML); Reprise currently implements
-its core listening workflow in ~8,600 lines of Rust (plus ~4,000 lines of
-tests). That is not a like-for-like comparison — Rhythmbox does far more
-today (podcasts, internet radio, DAAP sharing, CD ripping, device sync, a
-plugin ecosystem) — but it illustrates what a fresh start on a modern
-stack (Rust, SQL-backed views, GTK4's data widgets) buys: the essentials
-fit in a codebase one person can read.
+The library database and settings stay on the local machine. Reprise does not
+include telemetry. It reads music files during scanning and playback and changes
+them only after an explicit tag-edit action. Removing a track from the library
+does not remove its file; moving a file to Trash always requires confirmation
+and has no permanent-delete fallback.
 
-## Development
-
-Logging goes to stderr via `tracing`; the level defaults to `info` and can
-be overridden with the `REPRISE_LOG` environment variable (e.g.
-`REPRISE_LOG=debug cargo run`).
-
-A few environment variables exist purely to drive the app headlessly for
-development and end-to-end verification (`xvfb-run`, CI, etc.) — none are
-user-facing features:
-
-- `REPRISE_SCAN_DIR=/path/to/music` — scans the given folder into the
-  database synchronously at startup, before the window is shown, since the
-  folder-picker dialog can't be driven headlessly.
-- `REPRISE_SMOKE_ACTIVATE=1` — activates (double-click-equivalent) the first
-  track in the list shortly after the window is shown.
-- `REPRISE_AUDIO_SINK=fakesink` — overrides the GStreamer audio sink, for
-  running playback without a real audio device.
-- `REPRISE_SMOKE_QUIT=1` — quits the application automatically after
-  startup, so a headless run exits instead of hanging.
+Online cover lookup is disabled by default. When enabled explicitly, Reprise
+sends album/artist metadata queries to MusicBrainz and downloads matching images
+from Cover Art Archive. No other feature requires network access.
 
 ## Requirements
 
-- Rust (stable, edition 2021)
-- GTK 4.22+ and libadwaita 1.9+ development packages
-- GStreamer, including the plugins needed for your audio formats (e.g.
-  `gst-plugins-base`, `gst-plugins-good`)
+- Rust stable (edition 2021)
+- Meson 1.3+ and Ninja
+- GTK 4.22+ and libadwaita 1.9+
+- GStreamer 1.x and codec plugins for the formats you use
+- SQLite, gettext, and standard GNOME build tools
 
-## Build & run
+The Flatpak manifest supplies these through GNOME Platform/SDK 50 and the stable
+Rust SDK extension.
+
+## Build and run from source
 
 ```sh
-cargo build
+cargo build --workspace
 cargo run
-cargo test
+cargo test --workspace
 ```
 
-For an installable release build:
+Logs go to stderr. Set `REPRISE_LOG=debug` for additional diagnostics.
+
+## Install with Meson
+
+For a per-user optimized installation:
 
 ```sh
-meson setup _build --prefix=/usr
+meson setup _build --prefix="$HOME/.local" -Dprofile=release
 meson compile -C _build
 meson install -C _build
 ```
+
+Meson installs the `reprise` binary, desktop entry, AppStream metadata, full and
+symbolic icons, and gettext catalogs. Packagers can use `DESTDIR` with a `/usr`
+prefix.
+
+## Build the Flatpak
+
+The local manifest uses GNOME 50, builds Cargo dependencies offline from pinned
+checksums, and grants only display, graphics, audio, opt-in cover-network, and
+the application's own MPRIS permissions.
+
+```sh
+flatpak-builder --user --install-deps-from=flathub --force-clean \
+  --install /tmp/reprise-flatpak-build org.reprise.Reprise.yml
+flatpak run org.reprise.Reprise
+```
+
+See [flatpak/README.md](flatpak/README.md) for dependency regeneration and the
+single source substitution required before a real Flathub submission.
+
+## Verification and releasing
+
+Run the complete non-destructive distribution check from the repository root:
+
+```sh
+scripts/check-release.sh
+```
+
+The release checklist, manual GNOME tests, known external publication blockers,
+and maintainer handoff are documented in [RELEASING.md](RELEASING.md).
+
+Development-only `REPRISE_SMOKE_*` environment hooks support fully isolated
+headless regression tests. They are not user-facing features and must never be
+run against a real library database or music collection.
+
+## Relation to Rhythmbox
+
+Reprise follows Rhythmbox's proven local-library model: a column-based collection,
+smart and manual playlists, a play queue, ratings, and strong GNOME integration.
+Its scope is deliberately narrower: it does not currently provide podcasts,
+internet radio, CD ripping, device sync, DAAP sharing, or a plugin ecosystem.
 
 ## License
 
