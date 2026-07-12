@@ -634,10 +634,45 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
   weil er eine eigene Ansicht füllt statt über der Liste zu schweben).
 - Import aus Clementine/Strawberry — erweitert die Umsteiger-Zielgruppe
   über Rhythmbox hinaus
-- Regel-Editor für Smart Playlists
 - Mehrsprachige Oberfläche (i18n): gettext-Übersetzungen als `.po`-Dateien
   (GNOME-Standard, community-freundlich), zuerst Deutsch; Sprachwahl folgt
   dem System-Locale
+
+### Aus der iTunes-Feature-Studie (freigegeben 2026-07-12)
+
+Sieben Kandidaten, geprüft in `docs/research/itunes-feature-study.md` und
+vom Nutzer für die Roadmap freigegeben. Reihenfolge = empfohlene
+Sequenzierung; abgelehnte Features (Auto-Move/„Keep organized", Copy-to-
+library, Apple-Genius mit Telemetrie, Visualizer, Mehrfach-Bibliotheken)
+sind in der Studie mit Begründung dokumentiert und bleiben draußen.
+
+1. **Skip Count** — Übersprungen-Zähler pro Titel (`skip_count`-Spalte),
+   analog zur bestehenden Play-Count-Schwellenlogik; billig, ein „Skip"
+   ist ein Signal (u. a. fürs Scrobbling und den späteren Auto-DJ). Kann
+   früh mitlaufen, sobald der Tag-Editor/das Statistik-Modul dran ist.
+2. **Smart-Playlist-Regeleditor (UI)** — das generische Regelsystem
+   (Feld/Operator/Wert → SQL) existiert schon seit Etappe 3; hier fehlt
+   nur der Dialog. Niedrige Grenzkosten → Studie empfiehlt, ihn früher
+   zu ziehen (MVP-Ausläufer statt vage „später").
+3. **Duplikat-Finder** — nutzt die Fingerprint-Logik der Move-Detection
+   (Titel+Interpret+Album+Dauer ±2 s+Größe) fast unverändert; neu ist nur
+   die Report-Ansicht + Papierkorb-Aktion (Lösch-Infrastruktur existiert).
+4. **Compilation-/Album-Interpret-Korrektheit (VA-Alben)** — `album_artist`
+   ist bereits durchgängig (Scanner/Schema/Browse-Queries); es fehlt nur
+   die compilation-bewusste Gruppierung (ein „Various Artists"-Eimer in
+   der Interpret-Filterspalte statt Streuung über alle Gastkünstler).
+5. **Klassik-Felder** — `composer`/`work`/`movement`/`movement_name`
+   (Schema + lofty-Lesen + Tag-Editor-Oberfläche) plus optionale Regel
+   „innerhalb eines Werks nicht mischen".
+6. **Lokaler Auto-DJ** — seed-basierter Smart-Shuffle (Genre/Tags/Bewertung),
+   komplett in-process, keine Telemetrie/kein Vendor-Graph; nach dem
+   Regeleditor (teilt dessen Matching-Engine als Kandidatenquelle).
+7. **LAN-Bibliotheks-Sharing** — erweitert das geplante Companion-App-
+   Protokoll, sodass eine zweite Reprise-Instanz die Bibliothek einer
+   anderen im LAN durchstöbern/streamen kann (gepaart, kein Cloud);
+   nach der Begleit-App selbst (Streaming-Protokoll, größerer Aufwand).
+
+- Bewertungen optional in Dateitags exportieren
 - Bewertungen optional in Dateitags exportieren
 - (macOS-Port: endgültig gestrichen — Nutzer-Entscheidung 2026-07-11,
   „werde es eh nie portieren"; GTK4-Pivot besiegelt das)
