@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     FREE
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Autonomous final release-hardening audit
+SINCE:    2026-07-12 23:28 CEST
 ```
 
-_As of 2026-07-12 23:27 CEST: Codex released the lock after recording maintainer manual-QA confirmations._
+_As of 2026-07-12 23:28 CEST: Codex claimed the lock for autonomous final release hardening._
 
 ## Current position
 
