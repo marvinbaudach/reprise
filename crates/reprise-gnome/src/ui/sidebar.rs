@@ -395,21 +395,27 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
     shared.rows.borrow_mut().clear();
     *shared.new_playlist_row.borrow_mut() = None;
 
-    append_header(&shared.listbox, strings::SIDEBAR_SECTION_LIBRARY);
+    append_header(
+        &shared.listbox,
+        &strings::text(strings::SIDEBAR_SECTION_LIBRARY),
+    );
     add_row(
         shared,
         ViewSource::Library,
-        strings::SIDEBAR_MUSIC,
+        &strings::text(strings::SIDEBAR_MUSIC),
         Some(music_count),
     );
     add_row(
         shared,
         ViewSource::Queue,
-        strings::SIDEBAR_QUEUE,
+        &strings::text(strings::SIDEBAR_QUEUE),
         Some(queue_count),
     );
 
-    append_header(&shared.listbox, strings::SIDEBAR_SECTION_PLAYLISTS);
+    append_header(
+        &shared.listbox,
+        &strings::text(strings::SIDEBAR_SECTION_PLAYLISTS),
+    );
     for playlist in &playlist_rows {
         add_row(
             shared,
@@ -421,7 +427,10 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
     let new_playlist_row = append_new_playlist_row(&shared.listbox);
     *shared.new_playlist_row.borrow_mut() = Some(new_playlist_row);
 
-    append_header(&shared.listbox, strings::SIDEBAR_SECTION_SMART);
+    append_header(
+        &shared.listbox,
+        &strings::text(strings::SIDEBAR_SECTION_SMART),
+    );
     for smart in &smart_rows {
         add_row(shared, ViewSource::Smart(smart.id), &smart.name, None);
     }
@@ -436,7 +445,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             add_row(
                 shared,
                 ViewSource::ImportErrors,
-                strings::SIDEBAR_IMPORT_ERRORS,
+                &strings::text(strings::SIDEBAR_IMPORT_ERRORS),
                 Some(import_error_count),
             );
         }
@@ -444,7 +453,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             add_row(
                 shared,
                 ViewSource::Missing,
-                strings::SIDEBAR_MISSING_FILES,
+                &strings::text(strings::SIDEBAR_MISSING_FILES),
                 Some(missing_count),
             );
         }
@@ -602,7 +611,7 @@ fn append_new_playlist_row(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
     let icon = gtk4::Image::from_icon_name("list-add-symbolic");
     hbox.append(&icon);
 
-    let label = gtk4::Label::new(Some(strings::SIDEBAR_NEW_PLAYLIST));
+    let label = gtk4::Label::new(Some(&strings::text(strings::SIDEBAR_NEW_PLAYLIST)));
     label.set_xalign(0.0);
     label.add_css_class("dim-label");
     hbox.append(&label);
@@ -716,9 +725,9 @@ fn show_new_playlist_dialog(shared: &Rc<Shared>) {
     let shared = shared.clone();
     dialogs::prompt_name(
         &window,
-        strings::NEW_PLAYLIST_DIALOG_HEADING,
-        strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER,
-        strings::CREATE,
+        &strings::text(strings::NEW_PLAYLIST_DIALOG_HEADING),
+        &strings::text(strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER),
+        &strings::text(strings::CREATE),
         move |name| create_playlist_and_select(&shared, &name),
     );
 }

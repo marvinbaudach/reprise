@@ -22,7 +22,7 @@ use crate::ui::sidebar::{show_toast, Shared};
 use crate::ui::strings;
 
 /// Bare action name — internal identifier, not user-facing text (see
-/// `strings::EXPORT_PLAYLIST` for the menu item's actual copy). Mirrors
+/// `&strings::text(strings::EXPORT_PLAYLIST)` for the menu item's actual copy). Mirrors
 /// `ui::track_list_context_menu`'s `ACTION_*`/`ACTION_GROUP_NAME` naming.
 const ACTION_EXPORT: &str = "export";
 const ACTION_GROUP_NAME: &str = "playlistrow";
@@ -78,7 +78,7 @@ fn show_context_menu(
 
     let menu = gio::Menu::new();
     menu.append(
-        Some(strings::EXPORT_PLAYLIST),
+        Some(&strings::text(strings::EXPORT_PLAYLIST)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_EXPORT}")),
     );
 
@@ -112,7 +112,7 @@ fn start_export(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
     let filters = gio::ListStore::new::<gtk4::FileFilter>();
     filters.append(&filter);
     let dialog = gtk4::FileDialog::builder()
-        .title(strings::EXPORT_PLAYLIST_DIALOG_TITLE)
+        .title(strings::text(strings::EXPORT_PLAYLIST_DIALOG_TITLE))
         .modal(true)
         .filters(&filters)
         .default_filter(&filter)

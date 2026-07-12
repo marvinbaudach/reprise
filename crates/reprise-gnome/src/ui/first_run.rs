@@ -88,24 +88,24 @@ pub(super) fn run(
     }
 
     let cover = adw::SwitchRow::builder()
-        .title(strings::ONBOARDING_COVERS)
-        .subtitle(strings::ONBOARDING_COVERS_SUBTITLE)
+        .title(strings::text(strings::ONBOARDING_COVERS))
+        .subtitle(strings::text(strings::ONBOARDING_COVERS_SUBTITLE))
         .build();
     let rhythmbox = adw::SwitchRow::builder()
-        .title(strings::ONBOARDING_RHYTHMBOX)
-        .subtitle(strings::ONBOARDING_RHYTHMBOX_SUBTITLE)
+        .title(strings::text(strings::ONBOARDING_RHYTHMBOX))
+        .subtitle(strings::text(strings::ONBOARDING_RHYTHMBOX_SUBTITLE))
         .build();
     let group = adw::PreferencesGroup::new();
     group.add(&cover);
     group.add(&rhythmbox);
 
     let privacy = gtk4::Label::builder()
-        .label(strings::ONBOARDING_PRIVACY)
+        .label(strings::text(strings::ONBOARDING_PRIVACY))
         .wrap(true)
         .xalign(0.0)
         .build();
-    let skip = gtk4::Button::with_label(strings::ONBOARDING_SKIP);
-    let setup = gtk4::Button::with_label(strings::ONBOARDING_SET_UP);
+    let skip = gtk4::Button::with_label(&strings::text(strings::ONBOARDING_SKIP));
+    let setup = gtk4::Button::with_label(&strings::text(strings::ONBOARDING_SET_UP));
     setup.add_css_class("suggested-action");
     let buttons = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     buttons.set_halign(gtk4::Align::End);
@@ -124,7 +124,7 @@ pub(super) fn run(
     header.set_show_end_title_buttons(false);
     header.set_show_start_title_buttons(false);
     header.set_title_widget(Some(&adw::WindowTitle::new(
-        strings::ONBOARDING_WELCOME,
+        &strings::text(strings::ONBOARDING_WELCOME),
         "",
     )));
     let toolbar = adw::ToolbarView::new();

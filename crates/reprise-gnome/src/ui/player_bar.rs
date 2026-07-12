@@ -65,8 +65,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::pango;
-use gtk4::prelude::*;
+use gtk4::{pango, prelude::*};
 
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
@@ -206,12 +205,12 @@ impl PlayerBar {
         // Play | Next | Repeat, centered around the seek scale.
         let shuffle_button = gtk4::ToggleButton::builder()
             .icon_name(ICON_SHUFFLE)
-            .tooltip_text(strings::SHUFFLE)
+            .tooltip_text(strings::text(strings::SHUFFLE))
             .valign(gtk4::Align::Center)
             .build();
 
         let prev_button = gtk4::Button::from_icon_name(ICON_PREVIOUS);
-        prev_button.set_tooltip_text(Some(strings::PREVIOUS));
+        prev_button.set_tooltip_text(Some(&strings::text(strings::PREVIOUS)));
         prev_button.set_valign(gtk4::Align::Center);
         // No queue to step through until a view has been activated at least
         // once (see `set_transport_enabled`, called by
@@ -219,16 +218,16 @@ impl PlayerBar {
         prev_button.set_sensitive(false);
 
         let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
-        play_pause_button.set_tooltip_text(Some(strings::PLAY));
+        play_pause_button.set_tooltip_text(Some(&strings::text(strings::PLAY)));
         play_pause_button.set_valign(gtk4::Align::Center);
 
         let next_button = gtk4::Button::from_icon_name(ICON_NEXT);
-        next_button.set_tooltip_text(Some(strings::NEXT));
+        next_button.set_tooltip_text(Some(&strings::text(strings::NEXT)));
         next_button.set_valign(gtk4::Align::Center);
         next_button.set_sensitive(false);
 
         let repeat_button = gtk4::Button::from_icon_name(ICON_REPEAT_ALL);
-        repeat_button.set_tooltip_text(Some(strings::REPEAT));
+        repeat_button.set_tooltip_text(Some(&strings::text(strings::REPEAT)));
         repeat_button.set_valign(gtk4::Align::Center);
 
         let position_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
@@ -239,7 +238,7 @@ impl PlayerBar {
         scale.set_draw_value(false);
         scale.set_hexpand(true);
         scale.set_valign(gtk4::Align::Center);
-        scale.set_tooltip_text(Some(strings::PLAYBACK_POSITION));
+        scale.set_tooltip_text(Some(&strings::text(strings::PLAYBACK_POSITION)));
 
         let center_box = gtk4::Box::new(gtk4::Orientation::Horizontal, CENTER_BOX_SPACING);
         center_box.append(&shuffle_button);
@@ -256,7 +255,7 @@ impl PlayerBar {
         let volume_button =
             gtk4::ScaleButton::new(VOLUME_MIN, VOLUME_MAX, VOLUME_STEP, &VOLUME_ICONS);
         volume_button.set_value(VOLUME_DEFAULT);
-        volume_button.set_tooltip_text(Some(strings::VOLUME));
+        volume_button.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
         volume_button.set_valign(gtk4::Align::Center);
 
         // Task 8: cover + track_box (no buttons) share one clickable area —
@@ -371,11 +370,12 @@ impl PlayerBar {
         let is_playing = state == PlaybackState::Playing;
         self.play_pause_button
             .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
-        self.play_pause_button.set_tooltip_text(Some(if is_playing {
-            strings::PAUSE
+        let tooltip = if is_playing {
+            strings::text(strings::PAUSE)
         } else {
-            strings::PLAY
-        }));
+            strings::text(strings::PLAY)
+        };
+        self.play_pause_button.set_tooltip_text(Some(&tooltip));
         self.bar.set_sensitive(state != PlaybackState::Stopped);
         if state == PlaybackState::Stopped {
             // Force-clear any stale drag state: e.g. the track finishes or

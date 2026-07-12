@@ -92,7 +92,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     };
     let window = adw::ApplicationWindow::builder()
         .application(app)
-        .title(strings::APP_NAME)
+        .title(strings::text(strings::APP_NAME))
         .default_width(session_state.window_width)
         .default_height(session_state.window_height)
         .width_request(MIN_WIDTH)
@@ -105,24 +105,24 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     // `Sidebar`'s own default initial source, so this is set directly here
     // rather than through a round trip via `Sidebar::set_on_select` (not
     // wired until after `TrackList` exists — see that method's doc comment).
-    let window_title = adw::WindowTitle::new(strings::SIDEBAR_MUSIC, "");
+    let window_title = adw::WindowTitle::new(&strings::text(strings::SIDEBAR_MUSIC), "");
 
     let search_entry = gtk4::SearchEntry::builder()
-        .placeholder_text(strings::SEARCH_PLACEHOLDER)
+        .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
         .build();
 
-    let scan_button = gtk4::Button::with_label(strings::SCAN_FOLDER);
+    let scan_button = gtk4::Button::with_label(&strings::text(strings::SCAN_FOLDER));
     // Stage 3 Task 7: global "Import playlist…" entry, same header-button
     // shape as "Scan folder…" — see `wire_import_button`'s doc comment
     // (`ui::playlist_io`) for the dialog flow this drives.
-    let import_button = gtk4::Button::with_label(strings::IMPORT_PLAYLIST);
+    let import_button = gtk4::Button::with_label(&strings::text(strings::IMPORT_PLAYLIST));
 
     // Visible only while the split view is collapsed (see `wire_sidebar_
     // toggle`) — at full width both panes already show side by side, so
     // there is nothing to toggle.
     let sidebar_toggle = gtk4::ToggleButton::builder()
         .icon_name("sidebar-show-symbolic")
-        .tooltip_text(strings::SIDEBAR_TOGGLE)
+        .tooltip_text(strings::text(strings::SIDEBAR_TOGGLE))
         .visible(false)
         .build();
 
@@ -428,7 +428,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     // `toast_overlay`) already exist by this point, so this reorder has no
     // other dependency to satisfy.
     let sidebar_page = adw::NavigationPage::builder()
-        .title(strings::APP_NAME)
+        .title(strings::text(strings::APP_NAME))
         .child(sidebar.widget())
         .build();
     // Task 8: the content page's child is now an `adw::NavigationView`
@@ -440,10 +440,10 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let content_nav = now_playing_wiring::build_content_nav(
         &toast_overlay,
         player.as_ref().map(|p| p.now_playing_widget()),
-        strings::APP_NAME,
+        &strings::text(strings::APP_NAME),
     );
     let content_page = adw::NavigationPage::builder()
-        .title(strings::APP_NAME)
+        .title(strings::text(strings::APP_NAME))
         .child(&content_nav)
         .build();
 

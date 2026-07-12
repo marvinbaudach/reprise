@@ -82,12 +82,12 @@ impl NowPlayingView {
 
         let shuffle_button = gtk4::ToggleButton::builder()
             .icon_name(ICON_SHUFFLE)
-            .tooltip_text(strings::SHUFFLE)
+            .tooltip_text(strings::text(strings::SHUFFLE))
             .valign(gtk4::Align::Center)
             .build();
 
         let prev_button = gtk4::Button::from_icon_name(ICON_PREVIOUS);
-        prev_button.set_tooltip_text(Some(strings::PREVIOUS));
+        prev_button.set_tooltip_text(Some(&strings::text(strings::PREVIOUS)));
         prev_button.add_css_class("circular");
         // No queue until a view has been activated — mirrors the bar's own
         // initial state (see `PlayerBar::new`), synced from then on via
@@ -95,17 +95,17 @@ impl NowPlayingView {
         prev_button.set_sensitive(false);
 
         let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
-        play_pause_button.set_tooltip_text(Some(strings::PLAY));
+        play_pause_button.set_tooltip_text(Some(&strings::text(strings::PLAY)));
         play_pause_button.add_css_class("circular");
         play_pause_button.add_css_class("suggested-action");
 
         let next_button = gtk4::Button::from_icon_name(ICON_NEXT);
-        next_button.set_tooltip_text(Some(strings::NEXT));
+        next_button.set_tooltip_text(Some(&strings::text(strings::NEXT)));
         next_button.add_css_class("circular");
         next_button.set_sensitive(false);
 
         let repeat_button = gtk4::Button::from_icon_name(ICON_REPEAT_ALL);
-        repeat_button.set_tooltip_text(Some(strings::REPEAT));
+        repeat_button.set_tooltip_text(Some(&strings::text(strings::REPEAT)));
 
         let position_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
         let duration_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
@@ -114,7 +114,7 @@ impl NowPlayingView {
         scale.set_range(0.0, 1.0);
         scale.set_draw_value(false);
         scale.set_hexpand(true);
-        scale.set_tooltip_text(Some(strings::PLAYBACK_POSITION));
+        scale.set_tooltip_text(Some(&strings::text(strings::PLAYBACK_POSITION)));
 
         let seek_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         seek_row.append(&position_label);
@@ -218,11 +218,12 @@ impl NowPlayingView {
         let is_playing = state == PlaybackState::Playing;
         self.play_pause_button
             .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
-        self.play_pause_button.set_tooltip_text(Some(if is_playing {
-            strings::PAUSE
+        let tooltip = if is_playing {
+            strings::text(strings::PAUSE)
         } else {
-            strings::PLAY
-        }));
+            strings::text(strings::PLAY)
+        };
+        self.play_pause_button.set_tooltip_text(Some(&tooltip));
         if state == PlaybackState::Stopped {
             self.dragging.set(false);
             self.set_position(0, 0);

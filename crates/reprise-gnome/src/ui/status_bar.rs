@@ -139,9 +139,9 @@ fn format_status_text(
     filtered_count: Option<i64>,
 ) -> String {
     let track_word = if track_count == 1 {
-        strings::STATUS_TRACK_SINGULAR
+        &strings::text(strings::STATUS_TRACK_SINGULAR)
     } else {
-        strings::STATUS_TRACK_PLURAL
+        &strings::text(strings::STATUS_TRACK_PLURAL)
     };
     let count_text = match filtered_count {
         Some(filtered) => strings::status_filtered_of_total(
@@ -152,7 +152,7 @@ fn format_status_text(
     };
     format!(
         "{count_text} {track_word}{}{}",
-        strings::STATUS_SEPARATOR,
+        &strings::text(strings::STATUS_SEPARATOR),
         format_total_duration(total_duration_ms)
     )
 }
@@ -162,9 +162,9 @@ fn format_status_text(
 /// without the duration/"N of M" pieces that only make sense library-wide.
 fn format_source_status_text(count: i64) -> String {
     let track_word = if count == 1 {
-        strings::STATUS_TRACK_SINGULAR
+        &strings::text(strings::STATUS_TRACK_SINGULAR)
     } else {
-        strings::STATUS_TRACK_PLURAL
+        &strings::text(strings::STATUS_TRACK_PLURAL)
     };
     format!("{} {track_word}", format_thousands(count))
 }

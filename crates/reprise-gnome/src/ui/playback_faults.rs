@@ -129,7 +129,9 @@ impl PlayerController {
             );
             self.consecutive_skips.set(0);
             self.reset_to_stopped();
-            self.show_toast(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE);
+            self.show_toast(&strings::text(
+                strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE,
+            ));
             return;
         }
 

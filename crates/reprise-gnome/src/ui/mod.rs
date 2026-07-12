@@ -36,6 +36,7 @@ pub mod player_bar;
 pub mod player_controller;
 pub mod player_controller_wiring;
 pub mod playlist_io;
+mod playlist_io_names;
 pub mod primary_menu;
 pub mod queue_transport;
 pub mod rating;

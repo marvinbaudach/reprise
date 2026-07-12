@@ -67,9 +67,18 @@ impl BrowseBar {
         root.set_margin_end(12);
         root.add_css_class("toolbar");
 
-        let (genre_box, genre) = facet_widget(strings::BROWSE_GENRE, strings::ALL_GENRES);
-        let (artist_box, artist) = facet_widget(strings::BROWSE_ARTIST, strings::ALL_ARTISTS);
-        let (album_box, album) = facet_widget(strings::BROWSE_ALBUM, strings::ALL_ALBUMS);
+        let (genre_box, genre) = facet_widget(
+            &strings::text(strings::BROWSE_GENRE),
+            &strings::text(strings::ALL_GENRES),
+        );
+        let (artist_box, artist) = facet_widget(
+            &strings::text(strings::BROWSE_ARTIST),
+            &strings::text(strings::ALL_ARTISTS),
+        );
+        let (album_box, album) = facet_widget(
+            &strings::text(strings::BROWSE_ALBUM),
+            &strings::text(strings::ALL_ALBUMS),
+        );
         root.append(&genre_box);
         root.append(&artist_box);
         root.append(&album_box);
@@ -131,24 +140,24 @@ impl BrowseBar {
         replace_options(
             &self.genre,
             &self.genre_values,
-            strings::ALL_GENRES,
-            strings::UNKNOWN_GENRE,
+            &strings::text(strings::ALL_GENRES),
+            &strings::text(strings::UNKNOWN_GENRE),
             genres,
             filter.genre.as_deref(),
         );
         replace_options(
             &self.artist,
             &self.artist_values,
-            strings::ALL_ARTISTS,
-            strings::UNKNOWN_ARTIST,
+            &strings::text(strings::ALL_ARTISTS),
+            &strings::text(strings::UNKNOWN_ARTIST),
             artists,
             filter.artist.as_deref(),
         );
         replace_options(
             &self.album,
             &self.album_values,
-            strings::ALL_ALBUMS,
-            strings::UNKNOWN_ALBUM,
+            &strings::text(strings::ALL_ALBUMS),
+            &strings::text(strings::UNKNOWN_ALBUM),
             albums,
             filter.album.as_deref(),
         );

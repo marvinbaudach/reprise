@@ -100,7 +100,7 @@ pub(super) fn wire_scan_button(
         scan_button_handle.set_sensitive(false);
 
         let dialog = gtk4::FileDialog::builder()
-            .title(strings::SCAN_DIALOG_TITLE)
+            .title(strings::text(strings::SCAN_DIALOG_TITLE))
             .modal(true)
             .build();
 
@@ -227,8 +227,8 @@ fn spawn_scan(
     watcher_state: Rc<RefCell<Option<WatcherHandle>>>,
 ) {
     scan_button.set_sensitive(false);
-    scan_button.set_label(strings::SCANNING);
-    scan_button.set_tooltip_text(Some(strings::SCANNING));
+    scan_button.set_label(&strings::text(strings::SCANNING));
+    scan_button.set_tooltip_text(Some(&strings::text(strings::SCANNING)));
 
     let (sender, receiver) = async_channel::bounded::<Result<ScanReport, ScanError>>(1);
 
@@ -252,7 +252,7 @@ fn spawn_scan(
         let outcome = receiver.recv().await;
 
         scan_button.set_sensitive(true);
-        scan_button.set_label(strings::SCAN_FOLDER);
+        scan_button.set_label(&strings::text(strings::SCAN_FOLDER));
         scan_button.set_tooltip_text(None);
 
         match outcome {
@@ -276,7 +276,7 @@ fn spawn_scan(
                 tracing::error!(%error, "scan failed");
                 toasts::show(
                     &toast_overlay,
-                    &format!("{}{error}", strings::SCAN_FAILED_PREFIX),
+                    &format!("{}{error}", &strings::text(strings::SCAN_FAILED_PREFIX)),
                 );
             }
             Err(error) => {
@@ -285,7 +285,7 @@ fn spawn_scan(
                 tracing::error!(%error, "scan worker channel closed unexpectedly");
                 toasts::show(
                     &toast_overlay,
-                    &format!("{}{error}", strings::SCAN_FAILED_PREFIX),
+                    &format!("{}{error}", &strings::text(strings::SCAN_FAILED_PREFIX)),
                 );
             }
         }

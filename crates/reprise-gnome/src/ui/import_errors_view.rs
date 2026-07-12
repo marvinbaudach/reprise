@@ -135,21 +135,21 @@ fn build_header_row() -> gtk4::Box {
     hbox.set_margin_top(6);
     hbox.set_margin_bottom(2);
 
-    let path_header = gtk4::Label::new(Some(strings::IMPORT_ERROR_COLUMN_PATH));
+    let path_header = gtk4::Label::new(Some(&strings::text(strings::IMPORT_ERROR_COLUMN_PATH)));
     path_header.set_xalign(0.0);
     path_header.set_hexpand(true);
     path_header.add_css_class("caption-heading");
     path_header.add_css_class("dim-label");
     hbox.append(&path_header);
 
-    let reason_header = gtk4::Label::new(Some(strings::IMPORT_ERROR_COLUMN_REASON));
+    let reason_header = gtk4::Label::new(Some(&strings::text(strings::IMPORT_ERROR_COLUMN_REASON)));
     reason_header.set_xalign(0.0);
     reason_header.set_width_chars(24);
     reason_header.add_css_class("caption-heading");
     reason_header.add_css_class("dim-label");
     hbox.append(&reason_header);
 
-    let time_header = gtk4::Label::new(Some(strings::IMPORT_ERROR_COLUMN_TIME));
+    let time_header = gtk4::Label::new(Some(&strings::text(strings::IMPORT_ERROR_COLUMN_TIME)));
     time_header.add_css_class("caption-heading");
     time_header.add_css_class("dim-label");
     hbox.append(&time_header);
@@ -212,7 +212,7 @@ fn build_row(shared: &Rc<Shared>, row: &ImportErrorRow) -> gtk4::ListBoxRow {
     time_label.add_css_class("numeric");
     hbox.append(&time_label);
 
-    let retry_button = gtk4::Button::with_label(strings::IMPORT_ERROR_RETRY);
+    let retry_button = gtk4::Button::with_label(&strings::text(strings::IMPORT_ERROR_RETRY));
     {
         let shared = shared.clone();
         let path = row.path.clone();
@@ -220,7 +220,7 @@ fn build_row(shared: &Rc<Shared>, row: &ImportErrorRow) -> gtk4::ListBoxRow {
     }
     hbox.append(&retry_button);
 
-    let dismiss_button = gtk4::Button::with_label(strings::IMPORT_ERROR_DISMISS);
+    let dismiss_button = gtk4::Button::with_label(&strings::text(strings::IMPORT_ERROR_DISMISS));
     {
         let shared = shared.clone();
         let id = row.id;

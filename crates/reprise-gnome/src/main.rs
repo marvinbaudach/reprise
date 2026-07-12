@@ -1,3 +1,4 @@
+mod i18n;
 mod ui;
 
 use std::cell::RefCell;
@@ -90,6 +91,8 @@ fn seed_playlist_from_library(
 
 fn main() -> glib::ExitCode {
     init_logging();
+    i18n::init();
+    i18n::smoke_report();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Reprise");
 
     let app = adw::Application::builder().application_id(APP_ID).build();

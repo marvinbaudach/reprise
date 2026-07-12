@@ -29,17 +29,17 @@ pub(super) fn install(
 ) {
     let menu = gio::Menu::new();
     menu.append(
-        Some(strings::DOWNLOAD_MISSING_COVERS),
+        Some(&strings::text(strings::DOWNLOAD_MISSING_COVERS)),
         Some("win.download-missing-covers"),
     );
     menu.append(
-        Some(strings::IMPORT_RHYTHMBOX_COLUMNS),
+        Some(&strings::text(strings::IMPORT_RHYTHMBOX_COLUMNS)),
         Some("win.import-rhythmbox-columns"),
     );
     let menu_button = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu)
-        .tooltip_text(strings::MAIN_MENU)
+        .tooltip_text(strings::text(strings::MAIN_MENU))
         .build();
     header.pack_end(&menu_button);
 
@@ -120,14 +120,16 @@ fn handle_rhythmbox_import(track_list: &TrackList, override_tokens: Option<Vec<S
     let layout = crate::ui::column_layout::import_rhythmbox_tokens(&tokens);
     if let Err(error) = track_list.apply_column_layout(&layout) {
         tracing::warn!(%error, "could not persist imported Rhythmbox column layout");
-        track_list.toast(strings::RHYTHMBOX_COLUMNS_IMPORT_SAVE_FAILED);
+        track_list.toast(&strings::text(
+            strings::RHYTHMBOX_COLUMNS_IMPORT_SAVE_FAILED,
+        ));
         return;
     }
     tracing::info!(
         layout = %crate::ui::column_layout::serialize_layout(&layout),
         "Rhythmbox column layout imported"
     );
-    track_list.toast(strings::RHYTHMBOX_COLUMNS_IMPORTED);
+    track_list.toast(&strings::text(strings::RHYTHMBOX_COLUMNS_IMPORTED));
 }
 
 fn rhythmbox_smoke_tokens() -> Option<Vec<String>> {
