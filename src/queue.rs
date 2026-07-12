@@ -353,6 +353,87 @@ impl Queue {
         true
     }
 
+    /// Purges every occurrence of each id in `remove` from the queue (Stage-3
+    /// close-out: "Remove from library" hard-deletes `tracks` rows —
+    /// `queries::remove_missing_track`/`remove_missing_tracks` — and a
+    /// queued id that no longer resolves to a row desyncs `len()`/`ids_in_
+    /// order()` from what `ViewSource::Queue`'s window query can actually
+    /// render; see `queries.rs`'s module doc, `Queue` section). Every
+    /// occurrence of a removed id is dropped, not just one — a hard-deleted
+    /// track is gone from the database entirely, so any queue slot
+    /// referencing it (even a duplicate, e.g. the same track queued twice)
+    /// is equally stale.
+    ///
+    /// The *currently playing* track (if it survives) stays current, by the
+    /// same stable-identity technique `move_item` uses (looked up by its
+    /// slot in `ids`, not by numeric position, since removal shifts every
+    /// later index down). If the current track ITSELF is being removed, this
+    /// advances to the next surviving track in play order — never wraps
+    /// backward — or becomes `None` if no track survives after it. A queue
+    /// that was already exhausted (`pos == None`, e.g. `Repeat::Off` ran off
+    /// the end) stays exhausted; a removal never resurrects a position,
+    /// matching `append_tracks`' same contract after exhaustion.
+    ///
+    /// A no-op (returns `false`, no mutation) for an empty `remove` slice, an
+    /// empty queue, or a `remove` slice that matches nothing currently
+    /// queued. Returns whether anything was actually removed.
+    pub fn remove_ids(&mut self, remove: &[i64]) -> bool {
+        if remove.is_empty() || self.ids.is_empty() {
+            return false;
+        }
+        let remove_set: std::collections::HashSet<i64> = remove.iter().copied().collect();
+        if !self.ids.iter().any(|id| remove_set.contains(id)) {
+            return false;
+        }
+
+        // The order-slot (position in the play sequence) the current track
+        // occupies — `None` if the queue is already exhausted.
+        let old_pos_slot = self.pos;
+
+        // Build the surviving `ids` list and a map from every OLD `ids`-index
+        // to its new one (`None` for a removed index).
+        let mut new_ids = Vec::with_capacity(self.ids.len());
+        let mut index_map: Vec<Option<usize>> = Vec::with_capacity(self.ids.len());
+        for &id in &self.ids {
+            if remove_set.contains(&id) {
+                index_map.push(None);
+            } else {
+                index_map.push(Some(new_ids.len()));
+                new_ids.push(id);
+            }
+        }
+
+        let new_order: Vec<usize> = self
+            .order
+            .iter()
+            .filter_map(|&old_idx| index_map[old_idx])
+            .collect();
+
+        let new_pos = match old_pos_slot {
+            None => None, // already exhausted; stays exhausted
+            Some(slot) => {
+                let old_idx = self.order[slot];
+                match index_map[old_idx] {
+                    // Current track survived: find its (unique) slot in the
+                    // new order.
+                    Some(new_idx) => new_order.iter().position(|&idx| idx == new_idx),
+                    // Current track itself was removed: advance to the next
+                    // surviving track in play order (never wrap backward to
+                    // an earlier one) — `None` if nothing survives after it.
+                    None => self.order[slot + 1..]
+                        .iter()
+                        .find_map(|&old_idx| index_map[old_idx])
+                        .and_then(|new_idx| new_order.iter().position(|&idx| idx == new_idx)),
+                }
+            }
+        };
+
+        self.ids = new_ids;
+        self.order = new_order;
+        self.pos = new_pos;
+        true
+    }
+
     /// Every queued track id in current play order — reflecting shuffle, if
     /// active — used by `ViewSource::Queue` (Stage 3 Task 3): `ui::
     /// player_controller::queue_ids_snapshot` clones this out so the "Queue"
@@ -1005,5 +1086,135 @@ mod tests {
             collected, expected,
             "should visit each track exactly once in a single pass"
         );
+    }
+
+    // Stage-3 close-out: `remove_ids` (hard-delete queue purge).
+
+    #[test]
+    fn remove_ids_on_empty_queue_is_a_no_op() {
+        let mut q = Queue::new();
+        assert!(!q.remove_ids(&[1, 2]));
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn remove_ids_empty_slice_is_a_no_op() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 0);
+        assert!(!q.remove_ids(&[]));
+        assert_eq!(q.ids_in_order(), vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn remove_ids_matching_nothing_is_a_no_op() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 1);
+        assert!(!q.remove_ids(&[999]));
+        assert_eq!(q.ids_in_order(), vec![10, 20, 30]);
+        assert_eq!(q.current(), Some(20));
+    }
+
+    #[test]
+    fn remove_ids_removes_a_non_current_track_and_stays_gapless() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40], 1); // current = 20
+        assert!(q.remove_ids(&[30]));
+        assert_eq!(q.ids_in_order(), vec![10, 20, 40]);
+        assert_eq!(q.current(), Some(20), "untouched current track survives");
+        assert_eq!(q.len(), 3);
+    }
+
+    #[test]
+    fn remove_ids_removing_the_current_track_advances_to_the_next_surviving_track() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40], 1); // current = 20
+        assert!(q.remove_ids(&[20]));
+        assert_eq!(q.ids_in_order(), vec![10, 30, 40]);
+        assert_eq!(
+            q.current(),
+            Some(30),
+            "advances to the next surviving track, never backward"
+        );
+    }
+
+    #[test]
+    fn remove_ids_removing_the_current_track_when_it_is_last_yields_none() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30], 2); // current = 30, last track
+        assert!(q.remove_ids(&[30]));
+        assert_eq!(q.ids_in_order(), vec![10, 20]);
+        assert_eq!(
+            q.current(),
+            None,
+            "no surviving track after the removed current track"
+        );
+    }
+
+    #[test]
+    fn remove_ids_removing_current_skips_over_multiple_removed_tracks_ahead() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40, 50], 1); // current = 20
+        assert!(q.remove_ids(&[20, 30, 40]));
+        assert_eq!(q.ids_in_order(), vec![10, 50]);
+        assert_eq!(q.current(), Some(50));
+    }
+
+    #[test]
+    fn remove_ids_removing_every_track_empties_the_queue() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20], 0);
+        assert!(q.remove_ids(&[10, 20]));
+        assert!(q.is_empty());
+        assert_eq!(q.current(), None);
+    }
+
+    #[test]
+    fn remove_ids_removes_every_occurrence_of_a_duplicated_id() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 10, 30], 0); // id 10 queued twice
+        assert!(q.remove_ids(&[10]));
+        assert_eq!(
+            q.ids_in_order(),
+            vec![20, 30],
+            "every occurrence of a hard-deleted id must be purged, not just one"
+        );
+    }
+
+    #[test]
+    fn remove_ids_leaves_an_exhausted_queue_exhausted() {
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20], 0);
+        q.set_repeat(Repeat::Off);
+        q.advance_auto(); // -> 20
+        q.advance_auto(); // -> None (exhausted)
+        assert_eq!(q.current(), None);
+
+        assert!(q.remove_ids(&[10]));
+        assert_eq!(
+            q.current(),
+            None,
+            "a removal must never resurrect an exhausted queue's position"
+        );
+        assert_eq!(q.ids_in_order(), vec![20]);
+    }
+
+    #[test]
+    fn remove_ids_preserves_current_under_shuffle() {
+        fastrand::seed(42);
+        let mut q = Queue::new();
+        q.set_tracks(vec![10, 20, 30, 40, 50], 0);
+        q.set_shuffle(true);
+        let current_before = q.current().unwrap();
+        // Remove a track that is not the current one.
+        let victim = q
+            .ids_in_order()
+            .into_iter()
+            .find(|&id| id != current_before)
+            .unwrap();
+
+        assert!(q.remove_ids(&[victim]));
+        assert_eq!(q.current(), Some(current_before));
+        assert_eq!(q.len(), 4);
+        assert!(!q.ids_in_order().contains(&victim));
     }
 }

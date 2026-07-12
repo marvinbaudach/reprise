@@ -24,11 +24,17 @@ use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 use crate::queue::Repeat;
 
 /// `MprisState::volume`'s initial value until the bar or an MPRIS `Volume`
-/// write sets a real one — "full volume", matching `ui::player_bar`'s own
-/// `VOLUME_DEFAULT` (a separate constant: this module doesn't depend on
-/// `ui`, only the other direction, so the two are kept in sync by
-/// convention, not by sharing one definition).
-const DEFAULT_VOLUME: f64 = 1.0;
+/// write sets a real one — "full volume". `pub(crate)` (Stage-3 close-out:
+/// this used to be duplicated verbatim as its own private `const` in
+/// `ui::player_controller`, which `PlayerController::volume`'s initial
+/// `Cell` value now instead reads from here via `crate::mpris::
+/// DEFAULT_VOLUME`, so there is exactly one definition to keep in sync).
+/// Still kept separate from `ui::player_bar`'s own `VOLUME_DEFAULT` — that
+/// one is the volume *slider widget*'s reset value, a UI concern this
+/// module deliberately doesn't depend on (this module has no `ui`
+/// dependency at all); the two are kept in sync by convention only, per
+/// that constant's own doc comment.
+pub(crate) const DEFAULT_VOLUME: f64 = 1.0;
 
 /// Commands the MPRIS `Player` interface's transport methods (`Play`,
 /// `Pause`, …) send into the app over an `async_channel`, drained by

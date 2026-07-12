@@ -249,6 +249,9 @@ type OnQueueReorder = Rc<dyn Fn(usize, usize) -> bool>;
 /// Sidebar drag-and-drop "add to playlist" callback — see the `Shared::on_
 /// sidebar_playlist_drop` doc comment.
 type OnSidebarPlaylistDrop = Rc<dyn Fn(i64, &str, &[i64]) -> bool>;
+/// "Remove from library" callback — see the `Shared::on_library_mutated` doc
+/// comment. Takes the ids actually deleted (Stage-3 close-out).
+type OnLibraryMutated = Rc<dyn Fn(&[i64])>;
 
 /// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -397,9 +400,13 @@ pub(super) struct Shared {
     pub(super) on_rescan_library: RefCell<Option<Rc<dyn Fn()>>>,
     /// "Remove from library" (Missing-source context menu item, Stage 3 Task
     /// 8): injected via `TrackList::set_on_library_mutated` — `window.rs`
-    /// wires this to `Sidebar::refresh`, since the Missing badge count can
-    /// only ever shrink from this action.
-    pub(super) on_library_mutated: RefCell<Option<Rc<dyn Fn()>>>,
+    /// wires this to `Sidebar::refresh` (the Missing badge count can only
+    /// ever shrink from this action) AND `PlayerController::purge_queue_ids`
+    /// (Stage-3 close-out: a hard-deleted track must also be purged from the
+    /// playback queue). Takes the ids `queries::remove_missing_tracks`
+    /// actually deleted — not just a bare notification — so the queue purge
+    /// knows exactly which ids to remove.
+    pub(super) on_library_mutated: RefCell<Option<OnLibraryMutated>>,
     /// Invoked after the ImportErrors panel's own Retry/Dismiss actions
     /// mutate `import_errors` — injected via `TrackList::set_on_import_
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the
@@ -701,7 +708,7 @@ impl TrackList {
     /// Injects the callback invoked after "Remove from library" deletes rows
     /// (Missing source, Stage 3 Task 8) — see the `Shared::on_library_
     /// mutated` doc comment. `window.rs` wires this to `Sidebar::refresh`.
-    pub fn set_on_library_mutated(&self, callback: impl Fn() + 'static) {
+    pub fn set_on_library_mutated(&self, callback: impl Fn(&[i64]) + 'static) {
         *self.shared.on_library_mutated.borrow_mut() = Some(Rc::new(callback));
     }
 

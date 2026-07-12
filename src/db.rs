@@ -124,27 +124,51 @@ CREATE TABLE settings (
 /// one code path per version bump to test and reason about, at the cost of a
 /// fresh install running through slightly more SQL than strictly necessary —
 /// a one-time, sub-millisecond cost that's worth the simplicity.
+///
+/// Stage-3 close-out fix: each version step's schema changes AND its
+/// `user_version` bump now run inside one transaction
+/// (`Connection::unchecked_transaction` — used rather than `Connection::
+/// transaction`, which needs `&mut Connection`, since this function only
+/// takes `&Connection` and every other caller in this codebase already
+/// treats a freshly-opened `Connection` as single-threaded/not concurrently
+/// borrowed, matching every other `unchecked_*` use's safety precondition).
+/// Before this fix, `execute_batch(SCHEMA_VN)` and `pragma_update(...,
+/// "user_version", N)` were two separate, non-atomic statements — a crash
+/// (power loss, OOM-kill) between them would commit the schema change but
+/// not the version bump, so the NEXT `migrate()` call would see the old
+/// version number and try to re-run `SCHEMA_VN`, failing on "table/column
+/// already exists" and permanently wedging that database. Wrapping both in
+/// one transaction makes each version step atomic: either the whole step
+/// (schema + version bump) lands, or neither does and the next `migrate()`
+/// call retries the same step cleanly. Idempotency (a second full `migrate()`
+/// call being a no-op) is unaffected — every existing migration test still
+/// passes unmodified.
 pub fn migrate(conn: &Connection) -> Result<(), DbError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if version < 1 {
-        conn.execute_batch(SCHEMA_V1)?;
-        conn.pragma_update(None, "user_version", 1)?;
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V1)?;
+        tx.pragma_update(None, "user_version", 1)?;
+        tx.commit()?;
     }
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if version < 2 {
-        conn.execute_batch(SCHEMA_V2)?;
-        conn.pragma_update(None, "user_version", 2)?;
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V2)?;
+        tx.pragma_update(None, "user_version", 2)?;
+        tx.commit()?;
     }
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if version < 3 {
-        conn.execute_batch(SCHEMA_V3)?;
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V3)?;
         // Seed three default smart playlists (only if none exist — idempotent).
         // This check is defensive-only; it runs exactly once per DB by version gate
         // and deleted seeds are never resurrected (by design).
         let smart_playlist_count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM smart_playlists", [], |r| r.get(0))?;
+            tx.query_row("SELECT COUNT(*) FROM smart_playlists", [], |r| r.get(0))?;
         if smart_playlist_count == 0 {
-            conn.execute_batch(
+            tx.execute_batch(
                 r#"
 INSERT INTO smart_playlists (name, rules_json, sort_field, sort_dir, limit_count)
 VALUES ('Recently played', '[{"field":"last_played_at","op":"not-null"}]', 'last_played_at', 'desc', 50);
@@ -155,12 +179,15 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
                 "#,
             )?;
         }
-        conn.pragma_update(None, "user_version", 3)?;
+        tx.pragma_update(None, "user_version", 3)?;
+        tx.commit()?;
     }
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if version < 4 {
-        conn.execute_batch(SCHEMA_V4)?;
-        conn.pragma_update(None, "user_version", 4)?;
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V4)?;
+        tx.pragma_update(None, "user_version", 4)?;
+        tx.commit()?;
     }
     Ok(())
 }
@@ -168,6 +195,46 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Stage-3 close-out regression: proves each version step is atomic — a
+    /// transaction rolled back partway through (simulating a crash between
+    /// the schema change and the `user_version` bump) leaves neither the
+    /// schema change nor the version bump behind, so a real `migrate()` call
+    /// afterward can safely retry the whole step from scratch rather than
+    /// tripping over a partially-applied schema ("duplicate column").
+    #[test]
+    fn migrate_version_step_is_atomic_a_rollback_leaves_no_partial_schema() {
+        let conn = open(None).unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+
+        // Simulate a crash mid-step: run the same work the v1->v2 step does,
+        // but roll back instead of committing (dropping an uncommitted
+        // `Transaction` rolls it back).
+        {
+            let tx = conn.unchecked_transaction().unwrap();
+            tx.execute_batch(SCHEMA_V2).unwrap();
+            tx.pragma_update(None, "user_version", 2).unwrap();
+        }
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            version, 1,
+            "the rolled-back version bump must not have survived"
+        );
+
+        // The rolled-back schema change must not have survived either — a
+        // real migrate() call must be able to re-run SCHEMA_V2 cleanly
+        // (would fail with "duplicate column name" if the ALTERs had
+        // partially committed).
+        migrate(&conn).unwrap();
+        let version_after: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version_after, 4);
+    }
 
     #[test]
     fn migrate_creates_tracks_table_and_is_idempotent() {

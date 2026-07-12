@@ -343,14 +343,30 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         });
     }
     {
-        // Stage 3 Task 8: "Remove from library" (Missing source only)
-        // deletes rows outright — the Missing badge count can only ever
-        // shrink from that, exactly like the missing-marking trigger above,
-        // so this is wired the same way.
+        // Stage 3 Task 8 / Stage-3 close-out: "Remove from library" (Missing
+        // source only) deletes rows outright — the Missing badge count can
+        // only ever shrink from that, exactly like the missing-marking
+        // trigger above, so the sidebar refresh is wired the same way. The
+        // close-out fix adds a second consumer of the same callback: the
+        // exact ids `queries::remove_missing_tracks` actually deleted are
+        // also purged from the playback queue (`PlayerController::purge_
+        // queue_ids`) — a hard-deleted track must not linger as a phantom
+        // queue entry (see that method's doc comment for the full
+        // invariant). `player.clone()` is a cheap `Option<Rc<_>>` clone,
+        // same pattern as every other closure above that needs the
+        // controller.
         let sidebar_weak = Rc::downgrade(&sidebar);
-        track_list.set_on_library_mutated(move || match sidebar_weak.upgrade() {
-            Some(sidebar) => sidebar.refresh("track removed from library"),
-            None => tracing::warn!("sidebar is gone; skipping refresh after a library removal"),
+        let player = player.clone();
+        track_list.set_on_library_mutated(move |removed_ids| {
+            match sidebar_weak.upgrade() {
+                Some(sidebar) => sidebar.refresh("track removed from library"),
+                None => {
+                    tracing::warn!("sidebar is gone; skipping refresh after a library removal");
+                }
+            }
+            if let Some(player) = &player {
+                player.purge_queue_ids(removed_ids);
+            }
         });
     }
     {
