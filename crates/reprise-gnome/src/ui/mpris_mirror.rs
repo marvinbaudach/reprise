@@ -395,7 +395,9 @@ impl PlayerController {
     fn mpris_set_shuffle(&self, on: bool) {
         self.queue.borrow_mut().set_shuffle(on);
         let is_shuffled = self.queue.borrow().is_shuffled();
-        self.bar.set_shuffle_indicator(is_shuffled);
+        // Syncs the bar AND the Now-Playing page — see `now_playing_wiring.
+        // rs`'s `sync_shuffle_indicator` doc comment.
+        self.sync_shuffle_indicator(is_shuffled);
         self.update_mpris_shuffle(is_shuffled);
         tracing::debug!(is_shuffled, "MPRIS: shuffle set");
     }
@@ -410,7 +412,7 @@ impl PlayerController {
     /// signal the way `ToggleButton::set_active`/`ScaleButton::set_value` do.
     fn mpris_set_loop(&self, repeat: Repeat) {
         self.queue.borrow_mut().set_repeat(repeat);
-        self.bar.set_repeat_indicator(repeat);
+        self.sync_repeat_indicator(repeat);
         self.update_mpris_repeat(repeat);
         tracing::debug!(?repeat, "MPRIS: loop status set");
     }

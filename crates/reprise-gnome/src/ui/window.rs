@@ -32,6 +32,7 @@ use rusqlite::Connection;
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 
+use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::playlist_io;
 use super::shortcuts;
@@ -425,9 +426,20 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .title(strings::APP_NAME)
         .child(sidebar.widget())
         .build();
+    // Task 8: the content page's child is now an `adw::NavigationView`
+    // (rather than `toast_overlay` directly) so the Now-Playing full view can
+    // be pushed onto it from a bar click — see `now_playing_wiring.rs`'s
+    // `build_content_nav`/`wire_bar_expand` doc comments. The split view's
+    // own sidebar/content navigation is unaffected: this is a second, nested
+    // `NavigationView` scoped to the content page alone.
+    let content_nav = now_playing_wiring::build_content_nav(
+        &toast_overlay,
+        player.as_ref().map(|p| p.now_playing_widget()),
+        strings::APP_NAME,
+    );
     let content_page = adw::NavigationPage::builder()
         .title(strings::APP_NAME)
-        .child(&toast_overlay)
+        .child(&content_nav)
         .build();
 
     let split_view = adw::NavigationSplitView::builder()
@@ -604,6 +616,11 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     );
 
     arm_smoke_bar_position(conn, &toolbar_view, &bottom_box);
+
+    // Task 8: wired after `player`/`content_nav` both exist — see
+    // `now_playing_wiring.rs`'s doc comments for what each call does.
+    now_playing_wiring::wire_bar_expand(player.as_ref(), &content_nav);
+    now_playing_wiring::arm_smoke_nowplaying(player.as_ref(), &content_nav);
 
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)

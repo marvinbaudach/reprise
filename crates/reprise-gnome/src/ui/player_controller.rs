@@ -3,15 +3,19 @@
 //!
 //! Stage 3 Task 1 split this file's MPRIS mirror/command logic out into
 //! `mpris_mirror.rs` and its fault-tolerance/auto-skip logic out into
-//! `playback_faults.rs`. Both are `impl PlayerController` blocks living in
-//! sibling modules under `ui` — not separate types — so `PlayerController`
-//! still has exactly one owner for every field: this file. See each
-//! module's own doc comment for what moved there and the `pub(super)` seam
-//! (fields/methods marked visible to `ui` and its descendants) that makes
-//! reaching into this struct from a sibling module possible. This file
-//! remains the canonical description of the borrow-discipline invariant
-//! itself (`## Queue borrow discipline` below), since `queue` is, and
-//! stays, a field owned here.
+//! `playback_faults.rs`. Task 8 split its queue-driven transport methods
+//! (`previous`/`next`/`toggle_pause`/`append_to_queue`/`queue_ids_snapshot`/
+//! `move_queue_item`/`purge_queue_ids`) out into `queue_transport.rs`, and
+//! the Now-Playing full view's construction, wiring, and bar/page fan-out
+//! (`sync_*`) out into `now_playing_wiring.rs`. All four are `impl
+//! PlayerController` blocks living in sibling modules under `ui` — not
+//! separate types — so `PlayerController` still has exactly one owner for
+//! every field: this file. See each module's own doc comment for what moved
+//! there and the `pub(super)` seam (fields/methods marked visible to `ui`
+//! and its descendants) that makes reaching into this struct from a sibling
+//! module possible. This file remains the canonical description of the
+//! borrow-discipline invariant itself (`## Queue borrow discipline` below),
+//! since `queue` is, and stays, a field owned here.
 //!
 //! ## Event marshalling: `async-channel` + `glib::spawn_future_local`
 //!
@@ -58,8 +62,8 @@
 //! another `apply_event`/queue call, so **no `queue` borrow may still be
 //! alive when `play_track_id`, `reset_to_stopped`, or any other
 //! player/GTK-facing call runs.** Every call site — in this file and in
-//! `mpris_mirror.rs`/`playback_faults.rs`, which both borrow `queue` too —
-//! follows the same shape: read the one `Option<i64>`/value it needs out of
+//! `mpris_mirror.rs`/`playback_faults.rs`/`queue_transport.rs`, which all
+//! borrow `queue` too — follows the same shape: read the one `Option<i64>`/value it needs out of
 //! the queue in a single expression (a `let x = queue.borrow_mut().method();`
 //! statement, or an explicit `{ }` block when more than one queue call is
 //! needed), which drops the borrow at the end of that statement/block —
@@ -138,9 +142,10 @@ use rusqlite::Connection;
 
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::mpris_mirror::{self, mpris_status_from_playback_state};
+use crate::ui::now_playing::NowPlayingView;
+use crate::ui::now_playing_wiring;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
-use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats;
 use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
 use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
@@ -234,12 +239,24 @@ pub struct PlayerController {
     /// reach it.
     pub(super) mpris_seek_notify: async_channel::Sender<i64>,
     /// Off-thread cover decode/cache substrate (Task 4); `play_track_id`
-    /// feeds the bar's cover widget through this after `set_track`.
-    cover_loader: Rc<CoverLoader>,
+    /// feeds the bar's and the Now-Playing page's cover widgets through this
+    /// one shared instance (see `now_playing_wiring.rs`'s `sync_cover`) —
+    /// same loader, two sizes, no second cache.
+    pub(super) cover_loader: Rc<CoverLoader>,
     /// Generation token for the bar's cover widget (see `cover_loader.rs`):
     /// bumped per `play_track_id` call so a stale in-flight load can't
     /// clobber a newer one.
-    bar_cover_generation: Rc<Cell<u64>>,
+    pub(super) bar_cover_generation: Rc<Cell<u64>>,
+    /// The Now-Playing full view (Task 8) — the SAME `PlayerController`
+    /// actions and state the bar uses, never a second playback/seek path.
+    /// See `now_playing_wiring.rs`'s module doc for the construction/wiring
+    /// and the `sync_*` fan-out that feeds both widgets from one call site.
+    pub(super) now_playing_view: NowPlayingView,
+    /// Generation token for the Now-Playing page's cover widget — separate
+    /// from `bar_cover_generation` because the page loads `ThumbnailSize::
+    /// Full` while the bar loads `ThumbnailSize::Bar`; each widget must only
+    /// ever apply its own most-recent load.
+    pub(super) now_playing_cover_generation: Rc<Cell<u64>>,
 }
 
 /// See `PlayerController::now_playing`'s doc comment. Fields are `pub(super)`
@@ -253,8 +270,10 @@ pub(super) struct NowPlaying {
     pub(super) album: String,
     pub(super) duration_ms: i64,
     /// On-disk path of the currently-loaded track. Not read yet (`play_
-    /// track_id` feeds `CoverLoader::load_into` from `summary.path`
-    /// directly) — the Now-Playing full view (Task 9) needs it here.
+    /// track_id` feeds `now_playing_wiring.rs`'s `sync_cover` from
+    /// `summary.path` directly) — kept for parity with the other display
+    /// fields above, and as the natural home for a future caller (e.g. a
+    /// re-applied MPRIS mirror) that only has this cache to work from.
     #[allow(dead_code)]
     pub(super) path: String,
 }
@@ -321,10 +340,13 @@ impl PlayerController {
             mpris_seek_notify,
             cover_loader: CoverLoader::new(),
             bar_cover_generation: Rc::new(Cell::new(0)),
+            now_playing_view: NowPlayingView::new(),
+            now_playing_cover_generation: Rc::new(Cell::new(0)),
         });
 
         player_controller_wiring::wire_bar_controls(&controller);
         player_controller_wiring::arm_smoke_repeat(&controller);
+        now_playing_wiring::wire_now_playing_controls(&controller);
 
         let weak = Rc::downgrade(&controller);
         glib::spawn_future_local(async move {
@@ -347,6 +369,21 @@ impl PlayerController {
     /// The bottom-bar widget for `ToolbarView::add_bottom_bar`.
     pub fn bar_widget(&self) -> &gtk4::ActionBar {
         self.bar.widget()
+    }
+
+    /// The Now-Playing page (Task 8), for `now_playing_wiring.rs`'s window-
+    /// side helpers (`build_content_nav`/`wire_bar_expand`/`arm_smoke_
+    /// nowplaying`) to add to the shell's `adw::NavigationView` and push on
+    /// a bar click.
+    pub fn now_playing_widget(&self) -> &adw::NavigationPage {
+        self.now_playing_view.widget()
+    }
+
+    /// Forwards to `PlayerBar::set_on_expand` (Task 8): `window.rs` wires
+    /// this, post-construction, to push the Now-Playing page returned by
+    /// `now_playing_widget` onto its `adw::NavigationView`.
+    pub fn set_on_expand(&self, f: impl Fn() + 'static) {
+        self.bar.set_on_expand(f);
     }
 
     /// Injects the window's toast overlay, once it exists (see the module's
@@ -385,7 +422,7 @@ impl PlayerController {
         tracing::info!(queue_len, start_index, "queue set from view");
 
         let queue_is_empty = self.queue.borrow().is_empty();
-        self.bar.set_transport_enabled(!queue_is_empty);
+        self.sync_transport_enabled(!queue_is_empty);
 
         let current = self.queue.borrow().current();
         match current {
@@ -429,19 +466,12 @@ impl PlayerController {
                     path: summary.path.clone(),
                 });
 
-                self.bar.set_track(&summary.title, &summary.artist);
-                // Bump the generation before the async cover load so a
-                // late-arriving load from a prior track can't clobber this
-                // one — see `cover_loader.rs`.
-                let generation = self.bar_cover_generation.get().wrapping_add(1);
-                self.bar_cover_generation.set(generation);
-                self.cover_loader.load_into(
-                    self.bar.cover_image(),
-                    &summary.path,
-                    ThumbnailSize::Bar,
-                    generation,
-                    &self.bar_cover_generation,
-                );
+                // Feeds the bar AND the Now-Playing page from this one call
+                // — see `now_playing_wiring.rs`'s `sync_track`/`sync_cover`
+                // doc comments for why this is the single state path both
+                // widgets are ever fed from.
+                self.sync_track(&summary.title, &summary.artist, &summary.album);
+                self.sync_cover(&summary.path);
                 match self.player.play(&summary.path) {
                     Ok(()) => {
                         self.consecutive_skips.set(0);
@@ -450,10 +480,10 @@ impl PlayerController {
                         // going through `play_from_view` — re-derive and
                         // apply the enabled state here too, hoisted into its
                         // own statement so no `queue` borrow is alive across
-                        // `set_transport_enabled` (see `## Queue borrow
+                        // `sync_transport_enabled` (see `## Queue borrow
                         // discipline`).
                         let queue_has_tracks = !self.queue.borrow().is_empty();
-                        self.bar.set_transport_enabled(queue_has_tracks);
+                        self.sync_transport_enabled(queue_has_tracks);
                         tracing::debug!(
                             queue_has_tracks,
                             "transport buttons re-enabled after playback start"
@@ -552,10 +582,10 @@ impl PlayerController {
         match event {
             PlayerEvent::StateChanged(state) => {
                 tracing::info!(?state, "player bar: applying state change");
-                self.bar.set_state(state);
+                self.sync_state(state);
                 if state == PlaybackState::Stopped {
-                    self.bar.clear_track();
-                    // Defensive, like the `bar.clear_track()` above:
+                    self.sync_clear_track();
+                    // Defensive, like the `sync_clear_track()` above:
                     // `reset_to_stopped` (the only caller of `Player::stop`)
                     // already clears `now_playing` itself before this event
                     // even has a chance to drain, but a stray `Stopped` from
@@ -576,7 +606,7 @@ impl PlayerController {
                 );
                 self.max_position_ms
                     .set(self.max_position_ms.get().max(position_ms));
-                self.bar.set_position(position_ms, duration_ms);
+                self.sync_position(position_ms, duration_ms);
                 // Stage 3 Task 10: keeps MPRIS's `Position` current between
                 // `update_mpris_mirror` rebuilds — see `update_mpris_
                 // position`'s doc comment.
@@ -632,7 +662,7 @@ impl PlayerController {
     /// mirror.rs` and `playback_faults.rs` can call it too.
     pub(super) fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
-        self.bar.set_transport_enabled(false);
+        self.sync_transport_enabled(false);
         // Stage 2 Task 6: cleared and mirrored unconditionally, before
         // `player.stop()` even runs — unlike the bar (which relies on the
         // `StateChanged(Stopped)` event on the success path, only resetting
@@ -646,137 +676,9 @@ impl PlayerController {
             Ok(()) => {}
             Err(error) => {
                 tracing::error!(%error, "failed to stop player during reset");
-                self.bar.set_state(PlaybackState::Stopped);
-                self.bar.clear_track();
+                self.sync_state(PlaybackState::Stopped);
+                self.sync_clear_track();
             }
-        }
-    }
-
-    /// Toggles play/pause on the player — shared by the bar's play/pause
-    /// button and MPRIS's `PlayPause` method (see the module's `## MPRIS`
-    /// doc section). Logs and no-ops on failure, matching the prior inline
-    /// button-closure behavior. `pub(super)` so `mpris_mirror.rs` can call it
-    /// too.
-    pub(super) fn toggle_pause(&self) {
-        if let Err(error) = self.player.toggle_pause() {
-            tracing::error!(%error, "toggle play/pause failed");
-        }
-    }
-
-    /// Steps the queue to the previous track and plays it (or resets to
-    /// stopped if there is none) — shared by the bar's previous button and
-    /// MPRIS's `Previous` method. Borrow discipline: `previous()` runs
-    /// inside this one `let` statement, so the borrow drops before
-    /// `play_track_id`/`reset_to_stopped` run — see the module's `## Queue
-    /// borrow discipline` doc section. `pub(super)` so `mpris_mirror.rs` can
-    /// call it too.
-    pub(super) fn previous(&self) {
-        let previous = self.queue.borrow_mut().previous();
-        match previous {
-            Some(id) => self.play_track_id(id),
-            None => self.reset_to_stopped(),
-        }
-    }
-
-    /// Steps the queue to the next track and plays it (or resets to stopped
-    /// if there is none) — shared by the bar's next button and MPRIS's
-    /// `Next` method. Same borrow discipline as `previous`. `pub(super)` so
-    /// `mpris_mirror.rs` can call it too.
-    pub(super) fn next(&self) {
-        let next = self.queue.borrow_mut().next_manual();
-        match next {
-            Some(id) => self.play_track_id(id),
-            None => self.reset_to_stopped(),
-        }
-    }
-
-    /// "Add to queue" context-menu action (Stage 3 Task 5): appends `ids` to
-    /// the end of the current queue via `Queue::append_tracks` — see that
-    /// method's doc comment for the exact append/no-auto-start semantics —
-    /// without ever calling `play_track_id`. A no-op for an empty `ids`
-    /// slice. If the queue was previously empty, the transport buttons are
-    /// re-enabled to match its now-non-empty state (the same re-derivation
-    /// `play_track_id` already does on every successful playback start), but
-    /// no track starts playing: `ui::track_actions::queue_selected_ids`
-    /// guards the empty case, and the queue itself only forms a `pos` of
-    /// `Some(0)` for bookkeeping (see `Queue::append_tracks`) — playback
-    /// stays exactly as it was. Borrow discipline: `append_tracks`/`is_
-    /// empty` each run inside their own statement, so no `queue` borrow is
-    /// alive across the `bar.set_transport_enabled` call (see the module's
-    /// `## Queue borrow discipline` doc section).
-    pub(super) fn append_to_queue(&self, ids: &[i64]) {
-        if ids.is_empty() {
-            tracing::debug!("append to queue: nothing to add; ignoring");
-            return;
-        }
-        self.queue.borrow_mut().append_tracks(ids);
-        let queue_len = self.queue.borrow().len();
-        let queue_has_tracks = queue_len > 0;
-        self.bar.set_transport_enabled(queue_has_tracks);
-        tracing::info!(added = ids.len(), queue_len, "tracks added to queue");
-    }
-
-    /// Snapshot of every queued track id in current play order (Stage 3
-    /// Task 3's `ViewSource::Queue` seam — see `queue::Queue::ids_in_order`'s
-    /// doc comment). `track_list.rs`'s queue-ids provider closure (wired in
-    /// `window::build`) calls this each time the track list reloads while
-    /// showing the Queue source, so that view always reflects the queue's
-    /// live state (including shuffle) rather than a stale copy. Hoisted
-    /// into its own `let` statement even though nothing here calls back
-    /// into `self` — consistent with every other `queue` access in this
-    /// file (see the module's `## Queue borrow discipline` doc section).
-    /// `pub(super)` so `track_list.rs` (a sibling module under `ui`) can
-    /// call it. No explicit hoisting `let` is needed here (unlike most other
-    /// `queue` accesses in this file): `ids_in_order()` returns an owned
-    /// `Vec`, so the temporary `Ref` this creates already drops at the end
-    /// of this one expression, before the function returns — there's no
-    /// second statement left for it to still be alive across.
-    pub(super) fn queue_ids_snapshot(&self) -> Vec<i64> {
-        self.queue.borrow().ids_in_order()
-    }
-
-    /// Queue drag-reorder (Stage 3 Task 6): moves the queued track at index
-    /// `from` to index `to` via `queue::Queue::move_item` — see that method's
-    /// doc comment for the current-track-preservation contract and
-    /// out-of-range/no-op handling (never panics). `ui::track_list_dnd`'s
-    /// queue-reorder drop handler calls this via `TrackList::set_on_queue_
-    /// reorder`, then reloads the track list itself so the Queue view picks
-    /// up the new order — this method only mutates queue state, the same
-    /// "state mutation only, caller decides what to refresh" contract as
-    /// `append_to_queue`. Returns `Queue::move_item`'s own bool verbatim, so
-    /// a no-op move (empty queue, out-of-range index, `from == to`) is
-    /// reported as `false` rather than the caller assuming success just
-    /// because a player was available to ask (Stage 3 Task 6 review finding
-    /// #3).
-    pub(super) fn move_queue_item(&self, from: usize, to: usize) -> bool {
-        self.queue.borrow_mut().move_item(from, to)
-    }
-
-    /// Purges hard-deleted track ids from the queue (Stage-3 close-out):
-    /// "Remove from library" (`queries::remove_missing_tracks`) deletes
-    /// `tracks` rows outright — without this, a queued id that no longer
-    /// resolves to a row desyncs `Queue::len`/`ids_in_order` from what
-    /// `ViewSource::Queue`'s window query can actually render (see
-    /// `queries.rs`'s module doc, `Queue` section, and `query_track_count`'s
-    /// `Queue` arm). Called from `ui::track_list_context_menu::handle_
-    /// remove_from_library` with exactly the ids `remove_missing_tracks`
-    /// reports as actually deleted — never the raw requested selection,
-    /// which could include ids that turned out not to be missing any more
-    /// and so were never deleted. A no-op for an empty slice (no `queue`
-    /// borrow taken at all). Hoisted borrow: `Queue::remove_ids` runs in its
-    /// own statement, matching every other `queue` access in this file (see
-    /// the module's `## Queue borrow discipline` doc section).
-    pub(super) fn purge_queue_ids(&self, ids: &[i64]) {
-        if ids.is_empty() {
-            return;
-        }
-        let changed = self.queue.borrow_mut().remove_ids(ids);
-        if changed {
-            tracing::info!(
-                removed = ids.len(),
-                queue_len = self.queue.borrow().len(),
-                "queue purged of hard-deleted track ids"
-            );
         }
     }
 }

@@ -105,6 +105,12 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         // logging `active`) so a log line always reflects what `Queue`
         // actually did, not just what the button asked for.
         let is_shuffled = controller.queue.borrow().is_shuffled();
+        // Task 8: keeps the Now-Playing page's shuffle toggle in sync with
+        // the bar's (the bar's own toggle is already correct — it's the
+        // click origin — but `sync_shuffle_indicator`'s `updating_shuffle`
+        // guard makes re-setting it here a harmless no-op; see that
+        // method's doc comment in `now_playing_wiring.rs`).
+        controller.sync_shuffle_indicator(is_shuffled);
         // Stage 3 Task 10: keeps the MPRIS mirror current immediately — see
         // `update_mpris_shuffle`'s doc comment.
         controller.update_mpris_shuffle(is_shuffled);
@@ -127,7 +133,9 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
             queue.set_repeat(next_repeat);
             next_repeat
         };
-        controller.bar.set_repeat_indicator(next_repeat);
+        // Task 8: syncs the bar AND the Now-Playing page — see
+        // `now_playing_wiring.rs`'s `sync_repeat_indicator` doc comment.
+        controller.sync_repeat_indicator(next_repeat);
         // Stage 3 Task 10: keeps the MPRIS mirror current immediately — see
         // `update_mpris_repeat`'s doc comment.
         controller.update_mpris_repeat(next_repeat);
@@ -136,7 +144,9 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
 
 /// Cycles the repeat mode in the mockup's button order: Off -> All -> One ->
 /// Off. Pure (no `Queue`/GTK access) so it's unit-testable directly.
-fn cycle_repeat(current: Repeat) -> Repeat {
+/// `pub(super)` (Task 8) so `now_playing_wiring.rs`'s repeat-button handler
+/// can share this exact cycling logic (DRY) rather than a second copy.
+pub(super) fn cycle_repeat(current: Repeat) -> Repeat {
     match current {
         Repeat::Off => Repeat::All,
         Repeat::All => Repeat::One,
@@ -163,7 +173,7 @@ pub(super) fn arm_smoke_repeat(controller: &Rc<PlayerController>) {
         "{SMOKE_REPEAT_ENV_VAR}={SMOKE_REPEAT_ALL_VALUE} set: forcing Repeat::All for headless wrap-around E2E"
     );
     controller.queue.borrow_mut().set_repeat(Repeat::All);
-    controller.bar.set_repeat_indicator(Repeat::All);
+    controller.sync_repeat_indicator(Repeat::All);
     controller.update_mpris_repeat(Repeat::All);
 }
 
