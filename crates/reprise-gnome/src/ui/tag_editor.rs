@@ -238,10 +238,18 @@ mod tests {
         if gtk4::init().is_err() {
             return;
         }
-        let dialog = adw::Dialog::new();
         let apply = gtk4::Button::with_label("Apply");
         let first = adw::EntryRow::new();
         let second = adw::EntryRow::new();
+        let group = adw::PreferencesGroup::new();
+        group.add(&first);
+        group.add(&second);
+        let header = adw::HeaderBar::new();
+        header.pack_end(&apply);
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&header);
+        toolbar.set_content(Some(&group));
+        let dialog = adw::Dialog::builder().child(&toolbar).build();
 
         enable_enter_submit(&dialog, &apply, &[&first, &second]);
 
