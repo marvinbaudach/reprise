@@ -226,6 +226,7 @@ pub struct PlayerController {
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
+    pub(super) queue_changed: RefCell<Option<Rc<dyn Fn()>>>,
     pub(super) current_track_changed:
         RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
@@ -369,6 +370,7 @@ impl PlayerController {
             queue: RefCell::new(Queue::new()),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
+            queue_changed: RefCell::new(None),
             current_track_changed: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             mpris_state,
@@ -459,6 +461,7 @@ impl PlayerController {
     /// discipline` doc section.
     pub fn play_from_view(&self, ids: Vec<i64>, start_index: usize) {
         self.queue.borrow_mut().set_tracks(ids, start_index);
+        self.notify_queue_changed();
 
         let queue_len = self.queue.borrow().len();
         tracing::info!(queue_len, start_index, "queue set from view");

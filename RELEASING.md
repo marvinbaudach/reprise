@@ -55,9 +55,10 @@ PTR_E2E_PROFILE=release scripts/ptr-e2e/run.sh
 This separate harness uses copied fixtures, a temporary XDG profile, private
 D-Bus/Xvfb, and a fake audio sink. It injects a real rating click, opens the
 track context menu and tag editor by keyboard, rejects an invalid Year on
-Enter, exercises Space play/pause, verifies nonblank screenshots, and rejects
-GTK/GLib criticals, Rust panics, and `RefCell` borrow failures. It does not
-replace the native-Wayland, audible-audio, media-key, or portal checks below.
+Enter, performs a held Queue drag with insertion-target capture and reorder,
+exercises Space play/pause, verifies nonblank screenshots, and rejects GTK/GLib
+criticals, Rust panics, and `RefCell` borrow failures. It does not replace the
+native-Wayland, audible-audio, media-key, or portal checks below.
 
 ## Build artifacts
 

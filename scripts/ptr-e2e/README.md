@@ -55,7 +55,7 @@ disk except `PTR_E2E_OUT_DIR`.
 3. Waits (~15s) for a window whose `WM_CLASS` matches `reprise`, matched by
    class rather than title/name (the title is the human-readable app name,
    not reliable for matching), then maximizes it via `wmctrl`.
-4. Runs three pointer/keyboard flows and asserts on the app's own log:
+4. Runs four pointer/keyboard flows and asserts on the app's own log:
    - **Star-rating click**: clicks star 1 of row 0's Rating column, then
      greps the log for `RatingWidget`'s `rating changed` debug line — proof
      the click reached the actual button inside the `ColumnView` cell.
@@ -63,6 +63,9 @@ disk except `PTR_E2E_OUT_DIR`.
      then navigates to Edit tags, proving the selected track's context menu
      and tag editor open without a pointer. It enters an invalid Year and
      verifies Enter rejects it instead of applying or closing the dialog.
+   - **Queue drag reorder**: adds two tracks through that keyboard menu,
+     opens Queue, holds a real drag over the second row, captures the active
+     insertion target, and verifies release applies the reorder.
    - **Space toggles play/pause**: double-clicks a track row to focus the
      list and start real (fakesink) playback, then presses Space twice,
      asserting the log shows `state=Paused` then `state=Playing` — proof a

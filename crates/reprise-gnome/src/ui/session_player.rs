@@ -54,6 +54,7 @@ impl PlayerController {
             .collect();
         queue.remove_ids(&missing);
         *self.queue.borrow_mut() = queue;
+        self.notify_queue_changed();
 
         let queue_has_tracks = !self.queue.borrow().is_empty();
         let shuffled = self.queue.borrow().is_shuffled();

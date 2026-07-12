@@ -294,10 +294,12 @@ impl Sidebar {
     ///    each succeed — playlist track counts (and, for a new playlist, the
     ///    playlist row itself) can change from that menu exactly as they can
     ///    from this sidebar's own "New playlist" dialog.
+    /// 5. **Queue length mutation** — `queue_transport::wire_sidebar_count`
+    ///    refreshes after a queue is replaced, appended, restored, or purged.
     ///
     /// See the module doc's `## Reentrancy` section for why a rebuild
-    /// triggered by this very sidebar's own selection (via `create_playlist_
-    /// and_select`) is still safe to feed back into it.
+    /// triggered by this very sidebar's own selection is still safe to feed
+    /// back into it.
     pub fn refresh(&self, reason: &str) {
         rebuild(&self.shared, None, reason);
     }

@@ -176,6 +176,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             None => 0,
         }
     }));
+    super::queue_transport::wire_sidebar_count(player.as_ref(), &sidebar);
 
     // Stage 3 Task 8: at most one folder watcher runs at a time. `None`
     // until either the startup check below finds a persisted `library_root`
