@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     follow table selection across track changes
+SINCE:    2026-07-12 20:58 CEST
 ```
 
-_As of 2026-07-12 20:55 CEST: Codex released the lock after fixing the manually reproduced startup-reconcile regression._
+_As of 2026-07-12 20:58 CEST: Codex claimed the lock for the manually reproduced current-track selection regression._
 
 ## Current position
 
