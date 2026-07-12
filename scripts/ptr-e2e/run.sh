@@ -259,6 +259,21 @@ key() {
   xdotool key "$1" >/dev/null 2>&1
 }
 
+drag_and_hold() {
+  local from_x="$1" from_y="$2" to_x="$3" to_y="$4"
+  xdotool mousemove "$from_x" "$from_y" mousedown 1 >/dev/null 2>&1
+  sleep 0.2
+  xdotool mousemove --sync "$((from_x + 20))" "$((from_y + 5))" >/dev/null 2>&1
+  sleep 0.2
+  xdotool mousemove --sync "$((to_x - 8))" "$to_y" >/dev/null 2>&1
+  sleep 0.2
+  xdotool mousemove --sync "$to_x" "$to_y" >/dev/null 2>&1
+}
+
+release_drag() {
+  xdotool mouseup 1 >/dev/null 2>&1
+}
+
 # Non-trivial-image check: a solid/blank capture has a standard deviation
 # near zero; a real rendered UI does not. Threshold (50) sits comfortably
 # below the ~3600 measured on a real capture at this resolution/theme and
@@ -396,9 +411,45 @@ assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/05-invalid-year-rejected.png"
 key "Escape"
 sleep 0.2
 
-# --- Flow 3: Space toggles play/pause when the track list has focus ---------
+# --- Flow 3: queue reorder exposes and applies a real drop target -----------
 
-log_step "flow 3: Space toggles play/pause…"
+log_step "flow 3: Queue insertion target and drag reorder…"
+MARKER=$(log_marker)
+key "shift+F10"
+key "Down"
+key "Return"
+sleep 0.2
+assert_log_contains_since "$MARKER" "context menu: tracks added to queue" "keyboard context menu added the first track to Queue"
+click_at 355 215
+MARKER=$(log_marker)
+key "shift+F10"
+key "Down"
+key "Return"
+sleep 0.2
+assert_log_contains_since "$MARKER" "context menu: tracks added to queue" "keyboard context menu added the second track to Queue"
+assert_log_contains_since "$MARKER" "sidebar refresh.*queue changed" "Queue mutation refreshed the sidebar count"
+click_at 80 104
+sleep 0.3
+screenshot "06-queue-before-reorder"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/06-queue-before-reorder.png"
+MARKER=$(log_marker)
+QUEUE_ROW0_TITLE_X=355
+QUEUE_ROW0_TITLE_Y=106
+QUEUE_ROW1_TITLE_X=355
+QUEUE_ROW1_TITLE_Y=157
+drag_and_hold "$QUEUE_ROW0_TITLE_X" "$QUEUE_ROW0_TITLE_Y" "$QUEUE_ROW1_TITLE_X" "$QUEUE_ROW1_TITLE_Y"
+sleep 0.4
+assert_log_contains_since "$MARKER" "reorder drop target entered.*source=queue" "held Queue drag entered a reorder target"
+screenshot "07-queue-reorder-target"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/07-queue-reorder-target.png"
+MARKER=$(log_marker)
+release_drag
+sleep 0.4
+assert_log_contains_since "$MARKER" "queue reordered via drag and drop" "Queue drag release applied the reorder"
+
+# --- Flow 4: Space toggles play/pause when the track list has focus ---------
+
+log_step "flow 4: Space toggles play/pause…"
 # Double-click a *different* row (row 1's Title cell) to both focus the
 # track list (search entry must NOT have focus, or Space would type a literal
 # space instead — see src/ui/shortcuts.rs's `space_should_toggle`) and start
@@ -412,10 +463,8 @@ log_step "flow 3: Space toggles play/pause…"
 # queued track — which would race with "Space paused a playing track" below
 # and turn a real bug into flaky noise. Every action after this point (both
 # Space presses) needs to land while the *same* activation is still playing.
-ROW1_TITLE_CELL_X=355
-ROW1_TITLE_CELL_Y=215
 MARKER=$(log_marker)
-double_click_at "$ROW1_TITLE_CELL_X" "$ROW1_TITLE_CELL_Y"
+double_click_at "$QUEUE_ROW1_TITLE_X" "$QUEUE_ROW1_TITLE_Y"
 sleep 0.3
 assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "activation started real playback (src/ui/player_controller.rs)"
 
@@ -431,12 +480,12 @@ assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Spac
 
 # --- Final screenshot ---------------------------------------------------------
 
-screenshot "06-final"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/06-final.png"
+screenshot "08-final"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-final.png"
 assert_log_absent \
   'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowMutError' \
   'GTK/GLib critical, panic, or RefCell borrow failure'
-log_step "final screenshot: $PTR_E2E_OUT_DIR/06-final.png"
+log_step "final screenshot: $PTR_E2E_OUT_DIR/08-final.png"
 log_step "app log will be preserved at: $PTR_E2E_OUT_DIR/app.log (copied by cleanup())"
 
 if [ "$FAILURES" -ne 0 ]; then

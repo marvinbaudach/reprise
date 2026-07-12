@@ -53,7 +53,9 @@ Run these first after restarting the current `target/release/reprise`.
   playlist row. Expected: an accent insertion line shows the insertion target.
 - [ ] **Queue reorder insertion feedback:** hover a single-row drag over another Queue
   row. Expected: an accent insertion line appears; Library and sorted/filtered
-  playlist views show no false reorder target.
+  playlist views show no false reorder target. The mapped-X11 release harness
+  captures the accent target and completes the Queue reorder; native GNOME
+  confirmation remains pending.
 - [x] **Imported playlist selection:** import a populated M3U. Expected: the new
   playlist is visibly selected in the sidebar and agrees with the title and table.
 - [x] **Tag editor Enter key:** edit any valid field and press Enter. Expected: Apply

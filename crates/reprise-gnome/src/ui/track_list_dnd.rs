@@ -297,6 +297,7 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
 
             last_drag_count.set(ids.len());
             let payload = format_drag_payload(&ids, reorder_position);
+            tracing::debug!(count = ids.len(), ?reorder_position, "track drag prepared");
             Some(gdk::ContentProvider::for_value(&payload.to_value()))
         });
     }
@@ -305,6 +306,7 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
         let last_drag_count = last_drag_count.clone();
         drag_source.connect_drag_begin(move |source, _drag| {
             let count = last_drag_count.get().max(1);
+            tracing::debug!(count, "track drag began");
             let label = gtk4::Label::new(Some(&strings::drag_tracks_label(count)));
             label.add_css_class("card");
             label.set_margin_top(6);
@@ -336,13 +338,14 @@ fn wire_drop_target(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
         let shared = shared.clone();
         drop_target.connect_enter(move |_target, _x, _y| {
             let source = shared.source.borrow().clone();
-            let eligible = match source {
+            let eligible = match &source {
                 ViewSource::Playlist(_) => playlist_reorder_allowed(&shared),
                 ViewSource::Queue => true,
                 _ => false,
             };
             track_list_row_interaction::set_reorder_indicator(&widget, eligible);
             if eligible {
+                tracing::debug!(source = %source.label(), "reorder drop target entered");
                 gdk::DragAction::MOVE
             } else {
                 gdk::DragAction::empty()

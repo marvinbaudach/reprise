@@ -58,7 +58,6 @@ pub(super) fn restore_runtime(
 ) {
     if let Some(player) = player {
         player.restore_session_queue(state.queue.clone());
-        sidebar.refresh("session queue restored");
     }
     view_session::restore(
         search_entry,

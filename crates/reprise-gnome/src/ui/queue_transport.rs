@@ -15,7 +15,10 @@
 //! its own statement/block, dropped before any call that could re-enter this
 //! controller.
 
+use std::rc::Rc;
+
 use crate::ui::player_controller::PlayerController;
+use crate::ui::sidebar::Sidebar;
 use reprise_core::media_integration::MprisPlaybackStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +39,17 @@ fn toggle_action(status: MprisPlaybackStatus, current_track: Option<i64>) -> Tog
 }
 
 impl PlayerController {
+    pub(super) fn set_on_queue_changed(&self, callback: impl Fn() + 'static) {
+        *self.queue_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(super) fn notify_queue_changed(&self) {
+        let callback = self.queue_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
+
     /// Starts the restored queue's current track while stopped; otherwise
     /// toggles the already-loaded pipeline. Shared by the bar, Space, and
     /// MPRIS PlayPause, without ever introducing startup autoplay.
@@ -104,6 +118,7 @@ impl PlayerController {
             return;
         }
         self.queue.borrow_mut().append_tracks(ids);
+        self.notify_queue_changed();
         let queue_len = self.queue.borrow().len();
         let queue_has_tracks = queue_len > 0;
         self.sync_transport_enabled(queue_has_tracks);
@@ -162,8 +177,20 @@ impl PlayerController {
                 queue_len = self.queue.borrow().len(),
                 "queue purged of hard-deleted track ids"
             );
+            self.notify_queue_changed();
         }
     }
+}
+
+pub(super) fn wire_sidebar_count(player: Option<&Rc<PlayerController>>, sidebar: &Rc<Sidebar>) {
+    let Some(player) = player else {
+        return;
+    };
+    let sidebar = Rc::downgrade(sidebar);
+    player.set_on_queue_changed(move || match sidebar.upgrade() {
+        Some(sidebar) => sidebar.refresh("queue changed"),
+        None => tracing::warn!("sidebar is gone; skipping refresh after queue change"),
+    });
 }
 
 #[cfg(test)]
