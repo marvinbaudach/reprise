@@ -84,6 +84,7 @@ use crate::models::Track;
 use crate::view_source::ViewSource;
 use rusqlite::Connection;
 
+mod browse;
 mod clauses;
 mod library;
 mod maintenance;
@@ -91,6 +92,7 @@ mod playlist;
 mod queue;
 mod smart;
 
+pub use browse::BrowseFilter;
 pub use clauses::build_track_ids_query;
 // `build_track_query`'s only current caller is this module's own test suite
 // (`tests::query_builder_whitelists_and_sorts` et al.) — re-exported `pub`
