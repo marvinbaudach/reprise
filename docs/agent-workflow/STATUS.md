@@ -21,25 +21,25 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     follow table selection across track changes
-SINCE:    2026-07-12 20:58 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 20:58 CEST: Codex claimed the lock for the manually reproduced current-track selection regression._
+_As of 2026-07-12 21:08 CEST: Codex released the lock after fixing current-track table selection._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Startup library reconcile** — after the user's screenshot proved that only
-  the three old tracks were visible, the watcher now arms first and immediately reconciles files
-  added while Reprise was closed (`3088c25`). Separate tests cover pre-start and post-start files;
-  an isolated two-start full-app E2E changed the UI query from 1 to 2 and persisted both exact
-  titles. Final gates: 465 passed, 1 ignored; core PURE; audit has only the accepted `paste` advisory.
+- **Last completed:** **Current-track table selection** — successful playback starts now select and
+  minimally scroll to the exact visible row without stealing keyboard focus (`467c6f9`). A hidden
+  filtered track leaves the user's selection untouched; duplicate queue IDs use the actual queue
+  occurrence. An isolated two-track auto-advance logged position 0→1. Final gates: 467 passed,
+  1 ignored; core PURE; audit has only the accepted `paste` advisory.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `3088c25`; this coordination-board update follows it.
+- **Feature HEAD:** `467c6f9`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -56,7 +56,8 @@ _As of 2026-07-12 20:58 CEST: Codex claimed the lock for the manually reproduced
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
-  for files added while the app was closed; all exact user-reported paths have regression coverage.
+  for files added while the app was closed, plus current-track table selection; all exact
+  user-reported paths have regression coverage.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
