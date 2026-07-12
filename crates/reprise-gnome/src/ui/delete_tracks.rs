@@ -239,6 +239,7 @@ fn finish(shared: &Rc<Shared>, report: &DeleteReport, mode: DeleteMode) {
     if let Some(callback) = callback {
         callback(&report.removed_ids);
     }
+    shared.browse_bar.refresh();
     reload(shared);
     tracing::info!(
         removed,

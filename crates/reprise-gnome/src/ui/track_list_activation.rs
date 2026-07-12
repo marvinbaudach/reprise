@@ -61,6 +61,7 @@ pub(super) fn queue_ids_for_activation(
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
+    let browse = shared.browse_filter.borrow().clone();
 
     let queue_ids = if matches!(source, ViewSource::Queue) {
         current_queue_ids(shared)
@@ -70,7 +71,15 @@ pub(super) fn queue_ids_for_activation(
 
     let ids = {
         let conn = shared.conn.borrow();
-        queries::query_track_ids(&conn, &source, &sort.field, &sort.dir, &filter, &queue_ids)
+        queries::query_track_ids_browsed(
+            &conn,
+            &source,
+            &sort.field,
+            &sort.dir,
+            &filter,
+            &browse,
+            &queue_ids,
+        )
     };
 
     match ids {
