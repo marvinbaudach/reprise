@@ -30,6 +30,14 @@ The **current work plan** is the newest file in `docs/superpowers/plans/`. Right
 `docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md` (GUI-A2: opt-in online album-cover
 download, 7 tasks). Each plan has a matching design spec in `docs/superpowers/specs/`.
 
+## Coordinating two agents (Claude ⇄ Codex) — READ FIRST
+
+`docs/agent-workflow/STATUS.md` is the shared, git-tracked coordination board: who's working,
+what's done, what's next. **Before touching `main`, read it and claim its Lock** (set OWNER to
+yourself, commit just that file); release the Lock when you finish. Only ONE agent works `main`
+at a time — if the Lock is held by the other agent and recently active, do not start. True
+parallel work needs a separate branch/worktree (ask the user).
+
 ## Shared workflow skills (read these — both agents use them)
 
 `docs/agent-workflow/` holds the tool-agnostic working method and the accumulated GTK4 pitfalls,
