@@ -210,7 +210,7 @@ git commit -m "feat: resolve album cover source (embedded picture or folder imag
 **Interfaces:**
 - Consumes: `CoverSource` (Task 1), `dirs` (already a dep), `image` (new).
 - Produces:
-  - `pub enum ThumbnailSize { List, Bar, Full }` with `pub fn pixels(self) -> u32` → 48 / 96 / 512
+  - `pub enum ThumbnailSize { List, Bar, Full }` with `pub fn pixels(self) -> u32` → 48 / 96 / 1024
   - `#[derive(Debug)] pub enum CoverError { Decode(String), Io(String) }` (impl `std::fmt::Display` + `std::error::Error`)
   - `pub fn thumbnail(source: &CoverSource, size: ThumbnailSize) -> Result<PathBuf, CoverError>`
   - `pub fn cache_dir() -> PathBuf` (for the test + callers)
@@ -227,11 +227,11 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 - [ ] **Step 2: Write the failing tests** — add to the `tests` mod in `cover.rs` (reuse `TINY_PNG`/`write` from Task 1):
 
 ```rust
-    // A real, decodable 600x600 red PNG — larger than the biggest thumbnail
-    // (512 px) so every size DOWNSCALES (image::thumbnail never upscales) and
-    // the exact-size assertion below holds.
-    fn red_png_600() -> Vec<u8> {
-        let img = image::RgbImage::from_pixel(600, 600, image::Rgb([255, 0, 0]));
+    // A real, decodable 1200x1200 red PNG — larger than the biggest thumbnail
+    // (1024 px) so every size DOWNSCALES (image::thumbnail never upscales) and
+    // the exact-size assertion below holds. (Solid-color PNG encodes tiny.)
+    fn red_png_1200() -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(1200, 1200, image::Rgb([255, 0, 0]));
         let mut buf = std::io::Cursor::new(Vec::new());
         image::DynamicImage::ImageRgb8(img)
             .write_to(&mut buf, image::ImageFormat::Png)
@@ -241,7 +241,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 
     #[test]
     fn thumbnail_produces_png_of_requested_size_and_caches_under_cache_dir() {
-        let src = CoverSource::Embedded(red_png_600());
+        let src = CoverSource::Embedded(red_png_1200());
         let path = thumbnail(&src, ThumbnailSize::List).unwrap();
         // Lands under the cache dir, NEVER in a track folder (core promise).
         assert!(path.starts_with(cache_dir()), "thumb must be in the cache dir");
@@ -255,15 +255,15 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 
     #[test]
     fn identical_bytes_hash_to_the_same_cache_path() {
-        let a = thumbnail(&CoverSource::Embedded(red_png_600()), ThumbnailSize::Bar).unwrap();
-        let b = thumbnail(&CoverSource::Embedded(red_png_600()), ThumbnailSize::Bar).unwrap();
+        let a = thumbnail(&CoverSource::Embedded(red_png_1200()), ThumbnailSize::Bar).unwrap();
+        let b = thumbnail(&CoverSource::Embedded(red_png_1200()), ThumbnailSize::Bar).unwrap();
         assert_eq!(a, b, "same source bytes + size -> same cache key");
         std::fs::remove_file(&a).ok();
     }
 
     #[test]
     fn different_sizes_get_distinct_cache_paths() {
-        let bytes = red_png_600();
+        let bytes = red_png_1200();
         let list = thumbnail(&CoverSource::Embedded(bytes.clone()), ThumbnailSize::List).unwrap();
         let full = thumbnail(&CoverSource::Embedded(bytes), ThumbnailSize::Full).unwrap();
         assert_ne!(list, full);
@@ -302,7 +302,7 @@ impl ThumbnailSize {
         match self {
             ThumbnailSize::List => 48,
             ThumbnailSize::Bar => 96,
-            ThumbnailSize::Full => 512,
+            ThumbnailSize::Full => 1024,
         }
     }
 }
@@ -908,7 +908,7 @@ git commit -m "feat: persisted player-bar position (top/bottom), applied at star
 
 **Design rule (critical):** the page binds to the SAME `PlayerController` and the SAME actions as the bar — no duplicated playback/seek state. The controller pushes updates to BOTH the bar and the page (extend the existing `set_track`/`set_state`/`set_position` fan-out). This is the same discipline as the MPRIS mirror.
 
-- [ ] **Step 1: Build the page widget** in `now_playing.rs`: an `adw::NavigationPage` wrapping a centered vertical box — big `gtk4::Image` (`set_pixel_size(320)`, fed a 512px texture), a title `gtk4::Label` (CSS `.title-1`), an artist/album `gtk4::Label` (`.dim-label`), a reused seek `gtk4::Scale` with position/duration labels, and a transport row (previous / play-pause / next) plus shuffle/repeat. Expose the setters + `connect_*` listed in Interfaces. (Reuse the bar's transport wiring shape from `player_bar.rs` `connect_previous`/`connect_play_pause`/`connect_next`/`connect_seek` — same closures, same controller actions.)
+- [ ] **Step 1: Build the page widget** in `now_playing.rs`: an `adw::NavigationPage` wrapping a centered vertical box — big `gtk4::Image` (`set_pixel_size(320)`, fed a 1024px texture — so the cover stays crisp when the view is enlarged / on HiDPI; the 1024 texture is only ever downscaled for display, never upscaled), a title `gtk4::Label` (CSS `.title-1`), an artist/album `gtk4::Label` (`.dim-label`), a reused seek `gtk4::Scale` with position/duration labels, and a transport row (previous / play-pause / next) plus shuffle/repeat. Expose the setters + `connect_*` listed in Interfaces. (Reuse the bar's transport wiring shape from `player_bar.rs` `connect_previous`/`connect_play_pause`/`connect_next`/`connect_seek` — same closures, same controller actions.)
 
 - [ ] **Step 2: Put content in an `adw::NavigationView`.** In `window.rs`, wrap the current content page so it's the root page of an `adw::NavigationView` (`nav.add(&content_page)`), and give the window that nav view as the `content_page` child of the split view. Keep the Now-Playing page constructed and held (pushed on demand).
 
