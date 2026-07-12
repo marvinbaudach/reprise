@@ -133,7 +133,7 @@
 //! MPRIS's `Play`/`Pause` are distinct from `toggle_pause` — see
 //! `mpris_mirror.rs`'s `mpris_play`/`mpris_pause` doc comments.
 //!
-//! ## Track-change notification (Stage 3 Task 9)
+//! ## Track-change notification (GUI-A)
 //!
 //! `play_track_id` sends a `gio::Notification` (title/body from the track
 //! summary, icon from the same Bar-size cover thumbnail the bar itself
@@ -575,7 +575,7 @@ impl PlayerController {
 
     /// Sends a `gio::Notification` for the just-started `title`/`artist`/
     /// `album`, with the same Bar-size cover thumbnail the bar itself shows
-    /// as the notification's icon (Task 9 — see the module's `## Track-change
+    /// as the notification's icon (GUI-A — see the module's `## Track-change
     /// notification` doc section). Called only when `play_track_id` detects
     /// an actual id change, never on pause/resume of the same track. Every
     /// step degrades silently: no cover source, no cached thumbnail, or no
