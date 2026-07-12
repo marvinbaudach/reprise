@@ -591,6 +591,28 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
      iOS-Unterstützung der Begleit-App bleibt angedacht (Mockup 7c);
      iOS-Geräte sind über MTP allerdings nicht klassisch ansteuerbar —
      dort führt nur der WLAN-Weg.
+  3. **Geteilter Rust-Core für die mobilen Apps** (Nutzer-Bestätigung
+     2026-07-11 — „halte auch Android/iOS mit im Blick"): Die Begleit-Apps
+     sind keine dünnen Remote-Clients, sondern konsumieren denselben
+     `reprise-core` wie die Desktop-Frontends — über **dieselbe
+     UniFFI-Brücke, die Kotlin (Android) *und* Swift (iOS) bedient**
+     (ein FFI-Layer, zwei generierte Binding-Sätze; bewährter Pfad, vgl.
+     Mozilla-Komponenten auf iOS + Android). Wiederverwendbar sind
+     Datenmodell, SQLite-Queries, Queue-Engine, Smart-Playlist-Regeln,
+     Move-Detection, M3U und Tag-Lesen (lofty) — allesamt plattform-
+     unabhängiges Rust. **Entscheidend: Das Sync-Protokoll + die
+     Merge-/Reconciliation-Logik leben im geteilten Core.** So sprechen
+     Desktop-Server und Handy-Client ein aus *demselben* Code erzeugtes
+     Wire-Format → **kein Protokoll-Drift** zwischen den Enden (der
+     klassische Companion-App-Bug fällt strukturell weg). Nativ bleiben
+     nur die plattformspezifischen Nähte: Audio (ExoPlayer/Media3 auf
+     Android, AVFoundation auf iOS — via `PlaybackBackend`-Trait),
+     Mediensteuerung (Android `MediaSession` / iOS `MPNowPlayingInfo` —
+     via `NowPlaying`-Trait) sowie der Dateizugriff (Androids Scoped
+     Storage / iOS-Sandbox brauchen einen plattformspezifischen
+     Scanner-Pfad) und die UI (Jetpack Compose / SwiftUI). Layout:
+     `frontends/android/` bzw. `frontends/ios/` als weitere Konsumenten
+     von `crates/reprise-ffi` — dasselbe Monorepo-Schema wie Desktop.
   Sicherheit: WLAN-Kopplung explizit (QR + Bestätigung), Kommunikation nur
   im lokalen Netz, verschlüsselt; das Modul fordert die Netzwerk-
   Berechtigung im Flatpak erst an, wenn der WLAN-Weg aktiviert wird — der
