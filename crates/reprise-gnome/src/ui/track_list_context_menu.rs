@@ -133,7 +133,7 @@ const ACTION_REMOVE_FROM_LIBRARY: &str = "remove-from-library";
 const ACTION_GROUP_NAME: &str = "tracklist";
 
 /// Attaches a secondary-click (`button = 3`) context-menu gesture to a
-/// freshly-`setup` cell widget (a plain `Label` for the five text columns,
+/// freshly-`setup` cell widget (a plain `Label` for the seven text columns,
 /// or the `RatingWidget` for the Rating column) — see the module doc's `##
 /// Row position via a stable ListItem handle` section for why this only
 /// needs to run once per widget instance, from `connect_setup`, with no
