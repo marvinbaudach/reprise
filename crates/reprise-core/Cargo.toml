@@ -36,6 +36,9 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # (GUI-A2). Blocking is fine — fetches run on a dedicated worker thread, never
 # the UI thread. No async runtime, no gtk/gstreamer/zbus (verify cargo tree).
 ureq = "2"
+# Cross-platform desktop trash integration for explicit, confirmed GUI-B
+# deletion. Never used automatically; tests inject a scratch-only action.
+trash = "5"
 
 [dev-dependencies]
 tempfile = "3"
