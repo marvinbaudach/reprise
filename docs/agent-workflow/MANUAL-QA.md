@@ -159,5 +159,7 @@ These are maintainer actions, not QA failures:
 
 - [ ] Provide a maintainer-controlled public immutable source archive/tag and SHA-256.
 - [ ] Establish verifiable ownership/identity appropriate for `org.reprise.Reprise`.
+- [ ] Publish a real maintainer-controlled contact/project URL and replace or verify
+  the MusicBrainz `User-Agent` URL before distributing online cover downloads.
 - [ ] Add the real homepage, capture authentic screenshots from this manual pass, and
   perform any forge/Flathub upload or submission explicitly.
