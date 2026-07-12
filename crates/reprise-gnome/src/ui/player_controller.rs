@@ -86,60 +86,45 @@
 //!
 //! - `toast_overlay: glib::WeakRef<adw::ToastOverlay>` — the overlay is built
 //!   in `window::build` *after* `PlayerController::new` (it wraps the whole
-//!   window, including the player bar this controller owns), so it can't be
-//!   a constructor parameter; `set_toast_overlay` injects it once
-//!   `window::build` has it. A `WeakRef`, not a strong reference, so the
-//!   controller can never keep the overlay (and thus the window) alive past
-//!   its natural lifetime; `show_toast` degrades to a log line if the
-//!   upgrade ever fails (e.g. very late shutdown) rather than panicking or
-//!   silently dropping the toast's *reason* from the logs.
+//!   window), so it can't be a constructor parameter; `set_toast_overlay`
+//!   injects it once `window::build` has it. A `WeakRef`, not a strong
+//!   reference, so the controller can never keep the window alive past its
+//!   natural lifetime; `show_toast` degrades to a log line if the upgrade
+//!   ever fails rather than panicking or silently dropping the toast.
 //! - `reload_track_list: RefCell<Option<Rc<dyn Fn()>>>` — similarly injected
-//!   post-construction via `set_track_list_reload`, since `track_list.rs`'s
-//!   `TrackList` is also built after the controller (its `on_activate`
-//!   closure needs `Rc<PlayerController>` to already exist). `window::build`
-//!   supplies a closure over a `Weak<TrackList>` (never a strong `Rc`): a
-//!   strong reference back from the controller to the track list would be an
-//!   `Rc` cycle with `TrackList`'s own `Shared.on_activate`, which already
-//!   holds a strong `Rc<PlayerController>` — neither side would ever free.
-//!   Stored as `Rc<dyn Fn()>` rather than `Box<dyn Fn()>` specifically so
-//!   `reload_track_list()` can clone it out of the `RefCell` in one `let`
-//!   statement before calling it — the same hoist-before-calling-out shape
-//!   the queue borrows above use, even though (unlike `queue`) nothing here
-//!   can currently call back into this particular `RefCell` re-entrantly.
+//!   post-construction via `set_track_list_reload`, since `TrackList` is
+//!   also built after the controller. `window::build` supplies a closure
+//!   over a `Weak<TrackList>`, never a strong `Rc`: a strong reference back
+//!   would be an `Rc` cycle with `TrackList`'s own `Shared.on_activate`,
+//!   which already holds a strong `Rc<PlayerController>`. `Rc<dyn Fn()>`
+//!   (not `Box`) so `reload_track_list()` can clone it out of the `RefCell`
+//!   in one `let` statement before calling it — same hoist-before-calling-
+//!   out shape the queue borrows above use.
 //!
 //! ## MPRIS (Stage 2 Task 6)
 //!
 //! `mpris::start()` is called once, right after the controller's own `Rc`
 //! exists (see `new`), spawning `mpris.rs`'s dedicated D-Bus thread and
 //! handing back two things this struct holds for the rest of its life:
-//! `mpris_state` (`Arc<Mutex<mpris::MprisState>>`, written by `mpris_mirror.
-//! rs`'s `update_mpris_mirror`, read by that thread) and an `async_channel::
-//! Receiver<MprisCommand>`, drained by a second `glib::spawn_future_local`
-//! loop exactly parallel to the `PlayerEvent` drain loop already in `new`
-//! (same `Weak`-controller-upgrade-or-break shape), calling `mpris_mirror.
-//! rs`'s `handle_mpris_command` per command. `now_playing` is a small
-//! `RefCell` cache of the currently-loaded track's title/artist/album/
-//! duration (`current_track` already tracks id/duration but only as a
-//! play-tracking high-water-mark key, not for display) — set alongside
-//! `current_track` in `play_track_id`, cleared alongside `bar.clear_track()`
-//! wherever that already runs. Both fields are `pub(super)` so `mpris_
-//! mirror.rs` (a sibling module, not a descendant of this one) can reach
-//! them — see that module's doc comment for the full mirror-update/command-
-//! handling logic itself, which moved there in Stage 3 Task 1.
+//! `mpris_state` (written by `mpris_mirror.rs`'s `update_mpris_mirror`, read
+//! by that thread) and an `async_channel::Receiver<MprisCommand>`, drained
+//! by a second `glib::spawn_future_local` loop parallel to the `PlayerEvent`
+//! drain loop already in `new`, calling `mpris_mirror.rs`'s `handle_mpris_
+//! command` per command. `now_playing` is a small `RefCell` cache of the
+//! currently-loaded track's display fields — set alongside `current_track`
+//! in `play_track_id`, cleared alongside `bar.clear_track()`. Both fields
+//! are `pub(super)` so `mpris_mirror.rs` can reach them — see that module's
+//! doc comment for the mirror-update/command-handling logic itself.
 //!
 //! Transport methods `toggle_pause`/`next`/`previous` stay here, `pub(super)`
 //! so `mpris_mirror.rs`'s `handle_mpris_command` can call them too — not
-//! inlined in the bar's button closures the way they used to be —
-//! specifically so both `wire_bar_controls` and `handle_mpris_command` call
-//! the same code (DRY): a physical media key and the on-screen button must
-//! behave identically. MPRIS's `Play`/`Pause` are *not* the same as
-//! `toggle_pause`, though (`PlayPause` is): the MPRIS spec has `Play`
-//! start-or-resume and `Pause` pause, each a no-op if already in that state,
-//! whereas the bar only ever has one button that alternates — see `mpris_
-//! mirror.rs`'s `mpris_play`/`mpris_pause`, which consult `mpris_state`'s own
-//! `status` (kept current by `update_mpris_mirror`) to decide whether
-//! `toggle_pause`/`play_track_id` actually apply, rather than adding a new
-//! `Player` query method just for this.
+//! inlined in the bar's button closures, specifically so both `wire_bar_
+//! controls` and `handle_mpris_command` call the same code (DRY): a
+//! physical media key and the on-screen button must behave identically.
+//! MPRIS's `Play`/`Pause` are *not* the same as `toggle_pause` (`PlayPause`
+//! is): the MPRIS spec has `Play` start-or-resume and `Pause` pause, each a
+//! no-op if already in that state, whereas the bar only has one alternating
+//! button — see `mpris_mirror.rs`'s `mpris_play`/`mpris_pause`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -148,9 +133,11 @@ use gtk4::glib;
 use libadwaita as adw;
 use rusqlite::Connection;
 
+use crate::ui::cover_loader::CoverLoader;
 use crate::ui::mpris_mirror::mpris_status_from_playback_state;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
+use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats;
 use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
 use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
@@ -243,6 +230,13 @@ pub struct PlayerController {
     /// to emit the `Seeked` signal. `pub(super)` so that sibling module can
     /// reach it.
     pub(super) mpris_seek_notify: async_channel::Sender<i64>,
+    /// Off-thread cover decode/cache substrate (Task 4); `play_track_id`
+    /// feeds the bar's cover widget through this after `set_track`.
+    cover_loader: Rc<CoverLoader>,
+    /// Generation token for the bar's cover widget (see `cover_loader.rs`):
+    /// bumped per `play_track_id` call so a stale in-flight load can't
+    /// clobber a newer one.
+    bar_cover_generation: Rc<Cell<u64>>,
 }
 
 /// See `PlayerController::now_playing`'s doc comment. Fields are `pub(super)`
@@ -255,6 +249,11 @@ pub(super) struct NowPlaying {
     pub(super) artist: String,
     pub(super) album: String,
     pub(super) duration_ms: i64,
+    /// On-disk path of the currently-loaded track. Not read yet (`play_
+    /// track_id` feeds `CoverLoader::load_into` from `summary.path`
+    /// directly) — the Now-Playing full view (Task 9) needs it here.
+    #[allow(dead_code)]
+    pub(super) path: String,
 }
 
 impl PlayerController {
@@ -317,6 +316,8 @@ impl PlayerController {
             now_playing: RefCell::new(None),
             volume: Cell::new(DEFAULT_VOLUME),
             mpris_seek_notify,
+            cover_loader: CoverLoader::new(),
+            bar_cover_generation: Rc::new(Cell::new(0)),
         });
 
         player_controller_wiring::wire_bar_controls(&controller);
@@ -401,24 +402,18 @@ impl PlayerController {
 
     /// Resolves `id` via `queries::query_track_summary` and starts its
     /// playback — the one place that actually calls `Player::play`, shared
-    /// by `play_from_view` and every queue-stepping call site
-    /// (`TrackFinished`'s auto-advance, the previous/next buttons,
-    /// `playback_faults.rs`'s `skip_after_failure` auto-skip) so the
+    /// by `play_from_view` and every queue-stepping call site so the
     /// "resolve, evaluate prior play tracking, start playback, handle
     /// failure" sequence exists exactly once (DRY). Ends the previous
-    /// track's listening session first (`evaluate_play_tracking`, same as
-    /// the old per-`Track` `play_track` did) — a queue step is still a track
-    /// switch. On success, resets `consecutive_skips` to 0 (Stage 2 Task 5:
-    /// a good track breaks any skip chain in progress). On a `Player::play`
-    /// failure, hands off to `playback_faults.rs`'s `handle_unplayable_track`
-    /// (diagnose missing-vs-corrupt, mark/toast, then auto-skip via `skip_
-    /// after_failure`) rather than resetting outright — see that module's
-    /// doc comment. A missing DB row or a query failure has no title/path to
-    /// build a toast from, so those two cases just log and go straight to
-    /// `skip_after_failure` (still counted against the skip-loop guard, so a
-    /// queue of entirely-vanished rows can't spin forever either). `pub
-    /// (super)` so `mpris_mirror.rs`'s `mpris_play` and `playback_faults.rs`'s
-    /// `skip_after_failure` can call it too.
+    /// track's listening session first (`evaluate_play_tracking`) — a queue
+    /// step is still a track switch. On success, resets `consecutive_skips`
+    /// to 0 (a good track breaks any skip chain in progress). On a `Player::
+    /// play` failure, hands off to `playback_faults.rs`'s `handle_unplayable_
+    /// track` (diagnose missing-vs-corrupt, mark/toast, then auto-skip)
+    /// rather than resetting outright. A missing DB row or a query failure
+    /// has no title/path to toast from, so those cases just log and go
+    /// straight to `skip_after_failure`. `pub(super)` so `mpris_mirror.rs`
+    /// and `playback_faults.rs` can call it too.
     pub(super) fn play_track_id(&self, id: i64) {
         self.evaluate_play_tracking();
 
@@ -437,38 +432,42 @@ impl PlayerController {
                     artist: summary.artist.clone(),
                     album: summary.album.clone(),
                     duration_ms: summary.duration_ms,
+                    path: summary.path.clone(),
                 });
 
                 self.bar.set_track(&summary.title, &summary.artist);
+                // Bump the generation before the async cover load so a
+                // late-arriving load from a prior track can't clobber this
+                // one — see `cover_loader.rs`.
+                let generation = self.bar_cover_generation.get() + 1;
+                self.bar_cover_generation.set(generation);
+                self.cover_loader.load_into(
+                    self.bar.cover_image(),
+                    &summary.path,
+                    ThumbnailSize::Bar,
+                    generation,
+                    &self.bar_cover_generation,
+                );
                 match self.player.play(&summary.path) {
                     Ok(()) => {
                         self.consecutive_skips.set(0);
-                        // Stage-2 close-out: `reset_to_stopped` disables the
-                        // prev/next transport buttons, and MPRIS's
-                        // `Previous`/`Play` commands can resume playback from
-                        // Stopped straight through this arm (see
-                        // `mpris_mirror.rs`'s `handle_mpris_command`) without
-                        // ever going through `set_queue`/`play_from_view`,
-                        // the only other call sites that re-enable them.
-                        // Re-deriving and applying the enabled state here, on
-                        // every successful playback start, keeps the
-                        // on-screen buttons in sync with MPRIS-driven
-                        // transitions too — hoisted into its own statement
-                        // first so no `queue` borrow is alive across the
-                        // `set_transport_enabled` call (see the module's
-                        // `## Queue borrow discipline` doc section).
+                        // `reset_to_stopped` disables prev/next, and MPRIS
+                        // can resume from Stopped through this arm without
+                        // going through `play_from_view` — re-derive and
+                        // apply the enabled state here too, hoisted into its
+                        // own statement so no `queue` borrow is alive across
+                        // `set_transport_enabled` (see `## Queue borrow
+                        // discipline`).
                         let queue_has_tracks = !self.queue.borrow().is_empty();
                         self.bar.set_transport_enabled(queue_has_tracks);
                         tracing::debug!(
                             queue_has_tracks,
                             "transport buttons re-enabled after playback start"
                         );
-                        // Stage 2 Task 6: reflect the new track's metadata
-                        // immediately rather than waiting for the
-                        // `StateChanged(Playing)` event `play()` also just
-                        // enqueued to drain asynchronously (see the module's
-                        // `## MPRIS` doc section) — that event's own arrival
-                        // still triggers a second, idempotent mirror update.
+                        // Reflect the new track's metadata immediately
+                        // rather than waiting for the async `StateChanged
+                        // (Playing)` event — that event's arrival still
+                        // triggers a second, idempotent mirror update.
                         self.update_mpris_mirror(MprisPlaybackStatus::Playing);
                     }
                     Err(error) => {
@@ -628,20 +627,15 @@ impl PlayerController {
     }
 
     /// Stops the pipeline and ensures the bar lands in the stopped/empty
-    /// state. Evaluates play tracking for whatever track was loaded first
-    /// (see `evaluate_play_tracking`) — every path that ends a listening
-    /// session (`TrackFinished`, a player error, and a future explicit
-    /// stop) funnels through here, so this is the one place that needs to
-    /// call it for those cases (`play_track_id` calls it separately, for the
-    /// track-switch case, since that path never calls `reset_to_stopped`).
-    /// On success the rest of this relies entirely on the
-    /// `StateChanged(Stopped)` event `stop()` emits — routed back here
-    /// through `apply_event` — so the bar isn't reset twice. If `stop()`
-    /// itself fails, though, that event never fires, so the bar is reset
-    /// directly right here instead: the UI must still land in a consistent
-    /// stopped state even when stopping the pipeline errors out. `pub
-    /// (super)` so `mpris_mirror.rs`'s `handle_mpris_command`/`mpris_play`
-    /// and `playback_faults.rs`'s `skip_after_failure` can call it too.
+    /// state. Evaluates play tracking for whatever track was loaded first —
+    /// every path that ends a listening session (`TrackFinished`, a player
+    /// error, a future explicit stop) funnels through here (`play_track_id`
+    /// calls it separately for the track-switch case, since that path never
+    /// calls `reset_to_stopped`). On success this relies on the `StateChanged
+    /// (Stopped)` event `stop()` emits, routed back through `apply_event`, so
+    /// the bar isn't reset twice; if `stop()` fails, that event never fires,
+    /// so the bar is reset directly here instead. `pub(super)` so `mpris_
+    /// mirror.rs` and `playback_faults.rs` can call it too.
     pub(super) fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
         self.bar.set_transport_enabled(false);

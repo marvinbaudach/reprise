@@ -21,17 +21,11 @@ const PLACEHOLDER_ICON: &str = "audio-x-generic-symbolic";
 /// re-reading the on-disk PNG during scrolling. Evicts oldest-inserted first.
 const MAX_CACHED_TEXTURES: usize = 256;
 
-/// `#[allow(dead_code)]` on this module's public surface: no consumer wires
-/// `CoverLoader` in yet — Tasks 5/6/8/9 (player bar, track-list, Now Playing)
-/// are the first call sites. The loader lands now as shared substrate so
-/// those tasks only add wiring, not this async/generation-token machinery.
-#[allow(dead_code)]
 pub struct CoverLoader {
     cache: RefCell<HashMap<String, gdk::Texture>>,
     order: RefCell<std::collections::VecDeque<String>>,
 }
 
-#[allow(dead_code)]
 impl CoverLoader {
     pub fn new() -> Rc<Self> {
         Rc::new(Self {

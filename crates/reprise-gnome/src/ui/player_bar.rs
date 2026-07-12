@@ -68,6 +68,7 @@ use std::rc::Rc;
 use gtk4::pango;
 use gtk4::prelude::*;
 
+use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 use reprise_core::format::format_duration;
 use reprise_core::playback::PlaybackState;
@@ -107,8 +108,21 @@ const TRACK_INFO_WIDTH: i32 = 220;
 const ZERO_TIME_LABEL: &str = "0:00";
 const CENTER_BOX_SPACING: i32 = 8;
 
+/// Pixel size of the player bar's cover thumbnail — matches
+/// `reprise_core::cover::ThumbnailSize::Bar`.
+const COVER_PIXEL_SIZE: i32 = 48;
+
+/// CSS class applied to the player bar's cover `gtk4::Image`, for styling
+/// hooks (rounded corners etc.) without reaching into `PlayerBar`'s widgets.
+const COVER_CSS_CLASS: &str = "player-bar-cover";
+
 pub struct PlayerBar {
     bar: gtk4::ActionBar,
+    /// The currently-playing track's album cover thumbnail, packed at the
+    /// start of the bar. Fed by `player_controller.rs`'s `CoverLoader` — this
+    /// struct only owns/exposes the widget, never resolves or decodes covers
+    /// itself (see `cover_loader.rs`).
+    cover: gtk4::Image,
     title_label: gtk4::Label,
     artist_label: gtk4::Label,
     shuffle_button: gtk4::ToggleButton,
@@ -155,6 +169,11 @@ pub struct PlayerBar {
 
 impl PlayerBar {
     pub fn new() -> Self {
+        let cover = gtk4::Image::new();
+        cover.set_pixel_size(COVER_PIXEL_SIZE);
+        cover.add_css_class(COVER_CSS_CLASS);
+        CoverLoader::set_placeholder(&cover);
+
         let title_label = build_track_label();
         // Bold via a Pango attribute (set once, applies to every future
         // `set_text`) rather than per-call `set_markup`, which would require
@@ -230,6 +249,9 @@ impl PlayerBar {
         volume_button.set_valign(gtk4::Align::Center);
 
         let bar = gtk4::ActionBar::new();
+        // Cover first: `pack_start` appends in call order, so packing it
+        // ahead of `track_box` puts it at the very start of the bar.
+        bar.pack_start(&cover);
         bar.pack_start(&track_box);
         bar.set_center_widget(Some(&center_box));
         bar.pack_end(&volume_button);
@@ -239,6 +261,7 @@ impl PlayerBar {
 
         let bar = Self {
             bar,
+            cover,
             title_label,
             artist_label,
             shuffle_button,
@@ -267,6 +290,18 @@ impl PlayerBar {
         &self.bar
     }
 
+    /// The cover thumbnail widget — `player_controller.rs` feeds it via
+    /// `CoverLoader::load_into` after `set_track`.
+    pub fn cover_image(&self) -> &gtk4::Image {
+        &self.cover
+    }
+
+    /// Resets the cover back to the placeholder icon — used when playback
+    /// stops with no track active (see `clear_track`).
+    pub fn clear_cover(&self) {
+        CoverLoader::set_placeholder(&self.cover);
+    }
+
     /// Shows `title`/`artist` in the left-hand labels. Called on row
     /// activation with data already in hand from the `Track` (see
     /// `player_controller.rs`) — no extra DB query needed.
@@ -293,6 +328,7 @@ impl PlayerBar {
         }
         self.title_label.set_text("");
         self.artist_label.set_text("");
+        self.clear_cover();
     }
 
     /// Applies a `PlaybackState`: swaps the play/pause icon and tooltip, and
