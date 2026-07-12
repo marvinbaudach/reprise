@@ -1,0 +1,398 @@
+#!/usr/bin/env bash
+#
+# Headless POINTER-level E2E harness for Reprise.
+#
+# Unlike the existing test suite (which drives the app through signal seams
+# such as `RatingWidget::click_star_for_test`'s `emit_clicked`), this script
+# injects REAL pointer/keyboard events via `xdotool` into a REAL mapped GTK4
+# window running inside a throwaway Xvfb X server, and verifies the result
+# through the app's own stderr log plus screenshot pixel data. This is the
+# only way to catch bugs where an event never reaches the intended widget in
+# the first place (e.g. a `GestureClick` on a non-interactive `Box` losing
+# the event to `GtkColumnView`'s row machinery) — a signal-seam test cannot
+# see that class of bug because it calls the widget's handler directly,
+# skipping event delivery entirely.
+#
+# See scripts/ptr-e2e/README.md for usage, requirements, and known limits.
+#
+# ---------------------------------------------------------------------------
+# Lessons baked in from earlier failed one-shot attempts at this harness:
+#
+#   1. "Stale Xvfb on a reused display number gives a blank capture."
+#      Fixed by never guessing a display number: Xvfb itself is asked to
+#      allocate one via `-displayfd`, which atomically picks the first free
+#      number and reports it back to us. Two concurrent runs of this script
+#      can never collide.
+#
+#   2. "Window not found by NAME." The app's WM_CLASS is `org.reprise.Reprise`
+#      (the GApplication id), but window managers/toolkits are free to fold
+#      that into a shorter class string (observed: `reprise.reprise`) and the
+#      title bar text is the human-readable app name, not the id. Matching by
+#      NAME is fragile; this script matches by CLASS via `xdotool search
+#      --class`, using a substring ("reprise") that is a superset of every
+#      variant WM_CLASS is known to take.
+#
+#   3. "No WM => window stays unmapped, capture is blank." `openbox` is
+#      started on the throwaway display before the app, and this script
+#      waits for it to be ready before launching Reprise.
+#
+#   4. "GDK_BACKEND=wayland inherited from the operator's shell silently
+#      connects the app to the operator's REAL Wayland session instead of
+#      the throwaway Xvfb display" — found live while building this script:
+#      a plain `DISPLAY=:N cargo run` on a Wayland-session host does *not*
+#      guarantee X11; GDK prefers Wayland if `WAYLAND_DISPLAY`/`GDK_BACKEND`
+#      leak through, and will happily paint a real, visible window on the
+#      operator's actual desktop — exactly the outcome a headless harness
+#      must never risk. This script unsets `WAYLAND_DISPLAY` and forces
+#      `GDK_BACKEND=x11` on the app's environment, unconditionally.
+#
+#   5. The isolated profile: `dbus-run-session` (own session bus — a leaked
+#      bus name on the operator's real session bus would hijack their real
+#      Reprise launches, since GApplication is single-instance over D-Bus)
+#      wrapping a scratch `XDG_DATA_HOME` (database) and `XDG_CONFIG_HOME`
+#      with a `gtk-4.0/settings.ini` forcing `gtk-icon-theme-name=Papirus-
+#      Dark` — the theme under which "all stars look filled" was originally
+#      caught (see `src/ui/rating.rs`'s module doc comment). Reprise's own
+#      rating widget already renders with theme-independent text glyphs
+#      (★/☆) specifically because of that trap, so this harness's Papirus
+#      run also stands as regression cover for the fix.
+#
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+# --- Configuration (all overridable via environment) ------------------------
+
+# debug builds faster and (per the task brief) is assumed already built;
+# set PTR_E2E_PROFILE=release to exercise the release binary instead.
+PTR_E2E_PROFILE="${PTR_E2E_PROFILE:-debug}"
+# Resolution of the throwaway X server. Fixed (not "whatever the display
+# happens to be") because the star-rating click below targets a hardcoded
+# pixel offset derived empirically at this exact resolution — see the
+# "Row/column geometry" section below for how that offset was measured and
+# what breaks it.
+PTR_E2E_SCREEN_RES="${PTR_E2E_SCREEN_RES:-1600x900x24}"
+# How many copies of the sine fixture to scan into the library.
+PTR_E2E_N_TRACKS="${PTR_E2E_N_TRACKS:-5}"
+# Where screenshots and the app log are left behind for a human/controller
+# to inspect after the run (NOT cleaned up on success, only stale prior runs
+# are cleared at the top of a fresh run).
+PTR_E2E_OUT_DIR="${PTR_E2E_OUT_DIR:-/tmp/reprise-ptr-e2e}"
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+APP_ID="org.reprise.Reprise"
+# Substring match for `xdotool search --class`: a superset of every WM_CLASS
+# variant observed (the app id itself, and toolkit-folded forms such as
+# `reprise.reprise`) — see lesson 2 above.
+WINDOW_CLASS_MATCH="reprise"
+
+case "$PTR_E2E_PROFILE" in
+  debug) BIN_PATH="$REPO_ROOT/target/debug/reprise"; CARGO_PROFILE_FLAG=() ;;
+  release) BIN_PATH="$REPO_ROOT/target/release/reprise"; CARGO_PROFILE_FLAG=(--release) ;;
+  *) echo "PTR_E2E_PROFILE must be 'debug' or 'release', got: $PTR_E2E_PROFILE" >&2; exit 2 ;;
+esac
+
+if [ ! -x "$BIN_PATH" ]; then
+  echo "FAIL: $BIN_PATH does not exist — build it first (cargo build${CARGO_PROFILE_FLAG:+ ${CARGO_PROFILE_FLAG[*]}})" >&2
+  exit 2
+fi
+
+# --- Scratch layout ----------------------------------------------------------
+
+SCRATCH_ROOT="$(mktemp -d /tmp/reprise-ptr-e2e-scratch.XXXXXX)"
+MUSIC_DIR="$SCRATCH_ROOT/music"
+XDG_DATA_HOME_SCRATCH="$SCRATCH_ROOT/xdg-data"
+XDG_CONFIG_HOME_SCRATCH="$SCRATCH_ROOT/xdg-config"
+DISPLAYFD_FILE="$SCRATCH_ROOT/displayfd.txt"
+APP_LOG="$SCRATCH_ROOT/app.log"
+XVFB_LOG="$SCRATCH_ROOT/xvfb.log"
+OPENBOX_LOG="$SCRATCH_ROOT/openbox.log"
+
+rm -rf "$PTR_E2E_OUT_DIR"
+mkdir -p "$PTR_E2E_OUT_DIR" "$MUSIC_DIR" "$XDG_DATA_HOME_SCRATCH" "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0"
+
+cat > "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0/settings.ini" <<'EOF'
+[Settings]
+gtk-icon-theme-name=Papirus-Dark
+EOF
+
+for i in $(seq 1 "$PTR_E2E_N_TRACKS"); do
+  # Zero-padded index so filenames (and thus the title the scanner falls
+  # back to — `sine.flac` carries no title tag, only a DESCRIPTION comment,
+  # so the title is the file stem) sort predictably.
+  printf -v idx "%02d" "$i"
+  cp "$REPO_ROOT/tests/fixtures/sine.flac" "$MUSIC_DIR/sine_$idx.flac"
+done
+
+# --- Process bookkeeping / cleanup -------------------------------------------
+
+XVFB_PID=""
+OPENBOX_PID=""
+APP_LAUNCH_PID=""
+FAILURES=0
+
+log_step() { echo "[ptr-e2e] $*"; }
+log_fail() { echo "[ptr-e2e] FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }
+
+cleanup() {
+  local exit_code=$?
+  log_step "cleaning up…"
+  # The app was launched via `setsid`, so its PID is also its process group
+  # id — killing the negative PGID takes the whole dbus-run-session/cargo/
+  # reprise tree with it in one shot, however many layers deep it is.
+  if [ -n "$APP_LAUNCH_PID" ]; then
+    kill -TERM -- "-$APP_LAUNCH_PID" 2>/dev/null || true
+    sleep 0.3
+    kill -KILL -- "-$APP_LAUNCH_PID" 2>/dev/null || true
+  fi
+  if [ -n "$OPENBOX_PID" ]; then
+    kill -KILL "$OPENBOX_PID" 2>/dev/null || true
+  fi
+  if [ -n "$XVFB_PID" ]; then
+    kill -KILL "$XVFB_PID" 2>/dev/null || true
+  fi
+  # Preserved unconditionally (success or failure) so a failed run still
+  # leaves the app's stderr log behind for a human/controller to inspect —
+  # scratch dir removal below would otherwise take it with it.
+  if [ -f "$APP_LOG" ]; then
+    cp "$APP_LOG" "$PTR_E2E_OUT_DIR/app.log" 2>/dev/null || true
+  fi
+  rm -rf "$SCRATCH_ROOT"
+  if [ "$exit_code" -eq 0 ] && [ "$FAILURES" -eq 0 ]; then
+    log_step "done — all checks passed"
+  else
+    log_step "done — see failures above (exit $exit_code, $FAILURES failed check(s))"
+  fi
+  exit $(( exit_code != 0 ? exit_code : (FAILURES > 0 ? 1 : 0) ))
+}
+trap cleanup EXIT
+
+# --- Xvfb + openbox -----------------------------------------------------------
+
+log_step "starting Xvfb on a freshly-allocated display (${PTR_E2E_SCREEN_RES})…"
+: > "$DISPLAYFD_FILE"
+# `-displayfd FD`: Xvfb itself finds the first unused display number and
+# writes it (as text, newline-terminated) to FD — no probing, no reused-
+# display races (lesson 1 above). FD 8 redirected to a real scratch file so
+# we can just read it back once Xvfb has written to it.
+Xvfb -displayfd 8 -screen 0 "$PTR_E2E_SCREEN_RES" -nolisten tcp \
+  8>"$DISPLAYFD_FILE" >"$XVFB_LOG" 2>&1 &
+XVFB_PID=$!
+
+for _ in $(seq 1 50); do
+  [ -s "$DISPLAYFD_FILE" ] && break
+  sleep 0.1
+done
+DISPLAY_NUM="$(tr -d '[:space:]' < "$DISPLAYFD_FILE")"
+if [ -z "$DISPLAY_NUM" ]; then
+  echo "FAIL: Xvfb never reported a display number (see $XVFB_LOG)" >&2
+  exit 1
+fi
+export DISPLAY=":$DISPLAY_NUM"
+log_step "Xvfb up on $DISPLAY (pid $XVFB_PID)"
+
+log_step "starting openbox (a WM is required or the window never maps)…"
+openbox >"$OPENBOX_LOG" 2>&1 &
+OPENBOX_PID=$!
+sleep 1
+
+# --- Launch the app -----------------------------------------------------------
+
+log_step "launching Reprise ($PTR_E2E_PROFILE profile, $PTR_E2E_N_TRACKS fixture tracks)…"
+# `setsid` gives the whole tree below it a fresh process group so cleanup()
+# can kill it in one shot regardless of how many processes dbus-run-session/
+# cargo interpose. `env -u WAYLAND_DISPLAY GDK_BACKEND=x11` is the fix for
+# lesson 4 above — without it, a Wayland-session operator's shell can steer
+# the app onto their real desktop instead of this throwaway X server.
+setsid dbus-run-session -- env \
+  -u WAYLAND_DISPLAY \
+  GDK_BACKEND=x11 \
+  DISPLAY="$DISPLAY" \
+  XDG_DATA_HOME="$XDG_DATA_HOME_SCRATCH" \
+  XDG_CONFIG_HOME="$XDG_CONFIG_HOME_SCRATCH" \
+  REPRISE_SCAN_DIR="$MUSIC_DIR" \
+  REPRISE_AUDIO_SINK=fakesink \
+  REPRISE_LOG=debug \
+  cargo run --quiet --manifest-path "$REPO_ROOT/Cargo.toml" "${CARGO_PROFILE_FLAG[@]}" \
+  >"$APP_LOG" 2>&1 &
+APP_LAUNCH_PID=$!
+
+# --- Helpers -------------------------------------------------------------
+
+# Polls up to ~15s for a mapped window whose WM_CLASS contains
+# $WINDOW_CLASS_MATCH, printing its X window id on success.
+find_window() {
+  local win=""
+  for _ in $(seq 1 30); do
+    win="$(xdotool search --class "$WINDOW_CLASS_MATCH" 2>/dev/null | head -1 || true)"
+    if [ -n "$win" ]; then
+      echo "$win"
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+screenshot() {
+  local name="$1"
+  scrot -o "$PTR_E2E_OUT_DIR/$name.png"
+}
+
+click_at() {
+  local x="$1" y="$2"
+  xdotool mousemove "$x" "$y" click 1
+}
+
+double_click_at() {
+  local x="$1" y="$2"
+  xdotool mousemove "$x" "$y" click --repeat 2 --delay 80 1
+}
+
+type_text() {
+  xdotool type -- "$1"
+}
+
+key() {
+  xdotool key "$1"
+}
+
+# Non-trivial-image check: a solid/blank capture has a standard deviation
+# near zero; a real rendered UI does not. Threshold (50) sits comfortably
+# below the ~3600 measured on a real capture at this resolution/theme and
+# comfortably above the ~0 a blank/solid capture would produce.
+assert_screenshot_not_blank() {
+  local path="$1"
+  if [ ! -s "$path" ]; then
+    log_fail "screenshot missing or empty: $path"
+    return
+  fi
+  local stddev
+  stddev="$(convert "$path" -format '%[standard-deviation]' info: 2>/dev/null || echo 0)"
+  # Integer-truncate for a portable numeric comparison (bash has no floats).
+  local stddev_int="${stddev%%.*}"
+  if [ -z "$stddev_int" ] || [ "$stddev_int" -lt 50 ]; then
+    log_fail "screenshot looks blank/solid (standard-deviation=$stddev): $path"
+  else
+    log_step "screenshot OK ($path): standard-deviation=$stddev"
+  fi
+}
+
+# tracing_subscriber's default formatter colors each field's key/`=`/value
+# separately with SGR escape codes even when stderr is redirected to a file
+# in this setup (observed empirically — `state^[[0m^[[2m=^[[0mPlaying`), so
+# a naive `grep "state=Playing"` never matches the raw log. Every log check
+# strips ANSI escapes first so patterns can be written in plain,
+# human-readable form.
+ANSI_STRIP_RE='s/\x1b\[[0-9;]*[a-zA-Z]//g'
+
+# Current line count of the app log — used as a "since" marker so a check
+# only looks at NEW log activity produced by the action just taken, not at
+# the whole log. This matters for flow 2: "Playing" appears once when
+# activation starts playback and again when the second Space resumes it —
+# without a marker, a plain "does the log contain state=Playing anywhere"
+# check would trivially pass on the first occurrence even if the second
+# Space silently did nothing.
+log_marker() { wc -l < "$APP_LOG" 2>/dev/null || echo 0; }
+
+assert_log_contains_since() {
+  local since_line="$1" pattern="$2" description="$3"
+  local plain
+  plain="$(tail -n "+$((since_line + 1))" "$APP_LOG" | sed -E "$ANSI_STRIP_RE")"
+  if grep -qi -- "$pattern" <<<"$plain"; then
+    log_step "log check OK: $description"
+    grep -i -- "$pattern" <<<"$plain" | tail -1 | sed 's/^/[ptr-e2e]   -> /'
+  else
+    log_fail "log never showed: $description (pattern: $pattern)"
+  fi
+}
+
+# --- Wait for the window, then maximize it -----------------------------------
+
+log_step "waiting for the Reprise window (WM_CLASS matching '$WINDOW_CLASS_MATCH')…"
+if ! WINDOW_ID="$(find_window)"; then
+  echo "FAIL: no window with WM_CLASS matching '$WINDOW_CLASS_MATCH' appeared within ~15s" >&2
+  echo "--- app log tail ---" >&2
+  tail -n 40 "$APP_LOG" >&2 || true
+  exit 1
+fi
+log_step "found window $WINDOW_ID"
+
+wmctrl -i -r "$WINDOW_ID" -b add,maximized_vert,maximized_horz
+sleep 1
+
+# --- Row/column geometry (this harness's known limit — see README) ----------
+#
+# GtkColumnView lays out non-expanding columns at their natural width,
+# left-aligned; there is no accessibility bridge wired up in this headless
+# session (no a11y bus), so widget geometry cannot be queried — only
+# inferred from a screenshot. The pixel offsets below were measured directly
+# from a `scrot` capture of this exact scan (5 sine.flac copies, Papirus-Dark,
+# 1600x900) and are stable for that fixed input, but WILL need re-measuring
+# if the column set, fonts, or resolution change. See README.md.
+ROW0_TITLE_CELL_X=316
+ROW0_TITLE_CELL_Y=106
+ROW0_RATING_STAR1_X=663
+ROW0_RATING_STAR1_Y=106
+
+# --- Flow 1: star-rating click reaches the real widget -----------------------
+
+log_step "flow 1: star-rating click…"
+screenshot "01-initial-track-list"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/01-initial-track-list.png"
+
+MARKER=$(log_marker)
+click_at "$ROW0_RATING_STAR1_X" "$ROW0_RATING_STAR1_Y"
+sleep 1
+screenshot "02-after-star-click"
+# `RatingWidget`'s click handler logs via `tracing::debug!(... "rating
+# changed")` in src/ui/track_list.rs — this is the exact line a signal-seam
+# test (calling `click_star_for_test`/`emit_clicked` directly) cannot prove:
+# it only exists if the real pointer click was actually delivered to the
+# button inside the ColumnView cell.
+assert_log_contains_since "$MARKER" "rating changed" "star click delivered a rating change (src/ui/track_list.rs on_rating_changed)"
+
+# --- Flow 2: Space toggles play/pause when the track list has focus ---------
+
+log_step "flow 2: Space toggles play/pause…"
+# Double-click a *different* row (row 1's Title cell) to both focus the
+# track list (search entry must NOT have focus, or Space would type a literal
+# space instead — see src/ui/shortcuts.rs's `space_should_toggle`) and start
+# real playback, so the player has a state to toggle away from. Using row 1
+# rather than row 0 keeps this flow's log lines distinguishable from flow 1's
+# star click above.
+#
+# Timing here is deliberately tight (0.3s, not the leisurely 1s used
+# elsewhere): the fixture track (tests/fixtures/sine.flac) is ~1.16s long,
+# and once it reaches end-of-stream the player auto-advances to the next
+# queued track — which would race with "Space paused a playing track" below
+# and turn a real bug into flaky noise. Every action after this point (both
+# Space presses) needs to land while the *same* activation is still playing.
+ROW1_TITLE_CELL_X=316
+ROW1_TITLE_CELL_Y=158
+MARKER=$(log_marker)
+double_click_at "$ROW1_TITLE_CELL_X" "$ROW1_TITLE_CELL_Y"
+sleep 0.3
+assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "activation started real playback (src/ui/player_controller.rs)"
+
+MARKER=$(log_marker)
+key "space"
+sleep 0.3
+assert_log_contains_since "$MARKER" "applying state change.*state=Paused" "Space paused a playing track"
+
+MARKER=$(log_marker)
+key "space"
+sleep 0.3
+assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Space resumed playback (state change to Playing)"
+
+# --- Final screenshot ---------------------------------------------------------
+
+screenshot "03-final"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/03-final.png"
+log_step "final screenshot: $PTR_E2E_OUT_DIR/03-final.png"
+log_step "app log will be preserved at: $PTR_E2E_OUT_DIR/app.log (copied by cleanup())"
+
+if [ "$FAILURES" -ne 0 ]; then
+  echo "[ptr-e2e] $FAILURES check(s) failed" >&2
+fi
+
+# `cleanup` (EXIT trap) computes and returns the real exit code.
