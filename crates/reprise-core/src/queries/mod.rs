@@ -113,7 +113,9 @@ pub use maintenance::remove_missing_track;
 pub use playlist::query_playlist_tracks_full;
 pub use queue::{is_queue_capped, QUEUE_LIMIT};
 
+use clauses::build_track_ids_query_browsed;
 use clauses::{build_track_ids_query_base, like_pattern, row_to_id};
+use rusqlite::types::Value;
 
 /// Global constraint: window queries never return more rows than this in one
 /// page, regardless of what the caller requests. SQLite treats a negative
@@ -157,10 +159,35 @@ pub fn query_track_window(
     limit: i64,
     queue_ids: &[i64],
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    query_track_window_browsed(
+        conn,
+        source,
+        sort_field,
+        sort_dir,
+        filter,
+        &BrowseFilter::default(),
+        offset,
+        limit,
+        queue_ids,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn query_track_window_browsed(
+    conn: &mut Connection,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    offset: i64,
+    limit: i64,
+    queue_ids: &[i64],
+) -> Result<Vec<Track>, rusqlite::Error> {
     match source {
-        ViewSource::Library => {
-            library::query_track_window_library(conn, sort_field, sort_dir, filter, offset, limit)
-        }
+        ViewSource::Library => library::query_track_window_library(
+            conn, sort_field, sort_dir, filter, offset, limit, browse,
+        ),
         ViewSource::Missing => {
             library::query_track_window_missing(conn, sort_field, sort_dir, filter, offset, limit)
         }
@@ -182,8 +209,18 @@ pub fn query_track_count(
     filter: &str,
     queue_ids: &[i64],
 ) -> Result<i64, rusqlite::Error> {
+    query_track_count_browsed(conn, source, filter, &BrowseFilter::default(), queue_ids)
+}
+
+pub fn query_track_count_browsed(
+    conn: &Connection,
+    source: &ViewSource,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+) -> Result<i64, rusqlite::Error> {
     match source {
-        ViewSource::Library => library::query_track_count_library(conn, filter),
+        ViewSource::Library => library::query_track_count_library(conn, filter, browse),
         ViewSource::Missing => library::query_track_count_missing(conn, filter),
         ViewSource::Playlist(id) => playlist::query_track_count_playlist(conn, *id, filter),
         ViewSource::Smart(id) => smart::query_track_count_smart(conn, *id, filter),
@@ -221,17 +258,38 @@ pub fn query_track_ids(
     filter: &str,
     queue_ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    query_track_ids_browsed(
+        conn,
+        source,
+        sort_field,
+        sort_dir,
+        filter,
+        &BrowseFilter::default(),
+        queue_ids,
+    )
+}
+
+pub fn query_track_ids_browsed(
+    conn: &Connection,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
     match source {
         ViewSource::Library => {
             let has_filter = !filter.trim().is_empty();
-            let sql = build_track_ids_query(sort_field, sort_dir, has_filter);
+            let sql = build_track_ids_query_browsed(sort_field, sort_dir, has_filter, browse);
             let mut stmt = conn.prepare(&sql)?;
-            let like = like_pattern(filter.trim());
-            let rows = if has_filter {
-                stmt.query_map(rusqlite::params![like], row_to_id)?
-            } else {
-                stmt.query_map([], row_to_id)?
-            };
+            let mut params = Vec::new();
+            if has_filter {
+                params.push(Value::Text(like_pattern(filter.trim())));
+            }
+            let (_, browse_values) = browse::browse_clause(browse, params.len() + 1);
+            params.extend(browse_values.into_iter().map(Value::Text));
+            let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
             rows.collect()
         }
         ViewSource::Missing => {
@@ -286,15 +344,23 @@ pub fn query_library_stats(
     conn: &Connection,
     filter: &str,
 ) -> Result<LibraryStats, rusqlite::Error> {
+    query_library_stats_browsed(conn, filter, &BrowseFilter::default())
+}
+
+pub fn query_library_stats_browsed(
+    conn: &Connection,
+    filter: &str,
+    browse: &BrowseFilter,
+) -> Result<LibraryStats, rusqlite::Error> {
     let (track_count, total_duration_ms) = conn.query_row(
         "SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE missing = 0",
         [],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    let filtered_count = if filter.trim().is_empty() {
+    let filtered_count = if filter.trim().is_empty() && browse.is_empty() {
         None
     } else {
-        Some(library::query_track_count_library(conn, filter)?)
+        Some(library::query_track_count_library(conn, filter, browse)?)
     };
     Ok(LibraryStats {
         track_count,

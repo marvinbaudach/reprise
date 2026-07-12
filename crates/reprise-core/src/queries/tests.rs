@@ -447,6 +447,87 @@ fn seeded_conn_with_missing() -> Connection {
     conn
 }
 
+fn seeded_browse_conn() -> Connection {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    for (id, title, artist, album, genre) in [
+        (1, "Live One", "A", "Stage", "Rock"),
+        (2, "Studio One", "A", "Room", "Rock"),
+        (3, "Live Two", "B", "Stage", "Rock"),
+        (4, "Live Three", "A", "Stage", "Jazz"),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks (id,path,title,artist,album,genre,added_at,duration_ms) \
+             VALUES (?1,?2,?3,?4,?5,?6,0,1000)",
+            rusqlite::params![id, format!("/x/{id}.flac"), title, artist, album, genre],
+        )
+        .unwrap();
+    }
+    conn
+}
+
+#[test]
+fn browse_and_text_filter_match_across_window_count_ids_and_stats() {
+    let mut conn = seeded_browse_conn();
+    let browse = BrowseFilter {
+        genre: Some("Rock".into()),
+        artist: Some("A".into()),
+        album: None,
+    };
+    let rows = query_track_window_browsed(
+        &mut conn,
+        &ViewSource::Library,
+        "title",
+        "asc",
+        "live",
+        &browse,
+        0,
+        10,
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        rows.iter().map(|track| track.id).collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert_eq!(
+        query_track_count_browsed(&conn, &ViewSource::Library, "live", &browse, &[]).unwrap(),
+        1
+    );
+    assert_eq!(
+        query_track_ids_browsed(
+            &conn,
+            &ViewSource::Library,
+            "title",
+            "asc",
+            "live",
+            &browse,
+            &[],
+        )
+        .unwrap(),
+        vec![1]
+    );
+    let stats = query_library_stats_browsed(&conn, "live", &browse).unwrap();
+    assert_eq!(stats.track_count, 4);
+    assert_eq!(stats.filtered_count, Some(1));
+}
+
+#[test]
+fn non_library_sources_ignore_browse_filter() {
+    let mut conn = seeded_browse_conn();
+    let playlist = crate::library::playlists::create(&conn, "All").unwrap();
+    crate::library::playlists::add_tracks(&mut conn, playlist, &[1, 2, 3, 4]).unwrap();
+    let browse = BrowseFilter {
+        genre: Some("Does not exist".into()),
+        ..BrowseFilter::default()
+    };
+    assert_eq!(
+        query_track_count_browsed(&conn, &ViewSource::Playlist(playlist), "", &browse, &[],)
+            .unwrap(),
+        4
+    );
+}
+
 #[test]
 fn missing_window_and_count_only_include_missing_rows() {
     let mut conn = seeded_conn_with_missing();

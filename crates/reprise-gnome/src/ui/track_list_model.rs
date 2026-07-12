@@ -41,7 +41,7 @@ use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
 use rusqlite::Connection;
 
 use reprise_core::models::Track;
-use reprise_core::queries;
+use reprise_core::queries::{self, BrowseFilter};
 use reprise_core::view_source::ViewSource;
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
@@ -66,6 +66,7 @@ mod imp {
         pub sort_field: String,
         pub sort_dir: String,
         pub filter: String,
+        pub browse: BrowseFilter,
         /// Only meaningful when `source == ViewSource::Queue` — see
         /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
         /// for every other source.
@@ -144,6 +145,25 @@ impl TrackListModel {
         filter: &str,
         queue_ids: &[i64],
     ) {
+        self.set_query_browsed(
+            source,
+            sort_field,
+            sort_dir,
+            filter,
+            &BrowseFilter::default(),
+            queue_ids,
+        );
+    }
+
+    pub fn set_query_browsed(
+        &self,
+        source: &ViewSource,
+        sort_field: &str,
+        sort_dir: &str,
+        filter: &str,
+        browse: &BrowseFilter,
+        queue_ids: &[i64],
+    ) {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
@@ -153,7 +173,7 @@ impl TrackListModel {
 
         let new_total = {
             let conn_ref = conn.borrow();
-            match queries::query_track_count(&conn_ref, source, filter, queue_ids) {
+            match queries::query_track_count_browsed(&conn_ref, source, filter, browse, queue_ids) {
                 Ok(n) => n.max(0) as u32,
                 Err(error) => {
                     tracing::error!(%error, source = %source.label(), sort_field, sort_dir, filter, "failed to count tracks for query");
@@ -168,6 +188,7 @@ impl TrackListModel {
             state.sort_field = sort_field.to_string();
             state.sort_dir = sort_dir.to_string();
             state.filter = filter.to_string();
+            state.browse = browse.clone();
             state.queue_ids = queue_ids.to_vec();
             state.total = new_total;
             state.cache.clear();
@@ -214,25 +235,27 @@ impl TrackListModel {
             return None;
         };
 
-        let (source, sort_field, sort_dir, filter, queue_ids) = {
+        let (source, sort_field, sort_dir, filter, browse, queue_ids) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
                 state.sort_field.clone(),
                 state.sort_dir.clone(),
                 state.filter.clone(),
+                state.browse.clone(),
                 state.queue_ids.clone(),
             )
         };
 
         let rows = {
             let mut conn = conn.borrow_mut();
-            queries::query_track_window(
+            queries::query_track_window_browsed(
                 &mut conn,
                 &source,
                 &sort_field,
                 &sort_dir,
                 &filter,
+                &browse,
                 i64::from(window_start),
                 i64::from(WINDOW_SIZE),
                 &queue_ids,

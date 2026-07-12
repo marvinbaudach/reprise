@@ -8,6 +8,7 @@ use crate::library::playlists;
 use crate::models::Track;
 
 use super::queue::QUEUE_LIMIT;
+use super::{browse::browse_clause, BrowseFilter};
 
 /// `"playlist_order"` is a *sentinel* entry, not a real column: it only
 /// resolves to valid SQL (`pt.position`) inside a query that actually joins
@@ -91,13 +92,31 @@ pub(super) fn build_track_query_base(
     sort_dir: &str,
     has_filter: bool,
 ) -> String {
+    build_track_query_base_browsed(
+        missing_flag,
+        sort_field,
+        sort_dir,
+        has_filter,
+        &BrowseFilter::default(),
+    )
+}
+
+pub(super) fn build_track_query_base_browsed(
+    missing_flag: u8,
+    sort_field: &str,
+    sort_dir: &str,
+    has_filter: bool,
+    browse: &BrowseFilter,
+) -> String {
     let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 3);
+    let browse_first_param = if has_filter { 4 } else { 3 };
+    let (browse_clause, _) = browse_clause(browse, browse_first_param);
     format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
          file_mtime, missing, file_size, device, inode \
-         FROM tracks WHERE missing = {missing_flag}{filter_clause} \
+         FROM tracks WHERE missing = {missing_flag}{filter_clause}{browse_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
     )
 }
@@ -106,6 +125,15 @@ pub(super) fn build_track_query_base(
 /// See `build_track_query_base`'s doc comment for the whitelist guarantee.
 pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     build_track_query_base(0, sort_field, sort_dir, has_filter)
+}
+
+pub(super) fn build_track_query_browsed(
+    sort_field: &str,
+    sort_dir: &str,
+    has_filter: bool,
+    browse: &BrowseFilter,
+) -> String {
+    build_track_query_base_browsed(0, sort_field, sort_dir, has_filter, browse)
 }
 
 /// Builds the parameterized `SELECT id` for the queue seam
@@ -133,6 +161,22 @@ pub(super) fn build_track_ids_query_base(
 /// (`missing = 0`). See `build_track_ids_query_base`'s doc comment.
 pub fn build_track_ids_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     build_track_ids_query_base(0, sort_field, sort_dir, has_filter)
+}
+
+pub(super) fn build_track_ids_query_browsed(
+    sort_field: &str,
+    sort_dir: &str,
+    has_filter: bool,
+    browse: &BrowseFilter,
+) -> String {
+    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
+    let filter_clause = filter_clause(has_filter, 1);
+    let browse_first_param = if has_filter { 2 } else { 1 };
+    let (browse_clause, _) = browse_clause(browse, browse_first_param);
+    format!(
+        "SELECT id FROM tracks WHERE missing = 0{filter_clause}{browse_clause} \
+         ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}"
+    )
 }
 
 pub(super) fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {

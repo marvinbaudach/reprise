@@ -14,7 +14,6 @@ impl BrowseFilter {
     }
 }
 
-#[allow(dead_code)] // GUI-C Task 2 wires the clause into all Library query shapes.
 pub(super) fn browse_clause(filter: &BrowseFilter, first_param: usize) -> (String, Vec<String>) {
     let mut clause = String::new();
     let mut values = Vec::new();
