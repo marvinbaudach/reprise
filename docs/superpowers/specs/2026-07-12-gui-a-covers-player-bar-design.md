@@ -38,7 +38,17 @@ Vollansicht (Amberol-Stil) als GNOME-nativen Blickfang ergänzen.
   Blickfang, der die schwebende Leiste ersetzt (Nutzer-Entscheidung 2026-07-12).
 
 **Nicht enthalten (spätere Etappen/Module):**
-- Online-Cover-Suche (eigenes `MetadataProvider`-Modul, Master-Spec Z. 144/652).
+- Online-Cover-Download — **eingeplant als direkt nächste Unter-Etappe GUI-A2**
+  (Nutzer-Entscheidung 2026-07-12): ein *opt-in* gated Modul, das für Tracks
+  ohne (oder mit nur winzigem) lokalem Cover ein hochauflösendes Album-Cover
+  von **Cover Art Archive** (kein API-Key, MusicBrainz-basiert) lädt und im
+  selben Cache ablegt. Standardmäßig **aus** (Netzwerk + Privatsphäre, vgl. die
+  abgelehnte Genius-Telemetrie); korrekter User-Agent + 1 Anfrage/s. Nur
+  Album-Cover; Interpreten-Bilder (fanart.tv/Wikidata) bleiben späteres Optional.
+  **Architektur-Haken in GUI-A:** `resolve_source` ist die eine Stelle, an der
+  GUI-A2 eine Netzwerk-Fallback-Stufe einhängt (nach eingebettet/Ordnerbild) —
+  GUI-A verbaut sich dadurch nicht; der Rest der Pipeline (Hash-Cache,
+  Thumbnailing, Loader) bleibt unverändert.
 - Album-Grid-/Cover-Wand-Ansicht (Master-Spec Z. 657, spätere GUI-Etappe).
 - Cover-Bearbeitung/-Einbettung (gehört zum Tag-Editor, GUI-B).
 - Lyrics-Panel und ambienter Cover-Farb-Glow der Now-Playing-Ansicht (spätere
@@ -244,8 +254,8 @@ Cover gesetzt, Zurück kehrt zur Liste.
 
 ## Explizit NICHT (YAGNI, bewusst verworfen)
 
-- Kein Online-Cover-Abruf, keine `MetadataProvider`-Abstraktion (späteres
-  Modul; Netzwerk + Privatsphäre-Abwägung).
+- Kein Online-Cover-Abruf in GUI-A selbst — das ist GUI-A2 (opt-in Modul, siehe
+  „Nicht enthalten"). GUI-A liefert nur den `resolve_source`-Einhängepunkt.
 - Keine vierte Thumbnail-Größe „auf Vorrat" — genau drei Konsumenten (Liste,
   Leiste, Vollansicht), genau drei Größen.
 - Keine Cover-Wand/Grid-Ansicht (spätere GUI-Etappe).
