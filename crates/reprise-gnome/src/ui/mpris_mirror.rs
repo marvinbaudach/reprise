@@ -67,10 +67,41 @@
 //! one-statement-per-queue-call shape applies there too, even though neither
 //! `PlayerBar`'s setters nor the mirror patch functions can re-enter `queue`.
 
+use std::rc::Rc;
+
+use gtk4::glib;
+
 use crate::ui::player_controller::PlayerController;
 use reprise_core::media_integration::{self, MprisCommand, MprisPlaybackStatus, MprisState};
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
+
+/// Spawns the MPRIS-command drain loop: `controller`'s `new` (Stage-3
+/// close-out: moved here from that function to keep `player_controller.rs`
+/// under the split-file line gate) calls this once, right after starting the
+/// `PlayerEvent` drain loop it keeps for itself. Mirrors that loop's shape
+/// exactly (see `player_controller.rs`'s `## MPRIS` doc section): a `Weak`
+/// controller reference — never a strong `Rc`, which would leak the
+/// controller for the app's whole lifetime — upgraded once per iteration,
+/// breaking the loop the first time the upgrade fails (i.e. once the
+/// controller itself has dropped), draining `receiver` (the `async_channel::
+/// Receiver<MprisCommand>` half of the channel `mpris::start` hands back) in
+/// strict FIFO order, and applying exactly one command per iteration via
+/// `handle_mpris_command`.
+pub(super) fn spawn_command_drain(
+    controller: &Rc<PlayerController>,
+    receiver: async_channel::Receiver<MprisCommand>,
+) {
+    let weak = Rc::downgrade(controller);
+    glib::spawn_future_local(async move {
+        while let Ok(command) = receiver.recv().await {
+            let Some(controller) = weak.upgrade() else {
+                break;
+            };
+            controller.handle_mpris_command(command);
+        }
+    });
+}
 
 impl PlayerController {
     /// Recomputes the MPRIS mirror from current controller state and writes

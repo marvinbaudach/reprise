@@ -99,32 +99,35 @@
 //!   which already holds a strong `Rc<PlayerController>`. `Rc<dyn Fn()>`
 //!   (not `Box`) so `reload_track_list()` can clone it out of the `RefCell`
 //!   in one `let` statement before calling it — same hoist-before-calling-
-//!   out shape the queue borrows above use.
+//!   out shape the queue borrows above use, kept for consistency even though
+//!   this `RefCell` isn't actually subject to the `## Queue borrow
+//!   discipline` hazard: nothing reachable from `reload_track_list()`'s call
+//!   can currently call back into it re-entrantly, so there's no live bug
+//!   here today, just the same defensive shape.
 //!
 //! ## MPRIS (Stage 2 Task 6)
 //!
 //! `mpris::start()` is called once, right after the controller's own `Rc`
 //! exists (see `new`), spawning `mpris.rs`'s dedicated D-Bus thread and
-//! handing back two things this struct holds for the rest of its life:
-//! `mpris_state` (written by `mpris_mirror.rs`'s `update_mpris_mirror`, read
-//! by that thread) and an `async_channel::Receiver<MprisCommand>`, drained
-//! by a second `glib::spawn_future_local` loop parallel to the `PlayerEvent`
-//! drain loop already in `new`, calling `mpris_mirror.rs`'s `handle_mpris_
-//! command` per command. `now_playing` is a small `RefCell` cache of the
-//! currently-loaded track's display fields — set alongside `current_track`
-//! in `play_track_id`, cleared alongside `bar.clear_track()`. Both fields
-//! are `pub(super)` so `mpris_mirror.rs` can reach them — see that module's
-//! doc comment for the mirror-update/command-handling logic itself.
+//! handing back two things this struct holds for its whole life: `mpris_
+//! state` (written by `mpris_mirror.rs`'s `update_mpris_mirror`, read by
+//! that thread) and an `async_channel::Receiver<MprisCommand>`, drained by
+//! `mpris_mirror.rs`'s `spawn_command_drain` (called from `new` — see that
+//! function's doc comment for the drain loop). `now_playing` is a small
+//! `RefCell` cache of the currently-loaded track's display fields, set
+//! alongside `current_track` in `play_track_id` and cleared alongside
+//! `bar.clear_track()`; both are `pub(super)` so `mpris_mirror.rs` can reach
+//! them — see that module's doc comment for the mirror-update/command-
+//! handling logic. The two fields look alike but differ: `current_track` is
+//! only `evaluate_play_tracking`'s high-water-mark key (id/duration, never
+//! rendered), while `now_playing` is the display cache MPRIS's `Metadata` is
+//! built from.
 //!
 //! Transport methods `toggle_pause`/`next`/`previous` stay here, `pub(super)`
-//! so `mpris_mirror.rs`'s `handle_mpris_command` can call them too — not
-//! inlined in the bar's button closures, specifically so both `wire_bar_
-//! controls` and `handle_mpris_command` call the same code (DRY): a
-//! physical media key and the on-screen button must behave identically.
-//! MPRIS's `Play`/`Pause` are *not* the same as `toggle_pause` (`PlayPause`
-//! is): the MPRIS spec has `Play` start-or-resume and `Pause` pause, each a
-//! no-op if already in that state, whereas the bar only has one alternating
-//! button — see `mpris_mirror.rs`'s `mpris_play`/`mpris_pause`.
+//! so `mpris_mirror.rs`'s `handle_mpris_command` can call them too, keeping
+//! one code path for a physical media key and the on-screen button (DRY).
+//! MPRIS's `Play`/`Pause` are distinct from `toggle_pause` — see
+//! `mpris_mirror.rs`'s `mpris_play`/`mpris_pause` doc comments.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -134,7 +137,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::mpris_mirror::mpris_status_from_playback_state;
+use crate::ui::mpris_mirror::{self, mpris_status_from_playback_state};
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use reprise_core::cover::ThumbnailSize;
@@ -333,19 +336,10 @@ impl PlayerController {
             }
         });
 
-        // Mirrors the drain loop above exactly (see the module's `## MPRIS`
-        // doc section): a `Weak` controller reference, broken FIFO drain of
-        // one `async_channel::Receiver`, one command applied per iteration
-        // via `mpris_mirror.rs`'s `handle_mpris_command`.
-        let weak = Rc::downgrade(&controller);
-        glib::spawn_future_local(async move {
-            while let Ok(command) = mpris_receiver.recv().await {
-                let Some(controller) = weak.upgrade() else {
-                    break;
-                };
-                controller.handle_mpris_command(command);
-            }
-        });
+        // MPRIS-command drain: see `mpris_mirror.rs`'s `spawn_command_drain`
+        // doc comment (moved there — Stage-3 close-out — to keep this file's
+        // line count comfortably under the split-file gate).
+        mpris_mirror::spawn_command_drain(&controller, mpris_receiver);
 
         Ok(controller)
     }
@@ -439,7 +433,7 @@ impl PlayerController {
                 // Bump the generation before the async cover load so a
                 // late-arriving load from a prior track can't clobber this
                 // one — see `cover_loader.rs`.
-                let generation = self.bar_cover_generation.get() + 1;
+                let generation = self.bar_cover_generation.get().wrapping_add(1);
                 self.bar_cover_generation.set(generation);
                 self.cover_loader.load_into(
                     self.bar.cover_image(),
