@@ -38,6 +38,14 @@
 //! app fully usable without live updates rather than treating this as
 //! fatal, exactly like every other subsystem-unavailable degrade in this
 //! codebase (GStreamer, MPRIS, D-Bus registration).
+//!
+//! ## Startup reconcile closes the stopped-app gap
+//!
+//! The OS watcher is armed before its worker thread starts. That thread runs
+//! one reconcile immediately, then enters the debounced event loop. Files
+//! created while Reprise was closed are therefore discovered at startup,
+//! while changes racing with the initial scan are still covered by the
+//! already-active recursive watch.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -143,6 +151,9 @@ pub fn start(
     let root_owned = root.to_path_buf();
 
     std::thread::spawn(move || {
+        if !stopped_thread.load(Ordering::SeqCst) {
+            reconcile(&root_owned, &db_path, &on_event);
+        }
         run_watch_loop(&rx, &stopped_thread, &root_owned, &db_path, &on_event);
     });
 
@@ -436,6 +447,13 @@ mod tests {
         })
         .expect("temporary directory should be watchable");
 
+        let startup = receiver
+            .recv_timeout(Duration::from_secs(3))
+            .expect("watcher should complete its initial reconcile");
+        assert_eq!(startup.report.added, 0);
+        assert_eq!(startup.report.errors, 0);
+        assert_eq!(startup.vanished, 0);
+
         let added = root.join("added-after-start.flac");
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
         std::fs::copy(fixture, &added).unwrap();
@@ -452,6 +470,43 @@ mod tests {
         assert!(
             stored.is_some(),
             "new file should be present without a rescan"
+        );
+        drop(handle);
+    }
+
+    #[test]
+    fn file_created_while_stopped_is_scanned_when_watcher_starts() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("music");
+        std::fs::create_dir(&root).unwrap();
+        let db_path = temp.path().join("reprise.db");
+        {
+            let conn = crate::db::open(Some(&db_path)).unwrap();
+            crate::db::migrate(&conn).unwrap();
+        }
+
+        let added = root.join("added-before-start.flac");
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        std::fs::copy(fixture, &added).unwrap();
+
+        let (sender, receiver) = std_mpsc::sync_channel(1);
+        let handle = start(&root, db_path.clone(), move |event| {
+            let _ = sender.send(event);
+        })
+        .expect("temporary directory should be watchable");
+
+        let event = receiver
+            .recv_timeout(Duration::from_secs(3))
+            .expect("watcher startup should reconcile files created while it was stopped");
+        assert_eq!(event.report.added, 1);
+        assert_eq!(event.report.errors, 0);
+        assert_eq!(event.vanished, 0);
+
+        let conn = crate::db::open(Some(&db_path)).unwrap();
+        let stored = crate::queries::track_id_for_path(&conn, &added.to_string_lossy()).unwrap();
+        assert!(
+            stored.is_some(),
+            "startup reconcile should persist the file"
         );
         drop(handle);
     }
