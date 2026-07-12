@@ -73,8 +73,9 @@ pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqli
 /// this one breaks (`playlist_tracks.position` gaps -> `library::playlists::
 /// move_position` moving the wrong row; a phantom id left in `queue::
 /// Queue`). Every real caller should go through `remove_missing_tracks`
-/// instead — this function is kept as the single-row primitive it's built
-/// on (DRY) and for the tests that pin its own no-op guard in isolation.
+/// instead — this function is kept for the tests that pin its own no-op
+/// guard in isolation. The batch path now shares `remove_tracks_impl` with
+/// the explicit live-row removal API rather than calling this wrapper.
 pub fn remove_missing_track(conn: &Connection, track_id: i64) -> Result<bool, rusqlite::Error> {
     let deleted = conn.execute(
         "DELETE FROM tracks WHERE id = ?1 AND missing = 1",
