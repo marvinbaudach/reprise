@@ -168,7 +168,7 @@ pub const CONTEXT_MENU_REMOVE_FROM_PLAYLIST: &str = "Remove from playlist";
 // missing track, "Retry"/"Dismiss" for an import-error row.
 
 /// Missing-source context menu item: re-runs a scan of the persisted library
-/// root (`library::settings::LIBRARY_ROOT_KEY`) — a reappeared file clears
+/// root (`library::settings::get_library_root`) — a reappeared file clears
 /// `missing` via the scanner's existing restore path.
 pub const CONTEXT_MENU_RESCAN_LIBRARY: &str = "Rescan library";
 /// Missing-source context menu item: deletes the selected row(s) from the
@@ -177,8 +177,8 @@ pub const CONTEXT_MENU_RESCAN_LIBRARY: &str = "Rescan library";
 pub const CONTEXT_MENU_REMOVE_FROM_LIBRARY: &str = "Remove from library";
 
 /// Toast shown when "Rescan library" is invoked but no library folder has
-/// ever been scanned/persisted yet (`library::settings::LIBRARY_ROOT_KEY`
-/// unset) — nothing to rescan.
+/// ever been scanned/persisted yet (`library::settings::get_library_root`
+/// returns `None`) — nothing to rescan.
 pub fn no_library_root_to_rescan_toast() -> String {
     "No library folder to rescan yet — use \"Scan folder…\" first".to_string()
 }

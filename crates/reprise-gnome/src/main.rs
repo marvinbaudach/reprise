@@ -148,9 +148,7 @@ fn main() -> glib::ExitCode {
         // `ui::window::build`'s startup check finds it and arms the watcher
         // on it — the dev hook otherwise has no way to reach that behavior,
         // since it runs before any window (and thus any watcher) exists.
-        if let Err(error) =
-            library::settings::set_setting(&conn, library::settings::LIBRARY_ROOT_KEY, &dir)
-        {
+        if let Err(error) = library::settings::set_library_root(&conn, &dir) {
             tracing::error!(%error, "failed to persist library root for dev scan hook");
         }
     }

@@ -172,7 +172,7 @@ pub(super) fn trigger_rescan_of_library_root(
 
     let root = {
         let conn = conn.borrow();
-        settings::get_setting(&conn, settings::LIBRARY_ROOT_KEY)
+        settings::get_library_root(&conn)
     };
     let root = match root {
         Ok(Some(root)) => PathBuf::from(root),
@@ -304,11 +304,7 @@ fn run_scan(db_path: &std::path::Path, folder: &std::path::Path) -> Result<ScanR
     let mut worker_conn = reprise_core::db::open(Some(db_path))?;
     reprise_core::db::migrate(&worker_conn)?;
     let report = library::scanner::scan_folder(&mut worker_conn, folder)?;
-    if let Err(error) = settings::set_setting(
-        &worker_conn,
-        settings::LIBRARY_ROOT_KEY,
-        &folder.to_string_lossy(),
-    ) {
+    if let Err(error) = settings::set_library_root(&worker_conn, &folder.to_string_lossy()) {
         tracing::error!(%error, "failed to persist library root after scan");
     }
     Ok(report)
