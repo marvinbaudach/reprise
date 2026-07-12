@@ -63,6 +63,7 @@ pub mod track_actions;
 pub mod track_list;
 pub mod track_list_activation;
 pub mod track_list_columns;
+mod track_list_context_keys;
 pub mod track_list_context_menu;
 pub mod track_list_dnd;
 pub mod track_list_dnd_smoke;

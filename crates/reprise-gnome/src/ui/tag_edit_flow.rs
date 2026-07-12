@@ -90,6 +90,7 @@ fn begin(shared: &Rc<Shared>) {
     tag_editor::present(&window, &summary, move |patch| {
         start_apply(&shared, tracks.clone(), patch);
     });
+    tracing::debug!(selected = tags.len(), "tag editor presented");
 }
 
 fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TagPatch) {

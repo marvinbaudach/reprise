@@ -200,7 +200,7 @@ fn current_selection_ids(shared: &Rc<Shared>) -> Vec<i64> {
 /// Building a handful of `gio::MenuItem`s per open is cheap enough that
 /// caching would only add invalidation complexity for no real benefit at
 /// this scale.
-fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
+pub(super) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
     let menu = gio::Menu::new();
 
     let primary = gio::Menu::new();
@@ -364,6 +364,7 @@ pub(super) fn wire_context_menu_actions(column_view: &gtk4::ColumnView, shared: 
     action_group.add_action(&remove_from_library_action);
 
     column_view.insert_action_group(ACTION_GROUP_NAME, Some(&action_group));
+    super::track_list_context_keys::wire(column_view, shared);
 }
 
 /// Opens the row context menu for a secondary click at widget-local `(x,

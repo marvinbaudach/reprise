@@ -59,7 +59,9 @@ Run these first after restarting the current `target/release/reprise`.
 - [x] **Tag editor Enter key:** edit any valid field and press Enter. Expected: Apply
   runs, saves the change, and closes the dialog.
 - [ ] **Tag editor invalid number:** enter an invalid Year or Track value and press
-  Enter. Expected: the dialog stays open and shows the validation error.
+  Enter. Expected: the dialog stays open and shows the validation error. The
+  mapped-X11 release harness passes this exact flow; native GNOME confirmation
+  remains pending.
 
 ## Pending: first run, layout, and language
 
