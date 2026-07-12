@@ -20,6 +20,7 @@
 //!   composition root only (controller construction); everything else goes
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
+pub mod cover_download_worker;
 pub mod cover_loader;
 pub mod dialogs;
 pub mod import_errors_view;

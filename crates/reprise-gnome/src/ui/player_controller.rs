@@ -161,6 +161,7 @@ use gtk4::glib;
 use libadwaita as adw;
 use rusqlite::Connection;
 
+use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::mpris_mirror::{self, mpris_status_from_playback_state};
 use crate::ui::now_playing::NowPlayingView;
@@ -319,6 +320,7 @@ impl PlayerController {
     pub fn new(
         conn: Rc<RefCell<Connection>>,
         mpris_enabled: bool,
+        cover_download: CoverDownloadRuntime,
         app: &adw::Application,
     ) -> Result<Rc<Self>, PlaybackError> {
         let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
@@ -370,7 +372,7 @@ impl PlayerController {
             now_playing: RefCell::new(None),
             volume: Cell::new(DEFAULT_VOLUME),
             mpris_seek_notify,
-            cover_loader: CoverLoader::new(),
+            cover_loader: CoverLoader::new(cover_download),
             bar_cover_generation: Rc::new(Cell::new(0)),
             now_playing_view: NowPlayingView::new(),
             now_playing_cover_generation: Rc::new(Cell::new(0)),
