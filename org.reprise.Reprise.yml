@@ -1,0 +1,31 @@
+app-id: org.reprise.Reprise
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: reprise
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --socket=pulseaudio
+  - --share=network
+  - --own-name=org.mpris.MediaPlayer2.reprise
+
+modules:
+  - name: reprise
+    buildsystem: meson
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/reprise/cargo
+        CARGO_NET_OFFLINE: 'true'
+    config-opts:
+      - -Dprofile=release
+    sources:
+      - type: dir
+        path: .
+      - flatpak/cargo-sources.json
