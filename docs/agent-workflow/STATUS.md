@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Prevent playlist duplicates and improve row-reorder drag feedback
+SINCE:    2026-07-12 22:33 CEST
 ```
 
-_As of 2026-07-12 22:20 CEST: Codex released the lock after repairing playlist interactions found in manual QA._
+_As of 2026-07-12 22:33 CEST: Codex claimed the lock for follow-up playlist drag-and-drop regressions._
 
 ## Current position
 
