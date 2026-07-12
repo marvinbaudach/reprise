@@ -7,12 +7,15 @@
 //! every function `TrackList::new`/`reload` needs is `pub(super)` while the
 //! `Shared` state and reload orchestration stay in `track_list.rs`.
 
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 
+use crate::ui::cover_loader::CoverLoader;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list::{
@@ -20,6 +23,7 @@ use crate::ui::track_list::{
 };
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd;
+use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats;
 use reprise_core::models::Track;
 use reprise_core::view_source::ViewSource;
@@ -181,6 +185,124 @@ pub(super) fn append_column(
 
     column_view.append_column(&column);
     column
+}
+
+/// Builds the leading cover-art column (Task 6): each cell is a
+/// `gtk4::Image`, lazily fed off-thread by the shared `CoverLoader` (Task 4)
+/// instead of rendering a `Track` field synchronously like `append_column`'s
+/// `gtk::Label` cells. `TrackList::new` calls this FIRST, before any other
+/// `append_column`/`append_rating_column`, so the cover lands as the
+/// leftmost column.
+///
+/// ## Per-cell generation guard
+///
+/// `GtkColumnView` recycles cell widgets as rows scroll in and out of view:
+/// the same `gtk4::Image` gets rebound (`connect_bind`) to a succession of
+/// different `Track`s over its lifetime. Cover loading is async
+/// (`CoverLoader::load_into` decodes/thumbnails off the main loop), so a
+/// slow load started for track A can complete after the cell has already
+/// been recycled to show track B — without a guard, that late result would
+/// paint A's cover into B's row. Each cell gets its own generation counter,
+/// bumped on every bind before the load is kicked off; `CoverLoader::
+/// load_into` compares the token it was given against the counter's *current*
+/// value when the async result lands and drops it if they no longer match
+/// (see that function's doc comment).
+///
+/// The counter can't live on the `gtk4::Image` cell itself — this cell has
+/// no interactive state worth a bespoke `gtk::Box` subclass, unlike
+/// `RatingWidget` below — so it's kept in a side table keyed by the cell's
+/// `ListItem` pointer identity (`glib::object::ObjectExt::as_ptr`), inserted
+/// on `connect_setup` and removed on `connect_teardown`. This is the safe
+/// alternative to an unsafe GObject `set_data`/`data` qdata pair; see
+/// `rating.rs`'s doc comment (`## Why a gtk::Box subclass, not a plain Rust
+/// struct`) for why this codebase avoids that pattern elsewhere.
+pub(super) fn append_cover_column(
+    column_view: &gtk4::ColumnView,
+    shared: &Rc<Shared>,
+    loader: &Rc<CoverLoader>,
+) {
+    // Reserved for parity with the other column-builders' signature (and any
+    // future need, e.g. reacting to a library rescan) — cover cells need no
+    // per-row DB access today, unlike `append_rating_column`'s write-back.
+    let _ = shared;
+
+    let generations: Rc<RefCell<HashMap<usize, Rc<Cell<u64>>>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+
+    let factory = gtk4::SignalListItemFactory::new();
+
+    {
+        let generations = generations.clone();
+        factory.connect_setup(move |_, obj| {
+            let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+                tracing::warn!("cover column setup: object is not a ListItem");
+                return;
+            };
+            let image = gtk4::Image::new();
+            image.set_pixel_size(32); // 48px cached texture in a 32pt cell — crisp, compact row
+            CoverLoader::set_placeholder(&image);
+            generations
+                .borrow_mut()
+                .insert(item.as_ptr() as usize, Rc::new(Cell::new(0u64)));
+            item.set_child(Some(&image));
+        });
+    }
+
+    {
+        let generations = generations.clone();
+        let loader = loader.clone();
+        factory.connect_bind(move |_, obj| {
+            let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+                tracing::warn!("cover column bind: object is not a ListItem");
+                return;
+            };
+            let Some(image) = item.child().and_then(|w| w.downcast::<gtk4::Image>().ok()) else {
+                tracing::warn!("cover column bind: list item child is not an Image");
+                return;
+            };
+            let Some(boxed) = item
+                .item()
+                .and_then(|o| o.downcast::<glib::BoxedAnyObject>().ok())
+            else {
+                tracing::warn!("cover column bind: item is not a BoxedAnyObject<Track>");
+                return;
+            };
+            let track = boxed.borrow::<Track>();
+
+            let key = item.as_ptr() as usize;
+            let generation = generations
+                .borrow_mut()
+                .entry(key)
+                .or_insert_with(|| Rc::new(Cell::new(0u64)))
+                .clone();
+            // Bump before kicking off the load: this is the token the async
+            // result must still match when it lands (see the doc comment
+            // above) — a stale-in-flight load for whatever track this cell
+            // previously showed is dropped by `load_into`'s own check.
+            let token = generation.get().wrapping_add(1);
+            generation.set(token);
+            loader.load_into(&image, &track.path, ThumbnailSize::List, token, &generation);
+        });
+    }
+
+    {
+        let generations = generations.clone();
+        factory.connect_teardown(move |_, obj| {
+            let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+                return;
+            };
+            generations.borrow_mut().remove(&(item.as_ptr() as usize));
+        });
+    }
+
+    let column = gtk4::ColumnViewColumn::builder()
+        .title("")
+        .factory(&factory)
+        .resizable(false)
+        .build();
+    column.set_fixed_width(40);
+
+    column_view.append_column(&column);
 }
 
 /// Builds the interactive `Rating` column: each cell is a `RatingWidget`
