@@ -17,7 +17,7 @@ pub(super) fn restore_source(shared: &Rc<Shared>, requested: ViewSource) -> (Vie
         .find(|(_, candidate, _)| candidate == &source)
         .map(|(row, _, title)| (row.clone(), title.clone()));
     let Some((row, title)) = entry else {
-        return (ViewSource::Library, strings::SIDEBAR_MUSIC.into());
+        return (ViewSource::Library, strings::text(strings::SIDEBAR_MUSIC));
     };
     *shared.current_source.borrow_mut() = source.clone();
     shared.listbox.select_row(Some(&row));

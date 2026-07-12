@@ -51,7 +51,7 @@ pub(super) fn prompt_name(
         .close_response(RESPONSE_CANCEL)
         .extra_child(&entry)
         .build();
-    dialog.add_response(RESPONSE_CANCEL, strings::CANCEL);
+    dialog.add_response(RESPONSE_CANCEL, &strings::text(strings::CANCEL));
     dialog.add_response(RESPONSE_CREATE, confirm_label);
     dialog.set_response_appearance(RESPONSE_CREATE, adw::ResponseAppearance::Suggested);
     dialog.set_response_enabled(RESPONSE_CREATE, false);

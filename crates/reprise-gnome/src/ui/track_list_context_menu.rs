@@ -204,15 +204,15 @@ fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
 
     let primary = gio::Menu::new();
     primary.append(
-        Some(strings::CONTEXT_MENU_PLAY),
+        Some(&strings::text(strings::CONTEXT_MENU_PLAY)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_PLAY}")),
     );
     primary.append(
-        Some(strings::CONTEXT_MENU_ADD_TO_QUEUE),
+        Some(&strings::text(strings::CONTEXT_MENU_ADD_TO_QUEUE)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_ADD_TO_QUEUE}")),
     );
     primary.append(
-        Some(strings::EDIT_TAGS),
+        Some(&strings::text(strings::EDIT_TAGS)),
         Some(&format!(
             "{ACTION_GROUP_NAME}.{}",
             tag_edit_flow::ACTION_EDIT_TAGS
@@ -237,18 +237,18 @@ fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
         playlist_submenu.append_item(&item);
     }
     playlist_submenu.append(
-        Some(strings::CONTEXT_MENU_NEW_PLAYLIST),
+        Some(&strings::text(strings::CONTEXT_MENU_NEW_PLAYLIST)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_NEW_PLAYLIST}")),
     );
     menu.append_submenu(
-        Some(strings::CONTEXT_MENU_ADD_TO_PLAYLIST),
+        Some(&strings::text(strings::CONTEXT_MENU_ADD_TO_PLAYLIST)),
         &playlist_submenu,
     );
 
     if matches!(*shared.source.borrow(), ViewSource::Playlist(_)) {
         let remove_section = gio::Menu::new();
         remove_section.append(
-            Some(strings::CONTEXT_MENU_REMOVE_FROM_PLAYLIST),
+            Some(&strings::text(strings::CONTEXT_MENU_REMOVE_FROM_PLAYLIST)),
             Some(&format!(
                 "{ACTION_GROUP_NAME}.{ACTION_REMOVE_FROM_PLAYLIST}"
             )),
@@ -264,7 +264,7 @@ fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
     if matches!(*shared.source.borrow(), ViewSource::Missing) {
         let missing_section = gio::Menu::new();
         missing_section.append(
-            Some(strings::CONTEXT_MENU_RESCAN_LIBRARY),
+            Some(&strings::text(strings::CONTEXT_MENU_RESCAN_LIBRARY)),
             Some(&format!("{ACTION_GROUP_NAME}.{ACTION_RESCAN_LIBRARY}")),
         );
         menu.append_section(None, &missing_section);
@@ -635,9 +635,9 @@ fn show_new_playlist_dialog(shared: &Rc<Shared>, ids: Vec<i64>) {
     let shared = shared.clone();
     dialogs::prompt_name(
         &window,
-        strings::NEW_PLAYLIST_DIALOG_HEADING,
-        strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER,
-        strings::CREATE,
+        &strings::text(strings::NEW_PLAYLIST_DIALOG_HEADING),
+        &strings::text(strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER),
+        &strings::text(strings::CREATE),
         move |name| match track_actions::create_playlist_and_add(&shared.conn, &name, &ids) {
             Ok((playlist_id, inserted)) => {
                 tracing::info!(

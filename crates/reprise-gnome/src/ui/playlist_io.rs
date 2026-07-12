@@ -59,10 +59,10 @@ use rusqlite::Connection;
 
 use reprise_core::library::m3u::{self, M3uExportEntry};
 use reprise_core::library::playlists;
-use reprise_core::models::Track;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
+use super::playlist_io_names::{display_name, playlist_name_from_file};
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
@@ -166,20 +166,6 @@ pub fn import_playlist(
     })
 }
 
-/// Derives the new playlist's name from the `.m3u` file's stem (e.g.
-/// `"Road Trip.m3u"` → `"Road Trip"`), falling back to a generic name when
-/// the stem is missing or blank (an edge case, not the common path — see
-/// `strings::IMPORTED_PLAYLIST_FALLBACK_NAME`'s doc comment).
-fn playlist_name_from_file(file_path: &Path) -> String {
-    file_path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .map(str::trim)
-        .filter(|stem| !stem.is_empty())
-        .unwrap_or(strings::IMPORTED_PLAYLIST_FALLBACK_NAME)
-        .to_string()
-}
-
 /// Resolves one parsed M3U path line to a track id — see the module doc's
 /// `## Path resolution` section for the exact-match-then-canonicalize
 /// strategy. `None` for a path that doesn't match anything either way (a
@@ -250,23 +236,12 @@ pub fn export_playlist(
     Ok(count)
 }
 
-/// `"Artist - Title"`, or just `"Title"` when the track has no artist —
-/// shared by both the real export and the `REPRISE_SMOKE_M3U=export:…` hook
-/// since both call [`export_playlist`] directly.
-fn display_name(track: &Track) -> String {
-    if track.artist.trim().is_empty() {
-        track.title.clone()
-    } else {
-        format!("{} - {}", track.artist, track.title)
-    }
-}
-
 /// Builds the `.m3u`/`.m3u8` `gtk::FileFilter` shared by both the import
 /// (open) and export (save) dialogs — `pub(super)` so `ui::sidebar_export`
 /// can reuse it for the save dialog rather than duplicating the suffix list.
 pub(super) fn m3u_file_filter() -> gtk4::FileFilter {
     let filter = gtk4::FileFilter::new();
-    filter.set_name(Some(strings::M3U_FILE_FILTER_NAME));
+    filter.set_name(Some(&strings::text(strings::M3U_FILE_FILTER_NAME)));
     filter.add_suffix("m3u");
     filter.add_suffix("m3u8");
     filter
@@ -304,7 +279,7 @@ pub fn wire_import_button(
         let filters = gio::ListStore::new::<gtk4::FileFilter>();
         filters.append(&filter);
         let dialog = gtk4::FileDialog::builder()
-            .title(strings::IMPORT_PLAYLIST_DIALOG_TITLE)
+            .title(strings::text(strings::IMPORT_PLAYLIST_DIALOG_TITLE))
             .modal(true)
             .filters(&filters)
             .default_filter(&filter)
@@ -511,6 +486,7 @@ fn find_playlist_id_by_name(conn: &Rc<RefCell<Connection>>, name: &str) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::models::Track;
 
     fn seeded_conn() -> Rc<RefCell<Connection>> {
         let conn = reprise_core::db::open(None).unwrap();
@@ -531,7 +507,10 @@ mod tests {
         // treats as a bare filename with no extension, so its "stem" is the
         // whole ".m3u" string, not a missing one).
         let name = playlist_name_from_file(Path::new("/"));
-        assert_eq!(name, strings::IMPORTED_PLAYLIST_FALLBACK_NAME);
+        assert_eq!(
+            name,
+            strings::text(strings::IMPORTED_PLAYLIST_FALLBACK_NAME)
+        );
     }
 
     #[test]

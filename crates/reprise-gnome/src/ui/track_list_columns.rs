@@ -93,8 +93,8 @@ pub(super) fn empty_state_for(
 pub(super) fn build_status_page() -> adw::StatusPage {
     adw::StatusPage::builder()
         .icon_name(ICON_EMPTY_LIBRARY)
-        .title(strings::EMPTY_LIBRARY_TITLE)
-        .description(strings::EMPTY_LIBRARY_DESCRIPTION)
+        .title(strings::text(strings::EMPTY_LIBRARY_TITLE))
+        .description(strings::text(strings::EMPTY_LIBRARY_DESCRIPTION))
         .vexpand(true)
         .build()
 }
@@ -401,7 +401,7 @@ pub(super) fn append_rating_column(
     });
 
     let column = gtk4::ColumnViewColumn::builder()
-        .title(strings::RATING)
+        .title(strings::text(strings::RATING))
         .factory(&factory)
         .resizable(true)
         .build();
@@ -468,26 +468,32 @@ pub(super) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
         }
         EmptyState::EmptyLibrary => {
             shared.empty_page.set_icon_name(Some(ICON_EMPTY_LIBRARY));
-            shared.empty_page.set_title(strings::EMPTY_LIBRARY_TITLE);
             shared
                 .empty_page
-                .set_description(Some(strings::EMPTY_LIBRARY_DESCRIPTION));
+                .set_title(&strings::text(strings::EMPTY_LIBRARY_TITLE));
+            shared
+                .empty_page
+                .set_description(Some(&strings::text(strings::EMPTY_LIBRARY_DESCRIPTION)));
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
         EmptyState::NoResults => {
             shared.empty_page.set_icon_name(Some(ICON_NO_RESULTS));
-            shared.empty_page.set_title(strings::NO_RESULTS_TITLE);
             shared
                 .empty_page
-                .set_description(Some(strings::NO_RESULTS_DESCRIPTION));
+                .set_title(&strings::text(strings::NO_RESULTS_TITLE));
+            shared
+                .empty_page
+                .set_description(Some(&strings::text(strings::NO_RESULTS_DESCRIPTION)));
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
         EmptyState::NothingHere => {
             shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
-            shared.empty_page.set_title(strings::NOTHING_HERE_TITLE);
             shared
                 .empty_page
-                .set_description(Some(strings::NOTHING_HERE_DESCRIPTION));
+                .set_title(&strings::text(strings::NOTHING_HERE_TITLE));
+            shared
+                .empty_page
+                .set_description(Some(&strings::text(strings::NOTHING_HERE_DESCRIPTION)));
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
     }

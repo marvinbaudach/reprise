@@ -1,2 +1,2 @@
-# gettext catalogs are wired in Release Task 2.
-
+i18n = import('i18n')
+i18n.gettext('reprise', preset: 'glib')

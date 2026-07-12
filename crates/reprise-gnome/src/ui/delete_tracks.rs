@@ -39,11 +39,11 @@ struct DeleteReport {
 pub(super) fn append_menu_section(menu: &gio::Menu, action_group: &str) {
     let section = gio::Menu::new();
     section.append(
-        Some(strings::REMOVE_FROM_LIBRARY),
+        Some(&strings::text(strings::REMOVE_FROM_LIBRARY)),
         Some(&format!("{action_group}.{ACTION_REMOVE}")),
     );
     section.append(
-        Some(strings::MOVE_TO_TRASH),
+        Some(&strings::text(strings::MOVE_TO_TRASH)),
         Some(&format!("{action_group}.{ACTION_TRASH}")),
     );
     menu.append_section(None, &section);
@@ -101,15 +101,15 @@ fn confirm(shared: &Rc<Shared>, mode: DeleteMode) {
     };
     let (heading, body, label, response) = match mode {
         DeleteMode::Remove => (
-            strings::REMOVE_FROM_LIBRARY,
+            &strings::text(strings::REMOVE_FROM_LIBRARY),
             strings::remove_confirmation_body(tracks.len()),
-            strings::DELETE_TRACKS_REMOVE,
+            &strings::text(strings::DELETE_TRACKS_REMOVE),
             RESPONSE_REMOVE,
         ),
         DeleteMode::Trash => (
-            strings::MOVE_TO_TRASH,
+            &strings::text(strings::MOVE_TO_TRASH),
             strings::trash_confirmation_body(tracks.len()),
-            strings::DELETE_TRACKS_TRASH,
+            &strings::text(strings::DELETE_TRACKS_TRASH),
             RESPONSE_TRASH,
         ),
     };
@@ -118,7 +118,10 @@ fn confirm(shared: &Rc<Shared>, mode: DeleteMode) {
         .body(body)
         .close_response(RESPONSE_CANCEL)
         .build();
-    dialog.add_response(RESPONSE_CANCEL, strings::DELETE_TRACKS_CANCEL);
+    dialog.add_response(
+        RESPONSE_CANCEL,
+        &strings::text(strings::DELETE_TRACKS_CANCEL),
+    );
     dialog.add_response(response, label);
     dialog.set_response_appearance(response, adw::ResponseAppearance::Destructive);
     let shared = shared.clone();
@@ -137,13 +140,19 @@ fn choose(shared: &Rc<Shared>) {
         return;
     };
     let dialog = adw::AlertDialog::builder()
-        .heading(strings::DELETE_TRACKS_HEADING)
-        .body(strings::DELETE_TRACKS_CHOICE)
+        .heading(strings::text(strings::DELETE_TRACKS_HEADING))
+        .body(strings::text(strings::DELETE_TRACKS_CHOICE))
         .close_response(RESPONSE_CANCEL)
         .build();
-    dialog.add_response(RESPONSE_CANCEL, strings::DELETE_TRACKS_CANCEL);
-    dialog.add_response(RESPONSE_REMOVE, strings::DELETE_TRACKS_REMOVE);
-    dialog.add_response(RESPONSE_TRASH, strings::DELETE_TRACKS_TRASH);
+    dialog.add_response(
+        RESPONSE_CANCEL,
+        &strings::text(strings::DELETE_TRACKS_CANCEL),
+    );
+    dialog.add_response(
+        RESPONSE_REMOVE,
+        &strings::text(strings::DELETE_TRACKS_REMOVE),
+    );
+    dialog.add_response(RESPONSE_TRASH, &strings::text(strings::DELETE_TRACKS_TRASH));
     dialog.set_response_appearance(RESPONSE_REMOVE, adw::ResponseAppearance::Destructive);
     dialog.set_response_appearance(RESPONSE_TRASH, adw::ResponseAppearance::Destructive);
     let shared = shared.clone();
@@ -160,7 +169,7 @@ fn choose(shared: &Rc<Shared>) {
 fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMode) {
     let db_path = shared.conn.borrow().path().map(PathBuf::from);
     let Some(db_path) = db_path else {
-        show_toast(shared, strings::DELETE_DATABASE_UNAVAILABLE);
+        show_toast(shared, &strings::text(strings::DELETE_DATABASE_UNAVAILABLE));
         return;
     };
     let (sender, receiver) = async_channel::bounded(1);
@@ -174,7 +183,7 @@ fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMo
         });
     if let Err(error) = spawned {
         tracing::warn!(%error, "could not start removal worker");
-        show_toast(shared, strings::DELETE_WORKER_FAILED);
+        show_toast(shared, &strings::text(strings::DELETE_WORKER_FAILED));
         return;
     }
     let shared_weak = Rc::downgrade(shared);
@@ -189,7 +198,10 @@ fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMo
             Ok(report) => finish(&shared, &report, mode),
             Err(error) => {
                 tracing::warn!(%error, "removal worker could not open database");
-                show_toast(&shared, strings::DELETE_DATABASE_UNAVAILABLE);
+                show_toast(
+                    &shared,
+                    &strings::text(strings::DELETE_DATABASE_UNAVAILABLE),
+                );
             }
         }
     });

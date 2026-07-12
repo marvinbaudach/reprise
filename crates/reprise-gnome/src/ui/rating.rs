@@ -161,7 +161,7 @@ impl RatingWidget {
         // any extra box spacing would spread the five stars into reading
         // as separate controls instead of one rating row.
         self.set_spacing(0);
-        self.set_tooltip_text(Some(strings::RATING));
+        self.set_tooltip_text(Some(&strings::text(strings::RATING)));
 
         let stars: Vec<(gtk4::Button, gtk4::Label)> = (1..=STAR_COUNT)
             .map(|star| {

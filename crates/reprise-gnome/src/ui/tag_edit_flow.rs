@@ -101,7 +101,10 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TagPatch
         conn.path().map(PathBuf::from)
     };
     let Some(db_path) = db_path else {
-        show_toast(shared, strings::TAG_EDIT_DATABASE_UNAVAILABLE);
+        show_toast(
+            shared,
+            &strings::text(strings::TAG_EDIT_DATABASE_UNAVAILABLE),
+        );
         return;
     };
     let (sender, receiver) = async_channel::bounded(1);
@@ -116,7 +119,7 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TagPatch
         });
     if let Err(error) = spawned {
         tracing::warn!(%error, "could not start tag-edit worker");
-        show_toast(shared, strings::TAG_EDIT_WORKER_FAILED);
+        show_toast(shared, &strings::text(strings::TAG_EDIT_WORKER_FAILED));
         return;
     }
 
@@ -132,7 +135,10 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TagPatch
             Ok(report) => finish_apply(&shared, &tracks, &report),
             Err(error) => {
                 tracing::warn!(%error, "tag-edit worker could not open database");
-                show_toast(&shared, strings::TAG_EDIT_DATABASE_UNAVAILABLE);
+                show_toast(
+                    &shared,
+                    &strings::text(strings::TAG_EDIT_DATABASE_UNAVAILABLE),
+                );
             }
         }
     });

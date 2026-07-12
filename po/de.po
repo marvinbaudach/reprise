@@ -1,0 +1,448 @@
+# German translations for Reprise.
+# Copyright (C) 2026 Marvin Baudach
+# This file is distributed under the same license as Reprise.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Reprise 0.1.0\n"
+"Report-Msgid-Bugs-To: Marvin Baudach\n"
+"POT-Creation-Date: 2026-07-12 17:37+0200\n"
+"PO-Revision-Date: 2026-07-12 18:10+0200\n"
+"Last-Translator: Marvin Baudach\n"
+"Language-Team: German\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Reprise"
+msgstr "Reprise"
+
+msgid "Welcome to Reprise"
+msgstr "Willkommen bei Reprise"
+
+msgid "Reprise keeps your library local. Music files are changed only when you explicitly edit tags or move tracks to Trash."
+msgstr "Reprise verwaltet Ihre Musiksammlung lokal. Musikdateien werden nur geändert, wenn Sie ausdrücklich Metadaten bearbeiten oder Titel in den Papierkorb verschieben."
+
+msgid "Download missing album covers"
+msgstr "Fehlende Albumcover herunterladen"
+
+msgid "Uses MusicBrainz and Cover Art Archive only when enabled"
+msgstr "Verwendet MusicBrainz und Cover Art Archive nur nach Aktivierung"
+
+msgid "Import Rhythmbox column layout"
+msgstr "Spaltenanordnung aus Rhythmbox importieren"
+
+msgid "Reads the existing layout without changing Rhythmbox settings"
+msgstr "Liest die bestehende Anordnung, ohne Rhythmbox-Einstellungen zu ändern"
+
+msgid "Skip for Now"
+msgstr "Vorerst überspringen"
+
+msgid "Set Up Library"
+msgstr "Musiksammlung einrichten"
+
+msgid "Main menu"
+msgstr "Hauptmenü"
+
+msgid "Rhythmbox column layout imported"
+msgstr "Spaltenanordnung aus Rhythmbox importiert"
+
+msgid "Could not save the imported column layout"
+msgstr "Die importierte Spaltenanordnung konnte nicht gespeichert werden"
+
+#, rust-format
+msgid "Could not import Rhythmbox columns: {error}"
+msgstr "Rhythmbox-Spalten konnten nicht importiert werden: {error}"
+
+msgid "Edit tags…"
+msgstr "Metadaten bearbeiten…"
+
+msgid "Apply"
+msgstr "Anwenden"
+
+msgid "(multiple values)"
+msgstr "(mehrere Werte)"
+
+msgid "Title"
+msgstr "Titel"
+
+msgid "Artist"
+msgstr "Interpret"
+
+msgid "Album"
+msgstr "Album"
+
+msgid "Album artist"
+msgstr "Albuminterpret"
+
+msgid "Year"
+msgstr "Jahr"
+
+msgid "Track number"
+msgstr "Titelnummer"
+
+msgid "Genre"
+msgstr "Genre"
+
+msgid "Year and track number must be positive whole numbers"
+msgstr "Jahr und Titelnummer müssen positive ganze Zahlen sein"
+
+msgid "Could not open the library database for tag editing"
+msgstr "Die Datenbank konnte nicht zum Bearbeiten der Metadaten geöffnet werden"
+
+msgid "Could not start the tag-edit worker"
+msgstr "Die Bearbeitung der Metadaten konnte nicht gestartet werden"
+
+msgid "All genres"
+msgstr "Alle Genres"
+
+msgid "All artists"
+msgstr "Alle Interpreten"
+
+msgid "All albums"
+msgstr "Alle Alben"
+
+msgid "Unknown genre"
+msgstr "Unbekanntes Genre"
+
+msgid "Unknown artist"
+msgstr "Unbekannter Interpret"
+
+msgid "Unknown album"
+msgstr "Unbekanntes Album"
+
+msgid "Remove from library…"
+msgstr "Aus der Musiksammlung entfernen…"
+
+msgid "Move to Trash…"
+msgstr "In den Papierkorb verschieben…"
+
+msgid "Remove Selected Tracks?"
+msgstr "Ausgewählte Titel entfernen?"
+
+msgid "Remove only the library entries, or move the music files to Trash as well."
+msgstr "Nur die Einträge aus der Musiksammlung entfernen oder auch die Musikdateien in den Papierkorb verschieben."
+
+msgid "Cancel"
+msgstr "Abbrechen"
+
+msgid "Remove Only"
+msgstr "Nur entfernen"
+
+msgid "Move to Trash"
+msgstr "In den Papierkorb verschieben"
+
+msgid "Could not open the library database for removal"
+msgstr "Die Datenbank konnte nicht zum Entfernen geöffnet werden"
+
+msgid "Could not start the removal worker"
+msgstr "Das Entfernen konnte nicht gestartet werden"
+
+#, rust-format
+msgid "Remove {count} track from the library? The music file will remain on disk."
+msgid_plural "Remove {count} tracks from the library? The music files will remain on disk."
+msgstr[0] "{count} Titel aus der Musiksammlung entfernen? Die Musikdatei bleibt auf dem Datenträger."
+msgstr[1] "{count} Titel aus der Musiksammlung entfernen? Die Musikdateien bleiben auf dem Datenträger."
+
+#, rust-format
+msgid "Move {count} music file to Trash and remove the library entry?"
+msgid_plural "Move {count} music files to Trash and remove the library entries?"
+msgstr[0] "{count} Musikdatei in den Papierkorb verschieben und den Eintrag aus der Musiksammlung entfernen?"
+msgstr[1] "{count} Musikdateien in den Papierkorb verschieben und die Einträge aus der Musiksammlung entfernen?"
+
+#, rust-format
+msgid "{removed} track moved to Trash"
+msgid_plural "{removed} tracks moved to Trash"
+msgstr[0] "{removed} Titel in den Papierkorb verschoben"
+msgstr[1] "{removed} Titel in den Papierkorb verschoben"
+
+#, rust-format
+msgid "{removed} track removed"
+msgid_plural "{removed} tracks removed"
+msgstr[0] "{removed} Titel entfernt"
+msgstr[1] "{removed} Titel entfernt"
+
+#, rust-format
+msgid "{removed} track moved to Trash; {failed} failed"
+msgid_plural "{removed} tracks moved to Trash; {failed} failed"
+msgstr[0] "{removed} Titel in den Papierkorb verschoben; {failed} fehlgeschlagen"
+msgstr[1] "{removed} Titel in den Papierkorb verschoben; {failed} fehlgeschlagen"
+
+#, rust-format
+msgid "{removed} track removed; {failed} failed"
+msgid_plural "{removed} tracks removed; {failed} failed"
+msgstr[0] "{removed} Titel entfernt; {failed} fehlgeschlagen"
+msgstr[1] "{removed} Titel entfernt; {failed} fehlgeschlagen"
+
+#, rust-format
+msgid "Tags updated for {updated} track"
+msgid_plural "Tags updated for {updated} tracks"
+msgstr[0] "Metadaten für {updated} Titel aktualisiert"
+msgstr[1] "Metadaten für {updated} Titel aktualisiert"
+
+#, rust-format
+msgid "Tags updated for {updated} track; {failed} failed"
+msgid_plural "Tags updated for {updated} tracks; {failed} failed"
+msgstr[0] "Metadaten für {updated} Titel aktualisiert; {failed} fehlgeschlagen"
+msgstr[1] "Metadaten für {updated} Titel aktualisiert; {failed} fehlgeschlagen"
+
+msgid "Search all fields"
+msgstr "Alle Felder durchsuchen"
+
+msgid "Scan folder…"
+msgstr "Ordner einlesen…"
+
+msgid "No music yet"
+msgstr "Noch keine Musik"
+
+msgid "Scan a folder to build your library"
+msgstr "Lesen Sie einen Ordner ein, um Ihre Musiksammlung aufzubauen"
+
+msgid "No results"
+msgstr "Keine Ergebnisse"
+
+msgid "Try a different search"
+msgstr "Versuchen Sie eine andere Suche"
+
+msgid "Nothing here"
+msgstr "Hier ist nichts"
+
+msgid "This view has no tracks right now"
+msgstr "Diese Ansicht enthält derzeit keine Titel"
+
+msgid "Select Music Folder"
+msgstr "Musikordner auswählen"
+
+msgid "Scanning…"
+msgstr "Ordner wird eingelesen…"
+
+msgid "Scan failed: "
+msgstr "Einlesen fehlgeschlagen: "
+
+msgid "track"
+msgstr "Titel"
+
+msgid "tracks"
+msgstr "Titel"
+
+msgid " · "
+msgstr " · "
+
+#, rust-format
+msgid "{filtered} of {total}"
+msgstr "{filtered} von {total}"
+
+msgid "Track"
+msgstr "Nr."
+
+msgid "Length"
+msgstr "Länge"
+
+msgid "Play"
+msgstr "Wiedergabe"
+
+msgid "Pause"
+msgstr "Pause"
+
+msgid "Playback position"
+msgstr "Wiedergabeposition"
+
+msgid "Volume"
+msgstr "Lautstärke"
+
+msgid "Shuffle"
+msgstr "Zufällige Reihenfolge"
+
+msgid "Previous"
+msgstr "Zurück"
+
+msgid "Next"
+msgstr "Weiter"
+
+msgid "Repeat"
+msgstr "Wiederholen"
+
+msgid "Rating"
+msgstr "Bewertung"
+
+#, rust-format
+msgid "Rate {count} star"
+msgid_plural "Rate {count} stars"
+msgstr[0] "Mit {count} Stern bewerten"
+msgstr[1] "Mit {count} Sternen bewerten"
+
+#, rust-format
+msgid "File not found — marked as missing: {title}"
+msgstr "Datei nicht gefunden — als fehlend markiert: {title}"
+
+#, rust-format
+msgid "Could not play {title} — skipping"
+msgstr "{title} konnte nicht wiedergegeben werden — wird übersprungen"
+
+msgid "Playback stopped — too many unplayable tracks"
+msgstr "Wiedergabe angehalten — zu viele nicht abspielbare Titel"
+
+#, rust-format
+msgid "Could not save rating for {title}"
+msgstr "Die Bewertung für {title} konnte nicht gespeichert werden"
+
+msgid "LIBRARY"
+msgstr "MUSIKSAMMLUNG"
+
+msgid "PLAYLISTS"
+msgstr "WIEDERGABELISTEN"
+
+msgid "SMART"
+msgstr "INTELLIGENT"
+
+msgid "Music"
+msgstr "Musik"
+
+msgid "Queue"
+msgstr "Warteschlange"
+
+msgid "New playlist"
+msgstr "Neue Wiedergabeliste"
+
+msgid "Import errors"
+msgstr "Importfehler"
+
+msgid "Missing files"
+msgstr "Fehlende Dateien"
+
+msgid "Toggle sidebar"
+msgstr "Seitenleiste ein-/ausblenden"
+
+msgid "Playlist name"
+msgstr "Name der Wiedergabeliste"
+
+msgid "Create"
+msgstr "Erstellen"
+
+#, rust-format
+msgid "Could not create playlist “{name}”"
+msgstr "Die Wiedergabeliste „{name}“ konnte nicht erstellt werden"
+
+msgid "Add to queue"
+msgstr "Zur Warteschlange hinzufügen"
+
+msgid "Add to playlist"
+msgstr "Zur Wiedergabeliste hinzufügen"
+
+msgid "New playlist…"
+msgstr "Neue Wiedergabeliste…"
+
+msgid "Remove from playlist"
+msgstr "Aus der Wiedergabeliste entfernen"
+
+msgid "Rescan library"
+msgstr "Musiksammlung erneut einlesen"
+
+msgid "No library folder to rescan yet — use “Scan folder…” first"
+msgstr "Noch kein Ordner zum erneuten Einlesen vorhanden — verwenden Sie zuerst „Ordner einlesen…“"
+
+msgid "A scan is already running"
+msgstr "Ein Einlesevorgang läuft bereits"
+
+#, rust-format
+msgid "{count} track removed from library"
+msgid_plural "{count} tracks removed from library"
+msgstr[0] "{count} Titel aus der Musiksammlung entfernt"
+msgstr[1] "{count} Titel aus der Musiksammlung entfernt"
+
+msgid "Could not remove tracks from library"
+msgstr "Titel konnten nicht aus der Musiksammlung entfernt werden"
+
+msgid "Path"
+msgstr "Pfad"
+
+msgid "Reason"
+msgstr "Grund"
+
+msgid "Time"
+msgstr "Zeit"
+
+msgid "Retry"
+msgstr "Erneut versuchen"
+
+msgid "Dismiss"
+msgstr "Schließen"
+
+msgid "Could not retry — see the log for details"
+msgstr "Erneuter Versuch fehlgeschlagen — Einzelheiten finden Sie im Protokoll"
+
+#, rust-format
+msgid "{count} track added to queue"
+msgid_plural "{count} tracks added to queue"
+msgstr[0] "{count} Titel zur Warteschlange hinzugefügt"
+msgstr[1] "{count} Titel zur Warteschlange hinzugefügt"
+
+#, rust-format
+msgid "{count} track added to {playlist}"
+msgid_plural "{count} tracks added to {playlist}"
+msgstr[0] "{count} Titel zu {playlist} hinzugefügt"
+msgstr[1] "{count} Titel zu {playlist} hinzugefügt"
+
+#, rust-format
+msgid "{count} track removed from playlist"
+msgid_plural "{count} tracks removed from playlist"
+msgstr[0] "{count} Titel aus der Wiedergabeliste entfernt"
+msgstr[1] "{count} Titel aus der Wiedergabeliste entfernt"
+
+#, rust-format
+msgid "Could not add tracks to “{name}”"
+msgstr "Titel konnten nicht zu „{name}“ hinzugefügt werden"
+
+msgid "Could not remove tracks from playlist"
+msgstr "Titel konnten nicht aus der Wiedergabeliste entfernt werden"
+
+msgid "Could not remove — reload the playlist and try again"
+msgstr "Entfernen fehlgeschlagen — laden Sie die Wiedergabeliste neu und versuchen Sie es erneut"
+
+#, rust-format
+msgid "{count} track"
+msgid_plural "{count} tracks"
+msgstr[0] "{count} Titel"
+msgstr[1] "{count} Titel"
+
+msgid "Could not reorder playlist"
+msgstr "Die Wiedergabeliste konnte nicht neu angeordnet werden"
+
+msgid "Import playlist…"
+msgstr "Wiedergabeliste importieren…"
+
+msgid "Export playlist…"
+msgstr "Wiedergabeliste exportieren…"
+
+msgid "Import Playlist"
+msgstr "Wiedergabeliste importieren"
+
+msgid "Export Playlist"
+msgstr "Wiedergabeliste exportieren"
+
+msgid "M3U Playlists"
+msgstr "M3U-Wiedergabelisten"
+
+msgid "Imported playlist"
+msgstr "Importierte Wiedergabeliste"
+
+#, rust-format
+msgid "Imported {name}: {matched} of {total} tracks matched"
+msgstr "{name} importiert: {matched} von {total} Titeln zugeordnet"
+
+#, rust-format
+msgid "Imported {name}: 0 of {total} tracks matched — nothing added"
+msgstr "{name} importiert: 0 von {total} Titeln zugeordnet — nichts hinzugefügt"
+
+msgid "Could not import playlist"
+msgstr "Die Wiedergabeliste konnte nicht importiert werden"
+
+#, rust-format
+msgid "Exported {name}"
+msgstr "{name} exportiert"
+
+#, rust-format
+msgid "Could not export “{name}”"
+msgstr "„{name}“ konnte nicht exportiert werden"

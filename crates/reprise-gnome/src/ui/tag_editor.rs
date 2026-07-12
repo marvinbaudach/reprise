@@ -40,7 +40,7 @@ pub(crate) fn number_patch(
 fn string_row(label: &str, value: &MixedValue<String>) -> adw::EntryRow {
     let title = match value {
         MixedValue::Uniform(_) => label.to_string(),
-        MixedValue::Mixed => format!("{label} — {}", strings::MULTIPLE_VALUES),
+        MixedValue::Mixed => format!("{label} — {}", &strings::text(strings::MULTIPLE_VALUES)),
     };
     let row = adw::EntryRow::builder().title(title).build();
     if let MixedValue::Uniform(value) = value {
@@ -51,7 +51,7 @@ fn string_row(label: &str, value: &MixedValue<String>) -> adw::EntryRow {
 
 fn number_row(label: &str, value: &MixedValue<Option<u32>>) -> adw::EntryRow {
     let title = match value {
-        MixedValue::Mixed => format!("{label} — {}", strings::MULTIPLE_VALUES),
+        MixedValue::Mixed => format!("{label} — {}", &strings::text(strings::MULTIPLE_VALUES)),
         MixedValue::Uniform(_) => label.to_string(),
     };
     let row = adw::EntryRow::builder()
@@ -84,13 +84,16 @@ pub fn present(
     summary: &EditableTagSummary,
     on_apply: impl Fn(TagPatch) + 'static,
 ) {
-    let title = string_row(strings::TAG_TITLE, &summary.title);
-    let artist = string_row(strings::TAG_ARTIST, &summary.artist);
-    let album = string_row(strings::TAG_ALBUM, &summary.album);
-    let album_artist = string_row(strings::TAG_ALBUM_ARTIST, &summary.album_artist);
-    let year = number_row(strings::TAG_YEAR, &summary.year);
-    let track_no = number_row(strings::TAG_TRACK_NUMBER, &summary.track_no);
-    let genre = string_row(strings::TAG_GENRE, &summary.genre);
+    let title = string_row(&strings::text(strings::TAG_TITLE), &summary.title);
+    let artist = string_row(&strings::text(strings::TAG_ARTIST), &summary.artist);
+    let album = string_row(&strings::text(strings::TAG_ALBUM), &summary.album);
+    let album_artist = string_row(
+        &strings::text(strings::TAG_ALBUM_ARTIST),
+        &summary.album_artist,
+    );
+    let year = number_row(&strings::text(strings::TAG_YEAR), &summary.year);
+    let track_no = number_row(&strings::text(strings::TAG_TRACK_NUMBER), &summary.track_no);
+    let genre = string_row(&strings::text(strings::TAG_GENRE), &summary.genre);
 
     let group = adw::PreferencesGroup::new();
     for row in [
@@ -106,7 +109,7 @@ pub fn present(
     }
 
     let error_label = gtk4::Label::builder()
-        .label(strings::TAG_NUMBER_ERROR)
+        .label(strings::text(strings::TAG_NUMBER_ERROR))
         .css_classes(["error"])
         .visible(false)
         .wrap(true)
@@ -120,14 +123,17 @@ pub fn present(
     content.append(&group);
     content.append(&error_label);
 
-    let cancel = gtk4::Button::with_label(strings::CANCEL);
-    let apply = gtk4::Button::with_label(strings::APPLY);
+    let cancel = gtk4::Button::with_label(&strings::text(strings::CANCEL));
+    let apply = gtk4::Button::with_label(&strings::text(strings::APPLY));
     apply.add_css_class("suggested-action");
     apply.set_sensitive(false);
     let header = adw::HeaderBar::new();
     header.pack_start(&cancel);
     header.pack_end(&apply);
-    header.set_title_widget(Some(&adw::WindowTitle::new(strings::EDIT_TAGS, "")));
+    header.set_title_widget(Some(&adw::WindowTitle::new(
+        &strings::text(strings::EDIT_TAGS),
+        "",
+    )));
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&content));
