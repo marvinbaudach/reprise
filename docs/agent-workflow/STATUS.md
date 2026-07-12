@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —               # e.g. "GUI-A2 Task 2"
-SINCE:    —               # timestamp when claimed
+OWNER:    codex           # FREE | claude | codex
+TASK:     Finish Reprise  # GUI-B through release
+SINCE:    2026-07-12 15:01 CEST
 ```
 
-_As of 2026-07-12 14:50 CEST: FREE. Codex completed GUI-A2 Tasks 2–7 and stage close-out._
+_As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C, GUI-D, and release._
 
 ## Current position
 
