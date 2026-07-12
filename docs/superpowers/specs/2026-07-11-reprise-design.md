@@ -328,11 +328,17 @@ ohne Neustart.
   Verhalten am Titelende.
 - **Darstellung:** Farbschema Dunkel / Hell / System (`AdwStyleManager`).
 - **Layout** (Mockup 7b): Playerleisten-Position über drei visuelle
-  Vorschau-Karten „Oben / Unten / Schwebend" (Standard: unten; technisch
-  `ToolbarView`-Top-/Bottom-Bar bzw. `GtkOverlay` für schwebend);
-  Seitenleiste anzeigen (an/aus), Statusleiste anzeigen (an/aus);
-  Listendichte Komfortabel / Standard / Kompakt; „Sichtbare Spalten" mit
-  Bearbeiten-Aktion (öffnet dasselbe Spalten-Popover wie am Listenkopf).
+  Vorschau-Karten „Oben / Unten / Schwebend" (technisch `ToolbarView`-Top-/
+  Bottom-Bar bzw. `GtkOverlay` für schwebend). **Standard bleibt „Unten",
+  angedockt** — das ist die GNOME-HIG-konforme, native Variante (wie
+  Amberol/Decibels), und die dichte Spaltenliste verträgt keine
+  überlagernde Leiste, die Zeilen verdeckt. „Schwebend" ist bewusst nur
+  Opt-in und niedrig priorisiert (bräuchte einen halbtransparenten
+  Hintergrund über den Listenzeilen — nahe der abgelehnten Glasoptik);
+  Nutzer-Entscheidung 2026-07-11. Seitenleiste anzeigen (an/aus),
+  Statusleiste anzeigen (an/aus); Listendichte Komfortabel / Standard /
+  Kompakt; „Sichtbare Spalten" mit Bearbeiten-Aktion (öffnet dasselbe
+  Spalten-Popover wie am Listenkopf).
 - **Bibliothek:** Ordner verwalten (hinzufügen/entfernen), Rescan,
   Rhythmbox-Import.
 - **Plugins** (so heißt das Modulsystem im UI): Liste der Module mit
@@ -585,6 +591,13 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
   auf Basis derselben Erweiterungspunkte
 - Alben-Grid-Ansicht: Cover-Wand als zweite Ansicht neben der
   Spaltenliste („Musik als Kunstform", nicht nur Tabelle)
+- **„Now Playing"-Vollansicht** (Nutzer-Idee 2026-07-11, statt schwebender
+  Leiste als GNOME-nativer Blickfang): per Klick auf die Playerleiste öffnet
+  sich eine großflächige Wiedergabe-Ansicht im Amberol-Stil — großes Cover,
+  Titel/Interpret/Album prominent, Seekbar, Transport; nutzt den Platz statt
+  die Liste zu verdecken. Später erweiterbar um Lyrics-Panel und ambienten
+  Farb-Glow aus dem Cover (der frühere Blur-Wunsch, hier HIG-verträglich,
+  weil er eine eigene Ansicht füllt statt über der Liste zu schweben).
 - Import aus Clementine/Strawberry — erweitert die Umsteiger-Zielgruppe
   über Rhythmbox hinaus
 - Regel-Editor für Smart Playlists
