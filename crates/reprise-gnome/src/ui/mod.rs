@@ -26,6 +26,7 @@ pub mod cover_download_worker;
 pub mod cover_loader;
 pub mod delete_tracks;
 pub mod dialogs;
+pub mod first_run;
 pub mod import_errors_view;
 pub mod mpris_mirror;
 pub mod now_playing;

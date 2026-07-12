@@ -14,6 +14,7 @@ use rusqlite::{Connection, OptionalExtension};
 /// watcher. `pub` so both call sites share the exact same literal rather than
 /// risking a typo'd duplicate string.
 pub const LIBRARY_ROOT_KEY: &str = "library_root";
+pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
 /// an error — for a key that has never been written, matching every other
@@ -81,6 +82,14 @@ pub fn get_library_root(conn: &Connection) -> Result<Option<String>, rusqlite::E
 
 pub fn set_library_root(conn: &Connection, root: &str) -> Result<(), rusqlite::Error> {
     set_setting(conn, LIBRARY_ROOT_KEY, root)
+}
+
+pub fn get_onboarding_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    get_bool(conn, ONBOARDING_COMPLETED_KEY, false)
+}
+
+pub fn set_onboarding_completed(conn: &Connection, completed: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, ONBOARDING_COMPLETED_KEY, completed)
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
@@ -212,6 +221,16 @@ mod tests {
             get_library_root(&conn).unwrap(),
             Some("/music/library".to_string())
         );
+    }
+
+    #[test]
+    fn onboarding_completed_typed_accessors_round_trip() {
+        let conn = migrated_conn();
+        assert!(!get_onboarding_completed(&conn).unwrap());
+        set_onboarding_completed(&conn, true).unwrap();
+        assert!(get_onboarding_completed(&conn).unwrap());
+        set_onboarding_completed(&conn, false).unwrap();
+        assert!(!get_onboarding_completed(&conn).unwrap());
     }
 
     #[test]
