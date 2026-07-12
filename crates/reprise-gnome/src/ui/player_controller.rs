@@ -226,6 +226,8 @@ pub struct PlayerController {
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
+    pub(super) current_track_changed:
+        RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
@@ -367,6 +369,7 @@ impl PlayerController {
             queue: RefCell::new(Queue::new()),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
+            current_track_changed: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             mpris_state,
             now_playing: RefCell::new(None),
@@ -528,6 +531,8 @@ impl PlayerController {
                 }
                 match self.player.play(&summary.path) {
                     Ok(()) => {
+                        let queue_position = self.queue.borrow().snapshot().position;
+                        self.notify_current_track_changed(id, queue_position);
                         self.consecutive_skips.set(0);
                         // `reset_to_stopped` disables prev/next, and MPRIS
                         // can resume from Stopped through this arm without

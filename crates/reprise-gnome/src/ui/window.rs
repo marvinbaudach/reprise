@@ -245,6 +245,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             cover_download.clone(),
         ))
     };
+    super::current_track_selection::wire(player.as_ref(), &track_list);
     primary_menu::install(&header, &window, conn, &cover_download, &track_list);
 
     let toolbar_view = adw::ToolbarView::new();

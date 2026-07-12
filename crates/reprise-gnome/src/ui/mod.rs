@@ -24,6 +24,7 @@ pub mod browse_bar;
 pub mod column_layout;
 pub mod cover_download_worker;
 pub mod cover_loader;
+mod current_track_selection;
 pub mod delete_tracks;
 pub mod dialogs;
 pub mod first_run;
