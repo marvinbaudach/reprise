@@ -11,6 +11,7 @@
 //! implementations live in per-OS platform crates (Linux: GStreamer and
 //! MPRIS in `reprise-platform-linux`).
 
+pub mod cover;
 pub mod db;
 pub mod format;
 pub mod library;
