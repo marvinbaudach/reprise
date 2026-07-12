@@ -40,6 +40,49 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusq
     Ok(())
 }
 
+/// Canonical stored forms for boolean settings. `get_bool` additionally
+/// tolerates anything else by falling back to the caller's default (never
+/// crash on a hand-edited database; log and move on — the same tolerance
+/// posture as the scanner's).
+const BOOL_TRUE: &str = "1";
+const BOOL_FALSE: &str = "0";
+
+pub fn get_bool(conn: &Connection, key: &str, default: bool) -> Result<bool, rusqlite::Error> {
+    match get_setting(conn, key)? {
+        None => Ok(default),
+        Some(value) => match value.as_str() {
+            BOOL_TRUE => Ok(true),
+            BOOL_FALSE => Ok(false),
+            other => {
+                tracing::warn!(
+                    key,
+                    value = other,
+                    "unrecognized boolean setting; using default"
+                );
+                Ok(default)
+            }
+        },
+    }
+}
+
+pub fn set_bool(conn: &Connection, key: &str, value: bool) -> Result<(), rusqlite::Error> {
+    set_setting(conn, key, if value { BOOL_TRUE } else { BOOL_FALSE })
+}
+
+/// Typed accessors for `LIBRARY_ROOT_KEY` — the one string setting with
+/// scattered call sites today (main.rs dev hook, scan flow, watcher
+/// startup). Stored as the same string the scanner writes; kept as String
+/// (not PathBuf) because the scanner's path storage is string-based and a
+/// lossy round-trip here could diverge from what `mark_vanished_under_root`
+/// compares against.
+pub fn get_library_root(conn: &Connection) -> Result<Option<String>, rusqlite::Error> {
+    get_setting(conn, LIBRARY_ROOT_KEY)
+}
+
+pub fn set_library_root(conn: &Connection, root: &str) -> Result<(), rusqlite::Error> {
+    set_setting(conn, LIBRARY_ROOT_KEY, root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +137,42 @@ mod tests {
         set_setting(&conn, "b", "2").unwrap();
         assert_eq!(get_setting(&conn, "a").unwrap(), Some("1".to_string()));
         assert_eq!(get_setting(&conn, "b").unwrap(), Some("2".to_string()));
+    }
+
+    #[test]
+    fn get_bool_returns_default_when_never_set() {
+        let conn = migrated_conn();
+        assert!(get_bool(&conn, "module.mpris.enabled", true).unwrap());
+        assert!(!get_bool(&conn, "module.mpris.enabled", false).unwrap());
+    }
+
+    #[test]
+    fn set_bool_round_trips_both_values() {
+        let conn = migrated_conn();
+        set_bool(&conn, "flag", true).unwrap();
+        assert!(get_bool(&conn, "flag", false).unwrap());
+        set_bool(&conn, "flag", false).unwrap();
+        assert!(!get_bool(&conn, "flag", true).unwrap());
+    }
+
+    #[test]
+    fn get_bool_falls_back_to_default_on_unrecognized_value() {
+        // A hand-edited or future-version value must never crash or silently
+        // flip a feature: unrecognized -> default, with a warning logged.
+        let conn = migrated_conn();
+        set_setting(&conn, "flag", "banana").unwrap();
+        assert!(get_bool(&conn, "flag", true).unwrap());
+        assert!(!get_bool(&conn, "flag", false).unwrap());
+    }
+
+    #[test]
+    fn library_root_typed_accessors_round_trip() {
+        let conn = migrated_conn();
+        assert_eq!(get_library_root(&conn).unwrap(), None);
+        set_library_root(&conn, "/music/library").unwrap();
+        assert_eq!(
+            get_library_root(&conn).unwrap(),
+            Some("/music/library".to_string())
+        );
     }
 }

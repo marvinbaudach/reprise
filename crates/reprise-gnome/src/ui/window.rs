@@ -538,7 +538,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     {
         let root = {
             let conn = conn.borrow();
-            settings::get_setting(&conn, settings::LIBRARY_ROOT_KEY)
+            settings::get_library_root(&conn)
         };
         match root {
             Ok(Some(root)) => super::scan_flow::start_or_restart_watcher(
