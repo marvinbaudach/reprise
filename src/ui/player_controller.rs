@@ -149,8 +149,10 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::library::stats;
-use crate::mpris::{self, MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
-use crate::player::{PlaybackState, Player, PlayerError, PlayerEvent};
+use crate::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
+use crate::mpris;
+use crate::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
+use crate::player::Player;
 use crate::queries;
 use crate::queue::Queue;
 use crate::ui::mpris_mirror::mpris_status_from_playback_state;
@@ -173,7 +175,7 @@ pub struct PlayerController {
     /// set_volume` can reach `Player::seek_to`/`set_volume` directly — the
     /// same `pub(super)` sibling-module seam `queue`/`mpris_state` already
     /// use (see the module's `## Queue borrow discipline` doc section).
-    pub(super) player: Player,
+    pub(super) player: Box<dyn PlaybackBackend>,
     /// `pub(super)` (Stage 3 Task 10) so `mpris_mirror.rs`'s `mpris_set_
     /// shuffle`/`mpris_set_loop`/`mpris_set_volume` can reach `PlayerBar`'s
     /// `set_shuffle_indicator`/`set_repeat_indicator`/`set_volume_indicator`
@@ -262,7 +264,7 @@ impl PlayerController {
     /// unavailable (no playbin, bad `REPRISE_AUDIO_SINK` override, …) — the
     /// caller decides how to degrade (see `window::build`: library browsing
     /// keeps working without a bar).
-    pub fn new(conn: Rc<RefCell<Connection>>) -> Result<Rc<Self>, PlayerError> {
+    pub fn new(conn: Rc<RefCell<Connection>>) -> Result<Rc<Self>, PlaybackError> {
         let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
 
         let player = Player::new(Box::new(move |event| {
@@ -280,10 +282,13 @@ impl PlayerController {
         // the fields it feeds), not in `window::build`, since nothing
         // outside this controller needs either handle — see the module's
         // `## MPRIS` doc section.
-        let (mpris_state, mpris_receiver, mpris_seek_notify) = mpris::start();
+        let handles = mpris::start(crate::APP_ID);
+        let mpris_state = handles.shared_state;
+        let mpris_receiver = handles.commands;
+        let mpris_seek_notify = handles.seek_notify;
 
         let controller = Rc::new(Self {
-            player,
+            player: Box::new(player),
             bar: PlayerBar::new(),
             conn,
             current_track: Cell::new(None),

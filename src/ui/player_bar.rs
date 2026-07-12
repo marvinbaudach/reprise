@@ -69,7 +69,7 @@ use gtk4::pango;
 use gtk4::prelude::*;
 
 use crate::format::format_duration;
-use crate::player::PlaybackState;
+use crate::playback::PlaybackState;
 use crate::queue::Repeat;
 use crate::ui::strings;
 
