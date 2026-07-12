@@ -123,6 +123,23 @@ pub fn remove_missing_tracks(
     conn: &mut Connection,
     ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    remove_tracks_impl(conn, ids, true)
+}
+
+/// Explicit, DATABASE-ONLY removal for live or missing tracks. This never
+/// touches a media file. Like [`remove_missing_tracks`], it deletes and
+/// compacts every affected playlist in one transaction and returns the
+/// unique ids actually removed in first-input order. The UI must separately
+/// purge these exact ids from its playback queue.
+pub fn remove_tracks(conn: &mut Connection, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
+    remove_tracks_impl(conn, ids, false)
+}
+
+fn remove_tracks_impl(
+    conn: &mut Connection,
+    ids: &[i64],
+    missing_only: bool,
+) -> Result<Vec<i64>, rusqlite::Error> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -136,7 +153,15 @@ pub fn remove_missing_tracks(
             .collect::<Result<_, _>>()?;
         drop(stmt);
 
-        if !remove_missing_track(&tx, id)? {
+        let deleted = if missing_only {
+            tx.execute(
+                "DELETE FROM tracks WHERE id = ?1 AND missing = 1",
+                rusqlite::params![id],
+            )?
+        } else {
+            tx.execute("DELETE FROM tracks WHERE id = ?1", rusqlite::params![id])?
+        };
+        if deleted == 0 {
             continue;
         }
         removed.push(id);

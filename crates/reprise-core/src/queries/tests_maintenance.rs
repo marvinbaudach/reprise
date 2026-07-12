@@ -277,6 +277,57 @@ fn remove_missing_tracks_empty_slice_is_a_no_op() {
     assert_eq!(count, 2);
 }
 
+#[test]
+fn remove_tracks_deletes_live_rows_deduplicates_input_and_compacts_playlists() {
+    let mut conn = seeded_conn_with_tracks(5);
+    let playlist_id = playlists::create(&conn, "General remove").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
+
+    let removed = remove_tracks(&mut conn, &[2, 3, 2, 999]).unwrap();
+
+    assert_eq!(removed, vec![2, 3]);
+    let rows: Vec<(i64, i64)> = conn
+        .prepare(
+            "SELECT track_id, position FROM playlist_tracks \
+             WHERE playlist_id=?1 ORDER BY position",
+        )
+        .unwrap()
+        .query_map([playlist_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(rows, vec![(1, 0), (4, 1), (5, 2)]);
+}
+
+#[test]
+fn remove_tracks_rolls_back_all_rows_and_playlist_changes_on_delete_failure() {
+    let mut conn = seeded_conn_with_tracks(4);
+    let playlist_id = playlists::create(&conn, "Rollback").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4]).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER fail_track_three BEFORE DELETE ON tracks
+         WHEN OLD.id = 3 BEGIN SELECT RAISE(ABORT, 'injected delete failure'); END;",
+    )
+    .unwrap();
+
+    assert!(remove_tracks(&mut conn, &[2, 3]).is_err());
+    let track_count: i64 = conn
+        .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(track_count, 4);
+    let rows: Vec<(i64, i64)> = conn
+        .prepare(
+            "SELECT track_id, position FROM playlist_tracks \
+             WHERE playlist_id=?1 ORDER BY position",
+        )
+        .unwrap()
+        .query_map([playlist_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(rows, vec![(1, 0), (2, 1), (3, 2), (4, 3)]);
+}
+
 /// Property-style regression test (the reviewer's ask): runs a scripted
 /// sequence of add/remove/move/hard-delete operations against a real
 /// playlist and a real `queue::Queue`, asserting the gapless-positions
