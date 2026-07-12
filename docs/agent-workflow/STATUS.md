@@ -21,25 +21,25 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Synchronize sidebar selection after M3U import
-SINCE:    2026-07-12 22:45 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 22:45 CEST: Codex claimed the lock for M3U import sidebar selection synchronization._
+_As of 2026-07-12 22:49 CEST: Codex released the lock after synchronizing M3U import navigation._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Playlist drag-and-drop follow-up** — interactive additions skip existing and
-  repeated tracks atomically, text-cell gestures fill the full allocation, and eligible playlist or
-  queue reorder targets show an accent insertion line (`acafd7d`). M3U/backend duplicate-preserving
-  semantics remain available. Final gates: 477 passed, 3 ignored; core PURE; audit has only the
-  accepted `paste` advisory. Real pointer/marker confirmation remains manual.
+- **Last completed:** **M3U import sidebar selection** — populated imports now select the new sidebar
+  row and let its normal callback synchronize highlight, track list, title, and adaptive navigation
+  (`83083b1`). An isolated 2-of-3 import reached the new playlist through that single path. Final
+  gates: 479 passed, 3 ignored; core PURE; audit has only the accepted `paste` advisory. Real visual
+  confirmation remains manual.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `acafd7d`; this coordination-board update follows it.
+- **Feature HEAD:** `83083b1`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
