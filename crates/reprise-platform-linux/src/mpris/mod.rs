@@ -30,8 +30,8 @@
 //! futures via `zbus::block_on`, not a runtime this module (or the rest of
 //! the app) has to integrate with; the `tokio` feature, the thing the task's
 //! "no tokio" constraint actually rules out, is off by default and stays
-//! off. A second, dedicated thread (spawned in [`run`]) exists purely to
-//! relay the `Seeked` signal promptly — see [`run`]'s doc comment.
+//! off. A second, dedicated thread (spawned in `run`) exists purely to
+//! relay the `Seeked` signal promptly — see `run`'s doc comment.
 //!
 //! ## Shared state: `Arc<Mutex<state::MprisState>>`, poison-recovered like `player.rs`
 //!
@@ -148,7 +148,7 @@ const FIXED_RATE: f64 = 1.0;
 /// method behind every seek in the app, whatever originated it — see its
 /// doc comment) sends the just-seeked position in µs into it after every
 /// successful seek, and this module's dedicated relay thread (spawned in
-/// [`run`]) drains it to emit the `Seeked` signal — see [`run`]'s doc
+/// `run`) drains it to emit the `Seeked` signal — see `run`'s doc
 /// comment for why that's a separate thread from the `PropertiesChanged`
 /// poll loop.
 pub fn start(desktop_entry: &'static str) -> MediaIntegrationHandles {
@@ -683,8 +683,8 @@ impl MprisPlayer {
     }
 
     /// Emitted after every successful seek — app-internal (the bar's seek
-    /// scale) and MPRIS-initiated alike — by [`emit_seeked`], called from
-    /// [`run`]'s dedicated relay thread. `position` is µs, per spec. See
+    /// scale) and MPRIS-initiated alike — by `emit_seeked`, called from
+    /// `run`'s dedicated relay thread. `position` is µs, per spec. See
     /// the module's `## PropertiesChanged` doc section and `state::
     /// MprisState`'s doc comment for why this signal (not a `Position`
     /// property-change notification) is how clients learn of position

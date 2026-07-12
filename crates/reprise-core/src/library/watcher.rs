@@ -14,10 +14,10 @@
 //! rename-into-place for many editors/downloaders). Reacting to each one
 //! individually would run a storm of redundant scans. Instead, every
 //! observed event resets a "last event at" timestamp on the watcher thread;
-//! the thread wakes on a short poll interval ([`POLL_INTERVAL`]) and runs
-//! exactly one reconcile the moment [`DEBOUNCE`] has elapsed since the last
+//! the thread wakes on a short poll interval (`POLL_INTERVAL`) and runs
+//! exactly one reconcile the moment `DEBOUNCE` has elapsed since the last
 //! event, then goes back to waiting for the next batch. The pure decision
-//! ("has it been long enough?") is [`should_trigger_after`], factored out so
+//! ("has it been long enough?") is `should_trigger_after`, factored out so
 //! it's unit-testable without a live filesystem/thread.
 //!
 //! ## Reconcile order: scan THEN mark-vanished, never the reverse

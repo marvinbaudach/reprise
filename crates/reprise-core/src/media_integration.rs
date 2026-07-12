@@ -90,8 +90,8 @@ impl MprisPlaybackStatus {
 
 /// Milliseconds — the app's unit everywhere outside this module — to
 /// microseconds, MPRIS's unit for `Position` and `mpris:length`. Clamped at
-/// 0 first: both callers ([`MprisPlayer`](super::MprisPlayer)'s `position`
-/// property and `build_metadata`'s `mpris:length`) only ever convert values
+/// 0 first: both Linux-backend callers (`MprisPlayer::position` and
+/// `build_metadata`'s `mpris:length`) only ever convert values
 /// that are never legitimately negative, and `saturating_mul` alone would
 /// still produce a valid-looking (if wrong) negative microsecond value for
 /// negative input.
@@ -209,7 +209,7 @@ pub fn can_seek(state: &MprisState) -> bool {
 }
 
 /// Whether the `Metadata` dict-valued property needs re-emitting: any field
-/// that feeds [`build_metadata`] changed.
+/// that feeds the Linux backend's `build_metadata` changed.
 pub fn metadata_differs(a: &MprisState, b: &MprisState) -> bool {
     a.track_id != b.track_id
         || a.title != b.title
