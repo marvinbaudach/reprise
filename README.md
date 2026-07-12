@@ -3,8 +3,8 @@
 A native GTK4/libadwaita music player for GNOME — a spiritual successor to
 Rhythmbox.
 
-Reprise is in early development (currently stage 3 of the MVP plan). What
-works today:
+Reprise has completed its planned application feature stages and is now in
+release-readiness work. What works today:
 
 - GTK4/libadwaita window with navigation sidebar (library, playlists,
   smart playlists, problem sources with badges), search, and status line.
@@ -18,10 +18,10 @@ works today:
 - Clickable star ratings and play-count tracking (50%-listened threshold).
 - MPRIS integration: GNOME quick settings, lock screen, media keys.
 - A bottom player bar: play/pause, seek, time display, and volume.
-
-In development (stage 3): manual and smart playlists in the UI, context
-menu with multi-select, drag & drop, M3U import/export, folder watching,
-keyboard shortcuts.
+- Manual and smart playlists, multi-select context actions, drag and drop,
+  M3U import/export, folder watching, keyboard shortcuts, album covers,
+  batch tag editing, safe removal/trash, browse facets, first-run setup, and
+  validated no-autoplay session restore.
 
 ## Relation to Rhythmbox
 
@@ -75,6 +75,14 @@ user-facing features:
 cargo build
 cargo run
 cargo test
+```
+
+For an installable release build:
+
+```sh
+meson setup _build --prefix=/usr
+meson compile -C _build
+meson install -C _build
 ```
 
 ## License

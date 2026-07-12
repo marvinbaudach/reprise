@@ -1,0 +1,8 @@
+option(
+  'profile',
+  type: 'combo',
+  choices: ['release', 'debug'],
+  value: 'release',
+  description: 'Cargo build profile used for the installed binary',
+)
+
