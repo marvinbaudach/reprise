@@ -2,9 +2,11 @@
 //! explicit state so a multi-selection can never clobber per-track values.
 
 use std::path::Path;
+use std::path::PathBuf;
 
 use lofty::prelude::*;
 use lofty::tag::{ItemKey, Tag};
+use rusqlite::Connection;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MixedValue<T> {
@@ -187,6 +189,81 @@ pub fn apply_patch_to_file(path: &Path, patch: &TagPatch) -> Result<(), TagEditE
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagWriteFailure {
+    pub id: i64,
+    pub path: PathBuf,
+    pub error: String,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct TagBatchReport {
+    pub updated_ids: Vec<i64>,
+    pub failures: Vec<TagWriteFailure>,
+}
+
+pub fn apply_patch_batch(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+    patch: &TagPatch,
+) -> TagBatchReport {
+    let mut report = TagBatchReport::default();
+    if patch.is_empty() {
+        return report;
+    }
+
+    for (id, path) in tracks {
+        if let Err(error) = apply_patch_to_file(path, patch) {
+            report.failures.push(TagWriteFailure {
+                id: *id,
+                path: path.clone(),
+                error: error.to_string(),
+            });
+            continue;
+        }
+
+        // Scanner mtimes are stored at whole-second precision. A tag write
+        // followed immediately by a targeted scan can therefore look
+        // unchanged; invalidate only this row first so reconciliation is
+        // guaranteed. If scanning fails, -1 intentionally causes the next
+        // watcher/manual scan to retry instead of preserving stale DB tags.
+        match conn.execute("UPDATE tracks SET file_mtime=-1 WHERE id=?1", [id]) {
+            Ok(1) => {}
+            Ok(_) => {
+                report.failures.push(TagWriteFailure {
+                    id: *id,
+                    path: path.clone(),
+                    error: "track row disappeared before tag reconciliation".into(),
+                });
+                continue;
+            }
+            Err(error) => {
+                report.failures.push(TagWriteFailure {
+                    id: *id,
+                    path: path.clone(),
+                    error: format!("could not prepare tag reconciliation: {error}"),
+                });
+                continue;
+            }
+        }
+
+        match crate::library::scanner::scan_folder(conn, path) {
+            Ok(scan) if scan.errors == 0 => report.updated_ids.push(*id),
+            Ok(scan) => report.failures.push(TagWriteFailure {
+                id: *id,
+                path: path.clone(),
+                error: format!("tag reconciliation reported {} error(s)", scan.errors),
+            }),
+            Err(error) => report.failures.push(TagWriteFailure {
+                id: *id,
+                path: path.clone(),
+                error: format!("tag reconciliation failed: {error}"),
+            }),
+        }
+    }
+    report
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,5 +398,45 @@ mod tests {
         let before = std::fs::read(&path).unwrap();
         apply_patch_to_file(&path, &TagPatch::default()).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+
+    #[test]
+    fn batch_continues_after_failure_and_reconciles_db_without_losing_stats() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = fixture_copy(dir.path(), "batch.flac");
+        seed_full_tag(&path);
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let path_text = path.to_string_lossy().to_string();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        conn.execute("UPDATE tracks SET rating=4, play_count=9 WHERE id=?1", [id])
+            .unwrap();
+
+        let missing = dir.path().join("missing.flac");
+        let report = apply_patch_batch(
+            &mut conn,
+            &[(id, path.clone()), (999, missing)],
+            &TagPatch {
+                title: Some("Batch title".into()),
+                ..TagPatch::default()
+            },
+        );
+
+        assert_eq!(report.updated_ids, vec![id]);
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].id, 999);
+        let row: (String, i32, i64) = conn
+            .query_row(
+                "SELECT title, rating, play_count FROM tracks WHERE id=?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, ("Batch title".into(), 4, 9));
     }
 }
