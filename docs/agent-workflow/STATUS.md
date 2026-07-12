@@ -35,8 +35,8 @@ _As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C
   session restore without autoplay, through `6d318c6` plus review fix `93622ee`; whole-branch
   review READY. Final gates: 458 passed, 1 ignored; core PURE; isolated skip/setup smokes and
   exact two-start session E2E passed. Human wizard/portal/geometry/media-key checks remain.
-- **➡️ NEXT:** Release design/spec/plan — Flatpak/Flathub readiness, gettext with German first,
-  desktop entry, icons, AppStream metadata, and sandbox portal hardening.
+- **Current plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
+- **➡️ NEXT:** Release Task 1 — Meson install layer and GNOME identity assets.
 - **Feature HEAD:** `93622ee`. Codex retains the continuous-work lock. Working tree clean.
 
 ## Done so far (compact)
