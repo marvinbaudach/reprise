@@ -2,8 +2,11 @@
 /// shuffle, and repeat modes. Uses Fisher-Yates shuffle via fastrand for determinism.
 use tracing::warn;
 
+mod snapshot;
+pub use snapshot::{QueueSnapshot, QueueSnapshotError};
+
 /// Repeat mode for the queue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Repeat {
     #[default]
     Off,
