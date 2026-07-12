@@ -21,25 +21,24 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Make Enter apply valid tag edits
-SINCE:    2026-07-12 22:58 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 22:58 CEST: Codex claimed the lock for tag-editor Enter-key behavior._
+_As of 2026-07-12 23:00 CEST: Codex released the lock after fixing tag-editor Enter submission._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **M3U import sidebar selection** — populated imports now select the new sidebar
-  row and let its normal callback synchronize highlight, track list, title, and adaptive navigation
-  (`83083b1`). An isolated 2-of-3 import reached the new playlist through that single path. Final
-  gates: 479 passed, 3 ignored; core PURE; audit has only the accepted `paste` advisory. Real visual
-  confirmation remains manual.
+- **Last completed:** **Tag-editor Enter submission** — all seven entry rows activate the dialog's
+  Apply default widget on Enter while dirty-state sensitivity and numeric validation remain intact
+  (`9111a0c`). The targeted real-display regression passed. Final gates: 479 passed, 4 ignored; core
+  PURE; audit has only the accepted `paste` advisory. Real keyboard confirmation remains manual.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `83083b1`; this coordination-board update follows it.
+- **Feature HEAD:** `9111a0c`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
