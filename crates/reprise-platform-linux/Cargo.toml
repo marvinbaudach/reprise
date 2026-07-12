@@ -19,6 +19,9 @@ gstreamer = "0.25"
 zbus = "5"
 async-channel = "2.5.0"
 tracing = "0.1"
+# Host trash implementation used outside Flatpak. Sandboxed deletion is
+# routed through the XDG Trash portal in `src/trash.rs` instead.
+trash = "5"
 
 [lints]
 workspace = true

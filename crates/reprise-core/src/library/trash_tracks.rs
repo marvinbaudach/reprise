@@ -1,5 +1,5 @@
-//! Explicit move-to-trash workflow. Production uses the desktop trash;
-//! tests inject a scratch-only action and never touch the real trash.
+//! Platform-independent move-to-trash reconciliation. The caller injects
+//! its platform trash action; tests inject scratch-only actions.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -98,12 +98,6 @@ where
         }
     }
     report
-}
-
-pub fn trash_tracks(conn: &mut Connection, tracks: &[(i64, PathBuf)]) -> TrashReport {
-    trash_tracks_with(conn, tracks, |path| {
-        trash::delete(path).map_err(|error| error.to_string())
-    })
 }
 
 #[cfg(test)]
