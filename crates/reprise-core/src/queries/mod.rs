@@ -92,7 +92,7 @@ mod playlist;
 mod queue;
 mod smart;
 
-pub use browse::BrowseFilter;
+pub use browse::{query_browse_values, BrowseFacet, BrowseFilter, BrowseValue};
 pub use clauses::build_track_ids_query;
 // `build_track_query`'s only current caller is this module's own test suite
 // (`tests::query_builder_whitelists_and_sorts` et al.) — re-exported `pub`
