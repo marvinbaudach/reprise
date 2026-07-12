@@ -63,12 +63,14 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use rusqlite::Connection;
 
+use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
 use crate::ui::strings;
 use crate::ui::toasts;
 use crate::ui::track_list_activation::{current_queue_ids, wire_activate};
 use crate::ui::track_list_columns::{
-    append_column, append_rating_column, apply_empty_state, build_status_page, empty_state_for,
+    append_column, append_cover_column, append_rating_column, apply_empty_state, build_status_page,
+    empty_state_for,
 };
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd_smoke;
@@ -391,6 +393,17 @@ impl TrackList {
                     ),
                 });
         }
+
+        // Task 6: the leading, leftmost column — appended before every text
+        // column below (order of `append_column`/`append_rating_column`
+        // calls is on-screen column order). `CoverLoader` is constructed
+        // here rather than threaded in from `window.rs`: nothing outside
+        // this list needs the loader instance, unlike the shared one
+        // `player_controller.rs` owns for the bar/Now-Playing cover (Task 5)
+        // — two independent `CoverLoader`s, each with its own small texture
+        // cache, one per widget family that shows covers.
+        let cover_loader = CoverLoader::new();
+        append_cover_column(&column_view, &shared, &cover_loader);
 
         let title_column = append_column(
             &column_view,
