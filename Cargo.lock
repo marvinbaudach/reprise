@@ -1329,15 +1329,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "reprise"
+name = "reprise-core"
 version = "0.1.0"
 dependencies = [
  "async-channel",
  "dirs",
  "fastrand",
- "gstreamer",
- "gtk4",
- "libadwaita",
  "lofty",
  "notify",
  "rusqlite",
@@ -1346,8 +1343,33 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tracing",
- "tracing-subscriber",
  "walkdir",
+]
+
+[[package]]
+name = "reprise-gnome"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "gtk4",
+ "libadwaita",
+ "reprise-core",
+ "reprise-platform-linux",
+ "rusqlite",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "reprise-platform-linux"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "gstreamer",
+ "reprise-core",
+ "tracing",
  "zbus",
 ]
 
