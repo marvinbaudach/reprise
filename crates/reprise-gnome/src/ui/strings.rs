@@ -9,6 +9,13 @@
 pub const APP_NAME: &str = "Reprise";
 pub const MAIN_MENU: &str = "Main menu";
 pub const DOWNLOAD_MISSING_COVERS: &str = "Download missing album covers";
+pub const IMPORT_RHYTHMBOX_COLUMNS: &str = "Import Rhythmbox column layout";
+pub const RHYTHMBOX_COLUMNS_IMPORTED: &str = "Rhythmbox column layout imported";
+pub const RHYTHMBOX_COLUMNS_IMPORT_SAVE_FAILED: &str = "Could not save the imported column layout";
+
+pub fn rhythmbox_columns_import_failed(error: &str) -> String {
+    format!("Could not import Rhythmbox columns: {error}")
+}
 pub const EDIT_TAGS: &str = "Edit tags…";
 pub const APPLY: &str = "Apply";
 pub const MULTIPLE_VALUES: &str = "(multiple values)";

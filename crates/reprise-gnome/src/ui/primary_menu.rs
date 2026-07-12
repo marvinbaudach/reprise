@@ -13,20 +13,28 @@ use rusqlite::Connection;
 
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::strings;
+use crate::ui::track_list::TrackList;
 
 const ACTION_DOWNLOAD_MISSING_COVERS: &str = "download-missing-covers";
+const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
 const SMOKE_COVER_DOWNLOAD_ENV_VAR: &str = "REPRISE_SMOKE_COVER_DOWNLOAD";
+const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
 
 pub(super) fn install(
     header: &adw::HeaderBar,
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
     runtime: &CoverDownloadRuntime,
+    track_list: &Rc<TrackList>,
 ) {
     let menu = gio::Menu::new();
     menu.append(
         Some(strings::DOWNLOAD_MISSING_COVERS),
         Some("win.download-missing-covers"),
+    );
+    menu.append(
+        Some(strings::IMPORT_RHYTHMBOX_COLUMNS),
+        Some("win.import-rhythmbox-columns"),
     );
     let menu_button = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
@@ -65,6 +73,19 @@ pub(super) fn install(
     }
     window.add_action(&toggle);
     arm_smoke_toggle(&toggle);
+
+    let import = gio::SimpleAction::new(ACTION_IMPORT_RHYTHMBOX_COLUMNS, None);
+    {
+        let track_list_weak = Rc::downgrade(track_list);
+        import.connect_activate(move |_, _| {
+            let Some(track_list) = track_list_weak.upgrade() else {
+                return;
+            };
+            handle_rhythmbox_import(&track_list, None);
+        });
+    }
+    window.add_action(&import);
+    arm_smoke_rhythmbox_import(track_list);
 }
 
 fn arm_smoke_toggle(toggle: &gio::SimpleAction) {
@@ -79,5 +100,46 @@ fn arm_smoke_toggle(toggle: &gio::SimpleAction) {
     glib::idle_add_local_once(move || {
         toggle.change_state(&true.to_variant());
         tracing::info!("smoke: cover_download toggled on");
+    });
+}
+
+fn handle_rhythmbox_import(track_list: &TrackList, override_tokens: Option<Vec<String>>) {
+    let tokens = match override_tokens {
+        Some(tokens) => tokens,
+        None => match crate::ui::column_layout::read_rhythmbox_visible_columns() {
+            Ok(tokens) => tokens,
+            Err(error) => {
+                tracing::warn!(%error, "could not read Rhythmbox visible columns");
+                track_list.toast(&strings::rhythmbox_columns_import_failed(
+                    &error.to_string(),
+                ));
+                return;
+            }
+        },
+    };
+    let layout = crate::ui::column_layout::import_rhythmbox_tokens(&tokens);
+    if let Err(error) = track_list.apply_column_layout(&layout) {
+        tracing::warn!(%error, "could not persist imported Rhythmbox column layout");
+        track_list.toast(strings::RHYTHMBOX_COLUMNS_IMPORT_SAVE_FAILED);
+        return;
+    }
+    tracing::info!(
+        layout = %crate::ui::column_layout::serialize_layout(&layout),
+        "Rhythmbox column layout imported"
+    );
+    track_list.toast(strings::RHYTHMBOX_COLUMNS_IMPORTED);
+}
+
+fn arm_smoke_rhythmbox_import(track_list: &Rc<TrackList>) {
+    let Ok(value) = std::env::var(SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR) else {
+        return;
+    };
+    let tokens = value.split(',').map(str::to_string).collect();
+    let track_list_weak = Rc::downgrade(track_list);
+    glib::idle_add_local_once(move || {
+        let Some(track_list) = track_list_weak.upgrade() else {
+            return;
+        };
+        handle_rhythmbox_import(&track_list, Some(tokens));
     });
 }

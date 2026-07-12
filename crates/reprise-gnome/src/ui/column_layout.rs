@@ -3,6 +3,10 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use gtk4::gio;
+use gtk4::gio::prelude::*;
+use thiserror::Error;
+
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
@@ -58,7 +62,7 @@ impl Default for ColumnLayout {
 }
 
 impl ColumnId {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Cover => "cover",
             Self::Title => "title",
@@ -82,6 +86,20 @@ impl ColumnId {
             "genre" => Some(Self::Genre),
             "year" => Some(Self::Year),
             "duration" => Some(Self::Duration),
+            "rating" => Some(Self::Rating),
+            _ => None,
+        }
+    }
+
+    pub fn from_sort_field(field: &str) -> Option<Self> {
+        match field {
+            "title" => Some(Self::Title),
+            "track_no" => Some(Self::TrackNumber),
+            "artist" => Some(Self::Artist),
+            "album" => Some(Self::Album),
+            "genre" => Some(Self::Genre),
+            "year" => Some(Self::Year),
+            "duration_ms" => Some(Self::Duration),
             "rating" => Some(Self::Rating),
             _ => None,
         }
@@ -111,6 +129,57 @@ pub fn parse_layout(value: &str) -> Option<ColumnLayout> {
     let order = parse_ids(order)?;
     let visible = parse_ids(visible)?.into_iter().collect();
     Some(normalize(order, visible))
+}
+
+pub fn import_rhythmbox_tokens(tokens: &[String]) -> ColumnLayout {
+    let mut order = Vec::new();
+    let mut visible = HashSet::new();
+    for token in tokens {
+        let id = match token.as_str() {
+            "track-number" => ColumnId::TrackNumber,
+            "artist" => ColumnId::Artist,
+            "album" => ColumnId::Album,
+            "genre" => ColumnId::Genre,
+            "duration" => ColumnId::Duration,
+            "date" => ColumnId::Year,
+            "rating" => ColumnId::Rating,
+            _ => continue,
+        };
+        if visible.insert(id) {
+            order.push(id);
+        }
+    }
+    normalize(order, visible)
+}
+
+const RHYTHMBOX_SCHEMA: &str = "org.gnome.rhythmbox.sources";
+const RHYTHMBOX_VISIBLE_COLUMNS_KEY: &str = "visible-columns";
+
+#[derive(Debug, Error)]
+pub enum ImportError {
+    #[error("the system GSettings schema source is unavailable")]
+    SchemaSourceUnavailable,
+    #[error("Rhythmbox GSettings schema is not installed")]
+    SchemaMissing,
+    #[error("Rhythmbox visible-columns setting is unavailable")]
+    KeyMissing,
+}
+
+pub fn read_rhythmbox_visible_columns() -> Result<Vec<String>, ImportError> {
+    let source =
+        gio::SettingsSchemaSource::default().ok_or(ImportError::SchemaSourceUnavailable)?;
+    let schema = source
+        .lookup(RHYTHMBOX_SCHEMA, true)
+        .ok_or(ImportError::SchemaMissing)?;
+    if !schema.has_key(RHYTHMBOX_VISIBLE_COLUMNS_KEY) {
+        return Err(ImportError::KeyMissing);
+    }
+    let settings = gio::Settings::new_full(&schema, gio::SettingsBackend::NONE, None);
+    Ok(settings
+        .strv(RHYTHMBOX_VISIBLE_COLUMNS_KEY)
+        .iter()
+        .map(ToString::to_string)
+        .collect())
 }
 
 fn parse_ids(value: &str) -> Option<Vec<ColumnId>> {
@@ -166,6 +235,10 @@ impl ColumnRegistry {
                 self.view.append_column(column);
             }
         }
+    }
+
+    pub fn column(&self, id: ColumnId) -> Option<&gtk4::ColumnViewColumn> {
+        self.columns.get(&id)
     }
 }
 
@@ -317,5 +390,51 @@ mod tests {
     fn corrupted_layout_can_fall_back_to_default() {
         let loaded = parse_layout("not a layout").unwrap_or_default();
         assert_eq!(loaded, ColumnLayout::default());
+    }
+
+    #[test]
+    fn rhythmbox_mapping_preserves_supported_order_and_ignores_unknown() {
+        let tokens =
+            ["rating", "duration", "album", "artist", "date", "post-time"].map(str::to_string);
+        let layout = import_rhythmbox_tokens(&tokens);
+        assert_eq!(
+            layout.order[..7],
+            [
+                ColumnId::Cover,
+                ColumnId::Title,
+                ColumnId::Rating,
+                ColumnId::Duration,
+                ColumnId::Album,
+                ColumnId::Artist,
+                ColumnId::Year,
+            ]
+        );
+        assert_eq!(layout.visible.len(), 7);
+    }
+
+    #[test]
+    fn rhythmbox_mapping_stably_deduplicates_tokens() {
+        let tokens = ["artist", "album", "artist", "genre"].map(str::to_string);
+        let layout = import_rhythmbox_tokens(&tokens);
+        assert_eq!(
+            layout.order[..5],
+            [
+                ColumnId::Cover,
+                ColumnId::Title,
+                ColumnId::Artist,
+                ColumnId::Album,
+                ColumnId::Genre,
+            ]
+        );
+    }
+
+    #[test]
+    fn rhythmbox_empty_list_still_keeps_cover_and_title() {
+        let layout = import_rhythmbox_tokens(&[]);
+        assert_eq!(layout.order[..2], [ColumnId::Cover, ColumnId::Title]);
+        assert_eq!(
+            layout.visible,
+            HashSet::from([ColumnId::Cover, ColumnId::Title])
+        );
     }
 }
