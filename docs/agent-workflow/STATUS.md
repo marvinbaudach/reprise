@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Synchronize sidebar selection after M3U import
+SINCE:    2026-07-12 22:45 CEST
 ```
 
-_As of 2026-07-12 22:41 CEST: Codex released the lock after refining playlist drag-and-drop._
+_As of 2026-07-12 22:45 CEST: Codex claimed the lock for M3U import sidebar selection synchronization._
 
 ## Current position
 
