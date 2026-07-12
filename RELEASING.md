@@ -44,6 +44,20 @@ do
 done
 ```
 
+Before the final manual GNOME pass, run the mapped-window pointer regression
+against the release binary:
+
+```sh
+cargo build --release
+PTR_E2E_PROFILE=release scripts/ptr-e2e/run.sh
+```
+
+This separate harness uses copied fixtures, a temporary XDG profile, private
+D-Bus/Xvfb, and a fake audio sink. It injects a real rating click and Space
+play/pause keypresses, verifies nonblank screenshots, and rejects GTK/GLib
+criticals, Rust panics, and `RefCell` borrow failures. It does not replace the
+native-Wayland, audible-audio, media-key, or portal checks below.
+
 ## Build artifacts
 
 Create a clean optimized install tree without writing to `/usr`:

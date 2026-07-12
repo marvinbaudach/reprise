@@ -66,8 +66,8 @@ disk except `PTR_E2E_OUT_DIR`.
      action, not just that `PlayerController::toggle_pause()` works when
      called directly.
 5. Takes a final screenshot and checks it isn't blank/solid-color (pixel
-   standard deviation above a threshold), as a basic sanity check that
-   something actually rendered.
+   standard deviation above a threshold), then rejects any application log
+   containing GTK/GLib criticals, a Rust panic, or a `RefCell` borrow failure.
 
 ## Known limits
 
