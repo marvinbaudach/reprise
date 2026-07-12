@@ -40,6 +40,10 @@ fn apply_selection(
     }
 }
 
+fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
+    filter.clone()
+}
+
 pub struct BrowseBar {
     root: gtk4::Box,
     genre: gtk4::DropDown,
@@ -96,6 +100,12 @@ impl BrowseBar {
 
     pub fn filter(&self) -> BrowseFilter {
         self.filter.borrow().clone()
+    }
+
+    pub(super) fn restore_filter(&self, filter: &BrowseFilter) {
+        let filter = restored_filter(filter);
+        *self.filter.borrow_mut() = filter;
+        self.refresh();
     }
 
     pub fn set_on_changed(&self, callback: impl Fn(BrowseFilter) + 'static) {
@@ -362,5 +372,15 @@ mod tests {
                 album: None,
             }
         );
+    }
+
+    #[test]
+    fn restored_filter_preserves_empty_unknown_values() {
+        let filter = BrowseFilter {
+            genre: Some(String::new()),
+            artist: Some(String::new()),
+            album: Some(String::new()),
+        };
+        assert_eq!(restored_filter(&filter), filter);
     }
 }

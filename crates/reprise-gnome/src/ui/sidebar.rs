@@ -94,7 +94,7 @@ type OnSelect = Rc<dyn Fn(ViewSource, String)>;
 /// actually needs are `pub(super)` individually below.
 pub(super) struct Shared {
     pub(super) conn: Rc<RefCell<Connection>>,
-    listbox: gtk4::ListBox,
+    pub(super) listbox: gtk4::ListBox,
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
     /// provider`) to a closure over the `PlayerController`.
@@ -102,11 +102,11 @@ pub(super) struct Shared {
     /// Which source is logically selected right now — kept in sync by the
     /// `row-selected` handler and used by a routine `rebuild` (`force_select
     /// = None`) to re-select the same source's (rebuilt) row afterwards.
-    current_source: RefCell<ViewSource>,
+    pub(super) current_source: RefCell<ViewSource>,
     /// Every row built by the most recent `rebuild`, for row-identity lookup
     /// (see the module doc's `## Row identity` section). Rebuilt from
     /// scratch on every `rebuild` call.
-    rows: RefCell<Vec<RowEntry>>,
+    pub(super) rows: RefCell<Vec<RowEntry>>,
     /// The "New playlist" action row, so `wire_row_activated` can tell it
     /// apart from a normal navigation row (identity compare) — it's
     /// `selectable(false)` so it never appears in `rows`/`row-selected`, only
@@ -314,6 +314,10 @@ impl Sidebar {
     pub fn refresh(&self, reason: &str) {
         rebuild(&self.shared, None, reason);
     }
+
+    pub(super) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
+        crate::ui::sidebar_session::restore_source(&self.shared, requested)
+    }
 }
 
 /// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
@@ -501,7 +505,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
 /// (see the `resolve_select_source_tests` module at the end of this file —
 /// grouped there, not right below this function, per `clippy::items_after_
 /// test_module`).
-fn resolve_select_source(requested: ViewSource, row_exists: bool) -> (ViewSource, bool) {
+pub(super) fn resolve_select_source(requested: ViewSource, row_exists: bool) -> (ViewSource, bool) {
     if row_exists {
         (requested, false)
     } else {
@@ -511,7 +515,7 @@ fn resolve_select_source(requested: ViewSource, row_exists: bool) -> (ViewSource
 
 /// Looks up the row currently backing `source` in `shared.rows` (rebuilt on
 /// every `rebuild` call, so this only ever searches the *current* row set).
-fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4::ListBoxRow> {
+pub(super) fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4::ListBoxRow> {
     shared
         .rows
         .borrow()
@@ -765,5 +769,17 @@ mod resolve_select_source_tests {
         let (source, fell_back) = resolve_select_source(ViewSource::Smart(7), false);
         assert_eq!(source, ViewSource::Library);
         assert!(fell_back);
+    }
+
+    #[test]
+    fn restored_source_reuses_the_vanished_source_fallback() {
+        assert_eq!(
+            resolve_select_source(ViewSource::Playlist(99), false).0,
+            ViewSource::Library
+        );
+        assert_eq!(
+            resolve_select_source(ViewSource::Queue, true).0,
+            ViewSource::Queue
+        );
     }
 }

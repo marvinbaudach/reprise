@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
+use crate::ui::column_layout::ColumnId;
 use crate::ui::track_list::{reload, Shared};
 use reprise_core::view_source::ViewSource;
 
@@ -27,6 +28,19 @@ impl Default for SortState {
             field: "artist".to_string(),
             dir: "asc".to_string(),
         }
+    }
+}
+
+pub(super) fn restored_sort(field: &str, dir: &str) -> SortState {
+    if ColumnId::from_sort_field(field).is_none() {
+        return SortState {
+            field: "title".into(),
+            dir: "asc".into(),
+        };
+    }
+    SortState {
+        field: field.into(),
+        dir: if dir == "desc" { "desc" } else { "asc" }.into(),
     }
 }
 
@@ -55,6 +69,9 @@ pub(super) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &Rc<Share
 }
 
 fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
+    if shared.restoring_view.get() {
+        return;
+    }
     let Some(column) = sorter.primary_sort_column() else {
         return;
     };
@@ -277,6 +294,22 @@ mod resolve_sort_on_switch_tests {
         assert_eq!(
             resolve_sort_on_switch(&header_click_sort(), &ViewSource::Queue),
             header_click_sort()
+        );
+    }
+}
+
+#[cfg(test)]
+mod restored_sort_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_restored_sort_falls_back_to_title_ascending() {
+        assert_eq!(
+            restored_sort("drop table", "sideways"),
+            SortState {
+                field: "title".into(),
+                dir: "asc".into(),
+            }
         );
     }
 }
