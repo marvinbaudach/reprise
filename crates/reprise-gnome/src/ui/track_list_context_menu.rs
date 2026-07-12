@@ -51,6 +51,7 @@ use gtk4::prelude::*;
 
 use crate::ui::delete_tracks;
 use crate::ui::dialogs;
+use crate::ui::popover_lifecycle;
 use crate::ui::strings;
 use crate::ui::tag_edit_flow;
 use crate::ui::track_actions;
@@ -396,7 +397,7 @@ fn show_context_menu(
     // The popover parents itself to `column_view` above; unparent it once
     // closed so repeated right-clicks don't accumulate stale popovers as
     // children of the view.
-    popover.connect_closed(gtk4::prelude::WidgetExt::unparent);
+    popover_lifecycle::unparent_after_actions(popover.upcast_ref());
 
     popover.popup();
 }

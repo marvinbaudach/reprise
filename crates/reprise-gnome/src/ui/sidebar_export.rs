@@ -18,6 +18,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 
 use crate::ui::playlist_io;
+use crate::ui::popover_lifecycle;
 use crate::ui::sidebar::{show_toast, Shared};
 use crate::ui::strings;
 
@@ -91,7 +92,7 @@ fn show_context_menu(
     // Unparent once closed, same as `ui::track_list_context_menu::show_
     // context_menu`, so repeated right-clicks don't accumulate stale
     // popovers as children of the row.
-    popover.connect_closed(gtk4::prelude::WidgetExt::unparent);
+    popover_lifecycle::unparent_after_actions(popover.upcast_ref());
 
     popover.popup();
 }
