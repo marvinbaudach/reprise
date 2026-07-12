@@ -146,11 +146,6 @@ pub(super) fn append_column(
         let label = gtk4::Label::new(None);
         track_list_row_interaction::expand_to_cell(&label);
         label.set_xalign(xalign);
-        label.set_halign(if right_align {
-            gtk4::Align::End
-        } else {
-            gtk4::Align::Start
-        });
         if right_align {
             label.add_css_class("numeric");
         }

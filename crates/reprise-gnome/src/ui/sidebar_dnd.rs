@@ -31,7 +31,11 @@ use gtk4::prelude::*;
 use crate::ui::sidebar::{rebuild, show_toast, Shared};
 use crate::ui::strings;
 use crate::ui::track_list_dnd;
-use reprise_core::library::playlists;
+use reprise_core::library::playlist_membership;
+
+fn drop_added_rows(inserted: u32) -> bool {
+    inserted > 0
+}
 
 /// Attaches a `gtk::DropTarget` to a playlist row (Stage 3 Task 6's DoD half:
 /// "playlists fillable via drag and drop"): accepts the same `String`
@@ -91,10 +95,17 @@ pub(super) fn handle_playlist_drop(
 
     let result = {
         let mut conn = shared.conn.borrow_mut();
-        playlists::add_tracks(&mut conn, playlist_id, ids)
+        playlist_membership::add_unique_tracks(&mut conn, playlist_id, ids)
     };
     match result {
         Ok(inserted) => {
+            if !drop_added_rows(inserted) {
+                tracing::info!(
+                    playlist_id,
+                    "sidebar playlist drop skipped: every track is already present"
+                );
+                return false;
+            }
             tracing::info!(
                 playlist_id,
                 inserted,
@@ -119,5 +130,16 @@ pub(super) fn handle_playlist_drop(
             );
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::drop_added_rows;
+
+    #[test]
+    fn duplicate_only_drop_reports_no_change() {
+        assert!(!drop_added_rows(0));
+        assert!(drop_added_rows(1));
     }
 }

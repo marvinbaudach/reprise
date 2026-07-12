@@ -1,4 +1,5 @@
 pub mod m3u;
+pub mod playlist_membership;
 pub mod playlists;
 pub mod scanner;
 pub mod session;
