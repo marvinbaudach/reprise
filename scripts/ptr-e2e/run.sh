@@ -366,9 +366,39 @@ screenshot "02-after-star-click"
 # button inside the ColumnView cell.
 assert_log_contains_since "$MARKER" "rating changed" "star click delivered a rating change (src/ui/track_list.rs on_rating_changed)"
 
-# --- Flow 2: Space toggles play/pause when the track list has focus ---------
+# --- Flow 2: keyboard opens the selected row's context menu -----------------
 
-log_step "flow 2: Space toggles play/pause…"
+log_step "flow 2: Shift+F10 opens the track context menu…"
+click_at "$ROW0_TITLE_CELL_X" "$ROW0_TITLE_CELL_Y"
+MARKER=$(log_marker)
+key "shift+F10"
+sleep 0.3
+assert_log_contains_since "$MARKER" "track context menu opened from keyboard" "Shift+F10 opened the selected track's context menu"
+screenshot "03-keyboard-context-menu"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/03-keyboard-context-menu.png"
+MARKER=$(log_marker)
+key "Down"
+key "Down"
+key "Return"
+sleep 0.4
+assert_log_contains_since "$MARKER" "tag editor presented" "keyboard context-menu navigation opened Edit tags"
+screenshot "04-keyboard-tag-editor"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/04-keyboard-tag-editor.png"
+click_at 800 466
+key "ctrl+a"
+type_text "0"
+MARKER=$(log_marker)
+key "Return"
+sleep 0.3
+assert_log_contains_since "$MARKER" "tag editor rejected an invalid year or track number" "invalid Year plus Enter was rejected without applying"
+screenshot "05-invalid-year-rejected"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/05-invalid-year-rejected.png"
+key "Escape"
+sleep 0.2
+
+# --- Flow 3: Space toggles play/pause when the track list has focus ---------
+
+log_step "flow 3: Space toggles play/pause…"
 # Double-click a *different* row (row 1's Title cell) to both focus the
 # track list (search entry must NOT have focus, or Space would type a literal
 # space instead — see src/ui/shortcuts.rs's `space_should_toggle`) and start
@@ -401,12 +431,12 @@ assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Spac
 
 # --- Final screenshot ---------------------------------------------------------
 
-screenshot "03-final"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/03-final.png"
+screenshot "06-final"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/06-final.png"
 assert_log_absent \
   'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowMutError' \
   'GTK/GLib critical, panic, or RefCell borrow failure'
-log_step "final screenshot: $PTR_E2E_OUT_DIR/03-final.png"
+log_step "final screenshot: $PTR_E2E_OUT_DIR/06-final.png"
 log_step "app log will be preserved at: $PTR_E2E_OUT_DIR/app.log (copied by cleanup())"
 
 if [ "$FAILURES" -ne 0 ]; then

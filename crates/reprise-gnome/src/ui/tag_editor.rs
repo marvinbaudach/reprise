@@ -191,6 +191,7 @@ pub fn present(
                 year.add_css_class("error");
                 track_no.add_css_class("error");
                 error_label.set_visible(true);
+                tracing::debug!("tag editor rejected an invalid year or track number");
                 return;
             };
             let patch = TagPatch {
