@@ -79,6 +79,13 @@ fn wire_dirty(
     });
 }
 
+fn enable_enter_submit(dialog: &adw::Dialog, apply: &gtk4::Button, rows: &[&adw::EntryRow]) {
+    dialog.set_default_widget(Some(apply));
+    for row in rows {
+        row.set_activates_default(true);
+    }
+}
+
 pub fn present(
     parent: &adw::ApplicationWindow,
     summary: &EditableTagSummary,
@@ -142,6 +149,19 @@ pub fn present(
         .content_width(520)
         .content_height(590)
         .build();
+    enable_enter_submit(
+        &dialog,
+        &apply,
+        &[
+            &title,
+            &artist,
+            &album,
+            &album_artist,
+            &year,
+            &track_no,
+            &genre,
+        ],
+    );
 
     let dirty: Vec<Rc<Cell<bool>>> = (0..7).map(|_| Rc::new(Cell::new(false))).collect();
     for (row, flag) in [
@@ -210,5 +230,23 @@ mod tests {
         assert_eq!(number_patch(true, " 42 "), Ok(Some(Some(42))));
         assert!(number_patch(true, "forty-two").is_err());
         assert!(number_patch(true, "0").is_err());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn enter_activates_the_apply_button_from_every_entry_row() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let dialog = adw::Dialog::new();
+        let apply = gtk4::Button::with_label("Apply");
+        let first = adw::EntryRow::new();
+        let second = adw::EntryRow::new();
+
+        enable_enter_submit(&dialog, &apply, &[&first, &second]);
+
+        assert!(first.activates_default());
+        assert!(second.activates_default());
+        assert_eq!(dialog.default_widget(), Some(apply.upcast()));
     }
 }
