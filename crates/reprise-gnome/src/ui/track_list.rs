@@ -54,7 +54,7 @@
 //! `ColumnViewColumn::id()`, and uses to re-run the model's query via
 //! `TrackListModel::set_query`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -156,7 +156,7 @@ pub(super) struct Shared {
     /// the right descendant on its own — see that method's doc comment for
     /// why the Escape shortcut (`ui::shortcuts`) needs a precise handle
     /// rather than "whatever's focusable in the current stack page."
-    column_view: gtk4::ColumnView,
+    pub(super) column_view: gtk4::ColumnView,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
@@ -173,6 +173,7 @@ pub(super) struct Shared {
     /// third stack page — see that function's doc comment.
     pub(super) empty_page: adw::StatusPage,
     pub(super) sort: RefCell<SortState>,
+    pub(super) restoring_view: Cell<bool>,
     pub(super) filter: RefCell<String>,
     /// Which of the six sources (Stage 3 Task 3) the list is currently
     /// showing — defaults to `ViewSource::Library`. Set via `TrackList::
@@ -305,9 +306,9 @@ pub(super) struct Shared {
 /// Handle to the built track list widget. Owns the shared, reference-counted
 /// state that the sort-header and search-debounce callbacks close over.
 pub struct TrackList {
-    shared: Rc<Shared>,
+    pub(super) shared: Rc<Shared>,
     root: gtk4::Box,
-    column_registry: ColumnRegistry,
+    pub(super) column_registry: ColumnRegistry,
 }
 
 impl TrackList {
@@ -380,6 +381,7 @@ impl TrackList {
             stack,
             empty_page,
             sort: RefCell::new(SortState::default()),
+            restoring_view: Cell::new(false),
             filter: RefCell::new(String::new()),
             source: RefCell::new(ViewSource::default()),
             queue_ids_provider: Box::new(queue_ids_provider),

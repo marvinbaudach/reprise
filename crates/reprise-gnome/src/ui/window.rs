@@ -44,11 +44,6 @@ use super::strings;
 use super::track_list::{OnActivate, TrackList};
 use reprise_core::view_source::ViewSource;
 
-/// Debounce delay between the last keystroke in the search entry and the
-/// track-list reload it triggers, so fast typing doesn't fire a query per
-/// keystroke.
-const SEARCH_DEBOUNCE_MS: u32 = 200;
-
 const DEFAULT_WIDTH: i32 = 1280;
 const DEFAULT_HEIGHT: i32 = 800;
 const MIN_WIDTH: i32 = 900;
@@ -541,7 +536,19 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
 
     window.set_content(Some(&split_view));
 
-    wire_search(&search_entry, track_list.clone());
+    let search_restore_guard = super::view_session::new_search_restore_guard();
+    super::view_session::wire_search(
+        &search_entry,
+        track_list.clone(),
+        search_restore_guard.clone(),
+    );
+    super::view_session::arm_smoke(
+        &search_entry,
+        &track_list,
+        &sidebar,
+        &window_title,
+        &search_restore_guard,
+    );
     // Stage 3 Task 9: Space/Ctrl+F/Escape. Wired here, right after `wire_
     // search` — `search_entry` and `track_list` are both fully built and
     // wired to each other by this point, and `player`/`window`/`app` all
@@ -764,35 +771,4 @@ fn wire_sidebar_toggle(sidebar_toggle: &gtk4::ToggleButton, split_view: &adw::Na
             sidebar_toggle.set_active(false);
         });
     }
-}
-
-/// Wires the header's `SearchEntry` to `track_list`: every `search-changed`
-/// emission (GTK already coalesces pure text-composition events for us, but
-/// not typing speed) restarts a 200 ms debounce timer, canceling any timer
-/// still pending, before reloading the track list with the current text as
-/// the filter. `track_list` is moved in and lives for as long as the timer
-/// closure — the window itself owns no other reference to it beyond
-/// `wire_scan_button`'s copy (both hold an `Rc`), so this is also what keeps
-/// it alive for the lifetime of the widget tree.
-fn wire_search(search_entry: &gtk4::SearchEntry, track_list: Rc<TrackList>) {
-    let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
-
-    search_entry.connect_search_changed(move |entry| {
-        if let Some(previous) = pending.borrow_mut().take() {
-            previous.remove();
-        }
-        let text = entry.text().to_string();
-        let track_list = track_list.clone();
-        let pending_for_timeout = pending.clone();
-        let source_id = glib::timeout_add_local(
-            std::time::Duration::from_millis(u64::from(SEARCH_DEBOUNCE_MS)),
-            move || {
-                track_list.set_filter(&text);
-                // The timer fired: nothing left to cancel next time.
-                pending_for_timeout.borrow_mut().take();
-                glib::ControlFlow::Break
-            },
-        );
-        *pending.borrow_mut() = Some(source_id);
-    });
 }

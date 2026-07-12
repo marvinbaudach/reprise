@@ -1,0 +1,233 @@
+//! Batched track-view restoration with one final query reload.
+
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+use std::time::Duration;
+
+use gtk4::glib;
+use gtk4::prelude::*;
+use libadwaita as adw;
+use reprise_core::library::session::{SessionSource, SessionState};
+use reprise_core::queries::BrowseFilter;
+use reprise_core::view_source::ViewSource;
+
+use crate::ui::column_layout::{ColumnId, ColumnRegistry};
+use crate::ui::sidebar::Sidebar;
+use crate::ui::track_list::{reload, TrackList};
+use crate::ui::track_list_sort::{restored_sort, SortState};
+
+const SMOKE_ENV: &str = "REPRISE_SMOKE_VIEW_SESSION";
+const SEARCH_DEBOUNCE_MS: u64 = 200;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TrackViewSnapshot {
+    pub(super) source: ViewSource,
+    pub(super) search: String,
+    pub(super) browse: BrowseFilter,
+    pub(super) sort: SortState,
+}
+
+pub(super) type SearchRestoreGuard = Rc<Cell<bool>>;
+
+pub(super) fn new_search_restore_guard() -> SearchRestoreGuard {
+    Rc::new(Cell::new(false))
+}
+
+pub(super) fn restore(
+    search_entry: &gtk4::SearchEntry,
+    track_list: &TrackList,
+    sidebar: &Sidebar,
+    window_title: &adw::WindowTitle,
+    search_guard: &SearchRestoreGuard,
+    state: &SessionState,
+) {
+    search_guard.set(true);
+    search_entry.set_text(&state.search);
+    prepare_track_view(
+        track_list,
+        &state.search,
+        &state.browse,
+        &state.sort_field,
+        &state.sort_dir,
+    );
+    let (source, title) = sidebar.restore_source(to_view_source(&state.source));
+    window_title.set_title(&title);
+    finish_track_source(track_list, &source);
+    search_guard.set(false);
+}
+
+pub(super) fn snapshot(track_list: &TrackList) -> TrackViewSnapshot {
+    TrackViewSnapshot {
+        source: track_list.shared.source.borrow().clone(),
+        search: track_list.shared.filter.borrow().clone(),
+        browse: track_list.shared.browse_filter.borrow().clone(),
+        sort: track_list.shared.sort.borrow().clone(),
+    }
+}
+
+pub(super) fn wire_search(
+    search_entry: &gtk4::SearchEntry,
+    track_list: Rc<TrackList>,
+    restoring: SearchRestoreGuard,
+) {
+    let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    search_entry.connect_search_changed(move |entry| {
+        if restoring.get() {
+            return;
+        }
+        let current_filter = track_list.shared.filter.borrow().clone();
+        if current_filter == entry.text() {
+            return;
+        }
+        if let Some(previous) = pending.borrow_mut().take() {
+            previous.remove();
+        }
+        let text = entry.text().to_string();
+        let track_list = track_list.clone();
+        let pending_for_timeout = pending.clone();
+        let source_id =
+            glib::timeout_add_local(Duration::from_millis(SEARCH_DEBOUNCE_MS), move || {
+                track_list.set_filter(&text);
+                pending_for_timeout.borrow_mut().take();
+                glib::ControlFlow::Break
+            });
+        *pending.borrow_mut() = Some(source_id);
+    });
+}
+
+fn prepare_track_view(
+    track_list: &TrackList,
+    search: &str,
+    browse: &BrowseFilter,
+    sort_field: &str,
+    sort_dir: &str,
+) {
+    let shared = &track_list.shared;
+    shared.restoring_view.set(true);
+    *shared.filter.borrow_mut() = search.to_string();
+    *shared.browse_filter.borrow_mut() = browse.clone();
+    shared.browse_bar.restore_filter(browse);
+
+    let sort = visible_restored_sort(&track_list.column_registry, sort_field, sort_dir);
+    *shared.sort.borrow_mut() = sort.clone();
+    let id = ColumnId::from_sort_field(&sort.field).unwrap_or(ColumnId::Title);
+    if let Some(column) = track_list.column_registry.column(id) {
+        let order = if sort.dir == "desc" {
+            gtk4::SortType::Descending
+        } else {
+            gtk4::SortType::Ascending
+        };
+        shared.column_view.sort_by_column(Some(column), order);
+    }
+    shared.restoring_view.set(false);
+}
+
+fn visible_restored_sort(registry: &ColumnRegistry, field: &str, dir: &str) -> SortState {
+    let sort = restored_sort(field, dir);
+    let id = ColumnId::from_sort_field(&sort.field).unwrap_or(ColumnId::Title);
+    if registry.is_visible(id) {
+        sort
+    } else {
+        restored_sort("title", "asc")
+    }
+}
+
+fn finish_track_source(track_list: &TrackList, source: &ViewSource) {
+    *track_list.shared.source.borrow_mut() = source.clone();
+    track_list
+        .shared
+        .browse_bar
+        .set_library_visible(matches!(source, ViewSource::Library));
+    reload(&track_list.shared);
+}
+
+pub(super) fn arm_smoke(
+    search_entry: &gtk4::SearchEntry,
+    track_list: &Rc<TrackList>,
+    sidebar: &Rc<Sidebar>,
+    window_title: &adw::WindowTitle,
+    search_guard: &SearchRestoreGuard,
+) {
+    let Ok(value) = std::env::var(SMOKE_ENV) else {
+        return;
+    };
+    let Some(state) = parse_smoke_state(&value) else {
+        tracing::warn!(value, "invalid view-session smoke fixture");
+        return;
+    };
+    let search_entry = search_entry.clone();
+    let track_list = track_list.clone();
+    let sidebar = sidebar.clone();
+    let window_title = window_title.clone();
+    let search_guard = search_guard.clone();
+    glib::idle_add_local_once(move || {
+        restore(
+            &search_entry,
+            &track_list,
+            &sidebar,
+            &window_title,
+            &search_guard,
+            &state,
+        );
+        let restored = snapshot(&track_list);
+        tracing::info!(
+            source = %restored.source.label(),
+            search = %restored.search,
+            ?restored.browse,
+            field = %restored.sort.field,
+            dir = %restored.sort.dir,
+            "view session smoke restored"
+        );
+    });
+}
+
+fn to_view_source(source: &SessionSource) -> ViewSource {
+    match source {
+        SessionSource::Library => ViewSource::Library,
+        SessionSource::Playlist(id) => ViewSource::Playlist(*id),
+        SessionSource::Smart(id) => ViewSource::Smart(*id),
+        SessionSource::Queue => ViewSource::Queue,
+        SessionSource::Missing => ViewSource::Missing,
+        SessionSource::ImportErrors => ViewSource::ImportErrors,
+    }
+}
+
+fn parse_smoke_state(value: &str) -> Option<SessionState> {
+    let mut fields = value.split('|');
+    let source = match fields.next()? {
+        "library" => SessionSource::Library,
+        "queue" => SessionSource::Queue,
+        "missing" => SessionSource::Missing,
+        "import-errors" => SessionSource::ImportErrors,
+        value if value.starts_with("playlist:") => {
+            SessionSource::Playlist(value.strip_prefix("playlist:")?.parse().ok()?)
+        }
+        value if value.starts_with("smart:") => {
+            SessionSource::Smart(value.strip_prefix("smart:")?.parse().ok()?)
+        }
+        _ => return None,
+    };
+    let search = fields.next()?.to_string();
+    let browse = BrowseFilter {
+        genre: parse_optional(fields.next()?),
+        artist: parse_optional(fields.next()?),
+        album: parse_optional(fields.next()?),
+    };
+    let sort_field = fields.next()?.to_string();
+    let sort_dir = fields.next()?.to_string();
+    if fields.next().is_some() {
+        return None;
+    }
+    Some(SessionState {
+        source,
+        search,
+        browse,
+        sort_field,
+        sort_dir,
+        ..SessionState::default()
+    })
+}
+
+fn parse_optional(value: &str) -> Option<String> {
+    (value != "~").then(|| value.to_string())
+}
