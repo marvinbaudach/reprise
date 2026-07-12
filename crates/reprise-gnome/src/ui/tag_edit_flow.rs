@@ -148,6 +148,7 @@ fn finish_apply(shared: &Rc<Shared>, tracks: &[(i64, PathBuf)], report: &TagBatc
             .map(|(_, path)| path.clone())
             .collect();
         shared.cover_loader.invalidate_paths(&paths);
+        shared.browse_bar.refresh();
         reload(shared);
         let on_tags_mutated = shared.on_tags_mutated.borrow().clone();
         if let Some(on_tags_mutated) = on_tags_mutated {

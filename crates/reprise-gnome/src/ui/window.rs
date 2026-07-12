@@ -237,9 +237,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
-            move |source, count, filter| {
+            move |source, count, filter, browse| {
                 if matches!(source, ViewSource::Library) {
-                    status_bar.refresh(&conn_for_status, filter);
+                    status_bar.refresh(&conn_for_status, filter, browse);
                 } else {
                     status_bar.refresh_for_source_count(count as i64);
                 }

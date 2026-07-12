@@ -64,6 +64,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use rusqlite::Connection;
 
+use crate::ui::browse_bar::BrowseBar;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
@@ -85,6 +86,7 @@ use crate::ui::track_list_sort::{
 };
 use reprise_core::format::format_duration;
 use reprise_core::models::Track;
+use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
 pub(super) const STACK_PAGE_EMPTY: &str = "empty";
@@ -108,8 +110,8 @@ pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize)>;
 
 /// Callback invoked at the end of every `reload()` — see the `Shared::
 /// on_reload` doc comment for what each parameter carries and why
-/// `window.rs` needs all three.
-type OnReload = Box<dyn Fn(&ViewSource, usize, &str)>;
+/// `window.rs` needs all four.
+type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFilter)>;
 
 /// Context-menu "Play" action callback — see the `Shared::on_play_selected`
 /// doc comment.
@@ -167,6 +169,8 @@ pub(super) struct Shared {
     /// Shared list-cell cover cache, retained so successful tag writes can
     /// invalidate entries keyed by the same path before rows are rebound.
     pub(super) cover_loader: Rc<CoverLoader>,
+    pub(super) browse_bar: Rc<BrowseBar>,
+    pub(super) browse_filter: RefCell<BrowseFilter>,
     pub(super) stack: gtk4::Stack,
     /// The single empty-state placeholder widget. Its title/description/icon
     /// are mutated in place by `apply_empty_state` rather than swapping in a
@@ -306,6 +310,7 @@ pub(super) struct Shared {
 /// state that the sort-header and search-debounce callbacks close over.
 pub struct TrackList {
     shared: Rc<Shared>,
+    root: gtk4::Box,
 }
 
 impl TrackList {
@@ -319,7 +324,7 @@ impl TrackList {
     pub fn new(
         conn: Rc<RefCell<Connection>>,
         on_activate: OnActivate,
-        on_reload: impl Fn(&ViewSource, usize, &str) + 'static,
+        on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
         queue_ids_provider: impl Fn() -> Vec<i64> + 'static,
         cover_download: CoverDownloadRuntime,
     ) -> Self {
@@ -355,6 +360,11 @@ impl TrackList {
         stack.add_named(import_errors_view.widget(), Some(STACK_PAGE_IMPORT_ERRORS));
         stack.set_visible_child_name(STACK_PAGE_EMPTY);
 
+        let browse_bar = BrowseBar::new(conn.clone());
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(browse_bar.widget());
+        root.append(&stack);
+
         // Built here, before any column is appended — unlike every stage
         // before Task 5, which built columns first: each column's `connect_
         // setup` now also wires its cell's context-menu gesture, which needs
@@ -368,6 +378,8 @@ impl TrackList {
             column_view: column_view.clone(),
             conn,
             cover_loader: cover_loader.clone(),
+            browse_bar: browse_bar.clone(),
+            browse_filter: RefCell::new(BrowseFilter::default()),
             stack,
             empty_page,
             sort: RefCell::new(SortState::default()),
@@ -389,6 +401,17 @@ impl TrackList {
             on_tags_mutated: RefCell::new(None),
             on_import_errors_mutated: RefCell::new(None),
         });
+
+        {
+            let shared_weak = Rc::downgrade(&shared);
+            browse_bar.set_on_changed(move |filter| {
+                let Some(shared) = shared_weak.upgrade() else {
+                    return;
+                };
+                *shared.browse_filter.borrow_mut() = filter;
+                reload(&shared);
+            });
+        }
 
         // Stage 3 Task 8: the panel's own Retry/Dismiss actions must both
         // refresh this `TrackList`'s stack-page/count decision (via `reload`,
@@ -498,15 +521,16 @@ impl TrackList {
         track_list_context_menu::arm_smoke_menu_action(&shared);
         crate::ui::tag_edit_flow::arm_smoke(&shared);
         crate::ui::delete_tracks::arm_smoke(&shared);
+        crate::ui::browse_bar::arm_smoke(&shared);
         track_list_dnd_smoke::arm_smoke_dnd(&shared);
 
-        Self { shared }
+        Self { shared, root }
     }
 
-    /// The root widget to embed as the window body (a `gtk::Stack` that
-    /// switches between the empty placeholder and the populated list).
-    pub fn widget(&self) -> &gtk4::Stack {
-        &self.shared.stack
+    /// The root widget: Library browse bar above the Stack that switches
+    /// between the empty placeholder and the populated list.
+    pub fn widget(&self) -> &gtk4::Box {
+        &self.root
     }
 
     /// Moves keyboard focus onto the track list's `ColumnView` (Stage 3 Task
@@ -540,6 +564,7 @@ impl TrackList {
     /// changing either — used by `window.rs` after a scan completes, so
     /// newly added tracks show up without disturbing an active search.
     pub fn reload(&self) {
+        self.shared.browse_bar.refresh();
         reload(&self.shared);
     }
 
@@ -712,6 +737,9 @@ pub(super) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
     let new_sort = resolve_sort_on_switch(&shared.sort.borrow(), &source);
     *shared.sort.borrow_mut() = new_sort;
     *shared.source.borrow_mut() = source;
+    shared
+        .browse_bar
+        .set_library_visible(matches!(*shared.source.borrow(), ViewSource::Library));
     reload(shared);
 }
 
@@ -723,7 +751,12 @@ pub(super) fn reload(shared: &Rc<Shared>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();
-    let has_filter = !filter.trim().is_empty();
+    let browse = if matches!(source, ViewSource::Library) {
+        shared.browse_filter.borrow().clone()
+    } else {
+        BrowseFilter::default()
+    };
+    let has_filter = !filter.trim().is_empty() || !browse.is_empty();
 
     let queue_ids = if matches!(source, ViewSource::Queue) {
         current_queue_ids(shared)
@@ -731,9 +764,14 @@ pub(super) fn reload(shared: &Rc<Shared>) {
         Vec::new()
     };
 
-    shared
-        .model
-        .set_query(&source, &sort.field, &sort.dir, &filter, &queue_ids);
+    shared.model.set_query_browsed(
+        &source,
+        &sort.field,
+        &sort.dir,
+        &filter,
+        &browse,
+        &queue_ids,
+    );
 
     // Stage 3 Task 8: the ImportErrors source's rows live in `import_errors_
     // view`, not `shared.model` (which `queries.rs` always resolves to an
@@ -751,9 +789,10 @@ pub(super) fn reload(shared: &Rc<Shared>) {
         field = %sort.field,
         dir = %sort.dir,
         filter = %filter,
+        ?browse,
         source = %source.label(),
         "query matched {count} tracks"
     );
 
-    (shared.on_reload)(&source, count, &filter);
+    (shared.on_reload)(&source, count, &filter, &browse);
 }

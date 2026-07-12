@@ -10,8 +10,8 @@
 //!
 //! ## Refresh triggers
 //!
-//! `refresh` re-runs `queries::query_library_stats` (passing the current
-//! search filter) and updates the label. `window.rs` calls it after every
+//! `refresh` re-runs `queries::query_library_stats_browsed` (passing the
+//! current search and browse filters) and updates the label. `window.rs` calls it after every
 //! `TrackList` reload — via the `on_reload` hook threaded into
 //! `TrackList::new`, which now also carries the filter string that was just
 //! applied (covers initial load, search, sort-header clicks, and the reload
@@ -35,7 +35,7 @@ use rusqlite::Connection;
 
 use crate::ui::strings;
 use reprise_core::format::{format_thousands, format_total_duration};
-use reprise_core::queries;
+use reprise_core::queries::{self, BrowseFilter};
 
 /// Handle to the status label. Cheap to clone (clones the underlying
 /// `gtk::Label`, a reference-counted GObject handle, not its contents) so
@@ -71,10 +71,10 @@ impl StatusBar {
     /// (or hides it, for an empty library — see the module doc comment).
     /// Query failures are logged and treated the same as an empty library:
     /// hide rather than show stale or partial text.
-    pub fn refresh(&self, conn: &Rc<RefCell<Connection>>, filter: &str) {
+    pub fn refresh(&self, conn: &Rc<RefCell<Connection>>, filter: &str, browse: &BrowseFilter) {
         let stats = {
             let conn = conn.borrow();
-            queries::query_library_stats(&conn, filter)
+            queries::query_library_stats_browsed(&conn, filter, browse)
         };
         match stats {
             Ok(stats) if stats.track_count > 0 => {

@@ -20,6 +20,7 @@
 //!   composition root only (controller construction); everything else goes
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
+pub mod browse_bar;
 pub mod cover_download_worker;
 pub mod cover_loader;
 pub mod delete_tracks;
