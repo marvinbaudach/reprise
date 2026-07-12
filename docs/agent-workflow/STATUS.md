@@ -21,25 +21,25 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Prevent playlist duplicates and improve row-reorder drag feedback
-SINCE:    2026-07-12 22:33 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 22:33 CEST: Codex claimed the lock for follow-up playlist drag-and-drop regressions._
+_As of 2026-07-12 22:41 CEST: Codex released the lock after refining playlist drag-and-drop._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Playlist manual-QA interactions** — drag/right-click surfaces fill each row
-  cell including the cover, context popovers stay attached through action dispatch, and creating an
-  empty playlist from the sidebar preserves the current source (`8ad0ac8`). Targeted display tests
-  and isolated six-track removal passed. Final gates: 473 passed, 3 ignored; core PURE; audit has only
-  the accepted `paste` advisory. Real pointer/menu confirmation remains manual.
+- **Last completed:** **Playlist drag-and-drop follow-up** — interactive additions skip existing and
+  repeated tracks atomically, text-cell gestures fill the full allocation, and eligible playlist or
+  queue reorder targets show an accent insertion line (`acafd7d`). M3U/backend duplicate-preserving
+  semantics remain available. Final gates: 477 passed, 3 ignored; core PURE; audit has only the
+  accepted `paste` advisory. Real pointer/marker confirmation remains manual.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `8ad0ac8`; this coordination-board update follows it.
+- **Feature HEAD:** `acafd7d`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -58,14 +58,13 @@ _As of 2026-07-12 22:33 CEST: Codex claimed the lock for follow-up playlist drag
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
   for files added while the app was closed, current-track table selection, and playable stopped
   session restoration without autoplay, functional browse-option search, rating resorting, stable
-  empty browse-popup geometry, and repaired playlist row/menu/create flows; all exact user-reported
-  paths have regression coverage.
+  empty browse-popup geometry, and repaired playlist row/menu/create/reorder flows including
+  duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
 - `notify_now_playing` re-runs cover resolve+thumbnail synchronously on the main thread (cheap on
   warm cache; future off-thread hop).
-- Cover cell has no DnD/context-menu gesture (right-click/drag exactly on the 32px thumbnail is a no-op).
 - `window.rs` (~791) is edge-tight — its next edit must extract a sibling module, not inline-add.
 - `notify_now_playing` doc comment says "Stage 3 Task 9" (cosmetic; should read GUI-A).
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
