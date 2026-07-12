@@ -233,7 +233,11 @@ fn run_delete(
             }
         }
         DeleteMode::Trash => {
-            let report = reprise_core::library::trash_tracks::trash_tracks(conn, tracks);
+            let report = reprise_core::library::trash_tracks::trash_tracks_with(
+                conn,
+                tracks,
+                reprise_platform_linux::trash::delete,
+            );
             for failure in &report.failures {
                 tracing::warn!(id = failure.id, path = %failure.path.display(), error = %failure.error, "move-to-trash failed");
             }

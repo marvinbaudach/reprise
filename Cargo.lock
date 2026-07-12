@@ -1758,7 +1758,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tracing",
- "trash",
  "ureq",
  "walkdir",
 ]
@@ -1788,6 +1787,7 @@ dependencies = [
  "gstreamer",
  "reprise-core",
  "tracing",
+ "trash",
  "zbus",
 ]
 

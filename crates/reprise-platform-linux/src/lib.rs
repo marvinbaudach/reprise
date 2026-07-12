@@ -7,3 +7,4 @@
 
 pub mod mpris;
 pub mod player;
+pub mod trash;
