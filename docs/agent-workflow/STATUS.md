@@ -21,23 +21,20 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Record maintainer manual-QA confirmations
-SINCE:    2026-07-12 23:26 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     FREE
+SINCE:    —
 ```
 
-_As of 2026-07-12 23:26 CEST: Codex claimed the lock to record maintainer manual-QA confirmations._
+_As of 2026-07-12 23:27 CEST: Codex released the lock after recording maintainer manual-QA confirmations._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Autonomous release QA close-out** — consolidated the exact real-GNOME test
-  ledger (`e791da9`), cleaned the GTK display-test fixture (`9b7d898`), documented the required
-  one-process-per-test Xvfb procedure (`9688749`), and added a warning-free Rustdoc release gate
-  after repairing stale cross-crate links (`1dda104`). All four display regressions pass individually.
-  The complete release checker passes: 479 tests, 4 display-only ignored; strict fmt/clippy/rustdoc;
-  core PURE; only the accepted `paste` advisory; fresh optimized Meson install. Isolated release
-  starts also passed for an existing six-track scratch library and fresh default-off onboarding.
+- **Last completed:** **Maintainer manual-QA confirmations** (`7e871b6`) — duplicate playlist adds
+  are prevented; playlist dragging works across the row with insertion feedback; imported playlists
+  become selected and open; valid tag edits save and close via Enter. Queue insertion feedback and
+  invalid numeric tag validation remain explicitly pending rather than being inferred.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
