@@ -40,6 +40,7 @@ pub mod queue_transport;
 pub mod rating;
 pub mod scan_flow;
 pub mod session_player;
+pub mod session_restore;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod sidebar_dnd;

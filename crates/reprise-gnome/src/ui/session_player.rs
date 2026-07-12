@@ -100,6 +100,13 @@ impl PlayerController {
             "session queue restored"
         );
     }
+
+    pub(super) fn session_playback_status(&self) -> MprisPlaybackStatus {
+        self.mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .status
+    }
 }
 
 #[cfg(test)]
