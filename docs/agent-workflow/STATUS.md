@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Make Enter apply valid tag edits
+SINCE:    2026-07-12 22:58 CEST
 ```
 
-_As of 2026-07-12 22:49 CEST: Codex released the lock after synchronizing M3U import navigation._
+_As of 2026-07-12 22:58 CEST: Codex claimed the lock for tag-editor Enter-key behavior._
 
 ## Current position
 
