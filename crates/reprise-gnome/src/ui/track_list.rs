@@ -497,6 +497,7 @@ impl TrackList {
         arm_smoke_sort_column(&column_view, &title_column, &artist_column);
         track_list_context_menu::arm_smoke_menu_action(&shared);
         crate::ui::tag_edit_flow::arm_smoke(&shared);
+        crate::ui::delete_tracks::arm_smoke(&shared);
         track_list_dnd_smoke::arm_smoke_dnd(&shared);
 
         Self { shared }
