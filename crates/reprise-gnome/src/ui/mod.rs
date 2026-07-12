@@ -42,7 +42,7 @@ pub mod sidebar_dnd;
 pub mod sidebar_export;
 pub mod status_bar;
 pub mod strings;
-#[allow(dead_code)] // GUI-B Task 7 wires the dialog into the track context menu.
+pub mod tag_edit_flow;
 pub mod tag_editor;
 pub mod toasts;
 pub mod track_actions;

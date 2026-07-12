@@ -55,6 +55,7 @@
 //! `TrackListModel::set_query`.
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::gio::prelude::*;
@@ -129,6 +130,9 @@ type OnSidebarPlaylistDrop = Rc<dyn Fn(i64, &str, &[i64]) -> bool>;
 /// "Remove from library" callback — see the `Shared::on_library_mutated` doc
 /// comment. Takes the ids actually deleted (Stage-3 close-out).
 type OnLibraryMutated = Rc<dyn Fn(&[i64])>;
+/// Successful tag-edit callback. Paths let the player invalidate only the
+/// currently displayed cover while the window refreshes sidebar metadata.
+type OnTagsMutated = Rc<dyn Fn(&[PathBuf])>;
 
 /// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -160,6 +164,9 @@ pub(super) struct Shared {
     /// rating column's click handler can write through `library::stats`
     /// without reaching into the model's private state.
     pub(super) conn: Rc<RefCell<Connection>>,
+    /// Shared list-cell cover cache, retained so successful tag writes can
+    /// invalidate entries keyed by the same path before rows are rebound.
+    pub(super) cover_loader: Rc<CoverLoader>,
     pub(super) stack: gtk4::Stack,
     /// The single empty-state placeholder widget. Its title/description/icon
     /// are mutated in place by `apply_empty_state` rather than swapping in a
@@ -284,6 +291,10 @@ pub(super) struct Shared {
     /// actually deleted — not just a bare notification — so the queue purge
     /// knows exactly which ids to remove.
     pub(super) on_library_mutated: RefCell<Option<OnLibraryMutated>>,
+    /// Invoked after successful file-tag writes and DB reconciliation.
+    /// Kept separate from `on_library_mutated`: editing tags must never purge
+    /// otherwise valid tracks from the playback queue.
+    pub(super) on_tags_mutated: RefCell<Option<OnTagsMutated>>,
     /// Invoked after the ImportErrors panel's own Retry/Dismiss actions
     /// mutate `import_errors` — injected via `TrackList::set_on_import_
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the
@@ -350,11 +361,13 @@ impl TrackList {
         // `&shared` (see `wire_context_menu_gesture`). Nothing else in
         // `Shared` depends on the columns existing first, so this reorder
         // has no other consequence.
+        let cover_loader = CoverLoader::new(cover_download);
         let shared = Rc::new(Shared {
             model,
             selection: selection.clone(),
             column_view: column_view.clone(),
             conn,
+            cover_loader: cover_loader.clone(),
             stack,
             empty_page,
             sort: RefCell::new(SortState::default()),
@@ -373,6 +386,7 @@ impl TrackList {
             import_errors_view,
             on_rescan_library: RefCell::new(None),
             on_library_mutated: RefCell::new(None),
+            on_tags_mutated: RefCell::new(None),
             on_import_errors_mutated: RefCell::new(None),
         });
 
@@ -404,7 +418,6 @@ impl TrackList {
         // `player_controller.rs` owns for the bar/Now-Playing cover (Task 5)
         // — two independent `CoverLoader`s, each with its own small texture
         // cache, one per widget family that shows covers.
-        let cover_loader = CoverLoader::new(cover_download);
         append_cover_column(&column_view, &shared, &cover_loader);
 
         let title_column = append_column(
@@ -483,6 +496,7 @@ impl TrackList {
         arm_smoke_source(&shared);
         arm_smoke_sort_column(&column_view, &title_column, &artist_column);
         track_list_context_menu::arm_smoke_menu_action(&shared);
+        crate::ui::tag_edit_flow::arm_smoke(&shared);
         track_list_dnd_smoke::arm_smoke_dnd(&shared);
 
         Self { shared }
@@ -599,6 +613,10 @@ impl TrackList {
     /// mutated` doc comment. `window.rs` wires this to `Sidebar::refresh`.
     pub fn set_on_library_mutated(&self, callback: impl Fn(&[i64]) + 'static) {
         *self.shared.on_library_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn set_on_tags_mutated(&self, callback: impl Fn(&[PathBuf]) + 'static) {
+        *self.shared.on_tags_mutated.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the callback invoked after the ImportErrors panel's own

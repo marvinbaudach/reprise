@@ -63,6 +63,19 @@ impl CoverLoader {
         cache.insert(key, texture);
     }
 
+    pub fn invalidate_paths(&self, paths: &[std::path::PathBuf]) {
+        let prefixes: Vec<String> = paths
+            .iter()
+            .map(|path| format!("{}|", path.to_string_lossy()))
+            .collect();
+        self.cache
+            .borrow_mut()
+            .retain(|key, _| !prefixes.iter().any(|prefix| key.starts_with(prefix)));
+        self.order
+            .borrow_mut()
+            .retain(|key| !prefixes.iter().any(|prefix| key.starts_with(prefix)));
+    }
+
     pub fn load_into(
         self: &Rc<Self>,
         image: &gtk4::Image,

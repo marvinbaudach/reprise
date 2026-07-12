@@ -23,6 +23,7 @@
 //!   becomes, and wires the bar's click-to-expand callback and the headless
 //!   smoke hook. Called from `window::build`.
 
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::glib;
@@ -34,6 +35,28 @@ use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
 impl PlayerController {
+    /// Invalidates and reloads the displayed cover when a successful tag
+    /// edit touched the currently playing path. Playback itself is left
+    /// untouched.
+    pub(super) fn refresh_edited_cover(&self, edited_paths: &[PathBuf]) {
+        let current_path = self
+            .now_playing
+            .borrow()
+            .as_ref()
+            .map(|track| track.path.clone());
+        let Some(current_path) = current_path else {
+            return;
+        };
+        if !edited_paths
+            .iter()
+            .any(|path| path == std::path::Path::new(&current_path))
+        {
+            return;
+        }
+        self.cover_loader.invalidate_paths(edited_paths);
+        self.sync_cover(&current_path);
+    }
+
     /// Feeds the bar's AND the Now-Playing page's title/artist/album labels
     /// from one call — the single state path `play_track_id` uses instead of
     /// touching `self.bar`/`self.now_playing_view` separately.
