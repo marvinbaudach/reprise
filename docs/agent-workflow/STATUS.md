@@ -21,26 +21,26 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     filter browse dropdowns and resort edited ratings
-SINCE:    2026-07-12 21:33 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 21:33 CEST: Codex claimed the lock for browse-search filtering and rating-resort regressions._
+_As of 2026-07-12 21:41 CEST: Codex released the lock after fixing browse search and rating resorting._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Stopped-session resume UI** — restored queues remain Stopped/no-autoplay but
-  reselect their current visible row after view restoration, keep Play/queue controls sensitive,
-  and start the restored current ID only after Play/Space/MPRIS PlayPause (`c33aa33`). Seek remains
-  disabled until a track is loaded. An isolated two-start E2E proved Stopped before the exact Play
-  activation, then Playing and selection 0→1. Final gates: 469 passed, 1 ignored; core PURE; audit
-  has only the accepted `paste` advisory.
+- **Last completed:** **Browse search + rating resort** — Genre/Artist/Album dropdown searches now
+  have GTK's required string expression and substring matching; nonsense text therefore filters
+  their option lists empty. Inline rating edits perform a full query reload when rating-sorted and
+  move immediately, while other sorts retain efficient row invalidation (`01a669e`). Tag-edit fields
+  already reloaded fully. Final gates: 471 passed, 1 ignored; core PURE; audit has only the accepted
+  `paste` advisory.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `c33aa33`; this coordination-board update follows it.
+- **Feature HEAD:** `01a669e`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -58,7 +58,8 @@ _As of 2026-07-12 21:33 CEST: Codex claimed the lock for browse-search filtering
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
   for files added while the app was closed, current-track table selection, and playable stopped
-  session restoration without autoplay; all exact user-reported paths have regression coverage.
+  session restoration without autoplay, plus functional browse-option search and rating resorting;
+  all exact user-reported paths have regression coverage.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
