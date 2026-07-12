@@ -116,12 +116,15 @@ populated test library; do not fabricate them from headless output.
 
 ## Public publication handoff
 
-Two external prerequisites remain and cannot be inferred or manufactured:
+Three external prerequisites remain and cannot be inferred or manufactured:
 
 1. Publish the source through a maintainer-controlled public remote and create an
    immutable 0.1.0 archive/tag with a verified SHA-256 checksum.
 2. Establish a verifiable project identity appropriate for the existing
    `org.reprise.Reprise` application ID.
+3. Make the maintainer-controlled project/contact URL embedded in the
+   MusicBrainz `User-Agent` real and reachable before distributing builds with
+   online cover download enabled; do not publish the current placeholder URL.
 
 After those exist, replace the local `type: dir` Flatpak source with the immutable
 archive, add the real homepage to AppStream, rerun every automated and manual check,
