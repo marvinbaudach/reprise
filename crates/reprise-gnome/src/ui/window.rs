@@ -71,6 +71,16 @@ const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
 /// Usage: `REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=8 xvfb-run -a cargo run`.
 const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
 
+/// Environment variable that, when set to `"top"` or `"bottom"` (anything
+/// else is treated as `"bottom"`), persists that player-bar position via
+/// `settings::set_player_bar_position` and re-applies it immediately —
+/// a standing headless-verification hook for Task 7's start-up docking
+/// (see `apply_bar_position`), mirroring the `arm_smoke_*` convention used
+/// for the rescan/import smoke hooks elsewhere in this module.
+///
+/// Usage: `REPRISE_SMOKE_BAR_POSITION=top xvfb-run -a cargo run`.
+const SMOKE_BAR_POSITION_ENV_VAR: &str = "REPRISE_SMOKE_BAR_POSITION";
+
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database connection; the UI layer owns it single-threaded
 /// (via `Rc<RefCell<_>>`) and reads through it via `track_list::TrackList`.
@@ -244,7 +254,8 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     if let Some(player) = &player {
         bottom_box.append(player.bar_widget());
     }
-    toolbar_view.add_bottom_bar(&bottom_box);
+    let bar_position = settings::get_player_bar_position(&conn.borrow());
+    apply_bar_position(&toolbar_view, &bottom_box, bar_position);
 
     let toast_overlay = adw::ToastOverlay::new();
     toast_overlay.set_child(Some(&toolbar_view));
@@ -592,6 +603,8 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         show_content_if_collapsed,
     );
 
+    arm_smoke_bar_position(conn, &toolbar_view, &bottom_box);
+
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
             .ok()
@@ -639,6 +652,60 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
 /// is being updated programmatically); the `show_content_notify` handler sets
 /// the guard before calling `set_active`, which would fire `toggled`, so the
 /// handler's check catches it and returns early.
+/// Attaches `bottom_box` (the status line + player bar, moved as one unit —
+/// see the module's `bottom_box` comment above) to `toolbar_view`'s top or
+/// bottom bar slot per `position`. Idempotent: `adw::ToolbarView::remove`
+/// detaches a bar previously added via `add_top_bar`/`add_bottom_bar` from
+/// whichever slot it currently occupies — but verified against libadwaita
+/// 1.9.2 (headless smoke below), it is NOT a safe no-op when the widget was
+/// never attached: it logs `Adwaita-CRITICAL: tried to remove non-child`.
+/// `bottom_box` is only ever parented under `toolbar_view` (never anywhere
+/// else in this module), so `bottom_box.parent().is_some()` is an exact,
+/// cheap test for "is currently attached" — guarding the `remove` call with
+/// it makes this fn safe to call both at start-up (nothing attached yet) and
+/// again later (see `arm_smoke_bar_position`) without ever double-adding,
+/// panicking, or emitting that critical warning.
+fn apply_bar_position(
+    toolbar_view: &adw::ToolbarView,
+    bottom_box: &gtk4::Box,
+    position: settings::PlayerBarPosition,
+) {
+    if bottom_box.parent().is_some() {
+        toolbar_view.remove(bottom_box);
+    }
+    match position {
+        settings::PlayerBarPosition::Top => toolbar_view.add_top_bar(bottom_box),
+        settings::PlayerBarPosition::Bottom => toolbar_view.add_bottom_bar(bottom_box),
+    }
+}
+
+/// Headless verification hook for Task 7: if `REPRISE_SMOKE_BAR_POSITION` is
+/// set to `"top"` or `"bottom"` (anything else falls back to `"bottom"`),
+/// persists that position and re-applies it via `apply_bar_position`,
+/// logging on success so a smoke run can grep for it. Mirrors the
+/// `arm_smoke_*` convention used by `scan_flow::arm_smoke_rescan` and
+/// `playlist_io::arm_smoke_m3u`.
+fn arm_smoke_bar_position(
+    conn: &Rc<RefCell<Connection>>,
+    toolbar_view: &adw::ToolbarView,
+    bottom_box: &gtk4::Box,
+) {
+    let Ok(value) = std::env::var(SMOKE_BAR_POSITION_ENV_VAR) else {
+        return;
+    };
+    let position = if value == "top" {
+        settings::PlayerBarPosition::Top
+    } else {
+        settings::PlayerBarPosition::Bottom
+    };
+    {
+        let conn = conn.borrow();
+        let _ = settings::set_player_bar_position(&conn, position);
+    }
+    apply_bar_position(toolbar_view, bottom_box, position);
+    tracing::info!(position = %value, "smoke: applied player bar position");
+}
+
 fn wire_sidebar_toggle(sidebar_toggle: &gtk4::ToggleButton, split_view: &adw::NavigationSplitView) {
     sidebar_toggle.set_visible(split_view.is_collapsed());
 
