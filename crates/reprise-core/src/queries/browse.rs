@@ -1,5 +1,7 @@
 //! Exact, bound Genre/Artist/Album facets for the flat Library source.
 
+use rusqlite::Connection;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BrowseFilter {
     pub genre: Option<String>,
@@ -12,6 +14,58 @@ impl BrowseFilter {
     pub fn is_empty(&self) -> bool {
         self.genre.is_none() && self.artist.is_none() && self.album.is_none()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowseFacet {
+    Genre,
+    Artist,
+    Album,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowseValue {
+    pub value: String,
+    pub count: i64,
+}
+
+pub fn query_browse_values(
+    conn: &Connection,
+    facet: BrowseFacet,
+    filter: &BrowseFilter,
+) -> Result<Vec<BrowseValue>, rusqlite::Error> {
+    let (column, effective_filter) = match facet {
+        BrowseFacet::Genre => ("genre", BrowseFilter::default()),
+        BrowseFacet::Artist => (
+            "artist",
+            BrowseFilter {
+                genre: filter.genre.clone(),
+                ..BrowseFilter::default()
+            },
+        ),
+        BrowseFacet::Album => (
+            "album",
+            BrowseFilter {
+                genre: filter.genre.clone(),
+                artist: filter.artist.clone(),
+                album: None,
+            },
+        ),
+    };
+    let (clause, values) = browse_clause(&effective_filter, 1);
+    let sql = format!(
+        "SELECT {column}, count(*) FROM tracks \
+         WHERE missing = 0{clause} \
+         GROUP BY {column} ORDER BY {column} COLLATE NOCASE ASC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(values), |row| {
+        Ok(BrowseValue {
+            value: row.get(0)?,
+            count: row.get(1)?,
+        })
+    })?;
+    rows.collect()
 }
 
 pub(super) fn browse_clause(filter: &BrowseFilter, first_param: usize) -> (String, Vec<String>) {
@@ -71,5 +125,84 @@ mod tests {
         assert_eq!(sql, " AND artist = ?1");
         assert_eq!(values, vec![hostile]);
         assert!(!sql.contains(hostile));
+    }
+
+    fn seeded_facets() -> Connection {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (id, artist, album, genre) in [
+            (1, "A", "Stage", "Rock"),
+            (2, "A", "Stage", "Rock"),
+            (3, "B", "Other", "Rock"),
+            (4, "A", "Blue", "Jazz"),
+            (5, "", "", ""),
+        ] {
+            conn.execute(
+                "INSERT INTO tracks (id,path,title,artist,album,genre,added_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,0)",
+                rusqlite::params![
+                    id,
+                    format!("/x/{id}.flac"),
+                    format!("T{id}"),
+                    artist,
+                    album,
+                    genre
+                ],
+            )
+            .unwrap();
+        }
+        conn
+    }
+
+    #[test]
+    fn artist_values_are_constrained_by_genre() {
+        let conn = seeded_facets();
+        let filter = BrowseFilter {
+            genre: Some("Rock".into()),
+            ..BrowseFilter::default()
+        };
+        assert_eq!(
+            query_browse_values(&conn, BrowseFacet::Artist, &filter).unwrap(),
+            vec![
+                BrowseValue {
+                    value: "A".into(),
+                    count: 2
+                },
+                BrowseValue {
+                    value: "B".into(),
+                    count: 1
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn album_values_are_constrained_by_genre_and_artist() {
+        let conn = seeded_facets();
+        let filter = BrowseFilter {
+            genre: Some("Rock".into()),
+            artist: Some("A".into()),
+            album: Some("ignored-current-album".into()),
+        };
+        assert_eq!(
+            query_browse_values(&conn, BrowseFacet::Album, &filter).unwrap(),
+            vec![BrowseValue {
+                value: "Stage".into(),
+                count: 2
+            }]
+        );
+    }
+
+    #[test]
+    fn empty_metadata_is_returned_as_typed_empty_value() {
+        let conn = seeded_facets();
+        assert!(
+            query_browse_values(&conn, BrowseFacet::Genre, &BrowseFilter::default())
+                .unwrap()
+                .contains(&BrowseValue {
+                    value: String::new(),
+                    count: 1
+                })
+        );
     }
 }
