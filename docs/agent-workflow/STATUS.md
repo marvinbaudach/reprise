@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     reconcile files added while the app was closed
+SINCE:    2026-07-12 20:46 CEST
 ```
 
-_As of 2026-07-12 20:25 CEST: Codex released the lock after completing the seek-drag fix and live-watcher regression coverage._
+_As of 2026-07-12 20:46 CEST: Codex claimed the lock for the manually reproduced startup-reconcile regression._
 
 ## Current position
 
