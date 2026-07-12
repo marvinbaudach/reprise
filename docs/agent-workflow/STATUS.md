@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —               # no local implementation task in flight
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     seek drag audio-stability regression
+SINCE:    2026-07-12 19:40 CEST
 ```
 
-_As of 2026-07-12 19:35 CEST: Codex completed and released the continuous GUI-B through release lock._
+_As of 2026-07-12 19:40 CEST: Codex reclaimed the lock for the manual-QA seek-drag regression._
 
 ## Current position
 
