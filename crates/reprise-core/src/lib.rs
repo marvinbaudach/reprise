@@ -12,6 +12,7 @@
 //! MPRIS in `reprise-platform-linux`).
 
 pub mod cover;
+pub mod cover_download;
 pub mod db;
 pub mod format;
 pub mod library;
