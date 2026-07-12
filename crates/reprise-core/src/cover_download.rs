@@ -18,12 +18,19 @@ const USER_AGENT: &str = concat!(
 );
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MB_MIN_INTERVAL: Duration = Duration::from_secs(1);
+const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;
 
 /// Process-global timestamp of the last MusicBrainz request, for the ≤1/s rule.
 static LAST_MB_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
+
+enum CaaFetchResult {
+    Found(Vec<u8>, &'static str),
+    NotFound,
+    TransientFailure,
+}
 
 /// Cache key for an album's downloaded cover: normalized album-artist + album,
 /// hashed to hex. One cover per album — every track of an album shares it.
@@ -144,11 +151,12 @@ pub fn fetch_and_cache(album_artist: &str, album: &str, mbid: Option<&str>) -> O
     };
     // 3. Fetch the CAA front cover (follows the 302 to the image).
     let (bytes, ext) = match http_get_bytes(&caa_front_url(&release_mbid)) {
-        Some(value) => value,
-        None => {
+        CaaFetchResult::Found(bytes, ext) => (bytes, ext),
+        CaaFetchResult::NotFound => {
             write_negative(&key);
             return None;
         }
+        CaaFetchResult::TransientFailure => return None,
     };
     // 4. Publish atomically under the download cache.
     store_downloaded(&key, &bytes, ext)
@@ -168,31 +176,56 @@ fn mb_get(url: &str) -> Option<String> {
         .ok()
 }
 
-/// A plain GET returning (bytes, extension) for an image response.
-fn http_get_bytes(url: &str) -> Option<(Vec<u8>, &'static str)> {
-    let response = ureq::builder()
+/// A plain GET returning validated image bytes, a clean miss, or a retryable failure.
+fn http_get_bytes(url: &str) -> CaaFetchResult {
+    let response = match ureq::builder()
         .timeout(HTTP_TIMEOUT)
         .user_agent(USER_AGENT)
         .build()
         .get(url)
         .call()
-        .ok()?;
-    let ext = match response.content_type() {
-        "image/png" => "png",
-        "image/webp" => "webp",
-        _ => "jpg", // CAA front covers are overwhelmingly JPEG
+    {
+        Ok(response) => response,
+        Err(ureq::Error::Status(status, _)) if is_clean_caa_miss(status) => {
+            return CaaFetchResult::NotFound;
+        }
+        Err(_) => return CaaFetchResult::TransientFailure,
     };
     let mut bytes = Vec::new();
     use std::io::Read;
-    response
+    if response
         .into_reader()
-        .take(20 * 1024 * 1024)
+        .take(MAX_IMAGE_BYTES + 1)
         .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.is_empty() {
-        return None;
+        .is_err()
+    {
+        return CaaFetchResult::TransientFailure;
     }
-    Some((bytes, ext))
+    if bytes.len() as u64 > MAX_IMAGE_BYTES {
+        return CaaFetchResult::NotFound;
+    }
+    match validated_image_extension(&bytes) {
+        Some(ext) => CaaFetchResult::Found(bytes, ext),
+        None => CaaFetchResult::NotFound,
+    }
+}
+
+fn is_clean_caa_miss(status: u16) -> bool {
+    status == 404
+}
+
+fn validated_image_extension(bytes: &[u8]) -> Option<&'static str> {
+    let format = image::guess_format(bytes).ok()?;
+    let ext = match format {
+        image::ImageFormat::Jpeg => "jpg",
+        image::ImageFormat::Png => "png",
+        image::ImageFormat::WebP => "webp",
+        image::ImageFormat::Gif => "gif",
+        image::ImageFormat::Bmp => "bmp",
+        _ => return None,
+    };
+    image::load_from_memory_with_format(bytes, format).ok()?;
+    Some(ext)
 }
 
 fn respect_mb_rate_limit() {
@@ -321,5 +354,23 @@ mod tests {
         std::fs::write(&marker, b"").unwrap();
         assert_eq!(fetch_and_cache("MissBand", "MissAlbum", None), None);
         std::fs::remove_file(&marker).ok();
+    }
+
+    #[test]
+    fn only_caa_not_found_is_a_clean_http_miss() {
+        assert!(is_clean_caa_miss(404));
+        assert!(!is_clean_caa_miss(500));
+        assert!(!is_clean_caa_miss(429));
+    }
+
+    #[test]
+    fn downloaded_bytes_must_decode_as_a_supported_image() {
+        assert_eq!(validated_image_extension(b"not an image"), None);
+
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        assert_eq!(validated_image_extension(png.get_ref()), Some("png"));
     }
 }
