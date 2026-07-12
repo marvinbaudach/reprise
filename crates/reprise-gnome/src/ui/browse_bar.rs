@@ -104,6 +104,7 @@ impl BrowseBar {
 
     pub fn set_library_visible(&self, visible: bool) {
         self.root.set_visible(visible);
+        tracing::info!(visible, "browse bar visibility updated");
     }
 
     pub fn refresh(&self) {
