@@ -79,6 +79,7 @@ PTR_E2E_N_TRACKS="${PTR_E2E_N_TRACKS:-5}"
 PTR_E2E_OUT_DIR="${PTR_E2E_OUT_DIR:-/tmp/reprise-ptr-e2e}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
 APP_ID="org.reprise.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
 # variant observed (the app id itself, and toolkit-folded forms such as
@@ -120,7 +121,7 @@ for i in $(seq 1 "$PTR_E2E_N_TRACKS"); do
   # back to — `sine.flac` carries no title tag, only a DESCRIPTION comment,
   # so the title is the file stem) sort predictably.
   printf -v idx "%02d" "$i"
-  cp "$REPO_ROOT/tests/fixtures/sine.flac" "$MUSIC_DIR/sine_$idx.flac"
+  cp "$FIXTURE_PATH" "$MUSIC_DIR/sine_$idx.flac"
 done
 
 # --- Process bookkeeping / cleanup -------------------------------------------
@@ -240,20 +241,20 @@ screenshot() {
 
 click_at() {
   local x="$1" y="$2"
-  xdotool mousemove "$x" "$y" click 1
+  xdotool mousemove "$x" "$y" click 1 >/dev/null 2>&1
 }
 
 double_click_at() {
   local x="$1" y="$2"
-  xdotool mousemove "$x" "$y" click --repeat 2 --delay 80 1
+  xdotool mousemove "$x" "$y" click --repeat 2 --delay 80 1 >/dev/null 2>&1
 }
 
 type_text() {
-  xdotool type -- "$1"
+  xdotool type -- "$1" >/dev/null 2>&1
 }
 
 key() {
-  xdotool key "$1"
+  xdotool key "$1" >/dev/null 2>&1
 }
 
 # Non-trivial-image check: a solid/blank capture has a standard deviation
@@ -329,10 +330,10 @@ sleep 1
 # from a `scrot` capture of this exact scan (5 sine.flac copies, Papirus-Dark,
 # 1600x900) and are stable for that fixed input, but WILL need re-measuring
 # if the column set, fonts, or resolution change. See README.md.
-ROW0_TITLE_CELL_X=316
-ROW0_TITLE_CELL_Y=106
-ROW0_RATING_STAR1_X=663
-ROW0_RATING_STAR1_Y=106
+ROW0_TITLE_CELL_X=355
+ROW0_TITLE_CELL_Y=165
+ROW0_RATING_STAR1_X=703
+ROW0_RATING_STAR1_Y=165
 
 # --- Flow 1: star-rating click reaches the real widget -----------------------
 
@@ -362,13 +363,13 @@ log_step "flow 2: Space toggles play/pause…"
 # star click above.
 #
 # Timing here is deliberately tight (0.3s, not the leisurely 1s used
-# elsewhere): the fixture track (tests/fixtures/sine.flac) is ~1.16s long,
+# elsewhere): the core fixture track is ~1.16s long,
 # and once it reaches end-of-stream the player auto-advances to the next
 # queued track — which would race with "Space paused a playing track" below
 # and turn a real bug into flaky noise. Every action after this point (both
 # Space presses) needs to land while the *same* activation is still playing.
-ROW1_TITLE_CELL_X=316
-ROW1_TITLE_CELL_Y=158
+ROW1_TITLE_CELL_X=355
+ROW1_TITLE_CELL_Y=215
 MARKER=$(log_marker)
 double_click_at "$ROW1_TITLE_CELL_X" "$ROW1_TITLE_CELL_Y"
 sleep 0.3

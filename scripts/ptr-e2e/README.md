@@ -30,7 +30,7 @@ Environment overrides (all optional):
 |---|---|---|
 | `PTR_E2E_PROFILE` | `debug` | `debug` or `release` — which `target/<profile>/reprise` binary to exercise. Must already be built. |
 | `PTR_E2E_SCREEN_RES` | `1600x900x24` | Xvfb resolution. Changing this invalidates the hardcoded click coordinates — see "Known limits" below. |
-| `PTR_E2E_N_TRACKS` | `5` | Number of copies of `tests/fixtures/sine.flac` scanned into the library. |
+| `PTR_E2E_N_TRACKS` | `5` | Number of copies of the core crate's `sine.flac` fixture scanned into the library. |
 | `PTR_E2E_OUT_DIR` | `/tmp/reprise-ptr-e2e` | Where screenshots and the app log are left after the run. Cleared at the start of each run. |
 
 Exit code is `0` when every check passes, non-zero otherwise. On any exit
@@ -48,7 +48,7 @@ disk except `PTR_E2E_OUT_DIR`.
    scratch `XDG_DATA_HOME`/`XDG_CONFIG_HOME`, and a `gtk-4.0/settings.ini`
    forcing `gtk-icon-theme-name=Papirus-Dark` — the theme under which a
    previous "all stars look filled" bug was only visible.
-2. Copies `PTR_E2E_N_TRACKS` copies of `tests/fixtures/sine.flac` into a
+2. Copies `PTR_E2E_N_TRACKS` copies of `crates/reprise-core/tests/fixtures/sine.flac` into a
    scratch music directory and launches Reprise with `REPRISE_SCAN_DIR`
    pointed at it, `REPRISE_AUDIO_SINK=fakesink`, and `REPRISE_LOG=debug` —
    no smoke-quit hook, so the app stays alive for interaction.
