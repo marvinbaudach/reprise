@@ -9,7 +9,7 @@
 pub const APP_NAME: &str = "Reprise";
 pub const MAIN_MENU: &str = "Main menu";
 pub const DOWNLOAD_MISSING_COVERS: &str = "Download missing album covers";
-pub const EDIT_TAGS: &str = "Edit Tags";
+pub const EDIT_TAGS: &str = "Edit tags…";
 pub const APPLY: &str = "Apply";
 pub const MULTIPLE_VALUES: &str = "(multiple values)";
 pub const TAG_TITLE: &str = "Title";
@@ -23,6 +23,46 @@ pub const TAG_NUMBER_ERROR: &str = "Year and track number must be positive whole
 pub const TAG_EDIT_DATABASE_UNAVAILABLE: &str =
     "Could not open the library database for tag editing";
 pub const TAG_EDIT_WORKER_FAILED: &str = "Could not start the tag-edit worker";
+pub const REMOVE_FROM_LIBRARY: &str = "Remove from library…";
+pub const MOVE_TO_TRASH: &str = "Move to Trash…";
+pub const DELETE_TRACKS_HEADING: &str = "Remove Selected Tracks?";
+pub const DELETE_TRACKS_CHOICE: &str =
+    "Remove only the library entries, or move the music files to Trash as well.";
+pub const DELETE_TRACKS_CANCEL: &str = "Cancel";
+pub const DELETE_TRACKS_REMOVE: &str = "Remove Only";
+pub const DELETE_TRACKS_TRASH: &str = "Move to Trash";
+pub const DELETE_DATABASE_UNAVAILABLE: &str = "Could not open the library database for removal";
+pub const DELETE_WORKER_FAILED: &str = "Could not start the removal worker";
+
+pub fn remove_confirmation_body(count: usize) -> String {
+    format!(
+        "Remove {count} {} from the library? The music {} will remain on disk.",
+        if count == 1 { "track" } else { "tracks" },
+        if count == 1 { "file" } else { "files" }
+    )
+}
+
+pub fn trash_confirmation_body(count: usize) -> String {
+    format!(
+        "Move {count} music {} to Trash and remove the library {}?",
+        if count == 1 { "file" } else { "files" },
+        if count == 1 { "entry" } else { "entries" }
+    )
+}
+
+pub fn delete_result_toast(removed: usize, failed: usize, trashed: bool) -> String {
+    let action = if trashed { "moved to Trash" } else { "removed" };
+    match failed {
+        0 => format!(
+            "{removed} {} {action}",
+            if removed == 1 { "track" } else { "tracks" }
+        ),
+        _ => format!(
+            "{removed} {} {action}; {failed} failed",
+            if removed == 1 { "track" } else { "tracks" }
+        ),
+    }
+}
 
 pub fn tag_edit_result_toast(updated: usize, failed: usize) -> String {
     match (updated, failed) {
@@ -195,11 +235,6 @@ pub const CONTEXT_MENU_REMOVE_FROM_PLAYLIST: &str = "Remove from playlist";
 /// root (`library::settings::get_library_root`) — a reappeared file clears
 /// `missing` via the scanner's existing restore path.
 pub const CONTEXT_MENU_RESCAN_LIBRARY: &str = "Rescan library";
-/// Missing-source context menu item: deletes the selected row(s) from the
-/// database outright (never the file on disk — see `queries::remove_
-/// missing_track`'s doc comment).
-pub const CONTEXT_MENU_REMOVE_FROM_LIBRARY: &str = "Remove from library";
-
 /// Toast shown when "Rescan library" is invoked but no library folder has
 /// ever been scanned/persisted yet (`library::settings::get_library_root`
 /// returns `None`) — nothing to rescan.

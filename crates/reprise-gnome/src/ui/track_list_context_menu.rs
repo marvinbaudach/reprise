@@ -49,6 +49,7 @@ use gtk4::glib;
 use gtk4::graphene;
 use gtk4::prelude::*;
 
+use crate::ui::delete_tracks;
 use crate::ui::dialogs;
 use crate::ui::strings;
 use crate::ui::tag_edit_flow;
@@ -266,12 +267,10 @@ fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
             Some(strings::CONTEXT_MENU_RESCAN_LIBRARY),
             Some(&format!("{ACTION_GROUP_NAME}.{ACTION_RESCAN_LIBRARY}")),
         );
-        missing_section.append(
-            Some(strings::CONTEXT_MENU_REMOVE_FROM_LIBRARY),
-            Some(&format!("{ACTION_GROUP_NAME}.{ACTION_REMOVE_FROM_LIBRARY}")),
-        );
         menu.append_section(None, &missing_section);
     }
+
+    delete_tracks::append_menu_section(&menu, ACTION_GROUP_NAME);
 
     menu
 }
@@ -309,6 +308,7 @@ pub(super) fn wire_context_menu_actions(column_view: &gtk4::ColumnView, shared: 
     }
     action_group.add_action(&queue_action);
     tag_edit_flow::add_action(&action_group, shared);
+    delete_tracks::add_actions(&action_group, column_view, shared);
 
     let add_to_playlist_action =
         gio::SimpleAction::new(ACTION_ADD_TO_PLAYLIST, Some(glib::VariantTy::INT64));
