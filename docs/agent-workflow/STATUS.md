@@ -21,24 +21,27 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Autonomous release QA audit and consolidated manual-test ledger
-SINCE:    2026-07-12 23:03 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     FREE
+SINCE:    —
 ```
 
-_As of 2026-07-12 23:03 CEST: Codex claimed the lock for autonomous release QA and manual-test consolidation._
+_As of 2026-07-12 23:20 CEST: Codex released the lock after autonomous release QA and manual-test consolidation._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Tag-editor Enter submission** — all seven entry rows activate the dialog's
-  Apply default widget on Enter while dirty-state sensitivity and numeric validation remain intact
-  (`9111a0c`). The targeted real-display regression passed. Final gates: 479 passed, 4 ignored; core
-  PURE; audit has only the accepted `paste` advisory. Real keyboard confirmation remains manual.
+- **Last completed:** **Autonomous release QA close-out** — consolidated the exact real-GNOME test
+  ledger (`e791da9`), cleaned the GTK display-test fixture (`9b7d898`), documented the required
+  one-process-per-test Xvfb procedure (`9688749`), and added a warning-free Rustdoc release gate
+  after repairing stale cross-crate links (`1dda104`). All four display regressions pass individually.
+  The complete release checker passes: 479 tests, 4 display-only ignored; strict fmt/clippy/rustdoc;
+  core PURE; only the accepted `paste` advisory; fresh optimized Meson install. Isolated release
+  starts also passed for an existing six-track scratch library and fresh default-off onboarding.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `9111a0c`; this coordination-board update follows it.
+- **Feature HEAD:** `1dda104`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -59,13 +62,15 @@ _As of 2026-07-12 23:03 CEST: Codex claimed the lock for autonomous release QA a
   session restoration without autoplay, functional browse-option search, rating resorting, stable
   empty browse-popup geometry, and repaired playlist row/menu/create/reorder flows including
   duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
+- ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
+  `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
+  the release checker now rejects Rustdoc warnings and broken intra-doc links.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
 - `notify_now_playing` re-runs cover resolve+thumbnail synchronously on the main thread (cheap on
   warm cache; future off-thread hop).
 - `window.rs` (~791) is edge-tight — its next edit must extract a sibling module, not inline-add.
-- `notify_now_playing` doc comment says "Stage 3 Task 9" (cosmetic; should read GUI-A).
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote
