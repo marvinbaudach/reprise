@@ -44,6 +44,10 @@ fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
     filter.clone()
 }
 
+fn browse_search_match_mode() -> gtk4::StringFilterMatchMode {
+    gtk4::StringFilterMatchMode::Substring
+}
+
 pub struct BrowseBar {
     root: gtk4::Box,
     genre: gtk4::DropDown,
@@ -221,7 +225,10 @@ fn facet_widget(label: &str, all_label: &str) -> (gtk4::Box, gtk4::DropDown) {
     let label = gtk4::Label::new(Some(label));
     label.add_css_class("dim-label");
     let dropdown = gtk4::DropDown::from_strings(&[all_label]);
+    let expression = gtk4::StringObject::this_expression("string");
+    dropdown.set_expression(Some(expression));
     dropdown.set_enable_search(true);
+    dropdown.set_search_match_mode(browse_search_match_mode());
     dropdown.set_hexpand(true);
     container.append(&label);
     container.append(&dropdown);
@@ -391,5 +398,13 @@ mod tests {
             album: Some(String::new()),
         };
         assert_eq!(restored_filter(&filter), filter);
+    }
+
+    #[test]
+    fn browse_search_matches_substrings() {
+        assert_eq!(
+            browse_search_match_mode(),
+            gtk4::StringFilterMatchMode::Substring
+        );
     }
 }
