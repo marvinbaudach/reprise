@@ -95,6 +95,17 @@ Nachfolger:
   Import-Bericht: übernommen / einzeln importiert / gerettet / nicht
   auffindbar. Radio-Streams (`iradio`-Einträge) werden aufgehoben und dem
   späteren Radio-Modul bereitgestellt.
+  - *Optionaler Bonus (Nutzer-Idee 2026-07-11, niedrige Priorität):*
+    Neben den Bibliotheksdaten liest der Import auch Rhythmbox' UI-
+    Einstellungen aus GSettings (`org.gnome.rhythmbox.*`, u. a.
+    `visible-columns` und die Sortierung) und überträgt sie per Best-
+    Effort-Mapping auf unsere Spaltenkonfiguration — nur die überlappenden
+    Spalten (Interpret, Album, Genre, Jahr, Länge, Wiedergaben, Bewertung,
+    Bitrate), Rest wird verworfen. Damit fühlt sich die Liste sofort
+    vertraut an. Ist dconf/das Schema nicht lesbar, passiert einfach nichts
+    (kein Fehler). Bewusst zweitrangig gegenüber dem Daten-Import — das
+    Spaltenlayout ist in Sekunden manuell gesetzt, die Bewertungen/Play
+    Counts nicht.
 - Browse-Leiste wie in Rhythmbox: einblendbare Filterspalten
   Genre / Interpret / Album über der Titelliste, kombinierbar mit der Suche
 - Cover-Art-Pipeline: eingebettete Cover (lofty) und Bilddateien im
