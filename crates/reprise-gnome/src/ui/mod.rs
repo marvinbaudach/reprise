@@ -33,6 +33,7 @@ pub mod now_playing;
 pub mod now_playing_wiring;
 pub mod playback_faults;
 pub mod player_bar;
+mod player_bar_seek;
 pub mod player_controller;
 pub mod player_controller_wiring;
 pub mod playlist_io;
