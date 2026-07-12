@@ -106,6 +106,7 @@ use crate::ui::track_actions;
 use crate::ui::track_list::{playlist_reorder_allowed, reload, show_toast, Shared};
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_model::TrackListModel;
+use crate::ui::track_list_row_interaction;
 use reprise_core::library::playlists;
 use reprise_core::view_source::ViewSource;
 
@@ -330,9 +331,36 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
 fn wire_drop_target(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shared: &Rc<Shared>) {
     let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
 
+    {
+        let widget = widget.upcast_ref::<gtk4::Widget>().clone();
+        let shared = shared.clone();
+        drop_target.connect_enter(move |_target, _x, _y| {
+            let source = shared.source.borrow().clone();
+            let eligible = match source {
+                ViewSource::Playlist(_) => playlist_reorder_allowed(&shared),
+                ViewSource::Queue => true,
+                _ => false,
+            };
+            track_list_row_interaction::set_reorder_indicator(&widget, eligible);
+            if eligible {
+                gdk::DragAction::MOVE
+            } else {
+                gdk::DragAction::empty()
+            }
+        });
+    }
+    {
+        let widget = widget.upcast_ref::<gtk4::Widget>().clone();
+        drop_target.connect_leave(move |_| {
+            track_list_row_interaction::set_reorder_indicator(&widget, false);
+        });
+    }
+
     let item = item.clone();
     let shared = shared.clone();
+    let drop_widget = widget.upcast_ref::<gtk4::Widget>().clone();
     drop_target.connect_drop(move |_target, value, _x, _y| {
+        track_list_row_interaction::set_reorder_indicator(&drop_widget, false);
         let Ok(payload_str) = value.get::<String>() else {
             return false;
         };

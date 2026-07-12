@@ -75,6 +75,7 @@ use crate::ui::track_list_columns::{apply_empty_state, build_status_page, empty_
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd_smoke;
 use crate::ui::track_list_model::TrackListModel;
+use crate::ui::track_list_row_interaction;
 use crate::ui::track_list_smoke::{
     arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
 };
@@ -338,6 +339,7 @@ impl TrackList {
             .show_row_separators(true)
             .show_column_separators(true)
             .build();
+        track_list_row_interaction::install_reorder_indicator_style(&column_view);
 
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)

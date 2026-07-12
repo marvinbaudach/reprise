@@ -61,7 +61,7 @@ use std::rc::Rc;
 use rusqlite::Connection;
 
 use crate::ui::track_list_model::TrackListModel;
-use reprise_core::library::playlists;
+use reprise_core::library::{playlist_membership, playlists};
 
 /// Maps selected row positions to track ids via `TrackListModel::track_at`,
 /// in the order `positions` was given (selection order, not id order).
@@ -114,9 +114,8 @@ pub fn queue_selected_ids(ids: &[i64]) -> Option<Vec<i64>> {
 }
 
 /// "Add to playlist" menu action: appends `ids` to the end of `playlist_id`
-/// via `library::playlists::add_tracks`. Returns the number of rows
-/// inserted (should always equal `ids.len()` — `add_tracks` has no partial-
-/// failure mode) or the underlying `rusqlite::Error`; the caller (`track_
+/// via `library::playlist_membership::add_unique_tracks`. Returns the number
+/// of newly inserted rows; tracks already present are skipped. The caller (`track_
 /// list.rs`) turns either outcome into a toast. A no-op (`Ok(0)`, no
 /// connection borrow taken) for an empty `ids` slice.
 pub fn add_selected_to_playlist(
@@ -128,7 +127,7 @@ pub fn add_selected_to_playlist(
         return Ok(0);
     }
     let mut conn = conn.borrow_mut();
-    playlists::add_tracks(&mut conn, playlist_id, ids)
+    playlist_membership::add_unique_tracks(&mut conn, playlist_id, ids)
 }
 
 /// Error from [`remove_selected_from_playlist`] — see the module doc's
@@ -361,6 +360,29 @@ mod tests {
         let playlist_id = playlists::create(&conn.borrow(), "P1").unwrap();
         let inserted = add_selected_to_playlist(&conn, playlist_id, &[]).unwrap();
         assert_eq!(inserted, 0);
+    }
+
+    #[test]
+    fn add_selected_to_playlist_does_not_duplicate_existing_tracks() {
+        let conn = seeded_conn_with_tracks(3);
+        let playlist_id = playlists::create(&conn.borrow(), "P1").unwrap();
+        assert_eq!(
+            add_selected_to_playlist(&conn, playlist_id, &[1, 2]).unwrap(),
+            2
+        );
+        assert_eq!(
+            add_selected_to_playlist(&conn, playlist_id, &[2, 3, 3]).unwrap(),
+            1
+        );
+        let count: i64 = conn
+            .borrow()
+            .query_row(
+                "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id=?1",
+                [playlist_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3);
     }
 
     /// The duplicate-safety case `remove_selected_from_playlist` exists
