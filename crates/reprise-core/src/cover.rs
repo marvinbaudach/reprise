@@ -170,7 +170,7 @@ fn source_bytes(source: &CoverSource) -> Result<Vec<u8>, CoverError> {
 /// bytes, hex-encoded. The key only needs to be deterministic on one machine
 /// and collision-resistant enough for a cache — no crypto property required,
 /// so no new hashing dependency.
-fn hash_hex(bytes: &[u8]) -> String {
+pub(crate) fn hash_hex(bytes: &[u8]) -> String {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut h);
     format!("{:016x}", h.finish())

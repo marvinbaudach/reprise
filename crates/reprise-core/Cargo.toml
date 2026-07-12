@@ -32,6 +32,10 @@ notify = "8"
 # off: only the formats embedded covers / sidecars actually use. Cross-platform,
 # pulls in no gtk/gstreamer/zbus (verify with `cargo tree -p reprise-core`).
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
+# Blocking, pure-Rust HTTP client (rustls) for the opt-in cover download
+# (GUI-A2). Blocking is fine — fetches run on a dedicated worker thread, never
+# the UI thread. No async runtime, no gtk/gstreamer/zbus (verify cargo tree).
+ureq = "2"
 
 [dev-dependencies]
 tempfile = "3"
