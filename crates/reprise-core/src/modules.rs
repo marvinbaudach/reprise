@@ -30,9 +30,16 @@ pub const MPRIS_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: true,
 };
 
+pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "cover_download",
+    name: "Cover download",
+    description: "Download missing album covers from Cover Art Archive (network; off by default)",
+    default_enabled: false,
+};
+
 /// Every module the app knows about, in the order the Plugins page will show
 /// them. Stage 5 appends equalizer and ReplayGain here.
-pub const ALL_MODULES: &[&ModuleDescriptor] = &[&MPRIS_MODULE];
+pub const ALL_MODULES: &[&ModuleDescriptor] = &[&MPRIS_MODULE, &COVER_DOWNLOAD_MODULE];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -85,5 +92,25 @@ mod tests {
     #[test]
     fn all_modules_lists_mpris() {
         assert!(ALL_MODULES.iter().any(|m| m.id == "mpris"));
+    }
+
+    #[test]
+    fn cover_download_defaults_to_disabled() {
+        let conn = migrated_conn();
+        assert!(!is_enabled(&conn, &COVER_DOWNLOAD_MODULE).unwrap());
+    }
+
+    #[test]
+    fn cover_download_round_trips() {
+        let conn = migrated_conn();
+        set_enabled(&conn, &COVER_DOWNLOAD_MODULE, true).unwrap();
+        assert!(is_enabled(&conn, &COVER_DOWNLOAD_MODULE).unwrap());
+    }
+
+    #[test]
+    fn all_modules_lists_cover_download() {
+        assert!(ALL_MODULES
+            .iter()
+            .any(|module| module.id == "cover_download"));
     }
 }
