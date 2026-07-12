@@ -129,8 +129,11 @@ Nachfolger:
 
 ### Bewusst NICHT im MVP
 
-- Last.fm/Libre.fm-Scrobbling — aber **priorisiert als erstes Modul direkt
-  nach dem MVP** (der Nutzer scrobbelt aktiv; die Lücke soll kurz bleiben)
+- Scrobbling (ListenBrainz, Last.fm, Libre.fm) — aber **priorisiert als
+  erstes Modul direkt nach dem MVP** (der Nutzer scrobbelt aktiv; die Lücke
+  soll kurz bleiben). **ListenBrainz ist der bevorzugte, empfohlene Dienst**
+  (offen, privatsphäre-freundlich, MusicBrainz-nah — passt zur GPL-/Keine-
+  Telemetrie-Linie); Last.fm/Libre.fm als etablierte Alternativen daneben.
 - Podcasts, Internetradio
 - Schreiben von *Bewertungen* in Dateitags (Ratings bleiben in der DB;
   der Tag-Editor schreibt nur die klassischen Metadaten)
@@ -589,8 +592,15 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
   udev/gvfs automatisch).
   Die Android-App selbst ist ein eigenes Projekt (eigenes Repo/eigene
   Planung) — Reprise-seitig zählt hier das Protokoll + die Module.
-- **Scrobbling (Last.fm/Libre.fm)** — erstes Modul nach dem MVP
-  (priorisiert), damit die Hörhistorie beim Umstieg schnell weiterläuft
+- **Scrobbling (ListenBrainz bevorzugt; Last.fm, Libre.fm)** — erstes
+  Modul nach dem MVP (priorisiert), damit die Hörhistorie beim Umstieg
+  schnell weiterläuft. Ein gemeinsames `Scrobbler`-Trait mit je einem
+  Backend pro Dienst (ListenBrainz: „listens submit" + „now playing" API,
+  Token-Auth; Last.fm/Libre.fm: klassische AudioScrobbler-API,
+  Session-Key); mehrere Dienste gleichzeitig aktivierbar. Offline-Queue:
+  Scrobbles bei fehlender Verbindung lokal puffern und später nachreichen
+  (Play-Schwelle >50 % wie bei Play Count). Konto-Status je Dienst im
+  Modul-UI („angemeldet als …").
 - **Musik-Radar** — zweites Modul nach dem MVP (priorisiert):
   1. *Fehlende Alben:* Abgleich der Bibliotheks-Interpreten gegen deren
      Discografie via MusicBrainz (Release-Groups); meldet Alben, die in
