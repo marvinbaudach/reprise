@@ -33,7 +33,7 @@ Vollansicht (Amberol-Stil) als GNOME-nativen Blickfang ergänzen.
 - Player-Leisten-Position als persistierte Einstellung (oben/unten, Default
   unten), sofort wirksam, über einen neuen Enum-Accessor der Settings-Façade.
 - „Now Playing"-Vollansicht (Amberol-Stil): per Klick auf die Player-Leiste
-  öffnet sich eine großflächige Wiedergabe-Ansicht mit großem Cover (512 px),
+  öffnet sich eine großflächige Wiedergabe-Ansicht mit großem Cover (1024 px),
   prominentem Titel/Interpret/Album, Seekbar und Transport — der GNOME-native
   Blickfang, der die schwebende Leiste ersetzt (Nutzer-Entscheidung 2026-07-12).
 
@@ -98,8 +98,10 @@ pub fn thumbnail(source: &CoverSource, size: ThumbnailSize)
 
 /// Die drei gecachten Kantenlängen. Genau drei Konsumenten, genau drei Größen
 /// (YAGNI): 48 px für Tracklisten-Zeilen, 96 px für Player-Leiste und
-/// Benachrichtigung, 512 px für die Now-Playing-Vollansicht.
-pub enum ThumbnailSize { List, Bar, Full } // 48 / 96 / 512 px
+/// Benachrichtigung, 1024 px für die Now-Playing-Vollansicht (großzügig, damit
+/// das Cover auch vergrößert / auf HiDPI nicht pixelig wird — es wird nur je
+/// herunterskaliert, nie hochskaliert).
+pub enum ThumbnailSize { List, Bar, Full } // 48 / 96 / 1024 px
 ```
 
 **Cache-Layout:** `<cache>/reprise/covers/<hex-hash>-<size>.png`. Der Hash
@@ -185,7 +187,8 @@ Blickfang, der den Platz nutzt statt zu verdecken.
 - **Navigation:** eigene Seite im bestehenden `adw`-Navigations-Stack; Klick
   auf die Leiste pusht sie, Zurück-Geste/Escape kehrt zur Liste zurück. Die
   Minimal-Leiste bleibt der Ausgangs-Kontext.
-- **Inhalt:** großes Cover (512 px aus dem Cache), Titel/Interpret/Album
+- **Inhalt:** großes Cover (1024 px aus dem Cache, in gedeckelter Anzeigegröße
+  → nie hochskaliert, daher gestochen scharf auch auf HiDPI), Titel/Interpret/Album
   prominent (klare Typo-Hierarchie), Seekbar mit Positions-/Dauer-Labels,
   Transport (Vorheriger/Play-Pause/Nächster), Shuffle/Repeat.
 - **Ein Zustand, kein zweiter Pfad:** alle Bedienelemente binden an denselben
@@ -207,7 +210,7 @@ Blickfang, der den Platz nutzt statt zu verdecken.
 4. Ergebnis zurück in den Main-Loop: Token noch aktuell? → `gtk::Image` setzen
    + LRU füllen. Token veraltet (Zeile recycelt)? → verwerfen.
 5. Player-Leiste/Notification: analog mit `Bar`-Größe beim Titelwechsel.
-6. Now-Playing-Vollansicht: beim Öffnen `Full`-Größe (512 px) fürs große Cover;
+6. Now-Playing-Vollansicht: beim Öffnen `Full`-Größe (1024 px) fürs große Cover;
    derselbe Loader, derselbe Platzhalter.
 
 ## Fehlerbehandlung
