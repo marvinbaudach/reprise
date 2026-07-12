@@ -51,6 +51,7 @@ use gtk4::prelude::*;
 
 use crate::ui::dialogs;
 use crate::ui::strings;
+use crate::ui::tag_edit_flow;
 use crate::ui::track_actions;
 use crate::ui::track_list::{reload, show_toast, Shared};
 use reprise_core::library::playlists;
@@ -209,6 +210,13 @@ fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
         Some(strings::CONTEXT_MENU_ADD_TO_QUEUE),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_ADD_TO_QUEUE}")),
     );
+    primary.append(
+        Some(strings::EDIT_TAGS),
+        Some(&format!(
+            "{ACTION_GROUP_NAME}.{}",
+            tag_edit_flow::ACTION_EDIT_TAGS
+        )),
+    );
     menu.append_section(None, &primary);
 
     let playlist_submenu = gio::Menu::new();
@@ -300,6 +308,7 @@ pub(super) fn wire_context_menu_actions(column_view: &gtk4::ColumnView, shared: 
         });
     }
     action_group.add_action(&queue_action);
+    tag_edit_flow::add_action(&action_group, shared);
 
     let add_to_playlist_action =
         gio::SimpleAction::new(ACTION_ADD_TO_PLAYLIST, Some(glib::VariantTy::INT64));

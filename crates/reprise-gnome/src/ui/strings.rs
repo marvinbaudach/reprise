@@ -9,28 +9,28 @@
 pub const APP_NAME: &str = "Reprise";
 pub const MAIN_MENU: &str = "Main menu";
 pub const DOWNLOAD_MISSING_COVERS: &str = "Download missing album covers";
-#[allow(dead_code)] // GUI-B Task 7 wires the tag-editor action.
 pub const EDIT_TAGS: &str = "Edit Tags";
-#[allow(dead_code)]
 pub const APPLY: &str = "Apply";
-#[allow(dead_code)]
 pub const MULTIPLE_VALUES: &str = "(multiple values)";
-#[allow(dead_code)]
 pub const TAG_TITLE: &str = "Title";
-#[allow(dead_code)]
 pub const TAG_ARTIST: &str = "Artist";
-#[allow(dead_code)]
 pub const TAG_ALBUM: &str = "Album";
-#[allow(dead_code)]
 pub const TAG_ALBUM_ARTIST: &str = "Album artist";
-#[allow(dead_code)]
 pub const TAG_YEAR: &str = "Year";
-#[allow(dead_code)]
 pub const TAG_TRACK_NUMBER: &str = "Track number";
-#[allow(dead_code)]
 pub const TAG_GENRE: &str = "Genre";
-#[allow(dead_code)]
 pub const TAG_NUMBER_ERROR: &str = "Year and track number must be positive whole numbers";
+pub const TAG_EDIT_DATABASE_UNAVAILABLE: &str =
+    "Could not open the library database for tag editing";
+pub const TAG_EDIT_WORKER_FAILED: &str = "Could not start the tag-edit worker";
+
+pub fn tag_edit_result_toast(updated: usize, failed: usize) -> String {
+    match (updated, failed) {
+        (1, 0) => "Tags updated for 1 track".into(),
+        (updated, 0) => format!("Tags updated for {updated} tracks"),
+        (updated, failed) => format!("Tags updated for {updated} tracks; {failed} failed"),
+    }
+}
 pub const SEARCH_PLACEHOLDER: &str = "Search all fields";
 pub const SCAN_FOLDER: &str = "Scan folder…";
 pub const EMPTY_LIBRARY_TITLE: &str = "No music yet";
