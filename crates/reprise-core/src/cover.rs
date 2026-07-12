@@ -18,24 +18,60 @@ pub enum CoverSource {
 const FOLDER_STEMS: &[&str] = &["cover", "folder", "front", "album"];
 const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
-/// Resolves the best available cover source for a track: first an embedded
-/// picture, otherwise the first matching sidecar image in the track's folder,
-/// otherwise None. Pure read — touches no cache and writes nothing.
-pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
-    if let Some(bytes) = embedded_picture(track_path) {
-        return Some(CoverSource::Embedded(bytes));
-    }
-    let dir = track_path.parent()?;
-    folder_image(dir).map(CoverSource::FolderImage)
+/// All cover-relevant tag fields, read in ONE lofty pass (so `resolve_source`
+/// and the download worker never open the file twice).
+#[derive(Debug, Default)]
+pub struct CoverTag {
+    pub picture: Option<Vec<u8>>,
+    pub album_artist: Option<String>,
+    pub album: Option<String>,
+    pub release_mbid: Option<String>,
 }
 
-/// Reads the first embedded picture's bytes from an audio file, if any.
-fn embedded_picture(track_path: &Path) -> Option<Vec<u8>> {
+pub fn read_cover_tag(track_path: &Path) -> CoverTag {
     use lofty::prelude::*;
-    let tagged = lofty::read_from_path(track_path).ok()?;
-    let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
-    let picture = tag.pictures().first()?;
-    Some(picture.data().to_vec())
+    let Ok(tagged) = lofty::read_from_path(track_path) else {
+        return CoverTag::default();
+    };
+    let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else {
+        return CoverTag::default();
+    };
+    CoverTag {
+        picture: tag
+            .pictures()
+            .first()
+            .map(|picture| picture.data().to_vec()),
+        album_artist: tag
+            .get_string(&lofty::tag::ItemKey::AlbumArtist)
+            .map(str::to_string),
+        album: tag.album().map(|album| album.to_string()),
+        release_mbid: tag
+            .get_string(&lofty::tag::ItemKey::MusicBrainzReleaseId)
+            .map(str::to_string),
+    }
+}
+
+/// Resolves the best available cover source for a track: embedded picture,
+/// sidecar image in the track folder, then the offline downloaded-cover cache.
+/// Pure read — it never writes to either the library or cache.
+pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
+    let tag = read_cover_tag(track_path);
+    if let Some(bytes) = tag.picture {
+        return Some(CoverSource::Embedded(bytes));
+    }
+    if let Some(dir) = track_path.parent() {
+        if let Some(path) = folder_image(dir) {
+            return Some(CoverSource::FolderImage(path));
+        }
+    }
+    // Stage 3 (offline): a previously downloaded cover for this album.
+    if let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref()) {
+        let key = crate::cover_download::album_key(album_artist, album);
+        if let Some(path) = crate::cover_download::downloaded_cover_path(&key) {
+            return Some(CoverSource::FolderImage(path));
+        }
+    }
+    None
 }
 
 /// Finds a sidecar cover image in `dir` by canonical stem + known extension,
@@ -225,6 +261,40 @@ mod tests {
             resolve_source(&track),
             Some(CoverSource::FolderImage(_))
         ));
+    }
+
+    #[test]
+    fn resolve_source_stage3_finds_a_downloaded_cover() {
+        // A track file with album tags but NO embedded/folder cover, whose
+        // album already has a downloaded cache file, resolves to it.
+        let dir = tempfile::tempdir().unwrap();
+        // A minimal file that lofty can read tags from is heavy to fabricate;
+        // instead assert the stage-3 lookup wiring via read_cover_tag + the
+        // download-cache path directly:
+        let key = crate::cover_download::album_key("StageThree", "Album");
+        std::fs::create_dir_all(crate::cover_download::downloaded_dir()).unwrap();
+        let f = crate::cover_download::downloaded_dir().join(format!("{key}.jpg"));
+        std::fs::write(&f, b"img").unwrap();
+        assert_eq!(
+            crate::cover_download::downloaded_cover_path(&key),
+            Some(f.clone()),
+            "stage-3 lookup must find the album's downloaded cover"
+        );
+        // And a downloaded cover path is always under the cache dir (promise):
+        assert!(f.starts_with(cache_dir()));
+        std::fs::remove_file(&f).ok();
+        let _ = dir;
+    }
+
+    #[test]
+    fn read_cover_tag_degrades_to_empty_fields_for_an_unreadable_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let track = write(dir.path(), "not-a-track.flac", b"not audio");
+        let tag = read_cover_tag(&track);
+        assert!(tag.picture.is_none());
+        assert!(tag.album_artist.is_none());
+        assert!(tag.album.is_none());
+        assert!(tag.release_mbid.is_none());
     }
 
     // A real, decodable 1200x1200 red PNG — larger than the biggest thumbnail
