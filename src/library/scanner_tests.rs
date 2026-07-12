@@ -704,3 +704,75 @@ fn mark_vanished_under_root_does_not_recount_an_already_missing_track() {
     assert_eq!(second, 0);
     assert_eq!(missing_flag(&conn, id), 1);
 }
+
+/// Test-only: inserts a bare, non-missing track row at `path` with no audio
+/// file backing it. Enough for `mark_vanished_under_root`, whose candidate
+/// query and prefix/`exists()` checks only read `id`/`path` — the file never
+/// having existed means `Path::exists()` is `false`, so the ONLY thing that
+/// keeps such a row from being marked is the under-root membership test.
+fn insert_raw_track(conn: &Connection, path: &std::path::Path) {
+    conn.execute(
+        "INSERT INTO tracks (path, added_at, missing) VALUES (?1, 0, 0)",
+        [path.to_string_lossy().to_string()],
+    )
+    .unwrap();
+}
+
+fn missing_count(conn: &Connection) -> i64 {
+    conn.query_row("SELECT count(*) FROM tracks WHERE missing = 1", [], |r| {
+        r.get(0)
+    })
+    .unwrap()
+}
+
+/// A reconcile of `<base>/music` must not touch a row under the sibling root
+/// `<base>/music2`, which shares a bare *string* prefix but not a path
+/// *component* prefix. Regression net for the SQL prefilter: its pattern is
+/// `<root>/%`, so it can never match `<base>/music2/...`; the authoritative
+/// component-wise `starts_with` also rejects it. Green before and after the
+/// prefilter lands (this is a perf refactor, not a behavior change).
+#[test]
+fn mark_vanished_ignores_sibling_root_with_common_string_prefix() {
+    let base = tempfile::tempdir().unwrap();
+    let root = base.path().join("music");
+    let sibling = base.path().join("music2");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    // A non-missing row whose file never existed, under the sibling root.
+    insert_raw_track(&conn, &sibling.join("gone.flac"));
+
+    let marked = mark_vanished_under_root(&conn, &root).unwrap();
+
+    assert_eq!(marked, 0);
+    assert_eq!(
+        missing_count(&conn),
+        0,
+        "sibling-root row must not be marked"
+    );
+}
+
+/// A root containing `_` (LIKE's single-char wildcard) must not widen the
+/// candidate set: a reconcile of `<base>/a_b` must not match a row under
+/// `<base>/axb`. Regression net that the prefilter escapes LIKE
+/// metacharacters (`ESCAPE '\'`) so `_` matches only a literal underscore;
+/// the component-wise `starts_with` re-filter also rejects `axb`. Green
+/// before and after the prefilter lands.
+#[test]
+fn mark_vanished_treats_like_metacharacters_in_root_literally() {
+    let base = tempfile::tempdir().unwrap();
+    let root = base.path().join("a_b");
+    let decoy = base.path().join("axb");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&decoy).unwrap();
+
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    insert_raw_track(&conn, &decoy.join("gone.flac"));
+
+    mark_vanished_under_root(&conn, &root).unwrap();
+
+    assert_eq!(missing_count(&conn), 0);
+}

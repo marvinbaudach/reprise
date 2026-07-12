@@ -490,25 +490,47 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
 /// transiently — and wrongly — flag a moved-but-not-yet-rescanned file as
 /// missing.
 ///
-/// ## Component-wise prefix check, not string/SQL `LIKE`
+/// ## Component-wise prefix check is authoritative; SQL `LIKE` only prefilters
 ///
-/// "Under `root`" is decided by `Path::starts_with`, which compares path
-/// *components*, not raw bytes: a track at `/music/foobar/x.flac` does NOT
-/// count as being under `/music/foo`, which a naive string/`LIKE 'foo%'`
-/// prefix check would incorrectly include. This is also what keeps this
-/// function from ever touching a track outside `root` — the guarantee a
-/// future multi-folder library depends on — even when that other track's
-/// file has also vanished from disk; only a scan/watch of *that* track's own
-/// root is ever responsible for marking it.
+/// Membership ("under `root`") is decided by `Path::starts_with`, which
+/// compares path *components*, not raw bytes: a track at `/music/foobar/
+/// x.flac` does NOT count as being under `/music/foo`, which a naive
+/// string/`LIKE 'foo%'` prefix check would incorrectly include. This is also
+/// what keeps this function from ever touching a track outside `root` — the
+/// guarantee a future multi-folder library depends on — even when that other
+/// track's file has also vanished from disk; only a scan/watch of *that*
+/// track's own root is ever responsible for marking it.
 ///
-/// A full scan over non-missing tracks (no index supports a path-prefix
-/// search) — acceptable at the library sizes this app targets, and no
-/// heavier than the sidebar/status-bar's own full-table aggregate queries.
+/// A SQL `LIKE '<root>/%'` prefilter (Queue-C ledger item) narrows the
+/// candidate rows the watcher streams through Rust on every reconcile,
+/// instead of full-scanning all non-missing tracks. The `/` before `%` and
+/// the escaping of LIKE metacharacters mean the pattern already excludes
+/// sibling roots (`/music` vs `/music2`), but it is deliberately only a
+/// *superset* filter: `starts_with` still decides membership on every
+/// surviving candidate, so the result is byte-identical to the pre-filter
+/// implementation regardless of `LIKE`'s ASCII case-insensitivity or any
+/// other way the pattern is wider than the component check.
 pub fn mark_vanished_under_root(conn: &Connection, root: &Path) -> Result<u32, ScanError> {
+    // Perf (Queue-C ledger item): narrow candidates in SQL instead of
+    // streaming the whole table through Rust on every watcher reconcile.
+    // The pattern is "<root>/%" with LIKE metacharacters escaped, so it can
+    // never match a *sibling* root sharing a string prefix ("/music" vs
+    // "/music2"). The component-wise starts_with() below remains the
+    // authoritative check — the LIKE only shrinks the candidate set, it
+    // never decides membership, so semantics are byte-identical to the
+    // pre-filter implementation (including exotic-UTF-8 and trailing-slash
+    // edges).
+    let root_str = root.to_string_lossy();
+    let pattern = format!(
+        "{}/%",
+        crate::library::playlists::escape_like(root_str.trim_end_matches('/'))
+    );
     let candidates: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare("SELECT id, path FROM tracks WHERE missing = 0")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, path FROM tracks WHERE missing = 0 AND path LIKE ?1 ESCAPE '\\'",
+        )?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .query_map(rusqlite::params![pattern], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
         rows
     };
