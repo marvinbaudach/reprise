@@ -10,6 +10,7 @@ trap 'rm -rf "$tmp_root"' EXIT
 echo "== Rust gates =="
 cargo fmt --check
 cargo clippy --all-targets --workspace -- -D warnings
+env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" cargo test --workspace
 cargo audit
 cargo check --manifest-path crates/reprise-core/Cargo.toml

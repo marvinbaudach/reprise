@@ -14,12 +14,12 @@ Then run:
 scripts/check-release.sh
 ```
 
-The script verifies Rust formatting/lints/tests/audit, standalone core purity,
-translation coverage, desktop metadata and icons, a complete optimized Meson
-DESTDIR installation, source-file size limits, Flatpak manifest structure, and
-the generated Cargo checksums. It runs `flatpak-builder-lint` when that tool (or
-the `org.flatpak.Builder` Flatpak) is installed and reports an explicit skip
-otherwise. It never launches Reprise or opens a user database.
+The script verifies Rust formatting/lints/documentation/tests/audit, standalone
+core purity, translation coverage, desktop metadata and icons, a complete
+optimized Meson DESTDIR installation, source-file size limits, Flatpak manifest
+structure, and the generated Cargo checksums. It runs `flatpak-builder-lint`
+when that tool (or the `org.flatpak.Builder` Flatpak) is installed and reports
+an explicit skip otherwise. It never launches Reprise or opens a user database.
 
 Only `RUSTSEC-2024-0436` (`paste`, transitively through `lofty`) is an accepted
 audit warning. Any additional advisory is a release blocker. The AppStream check
