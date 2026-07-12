@@ -154,7 +154,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 true
             });
     let cover_download = cover_download_worker::setup(&conn.borrow());
-    primary_menu::install(&header, &window, conn, &cover_download);
 
     let player =
         match PlayerController::new(conn.clone(), mpris_enabled, cover_download.clone(), app) {
@@ -248,6 +247,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             cover_download.clone(),
         ))
     };
+    primary_menu::install(&header, &window, conn, &cover_download, &track_list);
 
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(&header);

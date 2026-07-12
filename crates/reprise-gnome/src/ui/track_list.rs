@@ -65,7 +65,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::browse_bar::BrowseBar;
-use crate::ui::column_layout::{self, ColumnRegistry};
+use crate::ui::column_layout::{self, ColumnId, ColumnLayout, ColumnRegistry};
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
@@ -307,7 +307,6 @@ pub(super) struct Shared {
 pub struct TrackList {
     shared: Rc<Shared>,
     root: gtk4::Box,
-    #[allow(dead_code)] // GUI-C Task 6 applies imported layouts at runtime.
     column_registry: ColumnRegistry,
 }
 
@@ -509,6 +508,32 @@ impl TrackList {
     pub fn reload(&self) {
         self.shared.browse_bar.refresh();
         reload(&self.shared);
+    }
+
+    pub(super) fn apply_column_layout(&self, layout: &ColumnLayout) -> Result<(), rusqlite::Error> {
+        let serialized = column_layout::serialize_layout(layout);
+        reprise_core::library::settings::set_setting(
+            &self.shared.conn.borrow(),
+            reprise_core::library::settings::COLUMN_LAYOUT_KEY,
+            &serialized,
+        )?;
+        self.column_registry.apply(layout);
+        let sort = self.shared.sort.borrow().clone();
+        if let Some(column) =
+            ColumnId::from_sort_field(&sort.field).and_then(|id| self.column_registry.column(id))
+        {
+            let order = if sort.dir == "desc" {
+                gtk4::SortType::Descending
+            } else {
+                gtk4::SortType::Ascending
+            };
+            self.shared.column_view.sort_by_column(Some(column), order);
+        }
+        Ok(())
+    }
+
+    pub(super) fn toast(&self, message: &str) {
+        show_toast(&self.shared, message);
     }
 
     /// Injects the window's toast overlay, once it exists — see the
