@@ -39,24 +39,27 @@ Record these once when the final pass starts:
 - [x] Imported playlist rows display existing library ratings, as intended.
 - [x] Batch tag changes become visible immediately in the library.
 
-## Pending: recent regression confirmations
+## Recent regression confirmations
 
 Run these first after restarting the current `target/release/reprise`.
 
-- [ ] **Playlist duplicate prevention:** drag a track onto a playlist that already
+- [x] **Playlist duplicate prevention:** drag a track onto a playlist that already
   contains it. Expected: the count and row set do not change. Existing historical
   duplicates are not silently removed.
-- [ ] **Full-cell drag surface:** start a playlist reorder from blank space inside a
+- [x] **Full-cell drag surface:** start a playlist reorder from blank space inside a
   Title/Artist/Album cell, not directly on glyphs. Expected: the drag starts across
   the cell allocation, including the cover cell.
-- [ ] **Reorder insertion feedback:** hover a single-row drag over another row in a
-  playlist and in Queue. Expected: an accent insertion line appears only where
-  reorder is valid; Library and sorted/filtered playlist views show no false target.
-- [ ] **Imported playlist selection:** import a populated M3U. Expected: the new
+- [x] **Playlist reorder insertion feedback:** hover a single-row drag over another
+  playlist row. Expected: an accent insertion line shows the insertion target.
+- [ ] **Queue reorder insertion feedback:** hover a single-row drag over another Queue
+  row. Expected: an accent insertion line appears; Library and sorted/filtered
+  playlist views show no false reorder target.
+- [x] **Imported playlist selection:** import a populated M3U. Expected: the new
   playlist is visibly selected in the sidebar and agrees with the title and table.
-- [ ] **Tag editor Enter key:** edit any valid field and press Enter. Expected: Apply
-  runs and the dialog closes. Enter with an invalid Year/Track value must keep the
-  dialog open and show the validation error.
+- [x] **Tag editor Enter key:** edit any valid field and press Enter. Expected: Apply
+  runs, saves the change, and closes the dialog.
+- [ ] **Tag editor invalid number:** enter an invalid Year or Track value and press
+  Enter. Expected: the dialog stays open and shows the validation error.
 
 ## Pending: first run, layout, and language
 
