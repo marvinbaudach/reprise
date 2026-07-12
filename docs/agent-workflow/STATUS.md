@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     GUI-A2 Task 2   # e.g. "GUI-A2 Task 2"
-SINCE:    2026-07-12 14:27 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —               # e.g. "GUI-A2 Task 2"
+SINCE:    —               # timestamp when claimed
 ```
 
-_As of 2026-07-12 14:27 CEST: Codex claimed GUI-A2 Task 2._
+_As of 2026-07-12 14:50 CEST: FREE. Codex completed GUI-A2 Tasks 2–7 and stage close-out._
 
 ## Current position
 
-- **Active plan:** `docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md` (GUI-A2, 7 tasks).
-- **Last completed:** GUI-A2 **Task 1** — `cover_download` foundation (commit `7c3675c`),
-  adversarial review CLEAN. Core stays dependency-pure; `ureq` added no new audit advisory.
-- **➡️ NEXT:** GUI-A2 **Task 2** — MusicBrainz URL builders + conservative release matching.
-  Then Tasks 3–5 (core), 6–7 (frontend), then the GUI-A2 stage close-out.
-- **HEAD at handoff:** `38bca16` (docs). Working tree clean.
+- **Completed plan:** `docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md` (GUI-A2, 7 tasks).
+- **Last completed:** **GUI-A2** — opt-in online cover download (Tasks 1–7), through commit
+  `ba9f600`; whole-branch review READY. Final gates: 409 passed, 1 ignored; core PURE;
+  isolated default-OFF and toggle-ON smokes passed. Human real-network/render check remains.
+- **➡️ NEXT:** GUI-B design/spec/plan — multi-select batch tag editor plus delete/trash.
+- **Feature HEAD:** `ba9f600`; the lock-release docs commit follows. Working tree clean.
 
 ## Done so far (compact)
 
@@ -45,7 +45,7 @@ _As of 2026-07-12 14:27 CEST: Codex claimed GUI-A2 Task 2._
   `cargo tree`); platform seam; settings façade; module registry.
 - ✅ **GUI-A**: album covers in list + player bar, Now-Playing full view, cover in the track-change
   notification. Whole-branch review: READY TO MERGE.
-- 🟡 **GUI-A2** (in progress): opt-in online album-cover download. Task 1 done+reviewed; Tasks 2–7 open.
+- ✅ **GUI-A2**: opt-in online album-cover download via MusicBrainz/Cover Art Archive; default OFF.
 - ⬜ **GUI-B**: tag editor with multi-select batch edit + delete/trash.
 - ⬜ **GUI-C**: browse bar + Rhythmbox column import. ⬜ **GUI-D**: first-run wizard + session restore.
 - ⬜ **Release**: Flatpak/Flathub, gettext (German first), .desktop/AppStream.
