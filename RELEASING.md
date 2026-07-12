@@ -27,6 +27,23 @@ allows exactly two documented informational conditions: the established
 uppercase component ID `org.reprise.Reprise` and the absent homepage while no
 public project URL exists.
 
+Four GTK regression tests require a display and are ignored by the normal test
+suite. Run each in its own process because GTK can only be initialized from one
+thread per process, while Rust's test harness gives separate tests separate
+threads even with `--test-threads=1`:
+
+```sh
+for test in \
+  closed_popover_stays_parented_until_pending_actions_finish \
+  reentrant_set_on_changed_does_not_panic \
+  enter_activates_the_apply_button_from_every_entry_row \
+  interaction_surface_expands_to_the_whole_cell
+do
+  XDG_DATA_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)" \
+    xvfb-run -a cargo test -p reprise-gnome "$test" -- --ignored
+done
+```
+
 ## Build artifacts
 
 Create a clean optimized install tree without writing to `/usr`:
