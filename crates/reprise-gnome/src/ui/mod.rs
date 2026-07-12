@@ -38,6 +38,7 @@ mod player_bar_seek;
 mod player_bar_state;
 pub mod player_controller;
 pub mod player_controller_wiring;
+mod playlist_import_navigation;
 pub mod playlist_io;
 mod playlist_io_names;
 mod popover_lifecycle;

@@ -619,19 +619,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &window,
         &toast_overlay,
         conn.clone(),
-        track_list.clone(),
         sidebar.clone(),
-        window_title.clone(),
-        show_content_if_collapsed.clone(),
     );
-    playlist_io::arm_smoke_m3u(
-        conn.clone(),
-        &toast_overlay,
-        track_list.clone(),
-        sidebar.clone(),
-        window_title.clone(),
-        show_content_if_collapsed,
-    );
+    playlist_io::arm_smoke_m3u(conn.clone(), &toast_overlay, sidebar.clone());
 
     arm_smoke_bar_position(conn, &toolbar_view, &bottom_box);
 
