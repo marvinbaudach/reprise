@@ -264,7 +264,10 @@ impl PlayerController {
     /// unavailable (no playbin, bad `REPRISE_AUDIO_SINK` override, …) — the
     /// caller decides how to degrade (see `window::build`: library browsing
     /// keeps working without a bar).
-    pub fn new(conn: Rc<RefCell<Connection>>) -> Result<Rc<Self>, PlaybackError> {
+    pub fn new(
+        conn: Rc<RefCell<Connection>>,
+        mpris_enabled: bool,
+    ) -> Result<Rc<Self>, PlaybackError> {
         let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
 
         let player = Player::new(Box::new(move |event| {
@@ -282,7 +285,20 @@ impl PlayerController {
         // the fields it feeds), not in `window::build`, since nothing
         // outside this controller needs either handle — see the module's
         // `## MPRIS` doc section.
-        let handles = mpris::start(crate::APP_ID);
+        //
+        // Module registry gate: MPRIS is an optional module
+        // (`module.mpris.enabled`). When it's off, `MediaIntegrationHandles::
+        // inert()` hands back dormant handles that spawn no thread and claim
+        // no bus name — observably identical to the no-session-bus
+        // degradation path, so the rest of the controller is unchanged.
+        let handles = if mpris_enabled {
+            mpris::start(crate::APP_ID)
+        } else {
+            tracing::info!(
+                "MPRIS module disabled (module.mpris.enabled = 0); not claiming the bus name"
+            );
+            reprise_core::media_integration::MediaIntegrationHandles::inert()
+        };
         let mpris_state = handles.shared_state;
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;

@@ -247,6 +247,36 @@ pub struct MediaIntegrationHandles {
     pub seek_notify: async_channel::Sender<i64>,
 }
 
+impl MediaIntegrationHandles {
+    /// Dormant handles for when OS media integration is switched off (the
+    /// `module.mpris.enabled = 0` path, module registry). Constructs the
+    /// exact same channels a real platform `start(…)` does — a fresh default
+    /// `SharedMprisState`, an `MprisCommand` receiver, and a seek-notify
+    /// sender — but **spawns no thread and touches no bus**: the command
+    /// receiver's sender is dropped here, so `recv()` never yields; the
+    /// seek-notify sender's receiver is dropped, so the controller's
+    /// after-seek `try_send`s are silently discarded.
+    ///
+    /// This is deliberately indistinguishable, from the app's perspective,
+    /// from the platform side's "no session bus" degradation (see
+    /// `reprise-platform-linux`'s `mpris` module `## Failure is never fatal`
+    /// section): there too the controller keeps writing to a mirror nobody
+    /// reads and `try_send`ing to a receiver nobody drains. The disabled
+    /// module therefore needs no platform code at all — the whole
+    /// dormant-handle construction lives in this cross-platform core.
+    pub fn inert() -> Self {
+        let shared_state: SharedMprisState = Arc::new(Mutex::new(MprisState::default()));
+        let (_commands_sender, commands) = async_channel::unbounded::<MprisCommand>();
+        let (seek_notify, _seek_receiver) = async_channel::unbounded::<i64>();
+
+        Self {
+            shared_state,
+            commands,
+            seek_notify,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
