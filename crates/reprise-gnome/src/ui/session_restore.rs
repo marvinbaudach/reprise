@@ -55,6 +55,10 @@ pub(super) fn restore_runtime(
     player: Option<&Rc<PlayerController>>,
     state: &SessionState,
 ) {
+    if let Some(player) = player {
+        player.restore_session_queue(state.queue.clone());
+        sidebar.refresh("session queue restored");
+    }
     view_session::restore(
         search_entry,
         track_list,
@@ -63,9 +67,6 @@ pub(super) fn restore_runtime(
         search_guard,
         state,
     );
-    if let Some(player) = player {
-        player.restore_session_queue(state.queue.clone());
-    }
     if std::env::var(REPORT_ENV).is_ok() {
         let playback = player.map_or(MprisPlaybackStatus::Stopped, |player| {
             player.session_playback_status()
