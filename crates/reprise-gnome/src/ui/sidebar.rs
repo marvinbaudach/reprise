@@ -302,6 +302,13 @@ impl Sidebar {
         rebuild(&self.shared, None, reason);
     }
 
+    /// Rebuilds counts and selects `source` through the normal row-selected
+    /// callback, keeping sidebar highlight, track list, title, and adaptive
+    /// navigation synchronized. Used after importing a populated playlist.
+    pub fn refresh_and_select(&self, source: ViewSource, reason: &str) {
+        rebuild(&self.shared, Some(source), reason);
+    }
+
     pub(super) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
         crate::ui::sidebar_session::restore_source(&self.shared, requested)
     }

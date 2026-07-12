@@ -60,13 +60,12 @@ use rusqlite::Connection;
 use reprise_core::library::m3u::{self, M3uExportEntry};
 use reprise_core::library::playlists;
 use reprise_core::queries;
-use reprise_core::view_source::ViewSource;
 
+use super::playlist_import_navigation;
 use super::playlist_io_names::{display_name, playlist_name_from_file};
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
-use super::track_list::TrackList;
 
 /// Env var read by [`arm_smoke_m3u`] — see that function's doc comment for
 /// the two accepted value forms.
@@ -255,16 +254,12 @@ pub(super) fn m3u_file_filter() -> gtk4::FileFilter {
 /// not a second implementation. Dismissing the dialog is a normal, expected
 /// outcome (not an error) — logged at debug and otherwise ignored, matching
 /// `window.rs`'s `wire_scan_button`.
-#[allow(clippy::too_many_arguments)]
 pub fn wire_import_button(
     import_button: &gtk4::Button,
     window: &adw::ApplicationWindow,
     toast_overlay: &adw::ToastOverlay,
     conn: Rc<RefCell<Connection>>,
-    track_list: Rc<TrackList>,
     sidebar: Rc<Sidebar>,
-    window_title: adw::WindowTitle,
-    show_content_if_collapsed: Rc<dyn Fn()>,
 ) {
     let window = window.clone();
     let toast_overlay = toast_overlay.clone();
@@ -288,10 +283,7 @@ pub fn wire_import_button(
         let window = window.clone();
         let toast_overlay = toast_overlay.clone();
         let conn = conn.clone();
-        let track_list = track_list.clone();
         let sidebar = sidebar.clone();
-        let window_title = window_title.clone();
-        let show_content_if_collapsed = show_content_if_collapsed.clone();
         let import_button = import_button_handle.clone();
 
         glib::spawn_future_local(async move {
@@ -317,24 +309,16 @@ pub fn wire_import_button(
                 return;
             };
 
-            apply_import_result(
-                import_playlist(&conn, &path),
-                &toast_overlay,
-                &track_list,
-                &sidebar,
-                &window_title,
-                &show_content_if_collapsed,
-            );
+            apply_import_result(import_playlist(&conn, &path), &toast_overlay, &sidebar);
         });
     });
 }
 
 /// Applies an [`import_playlist`] result to the UI. On success with at least
-/// one matched track, refreshes the sidebar (the new playlist row), switches
-/// the track list straight to it (mirrors `ui::sidebar`'s own "New playlist"
-/// → select-it behavior), updates the headerbar title, brings the content
-/// page forward if the split view is collapsed, and shows the "Imported N of
-/// M" toast. On success with zero matched tracks, no playlist was created
+/// one matched track, rebuilds and selects the new sidebar row. The normal
+/// sidebar selection callback then switches the track list, title, and
+/// adaptive navigation as one synchronized operation before the "Imported N
+/// of M" toast. On success with zero matched tracks, no playlist was created
 /// (see [`import_playlist`]'s doc comment) — the sidebar/track-list/title
 /// are left untouched and a "0 of N matched" toast is shown instead. On
 /// failure, logs and shows a generic failure toast. Shared by the real
@@ -343,10 +327,7 @@ pub fn wire_import_button(
 fn apply_import_result(
     result: Result<ImportOutcome, ImportError>,
     toast_overlay: &adw::ToastOverlay,
-    track_list: &Rc<TrackList>,
     sidebar: &Rc<Sidebar>,
-    window_title: &adw::WindowTitle,
-    show_content_if_collapsed: &Rc<dyn Fn()>,
 ) {
     match result {
         Ok(outcome) => {
@@ -366,10 +347,10 @@ fn apply_import_result(
                 );
                 return;
             };
-            sidebar.refresh("playlist imported");
-            track_list.set_source(ViewSource::Playlist(playlist_id));
-            window_title.set_title(&outcome.name);
-            show_content_if_collapsed();
+            sidebar.refresh_and_select(
+                playlist_import_navigation::target_for_import(playlist_id),
+                "playlist imported",
+            );
             toasts::show(
                 toast_overlay,
                 &strings::playlist_imported_toast(&outcome.name, outcome.matched, outcome.total),
@@ -401,14 +382,10 @@ fn apply_import_result(
 ///
 /// Usage: `REPRISE_SCAN_DIR=… REPRISE_SMOKE_M3U=import:/tmp/x.m3u
 ///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
-#[allow(clippy::too_many_arguments)]
 pub fn arm_smoke_m3u(
     conn: Rc<RefCell<Connection>>,
     toast_overlay: &adw::ToastOverlay,
-    track_list: Rc<TrackList>,
     sidebar: Rc<Sidebar>,
-    window_title: adw::WindowTitle,
-    show_content_if_collapsed: Rc<dyn Fn()>,
 ) {
     let Ok(value) = std::env::var(SMOKE_M3U_ENV_VAR) else {
         return;
@@ -420,10 +397,7 @@ pub fn arm_smoke_m3u(
             apply_import_result(
                 import_playlist(&conn, Path::new(path)),
                 &toast_overlay,
-                &track_list,
                 &sidebar,
-                &window_title,
-                &show_content_if_collapsed,
             );
             return;
         }
