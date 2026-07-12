@@ -61,6 +61,14 @@ impl PlayerController {
             callback(track_id, queue_position);
         }
     }
+
+    pub(super) fn notify_restored_current_track(&self) {
+        let snapshot = self.queue.borrow().snapshot();
+        let current = self.queue.borrow().current();
+        if let Some(track_id) = current {
+            self.notify_current_track_changed(track_id, snapshot.position);
+        }
+    }
 }
 
 impl TrackList {

@@ -751,7 +751,8 @@ impl PlayerController {
     /// mirror.rs` and `playback_faults.rs` can call it too.
     pub(super) fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
-        self.sync_transport_enabled(false);
+        let queue_can_resume = self.queue.borrow().current().is_some();
+        self.sync_transport_enabled(queue_can_resume);
         // Stage 2 Task 6: cleared and mirrored unconditionally, before
         // `player.stop()` even runs — unlike the bar (which relies on the
         // `StateChanged(Stopped)` event on the success path, only resetting
