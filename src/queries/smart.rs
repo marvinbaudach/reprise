@@ -1,0 +1,179 @@
+//! `ViewSource::Smart(id)` window/count/ids queries — see the module doc's
+//! `Smart(id)` section for the rules-to-SQL translation and the "Smart
+//! playlist window math" nested-subquery approach. Split out of the former
+//! single-file `queries.rs` (Refactoring & Extensibility Task 1) — a pure
+//! move, no behavior change.
+
+use crate::library::playlists::{self, SmartPlaylist};
+use crate::models::Track;
+
+use super::clauses::{filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track};
+use super::queue::QUEUE_LIMIT;
+use super::MAX_WINDOW_LIMIT;
+use rusqlite::Connection;
+
+/// Loads one `SmartPlaylist` row by id via `playlists::list_smart` (a full
+/// scan of the tiny `smart_playlists` table, not worth a bespoke single-row
+/// query — see that module's DRY note). `None` if the id doesn't exist
+/// (e.g. the playlist was deleted between the sidebar listing it and the
+/// user clicking it) — every caller here treats that as "nothing to show",
+/// never a hard error.
+fn load_smart_playlist(
+    conn: &Connection,
+    id: i64,
+) -> Result<Option<SmartPlaylist>, rusqlite::Error> {
+    Ok(playlists::list_smart(conn)?
+        .into_iter()
+        .find(|p| p.id == id))
+}
+
+/// Builds the nested-subquery SELECT + bound params for a `Smart(id)`
+/// window — see the module doc's `Smart playlist window math` section.
+/// Returns the same `SmartRulesError` `smart_rules_to_sql` would (a bad
+/// `rules_json`, most likely from direct DB tampering since Task 2's rules
+/// editor validates before saving) rather than a `rusqlite::Error`; callers
+/// treat that as "no rows" rather than propagating it as a SQL failure.
+fn build_smart_window_query(
+    smart: &SmartPlaylist,
+    filter: &str,
+    offset: i64,
+    limit: i64,
+) -> Result<(String, Vec<rusqlite::types::Value>), playlists::SmartRulesError> {
+    let has_filter = !filter.trim().is_empty();
+    let (order_expr, dir) = order_expr_and_dir(&smart.sort_field, &smart.sort_dir);
+    let (rules_frag, mut params) = playlists::smart_rules_to_sql(&smart.rules_json)?;
+
+    let mut next_idx = params.len() as u8 + 1;
+    let mut inner_sql = format!(
+        "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
+         duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
+         file_mtime, missing, file_size, device, inode \
+         FROM tracks WHERE missing = 0 AND ({rules_frag})"
+    );
+    if has_filter {
+        inner_sql.push_str(&filter_clause(true, next_idx));
+        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
+        next_idx += 1;
+    }
+    inner_sql.push_str(&format!(" ORDER BY {order_expr} {dir}"));
+    if let Some(limit_count) = smart.limit_count {
+        inner_sql.push_str(&format!(" LIMIT ?{next_idx}"));
+        params.push(rusqlite::types::Value::Integer(limit_count));
+        next_idx += 1;
+    }
+
+    let limit_idx = next_idx;
+    let offset_idx = next_idx + 1;
+    let sql = format!(
+        "SELECT * FROM ({inner_sql}) ORDER BY {order_expr} {dir} LIMIT ?{limit_idx} OFFSET ?{offset_idx}"
+    );
+    params.push(rusqlite::types::Value::Integer(limit));
+    params.push(rusqlite::types::Value::Integer(offset));
+
+    Ok((sql, params))
+}
+
+pub(super) fn query_track_window_smart(
+    conn: &mut Connection,
+    smart_id: i64,
+    filter: &str,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<Track>, rusqlite::Error> {
+    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
+    let Some(smart) = load_smart_playlist(conn, smart_id)? else {
+        tracing::warn!(
+            smart_id,
+            "smart playlist not found for window query; returning empty"
+        );
+        return Ok(Vec::new());
+    };
+
+    let (sql, params) = match build_smart_window_query(&smart, filter, offset, limit) {
+        Ok(v) => v,
+        Err(error) => {
+            tracing::error!(%error, smart_id, "invalid smart playlist rules; returning empty window");
+            return Ok(Vec::new());
+        }
+    };
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_track)?;
+    rows.collect()
+}
+
+pub(super) fn query_track_count_smart(
+    conn: &Connection,
+    smart_id: i64,
+    filter: &str,
+) -> Result<i64, rusqlite::Error> {
+    let Some(smart) = load_smart_playlist(conn, smart_id)? else {
+        tracing::warn!(
+            smart_id,
+            "smart playlist not found for count query; returning 0"
+        );
+        return Ok(0);
+    };
+    let has_filter = !filter.trim().is_empty();
+    let (rules_frag, mut params) = match playlists::smart_rules_to_sql(&smart.rules_json) {
+        Ok(v) => v,
+        Err(error) => {
+            tracing::error!(%error, smart_id, "invalid smart playlist rules; returning 0");
+            return Ok(0);
+        }
+    };
+    let next_idx = params.len() as u8 + 1;
+    let mut sql = format!("SELECT count(*) FROM tracks WHERE missing = 0 AND ({rules_frag})");
+    if has_filter {
+        sql.push_str(&filter_clause(true, next_idx));
+        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
+    }
+    let raw: i64 = conn.query_row(&sql, rusqlite::params_from_iter(params.iter()), |r| {
+        r.get(0)
+    })?;
+    Ok(match smart.limit_count {
+        Some(n) => raw.min(n),
+        None => raw,
+    })
+}
+
+pub(super) fn query_track_ids_smart(
+    conn: &Connection,
+    smart_id: i64,
+    filter: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let Some(smart) = load_smart_playlist(conn, smart_id)? else {
+        tracing::warn!(
+            smart_id,
+            "smart playlist not found for ids query; returning empty"
+        );
+        return Ok(Vec::new());
+    };
+    let has_filter = !filter.trim().is_empty();
+    let (order_expr, dir) = order_expr_and_dir(&smart.sort_field, &smart.sort_dir);
+    let (rules_frag, mut params) = match playlists::smart_rules_to_sql(&smart.rules_json) {
+        Ok(v) => v,
+        Err(error) => {
+            tracing::error!(%error, smart_id, "invalid smart playlist rules; returning empty ids");
+            return Ok(Vec::new());
+        }
+    };
+    let next_idx = params.len() as u8 + 1;
+    let mut sql = format!("SELECT id FROM tracks WHERE missing = 0 AND ({rules_frag})");
+    if has_filter {
+        sql.push_str(&filter_clause(true, next_idx));
+        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
+    }
+    // The smart playlist's own limit bounds the queue too (capped by
+    // `QUEUE_LIMIT` for defense in depth, same as every other source's ids
+    // query); a literal, not a bound parameter — both operands are
+    // Rust-side i64s, never caller-supplied text.
+    let effective_limit = smart.limit_count.unwrap_or(QUEUE_LIMIT).min(QUEUE_LIMIT);
+    sql.push_str(&format!(
+        " ORDER BY {order_expr} {dir} LIMIT {effective_limit}"
+    ));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_id)?;
+    rows.collect()
+}
