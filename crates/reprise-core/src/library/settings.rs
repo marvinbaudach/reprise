@@ -83,6 +83,43 @@ pub fn set_library_root(conn: &Connection, root: &str) -> Result<(), rusqlite::E
     set_setting(conn, LIBRARY_ROOT_KEY, root)
 }
 
+pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
+
+/// Where the player bar docks. `Bottom` is the default and the fallback for any
+/// unknown/hand-edited value (same tolerance posture as `get_bool`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerBarPosition {
+    Top,
+    Bottom,
+}
+
+pub fn get_player_bar_position(conn: &Connection) -> PlayerBarPosition {
+    match get_setting(conn, PLAYER_BAR_POSITION_KEY) {
+        Ok(Some(v)) if v == "top" => PlayerBarPosition::Top,
+        Ok(Some(v)) if v == "bottom" => PlayerBarPosition::Bottom,
+        Ok(Some(other)) => {
+            tracing::warn!(value = %other, "unrecognized player_bar_position; using Bottom");
+            PlayerBarPosition::Bottom
+        }
+        Ok(None) => PlayerBarPosition::Bottom,
+        Err(error) => {
+            tracing::warn!(%error, "could not read player_bar_position; using Bottom");
+            PlayerBarPosition::Bottom
+        }
+    }
+}
+
+pub fn set_player_bar_position(
+    conn: &Connection,
+    pos: PlayerBarPosition,
+) -> Result<(), rusqlite::Error> {
+    let value = match pos {
+        PlayerBarPosition::Top => "top",
+        PlayerBarPosition::Bottom => "bottom",
+    };
+    set_setting(conn, PLAYER_BAR_POSITION_KEY, value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +211,27 @@ mod tests {
             get_library_root(&conn).unwrap(),
             Some("/music/library".to_string())
         );
+    }
+
+    #[test]
+    fn player_bar_position_defaults_to_bottom() {
+        let conn = migrated_conn();
+        assert_eq!(get_player_bar_position(&conn), PlayerBarPosition::Bottom);
+    }
+
+    #[test]
+    fn player_bar_position_round_trips_both_values() {
+        let conn = migrated_conn();
+        set_player_bar_position(&conn, PlayerBarPosition::Top).unwrap();
+        assert_eq!(get_player_bar_position(&conn), PlayerBarPosition::Top);
+        set_player_bar_position(&conn, PlayerBarPosition::Bottom).unwrap();
+        assert_eq!(get_player_bar_position(&conn), PlayerBarPosition::Bottom);
+    }
+
+    #[test]
+    fn player_bar_position_falls_back_to_bottom_on_unknown_value() {
+        let conn = migrated_conn();
+        set_setting(&conn, PLAYER_BAR_POSITION_KEY, "sideways").unwrap();
+        assert_eq!(get_player_bar_position(&conn), PlayerBarPosition::Bottom);
     }
 }
