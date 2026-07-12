@@ -14,13 +14,15 @@ use super::{browse::browse_clause, BrowseFilter};
 /// resolves to valid SQL (`pt.position`) inside a query that actually joins
 /// `playlist_tracks AS pt` — see the module doc's `Playlist(id)` section for
 /// why that's safe (only `ViewSource::Playlist` queries ever pass it).
-const SORT_WHITELIST: [(&str, &str); 7] = [
+const SORT_WHITELIST: [(&str, &str); 9] = [
     ("title", "title COLLATE NOCASE"),
     (
         "artist",
         "artist COLLATE NOCASE, album COLLATE NOCASE, track_no",
     ),
     ("album", "album COLLATE NOCASE, track_no"),
+    ("track_no", "track_no"),
+    ("genre", "genre COLLATE NOCASE, artist COLLATE NOCASE"),
     ("year", "year"),
     ("duration_ms", "duration_ms"),
     ("rating", "rating"),

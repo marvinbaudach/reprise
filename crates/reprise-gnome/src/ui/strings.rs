@@ -121,6 +121,8 @@ pub fn status_filtered_of_total(filtered: &str, total: &str) -> String {
 pub const COLUMN_TITLE: &str = "Title";
 pub const COLUMN_ARTIST: &str = "Artist";
 pub const COLUMN_ALBUM: &str = "Album";
+pub const COLUMN_TRACK_NUMBER: &str = "Track";
+pub const COLUMN_GENRE: &str = "Genre";
 pub const COLUMN_YEAR: &str = "Year";
 pub const COLUMN_LENGTH: &str = "Length";
 // The Rating column's header reuses `RATING` below rather than having its

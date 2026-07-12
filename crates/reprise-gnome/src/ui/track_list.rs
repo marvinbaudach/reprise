@@ -65,16 +65,13 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::browse_bar::BrowseBar;
+use crate::ui::column_layout::{self, ColumnRegistry};
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
-use crate::ui::strings;
 use crate::ui::toasts;
 use crate::ui::track_list_activation::{current_queue_ids, wire_activate};
-use crate::ui::track_list_columns::{
-    append_column, append_cover_column, append_rating_column, apply_empty_state, build_status_page,
-    empty_state_for,
-};
+use crate::ui::track_list_columns::{apply_empty_state, build_status_page, empty_state_for};
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd_smoke;
 use crate::ui::track_list_model::TrackListModel;
@@ -84,7 +81,6 @@ use crate::ui::track_list_smoke::{
 use crate::ui::track_list_sort::{
     resolve_sort_on_switch, wire_sort_clicks, SortState, PLAYLIST_ORDER_SORT_FIELD,
 };
-use reprise_core::format::format_duration;
 use reprise_core::models::Track;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
@@ -311,6 +307,8 @@ pub(super) struct Shared {
 pub struct TrackList {
     shared: Rc<Shared>,
     root: gtk4::Box,
+    #[allow(dead_code)] // GUI-C Task 6 applies imported layouts at runtime.
+    column_registry: ColumnRegistry,
 }
 
 impl TrackList {
@@ -433,69 +431,10 @@ impl TrackList {
                 });
         }
 
-        // Task 6: the leading, leftmost column — appended before every text
-        // column below (order of `append_column`/`append_rating_column`
-        // calls is on-screen column order). `CoverLoader` is constructed
-        // here rather than threaded in from `window.rs`: nothing outside
-        // this list needs the loader instance, unlike the shared one
-        // `player_controller.rs` owns for the bar/Now-Playing cover (Task 5)
-        // — two independent `CoverLoader`s, each with its own small texture
-        // cache, one per widget family that shows covers.
-        append_cover_column(&column_view, &shared, &cover_loader);
-
-        let title_column = append_column(
-            &column_view,
-            &shared,
-            "title",
-            strings::COLUMN_TITLE,
-            0.0,
-            false,
-            |t| t.title.clone(),
-        );
-        let artist_column = append_column(
-            &column_view,
-            &shared,
-            "artist",
-            strings::COLUMN_ARTIST,
-            0.0,
-            false,
-            |t| t.artist.clone(),
-        );
-        append_column(
-            &column_view,
-            &shared,
-            "album",
-            strings::COLUMN_ALBUM,
-            0.0,
-            false,
-            |t| t.album.clone(),
-        );
-        append_column(
-            &column_view,
-            &shared,
-            "year",
-            strings::COLUMN_YEAR,
-            0.0,
-            false,
-            |t| t.year.map(|y| y.to_string()).unwrap_or_default(),
-        );
-        append_column(
-            &column_view,
-            &shared,
-            "duration_ms",
-            strings::COLUMN_LENGTH,
-            1.0,
-            true,
-            |t| format_duration(t.duration_ms),
-        );
-
-        // Built after `shared` exists (unlike the other columns above): its
-        // click handler needs `shared.conn`/`shared.model` to persist a
-        // rating write and refresh the model's cached row — see
-        // `append_rating_column`'s doc comment. Appended last, so it still
-        // lands as the rightmost column, matching the visual order the
-        // other five columns were just added in.
-        append_rating_column(&column_view, &shared);
+        let built_columns = column_layout::build_columns(&column_view, &shared, &cover_loader);
+        let title_column = built_columns.title;
+        let artist_column = built_columns.artist;
+        let column_registry = built_columns.registry;
 
         wire_sort_clicks(&column_view, &shared);
 
@@ -524,7 +463,11 @@ impl TrackList {
         crate::ui::browse_bar::arm_smoke(&shared);
         track_list_dnd_smoke::arm_smoke_dnd(&shared);
 
-        Self { shared, root }
+        Self {
+            shared,
+            root,
+            column_registry,
+        }
     }
 
     /// The root widget: Library browse bar above the Stack that switches

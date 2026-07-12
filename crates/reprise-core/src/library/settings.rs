@@ -84,6 +84,7 @@ pub fn set_library_root(conn: &Connection, root: &str) -> Result<(), rusqlite::E
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
+pub const COLUMN_LAYOUT_KEY: &str = "ui.column_layout";
 
 /// Where the player bar docks. `Bottom` is the default and the fallback for any
 /// unknown/hand-edited value (same tolerance posture as `get_bool`).

@@ -1,4 +1,4 @@
-//! `GtkColumnView` view widgets for `ui::track_list`: the five text columns
+//! `GtkColumnView` view widgets for `ui::track_list`: the seven text columns
 //! (`append_column`), the interactive rating column (`append_rating_column`
 //! with its `on_rating_changed` write-back), the shared empty-state
 //! placeholder (`build_status_page`), and the empty-state decision and
@@ -220,7 +220,7 @@ pub(super) fn append_cover_column(
     column_view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
     loader: &Rc<CoverLoader>,
-) {
+) -> gtk4::ColumnViewColumn {
     // Reserved for parity with the other column-builders' signature (and any
     // future need, e.g. reacting to a library rescan) — cover cells need no
     // per-row DB access today, unlike `append_rating_column`'s write-back.
@@ -303,6 +303,7 @@ pub(super) fn append_cover_column(
     column.set_fixed_width(40);
 
     column_view.append_column(&column);
+    column
 }
 
 /// Builds the interactive `Rating` column: each cell is a `RatingWidget`
@@ -311,7 +312,7 @@ pub(super) fn append_cover_column(
 /// rendering a `Track` field. Requires a fully-built `shared` (its
 /// `conn`/`model` are used by the click handler), which is why
 /// `TrackList::new` calls this after constructing `Shared`, unlike the
-/// other five columns built by `append_column` beforehand.
+/// other seven columns built by `append_column` beforehand.
 pub(super) fn append_rating_column(
     column_view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
@@ -339,7 +340,7 @@ pub(super) fn append_rating_column(
                 &column_view,
             );
             // Stage 3 Task 6: same drag-source/drop-target wiring as the
-            // five text columns — see `ui::track_list_dnd`'s doc comment.
+            // seven text columns — see `ui::track_list_dnd`'s doc comment.
             track_list_dnd::wire_row_dnd(&rating_widget, item, &shared);
             item.set_child(Some(&rating_widget));
         });
