@@ -13,6 +13,8 @@ use gtk4::glib;
 
 use reprise_core::cover::{resolve_source, thumbnail, ThumbnailSize};
 
+use crate::ui::cover_download_worker::{CoverDownloadRuntime, DownloadRequest};
+
 /// Symbolic placeholder shown when a track has no cover (or while loading /
 /// on error). No decode — just an icon name GTK already ships.
 const PLACEHOLDER_ICON: &str = "audio-x-generic-symbolic";
@@ -24,13 +26,17 @@ const MAX_CACHED_TEXTURES: usize = 256;
 pub struct CoverLoader {
     cache: RefCell<HashMap<String, gdk::Texture>>,
     order: RefCell<std::collections::VecDeque<String>>,
+    download_enabled: Rc<Cell<bool>>,
+    download_worker: Option<async_channel::Sender<DownloadRequest>>,
 }
 
 impl CoverLoader {
-    pub fn new() -> Rc<Self> {
+    pub fn new(runtime: CoverDownloadRuntime) -> Rc<Self> {
         Rc::new(Self {
             cache: RefCell::new(HashMap::new()),
             order: RefCell::new(std::collections::VecDeque::new()),
+            download_enabled: runtime.enabled,
+            download_worker: Some(runtime.worker),
         })
     }
 
@@ -79,7 +85,7 @@ impl CoverLoader {
         glib::spawn_future_local(async move {
             // Off the main loop: resolve source + build/hit the disk cache.
             let path_for_worker = path_owned.clone();
-            let cache_path: Option<std::path::PathBuf> = gio::spawn_blocking(move || {
+            let mut cache_path: Option<std::path::PathBuf> = gio::spawn_blocking(move || {
                 let source = resolve_source(std::path::Path::new(&path_for_worker))?;
                 thumbnail(&source, size).ok()
             })
@@ -88,6 +94,42 @@ impl CoverLoader {
             .flatten();
 
             // Back on the main loop: bail if this cell was recycled meanwhile.
+            if current.get() != token {
+                return;
+            }
+            if cache_path.is_none() && this.download_enabled.get() {
+                let Some(worker) = this.download_worker.clone() else {
+                    return;
+                };
+                let (response, result) = async_channel::bounded(1);
+                if worker
+                    .try_send(DownloadRequest {
+                        track_path: path_owned.clone(),
+                        response,
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+                let Ok(Some(downloaded_path)) = result.recv().await else {
+                    return;
+                };
+                if current.get() != token {
+                    return;
+                }
+                cache_path = gio::spawn_blocking(move || {
+                    thumbnail(
+                        &reprise_core::cover::CoverSource::FolderImage(downloaded_path),
+                        size,
+                    )
+                    .ok()
+                })
+                .await
+                .ok()
+                .flatten();
+            }
+
+            // Re-check after a possible network request + thumbnail build.
             if current.get() != token {
                 return;
             }

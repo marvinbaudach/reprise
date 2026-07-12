@@ -63,6 +63,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use rusqlite::Connection;
 
+use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
 use crate::ui::strings;
@@ -309,6 +310,7 @@ impl TrackList {
         on_activate: OnActivate,
         on_reload: impl Fn(&ViewSource, usize, &str) + 'static,
         queue_ids_provider: impl Fn() -> Vec<i64> + 'static,
+        cover_download: CoverDownloadRuntime,
     ) -> Self {
         let model = TrackListModel::new(conn.clone());
         // `gtk::MultiSelection`, not `gtk::NoSelection` (Stage 3 Task 5):
@@ -402,7 +404,7 @@ impl TrackList {
         // `player_controller.rs` owns for the bar/Now-Playing cover (Task 5)
         // — two independent `CoverLoader`s, each with its own small texture
         // cache, one per widget family that shows covers.
-        let cover_loader = CoverLoader::new();
+        let cover_loader = CoverLoader::new(cover_download);
         append_cover_column(&column_view, &shared, &cover_loader);
 
         let title_column = append_column(

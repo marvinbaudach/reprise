@@ -32,6 +32,7 @@ use rusqlite::Connection;
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 
+use super::cover_download_worker;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::playlist_io;
@@ -151,14 +152,16 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 tracing::warn!(%error, "could not read module.mpris.enabled; defaulting to on");
                 true
             });
+    let cover_download = cover_download_worker::setup(&conn.borrow());
 
-    let player = match PlayerController::new(conn.clone(), mpris_enabled, app) {
-        Ok(controller) => Some(controller),
-        Err(error) => {
-            tracing::error!(%error, "player unavailable: playback disabled");
-            None
-        }
-    };
+    let player =
+        match PlayerController::new(conn.clone(), mpris_enabled, cover_download.clone(), app) {
+            Ok(controller) => Some(controller),
+            Err(error) => {
+                tracing::error!(%error, "player unavailable: playback disabled");
+                None
+            }
+        };
 
     // Built right after `player` (needed for the Queue row's counter) and
     // before `TrackList` and `spawn_scan`/`player.set_track_list_reload`
@@ -240,6 +243,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 }
             },
             queue_ids_provider,
+            cover_download.clone(),
         ))
     };
 
