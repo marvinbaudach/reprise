@@ -210,6 +210,8 @@ setsid dbus-run-session -- env \
   DISPLAY="$DISPLAY" \
   XDG_DATA_HOME="$XDG_DATA_HOME_SCRATCH" \
   XDG_CONFIG_HOME="$XDG_CONFIG_HOME_SCRATCH" \
+  GTK_A11Y=none \
+  NO_AT_BRIDGE=1 \
   REPRISE_SCAN_DIR="$MUSIC_DIR" \
   REPRISE_AUDIO_SINK=fakesink \
   REPRISE_LOG=debug \
@@ -307,6 +309,18 @@ assert_log_contains_since() {
   fi
 }
 
+assert_log_absent() {
+  local pattern="$1" description="$2"
+  local plain
+  plain="$(sed -E "$ANSI_STRIP_RE" "$APP_LOG")"
+  if grep -Eqi -- "$pattern" <<<"$plain"; then
+    log_fail "log unexpectedly showed: $description (pattern: $pattern)"
+    grep -Ei -- "$pattern" <<<"$plain" | tail -1 | sed 's/^/[ptr-e2e]   -> /' >&2
+  else
+    log_step "log check OK: no $description"
+  fi
+}
+
 # --- Wait for the window, then maximize it -----------------------------------
 
 log_step "waiting for the Reprise window (WM_CLASS matching '$WINDOW_CLASS_MATCH')…"
@@ -389,6 +403,9 @@ assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Spac
 
 screenshot "03-final"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/03-final.png"
+assert_log_absent \
+  'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowMutError' \
+  'GTK/GLib critical, panic, or RefCell borrow failure'
 log_step "final screenshot: $PTR_E2E_OUT_DIR/03-final.png"
 log_step "app log will be preserved at: $PTR_E2E_OUT_DIR/app.log (copied by cleanup())"
 
