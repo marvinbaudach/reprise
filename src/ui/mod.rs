@@ -6,6 +6,7 @@ pub mod player_controller;
 pub mod player_controller_wiring;
 pub mod playlist_io;
 pub mod rating;
+pub mod scan_flow;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod sidebar_dnd;
