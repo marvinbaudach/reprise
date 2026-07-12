@@ -21,24 +21,24 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Autonomous final release-hardening audit
-SINCE:    2026-07-12 23:28 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 23:28 CEST: Codex claimed the lock for autonomous final release hardening._
+_As of 2026-07-13 00:06 CEST: Codex released the lock after autonomous final release hardening._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Maintainer manual-QA confirmations** (`7e871b6`) — duplicate playlist adds
-  are prevented; playlist dragging works across the row with insertion feedback; imported playlists
-  become selected and open; valid tag edits save and close via Enter. Queue insertion feedback and
-  invalid numeric tag validation remain explicitly pending rather than being inferred.
+- **Last completed:** **Autonomous final release hardening** (`c9a4141` through `9318635`) — repaired
+  and hardened the isolated release pointer harness, added keyboard track actions, proved invalid
+  numeric tag rejection, Queue insertion feedback/reorder and playback controls, and fixed stale
+  Queue sidebar counts. The full release checker passes with 481 tests and 4 display-only ignores.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
-  `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `1dda104`; this coordination-board update follows it.
+  `RELEASING.md`; no agent should invent a remote, domain/contact identity, screenshots, tag, or upload.
+- **Feature HEAD:** `9318635`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -61,7 +61,9 @@ _As of 2026-07-12 23:28 CEST: Codex claimed the lock for autonomous final releas
   duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
-  the release checker now rejects Rustdoc warnings and broken intra-doc links.
+  the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
+  harness covers rating, keyboard context/tag validation, Queue badge/reorder feedback, playback,
+  screenshots, and GTK/GLib/panic/`RefCell` log rejection.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
@@ -72,6 +74,8 @@ _As of 2026-07-12 23:28 CEST: Codex claimed the lock for autonomous final releas
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote
   and verified ownership appropriate for `org.reprise.Reprise`.
+- Online-cover publication additionally requires a real reachable maintainer-controlled project or
+  contact URL for the MusicBrainz `User-Agent`; the current URL must not ship as a placeholder.
 - Human manual QA remains exactly as listed in `RELEASING.md`: real rendering/pointer/touch,
   portal picker and Trash visibility, audible codecs, media keys/lock screen, geometry, and
   screenshots from a populated disposable library.
