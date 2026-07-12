@@ -74,18 +74,20 @@ use reprise_core::format::format_duration;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
-const ICON_PLAY: &str = "media-playback-start-symbolic";
-const ICON_PAUSE: &str = "media-playback-pause-symbolic";
-const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
-const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
-const ICON_NEXT: &str = "media-skip-forward-symbolic";
-const ICON_REPEAT_ALL: &str = "media-playlist-repeat-symbolic";
-const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
+// `pub(super)` (Task 8): `now_playing.rs` reuses these icon names/CSS class
+// for its own transport row (DRY) rather than a second, drifting copy.
+pub(super) const ICON_PLAY: &str = "media-playback-start-symbolic";
+pub(super) const ICON_PAUSE: &str = "media-playback-pause-symbolic";
+pub(super) const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
+pub(super) const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
+pub(super) const ICON_NEXT: &str = "media-skip-forward-symbolic";
+pub(super) const ICON_REPEAT_ALL: &str = "media-playlist-repeat-symbolic";
+pub(super) const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
 /// Applied to the repeat button while `Repeat::Off`, so it reads as inactive
 /// without a third icon asset — the same generic "de-emphasize" style class
 /// `artist_label` already uses (see `PlayerBar::new`), which GTK's Adwaita
 /// theme renders as reduced-opacity text/icon content on any widget.
-const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
+pub(super) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 
 /// Icons `gtk::ScaleButton` cycles through by value, lowest first — mirrors
 /// the stock GNOME volume-button icon set (mute/low/medium/high).
@@ -115,6 +117,10 @@ const COVER_PIXEL_SIZE: i32 = 48;
 /// CSS class applied to the player bar's cover `gtk4::Image`, for styling
 /// hooks (rounded corners etc.) without reaching into `PlayerBar`'s widgets.
 const COVER_CSS_CLASS: &str = "player-bar-cover";
+
+/// Cover/track-info click callback storage (Task 8) — factored out to
+/// satisfy clippy's `type_complexity` lint; see `on_expand`'s doc comment.
+type ExpandCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 pub struct PlayerBar {
     bar: gtk4::ActionBar,
@@ -165,6 +171,11 @@ pub struct PlayerBar {
     /// Same guard shape as `updating_shuffle`, for `set_volume_indicator`/
     /// `connect_volume_changed`.
     updating_volume: Rc<Cell<bool>>,
+    /// Callback for clicking the cover/track-info area (Task 8); `window.rs`
+    /// sets it, post-construction, to push the Now-Playing page. Shared with
+    /// `new()`'s gesture; cloned out of the borrow before calling — never
+    /// invoked while the borrow is held.
+    on_expand: ExpandCallback,
 }
 
 impl PlayerBar {
@@ -248,11 +259,26 @@ impl PlayerBar {
         volume_button.set_tooltip_text(Some(strings::VOLUME));
         volume_button.set_valign(gtk4::Align::Center);
 
+        // Task 8: cover + track_box (no buttons) share one clickable area —
+        // NOT the whole `ActionBar`, which would swallow button clicks.
+        let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        info_box.append(&cover);
+        info_box.append(&track_box);
+
+        let on_expand: ExpandCallback = Rc::new(RefCell::new(None));
+        let expand_click = gtk4::GestureClick::new();
+        let expand_click_on_expand = on_expand.clone();
+        // Clone-out-before-call: see the `on_expand` field's doc comment.
+        expand_click.connect_released(move |_, _, _, _| {
+            let callback = expand_click_on_expand.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        info_box.add_controller(expand_click);
+
         let bar = gtk4::ActionBar::new();
-        // Cover first: `pack_start` appends in call order, so packing it
-        // ahead of `track_box` puts it at the very start of the bar.
-        bar.pack_start(&cover);
-        bar.pack_start(&track_box);
+        bar.pack_start(&info_box);
         bar.set_center_widget(Some(&center_box));
         bar.pack_end(&volume_button);
         // No track loaded yet — nothing to play, pause, or seek until the
@@ -279,6 +305,7 @@ impl PlayerBar {
             last_duration_ms: Cell::new(0),
             updating_shuffle: Rc::new(Cell::new(false)),
             updating_volume: Rc::new(Cell::new(false)),
+            on_expand,
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
         bar.set_repeat_indicator(Repeat::Off);
@@ -300,6 +327,12 @@ impl PlayerBar {
     /// stops with no track active (see `clear_track`).
     pub fn clear_cover(&self) {
         CoverLoader::set_placeholder(&self.cover);
+    }
+
+    /// Sets the cover/track-info click callback (Task 8), post-construction —
+    /// same injection shape as `set_toast_overlay`.
+    pub fn set_on_expand<F: Fn() + 'static>(&self, f: F) {
+        *self.on_expand.borrow_mut() = Some(Rc::new(f));
     }
 
     /// Shows `title`/`artist` in the left-hand labels. Called on row
