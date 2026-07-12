@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use lofty::prelude::*;
 use lofty::tag::{ItemKey, Tag};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MixedValue<T> {
@@ -213,6 +213,31 @@ pub fn apply_patch_batch(
     }
 
     for (id, path) in tracks {
+        let registered_path = conn
+            .query_row("SELECT path FROM tracks WHERE id=?1", [id], |row| {
+                row.get::<_, String>(0)
+            })
+            .optional();
+        match registered_path {
+            Ok(Some(registered)) if registered == path.to_string_lossy() => {}
+            Ok(_) => {
+                report.failures.push(TagWriteFailure {
+                    id: *id,
+                    path: path.clone(),
+                    error: "track path changed before tag write; refusing stale request".into(),
+                });
+                continue;
+            }
+            Err(error) => {
+                report.failures.push(TagWriteFailure {
+                    id: *id,
+                    path: path.clone(),
+                    error: format!("could not validate track path before tag write: {error}"),
+                });
+                continue;
+            }
+        }
+
         if let Err(error) = apply_patch_to_file(path, patch) {
             report.failures.push(TagWriteFailure {
                 id: *id,
@@ -438,5 +463,39 @@ mod tests {
             )
             .unwrap();
         assert_eq!(row, ("Batch title".into(), 4, 9));
+    }
+
+    #[test]
+    fn batch_refuses_a_stale_id_path_pair_before_touching_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let registered = fixture_copy(dir.path(), "registered.flac");
+        let other = fixture_copy(dir.path(), "other.flac");
+        seed_full_tag(&registered);
+        seed_full_tag(&other);
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        crate::library::scanner::scan_folder(&mut conn, &registered).unwrap();
+        let registered_text = registered.to_string_lossy().to_string();
+        let id: i64 = conn
+            .query_row(
+                "SELECT id FROM tracks WHERE path=?1",
+                [&registered_text],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let before = std::fs::read(&other).unwrap();
+
+        let report = apply_patch_batch(
+            &mut conn,
+            &[(id, other.clone())],
+            &TagPatch {
+                title: Some("Must not be written".into()),
+                ..TagPatch::default()
+            },
+        );
+
+        assert!(report.updated_ids.is_empty());
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(std::fs::read(other).unwrap(), before);
     }
 }
