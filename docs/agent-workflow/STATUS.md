@@ -21,25 +21,26 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     restore selectable playable stopped startup state
-SINCE:    2026-07-12 21:12 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 21:12 CEST: Codex claimed the lock for the manually reproduced stopped-session restore regression._
+_As of 2026-07-12 21:22 CEST: Codex released the lock after fixing stopped-session selection and Play._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Current-track table selection** — successful playback starts now select and
-  minimally scroll to the exact visible row without stealing keyboard focus (`467c6f9`). A hidden
-  filtered track leaves the user's selection untouched; duplicate queue IDs use the actual queue
-  occurrence. An isolated two-track auto-advance logged position 0→1. Final gates: 467 passed,
-  1 ignored; core PURE; audit has only the accepted `paste` advisory.
+- **Last completed:** **Stopped-session resume UI** — restored queues remain Stopped/no-autoplay but
+  reselect their current visible row after view restoration, keep Play/queue controls sensitive,
+  and start the restored current ID only after Play/Space/MPRIS PlayPause (`c33aa33`). Seek remains
+  disabled until a track is loaded. An isolated two-start E2E proved Stopped before the exact Play
+  activation, then Playing and selection 0→1. Final gates: 469 passed, 1 ignored; core PURE; audit
+  has only the accepted `paste` advisory.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `467c6f9`; this coordination-board update follows it.
+- **Feature HEAD:** `c33aa33`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -56,8 +57,8 @@ _As of 2026-07-12 21:12 CEST: Codex claimed the lock for the manually reproduced
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
-  for files added while the app was closed, plus current-track table selection; all exact
-  user-reported paths have regression coverage.
+  for files added while the app was closed, current-track table selection, and playable stopped
+  session restoration without autoplay; all exact user-reported paths have regression coverage.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
