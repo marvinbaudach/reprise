@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Reprise
+Name[de]=Reprise
+GenericName=Music Player
+GenericName[de]=Musikwiedergabe
+Comment=Play and organize your local music library
+Comment[de]=Die lokale Musiksammlung abspielen und organisieren
+Exec=reprise
+Icon=org.reprise.Reprise
+Terminal=false
+StartupNotify=true
+Categories=GTK;GNOME;AudioVideo;Audio;Player;
+Keywords=music;audio;library;playlist;player;
+Keywords[de]=Musik;Audio;Sammlung;Wiedergabeliste;Player;
+X-GNOME-UsesNotifications=true
+

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.reprise.Reprise</id>
+  <name>Reprise</name>
+  <summary>Play and organize your local music library</summary>
+  <summary xml:lang="de">Die lokale Musiksammlung abspielen und organisieren</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="org.reprise">
+    <name>Marvin Baudach</name>
+  </developer>
+  <description>
+    <p>
+      Reprise is a native music player for GNOME with a fast, column-based
+      library, playlists, a play queue, album covers, tag editing, and MPRIS
+      integration for media keys and the lock screen.
+    </p>
+    <p xml:lang="de">
+      Reprise ist eine native Musikwiedergabe für GNOME mit einer schnellen,
+      spaltenbasierten Sammlung, Wiedergabelisten, Warteschlange, Albumcovern,
+      Tag-Bearbeitung und MPRIS-Integration für Medientasten und Sperrbildschirm.
+    </p>
+    <p>
+      Your library stays local. Reprise changes music files only after an
+      explicit tag-edit or move-to-trash confirmation. Online cover lookup is
+      optional and disabled by default.
+    </p>
+    <p xml:lang="de">
+      Die Sammlung bleibt lokal. Reprise verändert Musikdateien nur nach einer
+      ausdrücklichen Bestätigung zur Tag-Bearbeitung oder zum Verschieben in den
+      Papierkorb. Die Online-Coversuche ist optional und standardmäßig aus.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.reprise.Reprise.desktop</launchable>
+  <provides>
+    <binary>reprise</binary>
+  </provides>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>library</keyword>
+    <keyword>playlist</keyword>
+    <keyword>player</keyword>
+    <keyword xml:lang="de">Musik</keyword>
+    <keyword xml:lang="de">Sammlung</keyword>
+    <keyword xml:lang="de">Wiedergabeliste</keyword>
+  </keywords>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-07-12">
+      <description>
+        <p>Initial release with local-library playback and organization.</p>
+        <p xml:lang="de">Erste Veröffentlichung mit Wiedergabe und Organisation der lokalen Sammlung.</p>
+      </description>
+    </release>
+  </releases>
+</component>
+
