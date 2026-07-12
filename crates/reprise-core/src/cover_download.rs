@@ -4,13 +4,26 @@
 //! module is enabled (default off). Writes ONLY under the XDG cover cache.
 
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crate::cover;
 
 const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
+const USER_AGENT: &str = concat!(
+    "Reprise/",
+    env!("CARGO_PKG_VERSION"),
+    " ( https://github.com/reprise-music/reprise )"
+);
+const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const MB_MIN_INTERVAL: Duration = Duration::from_secs(1);
+
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;
+
+/// Process-global timestamp of the last MusicBrainz request, for the ≤1/s rule.
+static LAST_MB_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Cache key for an album's downloaded cover: normalized album-artist + album,
 /// hashed to hex. One cover per album — every track of an album shares it.
@@ -43,10 +56,6 @@ pub fn negative_marker_path(key: &str) -> PathBuf {
     downloaded_dir().join(format!("{key}.notfound"))
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the GUI-A2 Task 3 fetch pipeline")
-)]
 pub(crate) fn musicbrainz_search_url(album_artist: &str, album: &str) -> String {
     // MusicBrainz Lucene query; percent-encode the whole query value.
     let query = format!("artist:\"{album_artist}\" AND release:\"{album}\"");
@@ -56,18 +65,10 @@ pub(crate) fn musicbrainz_search_url(album_artist: &str, album: &str) -> String 
     )
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the GUI-A2 Task 3 fetch pipeline")
-)]
 pub(crate) fn caa_front_url(mbid: &str) -> String {
     format!("https://coverartarchive.org/release/{mbid}/front")
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the GUI-A2 Task 3 fetch pipeline")
-)]
 pub(crate) fn parse_best_release(json: &str, album_artist: &str, album: &str) -> Option<String> {
     fn norm(s: &str) -> String {
         s.split_whitespace()
@@ -116,6 +117,116 @@ fn urlencode(s: &str) -> String {
         }
     }
     out
+}
+
+pub fn fetch_and_cache(album_artist: &str, album: &str, mbid: Option<&str>) -> Option<PathBuf> {
+    let key = album_key(album_artist, album);
+    // 1. Already resolved (positive or negative) -> no network.
+    if let Some(existing) = downloaded_cover_path(&key) {
+        return Some(existing);
+    }
+    if negative_marker_path(&key).exists() {
+        return None;
+    }
+    // 2. Resolve a release MBID: embedded first, else conservative search.
+    let release_mbid = match mbid {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => {
+            let body = mb_get(&musicbrainz_search_url(album_artist, album))?;
+            match parse_best_release(&body, album_artist, album) {
+                Some(id) => id,
+                None => {
+                    write_negative(&key);
+                    return None;
+                }
+            }
+        }
+    };
+    // 3. Fetch the CAA front cover (follows the 302 to the image).
+    let (bytes, ext) = match http_get_bytes(&caa_front_url(&release_mbid)) {
+        Some(value) => value,
+        None => {
+            write_negative(&key);
+            return None;
+        }
+    };
+    // 4. Publish atomically under the download cache.
+    store_downloaded(&key, &bytes, ext)
+}
+
+/// A rate-limited MusicBrainz GET returning the response body as text.
+fn mb_get(url: &str) -> Option<String> {
+    respect_mb_rate_limit();
+    ureq::builder()
+        .timeout(HTTP_TIMEOUT)
+        .user_agent(USER_AGENT)
+        .build()
+        .get(url)
+        .call()
+        .ok()?
+        .into_string()
+        .ok()
+}
+
+/// A plain GET returning (bytes, extension) for an image response.
+fn http_get_bytes(url: &str) -> Option<(Vec<u8>, &'static str)> {
+    let response = ureq::builder()
+        .timeout(HTTP_TIMEOUT)
+        .user_agent(USER_AGENT)
+        .build()
+        .get(url)
+        .call()
+        .ok()?;
+    let ext = match response.content_type() {
+        "image/png" => "png",
+        "image/webp" => "webp",
+        _ => "jpg", // CAA front covers are overwhelmingly JPEG
+    };
+    let mut bytes = Vec::new();
+    use std::io::Read;
+    response
+        .into_reader()
+        .take(20 * 1024 * 1024)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+    Some((bytes, ext))
+}
+
+fn respect_mb_rate_limit() {
+    let mut last = LAST_MB_REQUEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(previous) = *last {
+        let elapsed = previous.elapsed();
+        if elapsed < MB_MIN_INTERVAL {
+            std::thread::sleep(MB_MIN_INTERVAL - elapsed);
+        }
+    }
+    *last = Some(Instant::now());
+}
+
+fn write_negative(key: &str) {
+    let _ = std::fs::create_dir_all(downloaded_dir());
+    let _ = std::fs::write(negative_marker_path(key), b"");
+}
+
+fn store_downloaded(key: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
+    let dir = downloaded_dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    let out = dir.join(format!("{key}.{ext}"));
+    let tmp = dir.join(format!(".{key}-{}.{ext}.tmp", fastrand::u64(..)));
+    if std::fs::write(&tmp, bytes).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return None;
+    }
+    if std::fs::rename(&tmp, &out).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return downloaded_cover_path(key); // a concurrent writer may have published it
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -186,5 +297,29 @@ mod tests {
             caa_front_url("11111111-1111-1111-1111-111111111111"),
             "https://coverartarchive.org/release/11111111-1111-1111-1111-111111111111/front"
         );
+    }
+
+    #[test]
+    fn fetch_returns_cached_path_without_network_when_already_downloaded() {
+        let key = album_key("CachedBand", "CachedAlbum");
+        std::fs::create_dir_all(downloaded_dir()).unwrap();
+        let f = downloaded_dir().join(format!("{key}.png"));
+        std::fs::write(&f, b"img").unwrap();
+        // Already cached -> must return it, never touching the network.
+        assert_eq!(
+            fetch_and_cache("CachedBand", "CachedAlbum", None),
+            Some(f.clone())
+        );
+        std::fs::remove_file(&f).ok();
+    }
+
+    #[test]
+    fn fetch_short_circuits_on_negative_marker_without_network() {
+        let key = album_key("MissBand", "MissAlbum");
+        std::fs::create_dir_all(downloaded_dir()).unwrap();
+        let marker = negative_marker_path(&key);
+        std::fs::write(&marker, b"").unwrap();
+        assert_eq!(fetch_and_cache("MissBand", "MissAlbum", None), None);
+        std::fs::remove_file(&marker).ok();
     }
 }
