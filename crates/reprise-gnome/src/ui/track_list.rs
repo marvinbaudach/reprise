@@ -65,6 +65,7 @@ use rusqlite::Connection;
 
 use crate::ui::import_errors_view::ImportErrorsView;
 use crate::ui::strings;
+use crate::ui::toasts;
 use crate::ui::track_list_activation::{current_queue_ids, wire_activate};
 use crate::ui::track_list_columns::{
     append_column, append_rating_column, apply_empty_state, build_status_page, empty_state_for,
@@ -641,7 +642,7 @@ pub(super) fn playlist_reorder_allowed(shared: &Shared) -> bool {
 /// otherwise unrelated and this is a two-line `WeakRef::upgrade` match.
 pub(super) fn show_toast(shared: &Shared, text: &str) {
     match shared.toast_overlay.upgrade() {
-        Some(overlay) => overlay.add_toast(adw::Toast::new(text)),
+        Some(overlay) => toasts::show(&overlay, text),
         None => {
             tracing::warn!(text, "toast overlay is gone; degrading to log-only");
         }

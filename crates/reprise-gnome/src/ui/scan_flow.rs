@@ -21,6 +21,7 @@ use reprise_core::library::watcher::{self, WatcherHandle};
 
 use super::sidebar::Sidebar;
 use super::strings;
+use super::toasts;
 use super::track_list::TrackList;
 
 /// Dev/verification hook (permanent, like the others in this module and in
@@ -166,7 +167,7 @@ pub(super) fn trigger_rescan_of_library_root(
 ) {
     if !scan_button.is_sensitive() {
         tracing::debug!("rescan library: a scan is already running; ignoring");
-        toast_overlay.add_toast(adw::Toast::new(&strings::scan_already_running_toast()));
+        toasts::show(toast_overlay, &strings::scan_already_running_toast());
         return;
     }
 
@@ -177,12 +178,12 @@ pub(super) fn trigger_rescan_of_library_root(
     let root = match root {
         Ok(Some(root)) => PathBuf::from(root),
         Ok(None) => {
-            toast_overlay.add_toast(adw::Toast::new(&strings::no_library_root_to_rescan_toast()));
+            toasts::show(toast_overlay, &strings::no_library_root_to_rescan_toast());
             return;
         }
         Err(error) => {
             tracing::error!(%error, "rescan library: failed to read persisted library root");
-            toast_overlay.add_toast(adw::Toast::new(&strings::no_library_root_to_rescan_toast()));
+            toasts::show(toast_overlay, &strings::no_library_root_to_rescan_toast());
             return;
         }
     };
@@ -273,19 +274,19 @@ fn spawn_scan(
             }
             Ok(Err(error)) => {
                 tracing::error!(%error, "scan failed");
-                toast_overlay.add_toast(adw::Toast::new(&format!(
-                    "{}{error}",
-                    strings::SCAN_FAILED_PREFIX
-                )));
+                toasts::show(
+                    &toast_overlay,
+                    &format!("{}{error}", strings::SCAN_FAILED_PREFIX),
+                );
             }
             Err(error) => {
                 // The sender was dropped without sending — the worker thread
                 // must have panicked before reaching `send_blocking`.
                 tracing::error!(%error, "scan worker channel closed unexpectedly");
-                toast_overlay.add_toast(adw::Toast::new(&format!(
-                    "{}{error}",
-                    strings::SCAN_FAILED_PREFIX
-                )));
+                toasts::show(
+                    &toast_overlay,
+                    &format!("{}{error}", strings::SCAN_FAILED_PREFIX),
+                );
             }
         }
     });

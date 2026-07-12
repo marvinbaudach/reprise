@@ -48,21 +48,13 @@ use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::graphene;
 use gtk4::prelude::*;
-use libadwaita as adw;
-use libadwaita::prelude::*;
 
+use crate::ui::dialogs;
 use crate::ui::strings;
 use crate::ui::track_actions;
 use crate::ui::track_list::{reload, show_toast, Shared};
 use reprise_core::library::playlists;
 use reprise_core::view_source::ViewSource;
-
-/// `AdwAlertDialog` response ids for the "New playlist…" dialog — internal
-/// identifiers, not user-facing text (mirrors `ui::sidebar`'s own
-/// `RESPONSE_CANCEL`/`RESPONSE_CREATE`, private to that module, hence
-/// duplicated here rather than shared).
-const RESPONSE_CANCEL: &str = "cancel";
-const RESPONSE_CREATE: &str = "create";
 
 /// Dev/verification hook (permanent, like the `REPRISE_SMOKE_*` hooks in
 /// `track_list.rs`): when set, programmatically selects the first two rows
@@ -614,13 +606,13 @@ fn notify_library_mutated(shared: &Rc<Shared>, removed_ids: &[i64]) {
 }
 
 /// The context menu's "New playlist…" submenu leaf (`ACTION_NEW_PLAYLIST`):
-/// prompts for a name via an `AdwAlertDialog` (same shape as `ui::sidebar`'s
-/// own "New playlist" dialog, but not shared code — the two live in
-/// different modules, and this one adds the just-selected `ids` afterward
-/// instead of the sidebar's own "switch straight to it" behavior) and, on
-/// Create, creates the playlist and appends `ids` to it in one step
-/// (`ui::track_actions::create_playlist_and_add`). A no-op (dialog not
-/// shown) for an empty selection.
+/// prompts for a name via the shared `dialogs::prompt_name` helper (the same
+/// helper `ui::sidebar`'s own "New playlist" dialog uses) and, on Create,
+/// creates the playlist and appends `ids` to it in one step
+/// (`ui::track_actions::create_playlist_and_add`) — the sidebar's own
+/// `on_confirm` instead switches straight to the new playlist, which is the
+/// only difference between the two call sites. A no-op (dialog not shown)
+/// for an empty selection.
 fn show_new_playlist_dialog(shared: &Rc<Shared>, ids: Vec<i64>) {
     if ids.is_empty() {
         tracing::debug!("context menu: new-playlist requested with nothing selected; ignoring");
@@ -631,40 +623,13 @@ fn show_new_playlist_dialog(shared: &Rc<Shared>, ids: Vec<i64>) {
         return;
     };
 
-    let entry = gtk4::Entry::builder()
-        .placeholder_text(strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER)
-        .activates_default(true)
-        .build();
-
-    let dialog = adw::AlertDialog::builder()
-        .heading(strings::NEW_PLAYLIST_DIALOG_HEADING)
-        .default_response(RESPONSE_CREATE)
-        .close_response(RESPONSE_CANCEL)
-        .extra_child(&entry)
-        .build();
-    dialog.add_response(RESPONSE_CANCEL, strings::CANCEL);
-    dialog.add_response(RESPONSE_CREATE, strings::CREATE);
-    dialog.set_response_appearance(RESPONSE_CREATE, adw::ResponseAppearance::Suggested);
-    // Backend accepts an empty/whitespace-only name (`playlists::create`'s
-    // doc comment) — this is the UI-side validation, matching `ui::
-    // sidebar`'s own dialog.
-    dialog.set_response_enabled(RESPONSE_CREATE, false);
-
-    entry.connect_changed({
-        let dialog = dialog.clone();
-        move |entry| {
-            let has_name = !entry.text().trim().is_empty();
-            dialog.set_response_enabled(RESPONSE_CREATE, has_name);
-        }
-    });
-
     let shared = shared.clone();
-    dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
-        if response.as_str() != RESPONSE_CREATE {
-            return;
-        }
-        let name = entry.text().trim().to_string();
-        match track_actions::create_playlist_and_add(&shared.conn, &name, &ids) {
+    dialogs::prompt_name(
+        &window,
+        strings::NEW_PLAYLIST_DIALOG_HEADING,
+        strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER,
+        strings::CREATE,
+        move |name| match track_actions::create_playlist_and_add(&shared.conn, &name, &ids) {
             Ok((playlist_id, inserted)) => {
                 tracing::info!(
                     playlist_id,
@@ -683,8 +648,8 @@ fn show_new_playlist_dialog(shared: &Rc<Shared>, ids: Vec<i64>) {
                 tracing::error!(%error, name, "context menu: failed to create playlist");
                 show_toast(&shared, &strings::playlist_create_failed_toast(&name));
             }
-        }
-    });
+        },
+    );
 }
 
 /// Clone-out-then-call `on_playlist_mutated` (hoisted per this project's

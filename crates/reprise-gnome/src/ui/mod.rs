@@ -1,3 +1,26 @@
+//! # GTK/libadwaita containment policy (refactor stage, 2026-07)
+//!
+//! - `reprise-core` never sees gtk4/libadwaita — and never sees gstreamer
+//!   or zbus either: those live in `reprise-platform-linux` behind core's
+//!   `playback`/`media_integration` contracts. Both boundaries are
+//!   enforced by the crate graph, not by convention
+//!   (`cargo tree -p reprise-core` is the proof).
+//! - Inside this frontend, adw *structural* widgets (NavigationSplitView,
+//!   ToolbarView, HeaderBar, StatusPage, WindowTitle) are used directly and
+//!   deliberately unwrapped: an adw major-version port rewrites layout code
+//!   wholesale, and each of these types lives in at most two files — a
+//!   mirror-wrapper would only add a second rewrite site.
+//! - Repeated adw *patterns* are funneled: plain toasts via `toasts::show`,
+//!   name-prompt dialogs via `dialogs::prompt_name`. Add the next funnel
+//!   only when a third call site repeats a shape.
+//! - adw/gtk types must not appear in function signatures of modules whose
+//!   job is not widgetry (e.g. `track_actions` takes ids and callbacks, not
+//!   widgets) — keeps porting cost proportional to the widget layer only.
+//! - Platform concretes (`reprise_platform_linux::…`) are named at the
+//!   composition root only (controller construction); everything else goes
+//!   through `reprise_core::playback` / `reprise_core::media_integration`.
+
+pub mod dialogs;
 pub mod import_errors_view;
 pub mod mpris_mirror;
 pub mod playback_faults;
@@ -13,6 +36,7 @@ pub mod sidebar_dnd;
 pub mod sidebar_export;
 pub mod status_bar;
 pub mod strings;
+pub mod toasts;
 pub mod track_actions;
 pub mod track_list;
 pub mod track_list_activation;

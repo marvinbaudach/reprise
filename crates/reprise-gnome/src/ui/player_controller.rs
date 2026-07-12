@@ -499,7 +499,7 @@ impl PlayerController {
     /// failure` can call it too.
     pub(super) fn show_toast(&self, text: &str) {
         match self.toast_overlay.upgrade() {
-            Some(overlay) => overlay.add_toast(adw::Toast::new(text)),
+            Some(overlay) => crate::ui::toasts::show(&overlay, text),
             None => {
                 tracing::warn!(text, "toast overlay is gone; degrading to log-only");
             }

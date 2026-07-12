@@ -63,29 +63,20 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use rusqlite::Connection;
 
+use crate::ui::dialogs;
 use crate::ui::sidebar_dnd;
 use crate::ui::sidebar_export;
 use crate::ui::strings;
+use crate::ui::toasts;
 use reprise_core::format::format_thousands;
 use reprise_core::library::playlists;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
-
-/// `AdwAlertDialog` response id for the "New playlist" dialog's Cancel
-/// action. Not user-facing text (see `add_response`'s separate `label`
-/// argument for the button's actual copy) — an internal identifier, so it
-/// lives here rather than in `strings.rs`.
-const RESPONSE_CANCEL: &str = "cancel";
-/// `AdwAlertDialog` response id for the "New playlist" dialog's Create
-/// action — see `RESPONSE_CANCEL`'s doc comment.
-const RESPONSE_CREATE: &str = "create";
 
 /// One row's identity: the built widget, the `ViewSource` selecting it
 /// switches to, and its display title (handed to `Shared::on_select` so
@@ -330,7 +321,7 @@ impl Sidebar {
 /// `show_toast` (same seam, same degrade behavior).
 pub(super) fn show_toast(shared: &Shared, text: &str) {
     match shared.toast_overlay.upgrade() {
-        Some(overlay) => overlay.add_toast(adw::Toast::new(text)),
+        Some(overlay) => toasts::show(&overlay, text),
         None => {
             tracing::warn!(text, "toast overlay is gone; degrading to log-only");
         }
@@ -718,40 +709,14 @@ fn show_new_playlist_dialog(shared: &Rc<Shared>) {
         return;
     };
 
-    let entry = gtk4::Entry::builder()
-        .placeholder_text(strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER)
-        .activates_default(true)
-        .build();
-
-    let dialog = adw::AlertDialog::builder()
-        .heading(strings::NEW_PLAYLIST_DIALOG_HEADING)
-        .default_response(RESPONSE_CREATE)
-        .close_response(RESPONSE_CANCEL)
-        .extra_child(&entry)
-        .build();
-    dialog.add_response(RESPONSE_CANCEL, strings::CANCEL);
-    dialog.add_response(RESPONSE_CREATE, strings::CREATE);
-    dialog.set_response_appearance(RESPONSE_CREATE, adw::ResponseAppearance::Suggested);
-    // Backend accepts an empty/whitespace-only name (`playlists::create`'s
-    // doc comment: "backend is dumb; UI validates") — this is the UI-side
-    // validation that comment refers to.
-    dialog.set_response_enabled(RESPONSE_CREATE, false);
-
-    entry.connect_changed({
-        let dialog = dialog.clone();
-        move |entry| {
-            let has_name = !entry.text().trim().is_empty();
-            dialog.set_response_enabled(RESPONSE_CREATE, has_name);
-        }
-    });
-
     let shared = shared.clone();
-    dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
-        if response.as_str() == RESPONSE_CREATE {
-            let name = entry.text().to_string();
-            create_playlist_and_select(&shared, name.trim());
-        }
-    });
+    dialogs::prompt_name(
+        &window,
+        strings::NEW_PLAYLIST_DIALOG_HEADING,
+        strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER,
+        strings::CREATE,
+        move |name| create_playlist_and_select(&shared, &name),
+    );
 }
 
 /// Creates a playlist named `name` and, on success, rebuilds the sidebar and
