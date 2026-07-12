@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     restore selectable playable stopped startup state
+SINCE:    2026-07-12 21:12 CEST
 ```
 
-_As of 2026-07-12 21:08 CEST: Codex released the lock after fixing current-track table selection._
+_As of 2026-07-12 21:12 CEST: Codex claimed the lock for the manually reproduced stopped-session restore regression._
 
 ## Current position
 
