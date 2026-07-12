@@ -108,7 +108,7 @@ impl std::error::Error for CoverError {}
 /// "we don't touch your files" promise.
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .unwrap_or_else(std::env::temp_dir)
         .join("reprise/covers")
 }
 
@@ -126,14 +126,36 @@ pub fn thumbnail(source: &CoverSource, size: ThumbnailSize) -> Result<PathBuf, C
     std::fs::create_dir_all(&dir).map_err(|e| CoverError::Io(e.to_string()))?;
 
     let decoded = image::load_from_memory(&bytes).map_err(|e| CoverError::Decode(e.to_string()))?;
-    let thumb = decoded.thumbnail(size.pixels(), size.pixels()); // aspect-preserving
+    // Never upscale: clamp the target to the source's longest side. A source
+    // smaller than the requested box is kept at native size (best available,
+    // no blur) instead of being blown up by `image::thumbnail`, which does
+    // upscale when the source is smaller than the target box.
+    let longest = decoded.width().max(decoded.height());
+    let target = size.pixels().min(longest);
+    let thumb = decoded.thumbnail(target, target); // aspect-preserving
 
-    // Atomic publish: write a unique temp file in the same dir, then rename.
-    let tmp = dir.join(format!(".{key}-{}.png.tmp", size.pixels()));
-    thumb
-        .save_with_format(&tmp, image::ImageFormat::Png)
-        .map_err(|e| CoverError::Io(e.to_string()))?;
-    std::fs::rename(&tmp, &out).map_err(|e| CoverError::Io(e.to_string()))?;
+    // Atomic publish: write a UNIQUE temp file in the same dir, then rename.
+    // Uniqueness matters because concurrent calls for the same cache key must
+    // not race on one temp path (the loser would otherwise see a spurious
+    // ENOENT on rename after the winner already unlinked it).
+    let tmp = dir.join(format!(
+        ".{key}-{}-{}.png.tmp",
+        size.pixels(),
+        fastrand::u64(..)
+    ));
+    if let Err(e) = thumb.save_with_format(&tmp, image::ImageFormat::Png) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(CoverError::Io(e.to_string()));
+    }
+    if let Err(e) = std::fs::rename(&tmp, &out) {
+        let _ = std::fs::remove_file(&tmp);
+        // A concurrent writer may have already published this exact key —
+        // that's success, not an error.
+        if out.exists() {
+            return Ok(out);
+        }
+        return Err(CoverError::Io(e.to_string()));
+    }
     Ok(out)
 }
 
@@ -206,10 +228,17 @@ mod tests {
     }
 
     // A real, decodable 1200x1200 red PNG — larger than the biggest thumbnail
-    // (1024 px) so every size DOWNSCALES (image::thumbnail never upscales) and
-    // the exact-size assertion below holds. (Solid-color PNG encodes tiny.)
+    // (1024 px) so every size exercises the DOWNSCALE path, and the exact-size
+    // assertion below holds. (`image::thumbnail` itself CAN upscale a source
+    // smaller than the target box; `thumbnail()` clamps against that, which
+    // `small_source_is_not_upscaled` below covers.) Solid-color PNG encodes tiny.
     fn red_png_1200() -> Vec<u8> {
-        let img = image::RgbImage::from_pixel(1200, 1200, image::Rgb([255, 0, 0]));
+        red_png(1200)
+    }
+
+    // A solid-color square red PNG of the given side length.
+    fn red_png(side: u32) -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(side, side, image::Rgb([255, 0, 0]));
         let mut buf = std::io::Cursor::new(Vec::new());
         image::DynamicImage::ImageRgb8(img)
             .write_to(&mut buf, image::ImageFormat::Png)
@@ -259,5 +288,54 @@ mod tests {
             thumbnail(&src, ThumbnailSize::List),
             Err(CoverError::Decode(_))
         ));
+    }
+
+    #[test]
+    fn small_source_is_not_upscaled() {
+        let src = CoverSource::Embedded(red_png(32));
+        let path = thumbnail(&src, ThumbnailSize::Full).unwrap();
+        let decoded = image::open(&path).unwrap();
+        let (w, h) = (decoded.width(), decoded.height());
+        assert_eq!(
+            w.max(h),
+            32,
+            "small source must stay native size, got {w}x{h}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn concurrent_same_key_calls_all_succeed() {
+        let bytes = red_png_1200();
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let bytes = bytes.clone();
+                std::thread::spawn(move || {
+                    thumbnail(&CoverSource::Embedded(bytes), ThumbnailSize::List)
+                })
+            })
+            .collect();
+
+        let results: Vec<Result<PathBuf, CoverError>> = handles
+            .into_iter()
+            .map(|h| h.join().expect("thread panicked"))
+            .collect();
+
+        for r in &results {
+            assert!(r.is_ok(), "expected Ok, got {r:?}");
+        }
+        let first = results[0].as_ref().unwrap();
+        for r in &results {
+            assert_eq!(
+                r.as_ref().unwrap(),
+                first,
+                "all callers must agree on the cache path"
+            );
+        }
+        assert!(
+            image::open(first).is_ok(),
+            "final file must decode as a valid image"
+        );
+        std::fs::remove_file(first).ok();
     }
 }
