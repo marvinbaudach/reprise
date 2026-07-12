@@ -21,25 +21,26 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     seek drag audio-stability regression
-SINCE:    2026-07-12 19:40 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-12 19:40 CEST: Codex reclaimed the lock for the manual-QA seek-drag regression._
+_As of 2026-07-12 20:25 CEST: Codex released the lock after completing the seek-drag fix and live-watcher regression coverage._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Release readiness** — Meson install layer and GNOME identity assets,
-  complete gettext/German UI, Flatpak-safe Trash portal, GNOME-50 Flatpak manifest with pinned
-  offline Cargo sources, and repeatable release documentation/checks through `d90607c`; final
-  close-out review READY. Final gates: 461 passed, 1 ignored; core PURE; full release checker,
-  installed German/English startup, first-run regressions, and exact two-start session E2E passed.
+- **Last completed:** **Post-release manual-QA regressions** — seek dragging now tracks the physical
+  pointer independently of GTK gesture arbitration, keeps audio stable while held, and seeks once
+  on release (`c8dd534`, manually confirmed). A permanent live-watcher integration test proves that
+  a valid FLAC created after startup is reported and inserted without a rescan (`e7805c8`); two
+  isolated full-app E2Es also confirmed immediate DB and UI refresh. Final gates: 464 passed,
+  1 ignored; core PURE; audit has only the accepted `paste` advisory.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
 - **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
   `RELEASING.md`; no agent should invent a remote, domain identity, screenshots, tag, or upload.
-- **Feature HEAD:** `d90607c`; this close-out board update follows it. Working tree clean after commit.
+- **Feature HEAD:** `e7805c8`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -55,14 +56,15 @@ _As of 2026-07-12 19:40 CEST: Codex reclaimed the lock for the manual-QA seek-dr
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
+- ✅ **Manual-QA fixes**: stable one-shot seek-on-release plus permanent live-watcher-after-start
+  coverage; both exact user-reported paths verified.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
 - `notify_now_playing` re-runs cover resolve+thumbnail synchronously on the main thread (cheap on
   warm cache; future off-thread hop).
 - Cover cell has no DnD/context-menu gesture (right-click/drag exactly on the 32px thumbnail is a no-op).
-- `player_bar.rs` (799) and `window.rs` (~791) are edge-tight — next edit to either must extract a
-  sibling module, not inline-add.
+- `window.rs` (~791) is edge-tight — its next edit must extract a sibling module, not inline-add.
 - `notify_now_playing` doc comment says "Stage 3 Task 9" (cosmetic; should read GUI-A).
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
