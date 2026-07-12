@@ -106,6 +106,14 @@ const RESPONSE_CREATE: &str = "create";
 ///   hooks to drive a sorted-or-filtered playlist view headlessly, then
 ///   inspect `playlist_tracks` directly (e.g. via `sqlite3`) to confirm the
 ///   *visible* row was removed, not whatever sits at `pt.position 0`.
+/// - `remove-from-library` (Stage-3 close-out): calls `handle_remove_from_
+///   library` — the exact handler `ACTION_REMOVE_FROM_LIBRARY`'s `gio::
+///   SimpleAction` invokes — with the current selection's ids. Combine with
+///   `track_list.rs`'s `REPRISE_SMOKE_SOURCE=missing` so the selection lands
+///   on the Missing source's rows, then inspect `tracks`/`playlist_tracks`
+///   directly to confirm: the row is gone, every playlist it belonged to
+///   renumbered gaplessly, and (via the player's queue) any queued copy of
+///   it purged — the property this task's fix restores.
 ///
 /// Usage: `REPRISE_SCAN_DIR=… REPRISE_SMOKE_MENU_ACTION=queue
 ///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
@@ -572,11 +580,14 @@ fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]) {
     }
     match track_actions::remove_missing_selected(&shared.conn, ids) {
         Ok(removed) => {
-            tracing::info!(removed, "context menu: tracks removed from library");
-            notify_library_mutated(shared);
+            tracing::info!(
+                removed = removed.len(),
+                "context menu: tracks removed from library"
+            );
+            notify_library_mutated(shared, &removed);
             show_toast(
                 shared,
-                &strings::tracks_removed_from_library_toast(removed as usize),
+                &strings::tracks_removed_from_library_toast(removed.len()),
             );
             reload(shared);
         }
@@ -588,11 +599,14 @@ fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]) {
 }
 
 /// Clone-out-then-call `on_library_mutated` (Stage 3 Task 8) — see the
-/// `Shared::on_library_mutated` doc comment in `track_list.rs`.
-fn notify_library_mutated(shared: &Rc<Shared>) {
+/// `Shared::on_library_mutated` doc comment in `track_list.rs`. `removed_
+/// ids` is the exact set `queries::remove_missing_tracks` actually deleted
+/// (Stage-3 close-out), passed through so `window.rs`'s wiring can purge
+/// those same ids from the playback queue.
+fn notify_library_mutated(shared: &Rc<Shared>, removed_ids: &[i64]) {
     let callback = shared.on_library_mutated.borrow().clone();
     match callback {
-        Some(callback) => callback(),
+        Some(callback) => callback(removed_ids),
         None => tracing::warn!(
             "context menu: library mutated but no on_library_mutated callback is wired"
         ),
@@ -693,6 +707,19 @@ fn notify_playlist_mutated(shared: &Rc<Shared>) {
 /// rows via `shared.selection` and invokes the exact same `handle_add_to_
 /// queue`/`handle_add_to_playlist` functions the menu's `gio::SimpleAction`
 /// handlers call — never the popover itself (see the const's doc comment).
+///
+/// Stage-3 close-out: `value` may be a comma-separated LIST of actions
+/// (e.g. `queue,remove-from-library`), run in order against the *same*
+/// selection — this is what lets one headless run prove "a track that's
+/// queued, then hard-deleted, gets purged from the queue": a track already
+/// flagged `missing` is invisible to every OTHER source's own queries, but
+/// `ViewSource::Missing` (switched to beforehand via `REPRISE_SMOKE_SOURCE`)
+/// shows it, so the selection here can queue it there first (queueing a
+/// still-existing-but-missing track is a legitimate action — nothing gates
+/// "Add to queue" by source) and then remove it, in the same callback,
+/// exactly mirroring the real sequence "queue a track, later its file
+/// disappears (or, here, a scan already flagged it missing), then Remove
+/// from library" a real user session could produce.
 pub(super) fn arm_smoke_menu_action(shared: &Rc<Shared>) {
     let Ok(value) = std::env::var(SMOKE_MENU_ACTION_ENV_VAR) else {
         return;
@@ -707,42 +734,65 @@ pub(super) fn arm_smoke_menu_action(shared: &Rc<Shared>) {
         }
         shared.selection.select_range(0, row_count, true);
 
-        if value == ACTION_REMOVE_FROM_PLAYLIST {
-            // Positions, not ids — exercises the exact same position-
-            // resolution path a real right-click "Remove from playlist"
-            // uses (see `ui::track_actions`'s module doc), so this is what
-            // lets the hook drive the Fix Round 1 sorted/filtered-playlist
-            // E2E check headlessly.
-            let positions = current_selection_positions(&shared);
-            handle_remove_from_playlist(&shared, &positions);
-            return;
+        for action in value.split(',').map(str::trim) {
+            dispatch_smoke_menu_action(&shared, action);
         }
-
-        let ids = current_selection_ids(&shared);
-
-        if value == "play" {
-            handle_play(&shared, &ids);
-            return;
-        }
-
-        if value == "queue" {
-            handle_add_to_queue(&shared, &ids);
-            return;
-        }
-
-        let Some(playlist_name) = value.strip_prefix("playlist:") else {
-            tracing::warn!(value = %value, "{SMOKE_MENU_ACTION_ENV_VAR}: unrecognized value; ignoring");
-            return;
-        };
-        let Some(playlist_id) = resolve_smoke_menu_action_playlist(&shared, playlist_name) else {
-            tracing::warn!(
-                playlist_name,
-                "{SMOKE_MENU_ACTION_ENV_VAR}: no playlist found with this name"
-            );
-            return;
-        };
-        handle_add_to_playlist(&shared, playlist_id, &ids);
     });
+}
+
+/// Runs one `,`-separated token of the `REPRISE_SMOKE_MENU_ACTION` value
+/// against the CURRENT selection (`arm_smoke_menu_action` selects once,
+/// before the whole list runs) — see that function's doc comment for why a
+/// list of actions shares one selection.
+fn dispatch_smoke_menu_action(shared: &Rc<Shared>, action: &str) {
+    if action == ACTION_REMOVE_FROM_PLAYLIST {
+        // Positions, not ids — exercises the exact same position-resolution
+        // path a real right-click "Remove from playlist" uses (see `ui::
+        // track_actions`'s module doc), so this is what lets the hook drive
+        // the Fix Round 1 sorted/filtered-playlist E2E check headlessly.
+        let positions = current_selection_positions(shared);
+        handle_remove_from_playlist(shared, &positions);
+        return;
+    }
+
+    let ids = current_selection_ids(shared);
+
+    if action == "play" {
+        handle_play(shared, &ids);
+        return;
+    }
+
+    if action == "queue" {
+        handle_add_to_queue(shared, &ids);
+        return;
+    }
+
+    if action == ACTION_REMOVE_FROM_LIBRARY {
+        // Stage-3 close-out: drives `handle_remove_from_library` (the exact
+        // function the real "Remove from library" menu item calls)
+        // headlessly, so an E2E run can prove the hard-delete's fallout —
+        // playlist-position compaction, queue purge — without a human
+        // right-clicking a Missing-source row. Selects the first `SMOKE_
+        // MENU_ACTION_ROW_COUNT` rows of the CURRENT view like every other
+        // action here; a run that first switches to `ViewSource::Missing`
+        // (via `REPRISE_SMOKE_SOURCE`) with exactly one missing track
+        // selects exactly that one row.
+        handle_remove_from_library(shared, &ids);
+        return;
+    }
+
+    let Some(playlist_name) = action.strip_prefix("playlist:") else {
+        tracing::warn!(value = %action, "{SMOKE_MENU_ACTION_ENV_VAR}: unrecognized value; ignoring");
+        return;
+    };
+    let Some(playlist_id) = resolve_smoke_menu_action_playlist(shared, playlist_name) else {
+        tracing::warn!(
+            playlist_name,
+            "{SMOKE_MENU_ACTION_ENV_VAR}: no playlist found with this name"
+        );
+        return;
+    };
+    handle_add_to_playlist(shared, playlist_id, &ids);
 }
 
 /// Looks up a playlist id by exact name for the `REPRISE_SMOKE_MENU_ACTION=

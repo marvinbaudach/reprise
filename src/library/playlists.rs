@@ -75,13 +75,18 @@ fn create_playlist_row(conn: &Connection, name: &str) -> Result<i64, rusqlite::E
         trimmed.to_string()
     };
 
-    let max_position: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(position), -1) FROM playlists",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(-1);
+    // Stage-3 close-out fix: this used to be `.unwrap_or(-1)`, silently
+    // turning a transient DB error (lock contention, I/O failure) into
+    // "no rows yet" — the new playlist would land at position 0 (or
+    // collide/reorder against an existing position 0) instead of the
+    // caller ever finding out the query failed. `create_playlist_row`
+    // already returns `Result`, so propagate via `?` like every other
+    // fallible step in this function.
+    let max_position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) FROM playlists",
+        [],
+        |r| r.get(0),
+    )?;
     let new_position = max_position + 1;
 
     conn.execute(
@@ -164,13 +169,15 @@ fn append_tracks_rows(
     playlist_id: i64,
     track_ids: &[i64],
 ) -> Result<u32, rusqlite::Error> {
-    let max_position: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id = ?1",
-            params![playlist_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(-1);
+    // See `create_playlist_row`'s matching comment: propagate a transient DB
+    // error via `?` instead of silently treating it as "playlist is empty"
+    // (`.unwrap_or(-1)` would have appended at position 0, potentially
+    // colliding with/reordering an existing row).
+    let max_position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id = ?1",
+        params![playlist_id],
+        |r| r.get(0),
+    )?;
 
     let mut inserted = 0u32;
     for (i, &track_id) in track_ids.iter().enumerate() {
@@ -237,8 +244,30 @@ pub fn remove_positions(
         deleted += changes as u32;
     }
 
-    // Renumber remaining tracks to be contiguous.
-    let mut stmt = tx.prepare(
+    renumber_positions(&tx, playlist_id)?;
+
+    tx.commit()?;
+    Ok(deleted)
+}
+
+/// Renumbers `playlist_id`'s `playlist_tracks.position` values to be
+/// contiguous (0..n-1), preserving relative order — the gapless-position
+/// invariant this module's doc comment promises. Extracted from
+/// `remove_positions` (Stage-3 close-out) so `queries::remove_missing_
+/// tracks` can reuse the exact same renumbering after a hard-delete's
+/// `ON DELETE CASCADE` leaves gaps behind (see that function's doc comment
+/// for the full incident this closes). Takes a plain `&Connection` (not
+/// `&mut`) so it can run against either a bare `&Connection` or, via deref
+/// coercion, a `&Transaction` — the same "shared logic, caller owns the
+/// transaction" shape `create_playlist_row`/`append_tracks_rows` already
+/// use. A no-op for a playlist with no rows (or one that's already gapless —
+/// the `if old_pos != new_pos` guard skips a write for every row already in
+/// place).
+pub(crate) fn renumber_positions(
+    conn: &Connection,
+    playlist_id: i64,
+) -> Result<(), rusqlite::Error> {
+    let mut stmt = conn.prepare(
         "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position ASC",
     )?;
     let current_positions: Vec<i64> = stmt
@@ -248,15 +277,30 @@ pub fn remove_positions(
 
     for (new_pos, &old_pos) in current_positions.iter().enumerate() {
         if old_pos != new_pos as i64 {
-            tx.execute(
+            conn.execute(
                 "UPDATE playlist_tracks SET position = ?1 WHERE playlist_id = ?2 AND position = ?3",
                 params![new_pos as i64, playlist_id, old_pos],
             )?;
         }
     }
+    Ok(())
+}
 
-    tx.commit()?;
-    Ok(deleted)
+/// Escapes `\`, `%`, `_` for use inside a SQL `LIKE ... ESCAPE '\'` pattern —
+/// backslash first, so a literal backslash a user typed doesn't get
+/// misread as introducing one of the wildcard escapes emitted next (Stage-3
+/// close-out finding: the search filter's own `LIKE` sites in `queries.rs`
+/// didn't escape `%`/`_` at all, so typing either in the search box silently
+/// acted as a wildcard — inconsistent with this module's own `contains`
+/// smart-rule operator, which already escaped correctly). Shared by both:
+/// `contains` below, and every `filter_clause` LIKE-binding site in
+/// `queries.rs`, so a literal `%`/`_` in a search box or a smart-rule value
+/// is never misread as a wildcard, and the two can never drift apart on how
+/// escaping works.
+pub fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 /// Moves a track from one position to another, renumbering all affected
@@ -269,13 +313,15 @@ pub fn move_position(
     from: u32,
     to: u32,
 ) -> Result<(), rusqlite::Error> {
-    let max_position: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id = ?1",
-            params![playlist_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(-1);
+    // See `create_playlist_row`'s matching comment: propagate a transient DB
+    // error via `?` instead of silently treating it as "playlist is empty"
+    // (`.unwrap_or(-1)` would have made every `from`/`to` look out of range,
+    // silently no-op'ing a move instead of surfacing the real DB failure).
+    let max_position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id = ?1",
+        params![playlist_id],
+        |r| r.get(0),
+    )?;
 
     if from as i64 > max_position || to as i64 > max_position {
         tracing::warn!(
@@ -433,11 +479,7 @@ pub fn smart_rules_to_sql(
                 let s = val
                     .as_str()
                     .ok_or_else(|| SmartRulesError::InvalidValue("contains".to_string()))?;
-                // Escape backslash first, then % and _ for LIKE.
-                let escaped = s
-                    .replace('\\', "\\\\")
-                    .replace('%', "\\%")
-                    .replace('_', "\\_");
+                let escaped = escape_like(s);
                 params.push(rusqlite::types::Value::Text(format!("%{escaped}%")));
                 format!("{} LIKE ? ESCAPE '\\'", rule.field)
             }

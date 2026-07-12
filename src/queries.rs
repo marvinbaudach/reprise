@@ -144,12 +144,24 @@ const SORT_WHITELIST: [(&str, &str); 7] = [
 fn filter_clause(has_filter: bool, param_index: u8) -> String {
     if has_filter {
         format!(
-            " AND (title LIKE ?{param_index} OR artist LIKE ?{param_index} \
-             OR album LIKE ?{param_index} OR genre LIKE ?{param_index})"
+            " AND (title LIKE ?{param_index} ESCAPE '\\' OR artist LIKE ?{param_index} ESCAPE '\\' \
+             OR album LIKE ?{param_index} ESCAPE '\\' OR genre LIKE ?{param_index} ESCAPE '\\')"
         )
     } else {
         String::new()
     }
+}
+
+/// Builds the bound `%…%` LIKE pattern for a trimmed filter value — always
+/// through `library::playlists::escape_like` (Stage-3 close-out finding:
+/// this used to be a bare `format!("%{}%", filter.trim())` at every call
+/// site below, so a literal `%`/`_` typed into the search box acted as a
+/// live wildcard instead of matching itself, inconsistent with the smart-
+/// rule `contains` operator's own escaping). Every `filter_clause` LIKE
+/// site in this module builds its bound value through this one function so
+/// the two can never drift apart again.
+fn like_pattern(filter_trimmed: &str) -> String {
+    format!("%{}%", playlists::escape_like(filter_trimmed))
 }
 
 /// Resolves `sort_field`/`sort_dir` to a whitelisted `ORDER BY` expression
@@ -340,7 +352,7 @@ fn build_smart_window_query(
     );
     if has_filter {
         inner_sql.push_str(&filter_clause(true, next_idx));
-        params.push(rusqlite::types::Value::Text(format!("%{}%", filter.trim())));
+        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
         next_idx += 1;
     }
     inner_sql.push_str(&format!(" ORDER BY {order_expr} {dir}"));
@@ -373,7 +385,7 @@ fn query_track_window_library(
     let has_filter = !filter.trim().is_empty();
     let sql = build_track_query(sort_field, sort_dir, has_filter);
     let mut stmt = conn.prepare(&sql)?;
-    let like = format!("%{}%", filter.trim());
+    let like = like_pattern(filter.trim());
     let rows = if has_filter {
         stmt.query_map(rusqlite::params![limit, offset, like], row_to_track)?
     } else {
@@ -394,7 +406,7 @@ fn query_track_window_missing(
     let has_filter = !filter.trim().is_empty();
     let sql = build_track_query_base(1, sort_field, sort_dir, has_filter);
     let mut stmt = conn.prepare(&sql)?;
-    let like = format!("%{}%", filter.trim());
+    let like = like_pattern(filter.trim());
     let rows = if has_filter {
         stmt.query_map(rusqlite::params![limit, offset, like], row_to_track)?
     } else {
@@ -416,7 +428,7 @@ fn query_track_window_playlist(
     let has_filter = !filter.trim().is_empty();
     let sql = build_playlist_track_query(sort_field, sort_dir, has_filter);
     let mut stmt = conn.prepare(&sql)?;
-    let like = format!("%{}%", filter.trim());
+    let like = like_pattern(filter.trim());
     let rows = if has_filter {
         stmt.query_map(
             rusqlite::params![limit, offset, playlist_id, like],
@@ -500,15 +512,19 @@ fn query_track_window_queue(
 
     // invariant: an id in `ids` with no matching `tracks` row is silently
     // dropped here (via `filter_map`), so this window's row count can be
-    // *less* than `slice.len()` — which `query_track_count`'s `Queue` arm
-    // does not account for (it returns `queue_ids.len()` verbatim). This is
-    // unreachable today: nothing in this codebase hard-deletes a `tracks`
-    // row (`mark_track_missing` only flips a flag), so every id ever placed
-    // in a queue keeps resolving to a row for the queue's lifetime. If a
-    // future feature adds a hard-delete path, `query_track_count`'s `Queue`
-    // arm must switch from `queue_ids.len()` to actually counting matched
-    // rows, or the two will disagree (see `queue_count_matches_window_row_
-    // count_when_all_ids_resolve` below, which pins today's no-drop case).
+    // *less* than `slice.len()`. Stage-3 close-out: hard-delete now exists
+    // (`remove_missing_track`/`remove_missing_tracks`), so this is reachable
+    // — a queued id can genuinely stop resolving mid-life. Two things keep
+    // this from desyncing the UI: (1) the queue itself is purged of any
+    // hard-deleted id in lockstep, via `ui::player_controller::
+    // PlayerController::purge_queue_ids`, called from the "Remove from
+    // library" flow (`ui::track_list_context_menu::handle_remove_from_
+    // library`); (2) belt-and-braces, `query_track_count`'s `Queue` arm
+    // (`query_track_count_queue`) counts actually-matched rows rather than
+    // trusting `queue_ids.len()` verbatim, so even an unpurged stale id
+    // can't make a `ColumnView` believe there are more rows than this
+    // function will ever render (see `queue_count_matches_window_row_count_
+    // when_some_ids_do_not_resolve` below).
     let mut by_id: HashMap<i64, Track> = rows.into_iter().map(|t| (t.id, t)).collect();
     Ok(slice.iter().filter_map(|id| by_id.remove(id)).collect())
 }
@@ -563,7 +579,7 @@ fn query_track_count_library(conn: &Connection, filter: &str) -> Result<i64, rus
         filter_clause(has_filter, 1)
     );
     if has_filter {
-        let like = format!("%{}%", filter.trim());
+        let like = like_pattern(filter.trim());
         conn.query_row(&sql, rusqlite::params![like], |r| r.get(0))
     } else {
         conn.query_row(&sql, [], |r| r.get(0))
@@ -577,7 +593,7 @@ fn query_track_count_missing(conn: &Connection, filter: &str) -> Result<i64, rus
         filter_clause(has_filter, 1)
     );
     if has_filter {
-        let like = format!("%{}%", filter.trim());
+        let like = like_pattern(filter.trim());
         conn.query_row(&sql, rusqlite::params![like], |r| r.get(0))
     } else {
         conn.query_row(&sql, [], |r| r.get(0))
@@ -596,7 +612,7 @@ fn query_track_count_playlist(
         filter_clause(has_filter, 2)
     );
     if has_filter {
-        let like = format!("%{}%", filter.trim());
+        let like = like_pattern(filter.trim());
         conn.query_row(&sql, rusqlite::params![playlist_id, like], |r| r.get(0))
     } else {
         conn.query_row(&sql, rusqlite::params![playlist_id], |r| r.get(0))
@@ -627,7 +643,7 @@ fn query_track_count_smart(
     let mut sql = format!("SELECT count(*) FROM tracks WHERE missing = 0 AND ({rules_frag})");
     if has_filter {
         sql.push_str(&filter_clause(true, next_idx));
-        params.push(rusqlite::types::Value::Text(format!("%{}%", filter.trim())));
+        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
     }
     let raw: i64 = conn.query_row(&sql, rusqlite::params_from_iter(params.iter()), |r| {
         r.get(0)
@@ -638,9 +654,35 @@ fn query_track_count_smart(
     })
 }
 
+/// Counts how many of `queue_ids` still resolve to a live `tracks` row —
+/// the `Queue` count arm of `query_track_count` (Stage-3 close-out: hard-
+/// delete now exists — `remove_missing_track`/`remove_missing_tracks` — so a
+/// queued id can no longer be assumed to resolve; see that function's doc
+/// comment for the full history). Every occurrence in `queue_ids` is
+/// counted independently (not deduplicated first), matching `query_track_
+/// window_queue`'s own per-slot resolution — a track queued twice that
+/// still exists counts twice, exactly like the window that renders it
+/// twice.
+fn query_track_count_queue(conn: &Connection, queue_ids: &[i64]) -> Result<i64, rusqlite::Error> {
+    if queue_ids.is_empty() {
+        return Ok(0);
+    }
+    let unique_ids: std::collections::HashSet<i64> = queue_ids.iter().copied().collect();
+    let placeholders = (1..=unique_ids.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!("SELECT id FROM tracks WHERE id IN ({placeholders})");
+    let mut stmt = conn.prepare(&sql)?;
+    let existing: std::collections::HashSet<i64> = stmt
+        .query_map(rusqlite::params_from_iter(unique_ids.iter()), |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(queue_ids.iter().filter(|id| existing.contains(id)).count() as i64)
+}
+
 /// Counts rows matching `(source, filter)` — see the module doc for how
 /// each source defines "matching". `queue_ids` is only read for
-/// `ViewSource::Queue` (its count is simply `queue_ids.len()`).
+/// `ViewSource::Queue`.
 pub fn query_track_count(
     conn: &Connection,
     source: &ViewSource,
@@ -652,16 +694,18 @@ pub fn query_track_count(
         ViewSource::Missing => query_track_count_missing(conn, filter),
         ViewSource::Playlist(id) => query_track_count_playlist(conn, *id, filter),
         ViewSource::Smart(id) => query_track_count_smart(conn, *id, filter),
-        // invariant: this assumes every id in `queue_ids` still resolves to
-        // a live `tracks` row — true today since nothing hard-deletes rows
-        // (`mark_track_missing` only flips a flag) — so `queue_ids.len()`
-        // and `query_track_window_queue`'s actual row count always agree.
-        // `query_track_window_queue` already silently drops any id with no
-        // matching row (see its own `invariant:` comment); if a future
-        // hard-delete path is added, this arm must count matched rows
-        // instead of trusting `queue_ids.len()` verbatim, or the two will
-        // desync (a `ColumnView` reporting more rows than it can render).
-        ViewSource::Queue => Ok(queue_ids.len() as i64),
+        // Stage-3 close-out fix: this used to trust `queue_ids.len()`
+        // verbatim, on the documented assumption that nothing hard-deletes a
+        // `tracks` row. That assumption no longer holds (`remove_missing_
+        // track`/`remove_missing_tracks` do exactly that) — the queue itself
+        // is purged in lockstep by `ui::player_controller::PlayerController::
+        // purge_queue_ids` whenever a hard-delete happens through the app's
+        // own UI, but counting matched rows here (rather than trusting the
+        // caller's `queue_ids` slice) is a second, independent guarantee
+        // that a `ColumnView` can never be told there are more rows than
+        // `query_track_window_queue` will actually render, even if some
+        // future caller forgets to purge the queue after a hard-delete.
+        ViewSource::Queue => query_track_count_queue(conn, queue_ids),
         ViewSource::ImportErrors => Ok(0),
     }
 }
@@ -684,7 +728,7 @@ fn query_track_ids_playlist(
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = if has_filter {
-        let like = format!("%{}%", filter.trim());
+        let like = like_pattern(filter.trim());
         stmt.query_map(rusqlite::params![playlist_id, like], row_to_id)?
     } else {
         stmt.query_map(rusqlite::params![playlist_id], row_to_id)?
@@ -717,7 +761,7 @@ fn query_track_ids_smart(
     let mut sql = format!("SELECT id FROM tracks WHERE missing = 0 AND ({rules_frag})");
     if has_filter {
         sql.push_str(&filter_clause(true, next_idx));
-        params.push(rusqlite::types::Value::Text(format!("%{}%", filter.trim())));
+        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
     }
     // The smart playlist's own limit bounds the queue too (capped by
     // `QUEUE_LIMIT` for defense in depth, same as every other source's ids
@@ -756,7 +800,7 @@ pub fn query_track_ids(
             let has_filter = !filter.trim().is_empty();
             let sql = build_track_ids_query(sort_field, sort_dir, has_filter);
             let mut stmt = conn.prepare(&sql)?;
-            let like = format!("%{}%", filter.trim());
+            let like = like_pattern(filter.trim());
             let rows = if has_filter {
                 stmt.query_map(rusqlite::params![like], row_to_id)?
             } else {
@@ -768,7 +812,7 @@ pub fn query_track_ids(
             let has_filter = !filter.trim().is_empty();
             let sql = build_track_ids_query_base(1, sort_field, sort_dir, has_filter);
             let mut stmt = conn.prepare(&sql)?;
-            let like = format!("%{}%", filter.trim());
+            let like = like_pattern(filter.trim());
             let rows = if has_filter {
                 stmt.query_map(rusqlite::params![like], row_to_id)?
             } else {
@@ -869,12 +913,86 @@ pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqli
 /// file), rather than silently deleting a live library row's history because
 /// the UI's idea of "this row is missing" was one reload out of date.
 /// Returns whether a row was actually deleted.
+///
+/// This lone-row primitive does NOT renumber any playlist the deleted track
+/// belonged to, or purge it from the playback queue — see [`remove_missing_
+/// tracks`]'s doc comment for the cross-task invariant a bare delete like
+/// this one breaks (`playlist_tracks.position` gaps -> `library::playlists::
+/// move_position` moving the wrong row; a phantom id left in `queue::
+/// Queue`). Every real caller should go through `remove_missing_tracks`
+/// instead — this function is kept as the single-row primitive it's built
+/// on (DRY) and for the tests that pin its own no-op guard in isolation.
 pub fn remove_missing_track(conn: &Connection, track_id: i64) -> Result<bool, rusqlite::Error> {
     let deleted = conn.execute(
         "DELETE FROM tracks WHERE id = ?1 AND missing = 1",
         rusqlite::params![track_id],
     )?;
     Ok(deleted > 0)
+}
+
+/// Batch, TRANSACTIONAL "Remove from library" (Stage-3 close-out fix): the
+/// version every real caller (`ui::track_actions::remove_missing_selected`)
+/// uses instead of looping over [`remove_missing_track`] directly — the
+/// difference matters. A bare per-id `remove_missing_track` loop deletes
+/// each `tracks` row but leaves two cross-task invariants broken behind it
+/// (this is the bug this function's introduction fixes; Task 3's own
+/// `playlist_tracks`-related comments in this module documented reliance on
+/// "nothing hard-deletes a `tracks` row" — see the two `invariant:` comments
+/// this task updated, on `query_track_window_queue` and `query_track_count`):
+///
+/// - `playlist_tracks` has `ON DELETE CASCADE` (`db.rs`), so the deleted
+///   track's row in every playlist it belonged to disappears too — WITHOUT
+///   renumbering the survivors, leaving gapped positions (e.g. `[0,1,3,4]`).
+///   `library::playlists::move_position` treats a position as a literal
+///   `Vec` index (`tracks.remove(from as usize)`), an assumption that only
+///   holds while positions stay gapless — a gap makes a later drag-reorder
+///   silently move the wrong row (the Task 5 wrong-row bug class, through a
+///   side door this task closes).
+/// - A track hard-deleted while sitting in the playback queue leaves its id
+///   there as a phantom (`queue::Queue` has no delete-awareness of its own).
+///   This function only owns the DB side of the fix; the caller is
+///   responsible for purging the queue too, using this function's return
+///   value — see `ui::player_controller::PlayerController::purge_queue_ids`,
+///   invoked from `ui::track_list_context_menu::handle_remove_from_library`.
+///
+/// Every id's delete, and every playlist position renumber
+/// (`library::playlists::renumber_positions`) it triggers, happens inside
+/// ONE transaction — all ids succeed/fail together, so a crash/error
+/// partway through a multi-id remove can never leave a playlist's positions
+/// gapped in the committed database. Affected playlists are looked up
+/// *before* each delete (the FK cascade is about to remove those very
+/// `playlist_tracks` rows). Returns the ids actually deleted — a subset of
+/// `ids`, in input order; an id that wasn't/isn't-anymore missing is
+/// silently skipped (matching `remove_missing_track`'s own no-op contract),
+/// not an error. A no-op (`Ok(vec![])`, no transaction opened) for an empty
+/// `ids` slice.
+pub fn remove_missing_tracks(
+    conn: &mut Connection,
+    ids: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tx = conn.transaction()?;
+    let mut removed = Vec::with_capacity(ids.len());
+    for &id in ids {
+        let mut stmt =
+            tx.prepare("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1")?;
+        let affected_playlists: Vec<i64> = stmt
+            .query_map(rusqlite::params![id], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        drop(stmt);
+
+        if !remove_missing_track(&tx, id)? {
+            continue;
+        }
+        removed.push(id);
+        for playlist_id in affected_playlists {
+            playlists::renumber_positions(&tx, playlist_id)?;
+        }
+    }
+    tx.commit()?;
+    Ok(removed)
 }
 
 /// Aggregates library-wide stats over all non-missing tracks. Powers the
@@ -1034,7 +1152,59 @@ mod tests {
     fn query_builder_rejects_unknown_column_with_title_fallback() {
         let q = build_track_query("path; DROP TABLE tracks", "desc", true);
         assert!(q.contains("ORDER BY title COLLATE NOCASE DESC"));
-        assert!(q.contains("(title LIKE ?3 OR artist LIKE ?3 OR album LIKE ?3 OR genre LIKE ?3)"));
+        assert!(q.contains(
+            "(title LIKE ?3 ESCAPE '\\' OR artist LIKE ?3 ESCAPE '\\' \
+             OR album LIKE ?3 ESCAPE '\\' OR genre LIKE ?3 ESCAPE '\\')"
+        ));
+    }
+
+    /// Pins the exact escaped pattern `like_pattern` produces (per this
+    /// project's SQLite skill: assert the exact escaped param, not just
+    /// `contains`, so a regression that escapes the wrong character or the
+    /// wrong order still fails this test).
+    #[test]
+    fn like_pattern_escapes_backslash_first_then_percent_and_underscore() {
+        assert_eq!(like_pattern("50%_off\\sale"), "%50\\%\\_off\\\\sale%");
+    }
+
+    /// Regression for the LIKE-escaping finding: a literal `%` typed into
+    /// the search box must match only rows that actually contain a literal
+    /// `%`, not act as a live wildcard matching everything.
+    #[test]
+    fn search_filter_treats_a_literal_percent_as_a_literal_not_a_wildcard() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for (t, a) in [("A%B", "X"), ("AZB", "Y"), ("Other", "Z")] {
+            conn.execute(
+                "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t, a],
+            )
+            .unwrap();
+        }
+
+        let mut conn = conn;
+        let rows = query_track_window(
+            &mut conn,
+            &ViewSource::Library,
+            "title",
+            "asc",
+            "%",
+            0,
+            10,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            rows.len(),
+            1,
+            "a literal '%' must match only the literal-% row"
+        );
+        assert_eq!(rows[0].title, "A%B");
+
+        assert_eq!(
+            query_track_count(&conn, &ViewSource::Library, "%", &[]).unwrap(),
+            1
+        );
     }
 
     #[test]
@@ -1832,13 +2002,45 @@ mod tests {
     }
 
     #[test]
-    fn queue_count_is_the_ids_length_regardless_of_filter() {
-        let queue_ids = vec![5, 4, 3];
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+    fn queue_count_counts_resolvable_ids_regardless_of_filter() {
+        let conn = seeded_conn_with_tracks(3);
+        let queue_ids = vec![3, 2, 1];
         assert_eq!(
             query_track_count(&conn, &ViewSource::Queue, "anything", &queue_ids).unwrap(),
             3
+        );
+    }
+
+    /// Stage-3 close-out regression: a queued id that no longer resolves to
+    /// a `tracks` row (e.g. hard-deleted via "Remove from library") must not
+    /// inflate the count past what `query_track_window`'s `Queue` arm can
+    /// actually render.
+    #[test]
+    fn queue_count_excludes_ids_that_no_longer_resolve_to_a_row() {
+        let conn = seeded_conn_with_tracks(3);
+        let queue_ids = vec![3, 999, 1]; // 999 was never inserted
+        assert_eq!(
+            query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn queue_count_counts_each_occurrence_of_a_duplicated_resolvable_id() {
+        let conn = seeded_conn_with_tracks(3);
+        let queue_ids = vec![1, 1, 2]; // id 1 queued twice
+        assert_eq!(
+            query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap(),
+            3
+        );
+    }
+
+    #[test]
+    fn queue_count_is_zero_for_an_empty_queue() {
+        let conn = seeded_conn_with_tracks(3);
+        assert_eq!(
+            query_track_count(&conn, &ViewSource::Queue, "", &[]).unwrap(),
+            0
         );
     }
 
@@ -1853,14 +2055,10 @@ mod tests {
         );
     }
 
-    /// Defensive regression for the `Queue` count/window invariant noted at
-    /// both `query_track_count`'s `Queue` arm and `query_track_window_queue`:
-    /// when every id in `queue_ids` resolves to a live row (true today, since
-    /// nothing hard-deletes from `tracks`), `query_track_count`'s
-    /// `queue_ids.len()` must equal the actual number of rows a full-window
-    /// `query_track_window` call returns — no behavior change, just pinning
-    /// the assumption so a future hard-delete path trips this test instead
-    /// of silently desyncing the two.
+    /// Regression for the `Queue` count/window invariant: when every id in
+    /// `queue_ids` resolves to a live row, `query_track_count`'s `Queue` arm
+    /// must equal the actual number of rows a full-window `query_track_
+    /// window` call returns.
     #[test]
     fn queue_count_matches_window_row_count_when_all_ids_resolve() {
         let mut conn = seeded_conn_with_tracks(5);
@@ -1881,6 +2079,35 @@ mod tests {
 
         assert_eq!(count as usize, rows.len());
         assert_eq!(count as usize, queue_ids.len());
+    }
+
+    /// Stage-3 close-out: the desync this fix closes. `query_track_window_
+    /// queue` already silently dropped any id with no matching row; before
+    /// this fix, `query_track_count`'s `Queue` arm trusted `queue_ids.len()`
+    /// verbatim, so a `ColumnView` could be told there were more rows than
+    /// it would ever render (`count=4` while the window renders 3). Both
+    /// must now agree, even with a stale (hard-deleted) id still present in
+    /// `queue_ids` — the case that's reachable now that hard-delete exists.
+    #[test]
+    fn queue_count_matches_window_row_count_when_some_ids_do_not_resolve() {
+        let mut conn = seeded_conn_with_tracks(3);
+        let queue_ids = vec![3, 999, 1, 2]; // 999 doesn't resolve
+
+        let count = query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap();
+        let rows = query_track_window(
+            &mut conn,
+            &ViewSource::Queue,
+            "ignored",
+            "ignored",
+            "",
+            0,
+            queue_ids.len() as i64,
+            &queue_ids,
+        )
+        .unwrap();
+
+        assert_eq!(count as usize, rows.len());
+        assert_eq!(count, 3);
     }
 
     // -- ImportErrors source -------------------------------------------------
@@ -2040,6 +2267,249 @@ mod tests {
             .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1, "the non-missing row must survive untouched");
+    }
+
+    // -- remove_missing_tracks (Stage-3 close-out) ----------------------
+
+    /// THE core regression test for the "hard-delete broke a cross-task
+    /// invariant" finding: a playlist `[1,2,3,4,5]` (`pt.position` 0..4);
+    /// track 3 (position 2, the MIDDLE one) gets marked missing and then
+    /// hard-deleted via `remove_missing_tracks`. Before this fix, the
+    /// `ON DELETE CASCADE` on `playlist_tracks` would leave positions
+    /// `[0,1,3,4]` — a gap — which `library::playlists::move_position`
+    /// (treating a position as a literal `Vec` index) would silently
+    /// mis-resolve on the very next drag-reorder. This asserts the fix:
+    /// positions come out gapless (`0..n-1`) immediately after the delete.
+    #[test]
+    fn remove_missing_tracks_compacts_playlist_positions_after_a_middle_row_delete() {
+        let mut conn = seeded_conn_with_tracks(5);
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
+        playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
+        conn.execute("UPDATE tracks SET missing = 1 WHERE id = 3", [])
+            .unwrap();
+
+        let removed = remove_missing_tracks(&mut conn, &[3]).unwrap();
+        assert_eq!(removed, vec![3]);
+
+        let (track_ids, positions): (Vec<i64>, Vec<i64>) = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT track_id, position FROM playlist_tracks \
+                     WHERE playlist_id = ?1 ORDER BY position",
+                )
+                .unwrap();
+            let rows: Vec<(i64, i64)> = stmt
+                .query_map(rusqlite::params![playlist_id], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            rows.into_iter().unzip()
+        };
+        assert_eq!(
+            track_ids,
+            vec![1, 2, 4, 5],
+            "track 3 is gone, order preserved"
+        );
+        assert_eq!(
+            positions,
+            vec![0, 1, 2, 3],
+            "positions must be gapless (0..n-1) after the hard-delete, not [0,1,3,4]"
+        );
+
+        // The wrong-row-move class this closes: moving the row now at
+        // position 2 (track 4) must move track 4, not silently mis-resolve
+        // because of a leftover gap.
+        playlists::move_position(&mut conn, playlist_id, 2, 0).unwrap();
+        let after_move: Vec<i64> = conn
+            .prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(rusqlite::params![playlist_id], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            after_move,
+            vec![4, 1, 2, 5],
+            "track 4 (now at position 2) moved to the front"
+        );
+    }
+
+    #[test]
+    fn remove_missing_tracks_compacts_every_affected_playlist_in_one_call() {
+        let mut conn = seeded_conn_with_tracks(4);
+        let p1 = playlists::create(&conn, "P1").unwrap();
+        let p2 = playlists::create(&conn, "P2").unwrap();
+        playlists::add_tracks(&mut conn, p1, &[1, 2, 3]).unwrap();
+        playlists::add_tracks(&mut conn, p2, &[2, 3, 4]).unwrap();
+        conn.execute("UPDATE tracks SET missing = 1 WHERE id IN (2, 3)", [])
+            .unwrap();
+
+        let mut removed = remove_missing_tracks(&mut conn, &[2, 3]).unwrap();
+        removed.sort_unstable();
+        assert_eq!(removed, vec![2, 3]);
+
+        for playlist_id in [p1, p2] {
+            let positions: Vec<i64> = conn
+                .prepare(
+                    "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+                )
+                .unwrap()
+                .query_map(rusqlite::params![playlist_id], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(
+                positions,
+                (0..positions.len() as i64).collect::<Vec<_>>(),
+                "playlist {playlist_id} must stay gapless"
+            );
+        }
+    }
+
+    #[test]
+    fn remove_missing_tracks_skips_ids_that_are_not_missing() {
+        let mut conn = seeded_conn_with_tracks(3);
+        conn.execute("UPDATE tracks SET missing = 1 WHERE id = 1", [])
+            .unwrap();
+        // id 2 is left alone (still missing = 0).
+
+        let removed = remove_missing_tracks(&mut conn, &[1, 2]).unwrap();
+
+        assert_eq!(
+            removed,
+            vec![1],
+            "only the actually-missing track is removed"
+        );
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn remove_missing_tracks_empty_slice_is_a_no_op() {
+        let mut conn = seeded_conn_with_tracks(2);
+        let removed = remove_missing_tracks(&mut conn, &[]).unwrap();
+        assert!(removed.is_empty());
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    /// Property-style regression test (the reviewer's ask): runs a scripted
+    /// sequence of add/remove/move/hard-delete operations against a real
+    /// playlist and a real `queue::Queue`, asserting the gapless-positions
+    /// invariant holds after EVERY mutating step — not just immediately
+    /// after one hard-delete, which is what would have caught the original
+    /// bug at commit time — and that the queue's own count of resolvable
+    /// ids tracks `query_track_count`'s `Queue` arm after each removal too.
+    #[test]
+    fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed_operation_sequence(
+    ) {
+        fn assert_gapless(conn: &Connection, playlist_id: i64) {
+            let positions: Vec<i64> = conn
+                .prepare(
+                    "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+                )
+                .unwrap()
+                .query_map(rusqlite::params![playlist_id], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(
+                positions,
+                (0..positions.len() as i64).collect::<Vec<_>>(),
+                "playlist_tracks.position must stay gapless (0..n-1) after every operation"
+            );
+        }
+
+        let mut conn = seeded_conn_with_tracks(8);
+        let playlist_id = playlists::create(&conn, "Mix").unwrap();
+
+        // 1. add: [1,2,3,4,5,6]
+        playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4, 5, 6]).unwrap();
+        assert_gapless(&conn, playlist_id);
+
+        // 2. remove (positions 1,3 -> ids 2,4): [1,3,5,6]
+        playlists::remove_positions(&mut conn, playlist_id, &[1, 3]).unwrap();
+        assert_gapless(&conn, playlist_id);
+
+        // 3. move: [1,3,5,6] -> move index 0 to index 2 -> [3,5,1,6]
+        playlists::move_position(&mut conn, playlist_id, 0, 2).unwrap();
+        assert_gapless(&conn, playlist_id);
+
+        // A queue holding the same surviving ids, in the same order.
+        let mut queue = crate::queue::Queue::new();
+        queue.set_tracks(vec![3, 5, 1, 6, 7], 0);
+
+        // 4. hard-delete the middle-ish track (id 1, currently at playlist
+        // position 2) after marking it missing — the exact bug scenario.
+        conn.execute("UPDATE tracks SET missing = 1 WHERE id = 1", [])
+            .unwrap();
+        let removed = remove_missing_tracks(&mut conn, &[1]).unwrap();
+        assert_eq!(removed, vec![1]);
+        assert_gapless(&conn, playlist_id);
+
+        // Queue purge (mirrors `PlayerController::purge_queue_ids`) and the
+        // count-arm invariant: queue's own resolvable count and `query_
+        // track_count`'s `Queue` arm must agree, both before and after the
+        // in-memory queue purge runs.
+        let queue_ids_before_purge = queue.ids_in_order();
+        let count_before_purge =
+            query_track_count(&conn, &ViewSource::Queue, "", &queue_ids_before_purge).unwrap();
+        assert_eq!(
+            count_before_purge as usize,
+            queue_ids_before_purge.len() - 1,
+            "count arm must exclude the just-hard-deleted id even before the queue is purged"
+        );
+
+        assert!(queue.remove_ids(&removed));
+        let queue_ids_after_purge = queue.ids_in_order();
+        assert!(
+            !queue_ids_after_purge.contains(&1),
+            "purged id must be gone from the queue"
+        );
+        let count_after_purge =
+            query_track_count(&conn, &ViewSource::Queue, "", &queue_ids_after_purge).unwrap();
+        assert_eq!(
+            count_after_purge as usize,
+            queue_ids_after_purge.len(),
+            "after purge, every remaining queued id must resolve — count == queue length"
+        );
+
+        // 5. one more move on the now-compacted playlist ([3,5,6]) must
+        // still move the correct row.
+        let before_final_move: Vec<i64> = conn
+            .prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(rusqlite::params![playlist_id], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(before_final_move, vec![3, 5, 6]);
+        playlists::move_position(&mut conn, playlist_id, 2, 0).unwrap();
+        let after_final_move: Vec<i64> = conn
+            .prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(rusqlite::params![playlist_id], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            after_final_move,
+            vec![6, 3, 5],
+            "track 6 (position 2) moved to the front"
+        );
+        assert_gapless(&conn, playlist_id);
     }
 
     // -- track_id_for_path / query_playlist_tracks_full (Stage 3 Task 7) ---

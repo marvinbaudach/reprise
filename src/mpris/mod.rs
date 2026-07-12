@@ -99,6 +99,11 @@ pub use state::{
     loop_status_to_repeat, micros_to_ms, ms_to_micros, repeat_to_loop_status, MprisCommand,
     MprisPlaybackStatus, MprisState,
 };
+// `pub(crate)`, not `pub use` alongside the above: `DEFAULT_VOLUME` itself is
+// only `pub(crate)` in `state` (see its doc comment there), so re-exporting
+// it any wider would be a visibility error — crate-visibility is all `ui::
+// player_controller` (its one other user) needs anyway.
+pub(crate) use state::DEFAULT_VOLUME;
 
 use std::borrow::Cow;
 use std::collections::HashMap;

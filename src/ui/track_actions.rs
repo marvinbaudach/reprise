@@ -219,27 +219,29 @@ pub fn create_playlist_and_add(
 
 /// "Remove from library" menu action (Stage 3 Task 8, reachable only while
 /// viewing `ViewSource::Missing`): deletes each of `ids` via `queries::
-/// remove_missing_track` — a DATABASE-ONLY delete, never a file on disk (see
-/// that function's doc comment for the full guarantee and its defensive
-/// `missing = 1` guard). Returns the number of rows actually deleted; a
+/// remove_missing_tracks` — the batch, TRANSACTIONAL primitive (Stage-3
+/// close-out; see that function's doc comment for the DATABASE-ONLY delete
+/// guarantee, its defensive `missing = 1` guard, and why the batch/
+/// transactional form — not a per-id loop over `remove_missing_track` — is
+/// required: it also renumbers every playlist position gap the delete's
+/// `ON DELETE CASCADE` would otherwise leave behind). Returns the ids
+/// actually deleted (a subset of `ids`, in input order) — the caller
+/// (`ui::track_list_context_menu::handle_remove_from_library`) needs the
+/// exact ids, not just a count, to purge the same set from the playback
+/// queue via `ui::player_controller::PlayerController::purge_queue_ids`. A
 /// track that somehow wasn't/isn't-anymore missing is silently skipped, not
-/// an error. A no-op (`Ok(0)`, no connection borrow) for an empty `ids`
-/// slice.
+/// an error. A no-op (`Ok(vec![])`, no connection borrow) for an empty
+/// `ids` slice. `borrow_mut`, not `borrow`: `remove_missing_tracks` needs
+/// `&mut Connection` to open its own transaction.
 pub fn remove_missing_selected(
     conn: &Rc<RefCell<Connection>>,
     ids: &[i64],
-) -> Result<u32, rusqlite::Error> {
+) -> Result<Vec<i64>, rusqlite::Error> {
     if ids.is_empty() {
-        return Ok(0);
+        return Ok(Vec::new());
     }
-    let conn = conn.borrow();
-    let mut removed = 0u32;
-    for &id in ids {
-        if crate::queries::remove_missing_track(&conn, id)? {
-            removed += 1;
-        }
-    }
-    Ok(removed)
+    let mut conn = conn.borrow_mut();
+    crate::queries::remove_missing_tracks(&mut conn, ids)
 }
 
 #[cfg(test)]
@@ -689,9 +691,10 @@ mod tests {
         mark_missing(&conn, 1);
         mark_missing(&conn, 3);
 
-        let removed = remove_missing_selected(&conn, &[1, 3]).unwrap();
+        let mut removed = remove_missing_selected(&conn, &[1, 3]).unwrap();
+        removed.sort_unstable();
 
-        assert_eq!(removed, 2);
+        assert_eq!(removed, vec![1, 3]);
         let count: i64 = conn
             .borrow()
             .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
@@ -707,7 +710,11 @@ mod tests {
 
         let removed = remove_missing_selected(&conn, &[1, 2]).unwrap();
 
-        assert_eq!(removed, 1, "only the actually-missing track is removed");
+        assert_eq!(
+            removed,
+            vec![1],
+            "only the actually-missing track is removed"
+        );
         let count: i64 = conn
             .borrow()
             .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
@@ -719,6 +726,39 @@ mod tests {
     fn remove_missing_selected_empty_ids_is_a_no_op() {
         let conn = seeded_conn_with_tracks(2);
         let removed = remove_missing_selected(&conn, &[]).unwrap();
-        assert_eq!(removed, 0);
+        assert!(removed.is_empty());
+    }
+
+    /// Stage-3 close-out regression: removing a missing track that's also in
+    /// a playlist must leave that playlist's positions gapless — exercised
+    /// here one layer above `queries::remove_missing_tracks`'s own direct
+    /// tests, proving the transactional compaction reaches this real call
+    /// path (mirrors `create_playlist_and_add_rolls_back_playlist_row_on_a_
+    /// bad_track_id`'s "prove it reaches the caller" pattern above).
+    #[test]
+    fn remove_missing_selected_compacts_a_playlist_the_removed_track_belonged_to() {
+        let conn = seeded_conn_with_tracks(5);
+        let playlist_id = crate::library::playlists::create(&conn.borrow(), "P1").unwrap();
+        {
+            let mut conn_mut = conn.borrow_mut();
+            crate::library::playlists::add_tracks(&mut conn_mut, playlist_id, &[1, 2, 3, 4, 5])
+                .unwrap();
+        }
+        mark_missing(&conn, 3); // the middle track
+
+        let removed = remove_missing_selected(&conn, &[3]).unwrap();
+        assert_eq!(removed, vec![3]);
+
+        let positions: Vec<i64> = conn
+            .borrow()
+            .prepare(
+                "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(params![playlist_id], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(positions, vec![0, 1, 2, 3], "positions must stay gapless");
     }
 }

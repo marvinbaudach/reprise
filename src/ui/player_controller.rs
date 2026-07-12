@@ -149,7 +149,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::library::stats;
-use crate::mpris::{self, MprisPlaybackStatus, SharedMprisState};
+use crate::mpris::{self, MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
 use crate::player::{PlaybackState, Player, PlayerError, PlayerEvent};
 use crate::queries;
 use crate::queue::Queue;
@@ -157,11 +157,12 @@ use crate::ui::mpris_mirror::mpris_status_from_playback_state;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 
-/// `PlayerController::volume`'s initial value — matches `ui::player_bar`'s
-/// own `VOLUME_DEFAULT` (a separate constant: `player_controller` doesn't
-/// reach into `player_bar`'s private constants, and both simply mean "full
-/// volume until the user/MPRIS says otherwise").
-const DEFAULT_VOLUME: f64 = 1.0;
+// `PlayerController::volume`'s initial value is `crate::mpris::
+// DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
+// second, separately-defined `const DEFAULT_VOLUME: f64 = 1.0` here — see
+// that constant's doc comment in `mpris::state` for why it's now the single
+// source of truth, and why `ui::player_bar`'s own `VOLUME_DEFAULT` stays a
+// third, deliberately-separate constant).
 
 /// Owns the `Player` and its `PlayerBar`, routing user input from the bar to
 /// the player and `PlayerEvent`s from the player back onto the bar (on the
@@ -740,6 +741,34 @@ impl PlayerController {
     /// #3).
     pub(super) fn move_queue_item(&self, from: usize, to: usize) -> bool {
         self.queue.borrow_mut().move_item(from, to)
+    }
+
+    /// Purges hard-deleted track ids from the queue (Stage-3 close-out):
+    /// "Remove from library" (`queries::remove_missing_tracks`) deletes
+    /// `tracks` rows outright — without this, a queued id that no longer
+    /// resolves to a row desyncs `Queue::len`/`ids_in_order` from what
+    /// `ViewSource::Queue`'s window query can actually render (see
+    /// `queries.rs`'s module doc, `Queue` section, and `query_track_count`'s
+    /// `Queue` arm). Called from `ui::track_list_context_menu::handle_
+    /// remove_from_library` with exactly the ids `remove_missing_tracks`
+    /// reports as actually deleted — never the raw requested selection,
+    /// which could include ids that turned out not to be missing any more
+    /// and so were never deleted. A no-op for an empty slice (no `queue`
+    /// borrow taken at all). Hoisted borrow: `Queue::remove_ids` runs in its
+    /// own statement, matching every other `queue` access in this file (see
+    /// the module's `## Queue borrow discipline` doc section).
+    pub(super) fn purge_queue_ids(&self, ids: &[i64]) {
+        if ids.is_empty() {
+            return;
+        }
+        let changed = self.queue.borrow_mut().remove_ids(ids);
+        if changed {
+            tracing::info!(
+                removed = ids.len(),
+                queue_len = self.queue.borrow().len(),
+                "queue purged of hard-deleted track ids"
+            );
+        }
     }
 }
 
