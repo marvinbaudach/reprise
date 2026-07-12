@@ -418,4 +418,41 @@ mod tests {
         .add_path(path);
         assert!(!event_is_relevant(&event));
     }
+
+    #[test]
+    fn file_created_after_watcher_start_is_scanned_and_reported() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("music");
+        std::fs::create_dir(&root).unwrap();
+        let db_path = temp.path().join("reprise.db");
+        {
+            let conn = crate::db::open(Some(&db_path)).unwrap();
+            crate::db::migrate(&conn).unwrap();
+        }
+
+        let (sender, receiver) = std_mpsc::sync_channel(1);
+        let handle = start(&root, db_path.clone(), move |event| {
+            let _ = sender.send(event);
+        })
+        .expect("temporary directory should be watchable");
+
+        let added = root.join("added-after-start.flac");
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        std::fs::copy(fixture, &added).unwrap();
+
+        let event = receiver
+            .recv_timeout(DEBOUNCE + Duration::from_secs(6))
+            .expect("watcher should reconcile a file created after it was armed");
+        assert_eq!(event.report.added, 1);
+        assert_eq!(event.report.errors, 0);
+        assert_eq!(event.vanished, 0);
+
+        let conn = crate::db::open(Some(&db_path)).unwrap();
+        let stored = crate::queries::track_id_for_path(&conn, &added.to_string_lossy()).unwrap();
+        assert!(
+            stored.is_some(),
+            "new file should be present without a rescan"
+        );
+        drop(handle);
+    }
 }
