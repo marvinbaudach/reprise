@@ -19,7 +19,7 @@ use crate::ui::cover_loader::CoverLoader;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_list::{
-    show_toast, Shared, STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
+    reload, show_toast, Shared, STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
 };
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd;
@@ -39,6 +39,20 @@ const ICON_NO_RESULTS: &str = "system-search-symbolic";
 /// above: this isn't "no music has been scanned in" nor "your search
 /// matched nothing", just "this particular view has no members right now".
 const ICON_NOTHING_HERE: &str = "dialog-information-symbolic";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RatingRefresh {
+    Row,
+    Query,
+}
+
+fn rating_refresh_for_sort(sort_field: &str) -> RatingRefresh {
+    if sort_field == "rating" {
+        RatingRefresh::Query
+    } else {
+        RatingRefresh::Row
+    }
+}
 
 /// Which page of the track-list `Stack` should be visible, and (for the
 /// empty variants) which copy the shared `StatusPage` should carry. A plain
@@ -438,11 +452,28 @@ fn on_rating_changed(
         stats::set_rating(&conn, track_id, new_rating)
     };
     match result {
-        Ok(()) => shared.model.invalidate_window_at(position),
+        Ok(()) => {
+            let refresh = rating_refresh_for_sort(&shared.sort.borrow().field);
+            match refresh {
+                RatingRefresh::Row => shared.model.invalidate_window_at(position),
+                RatingRefresh::Query => reload(shared),
+            }
+        }
         Err(error) => {
             tracing::error!(%error, track_id, new_rating, "failed to persist rating change");
             show_toast(shared, &strings::rating_save_failed_toast(title));
         }
+    }
+}
+
+#[cfg(test)]
+mod rating_refresh_tests {
+    use super::*;
+
+    #[test]
+    fn rating_sort_requires_query_reload_but_other_sorts_need_one_row() {
+        assert_eq!(rating_refresh_for_sort("rating"), RatingRefresh::Query);
+        assert_eq!(rating_refresh_for_sort("title"), RatingRefresh::Row);
     }
 }
 
