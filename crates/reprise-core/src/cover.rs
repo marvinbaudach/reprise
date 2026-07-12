@@ -65,6 +65,95 @@ fn folder_image(dir: &Path) -> Option<PathBuf> {
     None
 }
 
+use std::hash::{Hash, Hasher};
+
+/// The three cached edge lengths — one per consumer (list row / player bar /
+/// Now-Playing view). Exactly three (YAGNI).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThumbnailSize {
+    List,
+    Bar,
+    Full,
+}
+
+impl ThumbnailSize {
+    pub fn pixels(self) -> u32 {
+        match self {
+            ThumbnailSize::List => 48,
+            ThumbnailSize::Bar => 96,
+            ThumbnailSize::Full => 1024,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CoverError {
+    Decode(String),
+    Io(String),
+}
+
+impl std::fmt::Display for CoverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CoverError::Decode(m) => write!(f, "cover decode failed: {m}"),
+            CoverError::Io(m) => write!(f, "cover cache I/O failed: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for CoverError {}
+
+/// The cover thumbnail cache directory: `<XDG cache>/reprise/covers`. NEVER a
+/// path inside the user's library — this is the load-bearing half of the
+/// "we don't touch your files" promise.
+pub fn cache_dir() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("reprise/covers")
+}
+
+/// Returns the cache path to a thumbnail of `source` at `size`, creating it if
+/// missing: hash the source bytes -> cache hit? -> else decode, resize (aspect
+/// preserved, longest side = size), write PNG atomically (temp + rename).
+pub fn thumbnail(source: &CoverSource, size: ThumbnailSize) -> Result<PathBuf, CoverError> {
+    let bytes = source_bytes(source)?;
+    let key = hash_hex(&bytes);
+    let dir = cache_dir();
+    let out = dir.join(format!("{key}-{}.png", size.pixels()));
+    if out.exists() {
+        return Ok(out);
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| CoverError::Io(e.to_string()))?;
+
+    let decoded = image::load_from_memory(&bytes).map_err(|e| CoverError::Decode(e.to_string()))?;
+    let thumb = decoded.thumbnail(size.pixels(), size.pixels()); // aspect-preserving
+
+    // Atomic publish: write a unique temp file in the same dir, then rename.
+    let tmp = dir.join(format!(".{key}-{}.png.tmp", size.pixels()));
+    thumb
+        .save_with_format(&tmp, image::ImageFormat::Png)
+        .map_err(|e| CoverError::Io(e.to_string()))?;
+    std::fs::rename(&tmp, &out).map_err(|e| CoverError::Io(e.to_string()))?;
+    Ok(out)
+}
+
+fn source_bytes(source: &CoverSource) -> Result<Vec<u8>, CoverError> {
+    match source {
+        CoverSource::Embedded(b) => Ok(b.clone()),
+        CoverSource::FolderImage(p) => std::fs::read(p).map_err(|e| CoverError::Io(e.to_string())),
+    }
+}
+
+/// Fast, non-cryptographic content hash (std DefaultHasher) over the source
+/// bytes, hex-encoded. The key only needs to be deterministic on one machine
+/// and collision-resistant enough for a cache — no crypto property required,
+/// so no new hashing dependency.
+fn hash_hex(bytes: &[u8]) -> String {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +202,62 @@ mod tests {
         assert!(matches!(
             resolve_source(&track),
             Some(CoverSource::FolderImage(_))
+        ));
+    }
+
+    // A real, decodable 1200x1200 red PNG — larger than the biggest thumbnail
+    // (1024 px) so every size DOWNSCALES (image::thumbnail never upscales) and
+    // the exact-size assertion below holds. (Solid-color PNG encodes tiny.)
+    fn red_png_1200() -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(1200, 1200, image::Rgb([255, 0, 0]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+        buf.into_inner()
+    }
+
+    #[test]
+    fn thumbnail_produces_png_of_requested_size_and_caches_under_cache_dir() {
+        let src = CoverSource::Embedded(red_png_1200());
+        let path = thumbnail(&src, ThumbnailSize::List).unwrap();
+        // Lands under the cache dir, NEVER in a track folder (core promise).
+        assert!(
+            path.starts_with(cache_dir()),
+            "thumb must be in the cache dir"
+        );
+        assert_eq!(path.extension().unwrap(), "png");
+        // Decodes back to a PNG whose largest side is the requested pixel count.
+        let decoded = image::open(&path).unwrap();
+        let (w, h) = (decoded.width(), decoded.height());
+        assert!(w.max(h) == ThumbnailSize::List.pixels(), "got {w}x{h}");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn identical_bytes_hash_to_the_same_cache_path() {
+        let a = thumbnail(&CoverSource::Embedded(red_png_1200()), ThumbnailSize::Bar).unwrap();
+        let b = thumbnail(&CoverSource::Embedded(red_png_1200()), ThumbnailSize::Bar).unwrap();
+        assert_eq!(a, b, "same source bytes + size -> same cache key");
+        std::fs::remove_file(&a).ok();
+    }
+
+    #[test]
+    fn different_sizes_get_distinct_cache_paths() {
+        let bytes = red_png_1200();
+        let list = thumbnail(&CoverSource::Embedded(bytes.clone()), ThumbnailSize::List).unwrap();
+        let full = thumbnail(&CoverSource::Embedded(bytes), ThumbnailSize::Full).unwrap();
+        assert_ne!(list, full);
+        std::fs::remove_file(&list).ok();
+        std::fs::remove_file(&full).ok();
+    }
+
+    #[test]
+    fn corrupt_image_returns_error_never_panics() {
+        let src = CoverSource::Embedded(b"definitely not an image".to_vec());
+        assert!(matches!(
+            thumbnail(&src, ThumbnailSize::List),
+            Err(CoverError::Decode(_))
         ));
     }
 }
