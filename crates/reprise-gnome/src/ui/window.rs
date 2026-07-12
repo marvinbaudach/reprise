@@ -44,10 +44,8 @@ use super::strings;
 use super::track_list::{OnActivate, TrackList};
 use reprise_core::view_source::ViewSource;
 
-const DEFAULT_WIDTH: i32 = 1280;
-const DEFAULT_HEIGHT: i32 = 800;
-const MIN_WIDTH: i32 = 900;
-const MIN_HEIGHT: i32 = 600;
+const MIN_WIDTH: i32 = 600;
+const MIN_HEIGHT: i32 = 400;
 
 /// Environment variable that, when set to any value, arms a one-shot timer
 /// that closes the window (and thereby quits the app, since it's the only
@@ -88,14 +86,19 @@ const SMOKE_BAR_POSITION_ENV_VAR: &str = "REPRISE_SMOKE_BAR_POSITION";
 /// it rather than sharing this one across threads — `rusqlite::Connection`
 /// isn't `Send`), so this takes a borrow rather than owning it outright.
 pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &Path) {
+    let session_state = {
+        let conn = conn.borrow();
+        super::session_restore::load(&conn)
+    };
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(strings::APP_NAME)
-        .default_width(DEFAULT_WIDTH)
-        .default_height(DEFAULT_HEIGHT)
+        .default_width(session_state.window_width)
+        .default_height(session_state.window_height)
         .width_request(MIN_WIDTH)
         .height_request(MIN_HEIGHT)
         .build();
+    super::session_restore::apply_initial_geometry(&window, &session_state);
 
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
     // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and
@@ -623,9 +626,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     playlist_io::arm_smoke_m3u(
         conn.clone(),
         &toast_overlay,
-        track_list,
-        sidebar,
-        window_title,
+        track_list.clone(),
+        sidebar.clone(),
+        window_title.clone(),
         show_content_if_collapsed,
     );
 
@@ -635,6 +638,18 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     // `now_playing_wiring.rs`'s doc comments for what each call does.
     now_playing_wiring::wire_bar_expand(player.as_ref(), &content_nav);
     now_playing_wiring::arm_smoke_nowplaying(player.as_ref(), &content_nav);
+
+    super::session_restore::restore_runtime(
+        &search_entry,
+        &track_list,
+        &sidebar,
+        &window_title,
+        &search_restore_guard,
+        player.as_ref(),
+        &session_state,
+    );
+    super::session_restore::wire_close(&window, conn, &track_list, player.as_ref(), &session_state);
+    super::session_restore::arm_seed_close(&window);
 
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
