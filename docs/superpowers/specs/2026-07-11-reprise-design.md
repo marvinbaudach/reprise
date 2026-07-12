@@ -15,8 +15,9 @@ Design folgt der **GNOME HIG** mit Adwaita-Widgets — Richtung gemäß dem
 GTK4-Mockup des Nutzers (`docs/design/2026-07-11-designmock-gtk4.pdf`,
 ausdrücklich „grobe Richtung, keine genaue Vorgabe"): dunkles, flaches
 Layout, Navigations-Seitenleiste, Playerleiste standardmäßig unten
-(Position per Einstellung: oben / unten / schwebend — Nutzer-Entscheidung
-2026-07-11, ersetzt die zwischenzeitliche HIG-Verschlankung), Farbschema
+(Position per Einstellung: oben / unten — Nutzer-Entscheidung 2026-07-11,
+ersetzt die zwischenzeitliche HIG-Verschlankung; „schwebend" 2026-07-12
+verworfen zugunsten der Now-Playing-Vollansicht), Farbschema
 Dunkel / Hell / System via `AdwStyleManager`.
 
 **Plattform-Entscheidung:** Linux-only, endgültig (Nutzer: „werde es eh nie
@@ -66,8 +67,8 @@ Nachfolger:
   Track-Nr., Genre) bearbeiten und via lofty in die Datei schreiben
 - MPRIS-Integration (GNOME-Mediensteuerung, Medientasten)
 - Layout-Einstellungen (zurückgeholt per Nutzer-Entscheidung 2026-07-11,
-  Mockup 7b): Position der Playerleiste (oben / unten / schwebend, über
-  visuelle Vorschau-Karten), Seitenleiste und Statusleiste ein-/ausblendbar,
+  Mockup 7b): Position der Playerleiste (oben / unten, über visuelle
+  Vorschau-Karten), Seitenleiste und Statusleiste ein-/ausblendbar,
   Listendichte (Komfortabel / Standard / Kompakt), sichtbare Spalten und
   Spaltenbreiten (Spalten-Popover am Listenkopf); Farbschema Dunkel /
   Hell / System (`AdwStyleManager`). Nur die Glasoptik bleibt gestrichen.
@@ -350,15 +351,15 @@ ohne Neustart.
   Ein/Aus), ReplayGain (Modus Titel / Album / Aus, Fallback-Verstärkung),
   Verhalten am Titelende.
 - **Darstellung:** Farbschema Dunkel / Hell / System (`AdwStyleManager`).
-- **Layout** (Mockup 7b): Playerleisten-Position über drei visuelle
-  Vorschau-Karten „Oben / Unten / Schwebend" (technisch `ToolbarView`-Top-/
-  Bottom-Bar bzw. `GtkOverlay` für schwebend). **Standard bleibt „Unten",
-  angedockt** — das ist die GNOME-HIG-konforme, native Variante (wie
-  Amberol/Decibels), und die dichte Spaltenliste verträgt keine
-  überlagernde Leiste, die Zeilen verdeckt. „Schwebend" ist bewusst nur
-  Opt-in und niedrig priorisiert (bräuchte einen halbtransparenten
-  Hintergrund über den Listenzeilen — nahe der abgelehnten Glasoptik);
-  Nutzer-Entscheidung 2026-07-11. Seitenleiste anzeigen (an/aus),
+- **Layout** (Mockup 7b): Playerleisten-Position über zwei visuelle
+  Vorschau-Karten „Oben / Unten" (technisch `ToolbarView`-Top-/Bottom-Bar).
+  **Standard bleibt „Unten", angedockt** — die GNOME-HIG-konforme, native
+  Variante (wie Amberol/Decibels); die dichte Spaltenliste verträgt keine
+  überlagernde Leiste, die Zeilen verdeckt. Die zwischenzeitlich erwogene
+  Position „Schwebend" ist 2026-07-12 verworfen — sie bräuchte einen
+  halbtransparenten Hintergrund über den Listenzeilen (nahe der abgelehnten
+  Glasoptik); ihre Rolle als nativer Blickfang übernimmt die
+  Now-Playing-Vollansicht (GUI-A), die den Platz füllt statt zu überlagern. Seitenleiste anzeigen (an/aus),
   Statusleiste anzeigen (an/aus); Listendichte Komfortabel / Standard /
   Kompakt; „Sichtbare Spalten" mit Bearbeiten-Aktion (öffnet dasselbe
   Spalten-Popover wie am Listenkopf).
@@ -657,7 +658,8 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
 - Alben-Grid-Ansicht: Cover-Wand als zweite Ansicht neben der
   Spaltenliste („Musik als Kunstform", nicht nur Tabelle)
 - **„Now Playing"-Vollansicht** (Nutzer-Idee 2026-07-11, statt schwebender
-  Leiste als GNOME-nativer Blickfang): per Klick auf die Playerleiste öffnet
+  Leiste als GNOME-nativer Blickfang; **eingeplant für GUI-A, 2026-07-12** —
+  Basis-Ansicht ohne Lyrics/Farb-Glow): per Klick auf die Playerleiste öffnet
   sich eine großflächige Wiedergabe-Ansicht im Amberol-Stil — großes Cover,
   Titel/Interpret/Album prominent, Seekbar, Transport; nutzt den Platz statt
   die Liste zu verdecken. Später erweiterbar um Lyrics-Panel und ambienten
