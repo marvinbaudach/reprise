@@ -132,10 +132,31 @@
 //! one code path for a physical media key and the on-screen button (DRY).
 //! MPRIS's `Play`/`Pause` are distinct from `toggle_pause` — see
 //! `mpris_mirror.rs`'s `mpris_play`/`mpris_pause` doc comments.
+//!
+//! ## Track-change notification (Stage 3 Task 9)
+//!
+//! `play_track_id` sends a `gio::Notification` (title/body from the track
+//! summary, icon from the same Bar-size cover thumbnail the bar itself
+//! requests — `reprise_core::cover::thumbnail`'s cache makes the second call
+//! cheap, not a second decode) through the `application` field's `WeakRef`.
+//! Greenfield: no notification existed before this. Two rules keep it from
+//! being annoying or fragile:
+//!
+//! - **Change, not state.** The id compared is the *previous* `now_playing`
+//!   id (read before `play_track_id` overwrites it), so pause/resume of the
+//!   same track — which re-enters `play_track_id` only via `play_from_view`
+//!   with the same id, never on its own — never re-fires the notification.
+//! - **Never fatal.** Every step (`resolve_source`, `thumbnail`, the
+//!   `WeakRef` upgrade) is an `if let`/`Option` chain; a decode failure,
+//!   missing cover, or missing application handle silently skips the icon or
+//!   the whole send, never panics, and is never logged above `debug` (a
+//!   headless/no-portal environment hits this on every track).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use gtk4::gio;
+use gtk4::gio::prelude::*;
 use gtk4::glib;
 use libadwaita as adw;
 use rusqlite::Connection;
@@ -257,6 +278,16 @@ pub struct PlayerController {
     /// Full` while the bar loads `ThumbnailSize::Bar`; each widget must only
     /// ever apply its own most-recent load.
     pub(super) now_playing_cover_generation: Rc<Cell<u64>>,
+    /// The owning `gio::Application`, for `play_track_id`'s track-change
+    /// notification (Task 9: `app.send_notification`). Passed into `new` from
+    /// `window::build`, which already holds the `&adw::Application` it builds
+    /// the window on — the cleanest seam, since the controller is otherwise
+    /// never handed a window/application reference (see the module's `##
+    /// Track-change notification` doc section). A `WeakRef`, like `toast_
+    /// overlay` above, so the controller can never keep the application alive
+    /// past its natural lifetime; `notify_now_playing` degrades to a no-op if
+    /// the upgrade ever fails.
+    application: glib::WeakRef<gio::Application>,
 }
 
 /// See `PlayerController::now_playing`'s doc comment. Fields are `pub(super)`
@@ -288,6 +319,7 @@ impl PlayerController {
     pub fn new(
         conn: Rc<RefCell<Connection>>,
         mpris_enabled: bool,
+        app: &adw::Application,
     ) -> Result<Rc<Self>, PlaybackError> {
         let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
 
@@ -342,6 +374,11 @@ impl PlayerController {
             bar_cover_generation: Rc::new(Cell::new(0)),
             now_playing_view: NowPlayingView::new(),
             now_playing_cover_generation: Rc::new(Cell::new(0)),
+            application: {
+                let weak = glib::WeakRef::new();
+                weak.set(Some(app.upcast_ref::<gio::Application>()));
+                weak
+            },
         });
 
         player_controller_wiring::wire_bar_controls(&controller);
@@ -455,6 +492,13 @@ impl PlayerController {
 
         match summary {
             Ok(Some(summary)) => {
+                // Read out before `now_playing` is overwritten below — the
+                // one comparison that makes the notification below fire only
+                // on an actual track change, never on pause/resume of the
+                // same id (see the module's `## Track-change notification`
+                // doc section).
+                let previous_id = self.now_playing.borrow().as_ref().map(|np| np.id);
+
                 self.current_track.set(Some((id, summary.duration_ms)));
                 self.max_position_ms.set(0);
                 *self.now_playing.borrow_mut() = Some(NowPlaying {
@@ -472,6 +516,14 @@ impl PlayerController {
                 // widgets are ever fed from.
                 self.sync_track(&summary.title, &summary.artist, &summary.album);
                 self.sync_cover(&summary.path);
+                if previous_id != Some(id) {
+                    self.notify_now_playing(
+                        &summary.title,
+                        &summary.artist,
+                        &summary.album,
+                        &summary.path,
+                    );
+                }
                 match self.player.play(&summary.path) {
                     Ok(()) => {
                         self.consecutive_skips.set(0);
@@ -512,6 +564,36 @@ impl PlayerController {
                 self.skip_after_failure();
             }
         }
+    }
+
+    /// Sends a `gio::Notification` for the just-started `title`/`artist`/
+    /// `album`, with the same Bar-size cover thumbnail the bar itself shows
+    /// as the notification's icon (Task 9 — see the module's `## Track-change
+    /// notification` doc section). Called only when `play_track_id` detects
+    /// an actual id change, never on pause/resume of the same track. Every
+    /// step degrades silently: no cover source, no cached thumbnail, or no
+    /// live `application` handle just means a plainer (or no) notification,
+    /// never a panic or an error-level log — headless/no-portal environments
+    /// hit every one of these paths on every track.
+    fn notify_now_playing(&self, title: &str, artist: &str, album: &str, path: &str) {
+        let Some(application) = self.application.upgrade() else {
+            tracing::debug!("no application handle; skipping track-change notification");
+            return;
+        };
+
+        let notification = gio::Notification::new(title);
+        notification.set_body(Some(&format!("{artist} — {album}")));
+
+        if let Some(source) = reprise_core::cover::resolve_source(std::path::Path::new(path)) {
+            if let Ok(thumb_path) =
+                reprise_core::cover::thumbnail(&source, reprise_core::cover::ThumbnailSize::Bar)
+            {
+                let icon = gio::FileIcon::new(&gio::File::for_path(&thumb_path));
+                notification.set_icon(&icon);
+            }
+        }
+
+        application.send_notification(Some("now-playing"), &notification);
     }
 
     /// Shows `text` as an `adw::Toast` on the window's toast overlay, if one

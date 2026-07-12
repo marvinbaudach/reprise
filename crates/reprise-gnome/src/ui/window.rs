@@ -152,7 +152,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 true
             });
 
-    let player = match PlayerController::new(conn.clone(), mpris_enabled) {
+    let player = match PlayerController::new(conn.clone(), mpris_enabled, app) {
         Ok(controller) => Some(controller),
         Err(error) => {
             tracing::error!(%error, "player unavailable: playback disabled");
