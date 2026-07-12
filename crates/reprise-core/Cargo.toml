@@ -28,6 +28,10 @@ fastrand = "2"
 # constructor picks it automatically and supports recursive watches, which is
 # all this task needs.
 notify = "8"
+# Pure-Rust image decode/resize for cover thumbnails (GUI-A). default-features
+# off: only the formats embedded covers / sidecars actually use. Cross-platform,
+# pulls in no gtk/gstreamer/zbus (verify with `cargo tree -p reprise-core`).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
 
 [dev-dependencies]
 tempfile = "3"
