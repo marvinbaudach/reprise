@@ -7,6 +7,16 @@
 //! site rather than here.
 
 pub const APP_NAME: &str = "Reprise";
+pub const ONBOARDING_WELCOME: &str = "Welcome to Reprise";
+pub const ONBOARDING_PRIVACY: &str = "Reprise keeps your library local. Music files are changed only when you explicitly edit tags or move tracks to Trash.";
+pub const ONBOARDING_COVERS: &str = "Download missing album covers";
+pub const ONBOARDING_COVERS_SUBTITLE: &str =
+    "Uses MusicBrainz and Cover Art Archive only when enabled";
+pub const ONBOARDING_RHYTHMBOX: &str = "Import Rhythmbox column layout";
+pub const ONBOARDING_RHYTHMBOX_SUBTITLE: &str =
+    "Reads the existing layout without changing Rhythmbox settings";
+pub const ONBOARDING_SKIP: &str = "Skip for Now";
+pub const ONBOARDING_SET_UP: &str = "Set Up Library";
 pub const MAIN_MENU: &str = "Main menu";
 pub const DOWNLOAD_MISSING_COVERS: &str = "Download missing album covers";
 pub const IMPORT_RHYTHMBOX_COLUMNS: &str = "Import Rhythmbox column layout";

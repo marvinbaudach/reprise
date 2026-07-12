@@ -650,6 +650,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     );
     super::session_restore::wire_close(&window, conn, &track_list, player.as_ref(), &session_state);
     super::session_restore::arm_seed_close(&window);
+    super::first_run::run(&window, &scan_button, conn);
 
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)

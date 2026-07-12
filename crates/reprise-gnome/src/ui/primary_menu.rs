@@ -15,8 +15,8 @@ use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 
-const ACTION_DOWNLOAD_MISSING_COVERS: &str = "download-missing-covers";
-const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
+pub(super) const ACTION_DOWNLOAD_MISSING_COVERS: &str = "download-missing-covers";
+pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
 const SMOKE_COVER_DOWNLOAD_ENV_VAR: &str = "REPRISE_SMOKE_COVER_DOWNLOAD";
 const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
 
@@ -81,11 +81,11 @@ pub(super) fn install(
             let Some(track_list) = track_list_weak.upgrade() else {
                 return;
             };
-            handle_rhythmbox_import(&track_list, None);
+            handle_rhythmbox_import(&track_list, rhythmbox_smoke_tokens());
         });
     }
     window.add_action(&import);
-    arm_smoke_rhythmbox_import(track_list);
+    arm_smoke_rhythmbox_import(&import);
 }
 
 fn arm_smoke_toggle(toggle: &gio::SimpleAction) {
@@ -130,16 +130,20 @@ fn handle_rhythmbox_import(track_list: &TrackList, override_tokens: Option<Vec<S
     track_list.toast(strings::RHYTHMBOX_COLUMNS_IMPORTED);
 }
 
-fn arm_smoke_rhythmbox_import(track_list: &Rc<TrackList>) {
-    let Ok(value) = std::env::var(SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR) else {
+fn rhythmbox_smoke_tokens() -> Option<Vec<String>> {
+    std::env::var(SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR)
+        .ok()
+        .map(|value| value.split(',').map(str::to_string).collect())
+}
+
+fn arm_smoke_rhythmbox_import(action: &gio::SimpleAction) {
+    if std::env::var(SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR).is_err()
+        || std::env::var(crate::ui::first_run::SMOKE_ENV).is_ok()
+    {
         return;
-    };
-    let tokens = value.split(',').map(str::to_string).collect();
-    let track_list_weak = Rc::downgrade(track_list);
+    }
+    let action = action.clone();
     glib::idle_add_local_once(move || {
-        let Some(track_list) = track_list_weak.upgrade() else {
-            return;
-        };
-        handle_rhythmbox_import(&track_list, Some(tokens));
+        action.activate(None);
     });
 }
