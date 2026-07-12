@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     stabilize empty browse-search popup width
+SINCE:    2026-07-12 21:53 CEST
 ```
 
-_As of 2026-07-12 21:41 CEST: Codex released the lock after fixing browse search and rating resorting._
+_As of 2026-07-12 21:53 CEST: Codex claimed the lock for the browse-popup width regression._
 
 ## Current position
 
