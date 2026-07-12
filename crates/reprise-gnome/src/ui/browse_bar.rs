@@ -14,7 +14,26 @@ use crate::ui::strings;
 use crate::ui::track_list::Shared;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
+const DROPDOWN_CSS_CLASS: &str = "reprise-browse-dropdown";
+const POPUP_MIN_HEIGHT: i32 = 200;
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
+
+fn browse_popup_min_height(_option_count: usize) -> i32 {
+    POPUP_MIN_HEIGHT
+}
+
+fn install_popup_style(widget: &impl IsA<gtk4::Widget>) {
+    let provider = gtk4::CssProvider::new();
+    provider.load_from_string(&format!(
+        ".{DROPDOWN_CSS_CLASS} popover contents {{ min-height: {}px; }}",
+        browse_popup_min_height(0)
+    ));
+    gtk4::style_context_add_provider_for_display(
+        &widget.display(),
+        &provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
 
 fn apply_selection(
     current: &BrowseFilter,
@@ -70,6 +89,7 @@ impl BrowseBar {
         root.set_margin_start(12);
         root.set_margin_end(12);
         root.add_css_class("toolbar");
+        install_popup_style(&root);
 
         let (genre_box, genre) = facet_widget(
             &strings::text(strings::BROWSE_GENRE),
@@ -225,6 +245,7 @@ fn facet_widget(label: &str, all_label: &str) -> (gtk4::Box, gtk4::DropDown) {
     let label = gtk4::Label::new(Some(label));
     label.add_css_class("dim-label");
     let dropdown = gtk4::DropDown::from_strings(&[all_label]);
+    dropdown.add_css_class(DROPDOWN_CSS_CLASS);
     let expression = gtk4::StringObject::this_expression("string");
     dropdown.set_expression(Some(expression));
     dropdown.set_enable_search(true);
@@ -406,5 +427,10 @@ mod tests {
             browse_search_match_mode(),
             gtk4::StringFilterMatchMode::Substring
         );
+    }
+
+    #[test]
+    fn browse_popup_minimum_height_does_not_collapse_with_zero_results() {
+        assert_eq!(browse_popup_min_height(0), browse_popup_min_height(5));
     }
 }
