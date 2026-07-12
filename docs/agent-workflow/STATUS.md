@@ -22,7 +22,7 @@ local/gitignored; THIS file is the shared, versioned summary.)
 
 ```
 OWNER:    codex           # FREE | claude | codex
-TASK:     Finish Reprise  # GUI-B through release
+TASK:     GUI-D + release # first-run/session restore, then packaging/i18n
 SINCE:    2026-07-12 15:01 CEST
 ```
 
@@ -30,12 +30,13 @@ _As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md` (GUI-A2, 7 tasks).
-- **Last completed:** **GUI-A2** — opt-in online cover download (Tasks 1–7), through commit
-  `ba9f600`; whole-branch review READY. Final gates: 409 passed, 1 ignored; core PURE;
-  isolated default-OFF and toggle-ON smokes passed. Human real-network/render check remains.
-- **➡️ NEXT:** GUI-B design/spec/plan — multi-select batch tag editor plus delete/trash.
-- **Feature HEAD:** `ba9f600`; the lock-release docs commit follows. Working tree clean.
+- **Completed plan:** `docs/superpowers/plans/2026-07-12-gui-c-browse-columns.md` (GUI-C, 7 tasks).
+- **Last completed:** **GUI-C** — cascading Genre/Artist/Album browse bar and explicit read-only
+  Rhythmbox visible-column import, through `e9faba2` plus review fix `1962b4c`; whole-branch
+  review READY. Final gates: 440 passed, 1 ignored; core PURE; isolated browse/import/source
+  smokes passed. Human layout/keyboard/real-GSettings checks remain.
+- **➡️ NEXT:** GUI-D design/spec/plan — first-run wizard plus session restore.
+- **Feature HEAD:** `1962b4c`. Codex retains the continuous-work lock. Working tree clean.
 
 ## Done so far (compact)
 
@@ -46,8 +47,9 @@ _As of 2026-07-12 15:01 CEST: Codex claimed continuous work through GUI-B, GUI-C
 - ✅ **GUI-A**: album covers in list + player bar, Now-Playing full view, cover in the track-change
   notification. Whole-branch review: READY TO MERGE.
 - ✅ **GUI-A2**: opt-in online album-cover download via MusicBrainz/Cover Art Archive; default OFF.
-- ⬜ **GUI-B**: tag editor with multi-select batch edit + delete/trash.
-- ⬜ **GUI-C**: browse bar + Rhythmbox column import. ⬜ **GUI-D**: first-run wizard + session restore.
+- ✅ **GUI-B**: tag editor with multi-select batch edit + confirmed DB-only delete/safe trash.
+- ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
+- ⬜ **GUI-D**: first-run wizard + session restore.
 - ⬜ **Release**: Flatpak/Flathub, gettext (German first), .desktop/AppStream.
 
 ## Deferred minors / follow-ups (triage at stage reviews)
