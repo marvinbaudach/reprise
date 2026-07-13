@@ -63,7 +63,7 @@ fn replay_gain_from_index(index: u32) -> ReplayGainMode {
     }
 }
 
-fn replay_gain_index(mode: ReplayGainMode) -> u32 {
+pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
     match mode {
         ReplayGainMode::Off => 0,
         ReplayGainMode::Track => 1,
@@ -158,18 +158,18 @@ fn apply_density(widget: &gtk4::Widget, density: ListDensity) {
 
 pub(super) struct PreferencesContext {
     window: adw::ApplicationWindow,
-    conn: Rc<RefCell<Connection>>,
+    pub(super) conn: Rc<RefCell<Connection>>,
     track_list: Rc<TrackList>,
     sidebar_page: adw::NavigationPage,
     status_bar: StatusBar,
     toolbar_view: adw::ToolbarView,
     bottom_box: gtk4::Box,
     scan_button: gtk4::Button,
-    player: Option<Rc<PlayerController>>,
-    syncing_effect_controls: Cell<bool>,
-    equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
-    replaygain_plugin: RefCell<Option<adw::SwitchRow>>,
-    replaygain_mode: RefCell<Option<adw::ComboRow>>,
+    pub(super) player: Option<Rc<PlayerController>>,
+    pub(super) syncing_effect_controls: Cell<bool>,
+    pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
+    pub(super) replaygain_plugin: RefCell<Option<adw::SwitchRow>>,
+    pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
     on_minimal: Rc<dyn Fn()>,
 }
 
@@ -271,66 +271,6 @@ impl PreferencesContext {
         tracing::info!("preferences smoke applied appearance, layout, and audio settings");
     }
 
-    fn apply_audio_effects(&self) {
-        let effects = {
-            let conn = self.conn.borrow();
-            super::audio_effects::stored(&conn)
-        };
-        if let Some(player) = &self.player {
-            if let Err(error) = player.set_audio_effects(effects) {
-                tracing::warn!(%error, "could not apply audio effects");
-                let active = player.active_audio_effects();
-                {
-                    let conn = self.conn.borrow();
-                    if let Err(persist_error) = super::audio_effects::persist(&conn, &active) {
-                        tracing::warn!(%persist_error, "could not restore active audio settings");
-                    }
-                }
-                self.syncing_effect_controls.set(true);
-                for row in self.equalizer_controls.borrow().iter() {
-                    row.set_active(active.equalizer_enabled);
-                }
-                if let Some(row) = self.replaygain_plugin.borrow().as_ref() {
-                    row.set_active(active.replay_gain != ReplayGainMode::Off);
-                }
-                if let Some(row) = self.replaygain_mode.borrow().as_ref() {
-                    row.set_selected(replay_gain_index(active.replay_gain));
-                }
-                self.syncing_effect_controls.set(false);
-                player.show_toast(&strings::text(strings::AUDIO_EFFECTS_FAILED));
-            }
-        }
-    }
-
-    fn set_equalizer_enabled(&self, active: bool) {
-        if let Err(error) = settings::set_equalizer_enabled(&self.conn.borrow(), active) {
-            tracing::warn!(%error, "could not save equalizer state");
-            return;
-        }
-        self.syncing_effect_controls.set(true);
-        for row in self.equalizer_controls.borrow().iter() {
-            row.set_active(active);
-        }
-        self.syncing_effect_controls.set(false);
-        self.apply_audio_effects();
-    }
-
-    fn set_replay_gain_mode(&self, mode: ReplayGainMode) {
-        if let Err(error) = settings::set_replay_gain_mode(&self.conn.borrow(), mode) {
-            tracing::warn!(%error, "could not save ReplayGain mode");
-            return;
-        }
-        self.syncing_effect_controls.set(true);
-        if let Some(row) = self.replaygain_plugin.borrow().as_ref() {
-            row.set_active(mode != ReplayGainMode::Off);
-        }
-        if let Some(row) = self.replaygain_mode.borrow().as_ref() {
-            row.set_selected(replay_gain_index(mode));
-        }
-        self.syncing_effect_controls.set(false);
-        self.apply_audio_effects();
-    }
-
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {
         let page = adw::PreferencesPage::builder()
             .title(strings::text(strings::PREFERENCES_APPEARANCE))
@@ -342,12 +282,14 @@ impl PreferencesContext {
             &strings::text(strings::COLOR_LIGHT),
             &strings::text(strings::COLOR_DARK),
         ]);
+        let selected_scheme = {
+            let conn = self.conn.borrow();
+            color_scheme_index(settings::get_color_scheme(&conn))
+        };
         let scheme = adw::ComboRow::builder()
             .title(strings::text(strings::COLOR_SCHEME))
             .model(&model)
-            .selected(color_scheme_index(settings::get_color_scheme(
-                &self.conn.borrow(),
-            )))
+            .selected(selected_scheme)
             .build();
         let weak = Rc::downgrade(self);
         scheme.connect_selected_notify(move |row| {
@@ -355,7 +297,11 @@ impl PreferencesContext {
                 return;
             };
             let value = color_scheme_from_index(row.selected());
-            if settings::set_color_scheme(&context.conn.borrow(), value).is_ok() {
+            let saved = {
+                let conn = context.conn.borrow();
+                settings::set_color_scheme(&conn, value)
+            };
+            if saved.is_ok() {
                 apply_color_scheme(value);
             }
         });
@@ -374,12 +320,14 @@ impl PreferencesContext {
             &strings::text(strings::POSITION_BOTTOM),
             &strings::text(strings::POSITION_TOP),
         ]);
+        let selected_position = {
+            let conn = self.conn.borrow();
+            bar_position_index(settings::get_player_bar_position(&conn))
+        };
         let bar = adw::ComboRow::builder()
             .title(strings::text(strings::PLAYER_BAR_POSITION))
             .model(&positions)
-            .selected(bar_position_index(settings::get_player_bar_position(
-                &self.conn.borrow(),
-            )))
+            .selected(selected_position)
             .build();
         let weak = Rc::downgrade(self);
         bar.connect_selected_notify(move |row| {
@@ -387,7 +335,11 @@ impl PreferencesContext {
                 return;
             };
             let value = bar_position_from_index(row.selected());
-            if settings::set_player_bar_position(&context.conn.borrow(), value).is_ok() {
+            let saved = {
+                let conn = context.conn.borrow();
+                settings::set_player_bar_position(&conn, value)
+            };
+            if saved.is_ok() {
                 crate::ui::window::apply_bar_position(
                     &context.toolbar_view,
                     &context.bottom_box,
@@ -397,9 +349,13 @@ impl PreferencesContext {
         });
         group.add(&bar);
 
+        let sidebar_visible = {
+            let conn = self.conn.borrow();
+            settings::get_sidebar_visible(&conn)
+        };
         let sidebar = adw::SwitchRow::builder()
             .title(strings::text(strings::SHOW_SIDEBAR))
-            .active(settings::get_sidebar_visible(&self.conn.borrow()))
+            .active(sidebar_visible)
             .build();
         let weak = Rc::downgrade(self);
         sidebar.connect_active_notify(move |row| {
@@ -407,15 +363,23 @@ impl PreferencesContext {
                 return;
             };
             let active = row.is_active();
-            if settings::set_sidebar_visible(&context.conn.borrow(), active).is_ok() {
+            let saved = {
+                let conn = context.conn.borrow();
+                settings::set_sidebar_visible(&conn, active)
+            };
+            if saved.is_ok() {
                 context.sidebar_page.set_visible(active);
             }
         });
         group.add(&sidebar);
 
+        let status_visible = {
+            let conn = self.conn.borrow();
+            settings::get_status_visible(&conn)
+        };
         let status = adw::SwitchRow::builder()
             .title(strings::text(strings::SHOW_STATUS_LINE))
-            .active(settings::get_status_visible(&self.conn.borrow()))
+            .active(status_visible)
             .build();
         let weak = Rc::downgrade(self);
         status.connect_active_notify(move |row| {
@@ -423,7 +387,11 @@ impl PreferencesContext {
                 return;
             };
             let active = row.is_active();
-            if settings::set_status_visible(&context.conn.borrow(), active).is_ok() {
+            let saved = {
+                let conn = context.conn.borrow();
+                settings::set_status_visible(&conn, active)
+            };
+            if saved.is_ok() {
                 context.status_bar.set_enabled(active);
                 if active {
                     context.track_list.reload();
@@ -437,12 +405,14 @@ impl PreferencesContext {
             &strings::text(strings::DENSITY_STANDARD),
             &strings::text(strings::DENSITY_COMPACT),
         ]);
+        let selected_density = {
+            let conn = self.conn.borrow();
+            density_index(settings::get_list_density(&conn))
+        };
         let density = adw::ComboRow::builder()
             .title(strings::text(strings::LIST_DENSITY))
             .model(&densities)
-            .selected(density_index(settings::get_list_density(
-                &self.conn.borrow(),
-            )))
+            .selected(selected_density)
             .build();
         let weak = Rc::downgrade(self);
         density.connect_selected_notify(move |row| {
@@ -450,7 +420,11 @@ impl PreferencesContext {
                 return;
             };
             let value = density_from_index(row.selected());
-            if settings::set_list_density(&context.conn.borrow(), value).is_ok() {
+            let saved = {
+                let conn = context.conn.borrow();
+                settings::set_list_density(&conn, value)
+            };
+            if saved.is_ok() {
                 apply_density(context.track_list.root_widget().upcast_ref(), value);
             }
         });
@@ -523,9 +497,13 @@ impl PreferencesContext {
         let equalizer = adw::PreferencesGroup::builder()
             .title(strings::text(strings::EQUALIZER))
             .build();
+        let equalizer_enabled = {
+            let conn = self.conn.borrow();
+            settings::get_equalizer_enabled(&conn)
+        };
         let enabled = adw::SwitchRow::builder()
             .title(strings::text(strings::ENABLE_EQUALIZER))
-            .active(settings::get_equalizer_enabled(&self.conn.borrow()))
+            .active(equalizer_enabled)
             .build();
         let weak = Rc::downgrade(self);
         enabled.connect_active_notify(move |row| {
@@ -622,12 +600,14 @@ impl PreferencesContext {
             &strings::text(strings::REPLAYGAIN_TRACK),
             &strings::text(strings::REPLAYGAIN_ALBUM),
         ]);
+        let selected_mode = {
+            let conn = self.conn.borrow();
+            replay_gain_index(settings::get_replay_gain_mode(&conn))
+        };
         let mode = adw::ComboRow::builder()
             .title(strings::text(strings::REPLAYGAIN_MODE))
             .model(&modes)
-            .selected(replay_gain_index(settings::get_replay_gain_mode(
-                &self.conn.borrow(),
-            )))
+            .selected(selected_mode)
             .build();
         let weak = Rc::downgrade(self);
         mode.connect_selected_notify(move |row| {
@@ -662,17 +642,19 @@ impl PreferencesContext {
                     strings::text(strings::RESTART_REQUIRED)
                 )
             };
+            let active = {
+                let conn = self.conn.borrow();
+                match descriptor.id {
+                    "equalizer" => settings::get_equalizer_enabled(&conn),
+                    "replaygain" => settings::get_replay_gain_mode(&conn) != ReplayGainMode::Off,
+                    _ => reprise_core::modules::is_enabled(&conn, descriptor)
+                        .unwrap_or(descriptor.default_enabled),
+                }
+            };
             let row = adw::SwitchRow::builder()
                 .title(plugin_title(descriptor))
                 .subtitle(subtitle)
-                .active(match descriptor.id {
-                    "equalizer" => settings::get_equalizer_enabled(&self.conn.borrow()),
-                    "replaygain" => {
-                        settings::get_replay_gain_mode(&self.conn.borrow()) != ReplayGainMode::Off
-                    }
-                    _ => reprise_core::modules::is_enabled(&self.conn.borrow(), descriptor)
-                        .unwrap_or(descriptor.default_enabled),
-                })
+                .active(active)
                 .build();
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
