@@ -154,6 +154,17 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   Expected: each applies immediately, survives restart, and remains readable at narrow
   widths. The isolated smoke persisted and reread every non-column value; the mapped
   pointer harness additionally opens every page and proves Sidebar/Status writes.
+- [ ] On Appearance, confirm **Chromium (CSD)** is the default, then
+  switch repeatedly to **System title bar** and back in Library plus Bar, Cover, Pill,
+  and Card Compact View; restart once in each mode. Expected: Reprise's flat header and
+  native window buttons appear only in client-side mode, the desktop supplies the title
+  bar and borders in system mode when the compositor supports SSD, drag/resize/close and
+  all header actions remain usable, no duplicate controls appear, and the saved choice
+  returns on restart. The isolated mapped GDK regression proves both decoration requests,
+  GTK's retained CSD resize frame, all four Compact control projections, and persisted
+  startup; actual GNOME/Wayland compositor acceptance, frame appearance, HiDPI, touch,
+  and live window-manager behavior remain native manual checks. A compositor that rejects
+  SSD may fall back to CSD; this is expected desktop policy, not a Reprise failure.
 - [ ] On Library, choose/cancel a disposable folder, rescan it, and invoke Rhythmbox
   column import. Expected: cancel is harmless and actions use the established safe
   picker/import paths.
