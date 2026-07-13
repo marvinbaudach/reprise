@@ -7,7 +7,7 @@ this folder.
 
 ```text
 You are taking over development of REPRISE — a native GTK4/libadwaita music
-player for GNOME (Rust, GPL-3.0, a Rhythmbox successor). Another agent built it
+player for GNOME (Rust, MIT-licensed, a Rhythmbox successor). Another agent built it
 this far and handed off to you at a clean, committed point. Continue in the same
 disciplined way.
 

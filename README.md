@@ -121,4 +121,4 @@ internet radio, CD ripping, device sync, DAAP sharing, or a plugin ecosystem.
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

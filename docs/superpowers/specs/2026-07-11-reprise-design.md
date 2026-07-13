@@ -29,7 +29,7 @@ Rhythmbox ist faktisch im Wartungsmodus (GTK3; der GTK4-Port ist trotz
 mehrerer Anläufe gescheitert). Reprise positioniert sich als moderner
 Nachfolger:
 
-- **Freie Software, GPL-3.0** — passt zur Rhythmbox-Herkunft und zur
+- **Freie Software, MIT-Lizenz** (Lizenzwechsel 2026-07-13, vorher GPL-3.0) — passt zur Rhythmbox-Herkunft und zur
   GNOME-Community.
 - **Migrationspfad im MVP:** Import von `rhythmdb.xml` (Bewertungen,
   Play Counts, zuletzt gespielt, hinzugefügt am) und `playlists.xml`

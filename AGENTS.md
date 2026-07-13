@@ -5,7 +5,7 @@ exactly where the last session left off. **Read this fully before writing code.*
 
 ## What Reprise is
 
-A native **GTK4 / libadwaita** music player for GNOME (Rust, GPL-3.0) — a Rhythmbox
+A native **GTK4 / libadwaita** music player for GNOME (Rust, MIT-licensed) — a Rhythmbox
 successor. Three-crate Cargo workspace:
 
 - `crates/reprise-core` — pure, cross-platform engine (DB, queue, queries, scanner,
