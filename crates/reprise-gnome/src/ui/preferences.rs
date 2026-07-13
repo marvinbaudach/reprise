@@ -22,14 +22,12 @@ const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-hei
      .reprise-density-compact columnview row { min-height: 28px; }";
 
 fn plugin_applies_live(id: &str) -> bool {
-    matches!(id, "cover_download" | "equalizer" | "replaygain")
+    id == "cover_download"
 }
 
 fn plugin_title(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
     let message = match descriptor.id {
         "cover_download" => strings::DOWNLOAD_MISSING_COVERS,
-        "equalizer" => strings::EQUALIZER,
-        "replaygain" => strings::REPLAYGAIN,
         _ => return descriptor.name.to_string(),
     };
     strings::text(message)
@@ -39,8 +37,6 @@ fn plugin_description(descriptor: &reprise_core::modules::ModuleDescriptor) -> S
     let message = match descriptor.id {
         "mpris" => strings::PLUGIN_MPRIS_DESCRIPTION,
         "cover_download" => strings::PLUGIN_COVER_DESCRIPTION,
-        "equalizer" => strings::PLUGIN_EQUALIZER_DESCRIPTION,
-        "replaygain" => strings::PLUGIN_REPLAYGAIN_DESCRIPTION,
         _ => return descriptor.description.to_string(),
     };
     strings::text(message)
@@ -169,7 +165,6 @@ pub(super) struct PreferencesContext {
     pub(super) player: Option<Rc<PlayerController>>,
     pub(super) syncing_effect_controls: Cell<bool>,
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
-    pub(super) replaygain_plugin: RefCell<Option<adw::SwitchRow>>,
     pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
     on_minimal: Rc<dyn Fn()>,
 }
@@ -201,7 +196,6 @@ impl PreferencesContext {
             player: player.cloned(),
             syncing_effect_controls: Cell::new(false),
             equalizer_controls: RefCell::new(Vec::new()),
-            replaygain_plugin: RefCell::new(None),
             replaygain_mode: RefCell::new(None),
             on_minimal: Rc::new(on_minimal),
         });
@@ -236,7 +230,6 @@ impl PreferencesContext {
 
     pub(super) fn present(self: &Rc<Self>) {
         self.equalizer_controls.borrow_mut().clear();
-        self.replaygain_plugin.borrow_mut().take();
         self.replaygain_mode.borrow_mut().take();
         let dialog = adw::PreferencesDialog::new();
         dialog.add(&self.appearance_page());
@@ -613,15 +606,8 @@ impl PreferencesContext {
                     strings::text(strings::RESTART_REQUIRED)
                 )
             };
-            let active = {
-                let conn = self.conn.borrow();
-                match descriptor.id {
-                    "equalizer" => settings::get_equalizer_enabled(&conn),
-                    "replaygain" => settings::get_replay_gain_mode(&conn) != ReplayGainMode::Off,
-                    _ => reprise_core::modules::is_enabled(&conn, descriptor)
-                        .unwrap_or(descriptor.default_enabled),
-                }
-            };
+            let active = reprise_core::modules::is_enabled(&self.conn.borrow(), descriptor)
+                .unwrap_or(descriptor.default_enabled);
             let row = adw::SwitchRow::builder()
                 .title(plugin_title(descriptor))
                 .subtitle(subtitle)
@@ -641,32 +627,12 @@ impl PreferencesContext {
                     {
                         action.change_state(&active.to_variant());
                     }
-                } else if descriptor.id == "equalizer" {
-                    if context.syncing_effect_controls.get() {
-                        return;
-                    }
-                    context.set_equalizer_enabled(active);
-                } else if descriptor.id == "replaygain" {
-                    if context.syncing_effect_controls.get() {
-                        return;
-                    }
-                    let mode = if active {
-                        ReplayGainMode::Track
-                    } else {
-                        ReplayGainMode::Off
-                    };
-                    context.set_replay_gain_mode(mode);
                 } else if let Err(error) =
                     reprise_core::modules::set_enabled(&context.conn.borrow(), descriptor, active)
                 {
                     tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
                 }
             });
-            if descriptor.id == "equalizer" {
-                self.equalizer_controls.borrow_mut().push(row.clone());
-            } else if descriptor.id == "replaygain" {
-                self.replaygain_plugin.borrow_mut().replace(row.clone());
-            }
             group.add(&row);
         }
         page.add(&group);
@@ -702,8 +668,8 @@ mod tests {
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {
         assert!(plugin_applies_live("cover_download"));
-        assert!(plugin_applies_live("equalizer"));
-        assert!(plugin_applies_live("replaygain"));
+        assert!(!plugin_applies_live("equalizer"));
+        assert!(!plugin_applies_live("replaygain"));
         assert!(!plugin_applies_live("mpris"));
         assert!(!plugin_applies_live("foreign"));
     }

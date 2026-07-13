@@ -28,14 +28,10 @@ impl PreferencesContext {
                 }
             }
             let equalizer_rows = self.equalizer_controls.borrow().clone();
-            let replaygain_plugin = self.replaygain_plugin.borrow().clone();
             let replaygain_mode = self.replaygain_mode.borrow().clone();
             self.syncing_effect_controls.set(true);
             for row in equalizer_rows {
                 row.set_active(active.equalizer_enabled);
-            }
-            if let Some(row) = replaygain_plugin {
-                row.set_active(active.replay_gain != ReplayGainMode::Off);
             }
             if let Some(row) = replaygain_mode {
                 row.set_selected(replay_gain_index(active.replay_gain));
@@ -72,12 +68,8 @@ impl PreferencesContext {
             tracing::warn!(%error, "could not save ReplayGain mode");
             return;
         }
-        let plugin = self.replaygain_plugin.borrow().clone();
         let mode_row = self.replaygain_mode.borrow().clone();
         self.syncing_effect_controls.set(true);
-        if let Some(row) = plugin {
-            row.set_active(mode != ReplayGainMode::Off);
-        }
         if let Some(row) = mode_row {
             row.set_selected(replay_gain_index(mode));
         }

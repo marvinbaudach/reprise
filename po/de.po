@@ -211,14 +211,6 @@ msgstr ""
 "Fehlende Albumcover aus dem Cover Art Archive herunterladen (Netzwerk; "
 "standardmäßig aus)"
 
-#: crates/reprise-gnome/src/ui/strings.rs:79
-msgid "Ten-band audio equalizer with presets and live adjustment"
-msgstr "Zehnband-Equalizer mit Voreinstellungen und direkter Anpassung"
-
-#: crates/reprise-gnome/src/ui/strings.rs:81
-msgid "Normalize playback volume from track or album ReplayGain tags"
-msgstr "Wiedergabelautstärke anhand der ReplayGain-Werte von Titel oder Album angleichen"
-
 #: crates/reprise-gnome/src/ui/strings.rs:82
 msgid "Library Folder"
 msgstr "Bibliotheksordner"

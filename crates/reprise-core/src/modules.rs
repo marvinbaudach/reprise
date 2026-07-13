@@ -1,13 +1,9 @@
-//! Module registry substrate (spec: "Internes Modulsystem", stage 5). This
-//! is deliberately the *data* half only: which optional features exist,
-//! their UI-facing name/description (the future Plugins page renders exactly
-//! this list), and a persisted on/off flag per module in the `settings`
-//! table. The behavioral half — a `Module` trait with start/stop lifecycle
-//! and extension points (sidebar entries, settings pages, pipeline elements)
-//! — is intentionally NOT here yet: it gets designed in stage 5 against its
-//! first two real implementors (equalizer, ReplayGain), not speculated
-//! against one. Until the Plugins UI exists, toggling a flag takes effect on
-//! the next launch.
+//! Registry metadata for optional features shown on the Plugins page.
+//!
+//! Core player capabilities such as Equalizer and ReplayGain deliberately do
+//! not belong here. Device support likewise belongs to Synchronization. This
+//! registry is reserved for optional integrations and features that depend on
+//! external services or APIs.
 
 use rusqlite::Connection;
 
@@ -37,28 +33,8 @@ pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: false,
 };
 
-pub const EQUALIZER_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "equalizer",
-    name: "Equalizer",
-    description: "Ten-band audio equalizer with presets and live adjustment",
-    default_enabled: false,
-};
-
-pub const REPLAYGAIN_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "replaygain",
-    name: "ReplayGain",
-    description: "Normalize playback volume from track or album ReplayGain tags",
-    default_enabled: false,
-};
-
-/// Every module the app knows about, in the order the Plugins page will show
-/// them. Stage 5 appends equalizer and ReplayGain here.
-pub const ALL_MODULES: &[&ModuleDescriptor] = &[
-    &MPRIS_MODULE,
-    &COVER_DOWNLOAD_MODULE,
-    &EQUALIZER_MODULE,
-    &REPLAYGAIN_MODULE,
-];
+/// Every optional integration the app currently exposes, in Plugins-page order.
+pub const ALL_MODULES: &[&ModuleDescriptor] = &[&MPRIS_MODULE, &COVER_DOWNLOAD_MODULE];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -134,8 +110,8 @@ mod tests {
     }
 
     #[test]
-    fn all_modules_lists_playback_effects() {
-        assert!(ALL_MODULES.iter().any(|module| module.id == "equalizer"));
-        assert!(ALL_MODULES.iter().any(|module| module.id == "replaygain"));
+    fn all_modules_excludes_core_playback_features() {
+        assert!(!ALL_MODULES.iter().any(|module| module.id == "equalizer"));
+        assert!(!ALL_MODULES.iter().any(|module| module.id == "replaygain"));
     }
 }

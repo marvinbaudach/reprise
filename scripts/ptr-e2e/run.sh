@@ -560,8 +560,8 @@ sleep 0.3
 screenshot "14-preferences-playback"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/14-preferences-playback.png"
 
-# Drive the real Playback controls, then prove both persistence and the
-# duplicate Plugins controls use the same state.
+# Drive the real Playback controls, then prove the removed duplicate plugin
+# rows cannot mutate either core playback setting.
 click_at 1034 194
 sleep 0.4
 assert_db_value "playback.equalizer_enabled" "1" "Playback switch enabled the equalizer"
@@ -575,13 +575,12 @@ click_at 907 823
 sleep 0.7
 click_at 1034 290
 sleep 0.4
-assert_db_value "playback.equalizer_enabled" "0" "Plugins switch disabled the equalizer"
+assert_db_value "playback.equalizer_enabled" "1" "Plugins has no duplicate Equalizer switch"
 click_at 1034 345
 sleep 0.4
-assert_db_value "playback.replay_gain_mode" "track" "Plugins switch enabled per-track ReplayGain"
-click_at 1034 345
-sleep 0.4
-assert_db_value "playback.replay_gain_mode" "off" "Plugins switch disabled ReplayGain"
+assert_db_query_true \
+  "SELECT COUNT(*) = 0 FROM settings WHERE key = 'playback.replay_gain_mode';" \
+  "Plugins has no duplicate ReplayGain switch"
 
 click_at 1011 823
 sleep 0.7
