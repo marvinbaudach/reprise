@@ -33,6 +33,7 @@ pub mod first_run;
 pub mod import_errors_view;
 mod minimal_view;
 pub mod mpris_mirror;
+mod notifications;
 pub mod now_playing;
 pub mod now_playing_wiring;
 pub mod playback_faults;
