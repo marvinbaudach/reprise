@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Native column-layout editor and Rhythmbox discovery prompt
+SINCE:    2026-07-13 03:01 CEST
 ```
 
-_As of 2026-07-13 00:06 CEST: Codex released the lock after autonomous final release hardening._
+_As of 2026-07-13 03:01 CEST: Codex claimed the lock for column-layout editing and Rhythmbox discovery UX._
 
 ## Current position
 
