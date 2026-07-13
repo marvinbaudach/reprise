@@ -283,10 +283,14 @@ impl Default for ListenBrainzClient {
 
 impl ListenBrainzClient {
     pub fn new() -> Self {
-        Self::with_base_url(LISTENBRAINZ_API_ROOT)
+        Self::with_api_root(LISTENBRAINZ_API_ROOT)
     }
 
-    fn with_base_url(base_url: &str) -> Self {
+    /// Builds a client for an explicitly supplied API root. Production code
+    /// should use [`Self::new`]; this seam exists for isolated local smoke
+    /// servers and downstream test transports.
+    #[doc(hidden)]
+    pub fn with_api_root(base_url: &str) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             agent: ureq::builder()
@@ -469,7 +473,7 @@ mod tests {
 
     #[test]
     fn validation_contract_uses_authorization_header_and_returns_user() {
-        let client = ListenBrainzClient::with_base_url("http://example.test");
+        let client = ListenBrainzClient::with_api_root("http://example.test");
         assert_eq!(
             parse_validation_response(
                 r#"{"code":200,"message":"Token valid.","valid":true,"user_name":" marvin "}"#,
@@ -489,7 +493,7 @@ mod tests {
 
     #[test]
     fn playing_now_request_targets_submit_endpoint_with_json() {
-        let client = ListenBrainzClient::with_base_url("http://example.test/");
+        let client = ListenBrainzClient::with_api_root("http://example.test/");
         let body = serde_json::to_string(&build_playing_now_payload(&track()).unwrap()).unwrap();
         assert_eq!(
             client.submission_url(),
