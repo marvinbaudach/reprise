@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Finish Preferences visual layout controls
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: Codex released the lock after integrating always-on missing-cover downloads._
+_As of 2026-07-13: Codex claimed the lock for the remaining Preferences visual controls._
 
 ## Current position
 
