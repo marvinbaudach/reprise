@@ -17,8 +17,9 @@ use crate::ui::track_list::TrackList;
 
 pub(super) const ACTION_DOWNLOAD_MISSING_COVERS: &str = "download-missing-covers";
 pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
+pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 const SMOKE_COVER_DOWNLOAD_ENV_VAR: &str = "REPRISE_SMOKE_COVER_DOWNLOAD";
-const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
+pub(super) const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
 
 pub(super) fn install(
     header: &adw::HeaderBar,
@@ -31,6 +32,10 @@ pub(super) fn install(
     menu.append(
         Some(&strings::text(strings::DOWNLOAD_MISSING_COVERS)),
         Some("win.download-missing-covers"),
+    );
+    menu.append(
+        Some(&strings::text(strings::EDIT_COLUMN_LAYOUT)),
+        Some("win.edit-column-layout"),
     );
     menu.append(
         Some(&strings::text(strings::IMPORT_RHYTHMBOX_COLUMNS)),
@@ -86,6 +91,28 @@ pub(super) fn install(
     }
     window.add_action(&import);
     arm_smoke_rhythmbox_import(&import);
+
+    let edit = gio::SimpleAction::new(ACTION_EDIT_COLUMN_LAYOUT, None);
+    {
+        let window = window.downgrade();
+        let track_list = Rc::downgrade(track_list);
+        edit.connect_activate(move |_, _| {
+            let (Some(window), Some(track_list)) = (window.upgrade(), track_list.upgrade()) else {
+                return;
+            };
+            crate::ui::column_layout_editor::present(&window, &track_list);
+        });
+    }
+    window.add_action(&edit);
+    arm_smoke_column_layout_editor(&edit);
+}
+
+fn arm_smoke_column_layout_editor(action: &gio::SimpleAction) {
+    if std::env::var(crate::ui::column_layout_editor::SMOKE_ENV).is_err() {
+        return;
+    }
+    let action = action.clone();
+    glib::idle_add_local_once(move || action.activate(None));
 }
 
 fn arm_smoke_toggle(toggle: &gio::SimpleAction) {

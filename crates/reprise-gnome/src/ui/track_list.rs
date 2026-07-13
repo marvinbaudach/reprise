@@ -554,6 +554,10 @@ impl TrackList {
         Ok(())
     }
 
+    pub(super) fn current_column_layout(&self) -> ColumnLayout {
+        column_layout::load_layout(&self.shared.conn.borrow())
+    }
+
     pub(super) fn toast(&self, message: &str) {
         show_toast(&self.shared, message);
     }

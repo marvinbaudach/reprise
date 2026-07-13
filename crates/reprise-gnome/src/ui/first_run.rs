@@ -11,7 +11,7 @@ use libadwaita::prelude::*;
 use reprise_core::library::settings;
 use rusqlite::Connection;
 
-use crate::ui::{primary_menu, strings};
+use crate::ui::{column_layout, primary_menu, strings};
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_FIRST_RUN";
 
@@ -40,6 +40,15 @@ fn requested_actions(options: CompletionOptions) -> (bool, bool) {
 
 fn should_open_folder(response: CompletionResponse) -> bool {
     response == CompletionResponse::SetUp
+}
+
+fn rhythmbox_offer(available: bool) -> Option<bool> {
+    column_layout::should_offer_rhythmbox_import(available).then_some(false)
+}
+
+fn rhythmbox_layout_available() -> bool {
+    std::env::var(primary_menu::SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR).is_ok()
+        || column_layout::read_rhythmbox_visible_columns().is_ok()
 }
 
 pub(super) fn decide(completed: bool, library_root: Option<&str>) -> FirstRunDecision {
@@ -91,13 +100,24 @@ pub(super) fn run(
         .title(strings::text(strings::ONBOARDING_COVERS))
         .subtitle(strings::text(strings::ONBOARDING_COVERS_SUBTITLE))
         .build();
-    let rhythmbox = adw::SwitchRow::builder()
-        .title(strings::text(strings::ONBOARDING_RHYTHMBOX))
-        .subtitle(strings::text(strings::ONBOARDING_RHYTHMBOX_SUBTITLE))
-        .build();
+    let rhythmbox_found = rhythmbox_layout_available();
+    let rhythmbox = rhythmbox_offer(rhythmbox_found).map(|active| {
+        adw::SwitchRow::builder()
+            .title(strings::text(strings::ONBOARDING_RHYTHMBOX_FOUND))
+            .subtitle(strings::text(strings::ONBOARDING_RHYTHMBOX_FOUND_SUBTITLE))
+            .active(active)
+            .build()
+    });
+    tracing::info!(
+        rhythmbox_found,
+        rhythmbox_import_default = false,
+        "first-run Rhythmbox discovery complete"
+    );
     let group = adw::PreferencesGroup::new();
     group.add(&cover);
-    group.add(&rhythmbox);
+    if let Some(rhythmbox) = &rhythmbox {
+        group.add(rhythmbox);
+    }
 
     let privacy = gtk4::Label::builder()
         .label(strings::text(strings::ONBOARDING_PRIVACY))
@@ -191,7 +211,7 @@ pub(super) fn run(
             complete(
                 CompletionOptions {
                     cover_download: cover.is_active(),
-                    rhythmbox_columns: rhythmbox.is_active(),
+                    rhythmbox_columns: rhythmbox.as_ref().is_some_and(adw::SwitchRow::is_active),
                 },
                 CompletionResponse::SetUp,
                 false,
@@ -281,5 +301,11 @@ mod tests {
     fn only_set_up_opens_the_folder_picker() {
         assert!(!should_open_folder(CompletionResponse::Skip));
         assert!(should_open_folder(CompletionResponse::SetUp));
+    }
+
+    #[test]
+    fn rhythmbox_offer_is_visible_only_when_detected_and_defaults_off() {
+        assert_eq!(rhythmbox_offer(false), None);
+        assert_eq!(rhythmbox_offer(true), Some(false));
     }
 }

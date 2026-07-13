@@ -31,14 +31,22 @@ pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Musi
 pub const ONBOARDING_COVERS: &str = N_!("Download missing album covers");
 pub const ONBOARDING_COVERS_SUBTITLE: &str =
     N_!("Uses MusicBrainz and Cover Art Archive only when enabled");
-pub const ONBOARDING_RHYTHMBOX: &str = N_!("Import Rhythmbox column layout");
-pub const ONBOARDING_RHYTHMBOX_SUBTITLE: &str =
-    N_!("Reads the existing layout without changing Rhythmbox settings");
+pub const ONBOARDING_RHYTHMBOX_FOUND: &str = N_!("Rhythmbox found");
+pub const ONBOARDING_RHYTHMBOX_FOUND_SUBTITLE: &str =
+    N_!("Import its column layout without changing Rhythmbox settings");
 pub const ONBOARDING_SKIP: &str = N_!("Skip for Now");
 pub const ONBOARDING_SET_UP: &str = N_!("Set Up Library");
 pub const MAIN_MENU: &str = N_!("Main menu");
 pub const DOWNLOAD_MISSING_COVERS: &str = N_!("Download missing album covers");
 pub const IMPORT_RHYTHMBOX_COLUMNS: &str = N_!("Import Rhythmbox column layout");
+pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
+pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
+pub const CLOSE: &str = N_!("Close");
+pub const COLUMN_ALWAYS_VISIBLE: &str = N_!("Always visible");
+pub const DRAG_TO_REORDER: &str = N_!("Drag to reorder");
+pub const MOVE_COLUMN_UP: &str = N_!("Move column up");
+pub const MOVE_COLUMN_DOWN: &str = N_!("Move column down");
+pub const COLUMN_LAYOUT_SAVE_FAILED: &str = N_!("Could not save the column layout");
 pub const RHYTHMBOX_COLUMNS_IMPORTED: &str = N_!("Rhythmbox column layout imported");
 pub const RHYTHMBOX_COLUMNS_IMPORT_SAVE_FAILED: &str =
     N_!("Could not save the imported column layout");
@@ -204,6 +212,7 @@ pub fn status_filtered_of_total(filtered: &str, total: &str) -> String {
 
 // Track list column headers (src/ui/track_list.rs).
 pub const COLUMN_TITLE: &str = N_!("Title");
+pub const COLUMN_COVER: &str = N_!("Cover");
 pub const COLUMN_ARTIST: &str = N_!("Artist");
 pub const COLUMN_ALBUM: &str = N_!("Album");
 pub const COLUMN_TRACK_NUMBER: &str = N_!("Track");
