@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Fix missing MPRIS cover metadata
+SINCE:    2026-07-13 10:25 CEST
 ```
 
-_As of 2026-07-13 10:06 CEST: Codex released the lock after fixing the Equalizer enable playback regression._
+_As of 2026-07-13 10:25 CEST: Codex claimed the lock to fix missing MPRIS cover metadata._
 
 ## Current position
 
