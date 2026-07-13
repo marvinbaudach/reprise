@@ -14,6 +14,11 @@ use serde::Serialize;
 
 pub mod lastfm;
 pub use lastfm::{LastFmClient, LastFmSession};
+mod queue;
+pub use queue::{
+    acknowledge_for, clear_pending_for, enqueue_for, pending_count_for, pending_for,
+    ScrobbleProvider,
+};
 
 const LISTENBRAINZ_API_ROOT: &str = "https://api.listenbrainz.org";
 const FOUR_MINUTES_MS: i64 = 4 * 60 * 1_000;
