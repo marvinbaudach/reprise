@@ -25,9 +25,10 @@ Ein `AdwPreferencesDialog` enthält:
   Listendichte Komfortabel/Standard/Kompakt, Spalteneditor öffnen.
 - Bibliothek: aktueller Ordner, Ordner wählen/neu scannen, read-only
   Rhythmbox-Spaltenimport.
-- Plugins: alle registrierten Module mit persistierten Schaltern; Laufzeitwirkung
-  wird für Cover und Audioeffekte sofort angewandt, MPRIS nennt ehrlich den nötigen
-  Neustart, solange dessen D-Bus-Lebenszyklus nicht sicher hot-reloadbar ist.
+- Plugins: nur optionale Integrationen und Funktionen mit externen Diensten/APIs.
+  Der Online-Coverabruf wirkt sofort; MPRIS nennt ehrlich den nötigen Neustart,
+  solange dessen D-Bus-Lebenszyklus nicht sicher hot-reloadbar ist. Equalizer und
+  ReplayGain sind feste Wiedergabefunktionen und erscheinen ausschließlich dort.
 
 ## Architektur
 
@@ -58,4 +59,3 @@ Release-Gates und native GNOME-Prüfliste.
 
 Schwebende/gläserne Playerleiste, Fremd-Plugin-Installation, mehrere
 Bibliotheksordner, Crossfade, Geräte-Synchronisation und Onlinekonten.
-

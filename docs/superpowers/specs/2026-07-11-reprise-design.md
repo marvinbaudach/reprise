@@ -199,8 +199,8 @@ reprise/                        eine Rust-Crate (kein npm, kein Webview)
 Die App ist von Anfang an intern modular — Vorbild ist Rhythmbox' Plugin-
 Liste, aber ohne Fremd-Plugin-API:
 
-- Jedes optionale Feature (später: Scrobbling, Podcasts, Lyrics,
-  Interpreten-Infos, Android-Sync) ist ein abgeschlossenes **Modul** mit
+- Jedes optionale Feature oder jede externe Integration (später: Scrobbling,
+  Podcasts, Lyrics, Interpreten-Infos) ist ein abgeschlossenes **Modul** mit
   eigenem Backend-Teil (Rust-Trait `Module`: init/shutdown, eigene
   Commands/Events) und optionalem Frontend-Teil.
 - **Erweiterungspunkte** sind definiert und werden vom Kern bereitgestellt:
@@ -208,8 +208,9 @@ Liste, aber ohne Fremd-Plugin-API:
   Detail-Panel-Tabs, Audio-Pipeline-Elemente.
 - In den Einstellungen gibt es eine **Modul-Liste mit An/Aus-Schaltern**
   (UI-Name: „Plugins", wie Rhythmbox); Zustand in der `settings`-Tabelle.
-  Equalizer, ReplayGain und MPRIS sind die ersten Module (alle im MVP,
-  standardmäßig an) und beweisen das System.
+  MPRIS und der Online-Coverabruf sind die ersten Module. Equalizer und ReplayGain
+  sind feste Kernfunktionen unter „Wiedergabe"; MTP-/iPod-Geräte-Support ist eine
+  feste Funktion unter „Synchronisation" und kein Plugin.
 - Eine echte **Fremd-Plugin-API** (zur Laufzeit ladbar, z. B. WASM) bleibt
   spätere Ausbaustufe und setzt auf denselben Erweiterungspunkten auf.
 
@@ -365,15 +366,18 @@ ohne Neustart.
   Spalten-Popover wie am Listenkopf).
 - **Bibliothek:** Ordner verwalten (hinzufügen/entfernen), Rescan,
   Rhythmbox-Import.
-- **Plugins** (so heißt das Modulsystem im UI): Liste der Module mit
+- **Plugins** (so heißt das Modulsystem im UI): Liste optionaler Funktionen und
+  externer Integrationen mit
   Name, Kurzbeschreibung, An/Aus-Schalter und — wo vorhanden —
   „Konfigurieren…"-Button für die moduleigene Einstellungsseite
-  (z. B. Equalizer, später Scrobbler mit Konto-Status „angemeldet als …").
+  (z. B. Scrobbler mit Konto-Status „angemeldet als …"). Equalizer und ReplayGain
+  erscheinen ausschließlich unter „Wiedergabe".
   Der Bereich „Plugin installieren…" (`~/.config/reprise/plugins`) aus
   dem Mockup ist für die spätere Fremd-Plugin-API reserviert und im MVP
   noch nicht sichtbar.
-- **Synchronisation:** erscheint erst mit dem Android-Sync-Modul
-  (Tab wird von dem Modul über den Erweiterungspunkt eingehängt).
+- **Synchronisation:** feste Produktseite für Geräte-Support. Sie erscheint, sobald
+  MTP-/iPod- oder WLAN-Synchronisation implementiert ist, und wird nicht als Plugin
+  ein- oder ausgeschaltet.
 
 Das **Spalten-Popover am Listenkopf** (Mockup 1): Button rechts außen in
 der Kopfzeile öffnet „Spalten anzeigen" — Checkboxen mit Drag-Griffen zum
@@ -577,11 +581,12 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
      LAN-Protokoll (gepaart, lokal, kein Cloud-Dienst).
   2. **Synchronisation über zwei gleichwertige Wege** (Nutzer-Anforderung
      2026-07-11 — Kabel ist ausdrücklich kein bloßer Fallback):
-     - **Kabel / USB (MTP, primär):** Gerät per USB anstecken → über
+     - **Kabel / USB (MTP/iPod, primär):** Gerät per USB anstecken → über
        MTP (via `libmtp`/gvfs, wie Rhythmbox) erkennen und synchronisieren;
        für Geräte im Massenspeicher-Modus alternativ direkter
-       Dateisystem-Zugriff. Funktioniert ohne Begleit-App, mit jedem
-       Android-Gerät und vielen MP3-Playern — der zuverlässige,
+       Dateisystem-Zugriff. Klassische iPods erhalten einen eigenen Adapter auf
+       derselben Synchronisationsschicht. Funktioniert ohne Begleit-App, mit jedem
+       Android-Gerät und vielen Musikplayern — der zuverlässige,
        netzwerkunabhängige Standardweg.
      - **Kabellos über WLAN (Begleit-App):** Kopplung per QR-Code,
        „nur im WLAN"; für Nutzer, die die Begleit-App installiert haben.
@@ -619,7 +624,7 @@ wer die App im Terminal startet, bekommt nützliche Diagnose-Ausgaben:
   Berechtigung im Flatpak erst an, wenn der WLAN-Weg aktiviert wird — der
   Kabel-Weg braucht kein Netzwerk, nur USB-/MTP-Zugriff (Flatpak-Portal).
   Angeschlossene und gekoppelte Geräte erscheinen als Liste im Tab
-  „Synchronisation" (vom Modul eingehängt) mit „Jetzt synchronisieren"/
+  „Synchronisation" mit „Jetzt synchronisieren"/
   „Entfernen"; eigener Sidebar-Eintrag „Geräte" (erkennt USB-Geräte über
   udev/gvfs automatisch).
   Die Android-App selbst ist ein eigenes Projekt (eigenes Repo/eigene

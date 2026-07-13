@@ -58,8 +58,8 @@ D-Bus/Xvfb, and a fake audio sink. It injects a real rating click, opens the
 track context menu and tag editor by keyboard, rejects an invalid Year on
 Enter, performs a held Queue drag with insertion-target capture and reorder,
 exercises Space play/pause and Ctrl+M, opens and captures all five Preferences
-pages, toggles layout/effect/plugin controls, performs a real library rescan,
-verifies exact isolated SQLite values, and rejects GTK/GLib criticals, Rust
+pages, toggles layout/effect controls, verifies the plugin boundary, performs a
+real library rescan, verifies exact isolated SQLite values, and rejects GTK/GLib criticals, Rust
 panics, and `RefCell` borrow failures. It does not replace the native-Wayland,
 audible-audio, media-key, or portal checks below.
 
@@ -104,9 +104,9 @@ The detailed live ledger of confirmed and pending checks is
   theme, density, sidebar/status, player-bar position, columns, library root and
   module states.
 - With disposable tagged audio and real speakers, adjust all equalizer bands and
-  presets while playing, confirm the Plugins and Playback switches stay in sync,
-  then compare ReplayGain Off, Per Track, and Per Album on files containing valid
-  ReplayGain tags.
+  presets while playing, then compare ReplayGain Off, Per Track, and Per Album on
+  files containing valid ReplayGain tags. Equalizer and ReplayGain belong only to
+  Playback and must not be duplicated on Plugins.
 - Scan the seven advertised extensions and play representative available codecs
   through real speakers. Verify seek, volume, previous/next, queue, shuffle, and
   repeat without surprise autoplay.

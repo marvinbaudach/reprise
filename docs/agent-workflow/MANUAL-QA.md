@@ -103,11 +103,10 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] On Library, choose/cancel a disposable folder, rescan it, and invoke Rhythmbox
   column import. Expected: cancel is harmless and actions use the established safe
   picker/import paths.
-- [ ] On Plugins, toggle Cover download, Equalizer, and ReplayGain. Expected: live
-  modules apply immediately; Equalizer and ReplayGain remain synchronized with their
-  Playback-page controls. MPRIS clearly says restart required and changes only after
-  restart. The mapped pointer harness proves Equalizer synchronization and ReplayGain
-  Track/Off writes; native visual confirmation and the MPRIS restart remain pending.
+- [ ] On Plugins, toggle Cover download and MPRIS. Expected: Cover download applies
+  immediately; MPRIS clearly says restart required and changes only after restart.
+  Equalizer and ReplayGain must not appear here because they are core Playback
+  features. Native visual confirmation and the MPRIS restart remain pending.
 - [ ] While disposable music plays through real speakers, enable Equalizer, select
   Flat/Rock/Pop/Bass Boost, and move all ten sliders. Expected: audible changes are
   immediate, bounded to ±12 dB, persist after restart, and do not interrupt or move
@@ -116,8 +115,7 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   filter replacement; audible confirmation remains pending.
 - [ ] With files containing valid ReplayGain tags, compare Off, Per Track, and Per
   Album. Expected: normalization mode changes live, album mode is consistent within an
-  album, untagged files remain playable, and the Plugins switch reflects Off versus an
-  enabled mode.
+  album, and untagged files remain playable.
 
 ## Pending: real audio and transport
 
