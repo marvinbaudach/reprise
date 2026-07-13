@@ -133,7 +133,8 @@ impl LyricsState {
     pub(super) fn retry(&mut self) -> Option<RequestIntent>;
     pub(super) fn accepts(&self, generation: u64) -> bool;
     pub(super) fn set_body(&mut self, body: LyricsBody);
-    pub(super) fn update_position(&mut self, position_ms: i64) -> Option<usize>;
+    pub(super) fn update_position(&mut self, position_ms: i64)
+        -> Option<Option<usize>>;
 }
 ```
 
@@ -144,6 +145,8 @@ impl LyricsState {
    increments generation; old responses are rejected.
 2. Add RED position tests: Synced updates only when line index changes;
    before-first/seek-back work; Plain and Instrumental never produce a line.
+   The outer `Option` denotes a change and the inner `Option` the active line,
+   so seeking back before the first timestamp can explicitly clear it.
 3. Add a test-only injected worker lookup and prove requests execute serially
    and return their generation without GTK data crossing the thread.
 4. Observe RED, implement the state and one dedicated worker thread.

@@ -50,6 +50,8 @@ mod library_chrome;
 mod library_player_bar;
 mod library_shell;
 mod listenbrainz_secret;
+mod lyrics_state;
+mod lyrics_worker;
 mod main_cover_download_progress;
 mod minimal_view;
 pub mod mpris_mirror;
