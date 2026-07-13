@@ -524,6 +524,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &sidebar_page,
         &status_bar,
         &library_player_bar,
+        &info_panel,
         &scan_button,
         player.as_ref(),
         &listenbrainz,
