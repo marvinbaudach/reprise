@@ -88,7 +88,57 @@ impl BatchProgress {
     }
 }
 
-type OnProgress = Rc<dyn Fn(BatchProgress)>;
+type OnProgress = Rc<dyn Fn(BatchProgress) -> bool>;
+
+#[derive(Clone)]
+struct ProgressSubscriber {
+    id: u64,
+    callback: OnProgress,
+}
+
+#[derive(Default)]
+struct ProgressSubscribers {
+    next_id: Cell<u64>,
+    entries: RefCell<Vec<ProgressSubscriber>>,
+}
+
+impl ProgressSubscribers {
+    fn subscribe(
+        &self,
+        current: BatchProgress,
+        callback: impl Fn(BatchProgress) -> bool + 'static,
+    ) {
+        self.notify(current);
+        let callback: OnProgress = Rc::new(callback);
+        if !callback(current) {
+            return;
+        }
+        let id = self.next_id.get().wrapping_add(1);
+        self.next_id.set(id);
+        self.entries
+            .borrow_mut()
+            .push(ProgressSubscriber { id, callback });
+    }
+
+    fn notify(&self, progress: BatchProgress) {
+        let entries = self.entries.borrow().clone();
+        let dead: Vec<u64> = entries
+            .iter()
+            .filter_map(|entry| (!(entry.callback)(progress)).then_some(entry.id))
+            .collect();
+        if dead.is_empty() {
+            return;
+        }
+        self.entries
+            .borrow_mut()
+            .retain(|entry| !dead.contains(&entry.id));
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.borrow().len()
+    }
+}
 
 pub(super) struct CoverDownloadBatch {
     conn: Rc<RefCell<Connection>>,
@@ -97,7 +147,7 @@ pub(super) struct CoverDownloadBatch {
     player: Option<Rc<PlayerController>>,
     generation: Cell<u64>,
     progress: Cell<BatchProgress>,
-    on_progress: RefCell<Option<OnProgress>>,
+    progress_subscribers: ProgressSubscribers,
 }
 
 impl CoverDownloadBatch {
@@ -114,14 +164,13 @@ impl CoverDownloadBatch {
             player: player.cloned(),
             generation: Cell::new(0),
             progress: Cell::new(BatchProgress::idle()),
-            on_progress: RefCell::new(None),
+            progress_subscribers: ProgressSubscribers::default(),
         })
     }
 
-    pub(super) fn set_on_progress(&self, callback: impl Fn(BatchProgress) + 'static) {
-        let callback: OnProgress = Rc::new(callback);
-        self.on_progress.borrow_mut().replace(callback.clone());
-        callback(self.progress.get());
+    pub(super) fn subscribe_progress(&self, callback: impl Fn(BatchProgress) -> bool + 'static) {
+        self.progress_subscribers
+            .subscribe(self.progress.get(), callback);
     }
 
     pub(super) fn set_enabled(self: &Rc<Self>, enabled: bool) {
@@ -204,10 +253,7 @@ impl CoverDownloadBatch {
 
     fn set_progress(&self, progress: BatchProgress) {
         self.progress.set(progress);
-        let callback = self.on_progress.borrow().clone();
-        if let Some(callback) = callback {
-            callback(progress);
-        }
+        self.progress_subscribers.notify(progress);
     }
 }
 
@@ -219,9 +265,11 @@ fn live_track_paths(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
     use std::path::PathBuf;
+    use std::rc::Rc;
 
-    use super::{live_track_paths, BatchProgress, BatchState};
+    use super::{live_track_paths, BatchProgress, BatchState, ProgressSubscribers};
     use crate::ui::cover_download_worker::DownloadOutcome;
 
     #[test]
@@ -279,5 +327,45 @@ mod tests {
             live_track_paths(&conn).unwrap(),
             vec!["/music/a.mp3".to_string(), "/music/b.mp3".to_string()]
         );
+    }
+
+    #[test]
+    fn multiple_progress_subscribers_receive_current_and_future_state() {
+        let subscribers = ProgressSubscribers::default();
+        let first = Rc::new(RefCell::new(Vec::new()));
+        let second = Rc::new(RefCell::new(Vec::new()));
+
+        for received in [&first, &second] {
+            let received = received.clone();
+            subscribers.subscribe(BatchProgress::idle(), move |progress| {
+                received.borrow_mut().push(progress);
+                true
+            });
+        }
+        let running = BatchProgress::running(4);
+        subscribers.notify(running);
+
+        assert_eq!(
+            *first.borrow(),
+            vec![BatchProgress::idle(), BatchProgress::idle(), running]
+        );
+        assert_eq!(*second.borrow(), vec![BatchProgress::idle(), running]);
+    }
+
+    #[test]
+    fn subscriber_returning_false_is_removed_after_that_update() {
+        let subscribers = ProgressSubscribers::default();
+        let calls = Rc::new(Cell::new(0));
+        let calls_for_callback = calls.clone();
+        subscribers.subscribe(BatchProgress::idle(), move |_| {
+            calls_for_callback.set(calls_for_callback.get() + 1);
+            calls_for_callback.get() < 2
+        });
+
+        subscribers.notify(BatchProgress::running(2));
+        subscribers.notify(BatchProgress::running(3));
+
+        assert_eq!(calls.get(), 2);
+        assert_eq!(subscribers.len(), 0);
     }
 }
