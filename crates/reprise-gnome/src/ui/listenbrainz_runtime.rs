@@ -16,6 +16,7 @@ use rusqlite::Connection;
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
 const MAX_BACKOFF: Duration = Duration::from_secs(5 * 60);
+const SMOKE_API_ROOT_ENV: &str = "REPRISE_SMOKE_LISTENBRAINZ_API_ROOT";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ConnectionStatus {
@@ -64,10 +65,12 @@ pub(super) struct ListenBrainzRuntime {
     status: RefCell<ConnectionStatus>,
     subscribers: RefCell<Vec<StatusCallback>>,
     drain_lock: Arc<Mutex<()>>,
+    smoke_api_root: Option<String>,
 }
 
 impl ListenBrainzRuntime {
     pub(super) fn new(database_path: PathBuf) -> Rc<Self> {
+        let smoke_api_root = smoke_api_root();
         Rc::new(Self {
             database_path,
             generation: Cell::new(0),
@@ -76,11 +79,16 @@ impl ListenBrainzRuntime {
             status: RefCell::new(ConnectionStatus::Disabled),
             subscribers: RefCell::new(Vec::new()),
             drain_lock: Arc::new(Mutex::new(())),
+            smoke_api_root,
         })
     }
 
     pub(super) fn is_active(&self) -> bool {
         self.active.get()
+    }
+
+    pub(super) fn smoke_api_is_local(&self) -> bool {
+        self.smoke_api_root.is_some()
     }
 
     pub(super) fn status(&self) -> ConnectionStatus {
@@ -109,6 +117,11 @@ impl ListenBrainzRuntime {
         });
         let database_path = self.database_path.clone();
         let drain_lock = self.drain_lock.clone();
+        let client = self
+            .smoke_api_root
+            .as_deref()
+            .map(ListenBrainzClient::with_api_root)
+            .unwrap_or_default();
         std::thread::spawn(move || {
             run_worker(
                 &database_path,
@@ -116,7 +129,7 @@ impl ListenBrainzRuntime {
                 &command_receiver,
                 &status_sender,
                 generation,
-                &ListenBrainzClient::new(),
+                &client,
                 WorkerCoordination {
                     drain_lock: &drain_lock,
                     cancelled: &cancelled,
@@ -204,8 +217,46 @@ fn status_is_current(current_generation: u64, message_generation: u64) -> bool {
     current_generation == message_generation
 }
 
+fn is_loopback_smoke_root(value: &str) -> bool {
+    ["http://127.0.0.1:", "http://[::1]:"]
+        .into_iter()
+        .find_map(|prefix| value.strip_prefix(prefix))
+        .and_then(|remainder| remainder.split('/').next())
+        .is_some_and(|port| port.parse::<u16>().is_ok())
+}
+
+fn smoke_api_root() -> Option<String> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let value = std::env::var(SMOKE_API_ROOT_ENV).ok()?;
+    if is_loopback_smoke_root(&value) {
+        Some(value)
+    } else {
+        tracing::warn!("ignored non-loopback ListenBrainz smoke API root");
+        None
+    }
+}
+
 fn next_backoff(current: Duration) -> Duration {
     current.saturating_mul(2).min(MAX_BACKOFF)
+}
+
+fn wait_for_retry(
+    receiver: &mpsc::Receiver<WorkerCommand>,
+    backoff: &mut Duration,
+    deferred_playing_now: &mut Option<TrackMetadata>,
+) -> bool {
+    let result = receiver.recv_timeout(*backoff);
+    *backoff = next_backoff(*backoff);
+    match result {
+        Ok(WorkerCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => false,
+        Ok(WorkerCommand::PlayingNow(track)) => {
+            *deferred_playing_now = Some(track);
+            true
+        }
+        Ok(WorkerCommand::Flush) | Err(mpsc::RecvTimeoutError::Timeout) => true,
+    }
 }
 
 fn flush_pending<T: ScrobblerTransport>(
@@ -281,7 +332,6 @@ fn run_worker<T: ScrobblerTransport>(
             match transport.validate_token(token) {
                 Ok(user) => {
                     user_name = Some(user);
-                    backoff = INITIAL_BACKOFF;
                     if coordination.cancelled.load(Ordering::Acquire) {
                         return;
                     }
@@ -309,16 +359,9 @@ fn run_worker<T: ScrobblerTransport>(
                             pending: pending_or_zero(&conn),
                         },
                     );
-                    match receiver.recv_timeout(backoff) {
-                        Ok(WorkerCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                            return;
-                        }
-                        Ok(WorkerCommand::PlayingNow(track)) => {
-                            deferred_playing_now = Some(track);
-                        }
-                        Ok(WorkerCommand::Flush) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
+                        return;
                     }
-                    backoff = next_backoff(backoff);
                     continue;
                 }
             }
@@ -331,6 +374,9 @@ fn run_worker<T: ScrobblerTransport>(
             if let Err(error) = transport.playing_now(token, &track) {
                 if !handle_transport_error(&conn, status_sender, generation, error, &mut user_name)
                 {
+                    return;
+                }
+                if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
                     return;
                 }
                 continue;
@@ -348,17 +394,23 @@ fn run_worker<T: ScrobblerTransport>(
             flush_pending(&conn, transport, token)
         };
         match flush_result {
-            Ok(pending) => publish(
-                status_sender,
-                generation,
-                ConnectionStatus::Connected {
-                    user_name: user_name.clone().unwrap_or_default(),
-                    pending,
-                },
-            ),
+            Ok(pending) => {
+                backoff = INITIAL_BACKOFF;
+                publish(
+                    status_sender,
+                    generation,
+                    ConnectionStatus::Connected {
+                        user_name: user_name.clone().unwrap_or_default(),
+                        pending,
+                    },
+                );
+            }
             Err(FlushError::Transport(error)) => {
                 if !handle_transport_error(&conn, status_sender, generation, error, &mut user_name)
                 {
+                    return;
+                }
+                if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
                     return;
                 }
                 continue;
@@ -400,6 +452,9 @@ fn run_worker<T: ScrobblerTransport>(
                         error,
                         &mut user_name,
                     ) {
+                        return;
+                    }
+                    if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
                         return;
                     }
                 }
@@ -568,10 +623,41 @@ mod tests {
     }
 
     #[test]
+    fn new_work_wakes_backoff_and_preserves_latest_playing_now() {
+        let (sender, receiver) = mpsc::channel();
+        let track = TrackMetadata {
+            artist_name: "Artist".to_string(),
+            track_name: "Track".to_string(),
+            release_name: None,
+            duration_ms: 60_000,
+        };
+        sender
+            .send(WorkerCommand::PlayingNow(track.clone()))
+            .unwrap();
+        let mut backoff = INITIAL_BACKOFF;
+        let mut deferred = None;
+        assert!(wait_for_retry(&receiver, &mut backoff, &mut deferred));
+        assert_eq!(deferred, Some(track));
+        assert_eq!(backoff, Duration::from_secs(10));
+
+        sender.send(WorkerCommand::Stop).unwrap();
+        assert!(!wait_for_retry(&receiver, &mut backoff, &mut deferred));
+    }
+
+    #[test]
     fn only_current_generation_may_update_visible_status() {
         assert!(status_is_current(7, 7));
         assert!(!status_is_current(7, 6));
         assert!(!status_is_current(7, 8));
+    }
+
+    #[test]
+    fn smoke_api_override_accepts_only_explicit_loopback_http_ports() {
+        assert!(is_loopback_smoke_root("http://127.0.0.1:8123"));
+        assert!(is_loopback_smoke_root("http://[::1]:8123/api"));
+        assert!(!is_loopback_smoke_root("https://api.listenbrainz.org"));
+        assert!(!is_loopback_smoke_root("http://127.0.0.1"));
+        assert!(!is_loopback_smoke_root("http://example.test:8123"));
     }
 
     #[test]

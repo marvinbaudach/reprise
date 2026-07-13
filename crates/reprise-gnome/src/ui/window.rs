@@ -144,6 +144,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let cover_download = cover_download_worker::setup(&conn.borrow());
     let listenbrainz = super::listenbrainz_runtime::ListenBrainzRuntime::new(db_path.to_path_buf());
     super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
+    super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
 
     let player = match PlayerController::new(
         conn.clone(),
