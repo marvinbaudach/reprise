@@ -94,21 +94,6 @@ fn wire_row_drag_and_drop(
     widget.add_controller(target);
 }
 
-fn column_label(id: ColumnId) -> String {
-    let message = match id {
-        ColumnId::Cover => strings::COLUMN_COVER,
-        ColumnId::Title => strings::COLUMN_TITLE,
-        ColumnId::TrackNumber => strings::COLUMN_TRACK_NUMBER,
-        ColumnId::Artist => strings::COLUMN_ARTIST,
-        ColumnId::Album => strings::COLUMN_ALBUM,
-        ColumnId::Genre => strings::COLUMN_GENRE,
-        ColumnId::Year => strings::COLUMN_YEAR,
-        ColumnId::Duration => strings::COLUMN_LENGTH,
-        ColumnId::Rating => strings::RATING,
-    };
-    strings::text(message)
-}
-
 struct EditorState {
     layout: RefCell<ColumnLayout>,
     list: gtk4::ListBox,
@@ -173,7 +158,9 @@ fn build_row(
     index: usize,
 ) -> adw::ActionRow {
     let capabilities = row_capabilities(id, index, layout.order.len());
-    let row = adw::ActionRow::builder().title(column_label(id)).build();
+    let row = adw::ActionRow::builder()
+        .title(column_layout::column_label(id))
+        .build();
     if is_fixed(id) {
         row.set_subtitle(&strings::text(strings::COLUMN_ALWAYS_VISIBLE));
     } else {

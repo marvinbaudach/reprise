@@ -10,6 +10,7 @@ impl TrackList {
             &serialized,
         )?;
         self.column_registry.apply(layout);
+        super::column_header_menu::sync(self, layout);
         let sort = self.shared.sort.borrow().clone();
         let current_id = ColumnId::from_sort_field(&sort.field);
         let (column, order) = if current_id.is_some_and(|id| self.column_registry.is_visible(id)) {
