@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate always-on missing-cover downloads
-SINCE:    2026-07-13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex claimed the lock to integrate always-on missing-cover downloads._
+_As of 2026-07-13: Codex released the lock after integrating always-on missing-cover downloads._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-system-decoration-fallback.md` (1 task).
-- **Last completed:** **System-decoration fallback** (`346cf6f`) — Reprise controls remain visible
-  until GTK confirms actual desktop-supplied decorations through its documented `ssd` state.
+- **Last completed:** **Always-on missing-cover downloads** (`03257b6`, merged as `aff5db7`) —
+  missing covers are fetched automatically with no stale disable surface or optional module state.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `346cf6f`.
+- **Main implementation:** `03257b6`.
 
 ## Done so far (compact)
 
@@ -45,7 +45,8 @@ _As of 2026-07-13: Codex claimed the lock to integrate always-on missing-cover d
   `cargo tree`); platform seam; settings façade; module registry.
 - ✅ **GUI-A**: album covers in list + player bar, Now-Playing full view, cover in the track-change
   notification. Whole-branch review: READY TO MERGE.
-- ✅ **GUI-A2**: opt-in online album-cover download via MusicBrainz/Cover Art Archive; default OFF.
+- ✅ **GUI-A2**: automatic missing-cover retrieval via MusicBrainz/Cover Art Archive; the privacy
+  copy discloses network lookup and no stale module, menu, onboarding, or Preferences toggle remains.
 - ✅ **GUI-B**: tag editor with multi-select batch edit + confirmed DB-only delete/safe trash.
 - ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
 - ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
