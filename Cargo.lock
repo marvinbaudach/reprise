@@ -2073,6 +2073,7 @@ dependencies = [
  "fastrand",
  "image",
  "lofty",
+ "md-5",
  "notify",
  "rusqlite",
  "serde",
@@ -2081,6 +2082,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "ureq",
+ "url",
  "walkdir",
 ]
 

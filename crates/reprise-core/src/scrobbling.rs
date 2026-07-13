@@ -12,6 +12,9 @@ use std::{io::Read, io::Take};
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
+pub mod lastfm;
+pub use lastfm::{LastFmClient, LastFmSession};
+
 const LISTENBRAINZ_API_ROOT: &str = "https://api.listenbrainz.org";
 const FOUR_MINUTES_MS: i64 = 4 * 60 * 1_000;
 const MAX_LISTENS_PER_REQUEST: usize = 1_000;
@@ -25,6 +28,162 @@ pub struct TrackMetadata {
     pub track_name: String,
     pub release_name: Option<String>,
     pub duration_ms: i64,
+}
+
+#[cfg(test)]
+mod lastfm_contract_tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    fn track() -> TrackMetadata {
+        TrackMetadata {
+            artist_name: " Massive Attack ".to_string(),
+            track_name: " Teardrop ".to_string(),
+            release_name: Some(" Mezzanine ".to_string()),
+            duration_ms: 331_999,
+        }
+    }
+
+    fn listen() -> Listen {
+        Listen {
+            id: None,
+            listened_at: 1_700_000_000,
+            track: track(),
+        }
+    }
+
+    #[test]
+    fn lastfm_signature_sorts_names_and_excludes_response_format() {
+        let params = BTreeMap::from([
+            ("token".to_string(), "tok".to_string()),
+            ("format".to_string(), "json".to_string()),
+            ("method".to_string(), "auth.getSession".to_string()),
+            ("api_key".to_string(), "key".to_string()),
+        ]);
+        assert_eq!(
+            lastfm::method_signature(&params, "secret"),
+            "04e870be4bb79756721b7bc1937fe83d"
+        );
+    }
+
+    #[test]
+    fn lastfm_credentials_must_not_be_blank() {
+        assert!(matches!(
+            LastFmClient::new(" ", "secret"),
+            Err(MetadataError::MissingApiKey)
+        ));
+        assert!(matches!(
+            LastFmClient::new("key", " "),
+            Err(MetadataError::MissingSharedSecret)
+        ));
+    }
+
+    #[test]
+    fn lastfm_authorization_url_encodes_key_and_request_token() {
+        let client = LastFmClient::with_roots(
+            "http://api.test/2.0/",
+            "https://www.last.fm/api/auth/",
+            "key + slash",
+            "secret",
+        )
+        .unwrap();
+        assert_eq!(
+            client.authorization_url("token + slash").unwrap(),
+            "https://www.last.fm/api/auth/?api_key=key+%2B+slash&token=token+%2B+slash"
+        );
+    }
+
+    #[test]
+    fn lastfm_auth_responses_require_non_blank_values() {
+        assert_eq!(
+            lastfm::parse_request_token(r#"{"token":" abc "}"#).unwrap(),
+            "abc"
+        );
+        assert!(matches!(
+            lastfm::parse_request_token(r#"{"token":" "}"#),
+            Err(TransportError::InvalidResponse)
+        ));
+        assert_eq!(
+            lastfm::parse_session(
+                r#"{"session":{"name":" marvin ","key":" session-key ","subscriber":"0"}}"#
+            )
+            .unwrap(),
+            LastFmSession {
+                user_name: "marvin".to_string(),
+                session_key: "session-key".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn lastfm_now_playing_params_are_trimmed_and_signed_later() {
+        let params = lastfm::now_playing_params(&track()).unwrap();
+        assert_eq!(params.get("method").unwrap(), "track.updateNowPlaying");
+        assert_eq!(params.get("artist").unwrap(), "Massive Attack");
+        assert_eq!(params.get("track").unwrap(), "Teardrop");
+        assert_eq!(params.get("album").unwrap(), "Mezzanine");
+        assert_eq!(params.get("duration").unwrap(), "331");
+        assert!(!params.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn lastfm_scrobble_params_include_start_time_and_array_names() {
+        let params = lastfm::scrobble_params(&[listen()]).unwrap();
+        assert_eq!(params.get("method").unwrap(), "track.scrobble");
+        assert_eq!(params.get("artist[0]").unwrap(), "Massive Attack");
+        assert_eq!(params.get("track[0]").unwrap(), "Teardrop");
+        assert_eq!(params.get("timestamp[0]").unwrap(), "1700000000");
+        assert_eq!(params.get("duration[0]").unwrap(), "331");
+    }
+
+    #[test]
+    fn lastfm_scrobble_batch_is_limited_to_fifty() {
+        assert!(matches!(
+            lastfm::scrobble_params(&[]),
+            Err(MetadataError::EmptyPayload)
+        ));
+        assert!(lastfm::scrobble_params(&vec![listen(); 50]).is_ok());
+        assert!(matches!(
+            lastfm::scrobble_params(&vec![listen(); 51]),
+            Err(MetadataError::TooManyLastFmScrobbles)
+        ));
+    }
+
+    #[test]
+    fn lastfm_success_with_ignored_items_is_consumed() {
+        assert!(lastfm::parse_write_response(
+            r#"{"scrobbles":{"@attr":{"accepted":"0","ignored":"1"}}}"#
+        )
+        .is_ok());
+        assert!(
+            lastfm::parse_write_response(r##"{"nowplaying":{"track":{"#text":"Teardrop"}}}"##)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn lastfm_api_error_codes_have_stable_retry_classes() {
+        assert_eq!(lastfm::classify_api_error(9), TransportError::Unauthorized);
+        assert_eq!(
+            lastfm::classify_api_error(16),
+            TransportError::Retryable(16)
+        );
+        assert_eq!(lastfm::classify_api_error(13), TransportError::Rejected(13));
+    }
+
+    #[test]
+    fn lastfm_errors_never_echo_credentials() {
+        for error in [
+            lastfm::classify_api_error(9),
+            lastfm::classify_api_error(16),
+            lastfm::classify_api_error(13),
+        ] {
+            let text = error.to_string();
+            assert!(!text.contains("api-secret-must-not-leak"));
+            assert!(!text.contains("session-key-must-not-leak"));
+        }
+    }
 }
 
 impl TrackMetadata {
@@ -58,21 +217,29 @@ pub enum MetadataError {
     EmptyPayload,
     #[error("a submission may contain at most 1000 listens")]
     TooManyListens,
+    #[error("a Last.fm submission may contain at most 50 scrobbles")]
+    TooManyLastFmScrobbles,
+    #[error("Last.fm API key is required")]
+    MissingApiKey,
+    #[error("Last.fm shared secret is required")]
+    MissingSharedSecret,
+    #[error("Last.fm request token is required")]
+    MissingRequestToken,
     #[error("listen metadata could not be serialized")]
     Serialization,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum TransportError {
-    #[error("ListenBrainz rejected the token")]
+    #[error("scrobbling service rejected the credential")]
     Unauthorized,
-    #[error("ListenBrainz request failed temporarily with HTTP {0}")]
+    #[error("scrobbling service request failed temporarily with code {0}")]
     Retryable(u16),
-    #[error("ListenBrainz rejected the request with HTTP {0}")]
+    #[error("scrobbling service rejected the request with code {0}")]
     Rejected(u16),
-    #[error("ListenBrainz is unreachable")]
+    #[error("scrobbling service is unreachable")]
     Network,
-    #[error("ListenBrainz returned an invalid response")]
+    #[error("scrobbling service returned an invalid response")]
     InvalidResponse,
     #[error("invalid listen metadata: {0}")]
     InvalidMetadata(#[from] MetadataError),
