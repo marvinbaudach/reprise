@@ -11,10 +11,6 @@ checkbutton.reprise-choice-card {
   border: 1px solid alpha(@window_fg_color, 0.18);
   border-radius: 8px;
 }
-.reprise-preview-light { background: #f6f5f4; }
-.reprise-preview-light-alt { background: #deddda; }
-.reprise-preview-dark { background: #241f31; }
-.reprise-preview-dark-alt { background: #3d3846; }
 .reprise-preview-sidebar { background: alpha(@window_fg_color, 0.16); }
 .reprise-preview-content { background: alpha(@window_fg_color, 0.06); }
 .reprise-preview-player { background: @accent_bg_color; }

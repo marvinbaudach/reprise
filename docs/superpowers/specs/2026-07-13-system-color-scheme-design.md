@@ -24,7 +24,7 @@ Nutzerdaten bleiben unverändert.
 ## Verifikation
 
 - Ein RED/GREEN-Strukturtest belegt, dass Darstellung nur Fensterdekorationen enthält.
-- Ein Displaytest belegt, dass keine Farbschema-Karte mehr gebaut wird.
+- Ein Displaytest belegt, dass ein zuvor erzwungenes Farbschema auf `Default` zurückgesetzt wird.
 - Der isolierte Preferences-Pointertest prüft, dass `ui.color_scheme` nicht geschrieben wird.
 - Vollständige Projekt-Gates, gettext, Rustdoc, Core-Purity und Releasechecker bleiben grün.
 
