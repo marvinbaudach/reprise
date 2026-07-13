@@ -33,8 +33,17 @@ pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: false,
 };
 
+pub const ARTIST_NEWS_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "artist_news",
+    name: "Artist & Album News",
+    description:
+        "Show upcoming and newly released albums from MusicBrainz (network; off by default)",
+    default_enabled: false,
+};
+
 /// Every optional integration the app currently exposes, in Plugins-page order.
-pub const ALL_MODULES: &[&ModuleDescriptor] = &[&MPRIS_MODULE, &COVER_DOWNLOAD_MODULE];
+pub const ALL_MODULES: &[&ModuleDescriptor] =
+    &[&MPRIS_MODULE, &COVER_DOWNLOAD_MODULE, &ARTIST_NEWS_MODULE];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -107,6 +116,24 @@ mod tests {
         assert!(ALL_MODULES
             .iter()
             .any(|module| module.id == "cover_download"));
+    }
+
+    #[test]
+    fn artist_news_is_listed_and_defaults_to_disabled() {
+        let conn = migrated_conn();
+        assert!(ALL_MODULES
+            .iter()
+            .any(|module| module.id == ARTIST_NEWS_MODULE.id));
+        assert!(!is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
+    }
+
+    #[test]
+    fn artist_news_round_trips() {
+        let conn = migrated_conn();
+        set_enabled(&conn, &ARTIST_NEWS_MODULE, true).unwrap();
+        assert!(is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
+        set_enabled(&conn, &ARTIST_NEWS_MODULE, false).unwrap();
+        assert!(!is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
     }
 
     #[test]
