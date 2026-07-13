@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::queries::BrowseFilter;
 use crate::queue::{Queue, QueueSnapshot, Repeat};
+use crate::up_next::UpNextQueue;
 
 pub const SESSION_KEY: &str = "ui.session.v1";
 const VERSION: u8 = 1;
@@ -36,6 +37,10 @@ pub struct SessionState {
     pub sort_field: String,
     pub sort_dir: String,
     pub queue: QueueSnapshot,
+    #[serde(default, deserialize_with = "deserialize_up_next")]
+    pub up_next: UpNextQueue,
+    #[serde(default, deserialize_with = "deserialize_current_up_next")]
+    pub current_up_next: Option<i64>,
 }
 
 impl Default for SessionState {
@@ -51,6 +56,8 @@ impl Default for SessionState {
             sort_field: "artist".into(),
             sort_dir: "asc".into(),
             queue: empty_queue(),
+            up_next: UpNextQueue::default(),
+            current_up_next: None,
         }
     }
 }
@@ -130,6 +137,7 @@ fn normalize(mut state: SessionState) -> SessionState {
         state.sort_dir = "asc".into();
     }
     let queue_limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
+    state.up_next.truncate(queue_limit);
     if state.queue.ids.len() > queue_limit {
         state.queue = empty_queue();
     } else {
@@ -140,6 +148,22 @@ fn normalize(mut state: SessionState) -> SessionState {
         }
     }
     state
+}
+
+fn deserialize_up_next<'de, D>(deserializer: D) -> Result<UpNextQueue, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+fn deserialize_current_up_next<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 fn truncate_utf8(value: &mut String, max_bytes: usize) {
@@ -185,6 +209,8 @@ mod tests {
                 repeat: Repeat::All,
                 shuffled: true,
             },
+            up_next: UpNextQueue::default(),
+            current_up_next: None,
         }
     }
 
@@ -237,5 +263,42 @@ mod tests {
         state.queue.position = Some(0);
         save(&conn, &state).unwrap();
         assert_eq!(load(&conn).queue, empty_queue());
+    }
+
+    #[test]
+    fn legacy_json_without_up_next_fields_loads_empty_pending_state() {
+        let mut value = serde_json::to_value(full_state()).unwrap();
+        value.as_object_mut().unwrap().remove("up_next");
+        value.as_object_mut().unwrap().remove("current_up_next");
+        let state: SessionState = serde_json::from_value(value).unwrap();
+        assert!(state.up_next.is_empty());
+        assert_eq!(state.current_up_next, None);
+    }
+
+    #[test]
+    fn corrupt_up_next_fields_degrade_without_dropping_the_session() {
+        let mut value = serde_json::to_value(full_state()).unwrap();
+        value["up_next"] = serde_json::json!({ "not": "a queue" });
+        value["current_up_next"] = serde_json::json!("not an id");
+        let state: SessionState = serde_json::from_value(value).unwrap();
+        assert!(state.up_next.is_empty());
+        assert_eq!(state.current_up_next, None);
+        assert_eq!(state.source, SessionSource::Playlist(7));
+    }
+
+    #[test]
+    fn up_next_fields_round_trip_and_pending_state_is_bounded() {
+        let conn = conn();
+        let mut state = full_state();
+        state.up_next.append(&[30, 40]);
+        state.current_up_next = Some(20);
+        save(&conn, &state).unwrap();
+        assert_eq!(load(&conn), state);
+
+        let len = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap() + 1;
+        state.up_next = crate::up_next::UpNextQueue::default();
+        state.up_next.append(&(0..len as i64).collect::<Vec<_>>());
+        save(&conn, &state).unwrap();
+        assert_eq!(load(&conn).up_next.len(), len - 1);
     }
 }

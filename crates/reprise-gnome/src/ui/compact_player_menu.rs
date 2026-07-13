@@ -24,19 +24,18 @@ const ACTION_RESTORE: &str = "restore";
 const ACTION_SHUFFLE: &str = "shuffle";
 const ACTION_REPEAT: &str = "repeat";
 const ACTION_PREFERENCES: &str = "preferences";
-const VOLUME_CHILD: &str = "volume";
-const VOLUME_ICONS: [&str; 4] = [
-    "audio-volume-muted-symbolic",
-    "audio-volume-low-symbolic",
-    "audio-volume-medium-symbolic",
-    "audio-volume-high-symbolic",
+pub(super) const MENU_ACTIONS: [&str; 5] = [
+    ACTION_RESTORE,
+    ACTION_LAYOUT,
+    ACTION_SHUFFLE,
+    ACTION_REPEAT,
+    ACTION_PREFERENCES,
 ];
 
 type VoidCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type LayoutCallback = Rc<RefCell<Option<Rc<dyn Fn(CompactLayout)>>>>;
 type BoolCallback = Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>;
 type RepeatCallback = Rc<RefCell<Option<Rc<dyn Fn(Repeat)>>>>;
-type VolumeCallback = Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>;
 
 pub(super) struct CompactMenu {
     pub(super) popover: gtk4::PopoverMenu,
@@ -44,13 +43,10 @@ pub(super) struct CompactMenu {
     layout_action: gio::SimpleAction,
     shuffle_action: gio::SimpleAction,
     repeat_action: gio::SimpleAction,
-    pub(super) volume: gtk4::ScaleButton,
-    updating_volume: Rc<std::cell::Cell<bool>>,
     on_restore: VoidCallback,
     on_layout: LayoutCallback,
     on_shuffle: BoolCallback,
     on_repeat: RepeatCallback,
-    on_volume: VolumeCallback,
     on_preferences: VoidCallback,
 }
 
@@ -60,7 +56,6 @@ impl CompactMenu {
         let on_layout: LayoutCallback = Rc::new(RefCell::new(None));
         let on_shuffle: BoolCallback = Rc::new(RefCell::new(None));
         let on_repeat: RepeatCallback = Rc::new(RefCell::new(None));
-        let on_volume: VolumeCallback = Rc::new(RefCell::new(None));
         let on_preferences = empty_callback();
         let action_group = gio::SimpleActionGroup::new();
 
@@ -133,41 +128,13 @@ impl CompactMenu {
         let preferences_action = gio::SimpleAction::new(ACTION_PREFERENCES, None);
         connect_void_action(&preferences_action, &on_preferences);
         action_group.add_action(&preferences_action);
+        debug_assert!(MENU_ACTIONS
+            .iter()
+            .all(|action| action_group.has_action(action)));
 
         let menu_model = menu_model();
         let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
         popover.set_has_arrow(false);
-        let volume = gtk4::ScaleButton::new(0.0, 1.0, 0.05, &VOLUME_ICONS);
-        volume.set_value(1.0);
-        volume.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
-        volume.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-            strings::VOLUME,
-        ))]);
-        let volume_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        volume_row.set_margin_start(12);
-        volume_row.set_margin_end(12);
-        volume_row.set_margin_top(6);
-        volume_row.set_margin_bottom(6);
-        let volume_label = gtk4::Label::new(Some(&strings::text(strings::VOLUME)));
-        volume_label.set_hexpand(true);
-        volume_label.set_xalign(0.0);
-        volume_row.append(&volume_label);
-        volume_row.append(&volume);
-        assert!(popover.add_child(&volume_row, VOLUME_CHILD));
-        let updating_volume = Rc::new(std::cell::Cell::new(false));
-        {
-            let callback = on_volume.clone();
-            let updating = updating_volume.clone();
-            volume.connect_value_changed(move |_, value| {
-                if updating.get() {
-                    return;
-                }
-                let callback = callback.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(value);
-                }
-            });
-        }
 
         Self {
             popover,
@@ -175,13 +142,10 @@ impl CompactMenu {
             layout_action,
             shuffle_action,
             repeat_action,
-            volume,
-            updating_volume,
             on_restore,
             on_layout,
             on_shuffle,
             on_repeat,
-            on_volume,
             on_preferences,
         }
     }
@@ -199,12 +163,6 @@ impl CompactMenu {
             .set_state(&repeat_token(repeat).to_variant());
     }
 
-    pub(super) fn set_volume(&self, volume: f64) {
-        self.updating_volume.set(true);
-        self.volume.set_value(volume);
-        self.updating_volume.set(false);
-    }
-
     pub(super) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
         *self.on_restore.borrow_mut() = Some(callback);
     }
@@ -219,10 +177,6 @@ impl CompactMenu {
 
     pub(super) fn set_on_repeat(&self, callback: Rc<dyn Fn(Repeat)>) {
         *self.on_repeat.borrow_mut() = Some(callback);
-    }
-
-    pub(super) fn set_on_volume(&self, callback: Rc<dyn Fn(f64)>) {
-        *self.on_volume.borrow_mut() = Some(callback);
     }
 
     pub(super) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
@@ -264,9 +218,6 @@ fn menu_model() -> gio::Menu {
     }
     menu.append_submenu(Some(&strings::text(strings::REPEAT)), &repeats);
 
-    let custom = gio::MenuItem::new(None, None);
-    custom.set_attribute_value("custom", Some(&VOLUME_CHILD.to_variant()));
-    menu.append_item(&custom);
     menu.append(
         Some(&strings::text(strings::PREFERENCES)),
         Some("compact.preferences"),
@@ -341,6 +292,8 @@ pub(super) fn is_context_menu_shortcut(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     #[test]
@@ -364,5 +317,47 @@ mod tests {
     fn context_menu_is_limited_to_non_interactive_regions() {
         assert!(accepts_context_menu(false));
         assert!(!accepts_context_menu(true));
+    }
+
+    #[test]
+    fn menu_has_only_the_supported_native_actions() {
+        assert_eq!(
+            MENU_ACTIONS,
+            ["restore", "layout", "shuffle", "repeat", "preferences"]
+        );
+        let mut actions = BTreeSet::new();
+        let model = menu_model();
+        assert!(!collect_model_contract(model.upcast_ref(), &mut actions));
+        assert_eq!(
+            actions,
+            [
+                "compact.layout".to_string(),
+                "compact.preferences".to_string(),
+                "compact.repeat".to_string(),
+                "compact.restore".to_string(),
+                "compact.shuffle".to_string(),
+            ]
+            .into_iter()
+            .collect()
+        );
+    }
+
+    fn collect_model_contract(model: &gio::MenuModel, actions: &mut BTreeSet<String>) -> bool {
+        let mut has_custom = false;
+        for item in 0..model.n_items() {
+            if let Some(action) = model
+                .item_attribute_value(item, "action", Some(glib::VariantTy::STRING))
+                .and_then(|value| value.get::<String>())
+            {
+                actions.insert(action);
+            }
+            has_custom |= model.item_attribute_value(item, "custom", None).is_some();
+            for link in ["section", "submenu"] {
+                if let Some(child) = model.item_link(item, link) {
+                    has_custom |= collect_model_contract(&child, actions);
+                }
+            }
+        }
+        has_custom
     }
 }

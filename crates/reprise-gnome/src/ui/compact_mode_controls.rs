@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn header_and_restore_buttons_switch_one_application_window_in_one_activation() {
+    fn header_and_menu_restore_switch_one_application_window_in_one_activation() {
         if gtk4::init().is_err() {
             return;
         }
@@ -160,8 +160,7 @@ mod tests {
         assert_eq!(window, same_window);
         assert!(window.is_visible());
 
-        let restore = find_button(compact.widget().upcast_ref(), "Return to Library").unwrap();
-        restore.emit_clicked();
+        compact.activate_restore_for_test();
 
         assert_eq!(window.content().as_ref(), Some(full_root.upcast_ref()));
         assert_eq!(window, same_window);
@@ -181,21 +180,5 @@ mod tests {
             .sidebar(&sidebar)
             .content(&content)
             .build()
-    }
-
-    fn find_button(root: &gtk4::Widget, tooltip: &str) -> Option<gtk4::Button> {
-        let mut child = root.first_child();
-        while let Some(widget) = child {
-            if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
-                if button.tooltip_text().as_deref() == Some(tooltip) {
-                    return Some(button);
-                }
-            }
-            if let Some(button) = find_button(&widget, tooltip) {
-                return Some(button);
-            }
-            child = widget.next_sibling();
-        }
-        None
     }
 }
