@@ -240,8 +240,8 @@ fn track_summary_found_returns_expected_fields() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, duration_ms, added_at) \
-         VALUES ('/x/a.flac', 'A Title', 'An Artist', 'An Album', 123456, 0)",
+        "INSERT INTO tracks (path, title, artist, album, year, duration_ms, added_at) \
+         VALUES ('/x/a.flac', 'A Title', 'An Artist', 'An Album', 2026, 123456, 0)",
         [],
     )
     .unwrap();
@@ -254,6 +254,7 @@ fn track_summary_found_returns_expected_fields() {
     assert_eq!(summary.title, "A Title");
     assert_eq!(summary.artist, "An Artist");
     assert_eq!(summary.album, "An Album");
+    assert_eq!(summary.year, Some(2026));
     assert_eq!(summary.duration_ms, 123456);
 }
 

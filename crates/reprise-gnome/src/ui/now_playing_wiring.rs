@@ -76,12 +76,12 @@ impl PlayerController {
         self.sync_cover(&current_path);
     }
 
-    /// Feeds the bar's AND the Now-Playing page's title/artist/album labels
-    /// from one call — the single state path `play_track_id` uses instead of
-    /// touching `self.bar`/`self.now_playing_view` separately.
-    pub(super) fn sync_track(&self, title: &str, artist: &str, album: &str) {
+    /// Feeds Bar, Compact, and Now Playing metadata from one call. Compact
+    /// additionally receives the optional year used by Card; the other
+    /// surfaces retain their existing metadata set.
+    pub(super) fn sync_track(&self, title: &str, artist: &str, album: &str, year: Option<i32>) {
         self.bar.set_track(title, artist);
-        self.compact_player.set_track(title, artist, album);
+        self.compact_player.set_track(title, artist, album, year);
         self.now_playing_view.set_track(title, artist, album);
     }
 

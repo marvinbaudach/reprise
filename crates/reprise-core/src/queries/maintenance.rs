@@ -21,7 +21,7 @@ pub fn query_track_summary(
     id: i64,
 ) -> Result<Option<TrackSummary>, rusqlite::Error> {
     conn.query_row(
-        "SELECT path, title, artist, album, duration_ms FROM tracks WHERE id = ?1",
+        "SELECT path, title, artist, album, year, duration_ms FROM tracks WHERE id = ?1",
         rusqlite::params![id],
         |r| {
             Ok(TrackSummary {
@@ -29,7 +29,8 @@ pub fn query_track_summary(
                 title: r.get(1)?,
                 artist: r.get(2)?,
                 album: r.get(3)?,
-                duration_ms: r.get(4)?,
+                year: r.get(4)?,
+                duration_ms: r.get(5)?,
             })
         },
     )

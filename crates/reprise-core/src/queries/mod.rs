@@ -312,8 +312,8 @@ pub fn query_track_ids_browsed(
 }
 
 /// The subset of a track's columns the player bar and queue playback path
-/// need: the file to hand `Player::play`, the title/artist to show, and the
-/// duration play-tracking's 50%-listened check requires
+/// need: the file to hand `Player::play`, display metadata, and the duration
+/// play-tracking's 50%-listened check requires
 /// (`library::stats::should_count_play`). Deliberately narrower than the
 /// full `Track` (no rating/play_count/etc. — the bar doesn't display those),
 /// avoiding the cost of loading and holding the columns nothing here reads.
@@ -326,6 +326,8 @@ pub struct TrackSummary {
     /// the player bar (which only shows title/artist), so it went unused
     /// here until MPRIS needed it.
     pub album: String,
+    /// Optional release year displayed by metadata-rich player surfaces.
+    pub year: Option<i32>,
     pub duration_ms: i64,
 }
 
