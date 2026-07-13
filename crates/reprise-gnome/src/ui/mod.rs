@@ -41,6 +41,7 @@ pub mod import_errors_view;
 mod info_panel;
 mod info_panel_state;
 mod lastfm_secret;
+mod library_chrome;
 mod library_shell;
 mod listenbrainz_secret;
 mod main_cover_download_progress;

@@ -119,9 +119,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .build();
 
     let header = adw::HeaderBar::new();
+    super::library_chrome::style_header(&header, &search_entry);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
-    header.pack_start(&search_entry);
     header.pack_end(&scan_button);
     header.pack_end(&import_button);
 
@@ -263,7 +263,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
     let toolbar_view = adw::ToolbarView::new();
-    toolbar_view.add_top_bar(&header);
     toolbar_view.add_top_bar(scan_progress.widget());
     toolbar_view.set_content(Some(track_list.widget()));
 
@@ -451,6 +450,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
     header.pack_end(&info_panel.toggle_button());
+    let library_chrome = super::library_chrome::build(&header, &split_view);
     {
         let info_panel = Rc::downgrade(&info_panel);
         track_list.set_on_selection_changed(move |context| {
@@ -462,7 +462,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     info_panel.arm_smoke(&track_list);
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
-        &split_view,
+        library_chrome.root.upcast_ref(),
         player.as_ref().map(|player| &player.compact_player),
         conn,
         initial_view,
@@ -518,6 +518,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             }),
         },
     );
+    header.pack_end(&search_entry);
     cover_batch.start_if_enabled();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view);
@@ -593,7 +594,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         });
     }
 
-    window.set_content(Some(&split_view));
+    window.set_content(Some(&library_chrome.root));
 
     let search_restore_guard = super::view_session::new_search_restore_guard();
     super::view_session::wire_search(
