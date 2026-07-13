@@ -28,10 +28,14 @@ impl PreferencesContext {
                 }
             }
             let equalizer_rows = self.equalizer_controls.borrow().clone();
+            let equalizer_surfaces = self.equalizer_surfaces.borrow().clone();
             let replaygain_mode = self.replaygain_mode.borrow().clone();
             self.syncing_effect_controls.set(true);
             for row in equalizer_rows {
                 row.set_active(active.equalizer_enabled);
+            }
+            for surface in equalizer_surfaces {
+                surface.set_sensitive(active.equalizer_enabled);
             }
             if let Some(row) = replaygain_mode {
                 row.set_selected(replay_gain_index(active.replay_gain));
@@ -51,9 +55,13 @@ impl PreferencesContext {
             return;
         }
         let rows = self.equalizer_controls.borrow().clone();
+        let surfaces = self.equalizer_surfaces.borrow().clone();
         self.syncing_effect_controls.set(true);
         for row in rows {
             row.set_active(active);
+        }
+        for surface in surfaces {
+            surface.set_sensitive(active);
         }
         self.syncing_effect_controls.set(false);
         self.apply_audio_effects();
