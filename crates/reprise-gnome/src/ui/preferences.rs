@@ -15,6 +15,7 @@ use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::cover_download_batch::CoverDownloadBatch;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::preference_playback::build_equalizer_surface;
 use crate::ui::preference_plugins::{plugin_applies_live, plugin_description, plugin_title};
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::status_bar::StatusBar;
@@ -150,6 +151,7 @@ pub(super) struct PreferencesContext {
     pub(super) player: Option<Rc<PlayerController>>,
     pub(super) syncing_effect_controls: Cell<bool>,
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
+    pub(super) equalizer_surfaces: RefCell<Vec<gtk4::Widget>>,
     pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
     pub(super) cover_batch: Rc<CoverDownloadBatch>,
     pub(super) listenbrainz: Rc<ScrobbleRuntime>,
@@ -194,6 +196,7 @@ impl PreferencesContext {
             player: player.cloned(),
             syncing_effect_controls: Cell::new(false),
             equalizer_controls: RefCell::new(Vec::new()),
+            equalizer_surfaces: RefCell::new(Vec::new()),
             replaygain_mode: RefCell::new(None),
             cover_batch: cover_batch.clone(),
             listenbrainz: listenbrainz.clone(),
@@ -247,6 +250,7 @@ impl PreferencesContext {
             return;
         }
         self.equalizer_controls.borrow_mut().clear();
+        self.equalizer_surfaces.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
         use super::preferences_window::{PageId, PAGE_ORDER};
         let pages = PAGE_ORDER.map(|id| {
@@ -493,11 +497,6 @@ impl PreferencesContext {
     }
 
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        const BAND_LABELS: [&str; 10] = [
-            "31 Hz", "62 Hz", "125 Hz", "250 Hz", "500 Hz", "1 kHz", "2 kHz", "4 kHz", "8 kHz",
-            "16 kHz",
-        ];
-
         let page = adw::PreferencesPage::builder()
             .title(strings::text(strings::PREFERENCES_PLAYBACK))
             .icon_name("audio-speakers-symbolic")
@@ -544,39 +543,34 @@ impl PreferencesContext {
         equalizer.add(&preset);
 
         let updating_preset = Rc::new(Cell::new(false));
-        let mut scales = Vec::with_capacity(BAND_LABELS.len());
-        for (index, label) in BAND_LABELS.into_iter().enumerate() {
-            let row = adw::ActionRow::builder().title(label).build();
-            let scale = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, -12.0, 12.0, 1.0);
-            scale.set_width_request(220);
-            scale.set_value(stored_bands[index]);
-            scale.set_digits(0);
-            scale.set_draw_value(true);
-            let weak = Rc::downgrade(self);
-            let preset = preset.clone();
-            let updating = updating_preset.clone();
-            scale.connect_value_changed(move |scale| {
-                if updating.get() {
-                    return;
-                }
-                let Some(context) = weak.upgrade() else {
-                    return;
-                };
-                updating.set(true);
-                preset.set_selected(gtk4::INVALID_LIST_POSITION);
-                updating.set(false);
-                let mut bands = settings::get_equalizer_bands(&context.conn.borrow());
-                bands[index] = scale.value();
-                if let Err(error) = settings::set_equalizer_bands(&context.conn.borrow(), bands) {
-                    tracing::warn!(%error, "could not save equalizer bands");
-                    return;
-                }
-                context.apply_audio_effects();
-            });
-            row.add_suffix(&scale);
-            equalizer.add(&row);
-            scales.push(scale);
-        }
+        let weak = Rc::downgrade(self);
+        let preset_for_band = preset.clone();
+        let updating_for_band = updating_preset.clone();
+        let on_band_changed: Rc<dyn Fn(usize, f64)> = Rc::new(move |index, value| {
+            if updating_for_band.get() {
+                return;
+            }
+            let Some(context) = weak.upgrade() else {
+                return;
+            };
+            updating_for_band.set(true);
+            preset_for_band.set_selected(gtk4::INVALID_LIST_POSITION);
+            updating_for_band.set(false);
+            let mut bands = settings::get_equalizer_bands(&context.conn.borrow());
+            bands[index] = value;
+            if let Err(error) = settings::set_equalizer_bands(&context.conn.borrow(), bands) {
+                tracing::warn!(%error, "could not save equalizer bands");
+                return;
+            }
+            context.apply_audio_effects();
+        });
+        let surface = build_equalizer_surface(stored_bands, equalizer_enabled, &on_band_changed);
+        let scales = surface.scales.clone();
+        self.equalizer_surfaces
+            .borrow_mut()
+            .push(surface.root.clone().upcast());
+        equalizer.add(&surface.root);
+
         let weak = Rc::downgrade(self);
         let updating = updating_preset.clone();
         preset.connect_selected_notify(move |row| {
