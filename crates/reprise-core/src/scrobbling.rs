@@ -9,6 +9,7 @@
 use std::time::Duration;
 use std::{io::Read, io::Take};
 
+use rusqlite::{params, Connection};
 use serde::Serialize;
 
 const LISTENBRAINZ_API_ROOT: &str = "https://api.listenbrainz.org";
@@ -77,6 +78,16 @@ pub enum TransportError {
     InvalidMetadata(#[from] MetadataError),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum QueueError {
+    #[error("database error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("invalid listen metadata: {0}")]
+    InvalidMetadata(#[from] MetadataError),
+    #[error("database returned an invalid pending-listen count")]
+    InvalidCount,
+}
+
 pub trait ScrobblerTransport: Send + 'static {
     fn validate_token(&self, token: &str) -> Result<String, TransportError>;
     fn playing_now(&self, token: &str, track: &TrackMetadata) -> Result<(), TransportError>;
@@ -92,6 +103,82 @@ pub fn should_scrobble(position_ms: i64, duration_ms: i64) -> bool {
     let half_duration = duration_ms / 2 + duration_ms % 2;
     let threshold = half_duration.min(FOUR_MINUTES_MS);
     position_ms >= threshold
+}
+
+/// Adds one completed playback session to the durable FIFO. The caller may
+/// safely request a worker flush only after this transaction has returned.
+pub fn enqueue(conn: &Connection, listen: &Listen) -> Result<i64, QueueError> {
+    listen.track.validate()?;
+    let release_name = listen
+        .track
+        .release_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|release| !release.is_empty());
+    conn.execute(
+        "INSERT INTO listenbrainz_queue \
+         (listened_at, artist_name, track_name, release_name, duration_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            listen.listened_at,
+            listen.track.artist_name.trim(),
+            listen.track.track_name.trim(),
+            release_name,
+            listen.track.duration_ms.max(0),
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Returns at most one ListenBrainz API batch in stable FIFO order.
+pub fn pending(conn: &Connection, limit: usize) -> Result<Vec<Listen>, QueueError> {
+    let limit = limit.min(MAX_LISTENS_PER_REQUEST);
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let mut statement = conn.prepare(
+        "SELECT id, listened_at, artist_name, track_name, release_name, duration_ms \
+         FROM listenbrainz_queue ORDER BY id ASC LIMIT ?1",
+    )?;
+    let rows = statement.query_map(params![limit as i64], |row| {
+        Ok(Listen {
+            id: Some(row.get(0)?),
+            listened_at: row.get(1)?,
+            track: TrackMetadata {
+                artist_name: row.get(2)?,
+                track_name: row.get(3)?,
+                release_name: row.get(4)?,
+                duration_ms: row.get(5)?,
+            },
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(QueueError::from)
+}
+
+/// Atomically removes only rows included in a confirmed API submission.
+pub fn acknowledge(conn: &Connection, ids: &[i64]) -> Result<(), QueueError> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    for id in ids {
+        transaction.execute("DELETE FROM listenbrainz_queue WHERE id = ?1", params![id])?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+pub fn clear_pending(conn: &Connection) -> Result<usize, QueueError> {
+    conn.execute("DELETE FROM listenbrainz_queue", [])
+        .map_err(QueueError::from)
+}
+
+pub fn pending_count(conn: &Connection) -> Result<usize, QueueError> {
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM listenbrainz_queue", [], |row| {
+        row.get(0)
+    })?;
+    usize::try_from(count).map_err(|_| QueueError::InvalidCount)
 }
 
 #[derive(Serialize)]
@@ -433,5 +520,100 @@ mod tests {
             ListenBrainzClient::classify_status(400),
             TransportError::Rejected(400)
         );
+    }
+
+    fn migrated_conn() -> rusqlite::Connection {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn enqueue_rejects_missing_required_metadata() {
+        let conn = migrated_conn();
+        let mut invalid = listen();
+        invalid.track.artist_name.clear();
+        assert!(matches!(
+            enqueue(&conn, &invalid),
+            Err(QueueError::InvalidMetadata(MetadataError::MissingArtist))
+        ));
+        assert_eq!(pending_count(&conn).unwrap(), 0);
+    }
+
+    #[test]
+    fn pending_returns_fifo_order_with_local_ids() {
+        let conn = migrated_conn();
+        let mut first = listen();
+        first.listened_at = 10;
+        first.track.track_name = "First".to_string();
+        let mut second = listen();
+        second.listened_at = 20;
+        second.track.track_name = "Second".to_string();
+        let first_id = enqueue(&conn, &first).unwrap();
+        let second_id = enqueue(&conn, &second).unwrap();
+
+        let queued = pending(&conn, 100).unwrap();
+        assert_eq!(
+            queued.iter().map(|listen| listen.id).collect::<Vec<_>>(),
+            vec![Some(first_id), Some(second_id)]
+        );
+        assert_eq!(queued[0].track.track_name, "First");
+        assert_eq!(queued[1].track.track_name, "Second");
+    }
+
+    #[test]
+    fn pending_clamps_batch_to_listenbrainz_maximum() {
+        let conn = migrated_conn();
+        for timestamp in 0..1_005 {
+            let mut item = listen();
+            item.listened_at = timestamp;
+            enqueue(&conn, &item).unwrap();
+        }
+        assert_eq!(pending(&conn, usize::MAX).unwrap().len(), 1_000);
+        assert!(pending(&conn, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn acknowledge_deletes_only_confirmed_ids() {
+        let conn = migrated_conn();
+        let first = enqueue(&conn, &listen()).unwrap();
+        let second = enqueue(&conn, &listen()).unwrap();
+        let third = enqueue(&conn, &listen()).unwrap();
+
+        acknowledge(&conn, &[first, third]).unwrap();
+
+        let queued = pending(&conn, 100).unwrap();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].id, Some(second));
+    }
+
+    #[test]
+    fn queue_survives_database_reopen() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("library.db");
+        {
+            let conn = crate::db::open(Some(&path)).unwrap();
+            crate::db::migrate(&conn).unwrap();
+            enqueue(&conn, &listen()).unwrap();
+        }
+        let conn = crate::db::open(Some(&path)).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        assert_eq!(pending(&conn, 100).unwrap(), vec![listen_with_id(1)]);
+    }
+
+    #[test]
+    fn clear_pending_returns_deleted_count() {
+        let conn = migrated_conn();
+        enqueue(&conn, &listen()).unwrap();
+        enqueue(&conn, &listen()).unwrap();
+        assert_eq!(clear_pending(&conn).unwrap(), 2);
+        assert_eq!(clear_pending(&conn).unwrap(), 0);
+        assert_eq!(pending_count(&conn).unwrap(), 0);
+    }
+
+    fn listen_with_id(id: i64) -> Listen {
+        let mut item = listen();
+        item.id = Some(id);
+        item
     }
 }
