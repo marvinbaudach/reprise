@@ -25,6 +25,9 @@ Stellen von der Referenz ab:
   der Headerbar. Textknöpfe dominieren stärker als die eigentliche Quelle.
 - Die drei Browse-Felder wachsen auf sehr breiten Fenstern unnötig weit und
   wirken dadurch wie ein zweiter Header statt wie ein optionaler Filter.
+- Die im Referenz-Mockup 7e vorgesehene rechte Informationsspalte fehlt. Damit
+  besitzen lokale Kontextinformationen und aktivierte Plugin-Inhalte keinen
+  ruhigen, dauerhaft erreichbaren Ort neben der Trackliste.
 - Zähler in der Sidebar sind typografisch schwach vom Eintragsnamen getrennt.
 - Der Preferences-Dialog zeigt fünf gleichrangige Bereiche in einer unteren
   Leiste. Auf langen Seiten verdeckt diese Leiste Inhalt; auf kurzen Seiten
@@ -49,6 +52,9 @@ Stellen von der Referenz ab:
 5. **Adaptiv, nicht abgeschnitten.** Breite Fenster nutzen horizontale
    Anordnung. Bei schmaler Geometrie umbrechen oder kollabieren Bedienelemente,
    ohne Trackdaten, Dialognavigation oder Aktionsknöpfe zu überdecken.
+6. **Kontext statt Dashboard.** Die rechte Spalte erklärt die aktuelle Auswahl
+   und zeigt dazu passende Beiträge aktivierter Module. Sie wird keine zweite
+   Navigation, kein Webfeed und keine Ansammlung globaler Einstellungswidgets.
 
 ## Bibliotheksansicht
 
@@ -59,14 +65,14 @@ Die bestehende `AdwNavigationSplitView`-, `AdwToolbarView`- und
 Queries, Queue noch Playbackzustand.
 
 ```text
-┌ Sidebar ───────┬ Header: Suche        Musik        [Kompakt] [Scan] [Menü] ┐
-│ BIBLIOTHEK     ├ Filter:  Genre       Interpret       Album                │
-│  Musik     504 │ Titel      Interpret      Album        Jahr  Länge  ★     │
-│  Queue      12 │ …                                                       │
-│ PLAYLISTEN     │ …                                                       │
-│  Training  48  │ …                                                       │
-│ INTELLIGENT    ├──────────────────────── 504 Titel · 1 Tag, 8 Std. ────────┤
-└────────────────┴ Playerleiste: Cover · Metadaten · Transport · Lautstärke ┘
+┌ Sidebar ────┬ Header: Suche     Musik      [Info] [Kompakt] [Scan] [Menü] ┐
+│ BIBLIOTHEK  ├ Filter: Genre       Interpret       Album          ┬ Info  × │
+│ Musik   504 │ Titel    Interpret    Album    Jahr  Länge  ★      │ Cover   │
+│ Queue    12 │ …                                                  │ Titel   │
+│ PLAYLISTEN  │ …                                                  │ Artist  │
+│ Training 48 │ …                                                  │─────────│
+│ INTELLIGENT ├──────────────── 504 Titel · 1 Tag, 8 Std. ─────────┤ Plugin  │
+└─────────────┴ Playerleiste: Cover · Metadaten · Transport ───────┴─────────┘
 ```
 
 ### Headerbar
@@ -76,8 +82,9 @@ Queries, Queue noch Playbackzustand.
   fokussierbar.
 - Der aktuelle Quelltitel bleibt zentriert und ist der einzige hervorgehobene
   Text in der Headerbar.
-- Rechts folgen der im Kompaktplayer-Plan definierte direkt sichtbare
-  Kompaktknopf, ein icon-only Scan-Knopf mit Tooltip und das Hauptmenü.
+- Rechts folgen der Informationsspalten-Schalter, der im Kompaktplayer-Plan
+  definierte direkt sichtbare Kompaktknopf, ein icon-only Scan-Knopf mit
+  Tooltip und das Hauptmenü.
 - „Playlist importieren…“ liegt im Hauptmenü. Es bleibt eine globale Aktion,
   wird aber nicht dauerhaft als großer Textknopf gezeigt.
 - Der Scan-Knopf bleibt sichtbar, weil Bibliothekspflege eine häufige und bei
@@ -121,6 +128,51 @@ Queries, Queue noch Playbackzustand.
   nachträglich zu vergrößern.
 - Der Spalteneditor bleibt über das Listenmenü und die Layout-Einstellungen
   erreichbar. Diese Etappe ändert keine Sortier-, Drag- oder Bewertungslogik.
+
+### Rechte Kontext- und Pluginspalte
+
+Die rechte Spalte ist ein verschließbares `AdwOverlaySplitView` mit
+`sidebar-position=end`, verschachtelt innerhalb des bestehenden Content-Panes.
+Damit bleiben die linke Navigation und die rechte Information unabhängig:
+links wechselt der Nutzer die Quelle, rechts betrachtet er Kontext derselben
+Quelle.
+
+- Ab ungefähr 1.180 Pixel Fensterbreite ist die 320–380 Pixel breite Spalte
+  angeheftet und verkleinert die Trackliste. Unterhalb davon öffnet sie als
+  native Overlay-Seitenleiste über dem Content. Unter ungefähr 720 Pixel ist
+  sie standardmäßig geschlossen, bleibt aber über den Headerknopf erreichbar.
+- Der Headerknopf zeigt und verbirgt die Spalte. Die Auswahl wird unter
+  `ui.info_panel_visible` sofort persistiert; Standard ist sichtbar. Eine
+  schmale Fenstergeometrie darf den gespeicherten Wunsch für den nächsten
+  breiten Start nicht überschreiben.
+- Die Spalte besitzt eine kleine eigene Headerbar „Information“ mit
+  Schließen-Knopf und darunter genau einen vertikalen Scrollbereich. Beim
+  Schließen oder Größenwechsel gehen Kontext und Pluginzustand nicht verloren.
+- Ein einzelner ausgewählter Track bestimmt den lokalen Kopf: Cover, Titel,
+  Interpret und Album. Ohne Auswahl wird der aktuell geladene Track verwendet.
+  Bei Mehrfachauswahl zeigt der Kopf nur Anzahl und gemeinsame Aktionsebene;
+  uneinheitliche Metadaten werden nicht erfunden. Wenn weder Auswahl noch
+  aktueller Track existiert, fordert eine ruhige Statusseite zum Auswählen auf.
+- Unter dem lokalen Kopf folgen Karten aktivierter Module, sofern sie für den
+  aktuellen Kontext Inhalt liefern. Beispiele sind Coverdownload-Status,
+  zukünftige Radar-/Interpreteninformationen, Lyrics oder Scrobblerstatus.
+  MPRIS erhält keine Karte, weil seine D-Bus-Bereitschaft keine nützliche
+  trackbezogene Information ist.
+- Die vorhandene Coverdownload-Karte verwendet den bestehenden
+  `CoverDownloadBatch`-Zustand über einen schwachen Subscriber. Sie zeigt
+  geprüft/heruntergeladen/nicht verfügbar und den Default-off-Netzwerkhinweis,
+  startet aber niemals selbst einen Lauf.
+- Modulbeiträge werden in stabiler Prioritätsreihenfolge dargestellt und
+  verschwinden sofort, wenn das Modul deaktiviert wird. Ein fehlerhafter oder
+  leerer Beitrag entfernt nur seine Karte; lokale Metadaten und andere Karten
+  bleiben benutzbar.
+- Onlinebeiträge führen keine Netzwerkanfrage allein durch das Öffnen der
+  Spalte aus. Sie verwenden ausschließlich Cache und Laufzeit eines bewusst
+  aktivierten Moduls. Links öffnen sich über den bestehenden sicheren
+  Desktop-/Portalpfad, niemals in einem eingebetteten WebView.
+- Das Panel besitzt keine eigene Trackauswahl und verändert weder Queue noch
+  Playback. Aktionen innerhalb einer Modulkarte rufen ausschließlich den
+  vorhandenen Controller beziehungsweise Modul-Callback auf.
 
 ### Sidebar und Status
 
@@ -185,9 +237,9 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
   Auswahlkarten. Jede Vorschau enthält Sidebar, Contentfläche und einen klaren
   Balken an der entsprechenden Kante. „Unten“ bleibt Standard. Die verworfene
   schwebende Variante kehrt nicht zurück.
-- Gruppe „Bibliotheksfenster“ enthält Schalter für Sidebar, Browse-Leiste und
-  Statuszeile sowie die Dichteauswahl. Die Begriffe beschreiben sichtbar genau
-  die Elemente des Hauptfensters.
+- Gruppe „Bibliotheksfenster“ enthält Schalter für Sidebar, Browse-Leiste,
+  Informationsspalte und Statuszeile sowie die Dichteauswahl. Die Begriffe
+  beschreiben sichtbar genau die Elemente des Hauptfensters.
 - Gruppe „Spalten“ zeigt die aktuell sichtbaren Spalten in der Subtitle-Zeile
   und öffnet denselben vorhandenen Spalteneditor. Keine zweite
   Spaltenkonfiguration wird aufgebaut.
@@ -212,13 +264,15 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
 ### Plugins
 
 - Eine einleitende Beschreibung erklärt, dass Plugins optionale Integrationen
-  sind und feste Playbackfunktionen nicht hier erscheinen.
+  sind, kontextuelle Karten in der rechten Informationsspalte liefern können
+  und feste Playbackfunktionen nicht hier erscheinen.
 - Jede Integration bleibt eine `AdwSwitchRow` mit Name, kurzer Wirkung und
   gegebenenfalls Neustarthinweis. MPRIS und Coverdownload behalten ihre
   bestehenden Defaultwerte und Lebenszyklen.
 - Laufender Coverdownload-Fortschritt steht direkt unter der zugehörigen Zeile
-  und bleibt beim Seitenwechsel erhalten. Es entsteht kein zweiter Subscriber,
-  solange der vorhandene schwache Subscriber ausreicht.
+  und bleibt beim Seitenwechsel erhalten. Preferences und Informationsspalte
+  abonnieren denselben `CoverDownloadBatch` jeweils schwach; es entsteht weder
+  ein zweiter Zustand noch ein zweiter Worker.
 
 ## Architektur und Dateigrenzen
 
@@ -229,11 +283,19 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
   Fill-/Ellipsierungsregeln landen dort, nicht im Composition Root.
 - `browse_bar.rs` bleibt Eigentümer der kaskadierenden Filter. Eine kleine pure
   Breakpoint-/Layoutentscheidung wird getrennt testbar gehalten.
+- Ein neues `info_panel.rs` besitzt ausschließlich die rechte
+  `AdwOverlaySplitView`-Oberfläche und schwache Kontext-/Modulcallbacks;
+  `info_panel_state.rs` entscheidet Auswahlfallback, Sichtbarkeit,
+  Breakpointmodus und stabile Sektionsreihenfolge ohne GTK.
+- Modulbeiträge verwenden eine kleine frontend-interne, statisch registrierte
+  `InfoPanelSection`-Schnittstelle. Sie ist keine Fremd-Plugin-ABI und reicht
+  keine GTK-Typen in `reprise-core` durch. Modulaktivierung bleibt allein bei
+  `reprise_core::modules`.
 - `preferences.rs` wird in Dialog-Shell, Appearance/Layout und Playback
   aufgeteilt. `preference_library.rs`, `preference_effects.rs` und
   `preference_cover_download.rs` bleiben fokussierte Seitenhelfer.
-- Der neue Browse-Sichtbarkeitswert lebt typisiert in
-  `reprise_core::library::settings`. Core erhält keine GTK-, Adwaita-,
+- Die neuen Browse- und Informationsspalten-Sichtbarkeitswerte leben typisiert
+  in `reprise_core::library::settings`. Core erhält keine GTK-, Adwaita-,
   GStreamer- oder zbus-Abhängigkeit.
 - Die parallele Kompaktplayer-Arbeit ist Merge-Grundlage. Vor der
   Implementierung wird dieser Branch auf deren abgeschlossene Etappe rebased;
@@ -255,18 +317,22 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
 
 ## Tests und Verifikation
 
-- Reine Tests prüfen Browse-Sichtbarkeits-Fallback/Roundtrip, adaptive
-  Browse-Anordnung, Headeraktionsreihenfolge, Spalten-Fillregeln,
+- Reine Tests prüfen Browse-/Informationsspalten-Fallback und Roundtrip,
+  adaptive Browse-/Panel-Anordnung, Kontextfallback Auswahl → aktueller Track →
+  leer, stabile Pluginreihenfolge, Headeraktionsreihenfolge, Spalten-Fillregeln,
   Preferences-Seitenreihenfolge und Auswahl-Rollback.
 - Displaytests prüfen Library bei 1.440, 900 und 640 Pixel Breite: keine
   ungenutzte rechte Tabellenfläche, kein abgeschnittener Header, korrekter
-  Browse-Umbruch und erreichbare Sidebar.
+  Browse-Umbruch sowie erreichbare linke Sidebar und rechte Informationsspalte.
+- Ein Displaytest öffnet die Informationsspalte, wechselt Einzel-, Mehrfach-
+  und keine Auswahl, deaktiviert einen Modulbeitrag und beweist, dass lokale
+  Metadaten, Kartenreihenfolge und Close-/Restore-Zustand korrekt bleiben.
 - Je ein Displaytest prüft breite und schmale Preferences-Navigation, sichere
   Content-Unterkante, die beiden Playerleisten-Vorschauen, alle zehn
   Equalizer-Skalen und Accessible Names.
-- Der vorhandene PTR-Harness nimmt Library sowie alle fünf Preferences-Seiten
-  auf und bedient Scan, Layout, Spalteneditor und Plugin-Schalter über echte
-  Pointer-/Tastaturpfade.
+- Der vorhandene PTR-Harness nimmt Library, geöffnete Informationsspalte sowie
+  alle fünf Preferences-Seiten auf und bedient Paneltoggle, Scan, Layout,
+  Spalteneditor und Plugin-Schalter über echte Pointer-/Tastaturpfade.
 - Vollständige Gates, Rustdoc, gettext-Abdeckung, Core-Purity,
   Releasechecker, isolierte App-Smokes und die 800-Zeilen-Regel bleiben
   verpflichtend.
@@ -284,6 +350,8 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
 
 - Keine Grid-/Albumcover-Bibliothek, Künstlerdetailseite oder neue
   Navigationsquelle.
+- Kein allgemeines Plugin-Dashboard, kein eingebettetes WebView, keine
+  Fremd-Plugin-Widget-ABI und kein Netzwerkladen nur durch Öffnen des Panels.
 - Kein frei gestaltbares Theme, keine benutzerdefinierten Farben, keine
   Transparenz, kein Blur und keine schwebende Playerleiste.
 - Keine neue Queue-, Sortier-, Browse-, Such-, Tag-, Datei- oder
