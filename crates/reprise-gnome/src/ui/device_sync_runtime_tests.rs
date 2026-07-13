@@ -33,13 +33,23 @@ struct FakeState {
 struct FakeBackend {
     state: Rc<FakeState>,
     delay_ms: u64,
+    available_bytes: Option<u64>,
 }
 
 impl FakeBackend {
     fn new(devices: Vec<DeviceDescriptor>, delay_ms: u64) -> Self {
         let state = Rc::new(FakeState::default());
         state.devices.replace(devices);
-        Self { state, delay_ms }
+        Self {
+            state,
+            delay_ms,
+            available_bytes: Some(1_000_000),
+        }
+    }
+
+    fn with_available_bytes(mut self, available_bytes: Option<u64>) -> Self {
+        self.available_bytes = available_bytes;
+        self
     }
 
     fn set_devices(&self, devices: &[DeviceDescriptor]) {
@@ -61,7 +71,8 @@ impl DeviceBackend for FakeBackend {
     }
 
     fn inspect(&self, _root_uri: String) -> TestFuture<(DeviceContents, Option<u64>)> {
-        Box::pin(async { Ok((DeviceContents::default(), Some(1_000_000))) })
+        let available_bytes = self.available_bytes;
+        Box::pin(async move { Ok((DeviceContents::default(), available_bytes)) })
     }
 
     fn copy_track(
@@ -373,6 +384,74 @@ fn invalid_device_or_empty_resolution_is_rejected_without_a_job() {
             runtime.enqueue("a", "A", &[1, 999]),
             Err(EnqueueError::NoUsableTracks)
         ));
+    });
+}
+
+#[test]
+fn known_insufficient_space_rejects_the_job_before_copying() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(
+            FakeBackend::new(vec![descriptor("a", true)], 1).with_available_bytes(Some(150)),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        assert_eq!(
+            runtime.enqueue("a", "Too Large", &[1, 2]),
+            Err(EnqueueError::InsufficientSpace {
+                required_bytes: 200,
+                available_bytes: 150,
+            })
+        );
+        settle().await;
+        assert!(backend.state.copy_order.borrow().is_empty());
+        assert_eq!(snapshot(&runtime, "a").phase, SyncPhase::Idle);
+        assert_eq!(snapshot(&runtime, "a").queued_jobs, 0);
+    });
+}
+
+#[test]
+fn queued_jobs_reserve_space_for_later_actions_on_the_same_device() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(
+            FakeBackend::new(vec![descriptor("a", true)], 20).with_available_bytes(Some(150)),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.enqueue("a", "First", &[1]).unwrap();
+        assert_eq!(
+            runtime.enqueue("a", "Second", &[2]),
+            Err(EnqueueError::InsufficientSpace {
+                required_bytes: 100,
+                available_bytes: 50,
+            })
+        );
+        settle().await;
+        assert_eq!(backend.state.copy_order.borrow().len(), 1);
+    });
+}
+
+#[test]
+fn cancelling_a_job_releases_its_reserved_space() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(
+            FakeBackend::new(vec![descriptor("a", true)], 20).with_available_bytes(Some(150)),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.enqueue("a", "Cancel", &[1]).unwrap();
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        runtime.cancel_current("a");
+        settle().await;
+
+        assert_eq!(runtime.enqueue("a", "After Cancel", &[2]), Ok(1));
+        settle().await;
+        assert_eq!(snapshot(&runtime, "a").phase, SyncPhase::Complete);
     });
 }
 

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-13 23:59+0200\n"
+"POT-Creation-Date: 2026-07-14 00:19+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -1084,7 +1084,7 @@ msgstr ""
 "Sie es erneut"
 
 #: crates/reprise-gnome/src/ui/strings.rs:691
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:120
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:121
 #, rust-format
 msgid "{count} track"
 msgid_plural "{count} tracks"
@@ -1242,78 +1242,91 @@ msgid "Refresh Device Music"
 msgstr "Gerätemusik aktualisieren"
 
 #: crates/reprise-gnome/src/ui/device_sync_strings.rs:41
+msgid "Not Enough Space on Device"
+msgstr "Nicht genügend Speicherplatz auf dem Gerät"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:42
 msgid "Synchronization Progress"
 msgstr "Synchronisierungsfortschritt"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:42
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:43
 msgid "Cancel Current Copy"
 msgstr "Aktuellen Kopiervorgang abbrechen"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:43
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:44
 msgid "Preparing copy…"
 msgstr "Kopiervorgang wird vorbereitet…"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:44
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:45
 msgid "Paused — reconnect the device to continue"
 msgstr "Pausiert — verbinde das Gerät erneut, um fortzufahren"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:45
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:46
 msgid "Cancelling current copy…"
 msgstr "Aktueller Kopiervorgang wird abgebrochen…"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:46
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:47
 msgid "Synchronization complete"
 msgstr "Synchronisierung abgeschlossen"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:47
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:48
 msgid "Synchronization failed"
 msgstr "Synchronisierung fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:48
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:49
 msgid "Ready to synchronize"
 msgstr "Bereit zum Synchronisieren"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:49
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:50
 msgid "Current file"
 msgstr "Aktuelle Datei"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:50
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:51
 msgid "Overall progress"
 msgstr "Gesamtfortschritt"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:57
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:58
 #, rust-format
 msgid "{size} available"
 msgstr "{size} verfügbar"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:65
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:66
 #, rust-format
 msgid "{state} · {space}"
 msgstr "{state} · {space}"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:80
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:81
 #, rust-format
 msgid "{completed} of {total} tracks"
 msgstr "{completed} von {total} Titeln"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:88
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:89
 #, rust-format
 msgid "{count} job waiting"
 msgid_plural "{count} jobs waiting"
 msgstr[0] "{count} Auftrag wartet"
 msgstr[1] "{count} Aufträge warten"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:97
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:98
 #, rust-format
 msgid "{copied} copied · {skipped} skipped · {failed} failed"
 msgstr "{copied} kopiert · {skipped} übersprungen · {failed} fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:110
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:111
 #, rust-format
 msgid "{count} track queued · job {position}"
 msgid_plural "{count} tracks queued · job {position}"
 msgstr[0] "{count} Titel eingereiht · Auftrag {position}"
 msgstr[1] "{count} Titel eingereiht · Auftrag {position}"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:136
+#, rust-format
+msgid ""
+"This copy needs {required}, but only {available} is available for this "
+"action. Free some space or select fewer tracks."
+msgstr ""
+"Dieser Kopiervorgang benötigt {required}, für diese Aktion sind jedoch nur "
+"{available} verfügbar. Gib Speicherplatz frei oder wähle weniger Titel aus."
 
 #: crates/reprise-gnome/src/ui/preference_visual_strings.rs:11
 msgid "Player Bar"

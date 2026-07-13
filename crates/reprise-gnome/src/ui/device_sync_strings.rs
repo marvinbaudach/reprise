@@ -38,6 +38,7 @@ pub const NEW_PHONE_PLAYLIST: &str = N_!("New Phone Playlist");
 pub const PLAYLIST_NAME: &str = N_!("Playlist name");
 pub const CREATE: &str = N_!("Create");
 pub const REFRESH_DEVICE: &str = N_!("Refresh Device Music");
+pub const NOT_ENOUGH_SPACE: &str = N_!("Not Enough Space on Device");
 pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
 pub const CANCEL_CURRENT: &str = N_!("Cancel Current Copy");
 pub const PREPARING: &str = N_!("Preparing copy…");
@@ -128,6 +129,15 @@ pub fn file_size(bytes: u64) -> String {
     format_bytes(bytes)
 }
 
+pub fn insufficient_space_description(required_bytes: u64, available_bytes: u64) -> String {
+    let required = format_bytes(required_bytes);
+    let available = format_bytes(available_bytes);
+    formatted(
+        N_!("This copy needs {required}, but only {available} is available for this action. Free some space or select fewer tracks."),
+        &[("required", &required), ("available", &available)],
+    )
+}
+
 fn format_bytes(bytes: u64) -> String {
     const KIB: f64 = 1_024.0;
     const MIB: f64 = KIB * 1_024.0;
@@ -166,5 +176,13 @@ mod tests {
     #[test]
     fn disconnected_device_does_not_claim_stale_available_space() {
         assert_eq!(device_subtitle(false, Some(1_024)), "Disconnected");
+    }
+
+    #[test]
+    fn insufficient_space_copy_reports_required_and_available_sizes() {
+        assert_eq!(
+            insufficient_space_description(2_048, 1_024),
+            "This copy needs 2.0 KiB, but only 1.0 KiB is available for this action. Free some space or select fewer tracks."
+        );
     }
 }
