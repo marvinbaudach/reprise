@@ -27,10 +27,7 @@ fn plural(singular: &str, plural: &str, count: usize, values: &[(&str, &str)]) -
 
 pub const APP_NAME: &str = N_!("Reprise");
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
-pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
-pub const ONBOARDING_COVERS: &str = N_!("Download missing album covers");
-pub const ONBOARDING_COVERS_SUBTITLE: &str =
-    N_!("Uses MusicBrainz and Cover Art Archive only when enabled");
+pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
     N_!("Rhythmbox was found. Choose what Reprise should import.");
@@ -95,8 +92,6 @@ pub const REPLAYGAIN_ALBUM: &str = N_!("Per Album");
 pub const AUDIO_EFFECTS_FAILED: &str = N_!("Could not apply audio effects");
 pub const PLUGIN_MPRIS_DESCRIPTION: &str =
     N_!("GNOME media controls, media keys, and lock-screen integration (D-Bus)");
-pub const PLUGIN_COVER_DESCRIPTION: &str =
-    N_!("Download missing album covers from Cover Art Archive (network; off by default)");
 pub const PLUGIN_LISTENBRAINZ_DESCRIPTION: &str =
     N_!("Scrobble completed listens to ListenBrainz (network; off by default)");
 pub const PLUGIN_LASTFM_DESCRIPTION: &str =
@@ -230,7 +225,6 @@ fn news_timestamp_date(timestamp: i64) -> String {
 }
 pub const COVER_DOWNLOAD_CHECKING: &str = N_!("Checking missing album covers…");
 pub const COVER_DOWNLOAD_COMPLETE: &str = N_!("Cover check complete");
-pub const COVER_DOWNLOAD_STOPPED: &str = N_!("Cover check stopped");
 pub const COVER_DOWNLOAD_FAILED: &str = N_!("Could not check album covers");
 
 pub fn cover_download_progress(
@@ -257,7 +251,6 @@ pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
 pub const RESTART_REQUIRED: &str = N_!("Restart required");
-pub const DOWNLOAD_MISSING_COVERS: &str = N_!("Download missing album covers");
 pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");

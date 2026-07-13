@@ -47,9 +47,8 @@ them only after an explicit tag-edit action. Removing a track from the library
 does not remove its file; moving a file to Trash always requires confirmation
 and has no permanent-delete fallback.
 
-Online cover lookup is disabled by default. When enabled explicitly, Reprise
-sends album/artist metadata queries to MusicBrainz and downloads matching images
-from Cover Art Archive.
+Reprise automatically sends album/artist metadata queries to MusicBrainz for
+missing covers and downloads conservative matches from Cover Art Archive.
 
 ListenBrainz scrobbling is also disabled by default. After you connect an account,
 Reprise sends artist, title, optional release, duration, and the listen start time
@@ -107,7 +106,7 @@ prefix.
 ## Build the Flatpak
 
 The local manifest uses GNOME 50, builds Cargo dependencies offline from pinned
-checksums, and grants only display, graphics, audio, opt-in cover-network, and
+checksums, and grants only display, graphics, audio, automatic cover-network, and
 the application's own MPRIS permissions.
 
 ```sh

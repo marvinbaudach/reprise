@@ -27,7 +27,7 @@ successor. Three-crate Cargo workspace:
    locally.
 
 The **current work plan** is the newest file in `docs/superpowers/plans/`. Right now that is
-`docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md` (GUI-A2: opt-in online album-cover
+`docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md` (GUI-A2: automatic online album-cover
 download, 7 tasks). Each plan has a matching design spec in `docs/superpowers/specs/`.
 
 ## Coordinating two agents (Claude ⇄ Codex) — READ FIRST
@@ -117,7 +117,7 @@ Done: MVP (playback, MPRIS, library organize) · Refactor (3-crate split, core m
 dependency-pure) · **GUI-A** (album covers in list + bar, Now-Playing full view, cover in
 track-change notification) — final review READY TO MERGE.
 
-In progress: **GUI-A2** (opt-in online album-cover download via Cover Art Archive — the current
+In progress: **GUI-A2** (automatic online album-cover download via Cover Art Archive — the current
 plan).
 
 Next: **GUI-B** (tag editor with **multi-select batch edit** — mixed fields show

@@ -25,7 +25,6 @@ fn presentation(progress: BatchProgress) -> ProgressPresentation {
         BatchState::Idle => "".to_string(),
         BatchState::Running => strings::text(strings::COVER_DOWNLOAD_CHECKING),
         BatchState::Complete => strings::text(strings::COVER_DOWNLOAD_COMPLETE),
-        BatchState::Stopped => strings::text(strings::COVER_DOWNLOAD_STOPPED),
         BatchState::Failed => strings::text(strings::COVER_DOWNLOAD_FAILED),
     };
     ProgressPresentation {
@@ -38,15 +37,12 @@ fn presentation(progress: BatchProgress) -> ProgressPresentation {
             progress.unavailable,
         ),
         fraction: progress.fraction().clamp(0.0, 1.0),
-        auto_hide: matches!(
-            progress.state,
-            BatchState::Complete | BatchState::Stopped | BatchState::Failed
-        ),
+        auto_hide: matches!(progress.state, BatchState::Complete | BatchState::Failed),
     }
 }
 
-/// Compact main-window projection of the shared cover batch state. Preferences
-/// retain terminal results; this surface acknowledges them briefly, then hides.
+/// Compact main-window projection of the shared cover batch state. Terminal
+/// results remain visible briefly and then hide automatically.
 #[derive(Clone)]
 struct MainCoverProgressView {
     revealer: gtk4::Revealer,
@@ -158,7 +154,7 @@ pub(super) fn install(
     batch.subscribe_progress(|| true, move |progress| view.apply(progress));
 
     let batch = batch.clone();
-    scan_controls.set_on_complete(move || batch.start_if_enabled());
+    scan_controls.set_on_complete(move || batch.start());
 }
 
 #[cfg(test)]
@@ -197,7 +193,6 @@ mod tests {
     fn terminal_states_stay_visible_briefly_and_clamp_fraction() {
         for (state, expected_title) in [
             (BatchState::Complete, "Cover check complete"),
-            (BatchState::Stopped, "Cover check stopped"),
             (BatchState::Failed, "Could not check album covers"),
         ] {
             let state = presentation(BatchProgress {
