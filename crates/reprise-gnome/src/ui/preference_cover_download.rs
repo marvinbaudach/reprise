@@ -49,11 +49,12 @@ impl PreferencesContext {
         let widgets = build_progress_widgets();
         let row = widgets.row.downgrade();
         let progress = widgets.progress.downgrade();
-        self.cover_batch.set_on_progress(move |state| {
+        self.cover_batch.subscribe_progress(move |state| {
             let (Some(row), Some(progress)) = (row.upgrade(), progress.upgrade()) else {
-                return;
+                return false;
             };
             apply_progress(&CoverProgressWidgets { row, progress }, state);
+            true
         });
         group.add(&widgets.row);
     }
