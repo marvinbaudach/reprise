@@ -22,20 +22,20 @@ local/gitignored; THIS file is the shared, versioned summary.)
 
 ```
 OWNER:    codex           # FREE | claude | codex
-TASK:     Replace browse dropdowns with unified chip filter bar
+TASK:     Preserve window controls when system decorations are unavailable
 SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: Codex claimed the lock for the unified chip filter bar._
+_As of 2026-07-13: Codex claimed the lock for the system-decoration fallback fix._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md` (4 tasks).
-- **Last completed:** **Preferences and sidebar visibility polish** (`beca64c`) — preferences stay
-  within the source-size gate and sidebar collapse remains focus-safe across window modes.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-one-time-rhythmbox-import.md` (2 tasks).
+- **Last completed:** **Compact playback equalizer** (`fe2fc01`, merged as `9f01272`) — the ten
+  separate settings rows are one scrollable native equalizer surface with truthful disabled state.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `beca64c`.
+- **Main implementation:** `fe2fc01`.
 
 ## Done so far (compact)
 
@@ -120,6 +120,14 @@ _As of 2026-07-13: Codex claimed the lock for the unified chip filter bar._
 - ✅ **Confirmed playlist deletion**: manual playlist rows offer a destructive, translated
   right-click action; deletion is DB-only, keeps all tracks, compacts remaining positions, and
   safely returns an open deleted playlist to Music with real-pointer regression coverage.
+- ✅ **Unified chip filter bar**: the three persistent facet searches are replaced by wrapping,
+  removable Genre/Artist/Album chips, a two-step add popover with one temporary value search,
+  exact live result counts, and one reset action while preserving cascade and session behavior.
+- ✅ **One-time Rhythmbox import**: detection and explicit column-layout selection live only in
+  initial setup; the persistent main menu and Preferences no longer expose a later import path.
+- ✅ **Compact playback equalizer**: Enable and Preset remain native settings rows while ten
+  accessible vertical scales share one horizontally scrollable card with live dB labels and
+  synchronized preset, persistence, backend-failure, and disabled-state behavior.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
@@ -128,7 +136,7 @@ _As of 2026-07-13: Codex claimed the lock for the unified chip filter bar._
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines) and `strings.rs` (797 lines) are edge-tight — their next edits
+- `scrobbling.rs` (795 lines) and `strings.rs` (790 lines) are edge-tight — their next edits
   must extract cohesive sibling modules rather than adding inline logic. Compact, rating,
   column-header, and playlist-delete pointer flows are extracted siblings so
   `scripts/ptr-e2e/run.sh` remains at 732 lines.

@@ -28,9 +28,12 @@ fn plural(singular: &str, plural: &str, count: usize, values: &[(&str, &str)]) -
 pub const APP_NAME: &str = N_!("Reprise");
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
-pub const ONBOARDING_RHYTHMBOX_FOUND: &str = N_!("Rhythmbox found");
-pub const ONBOARDING_RHYTHMBOX_FOUND_SUBTITLE: &str =
-    N_!("Import its column layout without changing Rhythmbox settings");
+pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
+pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
+    N_!("Rhythmbox was found. Choose what Reprise should import.");
+pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT: &str = N_!("Column layout");
+pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT_SUBTITLE: &str =
+    N_!("Read the layout without changing Rhythmbox settings");
 pub const ONBOARDING_SKIP: &str = N_!("Skip for Now");
 pub const ONBOARDING_SET_UP: &str = N_!("Set Up Library");
 pub const MAIN_MENU: &str = N_!("Main menu");
@@ -248,7 +251,6 @@ pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
 pub const RESTART_REQUIRED: &str = N_!("Restart required");
-pub const IMPORT_RHYTHMBOX_COLUMNS: &str = N_!("Import Rhythmbox column layout");
 pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");
@@ -281,15 +283,6 @@ pub const TAG_NUMBER_ERROR: &str = N_!("Year and track number must be positive w
 pub const TAG_EDIT_DATABASE_UNAVAILABLE: &str =
     N_!("Could not open the library database for tag editing");
 pub const TAG_EDIT_WORKER_FAILED: &str = N_!("Could not start the tag-edit worker");
-pub const BROWSE_GENRE: &str = N_!("Genre");
-pub const BROWSE_ARTIST: &str = N_!("Artist");
-pub const BROWSE_ALBUM: &str = N_!("Album");
-pub const ALL_GENRES: &str = N_!("All genres");
-pub const ALL_ARTISTS: &str = N_!("All artists");
-pub const ALL_ALBUMS: &str = N_!("All albums");
-pub const UNKNOWN_GENRE: &str = N_!("Unknown genre");
-pub const UNKNOWN_ARTIST: &str = N_!("Unknown artist");
-pub const UNKNOWN_ALBUM: &str = N_!("Unknown album");
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");
 pub const DELETE_TRACKS_HEADING: &str = N_!("Remove Selected Tracks?");
