@@ -165,6 +165,10 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
+    let device_sync = super::device_sync_runtime::DeviceSyncRuntime::new(
+        conn,
+        reprise_platform_linux::device_sync::DeviceMonitor::new(),
+    );
 
     let player = match PlayerController::new(
         conn.clone(),
@@ -530,6 +534,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &lastfm,
         &artist_news,
         &decorations,
+        &device_sync,
     );
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();

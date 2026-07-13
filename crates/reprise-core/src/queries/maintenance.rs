@@ -3,6 +3,10 @@
 //! former single-file `queries.rs` (Refactoring & Extensibility Task 1) — a
 //! pure move, no behavior change.
 
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+use crate::device_sync::SyncTrack;
 use crate::library::playlists;
 use rusqlite::{Connection, OptionalExtension};
 
@@ -35,6 +39,60 @@ pub fn query_track_summary(
         },
     )
     .optional()
+}
+
+/// Resolves a drag payload into copy-ready tracks without trusting stale UI
+/// metadata. Input order is preserved, repeated ids are emitted once, and
+/// rows that are unknown, marked missing, or no longer regular local files
+/// are omitted. The file size is read at enqueue time so progress totals
+/// describe the bytes that will actually be copied.
+pub fn query_sync_tracks(
+    conn: &Connection,
+    ids: &[i64],
+) -> Result<Vec<SyncTrack>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT path,title,artist,duration_ms FROM tracks WHERE id = ?1 AND missing = 0",
+    )?;
+    let mut seen = HashSet::new();
+    let mut tracks = Vec::with_capacity(ids.len());
+    for &id in ids {
+        if !seen.insert(id) {
+            continue;
+        }
+        let row = statement
+            .query_row(rusqlite::params![id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .optional()?;
+        let Some((path, title, artist, duration_ms)) = row else {
+            continue;
+        };
+        let source_path = PathBuf::from(path);
+        let Ok(metadata) = source_path.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let Some(original_name) = source_path.file_name() else {
+            continue;
+        };
+        tracks.push(SyncTrack {
+            id,
+            source_path: source_path.clone(),
+            original_name: original_name.to_string_lossy().into_owned(),
+            title,
+            artist,
+            duration_ms,
+            size_bytes: metadata.len(),
+        });
+    }
+    Ok(tracks)
 }
 
 /// Marks track `track_id` as missing (Stage 2 Task 5: a physically deleted
