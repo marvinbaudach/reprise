@@ -1,13 +1,5 @@
 //! Pure current-track and active-line state for the Lyrics surface.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the state is connected to widgets and playback in the planned integration task"
-    )
-)]
-
 use reprise_core::lyrics::{active_line_index, LyricsBody, LyricsQuery};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

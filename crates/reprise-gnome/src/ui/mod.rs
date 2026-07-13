@@ -68,6 +68,7 @@ mod player_bar_seek;
 mod player_bar_state;
 pub mod player_controller;
 pub mod player_controller_wiring;
+mod player_lyrics;
 mod playlist_import_navigation;
 pub mod playlist_io;
 mod playlist_io_names;
@@ -128,3 +129,6 @@ mod window_smoke;
 
 #[cfg(test)]
 mod lyrics_view_tests;
+
+#[cfg(test)]
+mod player_lyrics_tests;

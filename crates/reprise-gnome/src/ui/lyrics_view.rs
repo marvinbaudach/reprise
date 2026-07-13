@@ -1,13 +1,5 @@
 //! Lyrics presentation and active-line scrolling.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the view is inserted into the Information panel in the planned integration task"
-    )
-)]
-
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -22,6 +14,7 @@ const LOADING_PAGE: &str = "loading";
 const STATUS_PAGE: &str = "status";
 
 type RetryCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+type StatusCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 pub(super) struct LyricsView {
     root: gtk4::Stack,
@@ -32,7 +25,10 @@ pub(super) struct LyricsView {
     retry: gtk4::Button,
     line_labels: RefCell<Vec<gtk4::Label>>,
     active_line: Cell<Option<usize>>,
+    loading: Cell<bool>,
+    can_retry: Cell<bool>,
     on_retry: RetryCallback,
+    on_status_changed: StatusCallback,
 }
 
 impl LyricsView {
@@ -110,7 +106,10 @@ impl LyricsView {
             retry,
             line_labels: RefCell::new(Vec::new()),
             active_line: Cell::new(None),
+            loading: Cell::new(false),
+            can_retry: Cell::new(false),
             on_retry,
+            on_status_changed: Rc::new(RefCell::new(None)),
         });
         view.show_empty();
         view
@@ -133,6 +132,7 @@ impl LyricsView {
         self.loading_track
             .set_text(&format!("{}\n{}", title.trim(), artist.trim()));
         self.root.set_visible_child_name(LOADING_PAGE);
+        self.set_feedback(true, false);
     }
 
     pub(super) fn show_result(&self, body: &LyricsBody) {
@@ -143,10 +143,12 @@ impl LyricsView {
                     self.append_line(&line.text, true);
                 }
                 self.root.set_visible_child_name(CONTENT_PAGE);
+                self.set_feedback(false, false);
             }
             LyricsBody::Plain(text) => {
                 self.append_line(text, false);
                 self.root.set_visible_child_name(CONTENT_PAGE);
+                self.set_feedback(false, false);
             }
             LyricsBody::Instrumental => {
                 self.show_status(&lyrics_strings::text(lyrics_strings::INSTRUMENTAL), false);
@@ -193,6 +195,25 @@ impl LyricsView {
         *self.on_retry.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(super) fn retry(&self) {
+        let callback = self.on_retry.borrow().clone();
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
+
+    pub(super) fn set_on_status_changed(&self, callback: impl Fn() + 'static) {
+        *self.on_status_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(super) fn is_loading(&self) -> bool {
+        self.loading.get()
+    }
+
+    pub(super) fn can_retry(&self) -> bool {
+        self.can_retry.get()
+    }
+
     fn append_line(&self, text: &str, timed: bool) {
         let label = gtk4::Label::builder()
             .label(text)
@@ -219,6 +240,19 @@ impl LyricsView {
         self.status.set_text(message);
         self.retry.set_visible(retry);
         self.root.set_visible_child_name(STATUS_PAGE);
+        self.set_feedback(false, retry);
+    }
+
+    fn set_feedback(&self, loading: bool, can_retry: bool) {
+        let loading_changed = self.loading.replace(loading) != loading;
+        let retry_changed = self.can_retry.replace(can_retry) != can_retry;
+        if !loading_changed && !retry_changed {
+            return;
+        }
+        let callback = self.on_status_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback();
+        }
     }
 
     fn scroll_to_label(&self, label: &gtk4::Label) {

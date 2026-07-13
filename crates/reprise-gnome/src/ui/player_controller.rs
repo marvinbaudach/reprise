@@ -174,6 +174,7 @@ use crate::ui::now_playing::NowPlayingView;
 use crate::ui::now_playing_wiring;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
+use crate::ui::player_lyrics::{start_track_for_lyrics, PlayerLyrics};
 use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
 use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
 use reprise_core::queries;
@@ -295,6 +296,10 @@ pub struct PlayerController {
     /// See `now_playing_wiring.rs`'s module doc for the construction/wiring
     /// and the `sync_*` fan-out that feeds both widgets from one call site.
     pub(super) now_playing_view: NowPlayingView,
+    /// Shared off-main lyrics runtime and weak target for the Information
+    /// panel's Lyrics page. Playback position is fanned into this same owner;
+    /// it never starts a second timer.
+    pub(super) lyrics: Rc<PlayerLyrics>,
     /// Generation token for the Now-Playing page's cover widget — separate
     /// from `bar_cover_generation` because the page loads `ThumbnailSize::
     /// Full` while the bar loads `ThumbnailSize::Bar`; each widget must only
@@ -414,6 +419,7 @@ impl PlayerController {
             bar_cover_generation: Rc::new(Cell::new(0)),
             compact_cover_generation: Rc::new(Cell::new(0)),
             now_playing_view: NowPlayingView::new(),
+            lyrics: PlayerLyrics::new(),
             now_playing_cover_generation: Rc::new(Cell::new(0)),
             application: {
                 let weak = glib::WeakRef::new();
@@ -527,6 +533,7 @@ impl PlayerController {
     /// and `playback_faults.rs` can call it too.
     pub(super) fn play_track_id(&self, id: i64) {
         self.evaluate_play_tracking();
+        self.sync_lyrics_track(None);
 
         let summary = {
             let conn = self.conn.borrow();
@@ -573,8 +580,9 @@ impl PlayerController {
                         &summary.path,
                     );
                 }
-                match self.player.play(&summary.path) {
-                    Ok(()) => {
+                match start_track_for_lyrics(self.player.as_ref(), &summary) {
+                    Ok(lyrics_query) => {
+                        self.sync_lyrics_track(Some(lyrics_query));
                         tracing::info!(
                             track_id = id,
                             from_up_next = self.current_up_next.get() == Some(id),
