@@ -130,7 +130,6 @@ pub fn set_player_bar_position(
     set_setting(conn, PLAYER_BAR_POSITION_KEY, value)
 }
 
-pub const COLOR_SCHEME_KEY: &str = "ui.color_scheme";
 pub const LIST_DENSITY_KEY: &str = "ui.list_density";
 pub const SIDEBAR_VISIBLE_KEY: &str = "ui.sidebar_visible";
 pub const BROWSE_VISIBLE_KEY: &str = "ui.browse_visible";
@@ -142,13 +141,6 @@ pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
 pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColorScheme {
-    System,
-    Light,
-    Dark,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListDensity {
@@ -260,27 +252,6 @@ pub fn set_window_decoration_mode(
         WindowDecorationMode::System => "system",
     };
     set_setting(conn, WINDOW_DECORATION_MODE_KEY, value)
-}
-
-pub fn get_color_scheme(conn: &Connection) -> ColorScheme {
-    match typed_value(conn, COLOR_SCHEME_KEY, "system").as_str() {
-        "light" => ColorScheme::Light,
-        "dark" => ColorScheme::Dark,
-        "system" => ColorScheme::System,
-        value => {
-            tracing::warn!(value, "unrecognized color scheme; using System");
-            ColorScheme::System
-        }
-    }
-}
-
-pub fn set_color_scheme(conn: &Connection, value: ColorScheme) -> Result<(), rusqlite::Error> {
-    let value = match value {
-        ColorScheme::System => "system",
-        ColorScheme::Light => "light",
-        ColorScheme::Dark => "dark",
-    };
-    set_setting(conn, COLOR_SCHEME_KEY, value)
 }
 
 pub fn get_list_density(conn: &Connection) -> ListDensity {
@@ -537,9 +508,8 @@ mod tests {
     }
 
     #[test]
-    fn appearance_preferences_default_to_system_standard_and_visible() {
+    fn layout_preferences_default_to_standard_and_visible() {
         let conn = migrated_conn();
-        assert_eq!(get_color_scheme(&conn), ColorScheme::System);
         assert_eq!(get_list_density(&conn), ListDensity::Standard);
         assert!(get_sidebar_visible(&conn));
         assert!(get_status_visible(&conn));
@@ -580,13 +550,11 @@ mod tests {
     }
 
     #[test]
-    fn appearance_preferences_round_trip_every_variant() {
+    fn layout_preferences_round_trip() {
         let conn = migrated_conn();
-        set_color_scheme(&conn, ColorScheme::Dark).unwrap();
         set_list_density(&conn, ListDensity::Compact).unwrap();
         set_sidebar_visible(&conn, false).unwrap();
         set_status_visible(&conn, false).unwrap();
-        assert_eq!(get_color_scheme(&conn), ColorScheme::Dark);
         assert_eq!(get_list_density(&conn), ListDensity::Compact);
         assert!(!get_sidebar_visible(&conn));
         assert!(!get_status_visible(&conn));
@@ -615,10 +583,8 @@ mod tests {
     #[test]
     fn unknown_typed_preferences_fall_back_safely() {
         let conn = migrated_conn();
-        set_setting(&conn, COLOR_SCHEME_KEY, "neon").unwrap();
         set_setting(&conn, LIST_DENSITY_KEY, "microscopic").unwrap();
         set_setting(&conn, REPLAY_GAIN_MODE_KEY, "loudest").unwrap();
-        assert_eq!(get_color_scheme(&conn), ColorScheme::System);
         assert_eq!(get_list_density(&conn), ListDensity::Standard);
         assert_eq!(get_replay_gain_mode(&conn), ReplayGainMode::Off);
     }
