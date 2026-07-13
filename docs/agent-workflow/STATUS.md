@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge Artist & Album News information panel
+SINCE:    2026-07-13 14:09 CEST
 ```
 
-_As of 2026-07-13: ListenBrainz scrobbling is complete, merged, and the lock is released._
+_As of 2026-07-13 14:09 CEST: Codex claimed the lock to merge the isolated Artist & Album News branch._
 
 ## Current position
 
