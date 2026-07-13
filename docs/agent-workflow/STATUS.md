@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge feature/lastfm
+SINCE:    2026-07-13 14:46 CEST
 ```
 
-_As of 2026-07-13: Artist & Album News is complete, merged, and the lock is released._
+_As of 2026-07-13: Codex is merging the completed Last.fm feature branch._
 
 ## Current position
 
