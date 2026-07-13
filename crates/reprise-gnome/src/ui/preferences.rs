@@ -12,6 +12,7 @@ use reprise_core::library::settings::{
 use rusqlite::Connection;
 
 use crate::ui::cover_download_batch::CoverDownloadBatch;
+use crate::ui::listenbrainz_runtime::ListenBrainzRuntime;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
@@ -23,12 +24,13 @@ const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-hei
      .reprise-density-compact columnview row { min-height: 28px; }";
 
 fn plugin_applies_live(id: &str) -> bool {
-    id == "cover_download"
+    matches!(id, "cover_download" | "listenbrainz")
 }
 
 fn plugin_title(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
     let message = match descriptor.id {
         "cover_download" => strings::DOWNLOAD_MISSING_COVERS,
+        "listenbrainz" => strings::LISTENBRAINZ,
         _ => return descriptor.name.to_string(),
     };
     strings::text(message)
@@ -38,6 +40,7 @@ fn plugin_description(descriptor: &reprise_core::modules::ModuleDescriptor) -> S
     let message = match descriptor.id {
         "mpris" => strings::PLUGIN_MPRIS_DESCRIPTION,
         "cover_download" => strings::PLUGIN_COVER_DESCRIPTION,
+        "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
         _ => return descriptor.description.to_string(),
     };
     strings::text(message)
@@ -168,6 +171,9 @@ pub(super) struct PreferencesContext {
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
     pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
     pub(super) cover_batch: Rc<CoverDownloadBatch>,
+    pub(super) listenbrainz: Rc<ListenBrainzRuntime>,
+    pub(super) syncing_listenbrainz: Cell<bool>,
+    pub(super) listenbrainz_activation_pending: Cell<bool>,
     on_minimal: Rc<dyn Fn()>,
 }
 
@@ -184,6 +190,7 @@ impl PreferencesContext {
         scan_button: &gtk4::Button,
         player: Option<&Rc<PlayerController>>,
         cover_batch: &Rc<CoverDownloadBatch>,
+        listenbrainz: &Rc<ListenBrainzRuntime>,
         on_minimal: impl Fn() + 'static,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
@@ -201,6 +208,9 @@ impl PreferencesContext {
             equalizer_controls: RefCell::new(Vec::new()),
             replaygain_mode: RefCell::new(None),
             cover_batch: cover_batch.clone(),
+            listenbrainz: listenbrainz.clone(),
+            syncing_listenbrainz: Cell::new(false),
+            listenbrainz_activation_pending: Cell::new(false),
             on_minimal: Rc::new(on_minimal),
         });
         let weak = Rc::downgrade(&context);
@@ -631,6 +641,8 @@ impl PreferencesContext {
                     {
                         action.change_state(&active.to_variant());
                     }
+                } else if descriptor.id == "listenbrainz" {
+                    context.change_listenbrainz_activation(row, active);
                 } else if let Err(error) =
                     reprise_core::modules::set_enabled(&context.conn.borrow(), descriptor, active)
                 {
@@ -640,6 +652,8 @@ impl PreferencesContext {
             group.add(&row);
             if descriptor.id == "cover_download" {
                 self.add_cover_download_progress(&group);
+            } else if descriptor.id == "listenbrainz" {
+                self.add_listenbrainz_account(&group, &row);
             }
         }
         page.add(&group);
@@ -675,6 +689,7 @@ mod tests {
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {
         assert!(plugin_applies_live("cover_download"));
+        assert!(plugin_applies_live("listenbrainz"));
         assert!(!plugin_applies_live("equalizer"));
         assert!(!plugin_applies_live("replaygain"));
         assert!(!plugin_applies_live("mpris"));
