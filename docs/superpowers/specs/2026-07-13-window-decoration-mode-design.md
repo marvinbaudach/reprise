@@ -53,13 +53,16 @@ das `AdwApplicationWindow`, die Library-`AdwHeaderBar`, alle kompakten
 `AdwHeaderBar`s und die Pill-`GtkWindowControls`. Es kapselt die Projektion des
 persistierten Modus:
 
-- `Client`: `window.decorated = false`, interne Header-Titelknöpfe sichtbar,
-  Pill-WindowControls sichtbar;
-- `System`: `window.decorated = true`, interne Header-Titelknöpfe verborgen,
-  Pill-WindowControls verborgen.
+- `Client`: GTKs eigener dekorierbarer CSD-/Resize-Rahmen bleibt aktiv, der
+  realisierte `GdkToplevel` fordert keine Desktop-Dekoration an, interne
+  Header-Titelknöpfe und Pill-WindowControls sind sichtbar;
+- `System`: der realisierte `GdkToplevel` fordert Desktop-Dekorationen an,
+  interne Header-Titelknöpfe und Pill-WindowControls sind verborgen.
 
-Damit signalisiert Reprise im CSD-Modus, dass es den Rahmen selbst zeichnet,
-und fordert im Systemmodus Dekorationen vom Desktop an. Die App-Toolbar bleibt
+Der GTK-`decorated`-Zustand bleibt in beiden Modi aktiv, damit CSD-Schatten und
+Resize-Ränder nicht verloren gehen. Der gezielte GDK-Hinweis signalisiert im
+CSD-Modus, dass Reprise den Rahmen selbst zeichnet, und fordert im Systemmodus
+Dekorationen vom Desktop an. Die App-Toolbar bleibt
 in beiden Modi als flache Inhalts- und Drag-Leiste erhalten; im Systemmodus ist
 sie keine zweite Fensterbedienung.
 

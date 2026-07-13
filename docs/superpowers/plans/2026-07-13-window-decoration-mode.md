@@ -67,9 +67,10 @@ pub(super) fn mode_index(mode: WindowDecorationMode) -> u32;
 ```
 
 RED: Zuerst reine Index-Tests und einen ignorierten Displaytest anlegen. Der
-Displaytest baut Library-Header plus alle Compact-Dekorationsformen, wendet beide
-Modi an und fordert die exakten `decorated`-, Title-Button- und WindowControls-
-Zustände. Tests gezielt ausführen und den erwarteten Compile-/Assertionsfehler
+Displaytest baut Library-Header plus alle Compact-Dekorationsformen, realisiert
+das Fenster, wendet beide Modi an und fordert die exakten GDK-Toplevel-,
+GTK-Resize-, Title-Button- und WindowControls-Zustände. Tests gezielt ausführen
+und den erwarteten Compile-/Assertionsfehler
 sehen. GREEN: Controller, Widgetsammlung und Preference-Row implementieren;
 Startanwendung vor `window.present()`, erfolgreiche Live-Persistenz und
 vollständige gettext-Texte verdrahten. `preferences.rs` und `strings.rs` nicht
