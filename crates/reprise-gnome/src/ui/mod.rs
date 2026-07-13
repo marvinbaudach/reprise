@@ -39,6 +39,7 @@ pub mod dialogs;
 pub mod first_run;
 pub mod import_errors_view;
 mod info_panel;
+mod info_panel_feedback;
 mod info_panel_state;
 mod lastfm_secret;
 mod library_chrome;
