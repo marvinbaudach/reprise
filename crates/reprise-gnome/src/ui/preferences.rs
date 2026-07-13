@@ -6,9 +6,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::library::settings::{
-    self, ColorScheme, ListDensity, PlayerBarPosition, ReplayGainMode,
-};
+use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, ReplayGainMode};
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
@@ -53,13 +51,8 @@ pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
     }
 }
 
-pub(super) fn apply_color_scheme(value: ColorScheme) {
-    let value = match value {
-        ColorScheme::System => adw::ColorScheme::Default,
-        ColorScheme::Light => adw::ColorScheme::ForceLight,
-        ColorScheme::Dark => adw::ColorScheme::ForceDark,
-    };
-    adw::StyleManager::default().set_color_scheme(value);
+fn apply_system_color_scheme() {
+    adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
 }
 
 fn density_class(density: ListDensity) -> &'static str {
@@ -176,18 +169,9 @@ impl PreferencesContext {
     }
 
     fn apply_initial(&self) {
-        let (
-            color_scheme,
-            density,
-            sidebar_visible,
-            browse_visible,
-            info_visible,
-            status_visible,
-            decorations,
-        ) = {
+        let (density, sidebar_visible, browse_visible, info_visible, status_visible, decorations) = {
             let conn = self.conn.borrow();
             (
-                settings::get_color_scheme(&conn),
                 settings::get_list_density(&conn),
                 settings::get_sidebar_visible(&conn),
                 settings::get_browse_visible(&conn),
@@ -196,7 +180,7 @@ impl PreferencesContext {
                 settings::get_window_decoration_mode(&conn),
             )
         };
-        apply_color_scheme(color_scheme);
+        apply_system_color_scheme();
         apply_density(self.track_list.root_widget().upcast_ref(), density);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
@@ -268,7 +252,6 @@ impl PreferencesContext {
 
     fn apply_smoke(&self) {
         let conn = self.conn.borrow();
-        let _ = settings::set_color_scheme(&conn, ColorScheme::Dark);
         let _ = settings::set_list_density(&conn, ListDensity::Compact);
         let _ = settings::set_sidebar_visible(&conn, false);
         let _ = settings::set_browse_visible(&conn, false);
@@ -281,7 +264,7 @@ impl PreferencesContext {
         let _ = settings::set_player_bar_position(&conn, PlayerBarPosition::Top);
         let _ = settings::set_equalizer_bands(&conn, equalizer_preset(1));
         drop(conn);
-        apply_color_scheme(ColorScheme::Dark);
+        apply_system_color_scheme();
         apply_density(
             self.track_list.root_widget().upcast_ref(),
             ListDensity::Compact,
@@ -299,7 +282,7 @@ impl PreferencesContext {
         self.library_player_bar.set_position(PlayerBarPosition::Top);
         self.set_equalizer_enabled(true);
         self.set_replay_gain_mode(ReplayGainMode::Track);
-        tracing::info!("preferences smoke applied appearance, layout, and audio settings");
+        tracing::info!("preferences smoke applied layout and audio settings");
     }
 
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {
@@ -574,5 +557,19 @@ mod tests {
         ] {
             assert!(DENSITY_CSS.contains(density_class(density)));
         }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn appearance_always_restores_the_system_color_scheme() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let style = adw::StyleManager::default();
+        style.set_color_scheme(adw::ColorScheme::ForceDark);
+
+        apply_system_color_scheme();
+
+        assert_eq!(style.color_scheme(), adw::ColorScheme::Default);
     }
 }

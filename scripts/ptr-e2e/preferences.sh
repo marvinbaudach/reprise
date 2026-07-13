@@ -57,15 +57,9 @@ run_preferences_flow() {
 
   screenshot "18-preferences-appearance"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/18-preferences-appearance.png"
-
-  # Appearance is the default page. Exercise the middle Light card and then
-  # restore System so this flow leaves the isolated profile at its default.
-  click_preferences_relative "$preference_window" "$((width / 2))" 176
-  sleep 0.3
-  assert_db_value "ui.color_scheme" "light" "Light appearance card persisted"
-  click_preferences_relative "$preference_window" "$((width / 2 - 180))" 176
-  sleep 0.3
-  assert_db_value "ui.color_scheme" "system" "System appearance card persisted"
+  assert_db_query_true \
+    "SELECT COUNT(*) = 0 FROM settings WHERE key = 'ui.color_scheme';" \
+    "Appearance did not persist a manual color scheme"
 
   # The five native header tabs retain their natural width. Layout is centered
   # slightly left of the window midpoint because the close button occupies the
