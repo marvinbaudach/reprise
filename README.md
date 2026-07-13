@@ -13,7 +13,8 @@ Flathub.
 - Incremental background scanning, live folder watching, and move detection so
   renamed files keep ratings, play counts, playlist membership, and added dates.
 - GStreamer playback with seek, volume, queue, shuffle, repeat, previous/next,
-  automatic advance, and safe skipping of missing or unplayable tracks.
+  automatic advance, safe skipping of missing or unplayable tracks, a live
+  ten-band equalizer with presets, and track/album ReplayGain.
 - GNOME MPRIS integration for media keys, quick settings, notifications, and
   lock-screen controls.
 - Manual and smart playlists, multi-select actions, drag and drop, queue
@@ -24,6 +25,10 @@ Flathub.
 - First-run setup and validated session restore for window, view, filters,
   sorting, and exact queue state, including a default-off import offer when
   Rhythmbox settings are detected. Restoring a session never starts playback.
+- A compact minimal-player window plus native preferences for appearance,
+  player-bar placement, sidebar/status visibility, list density, column layout,
+  library actions, optional modules, and playback effects. Changes persist and
+  apply immediately except MPRIS, whose restart requirement is shown explicitly.
 - Complete English source UI and German gettext translation.
 
 Reprise scans `mp3`, `flac`, `ogg`, `opus`, `m4a`, `aac`, and `wav` files.

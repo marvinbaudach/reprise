@@ -46,3 +46,14 @@ Run release/debug tests, all display tests, isolated minimal/preferences/effects
 smokes and release checker; adversarial review; update README, release/manual QA,
 ledger and STATUS. Commit docs and release lock separately.
 
+### Close-out evidence
+
+- 502 automated tests pass; 5 GTK display-only tests also pass individually under
+  isolated Xvfb.
+- Strict formatting, clippy, Rustdoc, core-purity, gettext, metadata, Flatpak source,
+  file-size and optimized Meson install checks pass through `scripts/check-release.sh`.
+- Isolated runtime smokes prove Full → Minimal → Full and persisted appearance,
+  layout, equalizer Rock preset, and per-track ReplayGain settings with the real
+  GStreamer backend using `fakesink`.
+- Native GNOME rendering/window-manager behavior and audible effects remain honestly
+  assigned to `docs/agent-workflow/MANUAL-QA.md`.

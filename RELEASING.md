@@ -96,6 +96,15 @@ The detailed live ledger of confirmed and pending checks is
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
+- Exercise Minimal View through the menu and Ctrl+M, including playback controls,
+  repeated Full/Minimal transitions, close/reopen, and restoration of the full
+  window geometry. Exercise every Preferences page and restart to verify persisted
+  theme, density, sidebar/status, player-bar position, columns, library root and
+  module states.
+- With disposable tagged audio and real speakers, adjust all equalizer bands and
+  presets while playing, confirm the Plugins and Playback switches stay in sync,
+  then compare ReplayGain Off, Per Track, and Per Album on files containing valid
+  ReplayGain tags.
 - Scan the seven advertised extensions and play representative available codecs
   through real speakers. Verify seek, volume, previous/next, queue, shuffle, and
   repeat without surprise autoplay.

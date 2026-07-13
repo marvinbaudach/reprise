@@ -84,6 +84,36 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] Light and dark appearance, 100% and available HiDPI scale, keyboard navigation,
   pointer, and touch targets remain readable and usable.
 
+## Pending: minimal view and preferences
+
+- [ ] Open Minimal View from the menu and with Ctrl+M. Expected: the existing player
+  bar becomes the compact window content, cover/title/artist and every transport,
+  seek and volume control remain usable, and no second playback state appears.
+- [ ] Toggle Full → Minimal → Full repeatedly, then close once from each mode.
+  Expected: the last full window size/maximized state is restored and is never
+  overwritten by compact geometry. The isolated state and two-transition smokes pass;
+  native window-manager geometry remains pending.
+- [ ] On Appearance and Layout, change System/Light/Dark, player-bar top/bottom,
+  sidebar/status visibility, Comfortable/Standard/Compact density, and column layout.
+  Expected: each applies immediately, survives restart, and remains readable at narrow
+  widths. The isolated smoke persisted and reread every non-column value.
+- [ ] On Library, choose/cancel a disposable folder, rescan it, and invoke Rhythmbox
+  column import. Expected: cancel is harmless and actions use the established safe
+  picker/import paths.
+- [ ] On Plugins, toggle Cover download, Equalizer, and ReplayGain. Expected: live
+  modules apply immediately; Equalizer and ReplayGain remain synchronized with their
+  Playback-page controls. MPRIS clearly says restart required and changes only after
+  restart.
+- [ ] While disposable music plays through real speakers, enable Equalizer, select
+  Flat/Rock/Pop/Bass Boost, and move all ten sliders. Expected: audible changes are
+  immediate, bounded to ±12 dB, persist after restart, and do not interrupt or move
+  playback unexpectedly. The real GStreamer fakesink pipeline and live state/position
+  preservation tests pass; audible confirmation remains pending.
+- [ ] With files containing valid ReplayGain tags, compare Off, Per Track, and Per
+  Album. Expected: normalization mode changes live, album mode is consistent within an
+  album, untagged files remain playable, and the Plugins switch reflects Off versus an
+  enabled mode.
+
 ## Pending: real audio and transport
 
 Use representative available files for FLAC, MP3, Ogg Vorbis, Opus, WAV, M4A/AAC,
