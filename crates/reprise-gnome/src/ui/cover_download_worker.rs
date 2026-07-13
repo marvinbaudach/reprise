@@ -7,12 +7,20 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use reprise_core::cover::{read_cover_tag, CoverTag};
+use reprise_core::cover::{read_cover_tag, resolve_source, CoverTag};
 use reprise_core::cover_download::{album_key, fetch_and_cache};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum DownloadOutcome {
+    AlreadyCovered,
+    Downloaded(PathBuf),
+    Unavailable,
+}
 
 pub struct DownloadRequest {
     pub(super) track_path: String,
-    pub(super) response: async_channel::Sender<Option<PathBuf>>,
+    pub(super) skip_if_covered: bool,
+    pub(super) response: async_channel::Sender<DownloadOutcome>,
 }
 
 #[derive(Clone)]
@@ -46,8 +54,11 @@ pub(super) fn spawn() -> async_channel::Sender<DownloadRequest> {
         .spawn(move || {
             let mut attempted = HashMap::new();
             while let Ok(request) = receiver.recv_blocking() {
-                let tag = read_cover_tag(Path::new(&request.track_path));
-                let result = result_for_tag(tag, &mut attempted);
+                let result = result_for_path(
+                    Path::new(&request.track_path),
+                    request.skip_if_covered,
+                    &mut attempted,
+                );
                 let _ = request.response.try_send(result);
             }
         });
@@ -55,6 +66,21 @@ pub(super) fn spawn() -> async_channel::Sender<DownloadRequest> {
         tracing::warn!(%error, "could not start cover-download worker");
     }
     sender
+}
+
+fn result_for_path(
+    track_path: &Path,
+    skip_if_covered: bool,
+    attempted: &mut HashMap<String, Option<PathBuf>>,
+) -> DownloadOutcome {
+    if skip_if_covered && resolve_source(track_path).is_some() {
+        return DownloadOutcome::AlreadyCovered;
+    }
+    let tag = read_cover_tag(track_path);
+    match result_for_tag(tag, attempted) {
+        Some(path) => DownloadOutcome::Downloaded(path),
+        None => DownloadOutcome::Unavailable,
+    }
 }
 
 fn result_for_tag(
@@ -79,12 +105,45 @@ fn result_for_tag(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::fs;
     use std::path::PathBuf;
 
     use reprise_core::cover::CoverTag;
     use reprise_core::cover_download::album_key;
 
-    use super::result_for_tag;
+    use super::{result_for_path, result_for_tag, DownloadOutcome};
+
+    #[test]
+    fn batch_request_reports_an_existing_folder_cover_without_fetching() {
+        let dir = tempfile::tempdir().unwrap();
+        let track = dir.path().join("track.mp3");
+        fs::write(
+            dir.path().join("cover.jpg"),
+            b"not decoded for source resolution",
+        )
+        .unwrap();
+        let mut attempted = HashMap::new();
+
+        assert_eq!(
+            result_for_path(&track, true, &mut attempted),
+            DownloadOutcome::AlreadyCovered
+        );
+        assert!(attempted.is_empty());
+    }
+
+    #[test]
+    fn batch_request_reports_unavailable_for_missing_tags() {
+        let mut attempted = HashMap::new();
+        assert_eq!(
+            result_for_path(
+                std::path::Path::new("/does/not/exist.mp3"),
+                true,
+                &mut attempted
+            ),
+            DownloadOutcome::Unavailable
+        );
+        assert!(attempted.is_empty());
+    }
 
     #[test]
     fn missing_tags_do_not_create_an_attempted_album() {
