@@ -8,6 +8,8 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+pub use super::playlist_delete::delete;
+
 /// Summary of a manual playlist (name, id, track count).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaylistSummary {
@@ -105,13 +107,6 @@ pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<(), rusqlite::Er
         "UPDATE playlists SET name = ?1 WHERE id = ?2",
         params![name, id],
     )?;
-    Ok(())
-}
-
-/// Deletes a playlist by id. Cascades to all its playlist_tracks rows.
-#[allow(dead_code)]
-pub fn delete(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
-    conn.execute("DELETE FROM playlists WHERE id = ?1", params![id])?;
     Ok(())
 }
 
@@ -666,22 +661,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(name, "New Name");
-    }
-
-    #[test]
-    fn delete_playlist() {
-        let conn = seeded_conn();
-        let id = create(&conn, "To Delete").unwrap();
-        delete(&conn, id).unwrap();
-
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM playlists WHERE id = ?1",
-                params![id],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 0);
     }
 
     #[test]

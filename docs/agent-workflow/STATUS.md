@@ -21,24 +21,23 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Manual Up Next queue and GNOME compact-player redesign
-SINCE:    2026-07-13 19:59 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 19:59 CEST: Codex claimed the lock for the manual Up Next queue and GNOME compact-player redesign._
+_As of 2026-07-13 21:11 CEST: lock released after confirmed playlist deletion passed full QA._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Artist News panel and sidebar joint-review fixes** (`dafde90`) — desktop
-  widths pin Information as a real 340 px column, active requests expose indeterminate progress,
-  invalid refresh states are disabled, and the problem-source separator is no longer selectable.
+- **Last completed:** **Manual Up Next + native Compact redesign QA** (`379490f`) on the feature
+  branch, now integrating the newer confirmed-playlist-deletion main (`d1338a7`).
 - **Current plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md`
-  (implementation and QA complete on `feature/up-next-compact-redesign`; local merge pending).
-- **➡️ NEXT:** merge the completed feature branch locally, release this lock, then hold the joint
-  stage review; do not start another roadmap stage without explicit user direction.
-- **Feature implementation:** `1a2f462`; final QA/documentation follows it.
+  (implementation and feature QA complete; combined-main verification and local merge pending).
+- **➡️ NEXT:** finish combined verification, merge the feature branch locally, release the lock,
+  then hold the joint stage review; do not start another roadmap stage without explicit user direction.
+- **Feature implementation:** `1a2f462`; QA/documentation is `379490f`.
 
 ## Done so far (compact)
 
@@ -110,6 +109,16 @@ _As of 2026-07-13 19:59 CEST: Codex claimed the lock for the manual Up Next queu
   Bar/Cover/Pill/Card use opaque native GTK/libadwaita composition, expose Return to Library only
   through the shared context menu, and change volume in five-percent steps only on declared free
   cover/metadata scroll regions without visible Compact volume controls.
+- ✅ **Stable track-table geometry**: fixed per-column sizing prevents virtualized row contents from
+  changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
+- ✅ **Compact responsive ratings**: the Rating column defaults to a narrow `★ N` popover chooser,
+  promotes to five inline stars when widened, and retains real-pointer write-back regression coverage.
+- ✅ **Column-header visibility menu**: every track header exposes the same native right-click
+  checklist in current column order; fixed columns are visibly disabled, optional visibility is
+  immediately persisted, and editor/import changes keep menu state and ordering synchronized.
+- ✅ **Confirmed playlist deletion**: manual playlist rows offer a destructive, translated
+  right-click action; deletion is DB-only, keeps all tracks, compacts remaining positions, and
+  safely returns an open deleted playlist to Music with real-pointer regression coverage.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
@@ -118,10 +127,10 @@ _As of 2026-07-13 19:59 CEST: Codex claimed the lock for the manual Up Next queu
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines), `strings.rs` (784 lines), and `info_panel.rs` (794 lines)
-  are edge-tight — their next edits must extract cohesive sibling modules rather than
-  adding inline logic. The Compact pointer flow has been extracted from
-  `scripts/ptr-e2e/run.sh`, reducing the runner to 732 lines.
+- `scrobbling.rs` (795 lines) and `strings.rs` (797 lines) are edge-tight — their next edits
+  must extract cohesive sibling modules rather than adding inline logic. Compact, rating,
+  column-header, and playlist-delete pointer flows are extracted siblings so
+  `scripts/ptr-e2e/run.sh` remains at 732 lines.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote

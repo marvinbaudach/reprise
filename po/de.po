@@ -1051,6 +1051,33 @@ msgstr "Wiedergabeliste importieren…"
 msgid "Export playlist…"
 msgstr "Wiedergabeliste exportieren…"
 
+#: crates/reprise-gnome/src/ui/strings.rs:734
+msgid "Delete playlist…"
+msgstr "Wiedergabeliste löschen…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:735
+msgid "Delete Playlist"
+msgstr "Wiedergabeliste löschen"
+
+#: crates/reprise-gnome/src/ui/strings.rs:737
+msgid "The playlist will be deleted. Its tracks will remain in your library."
+msgstr "Die Wiedergabeliste wird gelöscht. Ihre Titel bleiben in der Bibliothek erhalten."
+
+#: crates/reprise-gnome/src/ui/strings.rs:739
+#, rust-format
+msgid "Delete “{name}”?"
+msgstr "„{name}“ löschen?"
+
+#: crates/reprise-gnome/src/ui/strings.rs:742
+#, rust-format
+msgid "Deleted playlist “{name}”"
+msgstr "Wiedergabeliste „{name}“ gelöscht"
+
+#: crates/reprise-gnome/src/ui/strings.rs:745
+#, rust-format
+msgid "Could not delete playlist “{name}”"
+msgstr "Wiedergabeliste „{name}“ konnte nicht gelöscht werden"
+
 #: crates/reprise-gnome/src/ui/strings.rs:674
 msgid "Import Playlist"
 msgstr "Wiedergabeliste importieren"

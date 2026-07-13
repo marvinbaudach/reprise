@@ -264,6 +264,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             cover_download.clone(),
         ))
     };
+    super::column_header_menu::install(&track_list);
     super::current_track_selection::wire(player.as_ref(), &track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
@@ -473,6 +474,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
+    info_panel.retain_for_window(&window);
     let player_bar_widget = player
         .as_ref()
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
