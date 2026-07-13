@@ -29,6 +29,7 @@ mod compact_mode_controls;
 mod compact_player;
 mod compact_player_layouts;
 mod compact_player_menu;
+mod compact_player_scroll;
 mod compact_player_state;
 mod cover_download_batch;
 pub mod cover_download_worker;

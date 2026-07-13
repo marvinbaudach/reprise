@@ -12,6 +12,7 @@ use reprise_core::queue::Repeat;
 
 use super::compact_player_layouts::{self, LayoutMetrics, LayoutWidgets};
 use super::compact_player_menu::{self, CompactMenu};
+use super::compact_player_scroll;
 use super::compact_player_state::{normalized_position, volume_percent, CompactPresentation};
 use super::cover_loader::CoverLoader;
 use super::player_bar::{
@@ -25,7 +26,6 @@ use super::player_bar_seek::{
 use super::strings;
 
 const ZERO_TIME: &str = "0:00";
-type RestoreCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 pub(super) struct CompactPlayer {
     stack: gtk4::Stack,
@@ -39,8 +39,6 @@ pub(super) struct CompactPlayer {
     seek_gestures: RefCell<Vec<gtk4::GestureClick>>,
     last_duration_ms: Cell<i64>,
     updating_shuffle: Rc<Cell<bool>>,
-    updating_volume: Rc<Cell<bool>>,
-    on_restore: RestoreCallback,
 }
 
 #[derive(Clone)]
@@ -100,12 +98,9 @@ impl CompactPlayer {
             seek_gestures: RefCell::new(Vec::new()),
             last_duration_ms: Cell::new(0),
             updating_shuffle: Rc::new(Cell::new(false)),
-            updating_volume: Rc::new(Cell::new(false)),
-            on_restore: Rc::new(RefCell::new(None)),
         };
         compact.wire_cover_mirror();
         compact.wire_menu_openers();
-        compact.wire_restore_buttons();
         compact.set_repeat_indicator(Repeat::Off);
         compact.refresh_sensitivity();
         compact
@@ -153,8 +148,12 @@ impl CompactPlayer {
     }
 
     pub(super) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
-        *self.on_restore.borrow_mut() = Some(callback.clone());
         self.menu.set_on_restore(callback);
+    }
+
+    #[cfg(test)]
+    pub(super) fn activate_restore_for_test(&self) {
+        self.menu.action_group.activate_action("restore", None);
     }
 
     pub(super) fn set_on_layout(&self, callback: Rc<dyn Fn(CompactLayout)>) {
@@ -318,14 +317,6 @@ impl CompactPlayer {
             1.0
         };
         self.presentation.borrow_mut().volume_percent = volume_percent(volume);
-        self.updating_volume.set(true);
-        for view in &self.views {
-            if let Some(button) = &view.volume {
-                button.set_value(volume);
-            }
-        }
-        self.menu.set_volume(volume);
-        self.updating_volume.set(false);
     }
 
     pub(super) fn connect_play_pause(&self, callback: impl Fn() + 'static) {
@@ -383,18 +374,11 @@ impl CompactPlayer {
     pub(super) fn connect_volume_changed(&self, callback: impl Fn(f64) + 'static) {
         let callback = Rc::new(callback);
         for view in &self.views {
-            let Some(volume) = &view.volume else {
-                continue;
-            };
-            let callback = callback.clone();
-            let updating = self.updating_volume.clone();
-            volume.connect_value_changed(move |_, value| {
-                if !updating.get() {
-                    callback(value);
-                }
-            });
+            let presentation = self.presentation.clone();
+            let current: Rc<dyn Fn() -> f64> =
+                Rc::new(move || f64::from(presentation.borrow().volume_percent) / 100.0);
+            compact_player_scroll::install(&view.volume_scroll_region, current, callback.clone());
         }
-        self.menu.set_on_volume(callback);
     }
 
     pub(super) fn connect_seek(&self, callback: impl Fn(i64) + 'static) {
@@ -545,18 +529,6 @@ impl CompactPlayer {
         }
     }
 
-    fn wire_restore_buttons(&self) {
-        for view in &self.views {
-            let callback = self.on_restore.clone();
-            view.restore.connect_clicked(move |_| {
-                let callback = callback.borrow().clone();
-                if let Some(callback) = callback {
-                    callback();
-                }
-            });
-        }
-    }
-
     fn seek_gesture_is_active(&self) -> bool {
         self.seek_gestures
             .borrow()
@@ -579,11 +551,6 @@ impl CompactPlayer {
             view.scale
                 .set_sensitive(presentation.state != PlaybackState::Stopped);
             view.menu
-                .set_sensitive(compact_player_layouts::control_is_sensitive(
-                    compact_player_layouts::ControlRole::WindowAction,
-                    sensitive,
-                ));
-            view.restore
                 .set_sensitive(compact_player_layouts::control_is_sensitive(
                     compact_player_layouts::ControlRole::WindowAction,
                     sensitive,
@@ -614,10 +581,7 @@ fn repeat_steps(current: Repeat, desired: Repeat) -> usize {
 fn is_interactive_descendant(widget: &gtk4::Widget, root: &gtk4::Widget) -> bool {
     let mut current = Some(widget.clone());
     while let Some(widget) = current {
-        if widget.is::<gtk4::Button>()
-            || widget.is::<gtk4::Scale>()
-            || widget.is::<gtk4::ScaleButton>()
-        {
+        if widget.is::<gtk4::Button>() || widget.is::<gtk4::Scale>() {
             return true;
         }
         if widget == *root {
@@ -637,6 +601,7 @@ mod tests {
             return;
         }
         let compact = CompactPlayer::new();
+        compact.connect_volume_changed(|_| {});
         compact.set_layout(layout);
         compact.set_track("Track", "Artist", "Album", Some(2026));
         let view = compact
@@ -666,10 +631,21 @@ mod tests {
             view.menu.tooltip_text().as_deref(),
             Some("Compact player menu")
         );
-        assert_eq!(
-            view.restore.tooltip_text().as_deref(),
-            Some("Return to Library")
-        );
+        assert!(view.volume_scroll_region.parent().is_some());
+        let controllers = view.volume_scroll_region.observe_controllers();
+        let scroll_controllers = (0..controllers.n_items())
+            .filter_map(|position| controllers.item(position))
+            .filter(gtk4::prelude::ObjectExt::is::<gtk4::EventControllerScroll>)
+            .count();
+        assert_eq!(scroll_controllers, 1);
+        assert!(!tree_has(&view.root, &|widget| widget.is::<gtk4::ScaleButton>()));
+        assert!(!tree_has_button_tooltip(&view.root, "Return to Library"));
+        assert!(!tree_has_button_tooltip(&view.root, "Volume"));
+        let actions = compact.menu.action_group.list_actions();
+        assert_eq!(actions.len(), compact_player_menu::MENU_ACTIONS.len());
+        for action in compact_player_menu::MENU_ACTIONS {
+            assert!(compact.menu.action_group.has_action(action));
+        }
         let metrics = compact.metrics();
         let (_, stack_width, _, _) = compact.widget().measure(gtk4::Orientation::Horizontal, -1);
         let (_, stack_height, _, _) = compact
@@ -707,6 +683,8 @@ mod tests {
             metrics.height
         );
         if metrics.direct_shuffle {
+            assert!(view.shuffle.as_ref().unwrap().parent().is_some());
+            assert!(view.repeat.as_ref().unwrap().parent().is_some());
             assert_eq!(
                 view.shuffle.as_ref().unwrap().tooltip_text().as_deref(),
                 Some("Shuffle")
@@ -715,20 +693,15 @@ mod tests {
                 view.repeat.as_ref().unwrap().tooltip_text().as_deref(),
                 Some("Repeat")
             );
-            assert_eq!(
-                view.volume.as_ref().unwrap().tooltip_text().as_deref(),
-                Some("Volume")
-            );
         } else {
             assert!(view.shuffle.is_none());
             assert!(view.repeat.is_none());
-            assert!(view.volume.is_none());
             assert!(compact.menu.action_group.has_action("shuffle"));
             assert!(compact.menu.action_group.has_action("repeat"));
-            assert_eq!(
-                compact.menu.volume.tooltip_text().as_deref(),
-                Some("Volume")
-            );
+        }
+        if layout == CompactLayout::Cover {
+            assert_eq!(view.title.xalign(), 0.5);
+            assert_eq!(view.artist.xalign(), 0.5);
         }
     }
 
@@ -768,5 +741,14 @@ mod tests {
             child = widget.next_sibling();
         }
         false
+    }
+
+    fn tree_has_button_tooltip(root: &gtk4::Widget, tooltip: &str) -> bool {
+        tree_has(root, &|widget| {
+            widget
+                .clone()
+                .downcast::<gtk4::Button>()
+                .is_ok_and(|button| button.tooltip_text().as_deref() == Some(tooltip))
+        })
     }
 }

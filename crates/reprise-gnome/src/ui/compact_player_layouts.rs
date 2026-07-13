@@ -6,13 +6,6 @@ use super::cover_loader::CoverLoader;
 use super::player_bar::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
 use super::strings;
 
-const VOLUME_ICONS: [&str; 4] = [
-    "audio-volume-muted-symbolic",
-    "audio-volume-low-symbolic",
-    "audio-volume-medium-symbolic",
-    "audio-volume-high-symbolic",
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct LayoutMetrics {
     pub(super) width: i32,
@@ -20,7 +13,6 @@ pub(super) struct LayoutMetrics {
     pub(super) separate_header: bool,
     pub(super) direct_shuffle: bool,
     pub(super) direct_repeat: bool,
-    pub(super) direct_volume: bool,
 }
 
 impl LayoutMetrics {
@@ -30,7 +22,6 @@ impl LayoutMetrics {
         separate_header: bool,
         direct_shuffle: bool,
         direct_repeat: bool,
-        direct_volume: bool,
     ) -> Self {
         Self {
             width,
@@ -38,17 +29,16 @@ impl LayoutMetrics {
             separate_header,
             direct_shuffle,
             direct_repeat,
-            direct_volume,
         }
     }
 }
 
 pub(super) const fn metrics(layout: CompactLayout) -> LayoutMetrics {
     match layout {
-        CompactLayout::Bar => LayoutMetrics::new(600, 135, true, true, true, true),
-        CompactLayout::Cover => LayoutMetrics::new(360, 500, true, false, false, false),
-        CompactLayout::Pill => LayoutMetrics::new(620, 82, false, false, false, false),
-        CompactLayout::Card => LayoutMetrics::new(440, 240, true, true, true, true),
+        CompactLayout::Bar => LayoutMetrics::new(680, 180, true, true, true),
+        CompactLayout::Cover => LayoutMetrics::new(380, 560, true, false, false),
+        CompactLayout::Pill => LayoutMetrics::new(720, 96, false, false, false),
+        CompactLayout::Card => LayoutMetrics::new(520, 300, true, false, false),
     }
 }
 
@@ -125,9 +115,8 @@ pub(super) struct LayoutWidgets {
     pub(super) position: gtk4::Label,
     pub(super) duration: gtk4::Label,
     pub(super) scale: gtk4::Scale,
-    pub(super) volume: Option<gtk4::ScaleButton>,
     pub(super) menu: gtk4::Button,
-    pub(super) restore: gtk4::Button,
+    pub(super) volume_scroll_region: gtk4::Widget,
 }
 
 impl LayoutWidgets {
@@ -174,18 +163,9 @@ impl LayoutWidgets {
             strings::PLAYBACK_POSITION,
         ))]);
 
-        let volume = metrics.direct_volume.then(|| {
-            let button = gtk4::ScaleButton::new(0.0, 1.0, 0.05, &VOLUME_ICONS);
-            button.set_value(1.0);
-            button.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
-            button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-                strings::VOLUME,
-            ))]);
-            button
-        });
         let menu = icon_button("open-menu-symbolic", strings::COMPACT_MENU);
-        let restore = icon_button("view-restore-symbolic", strings::RETURN_TO_LIBRARY);
         let placeholder = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let volume_scroll_region = cover.clone().upcast();
 
         Self {
             layout,
@@ -203,9 +183,8 @@ impl LayoutWidgets {
             position,
             duration,
             scale,
-            volume,
             menu,
-            restore,
+            volume_scroll_region,
         }
     }
 }
@@ -220,17 +199,16 @@ pub(super) fn build(layout: CompactLayout) -> LayoutWidgets {
 }
 
 fn build_bar() -> LayoutWidgets {
-    let mut widgets = LayoutWidgets::common(CompactLayout::Bar, 64);
-    let info = metadata_box(&widgets, 150);
+    let mut widgets = LayoutWidgets::common(CompactLayout::Bar, 72);
+    let info = metadata_box(&widgets, 180);
+    widgets.volume_scroll_region = info.clone().upcast();
     let controls = transport_box(&widgets, true);
     let seek = seek_box(&widgets);
     let center = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     center.set_hexpand(true);
     center.append(&controls);
     center.append(&seek);
-    let root = padded_box(gtk4::Orientation::Horizontal, 12);
-    root.set_margin_top(8);
-    root.set_margin_bottom(8);
+    let root = padded_box(gtk4::Orientation::Horizontal, 16);
     root.append(&widgets.cover);
     root.append(&info);
     root.append(&center);
@@ -239,12 +217,17 @@ fn build_bar() -> LayoutWidgets {
 }
 
 fn build_cover() -> LayoutWidgets {
-    let mut widgets = LayoutWidgets::common(CompactLayout::Cover, 280);
-    let info = metadata_box(&widgets, 300);
+    let mut widgets = LayoutWidgets::common(CompactLayout::Cover, 300);
+    let info = metadata_box(&widgets, 320);
+    widgets.title.set_xalign(0.5);
+    widgets.artist.set_xalign(0.5);
+    widgets.album.set_xalign(0.5);
+    widgets.year.set_xalign(0.5);
+    widgets.volume_scroll_region = widgets.cover.clone().upcast();
     let controls = transport_box(&widgets, false);
     controls.set_halign(gtk4::Align::Center);
     let seek = seek_box(&widgets);
-    let root = padded_box(gtk4::Orientation::Vertical, 6);
+    let root = padded_box(gtk4::Orientation::Vertical, 10);
     widgets.cover.set_halign(gtk4::Align::Center);
     root.append(&widgets.cover);
     root.append(&info);
@@ -256,39 +239,40 @@ fn build_cover() -> LayoutWidgets {
 
 fn build_pill() -> LayoutWidgets {
     debug_assert!(is_drag_region("metadata"));
-    let mut widgets = LayoutWidgets::common(CompactLayout::Pill, 50);
-    let info = metadata_box(&widgets, 120);
+    let mut widgets = LayoutWidgets::common(CompactLayout::Pill, 56);
+    let info = metadata_box(&widgets, 160);
+    widgets.volume_scroll_region = info.clone().upcast();
     let handle = gtk4::WindowHandle::new();
     handle.set_child(Some(&info));
     handle.set_hexpand(true);
     let controls = transport_box(&widgets, false);
     let seek = seek_box(&widgets);
-    seek.set_width_request(150);
-    let actions = action_box(&widgets);
-    let root = padded_box(gtk4::Orientation::Horizontal, 8);
+    seek.set_width_request(180);
+    let root = padded_box(gtk4::Orientation::Horizontal, 10);
     root.set_margin_top(8);
     root.set_margin_bottom(8);
     root.append(&widgets.cover);
     root.append(&handle);
     root.append(&controls);
     root.append(&seek);
-    root.append(&actions);
+    root.append(&widgets.menu);
     root.append(&gtk4::WindowControls::new(gtk4::PackType::End));
     widgets.root = with_window_chrome(CompactLayout::Pill, root, &widgets);
     widgets
 }
 
 fn build_card() -> LayoutWidgets {
-    let mut widgets = LayoutWidgets::common(CompactLayout::Card, 132);
-    let info = metadata_box(&widgets, 230);
-    let controls = transport_box(&widgets, true);
+    let mut widgets = LayoutWidgets::common(CompactLayout::Card, 160);
+    let info = metadata_box(&widgets, 260);
+    widgets.volume_scroll_region = info.clone().upcast();
+    let controls = transport_box(&widgets, false);
     let seek = seek_box(&widgets);
-    let right = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    let right = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
     right.set_hexpand(true);
     right.append(&info);
     right.append(&seek);
     right.append(&controls);
-    let root = padded_box(gtk4::Orientation::Horizontal, 12);
+    let root = padded_box(gtk4::Orientation::Horizontal, 16);
     root.append(&widgets.cover);
     root.append(&right);
     widgets.root = with_window_chrome(CompactLayout::Card, root, &widgets);
@@ -314,11 +298,7 @@ fn with_window_chrome(
         &strings::text(strings::APP_NAME),
         &strings::text(subtitle),
     )));
-    header.pack_end(&widgets.restore);
     header.pack_end(&widgets.menu);
-    if let Some(volume) = &widgets.volume {
-        header.pack_end(volume);
-    }
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&content));
@@ -371,16 +351,6 @@ fn seek_box(widgets: &LayoutWidgets) -> gtk4::Box {
     seek
 }
 
-fn action_box(widgets: &LayoutWidgets) -> gtk4::Box {
-    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-    if let Some(volume) = &widgets.volume {
-        actions.append(volume);
-    }
-    actions.append(&widgets.menu);
-    actions.append(&widgets.restore);
-    actions
-}
-
 fn metadata_label(accessible_name: &str) -> gtk4::Label {
     let label = gtk4::Label::new(None);
     label.set_xalign(0.0);
@@ -425,19 +395,19 @@ mod tests {
     fn every_layout_has_exact_metrics_and_direct_controls() {
         assert_eq!(
             metrics(CompactLayout::Bar),
-            LayoutMetrics::new(600, 135, true, true, true, true)
+            LayoutMetrics::new(680, 180, true, true, true)
         );
         assert_eq!(
             metrics(CompactLayout::Cover),
-            LayoutMetrics::new(360, 500, true, false, false, false)
+            LayoutMetrics::new(380, 560, true, false, false)
         );
         assert_eq!(
             metrics(CompactLayout::Pill),
-            LayoutMetrics::new(620, 82, false, false, false, false)
+            LayoutMetrics::new(720, 96, false, false, false)
         );
         assert_eq!(
             metrics(CompactLayout::Card),
-            LayoutMetrics::new(440, 240, true, true, true, true)
+            LayoutMetrics::new(520, 300, true, false, false)
         );
         assert!(!control_is_sensitive(ControlRole::Playback, false));
         assert!(control_is_sensitive(ControlRole::Playback, true));
@@ -494,7 +464,7 @@ mod tests {
     #[test]
     fn pill_marks_only_its_free_metadata_region_as_draggable() {
         assert!(is_drag_region("metadata"));
-        for region in ["cover", "transport", "seek", "menu", "restore"] {
+        for region in ["cover", "transport", "seek", "menu"] {
             assert!(!is_drag_region(region));
         }
     }
