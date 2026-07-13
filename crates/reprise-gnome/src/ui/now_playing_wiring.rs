@@ -113,6 +113,7 @@ impl PlayerController {
 
         let compact_generation = self.compact_cover_generation.get().wrapping_add(1);
         self.compact_cover_generation.set(compact_generation);
+        self.compact_player.set_cover_placeholder();
         self.cover_loader.load_into(
             self.compact_player.cover_image(),
             path,

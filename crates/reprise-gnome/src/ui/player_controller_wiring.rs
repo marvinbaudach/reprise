@@ -145,6 +145,23 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
 
 pub(super) fn wire_compact_controls(controller: &Rc<PlayerController>) {
     let weak = Rc::downgrade(controller);
+    controller
+        .compact_player
+        .set_on_layout(Rc::new(move |layout| {
+            if let Some(controller) = weak.upgrade() {
+                controller.compact_player.set_layout(layout);
+            }
+        }));
+    controller.compact_player.set_on_restore(Rc::new(|| {
+        tracing::debug!("compact restore requested before window mode coordinator is installed");
+    }));
+    controller.compact_player.set_on_preferences(Rc::new(|| {
+        tracing::debug!(
+            "compact preferences requested before window mode coordinator is installed"
+        );
+    }));
+
+    let weak = Rc::downgrade(controller);
     controller.compact_player.connect_play_pause(move || {
         if let Some(controller) = weak.upgrade() {
             controller.toggle_pause();
