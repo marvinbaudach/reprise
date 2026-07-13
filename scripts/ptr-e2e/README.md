@@ -32,6 +32,7 @@ Environment overrides (all optional):
 | `PTR_E2E_SCREEN_RES` | `1600x900x24` | Xvfb resolution. Changing this invalidates the hardcoded click coordinates — see "Known limits" below. |
 | `PTR_E2E_N_TRACKS` | `5` | Number of copies of the core crate's `sine.flac` fixture scanned into the library. |
 | `PTR_E2E_OUT_DIR` | `/tmp/reprise-ptr-e2e` | Where screenshots and the app log are left after the run. Cleared at the start of each run. |
+| `PTR_E2E_PREFERENCES_ONLY` | `0` | Set to `1` to run only the Preferences pointer flow, independently of list geometry. |
 
 Exit code is `0` when every check passes, non-zero otherwise. On any exit
 (pass, fail, or interrupted) the `cleanup()` trap kills the app, openbox, and
@@ -87,9 +88,10 @@ disk except `PTR_E2E_OUT_DIR`.
      metadata changes the private MPRIS volume by exactly five percent while
      leaving paused position unchanged; the same wheel input over seek changes
      neither volume nor position.
-   - **Preferences**: opens the real primary-menu item, visits Layout,
-     Library, Plugins, and Playback, triggers a rescan, and proves selected
-     controls write the expected values to the scratch SQLite database.
+   - **Preferences**: opens the real primary-menu item, exercises the native
+     Appearance and Player Bar cards, visits every top-level page, and proves
+     all four Library Window switches write the expected values to the scratch
+     SQLite database.
 5. Takes a final screenshot and checks it isn't blank/solid-color (pixel
    standard deviation above a threshold), then rejects any application log
    containing GTK/GLib criticals, a Rust panic, or a `RefCell` borrow failure.

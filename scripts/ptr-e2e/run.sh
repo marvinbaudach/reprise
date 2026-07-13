@@ -80,6 +80,7 @@ PTR_E2E_OUT_DIR="${PTR_E2E_OUT_DIR:-/tmp/reprise-ptr-e2e}"
 PTR_E2E_NEWS_ONLY="${PTR_E2E_NEWS_ONLY:-0}"
 PTR_E2E_HEADER_ONLY="${PTR_E2E_HEADER_ONLY:-0}"
 PTR_E2E_PLAYLIST_DELETE_ONLY="${PTR_E2E_PLAYLIST_DELETE_ONLY:-0}"
+PTR_E2E_PREFERENCES_ONLY="${PTR_E2E_PREFERENCES_ONLY:-0}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=artist-news.sh
@@ -92,6 +93,8 @@ source "$REPO_ROOT/scripts/ptr-e2e/rating.sh"
 source "$REPO_ROOT/scripts/ptr-e2e/column-header-menu.sh"
 # shellcheck source=playlist-delete.sh
 source "$REPO_ROOT/scripts/ptr-e2e/playlist-delete.sh"
+# shellcheck source=preferences.sh
+source "$REPO_ROOT/scripts/ptr-e2e/preferences.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
 APP_ID="org.reprise.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
@@ -502,6 +505,14 @@ if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
   exit 0
 fi
 
+if [ "$PTR_E2E_PREFERENCES_ONLY" = "1" ]; then
+  run_preferences_flow
+  assert_log_absent \
+    'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
+    'GTK/GLib critical, panic, or RefCell borrow failure'
+  exit 0
+fi
+
 # --- Flow 1: compact rating click reaches the real popover ------------------
 
 run_rating_flow
@@ -642,78 +653,7 @@ assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Spac
 # --- Flow 5: native Compact layouts, context menu, and scroll volume --------
 
 run_compact_flow
-# --- Flow 6: real Preferences menu item --------------------------------------
-
-log_step "flow 6: Preferences dialog…"
-maximize_window
-click_window_from_right "$PRIMARY_MENU_FROM_RIGHT" 28
-sleep 0.3
-screenshot "17-main-menu"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/17-main-menu.png"
-
-# Preferences is the second row in the primary menu.
-MARKER=$(log_marker)
-key "Home"
-key "Down"
-key "Return"
-sleep 1.5
-assert_log_contains_since "$MARKER" "preferences dialog presented" "primary-menu click opened Preferences"
-screenshot "18-preferences"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/18-preferences.png"
-
-click_at 702 823
-sleep 0.3
-screenshot "19-preferences-layout"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/19-preferences-layout.png"
-click_at 1034 209
-sleep 0.2
-assert_db_value "ui.sidebar_visible" "0" "Layout switch hid the sidebar"
-click_at 1034 264
-sleep 0.2
-assert_db_value "ui.status_visible" "0" "Layout switch hid the status line"
-click_at 804 823
-sleep 0.7
-screenshot "20-preferences-library"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/20-preferences-library.png"
-MARKER=$(log_marker)
-click_at 800 209
-sleep 1.5
-assert_log_contains_since "$MARKER" "scan complete" "Library Preferences triggered a completed rescan"
-click_at 907 823
-sleep 0.3
-screenshot "21-preferences-plugins"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/21-preferences-plugins.png"
-click_at 1011 823
-sleep 0.3
-screenshot "22-preferences-playback"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/22-preferences-playback.png"
-
-# Drive the real Playback controls, then prove the removed duplicate plugin
-# rows cannot mutate either core playback setting.
-click_at 1034 194
-sleep 0.4
-assert_db_value "playback.equalizer_enabled" "1" "Playback switch enabled the equalizer"
-click_at 1000 323
-sleep 0.3
-assert_db_query_true \
-  "SELECT value <> '0,0,0,0,0,0,0,0,0,0' FROM settings WHERE key = 'playback.equalizer_bands';" \
-  "real scale click persisted a non-flat equalizer curve"
-
-click_at 907 823
-sleep 0.7
-click_at 1034 290
-sleep 0.4
-assert_db_value "playback.equalizer_enabled" "1" "Plugins has no duplicate Equalizer switch"
-click_at 1034 345
-sleep 0.4
-assert_db_query_true \
-  "SELECT COUNT(*) = 0 FROM settings WHERE key = 'playback.replay_gain_mode';" \
-  "Plugins has no duplicate ReplayGain switch"
-
-click_at 1011 823
-sleep 0.7
-screenshot "23-preferences-synchronized"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/23-preferences-synchronized.png"
+run_preferences_flow
 
 # --- Final screenshot ---------------------------------------------------------
 
