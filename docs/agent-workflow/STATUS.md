@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Add confirmed playlist deletion to the sidebar context menu
+SINCE:    2026-07-13 20:53 CEST
 ```
 
-_As of 2026-07-13 20:51 CEST: lock released after the column-header visibility menu passed full QA._
+_As of 2026-07-13 20:53 CEST: Codex is adding safe playlist deletion to the sidebar context menu._
 
 ## Current position
 
