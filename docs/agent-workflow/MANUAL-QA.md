@@ -183,14 +183,14 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] On Appearance, confirm **Chromium (CSD)** is the default, then
   switch repeatedly to **System title bar** and back in Library plus Bar, Cover, Pill,
   and Card Compact View; restart once in each mode. Expected: Reprise's flat header and
-  native window buttons appear only in client-side mode, the desktop supplies the title
-  bar and borders in system mode when the compositor supports SSD, drag/resize/close and
-  all header actions remain usable, no duplicate controls appear, and the saved choice
-  returns on restart. The isolated mapped GDK regression proves both decoration requests,
-  GTK's retained CSD resize frame, all four Compact control projections, and persisted
-  startup; actual GNOME/Wayland compositor acceptance, frame appearance, HiDPI, touch,
-  and live window-manager behavior remain native manual checks. A compositor that rejects
-  SSD may fall back to CSD; this is expected desktop policy, not a Reprise failure.
+  native window buttons remain visible until GTK confirms an actual desktop-supplied
+  title bar through its documented `ssd` state. With confirmed SSD, Reprise hides its own
+  controls so no duplicates appear. Without confirmed SSD, the app controls remain as a
+  safe CSD fallback; drag/resize/close and all header actions stay usable, and the saved
+  choice returns on restart. The isolated mapped GDK regression proves both decoration
+  requests, GTK's retained resize frame, fallback/confirmed/lost-SSD transitions and all
+  four Compact projections. Actual GNOME/Wayland compositor acceptance, frame appearance,
+  HiDPI, touch, and live window-manager behavior remain native manual checks.
 - [ ] On Library, choose/cancel a disposable folder and rescan it. Expected: cancel
   is harmless and actions use the established safe picker/scan paths; Rhythmbox
   import is not offered after first-run setup.
