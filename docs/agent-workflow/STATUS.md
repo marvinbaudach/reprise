@@ -22,20 +22,20 @@ local/gitignored; THIS file is the shared, versioned summary.)
 
 ```
 OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate preferences and sidebar visibility polish
-SINCE:    2026-07-13 21:45 CEST
+TASK:     Replace browse dropdowns with unified chip filter bar
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13 21:45 CEST: Codex claimed the lock to integrate the preferences and sidebar visibility polish._
+_As of 2026-07-13: Codex claimed the lock for the unified chip filter bar._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md` (4 tasks).
-- **Last completed:** **Whole-row column-layout drag restoration** (`87b85fc`) — every movable
-  editor row captures drag gestures before its embedded controls while ordinary clicks remain intact.
+- **Last completed:** **Preferences and sidebar visibility polish** (`beca64c`) — preferences stay
+  within the source-size gate and sidebar collapse remains focus-safe across window modes.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `87b85fc`.
+- **Main implementation:** `beca64c`.
 
 ## Done so far (compact)
 
