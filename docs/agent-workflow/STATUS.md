@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Warn before device sync exceeds available storage
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for the device-storage preflight warning._
+_As of 2026-07-14: the device-storage preflight warning is complete and the lock is free._
 
 ## Parallel feature work
 
@@ -35,12 +35,12 @@ _As of 2026-07-14: Codex claimed the lock for the device-storage preflight warni
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Android device synchronization** (`0d6c5dc`, merged as `14e2471`) — mounted
-  USB/MTP devices expose music and playlists in Settings, accept track drops, and copy with visible
-  cancellable progress plus strict per-device FIFO sequencing.
+- **Last completed:** **Device-sync storage preflight** (`7b454fe`) — known free space now gates
+  each drop after accounting for queued reservations, and rejected work shows a localized warning
+  with required and available sizes before any copy starts.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `a140115`.
+- **Main implementation:** `7b454fe`.
 
 ## Done so far (compact)
 
@@ -85,7 +85,8 @@ _As of 2026-07-14: Codex claimed the lock for the device-storage preflight warni
   track changes, selectable plain text and instrumental/offline states.
 - ✅ **Android USB/MTP synchronization**: Settings shows mounted devices, recognized music and
   Reprise playlists; dropping library tracks enqueues managed copies with file and overall progress,
-  cancellation, disconnect-safe resume for stable devices, and strict same-device FIFO execution.
+  cancellation, disconnect-safe resume for stable devices, strict same-device FIFO execution, and
+  a queue-aware free-space preflight with an explicit warning before oversized work is accepted.
 - ✅ **Full-width Library player bar**: the global status/player block now spans sidebar, library,
   and Information panel at Top or Bottom; Track, centered Transport+Seek, and secondary control
   zones retain one playback controller across immediate Library/Compact switching.
