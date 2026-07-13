@@ -21,23 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate manual Up Next and GNOME Compact redesign
-SINCE:    2026-07-13 21:26 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 21:26 CEST: Codex claimed the lock for the verified feature-branch integration._
+_As of 2026-07-13 21:28 CEST: lock released after manual Up Next and the native Compact redesign passed combined QA and merged locally._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Manual Up Next + native Compact redesign QA** (`379490f`) on the feature
-  branch, now integrating the newer confirmed-playlist-deletion main (`d1338a7`).
-- **Current plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md`
-  (implementation and feature QA complete; combined-main verification and local merge pending).
-- **➡️ NEXT:** finish combined verification, merge the feature branch locally, release the lock,
-  then hold the joint stage review; do not start another roadmap stage without explicit user direction.
-- **Feature implementation:** `1a2f462`; QA/documentation is `379490f`.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md` (4 tasks).
+- **Last completed:** **Manual Up Next + native Compact redesign** (`d0441f5`) — pending manual
+  tracks interrupt and then resume a hidden context; four GNOME-native layouts use menu-only
+  Library return and free-surface five-percent scroll volume without visible Compact volume UI.
+- **Current plan:** none.
+- **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
+- **Main implementation:** `d0441f5`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
