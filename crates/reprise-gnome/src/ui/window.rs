@@ -144,9 +144,20 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 true
             });
     let cover_download = cover_download_worker::setup(&conn.borrow());
-    let listenbrainz = super::listenbrainz_runtime::ListenBrainzRuntime::new(db_path.to_path_buf());
+    let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
+        db_path.to_path_buf(),
+        reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
+        "ListenBrainz",
+    );
+    let lastfm = super::scrobble_runtime::ScrobbleRuntime::new(
+        db_path.to_path_buf(),
+        reprise_core::scrobbling::ScrobbleProvider::LastFm,
+        "Last.fm",
+    );
+    super::preference_lastfm::bootstrap(conn, &lastfm);
     super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
+    super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
 
     let player = match PlayerController::new(
@@ -154,6 +165,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         mpris_enabled,
         cover_download.clone(),
         listenbrainz.clone(),
+        lastfm.clone(),
         app,
     ) {
         Ok(controller) => Some(controller),
@@ -476,6 +488,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         player.as_ref(),
         &cover_batch,
         &listenbrainz,
+        &lastfm,
         &artist_news,
         {
             let minimal_view = minimal_view.clone();

@@ -143,6 +143,21 @@ CREATE TABLE listenbrainz_queue (
 );
 "#;
 
+/// Schema v6: an independent, token-free Last.fm FIFO. It deliberately
+/// mirrors the ListenBrainz row shape while retaining a separate lifecycle:
+/// either provider can acknowledge or clear its own deliveries without
+/// affecting the other.
+const SCHEMA_V6: &str = r#"
+CREATE TABLE lastfm_queue (
+  id           INTEGER PRIMARY KEY,
+  listened_at  INTEGER NOT NULL,
+  artist_name  TEXT NOT NULL,
+  track_name   TEXT NOT NULL,
+  release_name TEXT,
+  duration_ms  INTEGER NOT NULL
+);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -223,6 +238,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 5)?;
         tx.commit()?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 6 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V6)?;
+        tx.pragma_update(None, "user_version", 6)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -267,7 +289,7 @@ mod tests {
         let version_after: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after, 5);
+        assert_eq!(version_after, 6);
     }
 
     #[test]
@@ -282,7 +304,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
     }
 
     /// Builds a v1 DB by hand (SCHEMA_V1 + `user_version = 1`, exactly what a
@@ -307,7 +329,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 5); // Now goes to the current schema
+        assert_eq!(version, 6); // Now goes to the current schema
 
         let (title, rating, play_count, added_at, file_size, device, inode): (
             String,
@@ -349,7 +371,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 5); // Current schema
+        assert_eq!(version_after_second_run, 6); // Current schema
     }
 
     #[test]
@@ -381,7 +403,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 5); // walks all the way to the current schema version
+        assert_eq!(version, 6); // walks all the way to the current schema version
 
         // Verify tables exist.
         let playlists_exist: bool = conn
@@ -536,7 +558,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
 
         let settings_exist: bool = conn
             .query_row(
@@ -567,7 +589,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 5);
+        assert_eq!(version_after_second_run, 6);
     }
 
     #[test]
@@ -589,7 +611,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let setting: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'keep'", [], |row| {
                 row.get(0)
@@ -605,5 +627,44 @@ mod tests {
             .unwrap();
         assert!(queue_exists);
         migrate(&conn).unwrap();
+    }
+
+    #[test]
+    fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
+        let conn = open(None).unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.execute_batch(SCHEMA_V2).unwrap();
+        conn.execute_batch(SCHEMA_V3).unwrap();
+        conn.execute_batch(SCHEMA_V4).unwrap();
+        conn.execute_batch(SCHEMA_V5).unwrap();
+        conn.execute(
+            "INSERT INTO listenbrainz_queue \
+             (listened_at, artist_name, track_name, release_name, duration_ms) \
+             VALUES (1, 'Artist', 'Track', NULL, 120000)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 5).unwrap();
+
+        migrate(&conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 6);
+        let lastfm_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(lastfm_exists);
+        let preserved: i64 = conn
+            .query_row("SELECT COUNT(*) FROM listenbrainz_queue", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(preserved, 1);
     }
 }
