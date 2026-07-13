@@ -12,7 +12,9 @@ pub struct UpNextQueue {
 
 impl UpNextQueue {
     pub fn append(&mut self, ids: &[i64]) {
-        self.ids.extend_from_slice(ids);
+        let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
+        let remaining = limit.saturating_sub(self.ids.len());
+        self.ids.extend(ids.iter().copied().take(remaining));
     }
 
     pub fn ids(&self) -> &[i64] {
@@ -137,5 +139,15 @@ mod tests {
         assert_eq!(queue.ids(), &[1, 2]);
         queue.truncate(8);
         assert_eq!(queue.ids(), &[1, 2]);
+    }
+
+    #[test]
+    fn append_never_grows_past_the_shared_queue_limit() {
+        let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap();
+        let ids: Vec<_> = (0..=limit as i64).collect();
+        let mut queue = UpNextQueue::default();
+        queue.append(&ids);
+        assert_eq!(queue.len(), limit);
+        assert_eq!(queue.ids().last(), Some(&(limit as i64 - 1)));
     }
 }

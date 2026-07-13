@@ -57,7 +57,11 @@ pub(super) fn restore_runtime(
     state: &SessionState,
 ) {
     if let Some(player) = player {
-        player.restore_session_queue(state.queue.clone());
+        player.restore_session_queue(
+            state.queue.clone(),
+            state.up_next.clone(),
+            state.current_up_next,
+        );
     }
     view_session::restore(
         search_entry,
@@ -135,6 +139,9 @@ pub(super) fn wire_close(
         }
         if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
             state.queue = player.session_queue_snapshot();
+            let (up_next, current_up_next) = player.session_up_next_snapshot();
+            state.up_next = up_next;
+            state.current_up_next = current_up_next;
         }
 
         let result = session::save(&conn.borrow(), &state);

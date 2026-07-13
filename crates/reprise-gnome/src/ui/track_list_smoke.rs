@@ -12,7 +12,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 
 use crate::ui::track_list::{set_filter_and_reload, set_source_and_reload, Shared};
-use crate::ui::track_list_activation::queue_ids_for_activation;
+use crate::ui::track_list_activation::activate_track;
 use reprise_core::view_source::ViewSource;
 
 /// Dev/verification hook (permanent, like `REPRISE_SCAN_DIR` and
@@ -94,8 +94,7 @@ pub(super) fn arm_smoke_activate(shared: &Rc<Shared>) {
             return;
         };
         tracing::info!(path = %track.path, "{SMOKE_ACTIVATE_ENV_VAR}: activating first row");
-        let (ids, start_index) = queue_ids_for_activation(&shared, 0, track.id);
-        (shared.on_activate)(&track, ids, start_index);
+        activate_track(&shared, 0, &track);
     });
 }
 

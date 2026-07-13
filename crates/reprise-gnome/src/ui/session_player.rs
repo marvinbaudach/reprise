@@ -5,8 +5,24 @@ use std::collections::HashSet;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::{Queue, QueueSnapshot};
+use reprise_core::up_next::UpNextQueue;
 
 use crate::ui::player_controller::{NowPlaying, PlayerController};
+
+fn validated_up_next(
+    mut up_next: UpNextQueue,
+    current: Option<i64>,
+    existing: &HashSet<i64>,
+) -> (UpNextQueue, Option<i64>) {
+    let missing: Vec<_> = up_next
+        .ids()
+        .iter()
+        .copied()
+        .filter(|id| !existing.contains(id))
+        .collect();
+    up_next.remove_ids(&missing);
+    (up_next, current.filter(|id| existing.contains(id)))
+}
 
 #[allow(dead_code)] // Called through the Task 5 session orchestration.
 pub(super) fn restore_should_start_playback() -> bool {
@@ -19,8 +35,17 @@ impl PlayerController {
         self.queue.borrow().snapshot()
     }
 
+    pub(super) fn session_up_next_snapshot(&self) -> (UpNextQueue, Option<i64>) {
+        (self.up_next.borrow().clone(), self.current_up_next.get())
+    }
+
     #[allow(dead_code)] // Wired into startup restoration in Task 5.
-    pub(super) fn restore_session_queue(&self, snapshot: QueueSnapshot) {
+    pub(super) fn restore_session_queue(
+        &self,
+        snapshot: QueueSnapshot,
+        up_next: UpNextQueue,
+        current_up_next: Option<i64>,
+    ) {
         debug_assert!(!restore_should_start_playback());
         let existing = {
             let conn = self.conn.borrow();
@@ -53,13 +78,18 @@ impl PlayerController {
             .filter(|id| !existing.contains(id))
             .collect();
         queue.remove_ids(&missing);
+        let (up_next, current_up_next) = validated_up_next(up_next, current_up_next, &existing);
         *self.queue.borrow_mut() = queue;
+        *self.up_next.borrow_mut() = up_next;
+        self.current_up_next.set(current_up_next);
         self.notify_queue_changed();
 
-        let queue_has_tracks = !self.queue.borrow().is_empty();
+        let queue_has_tracks = !self.queue.borrow().is_empty()
+            || !self.up_next.borrow().is_empty()
+            || current_up_next.is_some();
         let shuffled = self.queue.borrow().is_shuffled();
         let repeat = self.queue.borrow().repeat();
-        let current = self.queue.borrow().current();
+        let current = current_up_next.or_else(|| self.queue.borrow().current());
         self.sync_transport_enabled(queue_has_tracks);
         self.sync_shuffle_indicator(shuffled);
         self.sync_repeat_indicator(repeat);
@@ -102,6 +132,8 @@ impl PlayerController {
         self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
         tracing::info!(
             queue_len = self.queue.borrow().len(),
+            up_next_len = self.up_next.borrow().len(),
+            current_up_next,
             current,
             playback = "Stopped",
             "session queue restored"
@@ -123,5 +155,18 @@ mod tests {
     #[test]
     fn session_restore_never_starts_playback() {
         assert!(!restore_should_start_playback());
+    }
+
+    #[test]
+    fn restored_pending_and_current_ids_are_validated_together() {
+        let existing = HashSet::from([1, 3]);
+        let mut pending = UpNextQueue::default();
+        pending.append(&[1, 2, 3, 2]);
+        let (pending, current) = validated_up_next(pending, Some(2), &existing);
+        assert_eq!(pending.ids(), &[1, 3]);
+        assert_eq!(current, None);
+
+        let (_, current) = validated_up_next(UpNextQueue::default(), Some(3), &existing);
+        assert_eq!(current, Some(3));
     }
 }

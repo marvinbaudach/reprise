@@ -117,6 +117,8 @@ type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize)>;
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
+type OnQueueActivate = Rc<dyn Fn(usize)>;
+type OnQueueRemove = Rc<dyn Fn(&[usize]) -> usize>;
 /// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
 /// comment. Returns whether the move actually happened (`false` for a
 /// degraded no-op, e.g. no player wired — see `Shared::on_queue_reorder`'s
@@ -238,6 +240,8 @@ pub(super) struct Shared {
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`. Same seam shape as `on_play_selected`.
     pub(super) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    pub(super) on_queue_activate: RefCell<Option<OnQueueActivate>>,
+    pub(super) on_queue_remove: RefCell<Option<OnQueueRemove>>,
     /// Invoked after any context-menu action that mutates a playlist's
     /// membership (add to an existing playlist, add to a brand new one, or
     /// remove) — injected via `TrackList::set_on_playlist_mutated`, wired by
@@ -396,6 +400,8 @@ impl TrackList {
             window: glib::WeakRef::new(),
             on_play_selected: RefCell::new(None),
             on_queue_selected: RefCell::new(None),
+            on_queue_activate: RefCell::new(None),
+            on_queue_remove: RefCell::new(None),
             on_playlist_mutated: RefCell::new(None),
             on_queue_reorder: RefCell::new(None),
             on_sidebar_playlist_drop: RefCell::new(None),
@@ -530,6 +536,12 @@ impl TrackList {
         reload(&self.shared);
     }
 
+    pub fn reload_queue_if_visible(&self) {
+        if matches!(*self.shared.source.borrow(), ViewSource::Queue) {
+            reload(&self.shared);
+        }
+    }
+
     pub(super) fn root_widget(&self) -> &gtk4::Box {
         &self.root
     }
@@ -571,6 +583,14 @@ impl TrackList {
     /// `PlayerController::append_to_queue`.
     pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn set_on_queue_activate(&self, callback: impl Fn(usize) + 'static) {
+        *self.shared.on_queue_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn set_on_queue_remove(&self, callback: impl Fn(&[usize]) -> usize + 'static) {
+        *self.shared.on_queue_remove.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the callback invoked after any context-menu action that

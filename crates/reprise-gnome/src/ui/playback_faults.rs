@@ -37,6 +37,7 @@
 
 use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
+use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::queries;
 
 impl PlayerController {
@@ -117,7 +118,13 @@ impl PlayerController {
     /// borrow is alive when `play_track_id`/`reset_to_stopped` run — see
     /// this module's `## Queue borrow discipline` doc section.
     pub(super) fn skip_after_failure(&self) {
-        let queue_len = self.queue.borrow().len();
+        let queue_len = failure_limit(
+            self.failure_skip_limit.get(),
+            self.queue.borrow().len(),
+            self.up_next.borrow().len(),
+            self.current_up_next.get().is_some(),
+        );
+        self.failure_skip_limit.set(queue_len);
         let skips = self.consecutive_skips.get() + 1;
         self.consecutive_skips.set(skips);
 
@@ -128,6 +135,7 @@ impl PlayerController {
                 "too many consecutive unplayable tracks; stopping playback"
             );
             self.consecutive_skips.set(0);
+            self.failure_skip_limit.set(0);
             self.reset_to_stopped();
             self.show_toast(&strings::text(
                 strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE,
@@ -135,14 +143,7 @@ impl PlayerController {
             return;
         }
 
-        let next = self.queue.borrow_mut().next_manual();
-        match next {
-            Some(next_id) => self.play_track_id(next_id),
-            None => {
-                self.consecutive_skips.set(0);
-                self.reset_to_stopped();
-            }
-        }
+        self.advance_playback(AdvanceReason::Manual);
     }
 }
 
@@ -155,6 +156,19 @@ impl PlayerController {
 /// all). Pure (no `Queue`/GTK/DB access) so it's unit-testable directly.
 fn should_stop_skipping(consecutive_skips: usize, queue_len: usize) -> bool {
     queue_len == 0 || consecutive_skips >= queue_len
+}
+
+fn failure_limit(
+    existing: usize,
+    context_len: usize,
+    pending_len: usize,
+    has_current_pending: bool,
+) -> usize {
+    if existing > 0 {
+        existing
+    } else {
+        context_len + pending_len + usize::from(has_current_pending)
+    }
 }
 
 #[cfg(test)]
@@ -181,5 +195,12 @@ mod tests {
                 "should_stop_skipping({skips}, {queue_len}) should be {expected}"
             );
         }
+    }
+
+    #[test]
+    fn failure_limit_stays_fixed_while_pending_tracks_are_consumed() {
+        assert_eq!(failure_limit(0, 4, 2, false), 6);
+        assert_eq!(failure_limit(6, 4, 1, true), 6);
+        assert_eq!(failure_limit(6, 4, 0, false), 6);
     }
 }

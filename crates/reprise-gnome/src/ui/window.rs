@@ -191,11 +191,10 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
         let player = player.clone();
         move || match &player {
-            Some(controller) => controller.queue_ids_snapshot().len(),
+            Some(controller) => controller.up_next_len(),
             None => 0,
         }
     }));
-    super::queue_transport::wire_sidebar_count(player.as_ref(), &sidebar);
 
     // Stage 3 Task 8: at most one folder watcher runs at a time. `None`
     // until either the startup check below finds a persisted `library_root`
@@ -266,6 +265,18 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         ))
     };
     super::current_track_selection::wire(player.as_ref(), &track_list);
+    if let Some(player) = &player {
+        let sidebar = Rc::downgrade(&sidebar);
+        let track_list_weak = Rc::downgrade(&track_list);
+        player.set_on_queue_changed(move || {
+            if let Some(sidebar) = sidebar.upgrade() {
+                sidebar.refresh("up next changed");
+            }
+            if let Some(track_list) = track_list_weak.upgrade() {
+                track_list.reload_queue_if_visible();
+            }
+        });
+    }
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
     let toolbar_view = adw::ToolbarView::new();
@@ -337,6 +348,22 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             None => {
                 tracing::warn!("player unavailable; ignoring context menu add-to-queue action");
             }
+        });
+    }
+    {
+        let player = player.clone();
+        track_list.set_on_queue_activate(move |position| {
+            if let Some(player) = &player {
+                player.play_up_next_at(position);
+            }
+        });
+    }
+    {
+        let player = player.clone();
+        track_list.set_on_queue_remove(move |positions| {
+            player
+                .as_ref()
+                .map_or(0, |player| player.remove_up_next_positions(positions))
         });
     }
     {
