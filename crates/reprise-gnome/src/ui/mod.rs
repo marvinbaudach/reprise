@@ -51,6 +51,8 @@ mod library_player_bar;
 mod library_shell;
 mod listenbrainz_secret;
 mod lyrics_state;
+mod lyrics_strings;
+mod lyrics_view;
 mod lyrics_worker;
 mod main_cover_download_progress;
 mod minimal_view;
@@ -123,3 +125,6 @@ mod window_decoration_strings;
 mod window_decorations;
 mod window_navigation;
 mod window_smoke;
+
+#[cfg(test)]
+mod lyrics_view_tests;
