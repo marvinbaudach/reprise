@@ -5,7 +5,7 @@
   <summary>Play and organize your local music library</summary>
   <summary xml:lang="de">Die lokale Musiksammlung abspielen und organisieren</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <developer id="org.reprise">
     <name>Marvin Baudach</name>
   </developer>
