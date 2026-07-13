@@ -265,6 +265,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             cover_download.clone(),
         ))
     };
+    super::column_header_menu::install(&track_list);
     super::current_track_selection::wire(player.as_ref(), &track_list);
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);

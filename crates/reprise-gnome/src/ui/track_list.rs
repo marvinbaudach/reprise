@@ -55,6 +55,7 @@
 //! `TrackListModel::set_query`.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -313,6 +314,8 @@ pub struct TrackList {
     pub(super) shared: Rc<Shared>,
     root: gtk4::Box,
     pub(super) column_registry: ColumnRegistry,
+    pub(super) column_visibility_actions: RefCell<HashMap<ColumnId, gtk4::gio::SimpleAction>>,
+    pub(super) column_visibility_menu: RefCell<Option<gtk4::gio::Menu>>,
 }
 
 impl TrackList {
@@ -486,6 +489,8 @@ impl TrackList {
             shared,
             root,
             column_registry,
+            column_visibility_actions: RefCell::new(HashMap::new()),
+            column_visibility_menu: RefCell::new(None),
         }
     }
 
