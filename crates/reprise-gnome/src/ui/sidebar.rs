@@ -61,9 +61,9 @@ use crate::ui::dialogs;
 use crate::ui::sidebar_dnd;
 use crate::ui::sidebar_export;
 use crate::ui::sidebar_playlist_creation;
+use crate::ui::sidebar_presentation::{self, NavIcon};
 use crate::ui::strings;
 use crate::ui::toasts;
-use reprise_core::format::format_thousands;
 use reprise_core::library::playlists;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
@@ -391,7 +391,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
     shared.rows.borrow_mut().clear();
     *shared.new_playlist_row.borrow_mut() = None;
 
-    append_header(
+    sidebar_presentation::append_header(
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_LIBRARY),
     );
@@ -400,15 +400,17 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
         ViewSource::Library,
         &strings::text(strings::SIDEBAR_MUSIC),
         Some(music_count),
+        NavIcon::Library,
     );
     add_row(
         shared,
         ViewSource::Queue,
         &strings::text(strings::SIDEBAR_QUEUE),
         Some(queue_count),
+        NavIcon::Queue,
     );
 
-    append_header(
+    sidebar_presentation::append_header(
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_PLAYLISTS),
     );
@@ -418,17 +420,24 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             ViewSource::Playlist(playlist.id),
             &playlist.name,
             Some(playlist.track_count),
+            NavIcon::Playlist,
         );
     }
-    let new_playlist_row = append_new_playlist_row(&shared.listbox);
+    let new_playlist_row = sidebar_presentation::append_new_playlist_row(&shared.listbox);
     *shared.new_playlist_row.borrow_mut() = Some(new_playlist_row);
 
-    append_header(
+    sidebar_presentation::append_header(
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_SMART),
     );
     for smart in &smart_rows {
-        add_row(shared, ViewSource::Smart(smart.id), &smart.name, None);
+        add_row(
+            shared,
+            ViewSource::Smart(smart.id),
+            &smart.name,
+            None,
+            sidebar_presentation::smart_icon(&smart.sort_field),
+        );
     }
 
     // Problem sources: no section header in the mockup (unlike LIBRARY/
@@ -443,6 +452,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
                 ViewSource::ImportErrors,
                 &strings::text(strings::SIDEBAR_IMPORT_ERRORS),
                 Some(import_error_count),
+                NavIcon::ImportErrors,
             );
         }
         if missing_count > 0 {
@@ -451,6 +461,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
                 ViewSource::Missing,
                 &strings::text(strings::SIDEBAR_MISSING_FILES),
                 Some(missing_count),
+                NavIcon::Missing,
             );
         }
     }
@@ -529,34 +540,20 @@ pub(super) fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4:
         .map(|(row, _, _)| row.clone())
 }
 
-/// Appends a non-selectable, non-activatable section header row (LIBRARY /
-/// PLAYLISTS / SMART) — dim, small caps text per the mockup.
-fn append_header(listbox: &gtk4::ListBox, text: &str) {
-    let label = gtk4::Label::new(Some(text));
-    label.set_xalign(0.0);
-    label.add_css_class("caption-heading");
-    label.add_css_class("dim-label");
-    label.set_margin_start(12);
-    label.set_margin_end(12);
-    label.set_margin_top(12);
-    label.set_margin_bottom(2);
-
-    let row = gtk4::ListBoxRow::builder()
-        .child(&label)
-        .selectable(false)
-        .activatable(false)
-        .build();
-    listbox.append(&row);
-}
-
 /// Builds one navigation row (title + optional right-aligned count) and
 /// registers it in `shared.rows` against `source`. Playlist rows additionally
 /// get a drag-and-drop drop target (Stage 3 Task 6) — see `sidebar_dnd::
 /// wire_playlist_drop_target`'s doc comment — and a right-click "Export
 /// playlist…" context menu (Stage 3 Task 7) — see `sidebar_export::
 /// wire_playlist_context_menu`'s doc comment.
-fn add_row(shared: &Rc<Shared>, source: ViewSource, title: &str, count: Option<i64>) {
-    let row = build_nav_row(title, count);
+fn add_row(
+    shared: &Rc<Shared>,
+    source: ViewSource,
+    title: &str,
+    count: Option<i64>,
+    icon: NavIcon,
+) {
+    let row = sidebar_presentation::build_nav_row(title, count, icon);
     if let ViewSource::Playlist(playlist_id) = source {
         sidebar_dnd::wire_playlist_drop_target(shared, &row, playlist_id, title);
         sidebar_export::wire_playlist_context_menu(shared, &row, playlist_id, title);
@@ -566,59 +563,6 @@ fn add_row(shared: &Rc<Shared>, source: ViewSource, title: &str, count: Option<i
         .rows
         .borrow_mut()
         .push((row, source, title.to_string()));
-}
-
-/// Builds the widget tree for one navigation row: a title label (start-
-/// aligned, ellipsized, hexpand) and, if `count` is `Some`, a dim right-
-/// aligned counter/badge label.
-fn build_nav_row(title: &str, count: Option<i64>) -> gtk4::ListBoxRow {
-    let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    hbox.set_margin_start(12);
-    hbox.set_margin_end(12);
-    hbox.set_margin_top(6);
-    hbox.set_margin_bottom(6);
-
-    let title_label = gtk4::Label::new(Some(title));
-    title_label.set_xalign(0.0);
-    title_label.set_hexpand(true);
-    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    hbox.append(&title_label);
-
-    if let Some(count) = count {
-        let count_label = gtk4::Label::new(Some(&format_thousands(count)));
-        count_label.add_css_class("dim-label");
-        count_label.add_css_class("numeric");
-        hbox.append(&count_label);
-    }
-
-    gtk4::ListBoxRow::builder().child(&hbox).build()
-}
-
-/// Appends the "New playlist" action row: not selectable (it never
-/// participates in source-selection), but activatable (a click/Enter fires
-/// `row-activated`, caught by `wire_row_activated`).
-fn append_new_playlist_row(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
-    let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    hbox.set_margin_start(12);
-    hbox.set_margin_end(12);
-    hbox.set_margin_top(6);
-    hbox.set_margin_bottom(6);
-
-    let icon = gtk4::Image::from_icon_name("list-add-symbolic");
-    hbox.append(&icon);
-
-    let label = gtk4::Label::new(Some(&strings::text(strings::SIDEBAR_NEW_PLAYLIST)));
-    label.set_xalign(0.0);
-    label.add_css_class("dim-label");
-    hbox.append(&label);
-
-    let row = gtk4::ListBoxRow::builder()
-        .child(&hbox)
-        .selectable(false)
-        .activatable(true)
-        .build();
-    listbox.append(&row);
-    row
 }
 
 /// Wires the `ListBox`'s `row-selected` signal: a navigation row becoming

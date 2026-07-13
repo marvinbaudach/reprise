@@ -92,6 +92,30 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 ## Pending: compact layouts and preferences
 
+### Header and navigation design
+
+- [ ] At a wide native GNOME/Wayland size, open and close the Information panel.
+  Expected: one flat header spans the sidebar, library, and Information panel; Music
+  remains geometrically centered in the complete window rather than the track pane.
+- [ ] Inspect Search plus the menu, Compact, Information, Import, and Scan actions in
+  light/dark mode and at 100% plus an available HiDPI scale. Expected: every action is
+  a compact symbolic icon with a correct tooltip, accessible name, and comfortable
+  native target; no header item clips or forces the centered title aside.
+- [ ] Inspect Music, Queue, manual playlists, the three built-in smart playlists,
+  Import errors, Missing files, and New playlist. Expected: text remains present,
+  each row has a stable aligned symbolic icon, counts align at the end, and long names
+  ellipsize without moving the icon or count columns.
+- [ ] Resize through wide, intermediate, and collapsed navigation widths with the
+  Information panel open and closed. Expected: the sidebar stays approximately
+  220–280 px while split, collapses through the existing native navigation path, and
+  selecting or reselecting a source returns to content without losing state.
+- [ ] Exercise sidebar selection, playlist creation/context menus, track-to-playlist
+  drag and drop, Queue count/reorder, and Library/Compact round trips. Expected: only
+  presentation changed; callbacks, selection, counters, DnD, and restored Library root
+  remain intact. The isolated display tests and mapped-X11 pointer/screenshot harness
+  pass these structures and flows; native visual, touch, icon-theme, and Wayland input
+  judgment remains pending.
+
 - [ ] Inspect the Library player bar at wide and narrow native GNOME widths, with
   the Information panel both open and closed and the saved position set to Top and
   Bottom. Expected: the bar spans the complete window below/above sidebar, library,

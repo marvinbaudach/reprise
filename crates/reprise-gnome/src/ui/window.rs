@@ -103,11 +103,17 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
         .build();
 
-    let scan_button = gtk4::Button::with_label(&strings::text(strings::SCAN_FOLDER));
+    let scan_button = super::library_chrome::action_button(
+        "folder-open-symbolic",
+        &strings::text(strings::SCAN_FOLDER),
+    );
     // Stage 3 Task 7: global "Import playlist…" entry, same header-button
     // shape as "Scan folder…" — see `wire_import_button`'s doc comment
     // (`ui::playlist_io`) for the dialog flow this drives.
-    let import_button = gtk4::Button::with_label(&strings::text(strings::IMPORT_PLAYLIST));
+    let import_button = super::library_chrome::action_button(
+        "document-open-symbolic",
+        &strings::text(strings::IMPORT_PLAYLIST),
+    );
 
     // Visible only while the split view is collapsed (see `wire_sidebar_
     // toggle`) — at full width both panes already show side by side, so
@@ -119,9 +125,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .build();
 
     let header = adw::HeaderBar::new();
+    super::library_chrome::style_header(&header, &search_entry);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
-    header.pack_start(&search_entry);
     header.pack_end(&scan_button);
     header.pack_end(&import_button);
 
@@ -263,7 +269,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
     let toolbar_view = adw::ToolbarView::new();
-    toolbar_view.add_top_bar(&header);
     toolbar_view.add_top_bar(scan_progress.widget());
     toolbar_view.set_content(Some(track_list.widget()));
 
@@ -444,13 +449,14 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let player_bar_widget = player
         .as_ref()
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
+    header.pack_end(&info_panel.toggle_button());
+    let library_chrome = super::library_chrome::build(&header, &split_view);
     let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
-        &split_view,
+        &library_chrome.root,
         status_bar.widget(),
         player_bar_widget,
         bar_position,
     );
-    header.pack_end(&info_panel.toggle_button());
     {
         let info_panel = Rc::downgrade(&info_panel);
         track_list.set_on_selection_changed(move |context| {
@@ -517,6 +523,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             }),
         },
     );
+    header.pack_end(&search_entry);
     cover_batch.start_if_enabled();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view);
