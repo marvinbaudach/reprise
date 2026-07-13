@@ -21,24 +21,24 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Minimal view and complete native preferences stages
-SINCE:    2026-07-13 03:40 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 03:40 CEST: Codex claimed the lock for minimal view and native preferences._
+_As of 2026-07-13 04:25 CEST: Codex released the lock after completing minimal view and native preferences._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-column-layout-editor.md` (3 atomic tasks).
-- **Last completed:** **Column layout editor + Rhythmbox discovery** (`33238b0`, docs `2c3b837`) —
-  native immediate/persistent visibility and ordering through switches, buttons or whole-row drag
-  with exact insertion lines; fixed Cover/Title; reset; and a default-off first-run import offer
-  only when Rhythmbox settings are detected. Full release checker: 490 passed, 5 display-only ignored.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-minimal-preferences.md` (7 atomic tasks).
+- **Last completed:** **Minimal view + complete native preferences** (`a41e09e`, docs `8619b11`) —
+  compact same-player window; persistent Appearance/Layout/Library/Plugins pages; live synchronized
+  ten-band GStreamer equalizer/presets and ReplayGain. Full release checker: 502 passed, 5
+  display-only ignored; all five pass individually under isolated Xvfb.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
-- **➡️ NEXT:** native-GNOME visual/pointer confirmation for the new editor and discovery copy,
-  then the existing maintainer-controlled public-source/release handoff from `RELEASING.md`.
-- **Feature HEAD:** `2c3b837`; this coordination-board update follows it.
+- **➡️ NEXT:** native-GNOME visual/geometry confirmation and audible Equalizer/ReplayGain checks
+  recorded in `docs/agent-workflow/MANUAL-QA.md`, then the maintainer-controlled publication handoff.
+- **Feature HEAD:** `8619b11`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -57,6 +57,9 @@ _As of 2026-07-13 03:40 CEST: Codex claimed the lock for minimal view and native
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
+- ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent theme,
+  layout, library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
+  live controls; isolated runtime persistence and full release QA green.
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
   for files added while the app was closed, current-track table selection, and playable stopped
   session restoration without autoplay, functional browse-option search, rating resorting, stable
