@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Composition is added by the following information-panel task.
-
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
