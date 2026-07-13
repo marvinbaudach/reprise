@@ -11,7 +11,7 @@ default-members = ["crates/reprise-gnome"]
 version = "0.1.0"
 authors = ["Marvin Baudach"]
 edition = "2021"
-license = "GPL-3.0-or-later"
+license = "MIT"
 
 # Stage 3 Task 1: curated pedantic-lint selection, hardened to `warn` here so
 # `cargo clippy --all-targets -- -D warnings` (the gate every commit must
