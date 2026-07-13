@@ -84,6 +84,7 @@ use crate::models::Track;
 use crate::view_source::ViewSource;
 use rusqlite::Connection;
 
+mod artist_context;
 mod browse;
 mod clauses;
 mod library;
@@ -92,6 +93,7 @@ mod playlist;
 mod queue;
 mod smart;
 
+pub use artist_context::query_artist_albums;
 pub use browse::{query_browse_values, BrowseFacet, BrowseFilter, BrowseValue};
 pub use clauses::build_track_ids_query;
 // `build_track_query`'s only current caller is this module's own test suite

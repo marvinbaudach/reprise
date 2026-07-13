@@ -11,6 +11,7 @@ use reprise_core::library::settings::{
 };
 use rusqlite::Connection;
 
+use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::cover_download_batch::CoverDownloadBatch;
 use crate::ui::listenbrainz_runtime::ListenBrainzRuntime;
 use crate::ui::player_controller::PlayerController;
@@ -24,13 +25,14 @@ const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-hei
      .reprise-density-compact columnview row { min-height: 28px; }";
 
 fn plugin_applies_live(id: &str) -> bool {
-    matches!(id, "cover_download" | "listenbrainz")
+    matches!(id, "cover_download" | "artist_news" | "listenbrainz")
 }
 
 fn plugin_title(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
     let message = match descriptor.id {
         "cover_download" => strings::DOWNLOAD_MISSING_COVERS,
         "listenbrainz" => strings::LISTENBRAINZ,
+        "artist_news" => strings::ARTIST_NEWS,
         _ => return descriptor.name.to_string(),
     };
     strings::text(message)
@@ -41,6 +43,7 @@ fn plugin_description(descriptor: &reprise_core::modules::ModuleDescriptor) -> S
         "mpris" => strings::PLUGIN_MPRIS_DESCRIPTION,
         "cover_download" => strings::PLUGIN_COVER_DESCRIPTION,
         "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
+        "artist_news" => strings::ARTIST_NEWS_DESCRIPTION,
         _ => return descriptor.description.to_string(),
     };
     strings::text(message)
@@ -174,6 +177,7 @@ pub(super) struct PreferencesContext {
     pub(super) listenbrainz: Rc<ListenBrainzRuntime>,
     pub(super) syncing_listenbrainz: Cell<bool>,
     pub(super) listenbrainz_activation_pending: Cell<bool>,
+    pub(super) artist_news: Rc<ArtistNewsRuntime>,
     on_minimal: Rc<dyn Fn()>,
 }
 
@@ -191,6 +195,7 @@ impl PreferencesContext {
         player: Option<&Rc<PlayerController>>,
         cover_batch: &Rc<CoverDownloadBatch>,
         listenbrainz: &Rc<ListenBrainzRuntime>,
+        artist_news: &Rc<ArtistNewsRuntime>,
         on_minimal: impl Fn() + 'static,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
@@ -211,6 +216,7 @@ impl PreferencesContext {
             listenbrainz: listenbrainz.clone(),
             syncing_listenbrainz: Cell::new(false),
             listenbrainz_activation_pending: Cell::new(false),
+            artist_news: artist_news.clone(),
             on_minimal: Rc::new(on_minimal),
         });
         let weak = Rc::downgrade(&context);
@@ -625,14 +631,20 @@ impl PreferencesContext {
             let row = adw::SwitchRow::builder()
                 .title(plugin_title(descriptor))
                 .subtitle(subtitle)
+                .use_markup(false)
                 .active(active)
                 .build();
+            let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
+            let syncing_notify = syncing.clone();
             row.connect_active_notify(move |row| {
                 let Some(context) = weak.upgrade() else {
                     return;
                 };
+                if syncing_notify.get() {
+                    return;
+                }
                 let active = row.is_active();
                 if descriptor.id == "cover_download" {
                     if let Some(action) = context
@@ -643,12 +655,39 @@ impl PreferencesContext {
                     }
                 } else if descriptor.id == "listenbrainz" {
                     context.change_listenbrainz_activation(row, active);
-                } else if let Err(error) =
-                    reprise_core::modules::set_enabled(&context.conn.borrow(), descriptor, active)
-                {
-                    tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
+                } else {
+                    let result = if descriptor.id == "artist_news" {
+                        context.artist_news.set_enabled(&context.conn.borrow(), active)
+                    } else {
+                        reprise_core::modules::set_enabled(
+                            &context.conn.borrow(),
+                            descriptor,
+                            active,
+                        )
+                    };
+                    if let Err(error) = result {
+                        tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
+                        syncing_notify.set(true);
+                        row.set_active(!active);
+                        syncing_notify.set(false);
+                    }
                 }
             });
+            if descriptor.id == "artist_news" {
+                let alive = glib::WeakRef::new();
+                alive.set(Some(&row));
+                let target = alive.clone();
+                let syncing = syncing.clone();
+                self.artist_news.subscribe_enabled(
+                    move || alive.upgrade().is_some(),
+                    move |enabled| {
+                        let Some(row) = target.upgrade() else { return };
+                        syncing.set(true);
+                        row.set_active(enabled);
+                        syncing.set(false);
+                    },
+                );
+            }
             group.add(&row);
             if descriptor.id == "cover_download" {
                 self.add_cover_download_progress(&group);
@@ -690,6 +729,7 @@ mod tests {
     fn only_runtime_safe_plugins_apply_without_restart() {
         assert!(plugin_applies_live("cover_download"));
         assert!(plugin_applies_live("listenbrainz"));
+        assert!(plugin_applies_live("artist_news"));
         assert!(!plugin_applies_live("equalizer"));
         assert!(!plugin_applies_live("replaygain"));
         assert!(!plugin_applies_live("mpris"));
