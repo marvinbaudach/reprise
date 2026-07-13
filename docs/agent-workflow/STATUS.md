@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Stabilize track-table column widths while scrolling
+SINCE:    2026-07-13 20:04 CEST
 ```
 
-_As of 2026-07-13 20:00 CEST: Codex fixed the pinned Information panel reopen regression and is releasing the lock._
+_As of 2026-07-13 20:04 CEST: Codex is fixing track-table column width changes during scrolling._
 
 ## Current position
 
