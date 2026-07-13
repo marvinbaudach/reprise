@@ -262,6 +262,7 @@ impl PreferencesContext {
                 PageId::Appearance => self.appearance_page(),
                 PageId::Layout => self.layout_page(),
                 PageId::Library => self.library_page(),
+                PageId::Synchronization => super::preference_sync::build_page(&self.device_sync),
                 PageId::Plugins => self.plugins_page(),
             };
             (id, page)
