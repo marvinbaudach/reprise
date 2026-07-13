@@ -24,7 +24,6 @@ pub(super) enum FirstRunDecision {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct CompletionOptions {
-    cover_download: bool,
     rhythmbox_columns: bool,
 }
 
@@ -34,8 +33,8 @@ enum CompletionResponse {
     SetUp,
 }
 
-fn requested_actions(options: CompletionOptions) -> (bool, bool) {
-    (options.cover_download, options.rhythmbox_columns)
+fn requested_actions(options: CompletionOptions) -> bool {
+    options.rhythmbox_columns
 }
 
 fn should_open_folder(response: CompletionResponse) -> bool {
@@ -96,10 +95,6 @@ pub(super) fn run(
         return;
     }
 
-    let cover = adw::SwitchRow::builder()
-        .title(strings::text(strings::ONBOARDING_COVERS))
-        .subtitle(strings::text(strings::ONBOARDING_COVERS_SUBTITLE))
-        .build();
     let rhythmbox_found = rhythmbox_layout_available();
     let rhythmbox = rhythmbox_offer(rhythmbox_found).map(|active| {
         adw::SwitchRow::builder()
@@ -113,12 +108,6 @@ pub(super) fn run(
         rhythmbox_import_default = false,
         "first-run Rhythmbox discovery complete"
     );
-    let group = adw::PreferencesGroup::new();
-    group.add(&cover);
-    if let Some(rhythmbox) = &rhythmbox {
-        group.add(rhythmbox);
-    }
-
     let privacy = gtk4::Label::builder()
         .label(strings::text(strings::ONBOARDING_PRIVACY))
         .wrap(true)
@@ -137,7 +126,11 @@ pub(super) fn run(
     content.set_margin_start(18);
     content.set_margin_end(18);
     content.append(&privacy);
-    content.append(&group);
+    if let Some(rhythmbox) = &rhythmbox {
+        let group = adw::PreferencesGroup::new();
+        group.add(rhythmbox);
+        content.append(&group);
+    }
     content.append(&buttons);
 
     let header = adw::HeaderBar::new();
@@ -165,14 +158,7 @@ pub(super) fn run(
             let Some(window) = window.upgrade() else {
                 return;
             };
-            let (cover_download, rhythmbox_columns) = requested_actions(options);
-            if cover_download {
-                if let Some(action) =
-                    window.lookup_action(primary_menu::ACTION_DOWNLOAD_MISSING_COVERS)
-                {
-                    action.change_state(&true.to_variant());
-                }
-            }
+            let rhythmbox_columns = requested_actions(options);
             if rhythmbox_columns {
                 if let Some(action) =
                     window.lookup_action(primary_menu::ACTION_IMPORT_RHYTHMBOX_COLUMNS)
@@ -210,7 +196,6 @@ pub(super) fn run(
         setup.connect_clicked(move |_| {
             complete(
                 CompletionOptions {
-                    cover_download: cover.is_active(),
                     rhythmbox_columns: rhythmbox.as_ref().is_some_and(adw::SwitchRow::is_active),
                 },
                 CompletionResponse::SetUp,
@@ -230,7 +215,6 @@ pub(super) fn run(
             "skip" => (CompletionOptions::default(), CompletionResponse::Skip),
             "setup-options" => (
                 CompletionOptions {
-                    cover_download: true,
                     rhythmbox_columns: true,
                 },
                 CompletionResponse::SetUp,
@@ -249,15 +233,12 @@ fn log_smoke_result(conn: &Connection) {
         return;
     }
     let completed = settings::get_onboarding_completed(conn).unwrap_or(false);
-    let cover_download =
-        reprise_core::modules::is_enabled(conn, &reprise_core::modules::COVER_DOWNLOAD_MODULE)
-            .unwrap_or(false);
     let column_layout = settings::get_setting(conn, settings::COLUMN_LAYOUT_KEY)
         .ok()
         .flatten();
     tracing::info!(
         completed,
-        cover_download,
+        cover_download = true,
         ?column_layout,
         "first-run smoke completed"
     );
@@ -288,13 +269,10 @@ mod tests {
 
     #[test]
     fn completion_activates_only_explicitly_enabled_options() {
-        assert_eq!(
-            requested_actions(CompletionOptions {
-                cover_download: true,
-                rhythmbox_columns: false,
-            }),
-            (true, false)
-        );
+        assert!(!requested_actions(CompletionOptions::default()));
+        assert!(requested_actions(CompletionOptions {
+            rhythmbox_columns: true,
+        }));
     }
 
     #[test]

@@ -26,13 +26,6 @@ pub const MPRIS_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: true,
 };
 
-pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "cover_download",
-    name: "Cover download",
-    description: "Download missing album covers from Cover Art Archive (network; off by default)",
-    default_enabled: false,
-};
-
 pub const LISTENBRAINZ_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "listenbrainz",
     name: "ListenBrainz",
@@ -58,7 +51,6 @@ pub const ARTIST_NEWS_MODULE: ModuleDescriptor = ModuleDescriptor {
 /// Every optional integration the app currently exposes, in Plugins-page order.
 pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &MPRIS_MODULE,
-    &COVER_DOWNLOAD_MODULE,
     &ARTIST_NEWS_MODULE,
     &LISTENBRAINZ_MODULE,
     &LASTFM_MODULE,
@@ -118,21 +110,8 @@ mod tests {
     }
 
     #[test]
-    fn cover_download_defaults_to_disabled() {
-        let conn = migrated_conn();
-        assert!(!is_enabled(&conn, &COVER_DOWNLOAD_MODULE).unwrap());
-    }
-
-    #[test]
-    fn cover_download_round_trips() {
-        let conn = migrated_conn();
-        set_enabled(&conn, &COVER_DOWNLOAD_MODULE, true).unwrap();
-        assert!(is_enabled(&conn, &COVER_DOWNLOAD_MODULE).unwrap());
-    }
-
-    #[test]
-    fn all_modules_lists_cover_download() {
-        assert!(ALL_MODULES
+    fn all_modules_excludes_always_on_cover_download() {
+        assert!(!ALL_MODULES
             .iter()
             .any(|module| module.id == "cover_download"));
     }

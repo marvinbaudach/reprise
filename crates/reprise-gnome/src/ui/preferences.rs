@@ -12,9 +12,9 @@ use reprise_core::library::settings::{
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::cover_download_batch::CoverDownloadBatch;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::preference_plugins::{plugin_applies_live, plugin_description, plugin_title};
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
@@ -25,36 +25,6 @@ pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-height: 48px; }\n\
      .reprise-density-standard columnview row { min-height: 36px; }\n\
      .reprise-density-compact columnview row { min-height: 28px; }";
-
-fn plugin_applies_live(id: &str) -> bool {
-    matches!(
-        id,
-        "cover_download" | "artist_news" | "listenbrainz" | "lastfm"
-    )
-}
-
-fn plugin_title(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
-    let message = match descriptor.id {
-        "cover_download" => strings::DOWNLOAD_MISSING_COVERS,
-        "listenbrainz" => strings::LISTENBRAINZ,
-        "lastfm" => strings::LASTFM,
-        "artist_news" => strings::ARTIST_NEWS,
-        _ => return descriptor.name.to_string(),
-    };
-    strings::text(message)
-}
-
-fn plugin_description(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
-    let message = match descriptor.id {
-        "mpris" => strings::PLUGIN_MPRIS_DESCRIPTION,
-        "cover_download" => strings::PLUGIN_COVER_DESCRIPTION,
-        "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
-        "lastfm" => strings::PLUGIN_LASTFM_DESCRIPTION,
-        "artist_news" => strings::ARTIST_NEWS_DESCRIPTION,
-        _ => return descriptor.description.to_string(),
-    };
-    strings::text(message)
-}
 
 fn equalizer_preset(index: u32) -> [f64; 10] {
     match index {
@@ -180,7 +150,6 @@ pub(super) struct PreferencesContext {
     pub(super) syncing_effect_controls: Cell<bool>,
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
     pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
-    pub(super) cover_batch: Rc<CoverDownloadBatch>,
     pub(super) listenbrainz: Rc<ScrobbleRuntime>,
     pub(super) syncing_listenbrainz: Cell<bool>,
     pub(super) listenbrainz_activation_pending: Cell<bool>,
@@ -204,7 +173,6 @@ impl PreferencesContext {
         library_player_bar: &LibraryPlayerBarShell,
         scan_button: &gtk4::Button,
         player: Option<&Rc<PlayerController>>,
-        cover_batch: &Rc<CoverDownloadBatch>,
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
@@ -224,7 +192,6 @@ impl PreferencesContext {
             syncing_effect_controls: Cell::new(false),
             equalizer_controls: RefCell::new(Vec::new()),
             replaygain_mode: RefCell::new(None),
-            cover_batch: cover_batch.clone(),
             listenbrainz: listenbrainz.clone(),
             syncing_listenbrainz: Cell::new(false),
             listenbrainz_activation_pending: Cell::new(false),
@@ -699,14 +666,7 @@ impl PreferencesContext {
                     return;
                 }
                 let active = row.is_active();
-                if descriptor.id == "cover_download" {
-                    if let Some(action) = context
-                        .window
-                        .lookup_action(crate::ui::primary_menu::ACTION_DOWNLOAD_MISSING_COVERS)
-                    {
-                        action.change_state(&active.to_variant());
-                    }
-                } else if descriptor.id == "listenbrainz" {
+                if descriptor.id == "listenbrainz" {
                     context.change_listenbrainz_activation(row, active);
                 } else if descriptor.id == "lastfm" {
                     context.change_lastfm_activation(row, active);
@@ -744,9 +704,7 @@ impl PreferencesContext {
                 );
             }
             group.add(&row);
-            if descriptor.id == "cover_download" {
-                self.add_cover_download_progress(&group);
-            } else if descriptor.id == "listenbrainz" {
+            if descriptor.id == "listenbrainz" {
                 self.add_listenbrainz_account(&group, &row);
             } else if descriptor.id == "lastfm" {
                 self.add_lastfm_account(&group, &row);
@@ -784,7 +742,7 @@ mod tests {
 
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {
-        assert!(plugin_applies_live("cover_download"));
+        assert!(!plugin_applies_live("cover_download"));
         assert!(plugin_applies_live("listenbrainz"));
         assert!(plugin_applies_live("lastfm"));
         assert!(plugin_applies_live("artist_news"));

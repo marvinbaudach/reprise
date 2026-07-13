@@ -74,7 +74,8 @@ Run these first after restarting the current `target/release/reprise`.
 Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 - [ ] Fresh start shows the setup dialog once, with clear local-library/privacy copy.
-- [ ] Cover download is off by default. When Rhythmbox is detected, a clear
+- [ ] The first-run copy discloses automatic MusicBrainz/Cover Art Archive cover
+  lookup without offering a disable switch. When Rhythmbox is detected, a clear
   `Rhythmbox found` import offer appears and remains off by default; without the
   schema/key, no false Rhythmbox offer appears. Both decision paths and explicit
   fixture import pass in the isolated smoke; native copy/layout remains pending.
@@ -191,15 +192,12 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] On Library, choose/cancel a disposable folder, rescan it, and invoke Rhythmbox
   column import. Expected: cancel is harmless and actions use the established safe
   picker/import paths.
-- [ ] On Plugins, toggle Cover download and MPRIS. Expected: enabling Cover download
-  immediately reveals the same checked/total, downloaded and unavailable progress in
-  the main window and on the Plugins page. The main terminal result remains visible
-  briefly and hides; Preferences retain it while open. Disabling a running pass reports
-  that it stopped, and re-enabling starts a fresh pass. MPRIS clearly says restart
-  required and changes only after restart. Equalizer and ReplayGain must not appear here
+- [ ] On Plugins, Cover download is absent because it is an always-on core feature.
+  Toggle MPRIS and Artist & Album News. MPRIS clearly says restart required and changes
+  only after restart; Artist News applies live. Equalizer and ReplayGain must not appear
   because they are core Playback features. The isolated local-sidecar app smoke proves
-  main-window Running → Complete without network; both native GTK progress-widget tests
-  pass. Real-network results, native visual confirmation and MPRIS restart remain pending.
+  main-window cover progress Running → Complete without network. Real-network results,
+  native visual confirmation and MPRIS restart remain pending.
 - [ ] While disposable music plays through real speakers, enable Equalizer, select
   Flat/Rock/Pop/Bass Boost, and move all ten sliders. Expected: audible changes are
   immediate, bounded to ±12 dB, persist after restart, and do not interrupt or move
@@ -231,12 +229,12 @@ M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
 - [ ] Track-change notifications show correct title/artist and available cover art.
 - [ ] Embedded covers, folder covers, and placeholders render correctly in list, bar,
   and Now Playing without stale covers after rapid scrolling or track changes.
-- [ ] Opt-in cover download is off by default. When enabled on a disposable library
-  with network access, the visible progress reaches the library total, a strong
+- [ ] Automatic cover download is always active. On a disposable library with network
+  access, the visible progress reaches the library total, a strong
   MusicBrainz match increments the downloaded count and renders, existing local covers
   are not downloaded again, and ambiguous or wrong albums increment unavailable
-  without acquiring an unrelated cover. Disable during a longer run and confirm that
-  the status becomes stopped and no new requests begin; cached covers must remain.
+  without acquiring an unrelated cover. A legacy stored disabled value must not prevent
+  the run; cached covers must remain available offline.
 - [ ] Artist & Album News is off by default and the Information panel explains that
   only selected artist names are sent to MusicBrainz. With disposable tagged tracks,
   confirm the 340px desktop proportions and narrow overlay, Upcoming/New copy, cached
