@@ -19,6 +19,7 @@ use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
+use crate::ui::window_decorations::WindowDecorations;
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-height: 48px; }\n\
@@ -186,6 +187,7 @@ pub(super) struct PreferencesContext {
     pub(super) syncing_lastfm: Cell<bool>,
     pub(super) lastfm_activation_pending: Cell<bool>,
     pub(super) artist_news: Rc<ArtistNewsRuntime>,
+    pub(super) decorations: Rc<WindowDecorations>,
     on_minimal: Rc<dyn Fn()>,
 }
 
@@ -204,6 +206,7 @@ impl PreferencesContext {
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
+        decorations: &Rc<WindowDecorations>,
         on_minimal: impl Fn() + 'static,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
@@ -227,6 +230,7 @@ impl PreferencesContext {
             syncing_lastfm: Cell::new(false),
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
+            decorations: decorations.clone(),
             on_minimal: Rc::new(on_minimal),
         });
         let weak = Rc::downgrade(&context);
@@ -243,19 +247,21 @@ impl PreferencesContext {
     }
 
     fn apply_initial(&self) {
-        let (color_scheme, density, sidebar_visible, status_visible) = {
+        let (color_scheme, density, sidebar_visible, status_visible, decorations) = {
             let conn = self.conn.borrow();
             (
                 settings::get_color_scheme(&conn),
                 settings::get_list_density(&conn),
                 settings::get_sidebar_visible(&conn),
                 settings::get_status_visible(&conn),
+                settings::get_window_decoration_mode(&conn),
             )
         };
         apply_color_scheme(color_scheme);
         apply_density(self.track_list.root_widget().upcast_ref(), density);
         self.sidebar_page.set_visible(sidebar_visible);
         self.status_bar.set_enabled(status_visible);
+        self.decorations.apply(decorations);
     }
 
     pub(super) fn present(self: &Rc<Self>) {
@@ -285,6 +291,10 @@ impl PreferencesContext {
         let _ = settings::set_list_density(&conn, ListDensity::Compact);
         let _ = settings::set_sidebar_visible(&conn, false);
         let _ = settings::set_status_visible(&conn, false);
+        let _ = settings::set_window_decoration_mode(
+            &conn,
+            reprise_core::library::settings::WindowDecorationMode::System,
+        );
         let _ = settings::set_player_bar_position(&conn, PlayerBarPosition::Top);
         let _ = settings::set_equalizer_bands(&conn, equalizer_preset(1));
         drop(conn);
@@ -295,6 +305,8 @@ impl PreferencesContext {
         );
         self.sidebar_page.set_visible(false);
         self.status_bar.set_enabled(false);
+        self.decorations
+            .apply(reprise_core::library::settings::WindowDecorationMode::System);
         self.library_player_bar.set_position(PlayerBarPosition::Top);
         self.set_equalizer_enabled(true);
         self.set_replay_gain_mode(ReplayGainMode::Track);
@@ -336,6 +348,7 @@ impl PreferencesContext {
             }
         });
         group.add(&scheme);
+        group.add(&super::preference_window_decorations::row(self));
         page.add(&group);
         page
     }
