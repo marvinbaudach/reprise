@@ -21,24 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Correct full-width library player bar
-SINCE:    2026-07-13 15:03 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 15:03 CEST: Codex claimed the lock to correct the full-width library player bar._
+_As of 2026-07-13 15:26 CEST: Codex completed the full-width player-bar plan and is releasing the lock in this commit._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-lastfm-scrobbling.md` (5 tasks).
-- **Last completed:** **Last.fm scrobbling** (`f3d9e53` through `43270e2`, merged as
-  `4564440`) — a default-off integration uses bring-your-own desktop API credentials,
-  browser authorization, keyring-only secrets and an independent durable offline queue.
-- **Current plan:** `docs/superpowers/plans/2026-07-13-full-width-player-bar.md` (3 tasks) —
-  correcting the library player bar to span the entire window with the approved three-zone layout.
-- **➡️ NEXT:** Task 1, move the global player/status block outside the pane split while preserving
-  immediate Top/Bottom positioning and Library/Compact switching.
-- **Main merge:** `4564440`; this QA/coordination update follows it.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-full-width-player-bar.md` (3 tasks).
+- **Last completed:** **Full-width Library player bar** (`c8bebdb`, `ed680a3`) — the status/player
+  block now spans the complete pane split, with Track metadata left, Transport+Seek centered, and
+  Shuffle/Repeat/Volume right; Top/Bottom and Library/Compact transitions remain immediate.
+- **Current plan:** none.
+- **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
+- **Main implementation:** `ed680a3`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -72,6 +70,9 @@ _As of 2026-07-13 15:03 CEST: Codex claimed the lock to correct the full-width l
 - ✅ **Artist & Album News**: a persistent right-side Information panel follows the current
   selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
   filters cached Upcoming/New album and EP cards, and rejects stale selection responses.
+- ✅ **Full-width Library player bar**: the global status/player block now spans sidebar, library,
+  and Information panel at Top or Bottom; Track, centered Transport+Seek, and secondary control
+  zones retain one playback controller across immediate Library/Compact switching.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
