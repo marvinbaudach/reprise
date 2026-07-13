@@ -12,8 +12,8 @@ use reprise_core::library::settings::{
 use rusqlite::Connection;
 
 use crate::ui::cover_download_batch::CoverDownloadBatch;
-use crate::ui::listenbrainz_runtime::ListenBrainzRuntime;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
@@ -171,7 +171,7 @@ pub(super) struct PreferencesContext {
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
     pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
     pub(super) cover_batch: Rc<CoverDownloadBatch>,
-    pub(super) listenbrainz: Rc<ListenBrainzRuntime>,
+    pub(super) listenbrainz: Rc<ScrobbleRuntime>,
     pub(super) syncing_listenbrainz: Cell<bool>,
     pub(super) listenbrainz_activation_pending: Cell<bool>,
     on_minimal: Rc<dyn Fn()>,
@@ -190,7 +190,7 @@ impl PreferencesContext {
         scan_button: &gtk4::Button,
         player: Option<&Rc<PlayerController>>,
         cover_batch: &Rc<CoverDownloadBatch>,
-        listenbrainz: &Rc<ListenBrainzRuntime>,
+        listenbrainz: &Rc<ScrobbleRuntime>,
         on_minimal: impl Fn() + 'static,
     ) -> Rc<Self> {
         let context = Rc::new(Self {

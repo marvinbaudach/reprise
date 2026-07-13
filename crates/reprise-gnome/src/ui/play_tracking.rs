@@ -1,4 +1,4 @@
-//! Local play-count and optional ListenBrainz completion paths extracted from
+//! Local play-count and optional provider scrobbling paths extracted from
 //! the edge-tight `player_controller` module.
 
 use reprise_core::library::stats;
@@ -6,9 +6,21 @@ use reprise_core::scrobbling::{self, TrackMetadata};
 
 use crate::ui::player_controller::PlayerController;
 
+fn active_providers(
+    listenbrainz: bool,
+    lastfm: bool,
+) -> impl Iterator<Item = scrobbling::ScrobbleProvider> {
+    [
+        (listenbrainz, scrobbling::ScrobbleProvider::ListenBrainz),
+        (lastfm, scrobbling::ScrobbleProvider::LastFm),
+    ]
+    .into_iter()
+    .filter_map(|(active, provider)| active.then_some(provider))
+}
+
 impl PlayerController {
     pub(super) fn begin_scrobble(&self, track: TrackMetadata) {
-        if !self.listenbrainz.is_active() {
+        if !self.listenbrainz.is_active() && !self.lastfm.is_active() {
             return;
         }
         if let Err(error) = track.validate() {
@@ -18,7 +30,8 @@ impl PlayerController {
         self.scrobble_session
             .borrow_mut()
             .begin(track.clone(), now_unix());
-        self.listenbrainz.playing_now(track);
+        self.listenbrainz.playing_now(track.clone());
+        self.lastfm.playing_now(track);
     }
 
     /// Finishes both per-track accounting paths exactly once. The existing
@@ -30,21 +43,20 @@ impl PlayerController {
         };
         let max_position_ms = self.max_position_ms.replace(0);
 
-        let scrobble = self
-            .scrobble_session
-            .borrow_mut()
-            .finish(max_position_ms, self.listenbrainz.is_active());
+        let scrobble = self.scrobble_session.borrow_mut().finish(
+            max_position_ms,
+            self.listenbrainz.is_active() || self.lastfm.is_active(),
+        );
         if let Some(listen) = scrobble {
-            let queued = {
-                let conn = self.conn.borrow();
-                scrobbling::enqueue(&conn, &listen)
-            };
-            match queued {
-                Ok(queue_id) => {
-                    tracing::debug!(queue_id, "ListenBrainz listen queued");
-                    self.listenbrainz.flush();
-                }
-                Err(error) => tracing::warn!(%error, "could not queue ListenBrainz listen"),
+            for provider in active_providers(self.listenbrainz.is_active(), self.lastfm.is_active())
+            {
+                let (service, runtime) = match provider {
+                    scrobbling::ScrobbleProvider::ListenBrainz => {
+                        ("ListenBrainz", self.listenbrainz.as_ref())
+                    }
+                    scrobbling::ScrobbleProvider::LastFm => ("Last.fm", self.lastfm.as_ref()),
+                };
+                self.enqueue_scrobble(provider, service, runtime, &listen);
             }
         }
 
@@ -64,10 +76,67 @@ impl PlayerController {
             }
         }
     }
+
+    fn enqueue_scrobble(
+        &self,
+        provider: scrobbling::ScrobbleProvider,
+        service: &str,
+        runtime: &crate::ui::scrobble_runtime::ScrobbleRuntime,
+        listen: &scrobbling::Listen,
+    ) {
+        if !runtime.is_active() {
+            return;
+        }
+        let queued = scrobbling::enqueue_for(&self.conn.borrow(), provider, listen);
+        match queued {
+            Ok(queue_id) => {
+                tracing::debug!(queue_id, service, "scrobble queued");
+                runtime.flush();
+            }
+            Err(error) => tracing::warn!(%error, service, "could not queue scrobble"),
+        }
+    }
 }
 
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |duration| duration.as_secs() as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_active_provider_produces_no_scrobble_destination() {
+        assert_eq!(active_providers(false, false).count(), 0);
+    }
+
+    #[test]
+    fn listenbrainz_can_be_the_only_scrobble_destination() {
+        assert_eq!(
+            active_providers(true, false).collect::<Vec<_>>(),
+            vec![scrobbling::ScrobbleProvider::ListenBrainz]
+        );
+    }
+
+    #[test]
+    fn lastfm_can_be_the_only_scrobble_destination() {
+        assert_eq!(
+            active_providers(false, true).collect::<Vec<_>>(),
+            vec![scrobbling::ScrobbleProvider::LastFm]
+        );
+    }
+
+    #[test]
+    fn one_completed_listen_targets_both_active_providers() {
+        assert_eq!(
+            active_providers(true, true).collect::<Vec<_>>(),
+            vec![
+                scrobbling::ScrobbleProvider::ListenBrainz,
+                scrobbling::ScrobbleProvider::LastFm,
+            ]
+        );
+    }
 }

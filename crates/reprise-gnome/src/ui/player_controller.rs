@@ -181,7 +181,7 @@ use reprise_core::queue::Queue;
 use reprise_platform_linux::mpris;
 use reprise_platform_linux::player::Player;
 
-use super::listenbrainz_runtime::ListenBrainzRuntime;
+use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
 
 // `PlayerController::volume`'s initial value is `reprise_platform_linux::mpris::
@@ -223,7 +223,8 @@ pub struct PlayerController {
     /// near the end of a track can't cost a listener credit for having
     /// already passed the 50% mark. Reset to 0 whenever a new track starts.
     pub(super) max_position_ms: Cell<i64>,
-    pub(super) listenbrainz: Rc<ListenBrainzRuntime>,
+    pub(super) listenbrainz: Rc<ScrobbleRuntime>,
+    pub(super) lastfm: Rc<ScrobbleRuntime>,
     pub(super) scrobble_session: RefCell<ScrobbleSession>,
     /// The playback queue (Stage 2 Task 3/4): track order, shuffle, and
     /// repeat mode. `play_from_view` seeds it; `TrackFinished`/the
@@ -341,7 +342,8 @@ impl PlayerController {
         conn: Rc<RefCell<Connection>>,
         mpris_enabled: bool,
         cover_download: CoverDownloadRuntime,
-        listenbrainz: Rc<ListenBrainzRuntime>,
+        listenbrainz: Rc<ScrobbleRuntime>,
+        lastfm: Rc<ScrobbleRuntime>,
         app: &adw::Application,
     ) -> Result<Rc<Self>, PlaybackError> {
         let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
@@ -389,6 +391,7 @@ impl PlayerController {
             current_track: Cell::new(None),
             max_position_ms: Cell::new(0),
             listenbrainz,
+            lastfm,
             scrobble_session: RefCell::new(ScrobbleSession::default()),
             queue: RefCell::new(Queue::new()),
             toast_overlay: glib::WeakRef::new(),

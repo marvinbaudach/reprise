@@ -11,7 +11,7 @@ use libadwaita::prelude::*;
 use reprise_core::scrobbling::{ListenBrainzClient, ScrobblerTransport, TransportError};
 use rusqlite::Connection;
 
-use crate::ui::listenbrainz_runtime::{ConnectionStatus, ListenBrainzRuntime};
+use crate::ui::scrobble_runtime::{ConnectionStatus, ScrobbleRuntime};
 use crate::ui::{listenbrainz_secret, strings};
 
 use super::preferences::PreferencesContext;
@@ -57,7 +57,7 @@ pub(super) fn status_text(status: &ConnectionStatus) -> String {
     }
 }
 
-pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ListenBrainzRuntime>) {
+pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRuntime>) {
     let enabled = reprise_core::modules::is_enabled(
         &conn.borrow(),
         &reprise_core::modules::LISTENBRAINZ_MODULE,
@@ -74,7 +74,9 @@ pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ListenBrain
             return;
         };
         match listenbrainz_secret::load().await {
-            Ok(Some(token)) if !token.trim().is_empty() => runtime.configure(token),
+            Ok(Some(token)) if !token.trim().is_empty() => {
+                runtime.configure(token, Box::new(ListenBrainzClient::new()));
+            }
             Ok(_) => {
                 if let Err(error) = reprise_core::modules::set_enabled(
                     &conn.borrow(),
@@ -308,7 +310,8 @@ impl PreferencesContext {
     fn enable_listenbrainz(&self, row: &adw::SwitchRow, token: String) {
         if self.persist_listenbrainz_enabled(true) {
             self.set_listenbrainz_switch(row, true);
-            self.listenbrainz.configure(token);
+            self.listenbrainz
+                .configure(token, Box::new(ListenBrainzClient::new()));
         }
     }
 
