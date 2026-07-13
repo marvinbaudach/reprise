@@ -21,16 +21,16 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Correct unified filter plan status
-SINCE:    2026-07-13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex claimed the lock to correct the completed-plan status after merge._
+_As of 2026-07-13: Codex released the lock after correcting the completed unified-filter plan status._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md` (4 tasks).
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-unified-filter-bar.md` (3 tasks).
 - **Last completed:** **Unified chip filter bar** (`0a2076c`) — active Library facets are compact,
   removable chips with one add-filter search, live result counts, and a complete reset action.
 - **Current plan:** none.
