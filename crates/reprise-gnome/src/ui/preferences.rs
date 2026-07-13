@@ -270,6 +270,24 @@ impl PreferencesContext {
         if let Some(player) = &self.player {
             if let Err(error) = player.set_audio_effects(effects) {
                 tracing::warn!(%error, "could not apply audio effects");
+                let active = player.active_audio_effects();
+                {
+                    let conn = self.conn.borrow();
+                    if let Err(persist_error) = super::audio_effects::persist(&conn, &active) {
+                        tracing::warn!(%persist_error, "could not restore active audio settings");
+                    }
+                }
+                self.syncing_effect_controls.set(true);
+                for row in self.equalizer_controls.borrow().iter() {
+                    row.set_active(active.equalizer_enabled);
+                }
+                if let Some(row) = self.replaygain_plugin.borrow().as_ref() {
+                    row.set_active(active.replay_gain != ReplayGainMode::Off);
+                }
+                if let Some(row) = self.replaygain_mode.borrow().as_ref() {
+                    row.set_selected(replay_gain_index(active.replay_gain));
+                }
+                self.syncing_effect_controls.set(false);
                 player.show_toast(&strings::text(strings::AUDIO_EFFECTS_FAILED));
             }
         }
