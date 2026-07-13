@@ -157,14 +157,15 @@ fn apply_density(widget: &gtk4::Widget, density: ListDensity) {
 }
 
 pub(super) struct PreferencesContext {
-    window: adw::ApplicationWindow,
+    pub(super) window: adw::ApplicationWindow,
     pub(super) conn: Rc<RefCell<Connection>>,
-    track_list: Rc<TrackList>,
+    pub(super) track_list: Rc<TrackList>,
     sidebar_page: adw::NavigationPage,
     status_bar: StatusBar,
     toolbar_view: adw::ToolbarView,
     bottom_box: gtk4::Box,
-    scan_button: gtk4::Button,
+    pub(super) scan_button: gtk4::Button,
+    pub(super) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
     pub(super) player: Option<Rc<PlayerController>>,
     pub(super) syncing_effect_controls: Cell<bool>,
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
@@ -196,12 +197,21 @@ impl PreferencesContext {
             toolbar_view: toolbar_view.clone(),
             bottom_box: bottom_box.clone(),
             scan_button: scan_button.clone(),
+            library_folder_rows: RefCell::new(Vec::new()),
             player: player.cloned(),
             syncing_effect_controls: Cell::new(false),
             equalizer_controls: RefCell::new(Vec::new()),
             replaygain_plugin: RefCell::new(None),
             replaygain_mode: RefCell::new(None),
             on_minimal: Rc::new(on_minimal),
+        });
+        let weak = Rc::downgrade(&context);
+        context.scan_button.connect_sensitive_notify(move |button| {
+            if button.is_sensitive() {
+                if let Some(context) = weak.upgrade() {
+                    context.refresh_library_folder_rows();
+                }
+            }
         });
         install_density_css(context.track_list.root_widget().upcast_ref());
         context.apply_initial();
@@ -444,46 +454,6 @@ impl PreferencesContext {
         page
     }
 
-    fn library_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        let page = adw::PreferencesPage::builder()
-            .title(strings::text(strings::PREFERENCES_LIBRARY))
-            .icon_name("folder-music-symbolic")
-            .build();
-        let group = adw::PreferencesGroup::new();
-        let root = settings::get_library_root(&self.conn.borrow())
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| strings::text(strings::NO_LIBRARY_FOLDER));
-        let folder = adw::ActionRow::builder()
-            .title(strings::text(strings::LIBRARY_FOLDER))
-            .subtitle(root)
-            .build();
-        let choose = gtk4::Button::with_label(&strings::text(strings::CHOOSE_FOLDER));
-        choose.set_valign(gtk4::Align::Center);
-        let scan_button = self.scan_button.clone();
-        choose.connect_clicked(move |_| scan_button.emit_clicked());
-        folder.add_suffix(&choose);
-        group.add(&folder);
-
-        let weak = Rc::downgrade(self);
-        group.add(&action_row(
-            strings::IMPORT_RHYTHMBOX_COLUMNS,
-            Rc::new(move || {
-                let Some(context) = weak.upgrade() else {
-                    return;
-                };
-                if let Some(action) = context
-                    .window
-                    .lookup_action(crate::ui::primary_menu::ACTION_IMPORT_RHYTHMBOX_COLUMNS)
-                {
-                    action.activate(None);
-                }
-            }),
-        ));
-        page.add(&group);
-        page
-    }
-
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {
         const BAND_LABELS: [&str; 10] = [
             "31 Hz", "62 Hz", "125 Hz", "250 Hz", "500 Hz", "1 kHz", "2 kHz", "4 kHz", "8 kHz",
@@ -703,7 +673,7 @@ impl PreferencesContext {
     }
 }
 
-fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow {
+pub(super) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
         .title(strings::text(title))
         .activatable(true)
