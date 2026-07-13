@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate synchronized played-track lyrics
-SINCE:    2026-07-13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex is integrating the completed synchronized-lyrics feature branch._
+_As of 2026-07-13: synchronized played-track lyrics are integrated and the lock is free._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-system-color-scheme.md` (1 task).
-- **Last completed:** **System-only appearance** (`4f2581c`, merged as `6eee50f`) — Reprise always
-  follows libadwaita's system color scheme and no longer exposes or persists Light/Dark overrides.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-synchronized-lyrics.md` (5 tasks).
+- **Last completed:** **Synchronized lyrics** (`0cdfbda`, merged as `ddd5220`) — played-track lyrics
+  load automatically, highlight and center the current timed line, and retain selectable plain text.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `4f2581c`.
+- **Main implementation:** `0cdfbda`.
 
 ## Done so far (compact)
 
@@ -74,6 +74,10 @@ _As of 2026-07-13: Codex is integrating the completed synchronized-lyrics featur
   selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
   filters cached Upcoming/New album and EP cards, rejects stale selection responses, pins at
   ordinary desktop widths, and exposes visible indeterminate request progress.
+- ✅ **Synchronized played-track lyrics**: the Information panel's top Lyrics tab retrieves only
+  title, artist, album and duration after successful playback, caches LRCLIB results locally, and
+  highlights plus centers timed lines from the existing position stream with generation-safe
+  track changes, selectable plain text and instrumental/offline states.
 - ✅ **Full-width Library player bar**: the global status/player block now spans sidebar, library,
   and Information panel at Top or Bottom; Track, centered Transport+Seek, and secondary control
   zones retain one playback controller across immediate Library/Compact switching.
