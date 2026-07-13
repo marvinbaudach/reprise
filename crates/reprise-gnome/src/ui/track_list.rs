@@ -548,6 +548,10 @@ impl TrackList {
         }
     }
 
+    pub(super) fn set_browse_visible(&self, visible: bool) {
+        self.shared.browse_bar.set_preference_visible(visible);
+    }
+
     pub(super) fn root_widget(&self) -> &gtk4::Box {
         &self.root
     }
