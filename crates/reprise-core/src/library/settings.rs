@@ -137,6 +137,7 @@ pub const STATUS_VISIBLE_KEY: &str = "ui.status_visible";
 pub const INFO_PANEL_VISIBLE_KEY: &str = "ui.info_panel_visible";
 pub const WINDOW_VIEW_MODE_KEY: &str = "ui.window_view_mode";
 pub const COMPACT_LAYOUT_KEY: &str = "ui.compact_layout";
+pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
 pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
@@ -167,6 +168,12 @@ pub enum CompactLayout {
     Cover,
     Pill,
     Card,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowDecorationMode {
+    Client,
+    System,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,6 +237,28 @@ pub fn set_compact_layout(conn: &Connection, value: CompactLayout) -> Result<(),
         CompactLayout::Card => "card",
     };
     set_setting(conn, COMPACT_LAYOUT_KEY, value)
+}
+
+pub fn get_window_decoration_mode(conn: &Connection) -> WindowDecorationMode {
+    match typed_value(conn, WINDOW_DECORATION_MODE_KEY, "client").as_str() {
+        "system" => WindowDecorationMode::System,
+        "client" => WindowDecorationMode::Client,
+        value => {
+            tracing::warn!(value, "unrecognized window decoration mode; using Client");
+            WindowDecorationMode::Client
+        }
+    }
+}
+
+pub fn set_window_decoration_mode(
+    conn: &Connection,
+    value: WindowDecorationMode,
+) -> Result<(), rusqlite::Error> {
+    let value = match value {
+        WindowDecorationMode::Client => "client",
+        WindowDecorationMode::System => "system",
+    };
+    set_setting(conn, WINDOW_DECORATION_MODE_KEY, value)
 }
 
 pub fn get_color_scheme(conn: &Connection) -> ColorScheme {
@@ -502,6 +531,40 @@ mod tests {
         assert_eq!(get_list_density(&conn), ListDensity::Standard);
         assert!(get_sidebar_visible(&conn));
         assert!(get_status_visible(&conn));
+    }
+
+    #[test]
+    fn window_decoration_mode_defaults_to_client_side() {
+        let conn = migrated_conn();
+        assert_eq!(
+            get_window_decoration_mode(&conn),
+            WindowDecorationMode::Client
+        );
+    }
+
+    #[test]
+    fn window_decoration_mode_round_trips_every_variant() {
+        let conn = migrated_conn();
+        set_window_decoration_mode(&conn, WindowDecorationMode::System).unwrap();
+        assert_eq!(
+            get_window_decoration_mode(&conn),
+            WindowDecorationMode::System
+        );
+        set_window_decoration_mode(&conn, WindowDecorationMode::Client).unwrap();
+        assert_eq!(
+            get_window_decoration_mode(&conn),
+            WindowDecorationMode::Client
+        );
+    }
+
+    #[test]
+    fn unknown_window_decoration_mode_falls_back_to_client_side() {
+        let conn = migrated_conn();
+        set_setting(&conn, WINDOW_DECORATION_MODE_KEY, "frameless").unwrap();
+        assert_eq!(
+            get_window_decoration_mode(&conn),
+            WindowDecorationMode::Client
+        );
     }
 
     #[test]

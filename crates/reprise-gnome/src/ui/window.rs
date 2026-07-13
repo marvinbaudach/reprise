@@ -474,6 +474,11 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         initial_view,
         &toast_overlay,
     );
+    let compact_root = player
+        .as_ref()
+        .map(|player| player.compact_player.widget().upcast_ref());
+    let decorations =
+        super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
     let geometry_guard = minimal_view.geometry_guard();
     let cover_batch = super::cover_download_batch::CoverDownloadBatch::new(
         conn,
@@ -495,6 +500,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &listenbrainz,
         &lastfm,
         &artist_news,
+        &decorations,
         {
             let minimal_view = minimal_view.clone();
             move || minimal_view.toggle()

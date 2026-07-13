@@ -86,6 +86,8 @@ fn release_group_uri(mbid: &str) -> Option<String> {
 
 struct PanelWidgets {
     split: adw::OverlaySplitView,
+    #[cfg(test)]
+    header: adw::HeaderBar,
     body: gtk4::Box,
     local: gtk4::Box,
     cover: gtk4::Image,
@@ -144,6 +146,8 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
         .build();
     let heading = adw::WindowTitle::new(&strings::text(strings::INFORMATION), "");
     let header = adw::HeaderBar::new();
+    header.set_show_start_title_buttons(false);
+    header.set_show_end_title_buttons(false);
     header.set_title_widget(Some(&heading));
     header.pack_start(&refresh);
     header.pack_end(&close);
@@ -171,6 +175,8 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
         .build();
     PanelWidgets {
         split,
+        #[cfg(test)]
+        header,
         body,
         local,
         cover,
@@ -782,5 +788,7 @@ mod tests {
         assert_eq!(widgets.split.max_sidebar_width(), 340.0);
         assert!(!widgets.split.is_pin_sidebar());
         assert!(widgets.split.is_collapsed());
+        assert!(!widgets.header.shows_start_title_buttons());
+        assert!(!widgets.header.shows_end_title_buttons());
     }
 }
