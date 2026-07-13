@@ -130,6 +130,169 @@ pub fn set_player_bar_position(
     set_setting(conn, PLAYER_BAR_POSITION_KEY, value)
 }
 
+pub const COLOR_SCHEME_KEY: &str = "ui.color_scheme";
+pub const LIST_DENSITY_KEY: &str = "ui.list_density";
+pub const SIDEBAR_VISIBLE_KEY: &str = "ui.sidebar_visible";
+pub const STATUS_VISIBLE_KEY: &str = "ui.status_visible";
+pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
+pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
+pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorScheme {
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListDensity {
+    Comfortable,
+    Standard,
+    Compact,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayGainMode {
+    Off,
+    Track,
+    Album,
+}
+
+fn typed_value(conn: &Connection, key: &str, default: &'static str) -> String {
+    match get_setting(conn, key) {
+        Ok(Some(value)) => value,
+        Ok(None) => default.to_string(),
+        Err(error) => {
+            tracing::warn!(%error, key, "could not read typed setting; using default");
+            default.to_string()
+        }
+    }
+}
+
+pub fn get_color_scheme(conn: &Connection) -> ColorScheme {
+    match typed_value(conn, COLOR_SCHEME_KEY, "system").as_str() {
+        "light" => ColorScheme::Light,
+        "dark" => ColorScheme::Dark,
+        "system" => ColorScheme::System,
+        value => {
+            tracing::warn!(value, "unrecognized color scheme; using System");
+            ColorScheme::System
+        }
+    }
+}
+
+pub fn set_color_scheme(conn: &Connection, value: ColorScheme) -> Result<(), rusqlite::Error> {
+    let value = match value {
+        ColorScheme::System => "system",
+        ColorScheme::Light => "light",
+        ColorScheme::Dark => "dark",
+    };
+    set_setting(conn, COLOR_SCHEME_KEY, value)
+}
+
+pub fn get_list_density(conn: &Connection) -> ListDensity {
+    match typed_value(conn, LIST_DENSITY_KEY, "standard").as_str() {
+        "comfortable" => ListDensity::Comfortable,
+        "compact" => ListDensity::Compact,
+        "standard" => ListDensity::Standard,
+        value => {
+            tracing::warn!(value, "unrecognized list density; using Standard");
+            ListDensity::Standard
+        }
+    }
+}
+
+pub fn set_list_density(conn: &Connection, value: ListDensity) -> Result<(), rusqlite::Error> {
+    let value = match value {
+        ListDensity::Comfortable => "comfortable",
+        ListDensity::Standard => "standard",
+        ListDensity::Compact => "compact",
+    };
+    set_setting(conn, LIST_DENSITY_KEY, value)
+}
+
+pub fn get_sidebar_visible(conn: &Connection) -> bool {
+    get_bool(conn, SIDEBAR_VISIBLE_KEY, true).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read sidebar visibility; using visible");
+        true
+    })
+}
+
+pub fn set_sidebar_visible(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, SIDEBAR_VISIBLE_KEY, value)
+}
+
+pub fn get_status_visible(conn: &Connection) -> bool {
+    get_bool(conn, STATUS_VISIBLE_KEY, true).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read status visibility; using visible");
+        true
+    })
+}
+
+pub fn set_status_visible(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, STATUS_VISIBLE_KEY, value)
+}
+
+pub fn get_equalizer_enabled(conn: &Connection) -> bool {
+    get_bool(conn, EQUALIZER_ENABLED_KEY, false).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read equalizer state; using disabled");
+        false
+    })
+}
+
+pub fn set_equalizer_enabled(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, EQUALIZER_ENABLED_KEY, value)
+}
+
+pub fn get_equalizer_bands(conn: &Connection) -> [f64; 10] {
+    let value = typed_value(conn, EQUALIZER_BANDS_KEY, "0,0,0,0,0,0,0,0,0,0");
+    let values = value
+        .split(',')
+        .map(str::parse::<f64>)
+        .collect::<Result<Vec<_>, _>>();
+    let Ok(values) = values else {
+        tracing::warn!("invalid equalizer bands; using flat preset");
+        return [0.0; 10];
+    };
+    let Ok(values) = <Vec<f64> as TryInto<[f64; 10]>>::try_into(values) else {
+        tracing::warn!("wrong equalizer band count; using flat preset");
+        return [0.0; 10];
+    };
+    values.map(|value| value.clamp(-12.0, 12.0))
+}
+
+pub fn set_equalizer_bands(conn: &Connection, values: [f64; 10]) -> Result<(), rusqlite::Error> {
+    let value = values
+        .map(|value| value.clamp(-12.0, 12.0).to_string())
+        .join(",");
+    set_setting(conn, EQUALIZER_BANDS_KEY, &value)
+}
+
+pub fn get_replay_gain_mode(conn: &Connection) -> ReplayGainMode {
+    match typed_value(conn, REPLAY_GAIN_MODE_KEY, "off").as_str() {
+        "track" => ReplayGainMode::Track,
+        "album" => ReplayGainMode::Album,
+        "off" => ReplayGainMode::Off,
+        value => {
+            tracing::warn!(value, "unrecognized ReplayGain mode; using Off");
+            ReplayGainMode::Off
+        }
+    }
+}
+
+pub fn set_replay_gain_mode(
+    conn: &Connection,
+    value: ReplayGainMode,
+) -> Result<(), rusqlite::Error> {
+    let value = match value {
+        ReplayGainMode::Off => "off",
+        ReplayGainMode::Track => "track",
+        ReplayGainMode::Album => "album",
+    };
+    set_setting(conn, REPLAY_GAIN_MODE_KEY, value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,5 +416,65 @@ mod tests {
         let conn = migrated_conn();
         set_setting(&conn, PLAYER_BAR_POSITION_KEY, "sideways").unwrap();
         assert_eq!(get_player_bar_position(&conn), PlayerBarPosition::Bottom);
+    }
+
+    #[test]
+    fn appearance_preferences_default_to_system_standard_and_visible() {
+        let conn = migrated_conn();
+        assert_eq!(get_color_scheme(&conn), ColorScheme::System);
+        assert_eq!(get_list_density(&conn), ListDensity::Standard);
+        assert!(get_sidebar_visible(&conn));
+        assert!(get_status_visible(&conn));
+    }
+
+    #[test]
+    fn appearance_preferences_round_trip_every_variant() {
+        let conn = migrated_conn();
+        set_color_scheme(&conn, ColorScheme::Dark).unwrap();
+        set_list_density(&conn, ListDensity::Compact).unwrap();
+        set_sidebar_visible(&conn, false).unwrap();
+        set_status_visible(&conn, false).unwrap();
+        assert_eq!(get_color_scheme(&conn), ColorScheme::Dark);
+        assert_eq!(get_list_density(&conn), ListDensity::Compact);
+        assert!(!get_sidebar_visible(&conn));
+        assert!(!get_status_visible(&conn));
+    }
+
+    #[test]
+    fn unknown_typed_preferences_fall_back_safely() {
+        let conn = migrated_conn();
+        set_setting(&conn, COLOR_SCHEME_KEY, "neon").unwrap();
+        set_setting(&conn, LIST_DENSITY_KEY, "microscopic").unwrap();
+        set_setting(&conn, REPLAY_GAIN_MODE_KEY, "loudest").unwrap();
+        assert_eq!(get_color_scheme(&conn), ColorScheme::System);
+        assert_eq!(get_list_density(&conn), ListDensity::Standard);
+        assert_eq!(get_replay_gain_mode(&conn), ReplayGainMode::Off);
+    }
+
+    #[test]
+    fn playback_effect_preferences_round_trip() {
+        let conn = migrated_conn();
+        set_equalizer_enabled(&conn, true).unwrap();
+        set_equalizer_bands(
+            &conn,
+            [1.0, 2.0, 3.0, 4.0, 5.0, -1.0, -2.0, -3.0, -4.0, -5.0],
+        )
+        .unwrap();
+        set_replay_gain_mode(&conn, ReplayGainMode::Album).unwrap();
+        assert!(get_equalizer_enabled(&conn));
+        assert_eq!(
+            get_equalizer_bands(&conn),
+            [1.0, 2.0, 3.0, 4.0, 5.0, -1.0, -2.0, -3.0, -4.0, -5.0]
+        );
+        assert_eq!(get_replay_gain_mode(&conn), ReplayGainMode::Album);
+    }
+
+    #[test]
+    fn equalizer_bands_reject_corrupt_values_and_clamp_writes() {
+        let conn = migrated_conn();
+        set_setting(&conn, EQUALIZER_BANDS_KEY, "1,2,broken").unwrap();
+        assert_eq!(get_equalizer_bands(&conn), [0.0; 10]);
+        set_equalizer_bands(&conn, [50.0; 10]).unwrap();
+        assert_eq!(get_equalizer_bands(&conn), [12.0; 10]);
     }
 }
