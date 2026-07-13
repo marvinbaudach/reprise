@@ -81,6 +81,7 @@ impl PlayerController {
     /// touching `self.bar`/`self.now_playing_view` separately.
     pub(super) fn sync_track(&self, title: &str, artist: &str, album: &str) {
         self.bar.set_track(title, artist);
+        self.compact_player.set_track(title, artist, album);
         self.now_playing_view.set_track(title, artist, album);
     }
 
@@ -88,6 +89,7 @@ impl PlayerController {
     /// `Stopped`/failure-path counterpart to `sync_track`.
     pub(super) fn sync_clear_track(&self) {
         self.bar.clear_track();
+        self.compact_player.clear_track();
         self.now_playing_view.clear_track();
     }
 
@@ -107,6 +109,16 @@ impl PlayerController {
             ThumbnailSize::Bar,
             bar_generation,
             &self.bar_cover_generation,
+        );
+
+        let compact_generation = self.compact_cover_generation.get().wrapping_add(1);
+        self.compact_cover_generation.set(compact_generation);
+        self.cover_loader.load_into(
+            self.compact_player.cover_image(),
+            path,
+            ThumbnailSize::Bar,
+            compact_generation,
+            &self.compact_cover_generation,
         );
 
         let full_generation = self.now_playing_cover_generation.get().wrapping_add(1);
@@ -152,16 +164,19 @@ impl PlayerController {
 
     pub(super) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
+        self.compact_player.set_state(state);
         self.now_playing_view.set_state(state);
     }
 
     pub(super) fn sync_position(&self, position_ms: i64, duration_ms: i64) {
         self.bar.set_position(position_ms, duration_ms);
+        self.compact_player.set_position(position_ms, duration_ms);
         self.now_playing_view.set_position(position_ms, duration_ms);
     }
 
     pub(super) fn sync_transport_enabled(&self, enabled: bool) {
         self.bar.set_transport_enabled(enabled);
+        self.compact_player.set_transport_enabled(enabled);
         self.now_playing_view.set_transport_enabled(enabled);
     }
 
@@ -173,13 +188,20 @@ impl PlayerController {
     /// widget (if any) was the origin.
     pub(super) fn sync_shuffle_indicator(&self, active: bool) {
         self.bar.set_shuffle_indicator(active);
+        self.compact_player.set_shuffle_indicator(active);
         self.now_playing_view.set_shuffle_indicator(active);
     }
 
     /// Same shape as `sync_shuffle_indicator`, for the repeat button.
     pub(super) fn sync_repeat_indicator(&self, repeat: Repeat) {
         self.bar.set_repeat_indicator(repeat);
+        self.compact_player.set_repeat_indicator(repeat);
         self.now_playing_view.set_repeat_indicator(repeat);
+    }
+
+    pub(super) fn sync_volume_indicator(&self, volume: f64) {
+        self.bar.set_volume_indicator(volume);
+        self.compact_player.set_volume_indicator(volume);
     }
 }
 
