@@ -14,8 +14,8 @@ use std::rc::{Rc, Weak};
 use gtk4::gio;
 use gtk4::gio::prelude::*;
 use reprise_core::device_sync::{
-    merge_playlist_entries, track_relative_path, DeviceQueue, SyncJob, SyncSnapshot, SyncTrack,
-    TrackOutcome,
+    merge_playlist_entries, track_relative_path, DeviceQueue, SyncJob, SyncPhase, SyncSnapshot,
+    SyncTrack, TrackOutcome,
 };
 use reprise_core::library::m3u::{M3uEntry, M3uExportEntry};
 use reprise_platform_linux::device_sync::{
@@ -143,6 +143,7 @@ pub struct DeviceView {
     pub contents: DeviceContents,
     pub scanning: bool,
     pub scan_error: Option<String>,
+    pub draft_playlists: Vec<String>,
     pub snapshot: SyncSnapshot,
 }
 
@@ -205,6 +206,7 @@ struct DeviceState {
     scanning: bool,
     scan_generation: u64,
     scan_error: Option<String>,
+    draft_playlists: Vec<String>,
 }
 
 impl DeviceState {
@@ -223,6 +225,7 @@ impl DeviceState {
             scanning: false,
             scan_generation: 0,
             scan_error: None,
+            draft_playlists: Vec::new(),
         }
     }
 
@@ -238,6 +241,7 @@ impl DeviceState {
             contents: self.contents.clone(),
             scanning: self.scanning,
             scan_error: self.scan_error.clone(),
+            draft_playlists: self.draft_playlists.clone(),
             snapshot: self.queue.snapshot(),
         }
     }
@@ -346,6 +350,26 @@ impl DeviceSyncRuntime {
         }
     }
 
+    pub fn create_playlist_draft(self: &Rc<Self>, device_id: &str, name: &str) -> Option<String> {
+        let name = reprise_core::device_sync::safe_component(name, "Playlist");
+        let created = {
+            let mut devices = self.device_states.borrow_mut();
+            let device = devices.get_mut(device_id)?;
+            let exists_on_device = device
+                .contents
+                .playlists
+                .iter()
+                .any(|playlist| playlist.name == name);
+            if !exists_on_device && !device.draft_playlists.contains(&name) {
+                device.draft_playlists.push(name.clone());
+                device.draft_playlists.sort();
+            }
+            name
+        };
+        self.notify();
+        Some(created)
+    }
+
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
         let request = {
             let mut devices = self.device_states.borrow_mut();
@@ -437,6 +461,16 @@ impl DeviceSyncRuntime {
                     }
                 }
             }
+            states.retain(|id, state| {
+                incoming.contains_key(id)
+                    || state.running
+                    || state.paused_work.is_some()
+                    || state.queue.snapshot().queued_jobs > 0
+                    || matches!(
+                        state.queue.snapshot().phase,
+                        SyncPhase::PausedDisconnected | SyncPhase::Failed
+                    )
+            });
             for (id, descriptor) in incoming {
                 if let Some(state) = states.get_mut(&id) {
                     let was_connected = state.connected;

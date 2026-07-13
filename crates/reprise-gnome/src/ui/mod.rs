@@ -42,6 +42,7 @@ pub mod delete_tracks;
 mod device_sync_runtime;
 #[cfg(test)]
 mod device_sync_runtime_tests;
+mod device_sync_strings;
 pub mod dialogs;
 pub mod first_run;
 pub mod import_errors_view;
@@ -77,6 +78,7 @@ mod preference_library;
 mod preference_listenbrainz;
 mod preference_playback;
 mod preference_plugins;
+mod preference_sync;
 mod preference_window_decorations;
 mod preferences;
 mod preferences_window;

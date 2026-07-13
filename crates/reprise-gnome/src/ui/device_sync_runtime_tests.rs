@@ -367,3 +367,34 @@ fn invalid_device_or_empty_resolution_is_rejected_without_a_job() {
         ));
     });
 }
+
+#[test]
+fn playlist_drafts_are_sanitized_deduplicated_and_do_no_device_io() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        assert_eq!(
+            runtime.create_playlist_draft("a", "../ Road / Mix"),
+            Some("Road Mix".into())
+        );
+        assert_eq!(
+            runtime.create_playlist_draft("a", "Road Mix"),
+            Some("Road Mix".into())
+        );
+        assert_eq!(runtime.devices()[0].draft_playlists, ["Road Mix"]);
+        assert!(backend.state.copy_order.borrow().is_empty());
+        assert!(backend.state.playlists.borrow().is_empty());
+    });
+}
+
+#[test]
+fn unplugged_idle_device_leaves_the_detected_device_list() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        backend.set_devices(&[]);
+        assert!(runtime.devices().is_empty());
+    });
+}

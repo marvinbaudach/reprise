@@ -1,4 +1,5 @@
 crates/reprise-gnome/src/ui/strings.rs
+crates/reprise-gnome/src/ui/device_sync_strings.rs
 crates/reprise-gnome/src/ui/browse_filter_strings.rs
 crates/reprise-gnome/src/ui/track_list_queue_menu.rs
 crates/reprise-gnome/src/ui/window_decoration_strings.rs
