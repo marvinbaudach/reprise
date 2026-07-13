@@ -105,7 +105,8 @@ pub use clauses::build_track_ids_query;
 pub use clauses::build_track_query;
 pub use maintenance::{
     delete_import_error, mark_track_missing, query_import_error_count, query_import_errors,
-    query_track_summary, remove_missing_tracks, remove_tracks, track_id_for_path,
+    query_sync_tracks, query_track_summary, remove_missing_tracks, remove_tracks,
+    track_id_for_path,
 };
 // `remove_missing_track`'s only external caller (beyond `remove_missing_
 // tracks`'s own internal use) is this module's test suite — same reasoning

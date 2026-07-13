@@ -12,6 +12,7 @@ use reprise_core::library::settings::{
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::preference_playback::build_equalizer_surface;
@@ -160,6 +161,10 @@ pub(super) struct PreferencesContext {
     pub(super) lastfm_activation_pending: Cell<bool>,
     pub(super) artist_news: Rc<ArtistNewsRuntime>,
     pub(super) decorations: Rc<WindowDecorations>,
+    // Constructed at the application composition root now; the following
+    // synchronization-page task becomes its first widget consumer.
+    #[allow(dead_code)]
+    pub(super) device_sync: Rc<DeviceSyncRuntime>,
     preferences_window: RefCell<glib::WeakRef<adw::Window>>,
 }
 
@@ -179,6 +184,7 @@ impl PreferencesContext {
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
         decorations: &Rc<WindowDecorations>,
+        device_sync: &Rc<DeviceSyncRuntime>,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
             window: window.clone(),
@@ -203,6 +209,7 @@ impl PreferencesContext {
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
             decorations: decorations.clone(),
+            device_sync: device_sync.clone(),
             preferences_window: RefCell::new(glib::WeakRef::new()),
         });
         let weak = Rc::downgrade(&context);
