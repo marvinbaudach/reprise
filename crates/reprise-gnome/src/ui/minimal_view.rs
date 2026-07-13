@@ -249,8 +249,15 @@ impl MinimalView {
         }
         let layout = self.transition.get().layout;
         compact.set_layout(layout);
-        self.apply_compact_metrics(layout);
+        // Drop the Library root and its much larger minimum before making the
+        // toplevel non-resizable. Otherwise GTK/WM can freeze the old Library
+        // allocation and leave a small compact child floating in a large
+        // window after a maximized or otherwise wide Library session.
+        self.window.set_resizable(true);
+        self.window.set_width_request(-1);
+        self.window.set_height_request(-1);
         self.window.set_content(Some(compact_root));
+        self.apply_compact_metrics(layout);
     }
 
     fn restore_library(&self) {
@@ -268,10 +275,11 @@ impl MinimalView {
 
     fn apply_compact_metrics(&self, layout: CompactLayout) {
         let metrics = layout_metrics(layout);
+        self.window.set_resizable(true);
         self.window.set_width_request(metrics.width);
         self.window.set_height_request(metrics.height);
-        self.window.set_resizable(false);
         self.window.set_default_size(metrics.width, metrics.height);
+        self.window.set_resizable(false);
     }
 
     fn show_toast(&self, message: &str) {

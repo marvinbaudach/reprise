@@ -68,6 +68,8 @@ impl CompactPlayer {
     pub(super) fn new() -> Self {
         let stack = gtk4::Stack::new();
         stack.set_transition_type(gtk4::StackTransitionType::None);
+        stack.set_hhomogeneous(false);
+        stack.set_vhomogeneous(false);
         let views: Vec<_> = [
             CompactLayout::Bar,
             CompactLayout::Cover,
@@ -654,6 +656,20 @@ mod tests {
             Some("Return to Library")
         );
         let metrics = compact.metrics();
+        let (_, stack_width, _, _) = compact.widget().measure(gtk4::Orientation::Horizontal, -1);
+        let (_, stack_height, _, _) = compact
+            .widget()
+            .measure(gtk4::Orientation::Vertical, metrics.width);
+        assert!(
+            stack_width <= metrics.width,
+            "active {layout:?} stack width {stack_width} > {}",
+            metrics.width
+        );
+        assert!(
+            stack_height <= metrics.height,
+            "active {layout:?} stack height {stack_height} > {}",
+            metrics.height
+        );
         assert_eq!(
             tree_has(&view.root, &|widget| widget.is::<libadwaita::HeaderBar>()),
             metrics.separate_header

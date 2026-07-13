@@ -153,6 +153,7 @@ mod tests {
         let same_window = window.clone();
 
         open.emit_clicked();
+        while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert_eq!(compact.layout(), CompactLayout::Card);
         assert!(compact.widget().is_ancestor(&window));
