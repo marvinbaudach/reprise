@@ -149,6 +149,64 @@ fn widget_exposes_information_sidebar_metrics() {
     assert!(widgets.split.is_collapsed());
     assert!(!widgets.header.shows_start_title_buttons());
     assert!(!widgets.header.shows_end_title_buttons());
+    let pages = widgets.stack.pages();
+    assert_eq!(pages.n_items(), 2);
+    let information = pages
+        .item(0)
+        .unwrap()
+        .downcast::<gtk4::StackPage>()
+        .unwrap();
+    let lyrics = pages
+        .item(1)
+        .unwrap()
+        .downcast::<gtk4::StackPage>()
+        .unwrap();
+    assert_eq!(information.name().as_deref(), Some("information"));
+    assert_eq!(lyrics.name().as_deref(), Some("lyrics"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn lyrics_context_is_independent_and_survives_panel_close() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
+    reprise_core::db::migrate(&conn.borrow()).unwrap();
+    let runtime = ArtistNewsRuntime::setup(&conn.borrow());
+    let cover_runtime = crate::ui::cover_download_worker::setup();
+    let cover_loader = CoverLoader::new(cover_runtime);
+    let app = adw::Application::builder()
+        .application_id("org.reprise.Reprise.LyricsPanelTest")
+        .build();
+    app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+    let window = adw::ApplicationWindow::new(&app);
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let panel = InfoPanel::new(&content, &window, conn, runtime, cover_loader);
+
+    panel.set_context(PanelContext::Multiple(2));
+    let information_title = panel.widgets.title.text();
+    let lyrics = panel.lyrics_view();
+    panel.widgets.stack.set_visible_child_name("lyrics");
+    lyrics.show_loading("Playback title", "Playback artist");
+    assert_eq!(panel.widgets.title.text(), information_title);
+    assert_eq!(lyrics.visible_state_name().as_deref(), Some("loading"));
+    assert!(panel.widgets.progress.is_visible());
+    assert!(!panel.widgets.refresh.is_sensitive());
+
+    let retries = Rc::new(Cell::new(0));
+    let retries_called = retries.clone();
+    lyrics.set_on_retry(move || retries_called.set(retries_called.get() + 1));
+    lyrics.show_error(&reprise_core::lyrics::LyricsError::Temporary);
+    assert!(!panel.widgets.progress.is_visible());
+    assert!(panel.widgets.refresh.is_sensitive());
+    panel.widgets.refresh.emit_clicked();
+    assert_eq!(retries.get(), 1);
+
+    lyrics.show_result(&reprise_core::lyrics::LyricsBody::Plain(
+        "synthetic panel text".into(),
+    ));
+    panel.widgets.close.emit_clicked();
+    assert!(!panel.widgets.split.shows_sidebar());
+    assert_eq!(lyrics.line_labels().len(), 1);
 }
 
 #[test]

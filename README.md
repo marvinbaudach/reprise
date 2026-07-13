@@ -22,7 +22,10 @@ Flathub.
 - Android USB/MTP synchronization with detected-device browsing, phone
   playlists, drag-to-copy, per-file and overall progress, cancellation, and a
   strict per-device FIFO queue.
-- Embedded, folder, and cached online album covers plus a full Now Playing view.
+- Embedded, folder, and cached online album covers across library and player surfaces.
+- Automatically retrieved played-track lyrics with synchronized current-line
+  highlighting and scrolling when timed text is available, plus selectable plain
+  text and instrumental fallbacks.
 - Optional ListenBrainz scrobbling with playing-now updates, durable offline
   delivery, and credentials stored in the system keyring.
 - Optional Last.fm scrobbling with bring-your-own API credentials, browser
@@ -52,6 +55,15 @@ and has no permanent-delete fallback.
 
 Reprise automatically sends album/artist metadata queries to MusicBrainz for
 missing covers and downloads conservative matches from Cover Art Archive.
+
+When playback successfully starts, Reprise sends the track title, artist, album,
+and rounded duration to LRCLIB to retrieve lyrics. File paths, library contents,
+ratings, and play history are never sent. Synchronized lyrics follow the current
+playback position; plain lyrics remain selectable when timing data is unavailable.
+Results and short-lived not-found responses are cached only below the local XDG
+cache directory. Lookup is limited to tracks actually played—there is no whole-
+library upload or prefetch—and transient network failures remain retryable. Lyrics
+retrieved from the provider are not covered by Reprise's source-code licenses.
 
 ListenBrainz scrobbling is also disabled by default. After you connect an account,
 Reprise sends artist, title, optional release, duration, and the listen start time
@@ -92,7 +104,8 @@ The device must already be visible in the GNOME Files application before Reprise
 can browse or synchronize it.
 
 The Flatpak manifest supplies these through GNOME Platform/SDK 50 and the stable
-Rust SDK extension.
+Rust SDK extension. Network access is used for automatic cover and played-track
+lyrics retrieval, plus explicitly enabled online services.
 
 ## Build and run from source
 
@@ -121,9 +134,9 @@ prefix.
 ## Build the Flatpak
 
 The local manifest uses GNOME 50, builds Cargo dependencies offline from pinned
-checksums, and grants only display, graphics, audio, automatic cover-network,
-the application's own MPRIS permission, and the two narrow GVfs permissions
-needed to reach an MTP device already mounted by the desktop.
+checksums, and grants only display, graphics, audio, automatic cover and played-track
+lyrics network access, the application's own MPRIS permission, and the two narrow
+GVfs permissions needed to reach an MTP device already mounted by the desktop.
 
 ```sh
 flatpak-builder --user --install-deps-from=flathub --force-clean \

@@ -136,8 +136,14 @@ fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
     filter.clone()
 }
 
+fn browse_bar_visible(library_visible: bool, preference_visible: bool) -> bool {
+    library_visible && preference_visible
+}
+
 pub struct BrowseBar {
     root: gtk4::Box,
+    library_visible: Cell<bool>,
+    preference_visible: Cell<bool>,
     chips: gtk4::FlowBox,
     add_filter: gtk4::MenuButton,
     chooser_stack: gtk4::Stack,
@@ -214,6 +220,8 @@ impl BrowseBar {
 
         let bar = Rc::new(Self {
             root,
+            library_visible: Cell::new(true),
+            preference_visible: Cell::new(true),
             chips,
             add_filter,
             chooser_stack,
@@ -234,6 +242,7 @@ impl BrowseBar {
         });
         wire_chooser(&bar);
         wire_reset(&bar);
+        bar.sync_visibility();
         bar.refresh();
         bar
     }
@@ -257,6 +266,17 @@ impl BrowseBar {
     }
 
     pub fn set_library_visible(&self, visible: bool) {
+        self.library_visible.set(visible);
+        self.sync_visibility();
+    }
+
+    pub fn set_preference_visible(&self, visible: bool) {
+        self.preference_visible.set(visible);
+        self.sync_visibility();
+    }
+
+    fn sync_visibility(&self) {
+        let visible = browse_bar_visible(self.library_visible.get(), self.preference_visible.get());
         self.root.set_visible(visible);
         tracing::info!(visible, "browse bar visibility updated");
     }
@@ -624,6 +644,14 @@ fn schedule_smoke_step(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visibility_requires_library_source_and_user_preference() {
+        assert!(browse_bar_visible(true, true));
+        assert!(!browse_bar_visible(true, false));
+        assert!(!browse_bar_visible(false, true));
+        assert!(!browse_bar_visible(false, false));
+    }
 
     fn full_filter() -> BrowseFilter {
         BrowseFilter {

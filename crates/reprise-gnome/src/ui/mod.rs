@@ -56,6 +56,11 @@ mod library_chrome;
 mod library_player_bar;
 mod library_shell;
 mod listenbrainz_secret;
+mod lyrics_smoke;
+mod lyrics_state;
+mod lyrics_strings;
+mod lyrics_view;
+mod lyrics_worker;
 mod main_cover_download_progress;
 mod minimal_view;
 pub mod mpris_mirror;
@@ -70,17 +75,22 @@ mod player_bar_seek;
 mod player_bar_state;
 pub mod player_controller;
 pub mod player_controller_wiring;
+mod player_lyrics;
 mod playlist_import_navigation;
 pub mod playlist_io;
 mod playlist_io_names;
 mod popover_lifecycle;
+mod preference_appearance;
+mod preference_choice_cards;
 mod preference_effects;
 mod preference_lastfm;
+mod preference_layout;
 mod preference_library;
 mod preference_listenbrainz;
 mod preference_playback;
 mod preference_plugins;
 mod preference_sync;
+mod preference_visual_strings;
 mod preference_window_decorations;
 mod preferences;
 mod preferences_window;
@@ -128,3 +138,9 @@ mod window_decoration_strings;
 mod window_decorations;
 mod window_navigation;
 mod window_smoke;
+
+#[cfg(test)]
+mod lyrics_view_tests;
+
+#[cfg(test)]
+mod player_lyrics_tests;

@@ -66,6 +66,18 @@ paths in a mapped window. It proves explicit opt-in, Upcoming/New cards, delayed
 selection rejection, close/reopen reuse, disable behavior, request-field privacy and a
 shared interval of at least one second without network access.
 
+The synchronized-lyrics smoke copies and tags three synthetic FLAC fixtures and sets
+`REPRISE_SMOKE_LYRICS=1` with `REPRISE_LRCLIB_FIXTURE_DIR` and a private request log.
+It must show active-line indices 0 then 1, reject a delayed stale track in favor of the
+latest track, and log only title, artist, album, and rounded duration. Run it only with
+private XDG data/cache, private D-Bus/Xvfb, forced X11, unset Wayland, `fakesink`, and a
+fixture-only MusicBrainz directory so neither lyrics nor cover paths can reach the
+network.
+
+```sh
+scripts/check-lyrics-smoke.sh
+```
+
 ## Build artifacts
 
 Create a clean optimized install tree without writing to `/usr`:
@@ -118,6 +130,12 @@ The detailed live ledger of confirmed and pending checks is
   explain its default-off privacy boundary, show clear Upcoming/New and offline/cache
   copy, and open MusicBrainz in the system browser only after the user clicks the
   external-link button.
+- Switch the Information panel between Information and Lyrics while copied music is
+  playing. Synchronized text must highlight and center the current line after play and
+  seek, Pause must preserve it, Stop must clear it, rapid track changes must never show
+  stale text, and plain/instrumental/offline states must remain readable and retryable.
+  Confirm the cached result remains available offline. Use only disposable metadata
+  when validating the real LRCLIB service.
 - With disposable tagged audio and real speakers, adjust all equalizer bands and
   presets while playing, then compare ReplayGain Off, Per Track, and Per Album on
   files containing valid ReplayGain tags. Equalizer and ReplayGain belong only to
