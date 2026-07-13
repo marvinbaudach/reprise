@@ -246,6 +246,24 @@ click_at() {
   xdotool mousemove "$x" "$y" click 1 >/dev/null 2>&1
 }
 
+click_window_relative() {
+  local relative_x="$1" relative_y="$2" button="${3:-1}"
+  local geometry window_x window_y
+  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
+  window_x="$(sed -n 's/^X=//p' <<<"$geometry")"
+  window_y="$(sed -n 's/^Y=//p' <<<"$geometry")"
+  xdotool mousemove "$((window_x + relative_x))" "$((window_y + relative_y))" \
+    click "$button" >/dev/null 2>&1
+}
+
+click_window_from_right() {
+  local right_offset="$1" relative_y="$2" button="${3:-1}"
+  local geometry width
+  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
+  width="$(sed -n 's/^WIDTH=//p' <<<"$geometry")"
+  click_window_relative "$((width - right_offset))" "$relative_y" "$button"
+}
+
 double_click_at() {
   local x="$1" y="$2"
   xdotool mousemove "$x" "$y" click --repeat 2 --delay 80 1 >/dev/null 2>&1
@@ -271,6 +289,24 @@ assert_window_within() {
   else
     log_fail "$description exceeded ${max_width}x${max_height} (got ${width:-?}x${height:-?})"
   fi
+}
+
+maximize_window() {
+  local geometry current_width=0 current_height=0
+  wmctrl -i -r "$WINDOW_ID" -b add,maximized_vert,maximized_horz
+  for _ in $(seq 1 30); do
+    geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
+    current_width="$(sed -n 's/^WIDTH=//p' <<<"$geometry")"
+    current_height="$(sed -n 's/^HEIGHT=//p' <<<"$geometry")"
+    if [ "${current_width:-0}" -ge 1500 ] && [ "${current_height:-0}" -ge 850 ]; then
+      sleep 0.3
+      return
+    fi
+    wmctrl -i -r "$WINDOW_ID" -b add,maximized_vert,maximized_horz
+    sleep 0.1
+  done
+  echo "FAIL: Reprise window did not reach the fixed maximized harness geometry" >&2
+  exit 1
 }
 
 drag_and_hold() {
@@ -306,6 +342,18 @@ assert_screenshot_not_blank() {
     log_fail "screenshot looks blank/solid (standard-deviation=$stddev): $path"
   else
     log_step "screenshot OK ($path): standard-deviation=$stddev"
+  fi
+}
+
+assert_screenshots_differ() {
+  local before="$1" after="$2" description="$3"
+  local changed
+  changed="$(compare -metric AE "$before" "$after" null: 2>&1 || true)"
+  changed="${changed%% *}"
+  if [ "${changed:-0}" -gt 100 ]; then
+    log_step "screenshot difference OK: $description ($changed pixels)"
+  else
+    log_fail "$description did not visibly change the mapped UI (${changed:-0} pixels)"
   fi
 }
 
@@ -384,8 +432,7 @@ if ! WINDOW_ID="$(find_window)"; then
 fi
 log_step "found window $WINDOW_ID"
 
-wmctrl -i -r "$WINDOW_ID" -b add,maximized_vert,maximized_horz
-sleep 1
+maximize_window
 
 # --- Row/column geometry (this harness's known limit — see README) ----------
 #
@@ -515,43 +562,134 @@ key "space"
 sleep 0.3
 assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Space resumed playback (state change to Playing)"
 
-# --- Flow 5: minimal-view shortcut and real Preferences menu item ------------
+# --- Flow 5: visible Compact button, all layouts, menus, and shortcut --------
 
-log_step "flow 5: Compact View shortcut and Preferences dialog…"
+log_step "flow 5: visible Compact button and all four layouts…"
+# Header coordinates are fixed for this harness's 1600x900 maximized
+# geometry, like the row/rating coordinates documented above. The compact
+# button is the view-grid icon directly to the right of the primary menu.
+HEADER_BUTTON_Y=28
 MARKER=$(log_marker)
-key "ctrl+m"
+click_window_from_right 437 "$HEADER_BUTTON_Y"
 sleep 0.4
-assert_log_contains_since "$MARKER" "window view mode changed.*mode=Compact" "Ctrl+M entered Compact View"
+assert_log_contains_since "$MARKER" "window view mode changed.*mode=Compact.*layout=Bar" "full-header button entered Compact Bar"
 assert_window_within 660 185 "Bar compact geometry after leaving maximized Library"
-screenshot "08-minimal-view"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-minimal-view.png"
+screenshot "08-compact-bar"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-compact-bar.png"
+
+# Every compact header keeps the shared menu at a stable right-side offset.
+# Opening it with a real pointer proves the visible entry point; keyboard
+# navigation then selects each radio target in sequence.
+click_window_from_right 145 28
+sleep 0.3
+screenshot "09-compact-visible-menu"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/09-compact-visible-menu.png"
+
+MARKER=$(log_marker)
+click_window_from_right 145 100
+sleep 0.2
+click_window_from_right 145 124
+sleep 0.4
+assert_log_contains_since "$MARKER" "compact layout changed.*layout=Cover" "visible menu selected Cover"
+assert_window_within 420 560 "Cover compact geometry"
+screenshot "10-compact-cover"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/10-compact-cover.png"
+
+click_window_from_right 145 28
+MARKER=$(log_marker)
+sleep 0.2
+click_window_from_right 145 100
+sleep 0.2
+click_window_from_right 145 156
+sleep 0.4
+assert_log_contains_since "$MARKER" "compact layout changed.*layout=Pill" "visible menu selected Pill"
+assert_window_within 680 125 "Pill compact geometry"
+screenshot "11-compact-pill"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/11-compact-pill.png"
+
+click_window_from_right 145 40
+MARKER=$(log_marker)
+sleep 0.3
+screenshot "11b-compact-pill-visible-menu"
+assert_screenshots_differ \
+  "$PTR_E2E_OUT_DIR/11-compact-pill.png" \
+  "$PTR_E2E_OUT_DIR/11b-compact-pill-visible-menu.png" \
+  "Pill visible button opened the compact menu"
+click_window_from_right 151 124
+sleep 0.2
+click_window_from_right 151 219
+sleep 0.4
+assert_log_contains_since "$MARKER" "compact layout changed.*layout=Card" "visible menu selected Card"
+assert_window_within 500 300 "Card compact geometry"
+screenshot "12-compact-card"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/12-compact-card.png"
+
+# Free-surface right click and Shift+F10 must display the same shared menu.
+click_window_relative 20 200 3
+sleep 0.3
+screenshot "13-compact-right-click-menu"
+assert_screenshots_differ \
+  "$PTR_E2E_OUT_DIR/12-compact-card.png" \
+  "$PTR_E2E_OUT_DIR/13-compact-right-click-menu.png" \
+  "right click opened the compact menu"
+key "Escape"
+sleep 0.2
+click_window_from_right 145 28
+sleep 0.2
+key "Escape"
+screenshot "13b-compact-card-menu-closed"
+key "shift+F10"
+sleep 0.3
+screenshot "14-compact-keyboard-menu"
+assert_screenshots_differ \
+  "$PTR_E2E_OUT_DIR/13b-compact-card-menu-closed.png" \
+  "$PTR_E2E_OUT_DIR/14-compact-keyboard-menu.png" \
+  "Shift+F10 opened the compact menu"
+key "Escape"
+
+# The direct restore button returns to Library; Ctrl+M repeats the round trip
+# and must retain Card as the selected compact layout.
+MARKER=$(log_marker)
+click_window_from_right 105 28
+sleep 0.5
+assert_log_contains_since "$MARKER" "window view mode changed.*mode=Library.*layout=Card" "visible restore button returned to Library"
+screenshot "15-library-restored"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/15-library-restored.png"
 
 MARKER=$(log_marker)
 key "ctrl+m"
 sleep 0.4
-assert_log_contains_since "$MARKER" "window view mode changed.*mode=Library" "Ctrl+M restored Library View"
+assert_log_contains_since "$MARKER" "window view mode changed.*mode=Compact.*layout=Card" "Ctrl+M restored Compact Card"
+screenshot "16-compact-card-shortcut"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/16-compact-card-shortcut.png"
+MARKER=$(log_marker)
+key "ctrl+m"
+sleep 0.5
+assert_log_contains_since "$MARKER" "window view mode changed.*mode=Library.*layout=Card" "Ctrl+M restored Library View"
 
-# Header menu coordinates are fixed for this harness's fixed 1600x900
-# maximized geometry, like the row/rating coordinates documented above.
-MAIN_MENU_X=1163
-MAIN_MENU_Y=28
-click_at "$MAIN_MENU_X" "$MAIN_MENU_Y"
+# --- Flow 6: real Preferences menu item --------------------------------------
+
+log_step "flow 6: Preferences dialog…"
+maximize_window
+click_window_from_right 477 28
 sleep 0.3
-screenshot "09-main-menu"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/09-main-menu.png"
+screenshot "17-main-menu"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/17-main-menu.png"
 
 # Preferences is the second row in the primary menu.
 MARKER=$(log_marker)
-click_at 1085 122
+key "Home"
+key "Down"
+key "Return"
 sleep 1.5
 assert_log_contains_since "$MARKER" "preferences dialog presented" "primary-menu click opened Preferences"
-screenshot "10-preferences"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/10-preferences.png"
+screenshot "18-preferences"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/18-preferences.png"
 
 click_at 702 823
 sleep 0.3
-screenshot "11-preferences-layout"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/11-preferences-layout.png"
+screenshot "19-preferences-layout"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/19-preferences-layout.png"
 click_at 1034 209
 sleep 0.2
 assert_db_value "ui.sidebar_visible" "0" "Layout switch hid the sidebar"
@@ -560,20 +698,20 @@ sleep 0.2
 assert_db_value "ui.status_visible" "0" "Layout switch hid the status line"
 click_at 804 823
 sleep 0.7
-screenshot "12-preferences-library"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/12-preferences-library.png"
+screenshot "20-preferences-library"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/20-preferences-library.png"
 MARKER=$(log_marker)
 click_at 800 209
 sleep 1.5
 assert_log_contains_since "$MARKER" "scan complete" "Library Preferences triggered a completed rescan"
 click_at 907 823
 sleep 0.3
-screenshot "13-preferences-plugins"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/13-preferences-plugins.png"
+screenshot "21-preferences-plugins"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/21-preferences-plugins.png"
 click_at 1011 823
 sleep 0.3
-screenshot "14-preferences-playback"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/14-preferences-playback.png"
+screenshot "22-preferences-playback"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/22-preferences-playback.png"
 
 # Drive the real Playback controls, then prove the removed duplicate plugin
 # rows cannot mutate either core playback setting.
@@ -599,17 +737,17 @@ assert_db_query_true \
 
 click_at 1011 823
 sleep 0.7
-screenshot "15-preferences-synchronized"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/15-preferences-synchronized.png"
+screenshot "23-preferences-synchronized"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/23-preferences-synchronized.png"
 
 # --- Final screenshot ---------------------------------------------------------
 
-screenshot "16-final"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/16-final.png"
+screenshot "24-final"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/24-final.png"
 assert_log_absent \
-  'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowMutError' \
+  'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
   'GTK/GLib critical, panic, or RefCell borrow failure'
-log_step "final screenshot: $PTR_E2E_OUT_DIR/16-final.png"
+log_step "final screenshot: $PTR_E2E_OUT_DIR/24-final.png"
 log_step "app log will be preserved at: $PTR_E2E_OUT_DIR/app.log (copied by cleanup())"
 
 if [ "$FAILURES" -ne 0 ]; then
