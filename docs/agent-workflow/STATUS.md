@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     merge window decoration mode
+SINCE:    2026-07-13 16:45 CEST
 ```
 
-_As of 2026-07-13 16:05 CEST: Codex merged the completed header/sidebar feature and is releasing the lock._
+_As of 2026-07-13 16:45 CEST: Codex is merging the completed window-decoration feature._
 
 ## Current position
 
