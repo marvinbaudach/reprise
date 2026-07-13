@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Add visible library scan progress
+SINCE:    2026-07-13 10:21 CEST
 ```
 
-_As of 2026-07-13 10:19 CEST: Codex released the lock after fixing missing MPRIS cover metadata._
+_As of 2026-07-13 10:21 CEST: Codex claimed the lock to add visible library scan progress._
 
 ## Current position
 
