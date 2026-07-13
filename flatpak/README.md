@@ -26,10 +26,12 @@ flatpak-builder --user --install-deps-from=flathub --force-clean \
 flatpak run org.reprise.Reprise
 ```
 
-The application receives only display, graphics, audio, network, and its own
-MPRIS name. Library access is granted by the user's folder choice through the
-desktop FileChooser/Documents portals; moving files to Trash uses the Trash
-portal inside Flatpak. There is no broad home-directory or session-bus access.
+The application receives only display, graphics, audio, network, its own MPRIS
+name, and narrow access to the desktop's existing GVfs mounts for Android MTP
+synchronization. Library access is granted by the user's folder choice through
+the desktop FileChooser/Documents portals; moving files to Trash uses the Trash
+portal inside Flatpak. There is no broad home-directory, direct-USB,
+session-bus, or system-bus access.
 
 ## Public-source handoff
 

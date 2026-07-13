@@ -19,6 +19,9 @@ Flathub.
   lock-screen controls.
 - Manual and smart playlists, multi-select actions, drag and drop, queue
   reordering, and M3U/M3U8 import and export.
+- Android USB/MTP synchronization with detected-device browsing, phone
+  playlists, drag-to-copy, per-file and overall progress, cancellation, and a
+  strict per-device FIFO queue.
 - Embedded, folder, and cached online album covers plus a full Now Playing view.
 - Optional ListenBrainz scrobbling with playing-now updates, durable offline
   delivery, and credentials stored in the system keyring.
@@ -68,13 +71,25 @@ release, duration, and listen start time for completed tracks; playing-now updat
 omit the start time. Its offline FIFO is separate from ListenBrainz, and Disconnect
 removes only the Last.fm keyring item and Last.fm queue.
 
+Android synchronization starts only after tracks are dragged onto a phone
+playlist. Reprise writes copied audio and relative `.m3u8` playlists only below
+`Music/Reprise` on the selected device, never deletes unrelated device files,
+and performs at most one copy at a time per device. A disconnected device pauses
+a safely identifiable job until it reconnects; cancellation removes its partial
+file while preserving completed files and later queued jobs.
+
 ## Requirements
 
 - Rust stable (edition 2021)
 - Meson 1.3+ and Ninja
 - GTK 4.22+ and libadwaita 1.9+
 - GStreamer 1.x and codec plugins for the formats you use
+- GVfs with its MTP volume monitor for Android USB synchronization
 - SQLite, gettext, and standard GNOME build tools
+
+On the phone, unlock the screen and select its USB **File transfer / MTP** mode.
+The device must already be visible in the GNOME Files application before Reprise
+can browse or synchronize it.
 
 The Flatpak manifest supplies these through GNOME Platform/SDK 50 and the stable
 Rust SDK extension.
@@ -106,8 +121,9 @@ prefix.
 ## Build the Flatpak
 
 The local manifest uses GNOME 50, builds Cargo dependencies offline from pinned
-checksums, and grants only display, graphics, audio, automatic cover-network, and
-the application's own MPRIS permissions.
+checksums, and grants only display, graphics, audio, automatic cover-network,
+the application's own MPRIS permission, and the two narrow GVfs permissions
+needed to reach an MTP device already mounted by the desktop.
 
 ```sh
 flatpak-builder --user --install-deps-from=flathub --force-clean \
@@ -138,7 +154,7 @@ run against a real library database or music collection.
 Reprise follows Rhythmbox's proven local-library model: a column-based collection,
 smart and manual playlists, a play queue, ratings, and strong GNOME integration.
 Its scope is deliberately narrower: it does not currently provide podcasts,
-internet radio, CD ripping, device sync, DAAP sharing, or a plugin ecosystem.
+internet radio, CD ripping, DAAP sharing, or a plugin ecosystem.
 
 ## License
 
