@@ -15,6 +15,7 @@ use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::cover_download_batch::CoverDownloadBatch;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::preference_plugins::{plugin_applies_live, plugin_description, plugin_title};
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
@@ -25,36 +26,6 @@ pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-height: 48px; }\n\
      .reprise-density-standard columnview row { min-height: 36px; }\n\
      .reprise-density-compact columnview row { min-height: 28px; }";
-
-fn plugin_applies_live(id: &str) -> bool {
-    matches!(
-        id,
-        "cover_download" | "artist_news" | "listenbrainz" | "lastfm"
-    )
-}
-
-fn plugin_title(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
-    let message = match descriptor.id {
-        "cover_download" => strings::DOWNLOAD_MISSING_COVERS,
-        "listenbrainz" => strings::LISTENBRAINZ,
-        "lastfm" => strings::LASTFM,
-        "artist_news" => strings::ARTIST_NEWS,
-        _ => return descriptor.name.to_string(),
-    };
-    strings::text(message)
-}
-
-fn plugin_description(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
-    let message = match descriptor.id {
-        "mpris" => strings::PLUGIN_MPRIS_DESCRIPTION,
-        "cover_download" => strings::PLUGIN_COVER_DESCRIPTION,
-        "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
-        "lastfm" => strings::PLUGIN_LASTFM_DESCRIPTION,
-        "artist_news" => strings::ARTIST_NEWS_DESCRIPTION,
-        _ => return descriptor.description.to_string(),
-    };
-    strings::text(message)
-}
 
 fn equalizer_preset(index: u32) -> [f64; 10] {
     match index {
