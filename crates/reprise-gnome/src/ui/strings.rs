@@ -251,9 +251,19 @@ pub const NO_RESULTS_DESCRIPTION: &str = N_!("Try a different search");
 pub const NOTHING_HERE_TITLE: &str = N_!("Nothing here");
 pub const NOTHING_HERE_DESCRIPTION: &str = N_!("This view has no tracks right now");
 
-// Scan flow (src/ui/window.rs).
+// Scan flow (src/ui/scan_flow.rs and src/ui/scan_progress.rs).
 pub const SCAN_DIALOG_TITLE: &str = N_!("Select Music Folder");
 pub const SCANNING: &str = N_!("Scanning…");
+pub const SCAN_DISCOVERING: &str = N_!("Finding music files…");
+
+pub fn scan_progress(processed: u64, total: u64) -> String {
+    let processed = processed.to_string();
+    let total = total.to_string();
+    formatted(
+        N_!("{processed} of {total} files scanned"),
+        &[("processed", &processed), ("total", &total)],
+    )
+}
 /// Prefix for the error toast shown after a failed scan; the underlying
 /// `ScanError`'s `Display` text is appended by the caller.
 pub const SCAN_FAILED_PREFIX: &str = N_!("Scan failed: ");

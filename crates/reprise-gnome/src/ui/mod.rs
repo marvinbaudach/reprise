@@ -55,6 +55,7 @@ pub mod primary_menu;
 pub mod queue_transport;
 pub mod rating;
 pub mod scan_flow;
+mod scan_progress;
 pub mod session_player;
 pub mod session_restore;
 pub mod shortcuts;
