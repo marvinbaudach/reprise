@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-13 21:56+0200\n"
+"POT-Creation-Date: 2026-07-13 22:11+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -669,13 +669,13 @@ msgstr "Titel"
 
 #: crates/reprise-gnome/src/ui/strings.rs:281
 #: crates/reprise-gnome/src/ui/strings.rs:434
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:13
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:19
 msgid "Artist"
 msgstr "Interpret"
 
 #: crates/reprise-gnome/src/ui/strings.rs:282
 #: crates/reprise-gnome/src/ui/strings.rs:435
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:14
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:20
 msgid "Album"
 msgstr "Album"
 
@@ -694,7 +694,7 @@ msgstr "Titelnummer"
 
 #: crates/reprise-gnome/src/ui/strings.rs:286
 #: crates/reprise-gnome/src/ui/strings.rs:437
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:12
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:18
 msgid "Genre"
 msgstr "Genre"
 
@@ -1201,39 +1201,65 @@ msgstr "{name} exportiert"
 msgid "Could not export “{name}”"
 msgstr "„{name}“ konnte nicht exportiert werden"
 
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:12
+msgid "FILTER"
+msgstr "FILTER"
+
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:13
+msgid "Add filter"
+msgstr "Filter hinzufügen"
+
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:14
+msgid "Reset"
+msgstr "Zurücksetzen"
+
 #: crates/reprise-gnome/src/ui/browse_filter_strings.rs:15
-msgid "All genres"
-msgstr "Alle Genres"
+msgid "Back"
+msgstr "Zurück"
 
 #: crates/reprise-gnome/src/ui/browse_filter_strings.rs:16
-msgid "All artists"
-msgstr "Alle Interpreten"
+msgid "Search filter values"
+msgstr "Filterwerte suchen"
 
 #: crates/reprise-gnome/src/ui/browse_filter_strings.rs:17
-msgid "All albums"
-msgstr "Alle Alben"
+msgid "All filters are active"
+msgstr "Alle Filter sind aktiv"
 
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:18
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:21
 msgid "Unknown genre"
 msgstr "Unbekanntes Genre"
 
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:19
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:22
 msgid "Unknown artist"
 msgstr "Unbekannter Interpret"
 
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:20
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:23
 msgid "Unknown album"
 msgstr "Unbekanntes Album"
 
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:28
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:31
 #, rust-format
 msgid "{facet}: {value}"
 msgstr "{facet}: {value}"
 
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:35
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:38
 #, rust-format
 msgid "Remove {facet} filter: {value}"
 msgstr "Filter {facet} entfernen: {value}"
+
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:50
+#, rust-format
+msgid "{total} track"
+msgid_plural "{total} tracks"
+msgstr[0] "{total} Titel"
+msgstr[1] "{total} Titel"
+
+#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:54
+#, rust-format
+msgid "{filtered} of {total} track"
+msgid_plural "{filtered} of {total} tracks"
+msgstr[0] "{filtered} von {total} Titel"
+msgstr[1] "{filtered} von {total} Titeln"
 
 #: crates/reprise-gnome/src/ui/track_list_queue_menu.rs:18
 msgid "Remove from Queue"
@@ -1267,6 +1293,18 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window_decoration_strings.rs:18
 msgid "System title bar"
 msgstr "Systemtitelleiste"
+
+#~ msgid "Filters"
+#~ msgstr "Filter"
+
+#~ msgid "All genres"
+#~ msgstr "Alle Genres"
+
+#~ msgid "All artists"
+#~ msgstr "Alle Interpreten"
+
+#~ msgid "All albums"
+#~ msgstr "Alle Alben"
 
 #~ msgid "Minimal View"
 #~ msgstr "Minimalansicht"
