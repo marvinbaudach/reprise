@@ -30,6 +30,24 @@ pub(super) struct Callbacks {
     pub(super) on_cover_download_changed: Rc<dyn Fn(bool)>,
 }
 
+fn primary_menu_entries() -> Vec<(String, &'static str)> {
+    vec![
+        (
+            strings::text(strings::DOWNLOAD_MISSING_COVERS),
+            "win.download-missing-covers",
+        ),
+        (strings::text(strings::PREFERENCES), "win.preferences"),
+        (
+            strings::text(strings::COMPACT_VIEW),
+            "win.toggle-minimal-view",
+        ),
+        (
+            strings::text(strings::EDIT_COLUMN_LAYOUT),
+            "win.edit-column-layout",
+        ),
+    ]
+}
+
 pub(super) fn install(
     header: &adw::HeaderBar,
     window: &adw::ApplicationWindow,
@@ -39,26 +57,9 @@ pub(super) fn install(
     callbacks: Callbacks,
 ) {
     let menu = gio::Menu::new();
-    menu.append(
-        Some(&strings::text(strings::DOWNLOAD_MISSING_COVERS)),
-        Some("win.download-missing-covers"),
-    );
-    menu.append(
-        Some(&strings::text(strings::PREFERENCES)),
-        Some("win.preferences"),
-    );
-    menu.append(
-        Some(&strings::text(strings::COMPACT_VIEW)),
-        Some("win.toggle-minimal-view"),
-    );
-    menu.append(
-        Some(&strings::text(strings::EDIT_COLUMN_LAYOUT)),
-        Some("win.edit-column-layout"),
-    );
-    menu.append(
-        Some(&strings::text(strings::IMPORT_RHYTHMBOX_COLUMNS)),
-        Some("win.import-rhythmbox-columns"),
-    );
+    for (label, action) in primary_menu_entries() {
+        menu.append(Some(&label), Some(action));
+    }
     let menu_button = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu)
@@ -221,4 +222,20 @@ fn arm_smoke_rhythmbox_import(action: &gio::SimpleAction) {
     glib::idle_add_local_once(move || {
         action.activate(None);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persistent_menu_does_not_offer_rhythmbox_import() {
+        let actions = primary_menu_entries()
+            .into_iter()
+            .map(|(_, action)| action)
+            .collect::<Vec<_>>();
+
+        assert!(!actions.contains(&"win.import-rhythmbox-columns"));
+        assert!(actions.contains(&"win.edit-column-layout"));
+    }
 }

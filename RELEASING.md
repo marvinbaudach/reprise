@@ -111,7 +111,8 @@ The detailed live ledger of confirmed and pending checks is
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. Cover download must default off. A detected Rhythmbox installation
-  must show a clearly default-off import offer; no false offer appears without it.
+  must show a clearly default-off `Column layout` choice in the one-time import
+  section; no false offer appears without it and no later menu/Preferences entry exists.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
@@ -135,7 +136,8 @@ The detailed live ledger of confirmed and pending checks is
   cover art, shuffle/repeat writes, and clean shutdown on a real GNOME session.
 - Exercise browse facets, search, the column-layout editor (switches, buttons,
   whole-row drag, insertion lines, reset and restart persistence), a real read-only
-  Rhythmbox column import, playlists, M3U import/export, and drag/reorder gestures.
+  first-run Rhythmbox column import plus second-start suppression, playlists, M3U
+  import/export, and drag/reorder gestures.
 - Connect a disposable ListenBrainz account, verify the displayed account name,
   then test playing-now, the half-track/four-minute threshold, offline persistence
   across restart, retry delivery, disable-without-sending, and Disconnect clearing

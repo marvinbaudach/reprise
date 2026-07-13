@@ -65,21 +65,6 @@ impl PreferencesContext {
             }),
         ));
 
-        let weak = Rc::downgrade(self);
-        group.add(&action_row(
-            strings::IMPORT_RHYTHMBOX_COLUMNS,
-            Rc::new(move || {
-                let Some(context) = weak.upgrade() else {
-                    return;
-                };
-                if let Some(action) = context
-                    .window
-                    .lookup_action(crate::ui::primary_menu::ACTION_IMPORT_RHYTHMBOX_COLUMNS)
-                {
-                    action.activate(None);
-                }
-            }),
-        ));
         page.add(&group);
         page
     }
