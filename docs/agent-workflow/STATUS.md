@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     Next planned stage: minimal-view variants
-SINCE:    2026-07-13 09:47 CEST
+OWNER:    codex           # FREE | claude | codex
+TASK:     Prevent Equalizer enable from restarting the current track
+SINCE:    2026-07-13 09:48 CEST
 ```
 
-_As of 2026-07-13 09:47 CEST: Codex completed visible cover-download progress and released the lock._
+_As of 2026-07-13 09:48 CEST: Codex claimed the lock for the Equalizer enable playback regression._
 
 ## Current position
 
