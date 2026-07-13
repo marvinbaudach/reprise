@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge completed ListenBrainz scrobbling feature
+SINCE:    2026-07-13 13:52 CEST
 ```
 
-_As of 2026-07-13: selectable compact-player layouts are complete and the lock is released._
+_As of 2026-07-13 13:52 CEST: Codex claimed the lock to merge completed ListenBrainz scrobbling._
 
 ## Current position
 
