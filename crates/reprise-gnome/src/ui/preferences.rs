@@ -12,6 +12,7 @@ use reprise_core::library::settings::{
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::info_panel::InfoPanel;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::preference_playback::build_equalizer_surface;
@@ -98,6 +99,7 @@ pub(super) struct PreferencesContext {
     pub(super) sidebar_page: adw::NavigationPage,
     pub(super) status_bar: StatusBar,
     pub(super) library_player_bar: LibraryPlayerBarShell,
+    pub(super) info_panel: Rc<InfoPanel>,
     pub(super) scan_button: gtk4::Button,
     pub(super) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
     pub(super) player: Option<Rc<PlayerController>>,
@@ -126,6 +128,7 @@ impl PreferencesContext {
         sidebar_page: &adw::NavigationPage,
         status_bar: &StatusBar,
         library_player_bar: &LibraryPlayerBarShell,
+        info_panel: &Rc<InfoPanel>,
         scan_button: &gtk4::Button,
         player: Option<&Rc<PlayerController>>,
         listenbrainz: &Rc<ScrobbleRuntime>,
@@ -141,6 +144,7 @@ impl PreferencesContext {
             sidebar_page: sidebar_page.clone(),
             status_bar: status_bar.clone(),
             library_player_bar: library_player_bar.clone(),
+            info_panel: info_panel.clone(),
             scan_button: scan_button.clone(),
             library_folder_rows: RefCell::new(Vec::new()),
             player: player.cloned(),
@@ -172,13 +176,22 @@ impl PreferencesContext {
     }
 
     fn apply_initial(&self) {
-        let (color_scheme, density, sidebar_visible, browse_visible, status_visible, decorations) = {
+        let (
+            color_scheme,
+            density,
+            sidebar_visible,
+            browse_visible,
+            info_visible,
+            status_visible,
+            decorations,
+        ) = {
             let conn = self.conn.borrow();
             (
                 settings::get_color_scheme(&conn),
                 settings::get_list_density(&conn),
                 settings::get_sidebar_visible(&conn),
                 settings::get_browse_visible(&conn),
+                settings::get_info_panel_visible(&conn),
                 settings::get_status_visible(&conn),
                 settings::get_window_decoration_mode(&conn),
             )
@@ -191,8 +204,16 @@ impl PreferencesContext {
             sidebar_visible,
         );
         self.track_list.set_browse_visible(browse_visible);
+        self.info_panel.apply_persisted_visibility(info_visible);
         self.status_bar.set_enabled(status_visible);
         self.decorations.apply(decorations);
+        tracing::info!(
+            sidebar_visible,
+            browse_visible,
+            info_visible,
+            status_visible,
+            "persisted library layout applied"
+        );
     }
 
     pub(super) fn present(self: &Rc<Self>) {
@@ -217,6 +238,9 @@ impl PreferencesContext {
         let shell = super::preferences_window::build(&self.window, pages);
         self.preferences_window.borrow().set(Some(&shell.window));
         let smoke = std::env::var(SMOKE_ENV).ok();
+        if smoke.as_deref() == Some("layout") {
+            shell.stack.set_visible_child_name("layout");
+        }
         if smoke.as_deref() == Some("exercise") {
             let context = Rc::downgrade(self);
             let exercised = Rc::new(Cell::new(false));
@@ -247,6 +271,8 @@ impl PreferencesContext {
         let _ = settings::set_color_scheme(&conn, ColorScheme::Dark);
         let _ = settings::set_list_density(&conn, ListDensity::Compact);
         let _ = settings::set_sidebar_visible(&conn, false);
+        let _ = settings::set_browse_visible(&conn, false);
+        let _ = settings::set_info_panel_visible(&conn, false);
         let _ = settings::set_status_visible(&conn, false);
         let _ = settings::set_window_decoration_mode(
             &conn,
@@ -265,6 +291,8 @@ impl PreferencesContext {
             &self.sidebar_page,
             false,
         );
+        self.track_list.set_browse_visible(false);
+        self.info_panel.apply_persisted_visibility(false);
         self.status_bar.set_enabled(false);
         self.decorations
             .apply(reprise_core::library::settings::WindowDecorationMode::System);
