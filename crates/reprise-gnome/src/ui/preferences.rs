@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -13,6 +14,10 @@ use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
+
+fn plugin_applies_live(id: &str) -> bool {
+    id == reprise_core::modules::COVER_DOWNLOAD_MODULE.id
+}
 
 fn color_scheme_from_index(index: u32) -> ColorScheme {
     match index {
@@ -105,6 +110,7 @@ pub(super) struct PreferencesContext {
     status_bar: StatusBar,
     toolbar_view: adw::ToolbarView,
     bottom_box: gtk4::Box,
+    scan_button: gtk4::Button,
     on_minimal: Rc<dyn Fn()>,
 }
 
@@ -118,6 +124,7 @@ impl PreferencesContext {
         status_bar: &StatusBar,
         toolbar_view: &adw::ToolbarView,
         bottom_box: &gtk4::Box,
+        scan_button: &gtk4::Button,
         on_minimal: impl Fn() + 'static,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
@@ -128,6 +135,7 @@ impl PreferencesContext {
             status_bar: status_bar.clone(),
             toolbar_view: toolbar_view.clone(),
             bottom_box: bottom_box.clone(),
+            scan_button: scan_button.clone(),
             on_minimal: Rc::new(on_minimal),
         });
         context.apply_initial();
@@ -151,6 +159,8 @@ impl PreferencesContext {
         let dialog = adw::PreferencesDialog::new();
         dialog.add(&self.appearance_page());
         dialog.add(&self.layout_page());
+        dialog.add(&self.library_page());
+        dialog.add(&self.plugins_page());
         dialog.present(Some(&self.window));
         if let Ok(smoke) = std::env::var(SMOKE_ENV) {
             if smoke == "exercise" {
@@ -323,6 +333,96 @@ impl PreferencesContext {
         page.add(&group);
         page
     }
+
+    fn library_page(self: &Rc<Self>) -> adw::PreferencesPage {
+        let page = adw::PreferencesPage::builder()
+            .title(strings::text(strings::PREFERENCES_LIBRARY))
+            .icon_name("folder-music-symbolic")
+            .build();
+        let group = adw::PreferencesGroup::new();
+        let root = settings::get_library_root(&self.conn.borrow())
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| strings::text(strings::NO_LIBRARY_FOLDER));
+        let folder = adw::ActionRow::builder()
+            .title(strings::text(strings::LIBRARY_FOLDER))
+            .subtitle(root)
+            .build();
+        let choose = gtk4::Button::with_label(&strings::text(strings::CHOOSE_FOLDER));
+        choose.set_valign(gtk4::Align::Center);
+        let scan_button = self.scan_button.clone();
+        choose.connect_clicked(move |_| scan_button.emit_clicked());
+        folder.add_suffix(&choose);
+        group.add(&folder);
+
+        let weak = Rc::downgrade(self);
+        group.add(&action_row(
+            strings::IMPORT_RHYTHMBOX_COLUMNS,
+            Rc::new(move || {
+                let Some(context) = weak.upgrade() else {
+                    return;
+                };
+                if let Some(action) = context
+                    .window
+                    .lookup_action(crate::ui::primary_menu::ACTION_IMPORT_RHYTHMBOX_COLUMNS)
+                {
+                    action.activate(None);
+                }
+            }),
+        ));
+        page.add(&group);
+        page
+    }
+
+    fn plugins_page(self: &Rc<Self>) -> adw::PreferencesPage {
+        let page = adw::PreferencesPage::builder()
+            .title(strings::text(strings::PREFERENCES_PLUGINS))
+            .icon_name("application-x-addon-symbolic")
+            .build();
+        let group = adw::PreferencesGroup::new();
+        for descriptor in reprise_core::modules::ALL_MODULES {
+            let subtitle = if plugin_applies_live(descriptor.id) {
+                descriptor.description.to_string()
+            } else {
+                format!(
+                    "{} · {}",
+                    descriptor.description,
+                    strings::text(strings::RESTART_REQUIRED)
+                )
+            };
+            let row = adw::SwitchRow::builder()
+                .title(descriptor.name)
+                .subtitle(subtitle)
+                .active(
+                    reprise_core::modules::is_enabled(&self.conn.borrow(), descriptor)
+                        .unwrap_or(descriptor.default_enabled),
+                )
+                .build();
+            let weak = Rc::downgrade(self);
+            let descriptor = *descriptor;
+            row.connect_active_notify(move |row| {
+                let Some(context) = weak.upgrade() else {
+                    return;
+                };
+                let active = row.is_active();
+                if plugin_applies_live(descriptor.id) {
+                    if let Some(action) = context
+                        .window
+                        .lookup_action(crate::ui::primary_menu::ACTION_DOWNLOAD_MISSING_COVERS)
+                    {
+                        action.change_state(&active.to_variant());
+                    }
+                } else if let Err(error) =
+                    reprise_core::modules::set_enabled(&context.conn.borrow(), descriptor, active)
+                {
+                    tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
+                }
+            });
+            group.add(&row);
+        }
+        page.add(&group);
+        page
+    }
 }
 
 fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow {
@@ -348,5 +448,12 @@ mod tests {
         assert_eq!(density_from_index(2), ListDensity::Compact);
         assert_eq!(bar_position_from_index(0), PlayerBarPosition::Bottom);
         assert_eq!(bar_position_from_index(1), PlayerBarPosition::Top);
+    }
+
+    #[test]
+    fn only_runtime_safe_plugins_apply_without_restart() {
+        assert!(plugin_applies_live("cover_download"));
+        assert!(!plugin_applies_live("mpris"));
+        assert!(!plugin_applies_live("foreign"));
     }
 }
