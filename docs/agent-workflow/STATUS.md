@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate one-time Rhythmbox import
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: Codex released the lock after correcting the completed unified-filter plan status._
+_As of 2026-07-13: Codex claimed the lock to integrate the one-time Rhythmbox import._
 
 ## Current position
 
