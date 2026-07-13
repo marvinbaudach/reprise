@@ -26,6 +26,16 @@ pub struct ScanReport {
     pub moved: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScanProgress {
+    Discovering,
+    Scanning {
+        processed: u64,
+        total: u64,
+        current_path: std::path::PathBuf,
+    },
+}
+
 #[derive(Debug, Default)]
 pub struct TrackMeta {
     pub title: String,
@@ -40,6 +50,40 @@ pub struct TrackMeta {
 }
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
+
+fn is_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|extension| AUDIO_EXTENSIONS.contains(&extension.as_str()))
+}
+
+fn count_audio_files(root: &Path) -> u64 {
+    walkdir::WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file() && is_audio_file(entry.path()))
+        .count() as u64
+}
+
+struct ScanProgressReporter<'a> {
+    callback: &'a mut dyn FnMut(ScanProgress),
+    processed: u64,
+    total: u64,
+}
+
+impl ScanProgressReporter<'_> {
+    fn advance(&mut self, path: &Path) {
+        self.processed += 1;
+        self.total = self.total.max(self.processed);
+        (self.callback)(ScanProgress::Scanning {
+            processed: self.processed,
+            total: self.total,
+            current_path: path.to_path_buf(),
+        });
+    }
+}
 
 pub fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
     use lofty::prelude::*;
@@ -240,6 +284,29 @@ fn tag_param_values<'a>(title: &'a str, meta: &'a TrackMeta) -> TagParams<'a> {
 }
 
 pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, ScanError> {
+    scan_folder_inner(conn, root, None)
+}
+
+pub fn scan_folder_with_progress(
+    conn: &mut Connection,
+    root: &Path,
+    mut on_progress: impl FnMut(ScanProgress),
+) -> Result<ScanReport, ScanError> {
+    on_progress(ScanProgress::Discovering);
+    let total = count_audio_files(root);
+    let reporter = ScanProgressReporter {
+        callback: &mut on_progress,
+        processed: 0,
+        total,
+    };
+    scan_folder_inner(conn, root, Some(reporter))
+}
+
+fn scan_folder_inner(
+    conn: &mut Connection,
+    root: &Path,
+    mut progress: Option<ScanProgressReporter<'_>>,
+) -> Result<ScanReport, ScanError> {
     let mut report = ScanReport::default();
     let tx = conn.transaction()?;
     for entry in walkdir::WalkDir::new(root).follow_links(false).into_iter() {
@@ -269,12 +336,7 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
             continue;
         }
         let path = entry.path();
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(str::to_ascii_lowercase);
-        let Some(ext) = ext else { continue };
-        if !AUDIO_EXTENSIONS.contains(&ext.as_str()) {
+        if !is_audio_file(path) {
             continue;
         }
         let path_str = path.to_string_lossy().to_string();
@@ -302,6 +364,9 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
                 tracing::info!(path = %path_str, "restored missing track");
             } else {
                 report.skipped_unchanged += 1;
+            }
+            if let Some(progress) = &mut progress {
+                progress.advance(path);
             }
             continue;
         }
@@ -468,6 +533,9 @@ pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, Sca
                 report.errors += 1;
             }
         }
+        if let Some(progress) = &mut progress {
+            progress.advance(path);
+        }
     }
     tx.commit()?;
     Ok(report)
@@ -550,6 +618,10 @@ pub fn mark_vanished_under_root(conn: &Connection, root: &Path) -> Result<u32, S
     }
     Ok(marked)
 }
+
+#[cfg(test)]
+#[path = "scanner_progress_tests.rs"]
+mod progress_tests;
 
 // Stage 3 Task 1: the test suite moved to its own file purely to keep this
 // file under the project's 800-line rule — see `scanner_tests.rs`'s module
