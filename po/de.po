@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-13 23:27+0200\n"
+"POT-Creation-Date: 2026-07-13 23:49+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -1033,6 +1033,7 @@ msgid "Time"
 msgstr "Zeit"
 
 #: crates/reprise-gnome/src/ui/strings.rs:609
+#: crates/reprise-gnome/src/ui/lyrics_strings.rs:15
 msgid "Retry"
 msgstr "Erneut versuchen"
 
@@ -1273,6 +1274,30 @@ msgid "{filtered} of {total} track"
 msgid_plural "{filtered} of {total} tracks"
 msgstr[0] "{filtered} von {total} Titel"
 msgstr[1] "{filtered} von {total} Titeln"
+
+#: crates/reprise-gnome/src/ui/lyrics_strings.rs:9
+msgid "Lyrics"
+msgstr "Songtexte"
+
+#: crates/reprise-gnome/src/ui/lyrics_strings.rs:10
+msgid "Play a track to see its lyrics"
+msgstr "Spiele einen Titel ab, um seinen Songtext zu sehen"
+
+#: crates/reprise-gnome/src/ui/lyrics_strings.rs:11
+msgid "Loading lyrics…"
+msgstr "Songtext wird geladen…"
+
+#: crates/reprise-gnome/src/ui/lyrics_strings.rs:12
+msgid "Instrumental"
+msgstr "Instrumental"
+
+#: crates/reprise-gnome/src/ui/lyrics_strings.rs:13
+msgid "No lyrics found"
+msgstr "Kein Songtext gefunden"
+
+#: crates/reprise-gnome/src/ui/lyrics_strings.rs:14
+msgid "Could not load lyrics"
+msgstr "Songtext konnte nicht geladen werden"
 
 #: crates/reprise-gnome/src/ui/track_list_queue_menu.rs:18
 msgid "Remove from Queue"

@@ -13,6 +13,8 @@ use super::artist_news_worker::{ArtistNewsRequest, ArtistNewsResponse, ArtistNew
 use super::cover_loader::CoverLoader;
 use super::info_panel_feedback::request_feedback;
 use super::info_panel_state::{PanelContext, PanelState, RequestIntent};
+use super::lyrics_strings;
+use super::lyrics_view::LyricsView;
 use super::strings;
 use super::track_list::TrackList;
 
@@ -20,6 +22,8 @@ const PANEL_WIDTH: f64 = 340.0;
 // Left navigation (220) + usable track table (400) + Information (340).
 const PINNED_MIN_WIDTH: f64 = 960.0;
 const SMOKE_ENV: &str = "REPRISE_SMOKE_ARTIST_NEWS";
+const INFORMATION_PAGE: &str = "information";
+const LYRICS_PAGE: &str = "lyrics";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PanelMetrics {
@@ -94,6 +98,8 @@ struct PanelWidgets {
     split: adw::OverlaySplitView,
     #[cfg(test)]
     header: adw::HeaderBar,
+    stack: gtk4::Stack,
+    lyrics: Rc<LyricsView>,
     body: gtk4::Box,
     local: gtk4::Box,
     cover: gtk4::Image,
@@ -155,17 +161,34 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
         .icon_name("window-close-symbolic")
         .tooltip_text(strings::text(strings::CLOSE))
         .build();
-    let heading = adw::WindowTitle::new(&strings::text(strings::INFORMATION), "");
+    let lyrics = LyricsView::new();
+    let stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .vexpand(true)
+        .build();
+    stack.add_titled(
+        &scrolled,
+        Some(INFORMATION_PAGE),
+        &strings::text(strings::INFORMATION),
+    );
+    stack.add_titled(
+        lyrics.widget(),
+        Some(LYRICS_PAGE),
+        &lyrics_strings::text(lyrics_strings::LYRICS),
+    );
+    let switcher = gtk4::StackSwitcher::new();
+    switcher.set_stack(Some(&stack));
+    switcher.set_halign(gtk4::Align::Center);
     let header = adw::HeaderBar::new();
     header.set_show_start_title_buttons(false);
     header.set_show_end_title_buttons(false);
-    header.set_title_widget(Some(&heading));
+    header.set_title_widget(Some(&switcher));
     header.pack_start(&refresh);
     header.pack_start(&progress);
     header.pack_end(&close);
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&scrolled));
+    toolbar.set_content(Some(&stack));
     // Start in the safe overlay shape before the first allocation. The
     // breakpoint below promotes this to the pinned desktop shape when wide;
     // doing the inverse briefly over-constrains narrow startup windows.
@@ -189,6 +212,8 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
         split,
         #[cfg(test)]
         header,
+        stack,
+        lyrics,
         body,
         local,
         cover,
@@ -222,6 +247,7 @@ pub(super) struct InfoPanel {
     state: RefCell<PanelState>,
     syncing_visibility: Cell<bool>,
     syncing_enabled: Cell<bool>,
+    information_loading: Cell<bool>,
     window: glib::WeakRef<adw::ApplicationWindow>,
 }
 
@@ -251,6 +277,7 @@ impl InfoPanel {
             cover_generation: Rc::new(Cell::new(0)),
             syncing_visibility: Cell::new(false),
             syncing_enabled: Cell::new(false),
+            information_loading: Cell::new(false),
             window: glib::WeakRef::new(),
         });
         panel.window.set(Some(window));
@@ -265,6 +292,15 @@ impl InfoPanel {
 
     pub(super) fn toggle_button(&self) -> gtk4::ToggleButton {
         self.toggle.clone()
+    }
+
+    pub(super) fn lyrics_view(&self) -> Rc<LyricsView> {
+        self.widgets.lyrics.clone()
+    }
+
+    pub(super) fn show_lyrics(&self) {
+        self.widgets.stack.set_visible_child_name(LYRICS_PAGE);
+        self.widgets.split.set_show_sidebar(true);
     }
 
     pub(super) fn apply_persisted_visibility(&self, visible: bool) {
@@ -391,8 +427,26 @@ impl InfoPanel {
         let weak = Rc::downgrade(self);
         self.widgets.refresh.connect_clicked(move |_| {
             if let Some(panel) = weak.upgrade() {
+                if panel.widgets.stack.visible_child_name().as_deref() == Some(LYRICS_PAGE) {
+                    panel.widgets.lyrics.retry();
+                    return;
+                }
                 let intent = panel.state.borrow_mut().refresh();
                 panel.start_or_render(intent);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.widgets
+            .stack
+            .connect_visible_child_name_notify(move |_| {
+                if let Some(panel) = weak.upgrade() {
+                    panel.apply_header_feedback();
+                }
+            });
+        let weak = Rc::downgrade(self);
+        self.widgets.lyrics.set_on_status_changed(move || {
+            if let Some(panel) = weak.upgrade() {
+                panel.apply_header_feedback();
             }
         });
         let weak = Rc::downgrade(self);
@@ -657,13 +711,37 @@ impl InfoPanel {
     }
 
     fn apply_request_feedback(&self, loading: bool) {
-        let context = self.state.borrow().context();
-        let feedback = request_feedback(self.runtime.enabled.get(), &context, loading);
+        self.information_loading.set(loading);
+        self.apply_header_feedback();
+    }
+
+    fn apply_header_feedback(&self) {
+        if self.widgets.stack.visible_child_name().as_deref() == Some(LYRICS_PAGE) {
+            self.widgets
+                .refresh
+                .set_tooltip_text(Some(&lyrics_strings::text(lyrics_strings::RETRY)));
+            self.set_header_feedback(
+                self.widgets.lyrics.can_retry(),
+                self.widgets.lyrics.is_loading(),
+            );
+            return;
+        }
         self.widgets
             .refresh
-            .set_sensitive(feedback.refresh_sensitive);
-        self.widgets.progress.set_visible(feedback.progress_visible);
-        if feedback.progress_visible {
+            .set_tooltip_text(Some(&strings::text(strings::NEWS_REFRESH)));
+        let context = self.state.borrow().context();
+        let feedback = request_feedback(
+            self.runtime.enabled.get(),
+            &context,
+            self.information_loading.get(),
+        );
+        self.set_header_feedback(feedback.refresh_sensitive, feedback.progress_visible);
+    }
+
+    fn set_header_feedback(&self, refresh_sensitive: bool, progress_visible: bool) {
+        self.widgets.refresh.set_sensitive(refresh_sensitive);
+        self.widgets.progress.set_visible(progress_visible);
+        if progress_visible {
             self.widgets.progress.start();
         } else {
             self.widgets.progress.stop();
