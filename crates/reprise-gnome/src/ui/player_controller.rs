@@ -135,10 +135,10 @@
 //!
 //! ## Track-change notification (GUI-A)
 //!
-//! `play_track_id` sends a `gio::Notification` (title/body from the track
-//! summary, icon from the same Bar-size cover thumbnail the bar itself
-//! requests — `reprise_core::cover::thumbnail`'s cache makes the second call
-//! cheap, not a second decode) through the `application` field's `WeakRef`.
+//! `play_track_id` asks `notifications.rs` to send a `gio::Notification`
+//! (title/body from the track summary, icon from a Bar-size cover thumbnail)
+//! through the `application` field's `WeakRef`. Cover resolve/decode/cache work
+//! runs off the main loop, so a cold image can never delay `Player::play`.
 //! Greenfield: no notification existed before this. Two rules keep it from
 //! being annoying or fragile:
 //!
@@ -151,6 +151,8 @@
 //!   missing cover, or missing application handle silently skips the icon or
 //!   the whole send, never panics, and is never logged above `debug` (a
 //!   headless/no-portal environment hits this on every track).
+//! - **Never stale.** The async result carries the bar-cover generation from
+//!   the same track change and is discarded if a newer track has superseded it.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -292,7 +294,7 @@ pub struct PlayerController {
     /// overlay` above, so the controller can never keep the application alive
     /// past its natural lifetime; `notify_now_playing` degrades to a no-op if
     /// the upgrade ever fails.
-    application: glib::WeakRef<gio::Application>,
+    pub(super) application: glib::WeakRef<gio::Application>,
 }
 
 /// See `PlayerController::now_playing`'s doc comment. Fields are `pub(super)`
@@ -577,36 +579,6 @@ impl PlayerController {
                 self.skip_after_failure();
             }
         }
-    }
-
-    /// Sends a `gio::Notification` for the just-started `title`/`artist`/
-    /// `album`, with the same Bar-size cover thumbnail the bar itself shows
-    /// as the notification's icon (GUI-A — see the module's `## Track-change
-    /// notification` doc section). Called only when `play_track_id` detects
-    /// an actual id change, never on pause/resume of the same track. Every
-    /// step degrades silently: no cover source, no cached thumbnail, or no
-    /// live `application` handle just means a plainer (or no) notification,
-    /// never a panic or an error-level log — headless/no-portal environments
-    /// hit every one of these paths on every track.
-    fn notify_now_playing(&self, title: &str, artist: &str, album: &str, path: &str) {
-        let Some(application) = self.application.upgrade() else {
-            tracing::debug!("no application handle; skipping track-change notification");
-            return;
-        };
-
-        let notification = gio::Notification::new(title);
-        notification.set_body(Some(&format!("{artist} — {album}")));
-
-        if let Some(source) = reprise_core::cover::resolve_source(std::path::Path::new(path)) {
-            if let Ok(thumb_path) =
-                reprise_core::cover::thumbnail(&source, reprise_core::cover::ThumbnailSize::Bar)
-            {
-                let icon = gio::FileIcon::new(&gio::File::for_path(&thumb_path));
-                notification.set_icon(&icon);
-            }
-        }
-
-        application.send_notification(Some("now-playing"), &notification);
     }
 
     /// Shows `text` as an `adw::Toast` on the window's toast overlay, if one
