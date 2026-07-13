@@ -21,24 +21,23 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Add visible library scan progress
-SINCE:    2026-07-13 10:21 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 10:21 CEST: Codex claimed the lock to add visible library scan progress._
+_As of 2026-07-13 10:48 CEST: Codex completed visible library scan progress and released the lock._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-cover-download-progress.md` (4 tasks).
-- **Last completed:** **MPRIS cover metadata regression** (`84d08dd`) — resolved cached cover art
-  now reaches live `Metadata` as `mpris:artUrl`, including asynchronous updates and stale-result
-  rejection.
-- **Current plan:** none — visible cover progress is complete; minimal-view variants are the next
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-library-scan-progress.md` (3 tasks).
+- **Last completed:** **Visible library scan progress** (`06145bc`, `8596f96`) — user-driven scans
+  now show constant-memory discovery followed by monotone processed/total and current-file progress.
+- **Current plan:** none — library scan progress is complete; minimal-view variants are the next
   proposed feature stage and still need their dedicated approved spec/plan before implementation.
 - **➡️ NEXT:** settle and implement the proposed Compact/Cover/Pill/Card minimal-view variants,
   then run the native-GNOME visual/geometry and audible checks in `MANUAL-QA.md`.
-- **Feature HEAD:** `84d08dd`; this coordination-board update follows it.
+- **Feature HEAD:** `8596f96`; this QA/coordination update follows it.
 
 ## Done so far (compact)
 
@@ -70,6 +69,9 @@ _As of 2026-07-13 10:21 CEST: Codex claimed the lock to add visible library scan
   checked/downloaded/unavailable counts with complete, stopped and failure states in Preferences.
 - ✅ **MPRIS cover metadata**: local, embedded and downloaded art resolves off-main to the shared
   cache and is exposed as a generation-guarded `mpris:artUrl` with live metadata updates.
+- ✅ **Visible library scan progress**: Setup, header scans, Library rescans, and the post-launch
+  smoke share a native row that pulses during discovery and then shows bounded, coalesced
+  processed/total plus current-file updates without blocking the scan worker or retaining stale UI.
 - ✅ **Stable Equalizer toggle**: enabling or disabling Equalizer updates the persistent neutral
   filter in place, preserving the current pipeline, Playing state and playback position; native
   GStreamer regression coverage verifies the non-rewinding transition.
@@ -86,7 +88,7 @@ _As of 2026-07-13 10:21 CEST: Codex claimed the lock to add visible library scan
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `window.rs` (~791) is edge-tight — its next edit must extract a sibling module, not inline-add.
+- `window.rs` (789 lines) is edge-tight — its next edit must extract a sibling module, not inline-add.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote
