@@ -80,7 +80,6 @@ impl BatchProgress {
         self
     }
 
-    #[allow(dead_code)] // Read by the Preferences progress row in Task 3.
     pub(super) fn fraction(self) -> f64 {
         if self.total == 0 {
             return f64::from(self.state == BatchState::Complete);
@@ -119,7 +118,6 @@ impl CoverDownloadBatch {
         })
     }
 
-    #[allow(dead_code)] // Wired by the Preferences progress row in Task 3.
     pub(super) fn set_on_progress(&self, callback: impl Fn(BatchProgress) + 'static) {
         let callback: OnProgress = Rc::new(callback);
         self.on_progress.borrow_mut().replace(callback.clone());
