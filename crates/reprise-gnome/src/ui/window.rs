@@ -154,6 +154,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         reprise_core::scrobbling::ScrobbleProvider::LastFm,
         "Last.fm",
     );
+    super::preference_lastfm::bootstrap(conn, &lastfm);
     super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
 
@@ -491,6 +492,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         player.as_ref(),
         &cover_batch,
         &listenbrainz,
+        &lastfm,
         {
             let minimal_view = minimal_view.clone();
             move || minimal_view.toggle()

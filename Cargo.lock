@@ -2098,6 +2098,8 @@ dependencies = [
  "reprise-core",
  "reprise-platform-linux",
  "rusqlite",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tracing",

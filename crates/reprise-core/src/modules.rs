@@ -40,9 +40,20 @@ pub const LISTENBRAINZ_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: false,
 };
 
+pub const LASTFM_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "lastfm",
+    name: "Last.fm",
+    description: "Scrobble completed listens to Last.fm (network; off by default)",
+    default_enabled: false,
+};
+
 /// Every optional integration the app currently exposes, in Plugins-page order.
-pub const ALL_MODULES: &[&ModuleDescriptor] =
-    &[&MPRIS_MODULE, &COVER_DOWNLOAD_MODULE, &LISTENBRAINZ_MODULE];
+pub const ALL_MODULES: &[&ModuleDescriptor] = &[
+    &MPRIS_MODULE,
+    &COVER_DOWNLOAD_MODULE,
+    &LISTENBRAINZ_MODULE,
+    &LASTFM_MODULE,
+];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -151,5 +162,19 @@ mod tests {
     fn all_modules_excludes_core_playback_features() {
         assert!(!ALL_MODULES.iter().any(|module| module.id == "equalizer"));
         assert!(!ALL_MODULES.iter().any(|module| module.id == "replaygain"));
+    }
+
+    #[test]
+    fn lastfm_is_registered_once_default_off_with_namespaced_key() {
+        let conn = migrated_conn();
+        assert!(!is_enabled(&conn, &LASTFM_MODULE).unwrap());
+        assert_eq!(enabled_key(&LASTFM_MODULE), "module.lastfm.enabled");
+        assert_eq!(
+            ALL_MODULES
+                .iter()
+                .filter(|module| module.id == "lastfm")
+                .count(),
+            1
+        );
     }
 }
