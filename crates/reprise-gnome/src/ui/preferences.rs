@@ -52,54 +52,7 @@ pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
     }
 }
 
-fn color_scheme_from_index(index: u32) -> ColorScheme {
-    match index {
-        1 => ColorScheme::Light,
-        2 => ColorScheme::Dark,
-        _ => ColorScheme::System,
-    }
-}
-
-fn color_scheme_index(value: ColorScheme) -> u32 {
-    match value {
-        ColorScheme::System => 0,
-        ColorScheme::Light => 1,
-        ColorScheme::Dark => 2,
-    }
-}
-
-fn density_from_index(index: u32) -> ListDensity {
-    match index {
-        0 => ListDensity::Comfortable,
-        2 => ListDensity::Compact,
-        _ => ListDensity::Standard,
-    }
-}
-
-fn density_index(value: ListDensity) -> u32 {
-    match value {
-        ListDensity::Comfortable => 0,
-        ListDensity::Standard => 1,
-        ListDensity::Compact => 2,
-    }
-}
-
-fn bar_position_from_index(index: u32) -> PlayerBarPosition {
-    if index == 1 {
-        PlayerBarPosition::Top
-    } else {
-        PlayerBarPosition::Bottom
-    }
-}
-
-fn bar_position_index(value: PlayerBarPosition) -> u32 {
-    match value {
-        PlayerBarPosition::Bottom => 0,
-        PlayerBarPosition::Top => 1,
-    }
-}
-
-fn apply_color_scheme(value: ColorScheme) {
+pub(super) fn apply_color_scheme(value: ColorScheme) {
     let value = match value {
         ColorScheme::System => adw::ColorScheme::Default,
         ColorScheme::Light => adw::ColorScheme::ForceLight,
@@ -126,7 +79,7 @@ fn install_density_css(widget: &gtk4::Widget) {
     );
 }
 
-fn apply_density(widget: &gtk4::Widget, density: ListDensity) {
+pub(super) fn apply_density(widget: &gtk4::Widget, density: ListDensity) {
     for class in [
         "reprise-density-comfortable",
         "reprise-density-standard",
@@ -141,10 +94,10 @@ pub(super) struct PreferencesContext {
     pub(super) window: adw::ApplicationWindow,
     pub(super) conn: Rc<RefCell<Connection>>,
     pub(super) track_list: Rc<TrackList>,
-    split_view: adw::NavigationSplitView,
-    sidebar_page: adw::NavigationPage,
-    status_bar: StatusBar,
-    library_player_bar: LibraryPlayerBarShell,
+    pub(super) split_view: adw::NavigationSplitView,
+    pub(super) sidebar_page: adw::NavigationPage,
+    pub(super) status_bar: StatusBar,
+    pub(super) library_player_bar: LibraryPlayerBarShell,
     pub(super) scan_button: gtk4::Button,
     pub(super) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
     pub(super) player: Option<Rc<PlayerController>>,
@@ -322,176 +275,11 @@ impl PreferencesContext {
     }
 
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        let page = adw::PreferencesPage::builder()
-            .title(strings::text(strings::PREFERENCES_APPEARANCE))
-            .icon_name("applications-graphics-symbolic")
-            .build();
-        let group = adw::PreferencesGroup::new();
-        let model = gtk4::StringList::new(&[
-            &strings::text(strings::COLOR_SYSTEM),
-            &strings::text(strings::COLOR_LIGHT),
-            &strings::text(strings::COLOR_DARK),
-        ]);
-        let selected_scheme = {
-            let conn = self.conn.borrow();
-            color_scheme_index(settings::get_color_scheme(&conn))
-        };
-        let scheme = adw::ComboRow::builder()
-            .title(strings::text(strings::COLOR_SCHEME))
-            .model(&model)
-            .selected(selected_scheme)
-            .build();
-        let weak = Rc::downgrade(self);
-        scheme.connect_selected_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let value = color_scheme_from_index(row.selected());
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_color_scheme(&conn, value)
-            };
-            if saved.is_ok() {
-                apply_color_scheme(value);
-            }
-        });
-        group.add(&scheme);
-        group.add(&super::preference_window_decorations::row(self));
-        page.add(&group);
-        page
+        super::preference_appearance::build(self)
     }
 
     fn layout_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        let page = adw::PreferencesPage::builder()
-            .title(strings::text(strings::PREFERENCES_LAYOUT))
-            .icon_name("view-grid-symbolic")
-            .build();
-        let group = adw::PreferencesGroup::new();
-        let positions = gtk4::StringList::new(&[
-            &strings::text(strings::POSITION_BOTTOM),
-            &strings::text(strings::POSITION_TOP),
-        ]);
-        let selected_position = {
-            let conn = self.conn.borrow();
-            bar_position_index(settings::get_player_bar_position(&conn))
-        };
-        let bar = adw::ComboRow::builder()
-            .title(strings::text(strings::PLAYER_BAR_POSITION))
-            .model(&positions)
-            .selected(selected_position)
-            .build();
-        let weak = Rc::downgrade(self);
-        bar.connect_selected_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let value = bar_position_from_index(row.selected());
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_player_bar_position(&conn, value)
-            };
-            if saved.is_ok() {
-                context.library_player_bar.set_position(value);
-            }
-        });
-        group.add(&bar);
-
-        let sidebar_visible = {
-            let conn = self.conn.borrow();
-            settings::get_sidebar_visible(&conn)
-        };
-        let sidebar = adw::SwitchRow::builder()
-            .title(strings::text(strings::SHOW_SIDEBAR))
-            .active(sidebar_visible)
-            .build();
-        let weak = Rc::downgrade(self);
-        sidebar.connect_active_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let active = row.is_active();
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_sidebar_visible(&conn, active)
-            };
-            if saved.is_ok() {
-                super::window_navigation::apply_sidebar_visibility(
-                    &context.split_view,
-                    &context.sidebar_page,
-                    active,
-                );
-            }
-        });
-        group.add(&sidebar);
-
-        let status_visible = {
-            let conn = self.conn.borrow();
-            settings::get_status_visible(&conn)
-        };
-        let status = adw::SwitchRow::builder()
-            .title(strings::text(strings::SHOW_STATUS_LINE))
-            .active(status_visible)
-            .build();
-        let weak = Rc::downgrade(self);
-        status.connect_active_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let active = row.is_active();
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_status_visible(&conn, active)
-            };
-            if saved.is_ok() {
-                context.status_bar.set_enabled(active);
-                if active {
-                    context.track_list.reload();
-                }
-            }
-        });
-        group.add(&status);
-
-        let densities = gtk4::StringList::new(&[
-            &strings::text(strings::DENSITY_COMFORTABLE),
-            &strings::text(strings::DENSITY_STANDARD),
-            &strings::text(strings::DENSITY_COMPACT),
-        ]);
-        let selected_density = {
-            let conn = self.conn.borrow();
-            density_index(settings::get_list_density(&conn))
-        };
-        let density = adw::ComboRow::builder()
-            .title(strings::text(strings::LIST_DENSITY))
-            .model(&densities)
-            .selected(selected_density)
-            .build();
-        let weak = Rc::downgrade(self);
-        density.connect_selected_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let value = density_from_index(row.selected());
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_list_density(&conn, value)
-            };
-            if saved.is_ok() {
-                apply_density(context.track_list.root_widget().upcast_ref(), value);
-            }
-        });
-        group.add(&density);
-
-        let weak = Rc::downgrade(self);
-        group.add(&action_row(
-            strings::EDIT_COLUMN_LAYOUT,
-            Rc::new(move || {
-                if let Some(context) = weak.upgrade() {
-                    crate::ui::column_layout_editor::present(&context.window, &context.track_list);
-                }
-            }),
-        ));
-        page.add(&group);
-        page
+        super::preference_layout::build(self)
     }
 
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {
@@ -724,17 +512,7 @@ pub(super) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reprise_core::library::settings::{ColorScheme, ListDensity, PlayerBarPosition};
-
-    #[test]
-    fn combo_indices_round_trip_typed_layout_values() {
-        assert_eq!(color_scheme_from_index(0), ColorScheme::System);
-        assert_eq!(color_scheme_from_index(2), ColorScheme::Dark);
-        assert_eq!(density_from_index(0), ListDensity::Comfortable);
-        assert_eq!(density_from_index(2), ListDensity::Compact);
-        assert_eq!(bar_position_from_index(0), PlayerBarPosition::Bottom);
-        assert_eq!(bar_position_from_index(1), PlayerBarPosition::Top);
-    }
+    use reprise_core::library::settings::ListDensity;
 
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {

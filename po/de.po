@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-13 22:33+0200\n"
+"POT-Creation-Date: 2026-07-13 22:55+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -1184,6 +1184,26 @@ msgstr "{name} exportiert"
 #, rust-format
 msgid "Could not export “{name}”"
 msgstr "„{name}“ konnte nicht exportiert werden"
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:11
+msgid "Player Bar"
+msgstr "Playerleiste"
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:12
+msgid "Library Window"
+msgstr "Bibliotheksfenster"
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:13
+msgid "Columns"
+msgstr "Spalten"
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:14
+msgid "Could not save the color scheme"
+msgstr "Das Farbschema konnte nicht gespeichert werden"
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:16
+msgid "Could not save the player bar position"
+msgstr "Die Position der Playerleiste konnte nicht gespeichert werden"
 
 #: crates/reprise-gnome/src/ui/browse_filter_strings.rs:12
 msgid "FILTER"
