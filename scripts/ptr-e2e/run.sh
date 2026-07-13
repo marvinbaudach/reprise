@@ -537,10 +537,20 @@ click_at 702 823
 sleep 0.3
 screenshot "11-preferences-layout"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/11-preferences-layout.png"
+click_at 1034 209
+sleep 0.2
+assert_db_value "ui.sidebar_visible" "0" "Layout switch hid the sidebar"
+click_at 1034 264
+sleep 0.2
+assert_db_value "ui.status_visible" "0" "Layout switch hid the status line"
 click_at 804 823
-sleep 0.3
+sleep 0.7
 screenshot "12-preferences-library"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/12-preferences-library.png"
+MARKER=$(log_marker)
+click_at 800 209
+sleep 1.5
+assert_log_contains_since "$MARKER" "scan complete" "Library Preferences triggered a completed rescan"
 click_at 907 823
 sleep 0.3
 screenshot "13-preferences-plugins"
