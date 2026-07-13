@@ -45,10 +45,7 @@ awk -F'"' '/^checksum = / { print $2 }' Cargo.lock | sort > "$tmp_root/lock-chec
 jq -r '.[] | select(.type == "archive") | .sha256' flatpak/cargo-sources.json | sort > "$tmp_root/source-checksums"
 cmp "$tmp_root/lock-checksums" "$tmp_root/source-checksums"
 test "$(rg -c '^checksum = ' Cargo.lock)" -eq "$(jq '[.[] | select(.type == "archive")] | length' flatpak/cargo-sources.json)"
-if rg -q -- '--filesystem|--talk-name|--socket=session-bus|--socket=system-bus' org.reprise.Reprise.yml; then
-  echo "Flatpak manifest contains a forbidden broad permission" >&2
-  exit 1
-fi
+bash scripts/check-flatpak-device-permissions.sh org.reprise.Reprise.yml
 if command -v flatpak-builder-lint >/dev/null; then
   flatpak-builder-lint manifest org.reprise.Reprise.yml
 elif flatpak info org.flatpak.Builder >/dev/null 2>&1; then
