@@ -330,6 +330,42 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   import work with Unicode names and paths containing spaces.
 - [ ] Exported M3U opens in another compatible player when one is available.
 
+## Pending: Android USB/MTP synchronization
+
+Use only a disposable Android device or copied music. Unlock it, select USB
+**File transfer / MTP**, and first confirm that GNOME Files can browse it.
+
+- [ ] Open Preferences → Synchronization. Expected: the device appears with its
+  system icon, name, and available storage; unplugging removes it without stale
+  content or a crash. With no device, the page explains the MTP prerequisites.
+- [ ] Open the device. Expected: Reprise lists recognized audio and existing
+  `.m3u8` playlists without modifying either. Refresh shows a spinner and then
+  replaces the same view with current device contents.
+- [ ] Create a phone playlist and drag a multi-track selection onto it. Expected:
+  the row immediately reports accepted track count and queue position, then the
+  progress card shows the current filename, file bytes, completed/total tracks,
+  overall progress, and queued-job count.
+- [ ] While a large first job runs, enqueue two more drops onto the same device.
+  Expected: jobs copy strictly in drop order with no overlapping same-device
+  writes. A different connected device may progress independently.
+- [ ] Cancel a running copy. Expected: its `.reprise-part` and incomplete final
+  file are absent, completed files remain, and the next queued job starts. No
+  unrelated phone file is deleted or overwritten.
+- [ ] Inspect the phone with GNOME Files. Expected: Reprise wrote only below
+  `Music/Reprise/<playlist>` plus `Music/Reprise/<playlist>.m3u8`; playlist paths
+  are relative, preserve drag order, and contain no duplicate target paths.
+- [ ] Disconnect during a copy and reconnect the same stable device. Expected:
+  progress changes to a paused/disconnected state and safely resumes the current
+  track after reconnect. A device without a stable identity must not claim resume.
+- [ ] Repeat detection, browsing, copy, cancel, and reconnect in Flatpak. Expected:
+  GVfs MTP works with only the two documented narrow permissions; no host,
+  direct-USB, session-bus, or system-bus permission is present.
+
+The local GIO integration tests and isolated two-job app smoke prove FIFO,
+monotone progress, partial cleanup, and relative M3U8 output without touching real
+hardware. They do not replace the cable, Android USB-mode, GNOME Files, or Flatpak
+checks above.
+
 ## Pending: tag editing and safe removal
 
 Work only on disposable copies. Before each destructive check, verify the selected

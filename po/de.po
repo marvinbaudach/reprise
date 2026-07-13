@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-13 23:49+0200\n"
+"POT-Creation-Date: 2026-07-13 23:59+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -967,10 +967,12 @@ msgid "Toggle sidebar"
 msgstr "Seitenleiste ein-/ausblenden"
 
 #: crates/reprise-gnome/src/ui/strings.rs:529
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:38
 msgid "Playlist name"
 msgstr "Name der Wiedergabeliste"
 
 #: crates/reprise-gnome/src/ui/strings.rs:531
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:39
 msgid "Create"
 msgstr "Erstellen"
 
@@ -1082,6 +1084,7 @@ msgstr ""
 "Sie es erneut"
 
 #: crates/reprise-gnome/src/ui/strings.rs:691
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:120
 #, rust-format
 msgid "{count} track"
 msgid_plural "{count} tracks"
@@ -1169,6 +1172,148 @@ msgstr "{name} exportiert"
 #, rust-format
 msgid "Could not export “{name}”"
 msgstr "„{name}“ konnte nicht exportiert werden"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:22
+msgid "Synchronization"
+msgstr "Synchronisierung"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:23
+msgid "Connected Android Devices"
+msgstr "Verbundene Android-Geräte"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:24
+msgid "No Android Device Connected"
+msgstr "Kein Android-Gerät verbunden"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:26
+msgid ""
+"Connect your unlocked Android device by USB and select File transfer in its "
+"USB options."
+msgstr ""
+"Verbinde dein entsperrtes Android-Gerät per USB und wähle in den USB-"
+"Optionen die Dateiübertragung aus."
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:27
+msgid "Connected"
+msgstr "Verbunden"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:28
+msgid "Disconnected"
+msgstr "Getrennt"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:29
+msgid "Reading music on device…"
+msgstr "Musik auf dem Gerät wird gelesen…"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:30
+msgid "Could not read music on this device"
+msgstr "Musik auf diesem Gerät konnte nicht gelesen werden"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:31
+msgid "Available space unknown"
+msgstr "Verfügbarer Speicherplatz unbekannt"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:32
+msgid "Music on Device"
+msgstr "Musik auf dem Gerät"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:33
+msgid "Phone Playlists"
+msgstr "Handy-Wiedergabelisten"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:34
+msgid "No music was found in the device Music folder."
+msgstr "Im Musikordner des Geräts wurde keine Musik gefunden."
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:35
+msgid "Create a phone playlist, then drag tracks onto it."
+msgstr "Erstelle eine Handy-Wiedergabeliste und ziehe dann Titel darauf."
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:36
+msgid "Waiting for tracks"
+msgstr "Wartet auf Titel"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:37
+msgid "New Phone Playlist"
+msgstr "Neue Handy-Wiedergabeliste"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:40
+msgid "Refresh Device Music"
+msgstr "Gerätemusik aktualisieren"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:41
+msgid "Synchronization Progress"
+msgstr "Synchronisierungsfortschritt"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:42
+msgid "Cancel Current Copy"
+msgstr "Aktuellen Kopiervorgang abbrechen"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:43
+msgid "Preparing copy…"
+msgstr "Kopiervorgang wird vorbereitet…"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:44
+msgid "Paused — reconnect the device to continue"
+msgstr "Pausiert — verbinde das Gerät erneut, um fortzufahren"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:45
+msgid "Cancelling current copy…"
+msgstr "Aktueller Kopiervorgang wird abgebrochen…"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:46
+msgid "Synchronization complete"
+msgstr "Synchronisierung abgeschlossen"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:47
+msgid "Synchronization failed"
+msgstr "Synchronisierung fehlgeschlagen"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:48
+msgid "Ready to synchronize"
+msgstr "Bereit zum Synchronisieren"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:49
+msgid "Current file"
+msgstr "Aktuelle Datei"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:50
+msgid "Overall progress"
+msgstr "Gesamtfortschritt"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:57
+#, rust-format
+msgid "{size} available"
+msgstr "{size} verfügbar"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:65
+#, rust-format
+msgid "{state} · {space}"
+msgstr "{state} · {space}"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:80
+#, rust-format
+msgid "{completed} of {total} tracks"
+msgstr "{completed} von {total} Titeln"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:88
+#, rust-format
+msgid "{count} job waiting"
+msgid_plural "{count} jobs waiting"
+msgstr[0] "{count} Auftrag wartet"
+msgstr[1] "{count} Aufträge warten"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:97
+#, rust-format
+msgid "{copied} copied · {skipped} skipped · {failed} failed"
+msgstr "{copied} kopiert · {skipped} übersprungen · {failed} fehlgeschlagen"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:110
+#, rust-format
+msgid "{count} track queued · job {position}"
+msgid_plural "{count} tracks queued · job {position}"
+msgstr[0] "{count} Titel eingereiht · Auftrag {position}"
+msgstr[1] "{count} Titel eingereiht · Auftrag {position}"
 
 #: crates/reprise-gnome/src/ui/preference_visual_strings.rs:11
 msgid "Player Bar"
@@ -1331,3 +1476,68 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window_decoration_strings.rs:18
 msgid "System title bar"
 msgstr "Systemtitelleiste"
+
+#~ msgid "Color Scheme"
+#~ msgstr "Farbschema"
+
+#~ msgid "System"
+#~ msgstr "System"
+
+#~ msgid "Light"
+#~ msgstr "Hell"
+
+#~ msgid "Dark"
+#~ msgstr "Dunkel"
+
+#~ msgid "Rhythmbox found"
+#~ msgstr "Rhythmbox gefunden"
+
+#~ msgid "Import its column layout without changing Rhythmbox settings"
+#~ msgstr ""
+#~ "Dessen Spaltenanordnung importieren, ohne Rhythmbox-Einstellungen zu "
+#~ "ändern"
+
+#~ msgid "Import Rhythmbox column layout"
+#~ msgstr "Spaltenanordnung aus Rhythmbox importieren"
+
+#~ msgid "All genres"
+#~ msgstr "Alle Genres"
+
+#~ msgid "All artists"
+#~ msgstr "Alle Interpreten"
+
+#~ msgid "All albums"
+#~ msgstr "Alle Alben"
+
+#~ msgid ""
+#~ "Reprise keeps your library local. Music files are changed only when you "
+#~ "explicitly edit tags or move tracks to Trash."
+#~ msgstr ""
+#~ "Reprise verwaltet Ihre Musiksammlung lokal. Musikdateien werden nur "
+#~ "geändert, wenn Sie ausdrücklich Metadaten bearbeiten oder Titel in den "
+#~ "Papierkorb verschieben."
+
+#~ msgid "Download missing album covers"
+#~ msgstr "Fehlende Albumcover herunterladen"
+
+#~ msgid "Uses MusicBrainz and Cover Art Archive only when enabled"
+#~ msgstr "Verwendet MusicBrainz und Cover Art Archive nur nach Aktivierung"
+
+#~ msgid ""
+#~ "Download missing album covers from Cover Art Archive (network; off by "
+#~ "default)"
+#~ msgstr ""
+#~ "Fehlende Albumcover aus dem Cover Art Archive herunterladen (Netzwerk; "
+#~ "standardmäßig aus)"
+
+#~ msgid "Cover check stopped"
+#~ msgstr "Cover-Prüfung gestoppt"
+
+#~ msgid "Minimal View"
+#~ msgstr "Minimalansicht"
+
+#~ msgid "Restore Full View"
+#~ msgstr "Vollständige Ansicht wiederherstellen"
+
+#~ msgid "Filters"
+#~ msgstr "Filter"

@@ -1,8 +1,8 @@
 # Preferences: visuelle Layout-Steuerung — Implementierungsplan
 
-> **Status:** bereit zur Ausfuehrung  
-> **Spezifikation:** `docs/superpowers/specs/2026-07-13-library-preferences-polish-design.md`  
-> **Basis:** `e7c5f5f` (`feature/preferences-visual-controls`)  
+> **Status:** bereit zur Ausfuehrung
+> **Spezifikation:** `docs/superpowers/specs/2026-07-13-library-preferences-polish-design.md`
+> **Basis:** `e7c5f5f` (`feature/preferences-visual-controls`)
 > **Ausgangswert:** 708 Workspace-Tests bestanden; `cargo audit` meldet nur das akzeptierte
 > `RUSTSEC-2024-0436` (`paste` via `lofty`).
 

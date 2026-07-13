@@ -1,6 +1,7 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
+use super::device_sync_strings;
 use super::strings;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9,14 +10,16 @@ pub(super) enum PageId {
     Appearance,
     Layout,
     Library,
+    Synchronization,
     Plugins,
 }
 
-pub(super) const PAGE_ORDER: [PageId; 5] = [
+pub(super) const PAGE_ORDER: [PageId; 6] = [
     PageId::Playback,
     PageId::Appearance,
     PageId::Layout,
     PageId::Library,
+    PageId::Synchronization,
     PageId::Plugins,
 ];
 
@@ -27,6 +30,7 @@ impl PageId {
             Self::Appearance => "appearance",
             Self::Layout => "layout",
             Self::Library => "library",
+            Self::Synchronization => "synchronization",
             Self::Plugins => "plugins",
         }
     }
@@ -37,6 +41,7 @@ impl PageId {
             Self::Appearance => strings::PREFERENCES_APPEARANCE,
             Self::Layout => strings::PREFERENCES_LAYOUT,
             Self::Library => strings::PREFERENCES_LIBRARY,
+            Self::Synchronization => device_sync_strings::SYNCHRONIZATION,
             Self::Plugins => strings::PREFERENCES_PLUGINS,
         };
         strings::text(message)
@@ -48,6 +53,7 @@ impl PageId {
             Self::Appearance => "applications-graphics-symbolic",
             Self::Layout => "view-grid-symbolic",
             Self::Library => "folder-music-symbolic",
+            Self::Synchronization => "phone-symbolic",
             Self::Plugins => "application-x-addon-symbolic",
         }
     }
@@ -64,7 +70,7 @@ pub(super) struct PreferencesShell {
 
 pub(super) fn build(
     parent: &adw::ApplicationWindow,
-    pages: [(PageId, adw::PreferencesPage); 5],
+    pages: [(PageId, adw::PreferencesPage); 6],
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
     for (id, page) in pages {
@@ -120,7 +126,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn page_tabs_follow_the_design_order_without_compact_view() {
+    fn page_tabs_follow_the_design_order_with_synchronization() {
         assert_eq!(
             PAGE_ORDER,
             [
@@ -128,6 +134,7 @@ mod tests {
                 PageId::Appearance,
                 PageId::Layout,
                 PageId::Library,
+                PageId::Synchronization,
                 PageId::Plugins,
             ]
         );

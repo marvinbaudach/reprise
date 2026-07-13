@@ -15,6 +15,7 @@ pub mod artist_news;
 pub mod cover;
 pub mod cover_download;
 pub mod db;
+pub mod device_sync;
 pub mod format;
 pub mod library;
 pub mod lyrics;

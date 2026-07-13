@@ -10,6 +10,7 @@ use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, Repl
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::info_panel::InfoPanel;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
@@ -108,6 +109,7 @@ pub(super) struct PreferencesContext {
     pub(super) lastfm_activation_pending: Cell<bool>,
     pub(super) artist_news: Rc<ArtistNewsRuntime>,
     pub(super) decorations: Rc<WindowDecorations>,
+    pub(super) device_sync: Rc<DeviceSyncRuntime>,
     preferences_window: RefCell<glib::WeakRef<adw::Window>>,
 }
 
@@ -128,6 +130,7 @@ impl PreferencesContext {
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
         decorations: &Rc<WindowDecorations>,
+        device_sync: &Rc<DeviceSyncRuntime>,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
             window: window.clone(),
@@ -153,6 +156,7 @@ impl PreferencesContext {
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
             decorations: decorations.clone(),
+            device_sync: device_sync.clone(),
             preferences_window: RefCell::new(glib::WeakRef::new()),
         });
         let weak = Rc::downgrade(&context);
@@ -215,6 +219,7 @@ impl PreferencesContext {
                 PageId::Appearance => self.appearance_page(),
                 PageId::Layout => self.layout_page(),
                 PageId::Library => self.library_page(),
+                PageId::Synchronization => super::preference_sync::build_page(&self.device_sync),
                 PageId::Plugins => self.plugins_page(),
             };
             (id, page)

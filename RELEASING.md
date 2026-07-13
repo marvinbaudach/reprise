@@ -27,33 +27,19 @@ allows exactly two documented informational conditions: the established
 uppercase component ID `org.reprise.Reprise` and the absent homepage while no
 public project URL exists.
 
-Fifteen GTK regression tests require a display and are ignored by the normal test
-suite. Run each in its own process because GTK can only be initialized from one
-thread per process, while Rust's test harness gives separate tests separate
-threads even with `--test-threads=1`:
+GTK regression tests that require a display are ignored by the normal test suite.
+Run all currently discovered display tests in their own isolated processes because
+GTK can only be initialized from one thread per process:
 
 ```sh
-for test in \
-  closed_popover_stays_parented_until_pending_actions_finish \
-  widgets_show_running_counts_and_terminal_result \
-  progress_widgets_show_running_fraction_and_counts \
-  widgets_reveal_progress_and_hide_after_finish \
-  reentrant_set_on_changed_does_not_panic \
-  enter_activates_the_apply_button_from_every_entry_row \
-  interaction_surface_expands_to_the_whole_cell \
-  movable_row_owns_drag_and_drop_controllers \
-  token_entry_is_a_masked_password_row \
-  api_credentials_are_masked_rows \
-  header_and_restore_buttons_switch_one_application_window_in_one_activation \
-  bar_layout_has_required_accessible_controls_and_fits \
-  cover_layout_has_required_accessible_controls_and_fits \
-  pill_layout_has_required_accessible_controls_and_fits \
-  card_layout_has_required_accessible_controls_and_fits
-do
-  XDG_DATA_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)" \
-    xvfb-run -a cargo test -p reprise-gnome "$test" -- --ignored
-done
+scripts/check-display-tests.sh
 ```
+
+The runner creates a private D-Bus session, Xvfb display, XDG data/cache roots,
+and fake audio sink for every test. It must never be shortened to a live desktop
+run. The synchronization display tests prove device empty/list/detail/progress
+composition and the phone-playlist COPY drop controller; real hardware remains
+manual.
 
 Before the final manual GNOME pass, run the mapped-window pointer regression
 against the release binary:
@@ -114,6 +100,12 @@ For Flatpak, follow `flatpak/README.md`. A full builder run and sandbox start ar
 required on a machine with `flatpak-builder`, GNOME Platform/SDK 50, and the
 matching stable Rust extension.
 
+Android synchronization additionally requires the host and Flatpak environment
+to expose GVfs MTP. The manifest must contain exactly
+`--talk-name=org.gtk.vfs.*` and `--filesystem=xdg-run/gvfsd`; direct USB access,
+host filesystem access, and broad session/system bus access are forbidden by the
+release check.
+
 ## Manual GNOME QA
 
 Use disposable test music and a disposable XDG data directory where practical.
@@ -157,6 +149,11 @@ The detailed live ledger of confirmed and pending checks is
   whole-row drag, insertion lines, reset and restart persistence), a real read-only
   first-run Rhythmbox column import plus second-start suppression, playlists, M3U
   import/export, and drag/reorder gestures.
+- With a disposable Android device unlocked in File transfer/MTP mode, verify
+  detection, device music browsing, phone-playlist creation, drag-to-copy,
+  per-file/overall progress, same-device FIFO ordering, cancellation, and safe
+  disconnect/reconnect. Confirm all writes stay under `Music/Reprise` and the
+  relative `.m3u8` order matches the dragged tracks.
 - Connect a disposable ListenBrainz account, verify the displayed account name,
   then test playing-now, the half-track/four-minute threshold, offline persistence
   across restart, retry delivery, disable-without-sending, and Disconnect clearing

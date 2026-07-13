@@ -28,6 +28,14 @@ SINCE:    2026-07-13 CEST
 
 _As of 2026-07-13: Codex claimed the lock to merge Android device synchronization._
 
+## Parallel feature work
+
+- `feature/android-device-sync` completes the approved Android USB/MTP
+  synchronization plan through close-out commit `0d6c5dc`; after integrating
+  the latest `main`, all 44 combined display tests and the central release checker
+  passed, so the branch is ready to merge. This branch did not claim or release
+  the separate `main` lock above.
+
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-synchronized-lyrics.md` (5 tasks).
@@ -126,6 +134,11 @@ _As of 2026-07-13: Codex claimed the lock to merge Android device synchronizatio
 - ✅ **Confirmed playlist deletion**: manual playlist rows offer a destructive, translated
   right-click action; deletion is DB-only, keeps all tracks, compacts remaining positions, and
   safely returns an open deleted playlist to Music with real-pointer regression coverage.
+- ✅ **Android USB/MTP synchronization**: Preferences detects GVfs-mounted devices,
+  browses recognized music and phone playlists, accepts the established track DnD
+  payload, and copies into the managed `Music/Reprise` area with per-device FIFO,
+  visible file/overall progress, cancel cleanup, disconnect handling, and relative
+  merged `.m3u8` playlists.
 - ✅ **Unified chip filter bar**: the three persistent facet searches are replaced by wrapping,
   removable Genre/Artist/Album chips, a two-step add popover with one temporary value search,
   exact live result counts, and one reset action while preserving cascade and session behavior.
