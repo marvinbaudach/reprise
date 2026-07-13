@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Expand implementation plan with future plugin stages
+SINCE:    2026-07-13 05:13 CEST
 ```
 
-_As of 2026-07-13 05:13 CEST: Codex released the lock after the plugin-boundary correction._
+_As of 2026-07-13 05:13 CEST: Codex claimed the lock for the requested plan expansion._
 
 ## Current position
 
