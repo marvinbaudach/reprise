@@ -31,12 +31,13 @@ _As of 2026-07-13 21:26 CEST: Codex claimed the lock for the verified feature-br
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Confirmed playlist deletion** (`c10f638`) — manual playlist rows now expose
-  a translated destructive context-menu action that preserves library tracks, compacts playlist
-  positions, and falls back to Music when the currently open playlist is removed.
-- **Current plan:** none.
-- **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `c10f638`; this QA/coordination close-out follows it.
+- **Last completed:** **Manual Up Next + native Compact redesign QA** (`379490f`) on the feature
+  branch, now integrating the newer confirmed-playlist-deletion main (`d1338a7`).
+- **Current plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md`
+  (implementation and feature QA complete; combined-main verification and local merge pending).
+- **➡️ NEXT:** finish combined verification, merge the feature branch locally, release the lock,
+  then hold the joint stage review; do not start another roadmap stage without explicit user direction.
+- **Feature implementation:** `1a2f462`; QA/documentation is `379490f`.
 
 ## Done so far (compact)
 
@@ -103,6 +104,11 @@ _As of 2026-07-13 21:26 CEST: Codex claimed the lock for the verified feature-br
   session restoration without autoplay, functional browse-option search, rating resorting, stable
   empty browse-popup geometry, and repaired playlist row/menu/create/reorder flows including
   duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
+- ✅ **Manual Up Next + native Compact redesign**: Queue now contains only explicit pending manual
+  tracks and consumes them in stable user order before resuming the unchanged playback context;
+  Bar/Cover/Pill/Card use opaque native GTK/libadwaita composition, expose Return to Library only
+  through the shared context menu, and change volume in five-percent steps only on declared free
+  cover/metadata scroll regions without visible Compact volume controls.
 - ✅ **Stable track-table geometry**: fixed per-column sizing prevents virtualized row contents from
   changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
 - ✅ **Compact responsive ratings**: the Rating column defaults to a narrow `★ N` popover chooser,
@@ -121,9 +127,10 @@ _As of 2026-07-13 21:26 CEST: Codex claimed the lock for the verified feature-br
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines), `strings.rs` (784 lines), `info_panel.rs` (794 lines), and
-  `scripts/ptr-e2e/run.sh` (796 lines) are edge-tight — their next
-  edits must extract cohesive sibling modules rather than adding inline logic.
+- `scrobbling.rs` (795 lines) and `strings.rs` (797 lines) are edge-tight — their next edits
+  must extract cohesive sibling modules rather than adding inline logic. Compact, rating,
+  column-header, and playlist-delete pointer flows are extracted siblings so
+  `scripts/ptr-e2e/run.sh` remains at 732 lines.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote

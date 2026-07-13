@@ -51,11 +51,15 @@ Run these first after restarting the current `target/release/reprise`.
   the cell allocation, including the cover cell.
 - [x] **Playlist reorder insertion feedback:** hover a single-row drag over another
   playlist row. Expected: an accent insertion line shows the insertion target.
-- [ ] **Queue reorder insertion feedback:** hover a single-row drag over another Queue
-  row. Expected: an accent insertion line appears; Library and sorted/filtered
-  playlist views show no false reorder target. The mapped-X11 release harness
-  captures the accent target and completes the Queue reorder; native GNOME
-  confirmation remains pending.
+- [ ] **Manual Up Next ordering:** start track A in a longer Library, album, or
+  playlist context, add two tracks X and Y through Add to Queue, and reorder them in
+  Queue. Expected: Queue starts empty, shows only the two pending manual entries and
+  its sidebar count is two; the accent insertion line marks the reorder target while
+  Library and sorted/filtered playlist views show none. Next consumes the reordered
+  X/Y entries with count two to one to zero, then resumes context B. Duplicate manual
+  entries remain allowed; removing a Queue row changes neither files nor the hidden
+  context. The mapped-X11/MPRIS harness proves this complete ordering and resume flow;
+  native GNOME pointer/touch confirmation remains pending.
 - [x] **Imported playlist selection:** import a populated M3U. Expected: the new
   playlist is visibly selected in the sidebar and agrees with the title and table.
 - [x] **Tag editor Enter key:** edit any valid field and press Enter. Expected: Apply
@@ -125,19 +129,28 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   width and zone ancestry, both isolated position starts pass, and the real-input
   Compact round-trip preserves Playing state; native Wayland visual judgment and
   narrow-width target comfort remain pending.
-- [ ] Open Compact View through the visible Library-header button, the main menu,
-  Preferences, and Ctrl+M; return through each compact layout's visible button and
-  Ctrl+M. Expected: every route switches the same window immediately, retains the
-  selected layout, and never creates a second playback state. The mapped real-input
-  harness proves the visible buttons, menu and Ctrl+M routes headlessly; native
-  Wayland confirmation remains pending.
+- [ ] Open Compact View through the Library-header button, the main menu,
+  Preferences, and Ctrl+M. Return through **Return to Library in the Compact context
+  menu only**, then repeat the round trip with Ctrl+M. Expected: Bar, Cover, Pill, and
+  Card have no visible restore or volume control; every route switches the same window
+  immediately, retains the selected layout, and never creates a second playback state.
+  The mapped real-input harness proves the menu-only return, layout persistence and
+  Ctrl+M routes headlessly; native Wayland confirmation remains pending.
 - [ ] Inspect Bar, Cover, Pill, and Card with long English and German metadata, plus
   missing album/year values. Expected: proportions feel intentional, title/artist
   ellipsize cleanly, optional rows collapse, icons remain legible, and controls meet
   native Adwaita target sizes. The four isolated display tests prove accessible
   controls and natural-size bounds, but visual judgment remains manual.
+- [ ] With playback paused, scroll one wheel/touchpad step vertically on each
+  layout's free cover or metadata surface. Expected: volume changes by exactly five
+  percent per step and remains clamped from zero to 100 percent. Repeat over seek,
+  transport, menu, and window controls: neither volume nor seek position changes.
+  Compact exposes no visible volume slider; the Library bar, MPRIS, and media keys
+  remain alternative volume routes. The mapped X11 run proves Bar metadata and seek
+  separation against private-bus MPRIS values; native Wayland touchpad behavior and
+  audible loudness remain pending.
 - [ ] Drag Pill only from its free metadata region under Wayland and try dragging
-  from its seek, transport, menu, and restore controls. Expected: the metadata region
+  from its seek, transport, menu, and window controls. Expected: the metadata region
   moves the window, controls remain interactive, and integrated window actions work;
   no transparency, always-on-top, or dock behavior appears.
 - [ ] Toggle Library → each compact layout → Library repeatedly, resize/maximize the
@@ -193,8 +206,9 @@ Use representative available files for FLAC, MP3, Ogg Vorbis, Opus, WAV, and
 M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
 
 - [ ] Each advertised extension scans and a representative supported file plays.
-- [ ] Play/Pause, previous/next, seek, volume, shuffle, Repeat Off/All/One, Queue
-  append, Queue reorder, and end-of-queue behavior work through real speakers.
+- [ ] Play/Pause, previous/next, seek, volume, shuffle, and Repeat Off/All/One work
+  through real speakers. Manual Up Next entries interrupt in their visible order,
+  disappear when consumed, and resume the unchanged Library/playlist context.
 - [ ] A corrupt/unplayable file is skipped or reported without wedging later playback.
 - [ ] Starting, restoring, filtering, importing, and opening views never cause
   unexpected autoplay.

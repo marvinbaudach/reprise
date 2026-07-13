@@ -14,13 +14,17 @@ use super::track_list_activation::current_queue_ids;
 
 pub(super) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>)>;
 
-fn visible_position_for_track(
+fn visible_position_for_track_in_source(
     ids: &[i64],
     current_id: i64,
     queue_position: Option<usize>,
+    is_queue: bool,
 ) -> Option<u32> {
     if queue_position.is_some_and(|position| ids.get(position) == Some(&current_id)) {
         return queue_position.and_then(|position| u32::try_from(position).ok());
+    }
+    if is_queue {
+        return None;
     }
     ids.iter()
         .position(|candidate| *candidate == current_id)
@@ -63,10 +67,12 @@ impl PlayerController {
     }
 
     pub(super) fn notify_restored_current_track(&self) {
-        let snapshot = self.queue.borrow().snapshot();
-        let current = self.queue.borrow().current();
+        let current = self
+            .current_up_next
+            .get()
+            .or_else(|| self.queue.borrow().current());
         if let Some(track_id) = current {
-            self.notify_current_track_changed(track_id, snapshot.position);
+            self.notify_current_track_changed(track_id, None);
         }
     }
 }
@@ -101,7 +107,12 @@ impl TrackList {
                 return;
             }
         };
-        let Some(position) = visible_position_for_track(&ids, track_id, queue_position) else {
+        let Some(position) = visible_position_for_track_in_source(
+            &ids,
+            track_id,
+            queue_position,
+            matches!(source, ViewSource::Queue),
+        ) else {
             tracing::debug!(
                 track_id,
                 "current track is not visible in the active table query"
@@ -123,13 +134,37 @@ mod tests {
 
     #[test]
     fn visible_position_finds_the_current_track_in_view_order() {
-        assert_eq!(visible_position_for_track(&[41, 42, 43], 42, None), Some(1));
+        assert_eq!(
+            visible_position_for_track_in_source(&[41, 42, 43], 42, None, false),
+            Some(1)
+        );
     }
 
     #[test]
     fn visible_position_uses_queue_occurrence_then_falls_back_to_first_match() {
-        assert_eq!(visible_position_for_track(&[7, 8, 7], 7, Some(2)), Some(2));
-        assert_eq!(visible_position_for_track(&[7, 8, 7], 7, Some(1)), Some(0));
-        assert_eq!(visible_position_for_track(&[7, 8, 7], 9, None), None);
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 7, Some(2), false),
+            Some(2)
+        );
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 7, Some(1), false),
+            Some(0)
+        );
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 9, None, false),
+            None
+        );
+    }
+
+    #[test]
+    fn queue_does_not_highlight_a_pending_duplicate_of_the_current_track() {
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 7, None, true),
+            None
+        );
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 7, None, false),
+            Some(0)
+        );
     }
 }

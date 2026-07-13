@@ -1,9 +1,7 @@
-//! Queue-driven transport methods, split out of `player_controller.rs`
-//! (Task 8) purely to keep that file under the project's file-size limit and
-//! make room for the Now-Playing fan-out — same rationale, and same
-//! `impl PlayerController` sibling-module shape, as the Stage 3 Task 1 split
-//! that produced `mpris_mirror.rs`/`playback_faults.rs`. No behavioral
-//! change: every method here moved verbatim.
+//! Playback-context and manual Up Next transport methods, split out of
+//! `player_controller.rs` to keep that file under the project's file-size
+//! limit. The hidden `queue` remains the selected Library/playlist context;
+//! the visible Queue source is backed only by `up_next`.
 //!
 //! These are `pub(super)` so `mpris_mirror.rs`'s `handle_mpris_command` (and,
 //! for `queue_ids_snapshot`, `track_list.rs`) can call them too — shared with
@@ -18,21 +16,27 @@
 use std::rc::Rc;
 
 use crate::ui::player_controller::PlayerController;
-use crate::ui::sidebar::Sidebar;
+use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::media_integration::MprisPlaybackStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
     StartCurrent,
+    StartPending,
     TogglePipeline,
     Noop,
 }
 
-fn toggle_action(status: MprisPlaybackStatus, current_track: Option<i64>) -> ToggleAction {
-    match (status, current_track) {
-        (MprisPlaybackStatus::Stopped, Some(_)) => ToggleAction::StartCurrent,
-        (MprisPlaybackStatus::Stopped, None) => ToggleAction::Noop,
-        (MprisPlaybackStatus::Playing | MprisPlaybackStatus::Paused, _) => {
+fn toggle_action(
+    status: MprisPlaybackStatus,
+    current_track: Option<i64>,
+    has_pending: bool,
+) -> ToggleAction {
+    match (status, current_track, has_pending) {
+        (MprisPlaybackStatus::Stopped, Some(_), _) => ToggleAction::StartCurrent,
+        (MprisPlaybackStatus::Stopped, None, true) => ToggleAction::StartPending,
+        (MprisPlaybackStatus::Stopped, None, false) => ToggleAction::Noop,
+        (MprisPlaybackStatus::Playing | MprisPlaybackStatus::Paused, _, _) => {
             ToggleAction::TogglePipeline
         }
     }
@@ -44,6 +48,7 @@ impl PlayerController {
     }
 
     pub(super) fn notify_queue_changed(&self) {
+        tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
         let callback = self.queue_changed.borrow().clone();
         if let Some(callback) = callback {
             callback();
@@ -59,13 +64,18 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status;
-        let current = self.queue.borrow().current();
-        match toggle_action(status, current) {
+        let current = self
+            .current_up_next
+            .get()
+            .or_else(|| self.queue.borrow().current());
+        let has_pending = !self.up_next.borrow().is_empty();
+        match toggle_action(status, current, has_pending) {
             ToggleAction::StartCurrent => {
                 if let Some(id) = current {
                     self.play_track_id(id);
                 }
             }
+            ToggleAction::StartPending => self.advance_playback(AdvanceReason::Manual),
             ToggleAction::TogglePipeline => {
                 if let Err(error) = self.player.toggle_pause() {
                     tracing::error!(%error, "toggle play/pause failed");
@@ -81,77 +91,54 @@ impl PlayerController {
     /// inside this one `let` statement, so the borrow drops before
     /// `play_track_id`/`reset_to_stopped` run.
     pub(super) fn previous(&self) {
-        let previous = self.queue.borrow_mut().previous();
-        match previous {
-            Some(id) => self.play_track_id(id),
-            None => self.reset_to_stopped(),
-        }
+        self.previous_with_up_next();
     }
 
     /// Steps the queue to the next track and plays it (or resets to stopped
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(super) fn next(&self) {
-        let next = self.queue.borrow_mut().next_manual();
-        match next {
-            Some(id) => self.play_track_id(id),
-            None => self.reset_to_stopped(),
-        }
+        self.advance_playback(AdvanceReason::Manual);
     }
 
-    /// "Add to queue" context-menu action (Stage 3 Task 5): appends `ids` to
-    /// the end of the current queue via `Queue::append_tracks` — see that
-    /// method's doc comment for the exact append/no-auto-start semantics —
-    /// without ever calling `play_track_id`. A no-op for an empty `ids`
-    /// slice. If the queue was previously empty, the transport buttons are
-    /// re-enabled to match its now-non-empty state (the same re-derivation
-    /// `play_track_id` already does on every successful playback start), but
-    /// no track starts playing: `ui::track_actions::queue_selected_ids`
-    /// guards the empty case, and the queue itself only forms a `pos` of
-    /// `Some(0)` for bookkeeping (see `Queue::append_tracks`) — playback
-    /// stays exactly as it was. Borrow discipline: `append_tracks`/`is_
-    /// empty` each run inside their own statement, so no `queue` borrow is
-    /// alive across the `sync_transport_enabled` call.
+    /// Appends explicit user selections to visible Up Next without replacing
+    /// or starting the hidden playback context. Duplicates remain meaningful
+    /// user choices; an empty slice is a no-op.
     pub(super) fn append_to_queue(&self, ids: &[i64]) {
         if ids.is_empty() {
             tracing::debug!("append to queue: nothing to add; ignoring");
             return;
         }
-        self.queue.borrow_mut().append_tracks(ids);
+        self.up_next.borrow_mut().append(ids);
         self.notify_queue_changed();
-        let queue_len = self.queue.borrow().len();
-        let queue_has_tracks = queue_len > 0;
-        self.sync_transport_enabled(queue_has_tracks);
+        let queue_len = self.up_next.borrow().len();
+        self.sync_transport_enabled(true);
         tracing::info!(added = ids.len(), queue_len, "tracks added to queue");
     }
 
-    /// Snapshot of every queued track id in current play order (Stage 3
-    /// Task 3's `ViewSource::Queue` seam — see `queue::Queue::ids_in_order`'s
-    /// doc comment). `track_list.rs`'s queue-ids provider closure (wired in
-    /// `window::build`) calls this each time the track list reloads while
-    /// showing the Queue source, so that view always reflects the queue's
-    /// live state (including shuffle) rather than a stale copy. No explicit
-    /// hoisting `let` is needed here: `ids_in_order()` returns an owned
-    /// `Vec`, so the temporary `Ref` this creates already drops at the end
-    /// of this one expression, before the function returns.
+    /// Snapshot of pending manual ids in stable visible order. The Queue view
+    /// asks for a fresh owned value on each reload, so consumption, removal,
+    /// and drag reorder cannot expose the hidden context or a stale list.
     pub(super) fn queue_ids_snapshot(&self) -> Vec<i64> {
-        self.queue.borrow().ids_in_order()
+        self.up_next.borrow().ids().to_vec()
     }
 
-    /// Queue drag-reorder (Stage 3 Task 6): moves the queued track at index
-    /// `from` to index `to` via `queue::Queue::move_item` — see that method's
-    /// doc comment for the current-track-preservation contract and
-    /// out-of-range/no-op handling (never panics). `ui::track_list_dnd`'s
-    /// queue-reorder drop handler calls this via `TrackList::set_on_queue_
-    /// reorder`, then reloads the track list itself so the Queue view picks
-    /// up the new order — this method only mutates queue state, the same
-    /// "state mutation only, caller decides what to refresh" contract as
-    /// `append_to_queue`. Returns `Queue::move_item`'s own bool verbatim, so
-    /// a no-op move (empty queue, out-of-range index, `from == to`) is
-    /// reported as `false` rather than the caller assuming success just
-    /// because a player was available to ask.
+    pub(super) fn up_next_len(&self) -> usize {
+        self.up_next.borrow().len()
+    }
+
+    pub(super) fn remove_up_next_positions(&self, positions: &[usize]) -> usize {
+        let removed = self.up_next.borrow_mut().remove_positions(positions);
+        if removed > 0 {
+            self.notify_queue_changed();
+        }
+        removed
+    }
+
+    /// Reorders pending manual entries only. The caller reloads Queue after a
+    /// successful mutation; invalid and no-op positions return `false`.
     pub(super) fn move_queue_item(&self, from: usize, to: usize) -> bool {
-        self.queue.borrow_mut().move_item(from, to)
+        self.up_next.borrow_mut().move_item(from, to)
     }
 
     /// Purges hard-deleted track ids from the queue (Stage-3 close-out):
@@ -170,27 +157,26 @@ impl PlayerController {
         if ids.is_empty() {
             return;
         }
-        let changed = self.queue.borrow_mut().remove_ids(ids);
-        if changed {
+        let context_changed = self.queue.borrow_mut().remove_ids(ids);
+        let pending_changed = self.up_next.borrow_mut().remove_ids(ids);
+        if self
+            .current_up_next
+            .get()
+            .is_some_and(|id| ids.contains(&id))
+        {
+            self.current_up_next.set(None);
+        }
+        if context_changed || pending_changed {
             tracing::info!(
                 removed = ids.len(),
-                queue_len = self.queue.borrow().len(),
+                queue_len = self.up_next.borrow().len(),
                 "queue purged of hard-deleted track ids"
             );
-            self.notify_queue_changed();
+            if pending_changed {
+                self.notify_queue_changed();
+            }
         }
     }
-}
-
-pub(super) fn wire_sidebar_count(player: Option<&Rc<PlayerController>>, sidebar: &Rc<Sidebar>) {
-    let Some(player) = player else {
-        return;
-    };
-    let sidebar = Rc::downgrade(sidebar);
-    player.set_on_queue_changed(move || match sidebar.upgrade() {
-        Some(sidebar) => sidebar.refresh("queue changed"),
-        None => tracing::warn!("sidebar is gone; skipping refresh after queue change"),
-    });
 }
 
 #[cfg(test)]
@@ -200,11 +186,15 @@ mod tests {
     #[test]
     fn stopped_toggle_starts_current_queue_track_without_autoplay() {
         assert_eq!(
-            toggle_action(MprisPlaybackStatus::Stopped, Some(42)),
+            toggle_action(MprisPlaybackStatus::Stopped, Some(42), false),
             ToggleAction::StartCurrent
         );
         assert_eq!(
-            toggle_action(MprisPlaybackStatus::Stopped, None),
+            toggle_action(MprisPlaybackStatus::Stopped, None, true),
+            ToggleAction::StartPending
+        );
+        assert_eq!(
+            toggle_action(MprisPlaybackStatus::Stopped, None, false),
             ToggleAction::Noop
         );
     }
