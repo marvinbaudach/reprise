@@ -4,7 +4,9 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
+use reprise_core::playback::{
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
+};
 
 pub fn path_to_uri(path: &str) -> Result<String, PlaybackError> {
     if !path.starts_with('/') {
@@ -38,16 +40,81 @@ pub struct Player {
     /// specific `Bus` (and thus element) it was created for — a rebuilt
     /// playbin needs its own fresh watch, not the old element's.
     bus_watch: RefCell<gst::bus::BusWatchGuard>,
+    effects: Arc<Mutex<AudioEffects>>,
 }
 
 /// Builds a fresh `playbin3` element with the `REPRISE_AUDIO_SINK` override
 /// applied, if set. Extracted out of `Player::new` so `Player::rebuild_
 /// playbin` (the wedged-pipeline recovery — see `Player::play`'s doc
 /// comment) can build an identically-configured replacement element.
-fn build_playbin() -> Result<gst::Element, PlaybackError> {
+fn build_audio_filter(effects: &AudioEffects) -> Result<Option<gst::Element>, PlaybackError> {
+    use reprise_core::library::settings::ReplayGainMode;
+    if !effects.equalizer_enabled && effects.replay_gain == ReplayGainMode::Off {
+        return Ok(None);
+    }
+    let bin = gst::Bin::new();
+    let first = gst::ElementFactory::make("audioconvert")
+        .build()
+        .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+    let mut elements = vec![first];
+    if effects.equalizer_enabled {
+        let equalizer = gst::ElementFactory::make("equalizer-10bands")
+            .name("reprise-equalizer")
+            .build()
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+        for (index, value) in effects.equalizer_bands.iter().enumerate() {
+            equalizer.set_property(&format!("band{index}"), value.clamp(-12.0, 12.0));
+        }
+        elements.push(equalizer);
+    }
+    if effects.replay_gain != ReplayGainMode::Off {
+        let replaygain = gst::ElementFactory::make("rgvolume")
+            .name("reprise-replaygain")
+            .build()
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+        replaygain.set_property("album-mode", effects.replay_gain == ReplayGainMode::Album);
+        elements.push(replaygain);
+    }
+    elements.push(
+        gst::ElementFactory::make("audioconvert")
+            .build()
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?,
+    );
+    bin.add_many(elements.iter().collect::<Vec<_>>())
+        .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+    gst::Element::link_many(elements.iter().collect::<Vec<_>>())
+        .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+    let sink = elements[0]
+        .static_pad("sink")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: filter has no sink pad".into()))?;
+    let src = elements
+        .last()
+        .and_then(|e| e.static_pad("src"))
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: filter has no src pad".into()))?;
+    bin.add_pad(
+        &gst::GhostPad::with_target(&sink)
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?,
+    )
+    .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+    bin.add_pad(
+        &gst::GhostPad::with_target(&src)
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?,
+    )
+    .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+    Ok(Some(bin.upcast()))
+}
+
+fn apply_audio_filter(playbin: &gst::Element, effects: &AudioEffects) -> Result<(), PlaybackError> {
+    let filter = build_audio_filter(effects)?;
+    playbin.set_property("audio-filter", filter.as_ref());
+    Ok(())
+}
+
+fn build_playbin(effects: &AudioEffects) -> Result<gst::Element, PlaybackError> {
     let playbin = gst::ElementFactory::make("playbin3")
         .build()
         .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+    apply_audio_filter(&playbin, effects)?;
 
     if let Ok(sink_name) = std::env::var(AUDIO_SINK_ENV_VAR) {
         let sink = gst::ElementFactory::make(&sink_name)
@@ -122,7 +189,12 @@ impl Player {
 
         let on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync> = Arc::from(on_event);
 
-        let playbin = build_playbin()?;
+        let effects = Arc::new(Mutex::new(AudioEffects::default()));
+        let playbin = build_playbin(
+            &effects
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )?;
         let bus_watch = attach_bus_watch(&playbin, on_event.clone())?;
         let playbin = Arc::new(Mutex::new(playbin));
 
@@ -159,6 +231,7 @@ impl Player {
             playbin,
             on_event,
             bus_watch: RefCell::new(bus_watch),
+            effects,
         })
     }
 
@@ -189,7 +262,12 @@ impl Player {
     /// same `Arc<Mutex<_>>`, not a stale clone — see the `playbin` field's
     /// doc comment).
     fn rebuild_playbin(&self) -> Result<(), PlaybackError> {
-        let new_playbin = build_playbin()?;
+        let effects = self
+            .effects
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let new_playbin = build_playbin(&effects)?;
         let new_watch = attach_bus_watch(&new_playbin, self.on_event.clone())?;
 
         let mut playbin = self
@@ -294,6 +372,33 @@ impl PlaybackBackend for Player {
         playbin.set_property("volume", volume.clamp(0.0, 1.0));
     }
 
+    fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError> {
+        let playbin = self
+            .playbin
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = playbin.current_state();
+        let position = playbin.query_position::<gst::ClockTime>();
+        playbin
+            .set_state(gst::State::Null)
+            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+        apply_audio_filter(&playbin, &effects)?;
+        if state != gst::State::Null {
+            playbin
+                .set_state(state)
+                .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+            if let Some(position) = position {
+                let _ =
+                    playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT, position);
+            }
+        }
+        *self
+            .effects
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = effects;
+        Ok(())
+    }
+
     fn stop(&self) -> Result<(), PlaybackError> {
         let playbin = self
             .playbin
@@ -318,6 +423,21 @@ mod tests {
         assert!(uri.starts_with("file:///home/marvin/Music/"));
         assert!(uri.contains("J%C3%B3ga%20(Live).flac"));
         assert!(path_to_uri("relativ/pfad.mp3").is_err());
+    }
+
+    #[test]
+    fn audio_filter_contains_configured_equalizer_and_replaygain() {
+        gst::init().unwrap();
+        let effects = AudioEffects {
+            equalizer_enabled: true,
+            equalizer_bands: [3.0; 10],
+            replay_gain: reprise_core::library::settings::ReplayGainMode::Album,
+        };
+        let filter = build_audio_filter(&effects).unwrap().unwrap();
+        let bin = filter.downcast::<gst::Bin>().unwrap();
+        assert!(bin.by_name("reprise-equalizer").is_some());
+        let replaygain = bin.by_name("reprise-replaygain").unwrap();
+        assert!(replaygain.property::<bool>("album-mode"));
     }
 
     /// Guards every test in this module that sets `AUDIO_SINK_ENV_VAR`:
@@ -381,6 +501,32 @@ mod tests {
             PlayerEvent::StateChanged(PlaybackState::Stopped)
         ));
 
+        std::env::remove_var(AUDIO_SINK_ENV_VAR);
+    }
+
+    #[test]
+    fn live_audio_effect_change_preserves_a_playable_pipeline() {
+        let _guard = AUDIO_SINK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+        let player = Player::new(Box::new(|_| {})).unwrap();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+        player.play(path).unwrap();
+        let effects = AudioEffects {
+            equalizer_enabled: true,
+            equalizer_bands: [2.0; 10],
+            replay_gain: reprise_core::library::settings::ReplayGainMode::Track,
+        };
+        player.set_audio_effects(effects.clone()).unwrap();
+        assert_eq!(
+            *player
+                .effects
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            effects
+        );
+        player.stop().unwrap();
         std::env::remove_var(AUDIO_SINK_ENV_VAR);
     }
 
