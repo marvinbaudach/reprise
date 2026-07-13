@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Restore Information panel toggle behavior
+SINCE:    2026-07-13 19:56 CEST
 ```
 
-_As of 2026-07-13 19:54 CEST: Codex completed the Artist News panel and sidebar joint-review fixes and is releasing the lock._
+_As of 2026-07-13 19:56 CEST: Codex is fixing the pinned Information panel reopen regression._
 
 ## Current position
 
