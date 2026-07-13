@@ -75,3 +75,9 @@ TDD steps:
 
 Expected total: at least 491 passed, 5 ignored.
 
+## Execution note
+
+Tasks 1–3 landed as one atomic feature commit because `reprise-gnome` is a binary
+crate: committing the pure operations before their GTK/first-run consumers would
+fail the mandatory `-D warnings` dead-code gate. RED/GREEN was still observed for
+each task boundary before the combined gate battery and commit.

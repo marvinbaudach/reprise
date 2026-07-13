@@ -8,8 +8,8 @@ Flathub.
 ## Features
 
 - Fast, windowed column view for large local libraries, with search,
-  Genre/Artist/Album browsing, persistent column layouts, ratings, play counts,
-  missing-file and import-error views.
+  Genre/Artist/Album browsing, an editable persistent column layout, ratings,
+  play counts, missing-file and import-error views.
 - Incremental background scanning, live folder watching, and move detection so
   renamed files keep ratings, play counts, playlist membership, and added dates.
 - GStreamer playback with seek, volume, queue, shuffle, repeat, previous/next,
@@ -22,7 +22,8 @@ Flathub.
 - Multi-track tag editing that writes only fields explicitly changed by the
   user, confirmed database-only removal, and confirmed move to Trash.
 - First-run setup and validated session restore for window, view, filters,
-  sorting, and exact queue state. Restoring a session never starts playback.
+  sorting, and exact queue state, including a default-off import offer when
+  Rhythmbox settings are detected. Restoring a session never starts playback.
 - Complete English source UI and German gettext translation.
 
 Reprise scans `mp3`, `flac`, `ogg`, `opus`, `m4a`, `aac`, and `wav` files.

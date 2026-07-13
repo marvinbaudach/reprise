@@ -70,7 +70,10 @@ Run these first after restarting the current `target/release/reprise`.
 Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 - [ ] Fresh start shows the setup dialog once, with clear local-library/privacy copy.
-- [ ] Cover download and Rhythmbox import are off by default.
+- [ ] Cover download is off by default. When Rhythmbox is detected, a clear
+  `Rhythmbox found` import offer appears and remains off by default; without the
+  schema/key, no false Rhythmbox offer appears. Both decision paths and explicit
+  fixture import pass in the isolated smoke; native copy/layout remains pending.
 - [ ] Skip completes onboarding without opening a picker or scanning music.
 - [ ] Set Up Library opens the portal folder chooser; cancel is harmless; choosing a
   disposable folder scans it and does not expose broader filesystem access.
@@ -112,8 +115,12 @@ and WMA. Missing host codecs should produce an actionable error, not a crash.
 - [ ] Browse dropdowns work by mouse and keyboard at narrow and wide widths; each
   Genre → Artist → Album change resets only the dependent facets.
 - [ ] Search and browse facets combine correctly, including zero-result recovery.
-- [ ] Column visibility/order persists, Cover and Title remain available, and sorting
-  never targets a hidden or invalid column.
+- [ ] Open `Edit column layout…`. Switch optional columns, reorder through both
+  Up/Down buttons and whole-row dragging, inspect the before/after accent line,
+  reset, and restart. Expected: changes apply immediately and persist; Cover and
+  Title stay fixed/visible; sorting never targets a hidden or invalid column. The
+  isolated editor smoke passes toggle/reorder/persist and the display regression
+  proves each movable row owns both controllers; native pointer visuals remain pending.
 - [ ] A real Rhythmbox visible-columns import is read-only, maps supported columns in
   order, ignores unknown tokens, and leaves Rhythmbox settings unchanged.
 - [ ] Playlist context-menu add/new/remove, sidebar drag add, multi-select, and M3U8

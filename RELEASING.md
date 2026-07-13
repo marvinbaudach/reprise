@@ -27,7 +27,7 @@ allows exactly two documented informational conditions: the established
 uppercase component ID `org.reprise.Reprise` and the absent homepage while no
 public project URL exists.
 
-Four GTK regression tests require a display and are ignored by the normal test
+Five GTK regression tests require a display and are ignored by the normal test
 suite. Run each in its own process because GTK can only be initialized from one
 thread per process, while Rust's test harness gives separate tests separate
 threads even with `--test-threads=1`:
@@ -37,7 +37,8 @@ for test in \
   closed_popover_stays_parented_until_pending_actions_finish \
   reentrant_set_on_changed_does_not_panic \
   enter_activates_the_apply_button_from_every_entry_row \
-  interaction_surface_expands_to_the_whole_cell
+  interaction_surface_expands_to_the_whole_cell \
+  movable_row_owns_drag_and_drop_controllers
 do
   XDG_DATA_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)" \
     xvfb-run -a cargo test -p reprise-gnome "$test" -- --ignored
@@ -90,7 +91,8 @@ The detailed live ledger of confirmed and pending checks is
 `docs/agent-workflow/MANUAL-QA.md`; keep it synchronized with every manual pass.
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
-  chooser. Cover download and Rhythmbox import must default off.
+  chooser. Cover download must default off. A detected Rhythmbox installation
+  must show a clearly default-off import offer; no false offer appears without it.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
@@ -99,7 +101,8 @@ The detailed live ledger of confirmed and pending checks is
   repeat without surprise autoplay.
 - Verify MPRIS quick settings, media keys, notifications, lock screen, metadata,
   cover art, shuffle/repeat writes, and clean shutdown on a real GNOME session.
-- Exercise browse facets, search, column visibility/order, a real read-only
+- Exercise browse facets, search, the column-layout editor (switches, buttons,
+  whole-row drag, insertion lines, reset and restart persistence), a real read-only
   Rhythmbox column import, playlists, M3U import/export, and drag/reorder gestures.
 - Batch-edit multiple copied tracks. Mixed fields must show multiple values and
   unchanged per-track fields must remain untouched.
