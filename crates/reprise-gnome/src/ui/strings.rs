@@ -31,9 +31,12 @@ pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Musi
 pub const ONBOARDING_COVERS: &str = N_!("Download missing album covers");
 pub const ONBOARDING_COVERS_SUBTITLE: &str =
     N_!("Uses MusicBrainz and Cover Art Archive only when enabled");
-pub const ONBOARDING_RHYTHMBOX_FOUND: &str = N_!("Rhythmbox found");
-pub const ONBOARDING_RHYTHMBOX_FOUND_SUBTITLE: &str =
-    N_!("Import its column layout without changing Rhythmbox settings");
+pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
+pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
+    N_!("Rhythmbox was found. Choose what Reprise should import.");
+pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT: &str = N_!("Column layout");
+pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT_SUBTITLE: &str =
+    N_!("Read the layout without changing Rhythmbox settings");
 pub const ONBOARDING_SKIP: &str = N_!("Skip for Now");
 pub const ONBOARDING_SET_UP: &str = N_!("Set Up Library");
 pub const MAIN_MENU: &str = N_!("Main menu");
@@ -255,7 +258,6 @@ pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
 pub const RESTART_REQUIRED: &str = N_!("Restart required");
 pub const DOWNLOAD_MISSING_COVERS: &str = N_!("Download missing album covers");
-pub const IMPORT_RHYTHMBOX_COLUMNS: &str = N_!("Import Rhythmbox column layout");
 pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");
