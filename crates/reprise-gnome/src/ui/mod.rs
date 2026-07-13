@@ -73,6 +73,7 @@ mod preference_effects;
 mod preference_lastfm;
 mod preference_library;
 mod preference_listenbrainz;
+mod preference_playback;
 mod preference_plugins;
 mod preference_window_decorations;
 mod preferences;
