@@ -34,9 +34,11 @@ _As of 2026-07-13 19:59 CEST: Codex claimed the lock for the manual Up Next queu
 - **Last completed:** **Artist News panel and sidebar joint-review fixes** (`dafde90`) — desktop
   widths pin Information as a real 340 px column, active requests expose indeterminate progress,
   invalid refresh states are disabled, and the problem-source separator is no longer selectable.
-- **Current plan:** none.
-- **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `dafde90`; this QA/coordination close-out follows it.
+- **Current plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md`
+  (implementation and QA complete on `feature/up-next-compact-redesign`; local merge pending).
+- **➡️ NEXT:** merge the completed feature branch locally, release this lock, then hold the joint
+  stage review; do not start another roadmap stage without explicit user direction.
+- **Feature implementation:** `1a2f462`; final QA/documentation follows it.
 
 ## Done so far (compact)
 
@@ -103,6 +105,11 @@ _As of 2026-07-13 19:59 CEST: Codex claimed the lock for the manual Up Next queu
   session restoration without autoplay, functional browse-option search, rating resorting, stable
   empty browse-popup geometry, and repaired playlist row/menu/create/reorder flows including
   duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
+- ✅ **Manual Up Next + native Compact redesign**: Queue now contains only explicit pending manual
+  tracks and consumes them in stable user order before resuming the unchanged playback context;
+  Bar/Cover/Pill/Card use opaque native GTK/libadwaita composition, expose Return to Library only
+  through the shared context menu, and change volume in five-percent steps only on declared free
+  cover/metadata scroll regions without visible Compact volume controls.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
@@ -111,9 +118,10 @@ _As of 2026-07-13 19:59 CEST: Codex claimed the lock for the manual Up Next queu
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines), `strings.rs` (784 lines), `info_panel.rs` (794 lines), and
-  `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
-  edits must extract cohesive sibling modules rather than adding inline logic.
+- `scrobbling.rs` (795 lines), `strings.rs` (784 lines), and `info_panel.rs` (794 lines)
+  are edge-tight — their next edits must extract cohesive sibling modules rather than
+  adding inline logic. The Compact pointer flow has been extracted from
+  `scripts/ptr-e2e/run.sh`, reducing the runner to 732 lines.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote

@@ -1,9 +1,7 @@
-//! Queue-driven transport methods, split out of `player_controller.rs`
-//! (Task 8) purely to keep that file under the project's file-size limit and
-//! make room for the Now-Playing fan-out — same rationale, and same
-//! `impl PlayerController` sibling-module shape, as the Stage 3 Task 1 split
-//! that produced `mpris_mirror.rs`/`playback_faults.rs`. No behavioral
-//! change: every method here moved verbatim.
+//! Playback-context and manual Up Next transport methods, split out of
+//! `player_controller.rs` to keep that file under the project's file-size
+//! limit. The hidden `queue` remains the selected Library/playlist context;
+//! the visible Queue source is backed only by `up_next`.
 //!
 //! These are `pub(super)` so `mpris_mirror.rs`'s `handle_mpris_command` (and,
 //! for `queue_ids_snapshot`, `track_list.rs`) can call them too — shared with
@@ -103,19 +101,9 @@ impl PlayerController {
         self.advance_playback(AdvanceReason::Manual);
     }
 
-    /// "Add to queue" context-menu action (Stage 3 Task 5): appends `ids` to
-    /// the end of the current queue via `Queue::append_tracks` — see that
-    /// method's doc comment for the exact append/no-auto-start semantics —
-    /// without ever calling `play_track_id`. A no-op for an empty `ids`
-    /// slice. If the queue was previously empty, the transport buttons are
-    /// re-enabled to match its now-non-empty state (the same re-derivation
-    /// `play_track_id` already does on every successful playback start), but
-    /// no track starts playing: `ui::track_actions::queue_selected_ids`
-    /// guards the empty case, and the queue itself only forms a `pos` of
-    /// `Some(0)` for bookkeeping (see `Queue::append_tracks`) — playback
-    /// stays exactly as it was. Borrow discipline: `append_tracks`/`is_
-    /// empty` each run inside their own statement, so no `queue` borrow is
-    /// alive across the `sync_transport_enabled` call.
+    /// Appends explicit user selections to visible Up Next without replacing
+    /// or starting the hidden playback context. Duplicates remain meaningful
+    /// user choices; an empty slice is a no-op.
     pub(super) fn append_to_queue(&self, ids: &[i64]) {
         if ids.is_empty() {
             tracing::debug!("append to queue: nothing to add; ignoring");
@@ -128,15 +116,9 @@ impl PlayerController {
         tracing::info!(added = ids.len(), queue_len, "tracks added to queue");
     }
 
-    /// Snapshot of every queued track id in current play order (Stage 3
-    /// Task 3's `ViewSource::Queue` seam — see `queue::Queue::ids_in_order`'s
-    /// doc comment). `track_list.rs`'s queue-ids provider closure (wired in
-    /// `window::build`) calls this each time the track list reloads while
-    /// showing the Queue source, so that view always reflects the queue's
-    /// live state (including shuffle) rather than a stale copy. No explicit
-    /// hoisting `let` is needed here: `ids_in_order()` returns an owned
-    /// `Vec`, so the temporary `Ref` this creates already drops at the end
-    /// of this one expression, before the function returns.
+    /// Snapshot of pending manual ids in stable visible order. The Queue view
+    /// asks for a fresh owned value on each reload, so consumption, removal,
+    /// and drag reorder cannot expose the hidden context or a stale list.
     pub(super) fn queue_ids_snapshot(&self) -> Vec<i64> {
         self.up_next.borrow().ids().to_vec()
     }
@@ -153,18 +135,8 @@ impl PlayerController {
         removed
     }
 
-    /// Queue drag-reorder (Stage 3 Task 6): moves the queued track at index
-    /// `from` to index `to` via `queue::Queue::move_item` — see that method's
-    /// doc comment for the current-track-preservation contract and
-    /// out-of-range/no-op handling (never panics). `ui::track_list_dnd`'s
-    /// queue-reorder drop handler calls this via `TrackList::set_on_queue_
-    /// reorder`, then reloads the track list itself so the Queue view picks
-    /// up the new order — this method only mutates queue state, the same
-    /// "state mutation only, caller decides what to refresh" contract as
-    /// `append_to_queue`. Returns `Queue::move_item`'s own bool verbatim, so
-    /// a no-op move (empty queue, out-of-range index, `from == to`) is
-    /// reported as `false` rather than the caller assuming success just
-    /// because a player was available to ask.
+    /// Reorders pending manual entries only. The caller reloads Queue after a
+    /// successful mutation; invalid and no-op positions return `false`.
     pub(super) fn move_queue_item(&self, from: usize, to: usize) -> bool {
         self.up_next.borrow_mut().move_item(from, to)
     }
