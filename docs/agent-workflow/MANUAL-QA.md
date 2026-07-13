@@ -77,6 +77,12 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] Skip completes onboarding without opening a picker or scanning music.
 - [ ] Set Up Library opens the portal folder chooser; cancel is harmless; choosing a
   disposable folder scans it and does not expose broader filesystem access.
+- [ ] During Set Up Library, Scan folder, and Rescan library, a narrow row directly
+  below the header appears immediately, pulses while files are discovered, then shows
+  a monotone processed/total count and the current filename before disappearing on
+  completion. The isolated two-file app smoke proves Discovering → Scanning → Complete,
+  and the native GTK widget regression proves reveal/fraction/hide; native GNOME visual
+  layout with a deliberately slow disposable tree remains pending.
 - [ ] Existing libraries upgrade silently without showing first-run setup.
 - [ ] English and German have no clipping, untranslated visible strings, broken
   plurals, or unnatural button/menu labels.
