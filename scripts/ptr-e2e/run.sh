@@ -264,9 +264,8 @@ screenshot() {
 
 click_at() {
   local x="$1" y="$2"
-  xdotool mousemove --sync "$x" "$y" click 1 >/dev/null 2>&1
+  xdotool mousemove --sync "$x" "$y" sleep 0.1 click 1 >/dev/null 2>&1
 }
-
 click_window_relative() {
   local relative_x="$1" relative_y="$2" button="${3:-1}"
   local geometry window_x window_y
@@ -474,10 +473,8 @@ sleep 1
 # from a `scrot` capture of this exact scan (5 sine.flac copies, Papirus-Dark,
 # 1600x900) and are stable for that fixed input, but WILL need re-measuring
 # if the column set, fonts, or resolution change. See README.md.
-ROW0_TITLE_CELL_X=355
-ROW0_TITLE_CELL_Y=165
-ROW0_RATING_STAR2_X=754
-ROW0_RATING_STAR2_Y=165
+# shellcheck source=geometry.sh
+source "$REPO_ROOT/scripts/ptr-e2e/geometry.sh"
 
 if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
   # --- Flow 0: opt-in Artist News in the contextual information panel -------
@@ -496,10 +493,12 @@ log_step "flow 1: star-rating click…"
 screenshot "01-initial-track-list"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/01-initial-track-list.png"
 # Close the default-visible Information overlay before exercising row input.
-click_window_from_right 437 28
+click_window_from_right "$INFO_TOGGLE_FROM_RIGHT" 28
+sleep 1
+click_at "$ROW0_TITLE_CELL_X" "$ROW0_TITLE_CELL_Y"
 sleep 0.3
 MARKER=$(log_marker)
-click_at "$ROW0_RATING_STAR2_X" "$ROW0_RATING_STAR2_Y"
+click_at "$ROW0_RATING_STAR1_X" "$ROW0_RATING_STAR1_Y"
 sleep 1
 screenshot "02-after-star-click"
 # `RatingWidget`'s click handler logs via `tracing::debug!(... "rating
@@ -508,7 +507,6 @@ screenshot "02-after-star-click"
 # it only exists if the real pointer click was actually delivered to the
 # button inside the ColumnView cell.
 assert_log_contains_since "$MARKER" "rating changed" "star click delivered a rating change (src/ui/track_list.rs on_rating_changed)"
-
 # --- Flow 2: keyboard opens the selected row's context menu -----------------
 
 log_step "flow 2: Shift+F10 opens the track context menu…"
@@ -548,7 +546,7 @@ key "Down"
 key "Return"
 sleep 0.2
 assert_log_contains_since "$MARKER" "context menu: tracks added to queue" "keyboard context menu added the first track to Queue"
-click_at 355 215
+click_at "$ROW1_TITLE_CELL_X" "$ROW1_TITLE_CELL_Y"
 MARKER=$(log_marker)
 key "shift+F10"
 key "Down"
@@ -556,7 +554,7 @@ key "Return"
 sleep 0.2
 assert_log_contains_since "$MARKER" "context menu: tracks added to queue" "keyboard context menu added the second track to Queue"
 assert_log_contains_since "$MARKER" "sidebar refresh.*queue changed" "Queue mutation refreshed the sidebar count"
-click_at 80 104
+click_at "$SIDEBAR_QUEUE_X" "$SIDEBAR_QUEUE_Y"
 sleep 0.3
 screenshot "06-queue-before-reorder"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/06-queue-before-reorder.png"
@@ -614,7 +612,7 @@ log_step "flow 5: visible Compact button and all four layouts…"
 # button is the view-grid icon directly to the right of the primary menu.
 HEADER_BUTTON_Y=28
 MARKER=$(log_marker)
-click_window_from_right 477 "$HEADER_BUTTON_Y"
+click_window_from_right "$COMPACT_BUTTON_FROM_RIGHT" "$HEADER_BUTTON_Y"
 sleep 0.4
 assert_log_contains_since "$MARKER" "window view mode changed.*mode=Compact.*layout=Bar" "full-header button entered Compact Bar"
 assert_window_within 660 185 "Bar compact geometry after leaving maximized Library"
@@ -713,7 +711,7 @@ assert_log_contains_since "$MARKER" "window view mode changed.*mode=Library.*lay
 
 log_step "flow 6: Preferences dialog…"
 maximize_window
-click_window_from_right 517 28
+click_window_from_right "$PRIMARY_MENU_FROM_RIGHT" 28
 sleep 0.3
 screenshot "17-main-menu"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/17-main-menu.png"
