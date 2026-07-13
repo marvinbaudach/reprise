@@ -857,6 +857,33 @@ msgstr ""
 msgid "Export playlist…"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings.rs:734
+msgid "Delete playlist…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:735
+msgid "Delete Playlist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:737
+msgid "The playlist will be deleted. Its tracks will remain in your library."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:739
+#, rust-format
+msgid "Delete “{name}”?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:742
+#, rust-format
+msgid "Deleted playlist “{name}”"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:745
+#, rust-format
+msgid "Could not delete playlist “{name}”"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings.rs:603
 msgid "Import Playlist"
 msgstr ""
