@@ -57,9 +57,11 @@ This separate harness uses copied fixtures, a temporary XDG profile, private
 D-Bus/Xvfb, and a fake audio sink. It injects a real rating click, opens the
 track context menu and tag editor by keyboard, rejects an invalid Year on
 Enter, performs a held Queue drag with insertion-target capture and reorder,
-exercises Space play/pause, verifies nonblank screenshots, and rejects GTK/GLib
-criticals, Rust panics, and `RefCell` borrow failures. It does not replace the
-native-Wayland, audible-audio, media-key, or portal checks below.
+exercises Space play/pause and Ctrl+M, opens and captures all five Preferences
+pages, toggles layout/effect/plugin controls, performs a real library rescan,
+verifies exact isolated SQLite values, and rejects GTK/GLib criticals, Rust
+panics, and `RefCell` borrow failures. It does not replace the native-Wayland,
+audible-audio, media-key, or portal checks below.
 
 ## Build artifacts
 
