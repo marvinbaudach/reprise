@@ -21,23 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Design selectable compact-player layouts
-SINCE:    2026-07-13 11:45 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 11:45 CEST: Codex claimed the lock to design selectable compact-player layouts._
+_As of 2026-07-13: selectable compact-player layouts are complete and the lock is released._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-main-cover-progress.md` (3 tasks).
-- **Last completed:** **Main-window cover-download progress** (`7b2f378`, `19a065e`) — the existing
-  serial batch now broadcasts one state to Preferences and a transient main-window progress row.
-- **Current plan:** none — cover and library scan progress are complete; minimal-view variants are the next
-  proposed feature stage and still need their dedicated approved spec/plan before implementation.
-- **➡️ NEXT:** settle and implement the proposed Compact/Cover/Pill/Card minimal-view variants,
-  then run the native-GNOME visual/geometry and audible checks in `MANUAL-QA.md`.
-- **Feature HEAD:** `19a065e`; this QA/coordination update follows it.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-compact-player-layouts.md` (5 tasks).
+- **Last completed:** **Selectable compact-player layouts** (`97901fd` through `f7db4c1`) — one
+  shared player now switches quickly between Library and persistent Bar/Cover/Pill/Card surfaces.
+- **Current plan:** none — the compact-layout stage is complete.
+- **➡️ NEXT:** joint native-GNOME visual/Wayland stage review using the exact remaining checks in
+  `MANUAL-QA.md`; do not begin another roadmap stage without explicit user direction.
+- **Feature HEAD:** `f7db4c1`; this QA/coordination update follows it.
 
 ## Done so far (compact)
 
@@ -59,6 +58,9 @@ _As of 2026-07-13 11:45 CEST: Codex claimed the lock to design selectable compac
 - ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent theme,
   layout, library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
   live controls; isolated runtime persistence and full release QA green.
+- ✅ **Selectable compact-player layouts**: persistent Bar, Cover, Pill and Card roots share one
+  controller, cover pipeline, queue and accessible menu; visible buttons, right-click, Shift+F10,
+  Ctrl+M, playing-state continuity and no-autoplay restart are covered by isolated real-input QA.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
@@ -89,7 +91,8 @@ _As of 2026-07-13 11:45 CEST: Codex claimed the lock to design selectable compac
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `window.rs` (790 lines) is edge-tight — its next edit must extract a sibling module, not inline-add.
+- `window.rs` (799 lines) is at the enforced limit — its next edit must extract a sibling module,
+  not add inline feature logic.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote
