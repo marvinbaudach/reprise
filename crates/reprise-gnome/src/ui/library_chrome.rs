@@ -26,6 +26,15 @@ pub(super) fn style_header(header: &adw::HeaderBar, search: &gtk4::SearchEntry) 
     search.set_hexpand(false);
 }
 
+pub(super) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
+    let button = gtk4::Button::builder()
+        .icon_name(icon_name)
+        .tooltip_text(label)
+        .build();
+    button.update_property(&[gtk4::accessible::Property::Label(label)]);
+    button
+}
+
 #[cfg(test)]
 mod tests {
     use libadwaita::prelude::*;
@@ -54,6 +63,19 @@ mod tests {
             Some(navigation.upcast_ref())
         );
         assert!(header.is_ancestor(&chrome.root));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn header_actions_are_compact_icons_with_accessible_tooltips() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let button = action_button("folder-open-symbolic", "Scan folder…");
+
+        assert_eq!(button.icon_name().as_deref(), Some("folder-open-symbolic"));
+        assert_eq!(button.tooltip_text().as_deref(), Some("Scan folder…"));
+        assert!(button.label().is_none());
     }
 
     fn test_navigation() -> adw::NavigationSplitView {

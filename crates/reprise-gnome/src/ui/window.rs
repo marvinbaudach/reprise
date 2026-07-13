@@ -103,11 +103,17 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
         .build();
 
-    let scan_button = gtk4::Button::with_label(&strings::text(strings::SCAN_FOLDER));
+    let scan_button = super::library_chrome::action_button(
+        "folder-open-symbolic",
+        &strings::text(strings::SCAN_FOLDER),
+    );
     // Stage 3 Task 7: global "Import playlist…" entry, same header-button
     // shape as "Scan folder…" — see `wire_import_button`'s doc comment
     // (`ui::playlist_io`) for the dialog flow this drives.
-    let import_button = gtk4::Button::with_label(&strings::text(strings::IMPORT_PLAYLIST));
+    let import_button = super::library_chrome::action_button(
+        "document-open-symbolic",
+        &strings::text(strings::IMPORT_PLAYLIST),
+    );
 
     // Visible only while the split view is collapsed (see `wire_sidebar_
     // toggle`) — at full width both panes already show side by side, so
