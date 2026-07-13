@@ -457,6 +457,12 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         player.as_ref().map(|player| player.bar_widget()),
     );
     let geometry_guard = minimal_view.geometry_guard();
+    let cover_batch = super::cover_download_batch::CoverDownloadBatch::new(
+        conn,
+        &cover_download,
+        &track_list,
+        player.as_ref(),
+    );
     let preferences = super::preferences::PreferencesContext::new(
         &window,
         conn,
@@ -467,16 +473,11 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &bottom_box,
         &scan_button,
         player.as_ref(),
+        &cover_batch,
         {
             let minimal_view = minimal_view.clone();
             move || minimal_view.toggle()
         },
-    );
-    let cover_batch = super::cover_download_batch::CoverDownloadBatch::new(
-        conn,
-        &cover_download,
-        &track_list,
-        player.as_ref(),
     );
     let minimal_toggle = minimal_view.clone();
     let toggled_cover_batch = cover_batch.clone();

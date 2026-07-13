@@ -11,6 +11,7 @@ use reprise_core::library::settings::{
 };
 use rusqlite::Connection;
 
+use crate::ui::cover_download_batch::CoverDownloadBatch;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
@@ -166,6 +167,7 @@ pub(super) struct PreferencesContext {
     pub(super) syncing_effect_controls: Cell<bool>,
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
     pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
+    pub(super) cover_batch: Rc<CoverDownloadBatch>,
     on_minimal: Rc<dyn Fn()>,
 }
 
@@ -181,6 +183,7 @@ impl PreferencesContext {
         bottom_box: &gtk4::Box,
         scan_button: &gtk4::Button,
         player: Option<&Rc<PlayerController>>,
+        cover_batch: &Rc<CoverDownloadBatch>,
         on_minimal: impl Fn() + 'static,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
@@ -197,6 +200,7 @@ impl PreferencesContext {
             syncing_effect_controls: Cell::new(false),
             equalizer_controls: RefCell::new(Vec::new()),
             replaygain_mode: RefCell::new(None),
+            cover_batch: cover_batch.clone(),
             on_minimal: Rc::new(on_minimal),
         });
         let weak = Rc::downgrade(&context);
@@ -634,6 +638,9 @@ impl PreferencesContext {
                 }
             });
             group.add(&row);
+            if descriptor.id == "cover_download" {
+                self.add_cover_download_progress(&group);
+            }
         }
         page.add(&group);
         page

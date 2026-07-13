@@ -75,6 +75,31 @@ pub const PLUGIN_MPRIS_DESCRIPTION: &str =
     N_!("GNOME media controls, media keys, and lock-screen integration (D-Bus)");
 pub const PLUGIN_COVER_DESCRIPTION: &str =
     N_!("Download missing album covers from Cover Art Archive (network; off by default)");
+pub const COVER_DOWNLOAD_CHECKING: &str = N_!("Checking missing album covers…");
+pub const COVER_DOWNLOAD_COMPLETE: &str = N_!("Cover check complete");
+pub const COVER_DOWNLOAD_STOPPED: &str = N_!("Cover check stopped");
+pub const COVER_DOWNLOAD_FAILED: &str = N_!("Could not check album covers");
+
+pub fn cover_download_progress(
+    checked: usize,
+    total: usize,
+    downloaded: usize,
+    unavailable: usize,
+) -> String {
+    let checked = checked.to_string();
+    let total = total.to_string();
+    let downloaded = downloaded.to_string();
+    let unavailable = unavailable.to_string();
+    formatted(
+        N_!("{checked} of {total} checked · {downloaded} downloaded · {unavailable} unavailable"),
+        &[
+            ("checked", &checked),
+            ("total", &total),
+            ("downloaded", &downloaded),
+            ("unavailable", &unavailable),
+        ],
+    )
+}
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
