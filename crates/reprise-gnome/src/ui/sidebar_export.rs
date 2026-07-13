@@ -1,5 +1,6 @@
 //! The sidebar's playlist-row right-click context menu (Stage 3 Task 7):
-//! currently a single "Export playlist…" action. Split out of `sidebar.rs`
+//! provides "Export playlist…" and confirmed "Delete playlist…" actions.
+//! Split out of `sidebar.rs`
 //! for the same file-size reason as `sidebar_dnd.rs` — see that module's own
 //! doc comment for the pattern this mirrors (reaching into `sidebar.rs`'s
 //! private `Shared` via `pub(super)` fields/functions).
@@ -8,7 +9,8 @@
 //! (shared with the global "Import playlist…" flow in `window.rs`, and with
 //! the `REPRISE_SMOKE_M3U=export:<name>:<path>` dev hook); this module owns
 //! only the widget wiring: the right-click gesture, the `gio::Menu`/
-//! `PopoverMenu`, and the `gtk::FileDialog` save flow.
+//! `PopoverMenu`, the `gtk::FileDialog` save flow, and the destructive
+//! confirmation that deletes only the playlist database row.
 
 use std::rc::Rc;
 
@@ -16,17 +18,41 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
+use libadwaita as adw;
+use libadwaita::prelude::*;
 
 use crate::ui::playlist_io;
 use crate::ui::popover_lifecycle;
-use crate::ui::sidebar::{show_toast, Shared};
+use crate::ui::sidebar::{rebuild, show_toast, Shared};
 use crate::ui::strings;
+use reprise_core::library::playlists;
 
 /// Bare action name — internal identifier, not user-facing text (see
 /// `&strings::text(strings::EXPORT_PLAYLIST)` for the menu item's actual copy). Mirrors
 /// `ui::track_list_context_menu`'s `ACTION_*`/`ACTION_GROUP_NAME` naming.
 const ACTION_EXPORT: &str = "export";
+const ACTION_DELETE: &str = "delete";
 const ACTION_GROUP_NAME: &str = "playlistrow";
+const RESPONSE_CANCEL: &str = "cancel";
+const RESPONSE_DELETE: &str = "delete";
+
+struct PlaylistMenuSpec {
+    action: &'static str,
+    label: String,
+}
+
+fn playlist_menu_specs() -> [PlaylistMenuSpec; 2] {
+    [
+        PlaylistMenuSpec {
+            action: ACTION_EXPORT,
+            label: strings::text(strings::EXPORT_PLAYLIST),
+        },
+        PlaylistMenuSpec {
+            action: ACTION_DELETE,
+            label: strings::text(strings::DELETE_PLAYLIST),
+        },
+    ]
+}
 
 /// Attaches a secondary-click (`button = 3`) context-menu gesture to a
 /// playlist row — same pattern as `ui::track_list_context_menu::wire_
@@ -53,7 +79,7 @@ pub(super) fn wire_playlist_context_menu(
     row.add_controller(gesture);
 }
 
-/// Builds and pops up the one-item context menu at the click point. The
+/// Builds and pops up the context menu at the click point. The
 /// `gio::SimpleActionGroup` is rebuilt on every open (like `ui::track_list_
 /// context_menu::build_context_menu_model`) — cheap at one item, and avoids
 /// any invalidation concern from a stale captured `playlist_id`/`name`.
@@ -75,13 +101,24 @@ fn show_context_menu(
         });
     }
     action_group.add_action(&export_action);
+    let delete_action = gio::SimpleAction::new(ACTION_DELETE, None);
+    {
+        let shared = shared.clone();
+        let playlist_name = playlist_name.to_string();
+        delete_action.connect_activate(move |_, _| {
+            confirm_delete(&shared, playlist_id, &playlist_name);
+        });
+    }
+    action_group.add_action(&delete_action);
     row.insert_action_group(ACTION_GROUP_NAME, Some(&action_group));
 
     let menu = gio::Menu::new();
-    menu.append(
-        Some(&strings::text(strings::EXPORT_PLAYLIST)),
-        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_EXPORT}")),
-    );
+    for spec in playlist_menu_specs() {
+        menu.append(
+            Some(&spec.label),
+            Some(&format!("{ACTION_GROUP_NAME}.{}", spec.action)),
+        );
+    }
 
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
     popover.set_parent(row);
@@ -95,6 +132,56 @@ fn show_context_menu(
     popover_lifecycle::unparent_after_actions(popover.upcast_ref());
 
     popover.popup();
+}
+
+fn confirm_delete(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
+    let Some(window) = shared.window.upgrade() else {
+        tracing::warn!(
+            playlist_id,
+            "sidebar: window is gone; cannot confirm playlist deletion"
+        );
+        return;
+    };
+    let dialog = adw::AlertDialog::builder()
+        .heading(strings::playlist_delete_heading(playlist_name))
+        .body(strings::text(strings::PLAYLIST_DELETE_BODY))
+        .close_response(RESPONSE_CANCEL)
+        .build();
+    dialog.add_response(RESPONSE_CANCEL, &strings::text(strings::CANCEL));
+    dialog.add_response(
+        RESPONSE_DELETE,
+        &strings::text(strings::PLAYLIST_DELETE_RESPONSE),
+    );
+    dialog.set_response_appearance(RESPONSE_DELETE, adw::ResponseAppearance::Destructive);
+
+    let shared = shared.clone();
+    let playlist_name = playlist_name.to_string();
+    dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
+        if response.as_str() == RESPONSE_DELETE {
+            delete_playlist(&shared, playlist_id, &playlist_name);
+        }
+    });
+}
+
+fn delete_playlist(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
+    let result = {
+        let conn = shared.conn.borrow();
+        playlists::delete(&conn, playlist_id)
+    };
+    match result {
+        Ok(()) => {
+            tracing::info!(playlist_id, playlist_name, "playlist deleted");
+            rebuild(shared, None, "playlist deleted");
+            show_toast(shared, &strings::playlist_deleted_toast(playlist_name));
+        }
+        Err(error) => {
+            tracing::error!(%error, playlist_id, playlist_name, "playlist deletion failed");
+            show_toast(
+                shared,
+                &strings::playlist_delete_failed_toast(playlist_name),
+            );
+        }
+    }
 }
 
 /// Opens the "Export playlist…" save dialog and, on a chosen path, runs
@@ -160,4 +247,19 @@ fn start_export(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playlist_menu_contains_export_then_delete() {
+        let specs = playlist_menu_specs();
+
+        assert_eq!(specs.len(), 2);
+        assert_eq!(specs[0].action, ACTION_EXPORT);
+        assert_eq!(specs[1].action, ACTION_DELETE);
+        assert_eq!(specs[1].label, strings::text(strings::DELETE_PLAYLIST));
+    }
 }
