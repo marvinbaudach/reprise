@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Restore whole-row column layout drag
+SINCE:    2026-07-13 21:34 CEST
 ```
 
-_As of 2026-07-13 21:28 CEST: lock released after manual Up Next and the native Compact redesign passed combined QA and merged locally._
+_As of 2026-07-13 21:34 CEST: Codex claimed the lock for the whole-row column-layout drag regression._
 
 ## Current position
 
