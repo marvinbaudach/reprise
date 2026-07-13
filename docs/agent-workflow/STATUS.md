@@ -21,23 +21,23 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Merge Artist & Album News information panel
-SINCE:    2026-07-13 14:09 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 14:09 CEST: Codex claimed the lock to merge the isolated Artist & Album News branch._
+_As of 2026-07-13: Artist & Album News is complete, merged, and the lock is released._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-listenbrainz-scrobbling.md` (5 tasks).
-- **Last completed:** **Opt-in ListenBrainz scrobbling** (`1839e2a` through `340d46e`, merged as
-  `5b52fe6`) — secure keyring credentials, playing-now, threshold listens, and a durable offline
-  queue run through one cancellable retry worker without sending before explicit opt-in.
-- **Current plan:** none — the ListenBrainz stage is complete.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-artist-album-news.md` (5 tasks).
+- **Last completed:** **Artist & Album News information panel** (`4c2f30d` through `34b0e9a`,
+  merged as `5216842`) — a default-off MusicBrainz integration shows cached Upcoming/New album
+  cards for the selected artist without sending paths or listening history.
+- **Current plan:** none — the Artist & Album News stage is complete.
 - **➡️ NEXT:** joint native-GNOME visual/Wayland stage review using the exact remaining checks in
   `MANUAL-QA.md`; do not begin another roadmap stage without explicit user direction.
-- **Main merge:** `5b52fe6`; this QA/coordination update follows it.
+- **Main merge:** `5216842`; this QA/coordination update follows it.
 
 ## Done so far (compact)
 
@@ -65,6 +65,9 @@ _As of 2026-07-13 14:09 CEST: Codex claimed the lock to merge the isolated Artis
 - ✅ **ListenBrainz scrobbling**: default-off live integration validates a securely keyring-stored
   token, reports playing-now, submits threshold-completed listens, persists a bounded FIFO offline,
   retries with cancellation/generation guards, and exposes translated connect/status/disconnect UI.
+- ✅ **Artist & Album News**: a persistent right-side Information panel follows the current
+  selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
+  filters cached Upcoming/New album and EP cards, and rejects stale selection responses.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
@@ -97,12 +100,14 @@ _As of 2026-07-13 14:09 CEST: Codex claimed the lock to merge the isolated Artis
 
 - `listenbrainz_runtime.rs` (787 lines) is edge-tight — its next edit must extract a sibling module,
   not add inline feature logic.
+- `info_panel.rs` (786 lines) and `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
+  edits must extract cohesive sibling modules rather than adding inline logic.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote
   and verified ownership appropriate for `org.reprise.Reprise`.
-- Online-cover publication additionally requires a real reachable maintainer-controlled project or
-  contact URL for the MusicBrainz `User-Agent`; the current URL must not ship as a placeholder.
+- The MusicBrainz `User-Agent` uses the reachable maintainer profile; a public project homepage
+  remains part of the general publication handoff above.
 - Human manual QA remains exactly as listed in `RELEASING.md`: real rendering/pointer/touch,
   portal picker and Trash visibility, audible codecs, media keys/lock screen, geometry, and
   screenshots from a populated disposable library.
