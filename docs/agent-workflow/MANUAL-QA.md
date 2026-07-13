@@ -223,7 +223,7 @@ M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
 - [ ] Starting, restoring, filtering, importing, and opening views never cause
   unexpected autoplay.
 
-## Pending: MPRIS, notifications, and covers
+## Pending: MPRIS, notifications, covers, and lyrics
 
 - [ ] GNOME Quick Settings and media keys show the player and control playback.
 - [ ] Lock-screen controls, metadata, duration, seek position, shuffle, and repeat stay
@@ -245,6 +245,18 @@ M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
   rendering, stale-selection rejection, close/reopen reuse, one shared request per
   second, request-field privacy, and zero calls before opt-in or after disable. Native
   GNOME proportions, browser launch and offline/cache wording remain pending.
+- [ ] Open the Information panel while a disposable tagged track is playing and switch
+  between the top Information and Lyrics tabs. Expected: the Lyrics tab follows playback,
+  not table selection; synchronized text highlights one current line and keeps it near
+  the viewport center after play and seek; Pause preserves the line; Stop clears it;
+  closing and reopening the panel preserves a still-playing track's text. Plain lyrics
+  remain selectable, Instrumental and not-found are distinct, and temporary offline
+  failure exposes Retry. Rapidly switch tracks while one lookup is delayed and confirm
+  no stale text appears; then disconnect the network and confirm a cached result remains.
+  The isolated three-track fixture proves indices 0 to 1, delayed-generation rejection,
+  latest-track rendering, request-field privacy, and zero real LRCLIB access. Native
+  GNOME typography, high contrast, keyboard selection, HiDPI and real-service matching
+  remain pending. Use only copied music and disposable metadata for the real lookup.
 - [ ] MPRIS bus loss/name collision and clean application shutdown do not crash or
   leave a ghost player in GNOME Shell.
 

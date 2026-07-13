@@ -715,6 +715,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     // `now_playing_wiring.rs`'s doc comments for what each call does.
     now_playing_wiring::wire_bar_expand(player.as_ref(), &content_nav);
     now_playing_wiring::arm_smoke_nowplaying(player.as_ref(), &content_nav);
+    super::lyrics_smoke::arm(player.as_ref(), &info_panel, conn);
 
     super::session_restore::restore_runtime(
         &search_entry,

@@ -1,13 +1,15 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 
 use tempfile::TempDir;
 use url::Url;
 
 use crate::lyrics::{
-    active_line_index, cache_file, load_or_fetch_at, parse_lrc, parse_response, request_url,
-    HttpOutcome, LyricsBody, LyricsError, LyricsQuery, TimedLine, NEGATIVE_TTL_SECONDS,
+    active_line_index, cache_file, fixture_get_at, fixture_request, load_or_fetch_at, parse_lrc,
+    parse_response, request_url, HttpOutcome, LyricsBody, LyricsError, LyricsQuery, TimedLine,
+    NEGATIVE_TTL_SECONDS,
 };
 
 fn query() -> LyricsQuery {
@@ -52,6 +54,59 @@ fn blank_required_metadata_is_rejected_before_fetch() {
         assert_eq!(result, Err(LyricsError::MissingMetadata));
         assert_eq!(calls.get(), 0);
     }
+}
+
+#[test]
+fn fixture_route_accepts_only_the_exact_lrclib_lookup_shape() {
+    let exact = request_url(&query()).unwrap();
+    let request = fixture_request(&exact).unwrap();
+    assert_eq!(request.title, "Synthetic & Song");
+    assert_eq!(request.artist, "Example Artist");
+    assert_eq!(request.album, "Test / Album");
+    assert_eq!(request.duration_seconds, 180);
+    assert_eq!(
+        request.filename(),
+        "lyrics-Synthetic%20%26%20Song--Example%20Artist--Test%20%2F%20Album--180.json"
+    );
+
+    for malformed in [
+        "https://example.test/api/get?track_name=x&artist_name=y&album_name=z&duration=1",
+        "https://lrclib.net/private?track_name=x&artist_name=y&album_name=z&duration=1",
+        "https://lrclib.net/api/get?track_name=../outside&artist_name=y",
+        "https://lrclib.net/api/get?track_name=x&artist_name=y&album_name=z&duration=-1",
+        "not a URL",
+    ] {
+        assert!(fixture_request(malformed).is_none());
+    }
+}
+
+#[test]
+fn fixture_lookup_reads_exact_response_and_logs_only_query_fields() {
+    let temp = TempDir::new().unwrap();
+    let request = fixture_request(&request_url(&query()).unwrap()).unwrap();
+    let response =
+        r#"{"instrumental":false,"plainLyrics":null,"syncedLyrics":"[00:00.10]Synthetic"}"#;
+    fs::write(temp.path().join(request.filename()), response).unwrap();
+    let log = temp.path().join("requests.jsonl");
+
+    assert_eq!(
+        fixture_get_at(&request_url(&query()).unwrap(), temp.path(), Some(&log)),
+        HttpOutcome::Found(response.into())
+    );
+    let logged: serde_json::Value =
+        serde_json::from_str(fs::read_to_string(log).unwrap().trim()).unwrap();
+    assert_eq!(
+        logged
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        ["album", "artist", "duration_seconds", "title"]
+    );
+    assert_eq!(logged["title"], "Synthetic & Song");
+    assert!(!logged.to_string().contains("api/get"));
+    assert!(!logged.to_string().contains(temp.path().to_str().unwrap()));
 }
 
 #[test]
@@ -171,6 +226,18 @@ fn positive_cache_roundtrip_skips_network_and_validates_identity() {
     });
     assert_eq!(result, Err(LyricsError::NotFound));
     assert_eq!(calls.get(), 2);
+}
+
+#[test]
+fn cache_identity_uses_the_same_rounded_duration_as_the_provider() {
+    let first = query();
+    let mut equivalent = first.clone();
+    equivalent.duration_ms = 180_001;
+
+    assert_eq!(
+        cache_file(Path::new("/cache"), &first),
+        cache_file(Path::new("/cache"), &equivalent)
+    );
 }
 
 #[test]

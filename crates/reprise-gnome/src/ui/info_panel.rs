@@ -298,6 +298,11 @@ impl InfoPanel {
         self.widgets.lyrics.clone()
     }
 
+    pub(super) fn show_lyrics(&self) {
+        self.widgets.stack.set_visible_child_name(LYRICS_PAGE);
+        self.widgets.split.set_show_sidebar(true);
+    }
+
     /// Keeps the callback owner alive for exactly as long as the window.
     ///
     /// Widgets keep their signal handlers but those handlers deliberately

@@ -4,6 +4,8 @@
 //! module never sees GTK or playback objects and never writes beside music
 //! files: its only persistent output is versioned JSON below the XDG cache.
 
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -13,6 +15,8 @@ const API_URL: &str = "https://lrclib.net/api/get";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const CACHE_VERSION: u32 = 1;
+const FIXTURE_DIR_ENV: &str = "REPRISE_LRCLIB_FIXTURE_DIR";
+const FIXTURE_LOG_ENV: &str = "REPRISE_LRCLIB_FIXTURE_LOG";
 pub(crate) const NEGATIVE_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,7 +44,7 @@ impl LyricsQuery {
             query.artist.to_lowercase(),
             query.title.to_lowercase(),
             query.album.to_lowercase(),
-            query.duration_ms
+            rounded_duration_seconds(query.duration_ms)
         )
     }
 
@@ -90,6 +94,26 @@ pub(crate) enum HttpOutcome {
     Temporary,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct FixtureRequest {
+    pub(crate) title: String,
+    pub(crate) artist: String,
+    pub(crate) album: String,
+    pub(crate) duration_seconds: i64,
+}
+
+impl FixtureRequest {
+    pub(crate) fn filename(&self) -> String {
+        format!(
+            "lyrics-{}--{}--{}--{}.json",
+            crate::musicbrainz::urlencode(&self.title),
+            crate::musicbrainz::urlencode(&self.artist),
+            crate::musicbrainz::urlencode(&self.album),
+            self.duration_seconds
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CacheRecord {
     version: u32,
@@ -128,6 +152,68 @@ pub fn request_url(query: &LyricsQuery) -> Result<String, LyricsError> {
             &rounded_duration_seconds(query.duration_ms).to_string(),
         );
     Ok(url.into())
+}
+
+pub(crate) fn fixture_request(url: &str) -> Option<FixtureRequest> {
+    let url = url::Url::parse(url).ok()?;
+    if url.scheme() != "https" || url.host_str() != Some("lrclib.net") || url.path() != "/api/get" {
+        return None;
+    }
+    let mut title = None;
+    let mut artist = None;
+    let mut album = None;
+    let mut duration = None;
+    for (key, value) in url.query_pairs() {
+        let slot = match key.as_ref() {
+            "track_name" => &mut title,
+            "artist_name" => &mut artist,
+            "album_name" => &mut album,
+            "duration" => &mut duration,
+            _ => return None,
+        };
+        if slot.replace(value.into_owned()).is_some() {
+            return None;
+        }
+    }
+    let title = title.filter(|value| !value.trim().is_empty())?;
+    let artist = artist.filter(|value| !value.trim().is_empty())?;
+    let album = album.unwrap_or_default();
+    let duration_seconds = duration?.parse::<i64>().ok()?;
+    if duration_seconds < 0 {
+        return None;
+    }
+    Some(FixtureRequest {
+        title,
+        artist,
+        album,
+        duration_seconds,
+    })
+}
+
+pub(crate) fn fixture_get_at(url: &str, directory: &Path, log_path: Option<&Path>) -> HttpOutcome {
+    let Some(request) = fixture_request(url) else {
+        return HttpOutcome::Temporary;
+    };
+    if let Some(log_path) = log_path {
+        let line = match serde_json::to_string(&request) {
+            Ok(line) => line,
+            Err(_) => return HttpOutcome::Temporary,
+        };
+        let written = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)
+            .and_then(|mut file| writeln!(file, "{line}"));
+        if written.is_err() {
+            return HttpOutcome::Temporary;
+        }
+    }
+    let path = directory.join(request.filename());
+    if let Ok(delay) = std::fs::read_to_string(path.with_extension("delay-ms")) {
+        let millis = delay.trim().parse::<u64>().unwrap_or_default();
+        std::thread::sleep(Duration::from_millis(millis));
+    }
+    std::fs::read_to_string(path).map_or(HttpOutcome::Temporary, HttpOutcome::Found)
 }
 
 pub fn parse_lrc(input: &str) -> Vec<TimedLine> {
@@ -348,6 +434,10 @@ fn write_cache(cache_dir: &Path, query: &LyricsQuery, record: &CacheRecord) {
 }
 
 fn http_get(url: &str) -> HttpOutcome {
+    if let Ok(directory) = std::env::var(FIXTURE_DIR_ENV) {
+        let log_path = std::env::var(FIXTURE_LOG_ENV).ok().map(PathBuf::from);
+        return fixture_get_at(url, Path::new(&directory), log_path.as_deref());
+    }
     let response = match ureq::builder()
         .timeout(HTTP_TIMEOUT)
         .user_agent(&crate::musicbrainz::user_agent())
