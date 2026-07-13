@@ -1,14 +1,10 @@
 //! Live ListenBrainz worker runtime. HTTP and queue draining stay on a
 //! dedicated thread; only immutable status values cross back to GTK.
 
-#![allow(
-    dead_code,
-    reason = "secure credential bootstrap is wired by the following ListenBrainz task"
-)]
-
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
@@ -47,13 +43,24 @@ enum WorkerCommand {
     Stop,
 }
 
+struct WorkerControl {
+    sender: mpsc::Sender<WorkerCommand>,
+    cancelled: Arc<AtomicBool>,
+}
+
+#[derive(Clone, Copy)]
+struct WorkerCoordination<'a> {
+    drain_lock: &'a Mutex<()>,
+    cancelled: &'a AtomicBool,
+}
+
 type StatusCallback = Rc<dyn Fn(ConnectionStatus)>;
 
 pub(super) struct ListenBrainzRuntime {
     database_path: PathBuf,
     generation: Cell<u64>,
     active: Cell<bool>,
-    command: RefCell<Option<mpsc::Sender<WorkerCommand>>>,
+    command: RefCell<Option<WorkerControl>>,
     status: RefCell<ConnectionStatus>,
     subscribers: RefCell<Vec<StatusCallback>>,
     drain_lock: Arc<Mutex<()>>,
@@ -94,8 +101,12 @@ impl ListenBrainzRuntime {
         self.set_status(&ConnectionStatus::Connecting);
 
         let (command_sender, command_receiver) = mpsc::channel();
+        let cancelled = Arc::new(AtomicBool::new(false));
         let (status_sender, status_receiver) = async_channel::unbounded();
-        self.command.borrow_mut().replace(command_sender);
+        self.command.borrow_mut().replace(WorkerControl {
+            sender: command_sender,
+            cancelled: cancelled.clone(),
+        });
         let database_path = self.database_path.clone();
         let drain_lock = self.drain_lock.clone();
         std::thread::spawn(move || {
@@ -106,7 +117,10 @@ impl ListenBrainzRuntime {
                 &status_sender,
                 generation,
                 &ListenBrainzClient::new(),
-                &drain_lock,
+                WorkerCoordination {
+                    drain_lock: &drain_lock,
+                    cancelled: &cancelled,
+                },
             );
         });
 
@@ -143,8 +157,16 @@ impl ListenBrainzRuntime {
         }
     }
 
+    pub(super) fn report_status(&self, status: &ConnectionStatus) {
+        self.set_status(status);
+    }
+
     fn send(&self, command: WorkerCommand) {
-        let sender = self.command.borrow().clone();
+        let sender = self
+            .command
+            .borrow()
+            .as_ref()
+            .map(|control| control.sender.clone());
         if let Some(sender) = sender {
             if sender.send(command).is_err() {
                 tracing::warn!("ListenBrainz worker is unavailable");
@@ -153,9 +175,10 @@ impl ListenBrainzRuntime {
     }
 
     fn stop_worker(&self) {
-        let sender = self.command.borrow_mut().take();
-        if let Some(sender) = sender {
-            let _ = sender.send(WorkerCommand::Stop);
+        let control = self.command.borrow_mut().take();
+        if let Some(control) = control {
+            control.cancelled.store(true, Ordering::Release);
+            let _ = control.sender.send(WorkerCommand::Stop);
         }
     }
 
@@ -170,8 +193,9 @@ impl ListenBrainzRuntime {
 
 impl Drop for ListenBrainzRuntime {
     fn drop(&mut self) {
-        if let Some(sender) = self.command.get_mut().take() {
-            let _ = sender.send(WorkerCommand::Stop);
+        if let Some(control) = self.command.get_mut().take() {
+            control.cancelled.store(true, Ordering::Release);
+            let _ = control.sender.send(WorkerCommand::Stop);
         }
     }
 }
@@ -228,7 +252,7 @@ fn run_worker<T: ScrobblerTransport>(
     status_sender: &async_channel::Sender<(u64, ConnectionStatus)>,
     generation: u64,
     transport: &T,
-    drain_lock: &Mutex<()>,
+    coordination: WorkerCoordination<'_>,
 ) {
     let conn = match reprise_core::db::open(Some(database_path))
         .and_then(|conn| reprise_core::db::migrate(&conn).map(|()| conn))
@@ -249,12 +273,18 @@ fn run_worker<T: ScrobblerTransport>(
     let mut backoff = INITIAL_BACKOFF;
     let mut deferred_playing_now = None;
     loop {
+        if coordination.cancelled.load(Ordering::Acquire) {
+            return;
+        }
         if user_name.is_none() {
             publish(status_sender, generation, ConnectionStatus::Connecting);
             match transport.validate_token(token) {
                 Ok(user) => {
                     user_name = Some(user);
                     backoff = INITIAL_BACKOFF;
+                    if coordination.cancelled.load(Ordering::Acquire) {
+                        return;
+                    }
                 }
                 Err(TransportError::Unauthorized) => {
                     publish(status_sender, generation, ConnectionStatus::Unauthorized);
@@ -295,6 +325,9 @@ fn run_worker<T: ScrobblerTransport>(
         }
 
         if let Some(track) = deferred_playing_now.take() {
+            if coordination.cancelled.load(Ordering::Acquire) {
+                return;
+            }
             if let Err(error) = transport.playing_now(token, &track) {
                 if !handle_transport_error(&conn, status_sender, generation, error, &mut user_name)
                 {
@@ -304,8 +337,12 @@ fn run_worker<T: ScrobblerTransport>(
             }
         }
 
+        if coordination.cancelled.load(Ordering::Acquire) {
+            return;
+        }
         let flush_result = {
-            let _guard = drain_lock
+            let _guard = coordination
+                .drain_lock
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             flush_pending(&conn, transport, token)
@@ -352,6 +389,9 @@ fn run_worker<T: ScrobblerTransport>(
 
         match receiver.recv() {
             Ok(WorkerCommand::PlayingNow(track)) => {
+                if coordination.cancelled.load(Ordering::Acquire) {
+                    return;
+                }
                 if let Err(error) = transport.playing_now(token, &track) {
                     if !handle_transport_error(
                         &conn,
@@ -563,7 +603,10 @@ mod tests {
                     result: Ok(()),
                     submitted: worker_submitted,
                 },
-                &Mutex::new(()),
+                WorkerCoordination {
+                    drain_lock: &Mutex::new(()),
+                    cancelled: &AtomicBool::new(false),
+                },
             );
         });
 
@@ -612,7 +655,10 @@ mod tests {
                 result: Ok(()),
                 submitted: Arc::new(Mutex::new(Vec::new())),
             },
-            &Mutex::new(()),
+            WorkerCoordination {
+                drain_lock: &Mutex::new(()),
+                cancelled: &AtomicBool::new(false),
+            },
         );
         let mut statuses = Vec::new();
         while let Ok(status) = status_receiver.try_recv() {
@@ -622,5 +668,34 @@ mod tests {
         let conn = reprise_core::db::open(Some(&path)).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         assert_eq!(reprise_core::scrobbling::pending_count(&conn).unwrap(), 2);
+    }
+
+    #[test]
+    fn cancelled_worker_performs_no_network_or_status_work() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("cancelled.db");
+        let conn = reprise_core::db::open(Some(&path)).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        drop(conn);
+        let (_command_sender, command_receiver) = mpsc::channel();
+        let (status_sender, status_receiver) = async_channel::unbounded();
+        let cancelled = AtomicBool::new(true);
+        run_worker(
+            &path,
+            "unused-token",
+            &command_receiver,
+            &status_sender,
+            10,
+            &FakeTransport {
+                validation: Err(TransportError::Unauthorized),
+                result: Ok(()),
+                submitted: Arc::new(Mutex::new(Vec::new())),
+            },
+            WorkerCoordination {
+                drain_lock: &Mutex::new(()),
+                cancelled: &cancelled,
+            },
+        );
+        assert!(status_receiver.try_recv().is_err());
     }
 }

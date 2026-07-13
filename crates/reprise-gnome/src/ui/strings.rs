@@ -75,6 +75,42 @@ pub const PLUGIN_MPRIS_DESCRIPTION: &str =
     N_!("GNOME media controls, media keys, and lock-screen integration (D-Bus)");
 pub const PLUGIN_COVER_DESCRIPTION: &str =
     N_!("Download missing album covers from Cover Art Archive (network; off by default)");
+pub const PLUGIN_LISTENBRAINZ_DESCRIPTION: &str =
+    N_!("Scrobble completed listens to ListenBrainz (network; off by default)");
+pub const LISTENBRAINZ: &str = N_!("ListenBrainz");
+pub const LISTENBRAINZ_ACCOUNT: &str = N_!("ListenBrainz Account");
+pub const LISTENBRAINZ_NOT_CONNECTED: &str = N_!("Not connected");
+pub const LISTENBRAINZ_CONNECTING: &str = N_!("Connecting…");
+pub const LISTENBRAINZ_TOKEN_REJECTED: &str = N_!("Token rejected");
+pub const LISTENBRAINZ_CONNECTION_ERROR: &str = N_!("Connection error");
+pub const LISTENBRAINZ_OFFLINE: &str = N_!("Offline");
+pub const LISTENBRAINZ_DIALOG_HEADING: &str = N_!("Connect ListenBrainz");
+pub const LISTENBRAINZ_DIALOG_BODY: &str = N_!(
+    "Enter a user token from your ListenBrainz profile. The token is stored in the system keyring."
+);
+pub const LISTENBRAINZ_TOKEN: &str = N_!("User token");
+pub const LISTENBRAINZ_CONNECT: &str = N_!("Connect");
+pub const LISTENBRAINZ_DISCONNECT: &str = N_!("Disconnect");
+pub const LISTENBRAINZ_KEYRING_ERROR: &str =
+    N_!("Could not access the system keyring. The token was not stored.");
+pub const LISTENBRAINZ_VALIDATION_ERROR: &str =
+    N_!("Could not validate the ListenBrainz token. Try again later.");
+pub const LISTENBRAINZ_DISCONNECT_ERROR: &str =
+    N_!("Could not remove the ListenBrainz token from the system keyring.");
+
+pub fn listenbrainz_connected(user_name: &str) -> String {
+    formatted(N_!("Connected as {user_name}"), &[("user_name", user_name)])
+}
+
+pub fn listenbrainz_pending(prefix: &str, pending: usize) -> String {
+    let pending_text = pending.to_string();
+    plural(
+        "{prefix} · {pending} listen pending",
+        "{prefix} · {pending} listens pending",
+        pending,
+        &[("prefix", prefix), ("pending", &pending_text)],
+    )
+}
 pub const COVER_DOWNLOAD_CHECKING: &str = N_!("Checking missing album covers…");
 pub const COVER_DOWNLOAD_COMPLETE: &str = N_!("Cover check complete");
 pub const COVER_DOWNLOAD_STOPPED: &str = N_!("Cover check stopped");

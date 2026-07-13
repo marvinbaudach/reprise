@@ -143,6 +143,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             });
     let cover_download = cover_download_worker::setup(&conn.borrow());
     let listenbrainz = super::listenbrainz_runtime::ListenBrainzRuntime::new(db_path.to_path_buf());
+    super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
 
     let player = match PlayerController::new(
         conn.clone(),
@@ -475,6 +476,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &scan_button,
         player.as_ref(),
         &cover_batch,
+        &listenbrainz,
         {
             let minimal_view = minimal_view.clone();
             move || minimal_view.toggle()
