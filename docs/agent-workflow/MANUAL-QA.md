@@ -92,6 +92,15 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 ## Pending: compact layouts and preferences
 
+- [ ] Inspect the Library player bar at wide and narrow native GNOME widths, with
+  the Information panel both open and closed and the saved position set to Top and
+  Bottom. Expected: the bar spans the complete window below/above sidebar, library,
+  and Information panel; Cover/Title/Artist remain left, Previous/Play/Next sit in a
+  centered row above Time/Seek/Duration, and Shuffle/Repeat/Volume remain right.
+  The measured native-widget regressions and mapped-X11 screenshots prove the full
+  width and zone ancestry, both isolated position starts pass, and the real-input
+  Compact round-trip preserves Playing state; native Wayland visual judgment and
+  narrow-width target comfort remain pending.
 - [ ] Open Compact View through the visible Library-header button, the main menu,
   Preferences, and Ctrl+M; return through each compact layout's visible button and
   Ctrl+M. Expected: every route switches the same window immediately, retains the
