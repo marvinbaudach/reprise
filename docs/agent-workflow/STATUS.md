@@ -21,25 +21,25 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Reclassify core playback and synchronization features outside Plugins
-SINCE:    2026-07-13 05:02 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 05:02 CEST: Codex claimed the lock for the plugin-boundary correction._
+_As of 2026-07-13 05:13 CEST: Codex released the lock after the plugin-boundary correction._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-minimal-preferences.md` (7 atomic tasks).
-- **Last completed:** **Post-release preferences/audio hardening** (`a4e73db`…`2cacae4`) —
-  glitch-free same-topology effect updates, requested-state/error recovery, unavailable-effect
-  fallback, reentrancy-safe preference callbacks, off-main notification covers, live folder/rescan
-  controls, and mapped real-pointer coverage for Minimal plus all Preferences pages and controls.
-  Full release checker: 509 passed, 5 display-only ignored; mapped pointer harness fully green.
-- **Current plan:** none — every planned application and local release-readiness stage is complete.
-- **➡️ NEXT:** native-GNOME visual/geometry confirmation and audible Equalizer/ReplayGain checks
-  recorded in `docs/agent-workflow/MANUAL-QA.md`, then the maintainer-controlled publication handoff.
-- **Feature HEAD:** `0bc4507`; this coordination-board update follows it.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-plugin-boundaries.md` (2 tasks).
+- **Last completed:** **Plugin boundary correction** (`b7a0d79`, `77439bb`) — Equalizer and
+  ReplayGain are core Playback features only; MPRIS and online cover download remain optional
+  Plugins; MTP/iPod belongs to future Synchronization. The future optional/external-integration
+  backlog is recorded in the matching design spec.
+- **Current plan:** none — the correction is complete; minimal-view variants are the next proposed
+  feature stage and still need their dedicated approved spec/plan before implementation.
+- **➡️ NEXT:** settle and implement the proposed Compact/Cover/Pill/Card minimal-view variants,
+  then run the native-GNOME visual/geometry and audible checks in `MANUAL-QA.md`.
+- **Feature HEAD:** `77439bb`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -64,6 +64,8 @@ _As of 2026-07-13 05:02 CEST: Codex claimed the lock for the plugin-boundary cor
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
+- ✅ **Plugin boundary correction**: Equalizer and ReplayGain exist only under Playback; Plugins
+  contains optional integrations, while future MTP/iPod device support belongs to Synchronization.
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
   for files added while the app was closed, current-track table selection, and playable stopped
   session restoration without autoplay, functional browse-option search, rating resorting, stable
