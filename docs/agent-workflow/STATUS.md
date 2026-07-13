@@ -21,25 +21,25 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Add visible batch progress for missing-cover download
-SINCE:    2026-07-13 09:21 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     Next planned stage: minimal-view variants
+SINCE:    2026-07-13 09:47 CEST
 ```
 
-_As of 2026-07-13 09:21 CEST: Codex claimed the lock for visible cover-download progress._
+_As of 2026-07-13 09:47 CEST: Codex completed visible cover-download progress and released the lock._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-plugin-boundaries.md` (2 tasks).
-- **Last completed:** **Plugin boundary correction** (`b7a0d79`, `77439bb`) — Equalizer and
-  ReplayGain are core Playback features only; MPRIS and online cover download remain optional
-  Plugins; MTP/iPod belongs to future Synchronization. The future optional/external-integration
-  backlog is recorded in both the design spec and staged implementation plan (`349b92b`).
-- **Current plan:** none — the correction is complete; minimal-view variants are the next proposed
-  feature stage and still need their dedicated approved spec/plan before implementation.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-cover-download-progress.md` (4 tasks).
+- **Last completed:** **Visible cover-download progress** (`d5382f1`, `9855169`, `3a64ab8`,
+  `6a00a47`) — enabling the optional network module starts one serial background pass over live
+  library tracks and the Plugins page reports checked/total, downloaded, unavailable,
+  complete/stopped/failed state; existing covers are skipped and no music files are written.
+- **Current plan:** none — visible cover progress is complete; minimal-view variants are the next
+  proposed feature stage and still need their dedicated approved spec/plan before implementation.
 - **➡️ NEXT:** settle and implement the proposed Compact/Cover/Pill/Card minimal-view variants,
   then run the native-GNOME visual/geometry and audible checks in `MANUAL-QA.md`.
-- **Feature HEAD:** `349b92b`; this coordination-board update follows it.
+- **Feature HEAD:** `6a00a47`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -66,6 +66,9 @@ _As of 2026-07-13 09:21 CEST: Codex claimed the lock for visible cover-download 
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
 - ✅ **Plugin boundary correction**: Equalizer and ReplayGain exist only under Playback; Plugins
   contains optional integrations, while future MTP/iPod device support belongs to Synchronization.
+- ✅ **Visible cover-download progress**: the default-off toggle starts/cancels a serial background
+  library check, skips local/cached covers, deduplicates albums, refreshes downloaded art, and shows
+  checked/downloaded/unavailable counts with complete, stopped and failure states in Preferences.
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
   for files added while the app was closed, current-track table selection, and playable stopped
   session restoration without autoplay, functional browse-option search, rating resorting, stable
