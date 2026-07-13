@@ -245,6 +245,7 @@ impl PreferencesContext {
         dialog.add(&self.plugins_page());
         dialog.add(&self.playback_page());
         dialog.present(Some(&self.window));
+        tracing::debug!("preferences dialog presented");
         if let Ok(smoke) = std::env::var(SMOKE_ENV) {
             if smoke == "exercise" {
                 self.apply_smoke();

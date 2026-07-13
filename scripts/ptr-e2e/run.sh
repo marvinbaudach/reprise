@@ -336,6 +336,29 @@ assert_log_absent() {
   fi
 }
 
+assert_db_value() {
+  local key_name="$1" expected="$2" description="$3"
+  local actual
+  actual="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
+    "SELECT value FROM settings WHERE key = '$key_name';")"
+  if [ "$actual" = "$expected" ]; then
+    log_step "database check OK: $description"
+  else
+    log_fail "$description (expected '$expected', got '$actual')"
+  fi
+}
+
+assert_db_query_true() {
+  local query="$1" description="$2"
+  local actual
+  actual="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" "$query")"
+  if [ "$actual" = "1" ]; then
+    log_step "database check OK: $description"
+  else
+    log_fail "$description (query returned '$actual')"
+  fi
+}
+
 # --- Wait for the window, then maximize it -----------------------------------
 
 log_step "waiting for the Reprise window (WM_CLASS matching '$WINDOW_CLASS_MATCH')…"
@@ -478,14 +501,91 @@ key "space"
 sleep 0.3
 assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Space resumed playback (state change to Playing)"
 
+# --- Flow 5: minimal-view shortcut and real Preferences menu item ------------
+
+log_step "flow 5: Minimal View shortcut and Preferences dialog…"
+MARKER=$(log_marker)
+key "ctrl+m"
+sleep 0.4
+assert_log_contains_since "$MARKER" "window view mode changed.*mode=Minimal" "Ctrl+M entered Minimal View"
+screenshot "08-minimal-view"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-minimal-view.png"
+
+MARKER=$(log_marker)
+key "ctrl+m"
+sleep 0.4
+assert_log_contains_since "$MARKER" "window view mode changed.*mode=Full" "Ctrl+M restored Full View"
+
+# Header menu coordinates are fixed for this harness's fixed 1600x900
+# maximized geometry, like the row/rating coordinates documented above.
+MAIN_MENU_X=1163
+MAIN_MENU_Y=28
+click_at "$MAIN_MENU_X" "$MAIN_MENU_Y"
+sleep 0.3
+screenshot "09-main-menu"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/09-main-menu.png"
+
+# Preferences is the second row in the primary menu.
+MARKER=$(log_marker)
+click_at 1085 122
+sleep 1.5
+assert_log_contains_since "$MARKER" "preferences dialog presented" "primary-menu click opened Preferences"
+screenshot "10-preferences"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/10-preferences.png"
+
+click_at 702 823
+sleep 0.3
+screenshot "11-preferences-layout"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/11-preferences-layout.png"
+click_at 804 823
+sleep 0.3
+screenshot "12-preferences-library"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/12-preferences-library.png"
+click_at 907 823
+sleep 0.3
+screenshot "13-preferences-plugins"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/13-preferences-plugins.png"
+click_at 1011 823
+sleep 0.3
+screenshot "14-preferences-playback"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/14-preferences-playback.png"
+
+# Drive the real Playback controls, then prove both persistence and the
+# duplicate Plugins controls use the same state.
+click_at 1034 194
+sleep 0.4
+assert_db_value "playback.equalizer_enabled" "1" "Playback switch enabled the equalizer"
+click_at 1000 323
+sleep 0.3
+assert_db_query_true \
+  "SELECT value <> '0,0,0,0,0,0,0,0,0,0' FROM settings WHERE key = 'playback.equalizer_bands';" \
+  "real scale click persisted a non-flat equalizer curve"
+
+click_at 907 823
+sleep 0.7
+click_at 1034 290
+sleep 0.4
+assert_db_value "playback.equalizer_enabled" "0" "Plugins switch disabled the equalizer"
+click_at 1034 345
+sleep 0.4
+assert_db_value "playback.replay_gain_mode" "track" "Plugins switch enabled per-track ReplayGain"
+click_at 1034 345
+sleep 0.4
+assert_db_value "playback.replay_gain_mode" "off" "Plugins switch disabled ReplayGain"
+
+click_at 1011 823
+sleep 0.7
+screenshot "15-preferences-synchronized"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/15-preferences-synchronized.png"
+
 # --- Final screenshot ---------------------------------------------------------
 
-screenshot "08-final"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-final.png"
+screenshot "16-final"
+assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/16-final.png"
 assert_log_absent \
   'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowMutError' \
   'GTK/GLib critical, panic, or RefCell borrow failure'
-log_step "final screenshot: $PTR_E2E_OUT_DIR/08-final.png"
+log_step "final screenshot: $PTR_E2E_OUT_DIR/16-final.png"
 log_step "app log will be preserved at: $PTR_E2E_OUT_DIR/app.log (copied by cleanup())"
 
 if [ "$FAILURES" -ne 0 ]; then
