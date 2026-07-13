@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     -
-SINCE:    -
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate preferences and sidebar visibility polish
+SINCE:    2026-07-13 21:45 CEST
 ```
 
-_As of 2026-07-13: whole-row column-layout dragging is restored and the lock is free._
+_As of 2026-07-13 21:45 CEST: Codex claimed the lock to integrate the preferences and sidebar visibility polish._
 
 ## Current position
 
