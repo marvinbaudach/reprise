@@ -21,22 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Add confirmed playlist deletion to the sidebar context menu
-SINCE:    2026-07-13 20:53 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 20:53 CEST: Codex is adding safe playlist deletion to the sidebar context menu._
+_As of 2026-07-13 21:11 CEST: lock released after confirmed playlist deletion passed full QA._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Column-header visibility menu** (`c57ff88`) — right-clicking any track
-  header now exposes a native persistent visibility checklist; Cover and Title remain fixed, while
-  optional columns toggle immediately and stay synchronized with the full layout editor.
+- **Last completed:** **Confirmed playlist deletion** (`c10f638`) — manual playlist rows now expose
+  a translated destructive context-menu action that preserves library tracks, compacts playlist
+  positions, and falls back to Music when the currently open playlist is removed.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `c57ff88`; this QA/coordination close-out follows it.
+- **Main implementation:** `c10f638`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -110,6 +110,9 @@ _As of 2026-07-13 20:53 CEST: Codex is adding safe playlist deletion to the side
 - ✅ **Column-header visibility menu**: every track header exposes the same native right-click
   checklist in current column order; fixed columns are visibly disabled, optional visibility is
   immediately persisted, and editor/import changes keep menu state and ordering synchronized.
+- ✅ **Confirmed playlist deletion**: manual playlist rows offer a destructive, translated
+  right-click action; deletion is DB-only, keeps all tracks, compacts remaining positions, and
+  safely returns an open deleted playlist to Music with real-pointer regression coverage.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
@@ -119,7 +122,7 @@ _As of 2026-07-13 20:53 CEST: Codex is adding safe playlist deletion to the side
 ## Deferred minors / follow-ups (triage at stage reviews)
 
 - `scrobbling.rs` (795 lines), `strings.rs` (784 lines), `info_panel.rs` (794 lines), and
-  `scripts/ptr-e2e/run.sh` (791 lines) are edge-tight — their next
+  `scripts/ptr-e2e/run.sh` (796 lines) are edge-tight — their next
   edits must extract cohesive sibling modules rather than adding inline logic.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
