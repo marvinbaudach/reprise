@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Remove manual color-scheme controls; always follow system
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: Preferences visual controls are merged and the lock is free._
+_As of 2026-07-13: Codex claimed the lock for the system-only appearance follow-up._
 
 ## Current position
 
