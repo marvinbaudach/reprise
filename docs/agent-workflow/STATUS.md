@@ -34,9 +34,10 @@ _As of 2026-07-13 15:03 CEST: Codex claimed the lock to correct the full-width l
 - **Last completed:** **Last.fm scrobbling** (`f3d9e53` through `43270e2`, merged as
   `4564440`) — a default-off integration uses bring-your-own desktop API credentials,
   browser authorization, keyring-only secrets and an independent durable offline queue.
-- **Current plan:** none — the Last.fm stage is complete.
-- **➡️ NEXT:** joint native-GNOME visual/Wayland stage review using the exact remaining checks in
-  `MANUAL-QA.md`; do not begin another roadmap stage without explicit user direction.
+- **Current plan:** `docs/superpowers/plans/2026-07-13-full-width-player-bar.md` (3 tasks) —
+  correcting the library player bar to span the entire window with the approved three-zone layout.
+- **➡️ NEXT:** Task 1, move the global player/status block outside the pane split while preserving
+  immediate Top/Bottom positioning and Library/Compact switching.
 - **Main merge:** `4564440`; this QA/coordination update follows it.
 
 ## Done so far (compact)
