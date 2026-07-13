@@ -30,13 +30,13 @@ _As of 2026-07-13 19:40 CEST: Codex is addressing joint-review feedback for the 
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-header-sidebar-redesign.md` (3 tasks).
-- **Last completed:** **Header and sidebar redesign** (`a2fabeb`, `f05ecd7`, `76c6fbb`, merge
-  `ffba11d`) — one flat strict-centered header spans the full Library window, compact actions and
-  Search sit right, and the 220–280 px sidebar uses aligned symbolic source icons and counts.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
+- **Last completed:** **Window decoration mode** (`6b702cc`, `d5b3b52`, QA fix `137bb72`, merge
+  `1ddd27a`) — Chromium-like client-side decoration remains the default, while Appearance can
+  persistently request desktop title bars and borders with immediate Library/Compact projection.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `ffba11d`; this QA/coordination close-out follows it.
+- **Main implementation:** `1ddd27a`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -77,6 +77,9 @@ _As of 2026-07-13 19:40 CEST: Codex is addressing joint-review feedback for the 
   title strictly centered with compact accessible actions and Search on the right; the narrower
   navigation adds stable symbolic icons, aligned counts and mockup-derived section spacing while
   preserving adaptive navigation, DnD, menus and Library/Compact restoration.
+- ✅ **Window decoration mode**: Appearance defaults to the flat Chromium-like CSD header and can
+  live-switch to a persisted system-title-bar request across Library plus Bar, Cover, Pill and Card;
+  nested Information chrome never duplicates the real window controls.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
@@ -107,7 +110,7 @@ _As of 2026-07-13 19:40 CEST: Codex is addressing joint-review feedback for the 
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines), `strings.rs` (784 lines), `info_panel.rs` (786 lines), and
+- `scrobbling.rs` (795 lines), `strings.rs` (784 lines), `info_panel.rs` (794 lines), and
   `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
   edits must extract cohesive sibling modules rather than adding inline logic.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
