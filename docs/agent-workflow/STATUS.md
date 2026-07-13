@@ -21,22 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Manual Up Next queue and GNOME compact-player redesign
-SINCE:    2026-07-13 19:59 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 19:59 CEST: Codex claimed the lock for the manual Up Next queue and GNOME compact-player redesign._
+_As of 2026-07-13 20:00 CEST: Codex fixed the pinned Information panel reopen regression and is releasing the lock._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Artist News panel and sidebar joint-review fixes** (`dafde90`) — desktop
-  widths pin Information as a real 340 px column, active requests expose indeterminate progress,
-  invalid refresh states are disabled, and the problem-source separator is no longer selectable.
+- **Last completed:** **Information panel toggle lifetime fix** (`839c91c`) — the window now owns
+  the panel controller for its full lifetime, so the fixed desktop column can still be closed and
+  reopened and its selection, refresh and Artist News callbacks remain live.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `dafde90`; this QA/coordination close-out follows it.
+- **Main implementation:** `839c91c`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
