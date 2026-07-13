@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Make track ratings compact and responsive to column width
+SINCE:    2026-07-13 20:13 CEST
 ```
 
-_As of 2026-07-13: free after the track-table column-width stabilization passed all gates._
+_As of 2026-07-13 20:13 CEST: Codex is compacting the Rating column with a width-responsive chooser._
 
 ## Current position
 
