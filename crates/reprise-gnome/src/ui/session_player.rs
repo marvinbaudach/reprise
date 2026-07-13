@@ -82,6 +82,7 @@ impl PlayerController {
                     title: summary.title.clone(),
                     artist: summary.artist.clone(),
                     album: summary.album.clone(),
+                    art_url: None,
                     duration_ms: summary.duration_ms,
                     path: summary.path.clone(),
                 });

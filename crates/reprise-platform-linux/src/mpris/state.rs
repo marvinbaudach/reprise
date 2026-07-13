@@ -64,7 +64,9 @@ pub(super) fn track_object_path(track_id: i64) -> String {
 /// on that unlikely failure the id is logged and `mpris:trackid` is simply
 /// omitted rather than panicking — every other field still gets reported.
 /// `mpris:length` is microseconds, not the app's usual milliseconds (MPRIS
-/// spec unit) — `xesam:artist` is a list, not a scalar, per spec.
+/// spec unit) — `xesam:artist` is a list, not a scalar, per spec. When the
+/// asynchronous cover pipeline has resolved an image, its file URI is
+/// exposed as `mpris:artUrl`; without a cover that optional key is omitted.
 pub(super) fn build_metadata(state: &MprisState) -> HashMap<String, OwnedValue> {
     let mut metadata = HashMap::new();
 
@@ -98,6 +100,9 @@ pub(super) fn build_metadata(state: &MprisState) -> HashMap<String, OwnedValue> 
         "xesam:album",
         Value::from(state.album.clone()),
     );
+    if let Some(art_url) = &state.art_url {
+        insert_owned(&mut metadata, "mpris:artUrl", Value::from(art_url.clone()));
+    }
 
     metadata
 }
@@ -132,6 +137,7 @@ mod tests {
             title: "Title".into(),
             artist: "Artist".into(),
             album: "Album".into(),
+            art_url: None,
             duration_ms: 180_000,
             can_next: true,
             can_prev: true,
@@ -185,6 +191,29 @@ mod tests {
             .try_into()
             .expect("xesam:artist is a string list");
         assert_eq!(artist, vec!["Artist".to_string()]);
+    }
+
+    #[test]
+    fn build_metadata_includes_art_url_when_available() {
+        let state = MprisState {
+            art_url: Some("file:///cache/reprise/covers/album.png".into()),
+            ..playing_state()
+        };
+        let metadata = build_metadata(&state);
+
+        let art_url: String = metadata
+            .get("mpris:artUrl")
+            .expect("mpris:artUrl present")
+            .clone()
+            .try_into()
+            .expect("mpris:artUrl is a string");
+        assert_eq!(art_url, "file:///cache/reprise/covers/album.png");
+    }
+
+    #[test]
+    fn build_metadata_omits_art_url_without_a_cover() {
+        let metadata = build_metadata(&playing_state());
+        assert!(!metadata.contains_key("mpris:artUrl"));
     }
 
     #[test]
