@@ -8,6 +8,27 @@
 use super::*;
 use crate::library::playlists;
 
+fn seeded_sync_tracks() -> (tempfile::TempDir, Connection) {
+    let temp = tempfile::tempdir().unwrap();
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    for (id, name, title, artist, duration, bytes) in [
+        (1, "one.flac", "One", "First", 11_000, 11_usize),
+        (2, "two.mp3", "Two", "Second", 22_000, 22),
+        (3, "three.ogg", "Three", "Third", 33_000, 33),
+    ] {
+        let path = temp.path().join(name);
+        std::fs::write(&path, vec![id as u8; bytes]).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id,path,title,artist,duration_ms,added_at) \
+             VALUES (?1,?2,?3,?4,?5,0)",
+            rusqlite::params![id, path.to_string_lossy(), title, artist, duration],
+        )
+        .unwrap();
+    }
+    (temp, conn)
+}
+
 fn seeded_conn_with_tracks(count: i64) -> Connection {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
@@ -458,4 +479,41 @@ fn track_id_for_path_does_not_substring_match() {
     let conn = seeded_conn_with_tracks(3);
     let id = track_id_for_path(&conn, "/x/2").unwrap();
     assert_eq!(id, None);
+}
+
+// -- device synchronization ---------------------------------------------
+
+#[test]
+fn sync_tracks_preserve_input_order_and_deduplicate_ids() {
+    let (_temp, conn) = seeded_sync_tracks();
+    let tracks = query_sync_tracks(&conn, &[3, 1, 3, 2, 1]).unwrap();
+    assert_eq!(
+        tracks.iter().map(|track| track.id).collect::<Vec<_>>(),
+        [3, 1, 2]
+    );
+}
+
+#[test]
+fn sync_tracks_exclude_unknown_missing_and_unavailable_paths() {
+    let (temp, conn) = seeded_sync_tracks();
+    conn.execute("UPDATE tracks SET missing = 1 WHERE id = 2", [])
+        .unwrap();
+    std::fs::remove_file(temp.path().join("three.ogg")).unwrap();
+
+    let tracks = query_sync_tracks(&conn, &[999, 1, 2, 3]).unwrap();
+    assert_eq!(tracks.iter().map(|track| track.id).collect::<Vec<_>>(), [1]);
+}
+
+#[test]
+fn sync_tracks_include_copy_metadata_and_actual_file_size() {
+    let (temp, conn) = seeded_sync_tracks();
+    let tracks = query_sync_tracks(&conn, &[2]).unwrap();
+    assert_eq!(tracks.len(), 1);
+    let track = &tracks[0];
+    assert_eq!(track.source_path, temp.path().join("two.mp3"));
+    assert_eq!(track.original_name, "two.mp3");
+    assert_eq!(track.title, "Two");
+    assert_eq!(track.artist, "Second");
+    assert_eq!(track.duration_ms, 22_000);
+    assert_eq!(track.size_bytes, 22);
 }

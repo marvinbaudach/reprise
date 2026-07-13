@@ -1,7 +1,7 @@
 # Systemgebundenes Farbschema — Implementierungsplan
 
-> **Status:** bereit zur Ausführung  
-> **Spezifikation:** `docs/superpowers/specs/2026-07-13-system-color-scheme-design.md`  
+> **Status:** bereit zur Ausführung
+> **Spezifikation:** `docs/superpowers/specs/2026-07-13-system-color-scheme-design.md`
 > **Basis:** `3b958b9` (`feature/system-only-appearance`)
 
 ## Task 1: Manuelle Farbschema-Auswahl entfernen
