@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Correct unified filter plan status
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: Codex released the lock after finishing the unified chip filter bar._
+_As of 2026-07-13: Codex claimed the lock to correct the completed-plan status after merge._
 
 ## Current position
 
