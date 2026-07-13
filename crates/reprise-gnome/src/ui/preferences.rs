@@ -290,12 +290,25 @@ impl PreferencesContext {
         });
         let shell = super::preferences_window::build(&self.window, pages);
         self.preferences_window.borrow().set(Some(&shell.window));
+        let smoke = std::env::var(SMOKE_ENV).ok();
+        if smoke.as_deref() == Some("exercise") {
+            let context = Rc::downgrade(self);
+            let exercised = Rc::new(Cell::new(false));
+            shell.window.connect_map(move |_| {
+                if exercised.replace(true) {
+                    return;
+                }
+                let context = context.clone();
+                glib::idle_add_local_once(move || {
+                    if let Some(context) = context.upgrade() {
+                        context.apply_smoke();
+                    }
+                });
+            });
+        }
         shell.window.present();
         tracing::debug!("preferences window presented");
-        if let Ok(smoke) = std::env::var(SMOKE_ENV) {
-            if smoke == "exercise" {
-                self.apply_smoke();
-            }
+        if smoke.is_some() {
             let window = shell.window.clone();
             glib::timeout_add_seconds_local_once(1, move || {
                 window.close();
