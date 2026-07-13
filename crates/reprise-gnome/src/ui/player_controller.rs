@@ -335,6 +335,11 @@ impl PlayerController {
                 tracing::warn!(%error, "player event dropped: UI receiver is gone");
             }
         }))?;
+        let initial_effects = {
+            let conn = conn.borrow();
+            super::audio_effects::stored(&conn)
+        };
+        player.set_audio_effects(initial_effects)?;
 
         // Stage 2 Task 6: `mpris::start()` never fails outright (see its own
         // doc comment's `## Failure is never fatal` section) — it always

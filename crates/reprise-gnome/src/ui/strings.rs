@@ -57,6 +57,28 @@ pub const DENSITY_STANDARD: &str = N_!("Standard");
 pub const DENSITY_COMPACT: &str = N_!("Compact");
 pub const PREFERENCES_LIBRARY: &str = N_!("Library");
 pub const PREFERENCES_PLUGINS: &str = N_!("Plugins");
+pub const PREFERENCES_PLAYBACK: &str = N_!("Playback");
+pub const EQUALIZER: &str = N_!("Equalizer");
+pub const ENABLE_EQUALIZER: &str = N_!("Enable Equalizer");
+pub const EQUALIZER_PRESET: &str = N_!("Preset");
+pub const PRESET_FLAT: &str = N_!("Flat");
+pub const PRESET_ROCK: &str = N_!("Rock");
+pub const PRESET_POP: &str = N_!("Pop");
+pub const PRESET_BASS: &str = N_!("Bass Boost");
+pub const REPLAYGAIN: &str = N_!("ReplayGain");
+pub const REPLAYGAIN_MODE: &str = N_!("Volume Normalization");
+pub const REPLAYGAIN_OFF: &str = N_!("Off");
+pub const REPLAYGAIN_TRACK: &str = N_!("Per Track");
+pub const REPLAYGAIN_ALBUM: &str = N_!("Per Album");
+pub const AUDIO_EFFECTS_FAILED: &str = N_!("Could not apply audio effects");
+pub const PLUGIN_MPRIS_DESCRIPTION: &str =
+    N_!("GNOME media controls, media keys, and lock-screen integration (D-Bus)");
+pub const PLUGIN_COVER_DESCRIPTION: &str =
+    N_!("Download missing album covers from Cover Art Archive (network; off by default)");
+pub const PLUGIN_EQUALIZER_DESCRIPTION: &str =
+    N_!("Ten-band audio equalizer with presets and live adjustment");
+pub const PLUGIN_REPLAYGAIN_DESCRIPTION: &str =
+    N_!("Normalize playback volume from track or album ReplayGain tags");
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");

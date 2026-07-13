@@ -466,6 +466,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &toolbar_view,
         &bottom_box,
         &scan_button,
+        player.as_ref(),
         {
             let minimal_view = minimal_view.clone();
             move || minimal_view.toggle()
