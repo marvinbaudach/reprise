@@ -129,6 +129,20 @@ CREATE TABLE settings (
 );
 "#;
 
+/// Schema v5: durable, token-free FIFO for completed ListenBrainz listens.
+/// Rows deliberately do not reference `tracks`: a user may remove a library
+/// row while its already-completed listen is still waiting for connectivity.
+const SCHEMA_V5: &str = r#"
+CREATE TABLE listenbrainz_queue (
+  id           INTEGER PRIMARY KEY,
+  listened_at  INTEGER NOT NULL,
+  artist_name  TEXT NOT NULL,
+  track_name   TEXT NOT NULL,
+  release_name TEXT,
+  duration_ms  INTEGER NOT NULL
+);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -202,6 +216,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 4)?;
         tx.commit()?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 5 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V5)?;
+        tx.pragma_update(None, "user_version", 5)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -246,7 +267,7 @@ mod tests {
         let version_after: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after, 4);
+        assert_eq!(version_after, 5);
     }
 
     #[test]
@@ -261,7 +282,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
     }
 
     /// Builds a v1 DB by hand (SCHEMA_V1 + `user_version = 1`, exactly what a
@@ -286,7 +307,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4); // Now goes to v4
+        assert_eq!(version, 5); // Now goes to the current schema
 
         let (title, rating, play_count, added_at, file_size, device, inode): (
             String,
@@ -328,7 +349,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 4); // Now v4
+        assert_eq!(version_after_second_run, 5); // Current schema
     }
 
     #[test]
@@ -360,7 +381,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4); // walks all the way to the current schema version
+        assert_eq!(version, 5); // walks all the way to the current schema version
 
         // Verify tables exist.
         let playlists_exist: bool = conn
@@ -515,7 +536,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
 
         let settings_exist: bool = conn
             .query_row(
@@ -546,6 +567,43 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 4);
+        assert_eq!(version_after_second_run, 5);
+    }
+
+    #[test]
+    fn migrate_v4_to_v5_creates_listenbrainz_queue_and_preserves_settings() {
+        let conn = open(None).unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.execute_batch(SCHEMA_V2).unwrap();
+        conn.execute_batch(SCHEMA_V3).unwrap();
+        conn.execute_batch(SCHEMA_V4).unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('keep', 'yes')",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 4).unwrap();
+
+        migrate(&conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 5);
+        let setting: String = conn
+            .query_row("SELECT value FROM settings WHERE key = 'keep'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(setting, "yes");
+        let queue_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='listenbrainz_queue')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(queue_exists);
+        migrate(&conn).unwrap();
     }
 }
