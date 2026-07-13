@@ -303,6 +303,13 @@ impl InfoPanel {
         self.widgets.split.set_show_sidebar(true);
     }
 
+    pub(super) fn apply_persisted_visibility(&self, visible: bool) {
+        self.syncing_visibility.set(true);
+        self.widgets.split.set_show_sidebar(visible);
+        self.toggle.set_active(visible);
+        self.syncing_visibility.set(false);
+    }
+
     /// Keeps the callback owner alive for exactly as long as the window.
     ///
     /// Widgets keep their signal handlers but those handlers deliberately
@@ -395,9 +402,13 @@ impl InfoPanel {
             .split
             .connect_show_sidebar_notify(move |split| {
                 let Some(panel) = weak.upgrade() else { return };
+                let was_syncing = panel.syncing_visibility.get();
                 panel.syncing_visibility.set(true);
                 panel.toggle.set_active(split.shows_sidebar());
-                panel.syncing_visibility.set(false);
+                panel.syncing_visibility.set(was_syncing);
+                if was_syncing {
+                    return;
+                }
                 let saved = {
                     let conn = panel.conn.borrow();
                     reprise_core::library::settings::set_info_panel_visible(
