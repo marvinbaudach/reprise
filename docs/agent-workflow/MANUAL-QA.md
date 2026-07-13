@@ -300,8 +300,9 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
 
 ## Pending: browse, columns, playlists, and Rhythmbox
 
-- [ ] Browse dropdowns work by mouse and keyboard at narrow and wide widths; each
-  Genre → Artist → Album change resets only the dependent facets.
+- [ ] The unified filter bar works by mouse and keyboard at narrow and wide widths:
+  chips wrap without covering the table, `Add filter` shows one value search, and
+  Genre → Artist → Album changes or chip removal reset only dependent facets.
 - [ ] Search and browse facets combine correctly, including zero-result recovery.
 - [ ] Open `Edit column layout…`. Switch optional columns, reorder through both
   Up/Down buttons and whole-row dragging, inspect the before/after accent line,
