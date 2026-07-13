@@ -7,4 +7,5 @@
 
 pub mod mpris;
 pub mod player;
+mod player_effects;
 pub mod trash;
