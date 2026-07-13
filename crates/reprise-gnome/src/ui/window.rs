@@ -520,6 +520,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &window,
         conn,
         &track_list,
+        &split_view,
         &sidebar_page,
         &status_bar,
         &library_player_bar,
@@ -530,10 +531,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &lastfm,
         &artist_news,
         &decorations,
-        {
-            let minimal_view = minimal_view.clone();
-            move || minimal_view.toggle()
-        },
     );
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();

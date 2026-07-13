@@ -73,6 +73,7 @@ mod preference_library;
 mod preference_listenbrainz;
 mod preference_window_decorations;
 mod preferences;
+mod preferences_window;
 pub mod primary_menu;
 pub mod queue_transport;
 pub mod rating;

@@ -96,6 +96,14 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 ## Pending: compact layouts and preferences
 
+### Preferences window
+
+- [ ] Open Preferences, drag the window, and switch all five tabs. Expected: one
+  independent movable window is reused, Playback/Appearance/Layout/Library/Plugins
+  stay in the top header, no bottom switcher appears, and Layout does not duplicate
+  Compact View. The isolated GTK regression proves the non-modal window, transient
+  parent, top switcher and exact page order; native window-manager dragging remains.
+
 ### Header and navigation design
 
 - [ ] At a wide native GNOME/Wayland size, open and close the Information panel.
@@ -165,8 +173,10 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] On Appearance and Layout, change System/Light/Dark, player-bar top/bottom,
   sidebar/status visibility, Comfortable/Standard/Compact density, and column layout.
   Expected: each applies immediately, survives restart, and remains readable at narrow
-  widths. The isolated smoke persisted and reread every non-column value; the mapped
-  pointer harness additionally opens every page and proves Sidebar/Status writes.
+  widths; disabling Sidebar removes the complete left column and enabling it restores
+  that slot. The isolated smoke persisted and reread every non-column value; the mapped
+  pointer harness additionally opens every page and proves Sidebar/Status writes, and
+  the GTK regression proves complete sidebar-slot removal/restoration.
 - [ ] On Appearance, confirm **Chromium (CSD)** is the default, then
   switch repeatedly to **System title bar** and back in Library plus Bar, Cover, Pill,
   and Card Compact View; restart once in each mode. Expected: Reprise's flat header and
