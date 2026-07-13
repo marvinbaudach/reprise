@@ -154,6 +154,14 @@ M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
   are not downloaded again, and ambiguous or wrong albums increment unavailable
   without acquiring an unrelated cover. Disable during a longer run and confirm that
   the status becomes stopped and no new requests begin; cached covers must remain.
+- [ ] Artist & Album News is off by default and the Information panel explains that
+  only selected artist names are sent to MusicBrainz. With disposable tagged tracks,
+  confirm the 340px desktop proportions and narrow overlay, Upcoming/New copy, cached
+  and offline copy, and that Open in MusicBrainz launches the system browser only after
+  a click. The isolated mapped-window fixture passes opt-in persistence, Upcoming/New
+  rendering, stale-selection rejection, close/reopen reuse, one shared request per
+  second, request-field privacy, and zero calls before opt-in or after disable. Native
+  GNOME proportions, browser launch and offline/cache wording remain pending.
 - [ ] MPRIS bus loss/name collision and clean application shutdown do not crash or
   leave a ghost player in GNOME Shell.
 
@@ -213,7 +221,7 @@ These are maintainer actions, not QA failures:
 
 - [ ] Provide a maintainer-controlled public immutable source archive/tag and SHA-256.
 - [ ] Establish verifiable ownership/identity appropriate for `org.reprise.Reprise`.
-- [ ] Publish a real maintainer-controlled contact/project URL and replace or verify
-  the MusicBrainz `User-Agent` URL before distributing online cover downloads.
+- [x] Use the reachable maintainer profile as the MusicBrainz `User-Agent` contact URL.
+  A public project homepage remains a separate publication prerequisite below.
 - [ ] Add the real homepage, capture authentic screenshots from this manual pass, and
   perform any forge/Flathub upload or submission explicitly.

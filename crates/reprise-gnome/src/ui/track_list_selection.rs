@@ -63,6 +63,11 @@ impl TrackList {
     pub(super) fn shared_cover_loader(&self) -> Rc<super::cover_loader::CoverLoader> {
         self.shared.cover_loader.clone()
     }
+
+    pub(super) fn select_for_smoke(&self, position: u32) {
+        self.shared.selection.unselect_all();
+        self.shared.selection.select_item(position, true);
+    }
 }
 
 #[cfg(test)]

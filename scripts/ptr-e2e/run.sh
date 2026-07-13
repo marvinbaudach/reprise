@@ -77,6 +77,7 @@ PTR_E2E_N_TRACKS="${PTR_E2E_N_TRACKS:-5}"
 # to inspect after the run (NOT cleaned up on success, only stale prior runs
 # are cleared at the top of a fresh run).
 PTR_E2E_OUT_DIR="${PTR_E2E_OUT_DIR:-/tmp/reprise-ptr-e2e}"
+PTR_E2E_NEWS_ONLY="${PTR_E2E_NEWS_ONLY:-0}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
@@ -102,14 +103,23 @@ fi
 SCRATCH_ROOT="$(mktemp -d /tmp/reprise-ptr-e2e-scratch.XXXXXX)"
 MUSIC_DIR="$SCRATCH_ROOT/music"
 XDG_DATA_HOME_SCRATCH="$SCRATCH_ROOT/xdg-data"
+XDG_CACHE_HOME_SCRATCH="$SCRATCH_ROOT/xdg-cache"
 XDG_CONFIG_HOME_SCRATCH="$SCRATCH_ROOT/xdg-config"
+MUSICBRAINZ_FIXTURES="$SCRATCH_ROOT/musicbrainz"
+MUSICBRAINZ_LOG="$SCRATCH_ROOT/musicbrainz-requests.log"
 DISPLAYFD_FILE="$SCRATCH_ROOT/displayfd.txt"
 APP_LOG="$SCRATCH_ROOT/app.log"
 XVFB_LOG="$SCRATCH_ROOT/xvfb.log"
 OPENBOX_LOG="$SCRATCH_ROOT/openbox.log"
 
 rm -rf "$PTR_E2E_OUT_DIR"
-mkdir -p "$PTR_E2E_OUT_DIR" "$MUSIC_DIR" "$XDG_DATA_HOME_SCRATCH" "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0"
+mkdir -p \
+  "$PTR_E2E_OUT_DIR" \
+  "$MUSIC_DIR" \
+  "$MUSICBRAINZ_FIXTURES" \
+  "$XDG_DATA_HOME_SCRATCH" \
+  "$XDG_CACHE_HOME_SCRATCH" \
+  "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0"
 
 cat > "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0/settings.ini" <<'EOF'
 [Settings]
@@ -122,7 +132,33 @@ for i in $(seq 1 "$PTR_E2E_N_TRACKS"); do
   # so the title is the file stem) sort predictably.
   printf -v idx "%02d" "$i"
   cp "$FIXTURE_PATH" "$MUSIC_DIR/sine_$idx.flac"
+  if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
+    if (( i % 2 == 1 )); then
+      metaflac --set-tag="ARTIST=Artist Alpha" --set-tag="ALBUM=Local Alpha" "$MUSIC_DIR/sine_$idx.flac"
+    else
+      metaflac --set-tag="ARTIST=Artist Beta" --set-tag="ALBUM=Local Beta" "$MUSIC_DIR/sine_$idx.flac"
+    fi
+  fi
 done
+
+cat > "$MUSICBRAINZ_FIXTURES/artist-Artist%20Alpha.json" <<'EOF'
+{"artists":[{"id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","name":"Artist Alpha","score":100}]}
+EOF
+echo 1500 > "$MUSICBRAINZ_FIXTURES/artist-Artist%20Alpha.delay-ms"
+FUTURE_RELEASE_DATE="$(date -d '+30 days' +%F)"
+RECENT_RELEASE_DATE="$(date -d '-30 days' +%F)"
+cat > "$MUSICBRAINZ_FIXTURES/release-groups-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.json" <<EOF
+{"release-groups":[{"id":"aaaaaaaa-0000-0000-0000-000000000001","title":"Alpha Stale Result","primary-type":"Album","secondary-types":[],"first-release-date":"$FUTURE_RELEASE_DATE"}]}
+EOF
+cat > "$MUSICBRAINZ_FIXTURES/artist-Artist%20Beta.json" <<'EOF'
+{"artists":[{"id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","name":"Artist Beta","score":100}]}
+EOF
+cat > "$MUSICBRAINZ_FIXTURES/release-groups-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.json" <<EOF
+{"release-groups":[
+  {"id":"bbbbbbbb-0000-0000-0000-000000000001","title":"Beta Future","primary-type":"Album","secondary-types":[],"first-release-date":"$FUTURE_RELEASE_DATE"},
+  {"id":"bbbbbbbb-0000-0000-0000-000000000002","title":"Beta Fresh","primary-type":"EP","secondary-types":[],"first-release-date":"$RECENT_RELEASE_DATE"}
+]}
+EOF
 
 # --- Process bookkeeping / cleanup -------------------------------------------
 
@@ -209,11 +245,15 @@ setsid dbus-run-session -- env \
   GDK_BACKEND=x11 \
   DISPLAY="$DISPLAY" \
   XDG_DATA_HOME="$XDG_DATA_HOME_SCRATCH" \
+  XDG_CACHE_HOME="$XDG_CACHE_HOME_SCRATCH" \
   XDG_CONFIG_HOME="$XDG_CONFIG_HOME_SCRATCH" \
   GTK_A11Y=none \
   NO_AT_BRIDGE=1 \
   REPRISE_SCAN_DIR="$MUSIC_DIR" \
   REPRISE_AUDIO_SINK=fakesink \
+  REPRISE_MUSICBRAINZ_FIXTURE_DIR="$MUSICBRAINZ_FIXTURES" \
+  REPRISE_MUSICBRAINZ_FIXTURE_LOG="$MUSICBRAINZ_LOG" \
+  REPRISE_SMOKE_ARTIST_NEWS="$PTR_E2E_NEWS_ONLY" \
   REPRISE_LOG=debug \
   cargo run --quiet --manifest-path "$REPO_ROOT/Cargo.toml" "${CARGO_PROFILE_FLAG[@]}" \
   >"$APP_LOG" 2>&1 &
@@ -295,6 +335,23 @@ assert_screenshot_not_blank() {
   fi
 }
 
+wait_for_painted_window() {
+  local path="$PTR_E2E_OUT_DIR/.paint-probe.png"
+  local stddev stddev_int
+  for _ in $(seq 1 30); do
+    scrot -o "$path"
+    stddev="$(convert "$path" -format '%[standard-deviation]' info: 2>/dev/null || echo 0)"
+    stddev_int="${stddev%%.*}"
+    if [ -n "$stddev_int" ] && [ "$stddev_int" -ge 50 ]; then
+      rm -f "$path"
+      return 0
+    fi
+    sleep 0.2
+  done
+  rm -f "$path"
+  return 1
+}
+
 # tracing_subscriber's default formatter colors each field's key/`=`/value
 # separately with SGR escape codes even when stderr is redirected to a file
 # in this setup (observed empirically — `state^[[0m^[[2m=^[[0mPlaying`), so
@@ -336,6 +393,19 @@ assert_log_absent() {
   fi
 }
 
+wait_for_log_pattern() {
+  local pattern="$1" description="$2"
+  for _ in $(seq 1 100); do
+    if sed -E "$ANSI_STRIP_RE" "$APP_LOG" | grep -qi -- "$pattern"; then
+      log_step "log wait OK: $description"
+      return 0
+    fi
+    sleep 0.2
+  done
+  log_fail "timed out waiting for: $description (pattern: $pattern)"
+  return 1
+}
+
 assert_db_value() {
   local key_name="$1" expected="$2" description="$3"
   local actual
@@ -359,6 +429,39 @@ assert_db_query_true() {
   fi
 }
 
+fixture_request_count() {
+  if [ -f "$MUSICBRAINZ_LOG" ]; then
+    wc -l < "$MUSICBRAINZ_LOG"
+  else
+    echo 0
+  fi
+}
+
+assert_fixture_schedule() {
+  local count
+  count="$(fixture_request_count)"
+  if [ "$count" -ne 4 ]; then
+    log_fail "Artist News fixture expected 4 MusicBrainz calls, got $count"
+    return
+  fi
+  if ! awk -F '\t' 'NR > 1 && $1 - previous < 1000 { exit 1 } { previous = $1 }' "$MUSICBRAINZ_LOG"; then
+    log_fail "MusicBrainz fixture calls were scheduled less than one second apart"
+  else
+    log_step "fixture check OK: all MusicBrainz calls were at least one second apart"
+  fi
+  if grep -Eq "$MUSIC_DIR|sine_|\.flac|reprise\.db" "$MUSICBRAINZ_LOG"; then
+    log_fail "MusicBrainz fixture log leaked a path, title, or database name"
+  elif ! awk -F '\t' '
+    $2 == "artist" && $3 ~ /^Artist%20(Alpha|Beta)$/ { next }
+    $2 == "release-group" && $3 ~ /^(aaaaaaaa|bbbbbbbb)-/ { next }
+    { exit 1 }
+  ' "$MUSICBRAINZ_LOG"; then
+    log_fail "MusicBrainz fixture log contained fields other than artist names or resolved MBIDs"
+  else
+    log_step "fixture check OK: requests contain only artist names and resolved MBIDs"
+  fi
+}
+
 # --- Wait for the window, then maximize it -----------------------------------
 
 log_step "waiting for the Reprise window (WM_CLASS matching '$WINDOW_CLASS_MATCH')…"
@@ -370,6 +473,14 @@ if ! WINDOW_ID="$(find_window)"; then
 fi
 log_step "found window $WINDOW_ID"
 
+# Wait for GTK's first mapped frame before asking Openbox to maximize. Sending
+# the EWMH state while the surface is still blank races with GTK's initial
+# natural-size publication and can leave a 1200x800 window on this 1600x900
+# root, invalidating every fixed pointer coordinate below.
+if ! wait_for_painted_window; then
+  echo "FAIL: mapped Reprise window stayed blank for six seconds" >&2
+  exit 1
+fi
 wmctrl -i -r "$WINDOW_ID" -b add,maximized_vert,maximized_horz
 sleep 1
 
@@ -386,6 +497,59 @@ ROW0_TITLE_CELL_X=355
 ROW0_TITLE_CELL_Y=165
 ROW0_RATING_STAR1_X=703
 ROW0_RATING_STAR1_Y=165
+
+if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
+  # --- Flow 0: opt-in Artist News in the contextual information panel -------
+  # This dedicated flow uses the app's permanent smoke seam because absolute
+  # coordinates are not stable while AdwOverlaySplitView changes between its
+  # pinned and overlay geometries. It still drives the production selection,
+  # runtime, persistence and panel callbacks; the surrounding harness remains
+  # a real mapped GTK window with screenshot verification.
+  log_step "flow 0: Artist News opt-in, stale-selection guard, reopen and privacy…"
+  screenshot "00-before-artist-news-opt-in"
+  assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/00-before-artist-news-opt-in.png"
+  if [ "$(fixture_request_count)" -ne 0 ]; then
+    log_fail "Artist News made a request before explicit opt-in"
+  else
+    log_step "fixture check OK: disabled Artist News made zero requests"
+  fi
+
+  wait_for_log_pattern "Artist News smoke: plugin enabled" "explicit Artist News opt-in"
+  assert_db_value "module.artist_news.enabled" "1" "Artist News opt-in persisted"
+  wait_for_log_pattern "Artist News smoke: latest cards ready" "latest Artist Beta cards"
+  screenshot "00-artist-news-beta"
+  assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/00-artist-news-beta.png"
+  assert_log_contains_since 0 "artist news request dispatched.*artist=Artist Alpha" "Artist Alpha request started"
+  assert_log_contains_since 0 "artist news request dispatched.*artist=Artist Beta" "selection change requested Artist Beta"
+  assert_log_contains_since 0 "artist news response discarded as stale" "delayed Artist Alpha response was discarded"
+  assert_log_contains_since 0 "artist news response applied" "latest Artist Beta response was applied"
+  assert_fixture_schedule
+
+  REQUESTS_BEFORE_REOPEN="$(fixture_request_count)"
+  wait_for_log_pattern "Artist News smoke: panel closed" "Information panel close"
+  wait_for_log_pattern "Artist News smoke: panel reopened" "Information panel reopen"
+  screenshot "00-artist-news-reopened"
+  assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/00-artist-news-reopened.png"
+  if [ "$(fixture_request_count)" -ne "$REQUESTS_BEFORE_REOPEN" ]; then
+    log_fail "closing and reopening Information unexpectedly queried MusicBrainz"
+  else
+    log_step "fixture check OK: close/reopen reused the visible result without a request"
+  fi
+
+  wait_for_log_pattern "Artist News smoke: plugin disabled" "Artist News disable and reselection"
+  sleep 0.3
+  assert_db_value "module.artist_news.enabled" "0" "Artist News disable persisted"
+  if [ "$(fixture_request_count)" -ne "$REQUESTS_BEFORE_REOPEN" ]; then
+    log_fail "disabled Artist News made a provider request after selection changed"
+  else
+    log_step "fixture check OK: disabled Artist News made zero additional requests"
+  fi
+  assert_log_absent \
+    'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowMutError' \
+    'GTK/GLib critical, panic, or RefCell borrow failure'
+  log_step "Artist News-only run complete"
+  exit 0
+fi
 
 # --- Flow 1: star-rating click reaches the real widget -----------------------
 
@@ -518,7 +682,7 @@ assert_log_contains_since "$MARKER" "window view mode changed.*mode=Full" "Ctrl+
 
 # Header menu coordinates are fixed for this harness's fixed 1600x900
 # maximized geometry, like the row/rating coordinates documented above.
-MAIN_MENU_X=1163
+MAIN_MENU_X=1083
 MAIN_MENU_Y=28
 click_at "$MAIN_MENU_X" "$MAIN_MENU_Y"
 sleep 0.3

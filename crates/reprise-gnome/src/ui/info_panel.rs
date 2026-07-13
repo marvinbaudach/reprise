@@ -13,9 +13,11 @@ use super::artist_news_worker::{ArtistNewsRequest, ArtistNewsResponse, ArtistNew
 use super::cover_loader::CoverLoader;
 use super::info_panel_state::{PanelContext, PanelState, RequestIntent};
 use super::strings;
+use super::track_list::TrackList;
 
 const PANEL_WIDTH: f64 = 340.0;
 const PINNED_MIN_WIDTH: f64 = 1200.0;
+const SMOKE_ENV: &str = "REPRISE_SMOKE_ARTIST_NEWS";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PanelMetrics {
@@ -252,6 +254,66 @@ impl InfoPanel {
         self.start_or_render(intent);
     }
 
+    pub(super) fn arm_smoke(self: &Rc<Self>, track_list: &Rc<TrackList>) {
+        if std::env::var(SMOKE_ENV).as_deref() != Ok("1") {
+            return;
+        }
+        tracing::info!("{SMOKE_ENV} set: arming Artist News panel exercise");
+
+        let panel = self.clone();
+        let track_list = track_list.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_secs(5), move || {
+            track_list.select_for_smoke(0);
+            let result = {
+                let conn = panel.conn.borrow();
+                panel.runtime.set_enabled(&conn, true)
+            };
+            if let Err(error) = result {
+                tracing::warn!(%error, "Artist News smoke could not enable plugin");
+            } else {
+                tracing::info!("Artist News smoke: plugin enabled and Artist Alpha selected");
+            }
+
+            let beta_track_list = track_list.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
+                beta_track_list.select_for_smoke(3);
+                tracing::info!("Artist News smoke: selection changed to Artist Beta");
+            });
+
+            let panel_ready = panel.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_secs(5), move || {
+                panel_ready.widgets.split.set_show_sidebar(true);
+                tracing::info!("Artist News smoke: latest cards ready");
+            });
+
+            let panel_closed = panel.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_secs(8), move || {
+                panel_closed.widgets.split.set_show_sidebar(false);
+                tracing::info!("Artist News smoke: panel closed");
+            });
+
+            let panel_reopened = panel.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_secs(10), move || {
+                panel_reopened.widgets.split.set_show_sidebar(true);
+                tracing::info!("Artist News smoke: panel reopened");
+            });
+
+            let panel_disabled = panel.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_secs(13), move || {
+                let result = {
+                    let conn = panel_disabled.conn.borrow();
+                    panel_disabled.runtime.set_enabled(&conn, false)
+                };
+                if let Err(error) = result {
+                    tracing::warn!(%error, "Artist News smoke could not disable plugin");
+                } else {
+                    track_list.select_for_smoke(0);
+                    tracing::info!("Artist News smoke: plugin disabled and selection changed");
+                }
+            });
+        });
+    }
+
     fn wire(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         self.toggle.connect_toggled(move |button| {
@@ -336,6 +398,12 @@ impl InfoPanel {
     }
 
     fn dispatch(self: &Rc<Self>, intent: RequestIntent) {
+        tracing::debug!(
+            artist = %intent.artist,
+            generation = intent.generation,
+            force = intent.force,
+            "artist news request dispatched"
+        );
         let local_albums = {
             let conn = self.conn.borrow();
             reprise_core::queries::query_artist_albums(&conn, &intent.artist)
@@ -369,8 +437,16 @@ impl InfoPanel {
 
     fn apply_response(&self, response: ArtistNewsResponse) {
         if !self.state.borrow().accepts(response.generation) {
+            tracing::debug!(
+                generation = response.generation,
+                "artist news response discarded as stale"
+            );
             return;
         }
+        tracing::debug!(
+            generation = response.generation,
+            "artist news response applied"
+        );
         match response.result {
             Ok(news) => self.render_news(&news),
             Err(error) => self.render_error(news_error_text(&error)),

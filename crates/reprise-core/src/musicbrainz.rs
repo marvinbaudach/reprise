@@ -4,11 +4,16 @@
 //! one-request-per-second policy cannot accidentally diverge. Callers must
 //! keep this work off the UI thread.
 
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
+const FIXTURE_DIR_ENV: &str = "REPRISE_MUSICBRAINZ_FIXTURE_DIR";
+const FIXTURE_LOG_ENV: &str = "REPRISE_MUSICBRAINZ_FIXTURE_LOG";
 
 pub const CONTACT_URL: &str = "https://github.com/marvinbaudach";
 
@@ -33,6 +38,9 @@ pub fn user_agent() -> String {
 /// Performs a blocking, rate-limited MusicBrainz GET.
 pub fn get(url: &str) -> Result<String, FetchError> {
     respect_rate_limit();
+    if let Ok(directory) = std::env::var(FIXTURE_DIR_ENV) {
+        return fixture_get(url, Path::new(&directory));
+    }
     let response = ureq::builder()
         .timeout(HTTP_TIMEOUT)
         .user_agent(&user_agent())
@@ -41,6 +49,72 @@ pub fn get(url: &str) -> Result<String, FetchError> {
         .call()
         .map_err(classify_error)?;
     response.into_string().map_err(|_| FetchError::Body)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum FixtureRequest {
+    Artist(String),
+    ReleaseGroups(String),
+}
+
+impl FixtureRequest {
+    fn filename(&self) -> String {
+        match self {
+            Self::Artist(artist) => format!("artist-{artist}.json"),
+            Self::ReleaseGroups(mbid) => format!("release-groups-{mbid}.json"),
+        }
+    }
+
+    fn log_fields(&self) -> (&'static str, &str) {
+        match self {
+            Self::Artist(artist) => ("artist", artist),
+            Self::ReleaseGroups(mbid) => ("release-group", mbid),
+        }
+    }
+}
+
+fn fixture_request(url: &str) -> Option<FixtureRequest> {
+    const ARTIST_PREFIX: &str = "query=artist%3A%22";
+    if let Some(start) = url.find(ARTIST_PREFIX) {
+        let value = &url[start + ARTIST_PREFIX.len()..];
+        return value
+            .split_once("%22")
+            .map(|(artist, _)| FixtureRequest::Artist(artist.to_owned()));
+    }
+    if url.contains("/release-group?") {
+        let value = url.split_once("artist=")?.1;
+        let mbid = value.split_once('&').map_or(value, |(mbid, _)| mbid);
+        return Some(FixtureRequest::ReleaseGroups(mbid.to_owned()));
+    }
+    None
+}
+
+fn fixture_get(url: &str, directory: &Path) -> Result<String, FetchError> {
+    let request = fixture_request(url).ok_or(FetchError::Transport)?;
+    append_fixture_log(&request)?;
+    let path = directory.join(request.filename());
+    if let Ok(delay) = std::fs::read_to_string(path.with_extension("delay-ms")) {
+        let millis = delay.trim().parse::<u64>().unwrap_or_default();
+        std::thread::sleep(Duration::from_millis(millis));
+    }
+    std::fs::read_to_string(path).map_err(|_| FetchError::Transport)
+}
+
+fn append_fixture_log(request: &FixtureRequest) -> Result<(), FetchError> {
+    let Ok(path) = std::env::var(FIXTURE_LOG_ENV) else {
+        return Ok(());
+    };
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let (kind, value) = request.log_fields();
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|_| FetchError::Transport)?;
+    writeln!(file, "{timestamp}\t{kind}\t{value}").map_err(|_| FetchError::Transport)
 }
 
 pub(crate) fn urlencode(value: &str) -> String {
@@ -127,5 +201,42 @@ mod tests {
             panic!("poison test mutex");
         });
         assert_eq!(*lock_unpoisoned(&mutex), 7);
+    }
+
+    #[test]
+    fn fixture_routes_expose_only_artist_or_mbid_fields() {
+        assert_eq!(
+            fixture_request(
+                "https://musicbrainz.org/ws/2/artist/?query=artist%3A%22Artist%20Alpha%22&fmt=json&limit=5"
+            ),
+            Some(FixtureRequest::Artist("Artist%20Alpha".into()))
+        );
+        assert_eq!(
+            fixture_request(
+                "https://musicbrainz.org/ws/2/release-group?artist=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa&type=album"
+            ),
+            Some(FixtureRequest::ReleaseGroups(
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into()
+            ))
+        );
+        assert_eq!(fixture_request("https://example.test/private/path"), None);
+    }
+
+    #[test]
+    fn fixture_get_reads_the_routed_response() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("artist-Artist%20Alpha.json"),
+            r#"{"artists":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            fixture_get(
+                "https://musicbrainz.org/ws/2/artist/?query=artist%3A%22Artist%20Alpha%22&fmt=json&limit=5",
+                directory.path()
+            )
+            .unwrap(),
+            r#"{"artists":[]}"#
+        );
     }
 }

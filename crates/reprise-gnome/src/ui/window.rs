@@ -449,6 +449,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             }
         });
     }
+    info_panel.arm_smoke(&track_list);
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
         &split_view,
