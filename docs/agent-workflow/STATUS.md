@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate one-time Rhythmbox import
-SINCE:    2026-07-13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex claimed the lock to integrate the one-time Rhythmbox import._
+_As of 2026-07-13: Codex released the lock after integrating the one-time Rhythmbox import._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-unified-filter-bar.md` (3 tasks).
-- **Last completed:** **Unified chip filter bar** (`0a2076c`) — active Library facets are compact,
-  removable chips with one add-filter search, live result counts, and a complete reset action.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-one-time-rhythmbox-import.md` (2 tasks).
+- **Last completed:** **One-time Rhythmbox import** (`2b304df`, merged as `374d627`) — detected
+  Rhythmbox settings are offered only during initial setup with an explicit column-layout choice.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `0a2076c`.
+- **Main implementation:** `374d627`.
 
 ## Done so far (compact)
 
@@ -123,6 +123,8 @@ _As of 2026-07-13: Codex claimed the lock to integrate the one-time Rhythmbox im
 - ✅ **Unified chip filter bar**: the three persistent facet searches are replaced by wrapping,
   removable Genre/Artist/Album chips, a two-step add popover with one temporary value search,
   exact live result counts, and one reset action while preserving cascade and session behavior.
+- ✅ **One-time Rhythmbox import**: detection and explicit column-layout selection live only in
+  initial setup; the persistent main menu and Preferences no longer expose a later import path.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
@@ -131,7 +133,7 @@ _As of 2026-07-13: Codex claimed the lock to integrate the one-time Rhythmbox im
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines) and `strings.rs` (797 lines) are edge-tight — their next edits
+- `scrobbling.rs` (795 lines) and `strings.rs` (790 lines) are edge-tight — their next edits
   must extract cohesive sibling modules rather than adding inline logic. Compact, rating,
   column-header, and playlist-delete pointer flows are extracted siblings so
   `scripts/ptr-e2e/run.sh` remains at 732 lines.
