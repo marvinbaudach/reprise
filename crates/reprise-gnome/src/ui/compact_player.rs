@@ -165,7 +165,7 @@ impl CompactPlayer {
         self.menu.set_on_preferences(callback);
     }
 
-    pub(super) fn set_track(&self, title: &str, artist: &str, album: &str) {
+    pub(super) fn set_track(&self, title: &str, artist: &str, album: &str, year: Option<i32>) {
         if should_clear_drag_guard_on_track_change(
             self.pointer_down.get(),
             self.seek_gesture_is_active(),
@@ -177,15 +177,19 @@ impl CompactPlayer {
             presentation.title = title.to_string();
             presentation.artist = artist.to_string();
             presentation.album = album.to_string();
+            presentation.year = year;
         }
         for view in &self.views {
+            let detail_rows = compact_player_layouts::visible_detail_rows(view.layout, album, year);
             view.title.set_text(title);
             view.artist.set_text(artist);
             view.album.set_text(album);
-            view.album.set_visible(
-                compact_player_layouts::visible_detail_rows(album, None)
-                    .contains(&compact_player_layouts::MetadataRow::Album),
-            );
+            view.album
+                .set_visible(detail_rows.contains(&compact_player_layouts::MetadataRow::Album));
+            view.year
+                .set_text(&year.map(|value| value.to_string()).unwrap_or_default());
+            view.year
+                .set_visible(detail_rows.contains(&compact_player_layouts::MetadataRow::Year));
         }
     }
 
@@ -201,7 +205,9 @@ impl CompactPlayer {
             view.title.set_text("");
             view.artist.set_text("");
             view.album.set_text("");
+            view.year.set_text("");
             view.album.set_visible(false);
+            view.year.set_visible(false);
             view.position.set_text(ZERO_TIME);
             view.duration.set_text(ZERO_TIME);
         }
@@ -632,6 +638,7 @@ mod tests {
         }
         let compact = CompactPlayer::new();
         compact.set_layout(layout);
+        compact.set_track("Track", "Artist", "Album", Some(2026));
         let view = compact
             .views
             .iter()
@@ -640,6 +647,14 @@ mod tests {
         assert!(view.cover.parent().is_some());
         assert!(view.title.parent().is_some());
         assert!(view.artist.parent().is_some());
+        assert_eq!(
+            view.album.is_visible(),
+            matches!(layout, CompactLayout::Cover | CompactLayout::Card)
+        );
+        assert_eq!(view.year.is_visible(), layout == CompactLayout::Card);
+        if layout == CompactLayout::Card {
+            assert_eq!(view.year.text(), "2026");
+        }
         assert_eq!(view.previous.tooltip_text().as_deref(), Some("Previous"));
         assert_eq!(view.play_pause.tooltip_text().as_deref(), Some("Play"));
         assert_eq!(view.next.tooltip_text().as_deref(), Some("Next"));

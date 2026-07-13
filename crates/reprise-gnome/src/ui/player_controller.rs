@@ -548,7 +548,12 @@ impl PlayerController {
                 // — see `now_playing_wiring.rs`'s `sync_track`/`sync_cover`
                 // doc comments for why this is the single state path both
                 // widgets are ever fed from.
-                self.sync_track(&summary.title, &summary.artist, &summary.album);
+                self.sync_track(
+                    &summary.title,
+                    &summary.artist,
+                    &summary.album,
+                    summary.year,
+                );
                 self.sync_cover(&summary.path);
                 if previous_id != Some(id) {
                     self.notify_now_playing(

@@ -6,6 +6,7 @@ pub(super) struct CompactPresentation {
     pub(super) title: String,
     pub(super) artist: String,
     pub(super) album: String,
+    pub(super) year: Option<i32>,
     pub(super) state: PlaybackState,
     pub(super) position_ms: i64,
     pub(super) duration_ms: i64,
@@ -21,6 +22,7 @@ impl Default for CompactPresentation {
             title: String::new(),
             artist: String::new(),
             album: String::new(),
+            year: None,
             state: PlaybackState::Stopped,
             position_ms: 0,
             duration_ms: 0,
@@ -45,6 +47,7 @@ impl CompactPresentation {
         self.title.clear();
         self.artist.clear();
         self.album.clear();
+        self.year = None;
         self.position_ms = 0;
         self.duration_ms = 0;
     }
@@ -76,6 +79,7 @@ mod tests {
         assert_eq!(state.title, "");
         assert_eq!(state.artist, "");
         assert_eq!(state.album, "");
+        assert_eq!(state.year, None);
         assert_eq!(state.state, PlaybackState::Stopped);
         assert_eq!(state.position_ms, 0);
         assert_eq!(state.duration_ms, 0);
@@ -121,6 +125,7 @@ mod tests {
             title: "Track".into(),
             artist: "Artist".into(),
             album: "Album".into(),
+            year: Some(2026),
             position_ms: 500,
             duration_ms: 1_000,
             ..CompactPresentation::default()
@@ -131,6 +136,7 @@ mod tests {
         assert_eq!(state.title, "");
         assert_eq!(state.artist, "");
         assert_eq!(state.album, "");
+        assert_eq!(state.year, None);
         assert_eq!(state.position_ms, 0);
         assert_eq!(state.duration_ms, 0);
     }
