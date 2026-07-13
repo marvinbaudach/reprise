@@ -24,6 +24,7 @@ mod audio_effects;
 pub mod browse_bar;
 pub mod column_layout;
 mod column_layout_editor;
+mod compact_mode_controls;
 mod compact_player;
 mod compact_player_layouts;
 mod compact_player_menu;
