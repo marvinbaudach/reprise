@@ -134,6 +134,8 @@ pub const COLOR_SCHEME_KEY: &str = "ui.color_scheme";
 pub const LIST_DENSITY_KEY: &str = "ui.list_density";
 pub const SIDEBAR_VISIBLE_KEY: &str = "ui.sidebar_visible";
 pub const STATUS_VISIBLE_KEY: &str = "ui.status_visible";
+pub const WINDOW_VIEW_MODE_KEY: &str = "ui.window_view_mode";
+pub const COMPACT_LAYOUT_KEY: &str = "ui.compact_layout";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
 pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
@@ -153,6 +155,20 @@ pub enum ListDensity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowViewMode {
+    Library,
+    Compact,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactLayout {
+    Bar,
+    Cover,
+    Pill,
+    Card,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayGainMode {
     Off,
     Track,
@@ -168,6 +184,51 @@ fn typed_value(conn: &Connection, key: &str, default: &'static str) -> String {
             default.to_string()
         }
     }
+}
+
+pub fn get_window_view_mode(conn: &Connection) -> WindowViewMode {
+    match typed_value(conn, WINDOW_VIEW_MODE_KEY, "library").as_str() {
+        "compact" => WindowViewMode::Compact,
+        "library" => WindowViewMode::Library,
+        value => {
+            tracing::warn!(value, "unrecognized window view mode; using Library");
+            WindowViewMode::Library
+        }
+    }
+}
+
+pub fn set_window_view_mode(
+    conn: &Connection,
+    value: WindowViewMode,
+) -> Result<(), rusqlite::Error> {
+    let value = match value {
+        WindowViewMode::Library => "library",
+        WindowViewMode::Compact => "compact",
+    };
+    set_setting(conn, WINDOW_VIEW_MODE_KEY, value)
+}
+
+pub fn get_compact_layout(conn: &Connection) -> CompactLayout {
+    match typed_value(conn, COMPACT_LAYOUT_KEY, "bar").as_str() {
+        "cover" => CompactLayout::Cover,
+        "pill" => CompactLayout::Pill,
+        "card" => CompactLayout::Card,
+        "bar" => CompactLayout::Bar,
+        value => {
+            tracing::warn!(value, "unrecognized compact layout; using Bar");
+            CompactLayout::Bar
+        }
+    }
+}
+
+pub fn set_compact_layout(conn: &Connection, value: CompactLayout) -> Result<(), rusqlite::Error> {
+    let value = match value {
+        CompactLayout::Bar => "bar",
+        CompactLayout::Cover => "cover",
+        CompactLayout::Pill => "pill",
+        CompactLayout::Card => "card",
+    };
+    set_setting(conn, COMPACT_LAYOUT_KEY, value)
 }
 
 pub fn get_color_scheme(conn: &Connection) -> ColorScheme {
@@ -292,6 +353,10 @@ pub fn set_replay_gain_mode(
     };
     set_setting(conn, REPLAY_GAIN_MODE_KEY, value)
 }
+
+#[cfg(test)]
+#[path = "settings_compact_tests.rs"]
+mod compact_tests;
 
 #[cfg(test)]
 mod tests {
