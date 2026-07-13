@@ -103,9 +103,10 @@ pub(super) fn wire_close(
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     loaded: &SessionState,
+    geometry_suppressed: &Rc<Cell<bool>>,
 ) {
     let geometry = Rc::new(Cell::new((loaded.window_width, loaded.window_height)));
-    wire_geometry_tracking(window, &geometry);
+    wire_geometry_tracking(window, &geometry, geometry_suppressed);
 
     let conn = conn.clone();
     let track_list = Rc::downgrade(track_list);
@@ -150,11 +151,20 @@ pub(super) fn arm_seed_close(window: &adw::ApplicationWindow) {
     });
 }
 
-fn wire_geometry_tracking(window: &adw::ApplicationWindow, geometry: &Rc<Cell<(i32, i32)>>) {
+fn wire_geometry_tracking(
+    window: &adw::ApplicationWindow,
+    geometry: &Rc<Cell<(i32, i32)>>,
+    suppressed: &Rc<Cell<bool>>,
+) {
     for property in ["width", "height"] {
         let geometry = geometry.clone();
+        let suppressed = suppressed.clone();
         window.connect_notify_local(Some(property), move |window, _| {
-            if !window.is_maximized() && window.width() > 0 && window.height() > 0 {
+            if !suppressed.get()
+                && !window.is_maximized()
+                && window.width() > 0
+                && window.height() > 0
+            {
                 geometry.set((window.width(), window.height()));
             }
         });

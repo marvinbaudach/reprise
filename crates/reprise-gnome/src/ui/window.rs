@@ -22,7 +22,6 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -247,8 +246,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         ))
     };
     super::current_track_selection::wire(player.as_ref(), &track_list);
-    primary_menu::install(&header, &window, conn, &cover_download, &track_list);
-
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(track_list.widget()));
@@ -453,6 +450,25 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .sidebar(&sidebar_page)
         .content(&content_page)
         .build();
+    let minimal_view = super::minimal_view::MinimalView::new(
+        &window,
+        &split_view,
+        &bottom_box,
+        player.as_ref().map(|player| player.bar_widget()),
+    );
+    let geometry_guard = minimal_view.geometry_guard();
+    let minimal_toggle = minimal_view.clone();
+    primary_menu::install(
+        &header,
+        &window,
+        conn,
+        &cover_download,
+        &track_list,
+        move || {
+            minimal_toggle.toggle();
+        },
+    );
+    app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     wire_sidebar_toggle(&sidebar_toggle, &split_view);
 
     // Stage 3 Task 4: sidebar selection drives the track list's source and
@@ -474,19 +490,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     // upgrade, not a strong capture: `split_view` is about to be handed to
     // `window.set_content` below, and neither callback needs to keep it
     // alive past the window's own lifetime.
-    let show_content_if_collapsed: Rc<dyn Fn()> = {
-        let split_view_weak = split_view.downgrade();
-        Rc::new(move || match split_view_weak.upgrade() {
-            Some(split_view) => {
-                if split_view.is_collapsed() {
-                    split_view.set_show_content(true);
-                }
-            }
-            None => tracing::warn!(
-                "split view is gone; cannot show content pane after sidebar navigation"
-            ),
-        })
-    };
+    let show_content_if_collapsed = super::window_navigation::show_content_callback(&split_view);
     {
         let track_list = track_list.clone();
         let window_title = window_title.clone();
@@ -640,7 +644,14 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         player.as_ref(),
         &session_state,
     );
-    super::session_restore::wire_close(&window, conn, &track_list, player.as_ref(), &session_state);
+    super::session_restore::wire_close(
+        &window,
+        conn,
+        &track_list,
+        player.as_ref(),
+        &session_state,
+        &geometry_guard,
+    );
     super::session_restore::arm_seed_close(&window);
     super::first_run::run(&window, &scan_button, conn);
 

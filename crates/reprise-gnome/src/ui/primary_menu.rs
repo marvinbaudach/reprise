@@ -18,8 +18,10 @@ use crate::ui::track_list::TrackList;
 pub(super) const ACTION_DOWNLOAD_MISSING_COVERS: &str = "download-missing-covers";
 pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
+pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 const SMOKE_COVER_DOWNLOAD_ENV_VAR: &str = "REPRISE_SMOKE_COVER_DOWNLOAD";
 pub(super) const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
+const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
 pub(super) fn install(
     header: &adw::HeaderBar,
@@ -27,11 +29,16 @@ pub(super) fn install(
     conn: &Rc<RefCell<Connection>>,
     runtime: &CoverDownloadRuntime,
     track_list: &Rc<TrackList>,
+    on_minimal_view: impl Fn() + 'static,
 ) {
     let menu = gio::Menu::new();
     menu.append(
         Some(&strings::text(strings::DOWNLOAD_MISSING_COVERS)),
         Some("win.download-missing-covers"),
+    );
+    menu.append(
+        Some(&strings::text(strings::MINIMAL_VIEW)),
+        Some("win.toggle-minimal-view"),
     );
     menu.append(
         Some(&strings::text(strings::EDIT_COLUMN_LAYOUT)),
@@ -105,6 +112,24 @@ pub(super) fn install(
     }
     window.add_action(&edit);
     arm_smoke_column_layout_editor(&edit);
+
+    let minimal = gio::SimpleAction::new(ACTION_TOGGLE_MINIMAL_VIEW, None);
+    minimal.connect_activate(move |_, _| on_minimal_view());
+    window.add_action(&minimal);
+    arm_smoke_minimal_view(&minimal);
+}
+
+fn arm_smoke_minimal_view(action: &gio::SimpleAction) {
+    let Ok(mode) = std::env::var(SMOKE_MINIMAL_VIEW_ENV_VAR) else {
+        return;
+    };
+    let enter = action.clone();
+    glib::idle_add_local_once(move || enter.activate(None));
+    if mode == "stay" {
+        return;
+    }
+    let restore = action.clone();
+    glib::timeout_add_seconds_local_once(1, move || restore.activate(None));
 }
 
 fn arm_smoke_column_layout_editor(action: &gio::SimpleAction) {
