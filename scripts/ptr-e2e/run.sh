@@ -259,6 +259,20 @@ key() {
   xdotool key "$1" >/dev/null 2>&1
 }
 
+assert_window_within() {
+  local max_width="$1" max_height="$2" description="$3"
+  local geometry width height
+  geometry="$(xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null)"
+  width="$(sed -n 's/^WIDTH=//p' <<<"$geometry")"
+  height="$(sed -n 's/^HEIGHT=//p' <<<"$geometry")"
+  if [ -n "$width" ] && [ -n "$height" ] &&
+     [ "$width" -le "$max_width" ] && [ "$height" -le "$max_height" ]; then
+    log_step "window geometry OK: $description (${width}x${height})"
+  else
+    log_fail "$description exceeded ${max_width}x${max_height} (got ${width:-?}x${height:-?})"
+  fi
+}
+
 drag_and_hold() {
   local from_x="$1" from_y="$2" to_x="$3" to_y="$4"
   xdotool mousemove "$from_x" "$from_y" mousedown 1 >/dev/null 2>&1
@@ -503,18 +517,19 @@ assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Spac
 
 # --- Flow 5: minimal-view shortcut and real Preferences menu item ------------
 
-log_step "flow 5: Minimal View shortcut and Preferences dialog…"
+log_step "flow 5: Compact View shortcut and Preferences dialog…"
 MARKER=$(log_marker)
 key "ctrl+m"
 sleep 0.4
-assert_log_contains_since "$MARKER" "window view mode changed.*mode=Minimal" "Ctrl+M entered Minimal View"
+assert_log_contains_since "$MARKER" "window view mode changed.*mode=Compact" "Ctrl+M entered Compact View"
+assert_window_within 660 185 "Bar compact geometry after leaving maximized Library"
 screenshot "08-minimal-view"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-minimal-view.png"
 
 MARKER=$(log_marker)
 key "ctrl+m"
 sleep 0.4
-assert_log_contains_since "$MARKER" "window view mode changed.*mode=Full" "Ctrl+M restored Full View"
+assert_log_contains_since "$MARKER" "window view mode changed.*mode=Library" "Ctrl+M restored Library View"
 
 # Header menu coordinates are fixed for this harness's fixed 1600x900
 # maximized geometry, like the row/rating coordinates documented above.

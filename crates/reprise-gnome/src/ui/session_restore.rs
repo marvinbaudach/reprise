@@ -105,7 +105,11 @@ pub(super) fn wire_close(
     loaded: &SessionState,
     geometry_suppressed: &Rc<Cell<bool>>,
 ) {
-    let geometry = Rc::new(Cell::new((loaded.window_width, loaded.window_height)));
+    let geometry = Rc::new(Cell::new((
+        loaded.window_width,
+        loaded.window_height,
+        loaded.maximized,
+    )));
     wire_geometry_tracking(window, &geometry, geometry_suppressed);
 
     let conn = conn.clone();
@@ -114,15 +118,18 @@ pub(super) fn wire_close(
     let loaded = loaded.clone();
     let saved = Cell::new(false);
     let geometry = geometry.clone();
+    let geometry_suppressed = geometry_suppressed.clone();
     window.connect_close_request(move |window| {
         if saved.replace(true) {
             return glib::Propagation::Proceed;
         }
         let mut state = loaded.clone();
-        let (width, height) = geometry.get();
+        let live = (window.width(), window.height(), window.is_maximized());
+        let (width, height, maximized) =
+            geometry_for_save(geometry_suppressed.get(), geometry.get(), live);
         state.window_width = width;
         state.window_height = height;
-        state.maximized = window.is_maximized();
+        state.maximized = maximized;
         if let Some(track_list) = track_list.upgrade() {
             apply_view_snapshot(&mut state, view_session::snapshot(&track_list));
         }
@@ -153,21 +160,39 @@ pub(super) fn arm_seed_close(window: &adw::ApplicationWindow) {
 
 fn wire_geometry_tracking(
     window: &adw::ApplicationWindow,
-    geometry: &Rc<Cell<(i32, i32)>>,
+    geometry: &Rc<Cell<(i32, i32, bool)>>,
     suppressed: &Rc<Cell<bool>>,
 ) {
-    for property in ["width", "height"] {
+    for property in ["width", "height", "maximized"] {
         let geometry = geometry.clone();
         let suppressed = suppressed.clone();
         window.connect_notify_local(Some(property), move |window, _| {
-            if !suppressed.get()
-                && !window.is_maximized()
-                && window.width() > 0
-                && window.height() > 0
-            {
-                geometry.set((window.width(), window.height()));
+            if suppressed.get() {
+                return;
             }
+            let (width, height, _) = geometry.get();
+            let maximized = window.is_maximized();
+            let size = if !maximized && window.width() > 0 && window.height() > 0 {
+                (window.width(), window.height())
+            } else {
+                (width, height)
+            };
+            geometry.set((size.0, size.1, maximized));
         });
+    }
+}
+
+fn geometry_for_save(
+    suppressed: bool,
+    tracked: (i32, i32, bool),
+    live: (i32, i32, bool),
+) -> (i32, i32, bool) {
+    if suppressed {
+        tracked
+    } else if live.2 {
+        (tracked.0, tracked.1, true)
+    } else {
+        live
     }
 }
 
@@ -233,5 +258,17 @@ mod tests {
     fn close_always_proceeds_even_when_session_save_fails() {
         assert!(close_should_proceed(true));
         assert!(close_should_proceed(false));
+        assert_eq!(
+            geometry_for_save(true, (1200, 800, true), (440, 240, false)),
+            (1200, 800, true)
+        );
+        assert_eq!(
+            geometry_for_save(false, (1200, 800, true), (900, 600, false)),
+            (900, 600, false)
+        );
+        assert_eq!(
+            geometry_for_save(false, (1200, 800, true), (1920, 1080, true)),
+            (1200, 800, true)
+        );
     }
 }

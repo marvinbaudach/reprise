@@ -48,7 +48,7 @@ pub(super) fn install(
         Some("win.preferences"),
     );
     menu.append(
-        Some(&strings::text(strings::MINIMAL_VIEW)),
+        Some(&strings::text(strings::COMPACT_VIEW)),
         Some("win.toggle-minimal-view"),
     );
     menu.append(
