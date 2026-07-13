@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Correct full-width library player bar
+SINCE:    2026-07-13 15:03 CEST
 ```
 
-_As of 2026-07-13: Last.fm scrobbling is complete, merged, and the lock is released._
+_As of 2026-07-13 15:03 CEST: Codex claimed the lock to correct the full-width library player bar._
 
 ## Current position
 
