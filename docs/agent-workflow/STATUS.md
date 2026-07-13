@@ -21,24 +21,24 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Native column-layout editor and Rhythmbox discovery prompt
-SINCE:    2026-07-13 03:01 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 03:01 CEST: Codex claimed the lock for column-layout editing and Rhythmbox discovery UX._
+_As of 2026-07-13 03:25 CEST: Codex released the lock after column-layout editing and Rhythmbox discovery UX._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-12-release-readiness.md` (6 tasks).
-- **Last completed:** **Autonomous final release hardening** (`c9a4141` through `9318635`) — repaired
-  and hardened the isolated release pointer harness, added keyboard track actions, proved invalid
-  numeric tag rejection, Queue insertion feedback/reorder and playback controls, and fixed stale
-  Queue sidebar counts. The full release checker passes with 481 tests and 4 display-only ignores.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-column-layout-editor.md` (3 atomic tasks).
+- **Last completed:** **Column layout editor + Rhythmbox discovery** (`33238b0`, docs `2c3b837`) —
+  native immediate/persistent visibility and ordering through switches, buttons or whole-row drag
+  with exact insertion lines; fixed Cover/Title; reset; and a default-off first-run import offer
+  only when Rhythmbox settings are detected. Full release checker: 490 passed, 5 display-only ignored.
 - **Current plan:** none — every planned application and local release-readiness stage is complete.
-- **➡️ NEXT:** maintainer-controlled public-source/release handoff and manual GNOME QA from
-  `RELEASING.md`; no agent should invent a remote, domain/contact identity, screenshots, tag, or upload.
-- **Feature HEAD:** `9318635`; this coordination-board update follows it.
+- **➡️ NEXT:** native-GNOME visual/pointer confirmation for the new editor and discovery copy,
+  then the existing maintainer-controlled public-source/release handoff from `RELEASING.md`.
+- **Feature HEAD:** `2c3b837`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -51,6 +51,9 @@ _As of 2026-07-13 03:01 CEST: Codex claimed the lock for column-layout editing a
 - ✅ **GUI-A2**: opt-in online album-cover download via MusicBrainz/Cover Art Archive; default OFF.
 - ✅ **GUI-B**: tag editor with multi-select batch edit + confirmed DB-only delete/safe trash.
 - ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
+- ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
+  whole-row drag ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
+  first-run offer that remains default off.
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
