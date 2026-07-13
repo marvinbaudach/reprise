@@ -149,7 +149,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 tracing::warn!(%error, "could not read module.mpris.enabled; defaulting to on");
                 true
             });
-    let cover_download = cover_download_worker::setup(&conn.borrow());
+    let cover_download = cover_download_worker::setup();
     let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
         db_path.to_path_buf(),
         reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
@@ -526,7 +526,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &library_player_bar,
         &scan_button,
         player.as_ref(),
-        &cover_batch,
         &listenbrainz,
         &lastfm,
         &artist_news,
@@ -540,23 +539,17 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         player.as_ref().map(|player| &player.compact_player),
         Rc::new(move || compact_preferences.present()),
     );
-    let toggled_cover_batch = cover_batch.clone();
     primary_menu::install(
         &header,
         &window,
-        conn,
-        &cover_download,
         &track_list,
         primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
             on_preferences: Rc::new(move || preferences.present()),
-            on_cover_download_changed: Rc::new(move |enabled| {
-                toggled_cover_batch.set_enabled(enabled);
-            }),
         },
     );
     header.pack_end(&search_entry);
-    cover_batch.start_if_enabled();
+    cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view, &sidebar_page);
     // Stage 3 Task 4: sidebar selection drives the track list's source and

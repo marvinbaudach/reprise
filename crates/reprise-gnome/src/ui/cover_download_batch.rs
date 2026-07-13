@@ -14,7 +14,6 @@ pub(super) enum BatchState {
     Idle,
     Running,
     Complete,
-    Stopped,
     Failed,
 }
 
@@ -69,13 +68,6 @@ impl BatchProgress {
         }
         if self.checked == self.total {
             self.state = BatchState::Complete;
-        }
-        self
-    }
-
-    fn stopped(mut self) -> Self {
-        if self.state == BatchState::Running {
-            self.state = BatchState::Stopped;
         }
         self
     }
@@ -198,21 +190,7 @@ impl CoverDownloadBatch {
             .subscribe(self.progress.get(), is_alive, callback);
     }
 
-    pub(super) fn set_enabled(self: &Rc<Self>, enabled: bool) {
-        if enabled {
-            self.start();
-        } else {
-            self.stop();
-        }
-    }
-
-    pub(super) fn start_if_enabled(self: &Rc<Self>) {
-        if self.runtime.enabled.get() {
-            self.start();
-        }
-    }
-
-    fn start(self: &Rc<Self>) {
+    pub(super) fn start(self: &Rc<Self>) {
         let paths = {
             let conn = self.conn.borrow();
             live_track_paths(&conn)
@@ -235,7 +213,7 @@ impl CoverDownloadBatch {
         let this = self.clone();
         glib::spawn_future_local(async move {
             for path in &paths {
-                if this.generation.get() != generation || !this.runtime.enabled.get() {
+                if this.generation.get() != generation {
                     return;
                 }
                 let (response, result) = async_channel::bounded(1);
@@ -269,11 +247,6 @@ impl CoverDownloadBatch {
                 player.refresh_edited_cover(&refreshed_paths);
             }
         });
-    }
-
-    fn stop(&self) {
-        self.generation.set(self.generation.get().wrapping_add(1));
-        self.set_progress(self.progress.get().stopped());
     }
 
     fn set_progress(&self, progress: BatchProgress) {
@@ -311,18 +284,6 @@ mod tests {
         assert_eq!(progress.downloaded, 1);
         assert_eq!(progress.unavailable, 1);
         assert_eq!(progress.fraction(), 1.0);
-    }
-
-    #[test]
-    fn stopping_preserves_partial_counts_and_never_completes_the_run() {
-        let progress = BatchProgress::running(4)
-            .advance(&DownloadOutcome::AlreadyCovered)
-            .stopped();
-
-        assert_eq!(progress.state, BatchState::Stopped);
-        assert_eq!(progress.checked, 1);
-        assert_eq!(progress.total, 4);
-        assert_eq!(progress.fraction(), 0.25);
     }
 
     #[test]

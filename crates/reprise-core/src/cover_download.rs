@@ -1,7 +1,7 @@
-//! Opt-in online album-cover download (GUI-A2). Resolves a MusicBrainz release
+//! Automatic online album-cover download. Resolves a MusicBrainz release
 //! and fetches its Cover Art Archive front cover into the `covers/downloaded/`
-//! cache. GATED: nothing here touches the network unless the `cover_download`
-//! module is enabled (default off). Writes ONLY under the XDG cover cache.
+//! cache when the local cover pipeline has no usable image. Writes ONLY under
+//! the XDG cover cache.
 
 use std::path::PathBuf;
 use std::time::Duration;

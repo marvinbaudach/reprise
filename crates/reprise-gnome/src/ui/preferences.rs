@@ -12,7 +12,6 @@ use reprise_core::library::settings::{
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::cover_download_batch::CoverDownloadBatch;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::preference_playback::build_equalizer_surface;
@@ -153,7 +152,6 @@ pub(super) struct PreferencesContext {
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
     pub(super) equalizer_surfaces: RefCell<Vec<gtk4::Widget>>,
     pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
-    pub(super) cover_batch: Rc<CoverDownloadBatch>,
     pub(super) listenbrainz: Rc<ScrobbleRuntime>,
     pub(super) syncing_listenbrainz: Cell<bool>,
     pub(super) listenbrainz_activation_pending: Cell<bool>,
@@ -177,7 +175,6 @@ impl PreferencesContext {
         library_player_bar: &LibraryPlayerBarShell,
         scan_button: &gtk4::Button,
         player: Option<&Rc<PlayerController>>,
-        cover_batch: &Rc<CoverDownloadBatch>,
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
@@ -198,7 +195,6 @@ impl PreferencesContext {
             equalizer_controls: RefCell::new(Vec::new()),
             equalizer_surfaces: RefCell::new(Vec::new()),
             replaygain_mode: RefCell::new(None),
-            cover_batch: cover_batch.clone(),
             listenbrainz: listenbrainz.clone(),
             syncing_listenbrainz: Cell::new(false),
             listenbrainz_activation_pending: Cell::new(false),
@@ -664,14 +660,7 @@ impl PreferencesContext {
                     return;
                 }
                 let active = row.is_active();
-                if descriptor.id == "cover_download" {
-                    if let Some(action) = context
-                        .window
-                        .lookup_action(crate::ui::primary_menu::ACTION_DOWNLOAD_MISSING_COVERS)
-                    {
-                        action.change_state(&active.to_variant());
-                    }
-                } else if descriptor.id == "listenbrainz" {
+                if descriptor.id == "listenbrainz" {
                     context.change_listenbrainz_activation(row, active);
                 } else if descriptor.id == "lastfm" {
                     context.change_lastfm_activation(row, active);
@@ -709,9 +698,7 @@ impl PreferencesContext {
                 );
             }
             group.add(&row);
-            if descriptor.id == "cover_download" {
-                self.add_cover_download_progress(&group);
-            } else if descriptor.id == "listenbrainz" {
+            if descriptor.id == "listenbrainz" {
                 self.add_listenbrainz_account(&group, &row);
             } else if descriptor.id == "lastfm" {
                 self.add_lastfm_account(&group, &row);
@@ -749,7 +736,7 @@ mod tests {
 
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {
-        assert!(plugin_applies_live("cover_download"));
+        assert!(!plugin_applies_live("cover_download"));
         assert!(plugin_applies_live("listenbrainz"));
         assert!(plugin_applies_live("lastfm"));
         assert!(plugin_applies_live("artist_news"));

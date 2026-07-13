@@ -170,7 +170,7 @@ mod tests {
         gtk4::init().unwrap();
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         reprise_core::db::migrate(&conn).unwrap();
-        let runtime = crate::ui::cover_download_worker::setup(&conn);
+        let runtime = crate::ui::cover_download_worker::setup();
         let conn = Rc::new(RefCell::new(conn));
         let track_list = Rc::new(TrackList::new(
             conn.clone(),

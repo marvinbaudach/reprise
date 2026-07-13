@@ -110,9 +110,10 @@ The detailed live ledger of confirmed and pending checks is
 `docs/agent-workflow/MANUAL-QA.md`; keep it synchronized with every manual pass.
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
-  chooser. Cover download must default off. A detected Rhythmbox installation
-  must show a clearly default-off `Column layout` choice in the one-time import
-  section; no false offer appears without it and no later menu/Preferences entry exists.
+  chooser. The copy must disclose automatic cover lookup without showing a
+  disable switch. A detected Rhythmbox installation must show a clearly
+  default-off `Column layout` choice in the one-time import section; no false
+  offer appears without it and no later menu/Preferences entry exists.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
