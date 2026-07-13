@@ -81,6 +81,7 @@ pub mod sidebar;
 pub mod sidebar_dnd;
 pub mod sidebar_export;
 mod sidebar_playlist_creation;
+mod sidebar_presentation;
 pub mod sidebar_session;
 pub mod status_bar;
 pub mod strings;

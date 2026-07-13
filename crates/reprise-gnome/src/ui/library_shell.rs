@@ -57,6 +57,7 @@ pub(super) fn build(
         .content(&content_page)
         .collapsed(true)
         .build();
+    super::sidebar_presentation::style_split_view(&split_view);
     let condition = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MinWidth,
         800.0,
