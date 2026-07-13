@@ -13,7 +13,7 @@ use gtk4::glib;
 
 use reprise_core::cover::{resolve_source, thumbnail, ThumbnailSize};
 
-use crate::ui::cover_download_worker::{CoverDownloadRuntime, DownloadRequest};
+use crate::ui::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
 
 /// Symbolic placeholder shown when a track has no cover (or while loading /
 /// on error). No decode — just an icon name GTK already ships.
@@ -118,13 +118,14 @@ impl CoverLoader {
                 if worker
                     .try_send(DownloadRequest {
                         track_path: path_owned.clone(),
+                        skip_if_covered: false,
                         response,
                     })
                     .is_err()
                 {
                     return;
                 }
-                let Ok(Some(downloaded_path)) = result.recv().await else {
+                let Ok(DownloadOutcome::Downloaded(downloaded_path)) = result.recv().await else {
                     return;
                 };
                 if current.get() != token {
