@@ -2,8 +2,10 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-13-synchronized-lyrics-design.md`
 
-**Baseline:** synchronize current `main` after the in-flight Preferences lock
-is released, then record the exact workspace/display baseline before Task 1.
+**Baseline:** `e7c5f5f` in the isolated `reprise-agentB` worktree while the
+Preferences task owns `main`; record the exact workspace/display baseline
+before Task 1. Synchronize the completed Preferences commits before local
+integration, never by modifying its in-flight worktree.
 
 ## Global constraints
 
