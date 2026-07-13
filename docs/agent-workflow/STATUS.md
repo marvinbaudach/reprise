@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Artist News panel and sidebar QA fixes
+SINCE:    2026-07-13 19:40 CEST
 ```
 
-_As of 2026-07-13 16:05 CEST: Codex merged the completed header/sidebar feature and is releasing the lock._
+_As of 2026-07-13 19:40 CEST: Codex is addressing joint-review feedback for the Artist News panel and sidebar._
 
 ## Current position
 
