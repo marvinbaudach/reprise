@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Remove manual color-scheme controls; always follow system
-SINCE:    2026-07-13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex claimed the lock for the system-only appearance follow-up._
+_As of 2026-07-13: the system-only appearance follow-up is complete and the lock is free._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-preferences-visual-controls.md` (3 tasks).
-- **Last completed:** **Preferences visual controls** (`a9208b5`, merged as `15b2b74`) — native
-  Appearance and Player Bar cards plus immediate, persistent Library Window controls with rollback.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-system-color-scheme.md` (1 task).
+- **Last completed:** **System-only appearance** (`4f2581c`, merged as `6eee50f`) — Reprise always
+  follows libadwaita's system color scheme and no longer exposes or persists Light/Dark overrides.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `a9208b5`.
+- **Main implementation:** `4f2581c`.
 
 ## Done so far (compact)
 
@@ -58,8 +58,8 @@ _As of 2026-07-13: Codex claimed the lock for the system-only appearance follow-
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
-- ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent theme,
-  layout, library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
+- ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent layout,
+  library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
   live controls; isolated runtime persistence and full release QA green.
 - ✅ **Selectable compact-player layouts**: persistent Bar, Cover, Pill and Card roots share one
   controller, cover pipeline, queue and accessible menu; visible buttons, right-click, Shift+F10,
@@ -130,9 +130,10 @@ _As of 2026-07-13: Codex claimed the lock for the system-only appearance follow-
 - ✅ **Compact playback equalizer**: Enable and Preset remain native settings rows while ten
   accessible vertical scales share one horizontally scrollable card with live dB labels and
   synchronized preset, persistence, backend-failure, and disabled-state behavior.
-- ✅ **Preferences visual controls**: Appearance uses native System/Light/Dark preview cards;
-  Layout uses Top/Bottom Player Bar previews and persistent Sidebar, filter bar, Information panel,
-  status line and density controls that apply only after successful storage and rollback on error.
+- ✅ **Preferences visual controls**: Appearance follows the system color scheme and retains only
+  window-decoration configuration; Layout uses Top/Bottom Player Bar previews and persistent Sidebar,
+  filter bar, Information panel, status line and density controls that apply only after successful
+  storage and rollback on error.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
