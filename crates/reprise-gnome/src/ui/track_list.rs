@@ -66,6 +66,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::browse_bar::BrowseBar;
+use crate::ui::browse_filter_count;
 use crate::ui::column_layout::{self, ColumnId, ColumnRegistry};
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
@@ -777,6 +778,7 @@ pub(super) fn reload(shared: &Rc<Shared>) {
     } else {
         shared.model.n_items() as usize
     };
+    browse_filter_count::update(&shared.browse_bar, &shared.conn, &source, count, has_filter);
     apply_empty_state(shared, empty_state_for(count, has_filter, &source));
 
     tracing::info!(
