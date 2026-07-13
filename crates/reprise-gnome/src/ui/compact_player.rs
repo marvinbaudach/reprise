@@ -1,19 +1,21 @@
-//! Compact playback surface fed by the same `PlayerController::sync_*` path
-//! as the library bar and Now Playing page.
+//! Four compact playback layouts fed by the same `PlayerController::sync_*`
+//! path as the library bar and Now Playing page.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::{gdk, prelude::*};
 use reprise_core::format::format_duration;
+use reprise_core::library::settings::CompactLayout;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
+use super::compact_player_layouts::{self, LayoutMetrics, LayoutWidgets};
+use super::compact_player_menu::{self, CompactMenu};
 use super::compact_player_state::{normalized_position, volume_percent, CompactPresentation};
 use super::cover_loader::CoverLoader;
 use super::player_bar::{
-    ICON_NEXT, ICON_PAUSE, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_REPEAT_ONE,
-    ICON_SHUFFLE, REPEAT_OFF_CSS_CLASS,
+    ICON_PAUSE, ICON_PLAY, ICON_REPEAT_ALL, ICON_REPEAT_ONE, REPEAT_OFF_CSS_CLASS,
 };
 use super::player_bar_seek::{
     should_apply_position_tick, should_clear_drag_guard_on_track_change,
@@ -22,138 +24,113 @@ use super::player_bar_seek::{
 };
 use super::strings;
 
-const COVER_SIZE: i32 = 64;
-const INFO_WIDTH: i32 = 150;
 const ZERO_TIME: &str = "0:00";
-const VOLUME_ICONS: [&str; 4] = [
-    "audio-volume-muted-symbolic",
-    "audio-volume-low-symbolic",
-    "audio-volume-medium-symbolic",
-    "audio-volume-high-symbolic",
-];
+type RestoreCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 pub(super) struct CompactPlayer {
-    root: gtk4::Box,
-    cover: gtk4::Image,
-    title: gtk4::Label,
-    artist: gtk4::Label,
-    shuffle: gtk4::ToggleButton,
-    previous: gtk4::Button,
-    play_pause: gtk4::Button,
-    next: gtk4::Button,
-    repeat: gtk4::Button,
-    position: gtk4::Label,
-    duration: gtk4::Label,
-    scale: gtk4::Scale,
-    volume: gtk4::ScaleButton,
-    presentation: RefCell<CompactPresentation>,
+    stack: gtk4::Stack,
+    views: Vec<LayoutWidgets>,
+    menu: CompactMenu,
+    layout: Cell<CompactLayout>,
+    presentation: Rc<RefCell<CompactPresentation>>,
     updating_scale: Rc<Cell<bool>>,
     dragging: Rc<Cell<bool>>,
     pointer_down: Rc<Cell<bool>>,
-    seek_gesture: RefCell<Option<gtk4::GestureClick>>,
+    seek_gestures: RefCell<Vec<gtk4::GestureClick>>,
     last_duration_ms: Cell<i64>,
     updating_shuffle: Rc<Cell<bool>>,
     updating_volume: Rc<Cell<bool>>,
+    on_restore: RestoreCallback,
 }
 
 impl CompactPlayer {
     pub(super) fn new() -> Self {
-        let cover = gtk4::Image::new();
-        cover.set_pixel_size(COVER_SIZE);
-        CoverLoader::set_placeholder(&cover);
-
-        let title = track_label();
-        title.add_css_class("heading");
-        let artist = track_label();
-        artist.add_css_class("dim-label");
-        let info = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        info.set_width_request(INFO_WIDTH);
-        info.append(&title);
-        info.append(&artist);
-
-        let shuffle = gtk4::ToggleButton::builder()
-            .icon_name(ICON_SHUFFLE)
-            .tooltip_text(strings::text(strings::SHUFFLE))
-            .build();
-        let previous = icon_button(ICON_PREVIOUS, strings::PREVIOUS);
-        let play_pause = icon_button(ICON_PLAY, strings::PLAY);
-        play_pause.add_css_class("circular");
-        play_pause.add_css_class("suggested-action");
-        let next = icon_button(ICON_NEXT, strings::NEXT);
-        let repeat = icon_button(ICON_REPEAT_ALL, strings::REPEAT);
-
-        let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        for button in [
-            shuffle.upcast_ref::<gtk4::Widget>(),
-            previous.upcast_ref(),
-            play_pause.upcast_ref(),
-            next.upcast_ref(),
-            repeat.upcast_ref(),
-        ] {
-            controls.append(button);
+        let stack = gtk4::Stack::new();
+        stack.set_transition_type(gtk4::StackTransitionType::None);
+        let views: Vec<_> = [
+            CompactLayout::Bar,
+            CompactLayout::Cover,
+            CompactLayout::Pill,
+            CompactLayout::Card,
+        ]
+        .into_iter()
+        .map(compact_player_layouts::build)
+        .collect();
+        for view in &views {
+            stack.add_named(
+                &view.root,
+                Some(compact_player_layouts::layout_token(view.layout)),
+            );
         }
-
-        let position = gtk4::Label::new(Some(ZERO_TIME));
-        let duration = gtk4::Label::new(Some(ZERO_TIME));
-        let scale = gtk4::Scale::new(gtk4::Orientation::Horizontal, None::<&gtk4::Adjustment>);
-        scale.set_range(0.0, 1.0);
-        scale.set_draw_value(false);
-        scale.set_hexpand(true);
-        scale.set_tooltip_text(Some(&strings::text(strings::PLAYBACK_POSITION)));
-        let seek = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        seek.append(&position);
-        seek.append(&scale);
-        seek.append(&duration);
-        let center = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        center.set_hexpand(true);
-        center.append(&controls);
-        center.append(&seek);
-
-        let volume = gtk4::ScaleButton::new(0.0, 1.0, 0.05, &VOLUME_ICONS);
-        volume.set_value(1.0);
-        volume.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
-
-        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        root.set_margin_top(12);
-        root.set_margin_bottom(12);
-        root.set_margin_start(12);
-        root.set_margin_end(12);
-        root.append(&cover);
-        root.append(&info);
-        root.append(&center);
-        root.append(&volume);
-        root.set_sensitive(false);
+        let menu = CompactMenu::build(CompactLayout::Bar);
+        stack.insert_action_group("compact", Some(&menu.action_group));
 
         let compact = Self {
-            root,
-            cover,
-            title,
-            artist,
-            shuffle,
-            previous,
-            play_pause,
-            next,
-            repeat,
-            position,
-            duration,
-            scale,
-            volume,
-            presentation: RefCell::new(CompactPresentation::default()),
+            stack,
+            views,
+            menu,
+            layout: Cell::new(CompactLayout::Bar),
+            presentation: Rc::new(RefCell::new(CompactPresentation::default())),
             updating_scale: Rc::new(Cell::new(false)),
             dragging: Rc::new(Cell::new(false)),
             pointer_down: Rc::new(Cell::new(false)),
-            seek_gesture: RefCell::new(None),
+            seek_gestures: RefCell::new(Vec::new()),
             last_duration_ms: Cell::new(0),
             updating_shuffle: Rc::new(Cell::new(false)),
             updating_volume: Rc::new(Cell::new(false)),
+            on_restore: Rc::new(RefCell::new(None)),
         };
+        compact.wire_cover_mirror();
+        compact.wire_menu_openers();
+        compact.wire_restore_buttons();
         compact.set_repeat_indicator(Repeat::Off);
         compact.refresh_sensitivity();
         compact
     }
 
     pub(super) fn cover_image(&self) -> &gtk4::Image {
-        &self.cover
+        &self.views[0].cover
+    }
+
+    pub(super) fn set_cover_placeholder(&self) {
+        for view in &self.views {
+            CoverLoader::set_placeholder(&view.cover);
+        }
+    }
+
+    pub(super) fn layout(&self) -> CompactLayout {
+        self.layout.get()
+    }
+
+    pub(super) fn set_layout(&self, layout: CompactLayout) {
+        self.layout.set(layout);
+        self.stack
+            .set_visible_child_name(compact_player_layouts::layout_token(layout));
+        self.menu.set_layout(layout);
+        let metrics = self.metrics();
+        tracing::debug!(
+            ?layout,
+            width = metrics.width,
+            height = metrics.height,
+            "compact layout selected"
+        );
+    }
+
+    pub(super) fn metrics(&self) -> LayoutMetrics {
+        compact_player_layouts::metrics(self.layout())
+    }
+
+    pub(super) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
+        *self.on_restore.borrow_mut() = Some(callback.clone());
+        self.menu.set_on_restore(callback);
+    }
+
+    pub(super) fn set_on_layout(&self, callback: Rc<dyn Fn(CompactLayout)>) {
+        self.menu.set_on_layout(callback);
+    }
+
+    pub(super) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
+        self.menu.set_on_preferences(callback);
     }
 
     pub(super) fn set_track(&self, title: &str, artist: &str, album: &str) {
@@ -169,8 +146,15 @@ impl CompactPlayer {
             presentation.artist = artist.to_string();
             presentation.album = album.to_string();
         }
-        self.title.set_text(title);
-        self.artist.set_text(artist);
+        for view in &self.views {
+            view.title.set_text(title);
+            view.artist.set_text(artist);
+            view.album.set_text(album);
+            view.album.set_visible(
+                compact_player_layouts::visible_detail_rows(album, None)
+                    .contains(&compact_player_layouts::MetadataRow::Album),
+            );
+        }
     }
 
     pub(super) fn clear_track(&self) {
@@ -181,24 +165,32 @@ impl CompactPlayer {
             self.dragging.set(false);
         }
         self.presentation.borrow_mut().clear_track();
-        self.title.set_text("");
-        self.artist.set_text("");
-        self.position.set_text(ZERO_TIME);
-        self.duration.set_text(ZERO_TIME);
-        CoverLoader::set_placeholder(&self.cover);
+        for view in &self.views {
+            view.title.set_text("");
+            view.artist.set_text("");
+            view.album.set_text("");
+            view.album.set_visible(false);
+            view.position.set_text(ZERO_TIME);
+            view.duration.set_text(ZERO_TIME);
+        }
+        self.set_cover_placeholder();
     }
 
     pub(super) fn set_state(&self, state: PlaybackState) {
         self.presentation.borrow_mut().set_playback_state(state);
         let is_playing = state == PlaybackState::Playing;
-        self.play_pause
-            .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
-        self.play_pause
-            .set_tooltip_text(Some(&strings::text(if is_playing {
-                strings::PAUSE
-            } else {
-                strings::PLAY
-            })));
+        let action_label = strings::text(if is_playing {
+            strings::PAUSE
+        } else {
+            strings::PLAY
+        });
+        for view in &self.views {
+            view.play_pause
+                .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
+            view.play_pause.set_tooltip_text(Some(&action_label));
+            view.play_pause
+                .update_property(&[gtk4::accessible::Property::Label(&action_label)]);
+        }
         if state == PlaybackState::Stopped {
             self.pointer_down.set(false);
             self.dragging.set(false);
@@ -222,30 +214,42 @@ impl CompactPlayer {
             tracing::warn!("compact-player drag guard was stuck; self-healing");
             self.dragging.set(false);
         }
-        if should_apply_position_tick(self.dragging.get()) {
-            self.updating_scale.set(true);
-            if should_update_range(self.last_duration_ms.get(), duration_ms) {
-                self.last_duration_ms.set(duration_ms);
-                self.scale.set_range(0.0, duration_ms.max(1) as f64);
+        let update_range = should_update_range(self.last_duration_ms.get(), duration_ms);
+        self.updating_scale.set(true);
+        for view in &self.views {
+            if update_range {
+                view.scale.set_range(0.0, duration_ms.max(1) as f64);
             }
-            self.scale.set_value(position_ms as f64);
-            self.updating_scale.set(false);
+            if should_apply_position_tick(self.dragging.get()) {
+                view.scale.set_value(position_ms as f64);
+            }
+            view.position.set_text(&format_duration(position_ms));
+            view.duration.set_text(&format_duration(duration_ms));
         }
-        self.position.set_text(&format_duration(position_ms));
-        self.duration.set_text(&format_duration(duration_ms));
+        self.updating_scale.set(false);
+        if update_range {
+            self.last_duration_ms.set(duration_ms);
+        }
     }
 
     pub(super) fn set_transport_enabled(&self, enabled: bool) {
         self.presentation.borrow_mut().transport_enabled = enabled;
-        self.previous.set_sensitive(enabled);
-        self.next.set_sensitive(enabled);
+        for view in &self.views {
+            view.previous.set_sensitive(enabled);
+            view.next.set_sensitive(enabled);
+        }
         self.refresh_sensitivity();
     }
 
     pub(super) fn set_shuffle_indicator(&self, active: bool) {
         self.presentation.borrow_mut().shuffled = active;
         self.updating_shuffle.set(true);
-        self.shuffle.set_active(active);
+        for view in &self.views {
+            if let Some(shuffle) = &view.shuffle {
+                shuffle.set_active(active);
+            }
+        }
+        self.menu.set_shuffle(active);
         self.updating_shuffle.set(false);
     }
 
@@ -256,12 +260,17 @@ impl CompactPlayer {
             Repeat::All => (ICON_REPEAT_ALL, false),
             Repeat::One => (ICON_REPEAT_ONE, false),
         };
-        self.repeat.set_icon_name(icon);
-        if off {
-            self.repeat.add_css_class(REPEAT_OFF_CSS_CLASS);
-        } else {
-            self.repeat.remove_css_class(REPEAT_OFF_CSS_CLASS);
+        for view in &self.views {
+            if let Some(button) = &view.repeat {
+                button.set_icon_name(icon);
+                if off {
+                    button.add_css_class(REPEAT_OFF_CSS_CLASS);
+                } else {
+                    button.remove_css_class(REPEAT_OFF_CSS_CLASS);
+                }
+            }
         }
+        self.menu.set_repeat(repeat);
     }
 
     pub(super) fn set_volume_indicator(&self, volume: f64) {
@@ -272,50 +281,103 @@ impl CompactPlayer {
         };
         self.presentation.borrow_mut().volume_percent = volume_percent(volume);
         self.updating_volume.set(true);
-        self.volume.set_value(volume);
+        for view in &self.views {
+            if let Some(button) = &view.volume {
+                button.set_value(volume);
+            }
+        }
+        self.menu.set_volume(volume);
         self.updating_volume.set(false);
     }
 
-    pub(super) fn connect_play_pause(&self, f: impl Fn() + 'static) {
-        self.play_pause.connect_clicked(move |_| f());
+    pub(super) fn connect_play_pause(&self, callback: impl Fn() + 'static) {
+        let callback = Rc::new(callback);
+        for view in &self.views {
+            let callback = callback.clone();
+            view.play_pause.connect_clicked(move |_| callback());
+        }
     }
 
-    pub(super) fn connect_previous(&self, f: impl Fn() + 'static) {
-        self.previous.connect_clicked(move |_| f());
+    pub(super) fn connect_previous(&self, callback: impl Fn() + 'static) {
+        connect_buttons(self.views.iter().map(|view| &view.previous), callback);
     }
 
-    pub(super) fn connect_next(&self, f: impl Fn() + 'static) {
-        self.next.connect_clicked(move |_| f());
+    pub(super) fn connect_next(&self, callback: impl Fn() + 'static) {
+        connect_buttons(self.views.iter().map(|view| &view.next), callback);
     }
 
-    pub(super) fn connect_shuffle_toggled(&self, f: impl Fn(bool) + 'static) {
-        let updating = self.updating_shuffle.clone();
-        self.shuffle.connect_toggled(move |button| {
-            if !updating.get() {
-                f(button.is_active());
+    pub(super) fn connect_shuffle_toggled(&self, callback: impl Fn(bool) + 'static) {
+        let callback = Rc::new(callback);
+        for view in &self.views {
+            let Some(shuffle) = &view.shuffle else {
+                continue;
+            };
+            let callback = callback.clone();
+            let updating = self.updating_shuffle.clone();
+            shuffle.connect_toggled(move |button| {
+                if !updating.get() {
+                    callback(button.is_active());
+                }
+            });
+        }
+        self.menu.set_on_shuffle(callback);
+    }
+
+    pub(super) fn connect_repeat_clicked(&self, callback: impl Fn() + 'static) {
+        let callback = Rc::new(callback);
+        for view in &self.views {
+            let Some(repeat) = &view.repeat else {
+                continue;
+            };
+            let callback = callback.clone();
+            repeat.connect_clicked(move |_| callback());
+        }
+        let presentation = self.presentation.clone();
+        self.menu.set_on_repeat(Rc::new(move |desired| {
+            let current = presentation.borrow().repeat;
+            let steps = repeat_steps(current, desired);
+            for _ in 0..steps {
+                callback();
             }
-        });
+        }));
     }
 
-    pub(super) fn connect_repeat_clicked(&self, f: impl Fn() + 'static) {
-        self.repeat.connect_clicked(move |_| f());
+    pub(super) fn connect_volume_changed(&self, callback: impl Fn(f64) + 'static) {
+        let callback = Rc::new(callback);
+        for view in &self.views {
+            let Some(volume) = &view.volume else {
+                continue;
+            };
+            let callback = callback.clone();
+            let updating = self.updating_volume.clone();
+            volume.connect_value_changed(move |_, value| {
+                if !updating.get() {
+                    callback(value);
+                }
+            });
+        }
+        self.menu.set_on_volume(callback);
     }
 
-    pub(super) fn connect_volume_changed(&self, f: impl Fn(f64) + 'static) {
-        let updating = self.updating_volume.clone();
-        self.volume.connect_value_changed(move |_, value| {
-            if !updating.get() {
-                f(value);
-            }
-        });
+    pub(super) fn connect_seek(&self, callback: impl Fn(i64) + 'static) {
+        let callback = Rc::new(callback);
+        let mut gestures = Vec::with_capacity(self.views.len());
+        for view in &self.views {
+            self.wire_seek(view, &callback, &mut gestures);
+        }
+        *self.seek_gestures.borrow_mut() = gestures;
     }
 
-    pub(super) fn connect_seek(&self, f: impl Fn(i64) + 'static) {
-        let f = Rc::new(f);
+    fn wire_seek(
+        &self,
+        view: &LayoutWidgets,
+        callback: &Rc<impl Fn(i64) + 'static>,
+        gestures: &mut Vec<gtk4::GestureClick>,
+    ) {
         let updating = self.updating_scale.clone();
         let dragging = self.dragging.clone();
-        let changed = f.clone();
-        self.scale.connect_value_changed(move |scale| {
+        let changed = callback.clone();
+        view.scale.connect_value_changed(move |scale| {
             if !updating.get() && !dragging.get() {
                 changed(scale.value() as i64);
             }
@@ -330,14 +392,15 @@ impl CompactPlayer {
         let end_drag: Rc<dyn Fn()> = {
             let dragging = self.dragging.clone();
             let pointer_down = self.pointer_down.clone();
-            let scale = self.scale.downgrade();
+            let scale = view.scale.downgrade();
+            let callback = callback.clone();
             Rc::new(move || {
                 pointer_down.set(false);
                 if !dragging.replace(false) {
                     return;
                 }
                 if let Some(scale) = scale.upgrade() {
-                    f(scale.value() as i64);
+                    callback(scale.value() as i64);
                 }
             })
         };
@@ -366,7 +429,7 @@ impl CompactPlayer {
             }
             gtk4::glib::Propagation::Proceed
         });
-        self.scale.add_controller(raw);
+        view.scale.add_controller(raw);
 
         let released = end_drag.clone();
         click.connect_released(move |_, _, _, _| released());
@@ -386,15 +449,81 @@ impl CompactPlayer {
                 stopped();
             }
         });
-        *self.seek_gesture.borrow_mut() = Some(click.clone());
-        self.scale.add_controller(click);
+        view.scale.add_controller(click.clone());
+        gestures.push(click);
+    }
+
+    fn wire_cover_mirror(&self) {
+        let secondaries: Vec<_> = self
+            .views
+            .iter()
+            .skip(1)
+            .map(|view| view.cover.clone())
+            .collect();
+        self.views[0]
+            .cover
+            .connect_notify_local(Some("paintable"), move |primary, _| {
+                let paintable = primary.paintable();
+                for image in &secondaries {
+                    image.set_paintable(paintable.as_ref());
+                }
+            });
+    }
+
+    fn wire_menu_openers(&self) {
+        for view in &self.views {
+            let popover = self.menu.popover.clone();
+            let anchor = view.menu.clone();
+            view.menu.connect_clicked(move |_| {
+                compact_player_menu::popup_at(&popover, anchor.upcast_ref(), None);
+            });
+
+            let click = gtk4::GestureClick::new();
+            click.set_button(gdk::BUTTON_SECONDARY);
+            let popover = self.menu.popover.clone();
+            let anchor = view.root.clone();
+            click.connect_pressed(move |_, _, x, y| {
+                let interactive = anchor
+                    .pick(x, y, gtk4::PickFlags::DEFAULT)
+                    .is_some_and(|picked| is_interactive_descendant(&picked, &anchor));
+                if !compact_player_menu::accepts_context_menu(interactive) {
+                    return;
+                }
+                compact_player_menu::popup_at(&popover, &anchor, Some((x as i32, y as i32)));
+            });
+            view.root.add_controller(click);
+
+            let keys = gtk4::EventControllerKey::new();
+            let popover = self.menu.popover.clone();
+            let anchor = view.menu.clone();
+            keys.connect_key_pressed(move |_, key, _, modifiers| {
+                if !compact_player_menu::is_context_menu_shortcut(key, modifiers) {
+                    return gtk4::glib::Propagation::Proceed;
+                }
+                compact_player_menu::popup_at(&popover, anchor.upcast_ref(), None);
+                gtk4::glib::Propagation::Stop
+            });
+            view.root.add_controller(keys);
+        }
+    }
+
+    fn wire_restore_buttons(&self) {
+        for view in &self.views {
+            let callback = self.on_restore.clone();
+            view.restore.connect_clicked(move |_| {
+                let callback = callback.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            });
+        }
     }
 
     fn seek_gesture_is_active(&self) -> bool {
-        self.seek_gesture
+        self.seek_gestures
             .borrow()
-            .as_ref()
-            .is_some_and(gtk4::prelude::GestureExt::is_active)
+            .iter()
+            .any(gtk4::prelude::GestureExt::is_active)
     }
 
     fn refresh_sensitivity(&self) {
@@ -403,22 +532,159 @@ impl CompactPlayer {
             presentation.state,
             presentation.transport_enabled,
         );
-        self.root.set_sensitive(sensitive);
-        self.play_pause.set_sensitive(sensitive);
-        self.scale
-            .set_sensitive(presentation.state != PlaybackState::Stopped);
+        for view in &self.views {
+            view.play_pause
+                .set_sensitive(compact_player_layouts::control_is_sensitive(
+                    compact_player_layouts::ControlRole::Playback,
+                    sensitive,
+                ));
+            view.scale
+                .set_sensitive(presentation.state != PlaybackState::Stopped);
+            view.menu
+                .set_sensitive(compact_player_layouts::control_is_sensitive(
+                    compact_player_layouts::ControlRole::WindowAction,
+                    sensitive,
+                ));
+            view.restore
+                .set_sensitive(compact_player_layouts::control_is_sensitive(
+                    compact_player_layouts::ControlRole::WindowAction,
+                    sensitive,
+                ));
+        }
     }
 }
 
-fn track_label() -> gtk4::Label {
-    let label = gtk4::Label::new(None);
-    label.set_xalign(0.0);
-    label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    label
+fn connect_buttons<'a>(
+    buttons: impl Iterator<Item = &'a gtk4::Button>,
+    callback: impl Fn() + 'static,
+) {
+    let callback = Rc::new(callback);
+    for button in buttons {
+        let callback = callback.clone();
+        button.connect_clicked(move |_| callback());
+    }
 }
 
-fn icon_button(icon: &str, tooltip: &str) -> gtk4::Button {
-    let button = gtk4::Button::from_icon_name(icon);
-    button.set_tooltip_text(Some(&strings::text(tooltip)));
-    button
+fn repeat_steps(current: Repeat, desired: Repeat) -> usize {
+    match (current, desired) {
+        (a, b) if a == b => 0,
+        (Repeat::Off, Repeat::All) | (Repeat::All, Repeat::One) | (Repeat::One, Repeat::Off) => 1,
+        _ => 2,
+    }
+}
+
+fn is_interactive_descendant(widget: &gtk4::Widget, root: &gtk4::Widget) -> bool {
+    let mut current = Some(widget.clone());
+    while let Some(widget) = current {
+        if widget.is::<gtk4::Button>()
+            || widget.is::<gtk4::Scale>()
+            || widget.is::<gtk4::ScaleButton>()
+        {
+            return true;
+        }
+        if widget == *root {
+            break;
+        }
+        current = widget.parent();
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_layout_contract(layout: CompactLayout) {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let compact = CompactPlayer::new();
+        compact.set_layout(layout);
+        let view = compact
+            .views
+            .iter()
+            .find(|view| view.layout == layout)
+            .unwrap();
+        assert!(view.cover.parent().is_some());
+        assert!(view.title.parent().is_some());
+        assert!(view.artist.parent().is_some());
+        assert_eq!(view.previous.tooltip_text().as_deref(), Some("Previous"));
+        assert_eq!(view.play_pause.tooltip_text().as_deref(), Some("Play"));
+        assert_eq!(view.next.tooltip_text().as_deref(), Some("Next"));
+        assert_eq!(
+            view.scale.tooltip_text().as_deref(),
+            Some("Playback position")
+        );
+        assert_eq!(
+            view.menu.tooltip_text().as_deref(),
+            Some("Compact player menu")
+        );
+        assert_eq!(
+            view.restore.tooltip_text().as_deref(),
+            Some("Return to Library")
+        );
+        let metrics = compact.metrics();
+        let (_, natural_width, _, _) = view.root.measure(gtk4::Orientation::Horizontal, -1);
+        let (_, natural_height, _, _) = view
+            .root
+            .measure(gtk4::Orientation::Vertical, metrics.width);
+        assert!(
+            natural_width <= metrics.width,
+            "{layout:?} width {natural_width} > {}",
+            metrics.width
+        );
+        assert!(
+            natural_height <= metrics.height,
+            "{layout:?} height {natural_height} > {}",
+            metrics.height
+        );
+        if metrics.direct_shuffle {
+            assert_eq!(
+                view.shuffle.as_ref().unwrap().tooltip_text().as_deref(),
+                Some("Shuffle")
+            );
+            assert_eq!(
+                view.repeat.as_ref().unwrap().tooltip_text().as_deref(),
+                Some("Repeat")
+            );
+            assert_eq!(
+                view.volume.as_ref().unwrap().tooltip_text().as_deref(),
+                Some("Volume")
+            );
+        } else {
+            assert!(view.shuffle.is_none());
+            assert!(view.repeat.is_none());
+            assert!(view.volume.is_none());
+            assert!(compact.menu.action_group.has_action("shuffle"));
+            assert!(compact.menu.action_group.has_action("repeat"));
+            assert_eq!(
+                compact.menu.volume.tooltip_text().as_deref(),
+                Some("Volume")
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn bar_layout_has_required_accessible_controls_and_fits() {
+        assert_layout_contract(CompactLayout::Bar);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn cover_layout_has_required_accessible_controls_and_fits() {
+        assert_layout_contract(CompactLayout::Cover);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn pill_layout_has_required_accessible_controls_and_fits() {
+        assert_layout_contract(CompactLayout::Pill);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn card_layout_has_required_accessible_controls_and_fits() {
+        assert_layout_contract(CompactLayout::Card);
+    }
 }
