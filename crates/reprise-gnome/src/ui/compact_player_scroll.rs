@@ -34,6 +34,16 @@ pub(super) fn install(
     region.add_controller(scroll);
 }
 
+pub(super) fn block_seek_scroll(scale: &gtk4::Scale) {
+    let blocker = gtk4::EventControllerScroll::new(
+        gtk4::EventControllerScrollFlags::BOTH_AXES | gtk4::EventControllerScrollFlags::DISCRETE,
+    );
+    blocker.set_name(Some("compact-seek-scroll-blocker"));
+    blocker.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    blocker.connect_scroll(|_, _, _| gtk4::glib::Propagation::Stop);
+    scale.add_controller(blocker);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
