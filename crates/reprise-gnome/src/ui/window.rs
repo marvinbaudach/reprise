@@ -472,18 +472,29 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             move || minimal_view.toggle()
         },
     );
+    let cover_batch = super::cover_download_batch::CoverDownloadBatch::new(
+        conn,
+        &cover_download,
+        &track_list,
+        player.as_ref(),
+    );
     let minimal_toggle = minimal_view.clone();
+    let toggled_cover_batch = cover_batch.clone();
     primary_menu::install(
         &header,
         &window,
         conn,
         &cover_download,
         &track_list,
-        move || {
-            minimal_toggle.toggle();
+        primary_menu::Callbacks {
+            on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
+            on_preferences: Rc::new(move || preferences.present()),
+            on_cover_download_changed: Rc::new(move |enabled| {
+                toggled_cover_batch.set_enabled(enabled);
+            }),
         },
-        move || preferences.present(),
     );
+    cover_batch.start_if_enabled();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view);
 
