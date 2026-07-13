@@ -1,4 +1,4 @@
-//! Live ListenBrainz worker runtime. HTTP and queue draining stay on a
+//! Live scrobbling worker runtime. HTTP and queue draining stay on a
 //! dedicated thread; only immutable status values cross back to GTK.
 
 use std::cell::{Cell, RefCell};
@@ -10,13 +10,12 @@ use std::time::Duration;
 
 use gtk4::glib;
 use reprise_core::scrobbling::{
-    self, ListenBrainzClient, ScrobblerTransport, TrackMetadata, TransportError,
+    self, ScrobbleProvider, ScrobblerTransport, TrackMetadata, TransportError,
 };
 use rusqlite::Connection;
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
 const MAX_BACKOFF: Duration = Duration::from_secs(5 * 60);
-const SMOKE_API_ROOT_ENV: &str = "REPRISE_SMOKE_LISTENBRAINZ_API_ROOT";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ConnectionStatus {
@@ -50,6 +49,15 @@ struct WorkerControl {
 }
 
 #[derive(Clone, Copy)]
+struct WorkerConfig<'a> {
+    database_path: &'a Path,
+    provider: ScrobbleProvider,
+    service: &'a str,
+    credential: &'a str,
+    generation: u64,
+}
+
+#[derive(Clone, Copy)]
 struct WorkerCoordination<'a> {
     drain_lock: &'a Mutex<()>,
     cancelled: &'a AtomicBool,
@@ -57,38 +65,39 @@ struct WorkerCoordination<'a> {
 
 type StatusCallback = Rc<dyn Fn(ConnectionStatus)>;
 
-pub(super) struct ListenBrainzRuntime {
+pub(super) struct ScrobbleRuntime {
     database_path: PathBuf,
+    provider: ScrobbleProvider,
+    service: &'static str,
     generation: Cell<u64>,
     active: Cell<bool>,
     command: RefCell<Option<WorkerControl>>,
     status: RefCell<ConnectionStatus>,
     subscribers: RefCell<Vec<StatusCallback>>,
     drain_lock: Arc<Mutex<()>>,
-    smoke_api_root: Option<String>,
 }
 
-impl ListenBrainzRuntime {
-    pub(super) fn new(database_path: PathBuf) -> Rc<Self> {
-        let smoke_api_root = smoke_api_root();
+impl ScrobbleRuntime {
+    pub(super) fn new(
+        database_path: PathBuf,
+        provider: ScrobbleProvider,
+        service: &'static str,
+    ) -> Rc<Self> {
         Rc::new(Self {
             database_path,
+            provider,
+            service,
             generation: Cell::new(0),
             active: Cell::new(false),
             command: RefCell::new(None),
             status: RefCell::new(ConnectionStatus::Disabled),
             subscribers: RefCell::new(Vec::new()),
             drain_lock: Arc::new(Mutex::new(())),
-            smoke_api_root,
         })
     }
 
     pub(super) fn is_active(&self) -> bool {
         self.active.get()
-    }
-
-    pub(super) fn smoke_api_is_local(&self) -> bool {
-        self.smoke_api_root.is_some()
     }
 
     pub(super) fn status(&self) -> ConnectionStatus {
@@ -101,7 +110,11 @@ impl ListenBrainzRuntime {
         self.subscribers.borrow_mut().push(callback);
     }
 
-    pub(super) fn configure(self: &Rc<Self>, token: String) {
+    pub(super) fn configure(
+        self: &Rc<Self>,
+        credential: String,
+        transport: Box<dyn ScrobblerTransport>,
+    ) {
         self.stop_worker();
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
@@ -116,20 +129,21 @@ impl ListenBrainzRuntime {
             cancelled: cancelled.clone(),
         });
         let database_path = self.database_path.clone();
+        let provider = self.provider;
+        let service = self.service;
         let drain_lock = self.drain_lock.clone();
-        let client = self
-            .smoke_api_root
-            .as_deref()
-            .map(ListenBrainzClient::with_api_root)
-            .unwrap_or_default();
         std::thread::spawn(move || {
             run_worker(
-                &database_path,
-                &token,
+                WorkerConfig {
+                    database_path: &database_path,
+                    provider,
+                    service,
+                    credential: &credential,
+                    generation,
+                },
                 &command_receiver,
                 &status_sender,
-                generation,
-                &client,
+                transport.as_ref(),
                 WorkerCoordination {
                     drain_lock: &drain_lock,
                     cancelled: &cancelled,
@@ -182,7 +196,7 @@ impl ListenBrainzRuntime {
             .map(|control| control.sender.clone());
         if let Some(sender) = sender {
             if sender.send(command).is_err() {
-                tracing::warn!("ListenBrainz worker is unavailable");
+                tracing::warn!(service = self.service, "scrobbling worker is unavailable");
             }
         }
     }
@@ -204,7 +218,7 @@ impl ListenBrainzRuntime {
     }
 }
 
-impl Drop for ListenBrainzRuntime {
+impl Drop for ScrobbleRuntime {
     fn drop(&mut self) {
         if let Some(control) = self.command.get_mut().take() {
             control.cancelled.store(true, Ordering::Release);
@@ -215,27 +229,6 @@ impl Drop for ListenBrainzRuntime {
 
 fn status_is_current(current_generation: u64, message_generation: u64) -> bool {
     current_generation == message_generation
-}
-
-fn is_loopback_smoke_root(value: &str) -> bool {
-    ["http://127.0.0.1:", "http://[::1]:"]
-        .into_iter()
-        .find_map(|prefix| value.strip_prefix(prefix))
-        .and_then(|remainder| remainder.split('/').next())
-        .is_some_and(|port| port.parse::<u16>().is_ok())
-}
-
-fn smoke_api_root() -> Option<String> {
-    if !cfg!(debug_assertions) {
-        return None;
-    }
-    let value = std::env::var(SMOKE_API_ROOT_ENV).ok()?;
-    if is_loopback_smoke_root(&value) {
-        Some(value)
-    } else {
-        tracing::warn!("ignored non-loopback ListenBrainz smoke API root");
-        None
-    }
 }
 
 fn next_backoff(current: Duration) -> Duration {
@@ -259,17 +252,22 @@ fn wait_for_retry(
     }
 }
 
-fn flush_pending<T: ScrobblerTransport>(
+fn flush_pending<T: ScrobblerTransport + ?Sized>(
     conn: &Connection,
+    provider: ScrobbleProvider,
     transport: &T,
-    token: &str,
+    credential: &str,
 ) -> Result<usize, FlushError> {
+    let request_limit = match provider {
+        ScrobbleProvider::ListenBrainz => 1_000,
+        ScrobbleProvider::LastFm => 50,
+    };
     loop {
-        let listens = scrobbling::pending(conn, 1_000)?;
+        let listens = scrobbling::pending_for(conn, provider, request_limit)?;
         if listens.is_empty() {
-            return scrobbling::pending_count(conn).map_err(FlushError::from);
+            return scrobbling::pending_count_for(conn, provider).map_err(FlushError::from);
         }
-        transport.submit(token, &listens)?;
+        transport.submit(credential, &listens)?;
         let ids = listens
             .iter()
             .filter_map(|listen| listen.id)
@@ -277,7 +275,7 @@ fn flush_pending<T: ScrobblerTransport>(
         if ids.len() != listens.len() {
             return Err(FlushError::MissingQueueId);
         }
-        scrobbling::acknowledge(conn, &ids)?;
+        scrobbling::acknowledge_for(conn, provider, &ids)?;
     }
 }
 
@@ -289,28 +287,33 @@ fn publish(
     let _ = sender.try_send((generation, status));
 }
 
-fn pending_or_zero(conn: &Connection) -> usize {
-    scrobbling::pending_count(conn).unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not count pending ListenBrainz listens");
+fn pending_or_zero(conn: &Connection, provider: ScrobbleProvider, service: &str) -> usize {
+    scrobbling::pending_count_for(conn, provider).unwrap_or_else(|error| {
+        tracing::warn!(%error, service, "could not count pending scrobbles");
         0
     })
 }
 
-fn run_worker<T: ScrobblerTransport>(
-    database_path: &Path,
-    token: &str,
+fn run_worker<T: ScrobblerTransport + ?Sized>(
+    config: WorkerConfig<'_>,
     receiver: &mpsc::Receiver<WorkerCommand>,
     status_sender: &async_channel::Sender<(u64, ConnectionStatus)>,
-    generation: u64,
     transport: &T,
     coordination: WorkerCoordination<'_>,
 ) {
+    let WorkerConfig {
+        database_path,
+        provider,
+        service,
+        credential,
+        generation,
+    } = config;
     let conn = match reprise_core::db::open(Some(database_path))
         .and_then(|conn| reprise_core::db::migrate(&conn).map(|()| conn))
     {
         Ok(conn) => conn,
         Err(error) => {
-            tracing::warn!(%error, "could not open ListenBrainz queue");
+            tracing::warn!(%error, service, "could not open scrobbling queue");
             publish(
                 status_sender,
                 generation,
@@ -329,7 +332,7 @@ fn run_worker<T: ScrobblerTransport>(
         }
         if user_name.is_none() {
             publish(status_sender, generation, ConnectionStatus::Connecting);
-            match transport.validate_token(token) {
+            match transport.validate_token(credential) {
                 Ok(user) => {
                     user_name = Some(user);
                     if coordination.cancelled.load(Ordering::Acquire) {
@@ -345,18 +348,18 @@ fn run_worker<T: ScrobblerTransport>(
                         status_sender,
                         generation,
                         ConnectionStatus::Error {
-                            pending: pending_or_zero(&conn),
+                            pending: pending_or_zero(&conn, provider, service),
                         },
                     );
                     return;
                 }
                 Err(error) => {
-                    tracing::warn!(%error, "ListenBrainz validation deferred");
+                    tracing::warn!(%error, service, "scrobbling validation deferred");
                     publish(
                         status_sender,
                         generation,
                         ConnectionStatus::Offline {
-                            pending: pending_or_zero(&conn),
+                            pending: pending_or_zero(&conn, provider, service),
                         },
                     );
                     if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
@@ -371,9 +374,16 @@ fn run_worker<T: ScrobblerTransport>(
             if coordination.cancelled.load(Ordering::Acquire) {
                 return;
             }
-            if let Err(error) = transport.playing_now(token, &track) {
-                if !handle_transport_error(&conn, status_sender, generation, error, &mut user_name)
-                {
+            if let Err(error) = transport.playing_now(credential, &track) {
+                if !handle_transport_error(
+                    &conn,
+                    provider,
+                    service,
+                    status_sender,
+                    generation,
+                    error,
+                    &mut user_name,
+                ) {
                     return;
                 }
                 if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
@@ -391,7 +401,7 @@ fn run_worker<T: ScrobblerTransport>(
                 .drain_lock
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            flush_pending(&conn, transport, token)
+            flush_pending(&conn, provider, transport, credential)
         };
         match flush_result {
             Ok(pending) => {
@@ -406,8 +416,15 @@ fn run_worker<T: ScrobblerTransport>(
                 );
             }
             Err(FlushError::Transport(error)) => {
-                if !handle_transport_error(&conn, status_sender, generation, error, &mut user_name)
-                {
+                if !handle_transport_error(
+                    &conn,
+                    provider,
+                    service,
+                    status_sender,
+                    generation,
+                    error,
+                    &mut user_name,
+                ) {
                     return;
                 }
                 if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
@@ -416,23 +433,23 @@ fn run_worker<T: ScrobblerTransport>(
                 continue;
             }
             Err(FlushError::Queue(error)) => {
-                tracing::warn!(%error, "could not drain ListenBrainz queue");
+                tracing::warn!(%error, service, "could not drain scrobbling queue");
                 publish(
                     status_sender,
                     generation,
                     ConnectionStatus::Error {
-                        pending: pending_or_zero(&conn),
+                        pending: pending_or_zero(&conn, provider, service),
                     },
                 );
                 return;
             }
             Err(FlushError::MissingQueueId) => {
-                tracing::warn!("ListenBrainz queue returned a row without an id");
+                tracing::warn!(service, "scrobbling queue returned a row without an id");
                 publish(
                     status_sender,
                     generation,
                     ConnectionStatus::Error {
-                        pending: pending_or_zero(&conn),
+                        pending: pending_or_zero(&conn, provider, service),
                     },
                 );
                 return;
@@ -444,9 +461,11 @@ fn run_worker<T: ScrobblerTransport>(
                 if coordination.cancelled.load(Ordering::Acquire) {
                     return;
                 }
-                if let Err(error) = transport.playing_now(token, &track) {
+                if let Err(error) = transport.playing_now(credential, &track) {
                     if !handle_transport_error(
                         &conn,
+                        provider,
+                        service,
                         status_sender,
                         generation,
                         error,
@@ -467,6 +486,8 @@ fn run_worker<T: ScrobblerTransport>(
 
 fn handle_transport_error(
     conn: &Connection,
+    provider: ScrobbleProvider,
+    service: &str,
     status_sender: &async_channel::Sender<(u64, ConnectionStatus)>,
     generation: u64,
     error: TransportError,
@@ -482,7 +503,7 @@ fn handle_transport_error(
                 status_sender,
                 generation,
                 ConnectionStatus::Error {
-                    pending: pending_or_zero(conn),
+                    pending: pending_or_zero(conn, provider, service),
                 },
             );
             false
@@ -495,7 +516,7 @@ fn handle_transport_error(
                 status_sender,
                 generation,
                 ConnectionStatus::Offline {
-                    pending: pending_or_zero(conn),
+                    pending: pending_or_zero(conn, provider, service),
                 },
             );
             true
@@ -563,7 +584,10 @@ mod tests {
             result: Ok(()),
             submitted: submitted.clone(),
         };
-        assert_eq!(flush_pending(&conn, &transport, "token").unwrap(), 0);
+        assert_eq!(
+            flush_pending(&conn, ScrobbleProvider::ListenBrainz, &transport, "token",).unwrap(),
+            0
+        );
         assert_eq!(
             submitted
                 .lock()
@@ -585,7 +609,7 @@ mod tests {
             submitted: Arc::new(Mutex::new(Vec::new())),
         };
         assert!(matches!(
-            flush_pending(&conn, &transport, "token"),
+            flush_pending(&conn, ScrobbleProvider::ListenBrainz, &transport, "token",),
             Err(FlushError::Transport(TransportError::Retryable(503)))
         ));
         assert_eq!(reprise_core::scrobbling::pending_count(&conn).unwrap(), 2);
@@ -600,7 +624,7 @@ mod tests {
             submitted: Arc::new(Mutex::new(Vec::new())),
         };
         assert!(matches!(
-            flush_pending(&conn, &transport, "token"),
+            flush_pending(&conn, ScrobbleProvider::ListenBrainz, &transport, "token",),
             Err(FlushError::Transport(TransportError::Unauthorized))
         ));
         assert_eq!(reprise_core::scrobbling::pending_count(&conn).unwrap(), 2);
@@ -652,15 +676,6 @@ mod tests {
     }
 
     #[test]
-    fn smoke_api_override_accepts_only_explicit_loopback_http_ports() {
-        assert!(is_loopback_smoke_root("http://127.0.0.1:8123"));
-        assert!(is_loopback_smoke_root("http://[::1]:8123/api"));
-        assert!(!is_loopback_smoke_root("https://api.listenbrainz.org"));
-        assert!(!is_loopback_smoke_root("http://127.0.0.1"));
-        assert!(!is_loopback_smoke_root("http://example.test:8123"));
-    }
-
-    #[test]
     fn worker_validates_flushes_and_stops_on_command() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("worker.db");
@@ -679,11 +694,15 @@ mod tests {
         let worker_path = path.clone();
         let handle = std::thread::spawn(move || {
             run_worker(
-                &worker_path,
-                "token",
+                WorkerConfig {
+                    database_path: &worker_path,
+                    provider: ScrobbleProvider::ListenBrainz,
+                    service: "ListenBrainz",
+                    credential: "token",
+                    generation: 42,
+                },
                 &command_receiver,
                 &status_sender,
-                42,
                 &FakeTransport {
                     validation: Ok("tester".to_string()),
                     result: Ok(()),
@@ -716,72 +735,6 @@ mod tests {
         assert_eq!(reprise_core::scrobbling::pending_count(&conn).unwrap(), 0);
     }
 
-    #[test]
-    fn unauthorized_worker_stops_without_deleting_offline_queue() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("worker.db");
-        {
-            let conn = reprise_core::db::open(Some(&path)).unwrap();
-            reprise_core::db::migrate(&conn).unwrap();
-            let source = queued_conn();
-            for listen in reprise_core::scrobbling::pending(&source, 100).unwrap() {
-                reprise_core::scrobbling::enqueue(&conn, &listen).unwrap();
-            }
-        }
-        let (_command_sender, command_receiver) = mpsc::channel();
-        let (status_sender, status_receiver) = async_channel::unbounded();
-        run_worker(
-            &path,
-            "bad-token",
-            &command_receiver,
-            &status_sender,
-            9,
-            &FakeTransport {
-                validation: Err(TransportError::Unauthorized),
-                result: Ok(()),
-                submitted: Arc::new(Mutex::new(Vec::new())),
-            },
-            WorkerCoordination {
-                drain_lock: &Mutex::new(()),
-                cancelled: &AtomicBool::new(false),
-            },
-        );
-        let mut statuses = Vec::new();
-        while let Ok(status) = status_receiver.try_recv() {
-            statuses.push(status);
-        }
-        assert!(statuses.contains(&(9, ConnectionStatus::Unauthorized)));
-        let conn = reprise_core::db::open(Some(&path)).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        assert_eq!(reprise_core::scrobbling::pending_count(&conn).unwrap(), 2);
-    }
-
-    #[test]
-    fn cancelled_worker_performs_no_network_or_status_work() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("cancelled.db");
-        let conn = reprise_core::db::open(Some(&path)).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        drop(conn);
-        let (_command_sender, command_receiver) = mpsc::channel();
-        let (status_sender, status_receiver) = async_channel::unbounded();
-        let cancelled = AtomicBool::new(true);
-        run_worker(
-            &path,
-            "unused-token",
-            &command_receiver,
-            &status_sender,
-            10,
-            &FakeTransport {
-                validation: Err(TransportError::Unauthorized),
-                result: Ok(()),
-                submitted: Arc::new(Mutex::new(Vec::new())),
-            },
-            WorkerCoordination {
-                drain_lock: &Mutex::new(()),
-                cancelled: &cancelled,
-            },
-        );
-        assert!(status_receiver.try_recv().is_err());
-    }
+    #[path = "scrobble_runtime_worker_tests.rs"]
+    mod worker_tests;
 }

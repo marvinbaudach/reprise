@@ -9,6 +9,15 @@ use rusqlite::Connection;
 
 const SMOKE_BAR_POSITION_ENV_VAR: &str = "REPRISE_SMOKE_BAR_POSITION";
 const SMOKE_LISTENBRAINZ_ENV_VAR: &str = "REPRISE_SMOKE_LISTENBRAINZ";
+const SMOKE_LISTENBRAINZ_API_ROOT_ENV_VAR: &str = "REPRISE_SMOKE_LISTENBRAINZ_API_ROOT";
+
+fn is_loopback_smoke_root(value: &str) -> bool {
+    ["http://127.0.0.1:", "http://[::1]:"]
+        .into_iter()
+        .find_map(|prefix| value.strip_prefix(prefix))
+        .and_then(|remainder| remainder.split('/').next())
+        .is_some_and(|port| port.parse::<u16>().is_ok())
+}
 
 pub(super) fn arm_bar_position(
     conn: &Rc<RefCell<Connection>>,
@@ -37,15 +46,18 @@ pub(super) fn arm_bar_position(
 /// build or a real keyring token.
 pub(super) fn arm_listenbrainz(
     conn: &Rc<RefCell<Connection>>,
-    runtime: &Rc<super::listenbrainz_runtime::ListenBrainzRuntime>,
+    runtime: &Rc<super::scrobble_runtime::ScrobbleRuntime>,
 ) {
     if std::env::var(SMOKE_LISTENBRAINZ_ENV_VAR).as_deref() != Ok("exercise") {
         return;
     }
-    if !runtime.smoke_api_is_local() {
+    let Some(api_root) = std::env::var(SMOKE_LISTENBRAINZ_API_ROOT_ENV_VAR)
+        .ok()
+        .filter(|root| cfg!(debug_assertions) && is_loopback_smoke_root(root))
+    else {
         tracing::warn!("ListenBrainz smoke requested without a loopback API root");
         return;
-    }
+    };
     let listen = reprise_core::scrobbling::Listen {
         id: None,
         listened_at: 1_700_000_000,
@@ -58,9 +70,28 @@ pub(super) fn arm_listenbrainz(
     };
     match reprise_core::scrobbling::enqueue(&conn.borrow(), &listen) {
         Ok(queue_id) => {
-            runtime.configure("reprise-smoke-token".to_string());
+            runtime.configure(
+                "reprise-smoke-token".to_string(),
+                Box::new(reprise_core::scrobbling::ListenBrainzClient::with_api_root(
+                    &api_root,
+                )),
+            );
             tracing::info!(queue_id, "smoke: queued synthetic ListenBrainz listen");
         }
         Err(error) => tracing::warn!(%error, "ListenBrainz smoke could not queue listen"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_loopback_smoke_root;
+
+    #[test]
+    fn smoke_api_override_accepts_only_explicit_loopback_http_ports() {
+        assert!(is_loopback_smoke_root("http://127.0.0.1:8123"));
+        assert!(is_loopback_smoke_root("http://[::1]:8123/api"));
+        assert!(!is_loopback_smoke_root("https://api.listenbrainz.org"));
+        assert!(!is_loopback_smoke_root("http://127.0.0.1"));
+        assert!(!is_loopback_smoke_root("http://example.test:8123"));
     }
 }
