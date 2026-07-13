@@ -731,6 +731,19 @@ pub fn playlist_reorder_failed_toast() -> String {
 
 pub const IMPORT_PLAYLIST: &str = N_!("Import playlist…");
 pub const EXPORT_PLAYLIST: &str = N_!("Export playlist…");
+pub const DELETE_PLAYLIST: &str = N_!("Delete playlist…");
+pub const PLAYLIST_DELETE_RESPONSE: &str = N_!("Delete Playlist");
+pub const PLAYLIST_DELETE_BODY: &str =
+    N_!("The playlist will be deleted. Its tracks will remain in your library.");
+pub fn playlist_delete_heading(name: &str) -> String {
+    formatted(N_!("Delete “{name}”?"), &[("name", name)])
+}
+pub fn playlist_deleted_toast(name: &str) -> String {
+    formatted(N_!("Deleted playlist “{name}”"), &[("name", name)])
+}
+pub fn playlist_delete_failed_toast(name: &str) -> String {
+    formatted(N_!("Could not delete playlist “{name}”"), &[("name", name)])
+}
 pub const IMPORT_PLAYLIST_DIALOG_TITLE: &str = N_!("Import Playlist");
 pub const EXPORT_PLAYLIST_DIALOG_TITLE: &str = N_!("Export Playlist");
 /// Name shown for the `gtk::FileFilter` restricting the import dialog to

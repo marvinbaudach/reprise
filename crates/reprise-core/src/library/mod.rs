@@ -1,4 +1,5 @@
 pub mod m3u;
+mod playlist_delete;
 pub mod playlist_membership;
 pub mod playlists;
 pub mod scanner;

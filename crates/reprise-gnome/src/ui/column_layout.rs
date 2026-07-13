@@ -8,6 +8,7 @@ use gtk4::gio::prelude::*;
 use thiserror::Error;
 
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_columns::{append_column, append_cover_column, append_rating_column};
@@ -37,6 +38,38 @@ const DEFAULT_ORDER: [ColumnId; 9] = [
     ColumnId::TrackNumber,
     ColumnId::Genre,
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ColumnWidthPolicy {
+    fixed_width: i32,
+    expand: bool,
+}
+
+fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
+    let fixed_width = match id {
+        ColumnId::Cover => 40,
+        ColumnId::Title => 360,
+        ColumnId::TrackNumber => 80,
+        ColumnId::Artist => 260,
+        ColumnId::Album => 300,
+        ColumnId::Genre => 180,
+        ColumnId::Year => 90,
+        ColumnId::Duration => 100,
+        ColumnId::Rating => COMPACT_RATING_COLUMN_WIDTH,
+    };
+    ColumnWidthPolicy {
+        fixed_width,
+        expand: id == ColumnId::Title,
+    }
+}
+
+fn apply_column_width_policy(column: &gtk4::ColumnViewColumn, id: ColumnId) {
+    let policy = column_width_policy(id);
+    // ColumnView recycles row widgets while scrolling. A fixed width prevents
+    // newly visible cell contents from changing the natural column geometry.
+    column.set_fixed_width(policy.fixed_width);
+    column.set_expand(policy.expand);
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnLayout {
@@ -104,6 +137,21 @@ impl ColumnId {
             _ => None,
         }
     }
+}
+
+pub(super) fn column_label(id: ColumnId) -> String {
+    let message = match id {
+        ColumnId::Cover => strings::COLUMN_COVER,
+        ColumnId::Title => strings::COLUMN_TITLE,
+        ColumnId::TrackNumber => strings::COLUMN_TRACK_NUMBER,
+        ColumnId::Artist => strings::COLUMN_ARTIST,
+        ColumnId::Album => strings::COLUMN_ALBUM,
+        ColumnId::Genre => strings::COLUMN_GENRE,
+        ColumnId::Year => strings::COLUMN_YEAR,
+        ColumnId::Duration => strings::COLUMN_LENGTH,
+        ColumnId::Rating => strings::RATING,
+    };
+    strings::text(message)
 }
 
 pub fn serialize_layout(layout: &ColumnLayout) -> String {
@@ -317,6 +365,12 @@ impl ColumnRegistry {
             .get(&id)
             .is_some_and(gtk4::ColumnViewColumn::is_visible)
     }
+
+    pub fn set_header_menu(&self, menu: &gio::Menu) {
+        for column in self.columns.values() {
+            column.set_header_menu(Some(menu));
+        }
+    }
 }
 
 pub(super) fn build_columns(
@@ -405,6 +459,9 @@ pub(super) fn build_columns(
         (ColumnId::Duration, duration),
         (ColumnId::Rating, rating),
     ]);
+    for (id, column) in &columns {
+        apply_column_width_policy(column, *id);
+    }
     let registry = ColumnRegistry {
         view: view.clone(),
         columns,
@@ -421,6 +478,36 @@ pub(super) fn build_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rating_column_uses_the_compact_width() {
+        assert_eq!(
+            column_width_policy(ColumnId::Rating).fixed_width,
+            crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH
+        );
+    }
+
+    #[test]
+    fn every_track_column_has_stable_width_and_only_title_expands() {
+        for id in DEFAULT_ORDER {
+            let policy = column_width_policy(id);
+            assert!(policy.fixed_width > 0, "missing fixed width for {id:?}");
+            assert_eq!(policy.expand, id == ColumnId::Title);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn width_policy_is_applied_to_gtk_columns() {
+        gtk4::init().unwrap();
+        for id in DEFAULT_ORDER {
+            let column = gtk4::ColumnViewColumn::builder().build();
+            apply_column_width_policy(&column, id);
+            let policy = column_width_policy(id);
+            assert_eq!(column.fixed_width(), policy.fixed_width);
+            assert_eq!(column.expands(), policy.expand);
+        }
+    }
 
     #[test]
     fn layout_round_trips_canonically() {

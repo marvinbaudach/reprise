@@ -1,6 +1,8 @@
-//! `RatingWidget`: a row of 5 flat `gtk::Button`s showing text star glyphs
-//! (filled `★` U+2605 vs outline `☆` U+2606), used as the interactive
-//! `Rating` column cell in `track_list.rs`.
+//! `RatingWidget`: a width-responsive interactive rating cell. Its compact
+//! state shows one `★ N` menu button whose popover contains the five rating
+//! choices; when the column is widened it promotes to five inline flat
+//! buttons. Both states use text star glyphs (filled `★` U+2605 vs outline
+//! `☆` U+2606), so they stay readable across icon themes.
 //!
 //! ## Why buttons with text glyphs, not images with a `GestureClick`
 //!
@@ -76,12 +78,54 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
 use gtk4::prelude::*;
+use libadwaita as adw;
+use libadwaita::prelude::*;
 
 use crate::ui::strings;
 
 const STAR_COUNT: i32 = 5;
 const RATING_MIN: i32 = 0;
 const RATING_MAX: i32 = STAR_COUNT;
+pub(super) const COMPACT_RATING_COLUMN_WIDTH: i32 = 88;
+const WIDE_RATING_MIN_WIDTH: i32 = 132;
+const COMPACT_CONTROL_MIN_WIDTH: i32 = 44;
+const RATING_CONTROL_MIN_HEIGHT: i32 = 28;
+const COMPACT_STACK_CHILD: &str = "compact";
+const WIDE_STACK_CHILD: &str = "wide";
+const INLINE_STAR_CSS_CLASS: &str = "reprise-rating-inline-star";
+const COMPACT_BUTTON_CSS_CLASS: &str = "reprise-rating-compact-button";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RatingPresentation {
+    Compact,
+    Wide,
+}
+
+impl RatingPresentation {
+    fn stack_child(self) -> &'static str {
+        match self {
+            Self::Compact => COMPACT_STACK_CHILD,
+            Self::Wide => WIDE_STACK_CHILD,
+        }
+    }
+}
+
+fn rating_presentation(width: i32) -> RatingPresentation {
+    if width >= WIDE_RATING_MIN_WIDTH {
+        RatingPresentation::Wide
+    } else {
+        RatingPresentation::Compact
+    }
+}
+
+fn compact_rating_text(rating: i32) -> String {
+    let rating = rating.clamp(RATING_MIN, RATING_MAX);
+    if rating == RATING_MIN {
+        format!("{STAR_OUTLINE_GLYPH} —")
+    } else {
+        format!("{STAR_FILLED_GLYPH} {rating}")
+    }
+}
 
 /// Filled star glyph (U+2605) — shown for star positions `<= rating`.
 /// Single-codepoint symbol; stays here rather than strings.rs (see module
@@ -95,6 +139,29 @@ const STAR_OUTLINE_GLYPH: &str = "\u{2606}";
 /// De-emphasizes the outline glyph — the same generic Adwaita "dim" class
 /// `player_bar.rs` already uses for its inactive repeat state.
 const STAR_OUTLINE_CSS_CLASS: &str = "dim-label";
+
+thread_local! {
+    static RATING_STYLE_INSTALLED: Cell<bool> = const { Cell::new(false) };
+}
+
+fn install_rating_style(widget: &impl IsA<gtk4::Widget>) {
+    RATING_STYLE_INSTALLED.with(|installed| {
+        if installed.replace(true) {
+            return;
+        }
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_string(&format!(
+            ".{INLINE_STAR_CSS_CLASS} {{ min-width: 20px; min-height: 26px; padding: 1px; }}\n\
+             .{COMPACT_BUTTON_CSS_CLASS} {{ min-width: {COMPACT_CONTROL_MIN_WIDTH}px; \
+             min-height: {RATING_CONTROL_MIN_HEIGHT}px; padding: 2px 6px; }}"
+        ));
+        gtk4::style_context_add_provider_for_display(
+            &widget.display(),
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
+}
 
 /// Shared alias for the click-reporting callback's storage type — see the
 /// `on_changed` field doc comment for why it's `Rc`-wrapped and `Option`al.
@@ -110,6 +177,10 @@ mod imp {
         /// label is kept alongside the button so display updates don't
         /// have to re-downcast `button.child()` on every `set_rating`.
         pub stars: RefCell<Vec<(gtk4::Button, gtk4::Label)>>,
+        pub chooser_stars: RefCell<Vec<(gtk4::Button, gtk4::Label)>>,
+        pub compact_label: RefCell<Option<gtk4::Label>>,
+        pub compact_button: RefCell<Option<gtk4::MenuButton>>,
+        pub presentation_stack: RefCell<Option<gtk4::Stack>>,
         pub rating: Cell<i32>,
         /// Replaced wholesale by `set_on_changed` on every list-item
         /// rebind; `None` before the first `set_on_changed` call, so a
@@ -152,46 +223,113 @@ impl RatingWidget {
         glib::Object::new()
     }
 
-    /// Builds the five star buttons and wires their click handlers. Called
-    /// once from `constructed()`, i.e. exactly once per widget instance —
-    /// the same instance is then reused across every list-item rebind.
+    /// Builds compact and wide controls once. The `BreakpointBin` switches
+    /// between them from the cell's own allocation, so a narrow window or a
+    /// user-narrowed Rating column does not reserve five inline buttons.
     fn build_ui(&self) {
+        install_rating_style(self);
         self.set_orientation(gtk4::Orientation::Horizontal);
-        // Tight spacing: the flat buttons already carry their own padding;
-        // any extra box spacing would spread the five stars into reading
-        // as separate controls instead of one rating row.
         self.set_spacing(0);
         self.set_tooltip_text(Some(&strings::text(strings::RATING)));
 
+        let wide = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         let stars: Vec<(gtk4::Button, gtk4::Label)> = (1..=STAR_COUNT)
             .map(|star| {
-                let label = gtk4::Label::new(Some(STAR_OUTLINE_GLYPH));
-                label.add_css_class(STAR_OUTLINE_CSS_CLASS);
-
-                let button = gtk4::Button::new();
-                button.set_child(Some(&label));
-                // Flat/frameless so five adjacent buttons read as one star
-                // row, not a toolbar (`set_has_frame(false)` applies GTK's
-                // "flat" style class).
-                button.set_has_frame(false);
-                button.set_valign(gtk4::Align::Center);
-                // Accessible tooltip for screen readers.
-                let action_name = strings::rate_n_stars(star);
-                button.set_tooltip_text(Some(&action_name));
-
-                let widget = self.downgrade();
-                button.connect_clicked(move |_| {
-                    let Some(widget) = widget.upgrade() else {
-                        return;
-                    };
-                    widget.handle_star_activated(star);
-                });
-
-                self.append(&button);
+                let (button, label) = self.build_star_control(star, true, None);
+                wide.append(&button);
                 (button, label)
             })
             .collect();
         self.imp().stars.replace(stars);
+
+        let chooser = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+        chooser.set_margin_top(6);
+        chooser.set_margin_bottom(6);
+        chooser.set_margin_start(6);
+        chooser.set_margin_end(6);
+        let popover = gtk4::Popover::new();
+        let chooser_stars: Vec<(gtk4::Button, gtk4::Label)> = (1..=STAR_COUNT)
+            .map(|star| {
+                let (button, label) = self.build_star_control(star, false, Some(&popover));
+                chooser.append(&button);
+                (button, label)
+            })
+            .collect();
+        self.imp().chooser_stars.replace(chooser_stars);
+        popover.set_child(Some(&chooser));
+
+        let compact_label = gtk4::Label::new(Some(&compact_rating_text(RATING_MIN)));
+        let compact_button = gtk4::MenuButton::new();
+        compact_button.set_child(Some(&compact_label));
+        compact_button.set_popover(Some(&popover));
+        compact_button.set_always_show_arrow(false);
+        compact_button.set_has_frame(false);
+        compact_button.set_tooltip_text(Some(&strings::text(strings::RATING)));
+        compact_button.add_css_class(COMPACT_BUTTON_CSS_CLASS);
+        self.imp().compact_label.replace(Some(compact_label));
+        self.imp()
+            .compact_button
+            .replace(Some(compact_button.clone()));
+
+        let stack = gtk4::Stack::new();
+        stack.set_hhomogeneous(false);
+        stack.set_vhomogeneous(true);
+        stack.add_named(&compact_button, Some(COMPACT_STACK_CHILD));
+        stack.add_named(&wide, Some(WIDE_STACK_CHILD));
+        stack
+            .set_visible_child_name(rating_presentation(COMPACT_RATING_COLUMN_WIDTH).stack_child());
+        self.imp().presentation_stack.replace(Some(stack.clone()));
+
+        let responsive = adw::BreakpointBin::new();
+        responsive.set_hexpand(true);
+        responsive.set_width_request(COMPACT_CONTROL_MIN_WIDTH);
+        responsive.set_height_request(RATING_CONTROL_MIN_HEIGHT);
+        responsive.set_child(Some(&stack));
+        let condition = adw::BreakpointCondition::new_length(
+            adw::BreakpointConditionLengthType::MinWidth,
+            f64::from(WIDE_RATING_MIN_WIDTH),
+            adw::LengthUnit::Px,
+        );
+        let breakpoint = adw::Breakpoint::new(condition);
+        breakpoint.add_setter(
+            &stack,
+            "visible-child-name",
+            Some(&WIDE_STACK_CHILD.to_value()),
+        );
+        responsive.add_breakpoint(breakpoint);
+        self.append(&responsive);
+    }
+
+    fn build_star_control(
+        &self,
+        star: i32,
+        inline: bool,
+        popover: Option<&gtk4::Popover>,
+    ) -> (gtk4::Button, gtk4::Label) {
+        let label = gtk4::Label::new(Some(STAR_OUTLINE_GLYPH));
+        label.add_css_class(STAR_OUTLINE_CSS_CLASS);
+
+        let button = gtk4::Button::new();
+        button.set_child(Some(&label));
+        button.set_has_frame(false);
+        button.set_valign(gtk4::Align::Center);
+        button.set_tooltip_text(Some(&strings::rate_n_stars(star)));
+        if inline {
+            button.add_css_class(INLINE_STAR_CSS_CLASS);
+        }
+
+        let widget = self.downgrade();
+        let popover = popover.map(gtk4::glib::object::ObjectExt::downgrade);
+        button.connect_clicked(move |_| {
+            let Some(widget) = widget.upgrade() else {
+                return;
+            };
+            widget.handle_star_activated(star);
+            if let Some(popover) = popover.as_ref().and_then(glib::WeakRef::upgrade) {
+                popover.popdown();
+            }
+        });
+        (button, label)
     }
 
     /// Applies the Rhythmbox clear-on-reclick rule for a click on star
@@ -224,8 +362,24 @@ impl RatingWidget {
             tracing::warn!("rating widget: stars borrow unavailable; skipping redraw");
             return;
         };
-        for (i, (_, label)) in stars.iter().enumerate() {
-            let filled = (i as i32) < clamped;
+        let labels = stars
+            .iter()
+            .enumerate()
+            .map(|(index, (_, label))| (index as i32 + 1, label.clone()))
+            .collect::<Vec<_>>();
+        drop(stars);
+        let Ok(chooser_stars) = self.imp().chooser_stars.try_borrow() else {
+            tracing::warn!("rating widget: chooser stars borrow unavailable; skipping redraw");
+            return;
+        };
+        let chooser_labels = chooser_stars
+            .iter()
+            .enumerate()
+            .map(|(index, (_, label))| (index as i32 + 1, label.clone()))
+            .collect::<Vec<_>>();
+        drop(chooser_stars);
+        for (star, label) in labels.into_iter().chain(chooser_labels) {
+            let filled = star <= clamped;
             if filled {
                 label.set_text(STAR_FILLED_GLYPH);
                 label.remove_css_class(STAR_OUTLINE_CSS_CLASS);
@@ -233,6 +387,19 @@ impl RatingWidget {
                 label.set_text(STAR_OUTLINE_GLYPH);
                 label.add_css_class(STAR_OUTLINE_CSS_CLASS);
             }
+        }
+        let compact_label = self.imp().compact_label.borrow().clone();
+        if let Some(compact_label) = compact_label {
+            compact_label.set_text(&compact_rating_text(clamped));
+        }
+        let compact_button = self.imp().compact_button.borrow().clone();
+        if let Some(compact_button) = compact_button {
+            let tooltip = if clamped == RATING_MIN {
+                strings::text(strings::RATING)
+            } else {
+                strings::rate_n_stars(clamped)
+            };
+            compact_button.set_tooltip_text(Some(&tooltip));
         }
     }
 
@@ -263,6 +430,41 @@ impl RatingWidget {
             None => panic!("no star button at index {index}"),
         }
     }
+
+    #[cfg(test)]
+    pub fn click_compact_choice_for_test(&self, index: i32) {
+        let button = self
+            .imp()
+            .chooser_stars
+            .borrow()
+            .get(usize::try_from(index - 1).expect("star index must be >= 1"))
+            .map(|(button, _)| button.clone());
+        match button {
+            Some(button) => button.emit_clicked(),
+            None => panic!("no compact rating choice at index {index}"),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn compact_text_for_test(&self) -> String {
+        self.imp()
+            .compact_label
+            .borrow()
+            .as_ref()
+            .map(|label| label.text().to_string())
+            .unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub fn presentation_for_test(&self) -> String {
+        self.imp()
+            .presentation_stack
+            .borrow()
+            .as_ref()
+            .and_then(gtk4::Stack::visible_child_name)
+            .map(|name| name.to_string())
+            .unwrap_or_default()
+    }
 }
 
 impl Default for RatingWidget {
@@ -287,6 +489,73 @@ fn next_rating(clicked_star: i32, current: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rating_presentation_adapts_at_the_compact_width_boundary() {
+        assert_eq!(rating_presentation(88), RatingPresentation::Compact);
+        assert_eq!(
+            rating_presentation(WIDE_RATING_MIN_WIDTH - 1),
+            RatingPresentation::Compact
+        );
+        assert_eq!(
+            rating_presentation(WIDE_RATING_MIN_WIDTH),
+            RatingPresentation::Wide
+        );
+    }
+
+    #[test]
+    fn compact_rating_text_keeps_zero_and_values_distinct() {
+        assert_eq!(compact_rating_text(0), "☆ —");
+        assert_eq!(compact_rating_text(1), "★ 1");
+        assert_eq!(compact_rating_text(5), "★ 5");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn compact_chooser_updates_the_value_and_reports_the_change() {
+        gtk4::init().unwrap();
+        let widget = RatingWidget::new();
+        widget.set_rating(2);
+        assert_eq!(widget.compact_text_for_test(), "★ 2");
+
+        let reported = Rc::new(Cell::new(-1));
+        let reported_for_callback = reported.clone();
+        widget.set_on_changed(move |rating| reported_for_callback.set(rating));
+        widget.click_compact_choice_for_test(4);
+
+        assert_eq!(reported.get(), 4);
+        assert_eq!(widget.compact_text_for_test(), "★ 4");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn rating_widget_promotes_to_inline_stars_when_given_space() {
+        gtk4::init().unwrap();
+        let widget = RatingWidget::new();
+        let window = gtk4::Window::builder()
+            .default_width(COMPACT_RATING_COLUMN_WIDTH)
+            .default_height(48)
+            .child(&widget)
+            .build();
+        window.present();
+        drain_main_context();
+        assert_eq!(widget.presentation_for_test(), COMPACT_STACK_CHILD);
+
+        window.set_size_request(WIDE_RATING_MIN_WIDTH + 24, 48);
+        drain_main_context();
+        assert_eq!(widget.presentation_for_test(), WIDE_STACK_CHILD);
+        window.close();
+    }
+
+    fn drain_main_context() {
+        let context = glib::MainContext::default();
+        for _ in 0..10 {
+            while context.pending() {
+                context.iteration(false);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
 
     #[test]
     fn click_sets_rating_to_star_value() {

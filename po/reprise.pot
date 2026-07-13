@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-13 20:21+0200\n"
+"POT-Creation-Date: 2026-07-13 21:16+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1105,41 +1105,68 @@ msgid "Export playlist…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:734
-msgid "Import Playlist"
+msgid "Delete playlist…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:735
-msgid "Export Playlist"
+msgid "Delete Playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:738
-msgid "M3U Playlists"
+#: crates/reprise-gnome/src/ui/strings.rs:737
+msgid "The playlist will be deleted. Its tracks will remain in your library."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:739
+#, rust-format
+msgid "Delete “{name}”?"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:742
+#, rust-format
+msgid "Deleted playlist “{name}”"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:745
+#, rust-format
+msgid "Could not delete playlist “{name}”"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:747
+msgid "Import Playlist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:748
+msgid "Export Playlist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:751
+msgid "M3U Playlists"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:755
 msgid "Imported playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:750
+#: crates/reprise-gnome/src/ui/strings.rs:763
 #, rust-format
 msgid "Imported {name}: {matched} of {total} tracks matched"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:765
+#: crates/reprise-gnome/src/ui/strings.rs:778
 #, rust-format
 msgid "Imported {name}: 0 of {total} tracks matched — nothing added"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:773
+#: crates/reprise-gnome/src/ui/strings.rs:786
 msgid "Could not import playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:778
+#: crates/reprise-gnome/src/ui/strings.rs:791
 #, rust-format
 msgid "Exported {name}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:783
+#: crates/reprise-gnome/src/ui/strings.rs:796
 #, rust-format
 msgid "Could not export “{name}”"
 msgstr ""

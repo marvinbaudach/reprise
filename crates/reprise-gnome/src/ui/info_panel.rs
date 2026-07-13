@@ -267,6 +267,19 @@ impl InfoPanel {
         self.toggle.clone()
     }
 
+    /// Keeps the callback owner alive for exactly as long as the window.
+    ///
+    /// Widgets keep their signal handlers but those handlers deliberately
+    /// capture only `Weak<InfoPanel>` values. Without this window-owned
+    /// strong reference, the panel would remain painted while every handler
+    /// became inert as soon as `window::build` returned.
+    pub(super) fn retain_for_window(self: &Rc<Self>, window: &adw::ApplicationWindow) {
+        let panel = self.clone();
+        window.connect_destroy(move |_| {
+            let _keep_alive_until_destroy = &panel;
+        });
+    }
+
     pub(super) fn set_context(self: &Rc<Self>, context: PanelContext) {
         self.apply_local_context(&context);
         let intent = self.state.borrow_mut().set_context(context);
@@ -307,13 +320,13 @@ impl InfoPanel {
 
             let panel_closed = panel.clone();
             glib::timeout_add_local_once(std::time::Duration::from_secs(8), move || {
-                panel_closed.widgets.split.set_show_sidebar(false);
+                panel_closed.toggle.set_active(false);
                 tracing::info!("Artist News smoke: panel closed");
             });
 
             let panel_reopened = panel.clone();
             glib::timeout_add_local_once(std::time::Duration::from_secs(10), move || {
-                panel_reopened.widgets.split.set_show_sidebar(true);
+                panel_reopened.toggle.set_active(true);
                 tracing::info!("Artist News smoke: panel reopened");
             });
 
