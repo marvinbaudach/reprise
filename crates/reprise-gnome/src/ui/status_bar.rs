@@ -44,6 +44,7 @@ use reprise_core::queries::{self, BrowseFilter};
 #[derive(Clone)]
 pub struct StatusBar {
     label: gtk4::Label,
+    enabled: Rc<std::cell::Cell<bool>>,
 }
 
 impl StatusBar {
@@ -59,7 +60,10 @@ impl StatusBar {
         // avoids a flash of "0 tracks · 0 minutes" before the initial track
         // list load completes.
         label.set_visible(false);
-        Self { label }
+        Self {
+            label,
+            enabled: Rc::new(std::cell::Cell::new(true)),
+        }
     }
 
     /// The label widget to embed above the player bar in `window.rs`.
@@ -67,11 +71,21 @@ impl StatusBar {
         &self.label
     }
 
+    pub fn set_enabled(&self, enabled: bool) {
+        self.enabled.set(enabled);
+        if !enabled {
+            self.label.set_visible(false);
+        }
+    }
+
     /// Re-queries `queries::query_library_stats` and updates the label text
     /// (or hides it, for an empty library — see the module doc comment).
     /// Query failures are logged and treated the same as an empty library:
     /// hide rather than show stale or partial text.
     pub fn refresh(&self, conn: &Rc<RefCell<Connection>>, filter: &str, browse: &BrowseFilter) {
+        if !self.enabled.get() {
+            return;
+        }
         let stats = {
             let conn = conn.borrow();
             queries::query_library_stats_browsed(&conn, filter, browse)
@@ -107,6 +121,9 @@ impl StatusBar {
     /// empty-state placeholder already communicates "nothing here" for that
     /// case, so a zeroed status line would be redundant.
     pub fn refresh_for_source_count(&self, count: i64) {
+        if !self.enabled.get() {
+            return;
+        }
         if count <= 0 {
             self.label.set_visible(false);
             return;
