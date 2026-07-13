@@ -76,7 +76,7 @@ impl ColumnId {
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
+    pub(super) fn parse(value: &str) -> Option<Self> {
         match value {
             "cover" => Some(Self::Cover),
             "title" => Some(Self::Title),
@@ -131,6 +131,28 @@ pub fn parse_layout(value: &str) -> Option<ColumnLayout> {
     Some(normalize(order, visible))
 }
 
+pub fn load_layout(conn: &rusqlite::Connection) -> ColumnLayout {
+    let stored = reprise_core::library::settings::get_setting(
+        conn,
+        reprise_core::library::settings::COLUMN_LAYOUT_KEY,
+    )
+    .map_err(|error| tracing::warn!(%error, "could not load stored column layout"))
+    .ok()
+    .flatten();
+    let layout = stored.as_deref().and_then(parse_layout).unwrap_or_default();
+    let canonical = serialize_layout(&layout);
+    if stored.as_deref() != Some(&canonical) {
+        if let Err(error) = reprise_core::library::settings::set_setting(
+            conn,
+            reprise_core::library::settings::COLUMN_LAYOUT_KEY,
+            &canonical,
+        ) {
+            tracing::warn!(%error, "could not persist canonical column layout");
+        }
+    }
+    layout
+}
+
 pub fn import_rhythmbox_tokens(tokens: &[String]) -> ColumnLayout {
     let mut order = Vec::new();
     let mut visible = HashSet::new();
@@ -150,6 +172,51 @@ pub fn import_rhythmbox_tokens(tokens: &[String]) -> ColumnLayout {
         }
     }
     normalize(order, visible)
+}
+
+pub fn set_column_visible(layout: &ColumnLayout, id: ColumnId, visible: bool) -> ColumnLayout {
+    if matches!(id, ColumnId::Cover | ColumnId::Title) {
+        return layout.clone();
+    }
+    let mut next = layout.clone();
+    if visible {
+        next.visible.insert(id);
+    } else {
+        next.visible.remove(&id);
+    }
+    normalize(next.order, next.visible)
+}
+
+pub fn move_column(layout: &ColumnLayout, id: ColumnId, target: ColumnId) -> ColumnLayout {
+    move_column_relative(layout, id, target, false)
+}
+
+pub fn move_column_after(layout: &ColumnLayout, id: ColumnId, target: ColumnId) -> ColumnLayout {
+    move_column_relative(layout, id, target, true)
+}
+
+fn move_column_relative(
+    layout: &ColumnLayout,
+    id: ColumnId,
+    target: ColumnId,
+    after: bool,
+) -> ColumnLayout {
+    if id == target
+        || matches!(id, ColumnId::Cover | ColumnId::Title)
+        || matches!(target, ColumnId::Cover | ColumnId::Title)
+    {
+        return layout.clone();
+    }
+    let mut order = layout.order.clone();
+    let Some(source_index) = order.iter().position(|candidate| *candidate == id) else {
+        return layout.clone();
+    };
+    order.remove(source_index);
+    let Some(target_index) = order.iter().position(|candidate| *candidate == target) else {
+        return layout.clone();
+    };
+    order.insert(target_index + usize::from(after), id);
+    normalize(order, layout.visible.clone())
 }
 
 const RHYTHMBOX_SCHEMA: &str = "org.gnome.rhythmbox.sources";
@@ -180,6 +247,10 @@ pub fn read_rhythmbox_visible_columns() -> Result<Vec<String>, ImportError> {
         .iter()
         .map(ToString::to_string)
         .collect())
+}
+
+pub fn should_offer_rhythmbox_import(available: bool) -> bool {
+    available
 }
 
 fn parse_ids(value: &str) -> Option<Vec<ColumnId>> {
@@ -338,27 +409,7 @@ pub(super) fn build_columns(
         view: view.clone(),
         columns,
     };
-    let layout = {
-        let conn = shared.conn.borrow();
-        let stored = reprise_core::library::settings::get_setting(
-            &conn,
-            reprise_core::library::settings::COLUMN_LAYOUT_KEY,
-        )
-        .ok()
-        .flatten();
-        let layout = stored.as_deref().and_then(parse_layout).unwrap_or_default();
-        let canonical = serialize_layout(&layout);
-        if stored.as_deref() != Some(&canonical) {
-            if let Err(error) = reprise_core::library::settings::set_setting(
-                &conn,
-                reprise_core::library::settings::COLUMN_LAYOUT_KEY,
-                &canonical,
-            ) {
-                tracing::warn!(%error, "could not persist canonical column layout");
-            }
-        }
-        layout
-    };
+    let layout = load_layout(&shared.conn.borrow());
     registry.apply(&layout);
     BuiltColumns {
         registry,
@@ -442,5 +493,76 @@ mod tests {
             layout.visible,
             HashSet::from([ColumnId::Cover, ColumnId::Title])
         );
+    }
+
+    #[test]
+    fn optional_visibility_changes_without_changing_order() {
+        let layout = ColumnLayout::default();
+        let hidden = set_column_visible(&layout, ColumnId::Artist, false);
+        assert_eq!(hidden.order, layout.order);
+        assert!(!hidden.visible.contains(&ColumnId::Artist));
+        let shown = set_column_visible(&hidden, ColumnId::TrackNumber, true);
+        assert_eq!(shown.order, layout.order);
+        assert!(shown.visible.contains(&ColumnId::TrackNumber));
+    }
+
+    #[test]
+    fn fixed_columns_cannot_be_hidden() {
+        let layout = ColumnLayout::default();
+        assert_eq!(set_column_visible(&layout, ColumnId::Cover, false), layout);
+        assert_eq!(set_column_visible(&layout, ColumnId::Title, false), layout);
+    }
+
+    #[test]
+    fn movable_column_is_inserted_before_the_target() {
+        let layout = ColumnLayout::default();
+        let moved = move_column(&layout, ColumnId::Rating, ColumnId::Artist);
+        assert_eq!(
+            moved.order[..5],
+            [
+                ColumnId::Cover,
+                ColumnId::Title,
+                ColumnId::Rating,
+                ColumnId::Artist,
+                ColumnId::Album,
+            ]
+        );
+        assert_eq!(moved.visible, layout.visible);
+    }
+
+    #[test]
+    fn movable_column_can_be_inserted_after_the_target() {
+        let layout = ColumnLayout::default();
+        let moved = move_column_after(&layout, ColumnId::Artist, ColumnId::Rating);
+        let rating = moved
+            .order
+            .iter()
+            .position(|id| *id == ColumnId::Rating)
+            .unwrap();
+        assert_eq!(moved.order[rating + 1], ColumnId::Artist);
+        assert_eq!(moved.visible, layout.visible);
+    }
+
+    #[test]
+    fn fixed_target_source_and_self_moves_are_noops() {
+        let layout = ColumnLayout::default();
+        assert_eq!(
+            move_column(&layout, ColumnId::Cover, ColumnId::Artist),
+            layout
+        );
+        assert_eq!(
+            move_column(&layout, ColumnId::Artist, ColumnId::Title),
+            layout
+        );
+        assert_eq!(
+            move_column(&layout, ColumnId::Artist, ColumnId::Artist),
+            layout
+        );
+    }
+
+    #[test]
+    fn rhythmbox_import_is_offered_exactly_when_available() {
+        assert!(should_offer_rhythmbox_import(true));
+        assert!(!should_offer_rhythmbox_import(false));
     }
 }

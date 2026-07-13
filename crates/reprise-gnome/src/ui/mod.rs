@@ -22,6 +22,7 @@
 
 pub mod browse_bar;
 pub mod column_layout;
+mod column_layout_editor;
 pub mod cover_download_worker;
 pub mod cover_loader;
 mod current_track_selection;
