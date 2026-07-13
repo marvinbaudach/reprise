@@ -37,9 +37,28 @@ pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: false,
 };
 
+pub const EQUALIZER_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "equalizer",
+    name: "Equalizer",
+    description: "Ten-band audio equalizer with presets and live adjustment",
+    default_enabled: false,
+};
+
+pub const REPLAYGAIN_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "replaygain",
+    name: "ReplayGain",
+    description: "Normalize playback volume from track or album ReplayGain tags",
+    default_enabled: false,
+};
+
 /// Every module the app knows about, in the order the Plugins page will show
 /// them. Stage 5 appends equalizer and ReplayGain here.
-pub const ALL_MODULES: &[&ModuleDescriptor] = &[&MPRIS_MODULE, &COVER_DOWNLOAD_MODULE];
+pub const ALL_MODULES: &[&ModuleDescriptor] = &[
+    &MPRIS_MODULE,
+    &COVER_DOWNLOAD_MODULE,
+    &EQUALIZER_MODULE,
+    &REPLAYGAIN_MODULE,
+];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -112,5 +131,11 @@ mod tests {
         assert!(ALL_MODULES
             .iter()
             .any(|module| module.id == "cover_download"));
+    }
+
+    #[test]
+    fn all_modules_lists_playback_effects() {
+        assert!(ALL_MODULES.iter().any(|module| module.id == "equalizer"));
+        assert!(ALL_MODULES.iter().any(|module| module.id == "replaygain"));
     }
 }
