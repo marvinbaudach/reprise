@@ -12,6 +12,23 @@ pub enum PlaybackState {
     Stopped,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioEffects {
+    pub equalizer_enabled: bool,
+    pub equalizer_bands: [f64; 10],
+    pub replay_gain: crate::library::settings::ReplayGainMode,
+}
+
+impl Default for AudioEffects {
+    fn default() -> Self {
+        Self {
+            equalizer_enabled: false,
+            equalizer_bands: [0.0; 10],
+            replay_gain: crate::library::settings::ReplayGainMode::Off,
+        }
+    }
+}
+
 /// Events the player reports asynchronously, from the GStreamer bus watch and
 /// the position ticker. The UI layer subscribes to these via the callback
 /// passed to `Player::new`.
@@ -35,6 +52,7 @@ pub trait PlaybackBackend {
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);
+    fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError>;
     fn stop(&self) -> Result<(), PlaybackError>;
 }
 
