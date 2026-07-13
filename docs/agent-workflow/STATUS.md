@@ -21,24 +21,24 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Fix missing MPRIS cover metadata
-SINCE:    2026-07-13 10:25 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 10:25 CEST: Codex claimed the lock to fix missing MPRIS cover metadata._
+_As of 2026-07-13 10:19 CEST: Codex released the lock after fixing missing MPRIS cover metadata._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-cover-download-progress.md` (4 tasks).
-- **Last completed:** **Equalizer enable playback regression** (`6c09d36`) — the neutral ten-band
-  element remains in the stable audio filter, so enabling or disabling Equalizer only changes gains
-  and no longer rebuilds, rewinds, or restarts the active playback pipeline.
+- **Last completed:** **MPRIS cover metadata regression** (`84d08dd`) — resolved cached cover art
+  now reaches live `Metadata` as `mpris:artUrl`, including asynchronous updates and stale-result
+  rejection.
 - **Current plan:** none — visible cover progress is complete; minimal-view variants are the next
   proposed feature stage and still need their dedicated approved spec/plan before implementation.
 - **➡️ NEXT:** settle and implement the proposed Compact/Cover/Pill/Card minimal-view variants,
   then run the native-GNOME visual/geometry and audible checks in `MANUAL-QA.md`.
-- **Feature HEAD:** `6c09d36`; this coordination-board update follows it.
+- **Feature HEAD:** `84d08dd`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -68,6 +68,8 @@ _As of 2026-07-13 10:25 CEST: Codex claimed the lock to fix missing MPRIS cover 
 - ✅ **Visible cover-download progress**: the default-off toggle starts/cancels a serial background
   library check, skips local/cached covers, deduplicates albums, refreshes downloaded art, and shows
   checked/downloaded/unavailable counts with complete, stopped and failure states in Preferences.
+- ✅ **MPRIS cover metadata**: local, embedded and downloaded art resolves off-main to the shared
+  cache and is exposed as a generation-guarded `mpris:artUrl` with live metadata updates.
 - ✅ **Stable Equalizer toggle**: enabling or disabling Equalizer updates the persistent neutral
   filter in place, preserving the current pipeline, Playing state and playback position; native
   GStreamer regression coverage verifies the non-rewinding transition.
