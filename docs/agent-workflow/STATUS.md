@@ -21,25 +21,24 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Prevent Equalizer enable from restarting the current track
-SINCE:    2026-07-13 09:48 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 09:48 CEST: Codex claimed the lock for the Equalizer enable playback regression._
+_As of 2026-07-13 10:06 CEST: Codex released the lock after fixing the Equalizer enable playback regression._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-cover-download-progress.md` (4 tasks).
-- **Last completed:** **Visible cover-download progress** (`d5382f1`, `9855169`, `3a64ab8`,
-  `6a00a47`) — enabling the optional network module starts one serial background pass over live
-  library tracks and the Plugins page reports checked/total, downloaded, unavailable,
-  complete/stopped/failed state; existing covers are skipped and no music files are written.
+- **Last completed:** **Equalizer enable playback regression** (`6c09d36`) — the neutral ten-band
+  element remains in the stable audio filter, so enabling or disabling Equalizer only changes gains
+  and no longer rebuilds, rewinds, or restarts the active playback pipeline.
 - **Current plan:** none — visible cover progress is complete; minimal-view variants are the next
   proposed feature stage and still need their dedicated approved spec/plan before implementation.
 - **➡️ NEXT:** settle and implement the proposed Compact/Cover/Pill/Card minimal-view variants,
   then run the native-GNOME visual/geometry and audible checks in `MANUAL-QA.md`.
-- **Feature HEAD:** `6a00a47`; this coordination-board update follows it.
+- **Feature HEAD:** `6c09d36`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
@@ -69,6 +68,9 @@ _As of 2026-07-13 09:48 CEST: Codex claimed the lock for the Equalizer enable pl
 - ✅ **Visible cover-download progress**: the default-off toggle starts/cancels a serial background
   library check, skips local/cached covers, deduplicates albums, refreshes downloaded art, and shows
   checked/downloaded/unavailable counts with complete, stopped and failure states in Preferences.
+- ✅ **Stable Equalizer toggle**: enabling or disabling Equalizer updates the persistent neutral
+  filter in place, preserving the current pipeline, Playing state and playback position; native
+  GStreamer regression coverage verifies the non-rewinding transition.
 - ✅ **Manual-QA fixes**: stable one-shot seek-on-release, live additions, and startup reconciliation
   for files added while the app was closed, current-track table selection, and playable stopped
   session restoration without autoplay, functional browse-option search, rating resorting, stable
