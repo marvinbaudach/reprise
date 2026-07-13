@@ -158,7 +158,7 @@ fn pinned_panel_owner_survives_and_header_toggle_reopens_it() {
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
-    let cover_runtime = crate::ui::cover_download_worker::setup(&conn.borrow());
+    let cover_runtime = crate::ui::cover_download_worker::setup();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
         .application_id("org.reprise.Reprise.InfoPanelTest")
