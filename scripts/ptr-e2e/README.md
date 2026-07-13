@@ -107,8 +107,9 @@ disk except `PTR_E2E_OUT_DIR`.
   offsets and the Preferences rows are stable for that exact input but will
   drift if the column set, fonts, theme, or resolution change. Header and
   compact-window clicks are calculated relative to the live window geometry,
-  but their offsets still assume the current widget arrangement. Re-measure
-  from the numbered screenshots when changing the UI or harness resolution.
+  but their offsets still assume the current widget arrangement. The shared
+  measured values live in `geometry.sh`; re-measure them from the numbered
+  screenshots when changing the UI or harness resolution.
 - **Single scenario per run.** The harness scans a fixed fixture set each
   time (no persistence across runs); it is not a substitute for exploring
   arbitrary library states, only for proving that specific pointer/keyboard
