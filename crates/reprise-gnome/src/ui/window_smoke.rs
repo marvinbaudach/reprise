@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use libadwaita as adw;
 use reprise_core::library::settings;
 use rusqlite::Connection;
 
@@ -23,8 +22,7 @@ fn is_loopback_smoke_root(value: &str) -> bool {
 
 pub(super) fn arm_bar_position(
     conn: &Rc<RefCell<Connection>>,
-    toolbar_view: &adw::ToolbarView,
-    bottom_box: &gtk4::Box,
+    library_player_bar: &super::library_player_bar::LibraryPlayerBarShell,
 ) {
     let Ok(value) = std::env::var(SMOKE_BAR_POSITION_ENV_VAR) else {
         return;
@@ -38,7 +36,7 @@ pub(super) fn arm_bar_position(
         let conn = conn.borrow();
         let _ = settings::set_player_bar_position(&conn, position);
     }
-    super::window::apply_bar_position(toolbar_view, bottom_box, position);
+    library_player_bar.set_position(position);
     tracing::info!(position = %value, "smoke: applied player bar position");
 }
 

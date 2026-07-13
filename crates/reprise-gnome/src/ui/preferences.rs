@@ -13,6 +13,7 @@ use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::cover_download_batch::CoverDownloadBatch;
+use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::status_bar::StatusBar;
@@ -170,8 +171,7 @@ pub(super) struct PreferencesContext {
     pub(super) track_list: Rc<TrackList>,
     sidebar_page: adw::NavigationPage,
     status_bar: StatusBar,
-    toolbar_view: adw::ToolbarView,
-    bottom_box: gtk4::Box,
+    library_player_bar: LibraryPlayerBarShell,
     pub(super) scan_button: gtk4::Button,
     pub(super) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
     pub(super) player: Option<Rc<PlayerController>>,
@@ -197,8 +197,7 @@ impl PreferencesContext {
         track_list: &Rc<TrackList>,
         sidebar_page: &adw::NavigationPage,
         status_bar: &StatusBar,
-        toolbar_view: &adw::ToolbarView,
-        bottom_box: &gtk4::Box,
+        library_player_bar: &LibraryPlayerBarShell,
         scan_button: &gtk4::Button,
         player: Option<&Rc<PlayerController>>,
         cover_batch: &Rc<CoverDownloadBatch>,
@@ -213,8 +212,7 @@ impl PreferencesContext {
             track_list: track_list.clone(),
             sidebar_page: sidebar_page.clone(),
             status_bar: status_bar.clone(),
-            toolbar_view: toolbar_view.clone(),
-            bottom_box: bottom_box.clone(),
+            library_player_bar: library_player_bar.clone(),
             scan_button: scan_button.clone(),
             library_folder_rows: RefCell::new(Vec::new()),
             player: player.cloned(),
@@ -297,11 +295,7 @@ impl PreferencesContext {
         );
         self.sidebar_page.set_visible(false);
         self.status_bar.set_enabled(false);
-        crate::ui::window::apply_bar_position(
-            &self.toolbar_view,
-            &self.bottom_box,
-            PlayerBarPosition::Top,
-        );
+        self.library_player_bar.set_position(PlayerBarPosition::Top);
         self.set_equalizer_enabled(true);
         self.set_replay_gain_mode(ReplayGainMode::Track);
         tracing::info!("preferences smoke applied appearance, layout, and audio settings");
@@ -376,11 +370,7 @@ impl PreferencesContext {
                 settings::set_player_bar_position(&conn, value)
             };
             if saved.is_ok() {
-                crate::ui::window::apply_bar_position(
-                    &context.toolbar_view,
-                    &context.bottom_box,
-                    value,
-                );
+                context.library_player_bar.set_position(value);
             }
         });
         group.add(&bar);

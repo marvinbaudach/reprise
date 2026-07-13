@@ -94,7 +94,7 @@ fn updated_full_geometry(current: (i32, i32), live: (i32, i32), maximized: bool)
 
 pub(super) struct MinimalView {
     window: adw::ApplicationWindow,
-    full_root: adw::NavigationSplitView,
+    full_root: gtk4::Widget,
     compact: Option<CompactPlayerHandle>,
     compact_root: Option<adw::ToastOverlay>,
     conn: Rc<RefCell<Connection>>,
@@ -109,7 +109,7 @@ pub(super) struct MinimalView {
 impl MinimalView {
     pub(super) fn new(
         window: &adw::ApplicationWindow,
-        full_root: &adw::NavigationSplitView,
+        full_root: &gtk4::Widget,
         compact: Option<&CompactPlayer>,
         conn: Rc<RefCell<Connection>>,
         initial: ViewTransition,

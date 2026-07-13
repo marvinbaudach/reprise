@@ -267,16 +267,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     toolbar_view.add_top_bar(scan_progress.widget());
     toolbar_view.set_content(Some(track_list.widget()));
 
-    // Status line stacked directly above the player bar (design mockup 7a):
-    // one bottom bar containing both, in this order, rather than relying on
-    // `ToolbarView::add_bottom_bar`'s multi-call stacking order.
-    let bottom_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    bottom_box.append(status_bar.widget());
-    if let Some(player) = &player {
-        bottom_box.append(player.bar_widget());
-    }
     let bar_position = settings::get_player_bar_position(&conn.borrow());
-    apply_bar_position(&toolbar_view, &bottom_box, bar_position);
 
     let toast_overlay = adw::ToastOverlay::new();
     toast_overlay.set_child(Some(&toolbar_view));
@@ -450,6 +441,15 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
+    let player_bar_widget = player
+        .as_ref()
+        .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
+    let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
+        &split_view,
+        status_bar.widget(),
+        player_bar_widget,
+        bar_position,
+    );
     header.pack_end(&info_panel.toggle_button());
     {
         let info_panel = Rc::downgrade(&info_panel);
@@ -462,7 +462,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     info_panel.arm_smoke(&track_list);
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
-        &split_view,
+        library_player_bar.widget().upcast_ref(),
         player.as_ref().map(|player| &player.compact_player),
         conn,
         initial_view,
@@ -482,8 +482,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &track_list,
         &sidebar_page,
         &status_bar,
-        &toolbar_view,
-        &bottom_box,
+        &library_player_bar,
         &scan_button,
         player.as_ref(),
         &cover_batch,
@@ -593,7 +592,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         });
     }
 
-    window.set_content(Some(&split_view));
+    window.set_content(Some(library_player_bar.widget()));
 
     let search_restore_guard = super::view_session::new_search_restore_guard();
     super::view_session::wire_search(
@@ -678,7 +677,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     );
     playlist_io::arm_smoke_m3u(conn.clone(), &toast_overlay, sidebar.clone());
 
-    super::window_smoke::arm_bar_position(conn, &toolbar_view, &bottom_box);
+    super::window_smoke::arm_bar_position(conn, &library_player_bar);
 
     // Task 8: wired after `player`/`content_nav` both exist — see
     // `now_playing_wiring.rs`'s doc comments for what each call does.
@@ -725,56 +724,4 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
 
     tracing::info!("main window built");
     window.present();
-}
-
-/// Wires the headerbar's `sidebar-show-symbolic` toggle to `split_view` (see
-/// the module doc's `## Sidebar toggle` section): visible only while
-/// collapsed, and its `clicked` state drives `set_show_content` — the
-/// closest `AdwNavigationSplitView` analog to "show the sidebar pane" (it
-/// has no `show-sidebar` property, unlike `AdwOverlaySplitView`). Every
-/// collapse-state flip also resets the toggle to inactive/content-showing,
-/// so it starts predictable rather than inheriting whatever a previous wide-
-/// layout selection happened to leave.
-///
-/// The relationship between `toggle.active` and `split_view.show_content` is
-/// kept two-way so the toggle state stays in sync when `show_content` changes
-/// through other paths (auto-navigation on row select via `show_content_if_
-/// collapsed`, Adwaita's built-in back button, or other external changes).
-/// Semantics: `toggle.active = true` → sidebar shown → `show_content = false`;
-/// `toggle.active = false` → content shown → `show_content = true`. Three
-/// entry paths all update the toggle in ONE press each:
-/// 1. User toggle press → fires `toggled` → calls `set_show_content`
-/// 2. Auto-nav on row select → calls `set_show_content` → fires `show_content_notify` → sets toggle
-/// 3. Adwaita back button → calls `set_show_content` → fires `show_content_notify` → sets toggle
-///
-/// A guard (`Rc<Cell<bool>>`) prevents signal feedback loops: the user's
-/// `toggled` handler checks the guard at start and skips if set (the toggle
-/// is being updated programmatically); the `show_content_notify` handler sets
-/// the guard before calling `set_active`, which would fire `toggled`, so the
-/// handler's check catches it and returns early.
-/// Attaches `bottom_box` (the status line + player bar, moved as one unit —
-/// see the module's `bottom_box` comment above) to `toolbar_view`'s top or
-/// bottom bar slot per `position`. Idempotent: `adw::ToolbarView::remove`
-/// detaches a bar previously added via `add_top_bar`/`add_bottom_bar` from
-/// whichever slot it currently occupies — but verified against libadwaita
-/// 1.9.2 (headless smoke below), it is NOT a safe no-op when the widget was
-/// never attached: it logs `Adwaita-CRITICAL: tried to remove non-child`.
-/// `bottom_box` is only ever parented under `toolbar_view` (never anywhere
-/// else in this module), so `bottom_box.parent().is_some()` is an exact,
-/// cheap test for "is currently attached" — guarding the `remove` call with
-/// it makes this fn safe to call both at start-up (nothing attached yet) and
-/// again later (see `window_smoke::arm_bar_position`) without ever double-adding,
-/// panicking, or emitting that critical warning.
-pub(super) fn apply_bar_position(
-    toolbar_view: &adw::ToolbarView,
-    bottom_box: &gtk4::Box,
-    position: settings::PlayerBarPosition,
-) {
-    if bottom_box.parent().is_some() {
-        toolbar_view.remove(bottom_box);
-    }
-    match position {
-        settings::PlayerBarPosition::Top => toolbar_view.add_top_bar(bottom_box),
-        settings::PlayerBarPosition::Bottom => toolbar_view.add_bottom_bar(bottom_box),
-    }
 }
