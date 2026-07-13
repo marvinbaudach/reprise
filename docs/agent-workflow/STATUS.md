@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Minimal view and complete native preferences stages
+SINCE:    2026-07-13 03:40 CEST
 ```
 
-_As of 2026-07-13 03:25 CEST: Codex released the lock after column-layout editing and Rhythmbox discovery UX._
+_As of 2026-07-13 03:40 CEST: Codex claimed the lock for minimal view and native preferences._
 
 ## Current position
 
