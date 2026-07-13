@@ -21,22 +21,23 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Merge completed ListenBrainz scrobbling feature
-SINCE:    2026-07-13 13:52 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 13:52 CEST: Codex claimed the lock to merge completed ListenBrainz scrobbling._
+_As of 2026-07-13: ListenBrainz scrobbling is complete, merged, and the lock is released._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-compact-player-layouts.md` (5 tasks).
-- **Last completed:** **Selectable compact-player layouts** (`97901fd` through `f7db4c1`) — one
-  shared player now switches quickly between Library and persistent Bar/Cover/Pill/Card surfaces.
-- **Current plan:** none — the compact-layout stage is complete.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-listenbrainz-scrobbling.md` (5 tasks).
+- **Last completed:** **Opt-in ListenBrainz scrobbling** (`1839e2a` through `340d46e`, merged as
+  `5b52fe6`) — secure keyring credentials, playing-now, threshold listens, and a durable offline
+  queue run through one cancellable retry worker without sending before explicit opt-in.
+- **Current plan:** none — the ListenBrainz stage is complete.
 - **➡️ NEXT:** joint native-GNOME visual/Wayland stage review using the exact remaining checks in
   `MANUAL-QA.md`; do not begin another roadmap stage without explicit user direction.
-- **Feature HEAD:** `f7db4c1`; this QA/coordination update follows it.
+- **Main merge:** `5b52fe6`; this QA/coordination update follows it.
 
 ## Done so far (compact)
 
@@ -61,6 +62,9 @@ _As of 2026-07-13 13:52 CEST: Codex claimed the lock to merge completed ListenBr
 - ✅ **Selectable compact-player layouts**: persistent Bar, Cover, Pill and Card roots share one
   controller, cover pipeline, queue and accessible menu; visible buttons, right-click, Shift+F10,
   Ctrl+M, playing-state continuity and no-autoplay restart are covered by isolated real-input QA.
+- ✅ **ListenBrainz scrobbling**: default-off live integration validates a securely keyring-stored
+  token, reports playing-now, submits threshold-completed listens, persists a bounded FIFO offline,
+  retries with cancellation/generation guards, and exposes translated connect/status/disconnect UI.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
@@ -91,7 +95,7 @@ _As of 2026-07-13 13:52 CEST: Codex claimed the lock to merge completed ListenBr
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `window.rs` (799 lines) is at the enforced limit — its next edit must extract a sibling module,
+- `listenbrainz_runtime.rs` (787 lines) is edge-tight — its next edit must extract a sibling module,
   not add inline feature logic.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
