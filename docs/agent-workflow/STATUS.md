@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge header and sidebar redesign
+SINCE:    2026-07-13 16:04 CEST
 ```
 
-_As of 2026-07-13 15:26 CEST: Codex completed the full-width player-bar plan and is releasing the lock in this commit._
+_As of 2026-07-13 16:04 CEST: Codex is merging the completed header/sidebar feature branch._
 
 ## Current position
 
