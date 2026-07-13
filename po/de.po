@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-13 23:32+0200\n"
+"POT-Creation-Date: 2026-07-13 23:37+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -1099,7 +1099,7 @@ msgstr ""
 "Sie es erneut"
 
 #: crates/reprise-gnome/src/ui/strings.rs:695
-#: crates/reprise-gnome/src/ui/device_sync_strings.rs:109
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:120
 #, rust-format
 msgid "{count} track"
 msgid_plural "{count} tracks"
@@ -1322,6 +1322,13 @@ msgstr[1] "{count} Aufträge warten"
 #, rust-format
 msgid "{copied} copied · {skipped} skipped · {failed} failed"
 msgstr "{copied} kopiert · {skipped} übersprungen · {failed} fehlgeschlagen"
+
+#: crates/reprise-gnome/src/ui/device_sync_strings.rs:110
+#, rust-format
+msgid "{count} track queued · job {position}"
+msgid_plural "{count} tracks queued · job {position}"
+msgstr[0] "{count} Titel eingereiht · Auftrag {position}"
+msgstr[1] "{count} Titel eingereiht · Auftrag {position}"
 
 #: crates/reprise-gnome/src/ui/browse_filter_strings.rs:12
 msgid "FILTER"

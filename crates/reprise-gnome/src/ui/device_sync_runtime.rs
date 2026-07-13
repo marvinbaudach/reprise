@@ -1,8 +1,3 @@
-// The runtime is composed in Task 3; its enqueue/subscription API becomes a
-// production UI consumer in the immediately following synchronization-page
-// task. Keep the per-task all-targets gate clean across that deliberate seam.
-#![allow(dead_code)]
-
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt;
@@ -19,7 +14,7 @@ use reprise_core::device_sync::{
 };
 use reprise_core::library::m3u::{M3uEntry, M3uExportEntry};
 use reprise_platform_linux::device_sync::{
-    CopyOutcome, DeviceContents, DeviceDescriptor, DeviceMonitor, DeviceStorage,
+    CopyOutcome, DeviceContents, DeviceDescriptor, DeviceMonitor,
 };
 use rusqlite::Connection;
 
@@ -51,100 +46,26 @@ pub trait DeviceBackend {
     ) -> BackendFuture<()>;
 }
 
-struct GioDeviceBackend {
-    monitor: DeviceMonitor,
-}
-
-impl GioDeviceBackend {
-    fn new(monitor: DeviceMonitor) -> Self {
-        Self { monitor }
-    }
-}
-
-impl DeviceBackend for GioDeviceBackend {
-    fn devices(&self) -> Vec<DeviceDescriptor> {
-        self.monitor.devices()
-    }
-
-    fn subscribe_devices(&self, callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>) {
-        self.monitor.subscribe(callback);
-    }
-
-    fn inspect(&self, root_uri: String) -> BackendFuture<(DeviceContents, Option<u64>)> {
-        Box::pin(async move {
-            let storage = DeviceStorage::from_uri(&root_uri);
-            let contents = storage.inspect().await.map_err(|error| error.to_string())?;
-            let available = storage
-                .available_bytes()
-                .await
-                .map_err(|error| error.to_string())?;
-            Ok((contents, available))
-        })
-    }
-
-    fn copy_track(
-        &self,
-        _device_id: String,
-        root_uri: String,
-        source_path: PathBuf,
-        relative_target: String,
-        expected_size: u64,
-        cancellable: gio::Cancellable,
-        progress: Rc<dyn Fn(u64, u64)>,
-    ) -> BackendFuture<CopyOutcome> {
-        Box::pin(async move {
-            DeviceStorage::from_uri(&root_uri)
-                .copy_track(
-                    &gio::File::for_path(source_path),
-                    &relative_target,
-                    expected_size,
-                    &cancellable,
-                    move |copied, total| progress(copied, total),
-                )
-                .await
-                .map_err(|error| error.to_string())
-        })
-    }
-
-    fn read_playlist(&self, root_uri: String, name: String) -> BackendFuture<Vec<M3uEntry>> {
-        Box::pin(async move {
-            DeviceStorage::from_uri(&root_uri)
-                .read_playlist(&name)
-                .await
-                .map_err(|error| error.to_string())
-        })
-    }
-
-    fn replace_playlist(
-        &self,
-        _device_id: String,
-        root_uri: String,
-        name: String,
-        contents: Vec<u8>,
-    ) -> BackendFuture<()> {
-        Box::pin(async move {
-            DeviceStorage::from_uri(&root_uri)
-                .replace_playlist(&name, contents)
-                .await
-                .map_err(|error| error.to_string())
-        })
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct DeviceView {
     pub id: String,
     pub name: String,
-    pub root_uri: String,
     pub icon: gio::Icon,
-    pub reconnectable: bool,
     pub connected: bool,
     pub available_bytes: Option<u64>,
     pub contents: DeviceContents,
     pub scanning: bool,
     pub scan_error: Option<String>,
     pub draft_playlists: Vec<String>,
+    pub last_enqueue: Option<EnqueueReceipt>,
     pub snapshot: SyncSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EnqueueReceipt {
+    pub playlist: String,
+    pub track_count: usize,
+    pub queue_position: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -207,6 +128,7 @@ struct DeviceState {
     scan_generation: u64,
     scan_error: Option<String>,
     draft_playlists: Vec<String>,
+    last_enqueue: Option<EnqueueReceipt>,
 }
 
 impl DeviceState {
@@ -226,6 +148,7 @@ impl DeviceState {
             scan_generation: 0,
             scan_error: None,
             draft_playlists: Vec::new(),
+            last_enqueue: None,
         }
     }
 
@@ -233,15 +156,14 @@ impl DeviceState {
         DeviceView {
             id: self.descriptor.id.clone(),
             name: self.descriptor.name.clone(),
-            root_uri: self.descriptor.root_uri.clone(),
             icon: self.descriptor.icon.clone(),
-            reconnectable: self.descriptor.reconnectable,
             connected: self.connected,
             available_bytes: self.available_bytes,
             contents: self.contents.clone(),
             scanning: self.scanning,
             scan_error: self.scan_error.clone(),
             draft_playlists: self.draft_playlists.clone(),
+            last_enqueue: self.last_enqueue.clone(),
             snapshot: self.queue.snapshot(),
         }
     }
@@ -259,7 +181,10 @@ pub struct DeviceSyncRuntime {
 
 impl DeviceSyncRuntime {
     pub fn new(conn: &Rc<RefCell<Connection>>, monitor: DeviceMonitor) -> Rc<Self> {
-        Self::with_backend(conn, Rc::new(GioDeviceBackend::new(monitor)))
+        Self::with_backend(
+            conn,
+            Rc::new(super::device_sync_backend::GioDeviceBackend::new(monitor)),
+        )
     }
 
     pub fn with_backend(
@@ -320,10 +245,17 @@ impl DeviceSyncRuntime {
         let job_id = self.next_job_id.get();
         self.next_job_id.set(job_id.saturating_add(1));
         if let Some(device) = self.device_states.borrow_mut().get_mut(device_id) {
+            let playlist = reprise_core::device_sync::safe_component(playlist, "Playlist");
             device.queue.enqueue(SyncJob {
                 id: job_id,
-                playlist: reprise_core::device_sync::safe_component(playlist, "Playlist"),
+                playlist: playlist.clone(),
                 tracks,
+            });
+            let snapshot = device.queue.snapshot();
+            device.last_enqueue = Some(EnqueueReceipt {
+                playlist,
+                track_count: count,
+                queue_position: snapshot.queued_jobs + usize::from(device.running),
             });
         }
         self.notify();

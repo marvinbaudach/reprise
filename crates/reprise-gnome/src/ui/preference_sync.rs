@@ -3,6 +3,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::gdk;
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -204,16 +206,23 @@ fn playlist_group(
         group.set_description(Some(&copy::text(copy::NO_PHONE_PLAYLISTS)));
     }
     for (name, entries, draft) in names {
-        let subtitle = if draft {
+        let subtitle = if let Some(receipt) = device
+            .last_enqueue
+            .as_ref()
+            .filter(|receipt| receipt.playlist == name)
+        {
+            copy::tracks_queued(receipt.track_count, receipt.queue_position)
+        } else if draft {
             copy::text(copy::PLAYLIST_DRAFT)
         } else {
             copy::playlist_entries(entries)
         };
         let row = adw::ActionRow::builder()
-            .title(name)
+            .title(&name)
             .subtitle(subtitle)
             .build();
         row.add_prefix(&gtk4::Image::from_icon_name("view-list-symbolic"));
+        install_sync_drop(&row, &device.id, &name, runtime);
         group.add(&row);
     }
     group
@@ -286,6 +295,48 @@ fn progress_group(
         status.add_suffix(&cancel);
     }
     group
+}
+
+fn install_sync_drop(
+    row: &adw::ActionRow,
+    device_id: &str,
+    playlist: &str,
+    runtime: &Rc<DeviceSyncRuntime>,
+) {
+    let target = gtk4::DropTarget::new(glib::Type::STRING, gdk::DragAction::COPY);
+    let enter_row = row.clone();
+    target.connect_enter(move |_, _, _| {
+        enter_row.add_css_class("accent");
+        gdk::DragAction::COPY
+    });
+    let leave_row = row.clone();
+    target.connect_leave(move |_| leave_row.remove_css_class("accent"));
+    let drop_row = row.clone();
+    let device_id = device_id.to_string();
+    let playlist = playlist.to_string();
+    let runtime = runtime.clone();
+    target.connect_drop(move |_, value, _, _| {
+        drop_row.remove_css_class("accent");
+        let Ok(value) = value.get::<String>() else {
+            return false;
+        };
+        let Some(ids) = sync_drop_ids(&value) else {
+            return false;
+        };
+        match runtime.enqueue(&device_id, &playlist, &ids) {
+            Ok(_) => true,
+            Err(error) => {
+                tracing::warn!(%error, "phone playlist drop was rejected");
+                false
+            }
+        }
+    });
+    row.add_controller(target);
+}
+
+fn sync_drop_ids(value: &str) -> Option<Vec<i64>> {
+    let payload = super::track_list_dnd::parse_drag_payload(value)?;
+    payload.ids.iter().all(|id| *id > 0).then_some(payload.ids)
 }
 
 fn progress_row(title: &str, subtitle: &str, fraction: f64) -> adw::ActionRow {
@@ -390,15 +441,14 @@ mod tests {
         DeviceView {
             id: "phone".into(),
             name: "Phone".into(),
-            root_uri: "mtp://phone".into(),
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
-            reconnectable: true,
             connected: true,
             available_bytes: Some(1_024),
             contents: DeviceContents::default(),
             scanning: false,
             scan_error: None,
             draft_playlists: vec!["Road".into()],
+            last_enqueue: None,
             snapshot: reprise_core::device_sync::DeviceQueue::new().snapshot(),
         }
     }
@@ -443,6 +493,16 @@ mod tests {
         assert!(progress_is_visible(&snapshot));
     }
 
+    #[test]
+    fn sync_drop_accepts_only_the_established_positive_id_payload() {
+        assert_eq!(sync_drop_ids("1,2|-"), Some(vec![1, 2]));
+        assert!(sync_drop_ids("1,2").is_none());
+        assert!(sync_drop_ids("|-").is_none());
+        assert!(sync_drop_ids("foreign text").is_none());
+        assert_eq!(sync_drop_ids("0|-"), None);
+        assert_eq!(sync_drop_ids("-1|-"), None);
+    }
+
     fn display_runtime() -> Rc<DeviceSyncRuntime> {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
@@ -483,6 +543,22 @@ mod tests {
             Some(copy::device_subtitle(true, Some(1_024)).as_str())
         );
         assert!(row.is_activatable());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn phone_playlist_row_installs_a_copy_drop_target() {
+        gtk4::init().unwrap();
+        let runtime = display_runtime();
+        let row = adw::ActionRow::new();
+        install_sync_drop(&row, "phone", "Road", &runtime);
+
+        let controllers = row.observe_controllers();
+        assert!((0..controllers.n_items()).any(|index| {
+            controllers
+                .item(index)
+                .is_some_and(|controller| controller.is::<gtk4::DropTarget>())
+        }));
     }
 
     #[test]

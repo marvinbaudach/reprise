@@ -103,6 +103,17 @@ pub fn outcome_counts(copied: usize, skipped: usize, failed: usize) -> String {
     )
 }
 
+pub fn tracks_queued(count: usize, position: usize) -> String {
+    let count_text = count.to_string();
+    let position_text = position.to_string();
+    plural(
+        "{count} track queued · job {position}",
+        "{count} tracks queued · job {position}",
+        count,
+        &[("count", &count_text), ("position", &position_text)],
+    )
+}
+
 pub fn playlist_entries(count: usize) -> String {
     let count_text = count.to_string();
     plural(

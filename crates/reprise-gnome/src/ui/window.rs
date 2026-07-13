@@ -165,10 +165,13 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
-    let device_sync = super::device_sync_runtime::DeviceSyncRuntime::new(
-        conn,
-        reprise_platform_linux::device_sync::DeviceMonitor::new(),
-    );
+    let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
+        super::device_sync_runtime::DeviceSyncRuntime::new(
+            conn,
+            reprise_platform_linux::device_sync::DeviceMonitor::new(),
+        )
+    });
+    super::device_sync_smoke::arm(&device_sync);
 
     let player = match PlayerController::new(
         conn.clone(),
