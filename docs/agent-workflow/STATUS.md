@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Manual Up Next queue and GNOME compact-player redesign
+SINCE:    2026-07-13 19:59 CEST
 ```
 
-_As of 2026-07-13 19:54 CEST: Codex completed the Artist News panel and sidebar joint-review fixes and is releasing the lock._
+_As of 2026-07-13 19:59 CEST: Codex claimed the lock for the manual Up Next queue and GNOME compact-player redesign._
 
 ## Current position
 
