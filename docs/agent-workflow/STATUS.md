@@ -21,22 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Merge header and sidebar redesign
-SINCE:    2026-07-13 16:04 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 16:04 CEST: Codex is merging the completed header/sidebar feature branch._
+_As of 2026-07-13 16:05 CEST: Codex merged the completed header/sidebar feature and is releasing the lock._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-full-width-player-bar.md` (3 tasks).
-- **Last completed:** **Full-width Library player bar** (`c8bebdb`, `ed680a3`) — the status/player
-  block now spans the complete pane split, with Track metadata left, Transport+Seek centered, and
-  Shuffle/Repeat/Volume right; Top/Bottom and Library/Compact transitions remain immediate.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-header-sidebar-redesign.md` (3 tasks).
+- **Last completed:** **Header and sidebar redesign** (`a2fabeb`, `f05ecd7`, `76c6fbb`, merge
+  `ffba11d`) — one flat strict-centered header spans the full Library window, compact actions and
+  Search sit right, and the 220–280 px sidebar uses aligned symbolic source icons and counts.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `ed680a3`; this QA/coordination close-out follows it.
+- **Main implementation:** `ffba11d`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -73,6 +73,10 @@ _As of 2026-07-13 16:04 CEST: Codex is merging the completed header/sidebar feat
 - ✅ **Full-width Library player bar**: the global status/player block now spans sidebar, library,
   and Information panel at Top or Bottom; Track, centered Transport+Seek, and secondary control
   zones retain one playback controller across immediate Library/Compact switching.
+- ✅ **Design-aligned header and sidebar**: one flat full-window header keeps the current source
+  title strictly centered with compact accessible actions and Search on the right; the narrower
+  navigation adds stable symbolic icons, aligned counts and mockup-derived section spacing while
+  preserving adaptive navigation, DnD, menus and Library/Compact restoration.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
