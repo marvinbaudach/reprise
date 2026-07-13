@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-13 22:33+0200\n"
+"POT-Creation-Date: 2026-07-13 23:01+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1131,6 +1131,54 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings.rs:782
 #, rust-format
 msgid "Could not export “{name}”"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:11
+msgid "Player Bar"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:12
+msgid "Library Window"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:13
+msgid "Columns"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:14
+msgid "Show Filters"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:15
+msgid "Show Information Panel"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:16
+msgid "Could not save the color scheme"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:18
+msgid "Could not save the player bar position"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:19
+msgid "Could not save sidebar visibility"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:20
+msgid "Could not save filter visibility"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:22
+msgid "Could not save information panel visibility"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:23
+msgid "Could not save status line visibility"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/preference_visual_strings.rs:24
+msgid "Could not save list density"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/browse_filter_strings.rs:12
