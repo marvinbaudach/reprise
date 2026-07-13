@@ -110,6 +110,59 @@ fn apply_audio_filter(playbin: &gst::Element, effects: &AudioEffects) -> Result<
     Ok(())
 }
 
+fn same_filter_topology(current: &AudioEffects, next: &AudioEffects) -> bool {
+    use reprise_core::library::settings::ReplayGainMode;
+    current.equalizer_enabled == next.equalizer_enabled
+        && (current.replay_gain != ReplayGainMode::Off) == (next.replay_gain != ReplayGainMode::Off)
+}
+
+/// Updates properties on the existing filter bin when no elements need to be
+/// added or removed. This is safe while Playing and avoids a Null → Playing
+/// round trip for every intermediate equalizer-slider value.
+fn update_existing_audio_filter(
+    playbin: &gst::Element,
+    current: &AudioEffects,
+    next: &AudioEffects,
+) -> bool {
+    use reprise_core::library::settings::ReplayGainMode;
+    if !same_filter_topology(current, next) {
+        return false;
+    }
+    if !next.equalizer_enabled && next.replay_gain == ReplayGainMode::Off {
+        return true;
+    }
+    let Some(filter) = playbin.property::<Option<gst::Element>>("audio-filter") else {
+        return false;
+    };
+    let Ok(bin) = filter.downcast::<gst::Bin>() else {
+        return false;
+    };
+    if next.equalizer_enabled {
+        let Some(equalizer) = bin.by_name("reprise-equalizer") else {
+            return false;
+        };
+        for (index, value) in next.equalizer_bands.iter().enumerate() {
+            equalizer.set_property(&format!("band{index}"), value.clamp(-12.0, 12.0));
+        }
+    }
+    if next.replay_gain != ReplayGainMode::Off {
+        let Some(replaygain) = bin.by_name("reprise-replaygain") else {
+            return false;
+        };
+        replaygain.set_property("album-mode", next.replay_gain == ReplayGainMode::Album);
+    }
+    true
+}
+
+fn requested_state(element: &gst::Element) -> gst::State {
+    let (_, current, pending) = element.state(gst::ClockTime::ZERO);
+    if pending == gst::State::VoidPending {
+        current
+    } else {
+        pending
+    }
+}
+
 fn build_playbin(effects: &AudioEffects) -> Result<gst::Element, PlaybackError> {
     let playbin = gst::ElementFactory::make("playbin3")
         .build()
@@ -373,11 +426,19 @@ impl PlaybackBackend for Player {
     }
 
     fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError> {
+        let mut current_effects = self
+            .effects
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let playbin = self
             .playbin
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let state = playbin.current_state();
+        if update_existing_audio_filter(&playbin, &current_effects, &effects) {
+            *current_effects = effects;
+            return Ok(());
+        }
+        let state = requested_state(&playbin);
         let position = playbin.query_position::<gst::ClockTime>();
         playbin
             .set_state(gst::State::Null)
@@ -392,10 +453,7 @@ impl PlaybackBackend for Player {
                     playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT, position);
             }
         }
-        *self
-            .effects
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = effects;
+        *current_effects = effects;
         Ok(())
     }
 
@@ -526,6 +584,40 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
             effects
         );
+
+        let filter_before = player
+            .playbin
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .property::<Option<gst::Element>>("audio-filter")
+            .unwrap();
+        let adjusted = AudioEffects {
+            equalizer_enabled: true,
+            equalizer_bands: [5.0; 10],
+            replay_gain: reprise_core::library::settings::ReplayGainMode::Album,
+        };
+        player.set_audio_effects(adjusted).unwrap();
+        let playbin = player
+            .playbin
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let filter_after = playbin
+            .property::<Option<gst::Element>>("audio-filter")
+            .unwrap();
+        assert_eq!(filter_after, filter_before);
+        assert_eq!(requested_state(&playbin), gst::State::Playing);
+        let bin = filter_after.downcast::<gst::Bin>().unwrap();
+        assert_eq!(
+            bin.by_name("reprise-equalizer")
+                .unwrap()
+                .property::<f64>("band0"),
+            5.0
+        );
+        assert!(bin
+            .by_name("reprise-replaygain")
+            .unwrap()
+            .property::<bool>("album-mode"));
+        drop(playbin);
         player.stop().unwrap();
         std::env::remove_var(AUDIO_SINK_ENV_VAR);
     }
