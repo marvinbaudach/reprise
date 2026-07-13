@@ -8,6 +8,7 @@ use gtk4::gio::prelude::*;
 use thiserror::Error;
 
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_columns::{append_column, append_cover_column, append_rating_column};
@@ -54,7 +55,7 @@ fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
         ColumnId::Genre => 180,
         ColumnId::Year => 90,
         ColumnId::Duration => 100,
-        ColumnId::Rating => 160,
+        ColumnId::Rating => COMPACT_RATING_COLUMN_WIDTH,
     };
     ColumnWidthPolicy {
         fixed_width,
@@ -456,6 +457,14 @@ pub(super) fn build_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rating_column_uses_the_compact_width() {
+        assert_eq!(
+            column_width_policy(ColumnId::Rating).fixed_width,
+            crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH
+        );
+    }
 
     #[test]
     fn every_track_column_has_stable_width_and_only_title_expands() {

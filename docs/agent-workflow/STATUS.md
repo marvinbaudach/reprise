@@ -26,17 +26,17 @@ TASK:     —
 SINCE:    —
 ```
 
-_As of 2026-07-13: free after the track-table column-width stabilization passed all gates._
+_As of 2026-07-13: free after compact responsive track ratings passed all gates and pointer QA._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Stable track-table column widths** (`1dd55bc`) — every column now has a
-  deterministic width while Title alone absorbs spare space, preventing recycled visible rows
-  from changing the table geometry during scrolling.
+- **Last completed:** **Compact responsive track ratings** (`f7a4701`) — Rating now uses an 88px
+  `★ N` popover control by default and promotes to five inline stars when widened to 132px,
+  retaining direct pointer and keyboard-accessible editing without wasting table space.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `1dd55bc`; this QA/coordination close-out follows it.
+- **Main implementation:** `f7a4701`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -105,6 +105,8 @@ _As of 2026-07-13: free after the track-table column-width stabilization passed 
   duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
 - ✅ **Stable track-table geometry**: fixed per-column sizing prevents virtualized row contents from
   changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
+- ✅ **Compact responsive ratings**: the Rating column defaults to a narrow `★ N` popover chooser,
+  promotes to five inline stars when widened, and retains real-pointer write-back regression coverage.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
