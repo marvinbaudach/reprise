@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Preserve window controls when system decorations are unavailable
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: Codex released the lock after merging the compact playback equalizer._
+_As of 2026-07-13: Codex claimed the lock for the system-decoration fallback fix._
 
 ## Current position
 
