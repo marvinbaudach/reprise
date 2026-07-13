@@ -75,10 +75,12 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 - [ ] Fresh start shows the setup dialog once, with clear local-library/privacy copy.
 - [ ] The first-run copy discloses automatic MusicBrainz/Cover Art Archive cover
-  lookup without offering a disable switch. When Rhythmbox is detected, a clear
-  `Rhythmbox found` import offer appears and remains off by default; without the
-  schema/key, no false Rhythmbox offer appears. Both decision paths and explicit
-  fixture import pass in the isolated smoke; native copy/layout remains pending.
+  lookup without offering a disable switch. When Rhythmbox is detected, the
+  one-time setup dialog shows an `Import from Rhythmbox` section with the explicit
+  `Column layout` choice off by default; without the schema/key, the complete
+  section is absent. The main menu and Preferences expose no later Rhythmbox import.
+  Both decision paths and explicit fixture import pass in the isolated smoke;
+  native copy/layout remains pending.
 - [ ] Skip completes onboarding without opening a picker or scanning music.
 - [ ] Set Up Library opens the portal folder chooser; cancel is harmless; choosing a
   disposable folder scans it and does not expose broader filesystem access.
@@ -189,9 +191,9 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   startup; actual GNOME/Wayland compositor acceptance, frame appearance, HiDPI, touch,
   and live window-manager behavior remain native manual checks. A compositor that rejects
   SSD may fall back to CSD; this is expected desktop policy, not a Reprise failure.
-- [ ] On Library, choose/cancel a disposable folder, rescan it, and invoke Rhythmbox
-  column import. Expected: cancel is harmless and actions use the established safe
-  picker/import paths.
+- [ ] On Library, choose/cancel a disposable folder and rescan it. Expected: cancel
+  is harmless and actions use the established safe picker/scan paths; Rhythmbox
+  import is not offered after first-run setup.
 - [ ] On Plugins, Cover download is absent because it is an always-on core feature.
   Toggle MPRIS and Artist & Album News. MPRIS clearly says restart required and changes
   only after restart; Artist News applies live. Equalizer and ReplayGain must not appear
@@ -298,8 +300,9 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
 
 ## Pending: browse, columns, playlists, and Rhythmbox
 
-- [ ] Browse dropdowns work by mouse and keyboard at narrow and wide widths; each
-  Genre → Artist → Album change resets only the dependent facets.
+- [ ] The unified filter bar works by mouse and keyboard at narrow and wide widths:
+  chips wrap without covering the table, `Add filter` shows one value search, and
+  Genre → Artist → Album changes or chip removal reset only dependent facets.
 - [ ] Search and browse facets combine correctly, including zero-result recovery.
 - [ ] Open `Edit column layout…`. Switch optional columns, reorder through both
   Up/Down buttons and whole-row dragging, inspect the before/after accent line,
@@ -307,8 +310,10 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   Title stay fixed/visible; sorting never targets a hidden or invalid column. The
   isolated editor smoke passes toggle/reorder/persist and the display regression
   proves each movable row owns both controllers; native pointer visuals remain pending.
-- [ ] A real Rhythmbox visible-columns import is read-only, maps supported columns in
-  order, ignores unknown tokens, and leaves Rhythmbox settings unchanged.
+- [ ] During a disposable first-run profile, a real Rhythmbox visible-columns import
+  is offered only when detected, remains off until selected, maps supported columns
+  in order, ignores unknown tokens, and leaves Rhythmbox settings unchanged. A second
+  start offers no import surface.
 - [ ] Playlist context-menu add/new/remove, sidebar drag add, multi-select, and M3U8
   import work with Unicode names and paths containing spaces.
 - [ ] Exported M3U opens in another compatible player when one is available.

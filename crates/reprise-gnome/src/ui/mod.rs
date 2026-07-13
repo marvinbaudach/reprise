@@ -23,6 +23,8 @@
 mod artist_news_worker;
 mod audio_effects;
 pub mod browse_bar;
+mod browse_filter_count;
+mod browse_filter_strings;
 mod column_header_menu;
 pub mod column_layout;
 mod column_layout_editor;
@@ -70,6 +72,7 @@ mod preference_effects;
 mod preference_lastfm;
 mod preference_library;
 mod preference_listenbrainz;
+mod preference_playback;
 mod preference_plugins;
 mod preference_window_decorations;
 mod preferences;
