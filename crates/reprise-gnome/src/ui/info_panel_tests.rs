@@ -150,3 +150,33 @@ fn widget_exposes_information_sidebar_metrics() {
     assert!(!widgets.header.shows_start_title_buttons());
     assert!(!widgets.header.shows_end_title_buttons());
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pinned_panel_owner_survives_and_header_toggle_reopens_it() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
+    reprise_core::db::migrate(&conn.borrow()).unwrap();
+    let runtime = ArtistNewsRuntime::setup(&conn.borrow());
+    let cover_runtime = crate::ui::cover_download_worker::setup(&conn.borrow());
+    let cover_loader = CoverLoader::new(cover_runtime);
+    let app = adw::Application::builder()
+        .application_id("org.reprise.Reprise.InfoPanelTest")
+        .build();
+    app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+    let window = adw::ApplicationWindow::new(&app);
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let panel = InfoPanel::new(&content, &window, conn, runtime, cover_loader);
+    panel.widgets.split.set_collapsed(false);
+    panel.widgets.split.set_pin_sidebar(true);
+    panel.retain_for_window(&window);
+    let weak = Rc::downgrade(&panel);
+    let toggle = panel.toggle_button();
+
+    drop(panel);
+    assert!(weak.upgrade().is_some());
+    toggle.set_active(false);
+    assert!(!weak.upgrade().unwrap().widgets.split.shows_sidebar());
+    toggle.set_active(true);
+    assert!(weak.upgrade().unwrap().widgets.split.shows_sidebar());
+}
