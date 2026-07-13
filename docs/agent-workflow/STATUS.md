@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge Android device synchronization
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: synchronized played-track lyrics are integrated and the lock is free._
+_As of 2026-07-13: Codex claimed the lock to merge Android device synchronization._
 
 ## Current position
 
