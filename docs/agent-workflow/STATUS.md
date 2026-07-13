@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Add visible batch progress for missing-cover download
+SINCE:    2026-07-13 09:21 CEST
 ```
 
-_As of 2026-07-13 05:15 CEST: Codex released the lock after expanding the plugin plan._
+_As of 2026-07-13 09:21 CEST: Codex claimed the lock for visible cover-download progress._
 
 ## Current position
 
