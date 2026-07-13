@@ -22,20 +22,20 @@ local/gitignored; THIS file is the shared, versioned summary.)
 
 ```
 OWNER:    codex           # FREE | claude | codex
-TASK:     Replace browse dropdowns with unified chip filter bar
+TASK:     Integrate one-time Rhythmbox import
 SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: Codex claimed the lock for the unified chip filter bar._
+_As of 2026-07-13: Codex claimed the lock to integrate the one-time Rhythmbox import._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md` (4 tasks).
-- **Last completed:** **Preferences and sidebar visibility polish** (`beca64c`) — preferences stay
-  within the source-size gate and sidebar collapse remains focus-safe across window modes.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-unified-filter-bar.md` (3 tasks).
+- **Last completed:** **Unified chip filter bar** (`0a2076c`) — active Library facets are compact,
+  removable chips with one add-filter search, live result counts, and a complete reset action.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `beca64c`.
+- **Main implementation:** `0a2076c`.
 
 ## Done so far (compact)
 
@@ -120,6 +120,9 @@ _As of 2026-07-13: Codex claimed the lock for the unified chip filter bar._
 - ✅ **Confirmed playlist deletion**: manual playlist rows offer a destructive, translated
   right-click action; deletion is DB-only, keeps all tracks, compacts remaining positions, and
   safely returns an open deleted playlist to Music with real-pointer regression coverage.
+- ✅ **Unified chip filter bar**: the three persistent facet searches are replaced by wrapping,
+  removable Genre/Artist/Album chips, a two-step add popover with one temporary value search,
+  exact live result counts, and one reset action while preserving cascade and session behavior.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer

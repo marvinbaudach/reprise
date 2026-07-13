@@ -288,15 +288,6 @@ pub const TAG_NUMBER_ERROR: &str = N_!("Year and track number must be positive w
 pub const TAG_EDIT_DATABASE_UNAVAILABLE: &str =
     N_!("Could not open the library database for tag editing");
 pub const TAG_EDIT_WORKER_FAILED: &str = N_!("Could not start the tag-edit worker");
-pub const BROWSE_GENRE: &str = N_!("Genre");
-pub const BROWSE_ARTIST: &str = N_!("Artist");
-pub const BROWSE_ALBUM: &str = N_!("Album");
-pub const ALL_GENRES: &str = N_!("All genres");
-pub const ALL_ARTISTS: &str = N_!("All artists");
-pub const ALL_ALBUMS: &str = N_!("All albums");
-pub const UNKNOWN_GENRE: &str = N_!("Unknown genre");
-pub const UNKNOWN_ARTIST: &str = N_!("Unknown artist");
-pub const UNKNOWN_ALBUM: &str = N_!("Unknown album");
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");
 pub const DELETE_TRACKS_HEADING: &str = N_!("Remove Selected Tracks?");
