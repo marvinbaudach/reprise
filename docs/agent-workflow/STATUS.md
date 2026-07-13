@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Finish Preferences visual layout controls
-SINCE:    2026-07-13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex claimed the lock for the remaining Preferences visual controls._
+_As of 2026-07-13: Preferences visual controls are merged and the lock is free._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-system-decoration-fallback.md` (1 task).
-- **Last completed:** **Always-on missing-cover downloads** (`03257b6`, merged as `aff5db7`) —
-  missing covers are fetched automatically with no stale disable surface or optional module state.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-preferences-visual-controls.md` (3 tasks).
+- **Last completed:** **Preferences visual controls** (`a9208b5`, merged as `15b2b74`) — native
+  Appearance and Player Bar cards plus immediate, persistent Library Window controls with rollback.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `03257b6`.
+- **Main implementation:** `a9208b5`.
 
 ## Done so far (compact)
 
@@ -130,6 +130,9 @@ _As of 2026-07-13: Codex claimed the lock for the remaining Preferences visual c
 - ✅ **Compact playback equalizer**: Enable and Preset remain native settings rows while ten
   accessible vertical scales share one horizontally scrollable card with live dB labels and
   synchronized preset, persistence, backend-failure, and disabled-state behavior.
+- ✅ **Preferences visual controls**: Appearance uses native System/Light/Dark preview cards;
+  Layout uses Top/Bottom Player Bar previews and persistent Sidebar, filter bar, Information panel,
+  status line and density controls that apply only after successful storage and rollback on error.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
