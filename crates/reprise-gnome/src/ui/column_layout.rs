@@ -38,6 +38,38 @@ const DEFAULT_ORDER: [ColumnId; 9] = [
     ColumnId::Genre,
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ColumnWidthPolicy {
+    fixed_width: i32,
+    expand: bool,
+}
+
+fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
+    let fixed_width = match id {
+        ColumnId::Cover => 40,
+        ColumnId::Title => 360,
+        ColumnId::TrackNumber => 80,
+        ColumnId::Artist => 260,
+        ColumnId::Album => 300,
+        ColumnId::Genre => 180,
+        ColumnId::Year => 90,
+        ColumnId::Duration => 100,
+        ColumnId::Rating => 160,
+    };
+    ColumnWidthPolicy {
+        fixed_width,
+        expand: id == ColumnId::Title,
+    }
+}
+
+fn apply_column_width_policy(column: &gtk4::ColumnViewColumn, id: ColumnId) {
+    let policy = column_width_policy(id);
+    // ColumnView recycles row widgets while scrolling. A fixed width prevents
+    // newly visible cell contents from changing the natural column geometry.
+    column.set_fixed_width(policy.fixed_width);
+    column.set_expand(policy.expand);
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnLayout {
     pub order: Vec<ColumnId>,
@@ -405,6 +437,9 @@ pub(super) fn build_columns(
         (ColumnId::Duration, duration),
         (ColumnId::Rating, rating),
     ]);
+    for (id, column) in &columns {
+        apply_column_width_policy(column, *id);
+    }
     let registry = ColumnRegistry {
         view: view.clone(),
         columns,
@@ -421,6 +456,28 @@ pub(super) fn build_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_track_column_has_stable_width_and_only_title_expands() {
+        for id in DEFAULT_ORDER {
+            let policy = column_width_policy(id);
+            assert!(policy.fixed_width > 0, "missing fixed width for {id:?}");
+            assert_eq!(policy.expand, id == ColumnId::Title);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn width_policy_is_applied_to_gtk_columns() {
+        gtk4::init().unwrap();
+        for id in DEFAULT_ORDER {
+            let column = gtk4::ColumnViewColumn::builder().build();
+            apply_column_width_policy(&column, id);
+            let policy = column_width_policy(id);
+            assert_eq!(column.fixed_width(), policy.fixed_width);
+            assert_eq!(column.expands(), policy.expand);
+        }
+    }
 
     #[test]
     fn layout_round_trips_canonically() {
