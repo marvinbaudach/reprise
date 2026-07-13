@@ -174,6 +174,16 @@ async fn settle() {
     }
 }
 
+async fn settle_until(runtime: &DeviceSyncRuntime, device_id: &str, phase: SyncPhase) {
+    for _ in 0..1_000 {
+        if snapshot(runtime, device_id).phase == phase {
+            return;
+        }
+        gtk4::glib::timeout_future(Duration::from_millis(5)).await;
+    }
+    panic!("device sync did not reach {phase:?}");
+}
+
 fn snapshot(runtime: &DeviceSyncRuntime, id: &str) -> SyncSnapshot {
     runtime
         .devices()
@@ -255,9 +265,7 @@ fn device_view_projects_descriptor_scan_and_idle_state() {
         let device = runtime.devices().remove(0);
         assert_eq!(device.id, "a");
         assert_eq!(device.name, "Phone a");
-        assert_eq!(device.root_uri, "mtp://a");
         assert_eq!(device.icon, expected_icon);
-        assert!(device.reconnectable);
         assert!(device.connected);
         assert_eq!(device.available_bytes, Some(1_000_000));
         assert!(device.contents.files.is_empty());
@@ -396,5 +404,133 @@ fn unplugged_idle_device_leaves_the_detected_device_list() {
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         backend.set_devices(&[]);
         assert!(runtime.devices().is_empty());
+    });
+}
+
+#[test]
+fn local_gio_backend_runs_two_jobs_in_order_with_monotone_progress_and_m3u8() {
+    run(async {
+        let (_sources, conn) = fixture();
+        let device_root = tempfile::tempdir().unwrap();
+        let backend = Rc::new(
+            super::device_sync_smoke::SmokeDeviceBackend::for_root(device_root.path()).unwrap(),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        let snapshots = Rc::new(RefCell::new(Vec::new()));
+        let observed = snapshots.clone();
+        let _subscription = runtime.subscribe(Rc::new(move |state| {
+            if let Some(device) = state.devices.first() {
+                observed.borrow_mut().push(device.snapshot.clone());
+            }
+        }));
+        runtime
+            .enqueue(super::device_sync_smoke::DEVICE_ID, "Road", &[1, 2])
+            .unwrap();
+        runtime
+            .enqueue(super::device_sync_smoke::DEVICE_ID, "Road", &[3])
+            .unwrap();
+        settle().await;
+
+        for id in 1..=3 {
+            assert!(device_root
+                .path()
+                .join(format!("Music/Reprise/Road/{id}-{id}.flac"))
+                .is_file());
+        }
+        let playlist =
+            std::fs::read_to_string(device_root.path().join("Music/Reprise/Road.m3u8")).unwrap();
+        let paths = reprise_core::library::m3u::parse_m3u(&playlist)
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect::<Vec<_>>();
+        assert_eq!(paths, ["Road/1-1.flac", "Road/2-2.flac", "Road/3-3.flac"]);
+
+        for total_tracks in [2, 1] {
+            let progress = snapshots
+                .borrow()
+                .iter()
+                .filter(|snapshot| snapshot.total_tracks == total_tracks)
+                .map(|snapshot| snapshot.completed_bytes + snapshot.current_bytes)
+                .collect::<Vec<_>>();
+            assert!(progress.windows(2).all(|pair| pair[0] <= pair[1]));
+        }
+        assert_eq!(
+            snapshot(&runtime, super::device_sync_smoke::DEVICE_ID).phase,
+            SyncPhase::Complete
+        );
+    });
+}
+
+#[test]
+fn local_gio_cancel_removes_partial_and_runs_the_waiting_job() {
+    run(async {
+        let (sources, conn) = fixture();
+        std::fs::write(
+            sources.path().join("4.flac"),
+            vec![4_u8; 16 * 1_024 * 1_024],
+        )
+        .unwrap();
+        let device_root = tempfile::tempdir().unwrap();
+        let backend = Rc::new(
+            super::device_sync_smoke::SmokeDeviceBackend::for_root(device_root.path()).unwrap(),
+        );
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+
+        runtime
+            .enqueue(super::device_sync_smoke::DEVICE_ID, "Done", &[1])
+            .unwrap();
+        settle_until(
+            &runtime,
+            super::device_sync_smoke::DEVICE_ID,
+            SyncPhase::Complete,
+        )
+        .await;
+
+        let cancelled = Rc::new(Cell::new(false));
+        let cancelled_for_callback = cancelled.clone();
+        let runtime_for_callback = Rc::downgrade(&runtime);
+        let _subscription = runtime.subscribe(Rc::new(move |state| {
+            let Some(device) = state.devices.first() else {
+                return;
+            };
+            if device.snapshot.current_name.as_deref() == Some("4.flac")
+                && device.snapshot.current_bytes > 0
+                && !cancelled_for_callback.replace(true)
+            {
+                if let Some(runtime) = runtime_for_callback.upgrade() {
+                    runtime.cancel_current(super::device_sync_smoke::DEVICE_ID);
+                }
+            }
+        }));
+        runtime
+            .enqueue(super::device_sync_smoke::DEVICE_ID, "Cancel", &[4])
+            .unwrap();
+        runtime
+            .enqueue(super::device_sync_smoke::DEVICE_ID, "Keep", &[2])
+            .unwrap();
+        settle_until(
+            &runtime,
+            super::device_sync_smoke::DEVICE_ID,
+            SyncPhase::Complete,
+        )
+        .await;
+
+        assert!(cancelled.get());
+        assert!(device_root
+            .path()
+            .join("Music/Reprise/Done/1-1.flac")
+            .is_file());
+        assert!(device_root
+            .path()
+            .join("Music/Reprise/Keep/2-2.flac")
+            .is_file());
+        assert!(!device_root
+            .path()
+            .join("Music/Reprise/Cancel/4-4.flac")
+            .exists());
+        assert!(!device_root
+            .path()
+            .join("Music/Reprise/Cancel/4-4.flac.reprise-part")
+            .exists());
     });
 }

@@ -39,9 +39,11 @@ pub mod cover_download_worker;
 pub mod cover_loader;
 mod current_track_selection;
 pub mod delete_tracks;
+mod device_sync_backend;
 mod device_sync_runtime;
 #[cfg(test)]
 mod device_sync_runtime_tests;
+mod device_sync_smoke;
 mod device_sync_strings;
 pub mod dialogs;
 pub mod first_run;
