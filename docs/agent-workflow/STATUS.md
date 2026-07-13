@@ -21,22 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Restore whole-row column layout drag
-SINCE:    2026-07-13 21:34 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     -
+SINCE:    -
 ```
 
-_As of 2026-07-13 21:34 CEST: Codex claimed the lock for the whole-row column-layout drag regression._
+_As of 2026-07-13: whole-row column-layout dragging is restored and the lock is free._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-up-next-compact-redesign.md` (4 tasks).
-- **Last completed:** **Manual Up Next + native Compact redesign** (`d0441f5`) — pending manual
-  tracks interrupt and then resume a hidden context; four GNOME-native layouts use menu-only
-  Library return and free-surface five-percent scroll volume without visible Compact volume UI.
+- **Last completed:** **Whole-row column-layout drag restoration** (`87b85fc`) — every movable
+  editor row captures drag gestures before its embedded controls while ordinary clicks remain intact.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `d0441f5`; this QA/coordination close-out follows it.
+- **Main implementation:** `87b85fc`.
 
 ## Done so far (compact)
 
@@ -52,6 +51,9 @@ _As of 2026-07-13 21:34 CEST: Codex claimed the lock for the whole-row column-la
 - ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
   whole-row drag ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
   first-run offer that remains default off.
+- ✅ **Whole-row column-layout drag restoration**: movable editor rows use capture-phase drag
+  recognition across labels, empty space and embedded controls, while short Switch and Up/Down
+  clicks keep their existing behavior.
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
