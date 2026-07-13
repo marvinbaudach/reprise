@@ -1,6 +1,5 @@
-//! The bottom player bar: track title/artist, transport controls, a seek
-//! scale, and volume. A `gtk::ActionBar` embedded via
-//! `adw::ToolbarView::add_bottom_bar` in `window.rs`.
+//! The full-width Library player bar: track title/artist, transport controls,
+//! a seek scale, playback modes, and volume.
 //!
 //! `PlayerBar` owns every widget it displays; callers (see
 //! `player_controller.rs`) only interact with it through the `set_*`/
@@ -52,9 +51,10 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::{gdk, pango, prelude::*};
+use gtk4::{gdk, prelude::*};
 
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::player_bar_layout::{self, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::player_bar_seek::{
     should_apply_position_tick, should_clear_drag_guard_on_track_change,
     should_finish_observer_cancel, should_finish_observer_stop, should_self_heal,
@@ -79,35 +79,6 @@ pub(super) const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
 /// `artist_label` already uses (see `PlayerBar::new`), which GTK's Adwaita
 /// theme renders as reduced-opacity text/icon content on any widget.
 pub(super) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
-
-/// Icons `gtk::ScaleButton` cycles through by value, lowest first — mirrors
-/// the stock GNOME volume-button icon set (mute/low/medium/high).
-const VOLUME_ICONS: [&str; 4] = [
-    "audio-volume-muted-symbolic",
-    "audio-volume-low-symbolic",
-    "audio-volume-medium-symbolic",
-    "audio-volume-high-symbolic",
-];
-const VOLUME_MIN: f64 = 0.0;
-const VOLUME_MAX: f64 = 1.0;
-const VOLUME_STEP: f64 = 0.05;
-const VOLUME_DEFAULT: f64 = 1.0;
-
-/// Fixed width for the title/artist column so the transport controls stay
-/// centered regardless of how long a track's metadata is (labels ellipsize
-/// instead of pushing the layout around).
-const TRACK_INFO_WIDTH: i32 = 220;
-
-const ZERO_TIME_LABEL: &str = "0:00";
-const CENTER_BOX_SPACING: i32 = 8;
-
-/// Pixel size of the player bar's cover thumbnail — matches
-/// `reprise_core::cover::ThumbnailSize::Bar`.
-const COVER_PIXEL_SIZE: i32 = 48;
-
-/// CSS class applied to the player bar's cover `gtk4::Image`, for styling
-/// hooks (rounded corners etc.) without reaching into `PlayerBar`'s widgets.
-const COVER_CSS_CLASS: &str = "player-bar-cover";
 
 /// Cover/track-info click callback storage (Task 8) — factored out to
 /// satisfy clippy's `type_complexity` lint; see `on_expand`'s doc comment.
@@ -177,90 +148,23 @@ pub struct PlayerBar {
 
 impl PlayerBar {
     pub fn new() -> Self {
-        let cover = gtk4::Image::new();
-        cover.set_pixel_size(COVER_PIXEL_SIZE);
-        cover.add_css_class(COVER_CSS_CLASS);
-        CoverLoader::set_placeholder(&cover);
-
-        let title_label = build_track_label();
-        // Bold via a Pango attribute (set once, applies to every future
-        // `set_text`) rather than per-call `set_markup`, which would require
-        // escaping angle brackets/ampersands in track titles on every update.
-        let bold = pango::AttrList::new();
-        bold.insert(pango::AttrInt::new_weight(pango::Weight::Bold));
-        title_label.set_attributes(Some(&bold));
-
-        let artist_label = build_track_label();
-        artist_label.add_css_class("dim-label");
-
-        let track_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        track_box.append(&title_label);
-        track_box.append(&artist_label);
-        track_box.set_valign(gtk4::Align::Center);
-        track_box.set_width_request(TRACK_INFO_WIDTH);
-
-        // Transport strip, mockup order (design mockup 7a): Shuffle | Prev |
-        // Play | Next | Repeat, centered around the seek scale.
-        let shuffle_button = gtk4::ToggleButton::builder()
-            .icon_name(ICON_SHUFFLE)
-            .tooltip_text(strings::text(strings::SHUFFLE))
-            .valign(gtk4::Align::Center)
-            .build();
-
-        let prev_button = gtk4::Button::from_icon_name(ICON_PREVIOUS);
-        prev_button.set_tooltip_text(Some(&strings::text(strings::PREVIOUS)));
-        prev_button.set_valign(gtk4::Align::Center);
-        // No queue to step through until a view has been activated at least
-        // once (see `set_transport_enabled`, called by
-        // `player_controller::PlayerController::play_from_view`).
-        prev_button.set_sensitive(false);
-
-        let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
-        play_pause_button.set_tooltip_text(Some(&strings::text(strings::PLAY)));
-        play_pause_button.set_valign(gtk4::Align::Center);
-
-        let next_button = gtk4::Button::from_icon_name(ICON_NEXT);
-        next_button.set_tooltip_text(Some(&strings::text(strings::NEXT)));
-        next_button.set_valign(gtk4::Align::Center);
-        next_button.set_sensitive(false);
-
-        let repeat_button = gtk4::Button::from_icon_name(ICON_REPEAT_ALL);
-        repeat_button.set_tooltip_text(Some(&strings::text(strings::REPEAT)));
-        repeat_button.set_valign(gtk4::Align::Center);
-
-        let position_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
-        let duration_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
-
-        let scale = gtk4::Scale::new(gtk4::Orientation::Horizontal, None::<&gtk4::Adjustment>);
-        scale.set_range(0.0, 1.0);
-        scale.set_draw_value(false);
-        scale.set_hexpand(true);
-        scale.set_valign(gtk4::Align::Center);
-        scale.set_tooltip_text(Some(&strings::text(strings::PLAYBACK_POSITION)));
-
-        let center_box = gtk4::Box::new(gtk4::Orientation::Horizontal, CENTER_BOX_SPACING);
-        center_box.append(&shuffle_button);
-        center_box.append(&prev_button);
-        center_box.append(&play_pause_button);
-        center_box.append(&position_label);
-        center_box.append(&scale);
-        center_box.append(&duration_label);
-        center_box.append(&next_button);
-        center_box.append(&repeat_button);
-        center_box.set_hexpand(true);
-        center_box.set_valign(gtk4::Align::Center);
-
-        let volume_button =
-            gtk4::ScaleButton::new(VOLUME_MIN, VOLUME_MAX, VOLUME_STEP, &VOLUME_ICONS);
-        volume_button.set_value(VOLUME_DEFAULT);
-        volume_button.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
-        volume_button.set_valign(gtk4::Align::Center);
-
-        // Task 8: cover + track_box (no buttons) share one clickable area —
-        // NOT the whole `ActionBar`, which would swallow button clicks.
-        let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        info_box.append(&cover);
-        info_box.append(&track_box);
+        let PlayerBarWidgets {
+            root: bar,
+            info_box,
+            cover,
+            title_label,
+            artist_label,
+            shuffle_button,
+            prev_button,
+            play_pause_button,
+            next_button,
+            repeat_button,
+            position_label,
+            duration_label,
+            scale,
+            volume_button,
+            ..
+        } = player_bar_layout::build();
 
         let on_expand: ExpandCallback = Rc::new(RefCell::new(None));
         let expand_click = gtk4::GestureClick::new();
@@ -273,14 +177,6 @@ impl PlayerBar {
             }
         });
         info_box.add_controller(expand_click);
-
-        let bar = gtk4::ActionBar::new();
-        bar.pack_start(&info_box);
-        bar.set_center_widget(Some(&center_box));
-        bar.pack_end(&volume_button);
-        // No track loaded yet — nothing to play, pause, or seek until the
-        // player reports a non-stopped state (see `set_state`).
-        bar.set_sensitive(false);
 
         let bar = Self {
             bar,
@@ -312,7 +208,7 @@ impl PlayerBar {
         bar
     }
 
-    /// The root widget to embed via `ToolbarView::add_bottom_bar`.
+    /// The root widget to place in the full-width Library player-bar shell.
     pub fn widget(&self) -> &gtk4::ActionBar {
         &self.bar
     }
@@ -768,15 +664,4 @@ impl Default for PlayerBar {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Builds a start-aligned, ellipsizing label — the shared shape of the title
-/// and artist labels, differing only in the attribute/CSS class the caller
-/// adds afterwards (bold weight vs. `dim-label`).
-fn build_track_label() -> gtk4::Label {
-    let label = gtk4::Label::new(None);
-    label.set_halign(gtk4::Align::Start);
-    label.set_ellipsize(pango::EllipsizeMode::End);
-    label.set_xalign(0.0);
-    label
 }

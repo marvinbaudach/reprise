@@ -53,6 +53,7 @@ pub mod now_playing_wiring;
 mod play_tracking;
 pub mod playback_faults;
 pub mod player_bar;
+mod player_bar_layout;
 mod player_bar_seek;
 mod player_bar_state;
 pub mod player_controller;
