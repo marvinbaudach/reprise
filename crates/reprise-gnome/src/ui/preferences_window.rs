@@ -61,7 +61,6 @@ impl PageId {
 
 pub(super) struct PreferencesShell {
     pub(super) window: adw::Window,
-    #[cfg(test)]
     pub(super) stack: adw::ViewStack,
     #[cfg(test)]
     pub(super) switcher: adw::ViewSwitcher,
@@ -110,7 +109,6 @@ pub(super) fn build(
     window.set_size_request(560, 480);
     PreferencesShell {
         window,
-        #[cfg(test)]
         stack,
         #[cfg(test)]
         switcher,

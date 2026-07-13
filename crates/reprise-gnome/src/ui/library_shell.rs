@@ -45,6 +45,9 @@ pub(super) fn build(
         runtime.clone(),
         track_list.shared_cover_loader(),
     );
+    if let Some(player) = player {
+        player.set_lyrics_view(&info_panel.lyrics_view());
+    }
     let content_nav = now_playing_wiring::build_content_nav(
         info_panel.widget(),
         player.map(|controller| controller.now_playing_widget()),

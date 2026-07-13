@@ -18,6 +18,7 @@ pub mod db;
 pub mod device_sync;
 pub mod format;
 pub mod library;
+pub mod lyrics;
 pub mod media_integration;
 pub mod models;
 pub mod modules;
@@ -31,3 +32,5 @@ pub mod view_source;
 
 #[cfg(test)]
 mod artist_news_tests;
+#[cfg(test)]
+mod lyrics_tests;
