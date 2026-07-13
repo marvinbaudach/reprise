@@ -19,6 +19,7 @@ pub mod library;
 pub mod media_integration;
 pub mod models;
 pub mod modules;
+pub mod musicbrainz;
 pub mod playback;
 pub mod queries;
 pub mod queue;
