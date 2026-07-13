@@ -3,14 +3,15 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk4::gdk;
-use gtk4::glib;
 use gtk4::prelude::*;
+use gtk4::{gdk, gio, glib};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::device_sync::{SyncPhase, SyncSnapshot};
 
-use super::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView, Subscription};
+use super::device_sync_runtime::{
+    DeviceSyncRuntime, DeviceSyncState, DeviceView, EnqueueError, Subscription,
+};
 use super::device_sync_strings as copy;
 
 pub(super) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPage {
@@ -326,12 +327,44 @@ fn install_sync_drop(
         match runtime.enqueue(&device_id, &playlist, &ids) {
             Ok(_) => true,
             Err(error) => {
+                if let Some((heading, body)) = enqueue_warning(&error) {
+                    present_enqueue_warning(&drop_row, &heading, &body);
+                }
                 tracing::warn!(%error, "phone playlist drop was rejected");
                 false
             }
         }
     });
     row.add_controller(target);
+}
+
+fn enqueue_warning(error: &EnqueueError) -> Option<(String, String)> {
+    let EnqueueError::InsufficientSpace {
+        required_bytes,
+        available_bytes,
+    } = error
+    else {
+        return None;
+    };
+    Some((
+        copy::text(copy::NOT_ENOUGH_SPACE),
+        copy::insufficient_space_description(*required_bytes, *available_bytes),
+    ))
+}
+
+fn present_enqueue_warning<W: IsA<gtk4::Widget>>(parent: &W, heading: &str, body: &str) {
+    let dialog = enqueue_warning_dialog(heading, body);
+    dialog.choose(Some(parent), gio::Cancellable::NONE, |_| {});
+}
+
+fn enqueue_warning_dialog(heading: &str, body: &str) -> adw::AlertDialog {
+    let dialog = adw::AlertDialog::builder()
+        .heading(heading)
+        .body(body)
+        .close_response("close")
+        .build();
+    dialog.add_response("close", &super::strings::text(super::strings::CLOSE));
+    dialog
 }
 
 fn sync_drop_ids(value: &str) -> Option<Vec<i64>> {
@@ -501,6 +534,37 @@ mod tests {
         assert!(sync_drop_ids("foreign text").is_none());
         assert_eq!(sync_drop_ids("0|-"), None);
         assert_eq!(sync_drop_ids("-1|-"), None);
+    }
+
+    #[test]
+    fn only_insufficient_space_maps_to_the_storage_warning() {
+        let warning = enqueue_warning(&EnqueueError::InsufficientSpace {
+            required_bytes: 2_048,
+            available_bytes: 1_024,
+        })
+        .unwrap();
+        assert_eq!(warning.0, copy::text(copy::NOT_ENOUGH_SPACE));
+        assert_eq!(
+            warning.1,
+            copy::insufficient_space_description(2_048, 1_024)
+        );
+        assert!(enqueue_warning(&EnqueueError::UnknownDevice).is_none());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn storage_warning_dialog_exposes_sizes_and_a_close_action() {
+        gtk4::init().unwrap();
+        let heading = copy::text(copy::NOT_ENOUGH_SPACE);
+        let body = copy::insufficient_space_description(2_048, 1_024);
+        let dialog = enqueue_warning_dialog(&heading, &body);
+
+        assert_eq!(dialog.heading().as_deref(), Some(heading.as_str()));
+        assert_eq!(dialog.body(), body);
+        assert_eq!(
+            dialog.response_label("close"),
+            crate::ui::strings::text(crate::ui::strings::CLOSE)
+        );
     }
 
     fn display_runtime() -> Rc<DeviceSyncRuntime> {

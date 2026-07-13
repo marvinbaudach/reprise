@@ -348,6 +348,9 @@ Use only a disposable Android device or copied music. Unlock it, select USB
 - [ ] While a large first job runs, enqueue two more drops onto the same device.
   Expected: jobs copy strictly in drop order with no overlapping same-device
   writes. A different connected device may progress independently.
+- [ ] With less free device storage than the selected tracks require, drop them
+  onto a phone playlist. Expected: no job starts and a localized warning shows
+  both the required size and the space still available after queued copies.
 - [ ] Cancel a running copy. Expected: its `.reprise-part` and incomplete final
   file are absent, completed files remain, and the next queued job starts. No
   unrelated phone file is deleted or overwritten.

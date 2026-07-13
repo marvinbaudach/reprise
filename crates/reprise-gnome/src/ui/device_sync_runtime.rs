@@ -77,6 +77,10 @@ pub struct DeviceSyncState {
 pub enum EnqueueError {
     UnknownDevice,
     NoUsableTracks,
+    InsufficientSpace {
+        required_bytes: u64,
+        available_bytes: u64,
+    },
     Database(String),
 }
 
@@ -85,6 +89,13 @@ impl fmt::Display for EnqueueError {
         match self {
             Self::UnknownDevice => formatter.write_str("device is not connected"),
             Self::NoUsableTracks => formatter.write_str("no available tracks were selected"),
+            Self::InsufficientSpace {
+                required_bytes,
+                available_bytes,
+            } => write!(
+                formatter,
+                "copy needs {required_bytes} bytes but only {available_bytes} bytes are available"
+            ),
             Self::Database(error) => {
                 write!(formatter, "could not resolve selected tracks: {error}")
             }
@@ -129,6 +140,7 @@ struct DeviceState {
     scan_error: Option<String>,
     draft_playlists: Vec<String>,
     last_enqueue: Option<EnqueueReceipt>,
+    reserved_bytes: u64,
 }
 
 impl DeviceState {
@@ -149,6 +161,7 @@ impl DeviceState {
             scan_error: None,
             draft_playlists: Vec::new(),
             last_enqueue: None,
+            reserved_bytes: 0,
         }
     }
 
@@ -242,22 +255,38 @@ impl DeviceSyncRuntime {
             return Err(EnqueueError::NoUsableTracks);
         }
         let count = tracks.len();
+        let required_bytes = tracks
+            .iter()
+            .fold(0_u64, |total, track| total.saturating_add(track.size_bytes));
         let job_id = self.next_job_id.get();
-        self.next_job_id.set(job_id.saturating_add(1));
-        if let Some(device) = self.device_states.borrow_mut().get_mut(device_id) {
-            let playlist = reprise_core::device_sync::safe_component(playlist, "Playlist");
-            device.queue.enqueue(SyncJob {
-                id: job_id,
-                playlist: playlist.clone(),
-                tracks,
-            });
-            let snapshot = device.queue.snapshot();
-            device.last_enqueue = Some(EnqueueReceipt {
-                playlist,
-                track_count: count,
-                queue_position: snapshot.queued_jobs + usize::from(device.running),
-            });
+        let mut devices = self.device_states.borrow_mut();
+        let device = devices
+            .get_mut(device_id)
+            .ok_or(EnqueueError::UnknownDevice)?;
+        if let Some(available_bytes) = device.available_bytes {
+            let unreserved_bytes = available_bytes.saturating_sub(device.reserved_bytes);
+            if required_bytes > unreserved_bytes {
+                return Err(EnqueueError::InsufficientSpace {
+                    required_bytes,
+                    available_bytes: unreserved_bytes,
+                });
+            }
         }
+        self.next_job_id.set(job_id.saturating_add(1));
+        let playlist = reprise_core::device_sync::safe_component(playlist, "Playlist");
+        device.reserved_bytes = device.reserved_bytes.saturating_add(required_bytes);
+        device.queue.enqueue(SyncJob {
+            id: job_id,
+            playlist: playlist.clone(),
+            tracks,
+        });
+        let snapshot = device.queue.snapshot();
+        device.last_enqueue = Some(EnqueueReceipt {
+            playlist,
+            track_count: count,
+            queue_position: snapshot.queued_jobs + usize::from(device.running),
+        });
+        drop(devices);
         self.notify();
         self.start_or_resume(device_id);
         Ok(count)
@@ -270,7 +299,10 @@ impl DeviceSyncRuntime {
             device.queue.request_cancel();
             if let Some(cancellable) = device.cancellable.take() {
                 cancellable.cancel();
-            } else if device.paused_work.take().is_some() {
+            } else if let Some(work) = device.paused_work.take() {
+                device.reserved_bytes = device
+                    .reserved_bytes
+                    .saturating_sub(remaining_work_bytes(&work));
                 device.queue.resume();
                 device.queue.finish_job();
                 start_next = device.connected;
@@ -561,6 +593,12 @@ async fn run_work(
                     if device.generation != generation {
                         return;
                     }
+                    device.reserved_bytes = device.reserved_bytes.saturating_sub(track.size_bytes);
+                    if outcome == CopyOutcome::Copied {
+                        device.available_bytes = device
+                            .available_bytes
+                            .map(|available| available.saturating_sub(track.size_bytes));
+                    }
                     device.queue.set_track_bytes(track.size_bytes);
                     device.queue.finish_track(match outcome {
                         CopyOutcome::Copied => TrackOutcome::Copied,
@@ -575,6 +613,7 @@ async fn run_work(
                     if device.generation != generation {
                         return;
                     }
+                    device.reserved_bytes = device.reserved_bytes.saturating_sub(track.size_bytes);
                     device.queue.finish_track(TrackOutcome::Failed);
                 }
             }
@@ -591,6 +630,7 @@ fn finish_interrupted(
     generation: u64,
     work: Work,
 ) {
+    let remaining_bytes = remaining_work_bytes(&work);
     let mut continue_queue = false;
     if let Some(device) = runtime.device_states.borrow_mut().get_mut(device_id) {
         if device.generation != generation {
@@ -603,10 +643,12 @@ fn finish_interrupted(
             device.queue.pause_disconnected();
             continue_queue = device.connected;
         } else if device.interrupted_disconnect {
+            device.reserved_bytes = device.reserved_bytes.saturating_sub(remaining_bytes);
             device
                 .queue
                 .fail_job("Device disconnected; reconnect and enqueue again");
         } else {
+            device.reserved_bytes = device.reserved_bytes.saturating_sub(remaining_bytes);
             device.queue.finish_job();
             continue_queue = device.connected;
         }
@@ -616,6 +658,12 @@ fn finish_interrupted(
     if continue_queue {
         runtime.start_or_resume(device_id);
     }
+}
+
+fn remaining_work_bytes(work: &Work) -> u64 {
+    work.job.tracks[work.next_track..]
+        .iter()
+        .fold(0_u64, |total, track| total.saturating_add(track.size_bytes))
 }
 
 async fn finish_playlist(
