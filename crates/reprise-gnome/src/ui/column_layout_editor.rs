@@ -62,6 +62,9 @@ fn wire_row_drag_and_drop(
 ) {
     let source = gtk4::DragSource::new();
     source.set_actions(gdk::DragAction::MOVE);
+    // Observe pointer movement before ActionRow or one of its controls claims it.
+    // Clicks still propagate normally when the gesture does not become a drag.
+    source.set_propagation_phase(gtk4::PropagationPhase::Capture);
     source.connect_prepare(move |_, _, _| {
         Some(gdk::ContentProvider::for_value(&id.as_str().to_value()))
     });
@@ -350,21 +353,26 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn movable_row_owns_drag_and_drop_controllers() {
+    fn movable_row_captures_drag_before_child_controls_and_accepts_drops() {
         if gtk4::init().is_err() {
             return;
         }
-        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let row = adw::ActionRow::builder().title("Artist").build();
+        let toggle = gtk4::Switch::new();
+        row.add_suffix(&toggle);
+        row.set_activatable_widget(Some(&toggle));
         wire_row_drag_and_drop(&row, ColumnId::Artist, |_, _| {});
         let controllers = row.observe_controllers();
-        let mut has_drag = false;
+        let mut drag_phase = None;
         let mut has_drop = false;
         for index in 0..controllers.n_items() {
             let controller = controllers.item(index).unwrap();
-            has_drag |= controller.is::<gtk4::DragSource>();
+            if let Ok(source) = controller.clone().downcast::<gtk4::DragSource>() {
+                drag_phase = Some(source.propagation_phase());
+            }
             has_drop |= controller.is::<gtk4::DropTarget>();
         }
-        assert!(has_drag);
+        assert_eq!(drag_phase, Some(gtk4::PropagationPhase::Capture));
         assert!(has_drop);
     }
 }
