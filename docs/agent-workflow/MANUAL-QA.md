@@ -172,6 +172,30 @@ M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
 - [ ] MPRIS bus loss/name collision and clean application shutdown do not crash or
   leave a ghost player in GNOME Shell.
 
+## Pending: ListenBrainz account and scrobbling
+
+Use a disposable ListenBrainz account and copied test tracks. Never paste its token
+into a terminal, issue, screenshot, log capture, or repository file.
+
+- [ ] ListenBrainz is off on a fresh profile and causes no request before opt-in.
+- [ ] Connect from Plugins with the masked token field. Expected: the row becomes
+  “Connected as …”, restart reconnects without asking again, and the token exists in
+  the native Secret Service on the host and the encrypted Secret-Portal-backed store
+  in Flatpak—not in `reprise.db`, settings, environment output, or logs.
+- [ ] Start a short track and a track longer than eight minutes. Expected: playing-now
+  appears after successful playback start; a permanent listen appears once at half of
+  the short track and once at four minutes of the long track. Seeking backward after
+  crossing the threshold must not duplicate either listen.
+- [ ] Disconnect the network, complete a copied track, close Reprise, reopen it, and
+  restore the network. Expected: the UI reports the pending count, playback/local play
+  counts remain normal, and the listen is delivered once when connectivity returns.
+- [ ] Disable the module while connected. Expected: no new playing-now or permanent
+  listens are sent; pending metadata stays local. Re-enable and verify delivery resumes.
+- [ ] Choose Disconnect. Expected: the keyring item and local ListenBrainz queue are
+  removed, the plugin becomes disabled, and no music file or general library row changes.
+- [ ] Enter an invalid token and simulate an unavailable/locked keyring. Expected: the
+  UI shows rejected/error status and never falls back to plaintext storage.
+
 ## Pending: browse, columns, playlists, and Rhythmbox
 
 - [ ] Browse dropdowns work by mouse and keyboard at narrow and wide widths; each

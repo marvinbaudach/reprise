@@ -27,7 +27,7 @@ allows exactly two documented informational conditions: the established
 uppercase component ID `org.reprise.Reprise` and the absent homepage while no
 public project URL exists.
 
-Five GTK regression tests require a display and are ignored by the normal test
+Fourteen GTK regression tests require a display and are ignored by the normal test
 suite. Run each in its own process because GTK can only be initialized from one
 thread per process, while Rust's test harness gives separate tests separate
 threads even with `--test-threads=1`:
@@ -35,10 +35,19 @@ threads even with `--test-threads=1`:
 ```sh
 for test in \
   closed_popover_stays_parented_until_pending_actions_finish \
+  widgets_show_running_counts_and_terminal_result \
+  progress_widgets_show_running_fraction_and_counts \
+  widgets_reveal_progress_and_hide_after_finish \
   reentrant_set_on_changed_does_not_panic \
   enter_activates_the_apply_button_from_every_entry_row \
   interaction_surface_expands_to_the_whole_cell \
-  movable_row_owns_drag_and_drop_controllers
+  movable_row_owns_drag_and_drop_controllers \
+  token_entry_is_a_masked_password_row \
+  header_and_restore_buttons_switch_one_application_window_in_one_activation \
+  bar_layout_has_required_accessible_controls_and_fits \
+  cover_layout_has_required_accessible_controls_and_fits \
+  pill_layout_has_required_accessible_controls_and_fits \
+  card_layout_has_required_accessible_controls_and_fits
 do
   XDG_DATA_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)" \
     xvfb-run -a cargo test -p reprise-gnome "$test" -- --ignored
@@ -115,6 +124,11 @@ The detailed live ledger of confirmed and pending checks is
 - Exercise browse facets, search, the column-layout editor (switches, buttons,
   whole-row drag, insertion lines, reset and restart persistence), a real read-only
   Rhythmbox column import, playlists, M3U import/export, and drag/reorder gestures.
+- Connect a disposable ListenBrainz account, verify the displayed account name,
+  then test playing-now, the half-track/four-minute threshold, offline persistence
+  across restart, retry delivery, disable-without-sending, and Disconnect clearing
+  both the keyring item and local pending queue. Never use a production token in
+  automated tests or logs.
 - Batch-edit multiple copied tracks. Mixed fields must show multiple values and
   unchanged per-track fields must remain untouched.
 - Confirm database-only removal leaves copied files intact. Confirm move to Trash

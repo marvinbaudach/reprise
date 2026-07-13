@@ -20,6 +20,8 @@ Flathub.
 - Manual and smart playlists, multi-select actions, drag and drop, queue
   reordering, and M3U/M3U8 import and export.
 - Embedded, folder, and cached online album covers plus a full Now Playing view.
+- Optional ListenBrainz scrobbling with playing-now updates, durable offline
+  delivery, and credentials stored in the system keyring.
 - Multi-track tag editing that writes only fields explicitly changed by the
   user, confirmed database-only removal, and confirmed move to Trash.
 - First-run setup and validated session restore for window, view, filters,
@@ -45,7 +47,16 @@ and has no permanent-delete fallback.
 
 Online cover lookup is disabled by default. When enabled explicitly, Reprise
 sends album/artist metadata queries to MusicBrainz and downloads matching images
-from Cover Art Archive. No other feature requires network access.
+from Cover Art Archive.
+
+ListenBrainz scrobbling is also disabled by default. After you connect an account,
+Reprise sends artist, title, optional release, duration, and the listen start time
+to ListenBrainz; playing-now updates omit the start time. The user token is stored
+only in the system keyring (or the encrypted Secret-Portal-backed store in Flatpak),
+never in the library database or logs. Completed listens wait in a local FIFO queue
+while offline and are removed only after ListenBrainz accepts them. Disabling the
+module stops transmission but keeps pending listens locally; Disconnect removes
+both the keyring token and that ListenBrainz queue. Reprise sends no other telemetry.
 
 ## Requirements
 

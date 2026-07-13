@@ -33,8 +33,16 @@ pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: false,
 };
 
+pub const LISTENBRAINZ_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "listenbrainz",
+    name: "ListenBrainz",
+    description: "Scrobble completed listens to ListenBrainz (network; off by default)",
+    default_enabled: false,
+};
+
 /// Every optional integration the app currently exposes, in Plugins-page order.
-pub const ALL_MODULES: &[&ModuleDescriptor] = &[&MPRIS_MODULE, &COVER_DOWNLOAD_MODULE];
+pub const ALL_MODULES: &[&ModuleDescriptor] =
+    &[&MPRIS_MODULE, &COVER_DOWNLOAD_MODULE, &LISTENBRAINZ_MODULE];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -107,6 +115,36 @@ mod tests {
         assert!(ALL_MODULES
             .iter()
             .any(|module| module.id == "cover_download"));
+    }
+
+    #[test]
+    fn listenbrainz_defaults_to_disabled_and_has_a_namespaced_key() {
+        let conn = migrated_conn();
+        assert!(!is_enabled(&conn, &LISTENBRAINZ_MODULE).unwrap());
+        assert_eq!(
+            enabled_key(&LISTENBRAINZ_MODULE),
+            "module.listenbrainz.enabled"
+        );
+    }
+
+    #[test]
+    fn all_modules_lists_listenbrainz_once() {
+        assert_eq!(
+            ALL_MODULES
+                .iter()
+                .filter(|module| module.id == "listenbrainz")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn listenbrainz_enabled_state_round_trips() {
+        let conn = migrated_conn();
+        set_enabled(&conn, &LISTENBRAINZ_MODULE, true).unwrap();
+        assert!(is_enabled(&conn, &LISTENBRAINZ_MODULE).unwrap());
+        set_enabled(&conn, &LISTENBRAINZ_MODULE, false).unwrap();
+        assert!(!is_enabled(&conn, &LISTENBRAINZ_MODULE).unwrap());
     }
 
     #[test]
