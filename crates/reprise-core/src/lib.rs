@@ -22,4 +22,5 @@ pub mod modules;
 pub mod playback;
 pub mod queries;
 pub mod queue;
+pub mod scrobbling;
 pub mod view_source;
