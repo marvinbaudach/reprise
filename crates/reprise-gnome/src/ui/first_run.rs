@@ -29,6 +29,16 @@ struct CompletionOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RhythmboxImportChoices {
+    column_layout: bool,
+}
+
+struct RhythmboxImportWidgets {
+    group: adw::PreferencesGroup,
+    column_layout: adw::SwitchRow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompletionResponse {
     Skip,
     SetUp,
@@ -42,13 +52,38 @@ fn should_open_folder(response: CompletionResponse) -> bool {
     response == CompletionResponse::SetUp
 }
 
-fn rhythmbox_offer(available: bool) -> Option<bool> {
-    column_layout::should_offer_rhythmbox_import(available).then_some(false)
+fn rhythmbox_offer(decision: FirstRunDecision, available: bool) -> Option<RhythmboxImportChoices> {
+    (decision == FirstRunDecision::ShowWizard
+        && column_layout::should_offer_rhythmbox_import(available))
+    .then_some(RhythmboxImportChoices {
+        column_layout: false,
+    })
 }
 
 fn rhythmbox_layout_available() -> bool {
     std::env::var(primary_menu::SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR).is_ok()
         || column_layout::read_rhythmbox_visible_columns().is_ok()
+}
+
+fn build_rhythmbox_import_group(choices: RhythmboxImportChoices) -> RhythmboxImportWidgets {
+    let group = adw::PreferencesGroup::builder()
+        .title(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX))
+        .description(strings::text(
+            strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION,
+        ))
+        .build();
+    let column_layout = adw::SwitchRow::builder()
+        .title(strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT))
+        .subtitle(strings::text(
+            strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT_SUBTITLE,
+        ))
+        .active(choices.column_layout)
+        .build();
+    group.add(&column_layout);
+    RhythmboxImportWidgets {
+        group,
+        column_layout,
+    }
 }
 
 pub(super) fn decide(completed: bool, library_root: Option<&str>) -> FirstRunDecision {
@@ -101,13 +136,7 @@ pub(super) fn run(
         .subtitle(strings::text(strings::ONBOARDING_COVERS_SUBTITLE))
         .build();
     let rhythmbox_found = rhythmbox_layout_available();
-    let rhythmbox = rhythmbox_offer(rhythmbox_found).map(|active| {
-        adw::SwitchRow::builder()
-            .title(strings::text(strings::ONBOARDING_RHYTHMBOX_FOUND))
-            .subtitle(strings::text(strings::ONBOARDING_RHYTHMBOX_FOUND_SUBTITLE))
-            .active(active)
-            .build()
-    });
+    let rhythmbox = rhythmbox_offer(decision, rhythmbox_found).map(build_rhythmbox_import_group);
     tracing::info!(
         rhythmbox_found,
         rhythmbox_import_default = false,
@@ -115,9 +144,6 @@ pub(super) fn run(
     );
     let group = adw::PreferencesGroup::new();
     group.add(&cover);
-    if let Some(rhythmbox) = &rhythmbox {
-        group.add(rhythmbox);
-    }
 
     let privacy = gtk4::Label::builder()
         .label(strings::text(strings::ONBOARDING_PRIVACY))
@@ -138,6 +164,9 @@ pub(super) fn run(
     content.set_margin_end(18);
     content.append(&privacy);
     content.append(&group);
+    if let Some(rhythmbox) = &rhythmbox {
+        content.append(&rhythmbox.group);
+    }
     content.append(&buttons);
 
     let header = adw::HeaderBar::new();
@@ -211,7 +240,9 @@ pub(super) fn run(
             complete(
                 CompletionOptions {
                     cover_download: cover.is_active(),
-                    rhythmbox_columns: rhythmbox.as_ref().is_some_and(adw::SwitchRow::is_active),
+                    rhythmbox_columns: rhythmbox
+                        .as_ref()
+                        .is_some_and(|widgets| widgets.column_layout.is_active()),
                 },
                 CompletionResponse::SetUp,
                 false,
@@ -304,8 +335,40 @@ mod tests {
     }
 
     #[test]
-    fn rhythmbox_offer_is_visible_only_when_detected_and_defaults_off() {
-        assert_eq!(rhythmbox_offer(false), None);
-        assert_eq!(rhythmbox_offer(true), Some(false));
+    fn rhythmbox_offer_is_first_run_only_detected_and_defaults_off() {
+        assert_eq!(rhythmbox_offer(FirstRunDecision::ShowWizard, false), None);
+        assert_eq!(
+            rhythmbox_offer(FirstRunDecision::ExistingLibrary, true),
+            None
+        );
+        assert_eq!(
+            rhythmbox_offer(FirstRunDecision::AlreadyCompleted, true),
+            None
+        );
+        assert_eq!(
+            rhythmbox_offer(FirstRunDecision::ShowWizard, true),
+            Some(RhythmboxImportChoices {
+                column_layout: false,
+            })
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn detected_rhythmbox_group_lists_the_supported_import_choice() {
+        gtk4::init().unwrap();
+        let widgets = build_rhythmbox_import_group(RhythmboxImportChoices {
+            column_layout: false,
+        });
+
+        assert_eq!(
+            widgets.group.title(),
+            strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX)
+        );
+        assert_eq!(
+            widgets.column_layout.title(),
+            strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT)
+        );
+        assert!(!widgets.column_layout.is_active());
     }
 }
