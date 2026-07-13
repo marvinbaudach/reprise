@@ -19,6 +19,7 @@ pub(super) const ACTION_DOWNLOAD_MISSING_COVERS: &str = "download-missing-covers
 pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
+pub(super) const ACTION_PREFERENCES: &str = "preferences";
 const SMOKE_COVER_DOWNLOAD_ENV_VAR: &str = "REPRISE_SMOKE_COVER_DOWNLOAD";
 pub(super) const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
 const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
@@ -30,11 +31,16 @@ pub(super) fn install(
     runtime: &CoverDownloadRuntime,
     track_list: &Rc<TrackList>,
     on_minimal_view: impl Fn() + 'static,
+    on_preferences: impl Fn() + 'static,
 ) {
     let menu = gio::Menu::new();
     menu.append(
         Some(&strings::text(strings::DOWNLOAD_MISSING_COVERS)),
         Some("win.download-missing-covers"),
+    );
+    menu.append(
+        Some(&strings::text(strings::PREFERENCES)),
+        Some("win.preferences"),
     );
     menu.append(
         Some(&strings::text(strings::MINIMAL_VIEW)),
@@ -117,6 +123,14 @@ pub(super) fn install(
     minimal.connect_activate(move |_, _| on_minimal_view());
     window.add_action(&minimal);
     arm_smoke_minimal_view(&minimal);
+
+    let preferences = gio::SimpleAction::new(ACTION_PREFERENCES, None);
+    preferences.connect_activate(move |_, _| on_preferences());
+    window.add_action(&preferences);
+    if std::env::var(crate::ui::preferences::SMOKE_ENV).is_ok() {
+        let preferences = preferences.clone();
+        glib::idle_add_local_once(move || preferences.activate(None));
+    }
 }
 
 fn arm_smoke_minimal_view(action: &gio::SimpleAction) {

@@ -44,6 +44,7 @@ mod playlist_import_navigation;
 pub mod playlist_io;
 mod playlist_io_names;
 mod popover_lifecycle;
+mod preferences;
 pub mod primary_menu;
 pub mod queue_transport;
 pub mod rating;

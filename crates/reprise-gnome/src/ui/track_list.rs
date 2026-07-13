@@ -558,6 +558,10 @@ impl TrackList {
         column_layout::load_layout(&self.shared.conn.borrow())
     }
 
+    pub(super) fn root_widget(&self) -> &gtk4::Box {
+        &self.root
+    }
+
     pub(super) fn toast(&self, message: &str) {
         show_toast(&self.shared, message);
     }

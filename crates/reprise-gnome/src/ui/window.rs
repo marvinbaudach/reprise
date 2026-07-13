@@ -457,6 +457,19 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         player.as_ref().map(|player| player.bar_widget()),
     );
     let geometry_guard = minimal_view.geometry_guard();
+    let preferences = super::preferences::PreferencesContext::new(
+        &window,
+        conn,
+        &track_list,
+        &sidebar_page,
+        &status_bar,
+        &toolbar_view,
+        &bottom_box,
+        {
+            let minimal_view = minimal_view.clone();
+            move || minimal_view.toggle()
+        },
+    );
     let minimal_toggle = minimal_view.clone();
     primary_menu::install(
         &header,
@@ -467,9 +480,10 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         move || {
             minimal_toggle.toggle();
         },
+        move || preferences.present(),
     );
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
-    wire_sidebar_toggle(&sidebar_toggle, &split_view);
+    super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view);
 
     // Stage 3 Task 4: sidebar selection drives the track list's source and
     // the headerbar title. Wired here (after `track_list` and `window_title`
@@ -715,7 +729,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
 /// it makes this fn safe to call both at start-up (nothing attached yet) and
 /// again later (see `arm_smoke_bar_position`) without ever double-adding,
 /// panicking, or emitting that critical warning.
-fn apply_bar_position(
+pub(super) fn apply_bar_position(
     toolbar_view: &adw::ToolbarView,
     bottom_box: &gtk4::Box,
     position: settings::PlayerBarPosition,
@@ -754,40 +768,4 @@ fn arm_smoke_bar_position(
     }
     apply_bar_position(toolbar_view, bottom_box, position);
     tracing::info!(position = %value, "smoke: applied player bar position");
-}
-
-fn wire_sidebar_toggle(sidebar_toggle: &gtk4::ToggleButton, split_view: &adw::NavigationSplitView) {
-    sidebar_toggle.set_visible(split_view.is_collapsed());
-
-    let updating_toggle: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
-
-    {
-        let split_view = split_view.clone();
-        let updating_toggle = updating_toggle.clone();
-        sidebar_toggle.connect_toggled(move |button| {
-            // Skip if this toggle update is programmatic (from `show_content_notify`).
-            if updating_toggle.get() {
-                return;
-            }
-            split_view.set_show_content(!button.is_active());
-        });
-    }
-    {
-        let sidebar_toggle = sidebar_toggle.clone();
-        let updating_toggle = updating_toggle.clone();
-        split_view.connect_show_content_notify(move |split_view| {
-            // Guard against the toggle's `toggled` signal firing during `set_active` below.
-            updating_toggle.set(true);
-            // Semantics: toggle.active = !show_content
-            sidebar_toggle.set_active(!split_view.shows_content());
-            updating_toggle.set(false);
-        });
-    }
-    {
-        let sidebar_toggle = sidebar_toggle.clone();
-        split_view.connect_collapsed_notify(move |split_view| {
-            sidebar_toggle.set_visible(split_view.is_collapsed());
-            sidebar_toggle.set_active(false);
-        });
-    }
 }
