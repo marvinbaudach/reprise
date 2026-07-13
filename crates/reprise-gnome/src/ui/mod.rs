@@ -20,6 +20,7 @@
 //!   composition root only (controller construction); everything else goes
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
+mod artist_news_worker;
 mod audio_effects;
 pub mod browse_bar;
 pub mod column_layout;
@@ -37,7 +38,10 @@ pub mod delete_tracks;
 pub mod dialogs;
 pub mod first_run;
 pub mod import_errors_view;
+mod info_panel;
+mod info_panel_state;
 mod lastfm_secret;
+mod library_shell;
 mod listenbrainz_secret;
 mod main_cover_download_progress;
 mod minimal_view;
@@ -90,9 +94,11 @@ mod track_list_context_keys;
 pub mod track_list_context_menu;
 pub mod track_list_dnd;
 pub mod track_list_dnd_smoke;
+mod track_list_layout;
 pub mod track_list_model;
 mod track_list_rescan;
 mod track_list_row_interaction;
+mod track_list_selection;
 pub mod track_list_smoke;
 pub mod track_list_sort;
 pub mod view_session;

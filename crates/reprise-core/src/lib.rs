@@ -11,6 +11,7 @@
 //! implementations live in per-OS platform crates (Linux: GStreamer and
 //! MPRIS in `reprise-platform-linux`).
 
+pub mod artist_news;
 pub mod cover;
 pub mod cover_download;
 pub mod db;
@@ -19,8 +20,12 @@ pub mod library;
 pub mod media_integration;
 pub mod models;
 pub mod modules;
+pub mod musicbrainz;
 pub mod playback;
 pub mod queries;
 pub mod queue;
 pub mod scrobbling;
 pub mod view_source;
+
+#[cfg(test)]
+mod artist_news_tests;

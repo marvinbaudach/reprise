@@ -158,6 +158,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
+    let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
 
     let player = match PlayerController::new(
         conn.clone(),
@@ -436,35 +437,29 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         });
     }
 
-    // Built here — before the sidebar-selection wiring just below, rather
-    // than after it — specifically so that wiring can see `split_view`: see
-    // this function's doc comment note on Stage 3 Task 4 review finding #1.
-    // Both `sidebar_page` and `content_page`'s children (`sidebar.widget()`,
-    // `toast_overlay`) already exist by this point, so this reorder has no
-    // other dependency to satisfy.
-    let sidebar_page = adw::NavigationPage::builder()
-        .title(strings::text(strings::APP_NAME))
-        .child(sidebar.widget())
-        .build();
-    // Task 8: the content page's child is now an `adw::NavigationView`
-    // (rather than `toast_overlay` directly) so the Now-Playing full view can
-    // be pushed onto it from a bar click — see `now_playing_wiring.rs`'s
-    // `build_content_nav`/`wire_bar_expand` doc comments. The split view's
-    // own sidebar/content navigation is unaffected: this is a second, nested
-    // `NavigationView` scoped to the content page alone.
-    let content_nav = now_playing_wiring::build_content_nav(
+    let library_shell = super::library_shell::build(
+        &window,
+        conn,
+        &sidebar,
         &toast_overlay,
-        player.as_ref().map(|p| p.now_playing_widget()),
-        &strings::text(strings::APP_NAME),
+        &track_list,
+        player.as_ref(),
+        &artist_news,
     );
-    let content_page = adw::NavigationPage::builder()
-        .title(strings::text(strings::APP_NAME))
-        .child(&content_nav)
-        .build();
-    let split_view = adw::NavigationSplitView::builder()
-        .sidebar(&sidebar_page)
-        .content(&content_page)
-        .build();
+    let sidebar_page = library_shell.sidebar_page;
+    let split_view = library_shell.split_view;
+    let content_nav = library_shell.content_nav;
+    let info_panel = library_shell.info_panel;
+    header.pack_end(&info_panel.toggle_button());
+    {
+        let info_panel = Rc::downgrade(&info_panel);
+        track_list.set_on_selection_changed(move |context| {
+            if let Some(info_panel) = info_panel.upgrade() {
+                info_panel.set_context(context);
+            }
+        });
+    }
+    info_panel.arm_smoke(&track_list);
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
         &split_view,
@@ -494,6 +489,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &cover_batch,
         &listenbrainz,
         &lastfm,
+        &artist_news,
         {
             let minimal_view = minimal_view.clone();
             move || minimal_view.toggle()
