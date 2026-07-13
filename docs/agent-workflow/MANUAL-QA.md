@@ -204,6 +204,32 @@ into a terminal, issue, screenshot, log capture, or repository file.
 - [ ] Enter an invalid token and simulate an unavailable/locked keyring. Expected: the
   UI shows rejected/error status and never falls back to plaintext storage.
 
+## Pending: Last.fm account and scrobbling
+
+Use a disposable Last.fm account, a disposable desktop API application, and copied
+test tracks. Never put the API key, shared secret, session key, or real account
+metadata in a terminal command, repository file, issue, screenshot, or log capture.
+
+- [ ] Last.fm is off on a fresh profile and causes no request before opt-in.
+- [ ] Open Plugins → Last.fm and enter the API key and shared secret in masked rows.
+  Expected: the browser opens only after clicking Open Browser; approve the disposable
+  app, return, and Continue. The displayed account survives restart. All credentials
+  exist only in Secret Service (or the Flatpak Secret Portal store), never the database,
+  settings, environment output, repository, or logs.
+- [ ] Start copied short and long tracks. Expected: playing-now omits a timestamp and
+  each completed listen is sent once at half the track or four minutes, with artist,
+  title, optional release, duration, and start time. Seeking backward cannot duplicate it.
+- [ ] Take the network offline, complete a copied track, restart, and restore the
+  network. Expected: Last.fm's pending count survives and drains once without affecting
+  local play counts or any ListenBrainz queue.
+- [ ] Enable ListenBrainz and Last.fm together, then make one service unavailable.
+  Expected: the other continues independently; both receive one completion when healthy.
+- [ ] Disable Last.fm. Expected: no new Last.fm request begins and pending metadata stays
+  local. Re-enable to resume. Disconnect must delete only the Last.fm keyring item and
+  Last.fm queue, leaving ListenBrainz state and all music/library data untouched.
+- [ ] Revoke the disposable app/session on Last.fm, use invalid credentials, and lock
+  the keyring in separate runs. Expected: rejected/error status with no plaintext fallback.
+
 ## Pending: browse, columns, playlists, and Rhythmbox
 
 - [ ] Browse dropdowns work by mouse and keyboard at narrow and wide widths; each

@@ -22,6 +22,8 @@ Flathub.
 - Embedded, folder, and cached online album covers plus a full Now Playing view.
 - Optional ListenBrainz scrobbling with playing-now updates, durable offline
   delivery, and credentials stored in the system keyring.
+- Optional Last.fm scrobbling with bring-your-own API credentials, browser
+  authorization, and an independent durable offline queue.
 - Multi-track tag editing that writes only fields explicitly changed by the
   user, confirmed database-only removal, and confirmed move to Trash.
 - First-run setup and validated session restore for window, view, filters,
@@ -57,6 +59,15 @@ never in the library database or logs. Completed listens wait in a local FIFO qu
 while offline and are removed only after ListenBrainz accepts them. Disabling the
 module stops transmission but keeps pending listens locally; Disconnect removes
 both the keyring token and that ListenBrainz queue. Reprise sends no other telemetry.
+
+Last.fm scrobbling is independently disabled by default. Enabling it requires API
+credentials for a Last.fm desktop application; no project-wide API key is embedded
+in Reprise or committed to this repository. Reprise opens Last.fm authorization only
+after an explicit user action, then keeps the API key, shared secret, account name,
+and session key together in the system keyring. It transmits artist, title, optional
+release, duration, and listen start time for completed tracks; playing-now updates
+omit the start time. Its offline FIFO is separate from ListenBrainz, and Disconnect
+removes only the Last.fm keyring item and Last.fm queue.
 
 ## Requirements
 

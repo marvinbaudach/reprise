@@ -27,7 +27,7 @@ allows exactly two documented informational conditions: the established
 uppercase component ID `org.reprise.Reprise` and the absent homepage while no
 public project URL exists.
 
-Fourteen GTK regression tests require a display and are ignored by the normal test
+Fifteen GTK regression tests require a display and are ignored by the normal test
 suite. Run each in its own process because GTK can only be initialized from one
 thread per process, while Rust's test harness gives separate tests separate
 threads even with `--test-threads=1`:
@@ -43,6 +43,7 @@ for test in \
   interaction_surface_expands_to_the_whole_cell \
   movable_row_owns_drag_and_drop_controllers \
   token_entry_is_a_masked_password_row \
+  api_credentials_are_masked_rows \
   header_and_restore_buttons_switch_one_application_window_in_one_activation \
   bar_layout_has_required_accessible_controls_and_fits \
   cover_layout_has_required_accessible_controls_and_fits \
@@ -140,6 +141,12 @@ The detailed live ledger of confirmed and pending checks is
   across restart, retry delivery, disable-without-sending, and Disconnect clearing
   both the keyring item and local pending queue. Never use a production token in
   automated tests or logs.
+- With a disposable Last.fm account and disposable desktop API application, verify
+  masked BYO credentials, browser authorization, account status, playing-now,
+  scrobbling thresholds, restart/offline retry, disable-without-sending, and
+  Disconnect clearing only Last.fm credentials and its independent queue. Never put
+  the API key, shared secret, session key, or real account metadata in the repository,
+  terminal history, screenshots, test fixtures, or logs.
 - Batch-edit multiple copied tracks. Mixed fields must show multiple values and
   unchanged per-track fields must remain untouched.
 - Confirm database-only removal leaves copied files intact. Confirm move to Trash

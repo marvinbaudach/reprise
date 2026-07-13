@@ -2075,6 +2075,7 @@ dependencies = [
  "fastrand",
  "image",
  "lofty",
+ "md-5",
  "notify",
  "rusqlite",
  "serde",
@@ -2083,6 +2084,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "ureq",
+ "url",
  "walkdir",
 ]
 
@@ -2099,6 +2101,8 @@ dependencies = [
  "reprise-core",
  "reprise-platform-linux",
  "rusqlite",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tracing",

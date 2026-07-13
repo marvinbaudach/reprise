@@ -36,6 +36,11 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # (GUI-A2). Blocking is fine — fetches run on a dedicated worker thread, never
 # the UI thread. No async runtime, no gtk/gstreamer/zbus (verify cargo tree).
 ureq = "2"
+# Last.fm signs authenticated desktop/scrobble requests with MD5 as required
+# by its public API contract. `url` builds the browser authorization URI with
+# correct form encoding. Both remain platform-neutral and GUI-free.
+md-5 = "0.10"
+url = "2"
 # Pure-Rust local date arithmetic for the bounded Artist News window.
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 [dev-dependencies]

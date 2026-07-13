@@ -1,0 +1,259 @@
+//! Provider-specific durable scrobble queues.
+
+use rusqlite::{params, Connection};
+
+use super::{Listen, QueueError};
+
+const LISTENBRAINZ_BATCH_LIMIT: usize = 1_000;
+const LASTFM_BATCH_LIMIT: usize = 50;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrobbleProvider {
+    ListenBrainz,
+    LastFm,
+}
+
+impl ScrobbleProvider {
+    fn table(self) -> &'static str {
+        match self {
+            Self::ListenBrainz => "listenbrainz_queue",
+            Self::LastFm => "lastfm_queue",
+        }
+    }
+
+    fn batch_limit(self) -> usize {
+        match self {
+            Self::ListenBrainz => LISTENBRAINZ_BATCH_LIMIT,
+            Self::LastFm => LASTFM_BATCH_LIMIT,
+        }
+    }
+}
+
+pub fn enqueue_for(
+    conn: &Connection,
+    provider: ScrobbleProvider,
+    listen: &Listen,
+) -> Result<i64, QueueError> {
+    listen.track.validate()?;
+    let release_name = listen
+        .track
+        .release_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|release| !release.is_empty());
+    let sql = format!(
+        "INSERT INTO {} \
+         (listened_at, artist_name, track_name, release_name, duration_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        provider.table()
+    );
+    conn.execute(
+        &sql,
+        params![
+            listen.listened_at,
+            listen.track.artist_name.trim(),
+            listen.track.track_name.trim(),
+            release_name,
+            listen.track.duration_ms.max(0),
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn pending_for(
+    conn: &Connection,
+    provider: ScrobbleProvider,
+    limit: usize,
+) -> Result<Vec<Listen>, QueueError> {
+    let limit = limit.min(provider.batch_limit());
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT id, listened_at, artist_name, track_name, release_name, duration_ms \
+         FROM {} ORDER BY id ASC LIMIT ?1",
+        provider.table()
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(params![limit as i64], |row| {
+        Ok(Listen {
+            id: Some(row.get(0)?),
+            listened_at: row.get(1)?,
+            track: super::TrackMetadata {
+                artist_name: row.get(2)?,
+                track_name: row.get(3)?,
+                release_name: row.get(4)?,
+                duration_ms: row.get(5)?,
+            },
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(QueueError::from)
+}
+
+pub fn acknowledge_for(
+    conn: &Connection,
+    provider: ScrobbleProvider,
+    ids: &[i64],
+) -> Result<(), QueueError> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let sql = format!("DELETE FROM {} WHERE id = ?1", provider.table());
+    let transaction = conn.unchecked_transaction()?;
+    for id in ids {
+        transaction.execute(&sql, params![id])?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+pub fn clear_pending_for(
+    conn: &Connection,
+    provider: ScrobbleProvider,
+) -> Result<usize, QueueError> {
+    let sql = format!("DELETE FROM {}", provider.table());
+    conn.execute(&sql, []).map_err(QueueError::from)
+}
+
+pub fn pending_count_for(
+    conn: &Connection,
+    provider: ScrobbleProvider,
+) -> Result<usize, QueueError> {
+    let sql = format!("SELECT COUNT(*) FROM {}", provider.table());
+    let count: i64 = conn.query_row(&sql, [], |row| row.get(0))?;
+    usize::try_from(count).map_err(|_| QueueError::InvalidCount)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scrobbling::{Listen, TrackMetadata};
+
+    fn conn() -> rusqlite::Connection {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn
+    }
+
+    fn listen(timestamp: i64) -> Listen {
+        Listen {
+            id: None,
+            listened_at: timestamp,
+            track: TrackMetadata {
+                artist_name: "Portishead".to_string(),
+                track_name: format!("Roads {timestamp}"),
+                release_name: Some("Dummy".to_string()),
+                duration_ms: 307_000,
+            },
+        }
+    }
+
+    #[test]
+    fn provider_queues_are_isolated_for_pending_and_count() {
+        let conn = conn();
+        enqueue_for(&conn, ScrobbleProvider::ListenBrainz, &listen(1)).unwrap();
+        enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(2)).unwrap();
+        assert_eq!(
+            pending_count_for(&conn, ScrobbleProvider::ListenBrainz).unwrap(),
+            1
+        );
+        assert_eq!(
+            pending_count_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            1
+        );
+        assert_eq!(
+            pending_for(&conn, ScrobbleProvider::ListenBrainz, 10).unwrap()[0].listened_at,
+            1
+        );
+        assert_eq!(
+            pending_for(&conn, ScrobbleProvider::LastFm, 10).unwrap()[0].listened_at,
+            2
+        );
+    }
+
+    #[test]
+    fn lastfm_pending_is_fifo_and_clamped_to_fifty() {
+        let conn = conn();
+        for timestamp in 0..55 {
+            enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(timestamp)).unwrap();
+        }
+        let pending = pending_for(&conn, ScrobbleProvider::LastFm, usize::MAX).unwrap();
+        assert_eq!(pending.len(), 50);
+        assert_eq!(pending.first().unwrap().listened_at, 0);
+        assert_eq!(pending.last().unwrap().listened_at, 49);
+    }
+
+    #[test]
+    fn provider_acknowledge_deletes_only_matching_rows() {
+        let conn = conn();
+        let listenbrainz = enqueue_for(&conn, ScrobbleProvider::ListenBrainz, &listen(1)).unwrap();
+        let lastfm = enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(2)).unwrap();
+        acknowledge_for(&conn, ScrobbleProvider::LastFm, &[lastfm]).unwrap();
+        assert_eq!(
+            pending_count_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            0
+        );
+        assert_eq!(
+            pending_for(&conn, ScrobbleProvider::ListenBrainz, 10).unwrap()[0].id,
+            Some(listenbrainz)
+        );
+    }
+
+    #[test]
+    fn clear_removes_only_the_selected_provider() {
+        let conn = conn();
+        enqueue_for(&conn, ScrobbleProvider::ListenBrainz, &listen(1)).unwrap();
+        enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(2)).unwrap();
+        assert_eq!(
+            clear_pending_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            1
+        );
+        assert_eq!(
+            pending_count_for(&conn, ScrobbleProvider::ListenBrainz).unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn lastfm_queue_survives_database_reopen() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("reprise.db");
+        {
+            let conn = crate::db::open(Some(&path)).unwrap();
+            crate::db::migrate(&conn).unwrap();
+            enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(7)).unwrap();
+        }
+        let conn = crate::db::open(Some(&path)).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        assert_eq!(
+            pending_for(&conn, ScrobbleProvider::LastFm, 10).unwrap()[0].listened_at,
+            7
+        );
+    }
+
+    #[test]
+    fn lastfm_queue_rejects_blank_required_metadata() {
+        let conn = conn();
+        let mut invalid = listen(1);
+        invalid.track.track_name = " ".to_string();
+        assert!(enqueue_for(&conn, ScrobbleProvider::LastFm, &invalid).is_err());
+        assert_eq!(
+            pending_count_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn zero_pending_limit_returns_no_rows_without_deleting_them() {
+        let conn = conn();
+        enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(1)).unwrap();
+        assert!(pending_for(&conn, ScrobbleProvider::LastFm, 0)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            pending_count_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            1
+        );
+    }
+}
