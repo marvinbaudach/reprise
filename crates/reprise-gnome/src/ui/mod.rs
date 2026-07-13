@@ -23,6 +23,7 @@
 mod artist_news_worker;
 mod audio_effects;
 pub mod browse_bar;
+mod browse_filter_strings;
 mod column_header_menu;
 pub mod column_layout;
 mod column_layout_editor;
