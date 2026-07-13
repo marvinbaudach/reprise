@@ -65,7 +65,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::browse_bar::BrowseBar;
-use crate::ui::column_layout::{self, ColumnId, ColumnLayout, ColumnRegistry};
+use crate::ui::column_layout::{self, ColumnId, ColumnRegistry};
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
@@ -76,6 +76,7 @@ use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd_smoke;
 use crate::ui::track_list_model::TrackListModel;
 use crate::ui::track_list_row_interaction;
+use crate::ui::track_list_selection;
 use crate::ui::track_list_smoke::{
     arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
 };
@@ -132,6 +133,7 @@ type OnLibraryMutated = Rc<dyn Fn(&[i64])>;
 /// Successful tag-edit callback. Paths let the player invalidate only the
 /// currently displayed cover while the window refreshes sidebar metadata.
 type OnTagsMutated = Rc<dyn Fn(&[PathBuf])>;
+type OnSelectionChanged = Rc<dyn Fn(crate::ui::info_panel_state::PanelContext)>;
 
 /// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -302,6 +304,7 @@ pub(super) struct Shared {
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the
     /// Import-errors badge count just changed).
     pub(super) on_import_errors_mutated: RefCell<Option<Rc<dyn Fn()>>>,
+    pub(super) on_selection_changed: RefCell<Option<OnSelectionChanged>>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -401,7 +404,10 @@ impl TrackList {
             on_library_mutated: RefCell::new(None),
             on_tags_mutated: RefCell::new(None),
             on_import_errors_mutated: RefCell::new(None),
+            on_selection_changed: RefCell::new(None),
         });
+
+        track_list_selection::wire(&shared);
 
         {
             let shared_weak = Rc::downgrade(&shared);
@@ -522,40 +528,6 @@ impl TrackList {
     pub fn reload(&self) {
         self.shared.browse_bar.refresh();
         reload(&self.shared);
-    }
-
-    pub(super) fn apply_column_layout(&self, layout: &ColumnLayout) -> Result<(), rusqlite::Error> {
-        let serialized = column_layout::serialize_layout(layout);
-        reprise_core::library::settings::set_setting(
-            &self.shared.conn.borrow(),
-            reprise_core::library::settings::COLUMN_LAYOUT_KEY,
-            &serialized,
-        )?;
-        self.column_registry.apply(layout);
-        let sort = self.shared.sort.borrow().clone();
-        let current_id = ColumnId::from_sort_field(&sort.field);
-        let (column, order) = if current_id.is_some_and(|id| self.column_registry.is_visible(id)) {
-            let column = current_id.and_then(|id| self.column_registry.column(id));
-            let order = if sort.dir == "desc" {
-                gtk4::SortType::Descending
-            } else {
-                gtk4::SortType::Ascending
-            };
-            (column, order)
-        } else {
-            (
-                self.column_registry.column(ColumnId::Title),
-                gtk4::SortType::Ascending,
-            )
-        };
-        if let Some(column) = column {
-            self.shared.column_view.sort_by_column(Some(column), order);
-        }
-        Ok(())
-    }
-
-    pub(super) fn current_column_layout(&self) -> ColumnLayout {
-        column_layout::load_layout(&self.shared.conn.borrow())
     }
 
     pub(super) fn root_widget(&self) -> &gtk4::Box {

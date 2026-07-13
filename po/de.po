@@ -1010,6 +1010,101 @@ msgstr "{name} exportiert"
 msgid "Could not export “{name}”"
 msgstr "„{name}“ konnte nicht exportiert werden"
 
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Information"
+msgstr "Informationen"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist & Album News"
+msgstr "Interpreten- und Albumneuigkeiten"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Show upcoming and newly released albums from MusicBrainz (network; off by default)"
+msgstr "Kommende und neu veröffentlichte Alben von MusicBrainz anzeigen (Netzwerk; standardmäßig aus)"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "When enabled, selected artist names are sent to MusicBrainz. Reprise never sends file paths or listening history."
+msgstr "Wenn aktiviert, werden ausgewählte Interpretennamen an MusicBrainz gesendet. Reprise sendet niemals Dateipfade oder den Wiedergabeverlauf."
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist News is Off"
+msgstr "Interpretenneuigkeiten sind ausgeschaltet"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Select a track to see artist and album news."
+msgstr "Wählen Sie einen Titel aus, um Interpreten- und Albumneuigkeiten zu sehen."
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist News is paused while multiple tracks are selected."
+msgstr "Interpretenneuigkeiten sind pausiert, solange mehrere Titel ausgewählt sind."
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "This track has no artist information."
+msgstr "Dieser Titel enthält keine Angaben zum Interpreten."
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Checking MusicBrainz for album news…"
+msgstr "MusicBrainz wird nach Albumneuigkeiten durchsucht…"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "No new or upcoming regular albums found."
+msgstr "Keine neuen oder kommenden regulären Alben gefunden."
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist News is temporarily unavailable."
+msgstr "Interpretenneuigkeiten sind vorübergehend nicht verfügbar."
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist could not be matched."
+msgstr "Der Interpret konnte nicht zugeordnet werden."
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist could not be matched unambiguously."
+msgstr "Der Interpret konnte nicht eindeutig zugeordnet werden."
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Upcoming"
+msgstr "Demnächst"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "New"
+msgstr "Neu"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Refresh Artist News"
+msgstr "Interpretenneuigkeiten aktualisieren"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Open in MusicBrainz"
+msgstr "In MusicBrainz öffnen"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+#, rust-format
+msgid "{count} track selected"
+msgid_plural "{count} tracks selected"
+msgstr[0] "{count} Titel ausgewählt"
+msgstr[1] "{count} Titel ausgewählt"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+#, rust-format
+msgid "{type} · {date}"
+msgstr "{type} · {date}"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+#, rust-format
+msgid "MusicBrainz · Updated {date}"
+msgstr "MusicBrainz · Aktualisiert am {date}"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+#, rust-format
+msgid "Cached · Updated {date}"
+msgstr "Zwischengespeichert · Aktualisiert am {date}"
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "unknown date"
+msgstr "unbekanntes Datum"
+
+
 #~ msgid "Minimal View"
 #~ msgstr "Minimalansicht"
 
