@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Design selectable compact-player layouts
+SINCE:    2026-07-13 11:45 CEST
 ```
 
-_As of 2026-07-13 11:08 CEST: Codex completed main-window cover-download progress and released the lock._
+_As of 2026-07-13 11:45 CEST: Codex claimed the lock to design selectable compact-player layouts._
 
 ## Current position
 
