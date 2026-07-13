@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Expand implementation plan with future plugin stages
-SINCE:    2026-07-13 05:13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 05:13 CEST: Codex claimed the lock for the requested plan expansion._
+_As of 2026-07-13 05:15 CEST: Codex released the lock after expanding the plugin plan._
 
 ## Current position
 
@@ -34,12 +34,12 @@ _As of 2026-07-13 05:13 CEST: Codex claimed the lock for the requested plan expa
 - **Last completed:** **Plugin boundary correction** (`b7a0d79`, `77439bb`) — Equalizer and
   ReplayGain are core Playback features only; MPRIS and online cover download remain optional
   Plugins; MTP/iPod belongs to future Synchronization. The future optional/external-integration
-  backlog is recorded in the matching design spec.
+  backlog is recorded in both the design spec and staged implementation plan (`349b92b`).
 - **Current plan:** none — the correction is complete; minimal-view variants are the next proposed
   feature stage and still need their dedicated approved spec/plan before implementation.
 - **➡️ NEXT:** settle and implement the proposed Compact/Cover/Pill/Card minimal-view variants,
   then run the native-GNOME visual/geometry and audible checks in `MANUAL-QA.md`.
-- **Feature HEAD:** `77439bb`; this coordination-board update follows it.
+- **Feature HEAD:** `349b92b`; this coordination-board update follows it.
 
 ## Done so far (compact)
 
