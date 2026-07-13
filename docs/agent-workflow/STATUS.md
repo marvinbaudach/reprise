@@ -21,22 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Artist News panel and sidebar QA fixes
-SINCE:    2026-07-13 19:40 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 19:40 CEST: Codex is addressing joint-review feedback for the Artist News panel and sidebar._
+_As of 2026-07-13 19:54 CEST: Codex completed the Artist News panel and sidebar joint-review fixes and is releasing the lock._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Window decoration mode** (`6b702cc`, `d5b3b52`, QA fix `137bb72`, merge
-  `1ddd27a`) — Chromium-like client-side decoration remains the default, while Appearance can
-  persistently request desktop title bars and borders with immediate Library/Compact projection.
+- **Last completed:** **Artist News panel and sidebar joint-review fixes** (`dafde90`) — desktop
+  widths pin Information as a real 340 px column, active requests expose indeterminate progress,
+  invalid refresh states are disabled, and the problem-source separator is no longer selectable.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `1ddd27a`; this QA/coordination close-out follows it.
+- **Main implementation:** `dafde90`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -69,7 +69,8 @@ _As of 2026-07-13 19:40 CEST: Codex is addressing joint-review feedback for the 
   system keyring, persists a separate bounded FIFO, and runs independently beside ListenBrainz.
 - ✅ **Artist & Album News**: a persistent right-side Information panel follows the current
   selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
-  filters cached Upcoming/New album and EP cards, and rejects stale selection responses.
+  filters cached Upcoming/New album and EP cards, rejects stale selection responses, pins at
+  ordinary desktop widths, and exposes visible indeterminate request progress.
 - ✅ **Full-width Library player bar**: the global status/player block now spans sidebar, library,
   and Information panel at Top or Bottom; Track, centered Transport+Seek, and secondary control
   zones retain one playback controller across immediate Library/Compact switching.
