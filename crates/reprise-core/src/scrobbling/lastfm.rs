@@ -66,7 +66,7 @@ impl LastFmClient {
         Ok(Self {
             api_key,
             shared_secret,
-            api_root: api_root.trim_end_matches('/').to_string(),
+            api_root: format!("{}/", api_root.trim_end_matches('/')),
             auth_root: format!("{}/", auth_root.trim_end_matches('/')),
             agent: ureq::builder()
                 .timeout(HTTP_TIMEOUT)
@@ -322,5 +322,17 @@ mod tests {
             parse_write_response(r#"{"status":"ok"}"#),
             Err(TransportError::InvalidResponse)
         );
+    }
+
+    #[test]
+    fn api_root_keeps_one_trailing_slash_for_signed_posts() {
+        let client = LastFmClient::with_roots(
+            "http://127.0.0.1:8123/2.0///",
+            "http://127.0.0.1:8123/auth",
+            "key",
+            "secret",
+        )
+        .unwrap();
+        assert_eq!(client.api_root, "http://127.0.0.1:8123/2.0/");
     }
 }

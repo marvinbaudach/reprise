@@ -10,6 +10,8 @@ use rusqlite::Connection;
 const SMOKE_BAR_POSITION_ENV_VAR: &str = "REPRISE_SMOKE_BAR_POSITION";
 const SMOKE_LISTENBRAINZ_ENV_VAR: &str = "REPRISE_SMOKE_LISTENBRAINZ";
 const SMOKE_LISTENBRAINZ_API_ROOT_ENV_VAR: &str = "REPRISE_SMOKE_LISTENBRAINZ_API_ROOT";
+const SMOKE_LASTFM_ENV_VAR: &str = "REPRISE_SMOKE_LASTFM";
+const SMOKE_LASTFM_API_ROOT_ENV_VAR: &str = "REPRISE_SMOKE_LASTFM_API_ROOT";
 
 fn is_loopback_smoke_root(value: &str) -> bool {
     ["http://127.0.0.1:", "http://[::1]:"]
@@ -82,6 +84,55 @@ pub(super) fn arm_listenbrainz(
     }
 }
 
+/// Exercises Last.fm signing and queue draining only against an explicit
+/// debug-build loopback endpoint with synthetic credentials and metadata.
+pub(super) fn arm_lastfm(
+    conn: &Rc<RefCell<Connection>>,
+    runtime: &Rc<super::scrobble_runtime::ScrobbleRuntime>,
+) {
+    if std::env::var(SMOKE_LASTFM_ENV_VAR).as_deref() != Ok("exercise") {
+        return;
+    }
+    let Some(api_root) = std::env::var(SMOKE_LASTFM_API_ROOT_ENV_VAR)
+        .ok()
+        .filter(|root| cfg!(debug_assertions) && is_loopback_smoke_root(root))
+    else {
+        tracing::warn!("Last.fm smoke requested without a loopback API root");
+        return;
+    };
+    let listen = reprise_core::scrobbling::Listen {
+        id: None,
+        listened_at: 1_700_000_000,
+        track: reprise_core::scrobbling::TrackMetadata {
+            artist_name: "Reprise Last.fm Smoke Artist".to_string(),
+            track_name: "Reprise Last.fm Smoke Track".to_string(),
+            release_name: Some("Reprise Last.fm Smoke Release".to_string()),
+            duration_ms: 120_000,
+        },
+    };
+    let client = reprise_core::scrobbling::LastFmClient::with_roots(
+        &api_root,
+        &api_root,
+        "reprise-smoke-api-key",
+        "reprise-smoke-shared-secret",
+    );
+    match (
+        reprise_core::scrobbling::enqueue_for(
+            &conn.borrow(),
+            reprise_core::scrobbling::ScrobbleProvider::LastFm,
+            &listen,
+        ),
+        client,
+    ) {
+        (Ok(queue_id), Ok(client)) => {
+            runtime.configure("reprise-smoke-session-key".to_string(), Box::new(client));
+            tracing::info!(queue_id, "smoke: queued synthetic Last.fm scrobble");
+        }
+        (Err(error), _) => tracing::warn!(%error, "Last.fm smoke could not queue scrobble"),
+        (_, Err(error)) => tracing::warn!(%error, "Last.fm smoke client is invalid"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::is_loopback_smoke_root;
@@ -93,5 +144,14 @@ mod tests {
         assert!(!is_loopback_smoke_root("https://api.listenbrainz.org"));
         assert!(!is_loopback_smoke_root("http://127.0.0.1"));
         assert!(!is_loopback_smoke_root("http://example.test:8123"));
+    }
+
+    #[test]
+    fn lastfm_production_and_non_port_urls_cannot_be_smoke_targets() {
+        assert!(!is_loopback_smoke_root(
+            "https://ws.audioscrobbler.com/2.0/"
+        ));
+        assert!(!is_loopback_smoke_root("http://[::1]/2.0/"));
+        assert!(is_loopback_smoke_root("http://127.0.0.1:9876/2.0/"));
     }
 }
