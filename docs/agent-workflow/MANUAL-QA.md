@@ -103,10 +103,14 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] On Library, choose/cancel a disposable folder, rescan it, and invoke Rhythmbox
   column import. Expected: cancel is harmless and actions use the established safe
   picker/import paths.
-- [ ] On Plugins, toggle Cover download and MPRIS. Expected: Cover download applies
-  immediately; MPRIS clearly says restart required and changes only after restart.
-  Equalizer and ReplayGain must not appear here because they are core Playback
-  features. Native visual confirmation and the MPRIS restart remain pending.
+- [ ] On Plugins, toggle Cover download and MPRIS. Expected: enabling Cover download
+  immediately reveals a progress row with checked/total, downloaded and unavailable
+  counts; completion is retained while the dialog is open, disabling a running pass
+  reports that it stopped, and re-enabling starts a fresh pass. MPRIS clearly says
+  restart required and changes only after restart. Equalizer and ReplayGain must not
+  appear here because they are core Playback features. The isolated action/app smoke,
+  batch-state regressions and native GTK progress-widget test pass; real-network cover
+  results, native visual confirmation and the MPRIS restart remain pending.
 - [ ] While disposable music plays through real speakers, enable Equalizer, select
   Flat/Rock/Pop/Bass Boost, and move all ten sliders. Expected: audible changes are
   immediate, bounded to ±12 dB, persist after restart, and do not interrupt or move
@@ -138,8 +142,11 @@ M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
 - [ ] Embedded covers, folder covers, and placeholders render correctly in list, bar,
   and Now Playing without stale covers after rapid scrolling or track changes.
 - [ ] Opt-in cover download is off by default. When enabled on a disposable library
-  with network access, a strong MusicBrainz match downloads and renders; ambiguous or
-  wrong albums do not acquire an unrelated cover; disabling stops new network work.
+  with network access, the visible progress reaches the library total, a strong
+  MusicBrainz match increments the downloaded count and renders, existing local covers
+  are not downloaded again, and ambiguous or wrong albums increment unavailable
+  without acquiring an unrelated cover. Disable during a longer run and confirm that
+  the status becomes stopped and no new requests begin; cached covers must remain.
 - [ ] MPRIS bus loss/name collision and clean application shutdown do not crash or
   leave a ghost player in GNOME Shell.
 
