@@ -9,7 +9,7 @@ nutzt den verfügbaren Platz besser und macht die bereits implementierten
 Einstellungen als zusammengehörige native Adwaita-Oberfläche verständlich.
 
 Die Bibliothek bleibt das dichte Arbeitsfenster für große Sammlungen. Die
-Einstellungen bleiben ein fokussierter Dialog, in dem jede sichtbare Option
+Einstellungen bleiben ein fokussiertes Fenster, in dem jede sichtbare Option
 sofort wirkt. Beide Oberflächen teilen eine ruhige Hierarchie: eine klare
 Primäraktion, zurückhaltende Sekundäraktionen, native Abstände und keine
 dekorative Sonderoptik.
@@ -189,20 +189,19 @@ Quelle.
 
 ## Einstellungen
 
-### Dialog und Navigation
+### Fenster und Navigation
 
-Der Dialog bleibt modal zur Library und verwendet ausschließlich native
-Adwaita-Widgets. Sein Standardinhalt ist ungefähr 760 × 680 logische Pixel,
+Die Einstellungen öffnen als eigenes, zur Library gehörendes, aber
+nicht-modales `AdwWindow`. Das Fenster lässt sich über seine native Headerbar
+verschieben, bleibt einzeln instanziert und wird beim erneuten Aufruf in den
+Vordergrund geholt. Sein Standardinhalt ist ungefähr 760 × 680 logische Pixel,
 mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
 
 - Reihenfolge: **Wiedergabe · Darstellung · Layout · Bibliothek · Plugins**.
-- Ab ungefähr 720 Pixel Breite sitzt ein textlicher `AdwViewSwitcher` in der
+- Ein `AdwViewSwitcher` sitzt unabhängig von der Fensterbreite in der oberen
   Headerbar wie im Mockup 7b/7c. Die aktive Seite besitzt zusätzlich den
-  nativen Auswahlhintergrund.
-- Unterhalb dieser Breite verwendet der Dialog die native kompakte
-  Icon-/Text-Navigation am unteren Rand. Der Seiten-Scrollbereich endet oberhalb
-  dieser Leiste; Navigation darf niemals Equalizer oder Aktionszeilen
-  überdecken.
+  nativen Auswahlhintergrund. Es gibt keine zweite Navigationsleiste am unteren
+  Rand; bei kleiner Breite komprimiert die obere native Tabdarstellung.
 - Jede Seite besitzt einen eigenen Scrollzustand. Seitenwechsel verändern
   keine Einstellung und schließen keinen offenen Portal-Dialog.
 - Die Seitensymbole bleiben: Playback, Appearance, Layout, Library, Plugins.
@@ -238,22 +237,23 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
   Balken an der entsprechenden Kante. „Unten“ bleibt Standard. Die verworfene
   schwebende Variante kehrt nicht zurück.
 - Gruppe „Bibliotheksfenster“ enthält Schalter für Sidebar, Browse-Leiste,
-  Informationsspalte und Statuszeile sowie die Dichteauswahl. Die Begriffe
-  beschreiben sichtbar genau die Elemente des Hauptfensters.
+  Informationsspalte und Statuszeile sowie die Dichteauswahl. Der
+  Sidebar-Schalter entfernt beziehungsweise restauriert den vollständigen
+  linken Slot des `AdwNavigationSplitView`; es bleibt keine leere Spalte stehen.
+  Die Begriffe beschreiben sichtbar genau die Elemente des Hauptfensters.
 - Gruppe „Spalten“ zeigt die aktuell sichtbaren Spalten in der Subtitle-Zeile
   und öffnet denselben vorhandenen Spalteneditor. Keine zweite
   Spaltenkonfiguration wird aufgebaut.
-- Gruppe „Kompaktansicht“ wird erst nach Abschluss der parallelen
-  Kompaktplayer-Etappe gegen deren finalen `CompactLayout`-Vertrag eingebunden.
-  Diese Etappe dupliziert weder Layoutkarten noch Persistenzactions des
-  Kompaktplayer-Plans.
+- Die Kompaktansicht wird in den Einstellungen nicht erneut angeboten. Sie
+  bleibt über das vorhandene Kontext-/Hauptmenü und den Shortcut erreichbar;
+  die Einstellungen duplizieren diesen Bedienweg nicht.
 
 ### Bibliothek
 
 - Gruppe „Musikordner“ zeigt den aktuellen Pfad als Subtitle. „Ordner wählen…“
   bleibt die eine hervorgehobene Aktion der Zeile.
 - „Bibliothek neu scannen“ liegt direkt darunter und verwendet den gemeinsamen
-  Scanfortschritt. Eine laufende Operation ist in Dialog und Hauptfenster
+  Scanfortschritt. Eine laufende Operation ist in Einstellungs- und Hauptfenster
   derselbe Zustand, kein zweiter Worker.
 - Gruppe „Import“ enthält „Rhythmbox-Spaltenlayout importieren“. Die Zeile
   erklärt ausdrücklich, dass Reprise nur liest und Rhythmbox nicht verändert.
@@ -291,9 +291,9 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
   `InfoPanelSection`-Schnittstelle. Sie ist keine Fremd-Plugin-ABI und reicht
   keine GTK-Typen in `reprise-core` durch. Modulaktivierung bleibt allein bei
   `reprise_core::modules`.
-- `preferences.rs` wird in Dialog-Shell, Appearance/Layout und Playback
-  aufgeteilt. `preference_library.rs`, `preference_effects.rs` und
-  `preference_cover_download.rs` bleiben fokussierte Seitenhelfer.
+- `preferences.rs` delegiert die verschiebbare Fenster-Shell und die obere
+  Tabnavigation an `preferences_window.rs`. `preference_library.rs` und
+  `preference_effects.rs` bleiben fokussierte Seitenhelfer.
 - Die neuen Browse- und Informationsspalten-Sichtbarkeitswerte leben typisiert
   in `reprise_core::library::settings`. Core erhält keine GTK-, Adwaita-,
   GStreamer- oder zbus-Abhängigkeit.
@@ -312,8 +312,9 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
   kein Smoke greift auf die reale Datenbank oder Musikbibliothek zu.
 - Rhythmbox-GSettings bleiben read-only. Musikdateien werden in dieser Etappe
   weder geschrieben, verschoben noch gelöscht.
-- Der Dialog hält Callbacks schwach oder klont sie vor dem Aufruf aus
-  `RefCell`s. Seitenwechsel und Dialogschließen erzeugen keine Referenzzyklen.
+- Das Einstellungsfenster hält Callbacks schwach oder klont sie vor dem Aufruf
+  aus `RefCell`s. Seitenwechsel und Fensterschließen erzeugen keine
+  Referenzzyklen.
 
 ## Tests und Verifikation
 
@@ -327,9 +328,9 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
 - Ein Displaytest öffnet die Informationsspalte, wechselt Einzel-, Mehrfach-
   und keine Auswahl, deaktiviert einen Modulbeitrag und beweist, dass lokale
   Metadaten, Kartenreihenfolge und Close-/Restore-Zustand korrekt bleiben.
-- Je ein Displaytest prüft breite und schmale Preferences-Navigation, sichere
-  Content-Unterkante, die beiden Playerleisten-Vorschauen, alle zehn
-  Equalizer-Skalen und Accessible Names.
+- Je ein Displaytest prüft das verschiebbare Preferences-Fenster, die obere
+  Tabnavigation, sichere Content-Unterkante, die beiden
+  Playerleisten-Vorschauen, alle zehn Equalizer-Skalen und Accessible Names.
 - Der vorhandene PTR-Harness nimmt Library, geöffnete Informationsspalte sowie
   alle fünf Preferences-Seiten auf und bedient Paneltoggle, Scan, Layout,
   Spalteneditor und Plugin-Schalter über echte Pointer-/Tastaturpfade.

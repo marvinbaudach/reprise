@@ -170,6 +170,7 @@ pub(super) struct PreferencesContext {
     pub(super) window: adw::ApplicationWindow,
     pub(super) conn: Rc<RefCell<Connection>>,
     pub(super) track_list: Rc<TrackList>,
+    split_view: adw::NavigationSplitView,
     sidebar_page: adw::NavigationPage,
     status_bar: StatusBar,
     library_player_bar: LibraryPlayerBarShell,
@@ -188,7 +189,7 @@ pub(super) struct PreferencesContext {
     pub(super) lastfm_activation_pending: Cell<bool>,
     pub(super) artist_news: Rc<ArtistNewsRuntime>,
     pub(super) decorations: Rc<WindowDecorations>,
-    on_minimal: Rc<dyn Fn()>,
+    preferences_window: RefCell<glib::WeakRef<adw::Window>>,
 }
 
 impl PreferencesContext {
@@ -197,6 +198,7 @@ impl PreferencesContext {
         window: &adw::ApplicationWindow,
         conn: &Rc<RefCell<Connection>>,
         track_list: &Rc<TrackList>,
+        split_view: &adw::NavigationSplitView,
         sidebar_page: &adw::NavigationPage,
         status_bar: &StatusBar,
         library_player_bar: &LibraryPlayerBarShell,
@@ -207,12 +209,12 @@ impl PreferencesContext {
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
         decorations: &Rc<WindowDecorations>,
-        on_minimal: impl Fn() + 'static,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
             window: window.clone(),
             conn: conn.clone(),
             track_list: track_list.clone(),
+            split_view: split_view.clone(),
             sidebar_page: sidebar_page.clone(),
             status_bar: status_bar.clone(),
             library_player_bar: library_player_bar.clone(),
@@ -231,7 +233,7 @@ impl PreferencesContext {
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
             decorations: decorations.clone(),
-            on_minimal: Rc::new(on_minimal),
+            preferences_window: RefCell::new(glib::WeakRef::new()),
         });
         let weak = Rc::downgrade(&context);
         context.scan_button.connect_sensitive_notify(move |button| {
@@ -259,28 +261,44 @@ impl PreferencesContext {
         };
         apply_color_scheme(color_scheme);
         apply_density(self.track_list.root_widget().upcast_ref(), density);
-        self.sidebar_page.set_visible(sidebar_visible);
+        super::window_navigation::apply_sidebar_visibility(
+            &self.split_view,
+            &self.sidebar_page,
+            sidebar_visible,
+        );
         self.status_bar.set_enabled(status_visible);
         self.decorations.apply(decorations);
     }
 
     pub(super) fn present(self: &Rc<Self>) {
+        if let Some(window) = self.preferences_window.borrow().upgrade() {
+            window.present();
+            return;
+        }
         self.equalizer_controls.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
-        let dialog = adw::PreferencesDialog::new();
-        dialog.add(&self.appearance_page());
-        dialog.add(&self.layout_page());
-        dialog.add(&self.library_page());
-        dialog.add(&self.plugins_page());
-        dialog.add(&self.playback_page());
-        dialog.present(Some(&self.window));
-        tracing::debug!("preferences dialog presented");
+        use super::preferences_window::{PageId, PAGE_ORDER};
+        let pages = PAGE_ORDER.map(|id| {
+            let page = match id {
+                PageId::Playback => self.playback_page(),
+                PageId::Appearance => self.appearance_page(),
+                PageId::Layout => self.layout_page(),
+                PageId::Library => self.library_page(),
+                PageId::Plugins => self.plugins_page(),
+            };
+            (id, page)
+        });
+        let shell = super::preferences_window::build(&self.window, pages);
+        self.preferences_window.borrow().set(Some(&shell.window));
+        shell.window.present();
+        tracing::debug!("preferences window presented");
         if let Ok(smoke) = std::env::var(SMOKE_ENV) {
             if smoke == "exercise" {
                 self.apply_smoke();
             }
+            let window = shell.window.clone();
             glib::timeout_add_seconds_local_once(1, move || {
-                dialog.close();
+                window.close();
             });
         }
     }
@@ -303,7 +321,11 @@ impl PreferencesContext {
             self.track_list.root_widget().upcast_ref(),
             ListDensity::Compact,
         );
-        self.sidebar_page.set_visible(false);
+        super::window_navigation::apply_sidebar_visibility(
+            &self.split_view,
+            &self.sidebar_page,
+            false,
+        );
         self.status_bar.set_enabled(false);
         self.decorations
             .apply(reprise_core::library::settings::WindowDecorationMode::System);
@@ -407,7 +429,11 @@ impl PreferencesContext {
                 settings::set_sidebar_visible(&conn, active)
             };
             if saved.is_ok() {
-                context.sidebar_page.set_visible(active);
+                super::window_navigation::apply_sidebar_visibility(
+                    &context.split_view,
+                    &context.sidebar_page,
+                    active,
+                );
             }
         });
         group.add(&sidebar);
@@ -478,7 +504,6 @@ impl PreferencesContext {
                 }
             }),
         ));
-        group.add(&action_row(strings::COMPACT_VIEW, self.on_minimal.clone()));
         page.add(&group);
         page
     }
