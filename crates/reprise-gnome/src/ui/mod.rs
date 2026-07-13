@@ -32,6 +32,7 @@ pub mod delete_tracks;
 pub mod dialogs;
 pub mod first_run;
 pub mod import_errors_view;
+mod main_cover_download_progress;
 mod minimal_view;
 pub mod mpris_mirror;
 mod notifications;

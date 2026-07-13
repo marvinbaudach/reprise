@@ -30,11 +30,13 @@ Netzwerkpfad einzuführen.
 ## Architektur
 
 `CoverDownloadBatch` ersetzt seinen einzelnen überschreibenden Callback durch
-mehrere Subscriber. Jeder Subscriber erhält sofort den aktuellen immutable
-`BatchProgress` und liefert zurück, ob er noch lebt. Tote schwache GTK-Subscriber
-werden beim nächsten Zustand oder bei einer neuen Registrierung entfernt. Die
-Callbacks werden vor dem Aufruf aus dem `RefCell` kopiert, sodass keine Borrow-
-Grenze über re-entrante GTK-Aufrufe gehalten wird.
+mehrere Subscriber. Jeder Subscriber besitzt eine nebenwirkungsfreie schwache
+Lebensprüfung und einen getrennten Zustands-Callback; nur der neu registrierte
+Subscriber erhält sofort den aktuellen immutable `BatchProgress`. Tote schwache
+GTK-Subscriber werden beim nächsten Zustand oder bei einer neuen Registrierung
+entfernt, ohne dabei lebende Anzeigen erneut einzublenden. Die Einträge werden vor
+dem Aufruf aus dem `RefCell` kopiert, sodass keine Borrow-Grenze über re-entrante
+GTK-Aufrufe gehalten wird.
 
 Das neue `main_cover_download_progress.rs` besitzt ausschließlich die kompakte
 GTK-Darstellung, den Ausblend-Generationstimer und die Composition-Wiring-Funktion.

@@ -17,8 +17,9 @@ Dateien: `crates/reprise-gnome/src/ui/cover_download_batch.rs`,
    Zustand und alle weiteren Updates erhalten und ein `false` zurückliefernder
    Subscriber aus der Liste entfernt wird.
 2. Ersetze den einzelnen überschreibenden Callback durch eine re-entranzsichere
-   Subscriberliste. `subscribe_progress` liefert den aktuellen Zustand sofort;
-   Updates klonen Callbacks vor dem Aufruf und entfernen tote IDs danach.
+   Subscriberliste mit getrennter schwacher Lebensprüfung und Zustandsfunktion.
+   `subscribe_progress` liefert nur dem neuen Empfänger den aktuellen Zustand;
+   Updates klonen Einträge vor dem Aufruf und entfernen tote IDs danach.
 3. Stelle die Preferences-Zeile auf einen schwachen Subscriber um, ohne ihr
    bestehendes persistentes Verhalten zu ändern.
 4. Gezielte Tests, vollständige Gates und adversarial Review.
