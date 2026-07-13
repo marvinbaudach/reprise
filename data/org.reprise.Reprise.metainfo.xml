@@ -12,30 +12,37 @@
   <description>
     <p>
       Reprise is a native music player for GNOME with a fast, column-based
-      library, playlists, a play queue, album covers, tag editing, and MPRIS
-      integration for media keys and the lock screen. Optional ListenBrainz and
-      Last.fm scrobbling can report completed listens after explicit account setup.
+      library, playlists, a play queue, album covers, synchronized played-track
+      lyrics, tag editing, and MPRIS integration for media keys and the lock screen.
+      Optional ListenBrainz and Last.fm scrobbling can report completed listens
+      after explicit account setup.
     </p>
     <p xml:lang="de">
       Reprise ist eine native Musikwiedergabe für GNOME mit einer schnellen,
       spaltenbasierten Sammlung, Wiedergabelisten, Warteschlange, Albumcovern,
-      Tag-Bearbeitung und MPRIS-Integration für Medientasten und Sperrbildschirm.
-      Optionales ListenBrainz- und Last.fm-Scrobbling kann nach ausdrücklicher
-      Kontoeinrichtung abgeschlossene Wiedergaben melden.
+      synchronisierten Songtexten für laufende Titel, Tag-Bearbeitung und
+      MPRIS-Integration für Medientasten und Sperrbildschirm. Optionales
+      ListenBrainz- und Last.fm-Scrobbling kann nach ausdrücklicher Kontoeinrichtung
+      abgeschlossene Wiedergaben melden.
     </p>
     <p>
       Your library stays local. Reprise changes music files only after an
-      explicit tag-edit or move-to-trash confirmation. Online cover lookup is
-      optional and disabled by default. ListenBrainz and Last.fm are also disabled
-      by default; credentials stay in the system keyring and each service has an
-      independent local offline queue. Last.fm requires the user's own API credentials.
+      explicit tag-edit or move-to-trash confirmation. Missing covers are retrieved
+      automatically. For tracks you play, title, artist, album, and duration are sent
+      to LRCLIB for lyrics; file paths and the rest of the library are not sent.
+      ListenBrainz and Last.fm are disabled by default; credentials stay in the system
+      keyring and each service has an independent local offline queue. Last.fm requires
+      the user's own API credentials.
     </p>
     <p xml:lang="de">
       Die Sammlung bleibt lokal. Reprise verändert Musikdateien nur nach einer
       ausdrücklichen Bestätigung zur Tag-Bearbeitung oder zum Verschieben in den
-      Papierkorb. Online-Coversuche, ListenBrainz und Last.fm sind optional und
-      standardmäßig aus. Zugangsdaten bleiben im System-Schlüsselbund; beide Dienste
-      haben getrennte Offline-Warteschlangen. Last.fm erfordert eigene API-Zugangsdaten.
+      Papierkorb. Fehlende Cover werden automatisch abgerufen. Für abgespielte Titel
+      werden Titel, Interpret, Album und Dauer für Songtexte an LRCLIB gesendet;
+      Dateipfade und die übrige Sammlung werden nicht übertragen. ListenBrainz und
+      Last.fm sind standardmäßig aus. Zugangsdaten bleiben im System-Schlüsselbund;
+      beide Dienste haben getrennte Offline-Warteschlangen. Last.fm erfordert eigene
+      API-Zugangsdaten.
     </p>
   </description>
   <launchable type="desktop-id">org.reprise.Reprise.desktop</launchable>

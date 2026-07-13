@@ -50,6 +50,7 @@ mod library_chrome;
 mod library_player_bar;
 mod library_shell;
 mod listenbrainz_secret;
+mod lyrics_smoke;
 mod lyrics_state;
 mod lyrics_strings;
 mod lyrics_view;

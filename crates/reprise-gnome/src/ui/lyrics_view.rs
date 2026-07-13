@@ -214,6 +214,17 @@ impl LyricsView {
         self.can_retry.get()
     }
 
+    pub(super) fn smoke_snapshot(
+        &self,
+        expected: &str,
+        rejected: &str,
+    ) -> (usize, Option<usize>, bool) {
+        let labels = self.line_labels.borrow();
+        let latest = labels.iter().any(|label| label.text().contains(expected))
+            && labels.iter().all(|label| !label.text().contains(rejected));
+        (labels.len(), self.active_line.get(), latest)
+    }
+
     fn append_line(&self, text: &str, timed: bool) {
         let label = gtk4::Label::builder()
             .label(text)
