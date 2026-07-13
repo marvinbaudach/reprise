@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Composition is added by the following information-panel task.
-
 use reprise_core::models::Track;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +30,7 @@ impl PanelState {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn generation(&self) -> u64 {
         self.generation
     }

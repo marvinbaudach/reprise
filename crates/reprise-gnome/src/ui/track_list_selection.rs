@@ -55,13 +55,11 @@ fn notify(shared: &Rc<Shared>) {
 }
 
 impl TrackList {
-    #[allow(dead_code)] // Wired by the following information-panel task.
     pub(super) fn set_on_selection_changed(&self, callback: impl Fn(PanelContext) + 'static) {
         *self.shared.on_selection_changed.borrow_mut() = Some(Rc::new(callback));
         notify(&self.shared);
     }
 
-    #[allow(dead_code)] // Wired by the following information-panel task.
     pub(super) fn shared_cover_loader(&self) -> Rc<super::cover_loader::CoverLoader> {
         self.shared.cover_loader.clone()
     }
