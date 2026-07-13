@@ -90,17 +90,32 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] Light and dark appearance, 100% and available HiDPI scale, keyboard navigation,
   pointer, and touch targets remain readable and usable.
 
-## Pending: minimal view and preferences
+## Pending: compact layouts and preferences
 
-- [ ] Open Minimal View from the menu and with Ctrl+M. Expected: the existing player
-  bar becomes the compact window content, cover/title/artist and every transport,
-  seek and volume control remain usable, and no second playback state appears. The
-  mapped real-input harness proves Ctrl+M both ways and captures a populated,
-  nonblank compact player; native Wayland/window-manager confirmation remains.
-- [ ] Toggle Full → Minimal → Full repeatedly, then close once from each mode.
-  Expected: the last full window size/maximized state is restored and is never
-  overwritten by compact geometry. The isolated state and two-transition smokes pass;
-  native window-manager geometry remains pending.
+- [ ] Open Compact View through the visible Library-header button, the main menu,
+  Preferences, and Ctrl+M; return through each compact layout's visible button and
+  Ctrl+M. Expected: every route switches the same window immediately, retains the
+  selected layout, and never creates a second playback state. The mapped real-input
+  harness proves the visible buttons, menu and Ctrl+M routes headlessly; native
+  Wayland confirmation remains pending.
+- [ ] Inspect Bar, Cover, Pill, and Card with long English and German metadata, plus
+  missing album/year values. Expected: proportions feel intentional, title/artist
+  ellipsize cleanly, optional rows collapse, icons remain legible, and controls meet
+  native Adwaita target sizes. The four isolated display tests prove accessible
+  controls and natural-size bounds, but visual judgment remains manual.
+- [ ] Drag Pill only from its free metadata region under Wayland and try dragging
+  from its seek, transport, menu, and restore controls. Expected: the metadata region
+  moves the window, controls remain interactive, and integrated window actions work;
+  no transparency, always-on-top, or dock behavior appears.
+- [ ] Toggle Library → each compact layout → Library repeatedly, resize/maximize the
+  Library, then close once in Library and once in Card. Expected: the last full
+  Library size/maximized state survives and compact geometry never overwrites it;
+  the compositor chooses placement. Isolated transition and two-start smokes pass,
+  while native window-manager placement and resizing remain pending.
+- [ ] Exercise all four layouts with pointer, keyboard, and touch at 100% and available
+  HiDPI scales in light and dark appearance. Check real square and non-square covers.
+  Expected: focus, tooltips, hit targets, cover cropping/placeholder behavior and
+  active Shuffle/Repeat state remain clear without relying on color alone.
 - [ ] On Appearance and Layout, change System/Light/Dark, player-bar top/bottom,
   sidebar/status visibility, Comfortable/Standard/Compact density, and column layout.
   Expected: each applies immediately, survives restart, and remains readable at narrow
