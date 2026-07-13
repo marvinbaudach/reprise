@@ -26,7 +26,7 @@ pub(super) fn initial_transition(conn: &Connection, first_run: FirstRunDecision)
 
 pub(super) fn build_mode(
     window: &adw::ApplicationWindow,
-    full_root: &adw::NavigationSplitView,
+    full_root: &gtk4::Widget,
     compact: Option<&CompactPlayer>,
     conn: &Rc<RefCell<Connection>>,
     initial: ViewTransition,
@@ -136,7 +136,7 @@ mod tests {
         reprise_core::db::migrate(&conn.borrow()).unwrap();
         let mode = MinimalView::new(
             &window,
-            &full_root,
+            full_root.upcast_ref(),
             Some(&compact),
             conn,
             ViewTransition {
