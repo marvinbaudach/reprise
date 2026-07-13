@@ -54,8 +54,9 @@ disk except `PTR_E2E_OUT_DIR`.
    no smoke-quit hook, so the app stays alive for interaction.
 3. Waits (~15s) for a window whose `WM_CLASS` matches `reprise`, matched by
    class rather than title/name (the title is the human-readable app name,
-   not reliable for matching), then maximizes it via `wmctrl`.
-4. Runs four pointer/keyboard flows and asserts on the app's own log:
+   not reliable for matching), then uses `wmctrl` and the live geometry to
+   wait until it has reached the harness's fixed maximized size.
+4. Runs six pointer/keyboard flows and asserts on the app's own log:
    - **Star-rating click**: clicks star 1 of row 0's Rating column, then
      greps the log for `RatingWidget`'s `rating changed` debug line — proof
      the click reached the actual button inside the `ColumnView` cell.
@@ -72,6 +73,15 @@ disk except `PTR_E2E_OUT_DIR`.
      real physical keypress reached the window-level `toggle-play-pause`
      action, not just that `PlayerController::toggle_pause()` works when
      called directly.
+   - **Selectable compact layouts**: clicks the visible Library header
+     button, opens the visible compact menu, selects Bar, Cover, Pill, then
+     Card, and checks each layout's bounded window geometry and nonblank
+     screenshot. It opens the same shared menu through a free-surface right
+     click and Shift+F10, restores Library with the visible button, and proves
+     a Ctrl+M round trip retains Card.
+   - **Preferences**: opens the real primary-menu item, visits Layout,
+     Library, Plugins, and Playback, triggers a rescan, and proves selected
+     controls write the expected values to the scratch SQLite database.
 5. Takes a final screenshot and checks it isn't blank/solid-color (pixel
    standard deviation above a threshold), then rejects any application log
    containing GTK/GLib criticals, a Rust panic, or a `RefCell` borrow failure.
@@ -89,15 +99,16 @@ disk except `PTR_E2E_OUT_DIR`.
 - **Needs the binary already built.** The harness does not build the app;
   `cargo run` will build if the binary is stale, but a cold build will make
   the first run slow. `cargo build` first is recommended.
-- **Star-click coordinates are hardcoded, not queried.** There is no
+- **Some coordinates are hardcoded, not queried.** There is no
   accessibility bus wired into this headless session, so widget geometry
   can't be queried — only inferred from a screenshot taken once during
   development, at `PTR_E2E_SCREEN_RES=1600x900x24` with 5 fixture tracks.
   `GtkColumnView`'s non-expanding columns lay out at natural width, so these
-  pixel offsets are stable for that exact input but will drift if the
-  column set, fonts, theme, or resolution change — re-measure by running
-  the harness, opening `01-initial-track-list.png`, and reading off the
-  star glyph's pixel position in the Rating column.
+  offsets and the Preferences rows are stable for that exact input but will
+  drift if the column set, fonts, theme, or resolution change. Header and
+  compact-window clicks are calculated relative to the live window geometry,
+  but their offsets still assume the current widget arrangement. Re-measure
+  from the numbered screenshots when changing the UI or harness resolution.
 - **Single scenario per run.** The harness scans a fixed fixture set each
   time (no persistence across runs); it is not a substitute for exploring
   arbitrary library states, only for proving that specific pointer/keyboard
