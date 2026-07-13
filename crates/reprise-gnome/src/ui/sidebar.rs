@@ -444,8 +444,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
     // PLAYLISTS/SMART above) — just a separator, and only when at least one
     // of the two has anything to show.
     if import_error_count > 0 || missing_count > 0 {
-        let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
-        shared.listbox.append(&separator);
+        sidebar_presentation::append_problem_separator(&shared.listbox);
         if import_error_count > 0 {
             add_row(
                 shared,

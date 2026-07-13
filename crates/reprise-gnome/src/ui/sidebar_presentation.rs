@@ -108,6 +108,21 @@ pub(super) fn append_new_playlist_row(listbox: &gtk4::ListBox) -> gtk4::ListBoxR
     row
 }
 
+pub(super) fn append_problem_separator(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
+    let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+    separator.set_margin_top(8);
+    separator.set_margin_bottom(8);
+    separator.set_margin_start(ROW_HORIZONTAL_MARGIN);
+    separator.set_margin_end(ROW_HORIZONTAL_MARGIN);
+    let row = gtk4::ListBoxRow::builder()
+        .child(&separator)
+        .selectable(false)
+        .activatable(false)
+        .build();
+    listbox.append(&row);
+    row
+}
+
 pub(super) fn style_split_view(split: &adw::NavigationSplitView) {
     split.set_min_sidebar_width(SIDEBAR_MIN_WIDTH);
     split.set_max_sidebar_width(SIDEBAR_MAX_WIDTH);
@@ -154,6 +169,18 @@ mod tests {
         assert_eq!(smart_icon("rating"), NavIcon::TopRated);
         assert_eq!(smart_icon("added_at"), NavIcon::RecentlyAdded);
         assert_eq!(smart_icon("custom_field"), NavIcon::GenericSmart);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn problem_separator_is_not_a_selectable_blank_navigation_row() {
+        gtk4::init().unwrap();
+        let listbox = gtk4::ListBox::new();
+        let row = append_problem_separator(&listbox);
+
+        assert!(!row.is_selectable());
+        assert!(!row.is_activatable());
+        assert!(row.child().unwrap().is::<gtk4::Separator>());
     }
 
     #[test]
