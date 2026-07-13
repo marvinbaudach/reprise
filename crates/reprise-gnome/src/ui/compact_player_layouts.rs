@@ -1,4 +1,5 @@
 use gtk4::prelude::*;
+use libadwaita as adw;
 use reprise_core::library::settings::CompactLayout;
 
 use super::cover_loader::CoverLoader;
@@ -218,32 +219,29 @@ fn build_bar() -> LayoutWidgets {
     center.set_hexpand(true);
     center.append(&controls);
     center.append(&seek);
-    let actions = action_box(&widgets);
     let root = padded_box(gtk4::Orientation::Horizontal, 12);
+    root.set_margin_top(8);
+    root.set_margin_bottom(8);
     root.append(&widgets.cover);
     root.append(&info);
     root.append(&center);
-    root.append(&actions);
-    widgets.root = root.upcast();
+    widgets.root = with_window_chrome(CompactLayout::Bar, root, &widgets);
     widgets
 }
 
 fn build_cover() -> LayoutWidgets {
     let mut widgets = LayoutWidgets::common(CompactLayout::Cover, 280);
-    let actions = action_box(&widgets);
-    actions.set_halign(gtk4::Align::End);
     let info = metadata_box(&widgets, 300);
     let controls = transport_box(&widgets, false);
     controls.set_halign(gtk4::Align::Center);
     let seek = seek_box(&widgets);
     let root = padded_box(gtk4::Orientation::Vertical, 10);
-    root.append(&actions);
     widgets.cover.set_halign(gtk4::Align::Center);
     root.append(&widgets.cover);
     root.append(&info);
     root.append(&seek);
     root.append(&controls);
-    widgets.root = root.upcast();
+    widgets.root = with_window_chrome(CompactLayout::Cover, root, &widgets);
     widgets
 }
 
@@ -266,27 +264,56 @@ fn build_pill() -> LayoutWidgets {
     root.append(&controls);
     root.append(&seek);
     root.append(&actions);
-    widgets.root = root.upcast();
+    root.append(&gtk4::WindowControls::new(gtk4::PackType::End));
+    widgets.root = with_window_chrome(CompactLayout::Pill, root, &widgets);
     widgets
 }
 
 fn build_card() -> LayoutWidgets {
     let mut widgets = LayoutWidgets::common(CompactLayout::Card, 132);
     let info = metadata_box(&widgets, 230);
-    let actions = action_box(&widgets);
     let controls = transport_box(&widgets, true);
     let seek = seek_box(&widgets);
     let right = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
     right.set_hexpand(true);
-    right.append(&actions);
     right.append(&info);
     right.append(&seek);
     right.append(&controls);
     let root = padded_box(gtk4::Orientation::Horizontal, 12);
     root.append(&widgets.cover);
     root.append(&right);
-    widgets.root = root.upcast();
+    widgets.root = with_window_chrome(CompactLayout::Card, root, &widgets);
     widgets
+}
+
+fn with_window_chrome(
+    layout: CompactLayout,
+    content: gtk4::Box,
+    widgets: &LayoutWidgets,
+) -> gtk4::Widget {
+    if !metrics(layout).separate_header {
+        return content.upcast();
+    }
+    let subtitle = match layout {
+        CompactLayout::Bar => strings::COMPACT_LAYOUT_BAR,
+        CompactLayout::Cover => strings::COMPACT_LAYOUT_COVER,
+        CompactLayout::Pill => strings::COMPACT_LAYOUT_PILL,
+        CompactLayout::Card => strings::COMPACT_LAYOUT_CARD,
+    };
+    let header = adw::HeaderBar::new();
+    header.set_title_widget(Some(&adw::WindowTitle::new(
+        &strings::text(strings::APP_NAME),
+        &strings::text(subtitle),
+    )));
+    header.pack_end(&widgets.restore);
+    header.pack_end(&widgets.menu);
+    if let Some(volume) = &widgets.volume {
+        header.pack_end(volume);
+    }
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&header);
+    toolbar.set_content(Some(&content));
+    toolbar.upcast()
 }
 
 fn padded_box(orientation: gtk4::Orientation, spacing: i32) -> gtk4::Box {

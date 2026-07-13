@@ -89,8 +89,8 @@ pub(super) fn run(
     window: &adw::ApplicationWindow,
     scan_button: &gtk4::Button,
     conn: &Rc<RefCell<Connection>>,
+    decision: FirstRunDecision,
 ) {
-    let decision = initial_decision(&conn.borrow());
     tracing::info!(?decision, "first-run decision");
     if decision != FirstRunDecision::ShowWizard {
         return;

@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::{gdk, prelude::*};
+use gtk4::{gdk, gio, prelude::*};
 use reprise_core::format::format_duration;
 use reprise_core::library::settings::CompactLayout;
 use reprise_core::playback::PlaybackState;
@@ -31,7 +31,7 @@ pub(super) struct CompactPlayer {
     stack: gtk4::Stack,
     views: Vec<LayoutWidgets>,
     menu: CompactMenu,
-    layout: Cell<CompactLayout>,
+    layout: Rc<Cell<CompactLayout>>,
     presentation: Rc<RefCell<CompactPresentation>>,
     updating_scale: Rc<Cell<bool>>,
     dragging: Rc<Cell<bool>>,
@@ -41,6 +41,27 @@ pub(super) struct CompactPlayer {
     updating_shuffle: Rc<Cell<bool>>,
     updating_volume: Rc<Cell<bool>>,
     on_restore: RestoreCallback,
+}
+
+#[derive(Clone)]
+pub(super) struct CompactPlayerHandle {
+    stack: gtk4::Stack,
+    layout: Rc<Cell<CompactLayout>>,
+    layout_action: gio::SimpleAction,
+}
+
+impl CompactPlayerHandle {
+    pub(super) fn widget(&self) -> &gtk4::Stack {
+        &self.stack
+    }
+
+    pub(super) fn set_layout(&self, layout: CompactLayout) {
+        self.layout.set(layout);
+        self.stack
+            .set_visible_child_name(compact_player_layouts::layout_token(layout));
+        self.layout_action
+            .set_state(&compact_player_menu::active_target(layout).to_variant());
+    }
 }
 
 impl CompactPlayer {
@@ -69,7 +90,7 @@ impl CompactPlayer {
             stack,
             views,
             menu,
-            layout: Cell::new(CompactLayout::Bar),
+            layout: Rc::new(Cell::new(CompactLayout::Bar)),
             presentation: Rc::new(RefCell::new(CompactPresentation::default())),
             updating_scale: Rc::new(Cell::new(false)),
             dragging: Rc::new(Cell::new(false)),
@@ -92,6 +113,18 @@ impl CompactPlayer {
         &self.views[0].cover
     }
 
+    pub(super) fn widget(&self) -> &gtk4::Stack {
+        &self.stack
+    }
+
+    pub(super) fn handle(&self) -> CompactPlayerHandle {
+        CompactPlayerHandle {
+            stack: self.widget().clone(),
+            layout: self.layout.clone(),
+            layout_action: self.menu.layout_action(),
+        }
+    }
+
     pub(super) fn set_cover_placeholder(&self) {
         for view in &self.views {
             CoverLoader::set_placeholder(&view.cover);
@@ -103,10 +136,7 @@ impl CompactPlayer {
     }
 
     pub(super) fn set_layout(&self, layout: CompactLayout) {
-        self.layout.set(layout);
-        self.stack
-            .set_visible_child_name(compact_player_layouts::layout_token(layout));
-        self.menu.set_layout(layout);
+        self.handle().set_layout(layout);
         let metrics = self.metrics();
         tracing::debug!(
             ?layout,
@@ -624,6 +654,13 @@ mod tests {
             Some("Return to Library")
         );
         let metrics = compact.metrics();
+        assert_eq!(
+            tree_has(&view.root, &|widget| widget.is::<libadwaita::HeaderBar>()),
+            metrics.separate_header
+        );
+        if !metrics.separate_header {
+            assert!(tree_has(&view.root, &|widget| widget.is::<gtk4::WindowControls>()));
+        }
         let (_, natural_width, _, _) = view.root.measure(gtk4::Orientation::Horizontal, -1);
         let (_, natural_height, _, _) = view
             .root
@@ -686,5 +723,19 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn card_layout_has_required_accessible_controls_and_fits() {
         assert_layout_contract(CompactLayout::Card);
+    }
+
+    fn tree_has(root: &gtk4::Widget, predicate: &dyn Fn(&gtk4::Widget) -> bool) -> bool {
+        if predicate(root) {
+            return true;
+        }
+        let mut child = root.first_child();
+        while let Some(widget) = child {
+            if tree_has(&widget, predicate) {
+                return true;
+            }
+            child = widget.next_sibling();
+        }
+        false
     }
 }

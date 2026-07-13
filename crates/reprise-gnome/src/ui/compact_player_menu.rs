@@ -186,9 +186,8 @@ impl CompactMenu {
         }
     }
 
-    pub(super) fn set_layout(&self, layout: CompactLayout) {
-        self.layout_action
-            .set_state(&active_target(layout).to_variant());
+    pub(super) fn layout_action(&self) -> gio::SimpleAction {
+        self.layout_action.clone()
     }
 
     pub(super) fn set_shuffle(&self, active: bool) {
