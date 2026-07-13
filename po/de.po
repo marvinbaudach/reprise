@@ -1202,6 +1202,19 @@ msgstr "Chromium (CSD)"
 msgid "System title bar"
 msgstr "Systemtitelleiste"
 
+#: crates/reprise-gnome/src/ui/track_list_queue_menu.rs
+msgid "Remove from Queue"
+msgstr "Aus Queue entfernen"
+
+#: crates/reprise-gnome/src/ui/track_list_queue_menu.rs
+msgid "Removed one track from Queue"
+msgstr "Einen Titel aus der Queue entfernt"
+
+#: crates/reprise-gnome/src/ui/track_list_queue_menu.rs
+#, rust-format
+msgid "Removed {count} tracks from Queue"
+msgstr "{count} Titel aus der Queue entfernt"
+
 
 #~ msgid "Minimal View"
 #~ msgstr "Minimalansicht"

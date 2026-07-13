@@ -18,21 +18,27 @@
 use std::rc::Rc;
 
 use crate::ui::player_controller::PlayerController;
-use crate::ui::sidebar::Sidebar;
+use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::media_integration::MprisPlaybackStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
     StartCurrent,
+    StartPending,
     TogglePipeline,
     Noop,
 }
 
-fn toggle_action(status: MprisPlaybackStatus, current_track: Option<i64>) -> ToggleAction {
-    match (status, current_track) {
-        (MprisPlaybackStatus::Stopped, Some(_)) => ToggleAction::StartCurrent,
-        (MprisPlaybackStatus::Stopped, None) => ToggleAction::Noop,
-        (MprisPlaybackStatus::Playing | MprisPlaybackStatus::Paused, _) => {
+fn toggle_action(
+    status: MprisPlaybackStatus,
+    current_track: Option<i64>,
+    has_pending: bool,
+) -> ToggleAction {
+    match (status, current_track, has_pending) {
+        (MprisPlaybackStatus::Stopped, Some(_), _) => ToggleAction::StartCurrent,
+        (MprisPlaybackStatus::Stopped, None, true) => ToggleAction::StartPending,
+        (MprisPlaybackStatus::Stopped, None, false) => ToggleAction::Noop,
+        (MprisPlaybackStatus::Playing | MprisPlaybackStatus::Paused, _, _) => {
             ToggleAction::TogglePipeline
         }
     }
@@ -44,6 +50,7 @@ impl PlayerController {
     }
 
     pub(super) fn notify_queue_changed(&self) {
+        tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
         let callback = self.queue_changed.borrow().clone();
         if let Some(callback) = callback {
             callback();
@@ -59,13 +66,18 @@ impl PlayerController {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .status;
-        let current = self.queue.borrow().current();
-        match toggle_action(status, current) {
+        let current = self
+            .current_up_next
+            .get()
+            .or_else(|| self.queue.borrow().current());
+        let has_pending = !self.up_next.borrow().is_empty();
+        match toggle_action(status, current, has_pending) {
             ToggleAction::StartCurrent => {
                 if let Some(id) = current {
                     self.play_track_id(id);
                 }
             }
+            ToggleAction::StartPending => self.advance_playback(AdvanceReason::Manual),
             ToggleAction::TogglePipeline => {
                 if let Err(error) = self.player.toggle_pause() {
                     tracing::error!(%error, "toggle play/pause failed");
@@ -81,22 +93,14 @@ impl PlayerController {
     /// inside this one `let` statement, so the borrow drops before
     /// `play_track_id`/`reset_to_stopped` run.
     pub(super) fn previous(&self) {
-        let previous = self.queue.borrow_mut().previous();
-        match previous {
-            Some(id) => self.play_track_id(id),
-            None => self.reset_to_stopped(),
-        }
+        self.previous_with_up_next();
     }
 
     /// Steps the queue to the next track and plays it (or resets to stopped
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
     pub(super) fn next(&self) {
-        let next = self.queue.borrow_mut().next_manual();
-        match next {
-            Some(id) => self.play_track_id(id),
-            None => self.reset_to_stopped(),
-        }
+        self.advance_playback(AdvanceReason::Manual);
     }
 
     /// "Add to queue" context-menu action (Stage 3 Task 5): appends `ids` to
@@ -117,11 +121,10 @@ impl PlayerController {
             tracing::debug!("append to queue: nothing to add; ignoring");
             return;
         }
-        self.queue.borrow_mut().append_tracks(ids);
+        self.up_next.borrow_mut().append(ids);
         self.notify_queue_changed();
-        let queue_len = self.queue.borrow().len();
-        let queue_has_tracks = queue_len > 0;
-        self.sync_transport_enabled(queue_has_tracks);
+        let queue_len = self.up_next.borrow().len();
+        self.sync_transport_enabled(true);
         tracing::info!(added = ids.len(), queue_len, "tracks added to queue");
     }
 
@@ -135,7 +138,19 @@ impl PlayerController {
     /// `Vec`, so the temporary `Ref` this creates already drops at the end
     /// of this one expression, before the function returns.
     pub(super) fn queue_ids_snapshot(&self) -> Vec<i64> {
-        self.queue.borrow().ids_in_order()
+        self.up_next.borrow().ids().to_vec()
+    }
+
+    pub(super) fn up_next_len(&self) -> usize {
+        self.up_next.borrow().len()
+    }
+
+    pub(super) fn remove_up_next_positions(&self, positions: &[usize]) -> usize {
+        let removed = self.up_next.borrow_mut().remove_positions(positions);
+        if removed > 0 {
+            self.notify_queue_changed();
+        }
+        removed
     }
 
     /// Queue drag-reorder (Stage 3 Task 6): moves the queued track at index
@@ -151,7 +166,7 @@ impl PlayerController {
     /// reported as `false` rather than the caller assuming success just
     /// because a player was available to ask.
     pub(super) fn move_queue_item(&self, from: usize, to: usize) -> bool {
-        self.queue.borrow_mut().move_item(from, to)
+        self.up_next.borrow_mut().move_item(from, to)
     }
 
     /// Purges hard-deleted track ids from the queue (Stage-3 close-out):
@@ -170,27 +185,26 @@ impl PlayerController {
         if ids.is_empty() {
             return;
         }
-        let changed = self.queue.borrow_mut().remove_ids(ids);
-        if changed {
+        let context_changed = self.queue.borrow_mut().remove_ids(ids);
+        let pending_changed = self.up_next.borrow_mut().remove_ids(ids);
+        if self
+            .current_up_next
+            .get()
+            .is_some_and(|id| ids.contains(&id))
+        {
+            self.current_up_next.set(None);
+        }
+        if context_changed || pending_changed {
             tracing::info!(
                 removed = ids.len(),
-                queue_len = self.queue.borrow().len(),
+                queue_len = self.up_next.borrow().len(),
                 "queue purged of hard-deleted track ids"
             );
-            self.notify_queue_changed();
+            if pending_changed {
+                self.notify_queue_changed();
+            }
         }
     }
-}
-
-pub(super) fn wire_sidebar_count(player: Option<&Rc<PlayerController>>, sidebar: &Rc<Sidebar>) {
-    let Some(player) = player else {
-        return;
-    };
-    let sidebar = Rc::downgrade(sidebar);
-    player.set_on_queue_changed(move || match sidebar.upgrade() {
-        Some(sidebar) => sidebar.refresh("queue changed"),
-        None => tracing::warn!("sidebar is gone; skipping refresh after queue change"),
-    });
 }
 
 #[cfg(test)]
@@ -200,11 +214,15 @@ mod tests {
     #[test]
     fn stopped_toggle_starts_current_queue_track_without_autoplay() {
         assert_eq!(
-            toggle_action(MprisPlaybackStatus::Stopped, Some(42)),
+            toggle_action(MprisPlaybackStatus::Stopped, Some(42), false),
             ToggleAction::StartCurrent
         );
         assert_eq!(
-            toggle_action(MprisPlaybackStatus::Stopped, None),
+            toggle_action(MprisPlaybackStatus::Stopped, None, true),
+            ToggleAction::StartPending
+        );
+        assert_eq!(
+            toggle_action(MprisPlaybackStatus::Stopped, None, false),
             ToggleAction::Noop
         );
     }
