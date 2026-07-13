@@ -13,22 +13,29 @@
     <p>
       Reprise is a native music player for GNOME with a fast, column-based
       library, playlists, a play queue, album covers, tag editing, and MPRIS
-      integration for media keys and the lock screen.
+      integration for media keys and the lock screen. Optional ListenBrainz
+      scrobbling can report completed listens after explicit account setup.
     </p>
     <p xml:lang="de">
       Reprise ist eine native Musikwiedergabe für GNOME mit einer schnellen,
       spaltenbasierten Sammlung, Wiedergabelisten, Warteschlange, Albumcovern,
       Tag-Bearbeitung und MPRIS-Integration für Medientasten und Sperrbildschirm.
+      Optionales ListenBrainz-Scrobbling kann nach ausdrücklicher Kontoeinrichtung
+      abgeschlossene Wiedergaben melden.
     </p>
     <p>
       Your library stays local. Reprise changes music files only after an
       explicit tag-edit or move-to-trash confirmation. Online cover lookup is
-      optional and disabled by default.
+      optional and disabled by default. ListenBrainz is also disabled by default;
+      its token stays in the system keyring and offline listens remain in a local
+      queue until accepted or explicitly cleared by disconnecting the account.
     </p>
     <p xml:lang="de">
       Die Sammlung bleibt lokal. Reprise verändert Musikdateien nur nach einer
       ausdrücklichen Bestätigung zur Tag-Bearbeitung oder zum Verschieben in den
-      Papierkorb. Die Online-Coversuche ist optional und standardmäßig aus.
+      Papierkorb. Online-Coversuche und ListenBrainz sind optional und standardmäßig
+      aus. Das ListenBrainz-Token bleibt im System-Schlüsselbund; ausstehende
+      Wiedergaben bleiben bis zur Annahme oder zum Trennen des Kontos lokal.
     </p>
   </description>
   <launchable type="desktop-id">org.reprise.Reprise.desktop</launchable>
@@ -64,4 +71,3 @@
     </release>
   </releases>
 </component>
-
