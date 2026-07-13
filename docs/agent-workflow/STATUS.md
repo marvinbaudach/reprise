@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Reclassify core playback and synchronization features outside Plugins
+SINCE:    2026-07-13 05:02 CEST
 ```
 
-_As of 2026-07-13 05:00 CEST: Codex released the lock after automated post-release hardening._
+_As of 2026-07-13 05:02 CEST: Codex claimed the lock for the plugin-boundary correction._
 
 ## Current position
 
