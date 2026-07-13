@@ -26,17 +26,17 @@ TASK:     —
 SINCE:    —
 ```
 
-_As of 2026-07-13: free after compact responsive track ratings passed all gates and pointer QA._
+_As of 2026-07-13 20:51 CEST: lock released after the column-header visibility menu passed full QA._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Compact responsive track ratings** (`f7a4701`) — Rating now uses an 88px
-  `★ N` popover control by default and promotes to five inline stars when widened to 132px,
-  retaining direct pointer and keyboard-accessible editing without wasting table space.
+- **Last completed:** **Column-header visibility menu** (`c57ff88`) — right-clicking any track
+  header now exposes a native persistent visibility checklist; Cover and Title remain fixed, while
+  optional columns toggle immediately and stay synchronized with the full layout editor.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `f7a4701`; this QA/coordination close-out follows it.
+- **Main implementation:** `c57ff88`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -107,6 +107,9 @@ _As of 2026-07-13: free after compact responsive track ratings passed all gates 
   changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
 - ✅ **Compact responsive ratings**: the Rating column defaults to a narrow `★ N` popover chooser,
   promotes to five inline stars when widened, and retains real-pointer write-back regression coverage.
+- ✅ **Column-header visibility menu**: every track header exposes the same native right-click
+  checklist in current column order; fixed columns are visibly disabled, optional visibility is
+  immediately persisted, and editor/import changes keep menu state and ordering synchronized.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
@@ -116,7 +119,7 @@ _As of 2026-07-13: free after compact responsive track ratings passed all gates 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
 - `scrobbling.rs` (795 lines), `strings.rs` (784 lines), `info_panel.rs` (794 lines), and
-  `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
+  `scripts/ptr-e2e/run.sh` (791 lines) are edge-tight — their next
   edits must extract cohesive sibling modules rather than adding inline logic.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.

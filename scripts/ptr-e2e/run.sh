@@ -78,12 +78,15 @@ PTR_E2E_N_TRACKS="${PTR_E2E_N_TRACKS:-5}"
 # are cleared at the top of a fresh run).
 PTR_E2E_OUT_DIR="${PTR_E2E_OUT_DIR:-/tmp/reprise-ptr-e2e}"
 PTR_E2E_NEWS_ONLY="${PTR_E2E_NEWS_ONLY:-0}"
+PTR_E2E_HEADER_ONLY="${PTR_E2E_HEADER_ONLY:-0}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=artist-news.sh
 source "$REPO_ROOT/scripts/ptr-e2e/artist-news.sh"
 # shellcheck source=rating.sh
 source "$REPO_ROOT/scripts/ptr-e2e/rating.sh"
+# shellcheck source=column-header-menu.sh
+source "$REPO_ROOT/scripts/ptr-e2e/column-header-menu.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
 APP_ID="org.reprise.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
@@ -492,6 +495,12 @@ fi
 # --- Flow 1: compact rating click reaches the real popover ------------------
 
 run_rating_flow
+# --- Flow 1b: right-click headers expose column visibility ------------------
+
+run_column_header_menu_flow
+if [ "$PTR_E2E_HEADER_ONLY" = "1" ]; then
+  exit 0
+fi
 # --- Flow 2: keyboard opens the selected row's context menu -----------------
 
 log_step "flow 2: Shift+F10 opens the track context menu…"

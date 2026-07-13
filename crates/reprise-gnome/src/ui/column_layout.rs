@@ -139,6 +139,21 @@ impl ColumnId {
     }
 }
 
+pub(super) fn column_label(id: ColumnId) -> String {
+    let message = match id {
+        ColumnId::Cover => strings::COLUMN_COVER,
+        ColumnId::Title => strings::COLUMN_TITLE,
+        ColumnId::TrackNumber => strings::COLUMN_TRACK_NUMBER,
+        ColumnId::Artist => strings::COLUMN_ARTIST,
+        ColumnId::Album => strings::COLUMN_ALBUM,
+        ColumnId::Genre => strings::COLUMN_GENRE,
+        ColumnId::Year => strings::COLUMN_YEAR,
+        ColumnId::Duration => strings::COLUMN_LENGTH,
+        ColumnId::Rating => strings::RATING,
+    };
+    strings::text(message)
+}
+
 pub fn serialize_layout(layout: &ColumnLayout) -> String {
     let layout = normalize(layout.order.clone(), layout.visible.clone());
     let order = layout
@@ -349,6 +364,12 @@ impl ColumnRegistry {
         self.columns
             .get(&id)
             .is_some_and(gtk4::ColumnViewColumn::is_visible)
+    }
+
+    pub fn set_header_menu(&self, menu: &gio::Menu) {
+        for column in self.columns.values() {
+            column.set_header_menu(Some(menu));
+        }
     }
 }
 
