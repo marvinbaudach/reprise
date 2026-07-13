@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Add persistent column visibility menu to track headers
+SINCE:    2026-07-13 20:32 CEST
 ```
 
-_As of 2026-07-13: free after compact responsive track ratings passed all gates and pointer QA._
+_As of 2026-07-13 20:32 CEST: Codex is adding a native right-click visibility menu to track headers._
 
 ## Current position
 
