@@ -21,23 +21,23 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Show cover-download progress in the main window
-SINCE:    2026-07-13 10:54 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 10:54 CEST: Codex claimed the lock to expose the existing cover-download batch progress in the main window._
+_As of 2026-07-13 11:08 CEST: Codex completed main-window cover-download progress and released the lock._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-library-scan-progress.md` (3 tasks).
-- **Last completed:** **Visible library scan progress** (`06145bc`, `8596f96`) — user-driven scans
-  now show constant-memory discovery followed by monotone processed/total and current-file progress.
-- **Current plan:** none — library scan progress is complete; minimal-view variants are the next
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-main-cover-progress.md` (3 tasks).
+- **Last completed:** **Main-window cover-download progress** (`7b2f378`, `19a065e`) — the existing
+  serial batch now broadcasts one state to Preferences and a transient main-window progress row.
+- **Current plan:** none — cover and library scan progress are complete; minimal-view variants are the next
   proposed feature stage and still need their dedicated approved spec/plan before implementation.
 - **➡️ NEXT:** settle and implement the proposed Compact/Cover/Pill/Card minimal-view variants,
   then run the native-GNOME visual/geometry and audible checks in `MANUAL-QA.md`.
-- **Feature HEAD:** `8596f96`; this QA/coordination update follows it.
+- **Feature HEAD:** `19a065e`; this QA/coordination update follows it.
 
 ## Done so far (compact)
 
@@ -64,9 +64,10 @@ _As of 2026-07-13 10:54 CEST: Codex claimed the lock to expose the existing cove
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
 - ✅ **Plugin boundary correction**: Equalizer and ReplayGain exist only under Playback; Plugins
   contains optional integrations, while future MTP/iPod device support belongs to Synchronization.
-- ✅ **Visible cover-download progress**: the default-off toggle starts/cancels a serial background
-  library check, skips local/cached covers, deduplicates albums, refreshes downloaded art, and shows
-  checked/downloaded/unavailable counts with complete, stopped and failure states in Preferences.
+- ✅ **Visible cover-download progress**: the default-off toggle starts/cancels one serial background
+  library check, skips local/cached covers, deduplicates albums, refreshes downloaded art, and
+  broadcasts checked/downloaded/unavailable counts to persistent Preferences plus a transient
+  main-window row; successful scans restart it when enabled so first-run opt-in covers new tracks.
 - ✅ **MPRIS cover metadata**: local, embedded and downloaded art resolves off-main to the shared
   cache and is exposed as a generation-guarded `mpris:artUrl` with live metadata updates.
 - ✅ **Visible library scan progress**: Setup, header scans, Library rescans, and the post-launch
@@ -88,7 +89,7 @@ _As of 2026-07-13 10:54 CEST: Codex claimed the lock to expose the existing cove
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `window.rs` (789 lines) is edge-tight — its next edit must extract a sibling module, not inline-add.
+- `window.rs` (790 lines) is edge-tight — its next edit must extract a sibling module, not inline-add.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote

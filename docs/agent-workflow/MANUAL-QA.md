@@ -110,13 +110,14 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   column import. Expected: cancel is harmless and actions use the established safe
   picker/import paths.
 - [ ] On Plugins, toggle Cover download and MPRIS. Expected: enabling Cover download
-  immediately reveals a progress row with checked/total, downloaded and unavailable
-  counts; completion is retained while the dialog is open, disabling a running pass
-  reports that it stopped, and re-enabling starts a fresh pass. MPRIS clearly says
-  restart required and changes only after restart. Equalizer and ReplayGain must not
-  appear here because they are core Playback features. The isolated action/app smoke,
-  batch-state regressions and native GTK progress-widget test pass; real-network cover
-  results, native visual confirmation and the MPRIS restart remain pending.
+  immediately reveals the same checked/total, downloaded and unavailable progress in
+  the main window and on the Plugins page. The main terminal result remains visible
+  briefly and hides; Preferences retain it while open. Disabling a running pass reports
+  that it stopped, and re-enabling starts a fresh pass. MPRIS clearly says restart
+  required and changes only after restart. Equalizer and ReplayGain must not appear here
+  because they are core Playback features. The isolated local-sidecar app smoke proves
+  main-window Running → Complete without network; both native GTK progress-widget tests
+  pass. Real-network results, native visual confirmation and MPRIS restart remain pending.
 - [ ] While disposable music plays through real speakers, enable Equalizer, select
   Flat/Rock/Pop/Bass Boost, and move all ten sliders. Expected: audible changes are
   immediate, bounded to ±12 dB, persist after restart, and do not interrupt or move
