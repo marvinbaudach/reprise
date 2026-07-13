@@ -207,14 +207,6 @@ msgid ""
 "default)"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:79
-msgid "Ten-band audio equalizer with presets and live adjustment"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings.rs:81
-msgid "Normalize playback volume from track or album ReplayGain tags"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings.rs:82
 msgid "Library Folder"
 msgstr ""

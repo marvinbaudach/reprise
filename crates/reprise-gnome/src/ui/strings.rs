@@ -75,10 +75,6 @@ pub const PLUGIN_MPRIS_DESCRIPTION: &str =
     N_!("GNOME media controls, media keys, and lock-screen integration (D-Bus)");
 pub const PLUGIN_COVER_DESCRIPTION: &str =
     N_!("Download missing album covers from Cover Art Archive (network; off by default)");
-pub const PLUGIN_EQUALIZER_DESCRIPTION: &str =
-    N_!("Ten-band audio equalizer with presets and live adjustment");
-pub const PLUGIN_REPLAYGAIN_DESCRIPTION: &str =
-    N_!("Normalize playback volume from track or album ReplayGain tags");
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
