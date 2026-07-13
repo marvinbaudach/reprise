@@ -250,7 +250,7 @@ pub struct PlayerController {
     /// `Metadata` fields from — see the module's `## MPRIS` doc section for
     /// why this duplicates `current_track`'s id/duration rather than reusing
     /// it. `pub(super)` so that sibling module can reach it.
-    pub(super) now_playing: RefCell<Option<NowPlaying>>,
+    pub(super) now_playing: Rc<RefCell<Option<NowPlaying>>>,
     /// The last volume value applied via the bar's volume control or an
     /// MPRIS `Volume` write (Stage 3 Task 10). `Player::set_volume` is
     /// write-only (no getter), so this is the one source of truth `update_
@@ -306,6 +306,10 @@ pub(super) struct NowPlaying {
     pub(super) title: String,
     pub(super) artist: String,
     pub(super) album: String,
+    /// File URI for the resolved cached cover. It starts empty while the
+    /// off-thread cover pipeline runs and is retained here so later status
+    /// changes keep MPRIS metadata complete.
+    pub(super) art_url: Option<String>,
     pub(super) duration_ms: i64,
     /// On-disk path of the currently-loaded track. Not read yet (`play_
     /// track_id` feeds `now_playing_wiring.rs`'s `sync_cover` from
@@ -379,7 +383,7 @@ impl PlayerController {
             current_track_changed: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             mpris_state,
-            now_playing: RefCell::new(None),
+            now_playing: Rc::new(RefCell::new(None)),
             volume: Cell::new(DEFAULT_VOLUME),
             mpris_seek_notify,
             cover_loader: CoverLoader::new(cover_download),
@@ -519,6 +523,7 @@ impl PlayerController {
                     title: summary.title.clone(),
                     artist: summary.artist.clone(),
                     album: summary.album.clone(),
+                    art_url: None,
                     duration_ms: summary.duration_ms,
                     path: summary.path.clone(),
                 });

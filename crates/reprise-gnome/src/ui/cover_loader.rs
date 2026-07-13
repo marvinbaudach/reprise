@@ -5,6 +5,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::gdk;
@@ -23,8 +24,14 @@ const PLACEHOLDER_ICON: &str = "audio-x-generic-symbolic";
 /// re-reading the on-disk PNG during scrolling. Evicts oldest-inserted first.
 const MAX_CACHED_TEXTURES: usize = 256;
 
+#[derive(Clone)]
+struct CachedCover {
+    texture: gdk::Texture,
+    path: PathBuf,
+}
+
 pub struct CoverLoader {
-    cache: RefCell<HashMap<String, gdk::Texture>>,
+    cache: RefCell<HashMap<String, CachedCover>>,
     order: RefCell<std::collections::VecDeque<String>>,
     download_enabled: Rc<Cell<bool>>,
     download_worker: Option<async_channel::Sender<DownloadRequest>>,
@@ -44,11 +51,11 @@ impl CoverLoader {
         image.set_icon_name(Some(PLACEHOLDER_ICON));
     }
 
-    fn cache_get(&self, key: &str) -> Option<gdk::Texture> {
+    fn cache_get(&self, key: &str) -> Option<CachedCover> {
         self.cache.borrow().get(key).cloned()
     }
 
-    fn cache_put(&self, key: String, texture: gdk::Texture) {
+    fn cache_put(&self, key: String, cover: CachedCover) {
         let mut cache = self.cache.borrow_mut();
         if cache.contains_key(&key) {
             return;
@@ -60,7 +67,7 @@ impl CoverLoader {
             }
         }
         order.push_back(key.clone());
-        cache.insert(key, texture);
+        cache.insert(key, cover);
     }
 
     pub fn invalidate_paths(&self, paths: &[std::path::PathBuf]) {
@@ -84,9 +91,26 @@ impl CoverLoader {
         token: u64,
         current: &Rc<Cell<u64>>,
     ) {
+        self.load_into_with_path(image, track_path, size, token, current, |_| {});
+    }
+
+    /// Loads a cover like [`Self::load_into`] and reports the exact cached
+    /// image path after a successful decode. MPRIS uses that path for
+    /// `mpris:artUrl`; reporting it from this existing pipeline avoids any
+    /// synchronous tag/image work on the GTK main loop.
+    pub fn load_into_with_path(
+        self: &Rc<Self>,
+        image: &gtk4::Image,
+        track_path: &str,
+        size: ThumbnailSize,
+        token: u64,
+        current: &Rc<Cell<u64>>,
+        on_loaded: impl Fn(PathBuf) + 'static,
+    ) {
         let key = format!("{track_path}|{}", size.pixels());
-        if let Some(texture) = self.cache_get(&key) {
-            image.set_paintable(Some(&texture));
+        if let Some(cached) = self.cache_get(&key) {
+            image.set_paintable(Some(&cached.texture));
+            on_loaded(cached.path);
             return;
         }
         Self::set_placeholder(image);
@@ -152,8 +176,15 @@ impl CoverLoader {
             };
             match gdk::Texture::from_filename(&cache_path) {
                 Ok(texture) => {
-                    this.cache_put(key, texture.clone());
+                    this.cache_put(
+                        key,
+                        CachedCover {
+                            texture: texture.clone(),
+                            path: cache_path.clone(),
+                        },
+                    );
                     image.set_paintable(Some(&texture));
+                    on_loaded(cache_path);
                 }
                 Err(error) => {
                     tracing::debug!(%error, path = %path_owned, "cover texture load failed");

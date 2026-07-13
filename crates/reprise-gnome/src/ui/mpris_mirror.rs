@@ -14,10 +14,12 @@
 //! - `update_mpris_mirror`: recomputes `mpris::MprisState` from the
 //!   controller's current playback state and writes it into the shared
 //!   `Arc<Mutex<mpris::MprisState>>` the D-Bus thread reads. Covers every
-//!   field except `position_ms` (see its own doc comment) — status, track
-//!   metadata, transport-enabled flags, and (Stage 3 Task 10) `shuffle`/
-//!   `repeat` (read fresh from `Queue` every call) and `volume` (read from
-//!   `PlayerController::volume`, `Player` having no getter of its own).
+//!   controller-owned field except `position_ms` (see its own doc comment)
+//!   — status, track metadata, transport-enabled flags, and (Stage 3 Task
+//!   10) `shuffle`/`repeat` (read fresh from `Queue` every call) and `volume`
+//!   (read from `PlayerController::volume`, `Player` having no getter of its
+//!   own). `art_url` starts empty and is retained in `now_playing` once the
+//!   off-thread cover loader patches both caches.
 //! - `update_mpris_position`/`update_mpris_volume`/`update_mpris_shuffle`/
 //!   `update_mpris_repeat`: narrow, single-field patches to the mirror for
 //!   state that can change *without* a status/track transition — a position
@@ -123,7 +125,9 @@ impl PlayerController {
     /// `shuffle`/`repeat` are read fresh from `Queue` on every call — always
     /// current, no separate tracking needed. `volume` comes from
     /// `PlayerController::volume` (see that field's doc comment for why:
-    /// `Player` has no volume getter of its own).
+    /// `Player` has no volume getter of its own). `art_url` is copied from
+    /// the retained now-playing cache; `now_playing_wiring.rs` fills it and
+    /// patches the mirror after asynchronous cover resolution completes.
     ///
     /// `position_ms` is the one field this function does *not* simply
     /// re-derive: a status/track transition (this function's only trigger)
@@ -167,6 +171,7 @@ impl PlayerController {
                 title: track.title,
                 artist: track.artist,
                 album: track.album,
+                art_url: track.art_url,
                 duration_ms: track.duration_ms,
                 can_next: queue_has_tracks,
                 can_prev: queue_has_tracks,
@@ -181,6 +186,7 @@ impl PlayerController {
                 title: String::new(),
                 artist: String::new(),
                 album: String::new(),
+                art_url: None,
                 duration_ms: 0,
                 can_next: queue_has_tracks,
                 can_prev: queue_has_tracks,

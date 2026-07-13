@@ -23,7 +23,7 @@
 //!   becomes, and wires the bar's click-to-expand callback and the headless
 //!   smoke hook. Called from `window::build`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::glib;
@@ -31,8 +31,27 @@ use libadwaita as adw;
 
 use crate::ui::player_controller::PlayerController;
 use reprise_core::cover::ThumbnailSize;
+use reprise_core::media_integration::MprisState;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
+
+fn cover_path_to_uri(path: &Path) -> Option<String> {
+    match glib::filename_to_uri(path, None) {
+        Ok(uri) => Some(uri.to_string()),
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "could not build MPRIS cover URI");
+            None
+        }
+    }
+}
+
+fn set_art_url_for_current_track(mirror: &mut MprisState, track_id: i64, art_url: String) -> bool {
+    if mirror.track_id != Some(track_id) {
+        return false;
+    }
+    mirror.art_url = Some(art_url);
+    true
+}
 
 impl PlayerController {
     /// Invalidates and reloads the displayed cover when a successful tag
@@ -92,13 +111,43 @@ impl PlayerController {
 
         let full_generation = self.now_playing_cover_generation.get().wrapping_add(1);
         self.now_playing_cover_generation.set(full_generation);
-        self.cover_loader.load_into(
-            self.now_playing_view.cover_image(),
-            path,
-            ThumbnailSize::Full,
-            full_generation,
-            &self.now_playing_cover_generation,
-        );
+        let track_id = self.now_playing.borrow().as_ref().map(|track| track.id);
+        if let Some(track_id) = track_id {
+            let now_playing = self.now_playing.clone();
+            let mpris_state = self.mpris_state.clone();
+            self.cover_loader.load_into_with_path(
+                self.now_playing_view.cover_image(),
+                path,
+                ThumbnailSize::Full,
+                full_generation,
+                &self.now_playing_cover_generation,
+                move |cover_path| {
+                    let Some(art_url) = cover_path_to_uri(&cover_path) else {
+                        return;
+                    };
+                    {
+                        let mut current = now_playing.borrow_mut();
+                        let Some(track) = current.as_mut().filter(|track| track.id == track_id)
+                        else {
+                            return;
+                        };
+                        track.art_url = Some(art_url.clone());
+                    }
+                    let mut mirror = mpris_state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    set_art_url_for_current_track(&mut mirror, track_id, art_url);
+                },
+            );
+        } else {
+            self.cover_loader.load_into(
+                self.now_playing_view.cover_image(),
+                path,
+                ThumbnailSize::Full,
+                full_generation,
+                &self.now_playing_cover_generation,
+            );
+        }
     }
 
     pub(super) fn sync_state(&self, state: PlaybackState) {
@@ -269,4 +318,46 @@ pub(super) fn arm_smoke_nowplaying(
         nav.push(&page);
         tracing::info!("smoke: opened now-playing view");
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cover_path_to_uri_encodes_special_characters() {
+        let uri = cover_path_to_uri(Path::new("/tmp/Reprise Cover ä.png")).unwrap();
+        assert_eq!(uri, "file:///tmp/Reprise%20Cover%20%C3%A4.png");
+    }
+
+    #[test]
+    fn stale_cover_result_cannot_replace_current_mpris_art() {
+        let mut mirror = MprisState {
+            track_id: Some(2),
+            art_url: Some("file:///current.png".into()),
+            ..MprisState::default()
+        };
+
+        assert!(!set_art_url_for_current_track(
+            &mut mirror,
+            1,
+            "file:///stale.png".into(),
+        ));
+        assert_eq!(mirror.art_url.as_deref(), Some("file:///current.png"));
+    }
+
+    #[test]
+    fn current_cover_result_updates_mpris_art() {
+        let mut mirror = MprisState {
+            track_id: Some(2),
+            ..MprisState::default()
+        };
+
+        assert!(set_art_url_for_current_track(
+            &mut mirror,
+            2,
+            "file:///cover.png".into(),
+        ));
+        assert_eq!(mirror.art_url.as_deref(), Some("file:///cover.png"));
+    }
 }

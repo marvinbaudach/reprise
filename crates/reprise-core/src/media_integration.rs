@@ -139,6 +139,10 @@ pub struct MprisState {
     pub title: String,
     pub artist: String,
     pub album: String,
+    /// URI for the current cover image, when available. The frontend
+    /// resolves embedded and sidecar art to a cached image off-thread; the
+    /// Linux backend exposes this as `mpris:artUrl`.
+    pub art_url: Option<String>,
     pub duration_ms: i64,
     pub can_next: bool,
     pub can_prev: bool,
@@ -158,6 +162,7 @@ impl Default for MprisState {
             title: String::new(),
             artist: String::new(),
             album: String::new(),
+            art_url: None,
             duration_ms: 0,
             can_next: false,
             can_prev: false,
@@ -215,6 +220,7 @@ pub fn metadata_differs(a: &MprisState, b: &MprisState) -> bool {
         || a.title != b.title
         || a.artist != b.artist
         || a.album != b.album
+        || a.art_url != b.art_url
         || a.duration_ms != b.duration_ms
 }
 
@@ -288,6 +294,7 @@ mod tests {
             title: "Title".into(),
             artist: "Artist".into(),
             album: "Album".into(),
+            art_url: None,
             duration_ms: 180_000,
             can_next: true,
             can_prev: true,
@@ -394,6 +401,10 @@ mod tests {
         other.duration_ms = 1;
         assert!(metadata_differs(&base, &other));
 
+        let mut other = base.clone();
+        other.art_url = Some("file:///cover.png".into());
+        assert!(metadata_differs(&base, &other));
+
         // can_next/can_prev don't feed Metadata.
         let mut other = base.clone();
         other.can_next = !other.can_next;
@@ -405,6 +416,7 @@ mod tests {
         let state = MprisState::default();
         assert_eq!(state.status, MprisPlaybackStatus::Stopped);
         assert_eq!(state.track_id, None);
+        assert_eq!(state.art_url, None);
         assert!(!state.can_next);
         assert!(!state.can_prev);
         assert_eq!(state.position_ms, 0);
