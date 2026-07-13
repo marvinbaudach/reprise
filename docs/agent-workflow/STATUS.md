@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate manual Up Next and GNOME Compact redesign
+SINCE:    2026-07-13 21:26 CEST
 ```
 
-_As of 2026-07-13 21:11 CEST: lock released after confirmed playlist deletion passed full QA._
+_As of 2026-07-13 21:26 CEST: Codex claimed the lock for the verified feature-branch integration._
 
 ## Current position
 
