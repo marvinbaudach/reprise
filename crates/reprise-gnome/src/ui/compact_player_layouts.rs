@@ -90,12 +90,16 @@ pub(super) enum MetadataRow {
     Year,
 }
 
-pub(super) fn visible_detail_rows(album: &str, year: Option<i32>) -> Vec<MetadataRow> {
+pub(super) fn visible_detail_rows(
+    layout: CompactLayout,
+    album: &str,
+    year: Option<i32>,
+) -> Vec<MetadataRow> {
     let mut rows = Vec::with_capacity(2);
-    if !album.trim().is_empty() {
+    if matches!(layout, CompactLayout::Cover | CompactLayout::Card) && !album.trim().is_empty() {
         rows.push(MetadataRow::Album);
     }
-    if year.is_some() {
+    if layout == CompactLayout::Card && year.is_some() {
         rows.push(MetadataRow::Year);
     }
     rows
@@ -112,6 +116,7 @@ pub(super) struct LayoutWidgets {
     pub(super) title: gtk4::Label,
     pub(super) artist: gtk4::Label,
     pub(super) album: gtk4::Label,
+    pub(super) year: gtk4::Label,
     pub(super) previous: gtk4::Button,
     pub(super) play_pause: gtk4::Button,
     pub(super) next: gtk4::Button,
@@ -141,6 +146,9 @@ impl LayoutWidgets {
         let album = metadata_label(strings::COMPACT_ALBUM);
         album.add_css_class("dim-label");
         album.set_visible(false);
+        let year = metadata_label(strings::TAG_YEAR);
+        year.add_css_class("dim-label");
+        year.set_visible(false);
 
         let previous = icon_button(ICON_PREVIOUS, strings::PREVIOUS);
         let play_pause = icon_button(ICON_PLAY, strings::PLAY);
@@ -186,6 +194,7 @@ impl LayoutWidgets {
             title,
             artist,
             album,
+            year,
             previous,
             play_pause,
             next,
@@ -235,7 +244,7 @@ fn build_cover() -> LayoutWidgets {
     let controls = transport_box(&widgets, false);
     controls.set_halign(gtk4::Align::Center);
     let seek = seek_box(&widgets);
-    let root = padded_box(gtk4::Orientation::Vertical, 10);
+    let root = padded_box(gtk4::Orientation::Vertical, 6);
     widgets.cover.set_halign(gtk4::Align::Center);
     root.append(&widgets.cover);
     root.append(&info);
@@ -332,6 +341,7 @@ fn metadata_box(widgets: &LayoutWidgets, width: i32) -> gtk4::Box {
     info.append(&widgets.title);
     info.append(&widgets.artist);
     info.append(&widgets.album);
+    info.append(&widgets.year);
     info
 }
 
@@ -453,11 +463,30 @@ mod tests {
 
     #[test]
     fn missing_album_and_year_do_not_create_metadata_rows() {
-        assert_eq!(visible_detail_rows("", None), Vec::<MetadataRow>::new());
-        assert_eq!(visible_detail_rows("Album", None), vec![MetadataRow::Album]);
-        assert_eq!(visible_detail_rows("", Some(2026)), vec![MetadataRow::Year]);
+        for layout in [CompactLayout::Bar, CompactLayout::Pill] {
+            assert_eq!(
+                visible_detail_rows(layout, "Album", Some(2026)),
+                Vec::<MetadataRow>::new()
+            );
+        }
         assert_eq!(
-            visible_detail_rows("Album", Some(2026)),
+            visible_detail_rows(CompactLayout::Cover, "Album", Some(2026)),
+            vec![MetadataRow::Album]
+        );
+        assert_eq!(
+            visible_detail_rows(CompactLayout::Card, "", None),
+            Vec::<MetadataRow>::new()
+        );
+        assert_eq!(
+            visible_detail_rows(CompactLayout::Card, "Album", None),
+            vec![MetadataRow::Album]
+        );
+        assert_eq!(
+            visible_detail_rows(CompactLayout::Card, "", Some(2026)),
+            vec![MetadataRow::Year]
+        );
+        assert_eq!(
+            visible_detail_rows(CompactLayout::Card, "Album", Some(2026)),
             vec![MetadataRow::Album, MetadataRow::Year]
         );
     }

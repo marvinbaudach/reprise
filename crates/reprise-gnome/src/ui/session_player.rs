@@ -86,7 +86,12 @@ impl PlayerController {
                     duration_ms: summary.duration_ms,
                     path: summary.path.clone(),
                 });
-                self.sync_track(&summary.title, &summary.artist, &summary.album);
+                self.sync_track(
+                    &summary.title,
+                    &summary.artist,
+                    &summary.album,
+                    summary.year,
+                );
                 self.sync_cover(&summary.path);
             }
             None => {
