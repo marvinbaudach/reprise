@@ -15,10 +15,11 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use reprise_core::library;
-use reprise_core::library::scanner::{ScanError, ScanReport};
+use reprise_core::library::scanner::{ScanError, ScanProgress, ScanReport};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::{self, WatcherHandle};
 
+use super::scan_progress::ScanProgressView;
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
@@ -40,13 +41,28 @@ use super::track_list::TrackList;
 /// REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
 const SMOKE_RESCAN_ENV_VAR: &str = "REPRISE_SMOKE_RESCAN";
 
+#[derive(Clone)]
+pub(super) struct ScanControls {
+    button: gtk4::Button,
+    progress: ScanProgressView,
+}
+
+impl ScanControls {
+    pub(super) fn new(button: &gtk4::Button, progress: &ScanProgressView) -> Self {
+        Self {
+            button: button.clone(),
+            progress: progress.clone(),
+        }
+    }
+}
+
 /// Arms the `REPRISE_SMOKE_RESCAN` hook (see `SMOKE_RESCAN_ENV_VAR`'s doc
 /// comment): one idle callback, deferred so it runs once the main loop is up
 /// (matching `track_list.rs`'s `arm_smoke_*` hooks), that calls `spawn_scan`
 /// with the given directory — exactly what `wire_scan_button`'s click
 /// handler does after a folder is chosen, minus the dialog.
 pub(super) fn arm_smoke_rescan(
-    scan_button: &gtk4::Button,
+    controls: &ScanControls,
     toast_overlay: &adw::ToastOverlay,
     db_path: PathBuf,
     track_list: Rc<TrackList>,
@@ -57,13 +73,13 @@ pub(super) fn arm_smoke_rescan(
         return;
     };
     tracing::info!(dir = %dir, "{SMOKE_RESCAN_ENV_VAR} set: arming headless post-launch rescan");
-    let scan_button = scan_button.clone();
+    let controls = controls.clone();
     let toast_overlay = toast_overlay.clone();
     glib::idle_add_local_once(move || {
         spawn_scan(
             PathBuf::from(dir),
             db_path,
-            scan_button,
+            controls,
             toast_overlay,
             track_list,
             sidebar,
@@ -78,7 +94,7 @@ pub(super) fn arm_smoke_rescan(
 /// normal, expected outcome (not an error) — logged at debug and otherwise
 /// ignored.
 pub(super) fn wire_scan_button(
-    scan_button: &gtk4::Button,
+    controls: &ScanControls,
     window: &adw::ApplicationWindow,
     toast_overlay: &adw::ToastOverlay,
     db_path: PathBuf,
@@ -88,16 +104,16 @@ pub(super) fn wire_scan_button(
 ) {
     let window = window.clone();
     let toast_overlay = toast_overlay.clone();
-    let scan_button_handle = scan_button.clone();
+    let controls = controls.clone();
 
-    scan_button.connect_clicked(move |_| {
+    controls.button.clone().connect_clicked(move |_| {
         // Disable synchronously, before the async dialog even opens: a
         // second click landing while the first dialog is still up must not
         // be able to spawn a second dialog (and thus a second concurrent
         // scan worker against the same DB). Every exit path below that does
         // *not* hand off to `spawn_scan` must re-enable the button; the
         // `spawn_scan` path re-enables it itself once the scan finishes.
-        scan_button_handle.set_sensitive(false);
+        controls.button.set_sensitive(false);
 
         let dialog = gtk4::FileDialog::builder()
             .title(strings::text(strings::SCAN_DIALOG_TITLE))
@@ -109,7 +125,7 @@ pub(super) fn wire_scan_button(
         let db_path = db_path.clone();
         let track_list = track_list.clone();
         let sidebar = sidebar.clone();
-        let scan_button = scan_button_handle.clone();
+        let controls = controls.clone();
         let watcher_state = watcher_state.clone();
 
         glib::spawn_future_local(async move {
@@ -125,20 +141,20 @@ pub(super) fn wire_scan_button(
                     } else {
                         tracing::error!(%error, "scan folder dialog failed");
                     }
-                    scan_button.set_sensitive(true);
+                    controls.button.set_sensitive(true);
                     return;
                 }
             };
             let Some(path) = folder.path() else {
                 tracing::warn!("selected folder has no local filesystem path; cannot scan");
-                scan_button.set_sensitive(true);
+                controls.button.set_sensitive(true);
                 return;
             };
 
             spawn_scan(
                 path,
                 db_path,
-                scan_button,
+                controls,
                 toast_overlay,
                 track_list,
                 sidebar,
@@ -158,14 +174,14 @@ pub(super) fn wire_scan_button(
 /// rather than silently doing nothing when no folder has ever been scanned.
 pub(super) fn trigger_rescan_of_library_root(
     conn: &Rc<RefCell<Connection>>,
-    scan_button: &gtk4::Button,
+    controls: &ScanControls,
     toast_overlay: &adw::ToastOverlay,
     db_path: PathBuf,
     track_list: Rc<TrackList>,
     sidebar: Rc<Sidebar>,
     watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
 ) {
-    if !scan_button.is_sensitive() {
+    if !controls.button.is_sensitive() {
         tracing::debug!("rescan library: a scan is already running; ignoring");
         toasts::show(toast_overlay, &strings::scan_already_running_toast());
         return;
@@ -191,7 +207,7 @@ pub(super) fn trigger_rescan_of_library_root(
     spawn_scan(
         root,
         db_path,
-        scan_button.clone(),
+        controls.clone(),
         toast_overlay.clone(),
         track_list,
         sidebar,
@@ -199,16 +215,16 @@ pub(super) fn trigger_rescan_of_library_root(
     );
 }
 
-/// Starts a background scan of `folder`: disables `scan_button` and swaps
-/// its label to "Scanning…", runs `library::scanner::scan_folder` on a
+/// Starts a background scan of `folder`: disables `scan_button`, reveals
+/// `scan_progress`, and runs `library::scanner::scan_folder_with_progress` on a
 /// `std::thread` against a *separate* `rusqlite::Connection` opened from
 /// `db_path` (a `Connection` cannot cross threads), then marshals the result
-/// back onto the GTK main thread over an `async_channel` — the same bridge
-/// pattern `player_controller.rs` uses for `PlayerEvent`s, except the
-/// receive side here is a single one-shot `recv().await` rather than
-/// `player_controller.rs`'s long-lived drain loop: this channel is
-/// `bounded(1)` and carries exactly one message (the scan's final result),
-/// not a stream of events. On success: re-enable the button, reload the
+/// back onto the GTK main thread over a `bounded(1)` progress channel. While
+/// scanning, a full channel slot is replaced with the newest progress event,
+/// so a fast worker can neither block nor build an unbounded UI backlog. The
+/// separate one-shot result future waits until that progress channel has been
+/// fully drained before hiding the row. On success: re-enable the button,
+/// reload the
 /// track list (`TrackList::reload`'s `on_reload` hook keeps the status line
 /// in sync too — see its doc comment — so this doesn't refresh it a second
 /// time itself), and refresh the sidebar (trigger #1 from `Sidebar::
@@ -220,17 +236,22 @@ pub(super) fn trigger_rescan_of_library_root(
 fn spawn_scan(
     folder: PathBuf,
     db_path: PathBuf,
-    scan_button: gtk4::Button,
+    controls: ScanControls,
     toast_overlay: adw::ToastOverlay,
     track_list: Rc<TrackList>,
     sidebar: Rc<Sidebar>,
     watcher_state: Rc<RefCell<Option<WatcherHandle>>>,
 ) {
-    scan_button.set_sensitive(false);
-    scan_button.set_label(&strings::text(strings::SCANNING));
-    scan_button.set_tooltip_text(Some(&strings::text(strings::SCANNING)));
+    controls.button.set_sensitive(false);
+    controls.button.set_label(&strings::text(strings::SCANNING));
+    controls
+        .button
+        .set_tooltip_text(Some(&strings::text(strings::SCANNING)));
+    controls.progress.show(&ScanProgress::Discovering);
 
-    let (sender, receiver) = async_channel::bounded::<Result<ScanReport, ScanError>>(1);
+    let (progress_sender, progress_receiver) = async_channel::bounded::<ScanProgress>(1);
+    let (result_sender, result_receiver) = async_channel::bounded(1);
+    let (drained_sender, drained_receiver) = async_channel::bounded(1);
 
     // Cloned (not moved) here: the worker thread below consumes its own
     // copies, while the `glib::spawn_future_local` block further down still
@@ -238,32 +259,36 @@ fn spawn_scan(
     // the folder that was just scanned.
     let thread_folder = folder.clone();
     let thread_db_path = db_path.clone();
+    let stale_receiver = progress_receiver.clone();
     std::thread::spawn(move || {
-        let result = run_scan(&thread_db_path, &thread_folder);
-        if let Err(error) = sender.send_blocking(result) {
-            // The only way `send_blocking` fails on a bounded(1) channel
-            // whose one send is happening right here is a closed receiver —
-            // i.e. the window (and this whole future) is already gone.
+        let result = run_scan(&thread_db_path, &thread_folder, |progress| {
+            publish_latest_progress(&progress_sender, &stale_receiver, progress);
+        });
+        drop(progress_sender);
+        drop(stale_receiver);
+        if let Err(error) = result_sender.send_blocking(result) {
             tracing::warn!(%error, "scan result dropped: UI receiver is gone");
         }
     });
 
+    let progress_view = controls.progress.clone();
     glib::spawn_future_local(async move {
-        let outcome = receiver.recv().await;
+        while let Ok(progress) = progress_receiver.recv().await {
+            progress_view.show(&progress);
+        }
+        let _ = drained_sender.try_send(());
+    });
 
-        scan_button.set_sensitive(true);
-        scan_button.set_label(&strings::text(strings::SCAN_FOLDER));
-        scan_button.set_tooltip_text(None);
+    glib::spawn_future_local(async move {
+        let outcome = result_receiver.recv().await;
+        let _ = drained_receiver.recv().await;
+        finish_scan_ui(&controls);
 
         match outcome {
             Ok(Ok(report)) => {
                 tracing::info!(?report, "scan complete");
                 track_list.reload();
                 sidebar.refresh("scan completed");
-                // Stage 3 Task 8: (re)arm the watcher on the folder just
-                // scanned — covers both a brand-new root and a rescan of the
-                // one already being watched (the latter just replaces the
-                // watch with an equivalent one; harmless).
                 start_or_restart_watcher(
                     &watcher_state,
                     &folder,
@@ -280,8 +305,6 @@ fn spawn_scan(
                 );
             }
             Err(error) => {
-                // The sender was dropped without sending — the worker thread
-                // must have panicked before reaching `send_blocking`.
                 tracing::error!(%error, "scan worker channel closed unexpectedly");
                 toasts::show(
                     &toast_overlay,
@@ -290,6 +313,34 @@ fn spawn_scan(
             }
         }
     });
+}
+
+fn publish_latest_progress(
+    sender: &async_channel::Sender<ScanProgress>,
+    receiver: &async_channel::Receiver<ScanProgress>,
+    progress: ScanProgress,
+) {
+    match sender.try_send(progress) {
+        Ok(()) => {}
+        Err(async_channel::TrySendError::Full(progress)) => {
+            let _ = receiver.try_recv();
+            if let Err(error) = sender.try_send(progress) {
+                tracing::warn!(%error, "scan progress dropped: UI receiver is gone");
+            }
+        }
+        Err(async_channel::TrySendError::Closed(_)) => {
+            tracing::warn!("scan progress dropped: UI receiver is gone");
+        }
+    }
+}
+
+fn finish_scan_ui(controls: &ScanControls) {
+    controls.progress.finish();
+    controls.button.set_sensitive(true);
+    controls
+        .button
+        .set_label(&strings::text(strings::SCAN_FOLDER));
+    controls.button.set_tooltip_text(None);
 }
 
 /// Runs on the scan worker thread: opens and migrates its own `Connection`
@@ -301,10 +352,15 @@ fn spawn_scan(
 /// but does not fail the scan itself — the scan's own result is what matters
 /// most; the watcher simply won't auto-start next launch if this write
 /// didn't stick.
-fn run_scan(db_path: &std::path::Path, folder: &std::path::Path) -> Result<ScanReport, ScanError> {
+fn run_scan(
+    db_path: &std::path::Path,
+    folder: &std::path::Path,
+    on_progress: impl FnMut(ScanProgress),
+) -> Result<ScanReport, ScanError> {
     let mut worker_conn = reprise_core::db::open(Some(db_path))?;
     reprise_core::db::migrate(&worker_conn)?;
-    let report = library::scanner::scan_folder(&mut worker_conn, folder)?;
+    let report =
+        library::scanner::scan_folder_with_progress(&mut worker_conn, folder, on_progress)?;
     if let Err(error) = settings::set_library_root(&worker_conn, &folder.to_string_lossy()) {
         tracing::error!(%error, "failed to persist library root after scan");
     }
@@ -381,4 +437,42 @@ pub(super) fn start_or_restart_watcher(
         }
         tracing::debug!("watcher: event receiver closed; exiting UI drain loop");
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use reprise_core::library::scanner::ScanProgress;
+
+    use super::publish_latest_progress;
+
+    #[test]
+    fn progress_channel_keeps_only_the_latest_pending_update() {
+        let (sender, receiver) = async_channel::bounded(1);
+        publish_latest_progress(&sender, &receiver, ScanProgress::Discovering);
+        publish_latest_progress(
+            &sender,
+            &receiver,
+            ScanProgress::Scanning {
+                processed: 2,
+                total: 9,
+                current_path: PathBuf::from("second.flac"),
+            },
+        );
+
+        let progress = receiver.try_recv().expect("latest progress event");
+        let ScanProgress::Scanning {
+            processed,
+            total,
+            current_path,
+        } = progress
+        else {
+            panic!("expected the newest scanning event");
+        };
+        assert_eq!(processed, 2);
+        assert_eq!(total, 9);
+        assert_eq!(current_path, PathBuf::from("second.flac"));
+        assert!(receiver.is_empty());
+    }
 }

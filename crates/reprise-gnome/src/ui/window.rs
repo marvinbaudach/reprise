@@ -36,6 +36,7 @@ use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::playlist_io;
 use super::primary_menu;
+use super::scan_progress::ScanProgressView;
 use super::shortcuts;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
@@ -246,8 +247,11 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         ))
     };
     super::current_track_selection::wire(player.as_ref(), &track_list);
+    let scan_progress = ScanProgressView::new();
+    let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(&header);
+    toolbar_view.add_top_bar(scan_progress.widget());
     toolbar_view.set_content(Some(track_list.widget()));
 
     // Status line stacked directly above the player bar (design mockup 7a):
@@ -401,7 +405,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         // table itself, same decoupling-via-closure seam as `on_play_
         // selected`/`on_queue_selected` above.
         let conn = conn.clone();
-        let scan_button = scan_button.clone();
+        let scan_controls = scan_controls.clone();
         let toast_overlay = toast_overlay.clone();
         let db_path = db_path.to_path_buf();
         let track_list_for_rescan = track_list.clone();
@@ -410,7 +414,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         track_list.set_on_rescan_library(move || {
             super::scan_flow::trigger_rescan_of_library_root(
                 &conn,
-                &scan_button,
+                &scan_controls,
                 &toast_overlay,
                 db_path.clone(),
                 track_list_for_rescan.clone(),
@@ -598,7 +602,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     // `db_path`/`track_list`/`sidebar` to call `spawn_scan` with, the same
     // way a real button click would.
     super::scan_flow::wire_scan_button(
-        &scan_button,
+        &scan_controls,
         &window,
         &toast_overlay,
         db_path.to_path_buf(),
@@ -607,7 +611,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         watcher_state.clone(),
     );
     super::scan_flow::arm_smoke_rescan(
-        &scan_button,
+        &scan_controls,
         &toast_overlay,
         db_path.to_path_buf(),
         track_list.clone(),
