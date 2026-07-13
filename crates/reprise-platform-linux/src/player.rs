@@ -163,6 +163,46 @@ fn requested_state(element: &gst::Element) -> gst::State {
     }
 }
 
+fn restore_requested_state(
+    playbin: &gst::Element,
+    state: gst::State,
+    position: Option<gst::ClockTime>,
+) -> Result<(), PlaybackError> {
+    if state == gst::State::Null {
+        return Ok(());
+    }
+    playbin
+        .set_state(state)
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    if let Some(position) = position {
+        let _ = playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT, position);
+    }
+    Ok(())
+}
+
+fn replace_audio_filter(
+    playbin: &gst::Element,
+    effects: &AudioEffects,
+    apply: impl FnOnce(&gst::Element, &AudioEffects) -> Result<(), PlaybackError>,
+) -> Result<(), PlaybackError> {
+    let state = requested_state(playbin);
+    let position = playbin.query_position::<gst::ClockTime>();
+    playbin
+        .set_state(gst::State::Null)
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let apply_result = apply(playbin, effects);
+    let restore_result = restore_requested_state(playbin, state, position);
+    match (apply_result, restore_result) {
+        (Err(error), Err(restore_error)) => {
+            tracing::warn!(%restore_error, "could not restore playback after filter failure");
+            Err(error)
+        }
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
+}
+
 fn build_playbin(effects: &AudioEffects) -> Result<gst::Element, PlaybackError> {
     let playbin = gst::ElementFactory::make("playbin3")
         .build()
@@ -438,21 +478,7 @@ impl PlaybackBackend for Player {
             *current_effects = effects;
             return Ok(());
         }
-        let state = requested_state(&playbin);
-        let position = playbin.query_position::<gst::ClockTime>();
-        playbin
-            .set_state(gst::State::Null)
-            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-        apply_audio_filter(&playbin, &effects)?;
-        if state != gst::State::Null {
-            playbin
-                .set_state(state)
-                .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-            if let Some(position) = position {
-                let _ =
-                    playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT, position);
-            }
-        }
+        replace_audio_filter(&playbin, &effects, apply_audio_filter)?;
         *current_effects = effects;
         Ok(())
     }
@@ -617,6 +643,31 @@ mod tests {
             .by_name("reprise-replaygain")
             .unwrap()
             .property::<bool>("album-mode"));
+        drop(playbin);
+        player.stop().unwrap();
+        std::env::remove_var(AUDIO_SINK_ENV_VAR);
+    }
+
+    #[test]
+    fn failed_filter_replacement_restores_requested_playback_state() {
+        let _guard = AUDIO_SINK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+        let player = Player::new(Box::new(|_| {})).unwrap();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+        player.play(path).unwrap();
+        let playbin = player
+            .playbin
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let result = replace_audio_filter(&playbin, &AudioEffects::default(), |_, _| {
+            Err(PlaybackError::Backend("injected filter failure".into()))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(requested_state(&playbin), gst::State::Playing);
         drop(playbin);
         player.stop().unwrap();
         std::env::remove_var(AUDIO_SINK_ENV_VAR);

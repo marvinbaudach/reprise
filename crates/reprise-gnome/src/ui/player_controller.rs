@@ -193,6 +193,7 @@ pub struct PlayerController {
     /// same `pub(super)` sibling-module seam `queue`/`mpris_state` already
     /// use (see the module's `## Queue borrow discipline` doc section).
     pub(super) player: Box<dyn PlaybackBackend>,
+    pub(super) active_audio_effects: RefCell<reprise_core::playback::AudioEffects>,
     /// `pub(super)` (Stage 3 Task 10) so `mpris_mirror.rs`'s `mpris_set_
     /// shuffle`/`mpris_set_loop`/`mpris_set_volume` can reach `PlayerBar`'s
     /// `set_shuffle_indicator`/`set_repeat_indicator`/`set_volume_indicator`
@@ -335,11 +336,7 @@ impl PlayerController {
                 tracing::warn!(%error, "player event dropped: UI receiver is gone");
             }
         }))?;
-        let initial_effects = {
-            let conn = conn.borrow();
-            super::audio_effects::stored(&conn)
-        };
-        player.set_audio_effects(initial_effects)?;
+        let initial_effects = super::audio_effects::apply_initial(&player, &conn);
 
         // Stage 2 Task 6: `mpris::start()` never fails outright (see its own
         // doc comment's `## Failure is never fatal` section) — it always
@@ -368,6 +365,7 @@ impl PlayerController {
 
         let controller = Rc::new(Self {
             player: Box::new(player),
+            active_audio_effects: RefCell::new(initial_effects),
             bar: PlayerBar::new(),
             conn,
             current_track: Cell::new(None),
