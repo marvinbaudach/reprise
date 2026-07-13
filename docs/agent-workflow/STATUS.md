@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Show cover-download progress in the main window
+SINCE:    2026-07-13 10:54 CEST
 ```
 
-_As of 2026-07-13 10:48 CEST: Codex completed visible library scan progress and released the lock._
+_As of 2026-07-13 10:54 CEST: Codex claimed the lock to expose the existing cover-download batch progress in the main window._
 
 ## Current position
 
