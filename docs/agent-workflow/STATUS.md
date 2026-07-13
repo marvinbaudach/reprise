@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate always-on missing-cover downloads
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: Codex released the lock after fixing the system-decoration fallback._
+_As of 2026-07-13: Codex claimed the lock to integrate always-on missing-cover downloads._
 
 ## Current position
 
