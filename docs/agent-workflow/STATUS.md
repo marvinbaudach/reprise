@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate synchronized played-track lyrics
+SINCE:    2026-07-13 CEST
 ```
 
-_As of 2026-07-13: the system-only appearance follow-up is complete and the lock is free._
+_As of 2026-07-13: Codex is integrating the completed synchronized-lyrics feature branch._
 
 ## Current position
 
