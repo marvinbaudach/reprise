@@ -219,12 +219,13 @@ impl PreferencesContext {
     }
 
     fn apply_initial(&self) {
-        let (color_scheme, density, sidebar_visible, status_visible, decorations) = {
+        let (color_scheme, density, sidebar_visible, browse_visible, status_visible, decorations) = {
             let conn = self.conn.borrow();
             (
                 settings::get_color_scheme(&conn),
                 settings::get_list_density(&conn),
                 settings::get_sidebar_visible(&conn),
+                settings::get_browse_visible(&conn),
                 settings::get_status_visible(&conn),
                 settings::get_window_decoration_mode(&conn),
             )
@@ -236,6 +237,7 @@ impl PreferencesContext {
             &self.sidebar_page,
             sidebar_visible,
         );
+        self.track_list.set_browse_visible(browse_visible);
         self.status_bar.set_enabled(status_visible);
         self.decorations.apply(decorations);
     }
