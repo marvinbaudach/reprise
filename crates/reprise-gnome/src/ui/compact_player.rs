@@ -78,6 +78,7 @@ impl CompactPlayer {
         .map(compact_player_layouts::build)
         .collect();
         for view in &views {
+            compact_player_scroll::block_seek_scroll(&view.scale);
             stack.add_named(
                 &view.root,
                 Some(compact_player_layouts::layout_token(view.layout)),
@@ -638,6 +639,11 @@ mod tests {
             .filter(gtk4::prelude::ObjectExt::is::<gtk4::EventControllerScroll>)
             .count();
         assert_eq!(scroll_controllers, 1);
+        let scale_controllers = view.scale.observe_controllers();
+        assert!((0..scale_controllers.n_items())
+            .filter_map(|position| scale_controllers.item(position))
+            .filter_map(|controller| controller.downcast::<gtk4::EventController>().ok())
+            .any(|controller| controller.name().as_deref() == Some("compact-seek-scroll-blocker")));
         assert!(!tree_has(&view.root, &|widget| widget.is::<gtk4::ScaleButton>()));
         assert!(!tree_has_button_tooltip(&view.root, "Return to Library"));
         assert!(!tree_has_button_tooltip(&view.root, "Volume"));
