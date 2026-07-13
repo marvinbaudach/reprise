@@ -24,14 +24,19 @@ const SMOKE_COVER_DOWNLOAD_ENV_VAR: &str = "REPRISE_SMOKE_COVER_DOWNLOAD";
 pub(super) const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
 const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
+pub(super) struct Callbacks {
+    pub(super) on_minimal_view: Rc<dyn Fn()>,
+    pub(super) on_preferences: Rc<dyn Fn()>,
+    pub(super) on_cover_download_changed: Rc<dyn Fn(bool)>,
+}
+
 pub(super) fn install(
     header: &adw::HeaderBar,
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
     runtime: &CoverDownloadRuntime,
     track_list: &Rc<TrackList>,
-    on_minimal_view: impl Fn() + 'static,
-    on_preferences: impl Fn() + 'static,
+    callbacks: Callbacks,
 ) {
     let menu = gio::Menu::new();
     menu.append(
@@ -62,6 +67,7 @@ pub(super) fn install(
     header.pack_end(&menu_button);
 
     let initial_enabled = runtime.enabled.get();
+    let on_cover_download_changed = callbacks.on_cover_download_changed.clone();
     let toggle = gio::SimpleAction::new_stateful(
         ACTION_DOWNLOAD_MISSING_COVERS,
         None,
@@ -87,6 +93,7 @@ pub(super) fn install(
             }
             flag.set(enabled);
             action.set_state(&enabled.to_variant());
+            on_cover_download_changed(enabled);
         });
     }
     window.add_action(&toggle);
@@ -120,12 +127,12 @@ pub(super) fn install(
     arm_smoke_column_layout_editor(&edit);
 
     let minimal = gio::SimpleAction::new(ACTION_TOGGLE_MINIMAL_VIEW, None);
-    minimal.connect_activate(move |_, _| on_minimal_view());
+    minimal.connect_activate(move |_, _| (callbacks.on_minimal_view)());
     window.add_action(&minimal);
     arm_smoke_minimal_view(&minimal);
 
     let preferences = gio::SimpleAction::new(ACTION_PREFERENCES, None);
-    preferences.connect_activate(move |_, _| on_preferences());
+    preferences.connect_activate(move |_, _| (callbacks.on_preferences)());
     window.add_action(&preferences);
     if std::env::var(crate::ui::preferences::SMOKE_ENV).is_ok() {
         let preferences = preferences.clone();
