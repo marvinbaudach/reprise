@@ -10,13 +10,25 @@ use gtk4::prelude::*;
 use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
 use rusqlite::Connection;
 
-use crate::ui::strings;
+use crate::ui::browse_filter_strings as filter_strings;
 use crate::ui::track_list::Shared;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
 const DROPDOWN_CSS_CLASS: &str = "reprise-browse-dropdown";
 const POPUP_MIN_HEIGHT: i32 = 200;
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
+// Task 1 defines and tests this pure projection before Task 2 wires it into
+// GTK. The temporary allowance is removed with that wiring.
+#[cfg_attr(not(test), allow(dead_code))]
+const FACETS: [BrowseFacet; 3] = [BrowseFacet::Genre, BrowseFacet::Artist, BrowseFacet::Album];
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FilterChip {
+    facet: BrowseFacet,
+    label: String,
+    accessible_remove_label: String,
+}
 
 fn browse_popup_min_height(_option_count: usize) -> i32 {
     POPUP_MIN_HEIGHT
@@ -59,6 +71,72 @@ fn apply_selection(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+fn filter_value(filter: &BrowseFilter, facet: BrowseFacet) -> Option<&str> {
+    match facet {
+        BrowseFacet::Genre => filter.genre.as_deref(),
+        BrowseFacet::Artist => filter.artist.as_deref(),
+        BrowseFacet::Album => filter.album.as_deref(),
+    }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn facet_label(facet: BrowseFacet) -> String {
+    let message = match facet {
+        BrowseFacet::Genre => filter_strings::BROWSE_GENRE,
+        BrowseFacet::Artist => filter_strings::BROWSE_ARTIST,
+        BrowseFacet::Album => filter_strings::BROWSE_ALBUM,
+    };
+    filter_strings::text(message)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn displayed_value(facet: BrowseFacet, value: &str) -> String {
+    if !value.is_empty() {
+        return value.to_string();
+    }
+    let message = match facet {
+        BrowseFacet::Genre => filter_strings::UNKNOWN_GENRE,
+        BrowseFacet::Artist => filter_strings::UNKNOWN_ARTIST,
+        BrowseFacet::Album => filter_strings::UNKNOWN_ALBUM,
+    };
+    filter_strings::text(message)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
+    FACETS
+        .into_iter()
+        .filter_map(|facet| {
+            let value = displayed_value(facet, filter_value(filter, facet)?);
+            let facet_name = facet_label(facet);
+            Some(FilterChip {
+                facet,
+                label: filter_strings::chip_label(&facet_name, &value),
+                accessible_remove_label: filter_strings::remove_filter_label(&facet_name, &value),
+            })
+        })
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn available_facets(filter: &BrowseFilter) -> Vec<BrowseFacet> {
+    FACETS
+        .into_iter()
+        .filter(|facet| filter_value(filter, *facet).is_none())
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn remove_filter(filter: &BrowseFilter, facet: BrowseFacet) -> BrowseFilter {
+    apply_selection(filter, facet, None)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn value_matches_search(value: &str, search: &str) -> bool {
+    value.to_lowercase().contains(&search.trim().to_lowercase())
+}
+
 fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
     filter.clone()
 }
@@ -92,16 +170,16 @@ impl BrowseBar {
         install_popup_style(&root);
 
         let (genre_box, genre) = facet_widget(
-            &strings::text(strings::BROWSE_GENRE),
-            &strings::text(strings::ALL_GENRES),
+            &filter_strings::text(filter_strings::BROWSE_GENRE),
+            &filter_strings::text(filter_strings::ALL_GENRES),
         );
         let (artist_box, artist) = facet_widget(
-            &strings::text(strings::BROWSE_ARTIST),
-            &strings::text(strings::ALL_ARTISTS),
+            &filter_strings::text(filter_strings::BROWSE_ARTIST),
+            &filter_strings::text(filter_strings::ALL_ARTISTS),
         );
         let (album_box, album) = facet_widget(
-            &strings::text(strings::BROWSE_ALBUM),
-            &strings::text(strings::ALL_ALBUMS),
+            &filter_strings::text(filter_strings::BROWSE_ALBUM),
+            &filter_strings::text(filter_strings::ALL_ALBUMS),
         );
         root.append(&genre_box);
         root.append(&artist_box);
@@ -164,24 +242,24 @@ impl BrowseBar {
         replace_options(
             &self.genre,
             &self.genre_values,
-            &strings::text(strings::ALL_GENRES),
-            &strings::text(strings::UNKNOWN_GENRE),
+            &filter_strings::text(filter_strings::ALL_GENRES),
+            &filter_strings::text(filter_strings::UNKNOWN_GENRE),
             genres,
             filter.genre.as_deref(),
         );
         replace_options(
             &self.artist,
             &self.artist_values,
-            &strings::text(strings::ALL_ARTISTS),
-            &strings::text(strings::UNKNOWN_ARTIST),
+            &filter_strings::text(filter_strings::ALL_ARTISTS),
+            &filter_strings::text(filter_strings::UNKNOWN_ARTIST),
             artists,
             filter.artist.as_deref(),
         );
         replace_options(
             &self.album,
             &self.album_values,
-            &strings::text(strings::ALL_ALBUMS),
-            &strings::text(strings::UNKNOWN_ALBUM),
+            &filter_strings::text(filter_strings::ALL_ALBUMS),
+            &filter_strings::text(filter_strings::UNKNOWN_ALBUM),
             albums,
             filter.album.as_deref(),
         );
@@ -432,5 +510,74 @@ mod tests {
     #[test]
     fn browse_popup_minimum_height_does_not_collapse_with_zero_results() {
         assert_eq!(browse_popup_min_height(0), browse_popup_min_height(5));
+    }
+
+    #[test]
+    fn filter_chips_follow_cascade_order_and_render_unknown_values() {
+        let filter = BrowseFilter {
+            genre: Some(String::new()),
+            artist: Some("Brand of Sacrifice".into()),
+            album: Some(String::new()),
+        };
+
+        let chips = filter_chips(&filter);
+        let projection: Vec<_> = chips
+            .iter()
+            .map(|chip| (chip.facet, chip.label.as_str()))
+            .collect();
+        assert_eq!(
+            projection,
+            vec![
+                (BrowseFacet::Genre, "Genre: Unknown genre"),
+                (BrowseFacet::Artist, "Artist: Brand of Sacrifice"),
+                (BrowseFacet::Album, "Album: Unknown album"),
+            ]
+        );
+        assert_eq!(
+            chips[1].accessible_remove_label,
+            "Remove Artist filter: Brand of Sacrifice"
+        );
+    }
+
+    #[test]
+    fn available_facets_omit_filters_that_are_already_active() {
+        let filter = BrowseFilter {
+            genre: Some("Metal".into()),
+            artist: None,
+            album: Some("Lifeblood".into()),
+        };
+
+        assert_eq!(available_facets(&filter), vec![BrowseFacet::Artist]);
+    }
+
+    #[test]
+    fn removing_a_parent_filter_clears_dependent_filters() {
+        assert_eq!(
+            remove_filter(&full_filter(), BrowseFacet::Genre),
+            BrowseFilter::default()
+        );
+        assert_eq!(
+            remove_filter(&full_filter(), BrowseFacet::Artist),
+            BrowseFilter {
+                genre: Some("Rock".into()),
+                artist: None,
+                album: None,
+            }
+        );
+        assert_eq!(
+            remove_filter(&full_filter(), BrowseFacet::Album),
+            BrowseFilter {
+                genre: Some("Rock".into()),
+                artist: Some("A".into()),
+                album: None,
+            }
+        );
+    }
+
+    #[test]
+    fn the_single_value_search_is_case_insensitive_and_matches_substrings() {
+        assert!(value_matches_search("Brand of Sacrifice", "SACRI"));
+        assert!(value_matches_search("Brand of Sacrifice", ""));
+        assert!(!value_matches_search("Brand of Sacrifice", "Chelsea"));
     }
 }
