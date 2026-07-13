@@ -17,6 +17,9 @@ use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
+const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-height: 48px; }\n\
+     .reprise-density-standard columnview row { min-height: 36px; }\n\
+     .reprise-density-compact columnview row { min-height: 28px; }";
 
 fn plugin_applies_live(id: &str) -> bool {
     matches!(id, "cover_download" | "equalizer" | "replaygain")
@@ -124,6 +127,24 @@ fn apply_color_scheme(value: ColorScheme) {
     adw::StyleManager::default().set_color_scheme(value);
 }
 
+fn density_class(density: ListDensity) -> &'static str {
+    match density {
+        ListDensity::Comfortable => "reprise-density-comfortable",
+        ListDensity::Standard => "reprise-density-standard",
+        ListDensity::Compact => "reprise-density-compact",
+    }
+}
+
+fn install_density_css(widget: &gtk4::Widget) {
+    let provider = gtk4::CssProvider::new();
+    provider.load_from_string(DENSITY_CSS);
+    gtk4::style_context_add_provider_for_display(
+        &widget.display(),
+        &provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
+
 fn apply_density(widget: &gtk4::Widget, density: ListDensity) {
     for class in [
         "reprise-density-comfortable",
@@ -132,23 +153,7 @@ fn apply_density(widget: &gtk4::Widget, density: ListDensity) {
     ] {
         widget.remove_css_class(class);
     }
-    let class = match density {
-        ListDensity::Comfortable => "reprise-density-comfortable",
-        ListDensity::Standard => "reprise-density-standard",
-        ListDensity::Compact => "reprise-density-compact",
-    };
-    widget.add_css_class(class);
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(
-        ".reprise-density-comfortable columnview row { min-height: 48px; }\n\
-         .reprise-density-standard columnview row { min-height: 36px; }\n\
-         .reprise-density-compact columnview row { min-height: 28px; }",
-    );
-    gtk4::style_context_add_provider_for_display(
-        &widget.display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    widget.add_css_class(density_class(density));
 }
 
 pub(super) struct PreferencesContext {
@@ -198,21 +203,25 @@ impl PreferencesContext {
             replaygain_mode: RefCell::new(None),
             on_minimal: Rc::new(on_minimal),
         });
+        install_density_css(context.track_list.root_widget().upcast_ref());
         context.apply_initial();
         context
     }
 
     fn apply_initial(&self) {
-        let conn = self.conn.borrow();
-        apply_color_scheme(settings::get_color_scheme(&conn));
-        apply_density(
-            self.track_list.root_widget().upcast_ref(),
-            settings::get_list_density(&conn),
-        );
-        self.sidebar_page
-            .set_visible(settings::get_sidebar_visible(&conn));
-        self.status_bar
-            .set_enabled(settings::get_status_visible(&conn));
+        let (color_scheme, density, sidebar_visible, status_visible) = {
+            let conn = self.conn.borrow();
+            (
+                settings::get_color_scheme(&conn),
+                settings::get_list_density(&conn),
+                settings::get_sidebar_visible(&conn),
+                settings::get_status_visible(&conn),
+            )
+        };
+        apply_color_scheme(color_scheme);
+        apply_density(self.track_list.root_widget().upcast_ref(), density);
+        self.sidebar_page.set_visible(sidebar_visible);
+        self.status_bar.set_enabled(status_visible);
     }
 
     pub(super) fn present(self: &Rc<Self>) {
@@ -753,6 +762,17 @@ mod tests {
             assert!(equalizer_preset(index)
                 .into_iter()
                 .all(|gain| (-12.0..=12.0).contains(&gain)));
+        }
+    }
+
+    #[test]
+    fn every_density_has_one_stable_css_class_and_rule() {
+        for density in [
+            ListDensity::Comfortable,
+            ListDensity::Standard,
+            ListDensity::Compact,
+        ] {
+            assert!(DENSITY_CSS.contains(density_class(density)));
         }
     }
 }
