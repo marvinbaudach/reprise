@@ -97,6 +97,10 @@ pub(super) fn build(
         .default_height(680)
         .content(&toolbar)
         .build();
+    let focus_target = switcher.clone();
+    window.connect_map(move |window| {
+        gtk4::prelude::GtkWindowExt::set_focus(window, Some(&focus_target));
+    });
     window.set_size_request(560, 480);
     PreferencesShell {
         window,
