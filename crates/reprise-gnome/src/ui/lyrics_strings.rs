@@ -6,10 +6,6 @@ macro_rules! N_ {
     };
 }
 
-#[expect(
-    dead_code,
-    reason = "the Information-panel tab consumes this in the planned integration task"
-)]
 pub(super) const LYRICS: &str = N_!("Lyrics");
 pub(super) const PLAY_TO_SEE_LYRICS: &str = N_!("Play a track to see its lyrics");
 pub(super) const LOADING_LYRICS: &str = N_!("Loading lyrics…");

@@ -1,19 +1,11 @@
 //! Serial off-main lyrics lookup worker.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the runtime is connected to the Lyrics view in the planned integration task"
-    )
-)]
-
 use std::rc::Rc;
 use std::sync::Arc;
 
 use reprise_core::lyrics::{LyricsBody, LyricsError, LyricsQuery};
 
-type Lookup = Arc<dyn Fn(&LyricsQuery) -> Result<LyricsBody, LyricsError> + Send + Sync>;
+pub(super) type Lookup = Arc<dyn Fn(&LyricsQuery) -> Result<LyricsBody, LyricsError> + Send + Sync>;
 
 pub(super) struct LyricsRequest {
     pub(super) generation: u64,
@@ -31,16 +23,12 @@ pub(super) struct LyricsRuntime {
 }
 
 impl LyricsRuntime {
-    #[cfg_attr(
-        test,
-        expect(dead_code, reason = "tests inject a deterministic lookup instead")
-    )]
     pub(super) fn setup() -> Rc<Self> {
         Self::from_lookup(Arc::new(reprise_core::lyrics::load_or_fetch))
     }
 
     #[cfg(test)]
-    fn setup_with_lookup(lookup: Lookup) -> Rc<Self> {
+    pub(super) fn setup_with_lookup(lookup: Lookup) -> Rc<Self> {
         Self::from_lookup(lookup)
     }
 
