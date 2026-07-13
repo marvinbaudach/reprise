@@ -21,29 +21,26 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Merge Android device synchronization
-SINCE:    2026-07-13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex claimed the lock to merge Android device synchronization._
+_As of 2026-07-13: Android device synchronization is integrated and the lock is free._
 
 ## Parallel feature work
 
-- `feature/android-device-sync` completes the approved Android USB/MTP
-  synchronization plan through close-out commit `0d6c5dc`; after integrating
-  the latest `main`, all 44 combined display tests and the central release checker
-  passed, so the branch is ready to merge. This branch did not claim or release
-  the separate `main` lock above.
+- None.
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-synchronized-lyrics.md` (5 tasks).
-- **Last completed:** **Synchronized lyrics** (`0cdfbda`, merged as `ddd5220`) — played-track lyrics
-  load automatically, highlight and center the current timed line, and retain selectable plain text.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
+- **Last completed:** **Android device synchronization** (`0d6c5dc`, merged as `14e2471`) — mounted
+  USB/MTP devices expose music and playlists in Settings, accept track drops, and copy with visible
+  cancellable progress plus strict per-device FIFO sequencing.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `0cdfbda`.
+- **Main implementation:** `a140115`.
 
 ## Done so far (compact)
 
@@ -86,6 +83,9 @@ _As of 2026-07-13: Codex claimed the lock to merge Android device synchronizatio
   title, artist, album and duration after successful playback, caches LRCLIB results locally, and
   highlights plus centers timed lines from the existing position stream with generation-safe
   track changes, selectable plain text and instrumental/offline states.
+- ✅ **Android USB/MTP synchronization**: Settings shows mounted devices, recognized music and
+  Reprise playlists; dropping library tracks enqueues managed copies with file and overall progress,
+  cancellation, disconnect-safe resume for stable devices, and strict same-device FIFO execution.
 - ✅ **Full-width Library player bar**: the global status/player block now spans sidebar, library,
   and Information panel at Top or Bottom; Track, centered Transport+Seek, and secondary control
   zones retain one playback controller across immediate Library/Compact switching.
