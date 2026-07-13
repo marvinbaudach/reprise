@@ -1186,6 +1186,22 @@ msgstr "Zwischengespeichert · Aktualisiert am {date}"
 msgid "unknown date"
 msgstr "unbekanntes Datum"
 
+#: crates/reprise-gnome/src/ui/window_decoration_strings.rs:14
+msgid "Window Decorations"
+msgstr "Fensterdekoration"
+
+#: crates/reprise-gnome/src/ui/window_decoration_strings.rs:16
+msgid "Use Reprise's flat header, or request a title bar and borders from the desktop"
+msgstr "Reprises flache Kopfleiste verwenden oder Titelleiste und Rahmen vom Desktop anfordern"
+
+#: crates/reprise-gnome/src/ui/window_decoration_strings.rs:17
+msgid "Chromium (CSD)"
+msgstr "Chromium (CSD)"
+
+#: crates/reprise-gnome/src/ui/window_decoration_strings.rs:18
+msgid "System title bar"
+msgstr "Systemtitelleiste"
+
 
 #~ msgid "Minimal View"
 #~ msgstr "Minimalansicht"
