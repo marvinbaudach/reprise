@@ -457,7 +457,7 @@ impl PreferencesContext {
                 }
             }),
         ));
-        group.add(&action_row(strings::MINIMAL_VIEW, self.on_minimal.clone()));
+        group.add(&action_row(strings::COMPACT_VIEW, self.on_minimal.clone()));
         page.add(&group);
         page
     }

@@ -27,7 +27,7 @@ allows exactly two documented informational conditions: the established
 uppercase component ID `org.reprise.Reprise` and the absent homepage while no
 public project URL exists.
 
-Nine GTK regression tests require a display and are ignored by the normal test
+Fourteen GTK regression tests require a display and are ignored by the normal test
 suite. Run each in its own process because GTK can only be initialized from one
 thread per process, while Rust's test harness gives separate tests separate
 threads even with `--test-threads=1`:
@@ -42,7 +42,12 @@ for test in \
   enter_activates_the_apply_button_from_every_entry_row \
   interaction_surface_expands_to_the_whole_cell \
   movable_row_owns_drag_and_drop_controllers \
-  token_entry_is_a_masked_password_row
+  token_entry_is_a_masked_password_row \
+  header_and_restore_buttons_switch_one_application_window_in_one_activation \
+  bar_layout_has_required_accessible_controls_and_fits \
+  cover_layout_has_required_accessible_controls_and_fits \
+  pill_layout_has_required_accessible_controls_and_fits \
+  card_layout_has_required_accessible_controls_and_fits
 do
   XDG_DATA_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)" \
     xvfb-run -a cargo test -p reprise-gnome "$test" -- --ignored

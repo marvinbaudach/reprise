@@ -80,6 +80,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         let conn = conn.borrow();
         super::session_restore::load(&conn)
     };
+    let first_run_decision = super::first_run::initial_decision(&conn.borrow());
+    let initial_view =
+        super::compact_mode_controls::initial_transition(&conn.borrow(), first_run_decision);
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(strings::text(strings::APP_NAME))
@@ -89,7 +92,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .height_request(MIN_HEIGHT)
         .build();
     super::session_restore::apply_initial_geometry(&window, &session_state);
-
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
     // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and
     // `Sidebar`'s own default initial source, so this is set directly here
@@ -447,16 +449,17 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .title(strings::text(strings::APP_NAME))
         .child(&content_nav)
         .build();
-
     let split_view = adw::NavigationSplitView::builder()
         .sidebar(&sidebar_page)
         .content(&content_page)
         .build();
-    let minimal_view = super::minimal_view::MinimalView::new(
+    let minimal_view = super::compact_mode_controls::build_mode(
         &window,
         &split_view,
-        &bottom_box,
-        player.as_ref().map(|player| player.bar_widget()),
+        player.as_ref().map(|player| &player.compact_player),
+        conn,
+        initial_view,
+        &toast_overlay,
     );
     let geometry_guard = minimal_view.geometry_guard();
     let cover_batch = super::cover_download_batch::CoverDownloadBatch::new(
@@ -484,6 +487,13 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         },
     );
     let minimal_toggle = minimal_view.clone();
+    let compact_preferences = preferences.clone();
+    let _compact_button = super::compact_mode_controls::install(
+        &header,
+        &minimal_view,
+        player.as_ref().map(|player| &player.compact_player),
+        Rc::new(move || compact_preferences.present()),
+    );
     let toggled_cover_batch = cover_batch.clone();
     primary_menu::install(
         &header,
@@ -502,7 +512,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     cover_batch.start_if_enabled();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view);
-
     // Stage 3 Task 4: sidebar selection drives the track list's source and
     // the headerbar title. Wired here (after `track_list` and `window_title`
     // both exist) rather than at `Sidebar::new` time — see `Sidebar::
@@ -685,8 +694,8 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &geometry_guard,
     );
     super::session_restore::arm_seed_close(&window);
-    super::first_run::run(&window, &scan_button, conn);
-
+    super::first_run::run(&window, &scan_button, conn, first_run_decision);
+    minimal_view.apply_initial();
     if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
         let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
             .ok()
