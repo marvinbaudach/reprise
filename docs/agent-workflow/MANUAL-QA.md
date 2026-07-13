@@ -88,7 +88,9 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 - [ ] Open Minimal View from the menu and with Ctrl+M. Expected: the existing player
   bar becomes the compact window content, cover/title/artist and every transport,
-  seek and volume control remain usable, and no second playback state appears.
+  seek and volume control remain usable, and no second playback state appears. The
+  mapped real-input harness proves Ctrl+M both ways and captures a populated,
+  nonblank compact player; native Wayland/window-manager confirmation remains.
 - [ ] Toggle Full → Minimal → Full repeatedly, then close once from each mode.
   Expected: the last full window size/maximized state is restored and is never
   overwritten by compact geometry. The isolated state and two-transition smokes pass;
@@ -96,19 +98,22 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] On Appearance and Layout, change System/Light/Dark, player-bar top/bottom,
   sidebar/status visibility, Comfortable/Standard/Compact density, and column layout.
   Expected: each applies immediately, survives restart, and remains readable at narrow
-  widths. The isolated smoke persisted and reread every non-column value.
+  widths. The isolated smoke persisted and reread every non-column value; the mapped
+  pointer harness additionally opens every page and proves Sidebar/Status writes.
 - [ ] On Library, choose/cancel a disposable folder, rescan it, and invoke Rhythmbox
   column import. Expected: cancel is harmless and actions use the established safe
   picker/import paths.
 - [ ] On Plugins, toggle Cover download, Equalizer, and ReplayGain. Expected: live
   modules apply immediately; Equalizer and ReplayGain remain synchronized with their
   Playback-page controls. MPRIS clearly says restart required and changes only after
-  restart.
+  restart. The mapped pointer harness proves Equalizer synchronization and ReplayGain
+  Track/Off writes; native visual confirmation and the MPRIS restart remain pending.
 - [ ] While disposable music plays through real speakers, enable Equalizer, select
   Flat/Rock/Pop/Bass Boost, and move all ten sliders. Expected: audible changes are
   immediate, bounded to ±12 dB, persist after restart, and do not interrupt or move
   playback unexpectedly. The real GStreamer fakesink pipeline and live state/position
-  preservation tests pass; audible confirmation remains pending.
+  preservation tests pass; a real pointer scale change persists without criticals or
+  filter replacement; audible confirmation remains pending.
 - [ ] With files containing valid ReplayGain tags, compare Off, Per Track, and Per
   Album. Expected: normalization mode changes live, album mode is consistent within an
   album, untagged files remain playable, and the Plugins switch reflects Off versus an
@@ -116,8 +121,8 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 ## Pending: real audio and transport
 
-Use representative available files for FLAC, MP3, Ogg Vorbis, Opus, WAV, M4A/AAC,
-and WMA. Missing host codecs should produce an actionable error, not a crash.
+Use representative available files for FLAC, MP3, Ogg Vorbis, Opus, WAV, and
+M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
 
 - [ ] Each advertised extension scans and a representative supported file plays.
 - [ ] Play/Pause, previous/next, seek, volume, shuffle, Repeat Off/All/One, Queue
