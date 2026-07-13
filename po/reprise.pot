@@ -896,3 +896,97 @@ msgstr ""
 #, rust-format
 msgid "Could not export “{name}”"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Information"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist & Album News"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Show upcoming and newly released albums from MusicBrainz (network; off by default)"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "When enabled, selected artist names are sent to MusicBrainz. Reprise never sends file paths or listening history."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist News is Off"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Select a track to see artist and album news."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist News is paused while multiple tracks are selected."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "This track has no artist information."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Checking MusicBrainz for album news…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "No new or upcoming regular albums found."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist News is temporarily unavailable."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist could not be matched."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Artist could not be matched unambiguously."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Upcoming"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "New"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Refresh Artist News"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "Open in MusicBrainz"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+#, rust-format
+msgid "{count} track selected"
+msgid_plural "{count} tracks selected"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+#, rust-format
+msgid "{type} · {date}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+#, rust-format
+msgid "MusicBrainz · Updated {date}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+#, rust-format
+msgid "Cached · Updated {date}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs
+msgid "unknown date"
+msgstr ""

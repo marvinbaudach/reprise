@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::glib;
+use gtk4::prelude::IsA;
 use libadwaita as adw;
 
 use crate::ui::player_controller::PlayerController;
@@ -292,13 +293,13 @@ pub(super) fn wire_now_playing_controls(controller: &Rc<PlayerController>) {
 /// the FIRST page added — the library page here — every later `add`ed page
 /// stays off the visible stack until explicitly `push`ed).
 pub(super) fn build_content_nav(
-    toast_overlay: &adw::ToastOverlay,
+    library_content: &impl IsA<gtk4::Widget>,
     now_playing_page: Option<&adw::NavigationPage>,
     app_name: &str,
 ) -> adw::NavigationView {
     let library_page = adw::NavigationPage::builder()
         .title(app_name)
-        .child(toast_overlay)
+        .child(library_content)
         .build();
     let nav = adw::NavigationView::new();
     nav.add(&library_page);

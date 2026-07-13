@@ -77,8 +77,11 @@ PTR_E2E_N_TRACKS="${PTR_E2E_N_TRACKS:-5}"
 # to inspect after the run (NOT cleaned up on success, only stale prior runs
 # are cleared at the top of a fresh run).
 PTR_E2E_OUT_DIR="${PTR_E2E_OUT_DIR:-/tmp/reprise-ptr-e2e}"
+PTR_E2E_NEWS_ONLY="${PTR_E2E_NEWS_ONLY:-0}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=artist-news.sh
+source "$REPO_ROOT/scripts/ptr-e2e/artist-news.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
 APP_ID="org.reprise.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
@@ -102,14 +105,23 @@ fi
 SCRATCH_ROOT="$(mktemp -d /tmp/reprise-ptr-e2e-scratch.XXXXXX)"
 MUSIC_DIR="$SCRATCH_ROOT/music"
 XDG_DATA_HOME_SCRATCH="$SCRATCH_ROOT/xdg-data"
+XDG_CACHE_HOME_SCRATCH="$SCRATCH_ROOT/xdg-cache"
 XDG_CONFIG_HOME_SCRATCH="$SCRATCH_ROOT/xdg-config"
+MUSICBRAINZ_FIXTURES="$SCRATCH_ROOT/musicbrainz"
+MUSICBRAINZ_LOG="$SCRATCH_ROOT/musicbrainz-requests.log"
 DISPLAYFD_FILE="$SCRATCH_ROOT/displayfd.txt"
 APP_LOG="$SCRATCH_ROOT/app.log"
 XVFB_LOG="$SCRATCH_ROOT/xvfb.log"
 OPENBOX_LOG="$SCRATCH_ROOT/openbox.log"
 
 rm -rf "$PTR_E2E_OUT_DIR"
-mkdir -p "$PTR_E2E_OUT_DIR" "$MUSIC_DIR" "$XDG_DATA_HOME_SCRATCH" "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0"
+mkdir -p \
+  "$PTR_E2E_OUT_DIR" \
+  "$MUSIC_DIR" \
+  "$MUSICBRAINZ_FIXTURES" \
+  "$XDG_DATA_HOME_SCRATCH" \
+  "$XDG_CACHE_HOME_SCRATCH" \
+  "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0"
 
 cat > "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0/settings.ini" <<'EOF'
 [Settings]
@@ -122,7 +134,12 @@ for i in $(seq 1 "$PTR_E2E_N_TRACKS"); do
   # so the title is the file stem) sort predictably.
   printf -v idx "%02d" "$i"
   cp "$FIXTURE_PATH" "$MUSIC_DIR/sine_$idx.flac"
+  if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
+    tag_artist_news_fixture "$MUSIC_DIR/sine_$idx.flac" "$i"
+  fi
 done
+
+write_artist_news_fixtures
 
 # --- Process bookkeeping / cleanup -------------------------------------------
 
@@ -209,11 +226,15 @@ setsid dbus-run-session -- env \
   GDK_BACKEND=x11 \
   DISPLAY="$DISPLAY" \
   XDG_DATA_HOME="$XDG_DATA_HOME_SCRATCH" \
+  XDG_CACHE_HOME="$XDG_CACHE_HOME_SCRATCH" \
   XDG_CONFIG_HOME="$XDG_CONFIG_HOME_SCRATCH" \
   GTK_A11Y=none \
   NO_AT_BRIDGE=1 \
   REPRISE_SCAN_DIR="$MUSIC_DIR" \
   REPRISE_AUDIO_SINK=fakesink \
+  REPRISE_MUSICBRAINZ_FIXTURE_DIR="$MUSICBRAINZ_FIXTURES" \
+  REPRISE_MUSICBRAINZ_FIXTURE_LOG="$MUSICBRAINZ_LOG" \
+  REPRISE_SMOKE_ARTIST_NEWS="$PTR_E2E_NEWS_ONLY" \
   REPRISE_LOG=debug \
   cargo run --quiet --manifest-path "$REPO_ROOT/Cargo.toml" "${CARGO_PROFILE_FLAG[@]}" \
   >"$APP_LOG" 2>&1 &
@@ -243,7 +264,7 @@ screenshot() {
 
 click_at() {
   local x="$1" y="$2"
-  xdotool mousemove "$x" "$y" click 1 >/dev/null 2>&1
+  xdotool mousemove --sync "$x" "$y" click 1 >/dev/null 2>&1
 }
 
 click_window_relative() {
@@ -389,7 +410,8 @@ assert_log_contains_since() {
 assert_log_absent() {
   local pattern="$1" description="$2"
   local plain
-  plain="$(sed -E "$ANSI_STRIP_RE" "$APP_LOG")"
+  # Ignore the unrelated Nautilus accessibility line in the private session log.
+  plain="$(sed -E "$ANSI_STRIP_RE" "$APP_LOG" | grep -v '^[(]org[.]gnome[.]Nautilus:')"
   if grep -Eqi -- "$pattern" <<<"$plain"; then
     log_fail "log unexpectedly showed: $description (pattern: $pattern)"
     grep -Ei -- "$pattern" <<<"$plain" | tail -1 | sed 's/^/[ptr-e2e]   -> /' >&2
@@ -432,7 +454,16 @@ if ! WINDOW_ID="$(find_window)"; then
 fi
 log_step "found window $WINDOW_ID"
 
+# Wait for GTK's first mapped frame before asking Openbox to maximize. Sending
+# the EWMH state while the surface is still blank races with GTK's initial
+# natural-size publication and can leave a 1200x800 window on this 1600x900
+# root, invalidating every fixed pointer coordinate below.
+if ! wait_for_painted_window; then
+  echo "FAIL: mapped Reprise window stayed blank for six seconds" >&2
+  exit 1
+fi
 maximize_window
+sleep 1
 
 # --- Row/column geometry (this harness's known limit — see README) ----------
 #
@@ -445,17 +476,30 @@ maximize_window
 # if the column set, fonts, or resolution change. See README.md.
 ROW0_TITLE_CELL_X=355
 ROW0_TITLE_CELL_Y=165
-ROW0_RATING_STAR1_X=703
-ROW0_RATING_STAR1_Y=165
+ROW0_RATING_STAR2_X=754
+ROW0_RATING_STAR2_Y=165
+
+if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
+  # --- Flow 0: opt-in Artist News in the contextual information panel -------
+  # This dedicated flow uses the app's permanent smoke seam because absolute
+  # coordinates are not stable while AdwOverlaySplitView changes between its
+  # pinned and overlay geometries. It still drives the production selection,
+  # runtime, persistence and panel callbacks; the surrounding harness remains
+  # a real mapped GTK window with screenshot verification.
+  run_artist_news_flow
+  exit 0
+fi
 
 # --- Flow 1: star-rating click reaches the real widget -----------------------
 
 log_step "flow 1: star-rating click…"
 screenshot "01-initial-track-list"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/01-initial-track-list.png"
-
+# Close the default-visible Information overlay before exercising row input.
+click_window_from_right 437 28
+sleep 0.3
 MARKER=$(log_marker)
-click_at "$ROW0_RATING_STAR1_X" "$ROW0_RATING_STAR1_Y"
+click_at "$ROW0_RATING_STAR2_X" "$ROW0_RATING_STAR2_Y"
 sleep 1
 screenshot "02-after-star-click"
 # `RatingWidget`'s click handler logs via `tracing::debug!(... "rating
@@ -570,7 +614,7 @@ log_step "flow 5: visible Compact button and all four layouts…"
 # button is the view-grid icon directly to the right of the primary menu.
 HEADER_BUTTON_Y=28
 MARKER=$(log_marker)
-click_window_from_right 437 "$HEADER_BUTTON_Y"
+click_window_from_right 477 "$HEADER_BUTTON_Y"
 sleep 0.4
 assert_log_contains_since "$MARKER" "window view mode changed.*mode=Compact.*layout=Bar" "full-header button entered Compact Bar"
 assert_window_within 660 185 "Bar compact geometry after leaving maximized Library"
@@ -607,7 +651,7 @@ assert_window_within 680 125 "Pill compact geometry"
 screenshot "11-compact-pill"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/11-compact-pill.png"
 
-click_window_from_right 145 40
+click_window_from_right 120 40
 MARKER=$(log_marker)
 sleep 0.3
 screenshot "11b-compact-pill-visible-menu"
@@ -646,7 +690,6 @@ assert_screenshots_differ \
   "$PTR_E2E_OUT_DIR/14-compact-keyboard-menu.png" \
   "Shift+F10 opened the compact menu"
 key "Escape"
-
 # The direct restore button returns to Library; Ctrl+M repeats the round trip
 # and must retain Card as the selected compact layout.
 MARKER=$(log_marker)
@@ -666,12 +709,11 @@ MARKER=$(log_marker)
 key "ctrl+m"
 sleep 0.5
 assert_log_contains_since "$MARKER" "window view mode changed.*mode=Library.*layout=Card" "Ctrl+M restored Library View"
-
 # --- Flow 6: real Preferences menu item --------------------------------------
 
 log_step "flow 6: Preferences dialog…"
 maximize_window
-click_window_from_right 477 28
+click_window_from_right 517 28
 sleep 0.3
 screenshot "17-main-menu"
 assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/17-main-menu.png"

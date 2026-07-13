@@ -4,27 +4,17 @@
 //! module is enabled (default off). Writes ONLY under the XDG cover cache.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use crate::cover;
+use crate::{cover, musicbrainz};
 
 const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
-const USER_AGENT: &str = concat!(
-    "Reprise/",
-    env!("CARGO_PKG_VERSION"),
-    " ( https://github.com/reprise-music/reprise )"
-);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-const MB_MIN_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;
-
-/// Process-global timestamp of the last MusicBrainz request, for the ≤1/s rule.
-static LAST_MB_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
 
 enum CaaFetchResult {
     Found(Vec<u8>, &'static str),
@@ -68,7 +58,7 @@ pub(crate) fn musicbrainz_search_url(album_artist: &str, album: &str) -> String 
     let query = format!("artist:\"{album_artist}\" AND release:\"{album}\"");
     format!(
         "https://musicbrainz.org/ws/2/release?query={}&fmt=json&limit=5",
-        urlencode(&query)
+        musicbrainz::urlencode(&query)
     )
 }
 
@@ -112,20 +102,6 @@ pub(crate) fn parse_best_release(json: &str, album_artist: &str, album: &str) ->
     None
 }
 
-/// Minimal percent-encoding for a query value (RFC 3986 unreserved kept).
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 3);
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char);
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
 pub fn fetch_and_cache(album_artist: &str, album: &str, mbid: Option<&str>) -> Option<PathBuf> {
     let key = album_key(album_artist, album);
     // 1. Already resolved (positive or negative) -> no network.
@@ -164,23 +140,15 @@ pub fn fetch_and_cache(album_artist: &str, album: &str, mbid: Option<&str>) -> O
 
 /// A rate-limited MusicBrainz GET returning the response body as text.
 fn mb_get(url: &str) -> Option<String> {
-    respect_mb_rate_limit();
-    ureq::builder()
-        .timeout(HTTP_TIMEOUT)
-        .user_agent(USER_AGENT)
-        .build()
-        .get(url)
-        .call()
-        .ok()?
-        .into_string()
-        .ok()
+    musicbrainz::get(url).ok()
 }
 
 /// A plain GET returning validated image bytes, a clean miss, or a retryable failure.
 fn http_get_bytes(url: &str) -> CaaFetchResult {
+    let user_agent = musicbrainz::user_agent();
     let response = match ureq::builder()
         .timeout(HTTP_TIMEOUT)
-        .user_agent(USER_AGENT)
+        .user_agent(&user_agent)
         .build()
         .get(url)
         .call()
@@ -226,19 +194,6 @@ fn validated_image_extension(bytes: &[u8]) -> Option<&'static str> {
     };
     image::load_from_memory_with_format(bytes, format).ok()?;
     Some(ext)
-}
-
-fn respect_mb_rate_limit() {
-    let mut last = LAST_MB_REQUEST
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(previous) = *last {
-        let elapsed = previous.elapsed();
-        if elapsed < MB_MIN_INTERVAL {
-            std::thread::sleep(MB_MIN_INTERVAL - elapsed);
-        }
-    }
-    *last = Some(Instant::now());
 }
 
 fn write_negative(key: &str) {

@@ -134,6 +134,7 @@ pub const COLOR_SCHEME_KEY: &str = "ui.color_scheme";
 pub const LIST_DENSITY_KEY: &str = "ui.list_density";
 pub const SIDEBAR_VISIBLE_KEY: &str = "ui.sidebar_visible";
 pub const STATUS_VISIBLE_KEY: &str = "ui.status_visible";
+pub const INFO_PANEL_VISIBLE_KEY: &str = "ui.info_panel_visible";
 pub const WINDOW_VIEW_MODE_KEY: &str = "ui.window_view_mode";
 pub const COMPACT_LAYOUT_KEY: &str = "ui.compact_layout";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
@@ -293,6 +294,17 @@ pub fn get_status_visible(conn: &Connection) -> bool {
 
 pub fn set_status_visible(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
     set_bool(conn, STATUS_VISIBLE_KEY, value)
+}
+
+pub fn get_info_panel_visible(conn: &Connection) -> bool {
+    get_bool(conn, INFO_PANEL_VISIBLE_KEY, true).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read information panel visibility; using visible");
+        true
+    })
+}
+
+pub fn set_info_panel_visible(conn: &Connection, visible: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, INFO_PANEL_VISIBLE_KEY, visible)
 }
 
 pub fn get_equalizer_enabled(conn: &Connection) -> bool {
@@ -503,6 +515,16 @@ mod tests {
         assert_eq!(get_list_density(&conn), ListDensity::Compact);
         assert!(!get_sidebar_visible(&conn));
         assert!(!get_status_visible(&conn));
+    }
+
+    #[test]
+    fn information_panel_defaults_visible_and_round_trips() {
+        let conn = migrated_conn();
+        assert!(get_info_panel_visible(&conn));
+        set_info_panel_visible(&conn, false).unwrap();
+        assert!(!get_info_panel_visible(&conn));
+        set_info_panel_visible(&conn, true).unwrap();
+        assert!(get_info_panel_visible(&conn));
     }
 
     #[test]

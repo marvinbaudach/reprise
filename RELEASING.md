@@ -61,6 +61,7 @@ against the release binary:
 ```sh
 cargo build --release
 PTR_E2E_PROFILE=release scripts/ptr-e2e/run.sh
+PTR_E2E_PROFILE=release PTR_E2E_NEWS_ONLY=1 scripts/ptr-e2e/run.sh
 ```
 
 This separate harness uses copied fixtures, a temporary XDG profile, private
@@ -72,6 +73,12 @@ pages, toggles layout/effect controls, verifies the plugin boundary, performs a
 real library rescan, verifies exact isolated SQLite values, and rejects GTK/GLib criticals, Rust
 panics, and `RefCell` borrow failures. It does not replace the native-Wayland,
 audible-audio, media-key, or portal checks below.
+
+The dedicated Artist News mode copies and tags its own FLAC fixtures, serves local
+MusicBrainz-shaped responses, and exercises the real selection/runtime/persistence
+paths in a mapped window. It proves explicit opt-in, Upcoming/New cards, delayed stale
+selection rejection, close/reopen reuse, disable behavior, request-field privacy and a
+shared interval of at least one second without network access.
 
 ## Build artifacts
 
@@ -113,6 +120,10 @@ The detailed live ledger of confirmed and pending checks is
   window geometry. Exercise every Preferences page and restart to verify persisted
   theme, density, sidebar/status, player-bar position, columns, library root and
   module states.
+- Inspect the Information panel at wide and narrow sizes. Artist & Album News must
+  explain its default-off privacy boundary, show clear Upcoming/New and offline/cache
+  copy, and open MusicBrainz in the system browser only after the user clicks the
+  external-link button.
 - With disposable tagged audio and real speakers, adjust all equalizer bands and
   presets while playing, then compare ReplayGain Off, Per Track, and Per Album on
   files containing valid ReplayGain tags. Equalizer and ReplayGain belong only to
@@ -151,17 +162,16 @@ populated test library; do not fabricate them from headless output.
 
 ## Public publication handoff
 
-Three external prerequisites remain and cannot be inferred or manufactured:
+Two external prerequisites remain and cannot be inferred or manufactured:
 
 1. Publish the source through a maintainer-controlled public remote and create an
    immutable 0.1.0 archive/tag with a verified SHA-256 checksum.
 2. Establish a verifiable project identity appropriate for the existing
    `org.reprise.Reprise` application ID.
-3. Make the maintainer-controlled project/contact URL embedded in the
-   MusicBrainz `User-Agent` real and reachable before distributing builds with
-   online cover download enabled; do not publish the current placeholder URL.
 
-After those exist, replace the local `type: dir` Flatpak source with the immutable
+The MusicBrainz `User-Agent` now uses the reachable maintainer profile as its contact
+URL; this no longer depends on a placeholder project page. After the prerequisites
+above exist, replace the local `type: dir` Flatpak source with the immutable
 archive, add the real homepage to AppStream, rerun every automated and manual check,
 and submit through the maintainer's chosen public forge/Flathub account. Creating
 the remote, tag, release, signatures, screenshots, or Flathub pull request is an
