@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Preserve window controls when system decorations are unavailable
-SINCE:    2026-07-13 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex claimed the lock for the system-decoration fallback fix._
+_As of 2026-07-13: Codex released the lock after fixing the system-decoration fallback._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-one-time-rhythmbox-import.md` (2 tasks).
-- **Last completed:** **Compact playback equalizer** (`fe2fc01`, merged as `9f01272`) — the ten
-  separate settings rows are one scrollable native equalizer surface with truthful disabled state.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-system-decoration-fallback.md` (1 task).
+- **Last completed:** **System-decoration fallback** (`346cf6f`) — Reprise controls remain visible
+  until GTK confirms actual desktop-supplied decorations through its documented `ssd` state.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `fe2fc01`.
+- **Main implementation:** `346cf6f`.
 
 ## Done so far (compact)
 
@@ -82,6 +82,7 @@ _As of 2026-07-13: Codex claimed the lock for the system-decoration fallback fix
   preserving adaptive navigation, DnD, menus and Library/Compact restoration.
 - ✅ **Window decoration mode**: Appearance defaults to the flat Chromium-like CSD header and can
   live-switch to a persisted system-title-bar request across Library plus Bar, Cover, Pill and Card;
+  its controls remain as a safe fallback until GTK confirms SSD, then hide to prevent duplicates;
   nested Information chrome never duplicates the real window controls.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
