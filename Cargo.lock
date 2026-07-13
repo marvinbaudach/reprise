@@ -2114,8 +2114,10 @@ name = "reprise-platform-linux"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "gio",
  "gstreamer",
  "reprise-core",
+ "tempfile",
  "tracing",
  "trash",
  "zbus",
