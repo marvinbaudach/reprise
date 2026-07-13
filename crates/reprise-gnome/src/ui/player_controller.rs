@@ -49,6 +49,9 @@
 //! `evaluate_play_tracking` call checks `library::stats::should_count_play`
 //! against that high-water mark and `library::stats::record_play`s a play if
 //! it crosses the 50%-listened threshold, then clears the tracked state.
+//! The completion implementation now lives in `play_tracking.rs`, which also
+//! feeds the optional ListenBrainz runtime without adding another session-end
+//! path to this edge-tight controller module.
 //!
 //! ## Queue borrow discipline
 //!
@@ -171,13 +174,15 @@ use crate::ui::now_playing::NowPlayingView;
 use crate::ui::now_playing_wiring;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
-use reprise_core::library::stats;
 use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
 use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_platform_linux::mpris;
 use reprise_platform_linux::player::Player;
+
+use super::listenbrainz_runtime::ListenBrainzRuntime;
+use super::scrobble_session::ScrobbleSession;
 
 // `PlayerController::volume`'s initial value is `reprise_platform_linux::mpris::
 // DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
@@ -212,12 +217,14 @@ pub struct PlayerController {
     /// `(track_id, duration_ms)` of the track currently loaded, set by
     /// `play_track_id` and cleared once play tracking has been evaluated for
     /// it (see `evaluate_play_tracking`). `None` when no track is loaded.
-    current_track: Cell<Option<(i64, i64)>>,
+    pub(super) current_track: Cell<Option<(i64, i64)>>,
     /// The highest playback position observed for `current_track` via
     /// `Position` events — not the most recent one, so seeking backward
     /// near the end of a track can't cost a listener credit for having
     /// already passed the 50% mark. Reset to 0 whenever a new track starts.
-    max_position_ms: Cell<i64>,
+    pub(super) max_position_ms: Cell<i64>,
+    pub(super) listenbrainz: Rc<ListenBrainzRuntime>,
+    pub(super) scrobble_session: RefCell<ScrobbleSession>,
     /// The playback queue (Stage 2 Task 3/4): track order, shuffle, and
     /// repeat mode. `play_from_view` seeds it; `TrackFinished`/the
     /// previous/next buttons step through it. `pub(super)` so `mpris_mirror.
@@ -330,10 +337,11 @@ impl PlayerController {
     /// unavailable (no playbin, bad `REPRISE_AUDIO_SINK` override, …) — the
     /// caller decides how to degrade (see `window::build`: library browsing
     /// keeps working without a bar).
-    pub fn new(
+    pub(super) fn new(
         conn: Rc<RefCell<Connection>>,
         mpris_enabled: bool,
         cover_download: CoverDownloadRuntime,
+        listenbrainz: Rc<ListenBrainzRuntime>,
         app: &adw::Application,
     ) -> Result<Rc<Self>, PlaybackError> {
         let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
@@ -380,6 +388,8 @@ impl PlayerController {
             conn,
             current_track: Cell::new(None),
             max_position_ms: Cell::new(0),
+            listenbrainz,
+            scrobble_session: RefCell::new(ScrobbleSession::default()),
             queue: RefCell::new(Queue::new()),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
@@ -550,6 +560,13 @@ impl PlayerController {
                 }
                 match self.player.play(&summary.path) {
                     Ok(()) => {
+                        self.begin_scrobble(reprise_core::scrobbling::TrackMetadata {
+                            artist_name: summary.artist.clone(),
+                            track_name: summary.title.clone(),
+                            release_name: (!summary.album.trim().is_empty())
+                                .then(|| summary.album.clone()),
+                            duration_ms: summary.duration_ms,
+                        });
                         let queue_position = self.queue.borrow().snapshot().position;
                         self.notify_current_track_changed(id, queue_position);
                         self.consecutive_skips.set(0);
@@ -623,33 +640,6 @@ impl PlayerController {
             Some(reload) => reload(),
             None => {
                 tracing::warn!("track list reload requested but no callback is wired yet");
-            }
-        }
-    }
-
-    /// Evaluates whether the currently loaded track (if any) crossed the
-    /// 50%-listened threshold (`library::stats::should_count_play`) and, if
-    /// so, records a play — then clears the tracked state either way.
-    /// Idempotent: called with no current track, it's a no-op, so every
-    /// call site below (track switch, finish, error/stop) can call it
-    /// unconditionally without risking a double-count.
-    fn evaluate_play_tracking(&self) {
-        let Some((track_id, duration_ms)) = self.current_track.take() else {
-            return;
-        };
-        let max_position_ms = self.max_position_ms.replace(0);
-
-        if !stats::should_count_play(max_position_ms, duration_ms) {
-            return;
-        }
-
-        let conn = self.conn.borrow();
-        match stats::record_play(&conn, track_id, now_unix()) {
-            Ok(()) => {
-                tracing::debug!(track_id, max_position_ms, duration_ms, "play recorded");
-            }
-            Err(error) => {
-                tracing::error!(%error, track_id, "failed to record play");
             }
         }
     }
@@ -760,15 +750,4 @@ impl PlayerController {
             }
         }
     }
-}
-
-/// Current time as Unix seconds, for `record_play`'s `last_played_at`.
-/// Mirrors `library::scanner`'s private `now_unix` helper (not made public
-/// there — see that module's doc comment) rather than sharing it, since the
-/// two callers are otherwise unrelated and the function is a single
-/// `SystemTime` call.
-fn now_unix() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs() as i64)
 }

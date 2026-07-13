@@ -67,16 +67,6 @@ const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
 /// Usage: `REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=8 xvfb-run -a cargo run`.
 const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
 
-/// Environment variable that, when set to `"top"` or `"bottom"` (anything
-/// else is treated as `"bottom"`), persists that player-bar position via
-/// `settings::set_player_bar_position` and re-applies it immediately —
-/// a standing headless-verification hook for Task 7's start-up docking
-/// (see `apply_bar_position`), mirroring the `arm_smoke_*` convention used
-/// for the rescan/import smoke hooks elsewhere in this module.
-///
-/// Usage: `REPRISE_SMOKE_BAR_POSITION=top xvfb-run -a cargo run`.
-const SMOKE_BAR_POSITION_ENV_VAR: &str = "REPRISE_SMOKE_BAR_POSITION";
-
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database connection; the UI layer owns it single-threaded
 /// (via `Rc<RefCell<_>>`) and reads through it via `track_list::TrackList`.
@@ -152,15 +142,21 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 true
             });
     let cover_download = cover_download_worker::setup(&conn.borrow());
+    let listenbrainz = super::listenbrainz_runtime::ListenBrainzRuntime::new(db_path.to_path_buf());
 
-    let player =
-        match PlayerController::new(conn.clone(), mpris_enabled, cover_download.clone(), app) {
-            Ok(controller) => Some(controller),
-            Err(error) => {
-                tracing::error!(%error, "player unavailable: playback disabled");
-                None
-            }
-        };
+    let player = match PlayerController::new(
+        conn.clone(),
+        mpris_enabled,
+        cover_download.clone(),
+        listenbrainz.clone(),
+        app,
+    ) {
+        Ok(controller) => Some(controller),
+        Err(error) => {
+            tracing::error!(%error, "player unavailable: playback disabled");
+            None
+        }
+    };
 
     // Built right after `player` (needed for the Queue row's counter) and
     // before `TrackList` and `spawn_scan`/`player.set_track_list_reload`
@@ -661,7 +657,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     );
     playlist_io::arm_smoke_m3u(conn.clone(), &toast_overlay, sidebar.clone());
 
-    arm_smoke_bar_position(conn, &toolbar_view, &bottom_box);
+    super::window_smoke::arm_bar_position(conn, &toolbar_view, &bottom_box);
 
     // Task 8: wired after `player`/`content_nav` both exist — see
     // `now_playing_wiring.rs`'s doc comments for what each call does.
@@ -746,7 +742,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
 /// else in this module), so `bottom_box.parent().is_some()` is an exact,
 /// cheap test for "is currently attached" — guarding the `remove` call with
 /// it makes this fn safe to call both at start-up (nothing attached yet) and
-/// again later (see `arm_smoke_bar_position`) without ever double-adding,
+/// again later (see `window_smoke::arm_bar_position`) without ever double-adding,
 /// panicking, or emitting that critical warning.
 pub(super) fn apply_bar_position(
     toolbar_view: &adw::ToolbarView,
@@ -760,31 +756,4 @@ pub(super) fn apply_bar_position(
         settings::PlayerBarPosition::Top => toolbar_view.add_top_bar(bottom_box),
         settings::PlayerBarPosition::Bottom => toolbar_view.add_bottom_bar(bottom_box),
     }
-}
-
-/// Headless verification hook for Task 7: if `REPRISE_SMOKE_BAR_POSITION` is
-/// set to `"top"` or `"bottom"` (anything else falls back to `"bottom"`),
-/// persists that position and re-applies it via `apply_bar_position`,
-/// logging on success so a smoke run can grep for it. Mirrors the
-/// `arm_smoke_*` convention used by `scan_flow::arm_smoke_rescan` and
-/// `playlist_io::arm_smoke_m3u`.
-fn arm_smoke_bar_position(
-    conn: &Rc<RefCell<Connection>>,
-    toolbar_view: &adw::ToolbarView,
-    bottom_box: &gtk4::Box,
-) {
-    let Ok(value) = std::env::var(SMOKE_BAR_POSITION_ENV_VAR) else {
-        return;
-    };
-    let position = if value == "top" {
-        settings::PlayerBarPosition::Top
-    } else {
-        settings::PlayerBarPosition::Bottom
-    };
-    {
-        let conn = conn.borrow();
-        let _ = settings::set_player_bar_position(&conn, position);
-    }
-    apply_bar_position(toolbar_view, bottom_box, position);
-    tracing::info!(position = %value, "smoke: applied player bar position");
 }
