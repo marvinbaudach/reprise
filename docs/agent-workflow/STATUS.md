@@ -21,22 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Stabilize track-table column widths while scrolling
-SINCE:    2026-07-13 20:04 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13 20:04 CEST: Codex is fixing track-table column width changes during scrolling._
+_As of 2026-07-13: free after the track-table column-width stabilization passed all gates._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Information panel toggle lifetime fix** (`839c91c`) — the window now owns
-  the panel controller for its full lifetime, so the fixed desktop column can still be closed and
-  reopened and its selection, refresh and Artist News callbacks remain live.
+- **Last completed:** **Stable track-table column widths** (`1dd55bc`) — every column now has a
+  deterministic width while Title alone absorbs spare space, preventing recycled visible rows
+  from changing the table geometry during scrolling.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `839c91c`; this QA/coordination close-out follows it.
+- **Main implementation:** `1dd55bc`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -103,6 +103,8 @@ _As of 2026-07-13 20:04 CEST: Codex is fixing track-table column width changes d
   session restoration without autoplay, functional browse-option search, rating resorting, stable
   empty browse-popup geometry, and repaired playlist row/menu/create/reorder flows including
   duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
+- ✅ **Stable track-table geometry**: fixed per-column sizing prevents virtualized row contents from
+  changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
