@@ -157,6 +157,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     super::preference_lastfm::bootstrap(conn, &lastfm);
     super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
+    super::window_smoke::arm_lastfm(conn, &lastfm);
 
     let player = match PlayerController::new(
         conn.clone(),
