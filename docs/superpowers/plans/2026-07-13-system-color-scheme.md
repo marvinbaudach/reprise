@@ -8,7 +8,9 @@
 
 **Dateien:**
 
+- `crates/reprise-core/src/library/settings.rs`
 - `crates/reprise-gnome/src/ui/preference_appearance.rs`
+- `crates/reprise-gnome/src/ui/preference_choice_cards.rs`
 - `crates/reprise-gnome/src/ui/preferences.rs`
 - `crates/reprise-gnome/src/ui/strings.rs`
 - `crates/reprise-gnome/src/ui/preference_visual_strings.rs`
@@ -19,7 +21,8 @@
 
 1. Zuerst einen fehlschlagenden Strukturtest ergänzen, der genau eine Appearance-Sektion
    `WindowDecorations` verlangt, und den erwarteten Compile-Fehler belegen.
-2. Farbschema-Karten, Vorschauen, Persistenz-/Rollbackpfad und unbenutzte Texte entfernen.
+2. Farbschema-Karten, Vorschauen, typisierte Legacy-API, Persistenz-/Rollbackpfad und unbenutzte
+   Texte entfernen; vorhandene Datenbankzeilen werden nicht migriert oder gelöscht.
 3. Beim initialen UI-Aufbau `AdwStyleManager` immer auf `Default` setzen und den Preferences-Smoke
    so ändern, dass kein Farbschema mehr geschrieben oder erzwungen wird.
 4. Den fokussierten Pointertest auf Abwesenheit eines neuen `ui.color_scheme`-Werts umstellen.
