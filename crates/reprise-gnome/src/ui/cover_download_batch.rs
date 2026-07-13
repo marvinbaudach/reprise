@@ -88,11 +88,13 @@ impl BatchProgress {
     }
 }
 
-type OnProgress = Rc<dyn Fn(BatchProgress) -> bool>;
+type IsAlive = Rc<dyn Fn() -> bool>;
+type OnProgress = Rc<dyn Fn(BatchProgress)>;
 
 #[derive(Clone)]
 struct ProgressSubscriber {
     id: u64,
+    is_alive: IsAlive,
     callback: OnProgress,
 }
 
@@ -106,25 +108,44 @@ impl ProgressSubscribers {
     fn subscribe(
         &self,
         current: BatchProgress,
-        callback: impl Fn(BatchProgress) -> bool + 'static,
+        is_alive: impl Fn() -> bool + 'static,
+        callback: impl Fn(BatchProgress) + 'static,
     ) {
-        self.notify(current);
+        self.prune();
+        let is_alive: IsAlive = Rc::new(is_alive);
+        if !is_alive() {
+            return;
+        }
         let callback: OnProgress = Rc::new(callback);
-        if !callback(current) {
+        callback(current);
+        if !is_alive() {
             return;
         }
         let id = self.next_id.get().wrapping_add(1);
         self.next_id.set(id);
-        self.entries
-            .borrow_mut()
-            .push(ProgressSubscriber { id, callback });
+        self.entries.borrow_mut().push(ProgressSubscriber {
+            id,
+            is_alive,
+            callback,
+        });
     }
 
     fn notify(&self, progress: BatchProgress) {
+        self.prune();
+        let entries = self.entries.borrow().clone();
+        for entry in entries {
+            if (entry.is_alive)() {
+                (entry.callback)(progress);
+            }
+        }
+        self.prune();
+    }
+
+    fn prune(&self) {
         let entries = self.entries.borrow().clone();
         let dead: Vec<u64> = entries
             .iter()
-            .filter_map(|entry| (!(entry.callback)(progress)).then_some(entry.id))
+            .filter_map(|entry| (!(entry.is_alive)()).then_some(entry.id))
             .collect();
         if dead.is_empty() {
             return;
@@ -168,9 +189,13 @@ impl CoverDownloadBatch {
         })
     }
 
-    pub(super) fn subscribe_progress(&self, callback: impl Fn(BatchProgress) -> bool + 'static) {
+    pub(super) fn subscribe_progress(
+        &self,
+        is_alive: impl Fn() -> bool + 'static,
+        callback: impl Fn(BatchProgress) + 'static,
+    ) {
         self.progress_subscribers
-            .subscribe(self.progress.get(), callback);
+            .subscribe(self.progress.get(), is_alive, callback);
     }
 
     pub(super) fn set_enabled(self: &Rc<Self>, enabled: bool) {
@@ -337,35 +362,54 @@ mod tests {
 
         for received in [&first, &second] {
             let received = received.clone();
-            subscribers.subscribe(BatchProgress::idle(), move |progress| {
-                received.borrow_mut().push(progress);
-                true
-            });
+            subscribers.subscribe(
+                BatchProgress::idle(),
+                || true,
+                move |progress| {
+                    received.borrow_mut().push(progress);
+                },
+            );
         }
         let running = BatchProgress::running(4);
         subscribers.notify(running);
 
-        assert_eq!(
-            *first.borrow(),
-            vec![BatchProgress::idle(), BatchProgress::idle(), running]
-        );
+        assert_eq!(*first.borrow(), vec![BatchProgress::idle(), running]);
         assert_eq!(*second.borrow(), vec![BatchProgress::idle(), running]);
     }
 
     #[test]
-    fn subscriber_returning_false_is_removed_after_that_update() {
+    fn dead_subscriber_is_removed_without_replaying_state_to_live_ones() {
         let subscribers = ProgressSubscribers::default();
         let calls = Rc::new(Cell::new(0));
+        let alive = Rc::new(Cell::new(true));
         let calls_for_callback = calls.clone();
-        subscribers.subscribe(BatchProgress::idle(), move |_| {
-            calls_for_callback.set(calls_for_callback.get() + 1);
-            calls_for_callback.get() < 2
-        });
+        let alive_for_probe = alive.clone();
+        subscribers.subscribe(
+            BatchProgress::idle(),
+            move || alive_for_probe.get(),
+            move |_| calls_for_callback.set(calls_for_callback.get() + 1),
+        );
 
+        alive.set(false);
+        subscribers.subscribe(BatchProgress::idle(), || true, |_| {});
         subscribers.notify(BatchProgress::running(2));
-        subscribers.notify(BatchProgress::running(3));
 
-        assert_eq!(calls.get(), 2);
+        assert_eq!(calls.get(), 1);
+        assert_eq!(subscribers.len(), 1);
+    }
+
+    #[test]
+    fn subscriber_destroyed_by_initial_callback_is_not_retained() {
+        let subscribers = ProgressSubscribers::default();
+        let alive = Rc::new(Cell::new(true));
+        let alive_for_probe = alive.clone();
+        let alive_for_callback = alive.clone();
+        subscribers.subscribe(
+            BatchProgress::idle(),
+            move || alive_for_probe.get(),
+            move |_| alive_for_callback.set(false),
+        );
+
         assert_eq!(subscribers.len(), 0);
     }
 }

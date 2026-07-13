@@ -41,10 +41,29 @@ use super::track_list::TrackList;
 /// REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
 const SMOKE_RESCAN_ENV_VAR: &str = "REPRISE_SMOKE_RESCAN";
 
+type OnScanComplete = Rc<dyn Fn()>;
+
+#[derive(Clone, Default)]
+struct ScanCompletion(Rc<RefCell<Option<OnScanComplete>>>);
+
+impl ScanCompletion {
+    fn set(&self, callback: impl Fn() + 'static) {
+        self.0.borrow_mut().replace(Rc::new(callback));
+    }
+
+    fn notify(&self) {
+        let callback = self.0.borrow().clone();
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct ScanControls {
     button: gtk4::Button,
     progress: ScanProgressView,
+    completion: ScanCompletion,
 }
 
 impl ScanControls {
@@ -52,7 +71,12 @@ impl ScanControls {
         Self {
             button: button.clone(),
             progress: progress.clone(),
+            completion: ScanCompletion::default(),
         }
+    }
+
+    pub(super) fn set_on_complete(&self, callback: impl Fn() + 'static) {
+        self.completion.set(callback);
     }
 }
 
@@ -296,6 +320,7 @@ fn spawn_scan(
                     Rc::downgrade(&track_list),
                     Rc::downgrade(&sidebar),
                 );
+                controls.completion.notify();
             }
             Ok(Err(error)) => {
                 tracing::error!(%error, "scan failed");
@@ -441,11 +466,29 @@ pub(super) fn start_or_restart_watcher(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::path::PathBuf;
+    use std::rc::Rc;
 
     use reprise_core::library::scanner::ScanProgress;
 
-    use super::publish_latest_progress;
+    use super::{publish_latest_progress, ScanCompletion};
+
+    #[test]
+    fn scan_completion_callback_runs_without_holding_its_refcell_borrow() {
+        let completion = ScanCompletion::default();
+        let calls = Rc::new(Cell::new(0));
+        let calls_for_callback = calls.clone();
+        let reentrant_completion = completion.clone();
+        completion.set(move || {
+            calls_for_callback.set(calls_for_callback.get() + 1);
+            reentrant_completion.set(|| {});
+        });
+
+        completion.notify();
+
+        assert_eq!(calls.get(), 1);
+    }
 
     #[test]
     fn progress_channel_keeps_only_the_latest_pending_update() {

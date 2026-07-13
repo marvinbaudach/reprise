@@ -467,6 +467,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &track_list,
         player.as_ref(),
     );
+    super::main_cover_download_progress::install(&toolbar_view, &cover_batch, &scan_controls);
     let preferences = super::preferences::PreferencesContext::new(
         &window,
         conn,

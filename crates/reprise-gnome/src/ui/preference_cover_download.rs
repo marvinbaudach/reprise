@@ -49,13 +49,19 @@ impl PreferencesContext {
         let widgets = build_progress_widgets();
         let row = widgets.row.downgrade();
         let progress = widgets.progress.downgrade();
-        self.cover_batch.subscribe_progress(move |state| {
-            let (Some(row), Some(progress)) = (row.upgrade(), progress.upgrade()) else {
-                return false;
-            };
-            apply_progress(&CoverProgressWidgets { row, progress }, state);
-            true
-        });
+        let row_for_liveness = row.clone();
+        let progress_for_liveness = progress.clone();
+        self.cover_batch.subscribe_progress(
+            move || {
+                row_for_liveness.upgrade().is_some() && progress_for_liveness.upgrade().is_some()
+            },
+            move |state| {
+                let (Some(row), Some(progress)) = (row.upgrade(), progress.upgrade()) else {
+                    return;
+                };
+                apply_progress(&CoverProgressWidgets { row, progress }, state);
+            },
+        );
         group.add(&widgets.row);
     }
 }
