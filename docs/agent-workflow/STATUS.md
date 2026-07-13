@@ -21,23 +21,23 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Merge feature/lastfm
-SINCE:    2026-07-13 14:46 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-13: Codex is merging the completed Last.fm feature branch._
+_As of 2026-07-13: Last.fm scrobbling is complete, merged, and the lock is released._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-artist-album-news.md` (5 tasks).
-- **Last completed:** **Artist & Album News information panel** (`4c2f30d` through `34b0e9a`,
-  merged as `5216842`) — a default-off MusicBrainz integration shows cached Upcoming/New album
-  cards for the selected artist without sending paths or listening history.
-- **Current plan:** none — the Artist & Album News stage is complete.
+- **Completed plan:** `docs/superpowers/plans/2026-07-13-lastfm-scrobbling.md` (5 tasks).
+- **Last completed:** **Last.fm scrobbling** (`f3d9e53` through `43270e2`, merged as
+  `4564440`) — a default-off integration uses bring-your-own desktop API credentials,
+  browser authorization, keyring-only secrets and an independent durable offline queue.
+- **Current plan:** none — the Last.fm stage is complete.
 - **➡️ NEXT:** joint native-GNOME visual/Wayland stage review using the exact remaining checks in
   `MANUAL-QA.md`; do not begin another roadmap stage without explicit user direction.
-- **Main merge:** `5216842`; this QA/coordination update follows it.
+- **Main merge:** `4564440`; this QA/coordination update follows it.
 
 ## Done so far (compact)
 
@@ -65,6 +65,9 @@ _As of 2026-07-13: Codex is merging the completed Last.fm feature branch._
 - ✅ **ListenBrainz scrobbling**: default-off live integration validates a securely keyring-stored
   token, reports playing-now, submits threshold-completed listens, persists a bounded FIFO offline,
   retries with cancellation/generation guards, and exposes translated connect/status/disconnect UI.
+- ✅ **Last.fm scrobbling**: default-off live integration signs desktop-auth, playing-now and
+  scrobble requests with bring-your-own API credentials, stores credentials/session only in the
+  system keyring, persists a separate bounded FIFO, and runs independently beside ListenBrainz.
 - ✅ **Artist & Album News**: a persistent right-side Information panel follows the current
   selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
   filters cached Upcoming/New album and EP cards, and rejects stale selection responses.
@@ -98,9 +101,8 @@ _As of 2026-07-13: Codex is merging the completed Last.fm feature branch._
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `listenbrainz_runtime.rs` (787 lines) is edge-tight — its next edit must extract a sibling module,
-  not add inline feature logic.
-- `info_panel.rs` (786 lines) and `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
+- `scrobbling.rs` (795 lines), `strings.rs` (784 lines), `info_panel.rs` (786 lines), and
+  `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
   edits must extract cohesive sibling modules rather than adding inline logic.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
