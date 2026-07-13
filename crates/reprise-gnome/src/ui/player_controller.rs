@@ -163,6 +163,7 @@ use gtk4::glib;
 use libadwaita as adw;
 use rusqlite::Connection;
 
+use crate::ui::compact_player::CompactPlayer;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::mpris_mirror::{self, mpris_status_from_playback_state};
@@ -201,6 +202,7 @@ pub struct PlayerController {
     /// `set_shuffle_indicator`/`set_repeat_indicator`/`set_volume_indicator`
     /// directly — same reasoning as `player` above.
     pub(super) bar: PlayerBar,
+    pub(super) compact_player: CompactPlayer,
     /// The UI-owned database connection, shared with `track_list.rs` (see
     /// `window::build`) — used to write play-count updates via `library::
     /// stats::record_play`, and (via `playback_faults.rs`, `pub(super)` so
@@ -275,6 +277,7 @@ pub struct PlayerController {
     /// bumped per `play_track_id` call so a stale in-flight load can't
     /// clobber a newer one.
     pub(super) bar_cover_generation: Rc<Cell<u64>>,
+    pub(super) compact_cover_generation: Rc<Cell<u64>>,
     /// The Now-Playing full view (Task 8) — the SAME `PlayerController`
     /// actions and state the bar uses, never a second playback/seek path.
     /// See `now_playing_wiring.rs`'s module doc for the construction/wiring
@@ -373,6 +376,7 @@ impl PlayerController {
             player: Box::new(player),
             active_audio_effects: RefCell::new(initial_effects),
             bar: PlayerBar::new(),
+            compact_player: CompactPlayer::new(),
             conn,
             current_track: Cell::new(None),
             max_position_ms: Cell::new(0),
@@ -388,6 +392,7 @@ impl PlayerController {
             mpris_seek_notify,
             cover_loader: CoverLoader::new(cover_download),
             bar_cover_generation: Rc::new(Cell::new(0)),
+            compact_cover_generation: Rc::new(Cell::new(0)),
             now_playing_view: NowPlayingView::new(),
             now_playing_cover_generation: Rc::new(Cell::new(0)),
             application: {
@@ -398,6 +403,7 @@ impl PlayerController {
         });
 
         player_controller_wiring::wire_bar_controls(&controller);
+        player_controller_wiring::wire_compact_controls(&controller);
         player_controller_wiring::arm_smoke_repeat(&controller);
         now_playing_wiring::wire_now_playing_controls(&controller);
 

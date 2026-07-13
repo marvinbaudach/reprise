@@ -433,7 +433,7 @@ impl PlayerController {
     fn mpris_set_volume(&self, volume: f64) {
         self.player.set_volume(volume);
         self.volume.set(volume);
-        self.bar.set_volume_indicator(volume);
+        self.sync_volume_indicator(volume);
         self.update_mpris_volume(volume);
         tracing::debug!(volume, "MPRIS: volume set");
     }

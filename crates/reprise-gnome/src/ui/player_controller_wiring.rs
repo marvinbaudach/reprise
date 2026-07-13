@@ -71,6 +71,7 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
             return;
         };
         controller.player.set_volume(volume);
+        controller.sync_volume_indicator(volume);
         // Stage 3 Task 10: keeps the tracked volume + MPRIS mirror current
         // immediately, rather than waiting for an unrelated status/track
         // transition to refresh it via `update_mpris_mirror` — see
@@ -139,6 +140,77 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         // Stage 3 Task 10: keeps the MPRIS mirror current immediately — see
         // `update_mpris_repeat`'s doc comment.
         controller.update_mpris_repeat(next_repeat);
+    });
+}
+
+pub(super) fn wire_compact_controls(controller: &Rc<PlayerController>) {
+    let weak = Rc::downgrade(controller);
+    controller.compact_player.connect_play_pause(move || {
+        if let Some(controller) = weak.upgrade() {
+            controller.toggle_pause();
+        }
+    });
+
+    let weak = Rc::downgrade(controller);
+    controller.compact_player.connect_seek(move |position_ms| {
+        if let Some(controller) = weak.upgrade() {
+            controller.seek(position_ms);
+        }
+    });
+
+    let weak = Rc::downgrade(controller);
+    controller
+        .compact_player
+        .connect_volume_changed(move |volume| {
+            let Some(controller) = weak.upgrade() else {
+                return;
+            };
+            controller.player.set_volume(volume);
+            controller.volume.set(volume);
+            controller.sync_volume_indicator(volume);
+            controller.update_mpris_volume(volume);
+        });
+
+    let weak = Rc::downgrade(controller);
+    controller.compact_player.connect_previous(move || {
+        if let Some(controller) = weak.upgrade() {
+            controller.previous();
+        }
+    });
+
+    let weak = Rc::downgrade(controller);
+    controller.compact_player.connect_next(move || {
+        if let Some(controller) = weak.upgrade() {
+            controller.next();
+        }
+    });
+
+    let weak = Rc::downgrade(controller);
+    controller
+        .compact_player
+        .connect_shuffle_toggled(move |active| {
+            let Some(controller) = weak.upgrade() else {
+                return;
+            };
+            controller.queue.borrow_mut().set_shuffle(active);
+            let shuffled = controller.queue.borrow().is_shuffled();
+            controller.sync_shuffle_indicator(shuffled);
+            controller.update_mpris_shuffle(shuffled);
+        });
+
+    let weak = Rc::downgrade(controller);
+    controller.compact_player.connect_repeat_clicked(move || {
+        let Some(controller) = weak.upgrade() else {
+            return;
+        };
+        let repeat = {
+            let mut queue = controller.queue.borrow_mut();
+            let repeat = cycle_repeat(queue.repeat());
+            queue.set_repeat(repeat);
+            repeat
+        };
+        controller.sync_repeat_indicator(repeat);
+        controller.update_mpris_repeat(repeat);
     });
 }
 
