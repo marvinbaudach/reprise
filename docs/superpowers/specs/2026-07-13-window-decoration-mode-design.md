@@ -77,7 +77,7 @@ nach dem Ende der Ausleihe an.
 Weil `preferences.rs` und `strings.rs` randvoll sind, liegt die neue
 Darstellungszeile in `preference_window_decorations.rs`; ihre gettext-markierten
 Texte liegen in einem kleinen Geschwistermodul. `po/POTFILES.in` nimmt dieses
-Modul auf. Eine `AdwComboRow` bietet „Client-side (Chromium style)“ und „System
+Modul auf. Eine `AdwComboRow` bietet „Chromium (CSD)“ und „System
 title bar“ an und erklärt, dass die Systemunterstützung vom Desktop abhängt.
 
 ## Datenfluss und Fehlerverhalten

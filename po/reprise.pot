@@ -1000,7 +1000,7 @@ msgid "Use Reprise's flat header, or request a title bar and borders from the de
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/window_decoration_strings.rs:17
-msgid "Client-side (Chromium style)"
+msgid "Chromium (CSD)"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/window_decoration_strings.rs:18
