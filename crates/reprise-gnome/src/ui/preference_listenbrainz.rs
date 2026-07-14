@@ -124,6 +124,7 @@ impl PreferencesContext {
                 context.present_listenbrainz_dialog(&switch_for_account);
             }
         });
+        crate::ui::preference_dependencies::bind_visibility(switch, &account);
         group.add(&account);
     }
 

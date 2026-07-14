@@ -67,6 +67,7 @@ pub mod playlist_io;
 mod playlist_io_names;
 mod popover_lifecycle;
 mod preference_cover_download;
+mod preference_dependencies;
 mod preference_effects;
 mod preference_lastfm;
 mod preference_library;
