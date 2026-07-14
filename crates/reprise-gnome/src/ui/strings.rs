@@ -709,3 +709,7 @@ pub fn playlist_exported_toast(name: &str) -> String {
 pub fn playlist_export_failed_toast(name: &str) -> String {
     formatted(N_!("Could not export “{name}”"), &[("name", name)])
 }
+
+// Application identity and legal information shown in the native About dialog.
+pub const ABOUT: &str = N_!("About");
+pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linux Platform");

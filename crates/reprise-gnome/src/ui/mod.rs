@@ -20,6 +20,7 @@
 //!   composition root only (controller construction); everything else goes
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
+mod about;
 mod artist_news_worker;
 mod audio_effects;
 pub mod browse_bar;

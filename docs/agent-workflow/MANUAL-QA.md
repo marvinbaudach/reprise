@@ -98,6 +98,11 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] Existing libraries upgrade silently without showing first-run setup.
 - [ ] English and German have no clipping, untranslated visible strings, broken
   plurals, or unnatural button/menu labels.
+- [ ] Open **About** from the main menu in English and German. Expected: the
+  native dialog shows Reprise, the installed version, Marvin Baudach, the
+  GPL-3.0-or-later app license, and the MIT legal section for the Reprise Engine
+  and Linux Platform. The isolated GTK metadata regression passes; native
+  layout and license-page navigation remain pending.
 - [ ] Narrow width switches navigation cleanly; wide width restores the split view.
 - [ ] Light and dark appearance, 100% and available HiDPI scale, keyboard navigation,
   pointer, and touch targets remain readable and usable.
