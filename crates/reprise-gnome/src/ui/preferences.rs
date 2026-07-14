@@ -303,6 +303,19 @@ impl PreferencesContext {
         navigation.push(&page);
     }
 
+    pub(super) fn open_rhythmbox_import(self: &Rc<Self>) {
+        let navigation = self.preferences_navigation.borrow().upgrade();
+        let Some(navigation) = navigation else {
+            tracing::warn!("Rhythmbox import requested without preferences navigation");
+            return;
+        };
+        super::preference_rhythmbox::push_import_page(self, &navigation);
+    }
+
+    pub(super) fn preferences_window(&self) -> Option<adw::Window> {
+        self.preferences_window.borrow().upgrade()
+    }
+
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {
         let page = adw::PreferencesPage::builder()
             .title(strings::text(strings::PREFERENCES_PLAYBACK))
