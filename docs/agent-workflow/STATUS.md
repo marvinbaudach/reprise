@@ -37,8 +37,12 @@ Both agents share the same working tree, so the on-disk `LOCK` file is all the c
   column-layout dialog closing (`e9f7bf9`, `64f1d8b`, `a9f3887`).
 - **Last completed:** **Track-table column-title hierarchy** (`6e16ab0`) — sortable header text
   uses a subtle theme-relative 78% foreground alpha while song metadata keeps normal contrast.
-- **Current plan:** none.
-- **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
+- **Current plan:** refactoring ahead of the upcoming design fine-tuning —
+  `docs/superpowers/specs/2026-07-14-refactoring-plan.md` (R1 central `ui/style` module,
+  R2 core file-size violations, R3 feature-grouped `ui/`, R4 edge-tight rule).
+- **➡️ NEXT:** R1 (central style module) — it is the enabler for the user-announced design
+  fine-tuning phase. R2 is independent and safe to pick up in parallel slots (lock protocol
+  still applies). Do not start the design fine-tuning itself without explicit user direction.
 - **Main implementation:** `6e16ab0` on `main`.
 - **Latest validation:** the reported one-row initial Library render was not reproducible with the
   current debug build or the freshly reinstalled release: an isolated second launch with 501
