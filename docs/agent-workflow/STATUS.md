@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Fix initial library viewport height on main
-SINCE:    2026-07-14 06:27 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is fixing the reproduced initial one-row Library viewport on main._
+_As of 2026-07-14: Codex fixed and released the initial one-row Library viewport on main._
 
 ## Parallel feature work
 
@@ -35,13 +35,11 @@ _As of 2026-07-14: Codex is fixing the reproduced initial one-row Library viewpo
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-14-sidebar-issue-cleanup.md` (1 task).
-- **Last completed:** **Agent-D UI follow-ups** (`315e345`) — live list density, grouped playlist
-  import, finished Information-panel unavailable states, and inline conditional scrobble-service
-  configuration are integrated with the current responsive/library and lyrics work.
+- **Last completed:** **Initial Library viewport correction** (`bd4d9c7`) — the track-content stack
+  expands during its first allocation, so a populated Music view no longer starts at one row.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `315e345` (merge); feature commits `0379554`, `b4bc211`, `797791d`,
-  `0386d76`, and `535d7bc`.
+- **Main implementation:** `bd4d9c7`.
 
 ## Done so far (compact)
 
@@ -143,6 +141,8 @@ _As of 2026-07-14: Codex is fixing the reproduced initial one-row Library viewpo
   cover/metadata scroll regions without visible Compact volume controls.
 - ✅ **Stable track-table geometry**: fixed per-column sizing prevents virtualized row contents from
   changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
+- ✅ **Initial Library viewport**: the track-content stack requests the available height during its
+  first allocation, preventing a populated Music view from rendering only one row until navigation.
 - ✅ **Compact responsive ratings**: the Rating column defaults to a narrow `★ N` popover chooser,
   promotes to five inline stars when widened, and retains real-pointer write-back regression coverage.
 - ✅ **Column-header visibility menu**: every track header exposes the same native right-click
