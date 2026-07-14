@@ -1,4 +1,4 @@
-//! Full-window Library root with a movable status and player-bar block.
+//! Full-window Library content with a movable player bar.
 
 use gtk4::prelude::*;
 use reprise_core::library::settings::PlayerBarPosition;
@@ -12,7 +12,6 @@ pub(super) struct LibraryPlayerBarShell {
 impl LibraryPlayerBarShell {
     pub(super) fn new(
         content: &impl IsA<gtk4::Widget>,
-        status: &impl IsA<gtk4::Widget>,
         player_bar: Option<&gtk4::Widget>,
         position: PlayerBarPosition,
     ) -> Self {
@@ -25,7 +24,6 @@ impl LibraryPlayerBarShell {
 
         let bar_block = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         bar_block.set_hexpand(true);
-        bar_block.append(status);
         if let Some(player_bar) = player_bar {
             bar_block.append(player_bar);
         }
@@ -75,12 +73,10 @@ mod tests {
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         content.set_hexpand(true);
         content.set_vexpand(true);
-        let status = gtk4::Label::new(Some("Status"));
         let player = gtk4::ActionBar::new();
         player.set_center_widget(Some(&gtk4::Label::new(Some("Player"))));
         let shell = LibraryPlayerBarShell::new(
             &content,
-            &status,
             Some(player.upcast_ref()),
             PlayerBarPosition::Bottom,
         );
