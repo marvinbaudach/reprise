@@ -11,6 +11,7 @@ use rusqlite::Connection;
 
 use super::artist_news_worker::{ArtistNewsRequest, ArtistNewsResponse, ArtistNewsRuntime};
 use super::cover_loader::CoverLoader;
+use super::info_panel_empty_state;
 use super::info_panel_feedback::request_feedback;
 use super::info_panel_state::{PanelContext, PanelState, RequestIntent};
 use super::lyrics_strings;
@@ -114,6 +115,7 @@ struct PanelWidgets {
 
 fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let body = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    body.set_vexpand(true);
     body.set_margin_top(12);
     body.set_margin_bottom(18);
     body.set_margin_start(12);
@@ -180,6 +182,7 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
     switcher.set_stack(Some(&stack));
     switcher.set_halign(gtk4::Align::Center);
     let header = adw::HeaderBar::new();
+    header.set_centering_policy(adw::CenteringPolicy::Strict);
     header.set_show_start_title_buttons(false);
     header.set_show_end_title_buttons(false);
     header.set_title_widget(Some(&switcher));
@@ -559,7 +562,7 @@ impl InfoPanel {
                 self.widgets.local.set_visible(false);
             }
             PanelContext::Multiple(count) => {
-                self.widgets.local.set_visible(true);
+                self.widgets.local.set_visible(false);
                 self.widgets.cover.set_visible(false);
                 self.widgets
                     .title
@@ -589,15 +592,10 @@ impl InfoPanel {
             self.render_disabled();
             return;
         }
-        match self.state.borrow().context() {
-            PanelContext::Empty => self.render_status(strings::text(strings::NEWS_SELECT_TRACK)),
-            PanelContext::Multiple(_) => {
-                self.render_status(strings::text(strings::NEWS_MULTIPLE_SELECTION));
-            }
-            PanelContext::Track(track) if track.artist.trim().is_empty() => {
-                self.render_status(strings::text(strings::NEWS_NO_ARTIST));
-            }
-            PanelContext::Track(_) => self.render_loading(),
+        let context = self.state.borrow().context().clone();
+        match info_panel_empty_state::build(&context) {
+            Some(status) => self.render_empty_state(&status),
+            None => self.render_loading(),
         }
     }
 
@@ -625,10 +623,10 @@ impl InfoPanel {
             .append(&status_label(strings::text(strings::NEWS_LOADING)));
     }
 
-    fn render_status(&self, text: String) {
+    fn render_empty_state(&self, status: &adw::StatusPage) {
         self.apply_request_feedback(false);
         self.clear_body_after_local();
-        self.widgets.body.append(&status_label(text));
+        self.widgets.body.append(status);
     }
 
     fn render_error(&self, text: String) {
@@ -740,6 +738,7 @@ impl InfoPanel {
 
     fn set_header_feedback(&self, refresh_sensitive: bool, progress_visible: bool) {
         self.widgets.refresh.set_sensitive(refresh_sensitive);
+        self.widgets.refresh.set_visible(refresh_sensitive);
         self.widgets.progress.set_visible(progress_visible);
         if progress_visible {
             self.widgets.progress.start();

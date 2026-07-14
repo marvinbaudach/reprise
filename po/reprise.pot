@@ -1454,6 +1454,10 @@ msgstr ""
 msgid "Removed {count} tracks from Queue"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:15
+msgid "Configure…"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/window_decoration_strings.rs:14
 msgid "Window Decorations"
 msgstr ""

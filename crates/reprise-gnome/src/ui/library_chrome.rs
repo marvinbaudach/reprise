@@ -13,7 +13,6 @@ pub(super) struct LibraryChrome {
 
 pub(super) struct LibraryMaintenanceActions {
     pub(super) scan: gtk4::Button,
-    pub(super) import: gtk4::Button,
 }
 
 pub(super) fn build(header: &adw::HeaderBar, content: &impl IsA<gtk4::Widget>) -> LibraryChrome {
@@ -39,14 +38,9 @@ pub(super) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
     button
 }
 
-pub(super) fn build_maintenance_actions(header: &adw::HeaderBar) -> LibraryMaintenanceActions {
+pub(super) fn build_maintenance_actions() -> LibraryMaintenanceActions {
     let scan = action_button("folder-open-symbolic", &strings::text(strings::SCAN_FOLDER));
-    let import = action_button(
-        "document-open-symbolic",
-        &strings::text(strings::IMPORT_PLAYLIST),
-    );
-    header.pack_end(&import);
-    LibraryMaintenanceActions { scan, import }
+    LibraryMaintenanceActions { scan }
 }
 
 #[cfg(test)]
@@ -100,9 +94,8 @@ mod tests {
         }
         let header = adw::HeaderBar::new();
 
-        let actions = build_maintenance_actions(&header);
+        let actions = build_maintenance_actions();
 
-        assert!(actions.import.is_ancestor(&header));
         assert!(!actions.scan.is_ancestor(&header));
     }
 

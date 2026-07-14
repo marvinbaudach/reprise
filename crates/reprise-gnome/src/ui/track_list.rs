@@ -317,7 +317,7 @@ pub(super) struct Shared {
 /// state that the sort-header and search-debounce callbacks close over.
 pub struct TrackList {
     pub(super) shared: Rc<Shared>,
-    root: gtk4::Box,
+    pub(super) root: gtk4::Box,
     pub(super) column_registry: ColumnRegistry,
     pub(super) column_visibility_actions: RefCell<HashMap<ColumnId, gtk4::gio::SimpleAction>>,
     pub(super) column_visibility_menu: RefCell<Option<gtk4::gio::Menu>>,
@@ -550,10 +550,6 @@ impl TrackList {
 
     pub(super) fn set_browse_visible(&self, visible: bool) {
         self.shared.browse_bar.set_preference_visible(visible);
-    }
-
-    pub(super) fn root_widget(&self) -> &gtk4::Box {
-        &self.root
     }
 
     pub(super) fn toast(&self, message: &str) {

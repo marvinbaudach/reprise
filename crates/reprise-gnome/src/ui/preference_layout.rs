@@ -8,7 +8,7 @@ use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition};
 
 use super::preference_choice_cards::{self, ChoiceCardSpec};
 use super::preference_visual_strings as visual_strings;
-use super::preferences::{action_row, apply_density, PreferencesContext};
+use super::preferences::{action_row, PreferencesContext};
 use super::strings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -329,7 +329,7 @@ pub(super) fn build(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
         match saved {
             Ok(()) => {
                 committed_density_for_change.set(row.selected());
-                apply_density(context.track_list.root_widget().upcast_ref(), value);
+                super::list_density::apply(context.track_list.column_view_widget(), value);
             }
             Err(error) => {
                 tracing::warn!(%error, "could not save list density");

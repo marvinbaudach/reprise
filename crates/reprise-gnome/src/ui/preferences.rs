@@ -23,9 +23,6 @@ use crate::ui::track_list::TrackList;
 use crate::ui::window_decorations::WindowDecorations;
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
-const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-height: 48px; }\n\
-     .reprise-density-standard columnview row { min-height: 36px; }\n\
-     .reprise-density-compact columnview row { min-height: 28px; }";
 
 fn equalizer_preset(index: u32) -> [f64; 10] {
     match index {
@@ -54,35 +51,6 @@ pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
 
 fn apply_system_color_scheme() {
     adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
-}
-
-fn density_class(density: ListDensity) -> &'static str {
-    match density {
-        ListDensity::Comfortable => "reprise-density-comfortable",
-        ListDensity::Standard => "reprise-density-standard",
-        ListDensity::Compact => "reprise-density-compact",
-    }
-}
-
-fn install_density_css(widget: &gtk4::Widget) {
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(DENSITY_CSS);
-    gtk4::style_context_add_provider_for_display(
-        &widget.display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-}
-
-pub(super) fn apply_density(widget: &gtk4::Widget, density: ListDensity) {
-    for class in [
-        "reprise-density-comfortable",
-        "reprise-density-standard",
-        "reprise-density-compact",
-    ] {
-        widget.remove_css_class(class);
-    }
-    widget.add_css_class(density_class(density));
 }
 
 pub(super) struct PreferencesContext {
@@ -169,7 +137,7 @@ impl PreferencesContext {
                 }
             }
         });
-        install_density_css(context.track_list.root_widget().upcast_ref());
+        super::list_density::install(context.track_list.column_view_widget());
         context.apply_initial();
         context
     }
@@ -187,7 +155,7 @@ impl PreferencesContext {
             )
         };
         apply_system_color_scheme();
-        apply_density(self.track_list.root_widget().upcast_ref(), density);
+        super::list_density::apply(self.track_list.column_view_widget(), density);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
@@ -278,10 +246,7 @@ impl PreferencesContext {
         let _ = settings::set_equalizer_bands(&conn, equalizer_preset(1));
         drop(conn);
         apply_system_color_scheme();
-        apply_density(
-            self.track_list.root_widget().upcast_ref(),
-            ListDensity::Compact,
-        );
+        super::list_density::apply(self.track_list.column_view_widget(), ListDensity::Compact);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
@@ -523,9 +488,9 @@ impl PreferencesContext {
             }
             group.add(&row);
             if descriptor.id == "listenbrainz" {
-                self.add_listenbrainz_account(&group, &row);
+                self.add_listenbrainz_controls(&row);
             } else if descriptor.id == "lastfm" {
-                self.add_lastfm_account(&group, &row);
+                self.add_lastfm_controls(&row);
             }
         }
         page.add(&group);
@@ -546,7 +511,6 @@ pub(super) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reprise_core::library::settings::ListDensity;
 
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {
@@ -570,18 +534,6 @@ mod tests {
                 .all(|gain| (-12.0..=12.0).contains(&gain)));
         }
     }
-
-    #[test]
-    fn every_density_has_one_stable_css_class_and_rule() {
-        for density in [
-            ListDensity::Comfortable,
-            ListDensity::Standard,
-            ListDensity::Compact,
-        ] {
-            assert!(DENSITY_CSS.contains(density_class(density)));
-        }
-    }
-
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn appearance_always_restores_the_system_color_scheme() {
