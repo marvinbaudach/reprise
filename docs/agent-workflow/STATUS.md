@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Record concurrent filter pill documentation
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex reclaimed the lock briefly for the filter-pill documentation follow-up._
+_As of 2026-07-14: Codex released the lock after recording the filter-pill documentation follow-up._
 
 ## Parallel feature work
 
