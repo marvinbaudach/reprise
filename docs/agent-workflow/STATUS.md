@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Fix live list-density updates in the library track table
+SINCE:    2026-07-14 03:12 CEST
 ```
 
-_As of 2026-07-13: free after the track-table column-width stabilization passed all gates._
+_As of 2026-07-14: Codex is fixing the reported list-density regression._
 
 ## Current position
 
