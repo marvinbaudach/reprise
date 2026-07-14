@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Merge Rhythmbox, scrobbler, and column-layout close fixes
-SINCE:    2026-07-14 10:29 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
 _As of 2026-07-14: all reviewed local feature work is integrated into main._
@@ -34,12 +34,13 @@ _As of 2026-07-14: all reviewed local feature work is integrated into main._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-14-rhythmbox-stats-import.md` (7 tasks).
-- **Last completed:** **Centered numeric track columns** (`3cbe986`) — track number, year,
-  duration, rating and play count are centered while text metadata remains left-aligned.
+- **Completed follow-ups:** embedded Rhythmbox and scrobbler Preferences navigation plus native-only
+  column-layout dialog closing (`e9f7bf9`, `64f1d8b`, `a9f3887`).
+- **Last completed:** **Preferences navigation cleanup** (`a9f3887`) — setup flows stay in the
+  Preferences window and the standalone column editor has no redundant labeled Close button.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `3cbe986` on `main`.
+- **Main implementation:** `a9f3887` on `main`.
 - **Latest validation:** the reported one-row initial Library render was not reproducible with the
   current debug build or the freshly reinstalled release: an isolated second launch with 501
   pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
@@ -72,7 +73,8 @@ _As of 2026-07-14: all reviewed local feature work is integrated into main._
   database-only destructive confirmation, compact playlists, purge exact queue IDs, and
   remove the empty Issues group with a Music fallback.
 - ✅ **Preferences column-layout navigation**: Layout opens that editor as a native detail page in
-  the existing Preferences window with Back navigation instead of an obscured child dialog.
+  the existing Preferences window with Back navigation instead of an obscured child dialog; the
+  standalone editor relies only on its native close control.
 - ✅ **Foreground library-scan progress**: Rescan mirrors the single active scan state into the
   top of Preferences, catches up when that window opens mid-scan, and keeps the permanent main
   indicator alive when Preferences closes.
@@ -105,6 +107,9 @@ _As of 2026-07-14: all reviewed local feature work is integrated into main._
 - ✅ **Last.fm scrobbling**: default-off live integration signs desktop-auth, playing-now and
   scrobble requests with bring-your-own API credentials, stores credentials/session only in the
   system keyring, persists a separate bounded FIFO, and runs independently beside ListenBrainz.
+- ✅ **Scrobbler Preferences navigation**: ListenBrainz and Last.fm setup uses masked,
+  back-navigable detail pages inside Preferences; activation switches remain stable during keyring
+  checks and incomplete setup restores the actual inactive runtime state.
 - ✅ **Artist & Album News**: a persistent right-side Information panel follows the current
   selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
   filters cached Upcoming/New album and EP cards, rejects stale selection responses, sits in a
@@ -187,7 +192,7 @@ _As of 2026-07-14: all reviewed local feature work is integrated into main._
 - ✅ **Explicit Rhythmbox import**: when `rhythmdb.xml` is detected, Library Preferences can
   conservatively restore ratings, monotone play counts, older date-added values, newer last-played
   values, duplicate-safe static playlists and optional column layout; every choice is explicit,
-  repeatable and leaves Rhythmbox plus audio files unchanged.
+  repeatable, opens as a same-window detail page, and leaves Rhythmbox plus audio files unchanged.
 - ✅ **Compact playback equalizer**: Enable and Preset remain native settings rows while ten
   accessible vertical scales share one horizontally scrollable card with live dB labels and
   synchronized preset, persistence, backend-failure, and disabled-state behavior.
