@@ -12,7 +12,9 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::scrobbling::{LastFmClient, ScrobbleProvider, TransportError};
+use reprise_core::scrobbling::{
+    LastFmClient, ScrobbleProvider, ScrobblerTransport, TransportError,
+};
 use rusqlite::Connection;
 
 use crate::ui::lastfm_secret::{self, LastFmCredentials};
@@ -79,6 +81,7 @@ struct LastFmExpanderSurface {
     shared_secret: adw::PasswordEntryRow,
     open_browser: gtk4::Button,
     disconnect: gtk4::Button,
+    test_connection: crate::ui::preference_dependencies::TestConnectionRow,
 }
 
 fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> LastFmExpanderSurface {
@@ -129,6 +132,11 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     browser_row.add_suffix(&open_browser);
     expander.add_row(&browser_row);
 
+    // Test connection
+    let test_connection = crate::ui::preference_dependencies::TestConnectionRow::new();
+    test_connection.row.set_visible(connected);
+    expander.add_row(&test_connection.row);
+
     // Disconnect action row with destructive button
     let disconnect = gtk4::Button::builder()
         .label(strings::text(strings::LISTENBRAINZ_DISCONNECT))
@@ -163,6 +171,7 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
         let shared_secret = shared_secret.downgrade();
         let browser_row = browser_row.downgrade();
         let hint = hint.downgrade();
+        let test_row = test_connection.row.downgrade();
         let disconnect_row = disconnect_row.downgrade();
         move |expander| {
             let enabled = expander.enables_expansion();
@@ -178,6 +187,9 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
             if let Some(row) = hint.upgrade() {
                 row.set_sensitive(enabled);
             }
+            if let Some(row) = test_row.upgrade() {
+                row.set_sensitive(enabled);
+            }
             if let Some(row) = disconnect_row.upgrade() {
                 row.set_sensitive(enabled);
             }
@@ -190,6 +202,7 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     shared_secret.set_sensitive(body_sensitive);
     browser_row.set_sensitive(body_sensitive);
     hint.set_sensitive(body_sensitive);
+    test_connection.row.set_sensitive(body_sensitive);
     disconnect.set_sensitive(body_sensitive);
 
     LastFmExpanderSurface {
@@ -198,6 +211,7 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
         shared_secret,
         open_browser,
         disconnect,
+        test_connection,
     }
 }
 
@@ -326,6 +340,44 @@ impl PreferencesContext {
                     api_key.text().trim().to_string(),
                     shared_secret.text().trim().to_string(),
                 );
+            }
+        });
+
+        // Test connection button
+        let test_row = surface.test_connection;
+        self.lastfm.subscribe(Rc::new({
+            let test_row_ref = test_row.row.downgrade();
+            move |status| {
+                if let Some(row) = test_row_ref.upgrade() {
+                    row.set_visible(!matches!(status, ConnectionStatus::Disabled));
+                }
+            }
+        }));
+        test_row.button.connect_clicked({
+            let trigger = test_row.clone_trigger();
+            move |_| {
+                let trigger = trigger.clone();
+                glib::spawn_future_local(async move {
+                    let credentials = match lastfm_secret::load().await {
+                        Ok(Some(c)) if client_for(&c).is_ok() => c,
+                        Ok(_) => {
+                            trigger.show_error(&strings::text(strings::LISTENBRAINZ_NOT_CONNECTED));
+                            return;
+                        }
+                        Err(_) => {
+                            trigger.show_error(&strings::text(strings::LASTFM_KEYRING_ERROR));
+                            return;
+                        }
+                    };
+                    let session_key = credentials.session_key.clone();
+                    trigger.trigger(move || {
+                        let client = client_for(&credentials)
+                            .map_err(|_| strings::text(strings::LASTFM_CONNECTION_ERROR))?;
+                        client
+                            .validate_token(&session_key)
+                            .map_err(|e| map_transport_error(&e))
+                    });
+                });
             }
         });
 
@@ -654,6 +706,13 @@ fn set_activation_pending(row: &adw::ExpanderRow, pending: bool) {
 fn pending_count(conn: &Rc<RefCell<Connection>>) -> usize {
     reprise_core::scrobbling::pending_count_for(&conn.borrow(), ScrobbleProvider::LastFm)
         .unwrap_or(0)
+}
+
+fn map_transport_error(error: &TransportError) -> String {
+    match error {
+        TransportError::Unauthorized => strings::text(strings::LASTFM_CREDENTIALS_REJECTED),
+        _ => strings::text(strings::LASTFM_CONNECTION_ERROR),
+    }
 }
 
 #[cfg(test)]

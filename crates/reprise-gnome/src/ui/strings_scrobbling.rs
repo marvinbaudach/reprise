@@ -49,6 +49,15 @@ pub const LASTFM_CONNECTION_ERROR: &str = N_!("Could not connect to Last.fm. Try
 pub const LASTFM_DISCONNECT_ERROR: &str =
     N_!("Could not remove Last.fm credentials from the system keyring.");
 pub const OPEN_BROWSER: &str = N_!("Open Browser");
+pub const TEST_CONNECTION: &str = N_!("Test connection");
+pub const TEST_CONNECTION_FAILED: &str = N_!("Test failed — try again later.");
+
+pub fn test_connection_ok(user_name: &str) -> String {
+    formatted(
+        N_!("Connected as {user_name} ✓"),
+        &[("user_name", user_name)],
+    )
+}
 
 pub fn listenbrainz_connected(user_name: &str) -> String {
     formatted(N_!("Connected as {user_name}"), &[("user_name", user_name)])
