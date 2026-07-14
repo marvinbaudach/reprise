@@ -1,9 +1,9 @@
 //! Builds the main application window: an `adw::NavigationSplitView` (Stage
 //! 3 Task 4) whose sidebar page holds `ui::sidebar::Sidebar` and whose
 //! content page holds the pre-existing libadwaita `ToolbarView` — a header
-//! bar (search entry + scan button) over the track list, a status line + the
-//! player bar as stacked bottom bars, and an `adw::ToastOverlay` wrapping
-//! everything so scan errors can surface a toast (see `wire_scan_button`).
+//! bar over the full Library layout, compact track statistics at the
+//! content's bottom-right corner, the player bar, and an `adw::ToastOverlay`
+//! wrapping the track content so scan errors can surface a toast.
 //!
 //! ## Sidebar toggle
 //!
@@ -41,6 +41,7 @@ use super::shortcuts;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::strings;
+use super::track_content;
 use super::track_list::{OnActivate, TrackList};
 use reprise_core::view_source::ViewSource;
 
@@ -289,7 +290,8 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(scan_progress.widget());
-    toolbar_view.set_content(Some(track_list.widget()));
+    let track_content = track_content::build(track_list.widget(), status_bar.widget());
+    toolbar_view.set_content(Some(&track_content));
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
@@ -486,13 +488,12 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .as_ref()
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
     header.pack_end(&info_panel.toggle_button());
-    let library_chrome = super::library_chrome::build(&header, &split_view);
     let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
-        &library_chrome.root,
-        status_bar.widget(),
+        &split_view,
         player_bar_widget,
         bar_position,
     );
+    let library_chrome = super::library_chrome::build(&header, library_player_bar.widget());
     {
         let info_panel = Rc::downgrade(&info_panel);
         track_list.set_on_selection_changed(move |context| {
@@ -504,7 +505,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     info_panel.arm_smoke(&track_list);
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
-        library_player_bar.widget().upcast_ref(),
+        library_chrome.root.upcast_ref(),
         player.as_ref().map(|player| &player.compact_player),
         conn,
         initial_view,

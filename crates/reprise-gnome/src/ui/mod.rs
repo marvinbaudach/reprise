@@ -116,6 +116,7 @@ pub mod tag_edit_flow;
 pub mod tag_editor;
 pub mod toasts;
 pub mod track_actions;
+mod track_content;
 pub mod track_list;
 pub mod track_list_activation;
 pub mod track_list_columns;

@@ -1,5 +1,6 @@
-//! The slim, right-aligned status line shown above the player bar (design
-//! mockup 7a): `"{n} tracks · {total duration}"` with no filter active, e.g.
+//! The compact, right-aligned status information overlaid in the track
+//! content's bottom-right corner: `"{n} tracks · {total duration}"` with no
+//! filter active, e.g.
 //! `"1,704 tracks · 4 days, 6 hours and 28 minutes"`; `"{filtered} of {n}
 //! tracks · {total duration}"` while a search filter is active, e.g. "42 of
 //! 1,704 tracks · 4 days, 6 hours and 28 minutes" — the duration always
@@ -23,9 +24,8 @@
 //! When the library has zero tracks, the label is hidden outright (`set_
 //! visible(false)`) rather than showing "0 tracks · 0 minutes" — the
 //! empty-library placeholder in the track list already communicates that
-//! state; a zeroed status line above the player bar would be redundant
-//! clutter, and the player bar is `set_sensitive(false)`/blank in that state
-//! anyway (see `window.rs`).
+//! state; a zeroed overlay would be redundant clutter, and the player bar is
+//! `set_sensitive(false)`/blank in that state anyway (see `window.rs`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -66,7 +66,7 @@ impl StatusBar {
         }
     }
 
-    /// The label widget to embed above the player bar in `window.rs`.
+    /// The label widget to overlay on the track content in `window.rs`.
     pub fn widget(&self) -> &gtk4::Label {
         &self.label
     }

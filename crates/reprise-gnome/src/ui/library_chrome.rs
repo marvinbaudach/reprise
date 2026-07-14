@@ -9,14 +9,11 @@ pub(super) struct LibraryChrome {
     pub(super) root: adw::ToolbarView,
 }
 
-pub(super) fn build(
-    header: &adw::HeaderBar,
-    navigation: &adw::NavigationSplitView,
-) -> LibraryChrome {
+pub(super) fn build(header: &adw::HeaderBar, content: &impl IsA<gtk4::Widget>) -> LibraryChrome {
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
     root.add_top_bar(header);
-    root.set_content(Some(navigation));
+    root.set_content(Some(content));
     LibraryChrome { root }
 }
 
@@ -76,6 +73,37 @@ mod tests {
         assert_eq!(button.icon_name().as_deref(), Some("folder-open-symbolic"));
         assert_eq!(button.tooltip_text().as_deref(), Some("Scan folder…"));
         assert!(button.label().is_none());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn header_stays_above_a_top_player_bar() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let header = adw::HeaderBar::new();
+        let navigation = test_navigation();
+        let player = gtk4::ActionBar::new();
+        let shell = super::super::library_player_bar::LibraryPlayerBarShell::new(
+            &navigation,
+            Some(player.upcast_ref()),
+            reprise_core::library::settings::PlayerBarPosition::Top,
+        );
+
+        let chrome = build(&header, shell.widget());
+
+        assert!(header.is_ancestor(&chrome.root));
+        assert_eq!(
+            chrome.root.content().as_ref(),
+            Some(shell.widget().upcast_ref())
+        );
+        let top_bar = shell
+            .widget()
+            .first_child()
+            .unwrap()
+            .downcast::<gtk4::Box>()
+            .unwrap();
+        assert_eq!(top_bar.first_child(), Some(player.upcast()));
     }
 
     fn test_navigation() -> adw::NavigationSplitView {
