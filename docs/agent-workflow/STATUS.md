@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Inline scrobble service configuration controls
-SINCE:    2026-07-14 04:02 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is inlining scrobble service configuration controls._
+_As of 2026-07-14: free after inlining scrobble service configuration controls._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Disabled scrobble-service settings** (`0386d76`) — ListenBrainz and Last.fm
-  account rows now appear only while their respective provider toggle is on.
+- **Last completed:** **Inline scrobble-service configuration** (`535d7bc`) — ListenBrainz and
+  Last.fm now keep conditional Configure actions and live status in their provider row.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `0386d76`; this QA/coordination close-out follows it.
+- **Main implementation:** `535d7bc`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -113,9 +113,9 @@ _As of 2026-07-14: Codex is inlining scrobble service configuration controls._
 - ✅ **Finished Information-panel unavailable states**: Refresh disappears whenever Artist News
   cannot run or is already loading; no-selection, multi-selection and missing-artist contexts use
   centered native placeholders, with multi-selection no longer retaining an empty track card.
-- ✅ **Conditional scrobble-service settings**: ListenBrainz Account and Last.fm Account are hidden
-  initially and live whenever their independent service toggle is off; the provider toggles remain
-  visible for reactivation and weak bindings avoid Preferences widget cycles.
+- ✅ **Inline scrobble-service settings**: ListenBrainz and Last.fm no longer add separate Account
+  rows; enabled providers expose a translated Configure action plus live status in the provider row,
+  while disabled providers show only their description and always-available toggle.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
@@ -124,8 +124,7 @@ _As of 2026-07-14: Codex is inlining scrobble service configuration controls._
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines), `strings.rs` (784 lines), `info_panel.rs` (794 lines), and
-  `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
+- `scrobbling.rs` (795 lines) and `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
   edits must extract cohesive sibling modules rather than adding inline logic.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
