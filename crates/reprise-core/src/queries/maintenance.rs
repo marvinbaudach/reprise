@@ -186,6 +186,23 @@ pub fn remove_missing_tracks(
     remove_tracks_impl(conn, ids, true)
 }
 
+/// Removes every row currently marked missing from the library database.
+/// This is the bulk counterpart to [`remove_missing_tracks`]: it never
+/// touches media files, preserves live rows, compacts affected playlists in
+/// the same transaction, and returns the exact ids the caller must purge
+/// from its playback queue. The stable id order keeps callback behavior and
+/// tests deterministic.
+pub fn remove_all_missing_tracks(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Error> {
+    let ids = {
+        let mut statement = conn.prepare("SELECT id FROM tracks WHERE missing = 1 ORDER BY id")?;
+        let ids = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<i64>, _>>()?;
+        ids
+    };
+    remove_missing_tracks(conn, &ids)
+}
+
 /// Explicit, DATABASE-ONLY removal for live or missing tracks. This never
 /// touches a media file. Like [`remove_missing_tracks`], it deletes and
 /// compacts every affected playlist in one transaction and returns the
@@ -271,6 +288,13 @@ pub fn delete_import_error(conn: &Connection, id: i64) -> Result<(), rusqlite::E
         rusqlite::params![id],
     )?;
     Ok(())
+}
+
+/// Dismisses every recorded import failure and returns the number cleared.
+/// The diagnostic table is independent of `tracks`; no library row or media
+/// file is touched.
+pub fn delete_all_import_errors(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    conn.execute("DELETE FROM import_errors", [])
 }
 
 /// Looks up a track's id by its exact, parameterized `path` (Stage 3 Task 7:

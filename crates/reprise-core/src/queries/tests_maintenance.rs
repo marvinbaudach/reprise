@@ -119,6 +119,38 @@ fn delete_import_error_removes_only_the_given_row() {
 }
 
 #[test]
+fn delete_all_import_errors_clears_only_recorded_failures() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/a.flac', 'bad tag', 100)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/b.flac', 'io error', 200)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/live.flac', 'Live', '', 0)",
+        [],
+    )
+    .unwrap();
+
+    assert_eq!(delete_all_import_errors(&conn).unwrap(), 2);
+    assert_eq!(query_import_error_count(&conn).unwrap(), 0);
+    assert_eq!(delete_all_import_errors(&conn).unwrap(), 0);
+    let track_count: i64 = conn
+        .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        track_count, 1,
+        "clearing diagnostics must not delete tracks"
+    );
+}
+
+#[test]
 fn remove_missing_track_deletes_a_missing_row() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
@@ -296,6 +328,39 @@ fn remove_missing_tracks_empty_slice_is_a_no_op() {
         .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 2);
+}
+
+#[test]
+fn remove_all_missing_tracks_preserves_live_rows_and_compacts_playlists() {
+    let mut conn = seeded_conn_with_tracks(4);
+    let playlist_id = playlists::create(&conn, "Cleanup").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4]).unwrap();
+    conn.execute("UPDATE tracks SET missing = 1 WHERE id IN (2, 3)", [])
+        .unwrap();
+
+    let removed = remove_all_missing_tracks(&mut conn).unwrap();
+
+    assert_eq!(removed, vec![2, 3]);
+    let tracks: Vec<(i64, i64)> = conn
+        .prepare("SELECT id, missing FROM tracks ORDER BY id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(tracks, vec![(1, 0), (4, 0)]);
+    let playlist_rows: Vec<(i64, i64)> = conn
+        .prepare(
+            "SELECT track_id, position FROM playlist_tracks \
+             WHERE playlist_id = ?1 ORDER BY position",
+        )
+        .unwrap()
+        .query_map([playlist_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(playlist_rows, vec![(1, 0), (4, 1)]);
+    assert!(remove_all_missing_tracks(&mut conn).unwrap().is_empty());
 }
 
 #[test]

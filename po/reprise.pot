@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 03:31+0200\n"
+"POT-Creation-Date: 2026-07-14 04:04+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -661,6 +661,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:287
 #: crates/reprise-gnome/src/ui/strings.rs:531
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:30
 msgid "Cancel"
 msgstr ""
 
@@ -1271,6 +1272,50 @@ msgid ""
 "This copy needs {required}, but only {available} is available for this "
 "action. Free some space or select fewer tracks."
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:22
+msgid "Dismiss all import errors"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:23
+msgid "Remove all missing entries…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:24
+msgid "Could not clear import errors"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:25
+msgid "Remove All Missing Entries?"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:27
+msgid ""
+"This removes the missing tracks from the Reprise library. Your media files "
+"are never deleted."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:29
+msgid "Could not remove missing entries"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:31
+msgid "Remove"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:35
+#, rust-format
+msgid "Cleared {count} import error"
+msgid_plural "Cleared {count} import errors"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/sidebar_issue_strings.rs:43
+#, rust-format
+msgid "Removed {count} missing entry"
+msgid_plural "Removed {count} missing entries"
+msgstr[0] ""
+msgstr[1] ""
 
 #: crates/reprise-gnome/src/ui/preference_visual_strings.rs:11
 msgid "Player Bar"
