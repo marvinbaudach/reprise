@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate fixed Information column
-SINCE:    2026-07-14T10:00:32+02:00
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is integrating the fixed Information column._
+_As of 2026-07-14: all reviewed local feature work is integrated into main._
 
 ## Parallel feature work
 
@@ -35,20 +35,19 @@ _As of 2026-07-14: Codex is integrating the fixed Information column._
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-14-rhythmbox-stats-import.md` (7 tasks).
-- **Last completed:** **Column layout arrow cleanup** (`f0e1c9a`, merged as `f9716f6`) — movable
-  rows use whole-row dragging without permanent arrow buttons, while Alt+Up/Down preserves
-  non-pointer reordering.
+- **Last completed:** **Fixed Information column** (`b3d2592`) — Library content and the 340 px
+  Information panel are direct horizontal siblings, so the panel cannot overlay the track table.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `f0e1c9a` on `main` (merged as `f9716f6`).
+- **Main implementation:** `b3d2592` on `main`.
 - **Latest validation:** the reported one-row initial Library render was not reproducible with the
   current debug build or the freshly reinstalled release: an isolated second launch with 501
   pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
   single instance remains the likely explanation; real-desktop restart verification is pending.
-- **Information-column validation:** the existing `2cbe143` implementation keeps the right panel
-  pinned beside the Library. Mapped allocation checks at 700 and 1,200 pixels found no content
-  overlap, including throughout the panel opening transition; real-desktop restart verification
-  remains pending.
+- **Information-column validation:** `b3d2592` removes the overlay-capable container entirely.
+  Structural GTK tests prove direct sibling ownership and fixed width; isolated 1,600×900 pointer
+  screenshots show all fixture rows beside the open panel. Real GNOME/Wayland verification remains
+  pending.
 
 ## Done so far (compact)
 
@@ -105,8 +104,8 @@ _As of 2026-07-14: Codex is integrating the fixed Information column._
   system keyring, persists a separate bounded FIFO, and runs independently beside ListenBrainz.
 - ✅ **Artist & Album News**: a persistent right-side Information panel follows the current
   selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
-  filters cached Upcoming/New album and EP cards, rejects stale selection responses, pins at
-  every window width without covering the Library, and exposes visible indeterminate request progress.
+  filters cached Upcoming/New album and EP cards, rejects stale selection responses, sits in a
+  fixed sibling column without covering the Library, and exposes visible request progress.
 - ✅ **Synchronized played-track lyrics**: the Information panel's top Lyrics tab retrieves only
   title, artist, album and duration after successful playback, caches LRCLIB results locally, and
   highlights plus centers timed lines from the existing position stream with generation-safe
