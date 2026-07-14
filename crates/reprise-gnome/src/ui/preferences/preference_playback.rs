@@ -37,6 +37,7 @@ pub(super) fn build_equalizer_surface(
 
         let value = gtk4::Label::new(Some(&gain_label(bands[index])));
         value.add_css_class("caption");
+        value.add_css_class("reprise-eq-value");
         let scale = gtk4::Scale::with_range(gtk4::Orientation::Vertical, -12.0, 12.0, 1.0);
         scale.set_height_request(180);
         scale.set_vexpand(true);
@@ -69,11 +70,22 @@ pub(super) fn build_equalizer_surface(
         .build();
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     root.add_css_class("card");
+    root.add_css_class("reprise-equalizer");
     root.set_overflow(gtk4::Overflow::Hidden);
     root.set_sensitive(enabled);
     root.append(&scroll);
 
     EqualizerSurface { root, scales }
+}
+
+/// Equalizer chrome: accent-coloured band fills/handles and an accent dB
+/// readout, so the ten-band card reads as part of the redesign's accent
+/// system. Installed app-wide by [`super::style`].
+pub(super) fn css() -> String {
+    ".reprise-equalizer scale > trough > highlight { background-color: @accent_color; }\n\
+     .reprise-equalizer scale > trough > slider { background-color: @accent_color; }\n\
+     .reprise-eq-value { color: @accent_color; font-weight: bold; }"
+        .to_string()
 }
 
 #[cfg(test)]
@@ -90,6 +102,7 @@ mod tests {
         let surface = build_equalizer_surface([0.0; 10], false, &on_changed);
 
         assert!(surface.root.has_css_class("card"));
+        assert!(surface.root.has_css_class("reprise-equalizer"));
         assert_eq!(surface.scales.len(), 10);
         assert!(surface
             .scales
