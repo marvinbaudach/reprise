@@ -25,6 +25,7 @@ enum RhythmboxOption {
     ColumnLayout,
     Ratings,
     PlayCounts,
+    DateAdded,
     Playlists,
 }
 
@@ -34,7 +35,7 @@ struct ImportOptionSpec {
     selected: bool,
 }
 
-fn import_option_specs() -> [ImportOptionSpec; 4] {
+fn import_option_specs() -> [ImportOptionSpec; 5] {
     [
         ImportOptionSpec {
             id: RhythmboxOption::ColumnLayout,
@@ -46,6 +47,10 @@ fn import_option_specs() -> [ImportOptionSpec; 4] {
         },
         ImportOptionSpec {
             id: RhythmboxOption::PlayCounts,
+            selected: true,
+        },
+        ImportOptionSpec {
+            id: RhythmboxOption::DateAdded,
             selected: true,
         },
         ImportOptionSpec {
@@ -65,6 +70,7 @@ fn option_title(option: RhythmboxOption) -> String {
         RhythmboxOption::ColumnLayout => strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT,
         RhythmboxOption::Ratings => strings::RHYTHMBOX_IMPORT_RATINGS,
         RhythmboxOption::PlayCounts => strings::RHYTHMBOX_IMPORT_PLAY_COUNTS,
+        RhythmboxOption::DateAdded => strings::RHYTHMBOX_IMPORT_DATE_ADDED,
         RhythmboxOption::Playlists => strings::RHYTHMBOX_IMPORT_PLAYLISTS,
     })
 }
@@ -153,6 +159,7 @@ pub(super) fn add_rhythmbox_import_row(
                     RhythmboxImportChoices {
                         ratings: true,
                         play_counts: true,
+                        added_at: true,
                     },
                     true,
                 );
@@ -183,8 +190,9 @@ impl PreferencesContext {
                     RhythmboxImportChoices {
                         ratings: rows[1].is_active(),
                         play_counts: rows[2].is_active(),
+                        added_at: rows[3].is_active(),
                     },
-                    rows[3].is_active(),
+                    rows[4].is_active(),
                 );
             },
         );
@@ -204,7 +212,7 @@ impl PreferencesContext {
         let button = button.clone();
         glib::spawn_future_local(async move {
             let parsed = gio::spawn_blocking(move || -> Result<ParsedImport, String> {
-                let tracks = if choices.ratings || choices.play_counts {
+                let tracks = if choices.ratings || choices.play_counts || choices.added_at {
                     Some(
                         rhythmbox_import::parse_rhythmdb(&rhythmdb_path)
                             .map_err(|error| error.to_string())?,
@@ -276,6 +284,7 @@ impl PreferencesContext {
                     play_counts = imported
                         .stats
                         .map_or(0, |summary| summary.play_counts_raised),
+                    dates = imported.stats.map_or(0, |summary| summary.dates_imported),
                     playlists = imported.playlists.map_or(0, |summary| summary.imported),
                     playlist_tracks = imported.playlists.map_or(0, |summary| summary.tracks_added),
                     playlist_warning = imported.playlist_error.is_some(),
@@ -311,6 +320,7 @@ impl PreferencesContext {
                         summary.matched,
                         summary.ratings_imported,
                         summary.play_counts_raised,
+                        summary.dates_imported,
                         summary.skipped,
                     ));
                 }
@@ -356,30 +366,34 @@ mod tests {
     #[test]
     fn statistics_are_selected_but_column_layout_requires_opt_in() {
         let options = import_option_specs();
-        assert_eq!(options.len(), 4);
+        assert_eq!(options.len(), 5);
         assert_eq!(options[0].id, RhythmboxOption::ColumnLayout);
         assert!(!options[0].selected);
         assert_eq!(options[1].id, RhythmboxOption::Ratings);
         assert!(options[1].selected);
         assert_eq!(options[2].id, RhythmboxOption::PlayCounts);
         assert!(options[2].selected);
-        assert_eq!(options[3].id, RhythmboxOption::Playlists);
+        assert_eq!(options[3].id, RhythmboxOption::DateAdded);
         assert!(options[3].selected);
+        assert_eq!(options[4].id, RhythmboxOption::Playlists);
+        assert!(options[4].selected);
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn import_dialog_exposes_all_four_explicit_choices() {
+    fn import_dialog_exposes_all_five_explicit_choices() {
         gtk4::init().unwrap();
         let surface = build_import_dialog();
-        assert_eq!(surface.rows.len(), 4);
+        assert_eq!(surface.rows.len(), 5);
         assert_eq!(surface.rows[0].title(), "Column layout");
         assert_eq!(surface.rows[1].title(), "Ratings");
         assert_eq!(surface.rows[2].title(), "Play counts");
-        assert_eq!(surface.rows[3].title(), "Playlists");
+        assert_eq!(surface.rows[3].title(), "Date added");
+        assert_eq!(surface.rows[4].title(), "Playlists");
         assert!(!surface.rows[0].is_active());
         assert!(surface.rows[1].is_active());
         assert!(surface.rows[2].is_active());
         assert!(surface.rows[3].is_active());
+        assert!(surface.rows[4].is_active());
     }
 }

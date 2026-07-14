@@ -4,16 +4,17 @@
 
 Reprise bietet unter **Einstellungen → Bibliothek** erneut einen bewusst
 ausgelösten, read-only Rhythmbox-Import an. Neben dem bestehenden Spaltenlayout
-kann der Nutzer Bewertungen und Wiedergabezähler aus `rhythmdb.xml` sowie
-statische Playlisten aus `playlists.xml` übernehmen. Die Tracktabelle erhält
-außerdem eine optionale Spalte „Wiedergaben“.
+kann der Nutzer Bewertungen, Wiedergabezähler und das ursprüngliche
+Hinzufügedatum aus `rhythmdb.xml` sowie statische Playlisten aus
+`playlists.xml` übernehmen. Die Tracktabelle erhält außerdem eine optionale
+Spalte „Wiedergaben“.
 
 ## Umfang
 
 - eine dauerhafte Aktion „Aus Rhythmbox importieren…“ in den
   Bibliothekseinstellungen;
-- explizite Auswahl von Spaltenlayout, Bewertungen, Wiedergabezählern und
-  statischen Playlisten;
+- explizite Auswahl von Spaltenlayout, Bewertungen, Wiedergabezählern,
+  Hinzufügedatum und statischen Playlisten;
 - standardmäßig ausgewählte Statistikoptionen, ohne automatischen Import;
 - exaktes Matching lokaler Titel über den dekodierten `file://`-Pfad;
 - eine optionale, standardmäßig ausgeblendete und sortierbare Spalte
@@ -32,6 +33,10 @@ Der Import ist wiederholbar und konservativ:
   Bewertung noch 0 ist. Vorhandene Reprise-Bewertungen gewinnen.
 - Der Wiedergabezähler wird auf `max(Reprise, Rhythmbox)` gesetzt und daher nie
   verringert oder bei wiederholtem Import addiert.
+- Rhythmbox' positives `first-seen` wird als `added_at` übernommen, wenn es
+  älter als Reprises positiver Wert ist; bei einem fehlenden Reprise-Wert wird
+  der gültige Rhythmbox-Wert verwendet. Ein Import macht einen Titel niemals
+  künstlich neuer.
 - Nicht gefundene gültige Pfade werden in der Zusammenfassung gezählt.
   Nicht-Datei-URIs, ungültige Werte und Nicht-Song-Einträge werden sicher
   ignoriert.
