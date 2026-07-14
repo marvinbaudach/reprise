@@ -169,6 +169,7 @@ impl RatingWidget {
                 label.add_css_class(STAR_OUTLINE_CSS_CLASS);
 
                 let button = gtk4::Button::new();
+                button.add_css_class("reprise-rating-star");
                 button.set_child(Some(&label));
                 // Flat/frameless so five adjacent buttons read as one star
                 // row, not a toolbar (`set_has_frame(false)` applies GTK's

@@ -27,10 +27,11 @@ pub(super) fn set_reorder_indicator(widget: &impl IsA<gtk4::Widget>, active: boo
     }
 }
 
-/// Makes each cell's interactive child fill the cell allocation. Gestures
-/// attached to the child then work across the row cell instead of only on
-/// the text or icon's natural-size pixels.
+/// Marks and expands each app-owned cell child. The marker is the stable
+/// target for live density sizing; filling the cell also lets attached
+/// gestures work beyond the text or icon's natural-size pixels.
 pub(super) fn expand_to_cell(widget: &impl IsA<gtk4::Widget>) {
+    widget.add_css_class("reprise-track-cell");
     widget.set_hexpand(true);
     widget.set_halign(gtk4::Align::Fill);
 }
