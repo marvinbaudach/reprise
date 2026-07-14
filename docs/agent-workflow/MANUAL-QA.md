@@ -103,6 +103,11 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   GPL-3.0-or-later app license, and the MIT legal section for the Reprise Engine
   and Linux Platform. The isolated GTK metadata regression passes; native
   layout and license-page navigation remain pending.
+- [ ] Open **Help** from the main menu and with F1 in Library and Compact View,
+  in English and German. Expected: the native shortcuts dialog lists Space,
+  Ctrl+F, Ctrl+M, Escape, Return, Shift+F10, and F1 with accurate descriptions;
+  keyboard navigation works throughout. The isolated GTK structure regression
+  passes; native rendering and physical F1 event routing remain pending.
 - [ ] Narrow width switches navigation cleanly; wide width restores the split view.
 - [ ] Light and dark appearance, 100% and available HiDPI scale, keyboard navigation,
   pointer, and touch targets remain readable and usable.

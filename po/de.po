@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 07:08+0200\n"
+"POT-Creation-Date: 2026-07-14 07:23+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -1007,6 +1007,42 @@ msgstr "Über Reprise"
 #: crates/reprise-gnome/src/ui/strings.rs:715
 msgid "Reprise Engine and Linux Platform"
 msgstr "Reprise-Engine und Linux-Plattform"
+
+#: crates/reprise-gnome/src/ui/strings.rs:718
+msgid "Help"
+msgstr "Hilfe"
+
+#: crates/reprise-gnome/src/ui/strings.rs:719
+msgid "Navigation"
+msgstr "Navigation"
+
+#: crates/reprise-gnome/src/ui/strings.rs:720
+msgid "Play or Pause"
+msgstr "Wiedergabe oder Pause"
+
+#: crates/reprise-gnome/src/ui/strings.rs:721
+msgid "Search Library"
+msgstr "Bibliothek durchsuchen"
+
+#: crates/reprise-gnome/src/ui/strings.rs:722
+msgid "Toggle Compact View"
+msgstr "Kompaktansicht umschalten"
+
+#: crates/reprise-gnome/src/ui/strings.rs:723
+msgid "Clear Search or Return to Track List"
+msgstr "Suche leeren oder zur Titelliste zurückkehren"
+
+#: crates/reprise-gnome/src/ui/strings.rs:724
+msgid "Play Selected Track"
+msgstr "Ausgewählten Titel wiedergeben"
+
+#: crates/reprise-gnome/src/ui/strings.rs:725
+msgid "Open Context Menu"
+msgstr "Kontextmenü öffnen"
+
+#: crates/reprise-gnome/src/ui/strings.rs:726
+msgid "Open Help"
+msgstr "Hilfe öffnen"
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:12
 msgid "Scrobble completed listens to ListenBrainz (network; off by default)"

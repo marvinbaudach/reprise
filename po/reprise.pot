@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 07:08+0200\n"
+"POT-Creation-Date: 2026-07-14 07:23+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -975,6 +975,42 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:715
 msgid "Reprise Engine and Linux Platform"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:718
+msgid "Help"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:719
+msgid "Navigation"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:720
+msgid "Play or Pause"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:721
+msgid "Search Library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:722
+msgid "Toggle Compact View"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:723
+msgid "Clear Search or Return to Track List"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:724
+msgid "Play Selected Track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:725
+msgid "Open Context Menu"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:726
+msgid "Open Help"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:12

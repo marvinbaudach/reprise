@@ -48,6 +48,7 @@ mod device_sync_smoke;
 mod device_sync_strings;
 pub mod dialogs;
 pub mod first_run;
+mod help;
 pub mod import_errors_view;
 mod info_panel;
 mod info_panel_empty_state;

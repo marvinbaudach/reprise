@@ -564,6 +564,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     header.pack_end(&search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
+    app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
     super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view, &sidebar_page);
     // Stage 3 Task 4: sidebar selection drives the track list's source and
     // the headerbar title. Wired here (after `track_list` and `window_title`
