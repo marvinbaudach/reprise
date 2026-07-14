@@ -64,9 +64,32 @@ pub(super) struct PreferencesShell {
     pub(super) navigation: adw::NavigationView,
     pub(super) stack: adw::ViewStack,
     #[cfg(test)]
-    pub(super) switcher: adw::ViewSwitcher,
-    #[cfg(test)]
-    pub(super) header: adw::HeaderBar,
+    pub(super) sidebar: gtk4::ListBox,
+}
+
+/// One sidebar entry (icon + title) for `id`; its list index equals the
+/// page's `PAGE_ORDER` position, which is how selection maps back to a page.
+fn sidebar_row(id: PageId) -> gtk4::ListBoxRow {
+    let icon = gtk4::Image::from_icon_name(id.icon_name());
+    let label = gtk4::Label::new(Some(&id.title()));
+    label.set_xalign(0.0);
+    let row_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    row_box.set_margin_top(8);
+    row_box.set_margin_bottom(8);
+    row_box.set_margin_start(6);
+    row_box.set_margin_end(6);
+    row_box.append(&icon);
+    row_box.append(&label);
+    let row = gtk4::ListBoxRow::new();
+    row.set_child(Some(&row_box));
+    row
+}
+
+fn appearance_index() -> i32 {
+    PAGE_ORDER
+        .iter()
+        .position(|id| *id == PageId::Appearance)
+        .unwrap_or(0) as i32
 }
 
 pub(super) fn build(
@@ -78,26 +101,68 @@ pub(super) fn build(
     for (id, page) in pages {
         stack.add_titled_with_icon(&page, Some(id.name()), &id.title(), id.icon_name());
     }
-    // Appearance was the established default page. Keeping it visible also
-    // lets Playback's ComboRows finish parenting before users open that tab.
-    stack.set_visible_child_name("appearance");
-    let switcher = adw::ViewSwitcher::builder()
-        .policy(adw::ViewSwitcherPolicy::Wide)
-        .stack(&stack)
-        .build();
-    let header = adw::HeaderBar::new();
-    header.set_title_widget(Some(&switcher));
-    let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&header);
-    if let Some(foreground_top_bar) = foreground_top_bar {
-        toolbar.add_top_bar(foreground_top_bar);
+
+    // Vertical page navigation (redesign): a sidebar list drives the stack,
+    // replacing the former top ViewSwitcher. A row's list index equals its
+    // `PAGE_ORDER` position, so selection maps straight back to a page.
+    let sidebar_list = gtk4::ListBox::new();
+    sidebar_list.add_css_class("navigation-sidebar");
+    sidebar_list.set_selection_mode(gtk4::SelectionMode::Single);
+    for id in PAGE_ORDER {
+        sidebar_list.append(&sidebar_row(id));
     }
-    toolbar.set_content(Some(&stack));
-    let root_page = adw::NavigationPage::with_tag(
-        &toolbar,
+
+    let content_title = adw::WindowTitle::new(&PageId::Appearance.title(), "");
+    sidebar_list.connect_row_selected({
+        let stack = stack.clone();
+        let content_title = content_title.clone();
+        move |_, row| {
+            let Some(row) = row else { return };
+            let Some(id) = PAGE_ORDER.get(row.index() as usize).copied() else {
+                return;
+            };
+            stack.set_visible_child_name(id.name());
+            content_title.set_title(&id.title());
+        }
+    });
+
+    let sidebar_header = adw::HeaderBar::new();
+    sidebar_header.set_title_widget(Some(&adw::WindowTitle::new(
         &strings::text(strings::PREFERENCES),
-        "preferences",
-    );
+        "",
+    )));
+    let sidebar_scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .child(&sidebar_list)
+        .build();
+    let sidebar_toolbar = adw::ToolbarView::new();
+    sidebar_toolbar.add_top_bar(&sidebar_header);
+    sidebar_toolbar.set_content(Some(&sidebar_scroll));
+    let sidebar_page =
+        adw::NavigationPage::new(&sidebar_toolbar, &strings::text(strings::PREFERENCES));
+
+    let content_header = adw::HeaderBar::new();
+    content_header.set_title_widget(Some(&content_title));
+    let content_toolbar = adw::ToolbarView::new();
+    content_toolbar.add_top_bar(&content_header);
+    if let Some(foreground_top_bar) = foreground_top_bar {
+        content_toolbar.add_top_bar(foreground_top_bar);
+    }
+    content_toolbar.set_content(Some(&stack));
+    let content_page = adw::NavigationPage::new(&content_toolbar, &PageId::Appearance.title());
+
+    let split = adw::NavigationSplitView::builder()
+        .sidebar(&sidebar_page)
+        .content(&content_page)
+        .build();
+
+    // Start on Appearance (the established default), highlighting its row —
+    // which also drives the stack and content title through the handler.
+    stack.set_visible_child_name("appearance");
+    sidebar_list.select_row(sidebar_list.row_at_index(appearance_index()).as_ref());
+
+    let root_page =
+        adw::NavigationPage::with_tag(&split, &strings::text(strings::PREFERENCES), "preferences");
     let navigation = adw::NavigationView::new();
     navigation.add(&root_page);
     let window = adw::Window::builder()
@@ -114,7 +179,7 @@ pub(super) fn build(
         .default_height(680)
         .content(&navigation)
         .build();
-    let focus_target = switcher.clone();
+    let focus_target = sidebar_list.clone();
     window.connect_map(move |window| {
         gtk4::prelude::GtkWindowExt::set_focus(window, Some(&focus_target));
     });
@@ -124,9 +189,7 @@ pub(super) fn build(
         navigation,
         stack,
         #[cfg(test)]
-        switcher,
-        #[cfg(test)]
-        header,
+        sidebar: sidebar_list,
     }
 }
 
@@ -156,7 +219,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn preferences_are_a_movable_window_with_top_tabs() {
+    fn preferences_are_a_movable_window_with_a_page_sidebar() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.PreferencesWindowTest")
@@ -179,8 +242,15 @@ mod tests {
             shell.window.transient_for().as_ref(),
             Some(parent.upcast_ref())
         );
-        assert_eq!(shell.switcher.stack().as_ref(), Some(&shell.stack));
-        assert!(shell.switcher.is_ancestor(&shell.header));
+        // One sidebar row per page, and the stack holds every page.
+        assert!(shell
+            .sidebar
+            .row_at_index(PAGE_ORDER.len() as i32 - 1)
+            .is_some());
+        assert!(shell
+            .sidebar
+            .row_at_index(PAGE_ORDER.len() as i32)
+            .is_none());
         assert_eq!(shell.stack.pages().n_items(), PAGE_ORDER.len() as u32);
         shell.window.close();
     }
