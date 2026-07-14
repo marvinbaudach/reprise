@@ -12,7 +12,7 @@ Reprise trennt den normalen Wiedergabekontext von der sichtbaren Queue:
   der restliche Wiedergabekontext und bereits gespielte Titel erscheinen dort
   nicht.
 
-Zusätzlich werden Bar, Cover, Pill und Card näher an die bereitgestellte
+Zusätzlich werden Cover, Pill und Card näher an die bereitgestellte
 Vorlage gebracht, bleiben aber vollständig native, opake GTK4/libadwaita-
 Oberflächen. Es gibt kein Blur, keine Transparenz, kein Always-on-top, kein
 magnetisches Andocken und keine Hover-Vergrößerung des Fensters.
@@ -93,17 +93,17 @@ ausstehende Einträge unberührt.
 
 ## Compact-Menü und Lautstärke
 
-Alle vier Layouts behalten denselben sichtbaren Drei-Punkte-Knopf sowie
+Alle drei Layouts behalten denselben sichtbaren Drei-Punkte-Knopf sowie
 Rechtsklick, `Menu` und `Shift+F10` als Zugänge zum gemeinsamen nativen
 `GtkPopoverMenu`. Es enthält:
 
 - „Zur Bibliothek“;
-- Layout: Leiste, Cover, Pill, Card;
+- Layout: Cover, Pill, Card;
 - Shuffle;
 - Repeat Aus/Alle/Eins;
 - Einstellungen.
 
-„Zur Bibliothek“ existiert in Compact ausschließlich in diesem Menü. Die vier
+„Zur Bibliothek“ existiert in Compact ausschließlich in diesem Menü. Die drei
 sichtbaren Restore-Buttons entfallen. Hauptmenü und `Ctrl+M` bleiben als schnelle
 Wege **in** beziehungsweise aus Compact erhalten; die Bibliotheks-Headerbar
 dupliziert den Menüeintrag nicht mit einem eigenen Knopf.
@@ -118,14 +118,6 @@ Die Lautstärke bleibt außerdem über MPRIS, Systemmedientasten und die volle
 Bibliotheksleiste erreichbar.
 
 ## Layouts
-
-### Leiste (`Bar`)
-
-Eine breite, flache Alltagsansicht mit nativer schmaler Headerbar. Links stehen
-Cover und zweizeilige Titel-/Interpret-Metadaten; rechts davon liegen
-Shuffle, Zurück, Play/Pause, Weiter und Repeat. Position, Seek und Dauer bilden
-eine ruhige zweite Zeile. Der Header zeigt Titel/Variante und den Menüknopf,
-aber weder Restore noch Lautstärke.
 
 ### Cover (`Cover`)
 
@@ -173,7 +165,7 @@ weiterhin auf Bibliothek und alle Compact-Wurzeln.
   Stabilität, Previous, leeren Kontext und Fehler-Skip.
 - Track-List-Tests prüfen Queue-Aktivierung, Queue-spezifisches Entfernen,
   Badge/Ansicht und DnD ausschließlich gegen „Als Nächstes“.
-- Vier isolierte Displaytests prüfen neue Pflichtwidgets, fehlende sichtbare
+- Drei isolierte Displaytests prüfen neue Pflichtwidgets, fehlende sichtbare
   Restore-/Volume-Controls, natürliche Größe und Dekorationsprojektion.
 - Ein isolierter App-Smoke beweist: Bibliothekskontext mit mehreren Titeln,
   sichtbare Queue zunächst 0, zwei manuelle Titel sichtbar, Abspielreihenfolge
@@ -185,7 +177,7 @@ weiterhin auf Bibliothek und alle Compact-Wurzeln.
 
 ## Manuelle native GNOME-Prüfung
 
-- Proportionen und visuelle Ruhe aller vier Layouts mit echten Covern;
+- Proportionen und visuelle Ruhe aller drei Layouts mit echten Covern;
 - Mausrad und Touchpad auf freien gegenüber interaktiven Flächen;
 - Pill-Drag und CSD/SSD-Umschaltung unter Wayland;
 - Hell/Dunkel, HiDPI, Tastatur, Touch und lange deutsche/englische Metadaten;

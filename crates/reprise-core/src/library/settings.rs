@@ -157,7 +157,6 @@ pub enum WindowViewMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompactLayout {
-    Bar,
     Cover,
     Pill,
     Card,
@@ -210,21 +209,23 @@ pub fn set_window_view_mode(
 }
 
 pub fn get_compact_layout(conn: &Connection) -> CompactLayout {
-    match typed_value(conn, COMPACT_LAYOUT_KEY, "bar").as_str() {
+    match typed_value(conn, COMPACT_LAYOUT_KEY, "card").as_str() {
         "cover" => CompactLayout::Cover,
         "pill" => CompactLayout::Pill,
         "card" => CompactLayout::Card,
-        "bar" => CompactLayout::Bar,
+        "bar" => {
+            tracing::info!("legacy compact Bar layout mapped to Card");
+            CompactLayout::Card
+        }
         value => {
-            tracing::warn!(value, "unrecognized compact layout; using Bar");
-            CompactLayout::Bar
+            tracing::warn!(value, "unrecognized compact layout; using Card");
+            CompactLayout::Card
         }
     }
 }
 
 pub fn set_compact_layout(conn: &Connection, value: CompactLayout) -> Result<(), rusqlite::Error> {
     let value = match value {
-        CompactLayout::Bar => "bar",
         CompactLayout::Cover => "cover",
         CompactLayout::Pill => "pill",
         CompactLayout::Card => "card",

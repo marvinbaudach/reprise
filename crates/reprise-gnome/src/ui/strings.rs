@@ -42,7 +42,6 @@ pub const COMPACT_VIEW: &str = N_!("Compact View");
 pub const RETURN_TO_LIBRARY: &str = N_!("Return to Library");
 pub const COMPACT_MENU: &str = N_!("Compact player menu");
 pub const COMPACT_LAYOUT: &str = N_!("Layout");
-pub const COMPACT_LAYOUT_BAR: &str = N_!("Bar");
 pub const COMPACT_LAYOUT_COVER: &str = N_!("Cover");
 pub const COMPACT_LAYOUT_PILL: &str = N_!("Pill");
 pub const COMPACT_LAYOUT_CARD: &str = N_!("Card");

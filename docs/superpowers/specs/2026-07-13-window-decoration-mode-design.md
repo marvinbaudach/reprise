@@ -21,7 +21,7 @@ in diesem Fall keine doppelten eigenen Fensterknöpfe und bleibt bedienbar.
 - `Client` als toleranter Standard für neue, fehlende und unbekannte Werte;
 - ein fokussierter GTK-Controller für Fensterrahmen und interne Fensterknöpfe;
 - sofortige Umschaltung zwischen eigener flacher CSD und angeforderter SSD;
-- konsistente Behandlung von Library-Header sowie Bar-, Cover-, Pill- und
+- konsistente Behandlung von Library-Header sowie Cover-, Pill- und
   Card-Kompaktlayout;
 - eine Auswahlzeile auf der Seite Darstellung mit verständlicher Erklärung;
 - vollständige deutsche Übersetzung, isolierte Displaytests und native

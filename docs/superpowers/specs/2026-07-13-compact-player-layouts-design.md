@@ -7,8 +7,8 @@ Reprise besitzt zwei klar getrennte, schnell umschaltbare Fensteransichten:
 1. Die **Bibliotheksansicht** bleibt das vollständige Arbeitsfenster für Suche,
    Browse-Filter, Queue, Playlists, Tagpflege und Einstellungen.
 2. Die **Kompaktansicht** ist ein dauerhaft nutzbarer kleiner Player. Innerhalb
-   dieser Ansicht wählt der Nutzer eines von vier kuratierten Layouts:
-   **Leiste**, **Cover**, **Pill** oder **Card**.
+   dieser Ansicht wählt der Nutzer eines von drei kuratierten Layouts:
+   **Cover**, **Pill** oder **Card**.
 
 Die Varianten bedienen unterschiedliche Hörgewohnheiten, ohne vier unabhängige
 Player zu erzeugen. Playback, Queue, MPRIS, Coverauflösung und Sessionzustand
@@ -21,12 +21,9 @@ Der Code verwendet zwei typisierte Werte in
 
 - `WindowViewMode::{Library, Compact}` unter `ui.window_view_mode`, gespeichert
   als `library` oder `compact`; unbekannte Werte fallen auf `Library` zurück.
-- `CompactLayout::{Bar, Cover, Pill, Card}` unter `ui.compact_layout`,
-  gespeichert als `bar`, `cover`, `pill` oder `card`; unbekannte Werte fallen
-  auf `Bar` zurück.
-
-„Leiste“ ist die deutsche UI-Bezeichnung für `Bar`. Der gesamte Modus heißt
-„Kompaktansicht“; dadurch kollidiert kein Variantenname mit dem Modusnamen.
+- `CompactLayout::{Cover, Pill, Card}` unter `ui.compact_layout`, gespeichert
+  als `cover`, `pill` oder `card`; unbekannte Werte und der historische Wert
+  `bar` fallen rückwärtskompatibel auf `Card` zurück.
 
 Beide Werte werden sofort nach einer erfolgreichen Nutzeraktion persistiert.
 Scheitert das Speichern eines Ansichtswechsels, kehrt das Fenster in den
@@ -59,12 +56,12 @@ Platzierung.
 
 ## Gemeinsames Kompaktmenü
 
-Alle vier Layouts verwenden dasselbe `gio::MenuModel`, denselben daraus
+Alle drei Layouts verwenden dasselbe `gio::MenuModel`, denselben daraus
 gebauten `GtkPopoverMenu` und dieselben fenstergebundenen Actions. Der Popover
 besitzt für die Lautstärke eine native benutzerdefinierte Zeile mit Regler:
 
 - „Zur Bibliothek“
-- „Layout“ als Radio-Untermenü mit Leiste, Cover, Pill und Card
+- „Layout“ als Radio-Untermenü mit Cover, Pill und Card
 - Shuffle an/aus
 - Repeat Aus/Alle/Eins
 - Lautstärke über diese native Popover-Zeile
@@ -96,20 +93,6 @@ Shuffle, Repeat und Lautstärke bleiben in jedem Layout erreichbar. Wo der Raum
 nicht für direkte Knöpfe reicht, liegen sie im gemeinsamen Menü. Tooltips,
 Accessible Names, Tastaturfokus und mindestens die nativen Adwaita-Zielgrößen
 bleiben erhalten. Keine Variante trägt Bedeutung ausschließlich durch Farbe.
-
-## Layout Leiste (`Bar`)
-
-Leiste ist der Standard und die direkte Weiterentwicklung der bestehenden
-Minimalansicht. Sie ist ein horizontales Alltagslayout mit normaler schmaler
-Headerbar.
-
-- Links: 64-px-Cover, Titel und Interpret.
-- Mitte: Shuffle, Zurück, Play/Pause, Weiter und Repeat; darunter Seek mit
-  Zeitangaben.
-- Rechts: Lautstärke, Layoutmenü und „Zur Bibliothek“.
-- Alle Playbackfunktionen sind ohne Menü erreichbar.
-- Zielgröße ungefähr 600 × 135 logische Pixel einschließlich Headerbar; die
-  endgültige Mindestgröße folgt der gemessenen nativen Widgetanforderung.
 
 ## Layout Cover (`Cover`)
 
@@ -166,13 +149,13 @@ Methoden aufgenommen, die heute `PlayerBar` und `NowPlayingView` gemeinsam
 aktualisieren. Titel, Status, Position, Transport, Shuffle und Repeat werden so
 von jedem bestehenden Controllerereignis an alle drei Oberflächen projiziert;
 es entsteht kein zweiter Zustandsweg. Kompakte Nutzerabsichten rufen dieselben
-Controller-Methoden wie Bar und Now-Playing auf. Eine versteckte Oberfläche darf
+Controller-Methoden wie Library Player Bar und Now-Playing auf. Eine versteckte Oberfläche darf
 keine eigene Queue, keinen eigenen Positionstimer und keine zweite Coverpipeline
 starten. Der eine vorhandene `CoverLoader` bedient ein eigenes
 generation-geschütztes Kompakt-Coverziel.
 
 Layoutwechsel innerhalb der Kompaktansicht verwenden einen `gtk::Stack` mit
-vier klar getrennten Layoutwurzeln. Nur das aktive Kind ist sichtbar;
+drei klar getrennten Layoutwurzeln. Nur das aktive Kind ist sichtbar;
 asynchrone Coverergebnisse bleiben über die bereits vorhandene Generation an
 den aktuellen Track gebunden, nicht an eine Layoutinstanz. Layout-Callbacks
 halten nur schwache Referenzen. Kein `RefCell`- oder SQLite-Borrow überlebt
@@ -188,11 +171,11 @@ Track ist geladen und bedienbar, bleibt aber gestoppt.
 Schließen in der Kompaktansicht darf nicht zuerst künstlich in die
 Bibliotheksansicht wechseln. Die Session speichert weiterhin die zuletzt
 bekannte volle Bibliotheksgeometrie; der separate Moduswert bleibt `compact`.
-Fehler beim Lesen persistierter Werte führen zu Leiste beziehungsweise
+Fehler beim Lesen persistierter Werte führen zu Card beziehungsweise
 Bibliotheksansicht und einem Warnlog, nie zu einem Startabbruch.
 
 Wenn ein Layout wegen einer unerwarteten GTK-Ressource nicht aufgebaut werden
-kann, fällt die Kompaktansicht für diesen Lauf auf Leiste zurück. Playback läuft
+kann, fällt die Kompaktansicht für diesen Lauf auf Card zurück. Playback läuft
 weiter. Es gibt keine automatische Änderung der gespeicherten Auswahl ohne eine
 erfolgreiche Nutzeraktion.
 

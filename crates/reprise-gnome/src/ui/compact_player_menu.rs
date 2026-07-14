@@ -11,9 +11,8 @@ use reprise_core::queue::Repeat;
 use super::compact_player_layouts::{layout_from_token, layout_token};
 use super::strings;
 
-pub(super) const LAYOUT_TARGETS: [&str; 4] = ["bar", "cover", "pill", "card"];
-pub(super) const LAYOUT_NAMES: [(CompactLayout, &str); 4] = [
-    (CompactLayout::Bar, strings::COMPACT_LAYOUT_BAR),
+pub(super) const LAYOUT_TARGETS: [&str; 3] = ["cover", "pill", "card"];
+pub(super) const LAYOUT_NAMES: [(CompactLayout, &str); 3] = [
     (CompactLayout::Cover, strings::COMPACT_LAYOUT_COVER),
     (CompactLayout::Pill, strings::COMPACT_LAYOUT_PILL),
     (CompactLayout::Card, strings::COMPACT_LAYOUT_CARD),
@@ -298,13 +297,12 @@ mod tests {
 
     #[test]
     fn layout_radio_targets_are_complete_and_stable() {
-        assert_eq!(LAYOUT_TARGETS, ["bar", "cover", "pill", "card"]);
+        assert_eq!(LAYOUT_TARGETS, ["cover", "pill", "card"]);
     }
 
     #[test]
     fn active_radio_follows_the_selected_layout() {
         for (layout, target) in [
-            (CompactLayout::Bar, "bar"),
             (CompactLayout::Cover, "cover"),
             (CompactLayout::Pill, "pill"),
             (CompactLayout::Card, "card"),
