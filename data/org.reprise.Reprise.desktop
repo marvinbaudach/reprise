@@ -6,12 +6,12 @@ GenericName=Music Player
 GenericName[de]=Musikwiedergabe
 Comment=Play and organize your local music library
 Comment[de]=Die lokale Musiksammlung abspielen und organisieren
-Exec=reprise
+Exec=reprise %F
 Icon=org.reprise.Reprise
 Terminal=false
 StartupNotify=true
 Categories=GTK;GNOME;AudioVideo;Audio;Player;
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-opus+ogg;audio/mp4;audio/aac;audio/x-wav;audio/x-mpegurl;application/vnd.apple.mpegurl;
 Keywords=music;audio;library;playlist;player;
 Keywords[de]=Musik;Audio;Sammlung;Wiedergabeliste;Player;
 X-GNOME-UsesNotifications=true
-

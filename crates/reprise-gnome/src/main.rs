@@ -89,13 +89,38 @@ fn seed_playlist_from_library(
     Ok((playlist_id, count))
 }
 
+fn application_flags() -> gio::ApplicationFlags {
+    gio::ApplicationFlags::HANDLES_OPEN
+}
+
+type SharedFileOpenHandler = Rc<RefCell<Option<ui::file_open::FileOpenHandler>>>;
+
+fn ensure_window(
+    app: &adw::Application,
+    conn: &Rc<RefCell<rusqlite::Connection>>,
+    db_path: &std::path::Path,
+    shared: &SharedFileOpenHandler,
+) -> ui::file_open::FileOpenHandler {
+    let existing = shared.borrow().clone();
+    if let Some(existing) = existing {
+        return existing;
+    }
+
+    let handler = ui::window::build(app, conn, db_path);
+    *shared.borrow_mut() = Some(handler.clone());
+    handler
+}
+
 fn main() -> glib::ExitCode {
     init_logging();
     i18n::init();
     i18n::smoke_report();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Reprise");
 
-    let app = adw::Application::builder().application_id(APP_ID).build();
+    let app = adw::Application::builder()
+        .application_id(APP_ID)
+        .flags(application_flags())
+        .build();
 
     // Primary-vs-secondary is decided *before* the database is touched
     // (field finding, Stage 3): GApplication is single-instance, and a
@@ -174,21 +199,37 @@ fn main() -> glib::ExitCode {
         }
     }
 
+    let file_open_handler: SharedFileOpenHandler = Rc::new(RefCell::new(None));
+    let activate_conn = conn.clone();
+    let activate_path = path.clone();
+    let activate_handler = file_open_handler.clone();
     app.connect_activate(move |app| {
         // A second `reprise` launch forwards `activate` here (see the
         // `is_remote()` check above for the secondary's side of this).
         // Without this guard, a forwarded activate would build a second
         // window, PlayerController, playbin, and ticker thread all sharing
         // the same database connection.
-        if let Some(window) = app.active_window() {
-            tracing::debug!("presenting existing window");
-            window.present();
-            return;
-        }
-        ui::window::build(app, &conn, &path);
+        let handler = ensure_window(app, &activate_conn, &activate_path, &activate_handler);
+        tracing::debug!("presenting existing window");
+        handler.present();
     });
 
-    // No custom CLI arguments exist yet, so `run()` (which reads
-    // `std::env::args()`) is used as-is rather than `run_with_args`.
+    let open_conn = conn;
+    let open_path = path;
+    app.connect_open(move |app, files, _hint| {
+        let handler = ensure_window(app, &open_conn, &open_path, &file_open_handler);
+        handler.open(files);
+    });
+
     app.run()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn application_accepts_forwarded_file_open_requests() {
+        assert!(application_flags().contains(gio::ApplicationFlags::HANDLES_OPEN));
+    }
 }

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 07:23+0200\n"
+"POT-Creation-Date: 2026-07-14 07:36+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -990,57 +990,75 @@ msgstr ""
 msgid "Could not import playlist"
 msgstr "Die Wiedergabeliste konnte nicht importiert werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:705
+#: crates/reprise-gnome/src/ui/strings.rs:706
+#, rust-format
+msgid "One opened audio file is not in the library"
+msgid_plural "{count} opened audio files are not in the library"
+msgstr[0] "Eine geöffnete Audiodatei ist nicht in der Sammlung"
+msgstr[1] "{count} geöffnete Audiodateien sind nicht in der Sammlung"
+
+#: crates/reprise-gnome/src/ui/strings.rs:716
+#, rust-format
+msgid "One opened file is not supported"
+msgid_plural "{count} opened files are not supported"
+msgstr[0] "Eine geöffnete Datei wird nicht unterstützt"
+msgstr[1] "{count} geöffnete Dateien werden nicht unterstützt"
+
+#: crates/reprise-gnome/src/ui/strings.rs:724
+msgid "Playback is unavailable"
+msgstr "Die Wiedergabe ist nicht verfügbar"
+
+#: crates/reprise-gnome/src/ui/strings.rs:729
 #, rust-format
 msgid "Exported {name}"
 msgstr "{name} exportiert"
 
-#: crates/reprise-gnome/src/ui/strings.rs:710
+#: crates/reprise-gnome/src/ui/strings.rs:734
 #, rust-format
 msgid "Could not export “{name}”"
 msgstr "„{name}“ konnte nicht exportiert werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:714
+#: crates/reprise-gnome/src/ui/strings.rs:738
 msgid "About"
 msgstr "Über Reprise"
 
-#: crates/reprise-gnome/src/ui/strings.rs:715
+#: crates/reprise-gnome/src/ui/strings.rs:739
 msgid "Reprise Engine and Linux Platform"
 msgstr "Reprise-Engine und Linux-Plattform"
 
-#: crates/reprise-gnome/src/ui/strings.rs:718
+#: crates/reprise-gnome/src/ui/strings.rs:742
 msgid "Help"
 msgstr "Hilfe"
 
-#: crates/reprise-gnome/src/ui/strings.rs:719
+#: crates/reprise-gnome/src/ui/strings.rs:743
 msgid "Navigation"
 msgstr "Navigation"
 
-#: crates/reprise-gnome/src/ui/strings.rs:720
+#: crates/reprise-gnome/src/ui/strings.rs:744
 msgid "Play or Pause"
 msgstr "Wiedergabe oder Pause"
 
-#: crates/reprise-gnome/src/ui/strings.rs:721
+#: crates/reprise-gnome/src/ui/strings.rs:745
 msgid "Search Library"
 msgstr "Bibliothek durchsuchen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:722
+#: crates/reprise-gnome/src/ui/strings.rs:746
 msgid "Toggle Compact View"
 msgstr "Kompaktansicht umschalten"
 
-#: crates/reprise-gnome/src/ui/strings.rs:723
+#: crates/reprise-gnome/src/ui/strings.rs:747
 msgid "Clear Search or Return to Track List"
 msgstr "Suche leeren oder zur Titelliste zurückkehren"
 
-#: crates/reprise-gnome/src/ui/strings.rs:724
+#: crates/reprise-gnome/src/ui/strings.rs:748
 msgid "Play Selected Track"
 msgstr "Ausgewählten Titel wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings.rs:725
+#: crates/reprise-gnome/src/ui/strings.rs:749
 msgid "Open Context Menu"
 msgstr "Kontextmenü öffnen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:726
+#: crates/reprise-gnome/src/ui/strings.rs:750
 msgid "Open Help"
 msgstr "Hilfe öffnen"
 

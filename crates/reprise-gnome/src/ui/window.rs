@@ -31,6 +31,7 @@ use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 
 use super::cover_download_worker;
+use super::file_open::FileOpenHandler;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::playlist_io;
@@ -75,7 +76,11 @@ const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
 /// scan-worker thread or the watcher (both open their own `Connection` over
 /// it rather than sharing this one across threads — `rusqlite::Connection`
 /// isn't `Send`), so this takes a borrow rather than owning it outright.
-pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &Path) {
+pub fn build(
+    app: &adw::Application,
+    conn: &Rc<RefCell<Connection>>,
+    db_path: &Path,
+) -> FileOpenHandler {
     let session_state = {
         let conn = conn.borrow();
         super::session_restore::load(&conn)
@@ -761,4 +766,5 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
 
     tracing::info!("main window built");
     window.present();
+    FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
 }
