@@ -12,6 +12,7 @@
 //! reloading just that one provider — the mechanism behind the live theme
 //! picker.
 
+pub(super) mod cover_accent;
 pub(super) mod interactions;
 pub(super) mod theme;
 pub(super) mod tokens;
@@ -77,6 +78,8 @@ pub(super) fn install() {
             gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
         THEME_PROVIDER.with(|slot| *slot.borrow_mut() = Some(theme_provider));
+
+        cover_accent::install(&display);
 
         adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark);
     });
