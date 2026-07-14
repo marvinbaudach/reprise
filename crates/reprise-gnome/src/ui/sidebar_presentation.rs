@@ -20,6 +20,7 @@ pub(super) enum NavIcon {
     Queue,
     Playlist,
     NewPlaylist,
+    ImportPlaylist,
     RecentlyPlayed,
     TopRated,
     RecentlyAdded,
@@ -35,6 +36,7 @@ impl NavIcon {
             Self::Queue | Self::GenericSmart => "view-list-symbolic",
             Self::Playlist => "media-playlist-consecutive-symbolic",
             Self::NewPlaylist | Self::RecentlyAdded => "list-add-symbolic",
+            Self::ImportPlaylist => "document-open-symbolic",
             Self::RecentlyPlayed => "document-open-recent-symbolic",
             Self::TopRated => "starred-symbolic",
             Self::ImportErrors => "dialog-warning-symbolic",
@@ -90,11 +92,31 @@ pub(super) fn append_header(listbox: &gtk4::ListBox, text: &str) {
     listbox.append(&row);
 }
 
-pub(super) fn append_new_playlist_row(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
-    let hbox = row_box();
-    hbox.append(&nav_icon(NavIcon::NewPlaylist));
+pub(super) struct PlaylistActionRows {
+    pub(super) new_playlist: gtk4::ListBoxRow,
+    pub(super) import_playlist: gtk4::ListBoxRow,
+}
 
-    let label = gtk4::Label::new(Some(&strings::text(strings::SIDEBAR_NEW_PLAYLIST)));
+pub(super) fn append_playlist_action_rows(listbox: &gtk4::ListBox) -> PlaylistActionRows {
+    let new_playlist =
+        append_playlist_action_row(listbox, strings::SIDEBAR_NEW_PLAYLIST, NavIcon::NewPlaylist);
+    let import_playlist =
+        append_playlist_action_row(listbox, strings::IMPORT_PLAYLIST, NavIcon::ImportPlaylist);
+    PlaylistActionRows {
+        new_playlist,
+        import_playlist,
+    }
+}
+
+fn append_playlist_action_row(
+    listbox: &gtk4::ListBox,
+    label: &str,
+    icon: NavIcon,
+) -> gtk4::ListBoxRow {
+    let hbox = row_box();
+    hbox.append(&nav_icon(icon));
+
+    let label = gtk4::Label::new(Some(&strings::text(label)));
     label.set_xalign(0.0);
     label.add_css_class("dim-label");
     hbox.append(&label);
@@ -159,6 +181,10 @@ mod tests {
             "media-playlist-consecutive-symbolic"
         );
         assert_eq!(NavIcon::NewPlaylist.icon_name(), "list-add-symbolic");
+        assert_eq!(
+            NavIcon::ImportPlaylist.icon_name(),
+            "document-open-symbolic"
+        );
         assert_eq!(NavIcon::ImportErrors.icon_name(), "dialog-warning-symbolic");
         assert_eq!(NavIcon::Missing.icon_name(), "edit-delete-symbolic");
     }
@@ -169,6 +195,25 @@ mod tests {
         assert_eq!(smart_icon("rating"), NavIcon::TopRated);
         assert_eq!(smart_icon("added_at"), NavIcon::RecentlyAdded);
         assert_eq!(smart_icon("custom_field"), NavIcon::GenericSmart);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn playlist_actions_group_creation_and_import() {
+        gtk4::init().unwrap();
+        let listbox = gtk4::ListBox::new();
+        let rows = append_playlist_action_rows(&listbox);
+
+        assert_eq!(row_label(&rows.new_playlist), "New playlist");
+        assert_eq!(row_label(&rows.import_playlist), "Import playlist…");
+        assert_eq!(
+            rows.new_playlist.next_sibling(),
+            Some(rows.import_playlist.clone().upcast())
+        );
+        assert!(!rows.new_playlist.is_selectable());
+        assert!(!rows.import_playlist.is_selectable());
+        assert!(rows.new_playlist.is_activatable());
+        assert!(rows.import_playlist.is_activatable());
     }
 
     #[test]
@@ -233,5 +278,16 @@ mod tests {
             .sidebar(&sidebar)
             .content(&content)
             .build()
+    }
+
+    fn row_label(row: &gtk4::ListBoxRow) -> String {
+        row.child()
+            .unwrap()
+            .last_child()
+            .unwrap()
+            .downcast::<gtk4::Label>()
+            .unwrap()
+            .text()
+            .to_string()
     }
 }

@@ -726,8 +726,8 @@ pub fn playlist_reorder_failed_toast() -> String {
 }
 
 // M3U import/export (src/ui/playlist_io.rs, src/ui/sidebar_export.rs,
-// Stage 3 Task 7): a global "Import playlist…" headerbar button and a
-// per-playlist "Export playlist…" sidebar context-menu action.
+// Stage 3 Task 7): an "Import playlist…" sidebar action and a per-playlist
+// "Export playlist…" sidebar context-menu action.
 
 pub const IMPORT_PLAYLIST: &str = N_!("Import playlist…");
 pub const EXPORT_PLAYLIST: &str = N_!("Export playlist…");

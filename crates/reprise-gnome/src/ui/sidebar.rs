@@ -1,7 +1,7 @@
 //! The navigation sidebar (design mockup 7a): a `gtk::ListBox` (the
 //! "navigation-sidebar" GNOME style class) grouped into LIBRARY (Music,
 //! Queue — both with a track-count label), PLAYLISTS (`library::playlists::
-//! list`, each with its track count, plus a "New playlist" action row), and
+//! list`, each with its track count, plus grouped create/import actions), and
 //! SMART (`library::playlists::list_smart`, no counts — the mockup doesn't
 //! show any), followed by the "problem sources" — Import errors / Missing
 //! files — each shown only while its count is non-zero.
@@ -102,6 +102,9 @@ pub(super) struct Shared {
     /// `selectable(false)` so it never appears in `rows`/`row-selected`, only
     /// `row-activated`.
     new_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
+    /// The adjacent "Import playlist…" action row. Kept separately so row
+    /// activation can invoke the file-dialog callback wired by `window.rs`.
+    import_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
     /// Invoked whenever the logically selected source *changes* (real user
     /// click or an explicit forced selection) — never
     /// for a same-source reselect (see `wire_row_selected`'s dedup-by-value
@@ -127,6 +130,10 @@ pub(super) struct Shared {
     /// on_show_content`'s doc comment) — never to a source switch or reload,
     /// so re-tapping the current row is free of any query cost.
     on_show_content: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Opens the M3U import picker from the Playlist section. The dialog
+    /// implementation remains in `playlist_io`; the sidebar only owns the
+    /// action's placement and activation.
+    on_import_playlist: RefCell<Option<Rc<dyn Fn()>>>,
     /// Invoked after a drag-and-drop drop onto a playlist row successfully
     /// adds tracks (Stage 3 Task 6) — `window.rs` wires this to `TrackList::
     /// reload` so the track list picks up the new rows immediately in the
@@ -191,8 +198,10 @@ impl Sidebar {
             current_source: RefCell::new(ViewSource::default()),
             rows: RefCell::new(Vec::new()),
             new_playlist_row: RefCell::new(None),
+            import_playlist_row: RefCell::new(None),
             on_select: RefCell::new(None),
             on_show_content: RefCell::new(None),
+            on_import_playlist: RefCell::new(None),
             on_tracks_added: RefCell::new(None),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
@@ -235,6 +244,11 @@ impl Sidebar {
     /// content page forward if the split view is collapsed" closure.
     pub fn set_on_show_content(&self, callback: impl Fn() + 'static) {
         *self.shared.on_show_content.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Sets the callback invoked by the Playlist section's import action.
+    pub fn set_on_import_playlist(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_import_playlist.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Sets the callback invoked after a drag-and-drop drop onto a playlist
@@ -390,6 +404,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
     shared.listbox.remove_all();
     shared.rows.borrow_mut().clear();
     *shared.new_playlist_row.borrow_mut() = None;
+    *shared.import_playlist_row.borrow_mut() = None;
 
     sidebar_presentation::append_header(
         &shared.listbox,
@@ -423,8 +438,9 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             NavIcon::Playlist,
         );
     }
-    let new_playlist_row = sidebar_presentation::append_new_playlist_row(&shared.listbox);
-    *shared.new_playlist_row.borrow_mut() = Some(new_playlist_row);
+    let action_rows = sidebar_presentation::append_playlist_action_rows(&shared.listbox);
+    *shared.new_playlist_row.borrow_mut() = Some(action_rows.new_playlist);
+    *shared.import_playlist_row.borrow_mut() = Some(action_rows.import_playlist);
 
     sidebar_presentation::append_header(
         &shared.listbox,
@@ -636,6 +652,14 @@ fn wire_row_activated(shared: &Rc<Shared>) {
         let is_new_playlist_row = shared.new_playlist_row.borrow().as_ref() == Some(row);
         if is_new_playlist_row {
             show_new_playlist_dialog(&shared);
+            return;
+        }
+        let is_import_playlist_row = shared.import_playlist_row.borrow().as_ref() == Some(row);
+        if is_import_playlist_row {
+            let callback = shared.on_import_playlist.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
             return;
         }
         let is_nav_row = shared.rows.borrow().iter().any(|(r, _, _)| r == row);
