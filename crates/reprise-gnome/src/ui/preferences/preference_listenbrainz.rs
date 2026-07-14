@@ -1,4 +1,7 @@
 //! ListenBrainz-specific preferences, secure activation, and startup bootstrap.
+//!
+//! Presents an inline `adw::ExpanderRow` with an enable switch, token entry,
+//! connect / disconnect controls, and a live connection status subtitle.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -31,80 +34,162 @@ pub(super) fn activation_decision(requested: bool, token_available: bool) -> Act
 }
 
 pub(super) fn status_text(status: &ConnectionStatus) -> String {
-    match status {
-        ConnectionStatus::Disabled => strings::text(strings::LISTENBRAINZ_NOT_CONNECTED),
-        ConnectionStatus::Connecting => strings::text(strings::LISTENBRAINZ_CONNECTING),
+    let (base, submitted, pending) = match status {
+        ConnectionStatus::Disabled => return strings::text(strings::LISTENBRAINZ_NOT_CONNECTED),
+        ConnectionStatus::Connecting => return strings::text(strings::LISTENBRAINZ_CONNECTING),
         ConnectionStatus::Connected {
             user_name,
-            pending: 0,
-        } => strings::listenbrainz_connected(user_name),
-        ConnectionStatus::Connected { user_name, pending } => {
-            strings::listenbrainz_pending(&strings::listenbrainz_connected(user_name), *pending)
-        }
-        ConnectionStatus::Offline { pending } => {
-            strings::listenbrainz_pending(&strings::text(strings::LISTENBRAINZ_OFFLINE), *pending)
-        }
-        ConnectionStatus::Unauthorized => strings::text(strings::LISTENBRAINZ_TOKEN_REJECTED),
-        ConnectionStatus::Error { pending } => strings::listenbrainz_pending(
-            &strings::text(strings::LISTENBRAINZ_CONNECTION_ERROR),
+            pending,
+            submitted,
+        } => (
+            strings::listenbrainz_connected(user_name),
+            *submitted,
             *pending,
         ),
+        ConnectionStatus::Offline { pending, submitted } => (
+            strings::text(strings::LISTENBRAINZ_OFFLINE),
+            *submitted,
+            *pending,
+        ),
+        ConnectionStatus::Unauthorized => {
+            return strings::text(strings::LISTENBRAINZ_TOKEN_REJECTED)
+        }
+        ConnectionStatus::Error { pending, submitted } => (
+            strings::text(strings::LISTENBRAINZ_CONNECTION_ERROR),
+            *submitted,
+            *pending,
+        ),
+    };
+    match strings::scrobble_counts(submitted, pending) {
+        Some(counts) => format!("{base} · {counts}"),
+        None => base,
     }
 }
 
-struct ListenBrainzPageSurface {
-    page: adw::NavigationPage,
+struct ListenBrainzExpanderSurface {
+    expander: adw::ExpanderRow,
     token: adw::PasswordEntryRow,
     connect: gtk4::Button,
-    disconnect: Option<gtk4::Button>,
+    disconnect: gtk4::Button,
+    test_connection: crate::ui::preference_dependencies::TestConnectionRow,
 }
 
-fn build_listenbrainz_page(connected: bool) -> ListenBrainzPageSurface {
-    let account = adw::PreferencesGroup::builder()
-        .description(strings::text(strings::LISTENBRAINZ_DIALOG_BODY))
+fn build_listenbrainz_expander(
+    is_enabled: bool,
+    connected: bool,
+    status: &str,
+) -> ListenBrainzExpanderSurface {
+    let description = crate::ui::preference_plugins::plugin_description(
+        &reprise_core::modules::LISTENBRAINZ_MODULE,
+    );
+    let subtitle = if is_enabled {
+        crate::ui::preference_dependencies::service_subtitle(&description, true, status)
+    } else {
+        description.clone()
+    };
+
+    let expander = adw::ExpanderRow::builder()
+        .title(strings::text(strings::LISTENBRAINZ))
+        .subtitle(&subtitle)
+        .show_enable_switch(true)
+        .enable_expansion(is_enabled)
         .build();
+
+    // Token entry row
     let token = adw::PasswordEntryRow::builder()
         .title(strings::text(strings::LISTENBRAINZ_TOKEN))
         .build();
-    account.add(&token);
+    expander.add_row(&token);
 
-    let content = adw::PreferencesPage::new();
-    content.add(&account);
-    let disconnect = connected.then(|| {
-        let actions = adw::PreferencesGroup::new();
-        let row = adw::ActionRow::builder()
-            .title(strings::text(strings::LISTENBRAINZ))
-            .build();
-        let button = gtk4::Button::builder()
-            .label(strings::text(strings::LISTENBRAINZ_DISCONNECT))
-            .valign(gtk4::Align::Center)
-            .build();
-        button.add_css_class("destructive-action");
-        row.add_suffix(&button);
-        actions.add(&row);
-        content.add(&actions);
-        button
-    });
+    // Description hint
+    let hint = adw::ActionRow::builder()
+        .subtitle(strings::text(strings::LISTENBRAINZ_DIALOG_BODY))
+        .build();
+    hint.add_css_class("property");
+    expander.add_row(&hint);
 
-    let connect = gtk4::Button::with_label(&strings::text(strings::LISTENBRAINZ_CONNECT));
+    // Connect action row with suffix button
+    let connect = gtk4::Button::builder()
+        .label(strings::text(strings::LISTENBRAINZ_CONNECT))
+        .valign(gtk4::Align::Center)
+        .build();
     connect.add_css_class("suggested-action");
     connect.set_sensitive(false);
+    let connect_row = adw::ActionRow::builder()
+        .title(strings::text(strings::LISTENBRAINZ_CONNECT))
+        .activatable_widget(&connect)
+        .build();
+    connect_row.add_suffix(&connect);
+    expander.add_row(&connect_row);
+
+    // Test connection
+    let test_connection = crate::ui::preference_dependencies::TestConnectionRow::new();
+    test_connection.row.set_visible(connected);
+    expander.add_row(&test_connection.row);
+
+    // Disconnect action row with destructive button
+    let disconnect = gtk4::Button::builder()
+        .label(strings::text(strings::LISTENBRAINZ_DISCONNECT))
+        .valign(gtk4::Align::Center)
+        .build();
+    disconnect.add_css_class("destructive-action");
+    let disconnect_row = adw::ActionRow::builder()
+        .title(strings::text(strings::LISTENBRAINZ_DISCONNECT))
+        .activatable_widget(&disconnect)
+        .build();
+    disconnect_row.add_suffix(&disconnect);
+    disconnect_row.set_visible(connected);
+    expander.add_row(&disconnect_row);
+
+    // Gate connect button on non-empty token
     token.connect_changed({
         let connect = connect.clone();
         move |token| connect.set_sensitive(!token.text().trim().is_empty())
     });
-    let header = adw::HeaderBar::new();
-    header.pack_end(&connect);
-    let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&content));
-    let title = strings::text(strings::LISTENBRAINZ_ACCOUNT);
-    let page = adw::NavigationPage::with_tag(&toolbar, &title, "listenbrainz-account");
-    ListenBrainzPageSurface {
-        page,
+
+    // Decouple enable switch from expandability: when the switch is toggled
+    // off, adw::ExpanderRow collapses the body by default. Re-expand
+    // immediately so the user can still see (greyed-out) contents.
+    expander.connect_enable_expansion_notify({
+        let token = token.downgrade();
+        let connect_row = connect_row.downgrade();
+        let hint = hint.downgrade();
+        let test_row = test_connection.row.downgrade();
+        let disconnect_row = disconnect_row.downgrade();
+        move |expander| {
+            let enabled = expander.enables_expansion();
+            if let Some(w) = token.upgrade() {
+                w.set_sensitive(enabled);
+            }
+            if let Some(row) = connect_row.upgrade() {
+                row.set_sensitive(enabled);
+            }
+            if let Some(row) = hint.upgrade() {
+                row.set_sensitive(enabled);
+            }
+            if let Some(row) = test_row.upgrade() {
+                row.set_sensitive(enabled);
+            }
+            if let Some(row) = disconnect_row.upgrade() {
+                row.set_sensitive(enabled);
+            }
+        }
+    });
+
+    // Apply initial sensitivity
+    let body_sensitive = is_enabled;
+    token.set_sensitive(body_sensitive);
+    connect_row.set_sensitive(body_sensitive);
+    hint.set_sensitive(body_sensitive);
+    test_connection.row.set_sensitive(body_sensitive);
+    disconnect.set_sensitive(body_sensitive);
+
+    ListenBrainzExpanderSurface {
+        expander,
         token,
         connect,
         disconnect,
+        test_connection,
     }
 }
 
@@ -142,6 +227,7 @@ pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRun
                 tracing::warn!(%error, "could not load ListenBrainz token from keyring");
                 runtime.report_status(&ConnectionStatus::Error {
                     pending: pending_count(&conn),
+                    submitted: 0,
                 });
             }
         }
@@ -149,52 +235,131 @@ pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRun
 }
 
 impl PreferencesContext {
-    pub(super) fn add_listenbrainz_controls(self: &Rc<Self>, switch: &adw::SwitchRow) {
-        let description = switch.subtitle().unwrap_or_default().to_string();
-        switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
-            &description,
-            switch.is_active(),
-            &status_text(&self.listenbrainz.status()),
-        ));
+    /// Build the ListenBrainz expander row and wire up all controls.
+    /// Returns the `ExpanderRow` to be added to the plugins group.
+    pub(super) fn build_listenbrainz_row(self: &Rc<Self>) -> adw::ExpanderRow {
+        let is_enabled = reprise_core::modules::is_enabled(
+            &self.conn.borrow(),
+            &reprise_core::modules::LISTENBRAINZ_MODULE,
+        )
+        .unwrap_or(false);
+        let connected = self.listenbrainz.is_active();
+        let status = status_text(&self.listenbrainz.status());
+        let surface = build_listenbrainz_expander(is_enabled, connected, &status);
+
+        let description = crate::ui::preference_plugins::plugin_description(
+            &reprise_core::modules::LISTENBRAINZ_MODULE,
+        );
+
+        // Subscribe to runtime status changes for subtitle updates
         self.listenbrainz.subscribe(Rc::new({
-            let switch = switch.downgrade();
+            let expander = surface.expander.downgrade();
             let description = description.clone();
             move |status| {
-                if let Some(switch) = switch.upgrade() {
-                    switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
+                if let Some(expander) = expander.upgrade() {
+                    expander.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
                         &description,
-                        switch.is_active(),
+                        expander.enables_expansion(),
                         &status_text(&status),
                     ));
                 }
             }
         }));
-        let runtime = self.listenbrainz.clone();
-        let description_for_toggle = description.clone();
-        switch.connect_active_notify(move |switch| {
-            switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
-                &description_for_toggle,
-                switch.is_active(),
-                &status_text(&runtime.status()),
-            ));
-        });
-        let configure = crate::ui::preference_dependencies::add_configure_button(
-            switch,
-            &strings::text(strings::CONFIGURE),
-        );
+
+        // Disconnect button visibility tracks connection state
+        let disconnect_button = surface.disconnect.clone();
+        self.listenbrainz.subscribe(Rc::new({
+            let disconnect = disconnect_button.downgrade();
+            move |status| {
+                if let Some(button) = disconnect.upgrade() {
+                    let is_connected = !matches!(status, ConnectionStatus::Disabled);
+                    if let Some(parent) = button.parent() {
+                        parent.set_visible(is_connected);
+                    }
+                }
+            }
+        }));
+
+        // Enable switch toggle
         let weak = Rc::downgrade(self);
-        let switch = switch.downgrade();
-        configure.connect_clicked(move |_| {
-            let (Some(context), Some(switch)) = (weak.upgrade(), switch.upgrade()) else {
-                return;
-            };
-            context.push_listenbrainz_page(&switch);
+        let description_for_toggle = description.clone();
+        surface
+            .expander
+            .connect_enable_expansion_notify(move |expander| {
+                if let Some(context) = weak.upgrade() {
+                    // Update subtitle immediately
+                    expander.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
+                        &description_for_toggle,
+                        expander.enables_expansion(),
+                        &status_text(&context.listenbrainz.status()),
+                    ));
+                    context.change_listenbrainz_activation(expander, expander.enables_expansion());
+                }
+            });
+
+        // Connect button
+        let weak = Rc::downgrade(self);
+        let expander_for_connect = surface.expander.clone();
+        let token_for_connect = surface.token.clone();
+        surface.connect.connect_clicked(move |_| {
+            if let Some(context) = weak.upgrade() {
+                context.validate_and_save_listenbrainz(
+                    &expander_for_connect,
+                    token_for_connect.text().trim().to_string(),
+                );
+            }
         });
+
+        // Test connection button
+        let test_row = surface.test_connection;
+        self.listenbrainz.subscribe(Rc::new({
+            let test_row_ref = test_row.row.downgrade();
+            move |status| {
+                if let Some(row) = test_row_ref.upgrade() {
+                    row.set_visible(!matches!(status, ConnectionStatus::Disabled));
+                }
+            }
+        }));
+        test_row.button.connect_clicked({
+            let trigger = test_row.clone_trigger();
+            move |_| {
+                let trigger = trigger.clone();
+                glib::spawn_future_local(async move {
+                    let token = match listenbrainz_secret::load().await {
+                        Ok(Some(t)) if !t.trim().is_empty() => t,
+                        Ok(_) => {
+                            trigger.show_error(&strings::text(strings::LISTENBRAINZ_NOT_CONNECTED));
+                            return;
+                        }
+                        Err(_) => {
+                            trigger.show_error(&strings::text(strings::LISTENBRAINZ_KEYRING_ERROR));
+                            return;
+                        }
+                    };
+                    trigger.trigger(move || {
+                        ListenBrainzClient::new()
+                            .validate_token(&token)
+                            .map_err(|e| map_transport_error(&e))
+                    });
+                });
+            }
+        });
+
+        // Disconnect button
+        let weak = Rc::downgrade(self);
+        let expander_for_disconnect = surface.expander.clone();
+        surface.disconnect.connect_clicked(move |_| {
+            if let Some(context) = weak.upgrade() {
+                context.disconnect_listenbrainz(&expander_for_disconnect);
+            }
+        });
+
+        surface.expander
     }
 
     pub(super) fn change_listenbrainz_activation(
         self: &Rc<Self>,
-        row: &adw::SwitchRow,
+        row: &adw::ExpanderRow,
         requested: bool,
     ) {
         if self.syncing_listenbrainz.get() {
@@ -209,7 +374,7 @@ impl PreferencesContext {
             return;
         }
 
-        crate::ui::preference_dependencies::set_activation_pending(row, true);
+        set_activation_pending(row, true);
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
@@ -218,7 +383,7 @@ impl PreferencesContext {
                 return;
             };
             context.listenbrainz_activation_pending.set(false);
-            crate::ui::preference_dependencies::set_activation_pending(&row, false);
+            set_activation_pending(&row, false);
             match result {
                 Ok(token) => match (
                     activation_decision(
@@ -230,7 +395,12 @@ impl PreferencesContext {
                     (ActivationDecision::Enable, Some(token)) => {
                         context.enable_listenbrainz(&row, token);
                     }
-                    _ => context.push_listenbrainz_page(&row),
+                    _ => {
+                        // No stored token: expand the row so the user sees the
+                        // token field, but keep the enable switch on (it will
+                        // revert if the user closes without connecting).
+                        row.set_expanded(true);
+                    }
                 },
                 Err(error) => {
                     tracing::warn!(%error, "could not access ListenBrainz token in keyring");
@@ -238,6 +408,7 @@ impl PreferencesContext {
                         .listenbrainz
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
+                            submitted: 0,
                         });
                     context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_KEYRING_ERROR);
@@ -246,46 +417,7 @@ impl PreferencesContext {
         });
     }
 
-    fn push_listenbrainz_page(self: &Rc<Self>, row: &adw::SwitchRow) {
-        let Some(navigation) = self.preferences_navigation() else {
-            tracing::warn!("ListenBrainz setup requested without preferences navigation");
-            self.restore_listenbrainz_switch(row);
-            return;
-        };
-        let surface = build_listenbrainz_page(self.listenbrainz.is_active());
-        let weak = Rc::downgrade(self);
-        let hiding_row = row.clone();
-        surface.page.connect_hiding(move |_| {
-            if let Some(context) = weak.upgrade() {
-                context.restore_listenbrainz_switch(&hiding_row);
-            }
-        });
-        let weak = Rc::downgrade(self);
-        let connect_row = row.clone();
-        let token = surface.token.clone();
-        surface.connect.connect_clicked(move |_| {
-            if let Some(context) = weak.upgrade() {
-                context
-                    .validate_and_save_listenbrainz(&connect_row, token.text().trim().to_string());
-            }
-        });
-        if let Some(disconnect) = surface.disconnect {
-            let weak = Rc::downgrade(self);
-            let disconnect_row = row.clone();
-            let navigation = navigation.downgrade();
-            disconnect.connect_clicked(move |_| {
-                let (Some(context), Some(navigation)) = (weak.upgrade(), navigation.upgrade())
-                else {
-                    return;
-                };
-                context.disconnect_listenbrainz(&disconnect_row);
-                navigation.pop();
-            });
-        }
-        navigation.push(&surface.page);
-    }
-
-    fn validate_and_save_listenbrainz(self: &Rc<Self>, row: &adw::SwitchRow, token: String) {
+    fn validate_and_save_listenbrainz(self: &Rc<Self>, row: &adw::ExpanderRow, token: String) {
         self.listenbrainz
             .report_status(&ConnectionStatus::Connecting);
         let (sender, receiver) = async_channel::bounded(1);
@@ -302,6 +434,7 @@ impl PreferencesContext {
             tracing::warn!(%error, "could not start ListenBrainz validation worker");
             self.listenbrainz.report_status(&ConnectionStatus::Error {
                 pending: pending_count(&self.conn),
+                submitted: 0,
             });
             self.restore_listenbrainz_switch(row);
             self.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
@@ -323,6 +456,7 @@ impl PreferencesContext {
                             .listenbrainz
                             .report_status(&ConnectionStatus::Error {
                                 pending: pending_count(&context.conn),
+                                submitted: 0,
                             });
                         context.restore_listenbrainz_switch(&row);
                         context.show_listenbrainz_error(strings::LISTENBRAINZ_KEYRING_ERROR);
@@ -341,6 +475,7 @@ impl PreferencesContext {
                         .listenbrainz
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
+                            submitted: 0,
                         });
                     context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
@@ -351,6 +486,7 @@ impl PreferencesContext {
                         .listenbrainz
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
+                            submitted: 0,
                         });
                     context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
@@ -359,7 +495,7 @@ impl PreferencesContext {
         });
     }
 
-    fn enable_listenbrainz(&self, row: &adw::SwitchRow, token: String) {
+    fn enable_listenbrainz(&self, row: &adw::ExpanderRow, token: String) {
         if self.persist_listenbrainz_enabled(true) {
             self.set_listenbrainz_switch(row, true);
             self.listenbrainz
@@ -369,7 +505,7 @@ impl PreferencesContext {
         }
     }
 
-    fn disconnect_listenbrainz(self: &Rc<Self>, row: &adw::SwitchRow) {
+    fn disconnect_listenbrainz(self: &Rc<Self>, row: &adw::ExpanderRow) {
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
@@ -412,13 +548,13 @@ impl PreferencesContext {
         }
     }
 
-    fn set_listenbrainz_switch(&self, row: &adw::SwitchRow, active: bool) {
+    fn set_listenbrainz_switch(&self, row: &adw::ExpanderRow, active: bool) {
         self.syncing_listenbrainz.set(true);
-        row.set_active(active);
+        row.set_enable_expansion(active);
         self.syncing_listenbrainz.set(false);
     }
 
-    fn restore_listenbrainz_switch(&self, row: &adw::SwitchRow) {
+    fn restore_listenbrainz_switch(&self, row: &adw::ExpanderRow) {
         self.set_listenbrainz_switch(row, self.listenbrainz.is_active());
     }
 
@@ -433,8 +569,23 @@ impl PreferencesContext {
     }
 }
 
+/// Mark the expander row as pending (sensitive = false, switch forced on).
+fn set_activation_pending(row: &adw::ExpanderRow, pending: bool) {
+    if pending {
+        row.set_enable_expansion(true);
+    }
+    row.set_sensitive(!pending);
+}
+
 fn pending_count(conn: &Rc<RefCell<Connection>>) -> usize {
     reprise_core::scrobbling::pending_count(&conn.borrow()).unwrap_or(0)
+}
+
+fn map_transport_error(error: &TransportError) -> String {
+    match error {
+        TransportError::Unauthorized => strings::text(strings::LISTENBRAINZ_TOKEN_REJECTED),
+        _ => strings::text(strings::LISTENBRAINZ_CONNECTION_ERROR),
+    }
 }
 
 #[cfg(test)]
@@ -448,12 +599,16 @@ mod tests {
             status_text(&ConnectionStatus::Connected {
                 user_name: "listener".to_string(),
                 pending: 0,
+                submitted: 0,
             }),
             "Connected as listener"
         );
         assert_eq!(
-            status_text(&ConnectionStatus::Offline { pending: 3 }),
-            "Offline · 3 listens pending"
+            status_text(&ConnectionStatus::Offline {
+                pending: 3,
+                submitted: 0,
+            }),
+            "Offline · 3 queued"
         );
         assert_eq!(
             status_text(&ConnectionStatus::Unauthorized),
@@ -475,44 +630,66 @@ mod tests {
     }
 
     #[test]
-    fn connected_status_includes_pending_count() {
+    fn connected_status_includes_submitted_and_queued_counts() {
         assert_eq!(
             status_text(&ConnectionStatus::Connected {
                 user_name: "listener".to_string(),
                 pending: 2,
+                submitted: 0,
             }),
-            "Connected as listener · 2 listens pending"
+            "Connected as listener · 2 queued"
         );
         assert_eq!(
-            status_text(&ConnectionStatus::Error { pending: 1 }),
-            "Connection error · 1 listen pending"
+            status_text(&ConnectionStatus::Connected {
+                user_name: "listener".to_string(),
+                pending: 0,
+                submitted: 42,
+            }),
+            "Connected as listener · 42 submitted"
+        );
+        assert_eq!(
+            status_text(&ConnectionStatus::Connected {
+                user_name: "listener".to_string(),
+                pending: 3,
+                submitted: 42,
+            }),
+            "Connected as listener · 42 submitted · 3 queued"
+        );
+        assert_eq!(
+            status_text(&ConnectionStatus::Error {
+                pending: 1,
+                submitted: 5,
+            }),
+            "Connection error · 5 submitted · 1 queued"
         );
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn setup_page_keeps_the_token_masked_and_gates_connect() {
+    fn expander_row_has_enable_switch_token_entry_and_action_buttons() {
         gtk4::init().unwrap();
-        let surface = build_listenbrainz_page(false);
-        assert_eq!(surface.page.title(), "ListenBrainz Account");
-        assert!(surface.page.can_pop());
+        let surface = build_listenbrainz_expander(false, false, "Not connected");
+        assert!(surface.expander.shows_enable_switch());
+        assert!(!surface.expander.enables_expansion());
         assert!(surface.token.is::<adw::PasswordEntryRow>());
         assert!(!surface.connect.is_sensitive());
-        assert!(surface.disconnect.is_none());
 
+        // Disconnect button's parent row is hidden when not connected
+        assert!(surface.disconnect.parent().is_some_and(|p| !p.is_visible()));
+
+        // Token gates Connect
         surface.token.set_text("token");
         assert!(surface.connect.is_sensitive());
         surface.token.set_text("  ");
         assert!(!surface.connect.is_sensitive());
-        assert!(build_listenbrainz_page(true).disconnect.is_some());
 
-        let root =
-            adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Plugins");
-        let navigation = adw::NavigationView::new();
-        navigation.add(&root);
-        navigation.push(&surface.page);
-        assert_eq!(navigation.visible_page().as_ref(), Some(&surface.page));
-        assert!(navigation.pop());
-        assert_eq!(navigation.visible_page().as_ref(), Some(&root));
+        // When enabled, body rows become sensitive
+        let enabled_surface = build_listenbrainz_expander(true, true, "Connected as listener");
+        assert!(enabled_surface.expander.enables_expansion());
+        assert!(enabled_surface.token.is_sensitive());
+        assert!(enabled_surface
+            .disconnect
+            .parent()
+            .is_some_and(|p| p.is_visible()));
     }
 }

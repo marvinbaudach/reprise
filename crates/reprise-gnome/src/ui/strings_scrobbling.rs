@@ -12,7 +12,6 @@ pub const PLUGIN_LISTENBRAINZ_DESCRIPTION: &str =
     N_!("Scrobble completed listens to ListenBrainz (network; off by default)");
 pub const PLUGIN_LASTFM_DESCRIPTION: &str =
     N_!("Scrobble completed listens to Last.fm (network; off by default)");
-pub const CONFIGURE: &str = N_!("Configure…");
 pub const LISTENBRAINZ: &str = N_!("ListenBrainz");
 pub const LISTENBRAINZ_ACCOUNT: &str = N_!("ListenBrainz Account");
 pub const LISTENBRAINZ_NOT_CONNECTED: &str = N_!("Not connected");
@@ -50,31 +49,51 @@ pub const LASTFM_CONNECTION_ERROR: &str = N_!("Could not connect to Last.fm. Try
 pub const LASTFM_DISCONNECT_ERROR: &str =
     N_!("Could not remove Last.fm credentials from the system keyring.");
 pub const OPEN_BROWSER: &str = N_!("Open Browser");
+pub const LASTFM_SIGN_IN: &str = N_!("Sign in with Last.fm");
+pub const LASTFM_BUNDLED_HINT: &str = N_!("Sign in with your Last.fm account. No API key needed.");
+pub const LASTFM_BYO_KEY: &str = N_!("Use your own API key");
+pub const TEST_CONNECTION: &str = N_!("Test connection");
+pub const TEST_CONNECTION_FAILED: &str = N_!("Test failed — try again later.");
+
+pub fn test_connection_ok(user_name: &str) -> String {
+    formatted(
+        N_!("Connected as {user_name} ✓"),
+        &[("user_name", user_name)],
+    )
+}
 
 pub fn listenbrainz_connected(user_name: &str) -> String {
     formatted(N_!("Connected as {user_name}"), &[("user_name", user_name)])
-}
-
-pub fn listenbrainz_pending(prefix: &str, pending: usize) -> String {
-    let pending_text = pending.to_string();
-    plural(
-        "{prefix} · {pending} listen pending",
-        "{prefix} · {pending} listens pending",
-        pending,
-        &[("prefix", prefix), ("pending", &pending_text)],
-    )
 }
 
 pub fn lastfm_connected(user_name: &str) -> String {
     formatted(N_!("Connected as {user_name}"), &[("user_name", user_name)])
 }
 
-pub fn lastfm_pending(prefix: &str, pending: usize) -> String {
-    let pending_text = pending.to_string();
-    plural(
-        "{prefix} · {pending} scrobble pending",
-        "{prefix} · {pending} scrobbles pending",
-        pending,
-        &[("prefix", prefix), ("pending", &pending_text)],
-    )
+/// Builds a combined "N submitted · M queued" suffix.
+/// Returns `None` when both counts are zero.
+pub fn scrobble_counts(submitted: usize, queued: usize) -> Option<String> {
+    let submitted_part = if submitted > 0 {
+        let n = submitted.to_string();
+        Some(plural(
+            "{n} submitted",
+            "{n} submitted",
+            submitted,
+            &[("n", &n)],
+        ))
+    } else {
+        None
+    };
+    let queued_part = if queued > 0 {
+        let n = queued.to_string();
+        Some(plural("{n} queued", "{n} queued", queued, &[("n", &n)]))
+    } else {
+        None
+    };
+    match (submitted_part, queued_part) {
+        (Some(s), Some(q)) => Some(format!("{s} · {q}")),
+        (Some(s), None) => Some(s),
+        (None, Some(q)) => Some(q),
+        (None, None) => None,
+    }
 }
