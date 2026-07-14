@@ -12,6 +12,7 @@
 //! reloading just that one provider — the mechanism behind the live theme
 //! picker.
 
+pub(super) mod interactions;
 pub(super) mod theme;
 pub(super) mod tokens;
 
@@ -29,6 +30,7 @@ thread_local! {
 /// Palette colors are NOT here — they live in the separate theme provider.
 fn app_css() -> String {
     [
+        interactions::css(),
         super::browse_bar::css(),
         super::column_layout_editor::css(),
         super::list_density::css(),
@@ -95,6 +97,8 @@ mod tests {
         let css = super::app_css();
 
         for marker in [
+            ".reprise-surface",
+            ".reprise-hover:hover",
             ".reprise-filter-chip",
             ".reprise-column-drop-before",
             ".reprise-track-cell.reprise-density-comfortable",
