@@ -95,6 +95,7 @@ mod preference_library;
 mod preference_listenbrainz;
 mod preference_playback;
 mod preference_plugins;
+mod preference_rhythmbox;
 mod preference_sync;
 mod preference_visual_strings;
 mod preference_window_decorations;

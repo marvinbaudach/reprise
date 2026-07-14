@@ -32,8 +32,9 @@ Der Import ist wiederholbar und konservativ:
   Bewertung noch 0 ist. Vorhandene Reprise-Bewertungen gewinnen.
 - Der Wiedergabezähler wird auf `max(Reprise, Rhythmbox)` gesetzt und daher nie
   verringert oder bei wiederholtem Import addiert.
-- Nicht gefundene Pfade, Nicht-Datei-URIs, ungültige Werte und Nicht-Song-
-  Einträge werden gezählt und übersprungen.
+- Nicht gefundene gültige Pfade werden in der Zusammenfassung gezählt.
+  Nicht-Datei-URIs, ungültige Werte und Nicht-Song-Einträge werden sicher
+  ignoriert.
 - Ein XML-/Lesefehler tritt vor der SQLite-Transaktion auf; es entstehen keine
   Teiländerungen.
 
@@ -74,8 +75,10 @@ Whitelist akzeptiert `play_count`.
 - Fehlende oder unlesbare `rhythmdb.xml`: verständlicher Dialog, keine Änderung.
 - Eine fehlende `playlists.xml` verhindert nur den ausgewählten Playlistimport;
   Statistikimport und Spaltenlayout bleiben nutzbar.
-- Defektes XML: kompletter Abbruch vor dem DB-Merge.
-- Einzelne defekte Einträge: überspringen und in der Zusammenfassung melden.
+- Defekte `rhythmdb.xml`: kompletter Abbruch vor dem Statistik-Merge.
+- Defekte `playlists.xml`: Warnung; ein bereits erfolgreicher Statistikimport
+  bleibt erhalten.
+- Einzelne defekte Einträge: sicher überspringen.
 - SQLite-Fehler: Transaktion zurückrollen und Fehlerdialog zeigen.
 - Ein fehlendes Rhythmbox-GSettings-Schema verhindert nur den optionalen
   Spaltenlayoutteil, nicht den Statistikimport aus XML.

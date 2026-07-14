@@ -537,6 +537,7 @@ pub fn build(
         &window,
         conn,
         &track_list,
+        &sidebar,
         &split_view,
         &sidebar_page,
         &status_bar,
