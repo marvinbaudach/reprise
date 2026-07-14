@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate all outstanding local feature work into main
-SINCE:    2026-07-14 10:10 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: the installed app advertises and handles local audio and M3U files._
+_As of 2026-07-14: all reviewed local feature work is integrated into main._
 
 ## Parallel feature work
 
@@ -34,12 +34,13 @@ _As of 2026-07-14: the installed app advertises and handles local audio and M3U 
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-14-file-associations.md` (1 task).
-- **Last completed:** **Desktop file associations** (`ffa049c`) — GNOME can forward supported
-  local audio and M3U/M3U8 files into the one existing Reprise window.
+- **Completed plan:** `docs/superpowers/plans/2026-07-14-rhythmbox-stats-import.md` (7 tasks).
+- **Last completed:** **Rhythmbox statistics import** (`5598b2d`) — detected Rhythmbox data can
+  explicitly restore ratings, play counts, date-added, last-played, static playlists and optional
+  column layout without modifying Rhythmbox or audio files.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `ffa049c` on `main`.
+- **Main implementation:** `5598b2d` on `main`.
 
 ## Done so far (compact)
 
@@ -172,8 +173,10 @@ _As of 2026-07-14: the installed app advertises and handles local audio and M3U 
   removable Genre/Artist/Album chips, a two-step add popover with one temporary value search,
   exact live result counts, and one pill-styled add action while removable chips preserve cascade
   and session behavior without a redundant Reset button.
-- ✅ **One-time Rhythmbox import**: detection and explicit column-layout selection live only in
-  initial setup; the persistent main menu and Preferences no longer expose a later import path.
+- ✅ **Explicit Rhythmbox import**: when `rhythmdb.xml` is detected, Library Preferences can
+  conservatively restore ratings, monotone play counts, older date-added values, newer last-played
+  values, duplicate-safe static playlists and optional column layout; every choice is explicit,
+  repeatable and leaves Rhythmbox plus audio files unchanged.
 - ✅ **Compact playback equalizer**: Enable and Preset remain native settings rows while ten
   accessible vertical scales share one horizontally scrollable card with live dB labels and
   synchronized preset, persistence, backend-failure, and disabled-state behavior.
