@@ -350,6 +350,7 @@ impl TrackList {
             .show_row_separators(true)
             .show_column_separators(true)
             .build();
+        super::track_list_header_style::install(&column_view);
         track_list_row_interaction::install_reorder_indicator_style(&column_view);
 
         let scrolled = gtk4::ScrolledWindow::builder()

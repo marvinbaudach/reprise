@@ -135,6 +135,7 @@ mod track_list_context_keys;
 pub mod track_list_context_menu;
 pub mod track_list_dnd;
 pub mod track_list_dnd_smoke;
+mod track_list_header_style;
 mod track_list_layout;
 pub mod track_list_model;
 mod track_list_queue_menu;
