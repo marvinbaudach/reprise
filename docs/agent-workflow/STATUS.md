@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Merge column layout arrow cleanup
-SINCE:    2026-07-14T09:29:02+02:00
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is integrating the reviewed column-layout arrow cleanup._
+_As of 2026-07-14: all reviewed local feature work is integrated into main._
 
 ## Parallel feature work
 
@@ -35,12 +35,12 @@ _As of 2026-07-14: Codex is integrating the reviewed column-layout arrow cleanup
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-14-rhythmbox-stats-import.md` (7 tasks).
-- **Last completed:** **Rhythmbox statistics import** (`5598b2d`) — detected Rhythmbox data can
-  explicitly restore ratings, play counts, date-added, last-played, static playlists and optional
-  column layout without modifying Rhythmbox or audio files.
+- **Last completed:** **Column layout arrow cleanup** (`f0e1c9a`, merged as `f9716f6`) — movable
+  rows use whole-row dragging without permanent arrow buttons, while Alt+Up/Down preserves
+  non-pointer reordering.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `5598b2d` on `main`.
+- **Main implementation:** `f0e1c9a` on `main` (merged as `f9716f6`).
 - **Latest validation:** the reported one-row initial Library render was not reproducible with the
   current debug build or the freshly reinstalled release: an isolated second launch with 501
   pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
@@ -65,8 +65,8 @@ _As of 2026-07-14: Codex is integrating the reviewed column-layout arrow cleanup
   untouched mixed values remain unchanged, rating-only edits never write audio-file tags, and its
   header relies on the native close control instead of duplicating it with a Cancel button.
 - ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
-- ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
-  whole-row drag ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
+- ✅ **GUI-C follow-up**: native editable/persistent column layout with keyboard and whole-row drag
+  ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
   first-run offer that remains default off.
 - ✅ **Sidebar issue cleanup**: transient Import errors and Missing files rows provide one
   GNOME context action each; diagnostics clear directly, while missing entries require a
@@ -74,8 +74,8 @@ _As of 2026-07-14: Codex is integrating the reviewed column-layout arrow cleanup
   remove the empty Issues group with a Music fallback.
 - ✅ **Preferences column-layout navigation**: Layout opens that editor as a native detail page in
   the existing Preferences window with Back navigation instead of an obscured child dialog.
-- ✅ **Whole-row column-layout drag restoration**: movable editor rows use capture-phase drag
-  recognition across labels, empty space and embedded controls, while Switch clicks and
+- ✅ **Column-layout reordering**: movable editor rows use capture-phase drag recognition across
+  labels, empty space and embedded controls without permanent arrow buttons, while Switch clicks and
   Alt+Up/Down keyboard reordering keep non-drag interaction precise.
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
