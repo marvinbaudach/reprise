@@ -13,7 +13,7 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 
 pub mod lastfm;
-pub use lastfm::{LastFmClient, LastFmSession};
+pub use lastfm::{LastFmClient, LastFmSession, BUNDLED_API_KEY, BUNDLED_SHARED_SECRET};
 mod queue;
 pub use queue::{
     acknowledge_for, clear_pending_for, enqueue_for, pending_count_for, pending_for,
