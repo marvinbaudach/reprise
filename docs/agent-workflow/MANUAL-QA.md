@@ -97,6 +97,10 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   completion. The isolated two-file app smoke proves Discovering → Scanning → Complete,
   and the native GTK widget regression proves reveal/fraction/hide; native GNOME visual
   layout with a deliberately slow disposable tree remains pending.
+- [ ] Start Rescan library from Preferences → Library. Expected: the same progress row
+  appears inside the foreground Preferences window, never hidden behind it; closing
+  Preferences during the scan leaves the main-window row visible until completion.
+  Isolated GTK regressions prove top-level parenting, active-state replay and shared finish.
 - [ ] Existing libraries upgrade silently without showing first-run setup.
 - [ ] English and German have no clipping, untranslated visible strings, broken
   plurals, or unnatural button/menu labels.

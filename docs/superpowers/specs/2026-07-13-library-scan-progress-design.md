@@ -9,8 +9,11 @@ Lauf beendet ist.
 
 ## Verhalten
 
-- Nach der Ordnerauswahl erscheint direkt unter der Headerbar eine schmale native
-  Fortschrittszeile.
+- Nach der Ordnerauswahl erscheint direkt unter der Hauptfenster-Headerbar eine
+  schmale native Fortschrittszeile.
+- Solange Preferences geöffnet ist, wird derselbe Fortschritt zusätzlich direkt
+  unter dessen Headerbar sichtbar statt nur verdeckt im Hauptfenster; nach dem
+  Schließen bleibt die Hauptfensteranzeige aktiv.
 - Phase 1 lautet „Musikdateien werden ermittelt …“. Der Balken pulsiert, weil die
   Gesamtzahl während der Verzeichnisermittlung noch unbekannt ist.
 - Phase 2 zeigt einen bestimmten Balken mit „{processed} von {total} Dateien
@@ -39,10 +42,13 @@ erweitern; Bruchteile werden immer auf `0..=1` begrenzt. Verzeichnisfehler werde
 wie bisher ausschließlich im eigentlichen Scanlauf in `import_errors` erfasst.
 
 `ui/scan_progress.rs` besitzt ausschließlich die GTK-Darstellung und eine
-Generation für den Puls-Timer. `scan_flow.rs` überträgt Worker-Fortschritt über
-einen kapazitätsbegrenzten Kanal mit `try_send`: die UI darf Zwischenstände
-zusammenfassen, der Worker wird weder gebremst noch entsteht eine unbeschränkte
-Eventqueue. Das Endergebnis bleibt auf dem bestehenden separaten One-shot-Kanal.
+Generation für den Puls-Timer. `ScanControls` hält den Hauptfenster-View und verteilt
+denselben aktuellen Snapshot zusätzlich an schwach referenzierte Vordergrund-Views;
+ein während des Scans geöffnetes Preferences-Fenster erhält den letzten Stand sofort.
+`scan_flow.rs` überträgt Worker-Fortschritt über einen kapazitätsbegrenzten Kanal mit
+`try_send`: die UI darf Zwischenstände zusammenfassen, der Worker wird weder gebremst
+noch entsteht eine unbeschränkte Eventqueue. Das Endergebnis bleibt auf dem bestehenden
+separaten One-shot-Kanal.
 
 ## Sicherheit und Skalierung
 
@@ -61,6 +67,9 @@ stattdessen nachvollziehbar, wie weit der Lauf ist.
 - Core-Tests beweisen die exakte Phasenfolge, monotone Zähler, Audiofilterung und
   unveränderten `ScanReport`.
 - Reine UI-Zustandstests prüfen Text und Bruch einschließlich leerer Bibliothek.
+- Isolierte GTK-Tests prüfen, dass Preferences den Vordergrund-View innerhalb seines
+  eigenen Top-levels trägt und dass neue Views den aktiven Stand übernehmen, ohne
+  einen zweiten Scan zu starten.
 - Ein isolierter Xvfb/D-Bus/XDG-Smoke scannt mehrere Fixture-Dateien über
   `REPRISE_SMOKE_RESCAN`, protokolliert Discovering/Scanning/Complete und lehnt
   GTK-/GLib-Criticals, Panics und `RefCell`-Fehler ab.
