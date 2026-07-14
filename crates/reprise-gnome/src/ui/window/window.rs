@@ -145,17 +145,6 @@ pub fn build(
     // first frame. If GStreamer is unavailable the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
-    // Module registry: MPRIS is a gated module (`module.mpris.enabled`). Read
-    // the flag once here — the one place at startup holding the connection
-    // before the controller is built — and thread it into the controller,
-    // which owns the `mpris::start` call. A read error must never take the
-    // app down: default to on, exactly as a fresh database (no flag row) does.
-    let mpris_enabled =
-        reprise_core::modules::is_enabled(&conn.borrow(), &reprise_core::modules::MPRIS_MODULE)
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "could not read module.mpris.enabled; defaulting to on");
-                true
-            });
     let cover_download = cover_download_worker::setup();
     let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
         db_path.to_path_buf(),
@@ -182,7 +171,6 @@ pub fn build(
 
     let player = match PlayerController::new(
         conn.clone(),
-        mpris_enabled,
         cover_download.clone(),
         listenbrainz.clone(),
         lastfm.clone(),

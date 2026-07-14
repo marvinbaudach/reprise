@@ -355,7 +355,6 @@ impl PlayerController {
     /// keeps working without a bar).
     pub(super) fn new(
         conn: Rc<RefCell<Connection>>,
-        mpris_enabled: bool,
         cover_download: CoverDownloadRuntime,
         listenbrainz: Rc<ScrobbleRuntime>,
         lastfm: Rc<ScrobbleRuntime>,
@@ -380,19 +379,9 @@ impl PlayerController {
         // outside this controller needs either handle — see the module's
         // `## MPRIS` doc section.
         //
-        // Module registry gate: MPRIS is an optional module
-        // (`module.mpris.enabled`). When it's off, `MediaIntegrationHandles::
-        // inert()` hands back dormant handles that spawn no thread and claim
-        // no bus name — observably identical to the no-session-bus
-        // degradation path, so the rest of the controller is unchanged.
-        let handles = if mpris_enabled {
-            mpris::start(crate::APP_ID)
-        } else {
-            tracing::info!(
-                "MPRIS module disabled (module.mpris.enabled = 0); not claiming the bus name"
-            );
-            reprise_core::media_integration::MediaIntegrationHandles::inert()
-        };
+        // MPRIS is always on (no user toggle): the redesign integrates media
+        // keys / lock-screen unconditionally.
+        let handles = mpris::start(crate::APP_ID);
         let mpris_state = handles.shared_state;
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;
