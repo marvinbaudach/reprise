@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge agent-d UI follow-ups into main
+SINCE:    2026-07-14 06:12 CEST
 ```
 
-_As of 2026-07-14: Codex completed and released the sidebar issue-source cleanup._
+_As of 2026-07-14: Codex is merging the reviewed agent-d UI follow-ups into main._
 
 ## Parallel feature work
 
