@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Hide disabled service-dependent preference rows
+SINCE:    2026-07-14 03:52 CEST
 ```
 
-_As of 2026-07-14: free after polishing unavailable Information-panel states._
+_As of 2026-07-14: Codex is hiding disabled service-dependent preference rows._
 
 ## Current position
 
