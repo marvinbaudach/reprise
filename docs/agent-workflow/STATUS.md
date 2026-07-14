@@ -33,17 +33,20 @@ Both agents share the same working tree, so the on-disk `LOCK` file is all the c
 
 ## Current position
 
-- **Completed follow-ups:** embedded Rhythmbox and scrobbler Preferences navigation plus native-only
-  column-layout dialog closing (`e9f7bf9`, `64f1d8b`, `a9f3887`).
-- **Last completed:** **Track-table column-title hierarchy** (`6e16ab0`) — sortable header text
-  uses a subtle theme-relative 78% foreground alpha while song metadata keeps normal contrast.
-- **Current plan:** refactoring ahead of the upcoming design fine-tuning —
-  `docs/superpowers/specs/2026-07-14-refactoring-plan.md` (R1 central `ui/style` module,
-  R2 core file-size violations, R3 feature-grouped `ui/`, R4 edge-tight rule).
-- **➡️ NEXT:** R1 (central style module) — it is the enabler for the user-announced design
-  fine-tuning phase. R2 is independent and safe to pick up in parallel slots (lock protocol
-  still applies). Do not start the design fine-tuning itself without explicit user direction.
-- **Main implementation:** `6e16ab0` on `main`.
+- **Last completed:** **Refactoring plan R1–R3 executed** (`62b68b1`, `4f5f3b9`, `219fe26`) plus a
+  condensed README with an MCP-section placeholder (`6fa87ca`). R1: all app CSS now flows through
+  ONE provider in `ui/style` (feature `css()` sections + `ui/style/tokens.rs` design knobs;
+  installed once via `window::build`/tests, never per-widget). R2: queue/playlists test suites
+  moved to sibling `#[path]` files, `mark_vanished` tests split out — no file >800 lines. R3:
+  116 `ui/` sources grouped into 16 feature directories as pure `git mv`; the module tree is
+  unchanged via `#[path]` declarations in `ui/mod.rs`, so all `crate::ui::*`/`super::*` paths
+  still resolve. POTFILES.in follows the moved string tables.
+- **Current plan:** refactoring plan complete (R4 stays a standing rule:
+  `docs/superpowers/specs/2026-07-14-refactoring-plan.md`).
+- **➡️ NEXT:** the user-announced **design fine-tuning** phase. Visual knobs live in
+  `ui/style/tokens.rs`; new CSS goes into a feature `css()` section listed in `ui/style/mod.rs` —
+  do NOT create per-widget CssProviders. Wait for explicit user direction on scope.
+- **Main implementation:** `219fe26` on `main`.
 - **Latest validation:** the reported one-row initial Library render was not reproducible with the
   current debug build or the freshly reinstalled release: an isolated second launch with 501
   pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
@@ -225,7 +228,10 @@ Both agents share the same working tree, so the on-disk `LOCK` file is all the c
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines) is edge-tight — its next edit must extract a cohesive sibling module.
+- **File-size rule (R4):** no file exceeds 800 lines anymore, but several sit close
+  (`track_list.rs` 795, `scrobbling.rs` 795, `browse_bar.rs` ~790, `track_actions.rs` 790,
+  `track_list_context_menu.rs` 784, `sidebar.rs` 780) — the next substantive edit to any of
+  them must extract a cohesive sibling module first.
   Compact, rating, column-header, and playlist-delete pointer flows are already extracted so
   `scripts/ptr-e2e/run.sh` remains below the file-size limit.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
