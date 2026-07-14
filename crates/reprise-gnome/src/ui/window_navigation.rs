@@ -39,24 +39,47 @@ fn clear_sidebar_focus(split_view: &adw::NavigationSplitView, sidebar_page: &adw
     }
 }
 
-fn sidebar_toggle_is_visible(collapsed: bool, has_sidebar: bool) -> bool {
-    collapsed && has_sidebar
+fn sidebar_toggle_is_visible(has_sidebar: bool) -> bool {
+    has_sidebar
 }
 
 fn sync_sidebar_toggle(
     sidebar_toggle: &gtk4::ToggleButton,
     split_view: &adw::NavigationSplitView,
     sidebar_page: &adw::NavigationPage,
+    manually_hidden: &std::cell::Cell<bool>,
     updating: &std::cell::Cell<bool>,
 ) {
     updating.set(true);
     let has_sidebar = sidebar_page.is_visible();
-    sidebar_toggle.set_visible(sidebar_toggle_is_visible(
-        split_view.is_collapsed(),
-        has_sidebar,
-    ));
-    sidebar_toggle.set_active(has_sidebar && !split_view.shows_content());
+    sidebar_toggle.set_visible(sidebar_toggle_is_visible(has_sidebar));
+    sidebar_toggle.set_active(
+        has_sidebar
+            && !manually_hidden.get()
+            && (!split_view.is_collapsed() || !split_view.shows_content()),
+    );
     updating.set(false);
+}
+
+fn available_width(split_view: &adw::NavigationSplitView) -> i32 {
+    split_view
+        .root()
+        .map_or_else(|| split_view.width(), |root| root.width())
+}
+
+fn show_sidebar(split_view: &adw::NavigationSplitView, manually_hidden: &std::cell::Cell<bool>) {
+    manually_hidden.set(false);
+    let collapsed = available_width(split_view) < SIDEBAR_BREAKPOINT_WIDTH;
+    split_view.set_collapsed(collapsed);
+    if collapsed {
+        split_view.set_show_content(false);
+    }
+}
+
+fn hide_sidebar(split_view: &adw::NavigationSplitView, manually_hidden: &std::cell::Cell<bool>) {
+    manually_hidden.set(true);
+    split_view.set_show_content(true);
+    split_view.set_collapsed(true);
 }
 
 pub(super) fn show_content_callback(split_view: &adw::NavigationSplitView) -> Rc<dyn Fn()> {
@@ -79,43 +102,79 @@ pub(super) fn wire_sidebar_toggle(
     sidebar_page: &adw::NavigationPage,
 ) {
     let updating = Rc::new(std::cell::Cell::new(false));
-    sync_sidebar_toggle(sidebar_toggle, split_view, sidebar_page, &updating);
+    let manually_hidden = Rc::new(std::cell::Cell::new(false));
+    sync_sidebar_toggle(
+        sidebar_toggle,
+        split_view,
+        sidebar_page,
+        &manually_hidden,
+        &updating,
+    );
     {
         let split_view = split_view.clone();
         let sidebar_page = sidebar_page.clone();
+        let manually_hidden = manually_hidden.clone();
         let updating = updating.clone();
         sidebar_toggle.connect_toggled(move |button| {
             if !updating.get() && sidebar_page.is_visible() {
-                split_view.set_show_content(!button.is_active());
+                if button.is_active() {
+                    show_sidebar(&split_view, &manually_hidden);
+                } else {
+                    hide_sidebar(&split_view, &manually_hidden);
+                }
             }
         });
     }
     {
         let sidebar_toggle = sidebar_toggle.clone();
         let sidebar_page = sidebar_page.clone();
+        let manually_hidden = manually_hidden.clone();
         let updating = updating.clone();
         split_view.connect_show_content_notify(move |split_view| {
-            sync_sidebar_toggle(&sidebar_toggle, split_view, &sidebar_page, &updating);
+            sync_sidebar_toggle(
+                &sidebar_toggle,
+                split_view,
+                &sidebar_page,
+                &manually_hidden,
+                &updating,
+            );
         });
     }
     {
         let sidebar_toggle = sidebar_toggle.clone();
         let sidebar_page = sidebar_page.clone();
+        let manually_hidden = manually_hidden.clone();
         let updating = updating.clone();
         split_view.connect_collapsed_notify(move |split_view| {
-            if !sidebar_page.is_visible() && !split_view.is_collapsed() {
+            if (!sidebar_page.is_visible() || manually_hidden.get()) && !split_view.is_collapsed() {
                 split_view.set_collapsed(true);
                 return;
             }
-            sync_sidebar_toggle(&sidebar_toggle, split_view, &sidebar_page, &updating);
+            sync_sidebar_toggle(
+                &sidebar_toggle,
+                split_view,
+                &sidebar_page,
+                &manually_hidden,
+                &updating,
+            );
         });
     }
     {
         let sidebar_toggle = sidebar_toggle.clone();
         let split_view = split_view.clone();
+        let manually_hidden = manually_hidden.clone();
         let updating = updating.clone();
         sidebar_page.connect_visible_notify(move |sidebar_page| {
-            sync_sidebar_toggle(&sidebar_toggle, &split_view, sidebar_page, &updating);
+            if !sidebar_page.is_visible() {
+                manually_hidden.set(false);
+            }
+            sync_sidebar_toggle(
+                &sidebar_toggle,
+                &split_view,
+                sidebar_page,
+                &manually_hidden,
+                &updating,
+            );
         });
     }
 }
@@ -125,10 +184,58 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sidebar_toggle_requires_a_collapsed_view_with_a_sidebar_slot() {
-        assert!(sidebar_toggle_is_visible(true, true));
-        assert!(!sidebar_toggle_is_visible(false, true));
-        assert!(!sidebar_toggle_is_visible(true, false));
+    fn sidebar_toggle_remains_available_whenever_the_sidebar_slot_exists() {
+        assert!(sidebar_toggle_is_visible(true));
+        assert!(!sidebar_toggle_is_visible(false));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn wide_window_toggle_collapses_and_restores_the_sidebar_column() {
+        gtk4::init().unwrap();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let content = adw::NavigationPage::builder()
+            .title("Content")
+            .child(&gtk4::Label::new(Some("Content")))
+            .build();
+        let split = adw::NavigationSplitView::builder()
+            .sidebar(&sidebar)
+            .content(&content)
+            .collapsed(false)
+            .build();
+        let button = gtk4::ToggleButton::builder()
+            .icon_name("sidebar-show-symbolic")
+            .build();
+        let window = adw::Window::builder()
+            .default_width(900)
+            .default_height(600)
+            .content(&split)
+            .build();
+        window.set_size_request(900, 600);
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        wire_sidebar_toggle(&button, &split, &sidebar);
+
+        assert!(button.is_visible());
+        assert!(button.is_active());
+        assert!(!split.is_collapsed());
+        assert!(available_width(&split) >= SIDEBAR_BREAKPOINT_WIDTH);
+
+        button.set_active(false);
+        assert!(split.is_collapsed());
+        assert!(split.shows_content());
+        assert!(button.is_visible());
+
+        split.set_collapsed(false);
+        assert!(split.is_collapsed());
+
+        button.set_active(true);
+        assert!(!split.is_collapsed());
+        assert!(button.is_active());
+        window.close();
     }
 
     #[test]

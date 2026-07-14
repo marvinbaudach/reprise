@@ -91,7 +91,10 @@ Queries, Queue noch Playbackzustand.
   Einstellungen sowie in der Ersteinrichtung erreichbar. Sie verwenden
   weiterhin den einen vorhandenen `ScanControls`-Zustand; im Library-Header
   erscheint kein zusätzlicher Scan-Knopf.
-- Im kollabierten Split-View kommt der Sidebar-Knopf ganz links hinzu. Alle
+- Der Sidebar-Knopf bleibt ganz links erreichbar, solange die Sidebar in den
+  Layouteinstellungen aktiviert ist. Bei breitem Fenster klappt er die
+  vollständige linke Spalte ein und gibt den Platz der Tabelle zurück; im
+  schmalen Split-View wechselt er zwischen Navigation und Content. Alle
   icon-only Knöpfe besitzen Tooltip, Accessible Name und natives Fokusziel.
 
 ### Browse-Leiste
