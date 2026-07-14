@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Keep the right Information column beside the Library table
-SINCE:    2026-07-14T09:23:26+02:00
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
 _As of 2026-07-14: all reviewed local feature work is integrated into main._
@@ -45,6 +45,10 @@ _As of 2026-07-14: all reviewed local feature work is integrated into main._
   current debug build or the freshly reinstalled release: an isolated second launch with 501
   pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
   single instance remains the likely explanation; real-desktop restart verification is pending.
+- **Information-column validation:** the existing `2cbe143` implementation keeps the right panel
+  pinned beside the Library. Mapped allocation checks at 700 and 1,200 pixels found no content
+  overlap, including throughout the panel opening transition; real-desktop restart verification
+  remains pending.
 
 ## Done so far (compact)
 
