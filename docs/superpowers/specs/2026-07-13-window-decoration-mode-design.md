@@ -1,5 +1,10 @@
 # Fensterdekorationsmodus — Designspezifikation
 
+> Der SSD-Teil dieser Spezifikation ist durch
+> `2026-07-14-reliable-separate-title-bar-design.md` abgelöst. Persistente Tokens
+> und Chromium-CSD-Standard bleiben bestehen; `system` zeigt nun eine separate
+> native GTK-Leiste im dauerhaften Fensterinhalt.
+
 ## Ziel
 
 Reprise verwendet standardmäßig die bereits entworfene flache, Chromium-artige

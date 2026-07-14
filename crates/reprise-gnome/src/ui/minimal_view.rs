@@ -5,7 +5,6 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use reprise_core::library::settings::{self, CompactLayout, WindowViewMode};
 use rusqlite::Connection;
 
@@ -13,6 +12,7 @@ use super::compact_player::{CompactPlayer, CompactPlayerHandle};
 use super::compact_player_layouts::{self, LayoutMetrics};
 use super::first_run::FirstRunDecision;
 use super::strings;
+use super::window_decorations::WindowContentHost;
 
 const FULL_MIN_WIDTH: i32 = 600;
 const FULL_MIN_HEIGHT: i32 = 400;
@@ -94,6 +94,7 @@ fn updated_full_geometry(current: (i32, i32), live: (i32, i32), maximized: bool)
 
 pub(super) struct MinimalView {
     window: adw::ApplicationWindow,
+    content_host: WindowContentHost,
     full_root: gtk4::Widget,
     compact: Option<CompactPlayerHandle>,
     compact_root: Option<adw::ToastOverlay>,
@@ -109,6 +110,7 @@ pub(super) struct MinimalView {
 impl MinimalView {
     pub(super) fn new(
         window: &adw::ApplicationWindow,
+        content_host: &WindowContentHost,
         full_root: &gtk4::Widget,
         compact: Option<&CompactPlayer>,
         conn: Rc<RefCell<Connection>>,
@@ -132,6 +134,7 @@ impl MinimalView {
         });
         let state = Rc::new(Self {
             window: window.clone(),
+            content_host: content_host.clone(),
             full_root: full_root.clone(),
             compact,
             compact_root,
@@ -228,6 +231,12 @@ impl MinimalView {
         tracing::info!(mode = ?initial.mode, layout = ?initial.layout, "initial window view applied");
     }
 
+    pub(super) fn refresh_geometry(&self) {
+        if self.transition.get().mode == WindowViewMode::Compact {
+            self.apply_compact_metrics(self.transition.get().layout);
+        }
+    }
+
     fn enter_compact(&self, capture_full_geometry: bool) {
         let (Some(compact), Some(compact_root)) = (&self.compact, &self.compact_root) else {
             return;
@@ -256,7 +265,7 @@ impl MinimalView {
         self.window.set_resizable(true);
         self.window.set_width_request(-1);
         self.window.set_height_request(-1);
-        self.window.set_content(Some(compact_root));
+        self.content_host.set_content(compact_root);
         self.apply_compact_metrics(layout);
     }
 
@@ -266,7 +275,7 @@ impl MinimalView {
         self.window.set_resizable(true);
         self.window
             .set_default_size(self.full_width.get(), self.full_height.get());
-        self.window.set_content(Some(&self.full_root));
+        self.content_host.set_content(&self.full_root);
         if self.full_maximized.get() {
             self.window.maximize();
         }
@@ -275,10 +284,11 @@ impl MinimalView {
 
     fn apply_compact_metrics(&self, layout: CompactLayout) {
         let metrics = layout_metrics(layout);
+        let height = metrics.height + self.content_host.additional_height();
         self.window.set_resizable(true);
         self.window.set_width_request(metrics.width);
-        self.window.set_height_request(metrics.height);
-        self.window.set_default_size(metrics.width, metrics.height);
+        self.window.set_height_request(height);
+        self.window.set_default_size(metrics.width, height);
         self.window.set_resizable(false);
     }
 
