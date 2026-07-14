@@ -49,12 +49,8 @@ pub const ARTIST_NEWS_MODULE: ModuleDescriptor = ModuleDescriptor {
 };
 
 /// Every optional integration the app currently exposes, in Plugins-page order.
-pub const ALL_MODULES: &[&ModuleDescriptor] = &[
-    &MPRIS_MODULE,
-    &ARTIST_NEWS_MODULE,
-    &LISTENBRAINZ_MODULE,
-    &LASTFM_MODULE,
-];
+pub const ALL_MODULES: &[&ModuleDescriptor] =
+    &[&ARTIST_NEWS_MODULE, &LISTENBRAINZ_MODULE, &LASTFM_MODULE];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -105,8 +101,10 @@ mod tests {
     }
 
     #[test]
-    fn all_modules_lists_mpris() {
-        assert!(ALL_MODULES.iter().any(|m| m.id == "mpris"));
+    fn all_modules_excludes_mpris_which_is_always_on() {
+        // MPRIS is unconditional (no user toggle), so it is not a Plugins-page
+        // module even though MPRIS_MODULE still describes it.
+        assert!(!ALL_MODULES.iter().any(|m| m.id == "mpris"));
     }
 
     #[test]
