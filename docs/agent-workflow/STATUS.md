@@ -8,25 +8,24 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## Protocol (read before touching anything)
 
 1. **Read this file + `git log --oneline -10`.** Trust them over memory.
-2. **Only ONE agent works `main` at a time.** Before you start coding, set the **Lock** below to
-   yourself with a timestamp + the task you're taking, and commit *only this file* first
-   (`docs: claim work lock`). If the Lock is already held by the other agent and the timestamp is
-   recent, do NOT start — coordinate via the user or wait. (True parallel work requires a separate
-   branch/worktree — ask the user to set that up.)
+2. **Only ONE agent works `main` at a time.** Before you start coding, claim the **Lock** by
+   editing the gitignored `LOCK` file next to this one (set OWNER to yourself + a timestamp + the
+   task). **Do NOT commit it** — the LOCK file is gitignored and shared via the working tree on
+   disk, so the other agent sees your edit without any commit. If the Lock is already held by the
+   other agent and the timestamp is recent, do NOT start — coordinate via the user or wait. (True
+   parallel work requires a separate branch/worktree — ask the user to set that up.)
 3. **Do the task** per `development-method.md` (test-first → gates → commit → self-review → ledger line).
-4. **When done**, update "Current position" + "Done so far" here, set the Lock back to
-   `FREE`, and commit this file (`docs: release work lock; <what you finished>`).
+4. **When done**, update "Current position" + "Done so far" in THIS file (commit those doc edits
+   normally, together with or alongside your work), and set the `LOCK` file's OWNER back to `FREE`
+   (edit only — never commit LOCK).
 5. **Never push.** Never touch the user's real DB/music (see `AGENTS.md`).
 
 ## 🔒 Lock
 
-```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Soften track-table column titles
-SINCE:    2026-07-14T10:48:10+02:00
-```
-
-_As of 2026-07-14: Codex is softening the track-table column-title hierarchy._
+**The live lock lives in the gitignored `LOCK` file next to this one — edit it, never commit it.**
+Committing the lock state used to create a `docs: claim/release work lock` commit for every task
+(~150 noise commits in the history); the volatile lock is now kept out of version control entirely.
+Both agents share the same working tree, so the on-disk `LOCK` file is all the coordination needs.
 
 ## Parallel feature work
 
@@ -36,11 +35,11 @@ _As of 2026-07-14: Codex is softening the track-table column-title hierarchy._
 
 - **Completed follow-ups:** embedded Rhythmbox and scrobbler Preferences navigation plus native-only
   column-layout dialog closing (`e9f7bf9`, `64f1d8b`, `a9f3887`).
-- **Last completed:** **Preferences navigation cleanup** (`a9f3887`) — setup flows stay in the
-  Preferences window and the standalone column editor has no redundant labeled Close button.
+- **Last completed:** **Track-table column-title hierarchy** (`6e16ab0`) — sortable header text
+  uses a subtle theme-relative 78% foreground alpha while song metadata keeps normal contrast.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `a9f3887` on `main`.
+- **Main implementation:** `6e16ab0` on `main`.
 - **Latest validation:** the reported one-row initial Library render was not reproducible with the
   current debug build or the freshly reinstalled release: an isolated second launch with 501
   pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
@@ -81,6 +80,8 @@ _As of 2026-07-14: Codex is softening the track-table column-title hierarchy._
 - ✅ **Column-layout reordering**: movable editor rows use capture-phase drag recognition across
   labels, empty space and embedded controls without permanent arrow buttons, while Switch clicks and
   Alt+Up/Down keyboard reordering keep non-drag interaction precise.
+- ✅ **Track-table visual hierarchy**: sortable column-title labels are subtly quieter than song
+  metadata through one theme-relative, track-table-scoped foreground rule.
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.

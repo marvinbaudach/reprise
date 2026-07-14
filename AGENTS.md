@@ -33,9 +33,11 @@ download, 7 tasks). Each plan has a matching design spec in `docs/superpowers/sp
 ## Coordinating two agents (Claude ⇄ Codex) — READ FIRST
 
 `docs/agent-workflow/STATUS.md` is the shared, git-tracked coordination board: who's working,
-what's done, what's next. **Before touching `main`, read it and claim its Lock** (set OWNER to
-yourself, commit just that file); release the Lock when you finish. Only ONE agent works `main`
-at a time — if the Lock is held by the other agent and recently active, do not start. True
+what's done, what's next. **Before touching `main`, read it and claim the Lock** by editing the
+gitignored `docs/agent-workflow/LOCK` file (set OWNER to yourself) — **never commit LOCK**; it is
+shared via the working tree on disk, so no commit is needed (this replaced ~150 `docs: work lock`
+noise commits). Release the Lock (set OWNER back to `FREE`) when you finish. Only ONE agent works
+`main` at a time — if the Lock is held by the other agent and recently active, do not start. True
 parallel work needs a separate branch/worktree (ask the user).
 
 ## Shared workflow skills (read these — both agents use them)
