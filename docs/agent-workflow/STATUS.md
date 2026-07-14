@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Embed column layout as Preferences second-level navigation
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for Preferences column-layout navigation._
+_As of 2026-07-14: Codex released the lock after completing Preferences column-layout navigation._
 
 ## Parallel feature work
 
@@ -35,11 +35,11 @@ _As of 2026-07-14: Codex claimed the lock for Preferences column-layout navigati
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Filter-bar Reset cleanup** (`fe70693`) — removable chips are the sole clear
-  path, the redundant Reset action is gone, and `+ Add filter` uses the retained pill treatment.
+- **Last completed:** **Preferences column-layout navigation** (`428f916`) — Layout pushes the
+  existing editor as a native second-level page in the same Preferences window.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `fe70693`.
+- **Main implementation:** `428f916`.
 
 ## Done so far (compact)
 
@@ -59,6 +59,8 @@ _As of 2026-07-14: Codex claimed the lock for Preferences column-layout navigati
 - ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
   whole-row drag ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
   first-run offer that remains default off.
+- ✅ **Preferences column-layout navigation**: Layout opens that editor as a native detail page in
+  the existing Preferences window with Back navigation instead of an obscured child dialog.
 - ✅ **Whole-row column-layout drag restoration**: movable editor rows use capture-phase drag
   recognition across labels, empty space and embedded controls, while short Switch and Up/Down
   clicks keep their existing behavior.
