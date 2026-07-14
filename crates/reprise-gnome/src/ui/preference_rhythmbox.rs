@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -118,6 +118,10 @@ fn default_rhythmdb_path() -> PathBuf {
     )
 }
 
+fn rhythmbox_data_available(rhythmdb_path: &Path) -> bool {
+    rhythmdb_path.is_file()
+}
+
 fn default_playlists_path(rhythmdb_path: &std::path::Path) -> PathBuf {
     std::env::var_os(PLAYLISTS_PATH_ENV).map_or_else(
         || rhythmdb_path.with_file_name("playlists.xml"),
@@ -140,6 +144,9 @@ pub(super) fn add_rhythmbox_import_row(
     context: &Rc<PreferencesContext>,
     group: &adw::PreferencesGroup,
 ) {
+    if !rhythmbox_data_available(&default_rhythmdb_path()) {
+        return;
+    }
     let row = adw::ActionRow::builder()
         .title(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX))
         .subtitle(strings::text(strings::RHYTHMBOX_IMPORT_DESCRIPTION))
@@ -377,7 +384,22 @@ impl PreferencesContext {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
     use super::*;
+
+    #[test]
+    fn import_row_requires_a_detected_rhythmdb_file() {
+        let dir = tempdir().unwrap();
+        let rhythmdb = dir.path().join("rhythmdb.xml");
+
+        assert!(!rhythmbox_data_available(&rhythmdb));
+        fs::write(&rhythmdb, "<rhythmdb/>").unwrap();
+        assert!(rhythmbox_data_available(&rhythmdb));
+        assert!(!rhythmbox_data_available(dir.path()));
+    }
 
     #[test]
     fn statistics_are_selected_but_column_layout_requires_opt_in() {

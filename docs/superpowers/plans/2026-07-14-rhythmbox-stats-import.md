@@ -191,8 +191,22 @@ und Manual QA.
    vollständige Gates, Core-Purity, Dateigröße und Review.
 6. Commit: `feat: import Rhythmbox last played`.
 
+## Aufgabe 7 — Importaktion nur bei gefundenen Rhythmbox-Daten zeigen
+
+**Dateien:** `crates/reprise-gnome/src/ui/preference_rhythmbox.rs`, Design und
+Manual QA.
+
+1. RED: Ein Policytest verlangt, dass nur eine reguläre `rhythmdb.xml` als
+   gefundene Rhythmbox-Daten gilt; ein fehlender Pfad und ein Verzeichnis gelten
+   nicht als verfügbar.
+2. Den bereits aufgelösten Standard- oder Smoke-Pfad vor dem Erzeugen der
+   Preferences-Zeile prüfen und bei fehlender Datendatei früh zurückkehren.
+3. Fokustest sowie isolierte Settings-Smokes mit und ohne Scratch-Fixture
+   ausführen; danach vollständige Gates, Dateigröße und Review.
+4. Commit: `fix: hide unavailable Rhythmbox import`.
+
 ## Abschluss
 
-Ledger um alle sechs Commits ergänzen. Branch sauber und ungepusht lassen;
+Ledger um alle sieben Commits ergänzen. Branch sauber und ungepusht lassen;
 Integration nach `main` erfolgt erst nach separater Freigabe und Rebase auf den
 dann aktuellen `main`.

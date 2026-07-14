@@ -380,6 +380,9 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   unchanged. Enable the optional Plays column, sort it in both directions, hide it,
   and restart to verify layout persistence; confirm Recently added and Recently
   played follow the imported dates.
+- [ ] With no `rhythmdb.xml` in the disposable profile, Preferences → Library
+  does not show a Rhythmbox import row; adding the file and reopening Preferences
+  makes the row available.
 - [ ] Playlist context-menu add/new/remove, sidebar drag add, multi-select, and M3U8
   import work with Unicode names and paths containing spaces.
 - [ ] Exported M3U opens in another compatible player when one is available.
