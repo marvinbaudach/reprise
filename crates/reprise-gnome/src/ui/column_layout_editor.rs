@@ -19,21 +19,28 @@ const DROP_AFTER_CLASS: &str = "reprise-column-drop-after";
 struct RowCapabilities {
     toggleable: bool,
     draggable: bool,
-    can_move_up: bool,
-    can_move_down: bool,
 }
 
 fn is_fixed(id: ColumnId) -> bool {
     matches!(id, ColumnId::Cover | ColumnId::Title)
 }
 
-fn row_capabilities(id: ColumnId, index: usize, len: usize) -> RowCapabilities {
+fn row_capabilities(id: ColumnId) -> RowCapabilities {
     let movable = !is_fixed(id);
     RowCapabilities {
         toggleable: movable,
         draggable: movable,
-        can_move_up: movable && index > 2,
-        can_move_down: movable && index + 1 < len,
+    }
+}
+
+fn keyboard_reorder_offset(key: gdk::Key, modifiers: gdk::ModifierType) -> Option<isize> {
+    if !modifiers.contains(gdk::ModifierType::ALT_MASK) {
+        return None;
+    }
+    match key {
+        gdk::Key::Up => Some(-1),
+        gdk::Key::Down => Some(1),
+        _ => None,
     }
 }
 
@@ -154,19 +161,14 @@ impl EditorState {
             self.list.remove(&child);
         }
         let layout = self.layout.borrow().clone();
-        for (index, id) in layout.order.iter().copied().enumerate() {
-            self.list.append(&build_row(self, &layout, id, index));
+        for id in layout.order.iter().copied() {
+            self.list.append(&build_row(self, &layout, id));
         }
     }
 }
 
-fn build_row(
-    state: &Rc<EditorState>,
-    layout: &ColumnLayout,
-    id: ColumnId,
-    index: usize,
-) -> adw::ActionRow {
-    let capabilities = row_capabilities(id, index, layout.order.len());
+fn build_row(state: &Rc<EditorState>, layout: &ColumnLayout, id: ColumnId) -> adw::ActionRow {
+    let capabilities = row_capabilities(id);
     let row = adw::ActionRow::builder()
         .title(column_layout::column_label(id))
         .build();
@@ -200,35 +202,23 @@ fn build_row(
     }
 
     if capabilities.draggable {
-        let up = gtk4::Button::builder()
-            .icon_name("go-up-symbolic")
-            .tooltip_text(strings::text(strings::MOVE_COLUMN_UP))
-            .valign(gtk4::Align::Center)
-            .sensitive(capabilities.can_move_up)
-            .css_classes(["flat"])
-            .build();
+        row.update_property(&[
+            gtk4::accessible::Property::Description(&strings::text(strings::DRAG_TO_REORDER)),
+            gtk4::accessible::Property::KeyShortcuts("Alt+ArrowUp Alt+ArrowDown"),
+        ]);
+        let keys = gtk4::EventControllerKey::new();
+        keys.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let state_weak = Rc::downgrade(state);
-        up.connect_clicked(move |_| {
+        keys.connect_key_pressed(move |_, key, _, modifiers| {
+            let Some(offset) = keyboard_reorder_offset(key, modifiers) else {
+                return glib::Propagation::Proceed;
+            };
             if let Some(state) = state_weak.upgrade() {
-                state.move_by(id, -1);
+                state.move_by(id, offset);
             }
+            glib::Propagation::Stop
         });
-        row.add_suffix(&up);
-
-        let down = gtk4::Button::builder()
-            .icon_name("go-down-symbolic")
-            .tooltip_text(strings::text(strings::MOVE_COLUMN_DOWN))
-            .valign(gtk4::Align::Center)
-            .sensitive(capabilities.can_move_down)
-            .css_classes(["flat"])
-            .build();
-        let state_weak = Rc::downgrade(state);
-        down.connect_clicked(move |_| {
-            if let Some(state) = state_weak.upgrade() {
-                state.move_by(id, 1);
-            }
-        });
-        row.add_suffix(&down);
+        row.add_controller(keys);
 
         let state_weak = Rc::downgrade(state);
         wire_row_drag_and_drop(&row, id, move |source, after| {
@@ -347,23 +337,37 @@ pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList
 mod tests {
     use super::*;
 
+    fn descendant_button_count(widget: &gtk4::Widget) -> usize {
+        let mut count = usize::from(widget.is::<gtk4::Button>());
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            count += descendant_button_count(&current);
+            child = current.next_sibling();
+        }
+        count
+    }
+
     #[test]
     fn fixed_and_movable_rows_expose_the_right_controls() {
-        let fixed = row_capabilities(ColumnId::Title, 1, 9);
+        let fixed = row_capabilities(ColumnId::Title);
         assert!(!fixed.toggleable);
         assert!(!fixed.draggable);
-        assert!(!fixed.can_move_up);
-        assert!(!fixed.can_move_down);
 
-        let first = row_capabilities(ColumnId::Artist, 2, 9);
-        assert!(first.toggleable);
-        assert!(first.draggable);
-        assert!(!first.can_move_up);
-        assert!(first.can_move_down);
+        let movable = row_capabilities(ColumnId::Artist);
+        assert!(movable.toggleable);
+        assert!(movable.draggable);
+    }
 
-        let last = row_capabilities(ColumnId::Genre, 8, 9);
-        assert!(last.can_move_up);
-        assert!(!last.can_move_down);
+    #[test]
+    fn alt_arrow_keys_reorder_without_stealing_plain_navigation() {
+        let alt = gdk::ModifierType::ALT_MASK;
+        assert_eq!(keyboard_reorder_offset(gdk::Key::Up, alt), Some(-1));
+        assert_eq!(keyboard_reorder_offset(gdk::Key::Down, alt), Some(1));
+        assert_eq!(
+            keyboard_reorder_offset(gdk::Key::Up, gdk::ModifierType::empty()),
+            None
+        );
+        assert_eq!(keyboard_reorder_offset(gdk::Key::Return, alt), None);
     }
 
     #[test]
@@ -397,6 +401,33 @@ mod tests {
         }
         assert_eq!(drag_phase, Some(gtk4::PropagationPhase::Capture));
         assert!(has_drop);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn movable_row_reorders_without_visible_arrow_buttons() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let layout = ColumnLayout::default();
+        let state = Rc::new(EditorState {
+            layout: RefCell::new(layout.clone()),
+            list: gtk4::ListBox::new(),
+            track_list: std::rc::Weak::new(),
+        });
+
+        let row = build_row(&state, &layout, ColumnId::Artist);
+        let controllers = row.observe_controllers();
+        let keyboard_phase = (0..controllers.n_items()).find_map(|index| {
+            controllers
+                .item(index)?
+                .downcast::<gtk4::EventControllerKey>()
+                .ok()
+                .map(|controller| controller.propagation_phase())
+        });
+
+        assert_eq!(descendant_button_count(row.upcast_ref()), 0);
+        assert_eq!(keyboard_phase, Some(gtk4::PropagationPhase::Capture));
     }
 
     #[test]
