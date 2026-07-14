@@ -1,4 +1,7 @@
 //! Last.fm preferences, desktop authorization, keyring storage, and bootstrap.
+//!
+//! Presents an inline `adw::ExpanderRow` with an enable switch, API key entry,
+//! browser-based authorization, disconnect, and a live connection status subtitle.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -62,48 +65,77 @@ pub(super) fn status_text(status: &ConnectionStatus) -> String {
     }
 }
 
-struct LastFmPageSurface {
-    page: adw::NavigationPage,
+struct LastFmExpanderSurface {
+    expander: adw::ExpanderRow,
     api_key: adw::PasswordEntryRow,
     shared_secret: adw::PasswordEntryRow,
     open_browser: gtk4::Button,
-    disconnect: Option<gtk4::Button>,
+    disconnect: gtk4::Button,
 }
 
-fn build_lastfm_page(connected: bool) -> LastFmPageSurface {
-    let account = adw::PreferencesGroup::builder()
-        .description(strings::text(strings::LASTFM_DIALOG_BODY))
+fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> LastFmExpanderSurface {
+    let description =
+        crate::ui::preference_plugins::plugin_description(&reprise_core::modules::LASTFM_MODULE);
+    let subtitle = if is_enabled {
+        crate::ui::preference_dependencies::service_subtitle(&description, true, status)
+    } else {
+        description.clone()
+    };
+
+    let expander = adw::ExpanderRow::builder()
+        .title(strings::text(strings::LASTFM))
+        .subtitle(&subtitle)
+        .show_enable_switch(true)
+        .enable_expansion(is_enabled)
         .build();
+
+    // Credential entry rows
     let api_key = adw::PasswordEntryRow::builder()
         .title(strings::text(strings::LASTFM_API_KEY))
         .build();
+    expander.add_row(&api_key);
+
     let shared_secret = adw::PasswordEntryRow::builder()
         .title(strings::text(strings::LASTFM_SHARED_SECRET))
         .build();
-    account.add(&api_key);
-    account.add(&shared_secret);
+    expander.add_row(&shared_secret);
 
-    let content = adw::PreferencesPage::new();
-    content.add(&account);
-    let disconnect = connected.then(|| {
-        let actions = adw::PreferencesGroup::new();
-        let row = adw::ActionRow::builder()
-            .title(strings::text(strings::LASTFM))
-            .build();
-        let button = gtk4::Button::builder()
-            .label(strings::text(strings::LISTENBRAINZ_DISCONNECT))
-            .valign(gtk4::Align::Center)
-            .build();
-        button.add_css_class("destructive-action");
-        row.add_suffix(&button);
-        actions.add(&row);
-        content.add(&actions);
-        button
-    });
+    // Description hint
+    let hint = adw::ActionRow::builder()
+        .subtitle(strings::text(strings::LASTFM_DIALOG_BODY))
+        .build();
+    hint.add_css_class("property");
+    expander.add_row(&hint);
 
-    let open_browser = gtk4::Button::with_label(&strings::text(strings::OPEN_BROWSER));
+    // Open Browser action row with suffix button
+    let open_browser = gtk4::Button::builder()
+        .label(strings::text(strings::OPEN_BROWSER))
+        .valign(gtk4::Align::Center)
+        .build();
     open_browser.add_css_class("suggested-action");
     open_browser.set_sensitive(false);
+    let browser_row = adw::ActionRow::builder()
+        .title(strings::text(strings::OPEN_BROWSER))
+        .activatable_widget(&open_browser)
+        .build();
+    browser_row.add_suffix(&open_browser);
+    expander.add_row(&browser_row);
+
+    // Disconnect action row with destructive button
+    let disconnect = gtk4::Button::builder()
+        .label(strings::text(strings::LISTENBRAINZ_DISCONNECT))
+        .valign(gtk4::Align::Center)
+        .build();
+    disconnect.add_css_class("destructive-action");
+    let disconnect_row = adw::ActionRow::builder()
+        .title(strings::text(strings::LISTENBRAINZ_DISCONNECT))
+        .activatable_widget(&disconnect)
+        .build();
+    disconnect_row.add_suffix(&disconnect);
+    disconnect_row.set_visible(connected);
+    expander.add_row(&disconnect_row);
+
+    // Gate Open Browser on non-empty credentials
     for entry in [&api_key, &shared_secret] {
         entry.connect_changed({
             let open_browser = open_browser.clone();
@@ -116,15 +148,44 @@ fn build_lastfm_page(connected: bool) -> LastFmPageSurface {
             }
         });
     }
-    let header = adw::HeaderBar::new();
-    header.pack_end(&open_browser);
-    let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&content));
-    let title = strings::text(strings::LASTFM_ACCOUNT);
-    let page = adw::NavigationPage::with_tag(&toolbar, &title, "lastfm-account");
-    LastFmPageSurface {
-        page,
+
+    // Sensitivity gating for body rows when enable switch is off
+    expander.connect_enable_expansion_notify({
+        let api_key = api_key.downgrade();
+        let shared_secret = shared_secret.downgrade();
+        let browser_row = browser_row.downgrade();
+        let hint = hint.downgrade();
+        let disconnect_row = disconnect_row.downgrade();
+        move |expander| {
+            let enabled = expander.enables_expansion();
+            if let Some(w) = api_key.upgrade() {
+                w.set_sensitive(enabled);
+            }
+            if let Some(w) = shared_secret.upgrade() {
+                w.set_sensitive(enabled);
+            }
+            if let Some(row) = browser_row.upgrade() {
+                row.set_sensitive(enabled);
+            }
+            if let Some(row) = hint.upgrade() {
+                row.set_sensitive(enabled);
+            }
+            if let Some(row) = disconnect_row.upgrade() {
+                row.set_sensitive(enabled);
+            }
+        }
+    });
+
+    // Apply initial sensitivity
+    let body_sensitive = is_enabled;
+    api_key.set_sensitive(body_sensitive);
+    shared_secret.set_sensitive(body_sensitive);
+    browser_row.set_sensitive(body_sensitive);
+    hint.set_sensitive(body_sensitive);
+    disconnect.set_sensitive(body_sensitive);
+
+    LastFmExpanderSurface {
+        expander,
         api_key,
         shared_secret,
         open_browser,
@@ -183,50 +244,99 @@ fn disable_module(conn: &Rc<RefCell<Connection>>, runtime: &ScrobbleRuntime) {
 }
 
 impl PreferencesContext {
-    pub(super) fn add_lastfm_controls(self: &Rc<Self>, switch: &adw::SwitchRow) {
-        let description = switch.subtitle().unwrap_or_default().to_string();
-        switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
-            &description,
-            switch.is_active(),
-            &status_text(&self.lastfm.status()),
-        ));
+    /// Build the Last.fm expander row and wire up all controls.
+    /// Returns the `ExpanderRow` to be added to the plugins group.
+    pub(super) fn build_lastfm_row(self: &Rc<Self>) -> adw::ExpanderRow {
+        let is_enabled = reprise_core::modules::is_enabled(
+            &self.conn.borrow(),
+            &reprise_core::modules::LASTFM_MODULE,
+        )
+        .unwrap_or(false);
+        let connected = self.lastfm.is_active();
+        let status = status_text(&self.lastfm.status());
+        let surface = build_lastfm_expander(is_enabled, connected, &status);
+
+        let description = crate::ui::preference_plugins::plugin_description(
+            &reprise_core::modules::LASTFM_MODULE,
+        );
+
+        // Subscribe to runtime status changes for subtitle updates
         self.lastfm.subscribe(Rc::new({
-            let switch = switch.downgrade();
+            let expander = surface.expander.downgrade();
             let description = description.clone();
             move |status| {
-                if let Some(switch) = switch.upgrade() {
-                    switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
+                if let Some(expander) = expander.upgrade() {
+                    expander.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
                         &description,
-                        switch.is_active(),
+                        expander.enables_expansion(),
                         &status_text(&status),
                     ));
                 }
             }
         }));
-        let runtime = self.lastfm.clone();
-        let description_for_toggle = description.clone();
-        switch.connect_active_notify(move |switch| {
-            switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
-                &description_for_toggle,
-                switch.is_active(),
-                &status_text(&runtime.status()),
-            ));
-        });
-        let configure = crate::ui::preference_dependencies::add_configure_button(
-            switch,
-            &strings::text(strings::CONFIGURE),
-        );
+
+        // Disconnect button visibility tracks connection state
+        let disconnect_button = surface.disconnect.clone();
+        self.lastfm.subscribe(Rc::new({
+            let disconnect = disconnect_button.downgrade();
+            move |status| {
+                if let Some(button) = disconnect.upgrade() {
+                    let is_connected = !matches!(status, ConnectionStatus::Disabled);
+                    if let Some(parent) = button.parent() {
+                        parent.set_visible(is_connected);
+                    }
+                }
+            }
+        }));
+
+        // Enable switch toggle
         let weak = Rc::downgrade(self);
-        let switch = switch.downgrade();
-        configure.connect_clicked(move |_| {
-            let (Some(context), Some(switch)) = (weak.upgrade(), switch.upgrade()) else {
-                return;
-            };
-            context.push_lastfm_page(&switch);
+        let description_for_toggle = description.clone();
+        surface
+            .expander
+            .connect_enable_expansion_notify(move |expander| {
+                if let Some(context) = weak.upgrade() {
+                    expander.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
+                        &description_for_toggle,
+                        expander.enables_expansion(),
+                        &status_text(&context.lastfm.status()),
+                    ));
+                    context.change_lastfm_activation(expander, expander.enables_expansion());
+                }
+            });
+
+        // Open Browser button
+        let weak = Rc::downgrade(self);
+        let expander_for_browser = surface.expander.clone();
+        let api_key = surface.api_key.clone();
+        let shared_secret = surface.shared_secret.clone();
+        surface.open_browser.connect_clicked(move |_| {
+            if let Some(context) = weak.upgrade() {
+                context.request_lastfm_authorization(
+                    &expander_for_browser,
+                    api_key.text().trim().to_string(),
+                    shared_secret.text().trim().to_string(),
+                );
+            }
         });
+
+        // Disconnect button
+        let weak = Rc::downgrade(self);
+        let expander_for_disconnect = surface.expander.clone();
+        surface.disconnect.connect_clicked(move |_| {
+            if let Some(context) = weak.upgrade() {
+                context.disconnect_lastfm(&expander_for_disconnect);
+            }
+        });
+
+        surface.expander
     }
 
-    pub(super) fn change_lastfm_activation(self: &Rc<Self>, row: &adw::SwitchRow, requested: bool) {
+    pub(super) fn change_lastfm_activation(
+        self: &Rc<Self>,
+        row: &adw::ExpanderRow,
+        requested: bool,
+    ) {
         if self.syncing_lastfm.get() {
             return;
         }
@@ -238,7 +348,7 @@ impl PreferencesContext {
         if self.lastfm_activation_pending.replace(true) {
             return;
         }
-        crate::ui::preference_dependencies::set_activation_pending(row, true);
+        set_activation_pending(row, true);
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
@@ -247,12 +357,16 @@ impl PreferencesContext {
                 return;
             };
             context.lastfm_activation_pending.set(false);
-            crate::ui::preference_dependencies::set_activation_pending(&row, false);
+            set_activation_pending(&row, false);
             match result {
                 Ok(Some(credentials)) if client_for(&credentials).is_ok() => {
                     context.enable_lastfm(&row, credentials);
                 }
-                Ok(_) => context.push_lastfm_page(&row),
+                Ok(_) => {
+                    // No stored credentials: expand the row so the user sees
+                    // the credential fields, but keep the enable switch on.
+                    row.set_expanded(true);
+                }
                 Err(error) => {
                     tracing::warn!(%error, "could not access Last.fm credentials in keyring");
                     context.restore_lastfm_switch(&row);
@@ -262,52 +376,9 @@ impl PreferencesContext {
         });
     }
 
-    fn push_lastfm_page(self: &Rc<Self>, row: &adw::SwitchRow) {
-        let Some(navigation) = self.preferences_navigation() else {
-            tracing::warn!("Last.fm setup requested without preferences navigation");
-            self.restore_lastfm_switch(row);
-            return;
-        };
-        let surface = build_lastfm_page(self.lastfm.is_active());
-        let weak = Rc::downgrade(self);
-        let hiding_row = row.clone();
-        surface.page.connect_hiding(move |_| {
-            if let Some(context) = weak.upgrade() {
-                context.restore_lastfm_switch(&hiding_row);
-            }
-        });
-        let weak = Rc::downgrade(self);
-        let connect_row = row.clone();
-        let api_key = surface.api_key.clone();
-        let shared_secret = surface.shared_secret.clone();
-        surface.open_browser.connect_clicked(move |_| {
-            if let Some(context) = weak.upgrade() {
-                context.request_lastfm_authorization(
-                    &connect_row,
-                    api_key.text().trim().to_string(),
-                    shared_secret.text().trim().to_string(),
-                );
-            }
-        });
-        if let Some(disconnect) = surface.disconnect {
-            let weak = Rc::downgrade(self);
-            let disconnect_row = row.clone();
-            let navigation = navigation.downgrade();
-            disconnect.connect_clicked(move |_| {
-                let (Some(context), Some(navigation)) = (weak.upgrade(), navigation.upgrade())
-                else {
-                    return;
-                };
-                context.disconnect_lastfm(&disconnect_row);
-                navigation.pop();
-            });
-        }
-        navigation.push(&surface.page);
-    }
-
     fn request_lastfm_authorization(
         self: &Rc<Self>,
-        row: &adw::SwitchRow,
+        row: &adw::ExpanderRow,
         api_key: String,
         shared_secret: String,
     ) {
@@ -385,7 +456,7 @@ impl PreferencesContext {
 
     fn present_lastfm_confirmation(
         self: &Rc<Self>,
-        row: &adw::SwitchRow,
+        row: &adw::ExpanderRow,
         api_key: String,
         shared_secret: String,
         token: String,
@@ -419,7 +490,7 @@ impl PreferencesContext {
 
     fn exchange_lastfm_token(
         self: &Rc<Self>,
-        row: &adw::SwitchRow,
+        row: &adw::ExpanderRow,
         api_key: String,
         shared_secret: String,
         token: String,
@@ -484,7 +555,7 @@ impl PreferencesContext {
         });
     }
 
-    fn enable_lastfm(&self, row: &adw::SwitchRow, credentials: LastFmCredentials) {
+    fn enable_lastfm(&self, row: &adw::ExpanderRow, credentials: LastFmCredentials) {
         let Ok(client) = client_for(&credentials) else {
             self.restore_lastfm_switch(row);
             self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
@@ -499,7 +570,7 @@ impl PreferencesContext {
         }
     }
 
-    fn disconnect_lastfm(self: &Rc<Self>, row: &adw::SwitchRow) {
+    fn disconnect_lastfm(self: &Rc<Self>, row: &adw::ExpanderRow) {
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
@@ -542,13 +613,13 @@ impl PreferencesContext {
         )
     }
 
-    fn set_lastfm_switch(&self, row: &adw::SwitchRow, active: bool) {
+    fn set_lastfm_switch(&self, row: &adw::ExpanderRow, active: bool) {
         self.syncing_lastfm.set(true);
-        row.set_active(active);
+        row.set_enable_expansion(active);
         self.syncing_lastfm.set(false);
     }
 
-    fn restore_lastfm_switch(&self, row: &adw::SwitchRow) {
+    fn restore_lastfm_switch(&self, row: &adw::ExpanderRow) {
         self.set_lastfm_switch(row, self.lastfm.is_active());
     }
 
@@ -561,6 +632,14 @@ impl PreferencesContext {
         dialog.add_response("close", &strings::text(strings::CLOSE));
         dialog.present(Some(&self.preferences_parent()));
     }
+}
+
+/// Mark the expander row as pending (sensitive = false, switch forced on).
+fn set_activation_pending(row: &adw::ExpanderRow, pending: bool) {
+    if pending {
+        row.set_enable_expansion(true);
+    }
+    row.set_sensitive(!pending);
 }
 
 fn pending_count(conn: &Rc<RefCell<Connection>>) -> usize {
@@ -600,31 +679,33 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn setup_page_keeps_credentials_masked_and_gates_browser_action() {
+    fn expander_row_has_enable_switch_credentials_and_action_buttons() {
         gtk4::init().unwrap();
-        let surface = build_lastfm_page(false);
-        assert_eq!(surface.page.title(), "Last.fm Account");
-        assert!(surface.page.can_pop());
+        let surface = build_lastfm_expander(false, false, "Not connected");
+        assert!(surface.expander.shows_enable_switch());
+        assert!(!surface.expander.enables_expansion());
         assert!(surface.api_key.is::<adw::PasswordEntryRow>());
         assert!(surface.shared_secret.is::<adw::PasswordEntryRow>());
         assert!(!surface.open_browser.is_sensitive());
-        assert!(surface.disconnect.is_none());
 
+        // Disconnect button's parent row is hidden when not connected
+        assert!(surface.disconnect.parent().is_some_and(|p| !p.is_visible()));
+
+        // Credentials gate Open Browser
         surface.api_key.set_text("key");
         assert!(!surface.open_browser.is_sensitive());
         surface.shared_secret.set_text("secret");
         assert!(surface.open_browser.is_sensitive());
         surface.api_key.set_text("  ");
         assert!(!surface.open_browser.is_sensitive());
-        assert!(build_lastfm_page(true).disconnect.is_some());
 
-        let root =
-            adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Plugins");
-        let navigation = adw::NavigationView::new();
-        navigation.add(&root);
-        navigation.push(&surface.page);
-        assert_eq!(navigation.visible_page().as_ref(), Some(&surface.page));
-        assert!(navigation.pop());
-        assert_eq!(navigation.visible_page().as_ref(), Some(&root));
+        // When enabled + connected, body rows are sensitive and disconnect visible
+        let enabled_surface = build_lastfm_expander(true, true, "Connected as listener");
+        assert!(enabled_surface.expander.enables_expansion());
+        assert!(enabled_surface.api_key.is_sensitive());
+        assert!(enabled_surface
+            .disconnect
+            .parent()
+            .is_some_and(|p| p.is_visible()));
     }
 }

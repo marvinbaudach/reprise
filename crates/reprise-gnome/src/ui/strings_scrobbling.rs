@@ -12,7 +12,6 @@ pub const PLUGIN_LISTENBRAINZ_DESCRIPTION: &str =
     N_!("Scrobble completed listens to ListenBrainz (network; off by default)");
 pub const PLUGIN_LASTFM_DESCRIPTION: &str =
     N_!("Scrobble completed listens to Last.fm (network; off by default)");
-pub const CONFIGURE: &str = N_!("Configure…");
 pub const LISTENBRAINZ: &str = N_!("ListenBrainz");
 pub const LISTENBRAINZ_ACCOUNT: &str = N_!("ListenBrainz Account");
 pub const LISTENBRAINZ_NOT_CONNECTED: &str = N_!("Not connected");
