@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Add multi-selection ratings to Edit tags
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for the Edit-tags rating follow-up._
+_As of 2026-07-14: Codex released the lock after completing the Edit-tags rating follow-up._
 
 ## Parallel feature work
 
@@ -35,12 +35,11 @@ _As of 2026-07-14: Codex claimed the lock for the Edit-tags rating follow-up._
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Library chrome and sidebar grouping follow-ups** (`f29b58a`, `c7d7d53`) —
-  compact track statistics are restored without putting a Top player bar above the header, and
-  problem sources now use a subdued labeled section instead of a selection-like blank band.
+- **Last completed:** **Edit-tags rating follow-up** (`1230ab6`) — the mixed-safe batch editor now
+  exposes unrated and 1–5 star values while keeping ratings app-owned and rating-only edits DB-only.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `c7d7d53`.
+- **Main implementation:** `1230ab6`.
 
 ## Done so far (compact)
 
@@ -53,6 +52,8 @@ _As of 2026-07-14: Codex claimed the lock for the Edit-tags rating follow-up._
 - ✅ **GUI-A2**: automatic missing-cover retrieval via MusicBrainz/Cover Art Archive; the privacy
   copy discloses network lookup and no stale module, menu, onboarding, or Preferences toggle remains.
 - ✅ **GUI-B**: tag editor with multi-select batch edit + confirmed DB-only delete/safe trash.
+- ✅ **Edit-tags ratings**: the same mixed-safe batch editor supports unrated and 1–5 stars;
+  untouched mixed values remain unchanged, and rating-only edits never write audio-file tags.
 - ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
 - ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
   whole-row drag ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
