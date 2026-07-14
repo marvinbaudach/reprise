@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Restore library statistics overlay and keep header above Top player bar
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for the Library chrome ordering follow-up._
+_Released by Codex on 2026-07-14 after the Library chrome and sidebar grouping follow-ups._
 
 ## Parallel feature work
 
@@ -35,12 +35,12 @@ _As of 2026-07-14: Codex claimed the lock for the Library chrome ordering follow
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Device-sync storage preflight** (`7b454fe`) — known free space now gates
-  each drop after accounting for queued reservations, and rejected work shows a localized warning
-  with required and available sizes before any copy starts.
+- **Last completed:** **Library chrome and sidebar grouping follow-ups** (`f29b58a`, `c7d7d53`) —
+  compact track statistics are restored without putting a Top player bar above the header, and
+  problem sources now use a subdued labeled section instead of a selection-like blank band.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `7b454fe`.
+- **Main implementation:** `c7d7d53`.
 
 ## Done so far (compact)
 
@@ -93,7 +93,11 @@ _As of 2026-07-14: Codex claimed the lock for the Library chrome ordering follow
 - ✅ **Design-aligned header and sidebar**: one flat full-window header keeps the current source
   title strictly centered with compact accessible actions and Search on the right; the narrower
   navigation adds stable symbolic icons, aligned counts and mockup-derived section spacing while
-  preserving adaptive navigation, DnD, menus and Library/Compact restoration.
+  preserving adaptive navigation, DnD, menus and Library/Compact restoration. Problem sources use
+  a translated muted Issues heading rather than a separator that can resemble selection.
+- ✅ **Compact Library statistics hierarchy**: count and duration sit as a click-through
+  bottom-right track-content overlay, while the window header remains above the full-width player
+  bar even when its saved position is Top.
 - ✅ **Window decoration mode**: Appearance defaults to the flat Chromium-like CSD header and can
   live-switch to a persisted system-title-bar request across Library plus Bar, Cover, Pill and Card;
   its controls remain as a safe fallback until GTK confirms SSD, then hide to prevent duplicates;

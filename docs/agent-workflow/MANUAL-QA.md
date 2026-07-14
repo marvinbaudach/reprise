@@ -119,7 +119,8 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] Inspect Music, Queue, manual playlists, the three built-in smart playlists,
   Import errors, Missing files, and New playlist. Expected: text remains present,
   each row has a stable aligned symbolic icon, counts align at the end, and long names
-  ellipsize without moving the icon or count columns.
+  ellipsize without moving the icon or count columns. Problem sources appear below a
+  subdued Issues heading, never below a bright blank band that resembles selection.
 - [ ] Resize through wide, intermediate, and collapsed navigation widths with the
   Information panel open and closed. Expected: the sidebar stays approximately
   220–280 px while split, collapses through the existing native navigation path, and
@@ -136,6 +137,8 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   Bottom. Expected: the bar spans the complete window below/above sidebar, library,
   and Information panel; Cover/Title/Artist remain left, Previous/Play/Next sit in a
   centered row above Time/Seek/Duration, and Shuffle/Repeat/Volume remain right.
+  The window header stays above the Top player bar, while track count and duration sit
+  as a click-through bottom-right content overlay instead of a full-width bar row.
   The measured native-widget regressions and mapped-X11 screenshots prove the full
   width and zone ancestry, both isolated position starts pass, and the real-input
   Compact round-trip preserves Playing state; native Wayland visual judgment and
