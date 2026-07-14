@@ -14,7 +14,7 @@ arrives at the widget in the first place. That exact class of bug shipped
 before: a `GestureClick` on a non-interactive `Box` inside a `GtkColumnView`
 cell lost the click to the row's own selection machinery, so star-rating
 clicks silently did nothing on a real desktop while every signal-seam test
-stayed green (see `src/ui/rating.rs`'s module doc comment). This harness
+stayed green (see `src/ui/track_list/rating.rs`'s module doc comment). This harness
 injects input the same way a human would, so it can catch that class of bug.
 
 ## Usage

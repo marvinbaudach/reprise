@@ -52,7 +52,7 @@
 #      wrapping a scratch `XDG_DATA_HOME` (database) and `XDG_CONFIG_HOME`
 #      with a `gtk-4.0/settings.ini` forcing `gtk-icon-theme-name=Papirus-
 #      Dark` — the theme under which "all stars look filled" was originally
-#      caught (see `src/ui/rating.rs`'s module doc comment). Reprise's own
+#      caught (see `src/ui/track_list/rating.rs`'s module doc comment). Reprise's own
 #      rating widget already renders with theme-independent text glyphs
 #      (★/☆) specifically because of that trap, so this harness's Papirus
 #      run also stands as regression cover for the fix.
