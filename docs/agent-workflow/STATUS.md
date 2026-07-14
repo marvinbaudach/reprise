@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     FREE
-SINCE:    -
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate Compact-to-Library transition fix
+SINCE:    2026-07-14 07:15 CEST
 ```
 
 _As of 2026-07-14: the main menu exposes native About and licensing information._
