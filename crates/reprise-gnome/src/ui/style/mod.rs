@@ -42,6 +42,7 @@ fn app_css() -> String {
         super::track_list_header_style::css(),
         super::track_list_row_interaction::css(),
         super::stats_css::css(),
+        super::toasts::css(),
     ]
     .join("\n")
 }
@@ -102,6 +103,7 @@ mod tests {
         let css = super::app_css();
 
         for marker in [
+            ".toast button.text-button",
             ".player-bar-play",
             ".reprise-surface",
             ".reprise-hover:hover",

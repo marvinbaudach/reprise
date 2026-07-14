@@ -12,3 +12,14 @@ use libadwaita as adw;
 pub(super) fn show(overlay: &adw::ToastOverlay, text: &str) {
     overlay.add_toast(adw::Toast::new(text));
 }
+
+/// Redesign toast chrome: a fully-rounded dark pill with soft elevation and an
+/// accent-coloured action label. Installed app-wide by [`super::style`]; the
+/// action reads `@accent_color`, so it follows the theme accent.
+pub(super) fn css() -> String {
+    use crate::ui::style::tokens::SURFACE_SHADOW;
+    format!(
+        ".toast {{ border-radius: 9999px; box-shadow: {SURFACE_SHADOW}; }}\n\
+         .toast button.text-button {{ color: @accent_color; font-weight: bold; }}"
+    )
+}
