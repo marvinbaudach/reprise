@@ -25,6 +25,13 @@ pub(super) fn add_configure_button(service: &adw::SwitchRow, label: &str) -> gtk
     button
 }
 
+pub(super) fn set_activation_pending(service: &adw::SwitchRow, pending: bool) {
+    if pending {
+        service.set_active(true);
+    }
+    service.set_sensitive(!pending);
+}
+
 pub(super) fn service_subtitle(description: &str, enabled: bool, status: &str) -> String {
     if enabled {
         format!("{description} · {status}")
@@ -58,6 +65,22 @@ mod tests {
         service.remove(&configure);
         drop(configure);
         assert!(configure_weak.upgrade().is_none());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn pending_activation_keeps_the_requested_switch_on_without_duplicate_input() {
+        gtk4::init().unwrap();
+        let service = adw::SwitchRow::builder().active(true).build();
+
+        set_activation_pending(&service, true);
+
+        assert!(service.is_active());
+        assert!(!service.is_sensitive());
+
+        set_activation_pending(&service, false);
+        assert!(service.is_active());
+        assert!(service.is_sensitive());
     }
 
     #[test]

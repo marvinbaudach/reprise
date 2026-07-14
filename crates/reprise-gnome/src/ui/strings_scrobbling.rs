@@ -20,7 +20,6 @@ pub const LISTENBRAINZ_CONNECTING: &str = N_!("Connecting…");
 pub const LISTENBRAINZ_TOKEN_REJECTED: &str = N_!("Token rejected");
 pub const LISTENBRAINZ_CONNECTION_ERROR: &str = N_!("Connection error");
 pub const LISTENBRAINZ_OFFLINE: &str = N_!("Offline");
-pub const LISTENBRAINZ_DIALOG_HEADING: &str = N_!("Connect ListenBrainz");
 pub const LISTENBRAINZ_DIALOG_BODY: &str = N_!(
     "Enter a user token from your ListenBrainz profile. The token is stored in the system keyring."
 );
@@ -35,7 +34,6 @@ pub const LISTENBRAINZ_DISCONNECT_ERROR: &str =
     N_!("Could not remove the ListenBrainz token from the system keyring.");
 pub const LASTFM: &str = N_!("Last.fm");
 pub const LASTFM_ACCOUNT: &str = N_!("Last.fm Account");
-pub const LASTFM_DIALOG_HEADING: &str = N_!("Connect Last.fm");
 pub const LASTFM_DIALOG_BODY: &str = N_!(
     "Enter credentials for a Last.fm desktop API application. They and the resulting session are stored only in the system keyring."
 );

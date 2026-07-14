@@ -316,6 +316,15 @@ impl PreferencesContext {
         self.preferences_window.borrow().upgrade()
     }
 
+    pub(super) fn preferences_navigation(&self) -> Option<adw::NavigationView> {
+        self.preferences_navigation.borrow().upgrade()
+    }
+
+    pub(super) fn preferences_parent(&self) -> gtk4::Widget {
+        self.preferences_window()
+            .map_or_else(|| self.window.clone().upcast(), gtk4::Widget::from)
+    }
+
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {
         let page = adw::PreferencesPage::builder()
             .title(strings::text(strings::PREFERENCES_PLAYBACK))

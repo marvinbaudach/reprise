@@ -19,9 +19,7 @@ use crate::ui::strings;
 use super::preferences::PreferencesContext;
 
 const RESPONSE_CANCEL: &str = "cancel";
-const RESPONSE_CONNECT: &str = "connect";
 const RESPONSE_CONTINUE: &str = "continue";
-const RESPONSE_DISCONNECT: &str = "disconnect";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AuthorizationDecision {
@@ -61,6 +59,76 @@ pub(super) fn status_text(status: &ConnectionStatus) -> String {
         ConnectionStatus::Error { pending } => {
             strings::lastfm_pending(&strings::text(strings::LASTFM_CONNECTION_ERROR), *pending)
         }
+    }
+}
+
+struct LastFmPageSurface {
+    page: adw::NavigationPage,
+    api_key: adw::PasswordEntryRow,
+    shared_secret: adw::PasswordEntryRow,
+    open_browser: gtk4::Button,
+    disconnect: Option<gtk4::Button>,
+}
+
+fn build_lastfm_page(connected: bool) -> LastFmPageSurface {
+    let account = adw::PreferencesGroup::builder()
+        .description(strings::text(strings::LASTFM_DIALOG_BODY))
+        .build();
+    let api_key = adw::PasswordEntryRow::builder()
+        .title(strings::text(strings::LASTFM_API_KEY))
+        .build();
+    let shared_secret = adw::PasswordEntryRow::builder()
+        .title(strings::text(strings::LASTFM_SHARED_SECRET))
+        .build();
+    account.add(&api_key);
+    account.add(&shared_secret);
+
+    let content = adw::PreferencesPage::new();
+    content.add(&account);
+    let disconnect = connected.then(|| {
+        let actions = adw::PreferencesGroup::new();
+        let row = adw::ActionRow::builder()
+            .title(strings::text(strings::LASTFM))
+            .build();
+        let button = gtk4::Button::builder()
+            .label(strings::text(strings::LISTENBRAINZ_DISCONNECT))
+            .valign(gtk4::Align::Center)
+            .build();
+        button.add_css_class("destructive-action");
+        row.add_suffix(&button);
+        actions.add(&row);
+        content.add(&actions);
+        button
+    });
+
+    let open_browser = gtk4::Button::with_label(&strings::text(strings::OPEN_BROWSER));
+    open_browser.add_css_class("suggested-action");
+    open_browser.set_sensitive(false);
+    for entry in [&api_key, &shared_secret] {
+        entry.connect_changed({
+            let open_browser = open_browser.clone();
+            let api_key = api_key.clone();
+            let shared_secret = shared_secret.clone();
+            move |_| {
+                open_browser.set_sensitive(
+                    !api_key.text().trim().is_empty() && !shared_secret.text().trim().is_empty(),
+                );
+            }
+        });
+    }
+    let header = adw::HeaderBar::new();
+    header.pack_end(&open_browser);
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&header);
+    toolbar.set_content(Some(&content));
+    let title = strings::text(strings::LASTFM_ACCOUNT);
+    let page = adw::NavigationPage::with_tag(&toolbar, &title, "lastfm-account");
+    LastFmPageSurface {
+        page,
+        api_key,
+        shared_secret,
+        open_browser,
+        disconnect,
     }
 }
 
@@ -154,7 +222,7 @@ impl PreferencesContext {
             let (Some(context), Some(switch)) = (weak.upgrade(), switch.upgrade()) else {
                 return;
             };
-            context.present_lastfm_dialog(&switch);
+            context.push_lastfm_page(&switch);
         });
     }
 
@@ -170,92 +238,71 @@ impl PreferencesContext {
         if self.lastfm_activation_pending.replace(true) {
             return;
         }
-        self.set_lastfm_switch(row, false);
+        crate::ui::preference_dependencies::set_activation_pending(row, true);
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
+            let result = lastfm_secret::load().await;
             let Some(context) = weak.upgrade() else {
                 return;
             };
             context.lastfm_activation_pending.set(false);
-            match lastfm_secret::load().await {
+            crate::ui::preference_dependencies::set_activation_pending(&row, false);
+            match result {
                 Ok(Some(credentials)) if client_for(&credentials).is_ok() => {
                     context.enable_lastfm(&row, credentials);
                 }
-                Ok(_) => context.present_lastfm_dialog(&row),
+                Ok(_) => context.push_lastfm_page(&row),
                 Err(error) => {
                     tracing::warn!(%error, "could not access Last.fm credentials in keyring");
+                    context.restore_lastfm_switch(&row);
                     context.show_lastfm_error(strings::LASTFM_KEYRING_ERROR);
                 }
             }
         });
     }
 
-    fn present_lastfm_dialog(self: &Rc<Self>, row: &adw::SwitchRow) {
-        let api_key = adw::PasswordEntryRow::builder()
-            .title(strings::text(strings::LASTFM_API_KEY))
-            .build();
-        let shared_secret = adw::PasswordEntryRow::builder()
-            .title(strings::text(strings::LASTFM_SHARED_SECRET))
-            .build();
-        let list = gtk4::ListBox::new();
-        list.add_css_class("boxed-list");
-        list.append(&api_key);
-        list.append(&shared_secret);
-        let dialog = adw::AlertDialog::builder()
-            .heading(strings::text(strings::LASTFM_DIALOG_HEADING))
-            .body(strings::text(strings::LASTFM_DIALOG_BODY))
-            .extra_child(&list)
-            .default_response(RESPONSE_CONNECT)
-            .close_response(RESPONSE_CANCEL)
-            .build();
-        dialog.add_response(RESPONSE_CANCEL, &strings::text(strings::CANCEL));
-        dialog.add_response(RESPONSE_CONNECT, &strings::text(strings::OPEN_BROWSER));
-        dialog.set_response_appearance(RESPONSE_CONNECT, adw::ResponseAppearance::Suggested);
-        dialog.set_response_enabled(RESPONSE_CONNECT, false);
-        for entry in [&api_key, &shared_secret] {
-            entry.connect_changed({
-                let dialog = dialog.clone();
-                let api_key = api_key.clone();
-                let shared_secret = shared_secret.clone();
-                move |_| {
-                    dialog.set_response_enabled(
-                        RESPONSE_CONNECT,
-                        !api_key.text().trim().is_empty()
-                            && !shared_secret.text().trim().is_empty(),
-                    );
-                }
-            });
-        }
-        if self.lastfm.is_active() {
-            dialog.add_response(
-                RESPONSE_DISCONNECT,
-                &strings::text(strings::LISTENBRAINZ_DISCONNECT),
-            );
-            dialog
-                .set_response_appearance(RESPONSE_DISCONNECT, adw::ResponseAppearance::Destructive);
-        }
-
+    fn push_lastfm_page(self: &Rc<Self>, row: &adw::SwitchRow) {
+        let Some(navigation) = self.preferences_navigation() else {
+            tracing::warn!("Last.fm setup requested without preferences navigation");
+            self.restore_lastfm_switch(row);
+            return;
+        };
+        let surface = build_lastfm_page(self.lastfm.is_active());
         let weak = Rc::downgrade(self);
-        let row = row.clone();
-        dialog.choose(
-            Some(&self.window),
-            gio::Cancellable::NONE,
-            move |response| {
-                let Some(context) = weak.upgrade() else {
+        let hiding_row = row.clone();
+        surface.page.connect_hiding(move |_| {
+            if let Some(context) = weak.upgrade() {
+                context.restore_lastfm_switch(&hiding_row);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        let connect_row = row.clone();
+        let api_key = surface.api_key.clone();
+        let shared_secret = surface.shared_secret.clone();
+        surface.open_browser.connect_clicked(move |_| {
+            if let Some(context) = weak.upgrade() {
+                context.request_lastfm_authorization(
+                    &connect_row,
+                    api_key.text().trim().to_string(),
+                    shared_secret.text().trim().to_string(),
+                );
+            }
+        });
+        if let Some(disconnect) = surface.disconnect {
+            let weak = Rc::downgrade(self);
+            let disconnect_row = row.clone();
+            let navigation = navigation.downgrade();
+            disconnect.connect_clicked(move |_| {
+                let (Some(context), Some(navigation)) = (weak.upgrade(), navigation.upgrade())
+                else {
                     return;
                 };
-                match response.as_str() {
-                    RESPONSE_CONNECT => context.request_lastfm_authorization(
-                        &row,
-                        api_key.text().trim().to_string(),
-                        shared_secret.text().trim().to_string(),
-                    ),
-                    RESPONSE_DISCONNECT => context.disconnect_lastfm(&row),
-                    _ => {}
-                }
-            },
-        );
+                context.disconnect_lastfm(&disconnect_row);
+                navigation.pop();
+            });
+        }
+        navigation.push(&surface.page);
     }
 
     fn request_lastfm_authorization(
@@ -267,6 +314,7 @@ impl PreferencesContext {
         if authorization_decision(&api_key, &shared_secret, false)
             != AuthorizationDecision::OpenBrowser
         {
+            self.restore_lastfm_switch(row);
             self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
             return;
         }
@@ -286,6 +334,7 @@ impl PreferencesContext {
                 let _ = sender.send_blocking(result);
             });
         if spawned.is_err() {
+            self.restore_lastfm_switch(row);
             self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
             return;
         }
@@ -308,6 +357,7 @@ impl PreferencesContext {
                         }
                         Err(error) => {
                             tracing::warn!(%error, "could not open Last.fm authorization URL");
+                            context.restore_lastfm_switch(&row);
                             context.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
                         }
                     }
@@ -316,14 +366,17 @@ impl PreferencesContext {
                     context
                         .lastfm
                         .report_status(&ConnectionStatus::Unauthorized);
+                    context.restore_lastfm_switch(&row);
                     context.show_lastfm_error(strings::LASTFM_CREDENTIALS_REJECTED);
                 }
                 Ok(Err(error)) => {
                     tracing::warn!(%error, "could not request Last.fm authorization");
+                    context.restore_lastfm_switch(&row);
                     context.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
                 }
                 Err(error) => {
                     tracing::warn!(%error, "Last.fm authorization worker ended unexpectedly");
+                    context.restore_lastfm_switch(&row);
                     context.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
                 }
             }
@@ -339,6 +392,7 @@ impl PreferencesContext {
     ) {
         if authorization_decision(&api_key, &shared_secret, true) != AuthorizationDecision::Exchange
         {
+            self.restore_lastfm_switch(row);
             self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
             return;
         }
@@ -353,17 +407,14 @@ impl PreferencesContext {
         dialog.set_response_appearance(RESPONSE_CONTINUE, adw::ResponseAppearance::Suggested);
         let weak = Rc::downgrade(self);
         let row = row.clone();
-        dialog.choose(
-            Some(&self.window),
-            gio::Cancellable::NONE,
-            move |response| {
-                if response == RESPONSE_CONTINUE {
-                    if let Some(context) = weak.upgrade() {
-                        context.exchange_lastfm_token(&row, api_key, shared_secret, token);
-                    }
+        let parent = self.preferences_parent();
+        dialog.choose(Some(&parent), gio::Cancellable::NONE, move |response| {
+            if response == RESPONSE_CONTINUE {
+                if let Some(context) = weak.upgrade() {
+                    context.exchange_lastfm_token(&row, api_key, shared_secret, token);
                 }
-            },
-        );
+            }
+        });
     }
 
     fn exchange_lastfm_token(
@@ -385,6 +436,7 @@ impl PreferencesContext {
                 let _ = sender.send_blocking(result);
             });
         if spawned.is_err() {
+            self.restore_lastfm_switch(row);
             self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
             return;
         }
@@ -406,6 +458,7 @@ impl PreferencesContext {
                         Ok(()) => context.enable_lastfm(&row, credentials),
                         Err(error) => {
                             tracing::warn!(%error, "could not store Last.fm credentials");
+                            context.restore_lastfm_switch(&row);
                             context.show_lastfm_error(strings::LASTFM_KEYRING_ERROR);
                         }
                     }
@@ -414,14 +467,17 @@ impl PreferencesContext {
                     context
                         .lastfm
                         .report_status(&ConnectionStatus::Unauthorized);
+                    context.restore_lastfm_switch(&row);
                     context.show_lastfm_error(strings::LASTFM_CREDENTIALS_REJECTED);
                 }
                 Ok(Err(error)) => {
                     tracing::warn!(%error, "could not exchange Last.fm authorization token");
+                    context.restore_lastfm_switch(&row);
                     context.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
                 }
                 Err(error) => {
                     tracing::warn!(%error, "Last.fm session worker ended unexpectedly");
+                    context.restore_lastfm_switch(&row);
                     context.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
                 }
             }
@@ -430,6 +486,7 @@ impl PreferencesContext {
 
     fn enable_lastfm(&self, row: &adw::SwitchRow, credentials: LastFmCredentials) {
         let Ok(client) = client_for(&credentials) else {
+            self.restore_lastfm_switch(row);
             self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
             return;
         };
@@ -437,6 +494,8 @@ impl PreferencesContext {
             self.set_lastfm_switch(row, true);
             self.lastfm
                 .configure(credentials.session_key, Box::new(client));
+        } else {
+            self.restore_lastfm_switch(row);
         }
     }
 
@@ -461,6 +520,7 @@ impl PreferencesContext {
                 }
                 Err(error) => {
                     tracing::warn!(%error, "could not delete Last.fm credentials");
+                    context.restore_lastfm_switch(&row);
                     context.show_lastfm_error(strings::LASTFM_DISCONNECT_ERROR);
                 }
             }
@@ -488,6 +548,10 @@ impl PreferencesContext {
         self.syncing_lastfm.set(false);
     }
 
+    fn restore_lastfm_switch(&self, row: &adw::SwitchRow) {
+        self.set_lastfm_switch(row, self.lastfm.is_active());
+    }
+
     fn show_lastfm_error(&self, body: &str) {
         let dialog = adw::AlertDialog::builder()
             .heading(strings::text(strings::LASTFM_ACCOUNT))
@@ -495,7 +559,7 @@ impl PreferencesContext {
             .close_response("close")
             .build();
         dialog.add_response("close", &strings::text(strings::CLOSE));
-        dialog.present(Some(&self.window));
+        dialog.present(Some(&self.preferences_parent()));
     }
 }
 
@@ -536,11 +600,31 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn api_credentials_are_masked_rows() {
+    fn setup_page_keeps_credentials_masked_and_gates_browser_action() {
         gtk4::init().unwrap();
-        let key = adw::PasswordEntryRow::new();
-        let secret = adw::PasswordEntryRow::new();
-        assert!(key.is::<adw::PasswordEntryRow>());
-        assert!(secret.is::<adw::PasswordEntryRow>());
+        let surface = build_lastfm_page(false);
+        assert_eq!(surface.page.title(), "Last.fm Account");
+        assert!(surface.page.can_pop());
+        assert!(surface.api_key.is::<adw::PasswordEntryRow>());
+        assert!(surface.shared_secret.is::<adw::PasswordEntryRow>());
+        assert!(!surface.open_browser.is_sensitive());
+        assert!(surface.disconnect.is_none());
+
+        surface.api_key.set_text("key");
+        assert!(!surface.open_browser.is_sensitive());
+        surface.shared_secret.set_text("secret");
+        assert!(surface.open_browser.is_sensitive());
+        surface.api_key.set_text("  ");
+        assert!(!surface.open_browser.is_sensitive());
+        assert!(build_lastfm_page(true).disconnect.is_some());
+
+        let root =
+            adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Plugins");
+        let navigation = adw::NavigationView::new();
+        navigation.add(&root);
+        navigation.push(&surface.page);
+        assert_eq!(navigation.visible_page().as_ref(), Some(&surface.page));
+        assert!(navigation.pop());
+        assert_eq!(navigation.visible_page().as_ref(), Some(&root));
     }
 }

@@ -311,7 +311,11 @@ Use a disposable ListenBrainz account and copied test tracks. Never paste its to
 into a terminal, issue, screenshot, log capture, or repository file.
 
 - [ ] ListenBrainz is off on a fresh profile and causes no request before opt-in.
-- [ ] Connect from Plugins with the masked token field. Expected: the row becomes
+- [ ] Turn ListenBrainz on from Plugins. Expected: the switch stays visibly on while
+  the keyring is checked, then a masked-token detail page replaces the Plugins page
+  inside the same Preferences window. Back returns to Plugins and restores the switch
+  to off when no connection was completed; no separate window appears underneath.
+- [ ] Connect from the masked token detail page. Expected: the row becomes
   “Connected as …”, restart reconnects without asking again, and the token exists in
   the native Secret Service on the host and the encrypted Secret-Portal-backed store
   in Flatpak—not in `reprise.db`, settings, environment output, or logs.
@@ -327,7 +331,8 @@ into a terminal, issue, screenshot, log capture, or repository file.
 - [ ] Choose Disconnect. Expected: the keyring item and local ListenBrainz queue are
   removed, the plugin becomes disabled, and no music file or general library row changes.
 - [ ] Enter an invalid token and simulate an unavailable/locked keyring. Expected: the
-  UI shows rejected/error status and never falls back to plaintext storage.
+  UI shows rejected/error status in an alert above Preferences and never falls back
+  to plaintext storage.
 
 ## Pending: Last.fm account and scrobbling
 
@@ -336,11 +341,15 @@ test tracks. Never put the API key, shared secret, session key, or real account
 metadata in a terminal command, repository file, issue, screenshot, or log capture.
 
 - [ ] Last.fm is off on a fresh profile and causes no request before opt-in.
-- [ ] Open Plugins → Last.fm and enter the API key and shared secret in masked rows.
-  Expected: the browser opens only after clicking Open Browser; approve the disposable
-  app, return, and Continue. The displayed account survives restart. All credentials
-  exist only in Secret Service (or the Flatpak Secret Portal store), never the database,
-  settings, environment output, repository, or logs.
+- [ ] Turn Last.fm on from Plugins. Expected: the switch stays visibly on while the
+  keyring is checked, then the masked API-key and shared-secret page replaces Plugins
+  inside the same Preferences window. Back restores the switch to off if setup remains
+  incomplete; no separate setup window appears underneath.
+- [ ] Enter the API key and shared secret in the masked detail-page rows. Expected: the
+  browser opens only after clicking Open Browser; approve the disposable app, return,
+  and Continue in an alert above Preferences. The displayed account survives restart.
+  All credentials exist only in Secret Service (or the Flatpak Secret Portal store),
+  never the database, settings, environment output, repository, or logs.
 - [ ] Start copied short and long tracks. Expected: playing-now omits a timestamp and
   each completed listen is sent once at half the track or four minutes, with artist,
   title, optional release, duration, and start time. Seeking backward cannot duplicate it.
