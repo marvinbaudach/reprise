@@ -258,6 +258,8 @@ pub mod view_session;
 #[allow(dead_code)] // Datenschicht ohne UI-Konsumenten bisher
 #[path = "playback/waveform_peaks.rs"]
 mod waveform_peaks;
+#[path = "player_bar/waveform_seek.rs"]
+mod waveform_seek;
 #[path = "window/window.rs"]
 pub mod window;
 #[path = "window/window_decoration_strings.rs"]
