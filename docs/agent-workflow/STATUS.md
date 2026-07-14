@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Add a persistent left-sidebar collapse button
-SINCE:    2026-07-14 06:39 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is adding a persistent left-sidebar collapse button._
+_As of 2026-07-14: Codex added and released the persistent left-sidebar collapse button._
 
 ## Parallel feature work
 
@@ -35,11 +35,11 @@ _As of 2026-07-14: Codex is adding a persistent left-sidebar collapse button._
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-14-sidebar-issue-cleanup.md` (1 task).
-- **Last completed:** **Information column layout** (`2cbe143`) — the right panel reserves its own
-  340px column beside the Library and narrows the table instead of overlaying it.
+- **Last completed:** **Persistent Sidebar collapse** (`1eb3a5f`) — the leftmost header toggle
+  removes and restores the complete Sidebar column while keeping adaptive navigation intact.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `2cbe143`.
+- **Main implementation:** `1eb3a5f`.
 
 ## Done so far (compact)
 
@@ -102,9 +102,11 @@ _As of 2026-07-14: Codex is adding a persistent left-sidebar collapse button._
 - ✅ **Design-aligned header and sidebar**: one flat full-window header keeps the current source
   title strictly centered with compact accessible actions and Search on the right; the narrower
   navigation adds stable symbolic icons, aligned counts and mockup-derived section spacing while
-  preserving adaptive navigation, DnD, menus and Library/Compact restoration. Scan maintenance
-  stays in Preferences instead of duplicating a header action. Problem sources use a translated
-  muted Issues heading rather than a separator that can resemble selection.
+  preserving adaptive navigation, DnD, menus and Library/Compact restoration. Its persistent
+  leftmost toggle removes and restores the complete Sidebar column at wide widths while retaining
+  the native narrow navigation path. Scan maintenance stays in Preferences instead of duplicating
+  a header action. Problem sources use a translated muted Issues heading rather than a separator
+  that can resemble selection.
 - ✅ **Compact Library statistics hierarchy**: count and duration sit as a click-through
   bottom-right track-content overlay, while the window header remains above the full-width player
   bar even when its saved position is Top.
