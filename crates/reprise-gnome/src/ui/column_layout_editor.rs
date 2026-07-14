@@ -112,7 +112,11 @@ struct EditorState {
 
 struct EditorSurface {
     toolbar: adw::ToolbarView,
-    header: adw::HeaderBar,
+    state: Rc<EditorState>,
+}
+
+struct EditorDialogSurface {
+    dialog: adw::Dialog,
     state: Rc<EditorState>,
 }
 
@@ -278,11 +282,7 @@ fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&scroll));
 
-    EditorSurface {
-        toolbar,
-        header,
-        state,
-    }
+    EditorSurface { toolbar, state }
 }
 
 pub(super) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
@@ -293,22 +293,23 @@ pub(super) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::Navigati
     adw::NavigationPage::with_tag(&surface.toolbar, &title, "column-layout")
 }
 
-pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
+fn build_dialog(track_list: &Rc<TrackList>) -> EditorDialogSurface {
     let title = strings::text(strings::EDIT_COLUMN_LAYOUT);
     let surface = build_surface(track_list, &title);
-    let close = gtk4::Button::with_label(&strings::text(strings::CLOSE));
-    surface.header.pack_end(&close);
     let dialog = adw::Dialog::builder()
         .child(&surface.toolbar)
         .content_width(520)
         .content_height(620)
         .build();
-    {
-        let dialog = dialog.clone();
-        close.connect_clicked(move |_| {
-            dialog.close();
-        });
+    EditorDialogSurface {
+        dialog,
+        state: surface.state,
     }
+}
+
+pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
+    let surface = build_dialog(track_list);
+    let dialog = surface.dialog;
     dialog.present(Some(window));
     let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
     tracing::info!(
@@ -345,6 +346,25 @@ mod tests {
             child = current.next_sibling();
         }
         count
+    }
+
+    fn contains_button_label(widget: &gtk4::Widget, label: &str) -> bool {
+        if widget
+            .clone()
+            .downcast::<gtk4::Button>()
+            .is_ok_and(|button| button.label().as_deref() == Some(label))
+        {
+            return true;
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            let next = current.next_sibling();
+            if contains_button_label(&current, label) {
+                return true;
+            }
+            child = next;
+        }
+        false
     }
 
     #[test]
@@ -455,5 +475,33 @@ mod tests {
         assert!(page
             .child()
             .is_some_and(|child| child.is::<adw::ToolbarView>()));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn standalone_editor_uses_native_close_without_a_labeled_close_button() {
+        gtk4::init().unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let runtime = crate::ui::cover_download_worker::setup();
+        let track_list = Rc::new(TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _| {}),
+            |_, _, _, _| {},
+            Vec::new,
+            runtime,
+        ));
+
+        let surface = build_dialog(&track_list);
+        let content = surface.dialog.child().unwrap();
+
+        assert!(contains_button_label(
+            &content,
+            &strings::text(strings::RESET_TO_DEFAULT)
+        ));
+        assert!(!contains_button_label(
+            &content,
+            &strings::text(strings::CLOSE)
+        ));
     }
 }
