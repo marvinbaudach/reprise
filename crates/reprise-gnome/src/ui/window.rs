@@ -104,18 +104,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
         .build();
 
-    let scan_button = super::library_chrome::action_button(
-        "folder-open-symbolic",
-        &strings::text(strings::SCAN_FOLDER),
-    );
-    // Stage 3 Task 7: global "Import playlist…" entry, same header-button
-    // shape as "Scan folder…" — see `wire_import_button`'s doc comment
-    // (`ui::playlist_io`) for the dialog flow this drives.
-    let import_button = super::library_chrome::action_button(
-        "document-open-symbolic",
-        &strings::text(strings::IMPORT_PLAYLIST),
-    );
-
     // Visible only while the split view is collapsed (see `wire_sidebar_
     // toggle`) — at full width both panes already show side by side, so
     // there is nothing to toggle.
@@ -129,8 +117,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     super::library_chrome::style_header(&header, &search_entry);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
-    header.pack_end(&scan_button);
-    header.pack_end(&import_button);
+    let maintenance_actions = super::library_chrome::build_maintenance_actions(&header);
+    let scan_button = maintenance_actions.scan;
+    let import_button = maintenance_actions.import;
 
     // The player is created eagerly at window build (not lazily on first
     // activation): construction is cheap (one playbin, no I/O), the
@@ -705,10 +694,10 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         }
     }
 
-    // Stage 3 Task 7: wired last among the header buttons, after every
-    // widget/callback it needs (`track_list`, `sidebar`, `window_title`,
-    // `show_content_if_collapsed`) already exists — same reasoning as
-    // `wire_scan_button`'s own placement.
+    // Stage 3 Task 7: wired after every widget/callback it needs
+    // (`track_list`, `sidebar`, `window_title`, `show_content_if_collapsed`)
+    // already exists — the same late-wiring pattern as the shared scan
+    // trigger used by Preferences and initial setup.
     playlist_io::wire_import_button(
         &import_button,
         &window,

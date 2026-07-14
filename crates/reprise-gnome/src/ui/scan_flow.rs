@@ -112,11 +112,11 @@ pub(super) fn arm_smoke_rescan(
     });
 }
 
-/// Wires the header's "Scan folder…" button: a click opens a portal-friendly
-/// `gtk::FileDialog` folder picker; a chosen folder starts a background scan
-/// (see `spawn_scan`). Dismissing the dialog without choosing a folder is a
-/// normal, expected outcome (not an error) — logged at debug and otherwise
-/// ignored.
+/// Wires the shared "Scan folder…" trigger used by Preferences and initial
+/// setup: activation opens a portal-friendly `gtk::FileDialog` folder picker;
+/// a chosen folder starts a background scan (see `spawn_scan`). Dismissing the
+/// dialog without choosing a folder is a normal, expected outcome (not an
+/// error) — logged at debug and otherwise ignored.
 pub(super) fn wire_scan_button(
     controls: &ScanControls,
     window: &adw::ApplicationWindow,

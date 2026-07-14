@@ -571,8 +571,8 @@ pub fn no_library_root_to_rescan_toast() -> String {
     ))
 }
 
-/// Toast shown when "Rescan library" is invoked while a scan (from any
-/// trigger — the header button, a previous rescan, or this same action) is
+/// Toast shown when "Rescan library" is invoked while a scan (from folder
+/// selection, initial setup, a previous rescan, or this same action) is
 /// already running.
 pub fn scan_already_running_toast() -> String {
     text(N_!("A scan is already running"))

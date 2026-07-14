@@ -116,10 +116,11 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] At a wide native GNOME/Wayland size, open and close the Information panel.
   Expected: one flat header spans the sidebar, library, and Information panel; Music
   remains geometrically centered in the complete window rather than the track pane.
-- [ ] Inspect Search plus the menu, Information, Import, and Scan actions in
-  light/dark mode and at 100% plus an available HiDPI scale. Expected: every action is
-  a compact symbolic icon with a correct tooltip, accessible name, and comfortable
-  native target; no header item clips or forces the centered title aside.
+- [ ] Inspect Search plus the menu, Information, and Import actions in light/dark mode
+  and at 100% plus an available HiDPI scale. Expected: every action is a compact
+  symbolic icon with a correct tooltip, accessible name, and comfortable native target;
+  no Scan action duplicates Preferences → Library, and no header item clips or forces
+  the centered title aside.
 - [ ] Inspect Music, Queue, manual playlists, the three built-in smart playlists,
   Import errors, Missing files, and New playlist. Expected: text remains present,
   each row has a stable aligned symbolic icon, counts align at the end, and long names
