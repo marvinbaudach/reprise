@@ -98,13 +98,13 @@ eine temporäre Geschwisterdatei veröffentlicht.
 
 ## Rechtes Informationspanel
 
-Das Panel setzt die bereits beschlossene rechte Spalte konkret um. Ein
-`AdwOverlaySplitView` sitzt innerhalb des Library-Content-Panes mit
-`sidebar-position=end`, wird aber ausschließlich als angeheftete Split-Spalte
-verwendet:
+Das Panel setzt die bereits beschlossene rechte Spalte konkret um. Eine feste
+horizontale GTK-Komposition sitzt innerhalb des Library-Content-Panes: Der
+flexible Tabelleninhalt und die Informationsspalte sind direkte Geschwister.
+Ein overlay-fähiger Container wird bewusst nicht verwendet:
 
-- Sichtbar: immer angeheftet und nicht kollabiert, 340 logische Pixel natürliche
-  Breite; die Tabelle gibt entsprechend Breite ab, das Panel überlagert sie nie.
+- Sichtbar: feste 340 logische Pixel Breite; die Tabelle gibt entsprechend
+  Breite ab, das Panel überlagert sie nie.
 - Schmale Fenster: die linke Navigation bleibt unabhängig adaptiv, während die
   rechte Spalte weiterhin neben dem Tabelleninhalt liegt.
 - Versteckt: der gespeicherte Sichtbarkeitswunsch gibt die volle Breite wieder an

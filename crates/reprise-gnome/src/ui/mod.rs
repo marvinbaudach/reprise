@@ -55,6 +55,7 @@ mod info_panel;
 mod info_panel_empty_state;
 mod info_panel_feedback;
 mod info_panel_state;
+mod information_column;
 mod lastfm_secret;
 mod library_chrome;
 mod library_player_bar;
