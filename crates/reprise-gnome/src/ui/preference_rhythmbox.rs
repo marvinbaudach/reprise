@@ -14,8 +14,6 @@ use reprise_core::library::rhythmbox_import::{
 use super::preferences::PreferencesContext;
 use super::strings;
 
-const RESPONSE_CANCEL: &str = "cancel";
-const RESPONSE_IMPORT: &str = "import";
 const RHYTHMDB_PATH_ENV: &str = "REPRISE_RHYTHMDB_PATH";
 const PLAYLISTS_PATH_ENV: &str = "REPRISE_RHYTHMBOX_PLAYLISTS_PATH";
 const SMOKE_IMPORT_ENV: &str = "REPRISE_SMOKE_RHYTHMDB_IMPORT";
@@ -65,9 +63,10 @@ fn import_option_specs() -> [ImportOptionSpec; 6] {
     ]
 }
 
-struct ImportDialogSurface {
-    dialog: adw::AlertDialog,
+struct ImportPageSurface {
+    page: adw::NavigationPage,
     rows: Vec<adw::SwitchRow>,
+    import_button: gtk4::Button,
 }
 
 fn option_title(option: RhythmboxOption) -> String {
@@ -81,9 +80,10 @@ fn option_title(option: RhythmboxOption) -> String {
     })
 }
 
-fn build_import_dialog() -> ImportDialogSurface {
-    let list = gtk4::ListBox::new();
-    list.add_css_class("boxed-list");
+fn build_import_page() -> ImportPageSurface {
+    let group = adw::PreferencesGroup::builder()
+        .description(strings::text(strings::RHYTHMBOX_IMPORT_DIALOG_BODY))
+        .build();
     let rows = import_option_specs()
         .into_iter()
         .map(|spec| {
@@ -91,24 +91,26 @@ fn build_import_dialog() -> ImportDialogSurface {
                 .title(option_title(spec.id))
                 .active(spec.selected)
                 .build();
-            list.append(&row);
+            group.add(&row);
             row
         })
         .collect();
-    let dialog = adw::AlertDialog::builder()
-        .heading(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX))
-        .body(strings::text(strings::RHYTHMBOX_IMPORT_DIALOG_BODY))
-        .extra_child(&list)
-        .default_response(RESPONSE_IMPORT)
-        .close_response(RESPONSE_CANCEL)
-        .build();
-    dialog.add_response(RESPONSE_CANCEL, &strings::text(strings::CANCEL));
-    dialog.add_response(
-        RESPONSE_IMPORT,
-        &strings::text(strings::RHYTHMBOX_IMPORT_ACTION),
-    );
-    dialog.set_response_appearance(RESPONSE_IMPORT, adw::ResponseAppearance::Suggested);
-    ImportDialogSurface { dialog, rows }
+    let content = adw::PreferencesPage::new();
+    content.add(&group);
+    let import_button = gtk4::Button::with_label(&strings::text(strings::RHYTHMBOX_IMPORT_START));
+    import_button.add_css_class("suggested-action");
+    let header = adw::HeaderBar::new();
+    header.pack_end(&import_button);
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&header);
+    toolbar.set_content(Some(&content));
+    let title = strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX);
+    let page = adw::NavigationPage::with_tag(&toolbar, &title, "rhythmbox-import");
+    ImportPageSurface {
+        page,
+        rows,
+        import_button,
+    }
 }
 
 fn default_rhythmdb_path() -> PathBuf {
@@ -140,34 +142,45 @@ struct ImportResult {
     playlist_error: Option<String>,
 }
 
-pub(super) fn add_rhythmbox_import_row(
-    context: &Rc<PreferencesContext>,
-    group: &adw::PreferencesGroup,
-) {
-    if !rhythmbox_data_available(&default_rhythmdb_path()) {
-        return;
+struct ImportRowSurface {
+    row: adw::ActionRow,
+}
+
+fn build_import_row(rhythmdb_path: &Path) -> Option<ImportRowSurface> {
+    if !rhythmbox_data_available(rhythmdb_path) {
+        return None;
     }
     let row = adw::ActionRow::builder()
         .title(strings::text(strings::ONBOARDING_IMPORT_FROM_RHYTHMBOX))
         .subtitle(strings::text(strings::RHYTHMBOX_IMPORT_DESCRIPTION))
+        .activatable(true)
         .build();
-    let button = gtk4::Button::with_label(&strings::text(strings::RHYTHMBOX_IMPORT_ACTION));
-    button.set_valign(gtk4::Align::Center);
+    row.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
+    Some(ImportRowSurface { row })
+}
+
+pub(super) fn add_rhythmbox_import_row(
+    context: &Rc<PreferencesContext>,
+    group: &adw::PreferencesGroup,
+) {
+    let Some(surface) = build_import_row(&default_rhythmdb_path()) else {
+        return;
+    };
+    let ImportRowSurface { row } = surface;
     let weak = Rc::downgrade(context);
-    button.connect_clicked(move |button| {
+    row.connect_activated(move |_| {
         if let Some(context) = weak.upgrade() {
-            context.present_rhythmbox_import(button);
+            context.open_rhythmbox_import();
         }
     });
-    row.add_suffix(&button);
     group.add(&row);
     if std::env::var(SMOKE_IMPORT_ENV).is_ok() {
         let weak = Rc::downgrade(context);
-        let button = button.clone();
         glib::idle_add_local_once(move || {
             if let Some(context) = weak.upgrade() {
+                let surface = build_import_page();
                 context.start_rhythmbox_import(
-                    &button,
+                    &surface.import_button,
                     false,
                     RhythmboxImportChoices {
                         ratings: true,
@@ -182,37 +195,30 @@ pub(super) fn add_rhythmbox_import_row(
     }
 }
 
-impl PreferencesContext {
-    fn present_rhythmbox_import(self: &Rc<Self>, button: &gtk4::Button) {
-        let surface = build_import_dialog();
-        let weak = Rc::downgrade(self);
-        let button = button.clone();
-        let rows = surface.rows;
-        surface.dialog.choose(
-            Some(&self.window),
-            gio::Cancellable::NONE,
-            move |response| {
-                if response != RESPONSE_IMPORT {
-                    return;
-                }
-                let Some(context) = weak.upgrade() else {
-                    return;
-                };
-                context.start_rhythmbox_import(
-                    &button,
-                    rows[0].is_active(),
-                    RhythmboxImportChoices {
-                        ratings: rows[1].is_active(),
-                        play_counts: rows[2].is_active(),
-                        added_at: rows[3].is_active(),
-                        last_played_at: rows[4].is_active(),
-                    },
-                    rows[5].is_active(),
-                );
+pub(super) fn push_import_page(context: &Rc<PreferencesContext>, navigation: &adw::NavigationView) {
+    let surface = build_import_page();
+    let weak = Rc::downgrade(context);
+    let rows = surface.rows;
+    surface.import_button.connect_clicked(move |button| {
+        let Some(context) = weak.upgrade() else {
+            return;
+        };
+        context.start_rhythmbox_import(
+            button,
+            rows[0].is_active(),
+            RhythmboxImportChoices {
+                ratings: rows[1].is_active(),
+                play_counts: rows[2].is_active(),
+                added_at: rows[3].is_active(),
+                last_played_at: rows[4].is_active(),
             },
+            rows[5].is_active(),
         );
-    }
+    });
+    navigation.push(&surface.page);
+}
 
+impl PreferencesContext {
     fn start_rhythmbox_import(
         self: &Rc<Self>,
         button: &gtk4::Button,
@@ -378,7 +384,11 @@ impl PreferencesContext {
             .close_response("close")
             .build();
         dialog.add_response("close", &strings::text(strings::CLOSE));
-        dialog.present(Some(&self.window));
+        if let Some(preferences_window) = self.preferences_window() {
+            dialog.present(Some(&preferences_window));
+        } else {
+            dialog.present(Some(&self.window));
+        }
     }
 }
 
@@ -402,6 +412,28 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn detected_rhythmdb_builds_the_import_row() {
+        gtk4::init().unwrap();
+        let dir = tempdir().unwrap();
+        let rhythmdb = dir.path().join("rhythmdb.xml");
+        assert!(build_import_row(&rhythmdb).is_none());
+
+        fs::write(&rhythmdb, "<rhythmdb/>").unwrap();
+        let surface = build_import_row(&rhythmdb).unwrap();
+        assert_eq!(surface.row.title(), "Import from Rhythmbox");
+        assert!(surface.row.is_activatable());
+        let widgets = descendants(surface.row.upcast_ref());
+        assert!(widgets
+            .iter()
+            .filter_map(|widget| widget.clone().downcast::<gtk4::Image>().ok())
+            .any(|image| image.icon_name().as_deref() == Some("go-next-symbolic")));
+        assert!(!widgets
+            .iter()
+            .any(gtk4::prelude::ObjectExt::is::<gtk4::Button>));
+    }
+
+    #[test]
     fn statistics_are_selected_but_column_layout_requires_opt_in() {
         let options = import_option_specs();
         assert_eq!(options.len(), 6);
@@ -421,9 +453,27 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn import_dialog_exposes_all_six_explicit_choices() {
+    fn import_page_exposes_all_six_explicit_choices() {
         gtk4::init().unwrap();
-        let surface = build_import_dialog();
+        let surface = build_import_page();
+        assert_eq!(surface.page.title(), "Import from Rhythmbox");
+        assert!(surface.page.can_pop());
+        assert!(surface
+            .page
+            .child()
+            .is_some_and(|child| child.is::<adw::ToolbarView>()));
+        assert_eq!(surface.import_button.label().as_deref(), Some("Import"));
+        let root = adw::NavigationPage::with_tag(
+            &gtk4::Box::new(gtk4::Orientation::Vertical, 0),
+            "Preferences",
+            "preferences",
+        );
+        let navigation = adw::NavigationView::new();
+        navigation.add(&root);
+        navigation.push(&surface.page);
+        assert_eq!(navigation.visible_page().as_ref(), Some(&surface.page));
+        assert!(navigation.pop());
+        assert_eq!(navigation.visible_page().as_ref(), Some(&root));
         assert_eq!(surface.rows.len(), 6);
         assert_eq!(surface.rows[0].title(), "Column layout");
         assert_eq!(surface.rows[1].title(), "Ratings");
@@ -437,5 +487,20 @@ mod tests {
         assert!(surface.rows[3].is_active());
         assert!(surface.rows[4].is_active());
         assert!(surface.rows[5].is_active());
+    }
+
+    fn descendants(root: &gtk4::Widget) -> Vec<gtk4::Widget> {
+        let mut found = Vec::new();
+        collect_descendants(root, &mut found);
+        found
+    }
+
+    fn collect_descendants(root: &gtk4::Widget, found: &mut Vec<gtk4::Widget>) {
+        let mut child = root.first_child();
+        while let Some(widget) = child {
+            found.push(widget.clone());
+            collect_descendants(&widget, found);
+            child = widget.next_sibling();
+        }
     }
 }

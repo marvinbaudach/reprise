@@ -374,8 +374,11 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   is offered only when detected, remains off until selected, maps supported columns
   in order, ignores unknown tokens, and leaves Rhythmbox settings unchanged. A second
   start offers no import surface.
-- [ ] In Preferences → Library, run `Import from Rhythmbox…` against a disposable
-  `rhythmdb.xml` and `playlists.xml`. Expected: Ratings, Play counts, Date added,
+- [ ] In Preferences → Library, open `Import from Rhythmbox` against a disposable
+  `rhythmdb.xml` and `playlists.xml`. Expected: the same Preferences window pushes a
+  second-level `Import from Rhythmbox` page with the native Back button; no chooser
+  dialog or window appears behind Preferences, and the final result alert stays above
+  Preferences. Ratings, Play counts, Date added,
   Last played, and Playlists start selected while Column layout requires opt-in;
   exact decoded local paths match, existing Reprise ratings win, play counts only
   rise to the larger value, Date added becomes the older positive
