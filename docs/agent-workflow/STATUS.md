@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Keep Information panel beside instead of over Library content
+SINCE:    2026-07-14 06:31 CEST
 ```
 
-_As of 2026-07-14: Codex fixed and released the initial one-row Library viewport on main._
+_As of 2026-07-14: Codex is changing the Information panel to reserve layout width instead of overlaying Library content._
 
 ## Parallel feature work
 
