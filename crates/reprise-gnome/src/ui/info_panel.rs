@@ -4,7 +4,6 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use reprise_core::artist_news::{AlbumNews, ArtistNews, NewsError, NewsKind};
 use reprise_core::cover::ThumbnailSize;
 use rusqlite::Connection;
@@ -20,8 +19,6 @@ use super::strings;
 use super::track_list::TrackList;
 
 const PANEL_WIDTH: f64 = 340.0;
-// Left navigation (220) + usable track table (400) + Information (340).
-const PINNED_MIN_WIDTH: f64 = 960.0;
 const SMOKE_ENV: &str = "REPRISE_SMOKE_ARTIST_NEWS";
 const INFORMATION_PAGE: &str = "information";
 const LYRICS_PAGE: &str = "lyrics";
@@ -33,16 +30,12 @@ struct PanelMetrics {
     collapsed: bool,
 }
 
-fn panel_metrics(narrow: bool) -> PanelMetrics {
+fn panel_metrics_for_width(_width: f64) -> PanelMetrics {
     PanelMetrics {
         width: PANEL_WIDTH,
-        pinned: !narrow,
-        collapsed: narrow,
+        pinned: true,
+        collapsed: false,
     }
-}
-
-fn panel_metrics_for_width(width: f64) -> PanelMetrics {
-    panel_metrics(width < PINNED_MIN_WIDTH)
 }
 
 #[cfg(test)]
@@ -192,9 +185,8 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&stack));
-    // Start in the safe overlay shape before the first allocation. The
-    // breakpoint below promotes this to the pinned desktop shape when wide;
-    // doing the inverse briefly over-constrains narrow startup windows.
+    // Information is a real end column: showing it always reserves width
+    // beside the library instead of covering the track table as an overlay.
     let metrics = panel_metrics_for_width(0.0);
     let split = adw::OverlaySplitView::builder()
         .content(content)
@@ -264,7 +256,6 @@ impl InfoPanel {
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let widgets = build_widgets(content, visible);
-        install_breakpoint(window, &widgets.split);
         let toggle = gtk4::ToggleButton::builder()
             .icon_name("sidebar-show-symbolic")
             .tooltip_text(strings::text(strings::INFORMATION))
@@ -746,18 +737,6 @@ impl InfoPanel {
             self.widgets.progress.stop();
         }
     }
-}
-
-fn install_breakpoint(window: &adw::ApplicationWindow, split: &adw::OverlaySplitView) {
-    let condition = adw::BreakpointCondition::new_length(
-        adw::BreakpointConditionLengthType::MinWidth,
-        PINNED_MIN_WIDTH,
-        adw::LengthUnit::Px,
-    );
-    let breakpoint = adw::Breakpoint::new(condition);
-    breakpoint.add_setter(split, "collapsed", Some(&false.to_value()));
-    breakpoint.add_setter(split, "pin-sidebar", Some(&true.to_value()));
-    window.add_breakpoint(breakpoint);
 }
 
 fn status_label(text: String) -> gtk4::Label {
