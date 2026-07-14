@@ -700,6 +700,30 @@ pub fn playlist_import_failed_toast() -> String {
     text(N_!("Could not import playlist"))
 }
 
+pub fn file_open_not_in_library_toast(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "One opened audio file is not in the library",
+        "{count} opened audio files are not in the library",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn file_open_unsupported_toast(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "One opened file is not supported",
+        "{count} opened files are not supported",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn file_open_playback_unavailable_toast() -> String {
+    text(N_!("Playback is unavailable"))
+}
+
 /// Toast shown after a successful export.
 pub fn playlist_exported_toast(name: &str) -> String {
     formatted(N_!("Exported {name}"), &[("name", name)])

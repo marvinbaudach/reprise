@@ -337,7 +337,7 @@ pub fn wire_import_action(
 /// failure, logs and shows a generic failure toast. Shared by the real
 /// dialog callback ([`wire_import_action`]) and the `REPRISE_SMOKE_M3U=
 /// import:<path>` hook ([`arm_smoke_m3u`]).
-fn apply_import_result(
+pub(super) fn apply_import_result(
     result: Result<ImportOutcome, ImportError>,
     toast_overlay: &adw::ToastOverlay,
     sidebar: &Rc<Sidebar>,

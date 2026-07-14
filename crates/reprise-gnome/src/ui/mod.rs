@@ -47,6 +47,7 @@ mod device_sync_runtime_tests;
 mod device_sync_smoke;
 mod device_sync_strings;
 pub mod dialogs;
+pub(crate) mod file_open;
 pub mod first_run;
 mod help;
 pub mod import_errors_view;

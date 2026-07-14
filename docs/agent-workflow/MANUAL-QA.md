@@ -444,6 +444,14 @@ paths are under the disposable QA directory.
 - [ ] Launch the installed app from GNOME, not the build tree. Verify launcher name,
   comment, keywords, full-color and symbolic icons, AppStream data, application ID,
   German catalog, and clean uninstall paths.
+- [ ] After the Meson install, use Files → Open With on copied MP3, FLAC, Ogg, Opus,
+  M4A, AAC and WAV tracks that are already in a disposable Reprise library. Expected:
+  Reprise is offered, one existing window is presented, and selected tracks start in
+  the same order. A copied track outside the library is not imported and reports that
+  it is not in the library.
+- [ ] Open copied M3U and M3U8 playlists from Files both while Reprise is closed and
+  while it is already running. Expected: the request reaches the same window and the
+  existing playlist-import result, navigation and toast behavior is used.
 - [ ] On a machine with GNOME Platform/SDK 50 and `flatpak-builder`, build from the
   pinned manifest, run inside the sandbox, repeat portal picker/audio/MPRIS/Trash
   checks, and run `flatpak-builder-lint`.

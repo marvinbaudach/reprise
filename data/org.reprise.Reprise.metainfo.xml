@@ -48,6 +48,15 @@
   <launchable type="desktop-id">org.reprise.Reprise.desktop</launchable>
   <provides>
     <binary>reprise</binary>
+    <mediatype>audio/mpeg</mediatype>
+    <mediatype>audio/flac</mediatype>
+    <mediatype>audio/ogg</mediatype>
+    <mediatype>audio/x-opus+ogg</mediatype>
+    <mediatype>audio/mp4</mediatype>
+    <mediatype>audio/aac</mediatype>
+    <mediatype>audio/x-wav</mediatype>
+    <mediatype>audio/x-mpegurl</mediatype>
+    <mediatype>application/vnd.apple.mpegurl</mediatype>
   </provides>
   <categories>
     <category>AudioVideo</category>
