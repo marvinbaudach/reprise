@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Add native offline Help dialog
-SINCE:    2026-07-14 07:20 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
 _As of 2026-07-14: restoring Library from Compact no longer exposes a stretched intermediate frame._
@@ -34,12 +34,12 @@ _As of 2026-07-14: restoring Library from Compact no longer exposes a stretched 
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-14-compact-library-transition.md` (1 task).
-- **Last completed:** **Compact-to-Library transition** (`73e29ba`) — the full Library tree is
-  mounted before its larger geometry is requested, avoiding a stretched Compact intermediate frame.
+- **Completed plan:** `docs/superpowers/plans/2026-07-14-help-dialog.md` (1 task).
+- **Last completed:** **Native offline Help** (`571af01`) — the main menu and F1 open a translated
+  libadwaita shortcuts dialog containing only the application's implemented commands.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `73e29ba` on `main`.
+- **Main implementation:** `571af01` on `main`.
 
 ## Done so far (compact)
 
@@ -74,6 +74,8 @@ _As of 2026-07-14: restoring Library from Compact no longer exposes a stretched 
 - ✅ **Native About and licensing**: the main menu opens the libadwaita About dialog with the
   installed version, Marvin Baudach as developer and copyright holder, GPL-3.0-or-later for the
   Linux app, and an additional MIT legal section for the Engine and Linux Platform components.
+- ✅ **Native offline Help**: the main menu places Help before About, and F1 opens the same
+  translated libadwaita shortcuts dialog from Library or Compact View without network access.
 - ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent layout,
   library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
   live controls; isolated runtime persistence and full release QA green.
