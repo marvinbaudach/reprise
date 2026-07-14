@@ -39,3 +39,26 @@ pub(in crate::ui) const ROW_MIN_HEIGHT_COMPACT: i32 = 12;
 
 /// Font size (px) applied to track-row text in the Compact density.
 pub(in crate::ui) const COMPACT_ROW_FONT_SIZE: i32 = 10;
+
+// --- Redesign interaction + surface vocabulary (see `super::interactions`) ---
+
+/// Corner radius for layered redesign surfaces (cards, panels).
+pub(in crate::ui) const RADIUS_SURFACE: &str = "12px";
+
+/// Hover background alpha for flat interactive elements (over `@accent_bg_color`).
+pub(in crate::ui) const HOVER_BG_ALPHA: &str = "0.10";
+
+/// Blur radius of the accent focus glow on text inputs.
+pub(in crate::ui) const FOCUS_GLOW_BLUR: &str = "10px";
+
+/// Alpha of the accent focus glow (over `@accent_color`).
+pub(in crate::ui) const FOCUS_GLOW_ALPHA: &str = "0.28";
+
+/// Shared interaction transition (duration + easing) for hover/focus feedback.
+pub(in crate::ui) const TRANSITION: &str = "150ms cubic-bezier(0.16, 1, 0.3, 1)";
+
+/// Soft elevation shadow giving layered surfaces depth.
+pub(in crate::ui) const SURFACE_SHADOW: &str = "0 2px 12px rgba(0, 0, 0, 0.28)";
+
+/// Hairline border alpha for surfaces (over `@window_fg_color`).
+pub(in crate::ui) const SURFACE_BORDER_ALPHA: &str = "0.08";
