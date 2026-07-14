@@ -176,6 +176,8 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   Expected: Cover, Pill, and Card have no visible restore or volume control; every route
   switches the same window
   immediately, retains the selected layout, and never creates a second playback state.
+  The return mounts the Library before the window grows, without a stretched Compact
+  frame or visibly broken intermediate composition.
   The mapped real-input harness proves the menu-only return, layout persistence and
   Ctrl+M routes headlessly; native Wayland confirmation remains pending.
 - [ ] Inspect Cover, Pill, and Card with long English and German metadata, plus
