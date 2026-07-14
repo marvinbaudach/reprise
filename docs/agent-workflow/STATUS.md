@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Center non-text track columns
+SINCE:    2026-07-14T10:05:52+02:00
 ```
 
-_As of 2026-07-14: all reviewed local feature work is integrated into main._
+_As of 2026-07-14: Codex is centering non-text track columns._
 
 ## Parallel feature work
 
