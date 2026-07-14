@@ -16,6 +16,8 @@ use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::preference_playback::build_equalizer_surface;
 use crate::ui::preference_plugins::{plugin_applies_live, plugin_description, plugin_title};
+use crate::ui::scan_flow::ScanControls;
+use crate::ui::scan_progress::ScanProgressView;
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::status_bar::StatusBar;
@@ -65,6 +67,7 @@ pub(super) struct PreferencesContext {
     pub(super) library_player_bar: LibraryPlayerBarShell,
     pub(super) info_panel: Rc<InfoPanel>,
     pub(super) scan_button: gtk4::Button,
+    scan_controls: ScanControls,
     pub(super) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
     pub(super) player: Option<Rc<PlayerController>>,
     pub(super) syncing_effect_controls: Cell<bool>,
@@ -97,6 +100,7 @@ impl PreferencesContext {
         library_player_bar: &LibraryPlayerBarShell,
         info_panel: &Rc<InfoPanel>,
         scan_button: &gtk4::Button,
+        scan_controls: &ScanControls,
         player: Option<&Rc<PlayerController>>,
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
@@ -115,6 +119,7 @@ impl PreferencesContext {
             library_player_bar: library_player_bar.clone(),
             info_panel: info_panel.clone(),
             scan_button: scan_button.clone(),
+            scan_controls: scan_controls.clone(),
             library_folder_rows: RefCell::new(Vec::new()),
             player: player.cloned(),
             syncing_effect_controls: Cell::new(false),
@@ -198,7 +203,17 @@ impl PreferencesContext {
             };
             (id, page)
         });
-        let shell = super::preferences_window::build(&self.window, pages);
+        let foreground_scan_progress = ScanProgressView::new();
+        self.scan_controls
+            .attach_progress_view(&foreground_scan_progress);
+        let shell = super::preferences_window::build(
+            &self.window,
+            pages,
+            Some(foreground_scan_progress.widget().upcast_ref()),
+        );
+        shell.window.connect_destroy(move |_| {
+            let _keep_progress_alive_until_destroy = &foreground_scan_progress;
+        });
         self.preferences_window.borrow().set(Some(&shell.window));
         self.preferences_navigation
             .borrow()

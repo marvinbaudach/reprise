@@ -19,7 +19,7 @@ use reprise_core::library::scanner::{ScanError, ScanProgress, ScanReport};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::{self, WatcherHandle};
 
-use super::scan_progress::ScanProgressView;
+use super::scan_progress::{ScanProgressView, WeakScanProgressView};
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
@@ -61,8 +61,13 @@ impl ScanCompletion {
 
 #[derive(Clone)]
 pub(super) struct ScanControls {
+    // The main view is retained for the window lifetime. Foreground views are
+    // weak so closing Preferences cannot leak its widget tree; current_progress
+    // lets a newly opened Preferences window catch up mid-scan.
     button: gtk4::Button,
-    progress: ScanProgressView,
+    primary_progress: ScanProgressView,
+    foreground_progress: Rc<RefCell<Vec<WeakScanProgressView>>>,
+    current_progress: Rc<RefCell<Option<ScanProgress>>>,
     completion: ScanCompletion,
 }
 
@@ -70,8 +75,93 @@ impl ScanControls {
     pub(super) fn new(button: &gtk4::Button, progress: &ScanProgressView) -> Self {
         Self {
             button: button.clone(),
-            progress: progress.clone(),
+            primary_progress: progress.clone(),
+            foreground_progress: Rc::new(RefCell::new(Vec::new())),
+            current_progress: Rc::new(RefCell::new(None)),
             completion: ScanCompletion::default(),
+        }
+    }
+
+    pub(super) fn attach_progress_view(&self, progress: &ScanProgressView) {
+        self.foreground_progress
+            .borrow_mut()
+            .push(progress.downgrade());
+        let current = self.current_progress.borrow().clone();
+        if let Some(current) = current {
+            progress.show(&current);
+        }
+    }
+
+    fn live_progress_views(&self) -> Vec<ScanProgressView> {
+        let foreground = {
+            let mut weak_views = self.foreground_progress.borrow_mut();
+            let mut live = Vec::with_capacity(weak_views.len());
+            weak_views.retain(|weak| match weak.upgrade() {
+                Some(view) => {
+                    live.push(view);
+                    true
+                }
+                None => false,
+            });
+            live
+        };
+        std::iter::once(self.primary_progress.clone())
+            .chain(foreground)
+            .collect()
+    }
+
+    fn show_progress(&self, progress: &ScanProgress) {
+        let phase_changed = {
+            let current = self.current_progress.borrow();
+            !matches!(
+                (current.as_ref(), progress),
+                (Some(ScanProgress::Discovering), ScanProgress::Discovering)
+                    | (
+                        Some(ScanProgress::Scanning { .. }),
+                        ScanProgress::Scanning { .. }
+                    )
+            )
+        };
+        *self.current_progress.borrow_mut() = Some(progress.clone());
+        match progress {
+            ScanProgress::Discovering => {
+                if phase_changed {
+                    tracing::info!("scan progress: discovering");
+                }
+            }
+            ScanProgress::Scanning {
+                processed,
+                total,
+                current_path,
+            } => {
+                if phase_changed {
+                    tracing::info!(
+                        processed,
+                        total,
+                        file = %current_path.display(),
+                        "scan progress: scanning"
+                    );
+                } else {
+                    tracing::debug!(
+                        processed,
+                        total,
+                        file = %current_path.display(),
+                        "scan progress: scanning"
+                    );
+                }
+            }
+        }
+        let views = self.live_progress_views();
+        for view in views {
+            view.show(progress);
+        }
+    }
+
+    fn finish_progress(&self) {
+        self.current_progress.borrow_mut().take();
+        let views = self.live_progress_views();
+        for view in views {
+            view.finish();
         }
     }
 
@@ -271,7 +361,7 @@ fn spawn_scan(
     controls
         .button
         .set_tooltip_text(Some(&strings::text(strings::SCANNING)));
-    controls.progress.show(&ScanProgress::Discovering);
+    controls.show_progress(&ScanProgress::Discovering);
 
     let (progress_sender, progress_receiver) = async_channel::bounded::<ScanProgress>(1);
     let (result_sender, result_receiver) = async_channel::bounded(1);
@@ -295,10 +385,10 @@ fn spawn_scan(
         }
     });
 
-    let progress_view = controls.progress.clone();
+    let progress_controls = controls.clone();
     glib::spawn_future_local(async move {
         while let Ok(progress) = progress_receiver.recv().await {
-            progress_view.show(&progress);
+            progress_controls.show_progress(&progress);
         }
         let _ = drained_sender.try_send(());
     });
@@ -360,7 +450,7 @@ fn publish_latest_progress(
 }
 
 fn finish_scan_ui(controls: &ScanControls) {
-    controls.progress.finish();
+    controls.finish_progress();
     controls.button.set_sensitive(true);
     controls
         .button
@@ -472,7 +562,8 @@ mod tests {
 
     use reprise_core::library::scanner::ScanProgress;
 
-    use super::{publish_latest_progress, ScanCompletion};
+    use super::{publish_latest_progress, ScanCompletion, ScanControls};
+    use crate::ui::scan_progress::ScanProgressView;
 
     #[test]
     fn scan_completion_callback_runs_without_holding_its_refcell_borrow() {
@@ -517,5 +608,35 @@ mod tests {
         assert_eq!(total, 9);
         assert_eq!(current_path, PathBuf::from("second.flac"));
         assert!(receiver.is_empty());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn foreground_progress_view_replays_and_tracks_the_active_scan() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let button = gtk4::Button::new();
+        let main = ScanProgressView::new();
+        let controls = ScanControls::new(&button, &main);
+        controls.show_progress(&ScanProgress::Scanning {
+            processed: 2,
+            total: 5,
+            current_path: PathBuf::from("song.flac"),
+        });
+        let foreground = ScanProgressView::new();
+
+        controls.attach_progress_view(&foreground);
+
+        assert!(main.widget().reveals_child());
+        assert!(foreground.widget().reveals_child());
+        controls.finish_progress();
+        assert!(!main.widget().reveals_child());
+        assert!(!foreground.widget().reveals_child());
+
+        drop(foreground);
+        controls.show_progress(&ScanProgress::Discovering);
+        assert!(main.widget().reveals_child());
+        assert!(controls.foreground_progress.borrow().is_empty());
     }
 }

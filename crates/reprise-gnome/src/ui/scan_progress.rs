@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::path::Path;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::Duration;
 
 use gtk4::glib;
@@ -65,17 +65,30 @@ fn view_state(progress: &ScanProgress) -> ScanProgressState {
     }
 }
 
-/// Compact progress row displayed directly below the content header bar.
+/// Compact progress row displayed directly below its host window's header bar.
 /// A generation token stops an old pulse timeout whenever the phase changes
 /// or a scan finishes, so repeated scans never retain stale GTK callbacks.
 #[derive(Clone)]
 pub(super) struct ScanProgressView {
+    inner: Rc<ScanProgressWidgets>,
+}
+
+struct ScanProgressWidgets {
     revealer: gtk4::Revealer,
     title: gtk4::Label,
     detail: gtk4::Label,
     progress: gtk4::ProgressBar,
     pulse_generation: Rc<Cell<u64>>,
     phase: Rc<Cell<DisplayPhase>>,
+}
+
+#[derive(Clone)]
+pub(super) struct WeakScanProgressView(Weak<ScanProgressWidgets>);
+
+impl WeakScanProgressView {
+    pub(super) fn upgrade(&self) -> Option<ScanProgressView> {
+        self.0.upgrade().map(|inner| ScanProgressView { inner })
+    }
 }
 
 impl ScanProgressView {
@@ -114,79 +127,64 @@ impl ScanProgressView {
             .build();
 
         Self {
-            revealer,
-            title,
-            detail,
-            progress,
-            pulse_generation: Rc::new(Cell::new(0)),
-            phase: Rc::new(Cell::new(DisplayPhase::Hidden)),
+            inner: Rc::new(ScanProgressWidgets {
+                revealer,
+                title,
+                detail,
+                progress,
+                pulse_generation: Rc::new(Cell::new(0)),
+                phase: Rc::new(Cell::new(DisplayPhase::Hidden)),
+            }),
         }
     }
 
+    pub(super) fn downgrade(&self) -> WeakScanProgressView {
+        WeakScanProgressView(Rc::downgrade(&self.inner))
+    }
+
     pub(super) fn widget(&self) -> &gtk4::Revealer {
-        &self.revealer
+        &self.inner.revealer
     }
 
     pub(super) fn show(&self, progress: &ScanProgress) {
         let state = view_state(progress);
-        self.title.set_label(&state.title);
-        self.detail.set_label(state.detail.as_deref().unwrap_or(""));
-        self.detail.set_tooltip_text(state.detail.as_deref());
-        self.revealer.set_reveal_child(true);
+        self.inner.title.set_label(&state.title);
+        self.inner
+            .detail
+            .set_label(state.detail.as_deref().unwrap_or(""));
+        self.inner.detail.set_tooltip_text(state.detail.as_deref());
+        self.inner.revealer.set_reveal_child(true);
 
         match state.mode {
             ProgressMode::Indeterminate => {
-                if self.phase.replace(DisplayPhase::Discovering) != DisplayPhase::Discovering {
-                    tracing::info!("scan progress: discovering");
+                if self.inner.phase.replace(DisplayPhase::Discovering) != DisplayPhase::Discovering
+                {
                     self.start_pulsing();
                 }
             }
             ProgressMode::Determinate(fraction) => {
                 self.cancel_pulsing();
-                self.progress.set_fraction(fraction);
-                if let ScanProgress::Scanning {
-                    processed,
-                    total,
-                    current_path,
-                } = progress
-                {
-                    let first_update =
-                        self.phase.replace(DisplayPhase::Scanning) != DisplayPhase::Scanning;
-                    if first_update {
-                        tracing::info!(
-                            processed,
-                            total,
-                            file = %current_path.display(),
-                            "scan progress: scanning"
-                        );
-                    } else {
-                        tracing::debug!(
-                            processed,
-                            total,
-                            file = %current_path.display(),
-                            "scan progress: scanning"
-                        );
-                    }
-                }
+                self.inner.progress.set_fraction(fraction);
+                self.inner.phase.set(DisplayPhase::Scanning);
             }
         }
     }
 
     pub(super) fn finish(&self) {
         self.cancel_pulsing();
-        self.phase.set(DisplayPhase::Hidden);
-        self.revealer.set_reveal_child(false);
-        self.progress.set_fraction(0.0);
+        self.inner.phase.set(DisplayPhase::Hidden);
+        self.inner.revealer.set_reveal_child(false);
+        self.inner.progress.set_fraction(0.0);
     }
 
     fn start_pulsing(&self) {
-        let generation = self.pulse_generation.get().wrapping_add(1);
-        self.pulse_generation.set(generation);
-        self.progress.set_fraction(0.0);
-        self.progress.pulse();
+        let generation = self.inner.pulse_generation.get().wrapping_add(1);
+        self.inner.pulse_generation.set(generation);
+        self.inner.progress.set_fraction(0.0);
+        self.inner.progress.pulse();
 
-        let progress = self.progress.downgrade();
-        let pulse_generation = self.pulse_generation.clone();
+        let progress = self.inner.progress.downgrade();
+        let pulse_generation = self.inner.pulse_generation.clone();
         glib::timeout_add_local(PULSE_INTERVAL, move || {
             if pulse_generation.get() != generation {
                 return glib::ControlFlow::Break;
@@ -200,8 +198,9 @@ impl ScanProgressView {
     }
 
     fn cancel_pulsing(&self) {
-        self.pulse_generation
-            .set(self.pulse_generation.get().wrapping_add(1));
+        self.inner
+            .pulse_generation
+            .set(self.inner.pulse_generation.get().wrapping_add(1));
     }
 }
 
@@ -261,12 +260,12 @@ mod tests {
             current_path: PathBuf::from("/music/song.flac"),
         });
 
-        assert!(view.revealer.reveals_child());
-        assert_eq!(view.title.label(), "2 of 4 files scanned");
-        assert_eq!(view.detail.label(), "song.flac");
-        assert_eq!(view.progress.fraction(), 0.5);
+        assert!(view.inner.revealer.reveals_child());
+        assert_eq!(view.inner.title.label(), "2 of 4 files scanned");
+        assert_eq!(view.inner.detail.label(), "song.flac");
+        assert_eq!(view.inner.progress.fraction(), 0.5);
 
         view.finish();
-        assert!(!view.revealer.reveals_child());
+        assert!(!view.inner.revealer.reveals_child());
     }
 }

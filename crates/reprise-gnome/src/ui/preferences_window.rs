@@ -72,6 +72,7 @@ pub(super) struct PreferencesShell {
 pub(super) fn build(
     parent: &adw::ApplicationWindow,
     pages: [(PageId, adw::PreferencesPage); 6],
+    foreground_top_bar: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
     for (id, page) in pages {
@@ -88,6 +89,9 @@ pub(super) fn build(
     header.set_title_widget(Some(&switcher));
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
+    if let Some(foreground_top_bar) = foreground_top_bar {
+        toolbar.add_top_bar(foreground_top_bar);
+    }
     toolbar.set_content(Some(&stack));
     let root_page = adw::NavigationPage::with_tag(
         &toolbar,
@@ -168,7 +172,7 @@ mod tests {
             (id, page)
         });
 
-        let shell = build(&parent, pages);
+        let shell = build(&parent, pages, None);
 
         assert!(!shell.window.is_modal());
         assert_eq!(
@@ -198,7 +202,7 @@ mod tests {
                 .build();
             (id, page)
         });
-        let shell = build(&parent, pages);
+        let shell = build(&parent, pages, None);
         let detail =
             adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Columns");
 
@@ -210,6 +214,32 @@ mod tests {
             Some(shell.navigation.upcast_ref())
         );
         assert!(shell.navigation.pop());
+        shell.window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn foreground_progress_is_parented_inside_the_preferences_window() {
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.PreferencesProgressTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let parent = adw::ApplicationWindow::builder().application(&app).build();
+        let pages = PAGE_ORDER.map(|id| {
+            let page = adw::PreferencesPage::builder()
+                .title(id.title())
+                .icon_name(id.icon_name())
+                .build();
+            (id, page)
+        });
+        let progress = gtk4::Revealer::new();
+
+        let shell = build(&parent, pages, Some(progress.upcast_ref()));
+
+        assert!(progress.parent().is_some());
+        assert!(progress.is_ancestor(&shell.window));
         shell.window.close();
     }
 }
