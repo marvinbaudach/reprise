@@ -143,7 +143,7 @@ mod tests {
             specs.iter().map(|spec| spec.id).collect::<Vec<_>>(),
             layout.order
         );
-        assert_eq!(specs.len(), 9);
+        assert_eq!(specs.len(), layout.order.len());
         for spec in specs {
             let fixed = matches!(spec.id, ColumnId::Cover | ColumnId::Title);
             assert_eq!(spec.enabled, !fixed);
@@ -155,13 +155,20 @@ mod tests {
     #[test]
     fn hidden_optional_columns_still_remain_available_in_the_menu() {
         let layout = ColumnLayout::default();
-        let track_number = header_menu_specs(&layout)
-            .into_iter()
+        let specs = header_menu_specs(&layout);
+        let track_number = specs
+            .iter()
             .find(|spec| spec.id == ColumnId::TrackNumber)
+            .unwrap();
+        let play_count = specs
+            .iter()
+            .find(|spec| spec.id == ColumnId::PlayCount)
             .unwrap();
 
         assert!(track_number.enabled);
         assert!(!track_number.active);
+        assert!(play_count.enabled);
+        assert!(!play_count.active);
     }
 
     #[test]
