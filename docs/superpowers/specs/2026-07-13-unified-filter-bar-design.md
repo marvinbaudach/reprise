@@ -14,7 +14,7 @@ Die Leiste ist ausschließlich in `Library` sichtbar und enthält:
 
 - die zurückhaltende Abschnittsbeschriftung `Filters`;
 - aktive Chips in stabiler Reihenfolge Genre, Artist, Album;
-- einen kompakten `Add filter`-Button;
+- einen kompakten, auch ohne Hover sichtbaren `+ Add filter`-Button im nativen Pill-Stil;
 - rechts die aktuelle Trefferzahl;
 - ein zweistufiges Popover: zuerst Filtertyp, danach genau ein Suchfeld mit den möglichen Werten.
 

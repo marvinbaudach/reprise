@@ -316,7 +316,8 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
 ## Pending: browse, columns, playlists, and Rhythmbox
 
 - [ ] The unified filter bar works by mouse and keyboard at narrow and wide widths:
-  chips wrap without covering the table, `Add filter` shows one value search, and
+  chips wrap without covering the table, the raised `+ Add filter` pill remains visible
+  without hover and shows one value search, and
   Genre → Artist → Album changes or chip removal reset only dependent facets. No
   redundant Reset button is shown; removing the active chips clears the filters.
 - [ ] Search and browse facets combine correctly, including zero-result recovery.
