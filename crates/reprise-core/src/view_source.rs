@@ -43,6 +43,11 @@ pub enum ViewSource {
     /// query_import_error_count` exposes the one piece of this source this
     /// task builds ahead of time (a bare count, for a future sidebar badge).
     ImportErrors,
+    /// The "My Stats" screen — a dedicated view backed by
+    /// `library::stats_screen` rather than the shared track list. The
+    /// sidebar routes to it; the content area shows the stats view widget
+    /// instead of the `ColumnView`.
+    MyStats,
 }
 
 impl ViewSource {
@@ -58,6 +63,7 @@ impl ViewSource {
             Self::Queue => "queue".to_string(),
             Self::Missing => "missing".to_string(),
             Self::ImportErrors => "import_errors".to_string(),
+            Self::MyStats => "my_stats".to_string(),
         }
     }
 }
@@ -79,5 +85,6 @@ mod tests {
         assert_eq!(ViewSource::Queue.label(), "queue");
         assert_eq!(ViewSource::Missing.label(), "missing");
         assert_eq!(ViewSource::ImportErrors.label(), "import_errors");
+        assert_eq!(ViewSource::MyStats.label(), "my_stats");
     }
 }

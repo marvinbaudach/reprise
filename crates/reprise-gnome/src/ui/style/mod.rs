@@ -40,6 +40,7 @@ fn app_css() -> String {
         super::rating::css(),
         super::track_list_header_style::css(),
         super::track_list_row_interaction::css(),
+        super::stats_css::css(),
     ]
     .join("\n")
 }
@@ -109,6 +110,7 @@ mod tests {
             ".reprise-rating-inline-star",
             ".reprise-track-list > header label",
             ".reprise-reorder-target",
+            ".stats-chart",
         ] {
             assert!(css.contains(marker), "missing section marker: {marker}");
         }

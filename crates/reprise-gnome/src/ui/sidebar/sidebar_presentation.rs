@@ -27,6 +27,7 @@ pub(super) enum NavIcon {
     GenericSmart,
     ImportErrors,
     Missing,
+    MyStats,
 }
 
 impl NavIcon {
@@ -41,6 +42,7 @@ impl NavIcon {
             Self::TopRated => "starred-symbolic",
             Self::ImportErrors => "dialog-warning-symbolic",
             Self::Missing => "edit-delete-symbolic",
+            Self::MyStats => "starred-symbolic",
         }
     }
 }
@@ -70,6 +72,29 @@ pub(super) fn build_nav_row(title: &str, count: Option<i64>, icon: NavIcon) -> g
         count_label.add_css_class("numeric");
         hbox.append(&count_label);
     }
+
+    gtk4::ListBoxRow::builder().child(&hbox).build()
+}
+
+/// Builds a navigation row with a trailing badge label instead of a count
+/// (e.g. "NEW"). The badge uses the accent color via `.stats-badge`.
+pub(super) fn build_nav_row_with_badge(
+    title: &str,
+    badge_text: &str,
+    icon: NavIcon,
+) -> gtk4::ListBoxRow {
+    let hbox = row_box();
+    hbox.append(&nav_icon(icon));
+
+    let title_label = gtk4::Label::new(Some(title));
+    title_label.set_xalign(0.0);
+    title_label.set_hexpand(true);
+    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    hbox.append(&title_label);
+
+    let badge = gtk4::Label::new(Some(badge_text));
+    badge.add_css_class("stats-badge");
+    hbox.append(&badge);
 
     gtk4::ListBoxRow::builder().child(&hbox).build()
 }
@@ -177,6 +202,7 @@ mod tests {
         );
         assert_eq!(NavIcon::ImportErrors.icon_name(), "dialog-warning-symbolic");
         assert_eq!(NavIcon::Missing.icon_name(), "edit-delete-symbolic");
+        assert_eq!(NavIcon::MyStats.icon_name(), "starred-symbolic");
     }
 
     #[test]
