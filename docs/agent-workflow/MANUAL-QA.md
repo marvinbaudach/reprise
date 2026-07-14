@@ -106,6 +106,10 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   stay in the top header, no bottom switcher appears, and Layout does not duplicate
   Compact View. The isolated GTK regression proves the non-modal window, transient
   parent, top switcher and exact page order; native window-manager dragging remains.
+- [ ] In Preferences → Layout, open `Edit column layout…`. Expected: the same
+  Preferences window pushes a second-level `Column layout` page with the native
+  Back button; no dialog or window appears behind Preferences. Back returns to the
+  Layout tab without changing the selected top-level tab.
 
 ### Header and navigation design
 

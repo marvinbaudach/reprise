@@ -353,7 +353,7 @@ pub(super) fn build(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
         strings::EDIT_COLUMN_LAYOUT,
         Rc::new(move || {
             if let Some(context) = weak.upgrade() {
-                crate::ui::column_layout_editor::present(&context.window, &context.track_list);
+                context.open_column_layout_editor();
             }
         }),
     );
