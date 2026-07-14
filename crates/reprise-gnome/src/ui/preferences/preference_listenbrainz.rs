@@ -71,6 +71,7 @@ struct ListenBrainzExpanderSurface {
     token: adw::PasswordEntryRow,
     connect: gtk4::Button,
     disconnect: gtk4::Button,
+    test_connection: crate::ui::preference_dependencies::TestConnectionRow,
 }
 
 fn build_listenbrainz_expander(
@@ -121,6 +122,11 @@ fn build_listenbrainz_expander(
     connect_row.add_suffix(&connect);
     expander.add_row(&connect_row);
 
+    // Test connection
+    let test_connection = crate::ui::preference_dependencies::TestConnectionRow::new();
+    test_connection.row.set_visible(connected);
+    expander.add_row(&test_connection.row);
+
     // Disconnect action row with destructive button
     let disconnect = gtk4::Button::builder()
         .label(strings::text(strings::LISTENBRAINZ_DISCONNECT))
@@ -148,10 +154,10 @@ fn build_listenbrainz_expander(
         let token = token.downgrade();
         let connect_row = connect_row.downgrade();
         let hint = hint.downgrade();
+        let test_row = test_connection.row.downgrade();
         let disconnect_row = disconnect_row.downgrade();
         move |expander| {
             let enabled = expander.enables_expansion();
-            // Keep body rows sensitive only when enabled
             if let Some(w) = token.upgrade() {
                 w.set_sensitive(enabled);
             }
@@ -159,6 +165,9 @@ fn build_listenbrainz_expander(
                 row.set_sensitive(enabled);
             }
             if let Some(row) = hint.upgrade() {
+                row.set_sensitive(enabled);
+            }
+            if let Some(row) = test_row.upgrade() {
                 row.set_sensitive(enabled);
             }
             if let Some(row) = disconnect_row.upgrade() {
@@ -172,6 +181,7 @@ fn build_listenbrainz_expander(
     token.set_sensitive(body_sensitive);
     connect_row.set_sensitive(body_sensitive);
     hint.set_sensitive(body_sensitive);
+    test_connection.row.set_sensitive(body_sensitive);
     disconnect.set_sensitive(body_sensitive);
 
     ListenBrainzExpanderSurface {
@@ -179,6 +189,7 @@ fn build_listenbrainz_expander(
         token,
         connect,
         disconnect,
+        test_connection,
     }
 }
 
@@ -296,6 +307,41 @@ impl PreferencesContext {
                     &expander_for_connect,
                     token_for_connect.text().trim().to_string(),
                 );
+            }
+        });
+
+        // Test connection button
+        let test_row = surface.test_connection;
+        self.listenbrainz.subscribe(Rc::new({
+            let test_row_ref = test_row.row.downgrade();
+            move |status| {
+                if let Some(row) = test_row_ref.upgrade() {
+                    row.set_visible(!matches!(status, ConnectionStatus::Disabled));
+                }
+            }
+        }));
+        test_row.button.connect_clicked({
+            let trigger = test_row.clone_trigger();
+            move |_| {
+                let trigger = trigger.clone();
+                glib::spawn_future_local(async move {
+                    let token = match listenbrainz_secret::load().await {
+                        Ok(Some(t)) if !t.trim().is_empty() => t,
+                        Ok(_) => {
+                            trigger.show_error(&strings::text(strings::LISTENBRAINZ_NOT_CONNECTED));
+                            return;
+                        }
+                        Err(_) => {
+                            trigger.show_error(&strings::text(strings::LISTENBRAINZ_KEYRING_ERROR));
+                            return;
+                        }
+                    };
+                    trigger.trigger(move || {
+                        ListenBrainzClient::new()
+                            .validate_token(&token)
+                            .map_err(|e| map_transport_error(&e))
+                    });
+                });
             }
         });
 
@@ -533,6 +579,13 @@ fn set_activation_pending(row: &adw::ExpanderRow, pending: bool) {
 
 fn pending_count(conn: &Rc<RefCell<Connection>>) -> usize {
     reprise_core::scrobbling::pending_count(&conn.borrow()).unwrap_or(0)
+}
+
+fn map_transport_error(error: &TransportError) -> String {
+    match error {
+        TransportError::Unauthorized => strings::text(strings::LISTENBRAINZ_TOKEN_REJECTED),
+        _ => strings::text(strings::LISTENBRAINZ_CONNECTION_ERROR),
+    }
 }
 
 #[cfg(test)]
