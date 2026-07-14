@@ -65,7 +65,7 @@ Die bestehende `AdwNavigationSplitView`-, `AdwToolbarView`- und
 Queries, Queue noch Playbackzustand.
 
 ```text
-┌ Sidebar ────┬ Header: Suche     Musik      [Info] [Kompakt] [Scan] [Menü] ┐
+┌ Sidebar ────┬ Header: Suche          Musik              [Info] [Menü] ┐
 │ BIBLIOTHEK  ├ Filter: Genre       Interpret       Album          ┬ Info  × │
 │ Musik   504 │ Titel    Interpret    Album    Jahr  Länge  ★      │ Cover   │
 │ Queue    12 │ …                                                  │ Titel   │
@@ -82,14 +82,15 @@ Queries, Queue noch Playbackzustand.
   fokussierbar.
 - Der aktuelle Quelltitel bleibt zentriert und ist der einzige hervorgehobene
   Text in der Headerbar.
-- Rechts folgen der Informationsspalten-Schalter, der im Kompaktplayer-Plan
-  definierte direkt sichtbare Kompaktknopf, ein icon-only Scan-Knopf mit
-  Tooltip und das Hauptmenü.
+- Rechts folgen der Informationsspalten-Schalter und das Hauptmenü. Seltene
+  Bibliothekspflege und Darstellungswechsel werden nicht als zusätzliche
+  dauerhafte Header-Aktionen dupliziert.
 - „Playlist importieren…“ liegt im Hauptmenü. Es bleibt eine globale Aktion,
   wird aber nicht dauerhaft als großer Textknopf gezeigt.
-- Der Scan-Knopf bleibt sichtbar, weil Bibliothekspflege eine häufige und bei
-  leerer Bibliothek primäre Handlung ist. Während eines Scans verwendet er
-  weiterhin den einen vorhandenen `ScanControls`-Zustand.
+- Ordnerwahl und „Bibliothek neu scannen“ bleiben unter Bibliothek in den
+  Einstellungen sowie in der Ersteinrichtung erreichbar. Sie verwenden
+  weiterhin den einen vorhandenen `ScanControls`-Zustand; im Library-Header
+  erscheint kein zusätzlicher Scan-Knopf.
 - Im kollabierten Split-View kommt der Sidebar-Knopf ganz links hinzu. Alle
   icon-only Knöpfe besitzen Tooltip, Accessible Name und natives Fokusziel.
 

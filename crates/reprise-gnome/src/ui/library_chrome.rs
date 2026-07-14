@@ -3,10 +3,17 @@
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use super::strings;
+
 const SEARCH_WIDTH: i32 = 300;
 
 pub(super) struct LibraryChrome {
     pub(super) root: adw::ToolbarView,
+}
+
+pub(super) struct LibraryMaintenanceActions {
+    pub(super) scan: gtk4::Button,
+    pub(super) import: gtk4::Button,
 }
 
 pub(super) fn build(header: &adw::HeaderBar, content: &impl IsA<gtk4::Widget>) -> LibraryChrome {
@@ -30,6 +37,16 @@ pub(super) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
         .build();
     button.update_property(&[gtk4::accessible::Property::Label(label)]);
     button
+}
+
+pub(super) fn build_maintenance_actions(header: &adw::HeaderBar) -> LibraryMaintenanceActions {
+    let scan = action_button("folder-open-symbolic", &strings::text(strings::SCAN_FOLDER));
+    let import = action_button(
+        "document-open-symbolic",
+        &strings::text(strings::IMPORT_PLAYLIST),
+    );
+    header.pack_end(&import);
+    LibraryMaintenanceActions { scan, import }
 }
 
 #[cfg(test)]
@@ -73,6 +90,20 @@ mod tests {
         assert_eq!(button.icon_name().as_deref(), Some("folder-open-symbolic"));
         assert_eq!(button.tooltip_text().as_deref(), Some("Scan folder…"));
         assert!(button.label().is_none());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn maintenance_actions_keep_the_scan_trigger_out_of_the_header() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let header = adw::HeaderBar::new();
+
+        let actions = build_maintenance_actions(&header);
+
+        assert!(actions.import.is_ancestor(&header));
+        assert!(!actions.scan.is_ancestor(&header));
     }
 
     #[test]
