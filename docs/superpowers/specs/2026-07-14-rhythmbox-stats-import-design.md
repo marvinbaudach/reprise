@@ -4,8 +4,8 @@
 
 Reprise bietet unter **Einstellungen → Bibliothek** erneut einen bewusst
 ausgelösten, read-only Rhythmbox-Import an. Neben dem bestehenden Spaltenlayout
-kann der Nutzer Bewertungen, Wiedergabezähler und das ursprüngliche
-Hinzufügedatum aus `rhythmdb.xml` sowie statische Playlisten aus
+kann der Nutzer Bewertungen, Wiedergabezähler, das ursprüngliche
+Hinzufügedatum und die letzte Wiedergabe aus `rhythmdb.xml` sowie statische Playlisten aus
 `playlists.xml` übernehmen. Die Tracktabelle erhält außerdem eine optionale
 Spalte „Wiedergaben“.
 
@@ -14,7 +14,7 @@ Spalte „Wiedergaben“.
 - eine dauerhafte Aktion „Aus Rhythmbox importieren…“ in den
   Bibliothekseinstellungen;
 - explizite Auswahl von Spaltenlayout, Bewertungen, Wiedergabezählern,
-  Hinzufügedatum und statischen Playlisten;
+  Hinzufügedatum, letzter Wiedergabe und statischen Playlisten;
 - standardmäßig ausgewählte Statistikoptionen, ohne automatischen Import;
 - exaktes Matching lokaler Titel über den dekodierten `file://`-Pfad;
 - eine optionale, standardmäßig ausgeblendete und sortierbare Spalte
@@ -37,6 +37,9 @@ Der Import ist wiederholbar und konservativ:
   älter als Reprises positiver Wert ist; bei einem fehlenden Reprise-Wert wird
   der gültige Rhythmbox-Wert verwendet. Ein Import macht einen Titel niemals
   künstlich neuer.
+- Rhythmbox' positives `last-played` wird als `last_played_at` übernommen,
+  wenn es neuer als Reprises Wert ist. Der Import setzt eine aktuellere lokale
+  Wiedergabe niemals zurück.
 - Nicht gefundene gültige Pfade werden in der Zusammenfassung gezählt.
   Nicht-Datei-URIs, ungültige Werte und Nicht-Song-Einträge werden sicher
   ignoriert.
@@ -107,7 +110,7 @@ Whitelist akzeptiert `play_count`.
 ## Explizit nicht Teil dieser Änderung
 
 - kein Import von Audio-Tags wie Titel, Interpret, Album oder Genre;
-- kein Import von Smart-Playlists, Last-played-Zeit oder Rhythmbox-internen IDs;
+- kein Import von Smart-Playlists oder Rhythmbox-internen IDs;
 - kein automatischer Start, keine Hintergrundüberwachung und kein Schreiben
   nach Rhythmbox;
 - kein Zugriff auf echte Rhythmbox-, Reprise- oder Musikdaten während QA;

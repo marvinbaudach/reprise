@@ -28,11 +28,13 @@ pub struct RhythmboxTrackStats {
     pub rating: Option<i32>,
     pub play_count: Option<i64>,
     pub added_at: Option<i64>,
+    pub last_played_at: Option<i64>,
 }
 pub struct RhythmboxImportChoices {
     pub ratings: bool,
     pub play_counts: bool,
     pub added_at: bool,
+    pub last_played_at: bool,
 }
 pub struct RhythmboxImportSummary {
     pub parsed: usize,
@@ -40,6 +42,7 @@ pub struct RhythmboxImportSummary {
     pub ratings_imported: usize,
     pub play_counts_raised: usize,
     pub dates_imported: usize,
+    pub last_played_imported: usize,
     pub skipped: usize,
 }
 pub fn parse_rhythmdb(path: &Path) -> Result<Vec<RhythmboxTrackStats>, RhythmboxImportError>;
@@ -167,8 +170,29 @@ und Manual QA.
    ausführen; danach vollständige Gates, Core-Purity, Dateigröße und Review.
 5. Commit: `feat: import Rhythmbox date added`.
 
+## Aufgabe 6 — Letzte Wiedergabe übernehmen
+
+**Dateien:** `crates/reprise-core/src/library/rhythmbox_import.rs`, neu
+`crates/reprise-core/src/library/rhythmbox_playlist_import_tests.rs`,
+`crates/reprise-gnome/src/ui/preference_rhythmbox.rs`,
+`crates/reprise-gnome/src/ui/strings.rs`, `po/de.po`, `po/reprise.pot`, Design
+und Manual QA.
+
+1. RED: Parser- und Merge-Tests verlangen Rhythmbox' positives `last-played`,
+   den neueren positiven Zeitstempel, idempotentes Verhalten und eine sechste
+   explizite GTK-Auswahloption.
+2. Bestehende Core-Tests in ein Geschwistermodul extrahieren, damit die
+   Produktionsdatei und Testdatei jeweils unter 800 Zeilen bleiben.
+3. `last_played_at` streamend parsen und transaktional mit `max` mergen; ein
+   fehlender Reprise-Wert wird ergänzt, ein neuerer lokaler Wert bleibt.
+4. „Last played“ standardmäßig ausgewählt im Importdialog ergänzen und
+   Ergebnis-, Beschreibungs-, Manual-QA- sowie gettext-Texte aktualisieren.
+5. Fokustests, isolierten GTK-Test und Scratch-App-Smoke ausführen; danach
+   vollständige Gates, Core-Purity, Dateigröße und Review.
+6. Commit: `feat: import Rhythmbox last played`.
+
 ## Abschluss
 
-Ledger um alle fünf Commits ergänzen. Branch sauber und ungepusht lassen;
+Ledger um alle sechs Commits ergänzen. Branch sauber und ungepusht lassen;
 Integration nach `main` erfolgt erst nach separater Freigabe und Rebase auf den
 dann aktuellen `main`.
