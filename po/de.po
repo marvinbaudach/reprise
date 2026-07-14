@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 03:25+0200\n"
+"POT-Creation-Date: 2026-07-14 03:31+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -1380,10 +1380,6 @@ msgstr "FILTER"
 #: crates/reprise-gnome/src/ui/browse_filter_strings.rs:13
 msgid "Add filter"
 msgstr "Filter hinzufügen"
-
-#: crates/reprise-gnome/src/ui/browse_filter_strings.rs:14
-msgid "Reset"
-msgstr "Zurücksetzen"
 
 #: crates/reprise-gnome/src/ui/browse_filter_strings.rs:15
 msgid "Back"

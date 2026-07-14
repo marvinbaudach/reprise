@@ -11,7 +11,7 @@ macro_rules! N_ {
 
 pub(super) const FILTERS: &str = N_!("FILTER");
 pub(super) const ADD_FILTER: &str = N_!("Add filter");
-pub(super) const RESET: &str = N_!("Reset");
+// Active filters are cleared through their removable chips, not a duplicate Reset action.
 pub(super) const BACK: &str = N_!("Back");
 pub(super) const SEARCH_VALUES: &str = N_!("Search filter values");
 pub(super) const NO_FILTERS_AVAILABLE: &str = N_!("All filters are active");
