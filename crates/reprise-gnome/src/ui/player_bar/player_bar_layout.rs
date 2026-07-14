@@ -21,6 +21,8 @@ const ZERO_TIME_LABEL: &str = "0:00";
 const ZONE_SPACING: i32 = 8;
 const COVER_PIXEL_SIZE: i32 = 48;
 const COVER_CSS_CLASS: &str = "player-bar-cover";
+const PLAY_CSS_CLASS: &str = "player-bar-play";
+const SURFACE_CSS_CLASS: &str = "player-bar-surface";
 
 pub(super) struct PlayerBarWidgets {
     pub(super) root: gtk4::ActionBar,
@@ -72,16 +74,28 @@ pub(super) fn build() -> PlayerBarWidgets {
     info_box.append(&track_box);
     info_box.set_valign(gtk4::Align::Center);
 
+    let shuffle_button = gtk4::ToggleButton::builder()
+        .icon_name(ICON_SHUFFLE)
+        .tooltip_text(strings::text(strings::SHUFFLE))
+        .valign(gtk4::Align::Center)
+        .build();
     let prev_button = transport_button(ICON_PREVIOUS, strings::PREVIOUS);
     prev_button.set_sensitive(false);
     let play_pause_button = transport_button(ICON_PLAY, strings::PLAY);
+    // The play/pause control is the accent-glow focal point of the bar.
+    play_pause_button.add_css_class("circular");
+    play_pause_button.add_css_class(PLAY_CSS_CLASS);
     let next_button = transport_button(ICON_NEXT, strings::NEXT);
     next_button.set_sensitive(false);
+    let repeat_button = transport_button(ICON_REPEAT_ALL, strings::REPEAT);
 
+    // Mock layout: shuffle · prev · play · next · repeat grouped and centered.
     let transport_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
+    transport_row.append(&shuffle_button);
     transport_row.append(&prev_button);
     transport_row.append(&play_pause_button);
     transport_row.append(&next_button);
+    transport_row.append(&repeat_button);
     transport_row.set_halign(gtk4::Align::Center);
 
     let position_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
@@ -105,24 +119,17 @@ pub(super) fn build() -> PlayerBarWidgets {
     center_zone.set_hexpand(true);
     center_zone.set_valign(gtk4::Align::Center);
 
-    let shuffle_button = gtk4::ToggleButton::builder()
-        .icon_name(ICON_SHUFFLE)
-        .tooltip_text(strings::text(strings::SHUFFLE))
-        .valign(gtk4::Align::Center)
-        .build();
-    let repeat_button = transport_button(ICON_REPEAT_ALL, strings::REPEAT);
     let volume_button = gtk4::ScaleButton::new(VOLUME_MIN, VOLUME_MAX, VOLUME_STEP, &VOLUME_ICONS);
     volume_button.set_value(VOLUME_DEFAULT);
     volume_button.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
     volume_button.set_valign(gtk4::Align::Center);
 
     let secondary_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
-    secondary_zone.append(&shuffle_button);
-    secondary_zone.append(&repeat_button);
     secondary_zone.append(&volume_button);
     secondary_zone.set_valign(gtk4::Align::Center);
 
     let root = gtk4::ActionBar::new();
+    root.add_css_class(SURFACE_CSS_CLASS);
     root.pack_start(&info_box);
     root.set_center_widget(Some(&center_zone));
     root.pack_end(&secondary_zone);
@@ -152,6 +159,24 @@ pub(super) fn build() -> PlayerBarWidgets {
         scale,
         volume_button,
     }
+}
+
+/// Player-bar chrome CSS: the accent-glow circular play button and a hairline
+/// top border on the bar surface. Installed app-wide by [`super::style`]; the
+/// glow reads `@reprise_player_accent`, so it recolors with the active theme.
+pub(super) fn css() -> String {
+    use super::style::tokens::TRANSITION;
+    format!(
+        ".{PLAY_CSS_CLASS} {{ \
+           min-width: 40px; min-height: 40px; \
+           background-color: @reprise_player_accent; color: #ffffff; \
+           box-shadow: 0 0 14px alpha(@reprise_player_accent, 0.45); \
+           transition: box-shadow {TRANSITION}, background-color {TRANSITION}; }}\n\
+         .{PLAY_CSS_CLASS}:hover {{ \
+           box-shadow: 0 0 18px alpha(@reprise_player_accent, 0.6); }}\n\
+         .{SURFACE_CSS_CLASS} {{ \
+           border-top: 1px solid alpha(@window_fg_color, 0.06); }}"
+    )
 }
 
 fn transport_button(icon: &str, tooltip: &str) -> gtk4::Button {
@@ -214,17 +239,15 @@ mod tests {
         );
         assert_eq!(
             layout.transport_row.first_child(),
-            Some(layout.prev_button.clone().upcast())
+            Some(layout.shuffle_button.clone().upcast())
         );
         assert_eq!(
             layout.transport_row.last_child(),
-            Some(layout.next_button.clone().upcast())
+            Some(layout.repeat_button.clone().upcast())
         );
         assert!(layout.play_pause_button.is_ancestor(&layout.transport_row));
-        assert!(!layout.shuffle_button.is_ancestor(&layout.transport_row));
-        assert!(!layout.repeat_button.is_ancestor(&layout.transport_row));
-        assert!(!layout.shuffle_button.is_ancestor(&layout.center_zone));
-        assert!(!layout.repeat_button.is_ancestor(&layout.center_zone));
+        assert!(layout.shuffle_button.is_ancestor(&layout.transport_row));
+        assert!(layout.repeat_button.is_ancestor(&layout.transport_row));
         assert!(!layout.volume_button.is_ancestor(&layout.center_zone));
         assert_eq!(
             layout.seek_row.first_child(),
@@ -236,9 +259,17 @@ mod tests {
         );
         assert!(layout.scale.is_ancestor(&layout.seek_row));
         assert!(layout.scale.width() > 0);
-        assert!(layout.shuffle_button.is_ancestor(&layout.secondary_zone));
-        assert!(layout.repeat_button.is_ancestor(&layout.secondary_zone));
+        assert!(!layout.shuffle_button.is_ancestor(&layout.secondary_zone));
+        assert!(!layout.repeat_button.is_ancestor(&layout.secondary_zone));
         assert!(layout.volume_button.is_ancestor(&layout.secondary_zone));
         window.close();
+    }
+
+    #[test]
+    fn css_styles_the_glow_play_button_and_surface() {
+        let css = super::css();
+        assert!(css.contains(".player-bar-play"));
+        assert!(css.contains("@reprise_player_accent"));
+        assert!(css.contains(".player-bar-surface"));
     }
 }
