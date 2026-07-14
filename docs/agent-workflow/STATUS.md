@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Polish unavailable Information panel states
-SINCE:    2026-07-14 03:42 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is polishing unavailable Information-panel states._
+_As of 2026-07-14: free after polishing unavailable Information-panel states._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Playlist import placement** (`b4bc211`) — import is no longer a Library
-  header button and now sits directly below New playlist in the Playlist section.
+- **Last completed:** **Information-panel unavailable states** (`797791d`) — unusable Refresh is
+  hidden and multi-selection uses a centered native status page without an empty track card.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `b4bc211`; this QA/coordination close-out follows it.
+- **Main implementation:** `797791d`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -110,6 +110,9 @@ _As of 2026-07-14: Codex is polishing unavailable Information-panel states._
 - ✅ **Grouped playlist import**: the M3U import action now lives directly beside playlist creation
   in the sidebar instead of occupying a separate Library-header button; picker, result navigation,
   toasts and repeated-activation protection remain shared with the existing import flow.
+- ✅ **Finished Information-panel unavailable states**: Refresh disappears whenever Artist News
+  cannot run or is already loading; no-selection, multi-selection and missing-artist contexts use
+  centered native placeholders, with multi-selection no longer retaining an empty track card.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
