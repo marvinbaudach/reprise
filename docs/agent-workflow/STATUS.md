@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate all outstanding local feature work into main
+SINCE:    2026-07-14 10:10 CEST
 ```
 
 _As of 2026-07-14: the installed app advertises and handles local audio and M3U files._
