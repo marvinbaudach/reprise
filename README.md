@@ -7,105 +7,72 @@ Flathub.
 
 ## Features
 
-- Fast, windowed column view for large local libraries, with search,
-  Genre/Artist/Album browsing, an editable persistent column layout, ratings,
-  play counts, missing-file and import-error views.
-- Incremental background scanning, live folder watching, and move detection so
-  renamed files keep ratings, play counts, playlist membership, and added dates.
-- GStreamer playback with seek, volume, queue, shuffle, repeat, previous/next,
-  automatic advance, safe skipping of missing or unplayable tracks, a live
-  ten-band equalizer with presets, and track/album ReplayGain.
-- GNOME MPRIS integration for media keys, quick settings, notifications, and
-  lock-screen controls.
-- Manual and smart playlists, multi-select actions, drag and drop, queue
-  reordering, and M3U/M3U8 import and export.
-- Android USB/MTP synchronization with detected-device browsing, phone
-  playlists, drag-to-copy, per-file and overall progress, cancellation, and a
-  strict per-device FIFO queue.
-- Embedded, folder, and cached online album covers across library and player surfaces.
-- Automatically retrieved played-track lyrics with synchronized current-line
-  highlighting and scrolling when timed text is available, plus selectable plain
-  text and instrumental fallbacks.
-- Optional ListenBrainz scrobbling with playing-now updates, durable offline
-  delivery, and credentials stored in the system keyring.
-- Optional Last.fm scrobbling with bring-your-own API credentials, browser
-  authorization, and an independent durable offline queue.
-- Multi-track tag editing that writes only fields explicitly changed by the
-  user, confirmed database-only removal, and confirmed move to Trash.
-- First-run setup and validated session restore for window, view, filters,
-  sorting, and exact queue state, including a default-off import offer when
-  Rhythmbox settings are detected. Restoring a session never starts playback.
-- A compact minimal-player window plus native preferences for appearance,
-  player-bar placement, sidebar/status visibility, list density, column layout,
-  library actions, optional modules, and playback effects. Changes persist and
-  apply immediately except MPRIS, whose restart requirement is shown explicitly.
+- Fast, windowed column view for large local libraries with search, chip-based
+  Genre/Artist/Album filtering, editable persistent column layout, ratings,
+  play counts, and missing-file/import-error views.
+- Incremental scanning, live folder watching, and move detection that keeps
+  ratings, play counts, playlists, and added dates across renames.
+- GStreamer playback with queue, shuffle, repeat, a live ten-band equalizer
+  with presets, and track/album ReplayGain.
+- Full GNOME MPRIS integration: media keys, quick settings, notifications,
+  lock-screen controls, and cover art.
+- Manual and smart playlists, drag and drop, queue reordering, and M3U/M3U8
+  import/export.
+- Android USB/MTP synchronization with device browsing, drag-to-copy,
+  progress, cancellation, and a strict per-device FIFO queue.
+- Embedded, folder, and cached online album covers; automatically retrieved
+  played-track lyrics with synchronized highlighting.
+- Optional ListenBrainz and Last.fm scrobbling (independent, default-off,
+  keyring-stored credentials, durable offline queues).
+- Multi-track tag editing that writes only explicitly changed fields;
+  database-only removal and confirmed move to Trash.
+- First-run setup, validated no-autoplay session restore, and an optional
+  one-time Rhythmbox import (ratings, play counts, playlists, column layout).
+- Compact minimal-player window (Bar, Cover, Pill, Card layouts) plus native
+  preferences for appearance, layout, density, modules, and playback effects.
 - Complete English source UI and German gettext translation.
 
-Reprise scans `mp3`, `flac`, `ogg`, `opus`, `m4a`, `aac`, and `wav` files.
-Actual decoding is provided by the installed GStreamer runtime and its codec
-plugins, so format support can vary by distribution.
+Reprise scans `mp3`, `flac`, `ogg`, `opus`, `m4a`, `aac`, and `wav`; actual
+decoding depends on the installed GStreamer codec plugins.
 
 ## Privacy and file safety
 
-The library database and settings stay on the local machine. Reprise does not
-include telemetry. It reads music files during scanning and playback and changes
-them only after an explicit tag-edit action. Removing a track from the library
-does not remove its file; moving a file to Trash always requires confirmation
-and has no permanent-delete fallback.
+The library database and settings stay on the local machine; Reprise contains
+no telemetry. Music files are only written by an explicit tag-edit action.
+Removing a track never deletes its file; moving to Trash always requires
+confirmation and has no permanent-delete fallback.
 
-Reprise automatically sends album/artist metadata queries to MusicBrainz for
-missing covers and downloads conservative matches from Cover Art Archive.
+Online access is limited to:
 
-When playback successfully starts, Reprise sends the track title, artist, album,
-and rounded duration to LRCLIB to retrieve lyrics. File paths, library contents,
-ratings, and play history are never sent. Synchronized lyrics follow the current
-playback position; plain lyrics remain selectable when timing data is unavailable.
-Results and short-lived not-found responses are cached only below the local XDG
-cache directory. Lookup is limited to tracks actually played—there is no whole-
-library upload or prefetch—and transient network failures remain retryable. Lyrics
-retrieved from the provider are not covered by Reprise's source-code licenses.
+- **Covers** — album/artist metadata queries to MusicBrainz and conservative
+  downloads from Cover Art Archive for missing covers; the library-wide
+  background check is a visible, cancellable opt-in.
+- **Lyrics** — after playback starts, title/artist/album/rounded duration go
+  to LRCLIB; never file paths, library contents, ratings, or history. Results
+  are cached locally; only played tracks are looked up.
+- **ListenBrainz / Last.fm** — both default-off. They transmit artist, title,
+  optional release, duration, and listen start time; credentials live only in
+  the system keyring, offline listens wait in separate local FIFO queues, and
+  Disconnect removes the service's keyring item and queue. Last.fm requires
+  bring-your-own API credentials — no project API key is embedded.
 
-ListenBrainz scrobbling is also disabled by default. After you connect an account,
-Reprise sends artist, title, optional release, duration, and the listen start time
-to ListenBrainz; playing-now updates omit the start time. The user token is stored
-only in the system keyring (or the encrypted Secret-Portal-backed store in Flatpak),
-never in the library database or logs. Completed listens wait in a local FIFO queue
-while offline and are removed only after ListenBrainz accepts them. Disabling the
-module stops transmission but keeps pending listens locally; Disconnect removes
-both the keyring token and that ListenBrainz queue. Reprise sends no other telemetry.
+Android sync starts only after tracks are dragged onto a phone playlist,
+writes only below `Music/Reprise` on the device, and never deletes unrelated
+device files.
 
-Last.fm scrobbling is independently disabled by default. Enabling it requires API
-credentials for a Last.fm desktop application; no project-wide API key is embedded
-in Reprise or committed to this repository. Reprise opens Last.fm authorization only
-after an explicit user action, then keeps the API key, shared secret, account name,
-and session key together in the system keyring. It transmits artist, title, optional
-release, duration, and listen start time for completed tracks; playing-now updates
-omit the start time. Its offline FIFO is separate from ListenBrainz, and Disconnect
-removes only the Last.fm keyring item and Last.fm queue.
-
-Android synchronization starts only after tracks are dragged onto a phone
-playlist. Reprise writes copied audio and relative `.m3u8` playlists only below
-`Music/Reprise` on the selected device, never deletes unrelated device files,
-and performs at most one copy at a time per device. A disconnected device pauses
-a safely identifiable job until it reconnects; cancellation removes its partial
-file while preserving completed files and later queued jobs.
+<!-- TODO(marvin): section on the upcoming Reprise MCP server — what it
+     exposes and what agents can do with it (playback control, library
+     queries, playlists, …). -->
 
 ## Requirements
 
-- Rust stable (edition 2021)
-- Meson 1.3+ and Ninja
-- GTK 4.22+ and libadwaita 1.9+
-- GStreamer 1.x and codec plugins for the formats you use
+- Rust stable (edition 2021), Meson 1.3+ and Ninja
+- GTK 4.22+, libadwaita 1.9+, GStreamer 1.x with codec plugins
 - GVfs with its MTP volume monitor for Android USB synchronization
 - SQLite, gettext, and standard GNOME build tools
 
-On the phone, unlock the screen and select its USB **File transfer / MTP** mode.
-The device must already be visible in the GNOME Files application before Reprise
-can browse or synchronize it.
-
-The Flatpak manifest supplies these through GNOME Platform/SDK 50 and the stable
-Rust SDK extension. Network access is used for automatic cover and played-track
-lyrics retrieval, plus explicitly enabled online services.
+For MTP, unlock the phone, select USB **File transfer / MTP** mode, and make
+sure the device is visible in GNOME Files first.
 
 ## Build and run from source
 
@@ -115,11 +82,9 @@ cargo run
 cargo test --workspace
 ```
 
-Logs go to stderr. Set `REPRISE_LOG=debug` for additional diagnostics.
+Logs go to stderr; set `REPRISE_LOG=debug` for diagnostics.
 
 ## Install with Meson
-
-For a per-user optimized installation:
 
 ```sh
 meson setup _build --prefix="$HOME/.local" -Dprofile=release
@@ -127,16 +92,14 @@ meson compile -C _build
 meson install -C _build
 ```
 
-Meson installs the `reprise` binary, desktop entry, AppStream metadata, full and
-symbolic icons, and gettext catalogs. Packagers can use `DESTDIR` with a `/usr`
-prefix.
+Installs the binary, desktop entry, AppStream metadata, icons, and gettext
+catalogs. Packagers can use `DESTDIR` with a `/usr` prefix.
 
 ## Build the Flatpak
 
-The local manifest uses GNOME 50, builds Cargo dependencies offline from pinned
-checksums, and grants only display, graphics, audio, automatic cover and played-track
-lyrics network access, the application's own MPRIS permission, and the two narrow
-GVfs permissions needed to reach an MTP device already mounted by the desktop.
+The manifest uses GNOME 50, builds Cargo dependencies offline from pinned
+checksums, and grants only display/audio, cover and lyrics network access,
+its own MPRIS name, and the two narrow GVfs permissions for MTP devices.
 
 ```sh
 flatpak-builder --user --install-deps-from=flathub --force-clean \
@@ -145,30 +108,25 @@ flatpak run org.reprise.Reprise
 ```
 
 See [flatpak/README.md](flatpak/README.md) for dependency regeneration and the
-single source substitution required before a real Flathub submission.
+source substitution required before a Flathub submission.
 
 ## Verification and releasing
 
-Run the complete non-destructive distribution check from the repository root:
-
-```sh
-scripts/check-release.sh
-```
-
-The release checklist, manual GNOME tests, known external publication blockers,
-and maintainer handoff are documented in [RELEASING.md](RELEASING.md).
-
-Development-only `REPRISE_SMOKE_*` environment hooks support fully isolated
-headless regression tests. They are not user-facing features and must never be
-run against a real library database or music collection.
+`scripts/check-release.sh` runs the complete non-destructive distribution
+check. The release checklist, manual GNOME tests, and known publication
+blockers live in [RELEASING.md](RELEASING.md). Development-only
+`REPRISE_SMOKE_*` hooks exist for isolated headless regression tests and must
+never run against a real library.
 
 ## Relation to Rhythmbox
 
-Reprise follows Rhythmbox's proven local-library model: a column-based collection,
-smart and manual playlists, a play queue, ratings, and strong GNOME integration.
-Its scope is deliberately narrower: it does not currently provide podcasts,
-internet radio, CD ripping, DAAP sharing, or a plugin ecosystem.
+Reprise follows Rhythmbox's proven local-library model with strong GNOME
+integration, but deliberately narrower scope: no podcasts, internet radio,
+CD ripping, DAAP sharing, or plugin ecosystem.
 
 ## License
 
-Open-core split — engine (`reprise-core`, `reprise-platform-linux`) is **MIT**, the native GTK4 Linux app (`reprise-gnome`) is **GPL-3.0-or-later**; future macOS/Windows/mobile frontends are separate and proprietary. See [LICENSING.md](LICENSING.md).
+Open-core split — engine (`reprise-core`, `reprise-platform-linux`) is
+**MIT**, the native GTK4 Linux app (`reprise-gnome`) is **GPL-3.0-or-later**;
+future macOS/Windows/mobile frontends are separate and proprietary.
+See [LICENSING.md](LICENSING.md).
