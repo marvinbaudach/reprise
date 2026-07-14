@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Add a persistent left-sidebar collapse button
+SINCE:    2026-07-14 06:39 CEST
 ```
 
-_As of 2026-07-14: Codex fixed and released the non-overlaying Information column layout._
+_As of 2026-07-14: Codex is adding a persistent left-sidebar collapse button._
 
 ## Parallel feature work
 
