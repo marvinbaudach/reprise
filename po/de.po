@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 03:00+0200\n"
+"POT-Creation-Date: 2026-07-14 03:13+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -776,17 +776,17 @@ msgstr[1] "{removed} Titel entfernt; {failed} fehlgeschlagen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:358
 #, rust-format
-msgid "Tags updated for {updated} track"
-msgid_plural "Tags updated for {updated} tracks"
-msgstr[0] "Metadaten für {updated} Titel aktualisiert"
-msgstr[1] "Metadaten für {updated} Titel aktualisiert"
+msgid "Updated {updated} track"
+msgid_plural "Updated {updated} tracks"
+msgstr[0] "{updated} Titel aktualisiert"
+msgstr[1] "{updated} Titel aktualisiert"
 
 #: crates/reprise-gnome/src/ui/strings.rs:365
 #, rust-format
-msgid "Tags updated for {updated} track; {failed} failed"
-msgid_plural "Tags updated for {updated} tracks; {failed} failed"
-msgstr[0] "Metadaten für {updated} Titel aktualisiert; {failed} fehlgeschlagen"
-msgstr[1] "Metadaten für {updated} Titel aktualisiert; {failed} fehlgeschlagen"
+msgid "Updated {updated} track; {failed} failed"
+msgid_plural "Updated {updated} tracks; {failed} failed"
+msgstr[0] "{updated} Titel aktualisiert; {failed} fehlgeschlagen"
+msgstr[1] "{updated} Titel aktualisiert; {failed} fehlgeschlagen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:372
 msgid "Search all fields"

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 03:00+0200\n"
+"POT-Creation-Date: 2026-07-14 03:13+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -731,15 +731,15 @@ msgstr[1] ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:358
 #, rust-format
-msgid "Tags updated for {updated} track"
-msgid_plural "Tags updated for {updated} tracks"
+msgid "Updated {updated} track"
+msgid_plural "Updated {updated} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:365
 #, rust-format
-msgid "Tags updated for {updated} track; {failed} failed"
-msgid_plural "Tags updated for {updated} tracks; {failed} failed"
+msgid "Updated {updated} track; {failed} failed"
+msgid_plural "Updated {updated} tracks; {failed} failed"
 msgstr[0] ""
 msgstr[1] ""
 

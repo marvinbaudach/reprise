@@ -377,8 +377,11 @@ checks above.
 Work only on disposable copies. Before each destructive check, verify the selected
 paths are under the disposable QA directory.
 
-- [ ] Multi-select tracks with different Title/Album/Year values. Expected: mixed
-  fields say “multiple values”; changing only Genre preserves every untouched value.
+- [ ] Multi-select tracks with different Title/Album/Year/Rating values. Expected:
+  mixed fields and Rating say “multiple values”; choosing unrated or 1–5 stars updates
+  every selected rating, while changing only Genre preserves every untouched value.
+- [ ] Apply a Rating-only change to disposable file copies. Expected: the table and
+  rating sort refresh immediately, while the audio files remain byte-for-byte unchanged.
 - [ ] Clearing a dirty text or numeric field intentionally clears it; leaving a field
   untouched never clears it. Embedded pictures and custom tag items remain intact.
 - [ ] A partial batch failure reports exact success/failure counts and successful rows
