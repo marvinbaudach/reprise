@@ -440,11 +440,12 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
         );
     }
 
-    // Problem sources: no section header in the mockup (unlike LIBRARY/
-    // PLAYLISTS/SMART above) — just a separator, and only when at least one
-    // of the two has anything to show.
+    // Problem sources use the same subdued section-heading grammar as the
+    // groups above. A separator inside `navigation-sidebar` reads like a
+    // broad selected row with some themes, so the explicit label provides
+    // both semantic grouping and an unambiguous non-interactive boundary.
     if import_error_count > 0 || missing_count > 0 {
-        sidebar_presentation::append_problem_separator(&shared.listbox);
+        sidebar_presentation::append_problem_header(&shared.listbox);
         if import_error_count > 0 {
             add_row(
                 shared,
