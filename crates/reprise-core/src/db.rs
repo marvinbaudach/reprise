@@ -158,6 +158,23 @@ CREATE TABLE lastfm_queue (
 );
 "#;
 
+/// Schema v7: per-play listening events feeding the local "My Stats" screen.
+/// Unlike `tracks.play_count` (a running all-time counter), each row here is
+/// one completed play at a point in time, so the stats layer can build a
+/// month-by-month timeseries. `track_id` references `tracks` with
+/// `ON DELETE CASCADE` (removing a library row discards its recorded plays);
+/// `played_at` is unix seconds and indexed because every timeseries query
+/// filters/buckets on it.
+const SCHEMA_V7: &str = r#"
+CREATE TABLE listen_events (
+  id        INTEGER PRIMARY KEY,
+  track_id  INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  played_at INTEGER NOT NULL,
+  ms_played INTEGER NOT NULL
+);
+CREATE INDEX idx_listen_events_played_at ON listen_events(played_at);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -245,6 +262,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 6)?;
         tx.commit()?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 7 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V7)?;
+        tx.pragma_update(None, "user_version", 7)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -289,7 +313,7 @@ mod tests {
         let version_after: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after, 6);
+        assert_eq!(version_after, 7);
     }
 
     #[test]
@@ -304,7 +328,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
     }
 
     /// Builds a v1 DB by hand (SCHEMA_V1 + `user_version = 1`, exactly what a
@@ -329,7 +353,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6); // Now goes to the current schema
+        assert_eq!(version, 7); // Now goes to the current schema
 
         let (title, rating, play_count, added_at, file_size, device, inode): (
             String,
@@ -371,7 +395,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 6); // Current schema
+        assert_eq!(version_after_second_run, 7); // Current schema
     }
 
     #[test]
@@ -403,7 +427,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6); // walks all the way to the current schema version
+        assert_eq!(version, 7); // walks all the way to the current schema version
 
         // Verify tables exist.
         let playlists_exist: bool = conn
@@ -558,7 +582,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
 
         let settings_exist: bool = conn
             .query_row(
@@ -589,7 +613,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 6);
+        assert_eq!(version_after_second_run, 7);
     }
 
     #[test]
@@ -611,7 +635,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         let setting: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'keep'", [], |row| {
                 row.get(0)
@@ -627,6 +651,90 @@ mod tests {
             .unwrap();
         assert!(queue_exists);
         migrate(&conn).unwrap();
+    }
+
+    #[test]
+    fn migrate_v6_to_v7_creates_listen_events_and_preserves_tracks() {
+        let conn = open(None).unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.execute_batch(SCHEMA_V2).unwrap();
+        conn.execute_batch(SCHEMA_V3).unwrap();
+        conn.execute_batch(SCHEMA_V4).unwrap();
+        conn.execute_batch(SCHEMA_V5).unwrap();
+        conn.execute_batch(SCHEMA_V6).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 6).unwrap();
+
+        migrate(&conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 7);
+
+        let listen_events_exist: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='listen_events')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(listen_events_exist);
+
+        let index_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_listen_events_played_at')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(index_exists);
+
+        // Pre-existing track row survived untouched.
+        let title: String = conn
+            .query_row("SELECT title FROM tracks WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(title, "A");
+
+        // Second migrate() must be a no-op (would error re-creating the table).
+        migrate(&conn).unwrap();
+        let version_after: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version_after, 7);
+    }
+
+    /// The FK on `listen_events.track_id` cascades: deleting a track removes
+    /// its recorded listen events too.
+    #[test]
+    fn migrate_v7_foreign_key_cascades_on_track_delete() {
+        let conn = open(None).unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, 100, 200000)",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM listen_events WHERE track_id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]
@@ -651,7 +759,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         let lastfm_exists: bool = conn
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",

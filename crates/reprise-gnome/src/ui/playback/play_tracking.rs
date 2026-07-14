@@ -1,7 +1,7 @@
 //! Local play-count and optional provider scrobbling paths extracted from
 //! the edge-tight `player_controller` module.
 
-use reprise_core::library::stats;
+use reprise_core::library::{stats, stats_screen};
 use reprise_core::scrobbling::{self, TrackMetadata};
 
 use crate::ui::player_controller::PlayerController;
@@ -74,6 +74,28 @@ impl PlayerController {
             Err(error) => {
                 tracing::error!(%error, track_id, "failed to record play");
             }
+        }
+
+        self.record_local_listen_event(track_id, max_position_ms, duration_ms);
+    }
+
+    /// Records a per-play `listen_event` for the local "My Stats" screen. This
+    /// runs for *every* completed play that crosses the listen threshold,
+    /// independent of whether any scrobble provider is active — local stats
+    /// count all qualifying plays. It deliberately reuses the same threshold
+    /// predicate as scrobbling (`scrobbling::should_scrobble`, four minutes or
+    /// half the track) rather than the looser play-count predicate, so an
+    /// event only lands when the play would also have been scrobble-worthy.
+    fn record_local_listen_event(&self, track_id: i64, max_position_ms: i64, duration_ms: i64) {
+        if !scrobbling::should_scrobble(max_position_ms, duration_ms) {
+            return;
+        }
+        let result = {
+            let conn = self.conn.borrow();
+            stats_screen::record_listen_event(&conn, track_id, now_unix(), max_position_ms)
+        };
+        if let Err(error) = result {
+            tracing::error!(%error, track_id, "failed to record listen event");
         }
     }
 
