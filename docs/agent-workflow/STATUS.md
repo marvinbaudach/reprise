@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Restore library statistics overlay and keep header above Top player bar
+SINCE:    2026-07-14 CEST
 ```
 
-_As of 2026-07-14: the device-storage preflight warning is complete and the lock is free._
+_As of 2026-07-14: Codex claimed the lock for the Library chrome ordering follow-up._
 
 ## Parallel feature work
 
