@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate foreground Preferences scan progress
-SINCE:    2026-07-14T10:02:36+02:00
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is integrating foreground Preferences scan progress._
+_As of 2026-07-14: all reviewed local feature work is integrated into main._
 
 ## Parallel feature work
 
@@ -35,11 +35,12 @@ _As of 2026-07-14: Codex is integrating foreground Preferences scan progress._
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-14-rhythmbox-stats-import.md` (7 tasks).
-- **Last completed:** **Fixed Information column** (`b3d2592`) — Library content and the 340 px
-  Information panel are direct horizontal siblings, so the panel cannot overlay the track table.
+- **Last completed:** **Foreground scan progress** (`64d9a7c`, merged as `d8105fe`) — a Rescan
+  started from Preferences shows the shared scan progress directly below that window's header,
+  while closing Preferences leaves the main-window indicator and the single scan worker active.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `b3d2592` on `main`.
+- **Main implementation:** `64d9a7c` on `main` (merged as `d8105fe`).
 - **Latest validation:** the reported one-row initial Library render was not reproducible with the
   current debug build or the freshly reinstalled release: an isolated second launch with 501
   pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
@@ -73,6 +74,9 @@ _As of 2026-07-14: Codex is integrating foreground Preferences scan progress._
   remove the empty Issues group with a Music fallback.
 - ✅ **Preferences column-layout navigation**: Layout opens that editor as a native detail page in
   the existing Preferences window with Back navigation instead of an obscured child dialog.
+- ✅ **Foreground library-scan progress**: Rescan mirrors the single active scan state into the
+  top of Preferences, catches up when that window opens mid-scan, and keeps the permanent main
+  indicator alive when Preferences closes.
 - ✅ **Column-layout reordering**: movable editor rows use capture-phase drag recognition across
   labels, empty space and embedded controls without permanent arrow buttons, while Switch clicks and
   Alt+Up/Down keyboard reordering keep non-drag interaction precise.
