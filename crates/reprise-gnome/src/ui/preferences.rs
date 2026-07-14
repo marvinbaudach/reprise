@@ -674,9 +674,9 @@ impl PreferencesContext {
             if descriptor.id == "cover_download" {
                 self.add_cover_download_progress(&group);
             } else if descriptor.id == "listenbrainz" {
-                self.add_listenbrainz_account(&group, &row);
+                self.add_listenbrainz_controls(&row);
             } else if descriptor.id == "lastfm" {
-                self.add_lastfm_account(&group, &row);
+                self.add_lastfm_controls(&row);
             }
         }
         page.add(&group);

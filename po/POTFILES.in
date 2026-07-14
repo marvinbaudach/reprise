@@ -1,2 +1,3 @@
 crates/reprise-gnome/src/ui/strings.rs
+crates/reprise-gnome/src/ui/strings_scrobbling.rs
 crates/reprise-gnome/src/ui/window_decoration_strings.rs
