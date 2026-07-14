@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge column layout arrow cleanup
+SINCE:    2026-07-14T09:29:02+02:00
 ```
 
-_As of 2026-07-14: all reviewed local feature work is integrated into main._
+_As of 2026-07-14: Codex is integrating the reviewed column-layout arrow cleanup._
 
 ## Parallel feature work
 
