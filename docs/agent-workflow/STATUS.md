@@ -22,11 +22,11 @@ local/gitignored; THIS file is the shared, versioned summary.)
 
 ```
 OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate Compact layout and title-bar follow-ups into main
-SINCE:    2026-07-14 06:55 CEST
+TASK:     Add native About dialog and licensing metadata
+SINCE:    2026-07-14 07:15 CEST
 ```
 
-_As of 2026-07-14: Codex added and released the persistent left-sidebar collapse button._
+_As of 2026-07-14: Compact offers Cover, Pill and Card; legacy Bar selections open Card._
 
 ## Parallel feature work
 
@@ -34,12 +34,12 @@ _As of 2026-07-14: Codex added and released the persistent left-sidebar collapse
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-14-sidebar-issue-cleanup.md` (1 task).
-- **Last completed:** **Persistent Sidebar collapse** (`1eb3a5f`) — the leftmost header toggle
-  removes and restores the complete Sidebar column while keeping adaptive navigation intact.
-- **Current plan:** none.
-- **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `1eb3a5f`.
+- **Completed plan:** `docs/superpowers/plans/2026-07-14-reliable-separate-title-bar.md` (1 task).
+- **Last completed:** **Reliable separate title bar** (`ab5d28f`) — the compatible `system` token
+  now adds a visible native GTK title bar on GNOME Wayland while Chromium CSD stays the default.
+- **Current plan:** native About dialog and licensing metadata (user-requested follow-up).
+- **➡️ NEXT:** implement and verify the About dialog, then return to joint stage review.
+- **Main implementation:** `ab5d28f` on `main`.
 
 ## Done so far (compact)
 
@@ -111,9 +111,9 @@ _As of 2026-07-14: Codex added and released the persistent left-sidebar collapse
   bottom-right track-content overlay, while the window header remains above the full-width player
   bar even when its saved position is Top.
 - ✅ **Window decoration mode**: Appearance defaults to the flat Chromium-like CSD header and can
-  live-switch to a persisted system-title-bar request across Library plus Bar, Cover, Pill and Card;
-  its controls remain as a safe fallback until GTK confirms SSD, then hide to prevent duplicates;
-  nested Information chrome never duplicates the real window controls.
+  live-switch to a persisted separate native GTK title bar across Library plus Cover, Pill and
+  Card; one persistent outer content host keeps it visible through view changes, integrated controls
+  and duplicate Compact titles hide while active, and fixed Compact geometry includes its height.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
   off-main; Library preferences update live and expose safe rescan; mapped pointer QA covers all.
