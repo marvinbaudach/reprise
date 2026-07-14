@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Remove redundant Compact View toolbar button
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for the Compact View entry-point cleanup._
+_As of 2026-07-14: Codex released the lock after completing the Compact View entry-point cleanup._
 
 ## Parallel feature work
 
@@ -35,11 +35,11 @@ _As of 2026-07-14: Codex claimed the lock for the Compact View entry-point clean
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Edit-tags header cleanup** (`1a09721`) — the redundant Cancel button is
-  removed while the native window close control and Apply action remain.
+- **Last completed:** **Compact View entry-point cleanup** (`9ec6337`) — the redundant Library
+  header button is removed while the main-menu action, Ctrl+M, and Compact context menu remain.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `1a09721`.
+- **Main implementation:** `9ec6337`.
 
 ## Done so far (compact)
 
@@ -70,7 +70,8 @@ _As of 2026-07-14: Codex claimed the lock for the Compact View entry-point clean
   live controls; isolated runtime persistence and full release QA green.
 - ✅ **Selectable compact-player layouts**: persistent Bar, Cover, Pill and Card roots share one
   controller, cover pipeline, queue and accessible menu; visible buttons, right-click, Shift+F10,
-  Ctrl+M, playing-state continuity and no-autoplay restart are covered by isolated real-input QA.
+  Ctrl+M, playing-state continuity and no-autoplay restart are covered by isolated real-input QA;
+  Library enters through the main menu or shortcut without a duplicate header button.
 - ✅ **ListenBrainz scrobbling**: default-off live integration validates a securely keyring-stored
   token, reports playing-now, submits threshold-completed listens, persists a bounded FIFO offline,
   retries with cancellation/generation guards, and exposes translated connect/status/disconnect UI.
