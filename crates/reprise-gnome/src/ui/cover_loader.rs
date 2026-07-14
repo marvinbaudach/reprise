@@ -15,6 +15,7 @@ use gtk4::glib;
 use reprise_core::cover::{resolve_source, thumbnail, ThumbnailSize};
 
 use crate::ui::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
+use crate::ui::track_cover::TrackCover;
 
 /// Symbolic placeholder shown when a track has no cover (or while loading /
 /// on error). No decode — just an icon name GTK already ships.
@@ -35,6 +36,31 @@ pub struct CoverLoader {
     order: RefCell<std::collections::VecDeque<String>>,
     download_enabled: Rc<Cell<bool>>,
     download_worker: Option<async_channel::Sender<DownloadRequest>>,
+}
+
+trait CoverTarget: Clone + 'static {
+    fn show_placeholder(&self);
+    fn show_texture(&self, texture: &gdk::Texture);
+}
+
+impl CoverTarget for gtk4::Image {
+    fn show_placeholder(&self) {
+        CoverLoader::set_placeholder(self);
+    }
+
+    fn show_texture(&self, texture: &gdk::Texture) {
+        self.set_paintable(Some(texture));
+    }
+}
+
+impl CoverTarget for TrackCover {
+    fn show_placeholder(&self) {
+        self.set_placeholder();
+    }
+
+    fn show_texture(&self, texture: &gdk::Texture) {
+        self.set_paintable(Some(texture));
+    }
 }
 
 impl CoverLoader {
@@ -91,7 +117,18 @@ impl CoverLoader {
         token: u64,
         current: &Rc<Cell<u64>>,
     ) {
-        self.load_into_with_path(image, track_path, size, token, current, |_| {});
+        self.load_target(image, track_path, size, token, current, |_| {});
+    }
+
+    pub fn load_into_track_cover(
+        self: &Rc<Self>,
+        cover: &TrackCover,
+        track_path: &str,
+        size: ThumbnailSize,
+        token: u64,
+        current: &Rc<Cell<u64>>,
+    ) {
+        self.load_target(cover, track_path, size, token, current, |_| {});
     }
 
     /// Loads a cover like [`Self::load_into`] and reports the exact cached
@@ -107,16 +144,28 @@ impl CoverLoader {
         current: &Rc<Cell<u64>>,
         on_loaded: impl Fn(PathBuf) + 'static,
     ) {
+        self.load_target(image, track_path, size, token, current, on_loaded);
+    }
+
+    fn load_target<T: CoverTarget>(
+        self: &Rc<Self>,
+        target: &T,
+        track_path: &str,
+        size: ThumbnailSize,
+        token: u64,
+        current: &Rc<Cell<u64>>,
+        on_loaded: impl Fn(PathBuf) + 'static,
+    ) {
         let key = format!("{track_path}|{}", size.pixels());
         if let Some(cached) = self.cache_get(&key) {
-            image.set_paintable(Some(&cached.texture));
+            target.show_texture(&cached.texture);
             on_loaded(cached.path);
             return;
         }
-        Self::set_placeholder(image);
+        target.show_placeholder();
 
         let this = self.clone();
-        let image = image.clone();
+        let target = target.clone();
         let current = current.clone();
         let path_owned = track_path.to_string();
         glib::spawn_future_local(async move {
@@ -183,7 +232,7 @@ impl CoverLoader {
                             path: cache_path.clone(),
                         },
                     );
-                    image.set_paintable(Some(&texture));
+                    target.show_texture(&texture);
                     on_loaded(cache_path);
                 }
                 Err(error) => {

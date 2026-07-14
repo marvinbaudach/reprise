@@ -530,8 +530,8 @@ impl TrackList {
         reload(&self.shared);
     }
 
-    pub(super) fn root_widget(&self) -> &gtk4::Box {
-        &self.root
+    pub(super) fn column_view_widget(&self) -> &gtk4::ColumnView {
+        &self.shared.column_view
     }
 
     pub(super) fn toast(&self, message: &str) {

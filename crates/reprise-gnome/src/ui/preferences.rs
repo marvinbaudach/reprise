@@ -22,9 +22,6 @@ use crate::ui::track_list::TrackList;
 use crate::ui::window_decorations::WindowDecorations;
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
-const DENSITY_CSS: &str = ".reprise-density-comfortable columnview row { min-height: 48px; }\n\
-     .reprise-density-standard columnview row { min-height: 36px; }\n\
-     .reprise-density-compact columnview row { min-height: 28px; }";
 
 fn plugin_applies_live(id: &str) -> bool {
     matches!(
@@ -137,35 +134,6 @@ fn apply_color_scheme(value: ColorScheme) {
     adw::StyleManager::default().set_color_scheme(value);
 }
 
-fn density_class(density: ListDensity) -> &'static str {
-    match density {
-        ListDensity::Comfortable => "reprise-density-comfortable",
-        ListDensity::Standard => "reprise-density-standard",
-        ListDensity::Compact => "reprise-density-compact",
-    }
-}
-
-fn install_density_css(widget: &gtk4::Widget) {
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(DENSITY_CSS);
-    gtk4::style_context_add_provider_for_display(
-        &widget.display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-}
-
-fn apply_density(widget: &gtk4::Widget, density: ListDensity) {
-    for class in [
-        "reprise-density-comfortable",
-        "reprise-density-standard",
-        "reprise-density-compact",
-    ] {
-        widget.remove_css_class(class);
-    }
-    widget.add_css_class(density_class(density));
-}
-
 pub(super) struct PreferencesContext {
     pub(super) window: adw::ApplicationWindow,
     pub(super) conn: Rc<RefCell<Connection>>,
@@ -241,7 +209,7 @@ impl PreferencesContext {
                 }
             }
         });
-        install_density_css(context.track_list.root_widget().upcast_ref());
+        super::list_density::install(context.track_list.column_view_widget());
         context.apply_initial();
         context
     }
@@ -258,7 +226,7 @@ impl PreferencesContext {
             )
         };
         apply_color_scheme(color_scheme);
-        apply_density(self.track_list.root_widget().upcast_ref(), density);
+        super::list_density::apply(self.track_list.column_view_widget(), density);
         self.sidebar_page.set_visible(sidebar_visible);
         self.status_bar.set_enabled(status_visible);
         self.decorations.apply(decorations);
@@ -299,10 +267,7 @@ impl PreferencesContext {
         let _ = settings::set_equalizer_bands(&conn, equalizer_preset(1));
         drop(conn);
         apply_color_scheme(ColorScheme::Dark);
-        apply_density(
-            self.track_list.root_widget().upcast_ref(),
-            ListDensity::Compact,
-        );
+        super::list_density::apply(self.track_list.column_view_widget(), ListDensity::Compact);
         self.sidebar_page.set_visible(false);
         self.status_bar.set_enabled(false);
         self.decorations
@@ -464,7 +429,7 @@ impl PreferencesContext {
                 settings::set_list_density(&conn, value)
             };
             if saved.is_ok() {
-                apply_density(context.track_list.root_widget().upcast_ref(), value);
+                super::list_density::apply(context.track_list.column_view_widget(), value);
             }
         });
         group.add(&density);
@@ -764,17 +729,6 @@ mod tests {
             assert!(equalizer_preset(index)
                 .into_iter()
                 .all(|gain| (-12.0..=12.0).contains(&gain)));
-        }
-    }
-
-    #[test]
-    fn every_density_has_one_stable_css_class_and_rule() {
-        for density in [
-            ListDensity::Comfortable,
-            ListDensity::Standard,
-            ListDensity::Compact,
-        ] {
-            assert!(DENSITY_CSS.contains(density_class(density)));
         }
     }
 }

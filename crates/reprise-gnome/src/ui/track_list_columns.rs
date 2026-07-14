@@ -16,8 +16,10 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::list_density;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
+use crate::ui::track_cover::TrackCover;
 use crate::ui::track_list::{
     reload, show_toast, Shared, STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
 };
@@ -159,6 +161,7 @@ pub(super) fn append_column(
         // drop-target (reorder) — see `ui::track_list_dnd`'s doc comment.
         track_list_dnd::wire_row_dnd(&label, item, &shared);
         item.set_child(Some(&label));
+        list_density::inherit(&column_view_for_setup, &label);
     });
 
     factory.connect_bind(move |_, obj| {
@@ -199,7 +202,8 @@ pub(super) fn append_column(
 }
 
 /// Builds the leading cover-art column (Task 6): each cell is a
-/// `gtk4::Image`, lazily fed off-thread by the shared `CoverLoader` (Task 4)
+/// density-aware `TrackCover`, lazily fed off-thread by the shared
+/// `CoverLoader` (Task 4)
 /// instead of rendering a `Track` field synchronously like `append_column`'s
 /// `gtk::Label` cells. `TrackList::new` calls this FIRST, before any other
 /// `append_column`/`append_rating_column`, so the cover lands as the
@@ -208,7 +212,7 @@ pub(super) fn append_column(
 /// ## Per-cell generation guard
 ///
 /// `GtkColumnView` recycles cell widgets as rows scroll in and out of view:
-/// the same `gtk4::Image` gets rebound (`connect_bind`) to a succession of
+/// the same `TrackCover` gets rebound (`connect_bind`) to a succession of
 /// different `Track`s over its lifetime. Cover loading is async
 /// (`CoverLoader::load_into` decodes/thumbnails off the main loop), so a
 /// slow load started for track A can complete after the cell has already
@@ -219,14 +223,11 @@ pub(super) fn append_column(
 /// value when the async result lands and drops it if they no longer match
 /// (see that function's doc comment).
 ///
-/// The counter can't live on the `gtk4::Image` cell itself — this cell has
-/// no interactive state worth a bespoke `gtk::Box` subclass, unlike
-/// `RatingWidget` below — so it's kept in a side table keyed by the cell's
-/// `ListItem` pointer identity (`glib::object::ObjectExt::as_ptr`), inserted
-/// on `connect_setup` and removed on `connect_teardown`. This is the safe
-/// alternative to an unsafe GObject `set_data`/`data` qdata pair; see
-/// `rating.rs`'s doc comment (`## Why a gtk::Box subclass, not a plain Rust
-/// struct`) for why this codebase avoids that pattern elsewhere.
+/// The counter remains binding state rather than presentation state, so it
+/// is kept in a side table keyed by the cell's `ListItem` pointer identity
+/// (`glib::object::ObjectExt::as_ptr`), inserted on `connect_setup` and
+/// removed on `connect_teardown`. This also avoids an unsafe GObject
+/// `set_data`/`data` qdata pair.
 pub(super) fn append_cover_column(
     column_view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
@@ -246,16 +247,16 @@ pub(super) fn append_cover_column(
                 tracing::warn!("cover column setup: object is not a ListItem");
                 return;
             };
-            let image = gtk4::Image::new();
-            track_list_row_interaction::expand_to_cell(&image);
-            image.set_pixel_size(32); // 48px cached texture in a 32pt cell — crisp, compact row
-            CoverLoader::set_placeholder(&image);
-            track_list_context_menu::wire_context_menu_gesture(&image, item, &shared, &column_view);
-            track_list_dnd::wire_row_dnd(&image, item, &shared);
+            let cover = TrackCover::new();
+            track_list_row_interaction::expand_to_cell(&cover);
+            cover.set_placeholder();
+            track_list_context_menu::wire_context_menu_gesture(&cover, item, &shared, &column_view);
+            track_list_dnd::wire_row_dnd(&cover, item, &shared);
             generations
                 .borrow_mut()
                 .insert(item.as_ptr() as usize, Rc::new(Cell::new(0u64)));
-            item.set_child(Some(&image));
+            item.set_child(Some(&cover));
+            list_density::inherit(&column_view, &cover);
         });
     }
 
@@ -267,8 +268,8 @@ pub(super) fn append_cover_column(
                 tracing::warn!("cover column bind: object is not a ListItem");
                 return;
             };
-            let Some(image) = item.child().and_then(|w| w.downcast::<gtk4::Image>().ok()) else {
-                tracing::warn!("cover column bind: list item child is not an Image");
+            let Some(cover) = item.child().and_then(|w| w.downcast::<TrackCover>().ok()) else {
+                tracing::warn!("cover column bind: list item child is not a TrackCover");
                 return;
             };
             let Some(boxed) = item
@@ -292,7 +293,13 @@ pub(super) fn append_cover_column(
             // previously showed is dropped by `load_into`'s own check.
             let token = generation.get().wrapping_add(1);
             generation.set(token);
-            loader.load_into(&image, &track.path, ThumbnailSize::List, token, &generation);
+            loader.load_into_track_cover(
+                &cover,
+                &track.path,
+                ThumbnailSize::List,
+                token,
+                &generation,
+            );
         });
     }
 
@@ -355,6 +362,7 @@ pub(super) fn append_rating_column(
             // seven text columns — see `ui::track_list_dnd`'s doc comment.
             track_list_dnd::wire_row_dnd(&rating_widget, item, &shared);
             item.set_child(Some(&rating_widget));
+            list_density::inherit(&column_view, &rating_widget);
         });
     }
 
