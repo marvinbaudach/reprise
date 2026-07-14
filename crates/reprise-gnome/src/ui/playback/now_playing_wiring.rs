@@ -49,6 +49,36 @@ fn cover_path_to_uri(path: &Path) -> Option<String> {
     }
 }
 
+/// Off-main cover-accent extraction: decode the cover, derive its dominant
+/// accent, and apply it (generation-guarded so a rapid track change can't
+/// apply a stale album accent). A non-colorful cover clears to the theme
+/// fallback.
+fn apply_cover_accent(generation_cell: &Rc<std::cell::Cell<u64>>, cover_path: &Path) {
+    let generation = generation_cell.get().wrapping_add(1);
+    generation_cell.set(generation);
+    let generation_cell = generation_cell.clone();
+    let cover_path = cover_path.to_path_buf();
+    let (sender, receiver) = async_channel::bounded(1);
+    if std::thread::Builder::new()
+        .name("reprise-cover-accent".to_string())
+        .spawn(move || {
+            let _ = sender.send_blocking(crate::ui::style::cover_accent::accent_from_cover_file(
+                &cover_path,
+            ));
+        })
+        .is_err()
+    {
+        return;
+    }
+    glib::spawn_future_local(async move {
+        if let Ok(color) = receiver.recv().await {
+            if generation_cell.get() == generation {
+                crate::ui::style::cover_accent::set_cover_accent(color);
+            }
+        }
+    });
+}
+
 fn set_art_url_for_current_track(mirror: &mut MprisState, track_id: i64, art_url: String) -> bool {
     if mirror.track_id != Some(track_id) {
         return false;
@@ -96,6 +126,7 @@ impl PlayerController {
         self.compact_player.clear_track();
         self.now_playing_view.clear_track();
         self.sync_lyrics_track(None);
+        crate::ui::style::cover_accent::set_cover_accent(None);
     }
 
     /// Loads `path`'s cover into both widgets through the ONE shared
@@ -134,6 +165,7 @@ impl PlayerController {
         if let Some(track_id) = track_id {
             let now_playing = self.now_playing.clone();
             let mpris_state = self.mpris_state.clone();
+            let cover_accent_generation = self.cover_accent_generation.clone();
             self.cover_loader.load_into_with_path(
                 self.now_playing_view.cover_image(),
                 path,
@@ -156,6 +188,7 @@ impl PlayerController {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     set_art_url_for_current_track(&mut mirror, track_id, art_url);
+                    apply_cover_accent(&cover_accent_generation, &cover_path);
                 },
             );
         } else {
