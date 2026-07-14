@@ -11,8 +11,8 @@ Spalte „Wiedergaben“.
 
 ## Umfang
 
-- eine dauerhafte Aktion „Aus Rhythmbox importieren…“ in den
-  Bibliothekseinstellungen;
+- eine Aktion „Aus Rhythmbox importieren…“ in den Bibliothekseinstellungen,
+  die nur bei gefundener `rhythmdb.xml` erscheint;
 - explizite Auswahl von Spaltenlayout, Bewertungen, Wiedergabezählern,
   Hinzufügedatum, letzter Wiedergabe und statischen Playlisten;
 - standardmäßig ausgewählte Statistikoptionen, ohne automatischen Import;
@@ -71,7 +71,10 @@ den duplicate-sicheren Membership-Pfad ergänzt.
 `gio::spawn_blocking`, führt anschließend den kurzen SQLite-Merge auf dem
 Main-Thread aus und zeigt eine Ergebnis- oder Fehlermeldung. Der bekannte Pfad
 ist `$XDG_DATA_HOME/rhythmbox/rhythmdb.xml`; `playlists.xml` liegt daneben. Ein
-isolierter Smoke-Hook darf beide Pfade explizit überschreiben.
+isolierter Smoke-Hook darf beide Pfade explizit überschreiben. Die
+Bibliothekseinstellung erscheint nur, wenn der aufgelöste `rhythmdb.xml`-Pfad
+eine reguläre Datei bezeichnet; eine bloße Installation ohne importierbare
+Bibliotheksdaten erzeugt keine wirkungslose Aktion.
 
 `column_layout.rs` erweitert das persistente Spaltenmodell um `PlayCount`.
 Bestehende gespeicherte Layouts werden durch die vorhandene Normalisierung
@@ -100,8 +103,8 @@ Whitelist akzeptiert `play_count`.
   Smart-Playlist-Ausschluss, gleichnamiges Merge und Wiederholbarkeit;
 - Query- und Spaltenlayouttests für `play_count`, Legacy-Layoutmigration,
   Standard-unsichtbarkeit und Rhythmbox-Tokenmapping;
-- isolierter GTK-Test für die dauerhafte Preferences-Aktion und ihre vier
-  Auswahlmöglichkeiten;
+- isolierter GTK-Test für die bei gefundener `rhythmdb.xml` sichtbare
+  Preferences-Aktion und ihre Auswahlmöglichkeiten;
 - isolierter Anwendungssmoke mit Scratch-XDG, Scratch-DB und Scratch-
   `rhythmdb.xml`;
 - vollständige fmt-, clippy-, Workspace-Test-, Audit-, Core-Purity-, gettext-
