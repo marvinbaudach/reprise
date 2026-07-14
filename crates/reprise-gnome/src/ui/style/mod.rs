@@ -38,6 +38,7 @@ fn app_css() -> String {
         super::lyrics_view::css(),
         super::player_bar_layout::css(),
         super::preference_choice_cards::css(),
+        super::preference_playback::css(),
         super::rating::css(),
         super::track_list_header_style::css(),
         super::track_list_row_interaction::css(),
@@ -103,6 +104,7 @@ mod tests {
         let css = super::app_css();
 
         for marker in [
+            ".reprise-equalizer scale > trough > highlight",
             ".toast button.text-button",
             ".player-bar-play",
             ".reprise-surface",
