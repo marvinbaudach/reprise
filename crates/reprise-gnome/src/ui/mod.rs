@@ -255,6 +255,9 @@ pub mod track_list_sort;
 #[path = "playback/up_next_transport.rs"]
 mod up_next_transport;
 pub mod view_session;
+#[allow(dead_code)] // Datenschicht ohne UI-Konsumenten bisher
+#[path = "playback/waveform_peaks.rs"]
+mod waveform_peaks;
 #[path = "window/window.rs"]
 pub mod window;
 #[path = "window/window_decoration_strings.rs"]
