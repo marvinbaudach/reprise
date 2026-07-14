@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Merge agent-d UI follow-ups into main
-SINCE:    2026-07-14 06:12 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is merging the reviewed agent-d UI follow-ups into main._
+_As of 2026-07-14: Codex merged and released the agent-d UI follow-ups._
 
 ## Parallel feature work
 
@@ -35,12 +35,13 @@ _As of 2026-07-14: Codex is merging the reviewed agent-d UI follow-ups into main
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-14-sidebar-issue-cleanup.md` (1 task).
-- **Last completed:** **Sidebar issue-source cleanup** (`061d347`) — Import errors and
-  Missing files now expose bulk cleanup in their row context menus; missing cleanup is
-  confirmed, database-only, queue-aware, and empty issue sources fall back to Music.
+- **Last completed:** **Agent-D UI follow-ups** (`315e345`) — live list density, grouped playlist
+  import, finished Information-panel unavailable states, and inline conditional scrobble-service
+  configuration are integrated with the current responsive/library and lyrics work.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `061d347`.
+- **Main implementation:** `315e345` (merge); feature commits `0379554`, `b4bc211`, `797791d`,
+  `0386d76`, and `535d7bc`.
 
 ## Done so far (compact)
 
