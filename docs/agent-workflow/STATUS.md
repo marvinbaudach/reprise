@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Remove redundant Cancel button from Edit tags
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for the Edit-tags header cleanup._
+_As of 2026-07-14: Codex released the lock after completing the Edit-tags header cleanup._
 
 ## Parallel feature work
 
@@ -35,11 +35,11 @@ _As of 2026-07-14: Codex claimed the lock for the Edit-tags header cleanup._
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Edit-tags rating follow-up** (`1230ab6`) — the mixed-safe batch editor now
-  exposes unrated and 1–5 star values while keeping ratings app-owned and rating-only edits DB-only.
+- **Last completed:** **Edit-tags header cleanup** (`1a09721`) — the redundant Cancel button is
+  removed while the native window close control and Apply action remain.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `1230ab6`.
+- **Main implementation:** `1a09721`.
 
 ## Done so far (compact)
 
@@ -53,7 +53,8 @@ _As of 2026-07-14: Codex claimed the lock for the Edit-tags header cleanup._
   copy discloses network lookup and no stale module, menu, onboarding, or Preferences toggle remains.
 - ✅ **GUI-B**: tag editor with multi-select batch edit + confirmed DB-only delete/safe trash.
 - ✅ **Edit-tags ratings**: the same mixed-safe batch editor supports unrated and 1–5 stars;
-  untouched mixed values remain unchanged, and rating-only edits never write audio-file tags.
+  untouched mixed values remain unchanged, rating-only edits never write audio-file tags, and its
+  header relies on the native close control instead of duplicating it with a Cancel button.
 - ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
 - ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
   whole-row drag ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
