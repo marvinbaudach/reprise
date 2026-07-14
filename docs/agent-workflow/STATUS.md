@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Remove redundant Library-header rescan action
+SINCE:    2026-07-14 CEST
 ```
 
-_As of 2026-07-14: Codex released the lock after completing Preferences column-layout navigation._
+_As of 2026-07-14: Codex claimed the lock for Library-header rescan cleanup._
 
 ## Parallel feature work
 
