@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Remove redundant Library-header rescan action
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for Library-header rescan cleanup._
+_As of 2026-07-14: Codex released the lock after completing Library-header rescan cleanup._
 
 ## Parallel feature work
 
@@ -35,11 +35,11 @@ _As of 2026-07-14: Codex claimed the lock for Library-header rescan cleanup._
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Preferences column-layout navigation** (`428f916`) — Layout pushes the
-  existing editor as a native second-level page in the same Preferences window.
+- **Last completed:** **Library scan header cleanup** (`ebd32ae`) — scanning remains in
+  Preferences and initial setup without a duplicate Library-header action.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `428f916`.
+- **Main implementation:** `ebd32ae`.
 
 ## Done so far (compact)
 
@@ -98,8 +98,9 @@ _As of 2026-07-14: Codex claimed the lock for Library-header rescan cleanup._
 - ✅ **Design-aligned header and sidebar**: one flat full-window header keeps the current source
   title strictly centered with compact accessible actions and Search on the right; the narrower
   navigation adds stable symbolic icons, aligned counts and mockup-derived section spacing while
-  preserving adaptive navigation, DnD, menus and Library/Compact restoration. Problem sources use
-  a translated muted Issues heading rather than a separator that can resemble selection.
+  preserving adaptive navigation, DnD, menus and Library/Compact restoration. Scan maintenance
+  stays in Preferences instead of duplicating a header action. Problem sources use a translated
+  muted Issues heading rather than a separator that can resemble selection.
 - ✅ **Compact Library statistics hierarchy**: count and duration sit as a click-through
   bottom-right track-content overlay, while the window header remains above the full-width player
   bar even when its saved position is Top.
@@ -118,8 +119,8 @@ _As of 2026-07-14: Codex claimed the lock for Library-header rescan cleanup._
   main-window row; successful scans restart it when enabled so first-run opt-in covers new tracks.
 - ✅ **MPRIS cover metadata**: local, embedded and downloaded art resolves off-main to the shared
   cache and is exposed as a generation-guarded `mpris:artUrl` with live metadata updates.
-- ✅ **Visible library scan progress**: Setup, header scans, Library rescans, and the post-launch
-  smoke share a native row that pulses during discovery and then shows bounded, coalesced
+- ✅ **Visible library scan progress**: Setup, Preferences scans, Library rescans, and the
+  post-launch smoke share a native row that pulses during discovery and then shows bounded, coalesced
   processed/total plus current-file updates without blocking the scan worker or retaining stale UI.
 - ✅ **Stable Equalizer toggle**: enabling or disabling Equalizer updates the persistent neutral
   filter in place, preserving the current pipeline, Playing state and playback position; native
