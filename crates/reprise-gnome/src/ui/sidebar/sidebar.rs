@@ -472,6 +472,13 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             sidebar_presentation::smart_icon(&smart.sort_field),
         );
     }
+    add_row_with_badge(
+        shared,
+        ViewSource::MyStats,
+        &strings::text(strings::SIDEBAR_MY_STATS),
+        "NEW",
+        sidebar_presentation::NavIcon::MyStats,
+    );
 
     // Problem sources use the same subdued section-heading grammar as the
     // groups above. A separator inside `navigation-sidebar` reads like a
@@ -597,6 +604,24 @@ fn add_row(
         }
         _ => {}
     }
+    shared.listbox.append(&row);
+    shared
+        .rows
+        .borrow_mut()
+        .push((row, source, title.to_string()));
+}
+
+/// Builds one navigation row with a badge label (e.g. "NEW") rather than a
+/// count and registers it in `shared.rows` — same as `add_row` but delegates
+/// to `sidebar_presentation::build_nav_row_with_badge`.
+fn add_row_with_badge(
+    shared: &Rc<Shared>,
+    source: ViewSource,
+    title: &str,
+    badge_text: &str,
+    icon: sidebar_presentation::NavIcon,
+) {
+    let row = sidebar_presentation::build_nav_row_with_badge(title, badge_text, icon);
     shared.listbox.append(&row);
     shared
         .rows

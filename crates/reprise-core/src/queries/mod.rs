@@ -199,7 +199,7 @@ pub fn query_track_window_browsed(
         ),
         ViewSource::Smart(id) => smart::query_track_window_smart(conn, *id, filter, offset, limit),
         ViewSource::Queue => queue::query_track_window_queue(conn, queue_ids, offset, limit),
-        ViewSource::ImportErrors => Ok(Vec::new()),
+        ViewSource::ImportErrors | ViewSource::MyStats => Ok(Vec::new()),
     }
 }
 
@@ -239,7 +239,7 @@ pub fn query_track_count_browsed(
         // `query_track_window_queue` will actually render, even if some
         // future caller forgets to purge the queue after a hard-delete.
         ViewSource::Queue => queue::query_track_count_queue(conn, queue_ids),
-        ViewSource::ImportErrors => Ok(0),
+        ViewSource::ImportErrors | ViewSource::MyStats => Ok(0),
     }
 }
 
@@ -310,7 +310,7 @@ pub fn query_track_ids_browsed(
         ViewSource::Playlist(id) => playlist::query_track_ids_playlist(conn, *id, filter),
         ViewSource::Smart(id) => smart::query_track_ids_smart(conn, *id, filter),
         ViewSource::Queue => Ok(queue_ids.to_vec()),
-        ViewSource::ImportErrors => Ok(Vec::new()),
+        ViewSource::ImportErrors | ViewSource::MyStats => Ok(Vec::new()),
     }
 }
 

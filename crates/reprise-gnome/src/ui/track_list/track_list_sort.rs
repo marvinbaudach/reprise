@@ -135,7 +135,7 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
         ViewSource::Library | ViewSource::Smart(_) | ViewSource::Queue | ViewSource::Missing => {
             None
         }
-        ViewSource::ImportErrors => None,
+        ViewSource::ImportErrors | ViewSource::MyStats => None,
     }
 }
 
