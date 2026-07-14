@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -15,10 +14,6 @@ use crate::ui::scrobble_runtime::{ConnectionStatus, ScrobbleRuntime};
 use crate::ui::{listenbrainz_secret, strings};
 
 use super::preferences::PreferencesContext;
-
-const RESPONSE_CANCEL: &str = "cancel";
-const RESPONSE_CONNECT: &str = "connect";
-const RESPONSE_DISCONNECT: &str = "disconnect";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ActivationDecision {
@@ -54,6 +49,62 @@ pub(super) fn status_text(status: &ConnectionStatus) -> String {
             &strings::text(strings::LISTENBRAINZ_CONNECTION_ERROR),
             *pending,
         ),
+    }
+}
+
+struct ListenBrainzPageSurface {
+    page: adw::NavigationPage,
+    token: adw::PasswordEntryRow,
+    connect: gtk4::Button,
+    disconnect: Option<gtk4::Button>,
+}
+
+fn build_listenbrainz_page(connected: bool) -> ListenBrainzPageSurface {
+    let account = adw::PreferencesGroup::builder()
+        .description(strings::text(strings::LISTENBRAINZ_DIALOG_BODY))
+        .build();
+    let token = adw::PasswordEntryRow::builder()
+        .title(strings::text(strings::LISTENBRAINZ_TOKEN))
+        .build();
+    account.add(&token);
+
+    let content = adw::PreferencesPage::new();
+    content.add(&account);
+    let disconnect = connected.then(|| {
+        let actions = adw::PreferencesGroup::new();
+        let row = adw::ActionRow::builder()
+            .title(strings::text(strings::LISTENBRAINZ))
+            .build();
+        let button = gtk4::Button::builder()
+            .label(strings::text(strings::LISTENBRAINZ_DISCONNECT))
+            .valign(gtk4::Align::Center)
+            .build();
+        button.add_css_class("destructive-action");
+        row.add_suffix(&button);
+        actions.add(&row);
+        content.add(&actions);
+        button
+    });
+
+    let connect = gtk4::Button::with_label(&strings::text(strings::LISTENBRAINZ_CONNECT));
+    connect.add_css_class("suggested-action");
+    connect.set_sensitive(false);
+    token.connect_changed({
+        let connect = connect.clone();
+        move |token| connect.set_sensitive(!token.text().trim().is_empty())
+    });
+    let header = adw::HeaderBar::new();
+    header.pack_end(&connect);
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&header);
+    toolbar.set_content(Some(&content));
+    let title = strings::text(strings::LISTENBRAINZ_ACCOUNT);
+    let page = adw::NavigationPage::with_tag(&toolbar, &title, "listenbrainz-account");
+    ListenBrainzPageSurface {
+        page,
+        token,
+        connect,
+        disconnect,
     }
 }
 
@@ -137,7 +188,7 @@ impl PreferencesContext {
             let (Some(context), Some(switch)) = (weak.upgrade(), switch.upgrade()) else {
                 return;
             };
-            context.present_listenbrainz_dialog(&switch);
+            context.push_listenbrainz_page(&switch);
         });
     }
 
@@ -158,15 +209,17 @@ impl PreferencesContext {
             return;
         }
 
-        self.set_listenbrainz_switch(row, false);
+        crate::ui::preference_dependencies::set_activation_pending(row, true);
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
+            let result = listenbrainz_secret::load().await;
             let Some(context) = weak.upgrade() else {
                 return;
             };
             context.listenbrainz_activation_pending.set(false);
-            match listenbrainz_secret::load().await {
+            crate::ui::preference_dependencies::set_activation_pending(&row, false);
+            match result {
                 Ok(token) => match (
                     activation_decision(
                         true,
@@ -177,7 +230,7 @@ impl PreferencesContext {
                     (ActivationDecision::Enable, Some(token)) => {
                         context.enable_listenbrainz(&row, token);
                     }
-                    _ => context.present_listenbrainz_dialog(&row),
+                    _ => context.push_listenbrainz_page(&row),
                 },
                 Err(error) => {
                     tracing::warn!(%error, "could not access ListenBrainz token in keyring");
@@ -186,70 +239,50 @@ impl PreferencesContext {
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
                         });
+                    context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_KEYRING_ERROR);
                 }
             }
         });
     }
 
-    fn present_listenbrainz_dialog(self: &Rc<Self>, row: &adw::SwitchRow) {
-        let entry = adw::PasswordEntryRow::builder()
-            .title(strings::text(strings::LISTENBRAINZ_TOKEN))
-            .build();
-        let list = gtk4::ListBox::new();
-        list.add_css_class("boxed-list");
-        list.append(&entry);
-        let dialog = adw::AlertDialog::builder()
-            .heading(strings::text(strings::LISTENBRAINZ_DIALOG_HEADING))
-            .body(strings::text(strings::LISTENBRAINZ_DIALOG_BODY))
-            .extra_child(&list)
-            .default_response(RESPONSE_CONNECT)
-            .close_response(RESPONSE_CANCEL)
-            .build();
-        dialog.add_response(RESPONSE_CANCEL, &strings::text(strings::CANCEL));
-        dialog.add_response(
-            RESPONSE_CONNECT,
-            &strings::text(strings::LISTENBRAINZ_CONNECT),
-        );
-        dialog.set_response_appearance(RESPONSE_CONNECT, adw::ResponseAppearance::Suggested);
-        dialog.set_response_enabled(RESPONSE_CONNECT, false);
-        entry.connect_changed({
-            let dialog = dialog.clone();
-            move |entry| {
-                dialog.set_response_enabled(
-                    RESPONSE_CONNECT,
-                    !gtk4::prelude::EditableExt::text(entry).trim().is_empty(),
-                );
+    fn push_listenbrainz_page(self: &Rc<Self>, row: &adw::SwitchRow) {
+        let Some(navigation) = self.preferences_navigation() else {
+            tracing::warn!("ListenBrainz setup requested without preferences navigation");
+            self.restore_listenbrainz_switch(row);
+            return;
+        };
+        let surface = build_listenbrainz_page(self.listenbrainz.is_active());
+        let weak = Rc::downgrade(self);
+        let hiding_row = row.clone();
+        surface.page.connect_hiding(move |_| {
+            if let Some(context) = weak.upgrade() {
+                context.restore_listenbrainz_switch(&hiding_row);
             }
         });
-        if self.listenbrainz.is_active() {
-            dialog.add_response(
-                RESPONSE_DISCONNECT,
-                &strings::text(strings::LISTENBRAINZ_DISCONNECT),
-            );
-            dialog
-                .set_response_appearance(RESPONSE_DISCONNECT, adw::ResponseAppearance::Destructive);
-        }
-
         let weak = Rc::downgrade(self);
-        let row = row.clone();
-        dialog.choose(
-            Some(&self.window),
-            gio::Cancellable::NONE,
-            move |response| {
-                let Some(context) = weak.upgrade() else {
+        let connect_row = row.clone();
+        let token = surface.token.clone();
+        surface.connect.connect_clicked(move |_| {
+            if let Some(context) = weak.upgrade() {
+                context
+                    .validate_and_save_listenbrainz(&connect_row, token.text().trim().to_string());
+            }
+        });
+        if let Some(disconnect) = surface.disconnect {
+            let weak = Rc::downgrade(self);
+            let disconnect_row = row.clone();
+            let navigation = navigation.downgrade();
+            disconnect.connect_clicked(move |_| {
+                let (Some(context), Some(navigation)) = (weak.upgrade(), navigation.upgrade())
+                else {
                     return;
                 };
-                match response.as_str() {
-                    RESPONSE_CONNECT => {
-                        let token = gtk4::prelude::EditableExt::text(&entry).trim().to_string();
-                        context.validate_and_save_listenbrainz(&row, token);
-                    }
-                    RESPONSE_DISCONNECT => context.disconnect_listenbrainz(&row),
-                    _ => {}
-                }
-            },
-        );
+                context.disconnect_listenbrainz(&disconnect_row);
+                navigation.pop();
+            });
+        }
+        navigation.push(&surface.page);
     }
 
     fn validate_and_save_listenbrainz(self: &Rc<Self>, row: &adw::SwitchRow, token: String) {
@@ -270,6 +303,7 @@ impl PreferencesContext {
             self.listenbrainz.report_status(&ConnectionStatus::Error {
                 pending: pending_count(&self.conn),
             });
+            self.restore_listenbrainz_switch(row);
             self.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
             return;
         }
@@ -290,6 +324,7 @@ impl PreferencesContext {
                             .report_status(&ConnectionStatus::Error {
                                 pending: pending_count(&context.conn),
                             });
+                        context.restore_listenbrainz_switch(&row);
                         context.show_listenbrainz_error(strings::LISTENBRAINZ_KEYRING_ERROR);
                     }
                 },
@@ -297,6 +332,7 @@ impl PreferencesContext {
                     context
                         .listenbrainz
                         .report_status(&ConnectionStatus::Unauthorized);
+                    context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_TOKEN_REJECTED);
                 }
                 Ok(Err(error)) => {
@@ -306,6 +342,7 @@ impl PreferencesContext {
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
                         });
+                    context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
                 }
                 Err(error) => {
@@ -315,6 +352,7 @@ impl PreferencesContext {
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
                         });
+                    context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
                 }
             }
@@ -326,6 +364,8 @@ impl PreferencesContext {
             self.set_listenbrainz_switch(row, true);
             self.listenbrainz
                 .configure(token, Box::new(ListenBrainzClient::new()));
+        } else {
+            self.restore_listenbrainz_switch(row);
         }
     }
 
@@ -351,6 +391,7 @@ impl PreferencesContext {
                 }
                 Err(error) => {
                     tracing::warn!(%error, "could not delete ListenBrainz token from keyring");
+                    context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_DISCONNECT_ERROR);
                 }
             }
@@ -377,6 +418,10 @@ impl PreferencesContext {
         self.syncing_listenbrainz.set(false);
     }
 
+    fn restore_listenbrainz_switch(&self, row: &adw::SwitchRow) {
+        self.set_listenbrainz_switch(row, self.listenbrainz.is_active());
+    }
+
     fn show_listenbrainz_error(&self, body: &str) {
         let dialog = adw::AlertDialog::builder()
             .heading(strings::text(strings::LISTENBRAINZ_ACCOUNT))
@@ -384,7 +429,7 @@ impl PreferencesContext {
             .close_response("close")
             .build();
         dialog.add_response("close", &strings::text(strings::CLOSE));
-        dialog.present(Some(&self.window));
+        dialog.present(Some(&self.preferences_parent()));
     }
 }
 
@@ -446,9 +491,28 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn token_entry_is_a_masked_password_row() {
+    fn setup_page_keeps_the_token_masked_and_gates_connect() {
         gtk4::init().unwrap();
-        let entry = adw::PasswordEntryRow::new();
-        assert!(entry.is::<adw::PasswordEntryRow>());
+        let surface = build_listenbrainz_page(false);
+        assert_eq!(surface.page.title(), "ListenBrainz Account");
+        assert!(surface.page.can_pop());
+        assert!(surface.token.is::<adw::PasswordEntryRow>());
+        assert!(!surface.connect.is_sensitive());
+        assert!(surface.disconnect.is_none());
+
+        surface.token.set_text("token");
+        assert!(surface.connect.is_sensitive());
+        surface.token.set_text("  ");
+        assert!(!surface.connect.is_sensitive());
+        assert!(build_listenbrainz_page(true).disconnect.is_some());
+
+        let root =
+            adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Plugins");
+        let navigation = adw::NavigationView::new();
+        navigation.add(&root);
+        navigation.push(&surface.page);
+        assert_eq!(navigation.visible_page().as_ref(), Some(&surface.page));
+        assert!(navigation.pop());
+        assert_eq!(navigation.visible_page().as_ref(), Some(&root));
     }
 }
