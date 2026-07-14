@@ -13,30 +13,17 @@ use super::cover_loader::CoverLoader;
 use super::info_panel_empty_state;
 use super::info_panel_feedback::request_feedback;
 use super::info_panel_state::{PanelContext, PanelState, RequestIntent};
+use super::information_column::InformationColumn;
+#[cfg(test)]
+use super::information_column::PANEL_WIDTH;
 use super::lyrics_strings;
 use super::lyrics_view::LyricsView;
 use super::strings;
 use super::track_list::TrackList;
 
-const PANEL_WIDTH: f64 = 340.0;
 const SMOKE_ENV: &str = "REPRISE_SMOKE_ARTIST_NEWS";
 const INFORMATION_PAGE: &str = "information";
 const LYRICS_PAGE: &str = "lyrics";
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct PanelMetrics {
-    width: f64,
-    pinned: bool,
-    collapsed: bool,
-}
-
-fn panel_metrics_for_width(_width: f64) -> PanelMetrics {
-    PanelMetrics {
-        width: PANEL_WIDTH,
-        pinned: true,
-        collapsed: false,
-    }
-}
 
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,7 +76,7 @@ fn release_group_uri(mbid: &str) -> Option<String> {
 }
 
 struct PanelWidgets {
-    split: adw::OverlaySplitView,
+    column: InformationColumn,
     #[cfg(test)]
     header: adw::HeaderBar,
     stack: gtk4::Stack,
@@ -185,26 +172,14 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&stack));
-    // Information is a real end column: showing it always reserves width
-    // beside the library instead of covering the track table as an overlay.
-    let metrics = panel_metrics_for_width(0.0);
-    let split = adw::OverlaySplitView::builder()
-        .content(content)
-        .sidebar(&toolbar)
-        .sidebar_position(gtk4::PackType::End)
-        .min_sidebar_width(metrics.width)
-        .max_sidebar_width(metrics.width)
-        .pin_sidebar(metrics.pinned)
-        .collapsed(metrics.collapsed)
-        .show_sidebar(visible)
-        .build();
+    let column = InformationColumn::new(content, toolbar, visible);
     let enable = adw::SwitchRow::builder()
         .title(strings::text(strings::ARTIST_NEWS))
         .subtitle(strings::text(strings::ARTIST_NEWS_PRIVACY))
         .use_markup(false)
         .build();
     PanelWidgets {
-        split,
+        column,
         #[cfg(test)]
         header,
         stack,
@@ -280,8 +255,8 @@ impl InfoPanel {
         panel
     }
 
-    pub(super) fn widget(&self) -> &adw::OverlaySplitView {
-        &self.widgets.split
+    pub(super) fn widget(&self) -> &gtk4::Box {
+        self.widgets.column.widget()
     }
 
     pub(super) fn toggle_button(&self) -> gtk4::ToggleButton {
@@ -294,12 +269,12 @@ impl InfoPanel {
 
     pub(super) fn show_lyrics(&self) {
         self.widgets.stack.set_visible_child_name(LYRICS_PAGE);
-        self.widgets.split.set_show_sidebar(true);
+        self.widgets.column.set_visible(true);
     }
 
     pub(super) fn apply_persisted_visibility(&self, visible: bool) {
         self.syncing_visibility.set(true);
-        self.widgets.split.set_show_sidebar(visible);
+        self.widgets.column.set_visible(visible);
         self.toggle.set_active(visible);
         self.syncing_visibility.set(false);
     }
@@ -351,7 +326,7 @@ impl InfoPanel {
 
             let panel_ready = panel.clone();
             glib::timeout_add_local_once(std::time::Duration::from_secs(5), move || {
-                panel_ready.widgets.split.set_show_sidebar(true);
+                panel_ready.widgets.column.set_visible(true);
                 tracing::info!("Artist News smoke: latest cards ready");
             });
 
@@ -388,17 +363,18 @@ impl InfoPanel {
         self.toggle.connect_toggled(move |button| {
             let Some(panel) = weak.upgrade() else { return };
             if !panel.syncing_visibility.get() {
-                panel.widgets.split.set_show_sidebar(button.is_active());
+                panel.widgets.column.set_visible(button.is_active());
             }
         });
         let weak = Rc::downgrade(self);
         self.widgets
-            .split
-            .connect_show_sidebar_notify(move |split| {
+            .column
+            .sidebar_widget()
+            .connect_visible_notify(move |sidebar| {
                 let Some(panel) = weak.upgrade() else { return };
                 let was_syncing = panel.syncing_visibility.get();
                 panel.syncing_visibility.set(true);
-                panel.toggle.set_active(split.shows_sidebar());
+                panel.toggle.set_active(sidebar.is_visible());
                 panel.syncing_visibility.set(was_syncing);
                 if was_syncing {
                     return;
@@ -407,17 +383,17 @@ impl InfoPanel {
                     let conn = panel.conn.borrow();
                     reprise_core::library::settings::set_info_panel_visible(
                         &conn,
-                        split.shows_sidebar(),
+                        sidebar.is_visible(),
                     )
                 };
                 if let Err(error) = saved {
                     tracing::warn!(%error, "could not save information panel visibility");
                 }
             });
-        let split = self.widgets.split.clone();
+        let column = self.widgets.column.clone();
         self.widgets
             .close
-            .connect_clicked(move |_| split.set_show_sidebar(false));
+            .connect_clicked(move |_| column.set_visible(false));
         let weak = Rc::downgrade(self);
         self.widgets.refresh.connect_clicked(move |_| {
             if let Some(panel) = weak.upgrade() {

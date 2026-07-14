@@ -135,16 +135,16 @@ Queries, Queue noch Playbackzustand.
 
 ### Rechte Kontext- und Pluginspalte
 
-Die rechte Spalte ist ein verschließbares `AdwOverlaySplitView` mit
-`sidebar-position=end`, verschachtelt innerhalb des bestehenden Content-Panes.
-Damit bleiben die linke Navigation und die rechte Information unabhängig:
-links wechselt der Nutzer die Quelle, rechts betrachtet er Kontext derselben
-Quelle.
+Die rechte Spalte ist eine verschließbare feste GTK-Spalte, verschachtelt
+innerhalb des bestehenden Content-Panes. Tabelleninhalt und Information sind
+direkte horizontale Geschwister; ein overlay-fähiger Container kommt nicht zum
+Einsatz. Damit bleiben die linke Navigation und die rechte Information
+unabhängig: links wechselt der Nutzer die Quelle, rechts betrachtet er Kontext
+derselben Quelle.
 
-- Ab ungefähr 1.180 Pixel Fensterbreite ist die 320–380 Pixel breite Spalte
-  angeheftet und verkleinert die Trackliste. Unterhalb davon öffnet sie als
-  native Overlay-Seitenleiste über dem Content. Unter ungefähr 720 Pixel ist
-  sie standardmäßig geschlossen, bleibt aber über den Headerknopf erreichbar.
+- Die 340 Pixel breite Spalte verkleinert die Trackliste bei jeder
+  Fensterbreite. Sie überlagert niemals Tabelleninhalt, Filter, Header, Status
+  oder Playerbar und bleibt über den Headerknopf erreichbar.
 - Der Headerknopf zeigt und verbirgt die Spalte. Die Auswahl wird unter
   `ui.info_panel_visible` sofort persistiert; Standard ist sichtbar. Eine
   schmale Fenstergeometrie darf den gespeicherten Wunsch für den nächsten
@@ -291,9 +291,10 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
 - `browse_bar.rs` bleibt Eigentümer der kaskadierenden Filter. Eine kleine pure
   Breakpoint-/Layoutentscheidung wird getrennt testbar gehalten.
 - Ein neues `info_panel.rs` besitzt ausschließlich die rechte
-  `AdwOverlaySplitView`-Oberfläche und schwache Kontext-/Modulcallbacks;
-  `info_panel_state.rs` entscheidet Auswahlfallback, Sichtbarkeit,
-  Breakpointmodus und stabile Sektionsreihenfolge ohne GTK.
+  Informationsoberfläche und schwache Kontext-/Modulcallbacks; die feste
+  Geschwisterkomposition liegt in `information_column.rs`.
+  `info_panel_state.rs` entscheidet Auswahlfallback, Sichtbarkeit und stabile
+  Sektionsreihenfolge ohne GTK.
 - Modulbeiträge verwenden eine kleine frontend-interne, statisch registrierte
   `InfoPanelSection`-Schnittstelle. Sie ist keine Fremd-Plugin-ABI und reicht
   keine GTK-Typen in `reprise-core` durch. Modulaktivierung bleibt allein bei

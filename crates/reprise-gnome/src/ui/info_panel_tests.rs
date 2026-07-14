@@ -12,27 +12,6 @@ fn release(title: &str, kind: NewsKind) -> AlbumNews {
 }
 
 #[test]
-fn panel_metrics_always_reserve_space_beside_the_library() {
-    assert_eq!(
-        panel_metrics_for_width(1_000.0),
-        PanelMetrics {
-            width: 340.0,
-            pinned: true,
-            collapsed: false
-        }
-    );
-}
-
-#[test]
-fn every_window_width_keeps_the_information_column_beside_content() {
-    for width in [600.0, 900.0, 1_000.0, 2_000.0] {
-        let metrics = panel_metrics_for_width(width);
-        assert!(metrics.pinned);
-        assert!(!metrics.collapsed);
-    }
-}
-
-#[test]
 fn information_panel_visibility_round_trips_through_settings() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
@@ -133,15 +112,28 @@ fn provider_errors_have_specific_match_copy_and_generic_network_copy() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn information_panel_uses_fixed_sibling_columns_instead_of_an_overlay() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = build_widgets(&content, true);
+    let root = widgets.column.widget();
+    let sidebar = widgets.column.sidebar_widget();
+
+    assert_eq!(root.orientation(), gtk4::Orientation::Horizontal);
+    assert_eq!(root.first_child(), Some(content.clone().upcast()));
+    assert_eq!(root.last_child(), Some(sidebar.clone().upcast()));
+    assert_eq!(content.next_sibling(), Some(sidebar.clone().upcast()));
+    assert_eq!(sidebar.width_request(), PANEL_WIDTH);
+    assert!(sidebar.is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn widget_keeps_information_beside_instead_of_over_content() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = build_widgets(&content, true);
-    assert_eq!(widgets.split.sidebar_position(), gtk4::PackType::End);
-    assert_eq!(widgets.split.min_sidebar_width(), 340.0);
-    assert_eq!(widgets.split.max_sidebar_width(), 340.0);
-    assert!(widgets.split.is_pin_sidebar());
-    assert!(!widgets.split.is_collapsed());
+    assert!(widgets.column.is_visible());
     assert!(!widgets.header.shows_start_title_buttons());
     assert!(!widgets.header.shows_end_title_buttons());
     let pages = widgets.stack.pages();
@@ -200,7 +192,7 @@ fn lyrics_context_is_independent_and_survives_panel_close() {
         "synthetic panel text".into(),
     ));
     panel.widgets.close.emit_clicked();
-    assert!(!panel.widgets.split.shows_sidebar());
+    assert!(!panel.widgets.column.is_visible());
     assert_eq!(lyrics.line_labels().len(), 1);
 }
 
@@ -253,7 +245,7 @@ fn multiple_selection_uses_a_finished_empty_state_without_refresh() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn pinned_panel_owner_survives_and_header_toggle_reopens_it() {
+fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
     gtk4::init().unwrap();
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
@@ -267,8 +259,6 @@ fn pinned_panel_owner_survives_and_header_toggle_reopens_it() {
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let panel = InfoPanel::new(&content, &window, conn, runtime, cover_loader);
-    panel.widgets.split.set_collapsed(false);
-    panel.widgets.split.set_pin_sidebar(true);
     panel.retain_for_window(&window);
     let weak = Rc::downgrade(&panel);
     let toggle = panel.toggle_button();
@@ -276,7 +266,7 @@ fn pinned_panel_owner_survives_and_header_toggle_reopens_it() {
     drop(panel);
     assert!(weak.upgrade().is_some());
     toggle.set_active(false);
-    assert!(!weak.upgrade().unwrap().widgets.split.shows_sidebar());
+    assert!(!weak.upgrade().unwrap().widgets.column.is_visible());
     toggle.set_active(true);
-    assert!(weak.upgrade().unwrap().widgets.split.shows_sidebar());
+    assert!(weak.upgrade().unwrap().widgets.column.is_visible());
 }
