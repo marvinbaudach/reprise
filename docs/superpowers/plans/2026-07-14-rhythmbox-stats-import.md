@@ -27,16 +27,19 @@ pub struct RhythmboxTrackStats {
     pub path: PathBuf,
     pub rating: Option<i32>,
     pub play_count: Option<i64>,
+    pub added_at: Option<i64>,
 }
 pub struct RhythmboxImportChoices {
     pub ratings: bool,
     pub play_counts: bool,
+    pub added_at: bool,
 }
 pub struct RhythmboxImportSummary {
     pub parsed: usize,
     pub matched: usize,
     pub ratings_imported: usize,
     pub play_counts_raised: usize,
+    pub dates_imported: usize,
     pub skipped: usize,
 }
 pub fn parse_rhythmdb(path: &Path) -> Result<Vec<RhythmboxTrackStats>, RhythmboxImportError>;
@@ -145,8 +148,27 @@ fn default_rhythmdb_path() -> PathBuf;
 
 Erwartung: mindestens 1 Policytest, 1 Displaytest und 1 isolierter Smoke.
 
+## Aufgabe 5 — Ursprüngliches Hinzufügedatum übernehmen
+
+**Dateien:** `crates/reprise-core/src/library/rhythmbox_import.rs`,
+`crates/reprise-gnome/src/ui/preference_rhythmbox.rs`,
+`crates/reprise-gnome/src/ui/strings.rs`, `po/de.po`, `po/reprise.pot`, Design
+und Manual QA.
+
+1. RED: Parser- und Merge-Tests verlangen Rhythmbox' positives `first-seen`,
+   die explizite Auswahloption, den älteren positiven Zeitstempel und
+   idempotentes Verhalten; der GTK-Dialogtest verlangt fünf Optionen.
+2. `RhythmboxTrackStats`, `RhythmboxImportChoices` und Summary um `added_at`
+   erweitern. Der Merge setzt den älteren positiven Wert und macht einen Titel
+   nie neuer.
+3. „Date added“ standardmäßig ausgewählt im Importdialog ergänzen, Ergebnis-
+   und Beschreibungstexte sowie vollständiges deutsches gettext aktualisieren.
+4. Fokustests, isolierter GTK-Test und Scratch-App-Smoke mit `first-seen`
+   ausführen; danach vollständige Gates, Core-Purity, Dateigröße und Review.
+5. Commit: `feat: import Rhythmbox date added`.
+
 ## Abschluss
 
-Ledger um alle vier Commits ergänzen. Branch sauber und ungepusht lassen;
+Ledger um alle fünf Commits ergänzen. Branch sauber und ungepusht lassen;
 Integration nach `main` erfolgt erst nach separater Freigabe und Rebase auf den
 dann aktuellen `main`.

@@ -15,12 +15,14 @@ pub struct RhythmboxTrackStats {
     pub path: PathBuf,
     pub rating: Option<i32>,
     pub play_count: Option<i64>,
+    pub added_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RhythmboxImportChoices {
     pub ratings: bool,
     pub play_counts: bool,
+    pub added_at: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -29,6 +31,7 @@ pub struct RhythmboxImportSummary {
     pub matched: usize,
     pub ratings_imported: usize,
     pub play_counts_raised: usize,
+    pub dates_imported: usize,
     pub skipped: usize,
 }
 
@@ -67,6 +70,7 @@ enum Field {
     Location,
     Rating,
     PlayCount,
+    FirstSeen,
 }
 
 #[derive(Default)]
@@ -74,6 +78,7 @@ struct EntryBuilder {
     location: String,
     rating: String,
     play_count: String,
+    first_seen: String,
 }
 
 impl EntryBuilder {
@@ -82,6 +87,7 @@ impl EntryBuilder {
             Field::Location => self.location.push_str(value),
             Field::Rating => self.rating.push_str(value),
             Field::PlayCount => self.play_count.push_str(value),
+            Field::FirstSeen => self.first_seen.push_str(value),
         }
     }
 
@@ -102,11 +108,20 @@ impl EntryBuilder {
             .parse::<i64>()
             .ok()
             .filter(|value| *value >= 0);
-        (rating.is_some() || play_count.is_some()).then_some(RhythmboxTrackStats {
-            path,
-            rating,
-            play_count,
-        })
+        let added_at = self
+            .first_seen
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .filter(|value| *value > 0);
+        (rating.is_some() || play_count.is_some() || added_at.is_some()).then_some(
+            RhythmboxTrackStats {
+                path,
+                rating,
+                play_count,
+                added_at,
+            },
+        )
     }
 }
 
@@ -115,6 +130,7 @@ fn field_for(name: &[u8]) -> Option<Field> {
         b"location" => Some(Field::Location),
         b"rating" => Some(Field::Rating),
         b"play-count" => Some(Field::PlayCount),
+        b"first-seen" => Some(Field::FirstSeen),
         _ => None,
     }
 }
@@ -208,12 +224,18 @@ pub fn merge_stats(
         let path = track.path.to_string_lossy();
         let current = transaction
             .query_row(
-                "SELECT rating, play_count FROM tracks WHERE path = ?1",
+                "SELECT rating, play_count, added_at FROM tracks WHERE path = ?1",
                 [&path],
-                |row| Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, i32>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .optional()?;
-        let Some((current_rating, current_play_count)) = current else {
+        let Some((current_rating, current_play_count, current_added_at)) = current else {
             summary.skipped += 1;
             continue;
         };
@@ -231,13 +253,28 @@ pub fn merge_stats(
         } else {
             current_play_count
         };
+        let next_added_at = if choices.added_at {
+            track.added_at.map_or(current_added_at, |imported| {
+                if current_added_at > 0 {
+                    current_added_at.min(imported)
+                } else {
+                    imported
+                }
+            })
+        } else {
+            current_added_at
+        };
         summary.ratings_imported += usize::from(next_rating != current_rating);
         summary.play_counts_raised += usize::from(next_play_count != current_play_count);
+        summary.dates_imported += usize::from(next_added_at != current_added_at);
 
-        if next_rating != current_rating || next_play_count != current_play_count {
+        if next_rating != current_rating
+            || next_play_count != current_play_count
+            || next_added_at != current_added_at
+        {
             transaction.execute(
-                "UPDATE tracks SET rating = ?1, play_count = ?2 WHERE path = ?3",
-                rusqlite::params![next_rating, next_play_count, path],
+                "UPDATE tracks SET rating = ?1, play_count = ?2, added_at = ?3 WHERE path = ?4",
+                rusqlite::params![next_rating, next_play_count, next_added_at, path],
             )?;
         }
     }
@@ -419,7 +456,7 @@ mod tests {
         let xml = format!(
             r#"<?xml version="1.0"?>
 <rhythmdb version="2.0">
-  <entry type="song"><location>{uri}</location><rating>4</rating><play-count>17</play-count></entry>
+  <entry type="song"><location>{uri}</location><rating>4</rating><play-count>17</play-count><first-seen>1700000000</first-seen></entry>
   <entry type="podcast-post"><location>file:///ignored.ogg</location><rating>5</rating></entry>
 </rhythmdb>"#
         );
@@ -432,6 +469,7 @@ mod tests {
                 path: track,
                 rating: Some(4),
                 play_count: Some(17),
+                added_at: Some(1_700_000_000),
             }]
         );
     }
@@ -444,7 +482,7 @@ mod tests {
             &path,
             r#"<rhythmdb>
 <entry type="song"><location>https://example.com/song.ogg</location></entry>
-<entry type="song"><location>file:///valid.ogg</location><rating>99</rating><play-count>-2</play-count></entry>
+<entry type="song"><location>file:///valid.ogg</location><rating>99</rating><play-count>-2</play-count><first-seen>-1</first-seen></entry>
 </rhythmdb>"#,
         )
         .unwrap();
@@ -464,10 +502,12 @@ mod tests {
                 path,
                 rating: Some(3),
                 play_count: Some(12),
+                added_at: None,
             }],
             RhythmboxImportChoices {
                 ratings: true,
                 play_counts: true,
+                added_at: false,
             },
         )
         .unwrap();
@@ -486,10 +526,12 @@ mod tests {
             path,
             rating: Some(4),
             play_count: Some(11),
+            added_at: None,
         }];
         let choices = RhythmboxImportChoices {
             ratings: true,
             play_counts: true,
+            added_at: false,
         };
 
         let first = merge_stats(&mut conn, &imported, choices).unwrap();
@@ -511,16 +553,19 @@ mod tests {
                     path,
                     rating: Some(5),
                     play_count: Some(8),
+                    added_at: None,
                 },
                 RhythmboxTrackStats {
                     path: PathBuf::from("/music/missing.ogg"),
                     rating: Some(3),
                     play_count: Some(4),
+                    added_at: None,
                 },
             ],
             RhythmboxImportChoices {
                 ratings: false,
                 play_counts: true,
+                added_at: false,
             },
         )
         .unwrap();
@@ -529,6 +574,69 @@ mod tests {
         assert_eq!(summary.parsed, 2);
         assert_eq!(summary.matched, 1);
         assert_eq!(summary.skipped, 1);
+    }
+
+    #[test]
+    fn merge_imports_only_an_older_positive_date_added_idempotently() {
+        let path = PathBuf::from("/music/song.ogg");
+        let mut conn = database(&path, 0, 0);
+        conn.execute("UPDATE tracks SET added_at=200", []).unwrap();
+        let imported = [RhythmboxTrackStats {
+            path,
+            rating: None,
+            play_count: None,
+            added_at: Some(100),
+        }];
+        let choices = RhythmboxImportChoices {
+            ratings: false,
+            play_counts: false,
+            added_at: true,
+        };
+
+        let first = merge_stats(&mut conn, &imported, choices).unwrap();
+        let second = merge_stats(&mut conn, &imported, choices).unwrap();
+        let newer = merge_stats(
+            &mut conn,
+            &[RhythmboxTrackStats {
+                path: PathBuf::from("/music/song.ogg"),
+                rating: None,
+                play_count: None,
+                added_at: Some(300),
+            }],
+            choices,
+        )
+        .unwrap();
+        let added_at = conn
+            .query_row("SELECT added_at FROM tracks", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap();
+
+        assert_eq!(added_at, 100);
+        assert_eq!(first.dates_imported, 1);
+        assert_eq!(second.dates_imported, 0);
+        assert_eq!(newer.dates_imported, 0);
+
+        let missing_path = PathBuf::from("/music/without-date.ogg");
+        let mut missing_conn = database(&missing_path, 0, 0);
+        let missing = merge_stats(
+            &mut missing_conn,
+            &[RhythmboxTrackStats {
+                path: missing_path,
+                rating: None,
+                play_count: None,
+                added_at: Some(100),
+            }],
+            choices,
+        )
+        .unwrap();
+        let imported_missing = missing_conn
+            .query_row("SELECT added_at FROM tracks", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap();
+        assert_eq!(imported_missing, 100);
+        assert_eq!(missing.dates_imported, 1);
     }
 
     #[test]

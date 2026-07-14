@@ -35,10 +35,11 @@ pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT: &str = N_!("Column layout");
 pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT_SUBTITLE: &str =
     N_!("Read the layout without changing Rhythmbox settings");
 pub const RHYTHMBOX_IMPORT_DESCRIPTION: &str =
-    N_!("Import ratings, play counts, playlists, and optionally the column layout");
+    N_!("Import ratings, play counts, date-added information, playlists, and optionally the column layout");
 pub const RHYTHMBOX_IMPORT_DIALOG_BODY: &str = N_!("Choose which information to copy into Reprise. Rhythmbox and your audio files remain unchanged.");
 pub const RHYTHMBOX_IMPORT_RATINGS: &str = N_!("Ratings");
 pub const RHYTHMBOX_IMPORT_PLAY_COUNTS: &str = N_!("Play counts");
+pub const RHYTHMBOX_IMPORT_DATE_ADDED: &str = N_!("Date added");
 pub const RHYTHMBOX_IMPORT_PLAYLISTS: &str = N_!("Playlists");
 pub const RHYTHMBOX_IMPORT_ACTION: &str = N_!("Import…");
 pub const RHYTHMBOX_IMPORT_COMPLETE: &str = N_!("Rhythmbox import complete");
@@ -49,18 +50,21 @@ pub fn rhythmbox_import_summary(
     matched: usize,
     ratings: usize,
     play_counts: usize,
+    dates: usize,
     skipped: usize,
 ) -> String {
     let matched = matched.to_string();
     let ratings = ratings.to_string();
     let play_counts = play_counts.to_string();
+    let dates = dates.to_string();
     let skipped = skipped.to_string();
     formatted(
-        N_!("Matched {matched} tracks · imported {ratings} ratings · raised {play_counts} play counts · skipped {skipped}"),
+        N_!("Matched {matched} tracks · imported {ratings} ratings · raised {play_counts} play counts · restored {dates} date-added values · skipped {skipped}"),
         &[
             ("matched", &matched),
             ("ratings", &ratings),
             ("play_counts", &play_counts),
+            ("dates", &dates),
             ("skipped", &skipped),
         ],
     )

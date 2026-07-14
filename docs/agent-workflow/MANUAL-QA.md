@@ -370,13 +370,14 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   in order, ignores unknown tokens, and leaves Rhythmbox settings unchanged. A second
   start offers no import surface.
 - [ ] In Preferences → Library, run `Import from Rhythmbox…` against a disposable
-  `rhythmdb.xml` and `playlists.xml`. Expected: Ratings, Play counts, and Playlists
-  start selected while Column layout requires opt-in; exact decoded local paths match,
-  existing Reprise ratings win, play counts only rise to the larger value, static
-  playlist order is retained without duplicates, smart playlists are skipped, repeating
-  the import is a no-op, and Rhythmbox plus audio files remain unchanged. Enable the
-  optional Plays column, sort it in both directions, hide it, and restart to verify
-  layout persistence.
+  `rhythmdb.xml` and `playlists.xml`. Expected: Ratings, Play counts, Date added,
+  and Playlists start selected while Column layout requires opt-in; exact decoded
+  local paths match, existing Reprise ratings win, play counts only rise to the
+  larger value, and Date added becomes the older positive Reprise/Rhythmbox value.
+  Static playlist order is retained without duplicates, smart playlists are skipped,
+  repeating the import is a no-op, and Rhythmbox plus audio files remain unchanged.
+  Enable the optional Plays column, sort it in both directions, hide it, and restart
+  to verify layout persistence; confirm Recently added follows imported dates.
 - [ ] Playlist context-menu add/new/remove, sidebar drag add, multi-select, and M3U8
   import work with Unicode names and paths containing spaces.
 - [ ] Exported M3U opens in another compatible player when one is available.
