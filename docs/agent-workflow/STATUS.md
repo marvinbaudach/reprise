@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Fix initial Library viewport rendering only one track
-SINCE:    2026-07-14T08:57:52+02:00
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
 _As of 2026-07-14: all reviewed local feature work is integrated into main._
@@ -41,6 +41,10 @@ _As of 2026-07-14: all reviewed local feature work is integrated into main._
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
 - **Main implementation:** `5598b2d` on `main`.
+- **Latest validation:** the reported one-row initial Library render was not reproducible with the
+  current debug build or the freshly reinstalled release: an isolated second launch with 501
+  pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
+  single instance remains the likely explanation; real-desktop restart verification is pending.
 
 ## Done so far (compact)
 
