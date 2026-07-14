@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate foreground Preferences scan progress
+SINCE:    2026-07-14T10:02:36+02:00
 ```
 
-_As of 2026-07-14: all reviewed local feature work is integrated into main._
+_As of 2026-07-14: Codex is integrating foreground Preferences scan progress._
 
 ## Parallel feature work
 
