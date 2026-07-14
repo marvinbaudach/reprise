@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Move playlist import into Add Playlist
+SINCE:    2026-07-14 03:36 CEST
 ```
 
-_As of 2026-07-14: free after the live list-density regression fix passed all gates._
+_As of 2026-07-14: Codex is moving playlist import from the header into Add Playlist._
 
 ## Current position
 
