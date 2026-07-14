@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Keep the right Information column beside the Library table
+SINCE:    2026-07-14T09:23:26+02:00
 ```
 
 _As of 2026-07-14: all reviewed local feature work is integrated into main._
