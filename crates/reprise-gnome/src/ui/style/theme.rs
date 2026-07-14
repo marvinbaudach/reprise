@@ -1,0 +1,202 @@
+//! Named dark theme palettes for the redesign.
+//!
+//! Each theme is a [`Palette`] that overrides libadwaita's named colors via
+//! `@define-color` (see [`theme_css`]). Because every Adwaita widget resolves
+//! those named colors at draw time, swapping the palette recolors the whole
+//! app at once — the mechanism the redesign's live theme picker will drive.
+//!
+//! The concrete color values below are extracted from the design frames and
+//! are deliberately approximate; a later pass tunes them against the exact
+//! canonical palettes (Perpetual Rain, Night Terrain, …).
+
+/// A selectable dark theme. `id()` is the stable persistence key; the enum
+/// order is the picker order.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(in crate::ui) enum Theme {
+    PerpetualRain,
+    NightTerrain,
+    MutedBloom,
+}
+
+/// The color values a theme maps onto libadwaita's named colors. Every field
+/// is emitted by [`theme_css`] — keep them in sync so no value is dead.
+pub(in crate::ui) struct Palette {
+    pub(in crate::ui) window_bg: &'static str,
+    pub(in crate::ui) view_bg: &'static str,
+    pub(in crate::ui) card_bg: &'static str,
+    pub(in crate::ui) headerbar_bg: &'static str,
+    pub(in crate::ui) sidebar_bg: &'static str,
+    pub(in crate::ui) popover_bg: &'static str,
+    pub(in crate::ui) fg: &'static str,
+    pub(in crate::ui) dim_fg: &'static str,
+    /// Teal selection/toggle accent.
+    pub(in crate::ui) accent: &'static str,
+    pub(in crate::ui) accent_fg: &'static str,
+    /// Warm play/waveform accent — the static fallback until the P5
+    /// cover-derived accent subsystem drives it per track.
+    pub(in crate::ui) player_accent: &'static str,
+}
+
+impl Theme {
+    /// The theme a fresh install starts on.
+    pub(in crate::ui) const DEFAULT: Theme = Theme::PerpetualRain;
+
+    /// All themes in picker order.
+    #[allow(dead_code)] // wired by the theme picker in P0 slice 2
+    pub(in crate::ui) fn all() -> [Theme; 3] {
+        [Theme::PerpetualRain, Theme::NightTerrain, Theme::MutedBloom]
+    }
+
+    /// Stable persistence key (never reused across renamed themes).
+    #[allow(dead_code)] // wired by theme persistence in P0 slice 2
+    pub(in crate::ui) fn id(self) -> &'static str {
+        match self {
+            Theme::PerpetualRain => "perpetual-rain",
+            Theme::NightTerrain => "night-terrain",
+            Theme::MutedBloom => "muted-bloom",
+        }
+    }
+
+    /// Inverse of [`id`]; unknown ids fall back to `None` so the caller can
+    /// choose [`DEFAULT`].
+    #[allow(dead_code)] // wired by theme persistence in P0 slice 2
+    pub(in crate::ui) fn from_id(id: &str) -> Option<Theme> {
+        Theme::all().into_iter().find(|theme| theme.id() == id)
+    }
+
+    /// Human-readable name shown in the picker (English UI copy).
+    #[allow(dead_code)] // wired by the theme picker in P0 slice 2
+    pub(in crate::ui) fn display_name(self) -> &'static str {
+        match self {
+            Theme::PerpetualRain => "Perpetual Rain",
+            Theme::NightTerrain => "Night Terrain",
+            Theme::MutedBloom => "Muted Bloom",
+        }
+    }
+
+    pub(in crate::ui) fn palette(self) -> Palette {
+        match self {
+            Theme::PerpetualRain => Palette {
+                window_bg: "#16181b",
+                view_bg: "#1b1e22",
+                card_bg: "#22262b",
+                headerbar_bg: "#16181b",
+                sidebar_bg: "#191c20",
+                popover_bg: "#24282e",
+                fg: "#e7e9ec",
+                dim_fg: "#9198a0",
+                accent: "#33c9a3",
+                accent_fg: "#04140f",
+                player_accent: "#e8703a",
+            },
+            Theme::NightTerrain => Palette {
+                window_bg: "#13161c",
+                view_bg: "#191d25",
+                card_bg: "#20252f",
+                headerbar_bg: "#13161c",
+                sidebar_bg: "#161a21",
+                popover_bg: "#222834",
+                fg: "#e4e7ec",
+                dim_fg: "#8b93a1",
+                accent: "#4db6a9",
+                accent_fg: "#05130f",
+                player_accent: "#d98a3d",
+            },
+            Theme::MutedBloom => Palette {
+                window_bg: "#1a1518",
+                view_bg: "#201a1e",
+                card_bg: "#282027",
+                headerbar_bg: "#1a1518",
+                sidebar_bg: "#1d171b",
+                popover_bg: "#2a2029",
+                fg: "#ece6ea",
+                dim_fg: "#a2949c",
+                accent: "#c98bd0",
+                accent_fg: "#180612",
+                player_accent: "#e08a5a",
+            },
+        }
+    }
+}
+
+/// Produces the `@define-color` overrides that map `theme`'s palette onto the
+/// libadwaita named colors, plus two `reprise_*` colors the app's own CSS
+/// reads. Installed at application priority so it wins over Adwaita's defaults.
+pub(in crate::ui) fn theme_css(theme: Theme) -> String {
+    let p = theme.palette();
+    format!(
+        "@define-color window_bg_color {win};\n\
+         @define-color window_fg_color {fg};\n\
+         @define-color view_bg_color {view};\n\
+         @define-color view_fg_color {fg};\n\
+         @define-color headerbar_bg_color {hb};\n\
+         @define-color headerbar_fg_color {fg};\n\
+         @define-color sidebar_bg_color {sb};\n\
+         @define-color sidebar_fg_color {fg};\n\
+         @define-color card_bg_color {card};\n\
+         @define-color card_fg_color {fg};\n\
+         @define-color popover_bg_color {pop};\n\
+         @define-color popover_fg_color {fg};\n\
+         @define-color dialog_bg_color {card};\n\
+         @define-color dialog_fg_color {fg};\n\
+         @define-color accent_bg_color {acc};\n\
+         @define-color accent_fg_color {accfg};\n\
+         @define-color accent_color {acc};\n\
+         @define-color reprise_dim_fg_color {dim};\n\
+         @define-color reprise_player_accent {play};\n",
+        win = p.window_bg,
+        fg = p.fg,
+        view = p.view_bg,
+        hb = p.headerbar_bg,
+        sb = p.sidebar_bg,
+        card = p.card_bg,
+        pop = p.popover_bg,
+        acc = p.accent,
+        accfg = p.accent_fg,
+        dim = p.dim_fg,
+        play = p.player_accent,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_theme_is_listed() {
+        assert!(Theme::all().contains(&Theme::DEFAULT));
+    }
+
+    #[test]
+    fn ids_round_trip_and_are_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for theme in Theme::all() {
+            assert_eq!(Theme::from_id(theme.id()), Some(theme));
+            assert!(seen.insert(theme.id()), "duplicate id: {}", theme.id());
+            assert!(!theme.display_name().is_empty());
+        }
+        assert_eq!(Theme::from_id("does-not-exist"), None);
+    }
+
+    #[test]
+    fn theme_css_defines_core_named_colors() {
+        let css = theme_css(Theme::PerpetualRain);
+        for name in [
+            "@define-color window_bg_color",
+            "@define-color view_bg_color",
+            "@define-color accent_bg_color",
+            "@define-color reprise_player_accent",
+        ] {
+            assert!(css.contains(name), "missing color definition: {name}");
+        }
+    }
+
+    #[test]
+    fn distinct_themes_produce_distinct_css() {
+        assert_ne!(
+            theme_css(Theme::PerpetualRain),
+            theme_css(Theme::NightTerrain)
+        );
+        assert_ne!(theme_css(Theme::NightTerrain), theme_css(Theme::MutedBloom));
+    }
+}

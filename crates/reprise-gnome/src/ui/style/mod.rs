@@ -7,6 +7,7 @@
 //! per-widget installation used to add one display-global provider on every
 //! rebuild.
 
+pub(super) mod theme;
 pub(super) mod tokens;
 
 use std::cell::Cell;
@@ -18,6 +19,7 @@ thread_local! {
 /// One entry per feature that ships app-authored CSS.
 fn app_css() -> String {
     [
+        theme::theme_css(theme::Theme::DEFAULT),
         super::browse_bar::css(),
         super::column_layout_editor::css(),
         super::list_density::css(),
@@ -60,6 +62,8 @@ mod tests {
         let css = super::app_css();
 
         for marker in [
+            "@define-color window_bg_color",
+            "@define-color accent_bg_color",
             ".reprise-filter-chip",
             ".reprise-column-drop-before",
             ".reprise-track-cell.reprise-density-comfortable",
