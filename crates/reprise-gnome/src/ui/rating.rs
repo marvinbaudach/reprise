@@ -140,27 +140,14 @@ const STAR_OUTLINE_GLYPH: &str = "\u{2606}";
 /// `player_bar.rs` already uses for its inactive repeat state.
 const STAR_OUTLINE_CSS_CLASS: &str = "dim-label";
 
-thread_local! {
-    static RATING_STYLE_INSTALLED: Cell<bool> = const { Cell::new(false) };
-}
-
-fn install_rating_style(widget: &impl IsA<gtk4::Widget>) {
-    RATING_STYLE_INSTALLED.with(|installed| {
-        if installed.replace(true) {
-            return;
-        }
-        let provider = gtk4::CssProvider::new();
-        provider.load_from_string(&format!(
-            ".{INLINE_STAR_CSS_CLASS} {{ min-width: 20px; min-height: 26px; padding: 1px; }}\n\
-             .{COMPACT_BUTTON_CSS_CLASS} {{ min-width: {COMPACT_CONTROL_MIN_WIDTH}px; \
-             padding: 2px 6px; }}"
-        ));
-        gtk4::style_context_add_provider_for_display(
-            &widget.display(),
-            &provider,
-            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-    });
+/// Star and compact-chooser hit-area minima; installed app-wide by
+/// [`super::style`].
+pub(super) fn css() -> String {
+    format!(
+        ".{INLINE_STAR_CSS_CLASS} {{ min-width: 20px; min-height: 26px; padding: 1px; }}\n\
+         .{COMPACT_BUTTON_CSS_CLASS} {{ min-width: {COMPACT_CONTROL_MIN_WIDTH}px; \
+         padding: 2px 6px; }}"
+    )
 }
 
 /// Shared alias for the click-reporting callback's storage type — see the
@@ -227,7 +214,6 @@ impl RatingWidget {
     /// between them from the cell's own allocation, so a narrow window or a
     /// user-narrowed Rating column does not reserve five inline buttons.
     fn build_ui(&self) {
-        install_rating_style(self);
         self.set_orientation(gtk4::Orientation::Horizontal);
         self.set_spacing(0);
         self.set_tooltip_text(Some(&strings::text(strings::RATING)));

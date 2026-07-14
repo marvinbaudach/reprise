@@ -1,27 +1,24 @@
 //! Scoped visual hierarchy for the sortable track-table headers.
 //!
-//! GTK owns the `ColumnView` header labels, so the app cannot mark them directly.
-//! A root class keeps this selector away from song cells and every other column view.
+//! GTK owns the `ColumnView` header labels, so the app cannot mark them
+//! directly. A root class keeps this selector away from song cells and every
+//! other column view; the rule itself is installed app-wide by
+//! [`super::style`].
 
 use gtk4::prelude::*;
 
 const TRACK_LIST_CLASS: &str = "reprise-track-list";
-const HEADER_TEXT_ALPHA: &str = "0.78";
 
-fn header_css() -> String {
+/// Quieter column-title rule, scoped to [`TRACK_LIST_CLASS`] roots.
+pub(super) fn css() -> String {
+    use super::style::tokens::HEADER_TEXT_ALPHA;
     format!(
         ".{TRACK_LIST_CLASS} > header label {{ color: alpha(currentColor, {HEADER_TEXT_ALPHA}); }}"
     )
 }
 
-pub(super) fn install(view: &gtk4::ColumnView) {
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(&header_css());
-    gtk4::style_context_add_provider_for_display(
-        &view.display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+/// Marks a column view as the track table so the scoped header rule applies.
+pub(super) fn mark(view: &gtk4::ColumnView) {
     view.add_css_class(TRACK_LIST_CLASS);
 }
 
@@ -31,7 +28,7 @@ mod tests {
 
     #[test]
     fn header_style_is_subtle_and_scoped_away_from_song_cells() {
-        let css = super::header_css();
+        let css = super::css();
 
         assert!(css.contains(".reprise-track-list > header label"));
         assert!(css.contains("alpha(currentColor, 0.78)"));
@@ -40,12 +37,12 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn installing_header_style_marks_only_the_track_table_root() {
+    fn marking_targets_only_the_track_table_root() {
         gtk4::init().unwrap();
         let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
         let unrelated = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
 
-        super::install(&view);
+        super::mark(&view);
 
         assert!(view.has_css_class("reprise-track-list"));
         assert!(!unrelated.has_css_class("reprise-track-list"));
@@ -76,7 +73,8 @@ mod tests {
             Some("Title"),
             None::<gtk4::ListItemFactory>,
         ));
-        super::install(&view);
+        crate::ui::style::install();
+        super::mark(&view);
         let window = gtk4::Window::new();
         window.set_child(Some(&view));
         window.present();

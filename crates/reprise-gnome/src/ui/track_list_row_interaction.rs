@@ -2,21 +2,13 @@ use gtk4::prelude::*;
 
 const REORDER_TARGET_CSS_CLASS: &str = "reprise-reorder-target";
 
-pub(super) fn reorder_indicator_css() -> String {
+/// Row drop-position indicator; installed app-wide by [`super::style`].
+pub(super) fn css() -> String {
+    use super::style::tokens::DROP_INDICATOR_THICKNESS;
     format!(
         ".{REORDER_TARGET_CSS_CLASS}:drop(active) {{ \
-         box-shadow: inset 0 2px @accent_color; }}"
+         box-shadow: inset 0 {DROP_INDICATOR_THICKNESS} @accent_color; }}"
     )
-}
-
-pub(super) fn install_reorder_indicator_style(widget: &impl IsA<gtk4::Widget>) {
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(&reorder_indicator_css());
-    gtk4::style_context_add_provider_for_display(
-        &widget.display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
 }
 
 pub(super) fn set_reorder_indicator(widget: &impl IsA<gtk4::Widget>, active: bool) {
@@ -55,7 +47,7 @@ mod tests {
 
     #[test]
     fn reorder_indicator_uses_the_drop_active_state_and_accent_line() {
-        let css = super::reorder_indicator_css();
+        let css = super::css();
         assert!(css.contains(":drop(active)"));
         assert!(css.contains("box-shadow"));
         assert!(css.contains("@accent_color"));

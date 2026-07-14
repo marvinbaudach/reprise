@@ -81,6 +81,7 @@ pub fn build(
     conn: &Rc<RefCell<Connection>>,
     db_path: &Path,
 ) -> FileOpenHandler {
+    super::style::install();
     let session_state = {
         let conn = conn.borrow();
         super::session_restore::load(&conn)

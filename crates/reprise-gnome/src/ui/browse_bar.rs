@@ -33,20 +33,16 @@ fn browse_popup_min_height(_option_count: usize) -> i32 {
     POPUP_MIN_HEIGHT
 }
 
-fn install_popup_style(widget: &impl IsA<gtk4::Widget>) {
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(&format!(
+/// Chip and value-popover rules; installed app-wide by [`super::style`].
+pub(super) fn css() -> String {
+    use super::style::tokens::{CHIP_BG_ALPHA, CHIP_BG_HOVER_ALPHA};
+    format!(
         ".{CHIP_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 8px; \
-         background-color: alpha(@accent_bg_color, 0.22); color: @accent_color; }} \
-         .{CHIP_CSS_CLASS}:hover {{ background-color: alpha(@accent_bg_color, 0.32); }} \
+         background-color: alpha(@accent_bg_color, {CHIP_BG_ALPHA}); color: @accent_color; }} \
+         .{CHIP_CSS_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {CHIP_BG_HOVER_ALPHA}); }} \
          .{POPOVER_CSS_CLASS} contents {{ min-width: 300px; min-height: {}px; }}",
         browse_popup_min_height(0)
-    ));
-    gtk4::style_context_add_provider_for_display(
-        &widget.display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    )
 }
 
 fn apply_selection(
@@ -170,7 +166,6 @@ impl BrowseBar {
         root.set_margin_start(12);
         root.set_margin_end(12);
         root.add_css_class("toolbar");
-        install_popup_style(&root);
 
         let section_label = gtk4::Label::new(Some(&filter_strings::text(filter_strings::FILTERS)));
         section_label.add_css_class("dim-label");
