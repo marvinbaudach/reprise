@@ -9,6 +9,9 @@
 //! are deliberately approximate; a later pass tunes them against the exact
 //! canonical palettes (Perpetual Rain, Night Terrain, …).
 
+/// Settings key persisting the selected theme's [`Theme::id`].
+pub(in crate::ui) const THEME_SETTING_KEY: &str = "ui.theme";
+
 /// A selectable dark theme. `id()` is the stable persistence key; the enum
 /// order is the picker order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -42,13 +45,11 @@ impl Theme {
     pub(in crate::ui) const DEFAULT: Theme = Theme::PerpetualRain;
 
     /// All themes in picker order.
-    #[allow(dead_code)] // wired by the theme picker in P0 slice 2
     pub(in crate::ui) fn all() -> [Theme; 3] {
         [Theme::PerpetualRain, Theme::NightTerrain, Theme::MutedBloom]
     }
 
     /// Stable persistence key (never reused across renamed themes).
-    #[allow(dead_code)] // wired by theme persistence in P0 slice 2
     pub(in crate::ui) fn id(self) -> &'static str {
         match self {
             Theme::PerpetualRain => "perpetual-rain",
@@ -59,13 +60,11 @@ impl Theme {
 
     /// Inverse of [`id`]; unknown ids fall back to `None` so the caller can
     /// choose [`DEFAULT`].
-    #[allow(dead_code)] // wired by theme persistence in P0 slice 2
     pub(in crate::ui) fn from_id(id: &str) -> Option<Theme> {
         Theme::all().into_iter().find(|theme| theme.id() == id)
     }
 
     /// Human-readable name shown in the picker (English UI copy).
-    #[allow(dead_code)] // wired by the theme picker in P0 slice 2
     pub(in crate::ui) fn display_name(self) -> &'static str {
         match self {
             Theme::PerpetualRain => "Perpetual Rain",
