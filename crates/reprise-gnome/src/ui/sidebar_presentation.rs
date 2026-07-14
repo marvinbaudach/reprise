@@ -72,7 +72,7 @@ pub(super) fn build_nav_row(title: &str, count: Option<i64>, icon: NavIcon) -> g
     gtk4::ListBoxRow::builder().child(&hbox).build()
 }
 
-pub(super) fn append_header(listbox: &gtk4::ListBox, text: &str) {
+pub(super) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBoxRow {
     let label = gtk4::Label::new(Some(text));
     label.set_xalign(0.0);
     label.add_css_class("caption-heading");
@@ -88,6 +88,7 @@ pub(super) fn append_header(listbox: &gtk4::ListBox, text: &str) {
         .activatable(false)
         .build();
     listbox.append(&row);
+    row
 }
 
 pub(super) fn append_new_playlist_row(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
@@ -108,19 +109,8 @@ pub(super) fn append_new_playlist_row(listbox: &gtk4::ListBox) -> gtk4::ListBoxR
     row
 }
 
-pub(super) fn append_problem_separator(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
-    let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
-    separator.set_margin_top(8);
-    separator.set_margin_bottom(8);
-    separator.set_margin_start(ROW_HORIZONTAL_MARGIN);
-    separator.set_margin_end(ROW_HORIZONTAL_MARGIN);
-    let row = gtk4::ListBoxRow::builder()
-        .child(&separator)
-        .selectable(false)
-        .activatable(false)
-        .build();
-    listbox.append(&row);
-    row
+pub(super) fn append_problem_header(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
+    append_header(listbox, &strings::text(strings::SIDEBAR_SECTION_ISSUES))
 }
 
 pub(super) fn style_split_view(split: &adw::NavigationSplitView) {
@@ -173,14 +163,17 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn problem_separator_is_not_a_selectable_blank_navigation_row() {
+    fn problem_sources_use_a_labeled_section_header() {
         gtk4::init().unwrap();
         let listbox = gtk4::ListBox::new();
-        let row = append_problem_separator(&listbox);
+        let row = append_problem_header(&listbox);
 
         assert!(!row.is_selectable());
         assert!(!row.is_activatable());
-        assert!(row.child().unwrap().is::<gtk4::Separator>());
+        let label = row.child().unwrap().downcast::<gtk4::Label>().unwrap();
+        assert_eq!(label.text(), "ISSUES");
+        assert!(label.has_css_class("caption-heading"));
+        assert!(label.has_css_class("dim-label"));
     }
 
     #[test]

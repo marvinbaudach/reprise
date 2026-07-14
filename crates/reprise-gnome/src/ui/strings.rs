@@ -513,6 +513,7 @@ pub fn rating_save_failed_toast(title: &str) -> String {
 pub const SIDEBAR_SECTION_LIBRARY: &str = N_!("LIBRARY");
 pub const SIDEBAR_SECTION_PLAYLISTS: &str = N_!("PLAYLISTS");
 pub const SIDEBAR_SECTION_SMART: &str = N_!("SMART");
+pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
