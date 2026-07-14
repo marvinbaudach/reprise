@@ -13,9 +13,11 @@ disciplined way.
 
 ━━━━━━━━━━━━━━━━━━━━ STEP 0 — READ THESE FIRST (do not skip) ━━━━━━━━━━━━━━━━━━━━
 1. docs/agent-workflow/STATUS.md — the SHARED coordination board (who's working,
-   what's done, what's next). Read it first; before you touch `main`, claim its
-   Lock (set OWNER: codex + task + timestamp, commit just that file); release it
-   when done. Only ONE agent works main at a time.
+   what's done, what's next). Read it first; before you touch `main`, claim the
+   Lock by editing the gitignored docs/agent-workflow/LOCK file (set OWNER: codex
+   + task + timestamp) — NEVER commit LOCK (it is shared via the working tree on
+   disk; committing it created ~150 noise commits). Release it (OWNER: FREE) when
+   done. Only ONE agent works main at a time.
 2. AGENTS.md (repo root) — full resume instructions, gates, safety rules.
 3. docs/agent-workflow/development-method.md — the working method + iron rules.
 4. docs/agent-workflow/building-gtk4-rust-apps.md — GTK4/GStreamer/MPRIS/SQLite
@@ -45,7 +47,8 @@ Current plan: docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md
 6. Append one line to .superpowers/sdd/progress.md
    (`Task N: complete (commit <hash>, base <hash>, <note>)`) AND update
    docs/agent-workflow/STATUS.md (move "Current position" forward). When you
-   finish your working session, set the STATUS.md Lock back to FREE and commit it.
+   finish your working session, set the gitignored LOCK file's OWNER back to FREE
+   (edit only — never commit LOCK).
 Execute continuously; don't stop to ask "should I continue?". Stop only when
 truly blocked or the plan is done.
 

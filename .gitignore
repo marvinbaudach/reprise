@@ -16,5 +16,9 @@
 # Session scratch (not part of the repo)
 .superpowers/
 
+# Live agent work lock — volatile coordination state, never versioned
+# (committing it produced ~150 noise commits). See docs/agent-workflow/STATUS.md.
+docs/agent-workflow/LOCK
+
 # Claude Code personal settings (machine-specific hooks)
 .claude/settings.local.json

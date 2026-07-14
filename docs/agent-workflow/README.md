@@ -5,8 +5,9 @@ depending on a specific tool's plugin system. Read these together with the root 
 (which holds the resume instructions, gates, and safety rules).
 
 > **Coordinating two agents (Claude ⇄ Codex): read `STATUS.md` FIRST.** It is the shared,
-> git-tracked board for who's working, what's done, and what's next — claim its Lock before you
-> touch `main`, release it when done. Only one agent works `main` at a time.
+> git-tracked board for who's working, what's done, and what's next. Claim the Lock before you
+> touch `main` by editing the gitignored `LOCK` file (never commit it) and release it when done.
+> Only one agent works `main` at a time.
 
 - **`development-method.md`** — how the project is built: brainstorm → design spec →
   implementation plan → task-by-task TDD → per-task review → stage close-out. The iron rules
