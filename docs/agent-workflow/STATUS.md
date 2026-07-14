@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Center non-text track columns
-SINCE:    2026-07-14T10:05:52+02:00
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is centering non-text track columns._
+_As of 2026-07-14: all reviewed local feature work is integrated into main._
 
 ## Parallel feature work
 
@@ -35,12 +35,11 @@ _As of 2026-07-14: Codex is centering non-text track columns._
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-14-rhythmbox-stats-import.md` (7 tasks).
-- **Last completed:** **Foreground scan progress** (`64d9a7c`, merged as `d8105fe`) — a Rescan
-  started from Preferences shows the shared scan progress directly below that window's header,
-  while closing Preferences leaves the main-window indicator and the single scan worker active.
+- **Last completed:** **Centered numeric track columns** (`3cbe986`) — track number, year,
+  duration, rating and play count are centered while text metadata remains left-aligned.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `64d9a7c` on `main` (merged as `d8105fe`).
+- **Main implementation:** `3cbe986` on `main`.
 - **Latest validation:** the reported one-row initial Library render was not reproducible with the
   current debug build or the freshly reinstalled release: an isolated second launch with 501
   pre-existing tracks rendered a full viewport while cover checking ran. A stale already-running
@@ -164,7 +163,8 @@ _As of 2026-07-14: Codex is centering non-text track columns._
   through the shared context menu, and change volume in five-percent steps only on declared free
   cover/metadata scroll regions without visible Compact volume controls.
 - ✅ **Stable track-table geometry**: fixed per-column sizing prevents virtualized row contents from
-  changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
+  changing widths while scrolling; Title alone expands into spare space, columns remain resizable,
+  and numeric metadata uses centered tabular figures while text metadata stays left-aligned.
 - ✅ **Initial Library viewport**: the track-content stack requests the available height during its
   first allocation, preventing a populated Music view from rendering only one row until navigation.
 - ✅ **Compact responsive ratings**: the Rating column defaults to a narrow `★ N` popover chooser,
