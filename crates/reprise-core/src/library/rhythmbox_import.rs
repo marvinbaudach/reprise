@@ -1,5 +1,6 @@
 //! Read-only import of per-track statistics from Rhythmbox's `rhythmdb.xml`.
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -29,6 +30,20 @@ pub struct RhythmboxImportSummary {
     pub ratings_imported: usize,
     pub play_counts_raised: usize,
     pub skipped: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RhythmboxPlaylist {
+    pub name: String,
+    pub paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RhythmboxPlaylistSummary {
+    pub parsed: usize,
+    pub imported: usize,
+    pub tracks_added: usize,
+    pub skipped_tracks: usize,
 }
 
 #[derive(Debug, Error)]
@@ -231,6 +246,144 @@ pub fn merge_stats(
     Ok(summary)
 }
 
+pub fn parse_playlists(path: &Path) -> Result<Vec<RhythmboxPlaylist>, RhythmboxImportError> {
+    let file = File::open(path)?;
+    let mut reader = Reader::from_reader(BufReader::new(file));
+    reader.config_mut().trim_text(true);
+    reader.config_mut().check_end_names = true;
+    let mut buffer = Vec::new();
+    let mut depth = 0usize;
+    let mut playlist: Option<RhythmboxPlaylist> = None;
+    let mut location = None::<String>;
+    let mut playlists = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buffer)? {
+            Event::Start(element) => {
+                depth += 1;
+                if element.name().as_ref() == b"playlist" {
+                    let mut name = None;
+                    let mut playlist_type = None;
+                    for attribute in element.attributes().flatten() {
+                        let value = attribute.decoded_and_normalized_value(
+                            quick_xml::XmlVersion::Implicit1_0,
+                            reader.decoder(),
+                        )?;
+                        match attribute.key.as_ref() {
+                            b"name" => name = Some(value.into_owned()),
+                            b"type" => playlist_type = Some(value.into_owned()),
+                            _ => {}
+                        }
+                    }
+                    playlist = match (name, playlist_type.as_deref()) {
+                        (Some(name), Some("static")) if !name.trim().is_empty() => {
+                            Some(RhythmboxPlaylist {
+                                name,
+                                paths: Vec::new(),
+                            })
+                        }
+                        _ => None,
+                    };
+                } else if element.name().as_ref() == b"location" && playlist.is_some() {
+                    location = Some(String::new());
+                }
+            }
+            Event::Text(text) => {
+                if let Some(location) = &mut location {
+                    location.push_str(&text.decode()?);
+                }
+            }
+            Event::CData(text) => {
+                if let Some(location) = &mut location {
+                    location.push_str(&text.decode()?);
+                }
+            }
+            Event::GeneralRef(reference) => {
+                if let Some(location) = &mut location {
+                    let reference = reference.decode()?;
+                    let escaped = format!("&{reference};");
+                    location.push_str(&quick_xml::escape::unescape(&escaped)?);
+                }
+            }
+            Event::End(element) => {
+                depth = depth.saturating_sub(1);
+                if element.name().as_ref() == b"location" {
+                    if let (Some(playlist), Some(location)) = (&mut playlist, location.take()) {
+                        if let Ok(url) = url::Url::parse(location.trim()) {
+                            if let Ok(path) = url.to_file_path() {
+                                playlist.paths.push(path);
+                            }
+                        }
+                    }
+                } else if element.name().as_ref() == b"playlist" {
+                    if let Some(playlist) = playlist.take() {
+                        playlists.push(playlist);
+                    }
+                    location = None;
+                }
+            }
+            Event::Eof => {
+                if depth != 0 {
+                    return Err(RhythmboxImportError::UnexpectedEof);
+                }
+                return Ok(playlists);
+            }
+            _ => {}
+        }
+        buffer.clear();
+    }
+}
+
+pub fn merge_playlists(
+    conn: &mut Connection,
+    playlists: &[RhythmboxPlaylist],
+) -> Result<RhythmboxPlaylistSummary, RhythmboxImportError> {
+    let mut summary = RhythmboxPlaylistSummary {
+        parsed: playlists.len(),
+        ..RhythmboxPlaylistSummary::default()
+    };
+
+    for playlist in playlists {
+        let mut seen = HashSet::new();
+        let mut track_ids = Vec::new();
+        for path in &playlist.paths {
+            let path = path.to_string_lossy();
+            let track_id = conn
+                .query_row("SELECT id FROM tracks WHERE path=?1", [&path], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .optional()?;
+            match track_id {
+                Some(track_id) if seen.insert(track_id) => track_ids.push(track_id),
+                Some(_) => {}
+                None => summary.skipped_tracks += 1,
+            }
+        }
+        if track_ids.is_empty() {
+            continue;
+        }
+
+        let existing = conn
+            .query_row(
+                "SELECT id FROM playlists WHERE name=?1 ORDER BY position LIMIT 1",
+                [&playlist.name],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        let added = if let Some(playlist_id) = existing {
+            crate::library::playlist_membership::add_unique_tracks(conn, playlist_id, &track_ids)?
+                as usize
+        } else {
+            crate::library::playlists::create_with_tracks(conn, &playlist.name, &track_ids)?;
+            track_ids.len()
+        };
+        summary.imported += 1;
+        summary.tracks_added += added;
+    }
+
+    Ok(summary)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -376,5 +529,126 @@ mod tests {
         assert_eq!(summary.parsed, 2);
         assert_eq!(summary.matched, 1);
         assert_eq!(summary.skipped, 1);
+    }
+
+    #[test]
+    fn playlist_parser_keeps_static_order_and_decodes_locations() {
+        let dir = tempdir().unwrap();
+        let first = dir.path().join("One & Only.ogg");
+        let second = dir.path().join("Two.ogg");
+        let first_url = url::Url::from_file_path(&first).unwrap();
+        let first_uri = quick_xml::escape::escape(first_url.as_str());
+        let second_uri = url::Url::from_file_path(&second).unwrap();
+        let xml = format!(
+            r#"<rhythmdb-playlists>
+<playlist name="Favorites &amp; More" type="static">
+  <location>{first_uri}</location><location>{second_uri}</location>
+</playlist>
+<playlist name="Automatic" type="automatic"><location>{second_uri}</location></playlist>
+</rhythmdb-playlists>"#
+        );
+        let path = dir.path().join("playlists.xml");
+        fs::write(&path, xml).unwrap();
+
+        assert_eq!(
+            parse_playlists(&path).unwrap(),
+            vec![RhythmboxPlaylist {
+                name: "Favorites & More".to_string(),
+                paths: vec![first, second],
+            }]
+        );
+    }
+
+    #[test]
+    fn playlist_parser_rejects_truncated_xml() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("playlists.xml");
+        fs::write(
+            &path,
+            r#"<rhythmdb-playlists><playlist name="Broken" type="static">"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            parse_playlists(&path),
+            Err(RhythmboxImportError::UnexpectedEof)
+        ));
+    }
+
+    fn playlist_database() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::migrate(&conn).unwrap();
+        for id in 1..=2 {
+            conn.execute(
+                "INSERT INTO tracks (id, path, added_at) VALUES (?1, ?2, 0)",
+                rusqlite::params![id, format!("/music/{id}.ogg")],
+            )
+            .unwrap();
+        }
+        conn
+    }
+
+    fn playlist_track_ids(conn: &Connection, name: &str) -> Vec<i64> {
+        conn.prepare(
+            "SELECT pt.track_id FROM playlist_tracks pt JOIN playlists p ON p.id=pt.playlist_id \
+             WHERE p.name=?1 ORDER BY pt.position",
+        )
+        .unwrap()
+        .query_map([name], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+    }
+
+    #[test]
+    fn playlist_merge_creates_only_nonempty_matched_playlists() {
+        let mut conn = playlist_database();
+        let summary = merge_playlists(
+            &mut conn,
+            &[
+                RhythmboxPlaylist {
+                    name: "Road Trip".to_string(),
+                    paths: vec![
+                        PathBuf::from("/music/2.ogg"),
+                        PathBuf::from("/music/missing.ogg"),
+                        PathBuf::from("/music/1.ogg"),
+                    ],
+                },
+                RhythmboxPlaylist {
+                    name: "Unavailable".to_string(),
+                    paths: vec![PathBuf::from("/music/missing.ogg")],
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(playlist_track_ids(&conn, "Road Trip"), vec![2, 1]);
+        assert!(playlist_track_ids(&conn, "Unavailable").is_empty());
+        assert_eq!(summary.parsed, 2);
+        assert_eq!(summary.imported, 1);
+        assert_eq!(summary.tracks_added, 2);
+        assert_eq!(summary.skipped_tracks, 2);
+    }
+
+    #[test]
+    fn playlist_merge_extends_same_name_without_duplicates_and_is_idempotent() {
+        let mut conn = playlist_database();
+        let playlist_id = crate::library::playlists::create(&conn, "Favorites").unwrap();
+        crate::library::playlists::add_tracks(&mut conn, playlist_id, &[1]).unwrap();
+        let imported = [RhythmboxPlaylist {
+            name: "Favorites".to_string(),
+            paths: vec![
+                PathBuf::from("/music/1.ogg"),
+                PathBuf::from("/music/2.ogg"),
+                PathBuf::from("/music/2.ogg"),
+            ],
+        }];
+
+        let first = merge_playlists(&mut conn, &imported).unwrap();
+        let second = merge_playlists(&mut conn, &imported).unwrap();
+
+        assert_eq!(playlist_track_ids(&conn, "Favorites"), vec![1, 2]);
+        assert_eq!(first.tracks_added, 1);
+        assert_eq!(second.tracks_added, 0);
     }
 }
