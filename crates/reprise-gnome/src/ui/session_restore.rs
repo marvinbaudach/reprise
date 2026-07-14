@@ -211,7 +211,7 @@ fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
         ViewSource::Queue => SessionSource::Queue,
         ViewSource::Missing => SessionSource::Missing,
         ViewSource::ImportErrors => SessionSource::ImportErrors,
-        ViewSource::MyStats => SessionSource::Library,
+        ViewSource::MyStats | ViewSource::Album { .. } => SessionSource::Library,
     };
     state.search = view.search;
     state.browse = view.browse;
@@ -326,5 +326,24 @@ mod tests {
         assert_eq!(state.up_next.ids(), &[4, 5]);
         assert_eq!(state.queue.repeat, Repeat::Off);
         assert!(!state.queue.shuffled);
+    }
+
+    #[test]
+    fn transient_album_detail_saves_as_the_stable_library_source() {
+        let mut state = SessionState::default();
+        apply_view_snapshot(
+            &mut state,
+            TrackViewSnapshot {
+                source: ViewSource::Album {
+                    album: "Blue".into(),
+                    album_artist: "Joni Mitchell".into(),
+                },
+                search: String::new(),
+                browse: reprise_core::queries::BrowseFilter::default(),
+                sort: crate::ui::track_list_sort::SortState::default(),
+            },
+        );
+
+        assert_eq!(state.source, SessionSource::Library);
     }
 }
