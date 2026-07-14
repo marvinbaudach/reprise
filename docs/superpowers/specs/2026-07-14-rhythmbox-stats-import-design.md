@@ -4,14 +4,16 @@
 
 Reprise bietet unter **Einstellungen → Bibliothek** erneut einen bewusst
 ausgelösten, read-only Rhythmbox-Import an. Neben dem bestehenden Spaltenlayout
-kann der Nutzer Bewertungen und Wiedergabezähler aus `rhythmdb.xml` übernehmen.
-Die Tracktabelle erhält außerdem eine optionale Spalte „Wiedergaben“.
+kann der Nutzer Bewertungen und Wiedergabezähler aus `rhythmdb.xml` sowie
+statische Playlisten aus `playlists.xml` übernehmen. Die Tracktabelle erhält
+außerdem eine optionale Spalte „Wiedergaben“.
 
 ## Umfang
 
 - eine dauerhafte Aktion „Aus Rhythmbox importieren…“ in den
   Bibliothekseinstellungen;
-- explizite Auswahl von Spaltenlayout, Bewertungen und Wiedergabezählern;
+- explizite Auswahl von Spaltenlayout, Bewertungen, Wiedergabezählern und
+  statischen Playlisten;
 - standardmäßig ausgewählte Statistikoptionen, ohne automatischen Import;
 - exaktes Matching lokaler Titel über den dekodierten `file://`-Pfad;
 - eine optionale, standardmäßig ausgeblendete und sortierbare Spalte
@@ -35,6 +37,13 @@ Der Import ist wiederholbar und konservativ:
 - Ein XML-/Lesefehler tritt vor der SQLite-Transaktion auf; es entstehen keine
   Teiländerungen.
 
+Statische Playlisten behalten ihre Reihenfolge. Einträge werden ebenfalls über
+dekodierte `file://`-Pfade gematcht. Eine gleichnamige Reprise-Playlist wird
+ergänzt; vorhandene oder innerhalb der Rhythmbox-Playlist wiederholte Titel
+werden nicht erneut eingefügt. Eine neue Playlist wird nur angelegt, wenn
+mindestens ein Track gematcht wurde. Smart-/automatische Rhythmbox-Playlisten
+werden nicht in eine andere Semantik übersetzt und daher übersprungen.
+
 ## Architektur
 
 `reprise-core::library::rhythmbox_import` enthält den plattformneutralen,
@@ -44,11 +53,16 @@ mit `RhythmboxImportChoices` und liefert eine `RhythmboxImportSummary`.
 `quick-xml` dekodiert XML sicher, `url` wandelt ausschließlich `file://`-URIs
 in lokale Pfade um.
 
+Der gleiche Core-Baustein liest `playlists.xml` als geordnete
+`RhythmboxPlaylist`-Werte. Der Import verwendet die bestehenden atomaren
+Playlist-Helfer: neue Namen werden mit Tracks erstellt, vorhandene Namen über
+den duplicate-sicheren Membership-Pfad ergänzt.
+
 `preference_rhythmbox.rs` baut die Adwaita-Auswahl, liest die XML-Datei in
 `gio::spawn_blocking`, führt anschließend den kurzen SQLite-Merge auf dem
 Main-Thread aus und zeigt eine Ergebnis- oder Fehlermeldung. Der bekannte Pfad
-ist `$XDG_DATA_HOME/rhythmbox/rhythmdb.xml`; ein isolierter Smoke-Hook darf ihn
-explizit überschreiben.
+ist `$XDG_DATA_HOME/rhythmbox/rhythmdb.xml`; `playlists.xml` liegt daneben. Ein
+isolierter Smoke-Hook darf beide Pfade explizit überschreiben.
 
 `column_layout.rs` erweitert das persistente Spaltenmodell um `PlayCount`.
 Bestehende gespeicherte Layouts werden durch die vorhandene Normalisierung
@@ -58,6 +72,8 @@ Whitelist akzeptiert `play_count`.
 ## Fehlerbehandlung
 
 - Fehlende oder unlesbare `rhythmdb.xml`: verständlicher Dialog, keine Änderung.
+- Eine fehlende `playlists.xml` verhindert nur den ausgewählten Playlistimport;
+  Statistikimport und Spaltenlayout bleiben nutzbar.
 - Defektes XML: kompletter Abbruch vor dem DB-Merge.
 - Einzelne defekte Einträge: überspringen und in der Zusammenfassung melden.
 - SQLite-Fehler: Transaktion zurückrollen und Fehlerdialog zeigen.
@@ -69,9 +85,11 @@ Whitelist akzeptiert `play_count`.
 - Core-RED/GREEN-Tests mit ausschließlich temporärer XML- und SQLite-Fixture:
   URI-Dekodierung, Songfilter, Konfliktregeln, Wiederholbarkeit und atomarer
   Fehlerpfad;
+- Core-Tests für statische Playlist-Reihenfolge, URI-Dekodierung,
+  Smart-Playlist-Ausschluss, gleichnamiges Merge und Wiederholbarkeit;
 - Query- und Spaltenlayouttests für `play_count`, Legacy-Layoutmigration,
   Standard-unsichtbarkeit und Rhythmbox-Tokenmapping;
-- isolierter GTK-Test für die dauerhafte Preferences-Aktion und ihre drei
+- isolierter GTK-Test für die dauerhafte Preferences-Aktion und ihre vier
   Auswahlmöglichkeiten;
 - isolierter Anwendungssmoke mit Scratch-XDG, Scratch-DB und Scratch-
   `rhythmdb.xml`;
@@ -81,7 +99,7 @@ Whitelist akzeptiert `play_count`.
 ## Explizit nicht Teil dieser Änderung
 
 - kein Import von Audio-Tags wie Titel, Interpret, Album oder Genre;
-- kein Import von Playlists, Last-played-Zeit oder Rhythmbox-internen IDs;
+- kein Import von Smart-Playlists, Last-played-Zeit oder Rhythmbox-internen IDs;
 - kein automatischer Start, keine Hintergrundüberwachung und kein Schreiben
   nach Rhythmbox;
 - kein Zugriff auf echte Rhythmbox-, Reprise- oder Musikdaten während QA;
