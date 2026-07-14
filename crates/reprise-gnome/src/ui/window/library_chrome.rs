@@ -6,6 +6,8 @@ use libadwaita::prelude::*;
 use super::strings;
 
 const SEARCH_WIDTH: i32 = 300;
+const LIBRARY_TITLE_SOURCE: &str = "source";
+const LIBRARY_TITLE_SWITCHER: &str = "library-switcher";
 
 pub(super) struct LibraryChrome {
     pub(super) root: adw::ToolbarView,
@@ -13,6 +15,23 @@ pub(super) struct LibraryChrome {
 
 pub(super) struct LibraryMaintenanceActions {
     pub(super) scan: gtk4::Button,
+}
+
+pub(super) struct LibraryTitle {
+    pub(super) root: gtk4::Stack,
+    #[cfg(test)]
+    pub(super) switcher: gtk4::StackSwitcher,
+}
+
+impl LibraryTitle {
+    pub(super) fn set_library_navigation_visible(&self, visible: bool) {
+        let name = if visible {
+            LIBRARY_TITLE_SWITCHER
+        } else {
+            LIBRARY_TITLE_SOURCE
+        };
+        self.root.set_visible_child_name(name);
+    }
 }
 
 pub(super) fn build(header: &adw::HeaderBar, content: &impl IsA<gtk4::Widget>) -> LibraryChrome {
@@ -41,6 +60,26 @@ pub(super) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
 pub(super) fn build_maintenance_actions() -> LibraryMaintenanceActions {
     let scan = action_button("folder-open-symbolic", &strings::text(strings::SCAN_FOLDER));
     LibraryMaintenanceActions { scan }
+}
+
+pub(super) fn build_library_title(
+    header: &adw::HeaderBar,
+    source_title: &adw::WindowTitle,
+    views: &gtk4::Stack,
+) -> LibraryTitle {
+    header.set_title_widget(gtk4::Widget::NONE);
+    let switcher = gtk4::StackSwitcher::builder().stack(views).build();
+    switcher.add_css_class("reprise-surface");
+    let root = gtk4::Stack::new();
+    root.add_named(source_title, Some(LIBRARY_TITLE_SOURCE));
+    root.add_named(&switcher, Some(LIBRARY_TITLE_SWITCHER));
+    root.set_visible_child_name(LIBRARY_TITLE_SWITCHER);
+    header.set_title_widget(Some(&root));
+    LibraryTitle {
+        root,
+        #[cfg(test)]
+        switcher,
+    }
 }
 
 #[cfg(test)]
@@ -97,6 +136,34 @@ mod tests {
         let actions = build_maintenance_actions();
 
         assert!(!actions.scan.is_ancestor(&header));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn library_view_title_switches_between_source_title_and_view_switcher() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let title = adw::WindowTitle::new("Music", "");
+        let views = gtk4::Stack::new();
+        views.add_titled(&gtk4::Label::new(Some("Tracks")), Some("tracks"), "Tracks");
+
+        let header = adw::HeaderBar::new();
+        header.set_title_widget(Some(&title));
+        let library_title = build_library_title(&header, &title, &views);
+
+        assert_eq!(library_title.switcher.stack(), Some(views.clone()));
+        assert_eq!(title.parent(), Some(library_title.root.clone().upcast()));
+        assert!(library_title.root.is_ancestor(&header));
+        assert_eq!(
+            library_title.root.visible_child_name().as_deref(),
+            Some(LIBRARY_TITLE_SWITCHER)
+        );
+        library_title.set_library_navigation_visible(false);
+        assert_eq!(
+            library_title.root.visible_child_name().as_deref(),
+            Some(LIBRARY_TITLE_SOURCE)
+        );
     }
 
     #[test]
