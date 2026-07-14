@@ -45,23 +45,31 @@ fn authorization_decision(
 }
 
 pub(super) fn status_text(status: &ConnectionStatus) -> String {
-    match status {
-        ConnectionStatus::Disabled => strings::text(strings::LISTENBRAINZ_NOT_CONNECTED),
-        ConnectionStatus::Connecting => strings::text(strings::LISTENBRAINZ_CONNECTING),
+    let (base, submitted, pending) = match status {
+        ConnectionStatus::Disabled => return strings::text(strings::LISTENBRAINZ_NOT_CONNECTED),
+        ConnectionStatus::Connecting => return strings::text(strings::LISTENBRAINZ_CONNECTING),
         ConnectionStatus::Connected {
             user_name,
-            pending: 0,
-        } => strings::lastfm_connected(user_name),
-        ConnectionStatus::Connected { user_name, pending } => {
-            strings::lastfm_pending(&strings::lastfm_connected(user_name), *pending)
+            pending,
+            submitted,
+        } => (strings::lastfm_connected(user_name), *submitted, *pending),
+        ConnectionStatus::Offline { pending, submitted } => (
+            strings::text(strings::LISTENBRAINZ_OFFLINE),
+            *submitted,
+            *pending,
+        ),
+        ConnectionStatus::Unauthorized => {
+            return strings::text(strings::LASTFM_CREDENTIALS_REJECTED)
         }
-        ConnectionStatus::Offline { pending } => {
-            strings::lastfm_pending(&strings::text(strings::LISTENBRAINZ_OFFLINE), *pending)
-        }
-        ConnectionStatus::Unauthorized => strings::text(strings::LASTFM_CREDENTIALS_REJECTED),
-        ConnectionStatus::Error { pending } => {
-            strings::lastfm_pending(&strings::text(strings::LASTFM_CONNECTION_ERROR), *pending)
-        }
+        ConnectionStatus::Error { pending, submitted } => (
+            strings::text(strings::LASTFM_CONNECTION_ERROR),
+            *submitted,
+            *pending,
+        ),
+    };
+    match strings::scrobble_counts(submitted, pending) {
+        Some(counts) => format!("{base} · {counts}"),
+        None => base,
     }
 }
 
@@ -220,6 +228,7 @@ pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRun
                 tracing::warn!(%error, "could not load Last.fm credentials from keyring");
                 runtime.report_status(&ConnectionStatus::Error {
                     pending: pending_count(&conn),
+                    submitted: 0,
                 });
             }
         }
@@ -668,10 +677,11 @@ mod tests {
     }
 
     #[test]
-    fn connected_status_includes_lastfm_pending_count() {
+    fn connected_status_includes_lastfm_queued_count() {
         let text = status_text(&ConnectionStatus::Connected {
             user_name: "listener".to_string(),
             pending: 2,
+            submitted: 0,
         });
         assert!(text.contains("listener"));
         assert!(text.contains('2'));

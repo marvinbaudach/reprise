@@ -21,10 +21,20 @@ const MAX_BACKOFF: Duration = Duration::from_secs(5 * 60);
 pub(super) enum ConnectionStatus {
     Disabled,
     Connecting,
-    Connected { user_name: String, pending: usize },
-    Offline { pending: usize },
+    Connected {
+        user_name: String,
+        pending: usize,
+        submitted: usize,
+    },
+    Offline {
+        pending: usize,
+        submitted: usize,
+    },
     Unauthorized,
-    Error { pending: usize },
+    Error {
+        pending: usize,
+        submitted: usize,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -294,6 +304,13 @@ fn pending_or_zero(conn: &Connection, provider: ScrobbleProvider, service: &str)
     })
 }
 
+fn submitted_or_zero(conn: &Connection, provider: ScrobbleProvider, service: &str) -> usize {
+    scrobbling::submitted_count_for(conn, provider).unwrap_or_else(|error| {
+        tracing::warn!(%error, service, "could not count submitted scrobbles");
+        0
+    })
+}
+
 fn run_worker<T: ScrobblerTransport + ?Sized>(
     config: WorkerConfig<'_>,
     receiver: &mpsc::Receiver<WorkerCommand>,
@@ -317,7 +334,10 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
             publish(
                 status_sender,
                 generation,
-                ConnectionStatus::Error { pending: 0 },
+                ConnectionStatus::Error {
+                    pending: 0,
+                    submitted: 0,
+                },
             );
             return;
         }
@@ -349,6 +369,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                         generation,
                         ConnectionStatus::Error {
                             pending: pending_or_zero(&conn, provider, service),
+                            submitted: submitted_or_zero(&conn, provider, service),
                         },
                     );
                     return;
@@ -360,6 +381,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                         generation,
                         ConnectionStatus::Offline {
                             pending: pending_or_zero(&conn, provider, service),
+                            submitted: submitted_or_zero(&conn, provider, service),
                         },
                     );
                     if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
@@ -412,6 +434,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                     ConnectionStatus::Connected {
                         user_name: user_name.clone().unwrap_or_default(),
                         pending,
+                        submitted: submitted_or_zero(&conn, provider, service),
                     },
                 );
             }
@@ -439,6 +462,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                     generation,
                     ConnectionStatus::Error {
                         pending: pending_or_zero(&conn, provider, service),
+                        submitted: submitted_or_zero(&conn, provider, service),
                     },
                 );
                 return;
@@ -450,6 +474,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                     generation,
                     ConnectionStatus::Error {
                         pending: pending_or_zero(&conn, provider, service),
+                        submitted: submitted_or_zero(&conn, provider, service),
                     },
                 );
                 return;
@@ -504,6 +529,7 @@ fn handle_transport_error(
                 generation,
                 ConnectionStatus::Error {
                     pending: pending_or_zero(conn, provider, service),
+                    submitted: submitted_or_zero(conn, provider, service),
                 },
             );
             false
@@ -517,6 +543,7 @@ fn handle_transport_error(
                 generation,
                 ConnectionStatus::Offline {
                     pending: pending_or_zero(conn, provider, service),
+                    submitted: submitted_or_zero(conn, provider, service),
                 },
             );
             true
@@ -722,6 +749,7 @@ mod tests {
                 == (ConnectionStatus::Connected {
                     user_name: "tester".to_string(),
                     pending: 0,
+                    submitted: 2,
                 })
             {
                 break;
