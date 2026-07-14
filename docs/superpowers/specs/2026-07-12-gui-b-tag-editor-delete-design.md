@@ -30,8 +30,11 @@ Bearbeitbare klassische Metadaten:
 - Track number
 - Genre
 
-Bewertungen, Wiedergabezähler, Cover, MusicBrainz-IDs und ReplayGain-Tags bleiben
-unangetastet. Änderungen an Musikdateien geschehen ausschließlich nach „Apply“.
+Zusätzlich ist die Reprise-Bewertung von 0 bis 5 Sternen im selben Dialog
+bearbeitbar. Sie bleibt bewusst ein app-eigener Datenbankwert und wird nicht als
+Dateitag geschrieben. Wiedergabezähler, Cover, MusicBrainz-IDs und ReplayGain-Tags
+bleiben unangetastet. Änderungen an Musikdateien geschehen ausschließlich nach
+„Apply“.
 
 ## Architektur
 
@@ -58,6 +61,11 @@ pub struct TagPatch {
 `MixedValue<T>` beschreibt die Auswahlansicht (`Uniform(T)` oder `Mixed`). Die
 Zusammenfassung kommt aus den DB-Zeilen der ausgewählten IDs; Dateizugriffe sind
 dafür nicht nötig.
+
+Ein äußerer `TrackEditPatch` kombiniert den unveränderten Datei-`TagPatch` mit
+`rating: Option<i32>`. Dadurch kann ein Rating-only Batch ohne Dateizugriff laufen;
+bei kombinierten Änderungen werden zuerst die Dateitags versöhnt und anschließend
+das Rating nur für die erfolgreichen Track-IDs gespeichert.
 
 ### Core: Datei schreiben und DB synchronisieren
 
@@ -89,10 +97,13 @@ DB-Remove-Batch. Es gibt keinen permanenten Delete-Fallback.
 
 ### GTK-Frontend
 
-Ein `AdwDialog` zeigt sieben `AdwEntryRow`s. Bei gemischten Werten bleibt das
-Eingabefeld leer und der Hinweis lautet „(multiple values)“. Dirty-Flags werden
-erst nach der Initialisierung verbunden. Der Apply-Button ist ohne Änderung
-deaktiviert.
+Ein `AdwDialog` zeigt sieben `AdwEntryRow`s und eine native Rating-Auswahl mit
+„unrated“ sowie 1 bis 5 Sternen. Bei gemischten Werten bleibt das jeweilige
+Eingabefeld leer beziehungsweise die Rating-Auswahl auf „(multiple values)“.
+Dirty-Flags werden erst nach der Initialisierung verbunden. Der Apply-Button ist
+ohne Änderung deaktiviert. Der native Schließen-Button des Dialogfensters ist der
+einzige Abbruch-Button im Header; ein zusätzlicher „Cancel“-Button wird nicht
+angezeigt. Der Inhalt scrollt auf kleinen Fenstern.
 
 Das Track-Kontextmenü erhält:
 
@@ -129,7 +140,9 @@ Papierkorb wandern. Nach Erfolg werden Liste, Sidebar und Queue aktualisiert.
 - Mixed/Uniform-Zusammenfassung und Patch-Semantik.
 - Einzelfile: nur geänderte Felder; unberührte Felder und Cover/Custom Item bleiben.
 - Zahl setzen/löschen; leerer String löscht.
-- Batch-Teilerfolg; DB folgt nur erfolgreichen Writes; Rating/Playcount bleiben.
+- Tag-only-Batch-Teilerfolg; DB folgt nur erfolgreichen Writes; Rating/Playcount bleiben dabei erhalten.
+- Rating-only verändert keine Dateibytes; kombinierte Tag-/Rating-Änderungen
+  versöhnen beide Werte; gemischte Ratings bleiben ohne Nutzeränderung erhalten.
 - Entfernen kompaktiert Playlistpositionen und gibt exakt entfernte IDs zurück.
 - Trash injiziert: nur Erfolge werden DB-seitig entfernt; kein echter Trash im Test.
 - GTK-Smokes: Edit-Aktion ohne Änderung schreibt nichts; DB-only Remove lässt
@@ -138,9 +151,8 @@ Papierkorb wandern. Nach Erfolg werden Liste, Sidebar und Queue aktualisiert.
 
 ## Explizit nicht in GUI-B
 
-- Rating in Dateitags schreiben.
+- Rating in Dateitags schreiben; Bewertungen bleiben app-eigene DB-Werte.
 - Cover austauschen oder entfernen.
 - Undo über App-Neustarts hinweg.
 - Permanentes Löschen ohne Papierkorb.
 - Automatische Tag-Korrektur oder Online-Metadaten.
-

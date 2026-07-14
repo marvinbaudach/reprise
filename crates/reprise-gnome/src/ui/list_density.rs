@@ -10,11 +10,13 @@
 use gtk4::prelude::*;
 use reprise_core::library::settings::ListDensity;
 
-const DENSITY_CSS: &str = ".reprise-track-cell.reprise-density-comfortable { min-height: 32px; }\n\
-     .reprise-track-cell.reprise-density-standard { min-height: 24px; }\n\
+const DENSITY_CSS: &str = ".reprise-track-cell.reprise-density-comfortable { min-height: 36px; }\n\
+     .reprise-track-cell.reprise-density-standard { min-height: 28px; }\n\
      .reprise-track-cell.reprise-density-compact { min-height: 12px; font-size: 10px; }\n\
      .reprise-rating-star { min-height: 0; border: 0; padding: 0; margin: 0; }\n\
-     .reprise-rating-star.reprise-density-compact { font-size: 10px; }";
+     .reprise-rating-compact-button > button { min-height: 0; border: 0; padding: 0; margin: 0; }\n\
+     .reprise-rating-star.reprise-density-compact,\n\
+     .reprise-rating-compact-button.reprise-density-compact > button { font-size: 10px; }";
 
 fn density_class(density: ListDensity) -> &'static str {
     match density {

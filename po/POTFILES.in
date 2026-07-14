@@ -1,3 +1,9 @@
 crates/reprise-gnome/src/ui/strings.rs
 crates/reprise-gnome/src/ui/strings_scrobbling.rs
+crates/reprise-gnome/src/ui/device_sync_strings.rs
+crates/reprise-gnome/src/ui/sidebar_issue_strings.rs
+crates/reprise-gnome/src/ui/preference_visual_strings.rs
+crates/reprise-gnome/src/ui/browse_filter_strings.rs
+crates/reprise-gnome/src/ui/lyrics_strings.rs
+crates/reprise-gnome/src/ui/track_list_queue_menu.rs
 crates/reprise-gnome/src/ui/window_decoration_strings.rs

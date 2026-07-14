@@ -3,6 +3,10 @@
 //! former single-file `queries.rs` (Refactoring & Extensibility Task 1) — a
 //! pure move, no behavior change.
 
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+use crate::device_sync::SyncTrack;
 use crate::library::playlists;
 use rusqlite::{Connection, OptionalExtension};
 
@@ -35,6 +39,60 @@ pub fn query_track_summary(
         },
     )
     .optional()
+}
+
+/// Resolves a drag payload into copy-ready tracks without trusting stale UI
+/// metadata. Input order is preserved, repeated ids are emitted once, and
+/// rows that are unknown, marked missing, or no longer regular local files
+/// are omitted. The file size is read at enqueue time so progress totals
+/// describe the bytes that will actually be copied.
+pub fn query_sync_tracks(
+    conn: &Connection,
+    ids: &[i64],
+) -> Result<Vec<SyncTrack>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT path,title,artist,duration_ms FROM tracks WHERE id = ?1 AND missing = 0",
+    )?;
+    let mut seen = HashSet::new();
+    let mut tracks = Vec::with_capacity(ids.len());
+    for &id in ids {
+        if !seen.insert(id) {
+            continue;
+        }
+        let row = statement
+            .query_row(rusqlite::params![id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .optional()?;
+        let Some((path, title, artist, duration_ms)) = row else {
+            continue;
+        };
+        let source_path = PathBuf::from(path);
+        let Ok(metadata) = source_path.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let Some(original_name) = source_path.file_name() else {
+            continue;
+        };
+        tracks.push(SyncTrack {
+            id,
+            source_path: source_path.clone(),
+            original_name: original_name.to_string_lossy().into_owned(),
+            title,
+            artist,
+            duration_ms,
+            size_bytes: metadata.len(),
+        });
+    }
+    Ok(tracks)
 }
 
 /// Marks track `track_id` as missing (Stage 2 Task 5: a physically deleted
@@ -128,6 +186,23 @@ pub fn remove_missing_tracks(
     remove_tracks_impl(conn, ids, true)
 }
 
+/// Removes every row currently marked missing from the library database.
+/// This is the bulk counterpart to [`remove_missing_tracks`]: it never
+/// touches media files, preserves live rows, compacts affected playlists in
+/// the same transaction, and returns the exact ids the caller must purge
+/// from its playback queue. The stable id order keeps callback behavior and
+/// tests deterministic.
+pub fn remove_all_missing_tracks(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Error> {
+    let ids = {
+        let mut statement = conn.prepare("SELECT id FROM tracks WHERE missing = 1 ORDER BY id")?;
+        let ids = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<i64>, _>>()?;
+        ids
+    };
+    remove_missing_tracks(conn, &ids)
+}
+
 /// Explicit, DATABASE-ONLY removal for live or missing tracks. This never
 /// touches a media file. Like [`remove_missing_tracks`], it deletes and
 /// compacts every affected playlist in one transaction and returns the
@@ -213,6 +288,13 @@ pub fn delete_import_error(conn: &Connection, id: i64) -> Result<(), rusqlite::E
         rusqlite::params![id],
     )?;
     Ok(())
+}
+
+/// Dismisses every recorded import failure and returns the number cleared.
+/// The diagnostic table is independent of `tracks`; no library row or media
+/// file is touched.
+pub fn delete_all_import_errors(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    conn.execute("DELETE FROM import_errors", [])
 }
 
 /// Looks up a track's id by its exact, parameterized `path` (Stage 3 Task 7:

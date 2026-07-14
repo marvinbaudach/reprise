@@ -56,6 +56,7 @@ use crate::ui::strings;
 use crate::ui::tag_edit_flow;
 use crate::ui::track_actions;
 use crate::ui::track_list::{reload, show_toast, Shared};
+use crate::ui::track_list_queue_menu;
 use reprise_core::library::playlists;
 use reprise_core::view_source::ViewSource;
 
@@ -208,9 +209,12 @@ pub(super) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
         Some(&strings::text(strings::CONTEXT_MENU_PLAY)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_PLAY}")),
     );
-    primary.append(
-        Some(&strings::text(strings::CONTEXT_MENU_ADD_TO_QUEUE)),
-        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_ADD_TO_QUEUE}")),
+    track_list_queue_menu::append_queue_primary_action(
+        &primary,
+        shared,
+        ACTION_GROUP_NAME,
+        ACTION_ADD_TO_QUEUE,
+        &strings::text(strings::CONTEXT_MENU_ADD_TO_QUEUE),
     );
     primary.append(
         Some(&strings::text(strings::EDIT_TAGS)),
@@ -304,10 +308,11 @@ pub(super) fn wire_context_menu_actions(column_view: &gtk4::ColumnView, shared: 
         let shared = shared.clone();
         queue_action.connect_activate(move |_, _| {
             let ids = current_selection_ids(&shared);
-            handle_add_to_queue(&shared, &ids);
+            track_list_queue_menu::add_selected(&shared, &ids);
         });
     }
     action_group.add_action(&queue_action);
+    track_list_queue_menu::add_remove_action(&action_group, shared);
     tag_edit_flow::add_action(&action_group, shared);
     delete_tracks::add_actions(&action_group, column_view, shared);
 
@@ -406,6 +411,9 @@ fn show_context_menu(
 /// "Play" action handler (`ACTION_PLAY`) — see `ui::track_actions::
 /// play_selected_ids`'s doc comment for the semantics.
 fn handle_play(shared: &Rc<Shared>, ids: &[i64]) {
+    if track_list_queue_menu::play_selected_if_queue(shared) {
+        return;
+    }
     let Some((ids, start_index)) = track_actions::play_selected_ids(ids) else {
         tracing::debug!("context menu: play requested with nothing selected; ignoring");
         return;
@@ -417,27 +425,6 @@ fn handle_play(shared: &Rc<Shared>, ids: &[i64]) {
         None => tracing::warn!(
             count,
             "context menu: play action fired but no on_play_selected callback is wired"
-        ),
-    }
-}
-
-/// "Add to queue" action handler (`ACTION_ADD_TO_QUEUE`).
-fn handle_add_to_queue(shared: &Rc<Shared>, ids: &[i64]) {
-    let Some(ids) = track_actions::queue_selected_ids(ids) else {
-        tracing::debug!("context menu: add-to-queue requested with nothing selected; ignoring");
-        return;
-    };
-    let count = ids.len();
-    let callback = shared.on_queue_selected.borrow().clone();
-    match callback {
-        Some(callback) => {
-            callback(ids);
-            tracing::info!(count, "context menu: tracks added to queue");
-            show_toast(shared, &strings::tracks_added_to_queue_toast(count));
-        }
-        None => tracing::warn!(
-            count,
-            "context menu: add-to-queue action fired but no on_queue_selected callback is wired"
         ),
     }
 }
@@ -730,6 +717,10 @@ fn dispatch_smoke_menu_action(shared: &Rc<Shared>, action: &str) {
         handle_remove_from_playlist(shared, &positions);
         return;
     }
+    if action == track_list_queue_menu::ACTION_REMOVE_FROM_QUEUE {
+        track_list_queue_menu::remove_selected(shared);
+        return;
+    }
 
     let ids = current_selection_ids(shared);
 
@@ -739,7 +730,7 @@ fn dispatch_smoke_menu_action(shared: &Rc<Shared>, action: &str) {
     }
 
     if action == "queue" {
-        handle_add_to_queue(shared, &ids);
+        track_list_queue_menu::add_selected(shared, &ids);
         return;
     }
 

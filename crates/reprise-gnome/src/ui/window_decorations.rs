@@ -7,6 +7,16 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::library::settings::WindowDecorationMode;
 
+const SERVER_DECORATION_CLASS: &str = "ssd";
+
+fn client_controls_visible(mode: WindowDecorationMode, desktop_decorated: bool) -> bool {
+    mode == WindowDecorationMode::Client || !desktop_decorated
+}
+
+fn desktop_decorated(window: &adw::ApplicationWindow) -> bool {
+    window.has_css_class(SERVER_DECORATION_CLASS)
+}
+
 pub(super) struct WindowDecorations {
     window: adw::ApplicationWindow,
     headers: Vec<adw::HeaderBar>,
@@ -35,25 +45,25 @@ impl WindowDecorations {
         window.connect_realize(move |_| {
             if let Some(decorations) = weak.upgrade() {
                 decorations.apply_surface_request();
+                decorations.sync_controls();
+            }
+        });
+        let weak = Rc::downgrade(&decorations);
+        window.connect_css_classes_notify(move |_| {
+            if let Some(decorations) = weak.upgrade() {
+                decorations.sync_controls();
             }
         });
         decorations
     }
 
     pub(super) fn apply(&self, mode: WindowDecorationMode) {
-        let client_side = mode == WindowDecorationMode::Client;
         // Keep GtkWindow's own CSD resize frame enabled. The lower-level
         // GdkToplevel hint below selects who should draw the outer chrome.
         self.window.set_decorated(true);
-        for header in &self.headers {
-            header.set_show_start_title_buttons(client_side);
-            header.set_show_end_title_buttons(client_side);
-        }
-        for controls in &self.controls {
-            controls.set_visible(client_side);
-        }
         self.mode.set(mode);
         self.apply_surface_request();
+        self.sync_controls();
         tracing::info!(?mode, "window decoration mode applied");
     }
 
@@ -70,6 +80,18 @@ impl WindowDecorations {
             return;
         };
         toplevel.set_decorated(self.mode.get() == WindowDecorationMode::System);
+    }
+
+    fn sync_controls(&self) {
+        let desktop_decorated = desktop_decorated(&self.window);
+        let visible = client_controls_visible(self.mode.get(), desktop_decorated);
+        for header in &self.headers {
+            header.set_show_start_title_buttons(visible);
+            header.set_show_end_title_buttons(visible);
+        }
+        for controls in &self.controls {
+            controls.set_visible(visible);
+        }
     }
 }
 
@@ -98,6 +120,14 @@ mod tests {
 
     use super::*;
     use crate::ui::compact_player_layouts;
+
+    #[test]
+    fn system_mode_keeps_client_controls_until_desktop_decorations_are_active() {
+        assert!(client_controls_visible(WindowDecorationMode::Client, false));
+        assert!(client_controls_visible(WindowDecorationMode::Client, true));
+        assert!(client_controls_visible(WindowDecorationMode::System, false));
+        assert!(!client_controls_visible(WindowDecorationMode::System, true));
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
@@ -139,14 +169,42 @@ mod tests {
             .filter_map(|widget| widget.downcast::<gtk4::WindowControls>().ok())
             .any(|controls| controls.side() == gtk4::PackType::End && !controls.is_empty()));
         assert!(all_compact_headers_match(compact_root.upcast_ref(), true));
-        assert!(all_window_controls_match(compact_root.upcast_ref(), true));
+        assert!(decorations
+            .controls
+            .iter()
+            .all(gtk4::prelude::WidgetExt::is_visible));
 
         decorations.apply(WindowDecorationMode::System);
         assert!(surface_decorated(&window));
+        window.remove_css_class(SERVER_DECORATION_CLASS);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(library_header.shows_start_title_buttons());
+        assert!(library_header.shows_end_title_buttons());
+        assert!(all_compact_headers_match(compact_root.upcast_ref(), true));
+        assert!(decorations
+            .controls
+            .iter()
+            .all(gtk4::prelude::WidgetExt::is_visible));
+
+        window.add_css_class(SERVER_DECORATION_CLASS);
+        while gtk4::glib::MainContext::default().iteration(false) {}
         assert!(!library_header.shows_start_title_buttons());
         assert!(!library_header.shows_end_title_buttons());
         assert!(all_compact_headers_match(compact_root.upcast_ref(), false));
-        assert!(all_window_controls_match(compact_root.upcast_ref(), false));
+        assert!(decorations
+            .controls
+            .iter()
+            .all(|controls| !controls.is_visible()));
+
+        window.remove_css_class(SERVER_DECORATION_CLASS);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert!(library_header.shows_start_title_buttons());
+        assert!(library_header.shows_end_title_buttons());
+        assert!(all_compact_headers_match(compact_root.upcast_ref(), true));
+        assert!(decorations
+            .controls
+            .iter()
+            .all(gtk4::prelude::WidgetExt::is_visible));
         window.close();
     }
 
@@ -168,16 +226,6 @@ mod tests {
             header.shows_start_title_buttons() == expected
                 && header.shows_end_title_buttons() == expected
         })
-    }
-
-    fn all_window_controls_match(root: &gtk4::Widget, expected: bool) -> bool {
-        let controls = descendants(root)
-            .filter_map(|widget| widget.downcast::<gtk4::WindowControls>().ok())
-            .collect::<Vec<_>>();
-        assert_eq!(controls.len(), 1);
-        controls
-            .into_iter()
-            .all(|controls| controls.is_visible() == expected)
     }
 
     fn descendants(root: &gtk4::Widget) -> impl Iterator<Item = gtk4::Widget> {

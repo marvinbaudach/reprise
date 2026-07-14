@@ -8,6 +8,27 @@
 use super::*;
 use crate::library::playlists;
 
+fn seeded_sync_tracks() -> (tempfile::TempDir, Connection) {
+    let temp = tempfile::tempdir().unwrap();
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    for (id, name, title, artist, duration, bytes) in [
+        (1, "one.flac", "One", "First", 11_000, 11_usize),
+        (2, "two.mp3", "Two", "Second", 22_000, 22),
+        (3, "three.ogg", "Three", "Third", 33_000, 33),
+    ] {
+        let path = temp.path().join(name);
+        std::fs::write(&path, vec![id as u8; bytes]).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id,path,title,artist,duration_ms,added_at) \
+             VALUES (?1,?2,?3,?4,?5,0)",
+            rusqlite::params![id, path.to_string_lossy(), title, artist, duration],
+        )
+        .unwrap();
+    }
+    (temp, conn)
+}
+
 fn seeded_conn_with_tracks(count: i64) -> Connection {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
@@ -95,6 +116,38 @@ fn delete_import_error_removes_only_the_given_row() {
     let remaining = query_import_errors(&conn).unwrap();
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].path, "/x/b.flac");
+}
+
+#[test]
+fn delete_all_import_errors_clears_only_recorded_failures() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/a.flac', 'bad tag', 100)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/b.flac', 'io error', 200)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/live.flac', 'Live', '', 0)",
+        [],
+    )
+    .unwrap();
+
+    assert_eq!(delete_all_import_errors(&conn).unwrap(), 2);
+    assert_eq!(query_import_error_count(&conn).unwrap(), 0);
+    assert_eq!(delete_all_import_errors(&conn).unwrap(), 0);
+    let track_count: i64 = conn
+        .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        track_count, 1,
+        "clearing diagnostics must not delete tracks"
+    );
 }
 
 #[test]
@@ -278,6 +331,39 @@ fn remove_missing_tracks_empty_slice_is_a_no_op() {
 }
 
 #[test]
+fn remove_all_missing_tracks_preserves_live_rows_and_compacts_playlists() {
+    let mut conn = seeded_conn_with_tracks(4);
+    let playlist_id = playlists::create(&conn, "Cleanup").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4]).unwrap();
+    conn.execute("UPDATE tracks SET missing = 1 WHERE id IN (2, 3)", [])
+        .unwrap();
+
+    let removed = remove_all_missing_tracks(&mut conn).unwrap();
+
+    assert_eq!(removed, vec![2, 3]);
+    let tracks: Vec<(i64, i64)> = conn
+        .prepare("SELECT id, missing FROM tracks ORDER BY id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(tracks, vec![(1, 0), (4, 0)]);
+    let playlist_rows: Vec<(i64, i64)> = conn
+        .prepare(
+            "SELECT track_id, position FROM playlist_tracks \
+             WHERE playlist_id = ?1 ORDER BY position",
+        )
+        .unwrap()
+        .query_map([playlist_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(playlist_rows, vec![(1, 0), (4, 1)]);
+    assert!(remove_all_missing_tracks(&mut conn).unwrap().is_empty());
+}
+
+#[test]
 fn remove_tracks_deletes_live_rows_deduplicates_input_and_compacts_playlists() {
     let mut conn = seeded_conn_with_tracks(5);
     let playlist_id = playlists::create(&conn, "General remove").unwrap();
@@ -458,4 +544,41 @@ fn track_id_for_path_does_not_substring_match() {
     let conn = seeded_conn_with_tracks(3);
     let id = track_id_for_path(&conn, "/x/2").unwrap();
     assert_eq!(id, None);
+}
+
+// -- device synchronization ---------------------------------------------
+
+#[test]
+fn sync_tracks_preserve_input_order_and_deduplicate_ids() {
+    let (_temp, conn) = seeded_sync_tracks();
+    let tracks = query_sync_tracks(&conn, &[3, 1, 3, 2, 1]).unwrap();
+    assert_eq!(
+        tracks.iter().map(|track| track.id).collect::<Vec<_>>(),
+        [3, 1, 2]
+    );
+}
+
+#[test]
+fn sync_tracks_exclude_unknown_missing_and_unavailable_paths() {
+    let (temp, conn) = seeded_sync_tracks();
+    conn.execute("UPDATE tracks SET missing = 1 WHERE id = 2", [])
+        .unwrap();
+    std::fs::remove_file(temp.path().join("three.ogg")).unwrap();
+
+    let tracks = query_sync_tracks(&conn, &[999, 1, 2, 3]).unwrap();
+    assert_eq!(tracks.iter().map(|track| track.id).collect::<Vec<_>>(), [1]);
+}
+
+#[test]
+fn sync_tracks_include_copy_metadata_and_actual_file_size() {
+    let (temp, conn) = seeded_sync_tracks();
+    let tracks = query_sync_tracks(&conn, &[2]).unwrap();
+    assert_eq!(tracks.len(), 1);
+    let track = &tracks[0];
+    assert_eq!(track.source_path, temp.path().join("two.mp3"));
+    assert_eq!(track.original_name, "two.mp3");
+    assert_eq!(track.title, "Two");
+    assert_eq!(track.artist, "Second");
+    assert_eq!(track.duration_ms, 22_000);
+    assert_eq!(track.size_bytes, 22);
 }

@@ -33,8 +33,8 @@ const RESPONSE_CREATE: &str = "create";
 /// behavior there. The backend accepts empty/whitespace names
 /// (`playlists::create`'s doc comment: "backend is dumb; UI validates") —
 /// the enable-on-non-blank wiring below is that UI-side validation.
-pub(super) fn prompt_name(
-    parent: &adw::ApplicationWindow,
+pub(super) fn prompt_name<W: IsA<gtk4::Widget>>(
+    parent: &W,
     heading: &str,
     placeholder: &str,
     confirm_label: &str,

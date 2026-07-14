@@ -21,21 +21,26 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge agent-d UI follow-ups into main
+SINCE:    2026-07-14 06:12 CEST
 ```
 
-_As of 2026-07-14: free after inlining scrobble service configuration controls._
+_As of 2026-07-14: Codex is merging the reviewed agent-d UI follow-ups into main._
+
+## Parallel feature work
+
+- None.
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Inline scrobble-service configuration** (`535d7bc`) — ListenBrainz and
-  Last.fm now keep conditional Configure actions and live status in their provider row.
+- **Completed plan:** `docs/superpowers/plans/2026-07-14-sidebar-issue-cleanup.md` (1 task).
+- **Last completed:** **Sidebar issue-source cleanup** (`061d347`) — Import errors and
+  Missing files now expose bulk cleanup in their row context menus; missing cleanup is
+  confirmed, database-only, queue-aware, and empty issue sources fall back to Music.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `535d7bc`; this QA/coordination close-out follows it.
+- **Main implementation:** `061d347`.
 
 ## Done so far (compact)
 
@@ -45,21 +50,35 @@ _As of 2026-07-14: free after inlining scrobble service configuration controls._
   `cargo tree`); platform seam; settings façade; module registry.
 - ✅ **GUI-A**: album covers in list + player bar, Now-Playing full view, cover in the track-change
   notification. Whole-branch review: READY TO MERGE.
-- ✅ **GUI-A2**: opt-in online album-cover download via MusicBrainz/Cover Art Archive; default OFF.
+- ✅ **GUI-A2**: automatic missing-cover retrieval via MusicBrainz/Cover Art Archive; the privacy
+  copy discloses network lookup and no stale module, menu, onboarding, or Preferences toggle remains.
 - ✅ **GUI-B**: tag editor with multi-select batch edit + confirmed DB-only delete/safe trash.
+- ✅ **Edit-tags ratings**: the same mixed-safe batch editor supports unrated and 1–5 stars;
+  untouched mixed values remain unchanged, rating-only edits never write audio-file tags, and its
+  header relies on the native close control instead of duplicating it with a Cancel button.
 - ✅ **GUI-C**: browse bar + read-only Rhythmbox column import.
 - ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
   whole-row drag ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
   first-run offer that remains default off.
+- ✅ **Sidebar issue cleanup**: transient Import errors and Missing files rows provide one
+  GNOME context action each; diagnostics clear directly, while missing entries require a
+  database-only destructive confirmation, compact playlists, purge exact queue IDs, and
+  remove the empty Issues group with a Music fallback.
+- ✅ **Preferences column-layout navigation**: Layout opens that editor as a native detail page in
+  the existing Preferences window with Back navigation instead of an obscured child dialog.
+- ✅ **Whole-row column-layout drag restoration**: movable editor rows use capture-phase drag
+  recognition across labels, empty space and embedded controls, while short Switch and Up/Down
+  clicks keep their existing behavior.
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
-- ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent theme,
-  layout, library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
+- ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent layout,
+  library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
   live controls; isolated runtime persistence and full release QA green.
 - ✅ **Selectable compact-player layouts**: persistent Bar, Cover, Pill and Card roots share one
   controller, cover pipeline, queue and accessible menu; visible buttons, right-click, Shift+F10,
-  Ctrl+M, playing-state continuity and no-autoplay restart are covered by isolated real-input QA.
+  Ctrl+M, playing-state continuity and no-autoplay restart are covered by isolated real-input QA;
+  Library enters through the main menu or shortcut without a duplicate header button.
 - ✅ **ListenBrainz scrobbling**: default-off live integration validates a securely keyring-stored
   token, reports playing-now, submits threshold-completed listens, persists a bounded FIFO offline,
   retries with cancellation/generation guards, and exposes translated connect/status/disconnect UI.
@@ -70,15 +89,29 @@ _As of 2026-07-14: free after inlining scrobble service configuration controls._
   selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
   filters cached Upcoming/New album and EP cards, rejects stale selection responses, pins at
   ordinary desktop widths, and exposes visible indeterminate request progress.
+- ✅ **Synchronized played-track lyrics**: the Information panel's top Lyrics tab retrieves only
+  title, artist, album and duration after successful playback, caches LRCLIB results locally, and
+  highlights plus centers timed lines from the existing position stream with generation-safe
+  track changes, selectable plain text and instrumental/offline states.
+- ✅ **Android USB/MTP synchronization**: Settings shows mounted devices, recognized music and
+  Reprise playlists; dropping library tracks enqueues managed copies with file and overall progress,
+  cancellation, disconnect-safe resume for stable devices, strict same-device FIFO execution, and
+  a queue-aware free-space preflight with an explicit warning before oversized work is accepted.
 - ✅ **Full-width Library player bar**: the global status/player block now spans sidebar, library,
   and Information panel at Top or Bottom; Track, centered Transport+Seek, and secondary control
   zones retain one playback controller across immediate Library/Compact switching.
 - ✅ **Design-aligned header and sidebar**: one flat full-window header keeps the current source
   title strictly centered with compact accessible actions and Search on the right; the narrower
   navigation adds stable symbolic icons, aligned counts and mockup-derived section spacing while
-  preserving adaptive navigation, DnD, menus and Library/Compact restoration.
+  preserving adaptive navigation, DnD, menus and Library/Compact restoration. Scan maintenance
+  stays in Preferences instead of duplicating a header action. Problem sources use a translated
+  muted Issues heading rather than a separator that can resemble selection.
+- ✅ **Compact Library statistics hierarchy**: count and duration sit as a click-through
+  bottom-right track-content overlay, while the window header remains above the full-width player
+  bar even when its saved position is Top.
 - ✅ **Window decoration mode**: Appearance defaults to the flat Chromium-like CSD header and can
   live-switch to a persisted system-title-bar request across Library plus Bar, Cover, Pill and Card;
+  its controls remain as a safe fallback until GTK confirms SSD, then hide to prevent duplicates;
   nested Information chrome never duplicates the real window controls.
 - ✅ **Post-release hardening**: Equalizer slider changes no longer rebuild/seek the pipeline;
   effect failures preserve playback and restore truthful controls; notification cover work is
@@ -91,8 +124,8 @@ _As of 2026-07-14: free after inlining scrobble service configuration controls._
   main-window row; successful scans restart it when enabled so first-run opt-in covers new tracks.
 - ✅ **MPRIS cover metadata**: local, embedded and downloaded art resolves off-main to the shared
   cache and is exposed as a generation-guarded `mpris:artUrl` with live metadata updates.
-- ✅ **Visible library scan progress**: Setup, header scans, Library rescans, and the post-launch
-  smoke share a native row that pulses during discovery and then shows bounded, coalesced
+- ✅ **Visible library scan progress**: Setup, Preferences scans, Library rescans, and the
+  post-launch smoke share a native row that pulses during discovery and then shows bounded, coalesced
   processed/total plus current-file updates without blocking the scan worker or retaining stale UI.
 - ✅ **Stable Equalizer toggle**: enabling or disabling Equalizer updates the persistent neutral
   filter in place, preserving the current pipeline, Playing state and playback position; native
@@ -102,8 +135,39 @@ _As of 2026-07-14: free after inlining scrobble service configuration controls._
   session restoration without autoplay, functional browse-option search, rating resorting, stable
   empty browse-popup geometry, and repaired playlist row/menu/create/reorder flows including
   duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
+- ✅ **Manual Up Next + native Compact redesign**: Queue now contains only explicit pending manual
+  tracks and consumes them in stable user order before resuming the unchanged playback context;
+  Bar/Cover/Pill/Card use opaque native GTK/libadwaita composition, expose Return to Library only
+  through the shared context menu, and change volume in five-percent steps only on declared free
+  cover/metadata scroll regions without visible Compact volume controls.
 - ✅ **Stable track-table geometry**: fixed per-column sizing prevents virtualized row contents from
   changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
+- ✅ **Compact responsive ratings**: the Rating column defaults to a narrow `★ N` popover chooser,
+  promotes to five inline stars when widened, and retains real-pointer write-back regression coverage.
+- ✅ **Column-header visibility menu**: every track header exposes the same native right-click
+  checklist in current column order; fixed columns are visibly disabled, optional visibility is
+  immediately persisted, and editor/import changes keep menu state and ordering synchronized.
+- ✅ **Confirmed playlist deletion**: manual playlist rows offer a destructive, translated
+  right-click action; deletion is DB-only, keeps all tracks, compacts remaining positions, and
+  safely returns an open deleted playlist to Music with real-pointer regression coverage.
+- ✅ **Android USB/MTP synchronization**: Preferences detects GVfs-mounted devices,
+  browses recognized music and phone playlists, accepts the established track DnD
+  payload, and copies into the managed `Music/Reprise` area with per-device FIFO,
+  visible file/overall progress, cancel cleanup, disconnect handling, and relative
+  merged `.m3u8` playlists.
+- ✅ **Unified chip filter bar**: the three persistent facet searches are replaced by wrapping,
+  removable Genre/Artist/Album chips, a two-step add popover with one temporary value search,
+  exact live result counts, and one pill-styled add action while removable chips preserve cascade
+  and session behavior without a redundant Reset button.
+- ✅ **One-time Rhythmbox import**: detection and explicit column-layout selection live only in
+  initial setup; the persistent main menu and Preferences no longer expose a later import path.
+- ✅ **Compact playback equalizer**: Enable and Preset remain native settings rows while ten
+  accessible vertical scales share one horizontally scrollable card with live dB labels and
+  synchronized preset, persistence, backend-failure, and disabled-state behavior.
+- ✅ **Preferences visual controls**: Appearance follows the system color scheme and retains only
+  window-decoration configuration; Layout uses Top/Bottom Player Bar previews and persistent Sidebar,
+  filter bar, Information panel, status line and density controls that apply only after successful
+  storage and rollback on error.
 - ✅ **Live track-table density**: the persisted Comfortable, Standard and Compact preference now
   reaches concrete virtualized text, cover and rating cells, forces immediate relayout, and is
   inherited by cells created later while scrolling.
@@ -124,8 +188,9 @@ _As of 2026-07-14: free after inlining scrobble service configuration controls._
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines) and `scripts/ptr-e2e/run.sh` (799 lines) are edge-tight — their next
-  edits must extract cohesive sibling modules rather than adding inline logic.
+- `scrobbling.rs` (795 lines) is edge-tight — its next edit must extract a cohesive sibling module.
+  Compact, rating, column-header, and playlist-delete pointer flows are already extracted so
+  `scripts/ptr-e2e/run.sh` remains below the file-size limit.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote

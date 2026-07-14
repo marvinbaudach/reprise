@@ -27,18 +27,18 @@ fn plural(singular: &str, plural: &str, count: usize, values: &[(&str, &str)]) -
 
 pub const APP_NAME: &str = N_!("Reprise");
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
-pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
-pub const ONBOARDING_COVERS: &str = N_!("Download missing album covers");
-pub const ONBOARDING_COVERS_SUBTITLE: &str =
-    N_!("Uses MusicBrainz and Cover Art Archive only when enabled");
-pub const ONBOARDING_RHYTHMBOX_FOUND: &str = N_!("Rhythmbox found");
-pub const ONBOARDING_RHYTHMBOX_FOUND_SUBTITLE: &str =
-    N_!("Import its column layout without changing Rhythmbox settings");
+pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
+pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
+pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX_DESCRIPTION: &str =
+    N_!("Rhythmbox was found. Choose what Reprise should import.");
+pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT: &str = N_!("Column layout");
+pub const ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT_SUBTITLE: &str =
+    N_!("Read the layout without changing Rhythmbox settings");
 pub const ONBOARDING_SKIP: &str = N_!("Skip for Now");
 pub const ONBOARDING_SET_UP: &str = N_!("Set Up Library");
 pub const MAIN_MENU: &str = N_!("Main menu");
 pub const COMPACT_VIEW: &str = N_!("Compact View");
-pub const OPEN_COMPACT_VIEW: &str = N_!("Open Compact View");
+// Compact View opens through the menu action; the Library header has no duplicate control.
 pub const RETURN_TO_LIBRARY: &str = N_!("Return to Library");
 pub const COMPACT_MENU: &str = N_!("Compact player menu");
 pub const COMPACT_LAYOUT: &str = N_!("Layout");
@@ -61,10 +61,6 @@ pub const COMPACT_PLAYER_UNAVAILABLE: &str = N_!("Compact player is unavailable"
 pub const PREFERENCES: &str = N_!("Preferences");
 pub const PREFERENCES_APPEARANCE: &str = N_!("Appearance");
 pub const PREFERENCES_LAYOUT: &str = N_!("Layout");
-pub const COLOR_SCHEME: &str = N_!("Color Scheme");
-pub const COLOR_SYSTEM: &str = N_!("System");
-pub const COLOR_LIGHT: &str = N_!("Light");
-pub const COLOR_DARK: &str = N_!("Dark");
 pub const PLAYER_BAR_POSITION: &str = N_!("Player Bar Position");
 pub const POSITION_BOTTOM: &str = N_!("Bottom");
 pub const POSITION_TOP: &str = N_!("Top");
@@ -92,8 +88,6 @@ pub const REPLAYGAIN_ALBUM: &str = N_!("Per Album");
 pub const AUDIO_EFFECTS_FAILED: &str = N_!("Could not apply audio effects");
 pub const PLUGIN_MPRIS_DESCRIPTION: &str =
     N_!("GNOME media controls, media keys, and lock-screen integration (D-Bus)");
-pub const PLUGIN_COVER_DESCRIPTION: &str =
-    N_!("Download missing album covers from Cover Art Archive (network; off by default)");
 
 #[path = "strings_scrobbling.rs"]
 mod scrobbling;
@@ -160,7 +154,6 @@ fn news_timestamp_date(timestamp: i64) -> String {
 }
 pub const COVER_DOWNLOAD_CHECKING: &str = N_!("Checking missing album covers…");
 pub const COVER_DOWNLOAD_COMPLETE: &str = N_!("Cover check complete");
-pub const COVER_DOWNLOAD_STOPPED: &str = N_!("Cover check stopped");
 pub const COVER_DOWNLOAD_FAILED: &str = N_!("Could not check album covers");
 
 pub fn cover_download_progress(
@@ -187,8 +180,6 @@ pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
 pub const RESTART_REQUIRED: &str = N_!("Restart required");
-pub const DOWNLOAD_MISSING_COVERS: &str = N_!("Download missing album covers");
-pub const IMPORT_RHYTHMBOX_COLUMNS: &str = N_!("Import Rhythmbox column layout");
 pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");
@@ -221,15 +212,6 @@ pub const TAG_NUMBER_ERROR: &str = N_!("Year and track number must be positive w
 pub const TAG_EDIT_DATABASE_UNAVAILABLE: &str =
     N_!("Could not open the library database for tag editing");
 pub const TAG_EDIT_WORKER_FAILED: &str = N_!("Could not start the tag-edit worker");
-pub const BROWSE_GENRE: &str = N_!("Genre");
-pub const BROWSE_ARTIST: &str = N_!("Artist");
-pub const BROWSE_ALBUM: &str = N_!("Album");
-pub const ALL_GENRES: &str = N_!("All genres");
-pub const ALL_ARTISTS: &str = N_!("All artists");
-pub const ALL_ALBUMS: &str = N_!("All albums");
-pub const UNKNOWN_GENRE: &str = N_!("Unknown genre");
-pub const UNKNOWN_ARTIST: &str = N_!("Unknown artist");
-pub const UNKNOWN_ALBUM: &str = N_!("Unknown album");
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");
 pub const DELETE_TRACKS_HEADING: &str = N_!("Remove Selected Tracks?");
@@ -297,7 +279,7 @@ pub fn delete_result_toast(removed: usize, failed: usize, trashed: bool) -> Stri
     }
 }
 
-pub fn tag_edit_result_toast(updated: usize, failed: usize) -> String {
+pub fn track_edit_result_toast(updated: usize, failed: usize) -> String {
     let updated_text = updated.to_string();
     let failed_text = failed.to_string();
     let values = [
@@ -306,15 +288,15 @@ pub fn tag_edit_result_toast(updated: usize, failed: usize) -> String {
     ];
     if failed == 0 {
         plural(
-            "Tags updated for {updated} track",
-            "Tags updated for {updated} tracks",
+            "Updated {updated} track",
+            "Updated {updated} tracks",
             updated,
             &values,
         )
     } else {
         plural(
-            "Tags updated for {updated} track; {failed} failed",
-            "Tags updated for {updated} tracks; {failed} failed",
+            "Updated {updated} track; {failed} failed",
+            "Updated {updated} tracks; {failed} failed",
             updated,
             &values,
         )
@@ -464,6 +446,7 @@ pub fn rating_save_failed_toast(title: &str) -> String {
 pub const SIDEBAR_SECTION_LIBRARY: &str = N_!("LIBRARY");
 pub const SIDEBAR_SECTION_PLAYLISTS: &str = N_!("PLAYLISTS");
 pub const SIDEBAR_SECTION_SMART: &str = N_!("SMART");
+pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
@@ -521,8 +504,8 @@ pub fn no_library_root_to_rescan_toast() -> String {
     ))
 }
 
-/// Toast shown when "Rescan library" is invoked while a scan (from any
-/// trigger — the header button, a previous rescan, or this same action) is
+/// Toast shown when "Rescan library" is invoked while a scan (from folder
+/// selection, initial setup, a previous rescan, or this same action) is
 /// already running.
 pub fn scan_already_running_toast() -> String {
     text(N_!("A scan is already running"))
@@ -664,6 +647,19 @@ pub fn playlist_reorder_failed_toast() -> String {
 
 pub const IMPORT_PLAYLIST: &str = N_!("Import playlist…");
 pub const EXPORT_PLAYLIST: &str = N_!("Export playlist…");
+pub const DELETE_PLAYLIST: &str = N_!("Delete playlist…");
+pub const PLAYLIST_DELETE_RESPONSE: &str = N_!("Delete Playlist");
+pub const PLAYLIST_DELETE_BODY: &str =
+    N_!("The playlist will be deleted. Its tracks will remain in your library.");
+pub fn playlist_delete_heading(name: &str) -> String {
+    formatted(N_!("Delete “{name}”?"), &[("name", name)])
+}
+pub fn playlist_deleted_toast(name: &str) -> String {
+    formatted(N_!("Deleted playlist “{name}”"), &[("name", name)])
+}
+pub fn playlist_delete_failed_toast(name: &str) -> String {
+    formatted(N_!("Could not delete playlist “{name}”"), &[("name", name)])
+}
 pub const IMPORT_PLAYLIST_DIALOG_TITLE: &str = N_!("Import Playlist");
 pub const EXPORT_PLAYLIST_DIALOG_TITLE: &str = N_!("Export Playlist");
 /// Name shown for the `gtk::FileFilter` restricting the import dialog to

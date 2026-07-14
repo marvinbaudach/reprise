@@ -1,11 +1,9 @@
-//! Dedicated serial worker for opt-in online cover downloads. Only plain,
+//! Dedicated serial worker for automatic online cover downloads. Only plain,
 //! `Send` data crosses the thread boundary; GTK objects and textures stay on
 //! the main thread in `cover_loader`.
 
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 use reprise_core::cover::{read_cover_tag, resolve_source, CoverTag};
 use reprise_core::cover_download::{album_key, fetch_and_cache};
@@ -25,24 +23,15 @@ pub struct DownloadRequest {
 
 #[derive(Clone)]
 pub struct CoverDownloadRuntime {
-    pub(super) enabled: Rc<Cell<bool>>,
+    pub(super) enabled: bool,
     pub(super) worker: async_channel::Sender<DownloadRequest>,
 }
 
-/// Reads the persisted module flag and starts the one shared serial worker.
-/// The idle worker performs no I/O and cannot touch the network until a
-/// `CoverLoader` posts a request while this flag is enabled.
-pub(super) fn setup(conn: &rusqlite::Connection) -> CoverDownloadRuntime {
-    let enabled = reprise_core::modules::is_enabled(
-        conn,
-        &reprise_core::modules::COVER_DOWNLOAD_MODULE,
-    )
-    .unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read module.cover_download.enabled; defaulting to off");
-        false
-    });
+/// Starts the one shared serial worker. Cover downloads are always enabled and
+/// do not consult legacy `module.cover_download.enabled` rows.
+pub(super) fn setup() -> CoverDownloadRuntime {
     CoverDownloadRuntime {
-        enabled: Rc::new(Cell::new(enabled)),
+        enabled: true,
         worker: spawn(),
     }
 }
@@ -111,7 +100,17 @@ mod tests {
     use reprise_core::cover::CoverTag;
     use reprise_core::cover_download::album_key;
 
-    use super::{result_for_path, result_for_tag, DownloadOutcome};
+    use super::{result_for_path, result_for_tag, setup, DownloadOutcome};
+
+    #[test]
+    fn runtime_ignores_a_legacy_disabled_setting() {
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        reprise_core::library::settings::set_bool(&conn, "module.cover_download.enabled", false)
+            .unwrap();
+
+        assert!(setup().enabled);
+    }
 
     #[test]
     fn batch_request_reports_an_existing_folder_cover_without_fetching() {

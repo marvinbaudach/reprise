@@ -57,7 +57,11 @@ pub(super) fn restore_runtime(
     state: &SessionState,
 ) {
     if let Some(player) = player {
-        player.restore_session_queue(state.queue.clone());
+        player.restore_session_queue(
+            state.queue.clone(),
+            state.up_next.clone(),
+            state.current_up_next,
+        );
     }
     view_session::restore(
         search_entry,
@@ -135,6 +139,9 @@ pub(super) fn wire_close(
         }
         if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
             state.queue = player.session_queue_snapshot();
+            let (up_next, current_up_next) = player.session_up_next_snapshot();
+            state.up_next = up_next;
+            state.current_up_next = current_up_next;
         }
 
         let result = session::save(&conn.borrow(), &state);
@@ -212,6 +219,9 @@ fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
 }
 
 fn seeded_state(fixture: &str) -> Option<SessionState> {
+    if let Some(value) = fixture.strip_prefix("up-next:") {
+        return seeded_up_next_state(value);
+    }
     let ids = match fixture.strip_prefix("deterministic")? {
         "" => Vec::new(),
         value => value
@@ -246,6 +256,39 @@ fn seeded_state(fixture: &str) -> Option<SessionState> {
     })
 }
 
+fn seeded_up_next_state(value: &str) -> Option<SessionState> {
+    let mut fields = value.split(':');
+    let context = parse_smoke_ids(fields.next()?)?;
+    let current_up_next = fields.next()?.parse().ok()?;
+    let pending = parse_smoke_ids(fields.next()?)?;
+    if fields.next().is_some() {
+        return None;
+    }
+    let mut up_next = reprise_core::up_next::UpNextQueue::default();
+    up_next.append(&pending);
+    Some(SessionState {
+        source: SessionSource::Queue,
+        queue: QueueSnapshot {
+            position: (!context.is_empty()).then_some(0),
+            order: (0..context.len()).collect(),
+            ids: context,
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        up_next,
+        current_up_next: Some(current_up_next),
+        ..SessionState::default()
+    })
+}
+
+fn parse_smoke_ids(value: &str) -> Option<Vec<i64>> {
+    value
+        .split(',')
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()
+}
+
 fn close_should_proceed(_save_succeeded: bool) -> bool {
     true
 }
@@ -270,5 +313,17 @@ mod tests {
             geometry_for_save(false, (1200, 800, true), (1920, 1080, true)),
             (1200, 800, true)
         );
+    }
+
+    #[test]
+    fn up_next_smoke_fixture_seeds_current_and_pending_manual_tracks() {
+        let state = seeded_state("up-next:1,2:3:4,5").unwrap();
+
+        assert_eq!(state.queue.ids, vec![1, 2]);
+        assert_eq!(state.queue.position, Some(0));
+        assert_eq!(state.current_up_next, Some(3));
+        assert_eq!(state.up_next.ids(), &[4, 5]);
+        assert_eq!(state.queue.repeat, Repeat::Off);
+        assert!(!state.queue.shuffled);
     }
 }

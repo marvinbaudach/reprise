@@ -55,6 +55,7 @@
 //! `TrackListModel::set_query`.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -65,6 +66,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::browse_bar::BrowseBar;
+use crate::ui::browse_filter_count;
 use crate::ui::column_layout::{self, ColumnId, ColumnRegistry};
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
@@ -117,6 +119,8 @@ type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize)>;
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
+type OnQueueActivate = Rc<dyn Fn(usize)>;
+type OnQueueRemove = Rc<dyn Fn(&[usize]) -> usize>;
 /// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
 /// comment. Returns whether the move actually happened (`false` for a
 /// degraded no-op, e.g. no player wired — see `Shared::on_queue_reorder`'s
@@ -238,6 +242,8 @@ pub(super) struct Shared {
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`. Same seam shape as `on_play_selected`.
     pub(super) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    pub(super) on_queue_activate: RefCell<Option<OnQueueActivate>>,
+    pub(super) on_queue_remove: RefCell<Option<OnQueueRemove>>,
     /// Invoked after any context-menu action that mutates a playlist's
     /// membership (add to an existing playlist, add to a brand new one, or
     /// remove) — injected via `TrackList::set_on_playlist_mutated`, wired by
@@ -311,8 +317,10 @@ pub(super) struct Shared {
 /// state that the sort-header and search-debounce callbacks close over.
 pub struct TrackList {
     pub(super) shared: Rc<Shared>,
-    root: gtk4::Box,
+    pub(super) root: gtk4::Box,
     pub(super) column_registry: ColumnRegistry,
+    pub(super) column_visibility_actions: RefCell<HashMap<ColumnId, gtk4::gio::SimpleAction>>,
+    pub(super) column_visibility_menu: RefCell<Option<gtk4::gio::Menu>>,
 }
 
 impl TrackList {
@@ -396,6 +404,8 @@ impl TrackList {
             window: glib::WeakRef::new(),
             on_play_selected: RefCell::new(None),
             on_queue_selected: RefCell::new(None),
+            on_queue_activate: RefCell::new(None),
+            on_queue_remove: RefCell::new(None),
             on_playlist_mutated: RefCell::new(None),
             on_queue_reorder: RefCell::new(None),
             on_sidebar_playlist_drop: RefCell::new(None),
@@ -486,6 +496,8 @@ impl TrackList {
             shared,
             root,
             column_registry,
+            column_visibility_actions: RefCell::new(HashMap::new()),
+            column_visibility_menu: RefCell::new(None),
         }
     }
 
@@ -530,8 +542,14 @@ impl TrackList {
         reload(&self.shared);
     }
 
-    pub(super) fn column_view_widget(&self) -> &gtk4::ColumnView {
-        &self.shared.column_view
+    pub fn reload_queue_if_visible(&self) {
+        if matches!(*self.shared.source.borrow(), ViewSource::Queue) {
+            reload(&self.shared);
+        }
+    }
+
+    pub(super) fn set_browse_visible(&self, visible: bool) {
+        self.shared.browse_bar.set_preference_visible(visible);
     }
 
     pub(super) fn toast(&self, message: &str) {
@@ -571,6 +589,14 @@ impl TrackList {
     /// `PlayerController::append_to_queue`.
     pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn set_on_queue_activate(&self, callback: impl Fn(usize) + 'static) {
+        *self.shared.on_queue_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn set_on_queue_remove(&self, callback: impl Fn(&[usize]) -> usize + 'static) {
+        *self.shared.on_queue_remove.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the callback invoked after any context-menu action that
@@ -752,6 +778,7 @@ pub(super) fn reload(shared: &Rc<Shared>) {
     } else {
         shared.model.n_items() as usize
     };
+    browse_filter_count::update(&shared.browse_bar, &shared.conn, &source, count, has_filter);
     apply_empty_state(shared, empty_state_for(count, has_filter, &source));
 
     tracing::info!(

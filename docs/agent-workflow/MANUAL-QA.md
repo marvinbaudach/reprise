@@ -51,11 +51,15 @@ Run these first after restarting the current `target/release/reprise`.
   the cell allocation, including the cover cell.
 - [x] **Playlist reorder insertion feedback:** hover a single-row drag over another
   playlist row. Expected: an accent insertion line shows the insertion target.
-- [ ] **Queue reorder insertion feedback:** hover a single-row drag over another Queue
-  row. Expected: an accent insertion line appears; Library and sorted/filtered
-  playlist views show no false reorder target. The mapped-X11 release harness
-  captures the accent target and completes the Queue reorder; native GNOME
-  confirmation remains pending.
+- [ ] **Manual Up Next ordering:** start track A in a longer Library, album, or
+  playlist context, add two tracks X and Y through Add to Queue, and reorder them in
+  Queue. Expected: Queue starts empty, shows only the two pending manual entries and
+  its sidebar count is two; the accent insertion line marks the reorder target while
+  Library and sorted/filtered playlist views show none. Next consumes the reordered
+  X/Y entries with count two to one to zero, then resumes context B. Duplicate manual
+  entries remain allowed; removing a Queue row changes neither files nor the hidden
+  context. The mapped-X11/MPRIS harness proves this complete ordering and resume flow;
+  native GNOME pointer/touch confirmation remains pending.
 - [x] **Imported playlist selection:** import a populated M3U. Expected: the new
   playlist is visibly selected in the sidebar and agrees with the title and table.
 - [x] **Tag editor Enter key:** edit any valid field and press Enter. Expected: Apply
@@ -70,10 +74,13 @@ Run these first after restarting the current `target/release/reprise`.
 Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 - [ ] Fresh start shows the setup dialog once, with clear local-library/privacy copy.
-- [ ] Cover download is off by default. When Rhythmbox is detected, a clear
-  `Rhythmbox found` import offer appears and remains off by default; without the
-  schema/key, no false Rhythmbox offer appears. Both decision paths and explicit
-  fixture import pass in the isolated smoke; native copy/layout remains pending.
+- [ ] The first-run copy discloses automatic MusicBrainz/Cover Art Archive cover
+  lookup without offering a disable switch. When Rhythmbox is detected, the
+  one-time setup dialog shows an `Import from Rhythmbox` section with the explicit
+  `Column layout` choice off by default; without the schema/key, the complete
+  section is absent. The main menu and Preferences expose no later Rhythmbox import.
+  Both decision paths and explicit fixture import pass in the isolated smoke;
+  native copy/layout remains pending.
 - [ ] Skip completes onboarding without opening a picker or scanning music.
 - [ ] Set Up Library opens the portal folder chooser; cancel is harmless; choosing a
   disposable folder scans it and does not expose broader filesystem access.
@@ -92,19 +99,40 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 
 ## Pending: compact layouts and preferences
 
+### Preferences window
+
+- [ ] Open Preferences, drag the window, and switch all five tabs. Expected: one
+  independent movable window is reused, Playback/Appearance/Layout/Library/Plugins
+  stay in the top header, no bottom switcher appears, and Layout does not duplicate
+  Compact View. The isolated GTK regression proves the non-modal window, transient
+  parent, top switcher and exact page order; native window-manager dragging remains.
+- [ ] In Preferences → Layout, open `Edit column layout…`. Expected: the same
+  Preferences window pushes a second-level `Column layout` page with the native
+  Back button; no dialog or window appears behind Preferences. Back returns to the
+  Layout tab without changing the selected top-level tab.
+
 ### Header and navigation design
 
 - [ ] At a wide native GNOME/Wayland size, open and close the Information panel.
   Expected: one flat header spans the sidebar, library, and Information panel; Music
   remains geometrically centered in the complete window rather than the track pane.
-- [ ] Inspect Search plus the menu, Compact, Information, Import, and Scan actions in
-  light/dark mode and at 100% plus an available HiDPI scale. Expected: every action is
-  a compact symbolic icon with a correct tooltip, accessible name, and comfortable
-  native target; no header item clips or forces the centered title aside.
+- [ ] Inspect Search plus the menu, Information, and Import actions in light/dark mode
+  and at 100% plus an available HiDPI scale. Expected: every action is a compact
+  symbolic icon with a correct tooltip, accessible name, and comfortable native target;
+  no Scan action duplicates Preferences → Library, and no header item clips or forces
+  the centered title aside.
 - [ ] Inspect Music, Queue, manual playlists, the three built-in smart playlists,
   Import errors, Missing files, and New playlist. Expected: text remains present,
   each row has a stable aligned symbolic icon, counts align at the end, and long names
-  ellipsize without moving the icon or count columns.
+  ellipsize without moving the icon or count columns. Problem sources appear below a
+  subdued Issues heading, never below a bright blank band that resembles selection.
+- [ ] Seed disposable Import errors and Missing files, then use each issue row's
+  right-click cleanup action. Expected: import diagnostics clear immediately; missing
+  entries require a destructive native confirmation that explicitly promises media
+  files are never deleted. Successful cleanup reports its count, removes the empty row
+  and then the empty Issues group, purges removed IDs from playback/Up next, and falls
+  back to Music if the cleaned source was selected. Verify only with disposable isolated
+  XDG data, never the real library database or music files.
 - [ ] Resize through wide, intermediate, and collapsed navigation widths with the
   Information panel open and closed. Expected: the sidebar stays approximately
   220–280 px while split, collapses through the existing native navigation path, and
@@ -121,23 +149,34 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   Bottom. Expected: the bar spans the complete window below/above sidebar, library,
   and Information panel; Cover/Title/Artist remain left, Previous/Play/Next sit in a
   centered row above Time/Seek/Duration, and Shuffle/Repeat/Volume remain right.
+  The window header stays above the Top player bar, while track count and duration sit
+  as a click-through bottom-right content overlay instead of a full-width bar row.
   The measured native-widget regressions and mapped-X11 screenshots prove the full
   width and zone ancestry, both isolated position starts pass, and the real-input
   Compact round-trip preserves Playing state; native Wayland visual judgment and
   narrow-width target comfort remain pending.
-- [ ] Open Compact View through the visible Library-header button, the main menu,
-  Preferences, and Ctrl+M; return through each compact layout's visible button and
-  Ctrl+M. Expected: every route switches the same window immediately, retains the
-  selected layout, and never creates a second playback state. The mapped real-input
-  harness proves the visible buttons, menu and Ctrl+M routes headlessly; native
-  Wayland confirmation remains pending.
+- [ ] Open Compact View through the main menu and Ctrl+M. Return through **Return to
+  Library** in the Compact context menu only, then repeat the round trip with Ctrl+M.
+  Expected: Bar, Cover, Pill, and
+  Card have no visible restore or volume control; every route switches the same window
+  immediately, retains the selected layout, and never creates a second playback state.
+  The mapped real-input harness proves the menu-only return, layout persistence and
+  Ctrl+M routes headlessly; native Wayland confirmation remains pending.
 - [ ] Inspect Bar, Cover, Pill, and Card with long English and German metadata, plus
   missing album/year values. Expected: proportions feel intentional, title/artist
   ellipsize cleanly, optional rows collapse, icons remain legible, and controls meet
   native Adwaita target sizes. The four isolated display tests prove accessible
   controls and natural-size bounds, but visual judgment remains manual.
+- [ ] With playback paused, scroll one wheel/touchpad step vertically on each
+  layout's free cover or metadata surface. Expected: volume changes by exactly five
+  percent per step and remains clamped from zero to 100 percent. Repeat over seek,
+  transport, menu, and window controls: neither volume nor seek position changes.
+  Compact exposes no visible volume slider; the Library bar, MPRIS, and media keys
+  remain alternative volume routes. The mapped X11 run proves Bar metadata and seek
+  separation against private-bus MPRIS values; native Wayland touchpad behavior and
+  audible loudness remain pending.
 - [ ] Drag Pill only from its free metadata region under Wayland and try dragging
-  from its seek, transport, menu, and restore controls. Expected: the metadata region
+  from its seek, transport, menu, and window controls. Expected: the metadata region
   moves the window, controls remain interactive, and integrated window actions work;
   no transparency, always-on-top, or dock behavior appears.
 - [ ] Toggle Library → each compact layout → Library repeatedly, resize/maximize the
@@ -152,31 +191,30 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] On Appearance and Layout, change System/Light/Dark, player-bar top/bottom,
   sidebar/status visibility, Comfortable/Standard/Compact density, and column layout.
   Expected: each applies immediately, survives restart, and remains readable at narrow
-  widths. The isolated smoke persisted and reread every non-column value; the mapped
-  pointer harness additionally opens every page and proves Sidebar/Status writes.
+  widths; disabling Sidebar removes the complete left column and enabling it restores
+  that slot. The isolated smoke persisted and reread every non-column value; the mapped
+  pointer harness additionally opens every page and proves Sidebar/Status writes, and
+  the GTK regression proves complete sidebar-slot removal/restoration.
 - [ ] On Appearance, confirm **Chromium (CSD)** is the default, then
   switch repeatedly to **System title bar** and back in Library plus Bar, Cover, Pill,
   and Card Compact View; restart once in each mode. Expected: Reprise's flat header and
-  native window buttons appear only in client-side mode, the desktop supplies the title
-  bar and borders in system mode when the compositor supports SSD, drag/resize/close and
-  all header actions remain usable, no duplicate controls appear, and the saved choice
-  returns on restart. The isolated mapped GDK regression proves both decoration requests,
-  GTK's retained CSD resize frame, all four Compact control projections, and persisted
-  startup; actual GNOME/Wayland compositor acceptance, frame appearance, HiDPI, touch,
-  and live window-manager behavior remain native manual checks. A compositor that rejects
-  SSD may fall back to CSD; this is expected desktop policy, not a Reprise failure.
-- [ ] On Library, choose/cancel a disposable folder, rescan it, and invoke Rhythmbox
-  column import. Expected: cancel is harmless and actions use the established safe
-  picker/import paths.
-- [ ] On Plugins, toggle Cover download and MPRIS. Expected: enabling Cover download
-  immediately reveals the same checked/total, downloaded and unavailable progress in
-  the main window and on the Plugins page. The main terminal result remains visible
-  briefly and hides; Preferences retain it while open. Disabling a running pass reports
-  that it stopped, and re-enabling starts a fresh pass. MPRIS clearly says restart
-  required and changes only after restart. Equalizer and ReplayGain must not appear here
+  native window buttons remain visible until GTK confirms an actual desktop-supplied
+  title bar through its documented `ssd` state. With confirmed SSD, Reprise hides its own
+  controls so no duplicates appear. Without confirmed SSD, the app controls remain as a
+  safe CSD fallback; drag/resize/close and all header actions stay usable, and the saved
+  choice returns on restart. The isolated mapped GDK regression proves both decoration
+  requests, GTK's retained resize frame, fallback/confirmed/lost-SSD transitions and all
+  four Compact projections. Actual GNOME/Wayland compositor acceptance, frame appearance,
+  HiDPI, touch, and live window-manager behavior remain native manual checks.
+- [ ] On Library, choose/cancel a disposable folder and rescan it. Expected: cancel
+  is harmless and actions use the established safe picker/scan paths; Rhythmbox
+  import is not offered after first-run setup.
+- [ ] On Plugins, Cover download is absent because it is an always-on core feature.
+  Toggle MPRIS and Artist & Album News. MPRIS clearly says restart required and changes
+  only after restart; Artist News applies live. Equalizer and ReplayGain must not appear
   because they are core Playback features. The isolated local-sidecar app smoke proves
-  main-window Running → Complete without network; both native GTK progress-widget tests
-  pass. Real-network results, native visual confirmation and MPRIS restart remain pending.
+  main-window cover progress Running → Complete without network. Real-network results,
+  native visual confirmation and MPRIS restart remain pending.
 - [ ] While disposable music plays through real speakers, enable Equalizer, select
   Flat/Rock/Pop/Bass Boost, and move all ten sliders. Expected: audible changes are
   immediate, bounded to ±12 dB, persist after restart, and do not interrupt or move
@@ -193,13 +231,14 @@ Use representative available files for FLAC, MP3, Ogg Vorbis, Opus, WAV, and
 M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
 
 - [ ] Each advertised extension scans and a representative supported file plays.
-- [ ] Play/Pause, previous/next, seek, volume, shuffle, Repeat Off/All/One, Queue
-  append, Queue reorder, and end-of-queue behavior work through real speakers.
+- [ ] Play/Pause, previous/next, seek, volume, shuffle, and Repeat Off/All/One work
+  through real speakers. Manual Up Next entries interrupt in their visible order,
+  disappear when consumed, and resume the unchanged Library/playlist context.
 - [ ] A corrupt/unplayable file is skipped or reported without wedging later playback.
 - [ ] Starting, restoring, filtering, importing, and opening views never cause
   unexpected autoplay.
 
-## Pending: MPRIS, notifications, and covers
+## Pending: MPRIS, notifications, covers, and lyrics
 
 - [ ] GNOME Quick Settings and media keys show the player and control playback.
 - [ ] Lock-screen controls, metadata, duration, seek position, shuffle, and repeat stay
@@ -207,12 +246,12 @@ M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
 - [ ] Track-change notifications show correct title/artist and available cover art.
 - [ ] Embedded covers, folder covers, and placeholders render correctly in list, bar,
   and Now Playing without stale covers after rapid scrolling or track changes.
-- [ ] Opt-in cover download is off by default. When enabled on a disposable library
-  with network access, the visible progress reaches the library total, a strong
+- [ ] Automatic cover download is always active. On a disposable library with network
+  access, the visible progress reaches the library total, a strong
   MusicBrainz match increments the downloaded count and renders, existing local covers
   are not downloaded again, and ambiguous or wrong albums increment unavailable
-  without acquiring an unrelated cover. Disable during a longer run and confirm that
-  the status becomes stopped and no new requests begin; cached covers must remain.
+  without acquiring an unrelated cover. A legacy stored disabled value must not prevent
+  the run; cached covers must remain available offline.
 - [ ] Artist & Album News is off by default and the Information panel explains that
   only selected artist names are sent to MusicBrainz. With disposable tagged tracks,
   confirm the 340px desktop proportions and narrow overlay, Upcoming/New copy, cached
@@ -221,6 +260,18 @@ M4A/AAC. Missing host codecs should produce an actionable error, not a crash.
   rendering, stale-selection rejection, close/reopen reuse, one shared request per
   second, request-field privacy, and zero calls before opt-in or after disable. Native
   GNOME proportions, browser launch and offline/cache wording remain pending.
+- [ ] Open the Information panel while a disposable tagged track is playing and switch
+  between the top Information and Lyrics tabs. Expected: the Lyrics tab follows playback,
+  not table selection; synchronized text highlights one current line and keeps it near
+  the viewport center after play and seek; Pause preserves the line; Stop clears it;
+  closing and reopening the panel preserves a still-playing track's text. Plain lyrics
+  remain selectable, Instrumental and not-found are distinct, and temporary offline
+  failure exposes Retry. Rapidly switch tracks while one lookup is delayed and confirm
+  no stale text appears; then disconnect the network and confirm a cached result remains.
+  The isolated three-track fixture proves indices 0 to 1, delayed-generation rejection,
+  latest-track rendering, request-field privacy, and zero real LRCLIB access. Native
+  GNOME typography, high contrast, keyboard selection, HiDPI and real-service matching
+  remain pending. Use only copied music and disposable metadata for the real lookup.
 - [ ] MPRIS bus loss/name collision and clean application shutdown do not crash or
   leave a ghost player in GNOME Shell.
 
@@ -276,8 +327,11 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
 
 ## Pending: browse, columns, playlists, and Rhythmbox
 
-- [ ] Browse dropdowns work by mouse and keyboard at narrow and wide widths; each
-  Genre → Artist → Album change resets only the dependent facets.
+- [ ] The unified filter bar works by mouse and keyboard at narrow and wide widths:
+  chips wrap without covering the table, the raised `+ Add filter` pill remains visible
+  without hover and shows one value search, and
+  Genre → Artist → Album changes or chip removal reset only dependent facets. No
+  redundant Reset button is shown; removing the active chips clears the filters.
 - [ ] Search and browse facets combine correctly, including zero-result recovery.
 - [ ] Open `Edit column layout…`. Switch optional columns, reorder through both
   Up/Down buttons and whole-row dragging, inspect the before/after accent line,
@@ -285,19 +339,65 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   Title stay fixed/visible; sorting never targets a hidden or invalid column. The
   isolated editor smoke passes toggle/reorder/persist and the display regression
   proves each movable row owns both controllers; native pointer visuals remain pending.
-- [ ] A real Rhythmbox visible-columns import is read-only, maps supported columns in
-  order, ignores unknown tokens, and leaves Rhythmbox settings unchanged.
+- [ ] During a disposable first-run profile, a real Rhythmbox visible-columns import
+  is offered only when detected, remains off until selected, maps supported columns
+  in order, ignores unknown tokens, and leaves Rhythmbox settings unchanged. A second
+  start offers no import surface.
 - [ ] Playlist context-menu add/new/remove, sidebar drag add, multi-select, and M3U8
   import work with Unicode names and paths containing spaces.
 - [ ] Exported M3U opens in another compatible player when one is available.
+
+## Pending: Android USB/MTP synchronization
+
+Use only a disposable Android device or copied music. Unlock it, select USB
+**File transfer / MTP**, and first confirm that GNOME Files can browse it.
+
+- [ ] Open Preferences → Synchronization. Expected: the device appears with its
+  system icon, name, and available storage; unplugging removes it without stale
+  content or a crash. With no device, the page explains the MTP prerequisites.
+- [ ] Open the device. Expected: Reprise lists recognized audio and existing
+  `.m3u8` playlists without modifying either. Refresh shows a spinner and then
+  replaces the same view with current device contents.
+- [ ] Create a phone playlist and drag a multi-track selection onto it. Expected:
+  the row immediately reports accepted track count and queue position, then the
+  progress card shows the current filename, file bytes, completed/total tracks,
+  overall progress, and queued-job count.
+- [ ] While a large first job runs, enqueue two more drops onto the same device.
+  Expected: jobs copy strictly in drop order with no overlapping same-device
+  writes. A different connected device may progress independently.
+- [ ] With less free device storage than the selected tracks require, drop them
+  onto a phone playlist. Expected: no job starts and a localized warning shows
+  both the required size and the space still available after queued copies.
+- [ ] Cancel a running copy. Expected: its `.reprise-part` and incomplete final
+  file are absent, completed files remain, and the next queued job starts. No
+  unrelated phone file is deleted or overwritten.
+- [ ] Inspect the phone with GNOME Files. Expected: Reprise wrote only below
+  `Music/Reprise/<playlist>` plus `Music/Reprise/<playlist>.m3u8`; playlist paths
+  are relative, preserve drag order, and contain no duplicate target paths.
+- [ ] Disconnect during a copy and reconnect the same stable device. Expected:
+  progress changes to a paused/disconnected state and safely resumes the current
+  track after reconnect. A device without a stable identity must not claim resume.
+- [ ] Repeat detection, browsing, copy, cancel, and reconnect in Flatpak. Expected:
+  GVfs MTP works with only the two documented narrow permissions; no host,
+  direct-USB, session-bus, or system-bus permission is present.
+
+The local GIO integration tests and isolated two-job app smoke prove FIFO,
+monotone progress, partial cleanup, and relative M3U8 output without touching real
+hardware. They do not replace the cable, Android USB-mode, GNOME Files, or Flatpak
+checks above.
 
 ## Pending: tag editing and safe removal
 
 Work only on disposable copies. Before each destructive check, verify the selected
 paths are under the disposable QA directory.
 
-- [ ] Multi-select tracks with different Title/Album/Year values. Expected: mixed
-  fields say “multiple values”; changing only Genre preserves every untouched value.
+- [ ] Multi-select tracks with different Title/Album/Year/Rating values. Expected:
+  mixed fields and Rating say “multiple values”; choosing unrated or 1–5 stars updates
+  every selected rating, while changing only Genre preserves every untouched value.
+- [ ] Open Edit tags. Expected: the header contains the native window close control and
+  Apply, with no redundant Cancel button; closing without applying changes nothing.
+- [ ] Apply a Rating-only change to disposable file copies. Expected: the table and
+  rating sort refresh immediately, while the audio files remain byte-for-byte unchanged.
 - [ ] Clearing a dirty text or numeric field intentionally clears it; leaving a field
   untouched never clears it. Embedded pictures and custom tag items remain intact.
 - [ ] A partial batch failure reports exact success/failure counts and successful rows

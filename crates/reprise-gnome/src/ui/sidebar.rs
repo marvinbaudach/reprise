@@ -60,6 +60,7 @@ use rusqlite::Connection;
 use crate::ui::dialogs;
 use crate::ui::sidebar_dnd;
 use crate::ui::sidebar_export;
+use crate::ui::sidebar_issue_cleanup;
 use crate::ui::sidebar_playlist_creation;
 use crate::ui::sidebar_presentation::{self, NavIcon};
 use crate::ui::strings;
@@ -76,6 +77,7 @@ type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// Callback invoked whenever the logically selected source changes — see
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
+type OnMissingRemoved = Rc<dyn Fn(&[i64])>;
 
 /// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// sidebar_dnd` — see this file's `## Playlist drop target lives in sidebar_
@@ -144,9 +146,13 @@ pub(super) struct Shared {
     /// list refresh), the mirror image of `track_list.rs`'s `on_playlist_
     /// mutated` (track list mutation -> sidebar refresh).
     pub(super) on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
-    /// The window, for the "New playlist" `AlertDialog`'s parent, and (Stage
-    /// 3 Task 7) `ui::sidebar_export`'s "Export playlist…" `gtk::FileDialog`
-    /// parent — hence `pub(super)`, mirroring `conn`/`on_tracks_added`
+    /// Invoked with the exact database ids removed by the Missing-files
+    /// bulk cleanup. `window.rs` uses this to purge the shared playback
+    /// queue; cloned out before invocation to preserve reentrancy safety.
+    pub(super) on_missing_removed: RefCell<Option<OnMissingRemoved>>,
+    /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
+    /// export dialog plus playlist-delete confirmation — hence `pub(super)`,
+    /// mirroring `conn`/`on_tracks_added`
     /// above. `WeakRef` so the sidebar can never keep the window alive past
     /// its natural lifetime (same shape as `TrackList::toast_overlay`).
     pub(super) window: glib::WeakRef<adw::ApplicationWindow>,
@@ -203,6 +209,7 @@ impl Sidebar {
             on_show_content: RefCell::new(None),
             on_import_playlist: RefCell::new(None),
             on_tracks_added: RefCell::new(None),
+            on_missing_removed: RefCell::new(None),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
             refresh_count: Cell::new(0),
@@ -257,6 +264,11 @@ impl Sidebar {
     /// reload`.
     pub fn set_on_tracks_added(&self, callback: impl Fn() + 'static) {
         *self.shared.on_tracks_added.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Sets the queue-maintenance callback for Missing-files bulk cleanup.
+    pub fn set_on_missing_removed(&self, callback: impl Fn(&[i64]) + 'static) {
+        *self.shared.on_missing_removed.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the window's toast overlay, once it exists (built after the
@@ -327,6 +339,11 @@ impl Sidebar {
 
     pub(super) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
         crate::ui::sidebar_session::restore_source(&self.shared, requested)
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_shared(&self) -> &Rc<Shared> {
+        &self.shared
     }
 }
 
@@ -456,11 +473,12 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
         );
     }
 
-    // Problem sources: no section header in the mockup (unlike LIBRARY/
-    // PLAYLISTS/SMART above) — just a separator, and only when at least one
-    // of the two has anything to show.
+    // Problem sources use the same subdued section-heading grammar as the
+    // groups above. A separator inside `navigation-sidebar` reads like a
+    // broad selected row with some themes, so the explicit label provides
+    // both semantic grouping and an unambiguous non-interactive boundary.
     if import_error_count > 0 || missing_count > 0 {
-        sidebar_presentation::append_problem_separator(&shared.listbox);
+        sidebar_presentation::append_problem_header(&shared.listbox);
         if import_error_count > 0 {
             add_row(
                 shared,
@@ -558,8 +576,8 @@ pub(super) fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4:
 /// Builds one navigation row (title + optional right-aligned count) and
 /// registers it in `shared.rows` against `source`. Playlist rows additionally
 /// get a drag-and-drop drop target (Stage 3 Task 6) — see `sidebar_dnd::
-/// wire_playlist_drop_target`'s doc comment — and a right-click "Export
-/// playlist…" context menu (Stage 3 Task 7) — see `sidebar_export::
+/// wire_playlist_drop_target`'s doc comment — and a right-click export/delete
+/// context menu — see `sidebar_export::
 /// wire_playlist_context_menu`'s doc comment.
 fn add_row(
     shared: &Rc<Shared>,
@@ -569,9 +587,15 @@ fn add_row(
     icon: NavIcon,
 ) {
     let row = sidebar_presentation::build_nav_row(title, count, icon);
-    if let ViewSource::Playlist(playlist_id) = source {
-        sidebar_dnd::wire_playlist_drop_target(shared, &row, playlist_id, title);
-        sidebar_export::wire_playlist_context_menu(shared, &row, playlist_id, title);
+    match &source {
+        ViewSource::Playlist(playlist_id) => {
+            sidebar_dnd::wire_playlist_drop_target(shared, &row, *playlist_id, title);
+            sidebar_export::wire_playlist_context_menu(shared, &row, *playlist_id, title);
+        }
+        ViewSource::ImportErrors | ViewSource::Missing => {
+            sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());
+        }
+        _ => {}
     }
     shared.listbox.append(&row);
     shared

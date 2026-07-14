@@ -25,7 +25,7 @@ disciplined way.
 
 ━━━━━━━━━━━━━━━━━━━━ WHERE YOU RESUME ━━━━━━━━━━━━━━━━━━━━
 Current plan: docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md
-(GUI-A2 = opt-in online album-cover download via Cover Art Archive, 7 tasks).
+(GUI-A2 = automatic online album-cover download via Cover Art Archive, 7 tasks).
 - Task 1 is DONE + reviewed (commit 7c3675c): the cover_download foundation
   (ureq dep, album_key, download-cache paths).
 - YOUR NEXT STEP is Task 2 (MusicBrainz URL builders + conservative matching),
@@ -90,8 +90,8 @@ a cohesive sibling module — never trim doc comments to fit.
   Adwaita-CRITICAL). Guard reparents: `if w.parent().is_some() { tv.remove(&w); }`.
 • Runtime-optional features are MODULES (reprise-core::modules): a descriptor +
   a persisted `module.<id>.enabled` flag; gate behavior on modules::is_enabled.
-  cover_download is such a module, default OFF (privacy — no network until the
-  user enables it; the header menu toggle in Task 7 flips it).
+  cover_download is an always-on core feature, not an optional module; legacy
+  `module.cover_download.enabled=false` rows are intentionally ignored.
 • GUI-A2 Task 3 guidance: `ureq = "2"` default features already resolve to rustls
   (no OpenSSL in the tree) — no feature tweak needed. Rate-limit MusicBrainz to
   ≤1 req/s with a descriptive User-Agent; cache negative results.

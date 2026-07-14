@@ -174,10 +174,12 @@ use crate::ui::now_playing::NowPlayingView;
 use crate::ui::now_playing_wiring;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
+use crate::ui::player_lyrics::{start_track_for_lyrics, PlayerLyrics};
 use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
 use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
+use reprise_core::up_next::UpNextQueue;
 use reprise_platform_linux::mpris;
 use reprise_platform_linux::player::Player;
 
@@ -233,6 +235,8 @@ pub struct PlayerController {
     /// `## Queue borrow discipline` doc section for the rule every call site
     /// (in any of the three files) follows.
     pub(super) queue: RefCell<Queue>,
+    pub(super) up_next: RefCell<UpNextQueue>,
+    pub(super) current_up_next: Cell<Option<i64>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -250,6 +254,7 @@ pub struct PlayerController {
     /// queue's length to bound the skip chain. See the module's `## Fault
     /// tolerance` doc section.
     pub(super) consecutive_skips: Cell<usize>,
+    pub(super) failure_skip_limit: Cell<usize>,
     /// Shared with `mpris.rs`'s D-Bus thread — see the module's `## MPRIS`
     /// doc section. Written by `mpris_mirror.rs`'s `update_mpris_mirror`,
     /// never read directly here (the MPRIS thread is the only reader).
@@ -291,6 +296,10 @@ pub struct PlayerController {
     /// See `now_playing_wiring.rs`'s module doc for the construction/wiring
     /// and the `sync_*` fan-out that feeds both widgets from one call site.
     pub(super) now_playing_view: NowPlayingView,
+    /// Shared off-main lyrics runtime and weak target for the Information
+    /// panel's Lyrics page. Playback position is fanned into this same owner;
+    /// it never starts a second timer.
+    pub(super) lyrics: Rc<PlayerLyrics>,
     /// Generation token for the Now-Playing page's cover widget — separate
     /// from `bar_cover_generation` because the page loads `ThumbnailSize::
     /// Full` while the bar loads `ThumbnailSize::Bar`; each widget must only
@@ -394,11 +403,14 @@ impl PlayerController {
             lastfm,
             scrobble_session: RefCell::new(ScrobbleSession::default()),
             queue: RefCell::new(Queue::new()),
+            up_next: RefCell::new(UpNextQueue::default()),
+            current_up_next: Cell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
             queue_changed: RefCell::new(None),
             current_track_changed: RefCell::new(None),
             consecutive_skips: Cell::new(0),
+            failure_skip_limit: Cell::new(0),
             mpris_state,
             now_playing: Rc::new(RefCell::new(None)),
             volume: Cell::new(DEFAULT_VOLUME),
@@ -407,6 +419,7 @@ impl PlayerController {
             bar_cover_generation: Rc::new(Cell::new(0)),
             compact_cover_generation: Rc::new(Cell::new(0)),
             now_playing_view: NowPlayingView::new(),
+            lyrics: PlayerLyrics::new(),
             now_playing_cover_generation: Rc::new(Cell::new(0)),
             application: {
                 let weak = glib::WeakRef::new();
@@ -489,13 +502,13 @@ impl PlayerController {
     /// discipline` doc section.
     pub fn play_from_view(&self, ids: Vec<i64>, start_index: usize) {
         self.queue.borrow_mut().set_tracks(ids, start_index);
-        self.notify_queue_changed();
+        self.current_up_next.set(None);
 
         let queue_len = self.queue.borrow().len();
         tracing::info!(queue_len, start_index, "queue set from view");
 
-        let queue_is_empty = self.queue.borrow().is_empty();
-        self.sync_transport_enabled(!queue_is_empty);
+        let has_transport = !self.queue.borrow().is_empty() || !self.up_next.borrow().is_empty();
+        self.sync_transport_enabled(has_transport);
 
         let current = self.queue.borrow().current();
         match current {
@@ -520,6 +533,7 @@ impl PlayerController {
     /// and `playback_faults.rs` can call it too.
     pub(super) fn play_track_id(&self, id: i64) {
         self.evaluate_play_tracking();
+        self.sync_lyrics_track(None);
 
         let summary = {
             let conn = self.conn.borrow();
@@ -566,8 +580,14 @@ impl PlayerController {
                         &summary.path,
                     );
                 }
-                match self.player.play(&summary.path) {
-                    Ok(()) => {
+                match start_track_for_lyrics(self.player.as_ref(), &summary) {
+                    Ok(lyrics_query) => {
+                        self.sync_lyrics_track(Some(lyrics_query));
+                        tracing::info!(
+                            track_id = id,
+                            from_up_next = self.current_up_next.get() == Some(id),
+                            "playback started"
+                        );
                         self.begin_scrobble(reprise_core::scrobbling::TrackMetadata {
                             artist_name: summary.artist.clone(),
                             track_name: summary.title.clone(),
@@ -575,9 +595,9 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        let queue_position = self.queue.borrow().snapshot().position;
-                        self.notify_current_track_changed(id, queue_position);
+                        self.notify_current_track_changed(id, None);
                         self.consecutive_skips.set(0);
+                        self.failure_skip_limit.set(0);
                         // `reset_to_stopped` disables prev/next, and MPRIS
                         // can resume from Stopped through this arm without
                         // going through `play_from_view` — re-derive and
@@ -585,7 +605,9 @@ impl PlayerController {
                         // own statement so no `queue` borrow is alive across
                         // `sync_transport_enabled` (see `## Queue borrow
                         // discipline`).
-                        let queue_has_tracks = !self.queue.borrow().is_empty();
+                        let queue_has_tracks = !self.queue.borrow().is_empty()
+                            || !self.up_next.borrow().is_empty()
+                            || self.current_up_next.get().is_some();
                         self.sync_transport_enabled(queue_has_tracks);
                         tracing::debug!(
                             queue_has_tracks,
@@ -690,18 +712,7 @@ impl PlayerController {
             }
             PlayerEvent::TrackFinished => {
                 tracing::info!("track finished: advancing queue");
-                // Borrow discipline: `advance_auto()` runs inside this one
-                // `let` statement, so the `queue` borrow drops before
-                // `play_track_id`/`reset_to_stopped` run below — see the
-                // module's `## Queue borrow discipline` doc section.
-                let next = self.queue.borrow_mut().advance_auto();
-                match next {
-                    Some(id) => self.play_track_id(id),
-                    None => {
-                        tracing::info!("queue exhausted: resetting player to stopped");
-                        self.reset_to_stopped();
-                    }
-                }
+                self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
             }
             PlayerEvent::Error(message) => {
                 // Stage 2 Task 5: this can fire asynchronously for the
@@ -738,7 +749,11 @@ impl PlayerController {
     /// mirror.rs` and `playback_faults.rs` can call it too.
     pub(super) fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
-        let queue_can_resume = self.queue.borrow().current().is_some();
+        self.consecutive_skips.set(0);
+        self.failure_skip_limit.set(0);
+        let queue_can_resume = self.current_up_next.get().is_some()
+            || self.queue.borrow().current().is_some()
+            || !self.up_next.borrow().is_empty();
         self.sync_transport_enabled(queue_can_resume);
         // Stage 2 Task 6: cleared and mirrored unconditionally, before
         // `player.stop()` even runs — unlike the bar (which relies on the

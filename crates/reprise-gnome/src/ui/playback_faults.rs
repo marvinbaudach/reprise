@@ -12,9 +12,9 @@
 //! - `handle_unplayable_track`: diagnoses a playback failure for a track id
 //!   (file missing vs. file exists but won't play) and reports it (mark +
 //!   toast, or toast-only), then always hands off to `skip_after_failure`.
-//! - `skip_after_failure`: the one shared skip-loop guard — advances the
-//!   queue and retries, or gives up once `should_stop_skipping` says the
-//!   chain is bounded by the queue's own length.
+//! - `skip_after_failure`: the one shared skip-loop guard — advances pending
+//!   Up Next and the playback context, or gives up at their fixed combined
+//!   bound.
 //! - `should_stop_skipping`: the pure decision the guard consults.
 //!
 //! ## Seam: `pub(super)`
@@ -37,6 +37,7 @@
 
 use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
+use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::queries;
 
 impl PlayerController {
@@ -109,15 +110,18 @@ impl PlayerController {
 
     /// The one shared skip-loop guard (Stage 2 Task 5 — see this module's
     /// doc comment): increments `consecutive_skips`, then either advances the
-    /// queue and plays the next track, or — once `should_stop_skipping` says
-    /// the chain is bounded by the queue's own length — gives up, toasts,
-    /// and resets to stopped instead of spinning through an entirely-broken
-    /// queue forever. Borrow discipline: `len()` and (further down) `next_
-    /// manual()` each run inside their own `let` statement, so no `queue`
-    /// borrow is alive when `play_track_id`/`reset_to_stopped` run — see
-    /// this module's `## Queue borrow discipline` doc section.
+    /// next candidate, or — once `should_stop_skipping` reaches the fixed
+    /// combined context/Up Next bound — gives up, toasts, and resets to
+    /// stopped instead of spinning through entirely broken candidates. All
+    /// queue borrows end before advancing playback.
     pub(super) fn skip_after_failure(&self) {
-        let queue_len = self.queue.borrow().len();
+        let queue_len = failure_limit(
+            self.failure_skip_limit.get(),
+            self.queue.borrow().len(),
+            self.up_next.borrow().len(),
+            self.current_up_next.get().is_some(),
+        );
+        self.failure_skip_limit.set(queue_len);
         let skips = self.consecutive_skips.get() + 1;
         self.consecutive_skips.set(skips);
 
@@ -128,6 +132,7 @@ impl PlayerController {
                 "too many consecutive unplayable tracks; stopping playback"
             );
             self.consecutive_skips.set(0);
+            self.failure_skip_limit.set(0);
             self.reset_to_stopped();
             self.show_toast(&strings::text(
                 strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE,
@@ -135,26 +140,31 @@ impl PlayerController {
             return;
         }
 
-        let next = self.queue.borrow_mut().next_manual();
-        match next {
-            Some(next_id) => self.play_track_id(next_id),
-            None => {
-                self.consecutive_skips.set(0);
-                self.reset_to_stopped();
-            }
-        }
+        self.advance_playback(AdvanceReason::Manual);
     }
 }
 
 /// The skip-loop guard's pure decision (Stage 2 Task 5 — see this module's
 /// doc comment): whether `skip_after_failure` should give up rather than
 /// skip to yet another track. `true` once `consecutive_skips` has reached
-/// `queue_len` (an upper bound; if Repeat::Off and playback started
-/// mid-queue, `next_manual` reaching the physical end may trigger an earlier
-/// stop) or when the queue is empty to begin with (nothing to skip to at
-/// all). Pure (no `Queue`/GTK/DB access) so it's unit-testable directly.
+/// `queue_len`, which is the fixed context plus manual candidate count
+/// captured at the first failure, or when there was nothing to skip to. Pure
+/// (no Queue/GTK/DB access) so it is unit-testable directly.
 fn should_stop_skipping(consecutive_skips: usize, queue_len: usize) -> bool {
     queue_len == 0 || consecutive_skips >= queue_len
+}
+
+fn failure_limit(
+    existing: usize,
+    context_len: usize,
+    pending_len: usize,
+    has_current_pending: bool,
+) -> usize {
+    if existing > 0 {
+        existing
+    } else {
+        context_len + pending_len + usize::from(has_current_pending)
+    }
 }
 
 #[cfg(test)]
@@ -181,5 +191,12 @@ mod tests {
                 "should_stop_skipping({skips}, {queue_len}) should be {expected}"
             );
         }
+    }
+
+    #[test]
+    fn failure_limit_stays_fixed_while_pending_tracks_are_consumed() {
+        assert_eq!(failure_limit(0, 4, 2, false), 6);
+        assert_eq!(failure_limit(6, 4, 1, true), 6);
+        assert_eq!(failure_limit(6, 4, 0, false), 6);
     }
 }
