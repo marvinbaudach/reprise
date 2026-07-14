@@ -5,7 +5,7 @@
 Die drei dauerhaft sichtbaren Genre-, Interpret- und Album-Suchfelder werden durch die kompakte
 Filterdarstellung des Referenzdesigns ersetzt. Oberhalb der Tracktabelle zeigt Reprise aktive
 Bibliotheksfilter als entfernbare Chips, bietet einen einzigen Einstieg `Add filter` und stellt
-Trefferzahl sowie `Reset` in derselben Leiste dar. Die globale Freitextsuche im Header bleibt
+die Trefferzahl in derselben Leiste dar. Die globale Freitextsuche im Header bleibt
 unverändert.
 
 ## Umfang
@@ -15,20 +15,21 @@ Die Leiste ist ausschließlich in `Library` sichtbar und enthält:
 - die zurückhaltende Abschnittsbeschriftung `Filters`;
 - aktive Chips in stabiler Reihenfolge Genre, Artist, Album;
 - einen kompakten `Add filter`-Button;
-- rechts die aktuelle Trefferzahl und `Reset`;
+- rechts die aktuelle Trefferzahl;
 - ein zweistufiges Popover: zuerst Filtertyp, danach genau ein Suchfeld mit den möglichen Werten.
 
 Ein Chip zeigt den Typ und den exakten Wert, beispielsweise `Artist: Brand of Sacrifice`. Leere
 Tagwerte verwenden weiterhin `Unknown genre`, `Unknown artist` oder `Unknown album`. Ein Klick auf
 den Schließen-Teil entfernt den Filter. Wegen der bestehenden Kaskade entfernt Genre zugleich
-Artist und Album; Artist entfernt zugleich Album. `Reset` löscht alle Browse-Filter in einem Schritt.
+Artist und Album; Artist entfernt zugleich Album. Ein zusätzlicher `Reset`-Button wird nicht
+angezeigt, weil alle aktiven Filter direkt über ihre Chips entfernt werden können.
 
 Bereits aktive Filtertypen werden im Add-Popover nicht noch einmal angeboten. Wer einen Wert ändern
 will, entfernt dessen Chip und fügt den Filter neu hinzu. Die Wertsuche arbeitet lokal und
 case-insensitiv als Teilstringsuche. Die Ergebnismenge stammt weiter aus den bestehenden
 kaskadierenden Core-Abfragen; es entstehen keine neuen SQL-Semantiken.
 
-Bei schmaler Breite dürfen Chips umbrechen. Trefferzahl und Reset bleiben kompakt; die Tabelle wird
+Bei schmaler Breite dürfen Chips umbrechen. Die Trefferzahl bleibt kompakt; die Tabelle wird
 nicht durch drei expandierende Eingaben zusammengedrückt. Die Leiste zeigt bei aktiver Einschränkung
 `N of M tracks`, sonst nur `M tracks`. Dabei zählen globale Suche und Browse-Filter gemeinsam zur
 sichtbaren Einschränkung.
@@ -63,7 +64,8 @@ aufgenommen; deutsche Übersetzungen werden vollständig ergänzt.
 
 - Pure Tests für Chip-Reihenfolge, Unknown-Darstellung, verfügbare Facetten und kaskadierendes Entfernen.
 - Pure Test für case-insensitive Teilstringsuche im einzigen Wertsuchfeld.
-- GTK-Displaytest für Filtertyp-Auswahl, Chip-Projektion, Reset und zugängliche Bezeichnungen.
+- GTK-Displaytest für Filtertyp-Auswahl, Chip-Projektion, manuelles Entfernen ohne Reset-Button und
+  zugängliche Bezeichnungen.
 - Bestehender isolierter Browse-Smoke für Genre/Artist/Album plus Freitextsuche; zusätzlich werden
   Chip-Zustand und Trefferzahl geloggt.
 - Vollständige Gates, Release-Checker, Core-Purity und Dateigrößenprüfung.

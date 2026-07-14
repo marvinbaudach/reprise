@@ -151,7 +151,6 @@ pub struct BrowseBar {
     chooser_back: gtk4::Button,
     value_search: gtk4::SearchEntry,
     value_list: gtk4::ListBox,
-    reset: gtk4::Button,
     result_label: gtk4::Label,
     chooser_facets: RefCell<Vec<BrowseFacet>>,
     chooser_facet: Cell<Option<BrowseFacet>>,
@@ -198,7 +197,7 @@ impl BrowseBar {
         let add_filter = gtk4::MenuButton::new();
         add_filter.set_child(Some(&add_label));
         add_filter.set_popover(Some(&popover));
-        add_filter.add_css_class("flat");
+        add_filter.add_css_class("pill");
         add_filter.update_property(&[gtk4::accessible::Property::Label(&filter_strings::text(
             filter_strings::ADD_FILTER,
         ))]);
@@ -209,14 +208,9 @@ impl BrowseBar {
         result_label.add_css_class("caption");
         result_label.set_visible(false);
 
-        let reset = gtk4::Button::with_label(&filter_strings::text(filter_strings::RESET));
-        reset.add_css_class("flat");
-        reset.set_sensitive(false);
-
         root.append(&section_label);
         root.append(&chips);
         root.append(&result_label);
-        root.append(&reset);
 
         let bar = Rc::new(Self {
             root,
@@ -229,7 +223,6 @@ impl BrowseBar {
             chooser_back,
             value_search,
             value_list,
-            reset,
             result_label,
             chooser_facets: RefCell::new(Vec::new()),
             chooser_facet: Cell::new(None),
@@ -241,7 +234,6 @@ impl BrowseBar {
             on_changed: RefCell::new(None),
         });
         wire_chooser(&bar);
-        wire_reset(&bar);
         bar.sync_visibility();
         bar.refresh();
         bar
@@ -296,7 +288,6 @@ impl BrowseBar {
     pub fn refresh(self: &Rc<Self>) {
         let filter = self.filter();
         self.rebuild_chips(&filter);
-        self.reset.set_sensitive(!filter.is_empty());
         self.rebuild_facet_page(&filter);
     }
 
@@ -556,15 +547,6 @@ fn wire_chooser(bar: &Rc<BrowseBar>) {
     }
 }
 
-fn wire_reset(bar: &Rc<BrowseBar>) {
-    let weak = Rc::downgrade(bar);
-    bar.reset.connect_clicked(move |_| {
-        if let Some(bar) = weak.upgrade() {
-            bar.apply_filter(BrowseFilter::default());
-        }
-    });
-}
-
 fn load_values(conn: &Connection, facet: BrowseFacet, filter: &BrowseFilter) -> Vec<BrowseValue> {
     queries::query_browse_values(conn, facet, filter).unwrap_or_else(|error| {
         tracing::warn!(%error, ?facet, "could not load browse facet values");
@@ -771,7 +753,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn widget_projects_chips_and_reset_clears_the_filter() {
+    fn widget_projects_removable_chips_without_a_redundant_reset_button() {
         if gtk4::init().is_err() {
             return;
         }
@@ -781,15 +763,30 @@ mod tests {
 
         bar.restore_filter(&full_filter());
         assert_eq!(bar.chips.observe_children().n_items(), 4);
-        assert!(bar.reset.is_sensitive());
+        assert_eq!(bar.root.observe_children().n_items(), 3);
+        assert_eq!(
+            bar.root.last_child(),
+            Some(bar.result_label.clone().upcast())
+        );
 
-        bar.reset.emit_clicked();
+        let genre_chip = bar.chips.child_at_index(0).unwrap().child().unwrap();
+        genre_chip
+            .downcast::<gtk4::Button>()
+            .unwrap()
+            .emit_clicked();
         let context = glib::MainContext::default();
         while context.pending() {
             context.iteration(false);
         }
         assert_eq!(bar.filter(), BrowseFilter::default());
         assert_eq!(bar.chips.observe_children().n_items(), 1);
-        assert!(!bar.reset.is_sensitive());
+        assert!(!bar.add_filter.has_css_class("flat"));
+        assert_eq!(
+            bar.add_filter
+                .child()
+                .and_then(|child| child.downcast::<gtk4::Label>().ok())
+                .map(|label| label.text().to_string()),
+            Some("+ Add filter".into())
+        );
     }
 }
