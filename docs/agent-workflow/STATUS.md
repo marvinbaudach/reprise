@@ -21,22 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Move playlist import into Add Playlist
-SINCE:    2026-07-14 03:36 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is moving playlist import from the header into Add Playlist._
+_As of 2026-07-14: free after grouping playlist import with playlist creation._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Live track-table list density** (`0379554`) — Comfortable, Standard and
-  Compact now resize concrete virtualized text, cover and rating cells immediately, including
-  cells created later while scrolling.
+- **Last completed:** **Playlist import placement** (`b4bc211`) — import is no longer a Library
+  header button and now sits directly below New playlist in the Playlist section.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `0379554`; this QA/coordination close-out follows it.
+- **Main implementation:** `b4bc211`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -108,6 +107,9 @@ _As of 2026-07-14: Codex is moving playlist import from the header into Add Play
 - ✅ **Live track-table density**: the persisted Comfortable, Standard and Compact preference now
   reaches concrete virtualized text, cover and rating cells, forces immediate relayout, and is
   inherited by cells created later while scrolling.
+- ✅ **Grouped playlist import**: the M3U import action now lives directly beside playlist creation
+  in the sidebar instead of occupying a separate Library-header button; picker, result navigation,
+  toasts and repeated-activation protection remain shared with the existing import flow.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
