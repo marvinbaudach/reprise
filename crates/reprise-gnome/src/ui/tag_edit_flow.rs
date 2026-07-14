@@ -10,7 +10,8 @@ use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library::tag_edit::{
-    apply_patch_batch, summarize, EditableTags, TagBatchReport, TagPatch,
+    apply_track_edit_batch, summarize, summarize_values, EditableTags, TagBatchReport, TagPatch,
+    TrackEditPatch,
 };
 
 use crate::ui::player_controller::PlayerController;
@@ -22,7 +23,7 @@ use crate::ui::track_list_context_menu::current_selection_positions;
 
 pub(super) const ACTION_EDIT_TAGS: &str = "edit-tags";
 const SMOKE_TAG_EDIT_ENV_VAR: &str = "REPRISE_SMOKE_TAG_EDIT";
-type SelectedTags = (Vec<(i64, PathBuf)>, Vec<EditableTags>);
+type SelectedTags = (Vec<(i64, PathBuf)>, Vec<EditableTags>, Vec<i32>);
 
 pub(super) fn wire_refresh(
     track_list: &TrackList,
@@ -58,9 +59,11 @@ fn selected_tags(shared: &Rc<Shared>) -> Option<SelectedTags> {
     }
     let mut tracks = Vec::with_capacity(positions.len());
     let mut tags = Vec::with_capacity(positions.len());
+    let mut ratings = Vec::with_capacity(positions.len());
     for position in positions {
         let track = shared.model.track_at(position)?;
         tracks.push((track.id, PathBuf::from(&track.path)));
+        ratings.push(track.rating);
         tags.push(EditableTags {
             title: track.title,
             artist: track.artist,
@@ -71,15 +74,18 @@ fn selected_tags(shared: &Rc<Shared>) -> Option<SelectedTags> {
             genre: track.genre,
         });
     }
-    Some((tracks, tags))
+    Some((tracks, tags, ratings))
 }
 
 fn begin(shared: &Rc<Shared>) {
-    let Some((tracks, tags)) = selected_tags(shared) else {
+    let Some((tracks, tags, ratings)) = selected_tags(shared) else {
         tracing::debug!("tag editor requested without a fully resolvable selection");
         return;
     };
     let Some(summary) = summarize(&tags) else {
+        return;
+    };
+    let Some(rating_summary) = summarize_values(&ratings) else {
         return;
     };
     let Some(window) = shared.window.upgrade() else {
@@ -87,13 +93,13 @@ fn begin(shared: &Rc<Shared>) {
         return;
     };
     let shared = shared.clone();
-    tag_editor::present(&window, &summary, move |patch| {
+    tag_editor::present(&window, &summary, &rating_summary, move |patch| {
         start_apply(&shared, tracks.clone(), patch);
     });
     tracing::debug!(selected = tags.len(), "tag editor presented");
 }
 
-fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TagPatch) {
+fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEditPatch) {
     if patch.is_empty() {
         return;
     }
@@ -110,11 +116,12 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TagPatch
     };
     let (sender, receiver) = async_channel::bounded(1);
     let tracks_for_worker = tracks.clone();
+    let tags_changed = !patch.tags.is_empty();
     let spawned = std::thread::Builder::new()
         .name("reprise-tag-edit".into())
         .spawn(move || {
             let result = reprise_core::db::open(Some(&db_path))
-                .map(|mut conn| apply_patch_batch(&mut conn, &tracks_for_worker, &patch))
+                .map(|mut conn| apply_track_edit_batch(&mut conn, &tracks_for_worker, &patch))
                 .map_err(|error| error.to_string());
             let _ = sender.try_send(result);
         });
@@ -133,7 +140,7 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TagPatch
             return;
         };
         match result {
-            Ok(report) => finish_apply(&shared, &tracks, &report),
+            Ok(report) => finish_apply(&shared, &tracks, &report, tags_changed),
             Err(error) => {
                 tracing::warn!(%error, "tag-edit worker could not open database");
                 show_toast(
@@ -145,7 +152,12 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TagPatch
     });
 }
 
-fn finish_apply(shared: &Rc<Shared>, tracks: &[(i64, PathBuf)], report: &TagBatchReport) {
+fn finish_apply(
+    shared: &Rc<Shared>,
+    tracks: &[(i64, PathBuf)],
+    report: &TagBatchReport,
+    tags_changed: bool,
+) {
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
     if updated > 0 {
@@ -154,16 +166,20 @@ fn finish_apply(shared: &Rc<Shared>, tracks: &[(i64, PathBuf)], report: &TagBatc
             .filter(|(id, _)| report.updated_ids.contains(id))
             .map(|(_, path)| path.clone())
             .collect();
-        shared.cover_loader.invalidate_paths(&paths);
-        shared.browse_bar.refresh();
+        if tags_changed {
+            shared.cover_loader.invalidate_paths(&paths);
+            shared.browse_bar.refresh();
+        }
         reload(shared);
-        let on_tags_mutated = shared.on_tags_mutated.borrow().clone();
-        if let Some(on_tags_mutated) = on_tags_mutated {
-            on_tags_mutated(&paths);
+        if tags_changed {
+            let on_tags_mutated = shared.on_tags_mutated.borrow().clone();
+            if let Some(on_tags_mutated) = on_tags_mutated {
+                on_tags_mutated(&paths);
+            }
         }
     }
     tracing::info!(updated, failed, "tag-edit batch completed");
-    show_toast(shared, &strings::tag_edit_result_toast(updated, failed));
+    show_toast(shared, &strings::track_edit_result_toast(updated, failed));
 }
 
 pub(super) fn arm_smoke(shared: &Rc<Shared>) {
@@ -185,15 +201,18 @@ pub(super) fn arm_smoke(shared: &Rc<Shared>) {
             return;
         }
         shared.selection.select_range(0, count, true);
-        let Some((tracks, _)) = selected_tags(&shared) else {
+        let Some((tracks, _, _)) = selected_tags(&shared) else {
             return;
         };
         start_apply(
             &shared,
             tracks,
-            TagPatch {
-                title: Some(title),
-                ..TagPatch::default()
+            TrackEditPatch {
+                tags: TagPatch {
+                    title: Some(title),
+                    ..TagPatch::default()
+                },
+                ..TrackEditPatch::default()
             },
         );
     });

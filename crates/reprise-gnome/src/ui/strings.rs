@@ -346,7 +346,7 @@ pub fn delete_result_toast(removed: usize, failed: usize, trashed: bool) -> Stri
     }
 }
 
-pub fn tag_edit_result_toast(updated: usize, failed: usize) -> String {
+pub fn track_edit_result_toast(updated: usize, failed: usize) -> String {
     let updated_text = updated.to_string();
     let failed_text = failed.to_string();
     let values = [
@@ -355,15 +355,15 @@ pub fn tag_edit_result_toast(updated: usize, failed: usize) -> String {
     ];
     if failed == 0 {
         plural(
-            "Tags updated for {updated} track",
-            "Tags updated for {updated} tracks",
+            "Updated {updated} track",
+            "Updated {updated} tracks",
             updated,
             &values,
         )
     } else {
         plural(
-            "Tags updated for {updated} track; {failed} failed",
-            "Tags updated for {updated} tracks; {failed} failed",
+            "Updated {updated} track; {failed} failed",
+            "Updated {updated} tracks; {failed} failed",
             updated,
             &values,
         )

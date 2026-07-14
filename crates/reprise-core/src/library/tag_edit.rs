@@ -59,6 +59,27 @@ impl TagPatch {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TrackEditPatch {
+    pub tags: TagPatch,
+    pub rating: Option<i32>,
+}
+
+impl TrackEditPatch {
+    pub fn is_empty(&self) -> bool {
+        self.tags.is_empty() && self.rating.is_none()
+    }
+}
+
+pub fn summarize_values<T: Clone + PartialEq>(values: &[T]) -> Option<MixedValue<T>> {
+    let first = values.first()?;
+    if values[1..].iter().all(|value| value == first) {
+        Some(MixedValue::Uniform(first.clone()))
+    } else {
+        Some(MixedValue::Mixed)
+    }
+}
+
 pub fn summarize(tags: &[EditableTags]) -> Option<EditableTagSummary> {
     fn field<T: Clone + PartialEq>(
         tags: &[EditableTags],
@@ -202,6 +223,19 @@ pub struct TagBatchReport {
     pub failures: Vec<TagWriteFailure>,
 }
 
+fn validate_registered_track(conn: &Connection, id: i64, path: &Path) -> Result<(), String> {
+    let registered_path = conn
+        .query_row("SELECT path FROM tracks WHERE id=?1", [id], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()
+        .map_err(|error| format!("could not validate track path before edit: {error}"))?;
+    match registered_path {
+        Some(registered) if registered == path.to_string_lossy() => Ok(()),
+        _ => Err("track path changed before edit; refusing stale request".into()),
+    }
+}
+
 pub fn apply_patch_batch(
     conn: &mut Connection,
     tracks: &[(i64, PathBuf)],
@@ -213,29 +247,13 @@ pub fn apply_patch_batch(
     }
 
     for (id, path) in tracks {
-        let registered_path = conn
-            .query_row("SELECT path FROM tracks WHERE id=?1", [id], |row| {
-                row.get::<_, String>(0)
-            })
-            .optional();
-        match registered_path {
-            Ok(Some(registered)) if registered == path.to_string_lossy() => {}
-            Ok(_) => {
-                report.failures.push(TagWriteFailure {
-                    id: *id,
-                    path: path.clone(),
-                    error: "track path changed before tag write; refusing stale request".into(),
-                });
-                continue;
-            }
-            Err(error) => {
-                report.failures.push(TagWriteFailure {
-                    id: *id,
-                    path: path.clone(),
-                    error: format!("could not validate track path before tag write: {error}"),
-                });
-                continue;
-            }
+        if let Err(error) = validate_registered_track(conn, *id, path) {
+            report.failures.push(TagWriteFailure {
+                id: *id,
+                path: path.clone(),
+                error,
+            });
+            continue;
         }
 
         if let Err(error) = apply_patch_to_file(path, patch) {
@@ -284,6 +302,55 @@ pub fn apply_patch_batch(
                 path: path.clone(),
                 error: format!("tag reconciliation failed: {error}"),
             }),
+        }
+    }
+    report
+}
+
+pub fn apply_track_edit_batch(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+    patch: &TrackEditPatch,
+) -> TagBatchReport {
+    if patch.is_empty() {
+        return TagBatchReport::default();
+    }
+
+    let mut report = if patch.tags.is_empty() {
+        let mut report = TagBatchReport::default();
+        for (id, path) in tracks {
+            if let Err(error) = validate_registered_track(conn, *id, path) {
+                report.failures.push(TagWriteFailure {
+                    id: *id,
+                    path: path.clone(),
+                    error,
+                });
+                continue;
+            }
+            report.updated_ids.push(*id);
+        }
+        report
+    } else {
+        apply_patch_batch(conn, tracks, &patch.tags)
+    };
+
+    let Some(rating) = patch.rating else {
+        return report;
+    };
+    let eligible_ids = report.updated_ids.clone();
+    for id in eligible_ids {
+        if let Err(error) = crate::library::stats::set_rating(conn, id, rating) {
+            report.updated_ids.retain(|updated| *updated != id);
+            let path = tracks
+                .iter()
+                .find(|(track_id, _)| *track_id == id)
+                .map(|(_, path)| path.clone())
+                .unwrap_or_default();
+            report.failures.push(TagWriteFailure {
+                id,
+                path,
+                error: format!("could not save rating: {error}"),
+            });
         }
     }
     report
@@ -497,5 +564,101 @@ mod tests {
         assert!(report.updated_ids.is_empty());
         assert_eq!(report.failures.len(), 1);
         assert_eq!(std::fs::read(other).unwrap(), before);
+    }
+
+    #[test]
+    fn rating_summary_preserves_uniform_and_mixed_selections() {
+        assert_eq!(summarize_values(&[4, 4]), Some(MixedValue::Uniform(4)));
+        assert_eq!(summarize_values(&[4, 0]), Some(MixedValue::Mixed));
+        assert_eq!(summarize_values::<i32>(&[]), None);
+    }
+
+    #[test]
+    fn rating_only_edit_updates_the_database_without_touching_file_tags() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = fixture_copy(dir.path(), "rating-only.flac");
+        seed_full_tag(&path);
+        let before = std::fs::read(&path).unwrap();
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let path_text = path.to_string_lossy().to_string();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        let report = apply_track_edit_batch(
+            &mut conn,
+            &[(id, path.clone())],
+            &TrackEditPatch {
+                rating: Some(5),
+                ..TrackEditPatch::default()
+            },
+        );
+
+        assert_eq!(report.updated_ids, vec![id]);
+        assert!(report.failures.is_empty());
+        let rating: i32 = conn
+            .query_row("SELECT rating FROM tracks WHERE id=?1", [id], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rating, 5);
+        assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+
+    #[test]
+    fn combined_tag_and_rating_edit_reconciles_both_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = fixture_copy(dir.path(), "tag-and-rating.flac");
+        seed_full_tag(&path);
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let path_text = path.to_string_lossy().to_string();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        let report = apply_track_edit_batch(
+            &mut conn,
+            &[(id, path.clone())],
+            &TrackEditPatch {
+                tags: TagPatch {
+                    title: Some("New title and rating".into()),
+                    ..TagPatch::default()
+                },
+                rating: Some(3),
+            },
+        );
+
+        assert_eq!(report.updated_ids, vec![id]);
+        assert!(report.failures.is_empty());
+        let row: (String, i32) = conn
+            .query_row(
+                "SELECT title, rating FROM tracks WHERE id=?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(row, ("New title and rating".into(), 3));
+        assert_eq!(
+            read_editable_tags(&path).unwrap().title,
+            "New title and rating"
+        );
+    }
+
+    #[test]
+    fn untouched_track_edit_patch_is_empty_but_rating_zero_is_not() {
+        assert!(TrackEditPatch::default().is_empty());
+        assert!(!TrackEditPatch {
+            rating: Some(0),
+            ..TrackEditPatch::default()
+        }
+        .is_empty());
     }
 }
