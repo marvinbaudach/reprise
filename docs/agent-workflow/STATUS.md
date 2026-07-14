@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Embed column layout as Preferences second-level navigation
+SINCE:    2026-07-14 CEST
 ```
 
-_As of 2026-07-14: Codex released the lock after recording the filter-pill documentation follow-up._
+_As of 2026-07-14: Codex claimed the lock for Preferences column-layout navigation._
 
 ## Parallel feature work
 
