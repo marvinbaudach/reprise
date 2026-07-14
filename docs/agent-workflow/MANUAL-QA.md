@@ -372,6 +372,10 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   Genre → Artist → Album changes or chip removal reset only dependent facets. No
   redundant Reset button is shown; removing the active chips clears the filters.
 - [ ] Search and browse facets combine correctly, including zero-result recovery.
+- [ ] Inspect the track table in light and dark mode. Expected: column-title text is
+  subtly quieter than song metadata without looking disabled; sort indicators remain
+  clear, and row text keeps the theme's normal foreground contrast. The mapped GTK
+  regression proves the scoped header label resolves to 78% foreground alpha.
 - [ ] Open `Edit column layout…`. Switch optional columns, reorder through both
   Alt+Up/Down and whole-row dragging, inspect the before/after accent line,
   reset, and restart. Expected: changes apply immediately and persist; Cover and
