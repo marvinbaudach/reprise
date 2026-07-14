@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Inline scrobble service configuration controls
+SINCE:    2026-07-14 04:02 CEST
 ```
 
-_As of 2026-07-14: free after hiding disabled scrobble-service settings._
+_As of 2026-07-14: Codex is inlining scrobble service configuration controls._
 
 ## Current position
 
