@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate Compact-to-Library transition fix
-SINCE:    2026-07-14 07:15 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: the main menu exposes native About and licensing information._
+_As of 2026-07-14: restoring Library from Compact no longer exposes a stretched intermediate frame._
 
 ## Parallel feature work
 
@@ -34,12 +34,12 @@ _As of 2026-07-14: the main menu exposes native About and licensing information.
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-14-about-dialog.md` (1 task).
-- **Last completed:** **Native About dialog** (`e31d6b6`) — the main menu now presents app
-  identity, version, Marvin Baudach, GPL-3.0-or-later, and the MIT component notice.
+- **Completed plan:** `docs/superpowers/plans/2026-07-14-compact-library-transition.md` (1 task).
+- **Last completed:** **Compact-to-Library transition** (`73e29ba`) — the full Library tree is
+  mounted before its larger geometry is requested, avoiding a stretched Compact intermediate frame.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `e31d6b6` on `main`.
+- **Main implementation:** `73e29ba` on `main`.
 
 ## Done so far (compact)
 
@@ -77,6 +77,8 @@ _As of 2026-07-14: the main menu exposes native About and licensing information.
 - ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent layout,
   library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
   live controls; isolated runtime persistence and full release QA green.
+- ✅ **Compact-to-Library restoration**: Library content is mounted before the window grows, so the
+  compositor cannot expose Compact content stretched to the full Library geometry.
 - ✅ **Selectable compact-player layouts**: persistent Bar, Cover, Pill and Card roots share one
   controller, cover pipeline, queue and accessible menu; visible buttons, right-click, Shift+F10,
   Ctrl+M, playing-state continuity and no-autoplay restart are covered by isolated real-input QA;
