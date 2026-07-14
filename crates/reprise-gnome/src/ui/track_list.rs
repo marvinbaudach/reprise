@@ -365,7 +365,7 @@ impl TrackList {
         // ERRORS`'s doc comment.
         let import_errors_view = ImportErrorsView::new(conn.clone());
 
-        let stack = gtk4::Stack::new();
+        let stack = crate::ui::track_list_layout::build_track_content_stack();
         stack.add_named(&empty_page, Some(STACK_PAGE_EMPTY));
         stack.add_named(&scrolled, Some(STACK_PAGE_LIST));
         stack.add_named(import_errors_view.widget(), Some(STACK_PAGE_IMPORT_ERRORS));

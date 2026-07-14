@@ -1,6 +1,14 @@
 use super::column_layout::{self, ColumnId, ColumnLayout};
 use super::track_list::TrackList;
 
+/// Keeps the track-content viewport filling the window from its first layout.
+/// The initially selected empty page and the later list page have different
+/// natural heights, so relying on child-derived expansion can leave the stack
+/// at a single-row height until a source switch queues another allocation.
+pub(super) fn build_track_content_stack() -> gtk4::Stack {
+    gtk4::Stack::builder().vexpand(true).build()
+}
+
 impl TrackList {
     pub(super) fn column_view_widget(&self) -> &gtk4::ColumnView {
         &self.shared.column_view
@@ -43,5 +51,36 @@ impl TrackList {
 
     pub(super) fn current_column_layout(&self) -> ColumnLayout {
         column_layout::load_layout(&self.shared.conn.borrow())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gtk4::prelude::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn track_content_stack_expands_from_initial_layout() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let stack = super::build_track_content_stack();
+        stack.add_named(&gtk4::Label::new(Some("first track")), Some("list"));
+        stack.set_visible_child_name("list");
+
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&gtk4::Label::new(Some("filter bar")));
+        root.append(&stack);
+        let window = gtk4::Window::builder()
+            .default_width(600)
+            .default_height(400)
+            .child(&root)
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(stack.vexpands());
+        assert!(stack.height() > 300, "stack height was {}", stack.height());
+        window.close();
     }
 }
