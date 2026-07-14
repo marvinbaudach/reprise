@@ -8,21 +8,169 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use rusqlite::Connection;
 
+use super::album_view::AlbumView;
 use super::artist_news_worker::ArtistNewsRuntime;
+use super::artist_view::ArtistView;
 use super::info_panel::InfoPanel;
+use super::library_chrome::LibraryTitle;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::sidebar::Sidebar;
+use super::stats_view::StatsView;
 use super::strings;
 use super::track_list::TrackList;
+use reprise_core::view_source::ViewSource;
 
 pub(super) const SIDEBAR_BREAKPOINT_WIDTH: i32 = 800;
+pub(super) const LIBRARY_VIEW_TRACKS: &str = "tracks";
+pub(super) const LIBRARY_VIEW_ALBUMS: &str = "albums";
+pub(super) const LIBRARY_VIEW_ARTISTS: &str = "artists";
+const SMOKE_LIBRARY_VIEW_ENV: &str = "REPRISE_SMOKE_LIBRARY_VIEW";
 
 pub(super) struct LibraryShell {
     pub sidebar_page: adw::NavigationPage,
     pub split_view: adw::NavigationSplitView,
     pub content_nav: adw::NavigationView,
     pub info_panel: Rc<InfoPanel>,
+}
+
+pub(super) struct LibraryViews {
+    pub(super) stack: gtk4::Stack,
+}
+
+pub(super) fn build_views(
+    tracks: &impl IsA<gtk4::Widget>,
+    albums: &impl IsA<gtk4::Widget>,
+    artists: &impl IsA<gtk4::Widget>,
+) -> LibraryViews {
+    let stack = gtk4::Stack::new();
+    stack.add_titled(
+        tracks,
+        Some(LIBRARY_VIEW_TRACKS),
+        &strings::text(strings::LIBRARY_VIEW_TRACKS),
+    );
+    stack.add_titled(
+        albums,
+        Some(LIBRARY_VIEW_ALBUMS),
+        &strings::text(strings::LIBRARY_VIEW_ALBUMS),
+    );
+    stack.add_titled(
+        artists,
+        Some(LIBRARY_VIEW_ARTISTS),
+        &strings::text(strings::LIBRARY_VIEW_ARTISTS),
+    );
+    stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+    LibraryViews { stack }
+}
+
+pub(super) fn wire_album_view(
+    views: &LibraryViews,
+    album_view: &AlbumView,
+    track_list: &Rc<TrackList>,
+) {
+    let track_list = Rc::downgrade(track_list);
+    let stack = views.stack.clone();
+    album_view.set_on_activate(move |album| {
+        let Some(track_list) = track_list.upgrade() else {
+            return;
+        };
+        track_list.set_source(ViewSource::Album {
+            album: album.album,
+            album_artist: album.album_artist,
+        });
+        stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+    });
+
+    let refresh = album_view.refresh_callback();
+    views.stack.connect_visible_child_name_notify(move |stack| {
+        if stack.visible_child_name().as_deref() == Some(LIBRARY_VIEW_ALBUMS) {
+            refresh();
+        }
+    });
+}
+
+pub(super) fn wire_artist_view(
+    views: &LibraryViews,
+    artist_view: &ArtistView,
+    track_list: &Rc<TrackList>,
+) {
+    let track_list = Rc::downgrade(track_list);
+    let stack = views.stack.clone();
+    artist_view.set_on_activate(move |artist| {
+        let Some(track_list) = track_list.upgrade() else {
+            return;
+        };
+        track_list.set_source(ViewSource::Artist(artist.artist));
+        stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+    });
+
+    let refresh = artist_view.refresh_callback();
+    views.stack.connect_visible_child_name_notify(move |stack| {
+        if stack.visible_child_name().as_deref() == Some(LIBRARY_VIEW_ARTISTS) {
+            refresh();
+        }
+    });
+}
+
+fn smoke_library_view_name(value: &str) -> Option<&'static str> {
+    match value {
+        "tracks" => Some(LIBRARY_VIEW_TRACKS),
+        "albums" => Some(LIBRARY_VIEW_ALBUMS),
+        "artists" => Some(LIBRARY_VIEW_ARTISTS),
+        _ => None,
+    }
+}
+
+pub(super) fn arm_smoke_library_view(views: &LibraryViews) {
+    let Ok(value) = std::env::var(SMOKE_LIBRARY_VIEW_ENV) else {
+        return;
+    };
+    let Some(name) = smoke_library_view_name(&value) else {
+        tracing::warn!(value, "invalid library-view smoke target");
+        return;
+    };
+    let stack = views.stack.clone();
+    gtk4::glib::timeout_add_seconds_local_once(2, move || {
+        stack.set_visible_child_name(name);
+        tracing::info!(view = name, "smoke: opened library view");
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn wire_source_routing(
+    sidebar: &Rc<Sidebar>,
+    track_list: &Rc<TrackList>,
+    stats_view: StatsView,
+    conn: &Rc<RefCell<Connection>>,
+    content_stack: &gtk4::Stack,
+    views: &LibraryViews,
+    title: &Rc<LibraryTitle>,
+    source_title: &adw::WindowTitle,
+    show_content: Rc<dyn Fn()>,
+) {
+    let track_list = track_list.clone();
+    let content_stack = content_stack.clone();
+    let library_stack = views.stack.clone();
+    let title = title.clone();
+    let source_title = source_title.clone();
+    let stats_view = Rc::new(stats_view);
+    let conn = conn.clone();
+    let show_content_on_select = show_content.clone();
+    sidebar.set_on_select(move |source, source_name| {
+        let is_library = matches!(source, ViewSource::Library);
+        if matches!(source, ViewSource::MyStats) {
+            stats_view.refresh(&conn);
+            content_stack.set_visible_child_name("stats");
+        } else {
+            content_stack.set_visible_child_name("library");
+            library_stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+            track_list.set_source(source);
+        }
+        title.set_library_navigation_visible(is_library);
+        source_title.set_title(&source_name);
+        show_content_on_select();
+    });
+    sidebar.set_on_show_content(move || show_content());
 }
 
 pub(super) fn build(
@@ -76,5 +224,55 @@ pub(super) fn build(
         split_view,
         content_nav,
         info_panel,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use libadwaita::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn smoke_library_view_names_are_strict() {
+        assert_eq!(smoke_library_view_name("tracks"), Some(LIBRARY_VIEW_TRACKS));
+        assert_eq!(smoke_library_view_name("albums"), Some(LIBRARY_VIEW_ALBUMS));
+        assert_eq!(
+            smoke_library_view_name("artists"),
+            Some(LIBRARY_VIEW_ARTISTS)
+        );
+        assert_eq!(smoke_library_view_name("Albums"), None);
+        assert_eq!(smoke_library_view_name("unknown"), None);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn library_views_expose_tracks_albums_and_artists_in_order() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let tracks = gtk4::Label::new(Some("Track table"));
+        let albums = gtk4::Label::new(Some("Album grid"));
+        let artists = gtk4::Label::new(Some("Artist grid"));
+
+        let views = build_views(&tracks, &albums, &artists);
+
+        assert_eq!(
+            views.stack.visible_child_name().as_deref(),
+            Some(LIBRARY_VIEW_TRACKS)
+        );
+        assert_eq!(views.stack.pages().n_items(), 3);
+        assert_eq!(
+            views.stack.child_by_name(LIBRARY_VIEW_TRACKS),
+            Some(tracks.upcast())
+        );
+        assert_eq!(
+            views.stack.child_by_name(LIBRARY_VIEW_ALBUMS),
+            Some(albums.upcast())
+        );
+        assert_eq!(
+            views.stack.child_by_name(LIBRARY_VIEW_ARTISTS),
+            Some(artists.upcast())
+        );
     }
 }

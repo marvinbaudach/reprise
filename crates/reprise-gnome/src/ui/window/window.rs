@@ -29,6 +29,7 @@ use rusqlite::Connection;
 
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
+use reprise_core::view_source::ViewSource;
 
 use super::cover_download_worker;
 use super::file_open::FileOpenHandler;
@@ -43,7 +44,6 @@ use super::status_bar::StatusBar;
 use super::strings;
 use super::track_content;
 use super::track_list::{OnActivate, TrackList};
-use reprise_core::view_source::ViewSource;
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
@@ -285,13 +285,29 @@ pub fn build(
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(scan_progress.widget());
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
+    let album_view =
+        super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
+    let artist_view = super::artist_view::ArtistView::new(conn.clone());
+    let library_views = super::library_shell::build_views(
+        &track_content,
+        album_view.widget(),
+        artist_view.widget(),
+    );
+    super::library_shell::wire_album_view(&library_views, &album_view, &track_list);
+    super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list);
+    super::library_shell::arm_smoke_library_view(&library_views);
+    let library_title = Rc::new(super::library_chrome::build_library_title(
+        &header,
+        &window_title,
+        &library_views.stack,
+    ));
     let stats_view = super::stats_view::StatsView::new();
     let content_stack = gtk4::Stack::new();
     content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     content_stack.set_transition_duration(150);
-    content_stack.add_named(&track_content, Some("tracks"));
+    content_stack.add_named(&library_views.stack, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
-    content_stack.set_visible_child_name("tracks");
+    content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
@@ -583,49 +599,18 @@ pub fn build(
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
     super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view, &sidebar_page);
-    // Stage 3 Task 4: sidebar selection drives the track list's source and
-    // the headerbar title. Wired here (after `track_list` and `window_title`
-    // both exist) rather than at `Sidebar::new` time — see `Sidebar::
-    // set_on_select`'s doc comment for why the sidebar's own initial
-    // selection doesn't need to round-trip through this callback.
-    //
-    // Stage 3 Task 4 review finding #1: in collapsed/narrow-window mode,
-    // `NavigationSplitView` shows only one of its two pages at a time
-    // (`show-content` false = sidebar page, true = content page). Selecting
-    // a row used to switch the underlying source but never flip that
-    // property, leaving the user staring at the sidebar page after their tap
-    // registered. `show_content_if_collapsed` is the fix, shared (via `Rc<dyn
-    // Fn()>`) between `on_select` (fires on an actual source change) and
-    // `Sidebar::set_on_show_content` (fires on every row activation,
-    // including re-activating the already-selected row — see that method's
-    // doc comment for why `on_select` alone can't cover a re-tap). A `Weak`
-    // upgrade, not a strong capture: `split_view` is about to be handed to
-    // `window.set_content` below, and neither callback needs to keep it
-    // alive past the window's own lifetime.
     let show_content_if_collapsed = super::window_navigation::show_content_callback(&split_view);
-    {
-        let track_list = track_list.clone();
-        let window_title = window_title.clone();
-        let show_content_if_collapsed = show_content_if_collapsed.clone();
-        let content_stack = content_stack.clone();
-        let stats_view_ref = Rc::new(stats_view);
-        let conn_for_stats = conn.clone();
-        sidebar.set_on_select(move |source, title| {
-            if matches!(source, ViewSource::MyStats) {
-                stats_view_ref.refresh(&conn_for_stats);
-                content_stack.set_visible_child_name("stats");
-            } else {
-                content_stack.set_visible_child_name("tracks");
-                track_list.set_source(source);
-            }
-            window_title.set_title(&title);
-            show_content_if_collapsed();
-        });
-    }
-    {
-        let show_content_if_collapsed = show_content_if_collapsed.clone();
-        sidebar.set_on_show_content(move || show_content_if_collapsed());
-    }
+    super::library_shell::wire_source_routing(
+        &sidebar,
+        &track_list,
+        stats_view,
+        conn,
+        &content_stack,
+        &library_views,
+        &library_title,
+        &window_title,
+        show_content_if_collapsed,
+    );
     {
         // Stage 3 Task 6: the mirror image of `track_list.set_on_playlist_
         // mutated` above — a drag-and-drop drop onto a sidebar playlist row
@@ -756,6 +741,8 @@ pub fn build(
         player.as_ref(),
         &session_state,
     );
+    let restored_source = super::view_session::snapshot(&track_list).source;
+    library_title.set_library_navigation_visible(matches!(restored_source, ViewSource::Library));
     super::session_restore::wire_close(
         &window,
         conn,

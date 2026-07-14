@@ -43,6 +43,15 @@ pub enum ViewSource {
     /// query_import_error_count` exposes the one piece of this source this
     /// task builds ahead of time (a bare count, for a future sidebar badge).
     ImportErrors,
+    /// A read-only album detail reached from the visual Albums grid. The
+    /// pair is the album identity used by the grid query; both fields are
+    /// matched case-insensitively after trimming, and no database state is
+    /// written when entering or leaving this source.
+    Album { album: String, album_artist: String },
+    /// A read-only artist detail reached from the visual Artists view.
+    /// Artist identity is the trimmed, case-insensitive track artist used by
+    /// the summary query.
+    Artist(String),
     /// The "My Stats" screen — a dedicated view backed by
     /// `library::stats_screen` rather than the shared track list. The
     /// sidebar routes to it; the content area shows the stats view widget
@@ -63,6 +72,11 @@ impl ViewSource {
             Self::Queue => "queue".to_string(),
             Self::Missing => "missing".to_string(),
             Self::ImportErrors => "import_errors".to_string(),
+            Self::Album {
+                album,
+                album_artist,
+            } => format!("album:{album}:{album_artist}"),
+            Self::Artist(artist) => format!("artist:{artist}"),
             Self::MyStats => "my_stats".to_string(),
         }
     }
@@ -86,5 +100,14 @@ mod tests {
         assert_eq!(ViewSource::Missing.label(), "missing");
         assert_eq!(ViewSource::ImportErrors.label(), "import_errors");
         assert_eq!(ViewSource::MyStats.label(), "my_stats");
+        assert_eq!(
+            ViewSource::Album {
+                album: "Blue".into(),
+                album_artist: "Joni Mitchell".into(),
+            }
+            .label(),
+            "album:Blue:Joni Mitchell"
+        );
+        assert_eq!(ViewSource::Artist("Björk".into()).label(), "artist:Björk");
     }
 }

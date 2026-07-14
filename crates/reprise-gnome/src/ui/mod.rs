@@ -21,8 +21,12 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
+#[path = "library_views/album_view.rs"]
+mod album_view;
 #[path = "info_panel/artist_news_worker.rs"]
 mod artist_news_worker;
+#[path = "library_views/artist_view.rs"]
+mod artist_view;
 #[path = "playback/audio_effects.rs"]
 mod audio_effects;
 #[path = "browse/browse_bar.rs"]
@@ -92,6 +96,8 @@ mod library_chrome;
 mod library_player_bar;
 #[path = "window/library_shell.rs"]
 mod library_shell;
+#[path = "library_views/library_view_css.rs"]
+mod library_view_css;
 #[path = "track_list/list_density.rs"]
 mod list_density;
 #[path = "scrobbling/listenbrainz_secret.rs"]

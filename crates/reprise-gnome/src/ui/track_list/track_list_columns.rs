@@ -127,7 +127,10 @@ pub(super) fn empty_state_for(
     match (row_count, has_filter) {
         (0, true) => EmptyState::NoResults,
         (0, false) => match source {
-            ViewSource::Missing | ViewSource::ImportErrors => EmptyState::NothingHere,
+            ViewSource::Missing
+            | ViewSource::ImportErrors
+            | ViewSource::Album { .. }
+            | ViewSource::Artist(_) => EmptyState::NothingHere,
             _ => EmptyState::EmptyLibrary,
         },
         _ => EmptyState::List,
@@ -616,13 +619,28 @@ mod empty_state_tests {
     /// "no music yet" (which would read oddly for "no files are currently
     /// missing").
     #[test]
-    fn nothing_here_for_missing_and_import_errors_with_no_rows_and_no_filter() {
+    fn nothing_here_for_transient_or_issue_sources_with_no_rows_and_no_filter() {
         assert_eq!(
             empty_state_for(0, false, &ViewSource::Missing),
             EmptyState::NothingHere
         );
         assert_eq!(
             empty_state_for(0, false, &ViewSource::ImportErrors),
+            EmptyState::NothingHere
+        );
+        assert_eq!(
+            empty_state_for(
+                0,
+                false,
+                &ViewSource::Album {
+                    album: "Blue".into(),
+                    album_artist: "Joni Mitchell".into(),
+                },
+            ),
+            EmptyState::NothingHere
+        );
+        assert_eq!(
+            empty_state_for(0, false, &ViewSource::Artist("Björk".into())),
             EmptyState::NothingHere
         );
     }

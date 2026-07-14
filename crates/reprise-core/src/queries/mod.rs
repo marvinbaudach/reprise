@@ -88,6 +88,7 @@ mod artist_context;
 mod browse;
 mod clauses;
 mod library;
+mod library_views;
 mod maintenance;
 mod playlist;
 mod queue;
@@ -103,6 +104,7 @@ pub use clauses::build_track_ids_query;
 // where the re-export would otherwise look unused.
 #[allow(unused_imports)]
 pub use clauses::build_track_query;
+pub use library_views::{query_albums, query_artists, AlbumSummary, ArtistSummary};
 pub use maintenance::{
     delete_all_import_errors, delete_import_error, mark_track_missing, query_import_error_count,
     query_import_errors, query_sync_tracks, query_track_summary, remove_all_missing_tracks,
@@ -199,6 +201,22 @@ pub fn query_track_window_browsed(
         ),
         ViewSource::Smart(id) => smart::query_track_window_smart(conn, *id, filter, offset, limit),
         ViewSource::Queue => queue::query_track_window_queue(conn, queue_ids, offset, limit),
+        ViewSource::Album {
+            album,
+            album_artist,
+        } => library_views::query_album_track_window(
+            conn,
+            album,
+            album_artist,
+            sort_field,
+            sort_dir,
+            filter,
+            offset,
+            limit,
+        ),
+        ViewSource::Artist(artist) => library_views::query_artist_track_window(
+            conn, artist, sort_field, sort_dir, filter, offset, limit,
+        ),
         ViewSource::ImportErrors | ViewSource::MyStats => Ok(Vec::new()),
     }
 }
@@ -239,6 +257,11 @@ pub fn query_track_count_browsed(
         // `query_track_window_queue` will actually render, even if some
         // future caller forgets to purge the queue after a hard-delete.
         ViewSource::Queue => queue::query_track_count_queue(conn, queue_ids),
+        ViewSource::Album {
+            album,
+            album_artist,
+        } => library_views::query_album_track_count(conn, album, album_artist, filter),
+        ViewSource::Artist(artist) => library_views::query_artist_track_count(conn, artist, filter),
         ViewSource::ImportErrors | ViewSource::MyStats => Ok(0),
     }
 }
@@ -310,6 +333,20 @@ pub fn query_track_ids_browsed(
         ViewSource::Playlist(id) => playlist::query_track_ids_playlist(conn, *id, filter),
         ViewSource::Smart(id) => smart::query_track_ids_smart(conn, *id, filter),
         ViewSource::Queue => Ok(queue_ids.to_vec()),
+        ViewSource::Album {
+            album,
+            album_artist,
+        } => library_views::query_album_track_ids(
+            conn,
+            album,
+            album_artist,
+            sort_field,
+            sort_dir,
+            filter,
+        ),
+        ViewSource::Artist(artist) => {
+            library_views::query_artist_track_ids(conn, artist, sort_field, sort_dir, filter)
+        }
         ViewSource::ImportErrors | ViewSource::MyStats => Ok(Vec::new()),
     }
 }
