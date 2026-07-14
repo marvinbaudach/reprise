@@ -14,6 +14,8 @@ finish-args:
   - --socket=pulseaudio
   - --share=network
   - --own-name=org.mpris.MediaPlayer2.reprise
+  - --talk-name=org.gtk.vfs.*
+  - --filesystem=xdg-run/gvfsd
 
 modules:
   - name: reprise

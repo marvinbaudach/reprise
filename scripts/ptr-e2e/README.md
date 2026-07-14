@@ -32,6 +32,7 @@ Environment overrides (all optional):
 | `PTR_E2E_SCREEN_RES` | `1600x900x24` | Xvfb resolution. Changing this invalidates the hardcoded click coordinates — see "Known limits" below. |
 | `PTR_E2E_N_TRACKS` | `5` | Number of copies of the core crate's `sine.flac` fixture scanned into the library. |
 | `PTR_E2E_OUT_DIR` | `/tmp/reprise-ptr-e2e` | Where screenshots and the app log are left after the run. Cleared at the start of each run. |
+| `PTR_E2E_PREFERENCES_ONLY` | `0` | Set to `1` to run only the Preferences pointer flow, independently of list geometry. |
 
 Exit code is `0` when every check passes, non-zero otherwise. On any exit
 (pass, fail, or interrupted) the `cleanup()` trap kills the app, openbox, and
@@ -45,9 +46,12 @@ disk except `PTR_E2E_OUT_DIR`.
    earlier attempt at this harness failed on that exact point), starts
    `openbox` as the window manager (GTK4 windows never map without one), and
    builds an isolated profile: `dbus-run-session` (own session bus),
-   scratch `XDG_DATA_HOME`/`XDG_CONFIG_HOME`, and a `gtk-4.0/settings.ini`
+   scratch `XDG_DATA_HOME`/`XDG_CACHE_HOME`/`XDG_CONFIG_HOME`, and a
+   `gtk-4.0/settings.ini`
    forcing `gtk-icon-theme-name=Papirus-Dark` — the theme under which a
-   previous "all stars look filled" bug was only visible.
+   previous "all stars look filled" bug was only visible. The harness writes
+   the private session-bus address into that scratch profile so its MPRIS
+   assertions can never address the operator's real session bus.
 2. Copies `PTR_E2E_N_TRACKS` copies of `crates/reprise-core/tests/fixtures/sine.flac` into a
    scratch music directory and launches Reprise with `REPRISE_SCAN_DIR`
    pointed at it, `REPRISE_AUDIO_SINK=fakesink`, and `REPRISE_LOG=debug` —
@@ -57,31 +61,37 @@ disk except `PTR_E2E_OUT_DIR`.
    not reliable for matching), then uses `wmctrl` and the live geometry to
    wait until it has reached the harness's fixed maximized size.
 4. Runs six pointer/keyboard flows and asserts on the app's own log:
-   - **Star-rating click**: clicks star 1 of row 0's Rating column, then
-     greps the log for `RatingWidget`'s `rating changed` debug line — proof
-     the click reached the actual button inside the `ColumnView` cell.
+   - **Star-rating click**: opens row 0's compact Rating button and chooses
+     two stars in its popover, then greps for `rating changed` — proof that real
+     pointer events reached both controls and the list-cell write-back.
    - **Keyboard context menu**: selects a track row and presses Shift+F10,
      then navigates to Edit tags, proving the selected track's context menu
      and tag editor open without a pointer. It enters an invalid Year and
      verifies Enter rejects it instead of applying or closing the dialog.
-   - **Queue drag reorder**: adds two tracks through that keyboard menu,
-     opens Queue, holds a real drag over the second row, captures the active
-     insertion target, and verifies release applies the reorder.
-   - **Space toggles play/pause**: double-clicks a track row to focus the
-     list and start real (fakesink) playback, then presses Space twice,
-     asserting the log shows `state=Paused` then `state=Playing` — proof a
-     real physical keypress reached the window-level `toggle-play-pause`
-     action, not just that `PlayerController::toggle_pause()` works when
-     called directly.
-   - **Selectable compact layouts**: clicks the visible Library header
-     button, opens the visible compact menu, selects Bar, Cover, Pill, then
-     Card, and checks each layout's bounded window geometry and nonblank
-     screenshot. It opens the same shared menu through a free-surface right
-     click and Shift+F10, restores Library with the visible button, and proves
-     a Ctrl+M round trip retains Card.
-   - **Preferences**: opens the real primary-menu item, visits Layout,
-     Library, Plugins, and Playback, triggers a rescan, and proves selected
-     controls write the expected values to the scratch SQLite database.
+   - **Manual Up Next and drag reorder**: adds two tracks through the keyboard
+     menu, proves the visible count reaches one and then two, opens Queue,
+     holds a real drag over the second row, captures the active insertion
+     target, and verifies release applies the reorder. A Library activation
+     then establishes context A; private-bus MPRIS Next calls consume manual
+     X and Y in reordered order, drive the visible count from two to one to
+     zero, and finally resume context B.
+   - **Space toggles play/pause**: while that real fakesink playback is live,
+     presses Space twice and asserts `state=Paused` then `state=Playing` —
+     proof a physical keypress reached the window-level action, not just that
+     `PlayerController::toggle_pause()` works when called directly.
+   - **Native compact layouts and input policy**: enters Bar through the
+     Library header, selects Cover, Pill, and Card through the shared menu,
+     and checks every bounded window geometry and screenshot. It opens the
+     same menu through its visible button, a free-surface right click, and
+     Shift+F10; invokes the menu-only Return to Library action; and proves a
+     Ctrl+M round trip retains Card. One real downward wheel step on Bar
+     metadata changes the private MPRIS volume by exactly five percent while
+     leaving paused position unchanged; the same wheel input over seek changes
+     neither volume nor position.
+   - **Preferences**: opens the real primary-menu item, exercises the native
+     Appearance and Player Bar cards, visits every top-level page, and proves
+     all four Library Window switches write the expected values to the scratch
+     SQLite database.
 5. Takes a final screenshot and checks it isn't blank/solid-color (pixel
    standard deviation above a threshold), then rejects any application log
    containing GTK/GLib criticals, a Rust panic, or a `RefCell` borrow failure.

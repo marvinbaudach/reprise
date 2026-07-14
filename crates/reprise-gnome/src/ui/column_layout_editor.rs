@@ -62,6 +62,9 @@ fn wire_row_drag_and_drop(
 ) {
     let source = gtk4::DragSource::new();
     source.set_actions(gdk::DragAction::MOVE);
+    // Observe pointer movement before ActionRow or one of its controls claims it.
+    // Clicks still propagate normally when the gesture does not become a drag.
+    source.set_propagation_phase(gtk4::PropagationPhase::Capture);
     source.connect_prepare(move |_, _, _| {
         Some(gdk::ContentProvider::for_value(&id.as_str().to_value()))
     });
@@ -94,25 +97,16 @@ fn wire_row_drag_and_drop(
     widget.add_controller(target);
 }
 
-fn column_label(id: ColumnId) -> String {
-    let message = match id {
-        ColumnId::Cover => strings::COLUMN_COVER,
-        ColumnId::Title => strings::COLUMN_TITLE,
-        ColumnId::TrackNumber => strings::COLUMN_TRACK_NUMBER,
-        ColumnId::Artist => strings::COLUMN_ARTIST,
-        ColumnId::Album => strings::COLUMN_ALBUM,
-        ColumnId::Genre => strings::COLUMN_GENRE,
-        ColumnId::Year => strings::COLUMN_YEAR,
-        ColumnId::Duration => strings::COLUMN_LENGTH,
-        ColumnId::Rating => strings::RATING,
-    };
-    strings::text(message)
-}
-
 struct EditorState {
     layout: RefCell<ColumnLayout>,
     list: gtk4::ListBox,
     track_list: std::rc::Weak<TrackList>,
+}
+
+struct EditorSurface {
+    toolbar: adw::ToolbarView,
+    header: adw::HeaderBar,
+    state: Rc<EditorState>,
 }
 
 impl EditorState {
@@ -173,7 +167,9 @@ fn build_row(
     index: usize,
 ) -> adw::ActionRow {
     let capabilities = row_capabilities(id, index, layout.order.len());
-    let row = adw::ActionRow::builder().title(column_label(id)).build();
+    let row = adw::ActionRow::builder()
+        .title(column_layout::column_label(id))
+        .build();
     if is_fixed(id) {
         row.set_subtitle(&strings::text(strings::COLUMN_ALWAYS_VISIBLE));
     } else {
@@ -251,14 +247,14 @@ fn build_row(
     row
 }
 
-pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
+fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
     let provider = gtk4::CssProvider::new();
     provider.load_from_string(&format!(
         ".{DROP_BEFORE_CLASS}:drop(active) {{ box-shadow: inset 0 2px @accent_color; }}\n\
          .{DROP_AFTER_CLASS}:drop(active) {{ box-shadow: inset 0 -2px @accent_color; }}"
     ));
     gtk4::style_context_add_provider_for_display(
-        &gtk4::prelude::WidgetExt::display(window),
+        &track_list.root_widget().display(),
         &provider,
         gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
@@ -277,14 +273,9 @@ pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList
     reset.connect_clicked(move |_| {
         state_guard.apply(ColumnLayout::default());
     });
-    let close = gtk4::Button::with_label(&strings::text(strings::CLOSE));
     let header = adw::HeaderBar::new();
     header.pack_start(&reset);
-    header.pack_end(&close);
-    header.set_title_widget(Some(&adw::WindowTitle::new(
-        &strings::text(strings::EDIT_COLUMN_LAYOUT),
-        "",
-    )));
+    header.set_title_widget(Some(&adw::WindowTitle::new(title, "")));
     let scroll = gtk4::ScrolledWindow::builder()
         .child(&list)
         .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -296,8 +287,29 @@ pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&scroll));
+
+    EditorSurface {
+        toolbar,
+        header,
+        state,
+    }
+}
+
+pub(super) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
+    let title = strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT);
+    let surface = build_surface(track_list, &title);
+    let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
+    tracing::info!(layout = %serialized, "column layout editor opened in preferences");
+    adw::NavigationPage::with_tag(&surface.toolbar, &title, "column-layout")
+}
+
+pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
+    let title = strings::text(strings::EDIT_COLUMN_LAYOUT);
+    let surface = build_surface(track_list, &title);
+    let close = gtk4::Button::with_label(&strings::text(strings::CLOSE));
+    surface.header.pack_end(&close);
     let dialog = adw::Dialog::builder()
-        .child(&toolbar)
+        .child(&surface.toolbar)
         .content_width(520)
         .content_height(620)
         .build();
@@ -308,12 +320,13 @@ pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList
         });
     }
     dialog.present(Some(window));
-    let serialized = column_layout::serialize_layout(&state.layout.borrow());
+    let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
     tracing::info!(
         layout = %serialized,
         "column layout editor presented"
     );
     if let Ok(smoke) = std::env::var(SMOKE_ENV) {
+        let state = surface.state;
         glib::timeout_add_seconds_local_once(1, move || {
             if smoke == "exercise" {
                 let layout = state.layout.borrow().clone();
@@ -363,21 +376,53 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn movable_row_owns_drag_and_drop_controllers() {
+    fn movable_row_captures_drag_before_child_controls_and_accepts_drops() {
         if gtk4::init().is_err() {
             return;
         }
-        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let row = adw::ActionRow::builder().title("Artist").build();
+        let toggle = gtk4::Switch::new();
+        row.add_suffix(&toggle);
+        row.set_activatable_widget(Some(&toggle));
         wire_row_drag_and_drop(&row, ColumnId::Artist, |_, _| {});
         let controllers = row.observe_controllers();
-        let mut has_drag = false;
+        let mut drag_phase = None;
         let mut has_drop = false;
         for index in 0..controllers.n_items() {
             let controller = controllers.item(index).unwrap();
-            has_drag |= controller.is::<gtk4::DragSource>();
+            if let Ok(source) = controller.clone().downcast::<gtk4::DragSource>() {
+                drag_phase = Some(source.propagation_phase());
+            }
             has_drop |= controller.is::<gtk4::DropTarget>();
         }
-        assert!(has_drag);
+        assert_eq!(drag_phase, Some(gtk4::PropagationPhase::Capture));
         assert!(has_drop);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn navigation_editor_builds_a_poppable_preferences_detail_page() {
+        gtk4::init().unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let runtime = crate::ui::cover_download_worker::setup();
+        let track_list = Rc::new(TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _| {}),
+            |_, _, _, _| {},
+            Vec::new,
+            runtime,
+        ));
+
+        let page = build_navigation_page(&track_list);
+
+        assert_eq!(
+            page.title(),
+            strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT)
+        );
+        assert!(page.can_pop());
+        assert!(page
+            .child()
+            .is_some_and(|child| child.is::<adw::ToolbarView>()));
     }
 }

@@ -27,33 +27,19 @@ allows exactly two documented informational conditions: the established
 uppercase component ID `org.reprise.Reprise` and the absent homepage while no
 public project URL exists.
 
-Fifteen GTK regression tests require a display and are ignored by the normal test
-suite. Run each in its own process because GTK can only be initialized from one
-thread per process, while Rust's test harness gives separate tests separate
-threads even with `--test-threads=1`:
+GTK regression tests that require a display are ignored by the normal test suite.
+Run all currently discovered display tests in their own isolated processes because
+GTK can only be initialized from one thread per process:
 
 ```sh
-for test in \
-  closed_popover_stays_parented_until_pending_actions_finish \
-  widgets_show_running_counts_and_terminal_result \
-  progress_widgets_show_running_fraction_and_counts \
-  widgets_reveal_progress_and_hide_after_finish \
-  reentrant_set_on_changed_does_not_panic \
-  enter_activates_the_apply_button_from_every_entry_row \
-  interaction_surface_expands_to_the_whole_cell \
-  movable_row_owns_drag_and_drop_controllers \
-  token_entry_is_a_masked_password_row \
-  api_credentials_are_masked_rows \
-  header_and_restore_buttons_switch_one_application_window_in_one_activation \
-  bar_layout_has_required_accessible_controls_and_fits \
-  cover_layout_has_required_accessible_controls_and_fits \
-  pill_layout_has_required_accessible_controls_and_fits \
-  card_layout_has_required_accessible_controls_and_fits
-do
-  XDG_DATA_HOME="$(mktemp -d)" XDG_CACHE_HOME="$(mktemp -d)" \
-    xvfb-run -a cargo test -p reprise-gnome "$test" -- --ignored
-done
+scripts/check-display-tests.sh
 ```
+
+The runner creates a private D-Bus session, Xvfb display, XDG data/cache roots,
+and fake audio sink for every test. It must never be shortened to a live desktop
+run. The synchronization display tests prove device empty/list/detail/progress
+composition and the phone-playlist COPY drop controller; real hardware remains
+manual.
 
 Before the final manual GNOME pass, run the mapped-window pointer regression
 against the release binary:
@@ -80,6 +66,18 @@ paths in a mapped window. It proves explicit opt-in, Upcoming/New cards, delayed
 selection rejection, close/reopen reuse, disable behavior, request-field privacy and a
 shared interval of at least one second without network access.
 
+The synchronized-lyrics smoke copies and tags three synthetic FLAC fixtures and sets
+`REPRISE_SMOKE_LYRICS=1` with `REPRISE_LRCLIB_FIXTURE_DIR` and a private request log.
+It must show active-line indices 0 then 1, reject a delayed stale track in favor of the
+latest track, and log only title, artist, album, and rounded duration. Run it only with
+private XDG data/cache, private D-Bus/Xvfb, forced X11, unset Wayland, `fakesink`, and a
+fixture-only MusicBrainz directory so neither lyrics nor cover paths can reach the
+network.
+
+```sh
+scripts/check-lyrics-smoke.sh
+```
+
 ## Build artifacts
 
 Create a clean optimized install tree without writing to `/usr`:
@@ -102,6 +100,12 @@ For Flatpak, follow `flatpak/README.md`. A full builder run and sandbox start ar
 required on a machine with `flatpak-builder`, GNOME Platform/SDK 50, and the
 matching stable Rust extension.
 
+Android synchronization additionally requires the host and Flatpak environment
+to expose GVfs MTP. The manifest must contain exactly
+`--talk-name=org.gtk.vfs.*` and `--filesystem=xdg-run/gvfsd`; direct USB access,
+host filesystem access, and broad session/system bus access are forbidden by the
+release check.
+
 ## Manual GNOME QA
 
 Use disposable test music and a disposable XDG data directory where practical.
@@ -110,8 +114,10 @@ The detailed live ledger of confirmed and pending checks is
 `docs/agent-workflow/MANUAL-QA.md`; keep it synchronized with every manual pass.
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
-  chooser. Cover download must default off. A detected Rhythmbox installation
-  must show a clearly default-off import offer; no false offer appears without it.
+  chooser. The copy must disclose automatic cover lookup without showing a
+  disable switch. A detected Rhythmbox installation must show a clearly
+  default-off `Column layout` choice in the one-time import section; no false
+  offer appears without it and no later menu/Preferences entry exists.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
@@ -124,6 +130,12 @@ The detailed live ledger of confirmed and pending checks is
   explain its default-off privacy boundary, show clear Upcoming/New and offline/cache
   copy, and open MusicBrainz in the system browser only after the user clicks the
   external-link button.
+- Switch the Information panel between Information and Lyrics while copied music is
+  playing. Synchronized text must highlight and center the current line after play and
+  seek, Pause must preserve it, Stop must clear it, rapid track changes must never show
+  stale text, and plain/instrumental/offline states must remain readable and retryable.
+  Confirm the cached result remains available offline. Use only disposable metadata
+  when validating the real LRCLIB service.
 - With disposable tagged audio and real speakers, adjust all equalizer bands and
   presets while playing, then compare ReplayGain Off, Per Track, and Per Album on
   files containing valid ReplayGain tags. Equalizer and ReplayGain belong only to
@@ -135,7 +147,13 @@ The detailed live ledger of confirmed and pending checks is
   cover art, shuffle/repeat writes, and clean shutdown on a real GNOME session.
 - Exercise browse facets, search, the column-layout editor (switches, buttons,
   whole-row drag, insertion lines, reset and restart persistence), a real read-only
-  Rhythmbox column import, playlists, M3U import/export, and drag/reorder gestures.
+  first-run Rhythmbox column import plus second-start suppression, playlists, M3U
+  import/export, and drag/reorder gestures.
+- With a disposable Android device unlocked in File transfer/MTP mode, verify
+  detection, device music browsing, phone-playlist creation, drag-to-copy,
+  per-file/overall progress, same-device FIFO ordering, cancellation, and safe
+  disconnect/reconnect. Confirm all writes stay under `Music/Reprise` and the
+  relative `.m3u8` order matches the dragged tracks.
 - Connect a disposable ListenBrainz account, verify the displayed account name,
   then test playing-now, the half-track/four-minute threshold, offline persistence
   across restart, retry delivery, disable-without-sending, and Disconnect clearing

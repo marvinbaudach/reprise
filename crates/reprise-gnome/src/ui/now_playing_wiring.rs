@@ -86,12 +86,13 @@ impl PlayerController {
         self.now_playing_view.set_track(title, artist, album);
     }
 
-    /// Clears the bar's AND the page's track display together — the
+    /// Clears Bar, Compact, Now Playing, and Lyrics together — the
     /// `Stopped`/failure-path counterpart to `sync_track`.
     pub(super) fn sync_clear_track(&self) {
         self.bar.clear_track();
         self.compact_player.clear_track();
         self.now_playing_view.clear_track();
+        self.sync_lyrics_track(None);
     }
 
     /// Loads `path`'s cover into both widgets through the ONE shared
@@ -174,6 +175,7 @@ impl PlayerController {
         self.bar.set_position(position_ms, duration_ms);
         self.compact_player.set_position(position_ms, duration_ms);
         self.now_playing_view.set_position(position_ms, duration_ms);
+        self.sync_lyrics_position(position_ms);
     }
 
     pub(super) fn sync_transport_enabled(&self, enabled: bool) {

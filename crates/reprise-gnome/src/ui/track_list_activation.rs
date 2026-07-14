@@ -9,6 +9,7 @@
 use std::rc::Rc;
 
 use crate::ui::track_list::Shared;
+use reprise_core::models::Track;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
@@ -23,10 +24,22 @@ pub(super) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>)
             tracing::warn!(position, "track list activate: no item at position");
             return;
         };
-        tracing::info!(path = %track.path, "activate track");
-        let (ids, start_index) = queue_ids_for_activation(&shared, position, track.id);
-        (shared.on_activate)(&track, ids, start_index);
+        activate_track(&shared, position, &track);
     });
+}
+
+pub(super) fn activate_track(shared: &Rc<Shared>, position: u32, track: &Track) {
+    tracing::info!(path = %track.path, "activate track");
+    if matches!(*shared.source.borrow(), ViewSource::Queue) {
+        let callback = shared.on_queue_activate.borrow().clone();
+        match callback {
+            Some(callback) => callback(position as usize),
+            None => tracing::warn!("queue activation callback is not wired"),
+        }
+        return;
+    }
+    let (ids, start_index) = queue_ids_for_activation(shared, position, track.id);
+    (shared.on_activate)(track, ids, start_index);
 }
 
 /// Builds the `(ids, start_index)` pair `OnActivate` carries: every track id

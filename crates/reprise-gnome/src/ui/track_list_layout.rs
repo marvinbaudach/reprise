@@ -2,6 +2,14 @@ use super::column_layout::{self, ColumnId, ColumnLayout};
 use super::track_list::TrackList;
 
 impl TrackList {
+    pub(super) fn column_view_widget(&self) -> &gtk4::ColumnView {
+        &self.shared.column_view
+    }
+
+    pub(super) fn root_widget(&self) -> &gtk4::Box {
+        &self.root
+    }
+
     pub(super) fn apply_column_layout(&self, layout: &ColumnLayout) -> Result<(), rusqlite::Error> {
         let serialized = column_layout::serialize_layout(layout);
         reprise_core::library::settings::set_setting(
@@ -10,6 +18,7 @@ impl TrackList {
             &serialized,
         )?;
         self.column_registry.apply(layout);
+        super::column_header_menu::sync(self, layout);
         let sort = self.shared.sort.borrow().clone();
         let current_id = ColumnId::from_sort_field(&sort.field);
         let (column, order) = if current_id.is_some_and(|id| self.column_registry.is_visible(id)) {

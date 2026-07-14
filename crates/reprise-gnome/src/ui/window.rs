@@ -1,9 +1,9 @@
 //! Builds the main application window: an `adw::NavigationSplitView` (Stage
 //! 3 Task 4) whose sidebar page holds `ui::sidebar::Sidebar` and whose
 //! content page holds the pre-existing libadwaita `ToolbarView` — a header
-//! bar (search entry + scan button) over the track list, a status line + the
-//! player bar as stacked bottom bars, and an `adw::ToastOverlay` wrapping
-//! everything so scan errors can surface a toast (see `wire_scan_button`).
+//! bar over the full Library layout, compact track statistics at the
+//! content's bottom-right corner, the player bar, and an `adw::ToastOverlay`
+//! wrapping the track content so scan errors can surface a toast.
 //!
 //! ## Sidebar toggle
 //!
@@ -41,6 +41,7 @@ use super::shortcuts;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::strings;
+use super::track_content;
 use super::track_list::{OnActivate, TrackList};
 use reprise_core::view_source::ViewSource;
 
@@ -103,10 +104,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
         .build();
 
-    let scan_button = super::library_chrome::action_button(
-        "folder-open-symbolic",
-        &strings::text(strings::SCAN_FOLDER),
-    );
     // Visible only while the split view is collapsed (see `wire_sidebar_
     // toggle`) — at full width both panes already show side by side, so
     // there is nothing to toggle.
@@ -120,7 +117,8 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     super::library_chrome::style_header(&header, &search_entry);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
-    header.pack_end(&scan_button);
+    let maintenance_actions = super::library_chrome::build_maintenance_actions();
+    let scan_button = maintenance_actions.scan;
 
     // The player is created eagerly at window build (not lazily on first
     // activation): construction is cheap (one playbin, no I/O), the
@@ -140,7 +138,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
                 tracing::warn!(%error, "could not read module.mpris.enabled; defaulting to on");
                 true
             });
-    let cover_download = cover_download_worker::setup(&conn.borrow());
+    let cover_download = cover_download_worker::setup();
     let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
         db_path.to_path_buf(),
         reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
@@ -156,6 +154,13 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
+    let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
+        super::device_sync_runtime::DeviceSyncRuntime::new(
+            conn,
+            reprise_platform_linux::device_sync::DeviceMonitor::new(),
+        )
+    });
+    super::device_sync_smoke::arm(&device_sync);
 
     let player = match PlayerController::new(
         conn.clone(),
@@ -182,11 +187,10 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
         let player = player.clone();
         move || match &player {
-            Some(controller) => controller.queue_ids_snapshot().len(),
+            Some(controller) => controller.up_next_len(),
             None => 0,
         }
     }));
-    super::queue_transport::wire_sidebar_count(player.as_ref(), &sidebar);
 
     // Stage 3 Task 8: at most one folder watcher runs at a time. `None`
     // until either the startup check below finds a persisted `library_root`
@@ -256,12 +260,26 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             cover_download.clone(),
         ))
     };
+    super::column_header_menu::install(&track_list);
     super::current_track_selection::wire(player.as_ref(), &track_list);
+    if let Some(player) = &player {
+        let sidebar = Rc::downgrade(&sidebar);
+        let track_list_weak = Rc::downgrade(&track_list);
+        player.set_on_queue_changed(move || {
+            if let Some(sidebar) = sidebar.upgrade() {
+                sidebar.refresh("up next changed");
+            }
+            if let Some(track_list) = track_list_weak.upgrade() {
+                track_list.reload_queue_if_visible();
+            }
+        });
+    }
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(scan_progress.widget());
-    toolbar_view.set_content(Some(track_list.widget()));
+    let track_content = track_content::build(track_list.widget(), status_bar.widget());
+    toolbar_view.set_content(Some(&track_content));
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
@@ -303,6 +321,14 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     track_list.set_toast_overlay(&toast_overlay);
     // Same reason again: the sidebar is built before `toast_overlay` exists.
     sidebar.set_toast_overlay(&toast_overlay);
+    {
+        let player = player.clone();
+        sidebar.set_on_missing_removed(move |removed_ids| {
+            if let Some(player) = &player {
+                player.purge_queue_ids(removed_ids);
+            }
+        });
+    }
     super::tag_edit_flow::wire_refresh(&track_list, &sidebar, &player);
 
     // Stage 3 Task 5: context menu action wiring. `track_list` stays
@@ -328,6 +354,22 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             None => {
                 tracing::warn!("player unavailable; ignoring context menu add-to-queue action");
             }
+        });
+    }
+    {
+        let player = player.clone();
+        track_list.set_on_queue_activate(move |position| {
+            if let Some(player) = &player {
+                player.play_up_next_at(position);
+            }
+        });
+    }
+    {
+        let player = player.clone();
+        track_list.set_on_queue_remove(move |positions| {
+            player
+                .as_ref()
+                .map_or(0, |player| player.remove_up_next_positions(positions))
         });
     }
     {
@@ -442,13 +484,12 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .as_ref()
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
     header.pack_end(&info_panel.toggle_button());
-    let library_chrome = super::library_chrome::build(&header, &split_view);
     let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
-        &library_chrome.root,
-        status_bar.widget(),
+        &split_view,
         player_bar_widget,
         bar_position,
     );
+    let library_chrome = super::library_chrome::build(&header, library_player_bar.widget());
     {
         let info_panel = Rc::downgrade(&info_panel);
         track_list.set_on_selection_changed(move |context| {
@@ -460,7 +501,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     info_panel.arm_smoke(&track_list);
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
-        library_player_bar.widget().upcast_ref(),
+        library_chrome.root.upcast_ref(),
         player.as_ref().map(|player| &player.compact_player),
         conn,
         initial_view,
@@ -483,48 +524,39 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         &window,
         conn,
         &track_list,
+        &split_view,
         &sidebar_page,
         &status_bar,
         &library_player_bar,
+        &info_panel,
         &scan_button,
         player.as_ref(),
-        &cover_batch,
         &listenbrainz,
         &lastfm,
         &artist_news,
         &decorations,
-        {
-            let minimal_view = minimal_view.clone();
-            move || minimal_view.toggle()
-        },
+        &device_sync,
     );
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();
-    let _compact_button = super::compact_mode_controls::install(
-        &header,
+    super::compact_mode_controls::install(
         &minimal_view,
         player.as_ref().map(|player| &player.compact_player),
         Rc::new(move || compact_preferences.present()),
     );
-    let toggled_cover_batch = cover_batch.clone();
     primary_menu::install(
         &header,
         &window,
-        conn,
-        &cover_download,
         &track_list,
         primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
             on_preferences: Rc::new(move || preferences.present()),
-            on_cover_download_changed: Rc::new(move |enabled| {
-                toggled_cover_batch.set_enabled(enabled);
-            }),
         },
     );
     header.pack_end(&search_entry);
-    cover_batch.start_if_enabled();
+    cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
-    super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view);
+    super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view, &sidebar_page);
     // Stage 3 Task 4: sidebar selection drives the track list's source and
     // the headerbar title. Wired here (after `track_list` and `window_title`
     // both exist) rather than at `Sidebar::new` time — see `Sidebar::
@@ -680,6 +712,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     // `now_playing_wiring.rs`'s doc comments for what each call does.
     now_playing_wiring::wire_bar_expand(player.as_ref(), &content_nav);
     now_playing_wiring::arm_smoke_nowplaying(player.as_ref(), &content_nav);
+    super::lyrics_smoke::arm(player.as_ref(), &info_panel, conn);
 
     super::session_restore::restore_runtime(
         &search_entry,

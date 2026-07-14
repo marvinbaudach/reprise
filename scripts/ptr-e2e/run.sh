@@ -78,10 +78,23 @@ PTR_E2E_N_TRACKS="${PTR_E2E_N_TRACKS:-5}"
 # are cleared at the top of a fresh run).
 PTR_E2E_OUT_DIR="${PTR_E2E_OUT_DIR:-/tmp/reprise-ptr-e2e}"
 PTR_E2E_NEWS_ONLY="${PTR_E2E_NEWS_ONLY:-0}"
+PTR_E2E_HEADER_ONLY="${PTR_E2E_HEADER_ONLY:-0}"
+PTR_E2E_PLAYLIST_DELETE_ONLY="${PTR_E2E_PLAYLIST_DELETE_ONLY:-0}"
+PTR_E2E_PREFERENCES_ONLY="${PTR_E2E_PREFERENCES_ONLY:-0}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=artist-news.sh
 source "$REPO_ROOT/scripts/ptr-e2e/artist-news.sh"
+# shellcheck source=compact-flow.sh
+source "$REPO_ROOT/scripts/ptr-e2e/compact-flow.sh"
+# shellcheck source=rating.sh
+source "$REPO_ROOT/scripts/ptr-e2e/rating.sh"
+# shellcheck source=column-header-menu.sh
+source "$REPO_ROOT/scripts/ptr-e2e/column-header-menu.sh"
+# shellcheck source=playlist-delete.sh
+source "$REPO_ROOT/scripts/ptr-e2e/playlist-delete.sh"
+# shellcheck source=preferences.sh
+source "$REPO_ROOT/scripts/ptr-e2e/preferences.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
 APP_ID="org.reprise.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
@@ -111,6 +124,7 @@ MUSICBRAINZ_FIXTURES="$SCRATCH_ROOT/musicbrainz"
 MUSICBRAINZ_LOG="$SCRATCH_ROOT/musicbrainz-requests.log"
 DISPLAYFD_FILE="$SCRATCH_ROOT/displayfd.txt"
 APP_LOG="$SCRATCH_ROOT/app.log"
+DBUS_ADDRESS_FILE="$SCRATCH_ROOT/dbus-address.txt"
 XVFB_LOG="$SCRATCH_ROOT/xvfb.log"
 OPENBOX_LOG="$SCRATCH_ROOT/openbox.log"
 
@@ -221,7 +235,7 @@ log_step "launching Reprise ($PTR_E2E_PROFILE profile, $PTR_E2E_N_TRACKS fixture
 # cargo interpose. `env -u WAYLAND_DISPLAY GDK_BACKEND=x11` is the fix for
 # lesson 4 above — without it, a Wayland-session operator's shell can steer
 # the app onto their real desktop instead of this throwaway X server.
-setsid dbus-run-session -- env \
+setsid env \
   -u WAYLAND_DISPLAY \
   GDK_BACKEND=x11 \
   DISPLAY="$DISPLAY" \
@@ -231,11 +245,15 @@ setsid dbus-run-session -- env \
   GTK_A11Y=none \
   NO_AT_BRIDGE=1 \
   REPRISE_SCAN_DIR="$MUSIC_DIR" \
+  REPRISE_SMOKE_SEED_PLAYLIST="Pointer Playlist" \
   REPRISE_AUDIO_SINK=fakesink \
   REPRISE_MUSICBRAINZ_FIXTURE_DIR="$MUSICBRAINZ_FIXTURES" \
   REPRISE_MUSICBRAINZ_FIXTURE_LOG="$MUSICBRAINZ_LOG" \
   REPRISE_SMOKE_ARTIST_NEWS="$PTR_E2E_NEWS_ONLY" \
+  REPRISE_DBUS_ADDRESS_FILE="$DBUS_ADDRESS_FILE" \
   REPRISE_LOG=debug \
+  dbus-run-session -- sh -c \
+  'printf "%s" "$DBUS_SESSION_BUS_ADDRESS" > "$REPRISE_DBUS_ADDRESS_FILE"; exec "$@"' sh \
   cargo run --quiet --manifest-path "$REPO_ROOT/Cargo.toml" "${CARGO_PROFILE_FLAG[@]}" \
   >"$APP_LOG" 2>&1 &
 APP_LAUNCH_PID=$!
@@ -487,26 +505,25 @@ if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
   exit 0
 fi
 
-# --- Flow 1: star-rating click reaches the real widget -----------------------
+if [ "$PTR_E2E_PREFERENCES_ONLY" = "1" ]; then
+  run_preferences_flow
+  assert_log_absent \
+    'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
+    'GTK/GLib critical, panic, or RefCell borrow failure'
+  exit 0
+fi
 
-log_step "flow 1: star-rating click…"
-screenshot "01-initial-track-list"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/01-initial-track-list.png"
-# Close the default-visible Information overlay before exercising row input.
-click_window_from_right "$INFO_TOGGLE_FROM_RIGHT" 28
-sleep 1
-click_at "$ROW0_TITLE_CELL_X" "$ROW0_TITLE_CELL_Y"
-sleep 0.3
-MARKER=$(log_marker)
-click_at "$ROW0_RATING_STAR1_X" "$ROW0_RATING_STAR1_Y"
-sleep 1
-screenshot "02-after-star-click"
-# `RatingWidget`'s click handler logs via `tracing::debug!(... "rating
-# changed")` in src/ui/track_list.rs — this is the exact line a signal-seam
-# test (calling `click_star_for_test`/`emit_clicked` directly) cannot prove:
-# it only exists if the real pointer click was actually delivered to the
-# button inside the ColumnView cell.
-assert_log_contains_since "$MARKER" "rating changed" "star click delivered a rating change (src/ui/track_list.rs on_rating_changed)"
+# --- Flow 1: compact rating click reaches the real popover ------------------
+
+run_rating_flow
+# --- Flow 1b: right-click headers expose column visibility ------------------
+
+run_column_header_menu_flow
+if [ "$PTR_E2E_HEADER_ONLY" = "1" ]; then
+  exit 0
+fi
+run_playlist_delete_flow
+if [ "$PTR_E2E_PLAYLIST_DELETE_ONLY" = "1" ]; then exit 0; fi
 # --- Flow 2: keyboard opens the selected row's context menu -----------------
 
 log_step "flow 2: Shift+F10 opens the track context menu…"
@@ -545,15 +562,15 @@ key "shift+F10"
 key "Down"
 key "Return"
 sleep 0.2
-assert_log_contains_since "$MARKER" "context menu: tracks added to queue" "keyboard context menu added the first track to Queue"
+assert_log_contains_since "$MARKER" "tracks added to queue.*queue_len=1" "keyboard context menu added the first track to Queue"
 click_at "$ROW1_TITLE_CELL_X" "$ROW1_TITLE_CELL_Y"
 MARKER=$(log_marker)
 key "shift+F10"
 key "Down"
 key "Return"
 sleep 0.2
-assert_log_contains_since "$MARKER" "context menu: tracks added to queue" "keyboard context menu added the second track to Queue"
-assert_log_contains_since "$MARKER" "sidebar refresh.*queue changed" "Queue mutation refreshed the sidebar count"
+assert_log_contains_since "$MARKER" "tracks added to queue.*queue_len=2" "keyboard context menu added the second track to Queue"
+assert_log_contains_since "$MARKER" "sidebar refresh.*up next changed" "Queue mutation refreshed the sidebar count"
 click_at "$SIDEBAR_QUEUE_X" "$SIDEBAR_QUEUE_Y"
 sleep 0.3
 screenshot "06-queue-before-reorder"
@@ -573,26 +590,55 @@ release_drag
 sleep 0.4
 assert_log_contains_since "$MARKER" "queue reordered via drag and drop" "Queue drag release applied the reorder"
 
-# --- Flow 4: Space toggles play/pause when the track list has focus ---------
+# --- Flow 4: manual Up Next interrupts and resumes one playback context -----
 
-log_step "flow 4: Space toggles play/pause…"
-# Double-click a *different* row (row 1's Title cell) to both focus the
-# track list (search entry must NOT have focus, or Space would type a literal
-# space instead — see src/ui/shortcuts.rs's `space_should_toggle`) and start
-# real playback, so the player has a state to toggle away from. Using row 1
-# rather than row 0 keeps this flow's log lines distinguishable from flow 1's
-# star click above.
-#
-# Timing here is deliberately tight (0.3s, not the leisurely 1s used
-# elsewhere): the core fixture track is ~1.16s long,
-# and once it reaches end-of-stream the player auto-advances to the next
-# queued track — which would race with "Space paused a playing track" below
-# and turn a real bug into flaky noise. Every action after this point (both
-# Space presses) needs to land while the *same* activation is still playing.
-MARKER=$(log_marker)
-double_click_at "$QUEUE_ROW1_TITLE_X" "$QUEUE_ROW1_TITLE_Y"
+log_step "flow 4: context A → manual X → manual Y → context B…"
+click_at 80 100
 sleep 0.3
-assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "activation started real playback (src/ui/player_controller.rs)"
+TRACK_ID_A="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
+  'SELECT id FROM tracks WHERE missing = 0 ORDER BY id ASC LIMIT 1 OFFSET 2;')"
+TRACK_ID_X="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
+  'SELECT id FROM tracks WHERE missing = 0 ORDER BY id ASC LIMIT 1 OFFSET 1;')"
+TRACK_ID_Y="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
+  'SELECT id FROM tracks WHERE missing = 0 ORDER BY id ASC LIMIT 1 OFFSET 0;')"
+TRACK_ID_B="$(sqlite3 "$XDG_DATA_HOME_SCRATCH/reprise/reprise.db" \
+  'SELECT id FROM tracks WHERE missing = 0 ORDER BY id ASC LIMIT 1 OFFSET 3;')"
+ROW2_TITLE_Y=$((ROW0_TITLE_CELL_Y + 102))
+MARKER=$(log_marker)
+double_click_at "$ROW0_TITLE_CELL_X" "$ROW2_TITLE_Y"
+sleep 0.2
+assert_log_contains_since "$MARKER" \
+  "playback started.*track_id=$TRACK_ID_A.*from_up_next=false" \
+  "Library activation started context A while two manual tracks stayed pending"
+
+MARKER=$(log_marker)
+mpris_call Next
+sleep 0.2
+assert_log_contains_since "$MARKER" \
+  "playback started.*track_id=$TRACK_ID_X.*from_up_next=true" \
+  "MPRIS Next consumed reordered manual track X before the context"
+assert_log_contains_since "$MARKER" "up next changed.*up_next_len=1" \
+  "visible Up Next count changed from two to one"
+
+MARKER=$(log_marker)
+mpris_call Next
+sleep 0.2
+assert_log_contains_since "$MARKER" \
+  "playback started.*track_id=$TRACK_ID_Y.*from_up_next=true" \
+  "second MPRIS Next consumed manual track Y"
+assert_log_contains_since "$MARKER" "up next changed.*up_next_len=0" \
+  "visible Up Next count changed from one to zero"
+
+MARKER=$(log_marker)
+mpris_call Next
+sleep 0.2
+assert_log_contains_since "$MARKER" \
+  "playback started.*track_id=$TRACK_ID_B.*from_up_next=false" \
+  "MPRIS Next resumed the unchanged context at B"
+
+# Keep the original real-keyboard regression after the stronger ordering
+# proof. The fixture is short, so both keypresses remain tightly bounded.
+log_step "flow 4b: Space toggles play/pause…"
 
 MARKER=$(log_marker)
 key "space"
@@ -604,181 +650,10 @@ key "space"
 sleep 0.3
 assert_log_contains_since "$MARKER" "applying state change.*state=Playing" "Space resumed playback (state change to Playing)"
 
-# --- Flow 5: visible Compact button, all layouts, menus, and shortcut --------
+# --- Flow 5: native Compact layouts, context menu, and scroll volume --------
 
-log_step "flow 5: visible Compact button and all four layouts…"
-# Header coordinates are fixed for this harness's 1600x900 maximized
-# geometry, like the row/rating coordinates documented above. The compact
-# button is the view-grid icon directly to the right of the primary menu.
-HEADER_BUTTON_Y=28
-MARKER=$(log_marker)
-click_window_from_right "$COMPACT_BUTTON_FROM_RIGHT" "$HEADER_BUTTON_Y"
-sleep 0.4
-assert_log_contains_since "$MARKER" "window view mode changed.*mode=Compact.*layout=Bar" "full-header button entered Compact Bar"
-assert_window_within 660 185 "Bar compact geometry after leaving maximized Library"
-screenshot "08-compact-bar"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-compact-bar.png"
-
-# Every compact header keeps the shared menu at a stable right-side offset.
-# Opening it with a real pointer proves the visible entry point; keyboard
-# navigation then selects each radio target in sequence.
-click_window_from_right 145 28
-sleep 0.3
-screenshot "09-compact-visible-menu"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/09-compact-visible-menu.png"
-
-MARKER=$(log_marker)
-click_window_from_right 145 100
-sleep 0.2
-click_window_from_right 145 124
-sleep 0.4
-assert_log_contains_since "$MARKER" "compact layout changed.*layout=Cover" "visible menu selected Cover"
-assert_window_within 420 560 "Cover compact geometry"
-screenshot "10-compact-cover"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/10-compact-cover.png"
-
-click_window_from_right 145 28
-MARKER=$(log_marker)
-sleep 0.2
-click_window_from_right 145 100
-sleep 0.2
-click_window_from_right 145 156
-sleep 0.4
-assert_log_contains_since "$MARKER" "compact layout changed.*layout=Pill" "visible menu selected Pill"
-assert_window_within 680 125 "Pill compact geometry"
-screenshot "11-compact-pill"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/11-compact-pill.png"
-
-click_window_from_right 120 40
-MARKER=$(log_marker)
-sleep 0.3
-screenshot "11b-compact-pill-visible-menu"
-assert_screenshots_differ \
-  "$PTR_E2E_OUT_DIR/11-compact-pill.png" \
-  "$PTR_E2E_OUT_DIR/11b-compact-pill-visible-menu.png" \
-  "Pill visible button opened the compact menu"
-click_window_from_right 151 124
-sleep 0.2
-click_window_from_right 151 219
-sleep 0.4
-assert_log_contains_since "$MARKER" "compact layout changed.*layout=Card" "visible menu selected Card"
-assert_window_within 500 300 "Card compact geometry"
-screenshot "12-compact-card"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/12-compact-card.png"
-
-# Free-surface right click and Shift+F10 must display the same shared menu.
-click_window_relative 20 200 3
-sleep 0.3
-screenshot "13-compact-right-click-menu"
-assert_screenshots_differ \
-  "$PTR_E2E_OUT_DIR/12-compact-card.png" \
-  "$PTR_E2E_OUT_DIR/13-compact-right-click-menu.png" \
-  "right click opened the compact menu"
-key "Escape"
-sleep 0.2
-click_window_from_right 145 28
-sleep 0.2
-key "Escape"
-screenshot "13b-compact-card-menu-closed"
-key "shift+F10"
-sleep 0.3
-screenshot "14-compact-keyboard-menu"
-assert_screenshots_differ \
-  "$PTR_E2E_OUT_DIR/13b-compact-card-menu-closed.png" \
-  "$PTR_E2E_OUT_DIR/14-compact-keyboard-menu.png" \
-  "Shift+F10 opened the compact menu"
-key "Escape"
-# The direct restore button returns to Library; Ctrl+M repeats the round trip
-# and must retain Card as the selected compact layout.
-MARKER=$(log_marker)
-click_window_from_right 105 28
-sleep 0.5
-assert_log_contains_since "$MARKER" "window view mode changed.*mode=Library.*layout=Card" "visible restore button returned to Library"
-screenshot "15-library-restored"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/15-library-restored.png"
-
-MARKER=$(log_marker)
-key "ctrl+m"
-sleep 0.4
-assert_log_contains_since "$MARKER" "window view mode changed.*mode=Compact.*layout=Card" "Ctrl+M restored Compact Card"
-screenshot "16-compact-card-shortcut"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/16-compact-card-shortcut.png"
-MARKER=$(log_marker)
-key "ctrl+m"
-sleep 0.5
-assert_log_contains_since "$MARKER" "window view mode changed.*mode=Library.*layout=Card" "Ctrl+M restored Library View"
-# --- Flow 6: real Preferences menu item --------------------------------------
-
-log_step "flow 6: Preferences dialog…"
-maximize_window
-click_window_from_right "$PRIMARY_MENU_FROM_RIGHT" 28
-sleep 0.3
-screenshot "17-main-menu"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/17-main-menu.png"
-
-# Preferences is the second row in the primary menu.
-MARKER=$(log_marker)
-key "Home"
-key "Down"
-key "Return"
-sleep 1.5
-assert_log_contains_since "$MARKER" "preferences dialog presented" "primary-menu click opened Preferences"
-screenshot "18-preferences"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/18-preferences.png"
-
-click_at 702 823
-sleep 0.3
-screenshot "19-preferences-layout"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/19-preferences-layout.png"
-click_at 1034 209
-sleep 0.2
-assert_db_value "ui.sidebar_visible" "0" "Layout switch hid the sidebar"
-click_at 1034 264
-sleep 0.2
-assert_db_value "ui.status_visible" "0" "Layout switch hid the status line"
-click_at 804 823
-sleep 0.7
-screenshot "20-preferences-library"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/20-preferences-library.png"
-MARKER=$(log_marker)
-click_at 800 209
-sleep 1.5
-assert_log_contains_since "$MARKER" "scan complete" "Library Preferences triggered a completed rescan"
-click_at 907 823
-sleep 0.3
-screenshot "21-preferences-plugins"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/21-preferences-plugins.png"
-click_at 1011 823
-sleep 0.3
-screenshot "22-preferences-playback"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/22-preferences-playback.png"
-
-# Drive the real Playback controls, then prove the removed duplicate plugin
-# rows cannot mutate either core playback setting.
-click_at 1034 194
-sleep 0.4
-assert_db_value "playback.equalizer_enabled" "1" "Playback switch enabled the equalizer"
-click_at 1000 323
-sleep 0.3
-assert_db_query_true \
-  "SELECT value <> '0,0,0,0,0,0,0,0,0,0' FROM settings WHERE key = 'playback.equalizer_bands';" \
-  "real scale click persisted a non-flat equalizer curve"
-
-click_at 907 823
-sleep 0.7
-click_at 1034 290
-sleep 0.4
-assert_db_value "playback.equalizer_enabled" "1" "Plugins has no duplicate Equalizer switch"
-click_at 1034 345
-sleep 0.4
-assert_db_query_true \
-  "SELECT COUNT(*) = 0 FROM settings WHERE key = 'playback.replay_gain_mode';" \
-  "Plugins has no duplicate ReplayGain switch"
-
-click_at 1011 823
-sleep 0.7
-screenshot "23-preferences-synchronized"
-assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/23-preferences-synchronized.png"
+run_compact_flow
+run_preferences_flow
 
 # --- Final screenshot ---------------------------------------------------------
 

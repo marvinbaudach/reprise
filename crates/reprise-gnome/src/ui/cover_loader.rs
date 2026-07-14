@@ -34,7 +34,7 @@ struct CachedCover {
 pub struct CoverLoader {
     cache: RefCell<HashMap<String, CachedCover>>,
     order: RefCell<std::collections::VecDeque<String>>,
-    download_enabled: Rc<Cell<bool>>,
+    download_enabled: bool,
     download_worker: Option<async_channel::Sender<DownloadRequest>>,
 }
 
@@ -183,7 +183,7 @@ impl CoverLoader {
             if current.get() != token {
                 return;
             }
-            if cache_path.is_none() && this.download_enabled.get() {
+            if cache_path.is_none() && this.download_enabled {
                 let Some(worker) = this.download_worker.clone() else {
                     return;
                 };

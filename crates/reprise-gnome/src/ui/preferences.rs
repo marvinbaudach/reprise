@@ -6,15 +6,16 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::library::settings::{
-    self, ColorScheme, ListDensity, PlayerBarPosition, ReplayGainMode,
-};
+use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, ReplayGainMode};
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::cover_download_batch::CoverDownloadBatch;
+use crate::ui::device_sync_runtime::DeviceSyncRuntime;
+use crate::ui::info_panel::InfoPanel;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::preference_playback::build_equalizer_surface;
+use crate::ui::preference_plugins::{plugin_applies_live, plugin_description, plugin_title};
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
@@ -22,36 +23,6 @@ use crate::ui::track_list::TrackList;
 use crate::ui::window_decorations::WindowDecorations;
 
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
-
-fn plugin_applies_live(id: &str) -> bool {
-    matches!(
-        id,
-        "cover_download" | "artist_news" | "listenbrainz" | "lastfm"
-    )
-}
-
-fn plugin_title(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
-    let message = match descriptor.id {
-        "cover_download" => strings::DOWNLOAD_MISSING_COVERS,
-        "listenbrainz" => strings::LISTENBRAINZ,
-        "lastfm" => strings::LASTFM,
-        "artist_news" => strings::ARTIST_NEWS,
-        _ => return descriptor.name.to_string(),
-    };
-    strings::text(message)
-}
-
-fn plugin_description(descriptor: &reprise_core::modules::ModuleDescriptor) -> String {
-    let message = match descriptor.id {
-        "mpris" => strings::PLUGIN_MPRIS_DESCRIPTION,
-        "cover_download" => strings::PLUGIN_COVER_DESCRIPTION,
-        "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
-        "lastfm" => strings::PLUGIN_LASTFM_DESCRIPTION,
-        "artist_news" => strings::ARTIST_NEWS_DESCRIPTION,
-        _ => return descriptor.description.to_string(),
-    };
-    strings::text(message)
-}
 
 fn equalizer_preset(index: u32) -> [f64; 10] {
     match index {
@@ -78,76 +49,26 @@ pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
     }
 }
 
-fn color_scheme_from_index(index: u32) -> ColorScheme {
-    match index {
-        1 => ColorScheme::Light,
-        2 => ColorScheme::Dark,
-        _ => ColorScheme::System,
-    }
-}
-
-fn color_scheme_index(value: ColorScheme) -> u32 {
-    match value {
-        ColorScheme::System => 0,
-        ColorScheme::Light => 1,
-        ColorScheme::Dark => 2,
-    }
-}
-
-fn density_from_index(index: u32) -> ListDensity {
-    match index {
-        0 => ListDensity::Comfortable,
-        2 => ListDensity::Compact,
-        _ => ListDensity::Standard,
-    }
-}
-
-fn density_index(value: ListDensity) -> u32 {
-    match value {
-        ListDensity::Comfortable => 0,
-        ListDensity::Standard => 1,
-        ListDensity::Compact => 2,
-    }
-}
-
-fn bar_position_from_index(index: u32) -> PlayerBarPosition {
-    if index == 1 {
-        PlayerBarPosition::Top
-    } else {
-        PlayerBarPosition::Bottom
-    }
-}
-
-fn bar_position_index(value: PlayerBarPosition) -> u32 {
-    match value {
-        PlayerBarPosition::Bottom => 0,
-        PlayerBarPosition::Top => 1,
-    }
-}
-
-fn apply_color_scheme(value: ColorScheme) {
-    let value = match value {
-        ColorScheme::System => adw::ColorScheme::Default,
-        ColorScheme::Light => adw::ColorScheme::ForceLight,
-        ColorScheme::Dark => adw::ColorScheme::ForceDark,
-    };
-    adw::StyleManager::default().set_color_scheme(value);
+fn apply_system_color_scheme() {
+    adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
 }
 
 pub(super) struct PreferencesContext {
     pub(super) window: adw::ApplicationWindow,
     pub(super) conn: Rc<RefCell<Connection>>,
     pub(super) track_list: Rc<TrackList>,
-    sidebar_page: adw::NavigationPage,
-    status_bar: StatusBar,
-    library_player_bar: LibraryPlayerBarShell,
+    pub(super) split_view: adw::NavigationSplitView,
+    pub(super) sidebar_page: adw::NavigationPage,
+    pub(super) status_bar: StatusBar,
+    pub(super) library_player_bar: LibraryPlayerBarShell,
+    pub(super) info_panel: Rc<InfoPanel>,
     pub(super) scan_button: gtk4::Button,
     pub(super) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
     pub(super) player: Option<Rc<PlayerController>>,
     pub(super) syncing_effect_controls: Cell<bool>,
     pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
+    pub(super) equalizer_surfaces: RefCell<Vec<gtk4::Widget>>,
     pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
-    pub(super) cover_batch: Rc<CoverDownloadBatch>,
     pub(super) listenbrainz: Rc<ScrobbleRuntime>,
     pub(super) syncing_listenbrainz: Cell<bool>,
     pub(super) listenbrainz_activation_pending: Cell<bool>,
@@ -156,7 +77,9 @@ pub(super) struct PreferencesContext {
     pub(super) lastfm_activation_pending: Cell<bool>,
     pub(super) artist_news: Rc<ArtistNewsRuntime>,
     pub(super) decorations: Rc<WindowDecorations>,
-    on_minimal: Rc<dyn Fn()>,
+    pub(super) device_sync: Rc<DeviceSyncRuntime>,
+    preferences_window: RefCell<glib::WeakRef<adw::Window>>,
+    preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
 }
 
 impl PreferencesContext {
@@ -165,32 +88,35 @@ impl PreferencesContext {
         window: &adw::ApplicationWindow,
         conn: &Rc<RefCell<Connection>>,
         track_list: &Rc<TrackList>,
+        split_view: &adw::NavigationSplitView,
         sidebar_page: &adw::NavigationPage,
         status_bar: &StatusBar,
         library_player_bar: &LibraryPlayerBarShell,
+        info_panel: &Rc<InfoPanel>,
         scan_button: &gtk4::Button,
         player: Option<&Rc<PlayerController>>,
-        cover_batch: &Rc<CoverDownloadBatch>,
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
         decorations: &Rc<WindowDecorations>,
-        on_minimal: impl Fn() + 'static,
+        device_sync: &Rc<DeviceSyncRuntime>,
     ) -> Rc<Self> {
         let context = Rc::new(Self {
             window: window.clone(),
             conn: conn.clone(),
             track_list: track_list.clone(),
+            split_view: split_view.clone(),
             sidebar_page: sidebar_page.clone(),
             status_bar: status_bar.clone(),
             library_player_bar: library_player_bar.clone(),
+            info_panel: info_panel.clone(),
             scan_button: scan_button.clone(),
             library_folder_rows: RefCell::new(Vec::new()),
             player: player.cloned(),
             syncing_effect_controls: Cell::new(false),
             equalizer_controls: RefCell::new(Vec::new()),
+            equalizer_surfaces: RefCell::new(Vec::new()),
             replaygain_mode: RefCell::new(None),
-            cover_batch: cover_batch.clone(),
             listenbrainz: listenbrainz.clone(),
             syncing_listenbrainz: Cell::new(false),
             listenbrainz_activation_pending: Cell::new(false),
@@ -199,7 +125,9 @@ impl PreferencesContext {
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
             decorations: decorations.clone(),
-            on_minimal: Rc::new(on_minimal),
+            device_sync: device_sync.clone(),
+            preferences_window: RefCell::new(glib::WeakRef::new()),
+            preferences_navigation: RefCell::new(glib::WeakRef::new()),
         });
         let weak = Rc::downgrade(&context);
         context.scan_button.connect_sensitive_notify(move |button| {
@@ -215,49 +143,100 @@ impl PreferencesContext {
     }
 
     fn apply_initial(&self) {
-        let (color_scheme, density, sidebar_visible, status_visible, decorations) = {
+        let (density, sidebar_visible, browse_visible, info_visible, status_visible, decorations) = {
             let conn = self.conn.borrow();
             (
-                settings::get_color_scheme(&conn),
                 settings::get_list_density(&conn),
                 settings::get_sidebar_visible(&conn),
+                settings::get_browse_visible(&conn),
+                settings::get_info_panel_visible(&conn),
                 settings::get_status_visible(&conn),
                 settings::get_window_decoration_mode(&conn),
             )
         };
-        apply_color_scheme(color_scheme);
+        apply_system_color_scheme();
         super::list_density::apply(self.track_list.column_view_widget(), density);
-        self.sidebar_page.set_visible(sidebar_visible);
+        super::window_navigation::apply_sidebar_visibility(
+            &self.split_view,
+            &self.sidebar_page,
+            sidebar_visible,
+        );
+        self.track_list.set_browse_visible(browse_visible);
+        self.info_panel.apply_persisted_visibility(info_visible);
         self.status_bar.set_enabled(status_visible);
         self.decorations.apply(decorations);
+        tracing::info!(
+            sidebar_visible,
+            browse_visible,
+            info_visible,
+            status_visible,
+            "persisted library layout applied"
+        );
     }
 
     pub(super) fn present(self: &Rc<Self>) {
+        if let Some(window) = self.preferences_window.borrow().upgrade() {
+            window.present();
+            return;
+        }
         self.equalizer_controls.borrow_mut().clear();
+        self.equalizer_surfaces.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
-        let dialog = adw::PreferencesDialog::new();
-        dialog.add(&self.appearance_page());
-        dialog.add(&self.layout_page());
-        dialog.add(&self.library_page());
-        dialog.add(&self.plugins_page());
-        dialog.add(&self.playback_page());
-        dialog.present(Some(&self.window));
-        tracing::debug!("preferences dialog presented");
-        if let Ok(smoke) = std::env::var(SMOKE_ENV) {
-            if smoke == "exercise" {
-                self.apply_smoke();
-            }
+        use super::preferences_window::{PageId, PAGE_ORDER};
+        let pages = PAGE_ORDER.map(|id| {
+            let page = match id {
+                PageId::Playback => self.playback_page(),
+                PageId::Appearance => self.appearance_page(),
+                PageId::Layout => self.layout_page(),
+                PageId::Library => self.library_page(),
+                PageId::Synchronization => super::preference_sync::build_page(&self.device_sync),
+                PageId::Plugins => self.plugins_page(),
+            };
+            (id, page)
+        });
+        let shell = super::preferences_window::build(&self.window, pages);
+        self.preferences_window.borrow().set(Some(&shell.window));
+        self.preferences_navigation
+            .borrow()
+            .set(Some(&shell.navigation));
+        let smoke = std::env::var(SMOKE_ENV).ok();
+        if matches!(smoke.as_deref(), Some("layout" | "columns")) {
+            shell.stack.set_visible_child_name("layout");
+        }
+        if smoke.as_deref() == Some("columns") {
+            self.open_column_layout_editor();
+        }
+        if smoke.as_deref() == Some("exercise") {
+            let context = Rc::downgrade(self);
+            let exercised = Rc::new(Cell::new(false));
+            shell.window.connect_map(move |_| {
+                if exercised.replace(true) {
+                    return;
+                }
+                let context = context.clone();
+                glib::idle_add_local_once(move || {
+                    if let Some(context) = context.upgrade() {
+                        context.apply_smoke();
+                    }
+                });
+            });
+        }
+        shell.window.present();
+        tracing::debug!("preferences window presented");
+        if smoke.is_some() {
+            let window = shell.window.clone();
             glib::timeout_add_seconds_local_once(1, move || {
-                dialog.close();
+                window.close();
             });
         }
     }
 
     fn apply_smoke(&self) {
         let conn = self.conn.borrow();
-        let _ = settings::set_color_scheme(&conn, ColorScheme::Dark);
         let _ = settings::set_list_density(&conn, ListDensity::Compact);
         let _ = settings::set_sidebar_visible(&conn, false);
+        let _ = settings::set_browse_visible(&conn, false);
+        let _ = settings::set_info_panel_visible(&conn, false);
         let _ = settings::set_status_visible(&conn, false);
         let _ = settings::set_window_decoration_mode(
             &conn,
@@ -266,194 +245,43 @@ impl PreferencesContext {
         let _ = settings::set_player_bar_position(&conn, PlayerBarPosition::Top);
         let _ = settings::set_equalizer_bands(&conn, equalizer_preset(1));
         drop(conn);
-        apply_color_scheme(ColorScheme::Dark);
+        apply_system_color_scheme();
         super::list_density::apply(self.track_list.column_view_widget(), ListDensity::Compact);
-        self.sidebar_page.set_visible(false);
+        super::window_navigation::apply_sidebar_visibility(
+            &self.split_view,
+            &self.sidebar_page,
+            false,
+        );
+        self.track_list.set_browse_visible(false);
+        self.info_panel.apply_persisted_visibility(false);
         self.status_bar.set_enabled(false);
         self.decorations
             .apply(reprise_core::library::settings::WindowDecorationMode::System);
         self.library_player_bar.set_position(PlayerBarPosition::Top);
         self.set_equalizer_enabled(true);
         self.set_replay_gain_mode(ReplayGainMode::Track);
-        tracing::info!("preferences smoke applied appearance, layout, and audio settings");
+        tracing::info!("preferences smoke applied layout and audio settings");
     }
 
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        let page = adw::PreferencesPage::builder()
-            .title(strings::text(strings::PREFERENCES_APPEARANCE))
-            .icon_name("applications-graphics-symbolic")
-            .build();
-        let group = adw::PreferencesGroup::new();
-        let model = gtk4::StringList::new(&[
-            &strings::text(strings::COLOR_SYSTEM),
-            &strings::text(strings::COLOR_LIGHT),
-            &strings::text(strings::COLOR_DARK),
-        ]);
-        let selected_scheme = {
-            let conn = self.conn.borrow();
-            color_scheme_index(settings::get_color_scheme(&conn))
-        };
-        let scheme = adw::ComboRow::builder()
-            .title(strings::text(strings::COLOR_SCHEME))
-            .model(&model)
-            .selected(selected_scheme)
-            .build();
-        let weak = Rc::downgrade(self);
-        scheme.connect_selected_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let value = color_scheme_from_index(row.selected());
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_color_scheme(&conn, value)
-            };
-            if saved.is_ok() {
-                apply_color_scheme(value);
-            }
-        });
-        group.add(&scheme);
-        group.add(&super::preference_window_decorations::row(self));
-        page.add(&group);
-        page
+        super::preference_appearance::build(self)
     }
 
     fn layout_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        let page = adw::PreferencesPage::builder()
-            .title(strings::text(strings::PREFERENCES_LAYOUT))
-            .icon_name("view-grid-symbolic")
-            .build();
-        let group = adw::PreferencesGroup::new();
-        let positions = gtk4::StringList::new(&[
-            &strings::text(strings::POSITION_BOTTOM),
-            &strings::text(strings::POSITION_TOP),
-        ]);
-        let selected_position = {
-            let conn = self.conn.borrow();
-            bar_position_index(settings::get_player_bar_position(&conn))
-        };
-        let bar = adw::ComboRow::builder()
-            .title(strings::text(strings::PLAYER_BAR_POSITION))
-            .model(&positions)
-            .selected(selected_position)
-            .build();
-        let weak = Rc::downgrade(self);
-        bar.connect_selected_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let value = bar_position_from_index(row.selected());
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_player_bar_position(&conn, value)
-            };
-            if saved.is_ok() {
-                context.library_player_bar.set_position(value);
-            }
-        });
-        group.add(&bar);
+        super::preference_layout::build(self)
+    }
 
-        let sidebar_visible = {
-            let conn = self.conn.borrow();
-            settings::get_sidebar_visible(&conn)
+    pub(super) fn open_column_layout_editor(&self) {
+        let navigation = self.preferences_navigation.borrow().upgrade();
+        let Some(navigation) = navigation else {
+            tracing::warn!("column layout editor requested without preferences navigation");
+            return;
         };
-        let sidebar = adw::SwitchRow::builder()
-            .title(strings::text(strings::SHOW_SIDEBAR))
-            .active(sidebar_visible)
-            .build();
-        let weak = Rc::downgrade(self);
-        sidebar.connect_active_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let active = row.is_active();
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_sidebar_visible(&conn, active)
-            };
-            if saved.is_ok() {
-                context.sidebar_page.set_visible(active);
-            }
-        });
-        group.add(&sidebar);
-
-        let status_visible = {
-            let conn = self.conn.borrow();
-            settings::get_status_visible(&conn)
-        };
-        let status = adw::SwitchRow::builder()
-            .title(strings::text(strings::SHOW_STATUS_LINE))
-            .active(status_visible)
-            .build();
-        let weak = Rc::downgrade(self);
-        status.connect_active_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let active = row.is_active();
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_status_visible(&conn, active)
-            };
-            if saved.is_ok() {
-                context.status_bar.set_enabled(active);
-                if active {
-                    context.track_list.reload();
-                }
-            }
-        });
-        group.add(&status);
-
-        let densities = gtk4::StringList::new(&[
-            &strings::text(strings::DENSITY_COMFORTABLE),
-            &strings::text(strings::DENSITY_STANDARD),
-            &strings::text(strings::DENSITY_COMPACT),
-        ]);
-        let selected_density = {
-            let conn = self.conn.borrow();
-            density_index(settings::get_list_density(&conn))
-        };
-        let density = adw::ComboRow::builder()
-            .title(strings::text(strings::LIST_DENSITY))
-            .model(&densities)
-            .selected(selected_density)
-            .build();
-        let weak = Rc::downgrade(self);
-        density.connect_selected_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let value = density_from_index(row.selected());
-            let saved = {
-                let conn = context.conn.borrow();
-                settings::set_list_density(&conn, value)
-            };
-            if saved.is_ok() {
-                super::list_density::apply(context.track_list.column_view_widget(), value);
-            }
-        });
-        group.add(&density);
-
-        let weak = Rc::downgrade(self);
-        group.add(&action_row(
-            strings::EDIT_COLUMN_LAYOUT,
-            Rc::new(move || {
-                if let Some(context) = weak.upgrade() {
-                    crate::ui::column_layout_editor::present(&context.window, &context.track_list);
-                }
-            }),
-        ));
-        group.add(&action_row(strings::COMPACT_VIEW, self.on_minimal.clone()));
-        page.add(&group);
-        page
+        let page = super::column_layout_editor::build_navigation_page(&self.track_list);
+        navigation.push(&page);
     }
 
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        const BAND_LABELS: [&str; 10] = [
-            "31 Hz", "62 Hz", "125 Hz", "250 Hz", "500 Hz", "1 kHz", "2 kHz", "4 kHz", "8 kHz",
-            "16 kHz",
-        ];
-
         let page = adw::PreferencesPage::builder()
             .title(strings::text(strings::PREFERENCES_PLAYBACK))
             .icon_name("audio-speakers-symbolic")
@@ -500,39 +328,34 @@ impl PreferencesContext {
         equalizer.add(&preset);
 
         let updating_preset = Rc::new(Cell::new(false));
-        let mut scales = Vec::with_capacity(BAND_LABELS.len());
-        for (index, label) in BAND_LABELS.into_iter().enumerate() {
-            let row = adw::ActionRow::builder().title(label).build();
-            let scale = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, -12.0, 12.0, 1.0);
-            scale.set_width_request(220);
-            scale.set_value(stored_bands[index]);
-            scale.set_digits(0);
-            scale.set_draw_value(true);
-            let weak = Rc::downgrade(self);
-            let preset = preset.clone();
-            let updating = updating_preset.clone();
-            scale.connect_value_changed(move |scale| {
-                if updating.get() {
-                    return;
-                }
-                let Some(context) = weak.upgrade() else {
-                    return;
-                };
-                updating.set(true);
-                preset.set_selected(gtk4::INVALID_LIST_POSITION);
-                updating.set(false);
-                let mut bands = settings::get_equalizer_bands(&context.conn.borrow());
-                bands[index] = scale.value();
-                if let Err(error) = settings::set_equalizer_bands(&context.conn.borrow(), bands) {
-                    tracing::warn!(%error, "could not save equalizer bands");
-                    return;
-                }
-                context.apply_audio_effects();
-            });
-            row.add_suffix(&scale);
-            equalizer.add(&row);
-            scales.push(scale);
-        }
+        let weak = Rc::downgrade(self);
+        let preset_for_band = preset.clone();
+        let updating_for_band = updating_preset.clone();
+        let on_band_changed: Rc<dyn Fn(usize, f64)> = Rc::new(move |index, value| {
+            if updating_for_band.get() {
+                return;
+            }
+            let Some(context) = weak.upgrade() else {
+                return;
+            };
+            updating_for_band.set(true);
+            preset_for_band.set_selected(gtk4::INVALID_LIST_POSITION);
+            updating_for_band.set(false);
+            let mut bands = settings::get_equalizer_bands(&context.conn.borrow());
+            bands[index] = value;
+            if let Err(error) = settings::set_equalizer_bands(&context.conn.borrow(), bands) {
+                tracing::warn!(%error, "could not save equalizer bands");
+                return;
+            }
+            context.apply_audio_effects();
+        });
+        let surface = build_equalizer_surface(stored_bands, equalizer_enabled, &on_band_changed);
+        let scales = surface.scales.clone();
+        self.equalizer_surfaces
+            .borrow_mut()
+            .push(surface.root.clone().upcast());
+        equalizer.add(&surface.root);
+
         let weak = Rc::downgrade(self);
         let updating = updating_preset.clone();
         preset.connect_selected_notify(move |row| {
@@ -626,14 +449,7 @@ impl PreferencesContext {
                     return;
                 }
                 let active = row.is_active();
-                if descriptor.id == "cover_download" {
-                    if let Some(action) = context
-                        .window
-                        .lookup_action(crate::ui::primary_menu::ACTION_DOWNLOAD_MISSING_COVERS)
-                    {
-                        action.change_state(&active.to_variant());
-                    }
-                } else if descriptor.id == "listenbrainz" {
+                if descriptor.id == "listenbrainz" {
                     context.change_listenbrainz_activation(row, active);
                 } else if descriptor.id == "lastfm" {
                     context.change_lastfm_activation(row, active);
@@ -671,9 +487,7 @@ impl PreferencesContext {
                 );
             }
             group.add(&row);
-            if descriptor.id == "cover_download" {
-                self.add_cover_download_progress(&group);
-            } else if descriptor.id == "listenbrainz" {
+            if descriptor.id == "listenbrainz" {
                 self.add_listenbrainz_controls(&row);
             } else if descriptor.id == "lastfm" {
                 self.add_lastfm_controls(&row);
@@ -697,21 +511,10 @@ pub(super) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reprise_core::library::settings::{ColorScheme, ListDensity, PlayerBarPosition};
-
-    #[test]
-    fn combo_indices_round_trip_typed_layout_values() {
-        assert_eq!(color_scheme_from_index(0), ColorScheme::System);
-        assert_eq!(color_scheme_from_index(2), ColorScheme::Dark);
-        assert_eq!(density_from_index(0), ListDensity::Comfortable);
-        assert_eq!(density_from_index(2), ListDensity::Compact);
-        assert_eq!(bar_position_from_index(0), PlayerBarPosition::Bottom);
-        assert_eq!(bar_position_from_index(1), PlayerBarPosition::Top);
-    }
 
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {
-        assert!(plugin_applies_live("cover_download"));
+        assert!(!plugin_applies_live("cover_download"));
         assert!(plugin_applies_live("listenbrainz"));
         assert!(plugin_applies_live("lastfm"));
         assert!(plugin_applies_live("artist_news"));
@@ -730,5 +533,18 @@ mod tests {
                 .into_iter()
                 .all(|gain| (-12.0..=12.0).contains(&gain)));
         }
+    }
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn appearance_always_restores_the_system_color_scheme() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let style = adw::StyleManager::default();
+        style.set_color_scheme(adw::ColorScheme::ForceDark);
+
+        apply_system_color_scheme();
+
+        assert_eq!(style.color_scheme(), adw::ColorScheme::Default);
     }
 }

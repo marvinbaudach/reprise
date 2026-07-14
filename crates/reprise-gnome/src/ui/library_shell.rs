@@ -16,6 +16,8 @@ use super::sidebar::Sidebar;
 use super::strings;
 use super::track_list::TrackList;
 
+pub(super) const SIDEBAR_BREAKPOINT_WIDTH: i32 = 800;
+
 pub(super) struct LibraryShell {
     pub sidebar_page: adw::NavigationPage,
     pub split_view: adw::NavigationSplitView,
@@ -43,6 +45,9 @@ pub(super) fn build(
         runtime.clone(),
         track_list.shared_cover_loader(),
     );
+    if let Some(player) = player {
+        player.set_lyrics_view(&info_panel.lyrics_view());
+    }
     let content_nav = now_playing_wiring::build_content_nav(
         info_panel.widget(),
         player.map(|controller| controller.now_playing_widget()),
@@ -60,7 +65,7 @@ pub(super) fn build(
     super::sidebar_presentation::style_split_view(&split_view);
     let condition = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MinWidth,
-        800.0,
+        f64::from(SIDEBAR_BREAKPOINT_WIDTH),
         adw::LengthUnit::Px,
     );
     let breakpoint = adw::Breakpoint::new(condition);

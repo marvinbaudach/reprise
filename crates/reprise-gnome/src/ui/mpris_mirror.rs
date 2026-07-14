@@ -146,7 +146,9 @@ impl PlayerController {
     /// `## Queue borrow discipline` section — the shape is kept consistent
     /// anyway.
     pub(super) fn update_mpris_mirror(&self, status: MprisPlaybackStatus) {
-        let queue_has_tracks = !self.queue.borrow().is_empty();
+        let queue_has_tracks = !self.queue.borrow().is_empty()
+            || !self.up_next.borrow().is_empty()
+            || self.current_up_next.get().is_some();
         let is_shuffled = self.queue.borrow().is_shuffled();
         let repeat = self.queue.borrow().repeat();
         let now_playing = self.now_playing.borrow().clone();
@@ -338,9 +340,15 @@ impl PlayerController {
             MprisPlaybackStatus::Playing => {}
             MprisPlaybackStatus::Paused => self.toggle_pause(),
             MprisPlaybackStatus::Stopped => {
-                let current = self.queue.borrow().current();
+                let current = self
+                    .current_up_next
+                    .get()
+                    .or_else(|| self.queue.borrow().current());
                 match current {
                     Some(id) => self.play_track_id(id),
+                    None if !self.up_next.borrow().is_empty() => {
+                        self.advance_playback(crate::ui::up_next_transport::AdvanceReason::Manual);
+                    }
                     None => {
                         tracing::debug!("MPRIS Play: queue is empty; nothing to play");
                     }

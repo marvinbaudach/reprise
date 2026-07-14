@@ -5,6 +5,7 @@
 //! Windows get sibling crates implementing the same contracts (see the
 //! plan's "Repository & frontend strategy").
 
+pub mod device_sync;
 pub mod mpris;
 pub mod player;
 mod player_effects;
