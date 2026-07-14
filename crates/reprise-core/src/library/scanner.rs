@@ -629,3 +629,7 @@ mod progress_tests;
 #[cfg(test)]
 #[path = "scanner_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "scanner_vanished_tests.rs"]
+mod vanished_tests;
