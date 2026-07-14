@@ -35,6 +35,7 @@ fn app_css() -> String {
         super::column_layout_editor::css(),
         super::list_density::css(),
         super::lyrics_view::css(),
+        super::player_bar_layout::css(),
         super::preference_choice_cards::css(),
         super::rating::css(),
         super::track_list_header_style::css(),
@@ -97,6 +98,7 @@ mod tests {
         let css = super::app_css();
 
         for marker in [
+            ".player-bar-play",
             ".reprise-surface",
             ".reprise-hover:hover",
             ".reprise-filter-chip",
