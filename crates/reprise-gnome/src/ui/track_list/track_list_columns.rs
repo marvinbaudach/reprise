@@ -127,9 +127,10 @@ pub(super) fn empty_state_for(
     match (row_count, has_filter) {
         (0, true) => EmptyState::NoResults,
         (0, false) => match source {
-            ViewSource::Missing | ViewSource::ImportErrors | ViewSource::Album { .. } => {
-                EmptyState::NothingHere
-            }
+            ViewSource::Missing
+            | ViewSource::ImportErrors
+            | ViewSource::Album { .. }
+            | ViewSource::Artist(_) => EmptyState::NothingHere,
             _ => EmptyState::EmptyLibrary,
         },
         _ => EmptyState::List,
@@ -636,6 +637,10 @@ mod empty_state_tests {
                     album_artist: "Joni Mitchell".into(),
                 },
             ),
+            EmptyState::NothingHere
+        );
+        assert_eq!(
+            empty_state_for(0, false, &ViewSource::Artist("Björk".into())),
             EmptyState::NothingHere
         );
     }

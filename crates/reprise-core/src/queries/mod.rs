@@ -104,7 +104,7 @@ pub use clauses::build_track_ids_query;
 // where the re-export would otherwise look unused.
 #[allow(unused_imports)]
 pub use clauses::build_track_query;
-pub use library_views::{query_albums, AlbumSummary};
+pub use library_views::{query_albums, query_artists, AlbumSummary, ArtistSummary};
 pub use maintenance::{
     delete_all_import_errors, delete_import_error, mark_track_missing, query_import_error_count,
     query_import_errors, query_sync_tracks, query_track_summary, remove_all_missing_tracks,
@@ -214,6 +214,9 @@ pub fn query_track_window_browsed(
             offset,
             limit,
         ),
+        ViewSource::Artist(artist) => library_views::query_artist_track_window(
+            conn, artist, sort_field, sort_dir, filter, offset, limit,
+        ),
         ViewSource::ImportErrors | ViewSource::MyStats => Ok(Vec::new()),
     }
 }
@@ -258,6 +261,7 @@ pub fn query_track_count_browsed(
             album,
             album_artist,
         } => library_views::query_album_track_count(conn, album, album_artist, filter),
+        ViewSource::Artist(artist) => library_views::query_artist_track_count(conn, artist, filter),
         ViewSource::ImportErrors | ViewSource::MyStats => Ok(0),
     }
 }
@@ -340,6 +344,9 @@ pub fn query_track_ids_browsed(
             sort_dir,
             filter,
         ),
+        ViewSource::Artist(artist) => {
+            library_views::query_artist_track_ids(conn, artist, sort_field, sort_dir, filter)
+        }
         ViewSource::ImportErrors | ViewSource::MyStats => Ok(Vec::new()),
     }
 }
