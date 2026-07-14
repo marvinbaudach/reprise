@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Merge Rhythmbox, scrobbler, and column-layout close fixes
+SINCE:    2026-07-14 10:29 CEST
 ```
 
 _As of 2026-07-14: all reviewed local feature work is integrated into main._
