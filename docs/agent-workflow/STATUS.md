@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Add multi-selection ratings to Edit tags
+SINCE:    2026-07-14 CEST
 ```
 
-_Released by Codex on 2026-07-14 after the Library chrome and sidebar grouping follow-ups._
+_As of 2026-07-14: Codex claimed the lock for the Edit-tags rating follow-up._
 
 ## Parallel feature work
 
