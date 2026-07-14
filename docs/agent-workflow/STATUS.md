@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Polish unavailable Information panel states
+SINCE:    2026-07-14 03:42 CEST
 ```
 
-_As of 2026-07-14: free after grouping playlist import with playlist creation._
+_As of 2026-07-14: Codex is polishing unavailable Information-panel states._
 
 ## Current position
 
