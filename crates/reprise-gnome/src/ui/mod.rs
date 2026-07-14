@@ -25,6 +25,8 @@ mod about;
 mod album_view;
 #[path = "info_panel/artist_news_worker.rs"]
 mod artist_news_worker;
+#[path = "library_views/artist_view.rs"]
+mod artist_view;
 #[path = "playback/audio_effects.rs"]
 mod audio_effects;
 #[path = "browse/browse_bar.rs"]

@@ -31,7 +31,27 @@ pub const LIBRARY_VIEW_ALBUMS: &str = N_!("Albums");
 pub const LIBRARY_VIEW_ARTISTS: &str = N_!("Artists");
 pub const ALBUMS_EMPTY_TITLE: &str = N_!("No Albums Yet");
 pub const ALBUMS_EMPTY_DESCRIPTION: &str = N_!("Scan a music folder to see album covers here.");
+pub const ARTISTS_EMPTY_TITLE: &str = N_!("No Artists Yet");
+pub const ARTISTS_EMPTY_DESCRIPTION: &str = N_!("Scan a music folder to see artists here.");
 pub const UNKNOWN_ARTIST: &str = N_!("Unknown Artist");
+
+pub fn artist_counts(album_count: i64, track_count: i64) -> String {
+    let album_count = usize::try_from(album_count).unwrap_or(usize::MAX);
+    let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
+    let albums = plural(
+        "{count} album",
+        "{count} albums",
+        album_count,
+        &[("count", &album_count.to_string())],
+    );
+    let tracks = plural(
+        "{count} track",
+        "{count} tracks",
+        track_count,
+        &[("count", &track_count.to_string())],
+    );
+    format!("{albums} · {tracks}")
+}
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");

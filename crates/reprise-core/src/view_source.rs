@@ -48,6 +48,10 @@ pub enum ViewSource {
     /// matched case-insensitively after trimming, and no database state is
     /// written when entering or leaving this source.
     Album { album: String, album_artist: String },
+    /// A read-only artist detail reached from the visual Artists view.
+    /// Artist identity is the trimmed, case-insensitive track artist used by
+    /// the summary query.
+    Artist(String),
     /// The "My Stats" screen — a dedicated view backed by
     /// `library::stats_screen` rather than the shared track list. The
     /// sidebar routes to it; the content area shows the stats view widget
@@ -72,6 +76,7 @@ impl ViewSource {
                 album,
                 album_artist,
             } => format!("album:{album}:{album_artist}"),
+            Self::Artist(artist) => format!("artist:{artist}"),
             Self::MyStats => "my_stats".to_string(),
         }
     }
@@ -103,5 +108,6 @@ mod tests {
             .label(),
             "album:Blue:Joni Mitchell"
         );
+        assert_eq!(ViewSource::Artist("Björk".into()).label(), "artist:Björk");
     }
 }

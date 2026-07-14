@@ -19,6 +19,13 @@ pub struct AlbumSummary {
     pub track_count: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtistSummary {
+    pub artist: String,
+    pub track_count: i64,
+    pub album_count: i64,
+}
+
 /// Returns one row per case-insensitive `(album, effective album artist)`
 /// pair. Blank albums and missing tracks are excluded; the lowest track id
 /// supplies stable display spelling and the representative cover path.
@@ -44,6 +51,32 @@ pub fn query_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Er
             album_artist: row.get(1)?,
             representative_path: row.get(2)?,
             track_count: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Returns one row per case-insensitive track artist. Blank artists and
+/// missing tracks are excluded; album counts ignore blank album values.
+pub fn query_artists(conn: &Connection) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
+    let sql = "WITH grouped AS ( \
+                 SELECT LOWER(TRIM(artist)) AS artist_key, MIN(id) AS representative_id, \
+                        COUNT(*) AS track_count, \
+                        COUNT(DISTINCT CASE WHEN TRIM(album) <> '' \
+                                      THEN LOWER(TRIM(album)) END) AS album_count \
+                 FROM tracks \
+                 WHERE missing = 0 AND TRIM(artist) <> '' \
+                 GROUP BY artist_key \
+               ) \
+               SELECT TRIM(tracks.artist), grouped.track_count, grouped.album_count \
+               FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
+               ORDER BY TRIM(tracks.artist) COLLATE NOCASE ASC";
+    let mut statement = conn.prepare(sql)?;
+    let rows = statement.query_map([], |row| {
+        Ok(ArtistSummary {
+            artist: row.get(0)?,
+            track_count: row.get(1)?,
+            album_count: row.get(2)?,
         })
     })?;
     rows.collect()
@@ -139,6 +172,83 @@ pub(super) fn query_album_track_ids(
     rows.collect()
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn query_artist_track_window(
+    conn: &mut Connection,
+    artist: &str,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<Track>, rusqlite::Error> {
+    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !filter.trim().is_empty();
+    let (order, direction) = order_expr_and_dir(sort_field, sort_dir);
+    let filter_sql = filter_clause(has_filter, 4);
+    let sql = format!(
+        "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
+         duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
+         file_mtime, missing, file_size, device, inode \
+         FROM tracks WHERE missing = 0 \
+         AND TRIM(artist) = ?3 COLLATE NOCASE{filter_sql} \
+         ORDER BY {order} {direction} LIMIT ?1 OFFSET ?2"
+    );
+    let mut params = vec![
+        Value::Integer(limit),
+        Value::Integer(offset),
+        Value::Text(artist.trim().to_string()),
+    ];
+    if has_filter {
+        params.push(Value::Text(like_pattern(filter.trim())));
+    }
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(rusqlite::params_from_iter(params), row_to_track)?;
+    rows.collect()
+}
+
+pub(super) fn query_artist_track_count(
+    conn: &Connection,
+    artist: &str,
+    filter: &str,
+) -> Result<i64, rusqlite::Error> {
+    let has_filter = !filter.trim().is_empty();
+    let filter_sql = filter_clause(has_filter, 2);
+    let sql = format!(
+        "SELECT count(*) FROM tracks WHERE missing = 0 \
+         AND TRIM(artist) = ?1 COLLATE NOCASE{filter_sql}"
+    );
+    let mut params = vec![Value::Text(artist.trim().to_string())];
+    if has_filter {
+        params.push(Value::Text(like_pattern(filter.trim())));
+    }
+    conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
+}
+
+pub(super) fn query_artist_track_ids(
+    conn: &Connection,
+    artist: &str,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let has_filter = !filter.trim().is_empty();
+    let (order, direction) = order_expr_and_dir(sort_field, sort_dir);
+    let filter_sql = filter_clause(has_filter, 2);
+    let sql = format!(
+        "SELECT id FROM tracks WHERE missing = 0 \
+         AND TRIM(artist) = ?1 COLLATE NOCASE{filter_sql} \
+         ORDER BY {order} {direction} LIMIT {QUEUE_LIMIT}"
+    );
+    let mut params = vec![Value::Text(artist.trim().to_string())];
+    if has_filter {
+        params.push(Value::Text(like_pattern(filter.trim())));
+    }
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(rusqlite::params_from_iter(params), row_to_id)?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +321,87 @@ mod tests {
             album: "FIRST".into(),
             album_artist: "solo".into(),
         };
+
+        assert_eq!(query_track_count(&conn, &source, "", &[]).unwrap(), 2);
+        assert_eq!(
+            query_track_window(&mut conn, &source, "title", "desc", "", 0, 20, &[])
+                .unwrap()
+                .into_iter()
+                .map(|track| track.title)
+                .collect::<Vec<_>>(),
+            ["B", "A"]
+        );
+        assert_eq!(
+            query_track_ids(&conn, &source, "title", "asc", "A", &[]).unwrap(),
+            [1]
+        );
+    }
+
+    #[test]
+    fn artists_group_case_insensitively_and_report_track_and_album_counts() {
+        let conn = seeded_library();
+
+        assert_eq!(
+            query_artists(&conn).unwrap(),
+            vec![
+                ArtistSummary {
+                    artist: "Guest A".into(),
+                    track_count: 1,
+                    album_count: 1,
+                },
+                ArtistSummary {
+                    artist: "Guest B".into(),
+                    track_count: 1,
+                    album_count: 1,
+                },
+                ArtistSummary {
+                    artist: "Nobody".into(),
+                    track_count: 1,
+                    album_count: 0,
+                },
+                ArtistSummary {
+                    artist: "Other Artist".into(),
+                    track_count: 1,
+                    album_count: 1,
+                },
+                ArtistSummary {
+                    artist: "Solo".into(),
+                    track_count: 2,
+                    album_count: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn artists_query_is_read_only_and_excludes_blank_or_missing_rows() {
+        let conn = seeded_library();
+        conn.execute(
+            "INSERT INTO tracks (path,title,artist,album,added_at,missing) \
+             VALUES ('/music/no-artist.flac','No Artist',' ','First',0,0)",
+            [],
+        )
+        .unwrap();
+        let changes_before = conn.total_changes();
+
+        let artists = query_artists(&conn).unwrap();
+
+        assert_eq!(conn.total_changes(), changes_before);
+        assert!(artists.iter().all(|artist| !artist.artist.is_empty()));
+        assert_eq!(
+            artists
+                .iter()
+                .find(|artist| artist.artist == "Solo")
+                .unwrap()
+                .track_count,
+            2
+        );
+    }
+
+    #[test]
+    fn artist_source_count_window_and_ids_select_the_exact_artist_group() {
+        let mut conn = seeded_library();
+        let source = ViewSource::Artist(" SOLO ".into());
 
         assert_eq!(query_track_count(&conn, &source, "", &[]).unwrap(), 2);
         assert_eq!(

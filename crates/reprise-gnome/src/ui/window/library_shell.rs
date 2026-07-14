@@ -10,6 +10,7 @@ use rusqlite::Connection;
 
 use super::album_view::AlbumView;
 use super::artist_news_worker::ArtistNewsRuntime;
+use super::artist_view::ArtistView;
 use super::info_panel::InfoPanel;
 use super::library_chrome::LibraryTitle;
 use super::now_playing_wiring;
@@ -83,6 +84,29 @@ pub(super) fn wire_album_view(
     let refresh = album_view.refresh_callback();
     views.stack.connect_visible_child_name_notify(move |stack| {
         if stack.visible_child_name().as_deref() == Some(LIBRARY_VIEW_ALBUMS) {
+            refresh();
+        }
+    });
+}
+
+pub(super) fn wire_artist_view(
+    views: &LibraryViews,
+    artist_view: &ArtistView,
+    track_list: &Rc<TrackList>,
+) {
+    let track_list = Rc::downgrade(track_list);
+    let stack = views.stack.clone();
+    artist_view.set_on_activate(move |artist| {
+        let Some(track_list) = track_list.upgrade() else {
+            return;
+        };
+        track_list.set_source(ViewSource::Artist(artist.artist));
+        stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+    });
+
+    let refresh = artist_view.refresh_callback();
+    views.stack.connect_visible_child_name_notify(move |stack| {
+        if stack.visible_child_name().as_deref() == Some(LIBRARY_VIEW_ARTISTS) {
             refresh();
         }
     });

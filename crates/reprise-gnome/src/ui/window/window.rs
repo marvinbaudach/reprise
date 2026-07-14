@@ -299,13 +299,14 @@ pub fn build(
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
     let album_view =
         super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
-    let artists_placeholder = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let artist_view = super::artist_view::ArtistView::new(conn.clone());
     let library_views = super::library_shell::build_views(
         &track_content,
         album_view.widget(),
-        &artists_placeholder,
+        artist_view.widget(),
     );
     super::library_shell::wire_album_view(&library_views, &album_view, &track_list);
+    super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list);
     super::library_shell::arm_smoke_library_view(&library_views);
     let library_title = Rc::new(super::library_chrome::build_library_title(
         &header,
