@@ -1,4 +1,4 @@
-//! The single application-wide CSS provider.
+//! The single application-wide CSS provider plus the live theme palette.
 //!
 //! Feature modules own their CSS class names and contribute one plain
 //! `css()` string section; this module composes those sections, installs
@@ -6,20 +6,29 @@
 //! [`tokens`]. Widget constructors must never install providers themselves —
 //! per-widget installation used to add one display-global provider on every
 //! rebuild.
+//!
+//! The palette lives in its own [`theme`] provider (separate from the
+//! structural CSS above) so [`set_theme`] can recolor the whole app by
+//! reloading just that one provider — the mechanism behind the live theme
+//! picker.
 
 pub(super) mod theme;
 pub(super) mod tokens;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+
+use libadwaita as adw;
 
 thread_local! {
     static INSTALLED: Cell<bool> = const { Cell::new(false) };
+    /// The dedicated palette provider, kept so [`set_theme`] can reload it.
+    static THEME_PROVIDER: RefCell<Option<gtk4::CssProvider>> = const { RefCell::new(None) };
 }
 
-/// One entry per feature that ships app-authored CSS.
+/// One entry per feature that ships app-authored (theme-independent) CSS.
+/// Palette colors are NOT here — they live in the separate theme provider.
 fn app_css() -> String {
     [
-        theme::theme_css(theme::Theme::DEFAULT),
         super::browse_bar::css(),
         super::column_layout_editor::css(),
         super::list_density::css(),
@@ -32,10 +41,12 @@ fn app_css() -> String {
     .join("\n")
 }
 
-/// Installs the composed app CSS on the default display, once per process.
-/// Safe to call from every window/test entry point; calls before GTK has a
-/// default display (e.g. plain unit tests) are ignored without arming the
-/// once-guard, so a later call after `gtk4::init` still installs.
+/// Installs the structural app CSS and the default theme palette on the
+/// default display, once per process, and forces the dark color scheme (the
+/// redesign is dark across every theme). Safe to call from every window/test
+/// entry point; calls before GTK has a default display (e.g. plain unit
+/// tests) are ignored without arming the once-guard, so a later call after
+/// `gtk4::init` still installs.
 pub(super) fn install() {
     INSTALLED.with(|installed| {
         if installed.get() {
@@ -45,6 +56,7 @@ pub(super) fn install() {
             return;
         };
         installed.set(true);
+
         let provider = gtk4::CssProvider::new();
         provider.load_from_string(&app_css());
         gtk4::style_context_add_provider_for_display(
@@ -52,6 +64,27 @@ pub(super) fn install() {
             &provider,
             gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
+
+        let theme_provider = gtk4::CssProvider::new();
+        theme_provider.load_from_string(&theme::theme_css(theme::Theme::DEFAULT));
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &theme_provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+        THEME_PROVIDER.with(|slot| *slot.borrow_mut() = Some(theme_provider));
+
+        adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark);
+    });
+}
+
+/// Recolors the whole app to `theme` by reloading the palette provider. A
+/// no-op before [`install`] has run (no display yet).
+pub(in crate::ui) fn set_theme(theme: theme::Theme) {
+    THEME_PROVIDER.with(|slot| {
+        if let Some(provider) = slot.borrow().as_ref() {
+            provider.load_from_string(&theme::theme_css(theme));
+        }
     });
 }
 
@@ -62,8 +95,6 @@ mod tests {
         let css = super::app_css();
 
         for marker in [
-            "@define-color window_bg_color",
-            "@define-color accent_bg_color",
             ".reprise-filter-chip",
             ".reprise-column-drop-before",
             ".reprise-track-cell.reprise-density-comfortable",
@@ -75,6 +106,13 @@ mod tests {
         ] {
             assert!(css.contains(marker), "missing section marker: {marker}");
         }
+    }
+
+    #[test]
+    fn app_css_has_no_palette_colors() {
+        // Palette @define-colors belong to the separate theme provider, not
+        // the structural CSS, so a theme switch never has to rebuild this.
+        assert!(!super::app_css().contains("@define-color"));
     }
 
     #[test]

@@ -82,6 +82,20 @@ pub fn build(
     db_path: &Path,
 ) -> FileOpenHandler {
     super::style::install();
+    {
+        let conn = conn.borrow();
+        let stored = reprise_core::library::settings::get_setting(
+            &conn,
+            super::style::theme::THEME_SETTING_KEY,
+        )
+        .ok()
+        .flatten();
+        let theme = stored
+            .as_deref()
+            .and_then(super::style::theme::Theme::from_id)
+            .unwrap_or(super::style::theme::Theme::DEFAULT);
+        super::style::set_theme(theme);
+    }
     let session_state = {
         let conn = conn.borrow();
         super::session_restore::load(&conn)

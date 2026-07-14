@@ -52,10 +52,6 @@ pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
     }
 }
 
-fn apply_system_color_scheme() {
-    adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
-}
-
 pub(super) struct PreferencesContext {
     pub(super) window: adw::ApplicationWindow,
     pub(super) conn: Rc<RefCell<Connection>>,
@@ -162,7 +158,6 @@ impl PreferencesContext {
                 settings::get_window_decoration_mode(&conn),
             )
         };
-        apply_system_color_scheme();
         super::list_density::apply(self.track_list.column_view_widget(), density);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
@@ -266,7 +261,6 @@ impl PreferencesContext {
         let _ = settings::set_player_bar_position(&conn, PlayerBarPosition::Top);
         let _ = settings::set_equalizer_bands(&conn, equalizer_preset(1));
         drop(conn);
-        apply_system_color_scheme();
         super::list_density::apply(self.track_list.column_view_widget(), ListDensity::Compact);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
@@ -576,18 +570,5 @@ mod tests {
                 .into_iter()
                 .all(|gain| (-12.0..=12.0).contains(&gain)));
         }
-    }
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn appearance_always_restores_the_system_color_scheme() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let style = adw::StyleManager::default();
-        style.set_color_scheme(adw::ColorScheme::ForceDark);
-
-        apply_system_color_scheme();
-
-        assert_eq!(style.color_scheme(), adw::ColorScheme::Default);
     }
 }
