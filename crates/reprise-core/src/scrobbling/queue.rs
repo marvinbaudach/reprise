@@ -27,6 +27,13 @@ impl ScrobbleProvider {
             Self::LastFm => LASTFM_BATCH_LIMIT,
         }
     }
+
+    fn submitted_key(self) -> &'static str {
+        match self {
+            Self::ListenBrainz => "scrobble.submitted.listenbrainz",
+            Self::LastFm => "scrobble.submitted.lastfm",
+        }
+    }
 }
 
 pub fn enqueue_for(
@@ -104,8 +111,41 @@ pub fn acknowledge_for(
     for id in ids {
         transaction.execute(&sql, params![id])?;
     }
+    // Increment the cumulative submitted counter inside the same transaction
+    // so a crash between DELETE and increment cannot produce a miscount.
+    let key = provider.submitted_key();
+    let current: i64 = transaction
+        .query_row(
+            "SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key = ?1), 0)",
+            params![key],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    let new_total = current.saturating_add(ids.len() as i64);
+    transaction.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2) \
+         ON CONFLICT(key) DO UPDATE SET value = ?2",
+        params![key, new_total.to_string()],
+    )?;
     transaction.commit()?;
     Ok(())
+}
+
+/// Returns the cumulative number of listens submitted to the provider.
+/// Starts at 0 for fresh installs and survives disconnects.
+pub fn submitted_count_for(
+    conn: &Connection,
+    provider: ScrobbleProvider,
+) -> Result<usize, QueueError> {
+    let key = provider.submitted_key();
+    let count: i64 = conn
+        .query_row(
+            "SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key = ?1), 0)",
+            params![key],
+            |row| row.get(0),
+        )
+        .map_err(QueueError::from)?;
+    usize::try_from(count).map_err(|_| QueueError::InvalidCount)
 }
 
 pub fn clear_pending_for(
@@ -253,6 +293,50 @@ mod tests {
             .is_empty());
         assert_eq!(
             pending_count_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn acknowledge_increments_submitted_counter_atomically() {
+        let conn = conn();
+        assert_eq!(
+            submitted_count_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            0
+        );
+        let id1 = enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(1)).unwrap();
+        let id2 = enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(2)).unwrap();
+        acknowledge_for(&conn, ScrobbleProvider::LastFm, &[id1, id2]).unwrap();
+        assert_eq!(
+            submitted_count_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            2
+        );
+        // Counter is cumulative: a second acknowledge adds to the total.
+        let id3 = enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(3)).unwrap();
+        acknowledge_for(&conn, ScrobbleProvider::LastFm, &[id3]).unwrap();
+        assert_eq!(
+            submitted_count_for(&conn, ScrobbleProvider::LastFm).unwrap(),
+            3
+        );
+        // Provider counters are isolated.
+        assert_eq!(
+            submitted_count_for(&conn, ScrobbleProvider::ListenBrainz).unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn submitted_counter_survives_disconnect_clear() {
+        let conn = conn();
+        let id = enqueue_for(&conn, ScrobbleProvider::ListenBrainz, &listen(1)).unwrap();
+        acknowledge_for(&conn, ScrobbleProvider::ListenBrainz, &[id]).unwrap();
+        assert_eq!(
+            submitted_count_for(&conn, ScrobbleProvider::ListenBrainz).unwrap(),
+            1
+        );
+        clear_pending_for(&conn, ScrobbleProvider::ListenBrainz).unwrap();
+        assert_eq!(
+            submitted_count_for(&conn, ScrobbleProvider::ListenBrainz).unwrap(),
             1
         );
     }

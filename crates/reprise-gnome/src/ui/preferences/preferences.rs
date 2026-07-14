@@ -309,10 +309,6 @@ impl PreferencesContext {
         self.preferences_window.borrow().upgrade()
     }
 
-    pub(super) fn preferences_navigation(&self) -> Option<adw::NavigationView> {
-        self.preferences_navigation.borrow().upgrade()
-    }
-
     pub(super) fn preferences_parent(&self) -> gtk4::Widget {
         self.preferences_window()
             .map_or_else(|| self.window.clone().upcast(), gtk4::Widget::from)
@@ -456,6 +452,16 @@ impl PreferencesContext {
             .build();
         let group = adw::PreferencesGroup::new();
         for descriptor in reprise_core::modules::ALL_MODULES {
+            // Scrobbling services use inline ExpanderRows instead of SwitchRows.
+            if descriptor.id == "listenbrainz" {
+                group.add(&self.build_listenbrainz_row());
+                continue;
+            }
+            if descriptor.id == "lastfm" {
+                group.add(&self.build_lastfm_row());
+                continue;
+            }
+
             let description = plugin_description(descriptor);
             let subtitle = if plugin_applies_live(descriptor.id) {
                 description
@@ -486,26 +492,18 @@ impl PreferencesContext {
                     return;
                 }
                 let active = row.is_active();
-                if descriptor.id == "listenbrainz" {
-                    context.change_listenbrainz_activation(row, active);
-                } else if descriptor.id == "lastfm" {
-                    context.change_lastfm_activation(row, active);
+                let result = if descriptor.id == "artist_news" {
+                    context
+                        .artist_news
+                        .set_enabled(&context.conn.borrow(), active)
                 } else {
-                    let result = if descriptor.id == "artist_news" {
-                        context.artist_news.set_enabled(&context.conn.borrow(), active)
-                    } else {
-                        reprise_core::modules::set_enabled(
-                            &context.conn.borrow(),
-                            descriptor,
-                            active,
-                        )
-                    };
-                    if let Err(error) = result {
-                        tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
-                        syncing_notify.set(true);
-                        row.set_active(!active);
-                        syncing_notify.set(false);
-                    }
+                    reprise_core::modules::set_enabled(&context.conn.borrow(), descriptor, active)
+                };
+                if let Err(error) = result {
+                    tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
+                    syncing_notify.set(true);
+                    row.set_active(!active);
+                    syncing_notify.set(false);
                 }
             });
             if descriptor.id == "artist_news" {
@@ -524,11 +522,6 @@ impl PreferencesContext {
                 );
             }
             group.add(&row);
-            if descriptor.id == "listenbrainz" {
-                self.add_listenbrainz_controls(&row);
-            } else if descriptor.id == "lastfm" {
-                self.add_lastfm_controls(&row);
-            }
         }
         page.add(&group);
         page
