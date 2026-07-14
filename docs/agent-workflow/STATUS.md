@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Add bulk cleanup for sidebar issue sources
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for sidebar issue-source cleanup._
+_As of 2026-07-14: Codex completed and released the sidebar issue-source cleanup._
 
 ## Parallel feature work
 
@@ -34,12 +34,13 @@ _As of 2026-07-14: Codex claimed the lock for sidebar issue-source cleanup._
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Library scan header cleanup** (`ebd32ae`) — scanning remains in
-  Preferences and initial setup without a duplicate Library-header action.
+- **Completed plan:** `docs/superpowers/plans/2026-07-14-sidebar-issue-cleanup.md` (1 task).
+- **Last completed:** **Sidebar issue-source cleanup** (`061d347`) — Import errors and
+  Missing files now expose bulk cleanup in their row context menus; missing cleanup is
+  confirmed, database-only, queue-aware, and empty issue sources fall back to Music.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `ebd32ae`.
+- **Main implementation:** `061d347`.
 
 ## Done so far (compact)
 
@@ -59,6 +60,10 @@ _As of 2026-07-14: Codex claimed the lock for sidebar issue-source cleanup._
 - ✅ **GUI-C follow-up**: native editable/persistent column layout with accessible button and
   whole-row drag ordering, before/after insertion feedback, reset, and conditional Rhythmbox-found
   first-run offer that remains default off.
+- ✅ **Sidebar issue cleanup**: transient Import errors and Missing files rows provide one
+  GNOME context action each; diagnostics clear directly, while missing entries require a
+  database-only destructive confirmation, compact playlists, purge exact queue IDs, and
+  remove the empty Issues group with a Music fallback.
 - ✅ **Preferences column-layout navigation**: Layout opens that editor as a native detail page in
   the existing Preferences window with Back navigation instead of an obscured child dialog.
 - ✅ **Whole-row column-layout drag restoration**: movable editor rows use capture-phase drag
