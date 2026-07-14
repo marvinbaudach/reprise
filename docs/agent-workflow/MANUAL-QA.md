@@ -144,6 +144,10 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   selecting or reselecting a source returns to content without losing state. The
   340px Information column always remains beside the table and narrows it; it never
   overlays rows, filters, headers, status, or player controls.
+- [ ] At a wide Library width, use the leftmost Sidebar button repeatedly with the
+  Information panel open and closed. Expected: the complete left column disappears,
+  the table receives its space, and the always-reachable button restores the split
+  column. At narrow widths the same button switches between navigation and content.
 - [ ] Exercise sidebar selection, playlist creation/context menus, track-to-playlist
   drag and drop, Queue count/reorder, and Library/Compact round trips. Expected: only
   presentation changed; callbacks, selection, counters, DnD, and restored Library root

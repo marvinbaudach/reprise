@@ -10,13 +10,13 @@
 //! `AdwNavigationSplitView` collapses into a push/pop navigation stack at
 //! narrow widths on its own (Adwaita default behavior — this module doesn't
 //! fight it: `adw::HeaderBar` embedded in a page inside that stack shows its
-//! own back button automatically). The headerbar also gets an explicit
-//! `sidebar-show-symbolic` toggle button, visible only while collapsed, so
-//! the sidebar can be brought back without relying solely on that automatic
-//! back button. `NavigationSplitView` has no `show-sidebar` property (that's
-//! `AdwOverlaySplitView`'s API) — the closest analog is `show-content`
-//! (`set_show_content(false)` returns to the sidebar page), which is what
-//! the toggle drives (see `wire_sidebar_toggle`).
+//! own back button automatically). The headerbar also gets an explicit,
+//! persistent `sidebar-show-symbolic` toggle button. At wide widths it folds
+//! the complete sidebar column away so the track table receives that space;
+//! at narrow widths it switches between the native sidebar and content pages.
+//! `NavigationSplitView` has no `show-sidebar` property (that's
+//! `AdwOverlaySplitView`'s API), so `wire_sidebar_toggle` coordinates its
+//! `collapsed` and `show-content` properties.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -104,9 +104,8 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
         .build();
 
-    // Visible only while the split view is collapsed (see `wire_sidebar_
-    // toggle`) — at full width both panes already show side by side, so
-    // there is nothing to toggle.
+    // Starts hidden until `wire_sidebar_toggle` has applied both the persisted
+    // Sidebar preference and the current split-view state.
     let sidebar_toggle = gtk4::ToggleButton::builder()
         .icon_name("sidebar-show-symbolic")
         .tooltip_text(strings::text(strings::SIDEBAR_TOGGLE))

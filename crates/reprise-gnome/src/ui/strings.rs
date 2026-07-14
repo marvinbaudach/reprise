@@ -454,9 +454,8 @@ pub const SIDEBAR_NEW_PLAYLIST: &str = N_!("New playlist");
 pub const SIDEBAR_IMPORT_ERRORS: &str = N_!("Import errors");
 pub const SIDEBAR_MISSING_FILES: &str = N_!("Missing files");
 
-/// Tooltip/accessible name for the headerbar's sidebar-visibility toggle
-/// (only shown once the `AdwNavigationSplitView` collapses at narrow
-/// widths).
+/// Tooltip/accessible name for the headerbar's persistent sidebar-visibility
+/// toggle.
 pub const SIDEBAR_TOGGLE: &str = N_!("Toggle sidebar");
 
 pub const NEW_PLAYLIST_DIALOG_HEADING: &str = N_!("New playlist");

@@ -24,6 +24,8 @@ Funktionen haben Vorrang vor pixelgenauer Nachbildung.
 - Suchfeld rechts neben dem Titelbereich mit begrenzter, mockupnaher Breite;
 - bestehende Scan-, Import-, Compact-, Informations- und Menüaktionen als
   kompakte, zugängliche Headeraktionen;
+- einen dauerhaft erreichbaren Headerknopf, der die vollständige linke
+  Sidebar-Spalte ein- und ausklappt;
 - eine Sidebarbreite von ungefähr 220–280 px statt der heute sehr breiten
   Standardaufteilung;
 - Icons für Bibliothek, Warteschlange, manuelle und intelligente Playlists
@@ -73,8 +75,12 @@ benutzerdefinierte Regeln fallen auf ein neutrales Playlist-Symbol zurück.
 - Icons ergänzen Text, ersetzen ihn in der Sidebar nicht.
 - Zähler bleiben numerisch und rechtsbündig; lange Namen werden ellipsiert.
 - Die native `navigation-sidebar`-Auswahl bleibt alleinige Hervorhebung.
-- Im kollabierten Layout bleibt der bestehende Sidebar-Zurück-/Toggle-Weg
-  unverändert.
+- Der Sidebar-Knopf bleibt sichtbar, solange die Sidebar in den
+  Layouteinstellungen aktiviert ist. Bei breitem Fenster entfernt er die
+  vollständige linke Spalte und gibt den Platz der Tracktabelle zurück; beim
+  Wiedereinblenden stellt er die geteilte Ansicht wieder her.
+- Im schmalen adaptiven Layout wechselt derselbe Knopf zwischen Sidebar- und
+  Content-Seite. Eine Quellenauswahl führt weiterhin automatisch zum Content.
 - Keine `RefCell`-Ausleihe reicht über einen GTK-Aufruf oder Callback.
 
 ## Tests und Verifikation
