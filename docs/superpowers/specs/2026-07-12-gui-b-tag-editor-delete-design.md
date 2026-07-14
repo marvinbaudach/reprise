@@ -101,7 +101,9 @@ Ein `AdwDialog` zeigt sieben `AdwEntryRow`s und eine native Rating-Auswahl mit
 „unrated“ sowie 1 bis 5 Sternen. Bei gemischten Werten bleibt das jeweilige
 Eingabefeld leer beziehungsweise die Rating-Auswahl auf „(multiple values)“.
 Dirty-Flags werden erst nach der Initialisierung verbunden. Der Apply-Button ist
-ohne Änderung deaktiviert. Der Inhalt scrollt auf kleinen Fenstern.
+ohne Änderung deaktiviert. Der native Schließen-Button des Dialogfensters ist der
+einzige Abbruch-Button im Header; ein zusätzlicher „Cancel“-Button wird nicht
+angezeigt. Der Inhalt scrollt auf kleinen Fenstern.
 
 Das Track-Kontextmenü erhält:
 
