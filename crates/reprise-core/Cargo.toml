@@ -41,6 +41,9 @@ ureq = "2"
 # correct form encoding. Both remain platform-neutral and GUI-free.
 md-5 = "0.10"
 url = "2"
+# Streaming, pure-Rust reader for the user-triggered, read-only Rhythmbox
+# `rhythmdb.xml` statistics import.
+quick-xml = "0.41"
 # Pure-Rust local date arithmetic for the bounded Artist News window.
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 [dev-dependencies]

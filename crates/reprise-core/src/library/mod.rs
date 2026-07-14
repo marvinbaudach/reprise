@@ -2,6 +2,7 @@ pub mod m3u;
 mod playlist_delete;
 pub mod playlist_membership;
 pub mod playlists;
+pub mod rhythmbox_import;
 pub mod scanner;
 pub mod session;
 pub mod settings;
