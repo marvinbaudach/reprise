@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Add native About dialog and licensing metadata
-SINCE:    2026-07-14 07:15 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     FREE
+SINCE:    -
 ```
 
-_As of 2026-07-14: Compact offers Cover, Pill and Card; legacy Bar selections open Card._
+_As of 2026-07-14: the main menu exposes native About and licensing information._
 
 ## Parallel feature work
 
@@ -34,12 +34,12 @@ _As of 2026-07-14: Compact offers Cover, Pill and Card; legacy Bar selections op
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-14-reliable-separate-title-bar.md` (1 task).
-- **Last completed:** **Reliable separate title bar** (`ab5d28f`) — the compatible `system` token
-  now adds a visible native GTK title bar on GNOME Wayland while Chromium CSD stays the default.
-- **Current plan:** native About dialog and licensing metadata (user-requested follow-up).
-- **➡️ NEXT:** implement and verify the About dialog, then return to joint stage review.
-- **Main implementation:** `ab5d28f` on `main`.
+- **Completed plan:** `docs/superpowers/plans/2026-07-14-about-dialog.md` (1 task).
+- **Last completed:** **Native About dialog** (`e31d6b6`) — the main menu now presents app
+  identity, version, Marvin Baudach, GPL-3.0-or-later, and the MIT component notice.
+- **Current plan:** none.
+- **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
+- **Main implementation:** `e31d6b6` on `main`.
 
 ## Done so far (compact)
 
@@ -71,6 +71,9 @@ _As of 2026-07-14: Compact offers Cover, Pill and Card; legacy Bar selections op
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.
+- ✅ **Native About and licensing**: the main menu opens the libadwaita About dialog with the
+  installed version, Marvin Baudach as developer and copyright holder, GPL-3.0-or-later for the
+  Linux app, and an additional MIT legal section for the Engine and Linux Platform components.
 - ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent layout,
   library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
   live controls; isolated runtime persistence and full release QA green.
