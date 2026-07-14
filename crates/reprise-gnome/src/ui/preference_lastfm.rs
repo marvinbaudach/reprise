@@ -134,6 +134,7 @@ impl PreferencesContext {
                 }
             }
         }));
+        crate::ui::preference_dependencies::bind_visibility(switch, &account);
         let weak = Rc::downgrade(self);
         let switch = switch.clone();
         account.connect_activated(move |_| {
