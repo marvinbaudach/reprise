@@ -21,21 +21,21 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Hide disabled service-dependent preference rows
-SINCE:    2026-07-14 03:52 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is hiding disabled service-dependent preference rows._
+_As of 2026-07-14: free after hiding disabled scrobble-service settings._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Information-panel unavailable states** (`797791d`) — unusable Refresh is
-  hidden and multi-selection uses a centered native status page without an empty track card.
+- **Last completed:** **Disabled scrobble-service settings** (`0386d76`) — ListenBrainz and Last.fm
+  account rows now appear only while their respective provider toggle is on.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `797791d`; this QA/coordination close-out follows it.
+- **Main implementation:** `0386d76`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -113,6 +113,9 @@ _As of 2026-07-14: Codex is hiding disabled service-dependent preference rows._
 - ✅ **Finished Information-panel unavailable states**: Refresh disappears whenever Artist News
   cannot run or is already loading; no-selection, multi-selection and missing-artist contexts use
   centered native placeholders, with multi-selection no longer retaining an empty track card.
+- ✅ **Conditional scrobble-service settings**: ListenBrainz Account and Last.fm Account are hidden
+  initially and live whenever their independent service toggle is off; the provider toggles remain
+  visible for reactivation and weak bindings avoid Preferences widget cycles.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
