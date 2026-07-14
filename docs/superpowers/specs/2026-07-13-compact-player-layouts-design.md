@@ -41,12 +41,10 @@ immer in der Bibliotheksansicht.
 ## Schneller Wechsel
 
 - `Ctrl+M` schaltet jederzeit zwischen Bibliotheks- und Kompaktansicht um.
-- Die Bibliotheks-Headerbar erhält einen direkt sichtbaren Knopf
-  „Kompaktansicht öffnen“.
-- Jedes Kompaktlayout besitzt einen direkt sichtbaren Knopf
-  „Zur Bibliothek“.
-- Das Haupt- beziehungsweise Kompaktmenü bietet dieselbe Umschaltaktion als
-  textlichen Eintrag.
+- Die Bibliotheks-Headerbar zeigt keinen zusätzlichen Kompaktknopf; der Einstieg
+  bleibt im Hauptmenü und über `Ctrl+M` erreichbar.
+- Das Hauptmenü bietet „Kompaktansicht“ und das Kontextmenü der Kompaktlayouts
+  „Zur Bibliothek“ als textliche Einträge derselben Umschaltaktion.
 - Der Wechsel geschieht im bestehenden `AdwApplicationWindow`; es wird kein
   zweites Fenster und kein zweiter Player erzeugt.
 - Track, Queue, Playbackstatus, Position, Lautstärke, Shuffle und Repeat ändern
@@ -213,7 +211,7 @@ erfolgreiche Nutzeraktion.
   unveränderte Track-ID, Playing-Zustand und monotone Position.
 - Ein Zwei-Start-Smoke schließt in Card, startet erneut in Card mit restauriertem
   Track und beweist `Stopped` ohne Autoplay.
-- Der reale Xvfb-Pointerharness prüft Headerknopf, `Ctrl+M`, sichtbaren
+- Der reale Xvfb-Pointerharness prüft Hauptmenü, `Ctrl+M`, sichtbaren
   Kompaktmenüknopf, Rechtsklick, Radioauswahl und Rückkehrknopf sowie saubere
   GTK-/GLib-/Panic-/`RefCell`-Logs.
 - Vollständige Gates, Rustdoc, Core-Purity, gettext, Releasechecker und

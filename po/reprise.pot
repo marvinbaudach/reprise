@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 03:13+0200\n"
+"POT-Creation-Date: 2026-07-14 03:25+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -63,10 +63,6 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:40
 msgid "Compact View"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings.rs:41
-msgid "Open Compact View"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:42
