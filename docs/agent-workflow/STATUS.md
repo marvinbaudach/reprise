@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Integrate Compact layout and title-bar follow-ups into main
+SINCE:    2026-07-14 06:55 CEST
 ```
 
 _As of 2026-07-14: Codex added and released the persistent left-sidebar collapse button._
