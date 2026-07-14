@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-14 06:56+0200\n"
+"POT-Creation-Date: 2026-07-14 07:08+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -967,6 +967,14 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings.rs:710
 #, rust-format
 msgid "Could not export “{name}”"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:714
+msgid "About"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:715
+msgid "Reprise Engine and Linux Platform"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:12

@@ -16,6 +16,7 @@ pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-colum
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
+pub(super) const ACTION_ABOUT: &str = "about";
 pub(super) const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
 const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
@@ -35,6 +36,7 @@ fn primary_menu_entries() -> Vec<(String, &'static str)> {
             strings::text(strings::EDIT_COLUMN_LAYOUT),
             "win.edit-column-layout",
         ),
+        (strings::text(strings::ABOUT), "win.about"),
     ]
 }
 
@@ -94,6 +96,17 @@ pub(super) fn install(
         let preferences = preferences.clone();
         glib::idle_add_local_once(move || preferences.activate(None));
     }
+
+    let about = gio::SimpleAction::new(ACTION_ABOUT, None);
+    {
+        let window = window.downgrade();
+        about.connect_activate(move |_, _| {
+            if let Some(window) = window.upgrade() {
+                crate::ui::about::present(&window);
+            }
+        });
+    }
+    window.add_action(&about);
 }
 
 fn arm_smoke_minimal_view(action: &gio::SimpleAction) {
@@ -178,5 +191,6 @@ mod tests {
         assert!(!actions.contains(&"win.import-rhythmbox-columns"));
         assert!(actions.contains(&"win.edit-column-layout"));
         assert!(actions.contains(&"win.toggle-minimal-view"));
+        assert!(actions.contains(&"win.about"));
     }
 }
