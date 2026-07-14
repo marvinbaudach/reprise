@@ -360,6 +360,7 @@ pub const COLUMN_TRACK_NUMBER: &str = N_!("Track");
 pub const COLUMN_GENRE: &str = N_!("Genre");
 pub const COLUMN_YEAR: &str = N_!("Year");
 pub const COLUMN_LENGTH: &str = N_!("Length");
+pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
 // The Rating column's header reuses `RATING` below rather than having its
 // own `COLUMN_RATING` const — the column header and the `RatingWidget`
 // tooltip (src/ui/rating.rs) are the same word, so one const serves both.

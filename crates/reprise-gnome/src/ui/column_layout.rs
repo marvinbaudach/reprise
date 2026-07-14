@@ -25,9 +25,10 @@ pub enum ColumnId {
     Year,
     Duration,
     Rating,
+    PlayCount,
 }
 
-const DEFAULT_ORDER: [ColumnId; 9] = [
+const DEFAULT_ORDER: [ColumnId; 10] = [
     ColumnId::Cover,
     ColumnId::Title,
     ColumnId::Artist,
@@ -35,6 +36,7 @@ const DEFAULT_ORDER: [ColumnId; 9] = [
     ColumnId::Year,
     ColumnId::Duration,
     ColumnId::Rating,
+    ColumnId::PlayCount,
     ColumnId::TrackNumber,
     ColumnId::Genre,
 ];
@@ -56,6 +58,7 @@ fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
         ColumnId::Year => 90,
         ColumnId::Duration => 100,
         ColumnId::Rating => COMPACT_RATING_COLUMN_WIDTH,
+        ColumnId::PlayCount => 90,
     };
     ColumnWidthPolicy {
         fixed_width,
@@ -106,6 +109,7 @@ impl ColumnId {
             Self::Year => "year",
             Self::Duration => "duration",
             Self::Rating => "rating",
+            Self::PlayCount => "play-count",
         }
     }
 
@@ -120,6 +124,7 @@ impl ColumnId {
             "year" => Some(Self::Year),
             "duration" => Some(Self::Duration),
             "rating" => Some(Self::Rating),
+            "play-count" => Some(Self::PlayCount),
             _ => None,
         }
     }
@@ -134,6 +139,7 @@ impl ColumnId {
             "year" => Some(Self::Year),
             "duration_ms" => Some(Self::Duration),
             "rating" => Some(Self::Rating),
+            "play_count" => Some(Self::PlayCount),
             _ => None,
         }
     }
@@ -150,6 +156,7 @@ pub(super) fn column_label(id: ColumnId) -> String {
         ColumnId::Year => strings::COLUMN_YEAR,
         ColumnId::Duration => strings::COLUMN_LENGTH,
         ColumnId::Rating => strings::RATING,
+        ColumnId::PlayCount => strings::COLUMN_PLAY_COUNT,
     };
     strings::text(message)
 }
@@ -213,6 +220,7 @@ pub fn import_rhythmbox_tokens(tokens: &[String]) -> ColumnLayout {
             "duration" => ColumnId::Duration,
             "date" => ColumnId::Year,
             "rating" => ColumnId::Rating,
+            "play-count" => ColumnId::PlayCount,
             _ => continue,
         };
         if visible.insert(id) {
@@ -447,6 +455,15 @@ pub(super) fn build_columns(
         |t| format_duration(t.duration_ms),
     );
     let rating = append_rating_column(view, shared);
+    let play_count = append_column(
+        view,
+        shared,
+        "play_count",
+        &strings::text(strings::COLUMN_PLAY_COUNT),
+        1.0,
+        true,
+        |track| track.play_count.to_string(),
+    );
 
     let columns = HashMap::from([
         (ColumnId::Cover, cover),
@@ -458,6 +475,7 @@ pub(super) fn build_columns(
         (ColumnId::Year, year),
         (ColumnId::Duration, duration),
         (ColumnId::Rating, rating),
+        (ColumnId::PlayCount, play_count),
     ]);
     for (id, column) in &columns {
         apply_column_width_policy(column, *id);
@@ -494,6 +512,30 @@ mod tests {
             assert!(policy.fixed_width > 0, "missing fixed width for {id:?}");
             assert_eq!(policy.expand, id == ColumnId::Title);
         }
+    }
+
+    #[test]
+    fn play_count_is_available_but_hidden_by_default() {
+        let layout = ColumnLayout::default();
+        let rating = layout
+            .order
+            .iter()
+            .position(|id| *id == ColumnId::Rating)
+            .unwrap();
+        assert_eq!(layout.order[rating + 1], ColumnId::PlayCount);
+        assert!(!layout.visible.contains(&ColumnId::PlayCount));
+        assert_eq!(ColumnId::PlayCount.as_str(), "play-count");
+        assert_eq!(
+            ColumnId::from_sort_field("play_count"),
+            Some(ColumnId::PlayCount)
+        );
+    }
+
+    #[test]
+    fn legacy_layout_gains_a_hidden_play_count_column() {
+        let layout = parse_layout("cover,title,artist;cover,title,artist").unwrap();
+        assert!(layout.order.contains(&ColumnId::PlayCount));
+        assert!(!layout.visible.contains(&ColumnId::PlayCount));
     }
 
     #[test]
@@ -538,22 +580,31 @@ mod tests {
 
     #[test]
     fn rhythmbox_mapping_preserves_supported_order_and_ignores_unknown() {
-        let tokens =
-            ["rating", "duration", "album", "artist", "date", "post-time"].map(str::to_string);
+        let tokens = [
+            "rating",
+            "play-count",
+            "duration",
+            "album",
+            "artist",
+            "date",
+            "post-time",
+        ]
+        .map(str::to_string);
         let layout = import_rhythmbox_tokens(&tokens);
         assert_eq!(
-            layout.order[..7],
+            layout.order[..8],
             [
                 ColumnId::Cover,
                 ColumnId::Title,
                 ColumnId::Rating,
+                ColumnId::PlayCount,
                 ColumnId::Duration,
                 ColumnId::Album,
                 ColumnId::Artist,
                 ColumnId::Year,
             ]
         );
-        assert_eq!(layout.visible.len(), 7);
+        assert_eq!(layout.visible.len(), 8);
     }
 
     #[test]

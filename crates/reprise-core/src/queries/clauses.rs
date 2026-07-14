@@ -14,7 +14,7 @@ use super::{browse::browse_clause, BrowseFilter};
 /// resolves to valid SQL (`pt.position`) inside a query that actually joins
 /// `playlist_tracks AS pt` — see the module doc's `Playlist(id)` section for
 /// why that's safe (only `ViewSource::Playlist` queries ever pass it).
-const SORT_WHITELIST: [(&str, &str); 9] = [
+const SORT_WHITELIST: [(&str, &str); 10] = [
     ("title", "title COLLATE NOCASE"),
     (
         "artist",
@@ -26,6 +26,7 @@ const SORT_WHITELIST: [(&str, &str); 9] = [
     ("year", "year"),
     ("duration_ms", "duration_ms"),
     ("rating", "rating"),
+    ("play_count", "play_count"),
     ("playlist_order", "pt.position"),
 ];
 
@@ -220,4 +221,17 @@ pub(super) fn row_to_playlist_track(r: &rusqlite::Row) -> rusqlite::Result<Track
 
 pub(super) fn row_to_id(r: &rusqlite::Row) -> rusqlite::Result<i64> {
     r.get(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn play_count_is_a_whitelisted_numeric_sort() {
+        assert_eq!(
+            order_expr_and_dir("play_count", "desc"),
+            ("play_count", "DESC")
+        );
+    }
 }
