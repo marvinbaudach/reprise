@@ -297,7 +297,14 @@ pub fn build(
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(scan_progress.widget());
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
-    toolbar_view.set_content(Some(&track_content));
+    let stats_view = super::stats_view::StatsView::new();
+    let content_stack = gtk4::Stack::new();
+    content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
+    content_stack.set_transition_duration(150);
+    content_stack.add_named(&track_content, Some("tracks"));
+    content_stack.add_named(stats_view.widget(), Some("stats"));
+    content_stack.set_visible_child_name("tracks");
+    toolbar_view.set_content(Some(&content_stack));
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
@@ -612,8 +619,17 @@ pub fn build(
         let track_list = track_list.clone();
         let window_title = window_title.clone();
         let show_content_if_collapsed = show_content_if_collapsed.clone();
+        let content_stack = content_stack.clone();
+        let stats_view_ref = Rc::new(stats_view);
+        let conn_for_stats = conn.clone();
         sidebar.set_on_select(move |source, title| {
-            track_list.set_source(source);
+            if matches!(source, ViewSource::MyStats) {
+                stats_view_ref.refresh(&conn_for_stats);
+                content_stack.set_visible_child_name("stats");
+            } else {
+                content_stack.set_visible_child_name("tracks");
+                track_list.set_source(source);
+            }
             window_title.set_title(&title);
             show_content_if_collapsed();
         });

@@ -206,6 +206,14 @@ mod sidebar_playlist_creation;
 mod sidebar_presentation;
 #[path = "sidebar/sidebar_session.rs"]
 pub mod sidebar_session;
+#[path = "stats/stats_chart.rs"]
+mod stats_chart;
+#[path = "stats/stats_chart_math.rs"]
+mod stats_chart_math;
+#[path = "stats/stats_css.rs"]
+pub(crate) mod stats_css;
+#[path = "stats/stats_view.rs"]
+pub(crate) mod stats_view;
 pub mod status_bar;
 pub mod strings;
 mod style;

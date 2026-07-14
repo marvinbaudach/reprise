@@ -456,6 +456,7 @@ pub const SIDEBAR_QUEUE: &str = N_!("Queue");
 pub const SIDEBAR_NEW_PLAYLIST: &str = N_!("New playlist");
 pub const SIDEBAR_IMPORT_ERRORS: &str = N_!("Import errors");
 pub const SIDEBAR_MISSING_FILES: &str = N_!("Missing files");
+pub const SIDEBAR_MY_STATS: &str = N_!("My Stats");
 
 /// Tooltip/accessible name for the headerbar's persistent sidebar-visibility
 /// toggle.
