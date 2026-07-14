@@ -415,14 +415,6 @@ msgstr "Immer sichtbar"
 msgid "Drag to reorder"
 msgstr "Zum Umordnen ziehen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:192
-msgid "Move column up"
-msgstr "Spalte nach oben verschieben"
-
-#: crates/reprise-gnome/src/ui/strings.rs:193
-msgid "Move column down"
-msgstr "Spalte nach unten verschieben"
-
 #: crates/reprise-gnome/src/ui/strings.rs:194
 msgid "Could not save the column layout"
 msgstr "Die Spaltenanordnung konnte nicht gespeichert werden"
