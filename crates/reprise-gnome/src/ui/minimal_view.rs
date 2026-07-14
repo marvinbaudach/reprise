@@ -270,12 +270,15 @@ impl MinimalView {
     }
 
     fn restore_library(&self) {
+        // Mount the full Library tree before requesting its much larger
+        // geometry. Resizing first lets the compositor draw one intermediate
+        // frame with the Compact tree stretched to Library dimensions.
+        self.content_host.set_content(&self.full_root);
         self.window.set_width_request(FULL_MIN_WIDTH);
         self.window.set_height_request(FULL_MIN_HEIGHT);
         self.window.set_resizable(true);
         self.window
             .set_default_size(self.full_width.get(), self.full_height.get());
-        self.content_host.set_content(&self.full_root);
         if self.full_maximized.get() {
             self.window.maximize();
         }
@@ -330,6 +333,8 @@ impl MinimalView {
 
 #[cfg(test)]
 mod tests {
+    use gtk4::gio;
+
     use super::*;
 
     #[test]
@@ -362,6 +367,54 @@ mod tests {
             updated_full_geometry((900, 600), (820, 540), false),
             (820, 540)
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn library_root_is_mounted_before_full_geometry_is_requested() {
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.RestoreOrderTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let content_host = WindowContentHost::new(&window);
+        let full_root = gtk4::Label::new(Some("Library")).upcast::<gtk4::Widget>();
+        let compact_root = gtk4::Label::new(Some("Compact"));
+        content_host.set_content(&compact_root);
+        let state = MinimalView {
+            window: window.clone(),
+            content_host: content_host.clone(),
+            full_root: full_root.clone(),
+            compact: None,
+            compact_root: None,
+            conn: Rc::new(RefCell::new(Connection::open_in_memory().unwrap())),
+            transition: Cell::new(ViewTransition {
+                mode: WindowViewMode::Compact,
+                layout: CompactLayout::Card,
+            }),
+            full_width: Cell::new(900),
+            full_height: Cell::new(600),
+            full_maximized: Cell::new(false),
+            geometry_suppressed: Rc::new(Cell::new(true)),
+            toast: Rc::new(|_| {}),
+        };
+        let observed = Rc::new(Cell::new(false));
+        let library_was_mounted = Rc::new(Cell::new(false));
+        let observed_for_notify = observed.clone();
+        let mounted_for_notify = library_was_mounted.clone();
+        window.connect_notify_local(Some("width-request"), move |_, _| {
+            if observed_for_notify.replace(true) {
+                return;
+            }
+            mounted_for_notify.set(content_host.content().as_ref() == Some(&full_root));
+        });
+
+        state.restore_library();
+
+        assert!(observed.get());
+        assert!(library_was_mounted.get());
     }
 
     #[test]
