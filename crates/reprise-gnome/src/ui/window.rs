@@ -544,6 +544,7 @@ pub fn build(
         &library_player_bar,
         &info_panel,
         &scan_button,
+        &scan_controls,
         player.as_ref(),
         &listenbrainz,
         &lastfm,

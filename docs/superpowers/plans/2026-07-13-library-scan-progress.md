@@ -52,3 +52,10 @@ adversarial Whole-Diff-Review ausführen. Ledger/STATUS/MANUAL-QA nur soweit nö
 aktualisieren und Lock freigeben.
 
 Commit: `docs: record library scan progress QA`.
+
+## Follow-up 2026-07-14 — Vordergrundanzeige in Preferences
+
+Ein aus Preferences gestarteter Rescan spiegelt denselben `ScanControls`-Zustand in
+eine Top-Bar des Preferences-Fensters. Der Hauptfenster-View bleibt erhalten; schwache
+View-Registrierung und Snapshot-Replay verhindern sowohl Widget-Leaks als auch einen
+zweiten Worker. RED/GREEN-Displaytests belegen Top-level-Parenting und laufenden Fan-out.
