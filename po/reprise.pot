@@ -404,14 +404,6 @@ msgstr ""
 msgid "Drag to reorder"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:192
-msgid "Move column up"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings.rs:193
-msgid "Move column down"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings.rs:194
 msgid "Could not save the column layout"
 msgstr ""

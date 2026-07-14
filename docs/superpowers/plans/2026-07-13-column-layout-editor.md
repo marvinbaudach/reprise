@@ -81,3 +81,7 @@ Tasks 1–3 landed as one atomic feature commit because `reprise-gnome` is a bin
 crate: committing the pure operations before their GTK/first-run consumers would
 fail the mandatory `-D warnings` dead-code gate. RED/GREEN was still observed for
 each task boundary before the combined gate battery and commit.
+
+Follow-up 2026-07-14: visible Up/Down buttons were removed by user decision because
+whole-row dragging is the primary interaction. Alt+Up/Down and GTK accessibility
+shortcut metadata preserve non-pointer reordering without permanent row clutter.
