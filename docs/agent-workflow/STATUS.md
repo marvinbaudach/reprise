@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Integrate desktop file associations
-SINCE:    2026-07-14 07:36 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: restoring Library from Compact no longer exposes a stretched intermediate frame._
+_As of 2026-07-14: the installed app advertises and handles local audio and M3U files._
 
 ## Parallel feature work
 
@@ -34,12 +34,12 @@ _As of 2026-07-14: restoring Library from Compact no longer exposes a stretched 
 
 ## Current position
 
-- **Completed plan:** `docs/superpowers/plans/2026-07-14-help-dialog.md` (1 task).
-- **Last completed:** **Native offline Help** (`571af01`) — the main menu and F1 open a translated
-  libadwaita shortcuts dialog containing only the application's implemented commands.
+- **Completed plan:** `docs/superpowers/plans/2026-07-14-file-associations.md` (1 task).
+- **Last completed:** **Desktop file associations** (`ffa049c`) — GNOME can forward supported
+  local audio and M3U/M3U8 files into the one existing Reprise window.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `571af01` on `main`.
+- **Main implementation:** `ffa049c` on `main`.
 
 ## Done so far (compact)
 
@@ -76,6 +76,9 @@ _As of 2026-07-14: restoring Library from Compact no longer exposes a stretched 
   Linux app, and an additional MIT legal section for the Engine and Linux Platform components.
 - ✅ **Native offline Help**: the main menu places Help before About, and F1 opens the same
   translated libadwaita shortcuts dialog from Library or Compact View without network access.
+- ✅ **Desktop file associations**: installed metadata advertises supported audio and M3U/M3U8;
+  forwarded opens reuse one window, play known library tracks in order, import playlists through
+  the existing path, and never silently add unknown audio files.
 - ✅ **Minimal view + preferences**: one shared-player compact window; immediate persistent layout,
   library and plugin controls; real ten-band equalizer/presets and ReplayGain with synchronized
   live controls; isolated runtime persistence and full release QA green.
