@@ -74,6 +74,9 @@ impl WaveformSeek {
             move |area, cr, width, height| draw(area, cr, width, height, &state.borrow())
         });
 
+        // Click-to-seek only: a press jumps playback to that position. There is
+        // no drag-scrub, so — unlike GtkScale — there is no tick-vs-drag guard
+        // to maintain; position ticks always update the drawn fraction.
         let click = gtk4::GestureClick::new();
         click.connect_pressed({
             let state = state.clone();
@@ -82,19 +85,6 @@ impl WaveformSeek {
             move |_, _, x, _| seek_to(&area, &state, &on_seek, x)
         });
         area.add_controller(click);
-
-        let drag = gtk4::GestureDrag::new();
-        drag.connect_drag_update({
-            let state = state.clone();
-            let on_seek = on_seek.clone();
-            let area = area.clone();
-            move |gesture, offset_x, _| {
-                if let Some((start_x, _)) = gesture.start_point() {
-                    seek_to(&area, &state, &on_seek, start_x + offset_x);
-                }
-            }
-        });
-        area.add_controller(drag);
 
         Self {
             area,
