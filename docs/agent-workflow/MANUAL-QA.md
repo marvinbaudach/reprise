@@ -43,6 +43,11 @@ Record these once when the final pass starts:
 
 Run these first after restarting the current `target/release/reprise`.
 
+- [ ] **Initial library height:** restart directly into Music with a populated
+  disposable library. Expected: the table fills the available content height and
+  shows a viewport of rows immediately, without switching to a playlist and back.
+  The isolated mapped GTK regression proves a 400px window allocates more than
+  300px to the track-content stack; native GNOME confirmation remains pending.
 - [x] **Playlist duplicate prevention:** drag a track onto a playlist that already
   contains it. Expected: the count and row set do not change. Existing historical
   duplicates are not silently removed.
