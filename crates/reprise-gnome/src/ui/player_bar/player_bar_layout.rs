@@ -45,7 +45,7 @@ pub(super) struct PlayerBarWidgets {
     pub(super) repeat_button: gtk4::Button,
     pub(super) position_label: gtk4::Label,
     pub(super) duration_label: gtk4::Label,
-    pub(super) scale: gtk4::Scale,
+    pub(super) waveform: super::waveform_seek::WaveformSeek,
     pub(super) volume_button: gtk4::ScaleButton,
 }
 
@@ -100,16 +100,14 @@ pub(super) fn build() -> PlayerBarWidgets {
 
     let position_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
     let duration_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
-    let scale = gtk4::Scale::new(gtk4::Orientation::Horizontal, None::<&gtk4::Adjustment>);
-    scale.set_range(0.0, 1.0);
-    scale.set_draw_value(false);
-    scale.set_hexpand(true);
-    scale.set_valign(gtk4::Align::Center);
-    scale.set_tooltip_text(Some(&strings::text(strings::PLAYBACK_POSITION)));
+    let waveform = super::waveform_seek::WaveformSeek::new();
+    waveform
+        .widget()
+        .set_tooltip_text(Some(&strings::text(strings::PLAYBACK_POSITION)));
 
     let seek_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     seek_row.append(&position_label);
-    seek_row.append(&scale);
+    seek_row.append(waveform.widget());
     seek_row.append(&duration_label);
     seek_row.set_hexpand(true);
 
@@ -156,7 +154,7 @@ pub(super) fn build() -> PlayerBarWidgets {
         repeat_button,
         position_label,
         duration_label,
-        scale,
+        waveform,
         volume_button,
     }
 }
@@ -258,8 +256,8 @@ mod tests {
             layout.seek_row.last_child(),
             Some(layout.duration_label.clone().upcast())
         );
-        assert!(layout.scale.is_ancestor(&layout.seek_row));
-        assert!(layout.scale.width() > 0);
+        assert!(layout.waveform.widget().is_ancestor(&layout.seek_row));
+        assert!(layout.waveform.widget().width() > 0);
         assert!(!layout.shuffle_button.is_ancestor(&layout.secondary_zone));
         assert!(!layout.repeat_button.is_ancestor(&layout.secondary_zone));
         assert!(layout.volume_button.is_ancestor(&layout.secondary_zone));

@@ -305,6 +305,9 @@ pub struct PlayerController {
     /// Full` while the bar loads `ThumbnailSize::Bar`; each widget must only
     /// ever apply its own most-recent load.
     pub(super) now_playing_cover_generation: Rc<Cell<u64>>,
+    /// Generation token for the seek waveform's off-main peak load, so a
+    /// rapid track change can't paint a stale waveform.
+    pub(super) waveform_generation: Rc<Cell<u64>>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
     /// notification (Task 9: `app.send_notification`). Passed into `new` from
     /// `window::build`, which already holds the `&adw::Application` it builds
@@ -421,6 +424,7 @@ impl PlayerController {
             now_playing_view: NowPlayingView::new(),
             lyrics: PlayerLyrics::new(),
             now_playing_cover_generation: Rc::new(Cell::new(0)),
+            waveform_generation: Rc::new(Cell::new(0)),
             application: {
                 let weak = glib::WeakRef::new();
                 weak.set(Some(app.upcast_ref::<gio::Application>()));
