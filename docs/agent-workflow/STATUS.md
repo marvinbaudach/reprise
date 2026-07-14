@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Keep Information panel beside instead of over Library content
-SINCE:    2026-07-14 06:31 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is changing the Information panel to reserve layout width instead of overlaying Library content._
+_As of 2026-07-14: Codex fixed and released the non-overlaying Information column layout._
 
 ## Parallel feature work
 
@@ -35,11 +35,11 @@ _As of 2026-07-14: Codex is changing the Information panel to reserve layout wid
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-14-sidebar-issue-cleanup.md` (1 task).
-- **Last completed:** **Initial Library viewport correction** (`bd4d9c7`) — the track-content stack
-  expands during its first allocation, so a populated Music view no longer starts at one row.
+- **Last completed:** **Information column layout** (`2cbe143`) — the right panel reserves its own
+  340px column beside the Library and narrows the table instead of overlaying it.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `bd4d9c7`.
+- **Main implementation:** `2cbe143`.
 
 ## Done so far (compact)
 
@@ -87,7 +87,7 @@ _As of 2026-07-14: Codex is changing the Information panel to reserve layout wid
 - ✅ **Artist & Album News**: a persistent right-side Information panel follows the current
   selection, exposes a default-off privacy boundary, resolves conservative MusicBrainz matches,
   filters cached Upcoming/New album and EP cards, rejects stale selection responses, pins at
-  ordinary desktop widths, and exposes visible indeterminate request progress.
+  every window width without covering the Library, and exposes visible indeterminate request progress.
 - ✅ **Synchronized played-track lyrics**: the Information panel's top Lyrics tab retrieves only
   title, artist, album and duration after successful playback, caches LRCLIB results locally, and
   highlights plus centers timed lines from the existing position stream with generation-safe
