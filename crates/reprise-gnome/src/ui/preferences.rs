@@ -111,6 +111,7 @@ pub(super) struct PreferencesContext {
     pub(super) decorations: Rc<WindowDecorations>,
     pub(super) device_sync: Rc<DeviceSyncRuntime>,
     preferences_window: RefCell<glib::WeakRef<adw::Window>>,
+    preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
 }
 
 impl PreferencesContext {
@@ -158,6 +159,7 @@ impl PreferencesContext {
             decorations: decorations.clone(),
             device_sync: device_sync.clone(),
             preferences_window: RefCell::new(glib::WeakRef::new()),
+            preferences_navigation: RefCell::new(glib::WeakRef::new()),
         });
         let weak = Rc::downgrade(&context);
         context.scan_button.connect_sensitive_notify(move |button| {
@@ -226,9 +228,15 @@ impl PreferencesContext {
         });
         let shell = super::preferences_window::build(&self.window, pages);
         self.preferences_window.borrow().set(Some(&shell.window));
+        self.preferences_navigation
+            .borrow()
+            .set(Some(&shell.navigation));
         let smoke = std::env::var(SMOKE_ENV).ok();
-        if smoke.as_deref() == Some("layout") {
+        if matches!(smoke.as_deref(), Some("layout" | "columns")) {
             shell.stack.set_visible_child_name("layout");
+        }
+        if smoke.as_deref() == Some("columns") {
+            self.open_column_layout_editor();
         }
         if smoke.as_deref() == Some("exercise") {
             let context = Rc::downgrade(self);
@@ -296,6 +304,16 @@ impl PreferencesContext {
 
     fn layout_page(self: &Rc<Self>) -> adw::PreferencesPage {
         super::preference_layout::build(self)
+    }
+
+    pub(super) fn open_column_layout_editor(&self) {
+        let navigation = self.preferences_navigation.borrow().upgrade();
+        let Some(navigation) = navigation else {
+            tracing::warn!("column layout editor requested without preferences navigation");
+            return;
+        };
+        let page = super::column_layout_editor::build_navigation_page(&self.track_list);
+        navigation.push(&page);
     }
 
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {

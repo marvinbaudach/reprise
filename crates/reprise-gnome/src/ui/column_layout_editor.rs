@@ -103,6 +103,12 @@ struct EditorState {
     track_list: std::rc::Weak<TrackList>,
 }
 
+struct EditorSurface {
+    toolbar: adw::ToolbarView,
+    header: adw::HeaderBar,
+    state: Rc<EditorState>,
+}
+
 impl EditorState {
     fn apply(self: &Rc<Self>, next: ColumnLayout) {
         let current = self.layout.borrow().clone();
@@ -241,14 +247,14 @@ fn build_row(
     row
 }
 
-pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
+fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
     let provider = gtk4::CssProvider::new();
     provider.load_from_string(&format!(
         ".{DROP_BEFORE_CLASS}:drop(active) {{ box-shadow: inset 0 2px @accent_color; }}\n\
          .{DROP_AFTER_CLASS}:drop(active) {{ box-shadow: inset 0 -2px @accent_color; }}"
     ));
     gtk4::style_context_add_provider_for_display(
-        &gtk4::prelude::WidgetExt::display(window),
+        &track_list.root_widget().display(),
         &provider,
         gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
@@ -267,14 +273,9 @@ pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList
     reset.connect_clicked(move |_| {
         state_guard.apply(ColumnLayout::default());
     });
-    let close = gtk4::Button::with_label(&strings::text(strings::CLOSE));
     let header = adw::HeaderBar::new();
     header.pack_start(&reset);
-    header.pack_end(&close);
-    header.set_title_widget(Some(&adw::WindowTitle::new(
-        &strings::text(strings::EDIT_COLUMN_LAYOUT),
-        "",
-    )));
+    header.set_title_widget(Some(&adw::WindowTitle::new(title, "")));
     let scroll = gtk4::ScrolledWindow::builder()
         .child(&list)
         .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -286,8 +287,29 @@ pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&scroll));
+
+    EditorSurface {
+        toolbar,
+        header,
+        state,
+    }
+}
+
+pub(super) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
+    let title = strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT);
+    let surface = build_surface(track_list, &title);
+    let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
+    tracing::info!(layout = %serialized, "column layout editor opened in preferences");
+    adw::NavigationPage::with_tag(&surface.toolbar, &title, "column-layout")
+}
+
+pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
+    let title = strings::text(strings::EDIT_COLUMN_LAYOUT);
+    let surface = build_surface(track_list, &title);
+    let close = gtk4::Button::with_label(&strings::text(strings::CLOSE));
+    surface.header.pack_end(&close);
     let dialog = adw::Dialog::builder()
-        .child(&toolbar)
+        .child(&surface.toolbar)
         .content_width(520)
         .content_height(620)
         .build();
@@ -298,12 +320,13 @@ pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList
         });
     }
     dialog.present(Some(window));
-    let serialized = column_layout::serialize_layout(&state.layout.borrow());
+    let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
     tracing::info!(
         layout = %serialized,
         "column layout editor presented"
     );
     if let Ok(smoke) = std::env::var(SMOKE_ENV) {
+        let state = surface.state;
         glib::timeout_add_seconds_local_once(1, move || {
             if smoke == "exercise" {
                 let layout = state.layout.borrow().clone();
@@ -374,5 +397,32 @@ mod tests {
         }
         assert_eq!(drag_phase, Some(gtk4::PropagationPhase::Capture));
         assert!(has_drop);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn navigation_editor_builds_a_poppable_preferences_detail_page() {
+        gtk4::init().unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let runtime = crate::ui::cover_download_worker::setup();
+        let track_list = Rc::new(TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _| {}),
+            |_, _, _, _| {},
+            Vec::new,
+            runtime,
+        ));
+
+        let page = build_navigation_page(&track_list);
+
+        assert_eq!(
+            page.title(),
+            strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT)
+        );
+        assert!(page.can_pop());
+        assert!(page
+            .child()
+            .is_some_and(|child| child.is::<adw::ToolbarView>()));
     }
 }

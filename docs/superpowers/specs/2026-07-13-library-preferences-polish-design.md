@@ -242,8 +242,11 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
   linken Slot des `AdwNavigationSplitView`; es bleibt keine leere Spalte stehen.
   Die Begriffe beschreiben sichtbar genau die Elemente des Hauptfensters.
 - Gruppe „Spalten“ zeigt die aktuell sichtbaren Spalten in der Subtitle-Zeile
-  und öffnet denselben vorhandenen Spalteneditor. Keine zweite
-  Spaltenkonfiguration wird aufgebaut.
+  und öffnet denselben vorhandenen Spalteneditor als zweite Ebene der
+  bestehenden Preferences-Navigation. Die Detailseite ersetzt den
+  Preferences-Inhalt im selben Fenster und kehrt über den nativen
+  Zurück-Button zur Layout-Seite zurück; sie erzeugt kein weiteres Fenster.
+  Keine zweite Spaltenkonfiguration wird aufgebaut.
 - Die Kompaktansicht wird in den Einstellungen nicht erneut angeboten. Sie
   bleibt über das vorhandene Kontext-/Hauptmenü und den Shortcut erreichbar;
   die Einstellungen duplizieren diesen Bedienweg nicht.

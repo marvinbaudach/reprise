@@ -61,6 +61,7 @@ impl PageId {
 
 pub(super) struct PreferencesShell {
     pub(super) window: adw::Window,
+    pub(super) navigation: adw::NavigationView,
     pub(super) stack: adw::ViewStack,
     #[cfg(test)]
     pub(super) switcher: adw::ViewSwitcher,
@@ -88,6 +89,13 @@ pub(super) fn build(
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&stack));
+    let root_page = adw::NavigationPage::with_tag(
+        &toolbar,
+        &strings::text(strings::PREFERENCES),
+        "preferences",
+    );
+    let navigation = adw::NavigationView::new();
+    navigation.add(&root_page);
     let window = adw::Window::builder()
         .application(
             &parent
@@ -100,7 +108,7 @@ pub(super) fn build(
         .destroy_with_parent(true)
         .default_width(760)
         .default_height(680)
-        .content(&toolbar)
+        .content(&navigation)
         .build();
     let focus_target = switcher.clone();
     window.connect_map(move |window| {
@@ -109,6 +117,7 @@ pub(super) fn build(
     window.set_size_request(560, 480);
     PreferencesShell {
         window,
+        navigation,
         stack,
         #[cfg(test)]
         switcher,
@@ -122,6 +131,7 @@ mod tests {
     use gtk4::gio;
     use gtk4::prelude::*;
     use libadwaita as adw;
+    use libadwaita::prelude::*;
 
     use super::*;
 
@@ -168,6 +178,38 @@ mod tests {
         assert_eq!(shell.switcher.stack().as_ref(), Some(&shell.stack));
         assert!(shell.switcher.is_ancestor(&shell.header));
         assert_eq!(shell.stack.pages().n_items(), PAGE_ORDER.len() as u32);
+        shell.window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn preferences_push_detail_pages_inside_the_existing_window() {
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.PreferencesNavigationTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let parent = adw::ApplicationWindow::builder().application(&app).build();
+        let pages = PAGE_ORDER.map(|id| {
+            let page = adw::PreferencesPage::builder()
+                .title(id.title())
+                .icon_name(id.icon_name())
+                .build();
+            (id, page)
+        });
+        let shell = build(&parent, pages);
+        let detail =
+            adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Columns");
+
+        shell.navigation.push(&detail);
+
+        assert_eq!(shell.navigation.visible_page().as_ref(), Some(&detail));
+        assert_eq!(
+            shell.window.content().as_ref(),
+            Some(shell.navigation.upcast_ref())
+        );
+        assert!(shell.navigation.pop());
         shell.window.close();
     }
 }
