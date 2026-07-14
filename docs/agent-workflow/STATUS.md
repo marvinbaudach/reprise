@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Remove redundant filter-bar Reset button
-SINCE:    2026-07-14 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex claimed the lock for the filter-bar Reset cleanup._
+_As of 2026-07-14: Codex released the lock after completing the filter-bar Reset cleanup._
 
 ## Parallel feature work
 
@@ -35,11 +35,11 @@ _As of 2026-07-14: Codex claimed the lock for the filter-bar Reset cleanup._
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-android-device-sync.md` (6 tasks).
-- **Last completed:** **Compact View entry-point cleanup** (`9ec6337`) — the redundant Library
-  header button is removed while the main-menu action, Ctrl+M, and Compact context menu remain.
+- **Last completed:** **Filter-bar Reset cleanup** (`fe70693`) — removable chips are the sole clear
+  path, the redundant Reset action is gone, and `+ Add filter` uses the retained pill treatment.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `9ec6337`.
+- **Main implementation:** `fe70693`.
 
 ## Done so far (compact)
 
@@ -149,7 +149,8 @@ _As of 2026-07-14: Codex claimed the lock for the filter-bar Reset cleanup._
   merged `.m3u8` playlists.
 - ✅ **Unified chip filter bar**: the three persistent facet searches are replaced by wrapping,
   removable Genre/Artist/Album chips, a two-step add popover with one temporary value search,
-  exact live result counts, and one reset action while preserving cascade and session behavior.
+  exact live result counts, and one pill-styled add action while removable chips preserve cascade
+  and session behavior without a redundant Reset button.
 - ✅ **One-time Rhythmbox import**: detection and explicit column-layout selection live only in
   initial setup; the persistent main menu and Preferences no longer expose a later import path.
 - ✅ **Compact playback equalizer**: Enable and Preset remain native settings rows while ten
