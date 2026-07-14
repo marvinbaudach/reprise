@@ -11,7 +11,9 @@ use crate::ui::cover_loader::CoverLoader;
 use crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
-use crate::ui::track_list_columns::{append_column, append_cover_column, append_rating_column};
+use crate::ui::track_list_columns::{
+    append_column, append_cover_column, append_rating_column, CellAlignment,
+};
 use reprise_core::format::format_duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -40,6 +42,21 @@ const DEFAULT_ORDER: [ColumnId; 10] = [
     ColumnId::TrackNumber,
     ColumnId::Genre,
 ];
+
+fn cell_alignment(id: ColumnId) -> CellAlignment {
+    match id {
+        ColumnId::TrackNumber
+        | ColumnId::Year
+        | ColumnId::Duration
+        | ColumnId::Rating
+        | ColumnId::PlayCount => CellAlignment::Numeric,
+        ColumnId::Cover
+        | ColumnId::Title
+        | ColumnId::Artist
+        | ColumnId::Album
+        | ColumnId::Genre => CellAlignment::Text,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ColumnWidthPolicy {
@@ -392,8 +409,7 @@ pub(super) fn build_columns(
         shared,
         "title",
         &strings::text(strings::COLUMN_TITLE),
-        0.0,
-        false,
+        cell_alignment(ColumnId::Title),
         |t| t.title.clone(),
     );
     let track_number = append_column(
@@ -401,8 +417,7 @@ pub(super) fn build_columns(
         shared,
         "track_no",
         &strings::text(strings::COLUMN_TRACK_NUMBER),
-        1.0,
-        true,
+        cell_alignment(ColumnId::TrackNumber),
         |t| {
             t.track_no
                 .map(|value| value.to_string())
@@ -414,8 +429,7 @@ pub(super) fn build_columns(
         shared,
         "artist",
         &strings::text(strings::COLUMN_ARTIST),
-        0.0,
-        false,
+        cell_alignment(ColumnId::Artist),
         |t| t.artist.clone(),
     );
     let album = append_column(
@@ -423,8 +437,7 @@ pub(super) fn build_columns(
         shared,
         "album",
         &strings::text(strings::COLUMN_ALBUM),
-        0.0,
-        false,
+        cell_alignment(ColumnId::Album),
         |t| t.album.clone(),
     );
     let genre = append_column(
@@ -432,8 +445,7 @@ pub(super) fn build_columns(
         shared,
         "genre",
         &strings::text(strings::COLUMN_GENRE),
-        0.0,
-        false,
+        cell_alignment(ColumnId::Genre),
         |t| t.genre.clone(),
     );
     let year = append_column(
@@ -441,8 +453,7 @@ pub(super) fn build_columns(
         shared,
         "year",
         &strings::text(strings::COLUMN_YEAR),
-        0.0,
-        false,
+        cell_alignment(ColumnId::Year),
         |t| t.year.map(|value| value.to_string()).unwrap_or_default(),
     );
     let duration = append_column(
@@ -450,8 +461,7 @@ pub(super) fn build_columns(
         shared,
         "duration_ms",
         &strings::text(strings::COLUMN_LENGTH),
-        1.0,
-        true,
+        cell_alignment(ColumnId::Duration),
         |t| format_duration(t.duration_ms),
     );
     let rating = append_rating_column(view, shared);
@@ -460,8 +470,7 @@ pub(super) fn build_columns(
         shared,
         "play_count",
         &strings::text(strings::COLUMN_PLAY_COUNT),
-        1.0,
-        true,
+        cell_alignment(ColumnId::PlayCount),
         |track| track.play_count.to_string(),
     );
 
@@ -496,6 +505,27 @@ pub(super) fn build_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numeric_metadata_columns_are_classified_for_centering() {
+        for id in [
+            ColumnId::TrackNumber,
+            ColumnId::Year,
+            ColumnId::Duration,
+            ColumnId::Rating,
+            ColumnId::PlayCount,
+        ] {
+            assert_eq!(cell_alignment(id), CellAlignment::Numeric);
+        }
+        for id in [
+            ColumnId::Title,
+            ColumnId::Artist,
+            ColumnId::Album,
+            ColumnId::Genre,
+        ] {
+            assert_eq!(cell_alignment(id), CellAlignment::Text);
+        }
+    }
 
     #[test]
     fn rating_column_uses_the_compact_width() {

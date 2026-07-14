@@ -121,9 +121,9 @@ Queries, Queue noch Playbackzustand.
   Wahrheit. Die primäre Titelspalte nimmt zusätzlich verbleibende Fläche ein,
   sodass die Tabelle stets bis zum rechten Rand reicht; explizite
   Nutzerbreiten bleiben Mindest-/Basisbreiten und werden nicht überschrieben.
-- Cover, Titel, Interpret und Album ellipsieren. Jahr, Länge, Bewertung und
-  andere numerische Spalten bleiben kompakt und rechts beziehungsweise
-  typografisch numerisch ausgerichtet.
+- Cover, Titel, Interpret und Album ellipsieren. Jahr, Tracknummer, Länge,
+  Bewertung, Wiedergabezähler und andere numerische Spalten bleiben kompakt,
+  zentriert und verwenden typografisch tabellarische Ziffern.
 - Vertikale Zellgitter werden nicht als dominantes Raster verwendet. Native
   Zeilentrennung, Hover, Mehrfachauswahl und die bestehende Akzentmarkierung des
   laufenden Titels tragen die Orientierung.
