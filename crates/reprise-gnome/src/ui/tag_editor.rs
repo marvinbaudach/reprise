@@ -129,6 +129,16 @@ fn enable_enter_submit(dialog: &adw::Dialog, apply: &gtk4::Button, rows: &[&adw:
     }
 }
 
+fn editor_header(apply: &gtk4::Button) -> adw::HeaderBar {
+    let header = adw::HeaderBar::new();
+    header.pack_end(apply);
+    header.set_title_widget(Some(&adw::WindowTitle::new(
+        &strings::text(strings::EDIT_TAGS),
+        "",
+    )));
+    header
+}
+
 pub fn present(
     parent: &adw::ApplicationWindow,
     summary: &EditableTagSummary,
@@ -181,17 +191,10 @@ pub fn present(
         .vexpand(true)
         .build();
 
-    let cancel = gtk4::Button::with_label(&strings::text(strings::CANCEL));
     let apply = gtk4::Button::with_label(&strings::text(strings::APPLY));
     apply.add_css_class("suggested-action");
     apply.set_sensitive(false);
-    let header = adw::HeaderBar::new();
-    header.pack_start(&cancel);
-    header.pack_end(&apply);
-    header.set_title_widget(Some(&adw::WindowTitle::new(
-        &strings::text(strings::EDIT_TAGS),
-        "",
-    )));
+    let header = editor_header(&apply);
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&scrolled));
@@ -238,12 +241,6 @@ pub fn present(
 
     {
         let dialog = dialog.clone();
-        cancel.connect_clicked(move |_| {
-            dialog.close();
-        });
-    }
-    {
-        let dialog = dialog.clone();
         apply.connect_clicked(move |_| {
             let year_patch = number_patch(dirty[4].get(), year.text().as_str());
             let track_patch = number_patch(dirty[5].get(), track_no.text().as_str());
@@ -279,6 +276,21 @@ pub fn present(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn has_button_with_label(root: &impl IsA<gtk4::Widget>, label: &str) -> bool {
+        let mut child = root.first_child();
+        while let Some(widget) = child {
+            if widget
+                .downcast_ref::<gtk4::Button>()
+                .is_some_and(|button| button.label().as_deref() == Some(label))
+                || has_button_with_label(&widget, label)
+            {
+                return true;
+            }
+            child = widget.next_sibling();
+        }
+        false
+    }
 
     #[test]
     fn string_patch_writes_only_dirty_fields_and_allows_clear() {
@@ -337,6 +349,23 @@ mod tests {
             .downcast::<gtk4::StringObject>()
             .unwrap();
         assert_eq!(selected.string(), "(multiple values)");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn header_uses_the_window_close_control_instead_of_a_cancel_button() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let apply = gtk4::Button::with_label("Apply");
+        let header = editor_header(&apply);
+
+        assert!(header.shows_start_title_buttons());
+        assert!(apply.is_ancestor(&header));
+        assert!(!has_button_with_label(
+            &header,
+            &strings::text(strings::CANCEL)
+        ));
     }
 
     #[test]
