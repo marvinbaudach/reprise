@@ -10,13 +10,23 @@
 use gtk4::prelude::*;
 use reprise_core::library::settings::ListDensity;
 
-const DENSITY_CSS: &str = ".reprise-track-cell.reprise-density-comfortable { min-height: 36px; }\n\
-     .reprise-track-cell.reprise-density-standard { min-height: 28px; }\n\
-     .reprise-track-cell.reprise-density-compact { min-height: 12px; font-size: 10px; }\n\
-     .reprise-rating-star { min-height: 0; border: 0; padding: 0; margin: 0; }\n\
-     .reprise-rating-compact-button > button { min-height: 0; border: 0; padding: 0; margin: 0; }\n\
-     .reprise-rating-star.reprise-density-compact,\n\
-     .reprise-rating-compact-button.reprise-density-compact > button { font-size: 10px; }";
+/// Density row minima and rating-control resets; installed app-wide by
+/// [`super::style`].
+pub(super) fn css() -> String {
+    use super::style::tokens::{
+        COMPACT_ROW_FONT_SIZE, ROW_MIN_HEIGHT_COMFORTABLE, ROW_MIN_HEIGHT_COMPACT,
+        ROW_MIN_HEIGHT_STANDARD,
+    };
+    format!(
+        ".reprise-track-cell.reprise-density-comfortable {{ min-height: {ROW_MIN_HEIGHT_COMFORTABLE}px; }}\n\
+         .reprise-track-cell.reprise-density-standard {{ min-height: {ROW_MIN_HEIGHT_STANDARD}px; }}\n\
+         .reprise-track-cell.reprise-density-compact {{ min-height: {ROW_MIN_HEIGHT_COMPACT}px; font-size: {COMPACT_ROW_FONT_SIZE}px; }}\n\
+         .reprise-rating-star {{ min-height: 0; border: 0; padding: 0; margin: 0; }}\n\
+         .reprise-rating-compact-button > button {{ min-height: 0; border: 0; padding: 0; margin: 0; }}\n\
+         .reprise-rating-star.reprise-density-compact,\n\
+         .reprise-rating-compact-button.reprise-density-compact > button {{ font-size: {COMPACT_ROW_FONT_SIZE}px; }}"
+    )
+}
 
 fn density_class(density: ListDensity) -> &'static str {
     match density {
@@ -24,16 +34,6 @@ fn density_class(density: ListDensity) -> &'static str {
         ListDensity::Standard => "reprise-density-standard",
         ListDensity::Compact => "reprise-density-compact",
     }
-}
-
-pub(super) fn install(view: &gtk4::ColumnView) {
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(DENSITY_CSS);
-    gtk4::style_context_add_provider_for_display(
-        &view.display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
 }
 
 pub(super) fn apply(view: &gtk4::ColumnView, density: ListDensity) {
@@ -89,7 +89,7 @@ mod tests {
             ListDensity::Standard,
             ListDensity::Compact,
         ] {
-            assert!(DENSITY_CSS.contains(density_class(density)));
+            assert!(css().contains(density_class(density)));
         }
     }
 
@@ -176,7 +176,7 @@ mod tests {
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.append(&view);
-        install(&view);
+        crate::ui::style::install();
         let window = gtk4::Window::builder().child(&root).build();
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}

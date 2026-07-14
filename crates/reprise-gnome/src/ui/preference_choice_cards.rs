@@ -3,18 +3,27 @@ use std::rc::Rc;
 
 use gtk4::{glib, prelude::*};
 
-const CHOICE_CARD_CSS: &str = "
-checkbutton.reprise-choice-card {
+/// Layout preference choice-card surfaces; installed app-wide by
+/// [`super::style`].
+pub(super) fn css() -> String {
+    use super::style::tokens::{
+        PREVIEW_BORDER_ALPHA, PREVIEW_CONTENT_ALPHA, PREVIEW_SIDEBAR_ALPHA,
+    };
+    format!(
+        "
+checkbutton.reprise-choice-card {{
   padding: 12px;
-}
-.reprise-choice-preview {
-  border: 1px solid alpha(@window_fg_color, 0.18);
+}}
+.reprise-choice-preview {{
+  border: 1px solid alpha(@window_fg_color, {PREVIEW_BORDER_ALPHA});
   border-radius: 8px;
+}}
+.reprise-preview-sidebar {{ background: alpha(@window_fg_color, {PREVIEW_SIDEBAR_ALPHA}); }}
+.reprise-preview-content {{ background: alpha(@window_fg_color, {PREVIEW_CONTENT_ALPHA}); }}
+.reprise-preview-player {{ background: @accent_bg_color; }}
+"
+    )
 }
-.reprise-preview-sidebar { background: alpha(@window_fg_color, 0.16); }
-.reprise-preview-content { background: alpha(@window_fg_color, 0.06); }
-.reprise-preview-player { background: @accent_bg_color; }
-";
 
 pub(super) struct ChoiceCardSpec {
     title: String,
@@ -44,16 +53,6 @@ fn retained_selection(committed: u32, requested: u32, save_succeeded: bool) -> u
     }
 }
 
-fn install_style(widget: &impl IsA<gtk4::Widget>) {
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(CHOICE_CARD_CSS);
-    gtk4::style_context_add_provider_for_display(
-        &widget.display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-}
-
 pub(super) fn build(
     specs: Vec<ChoiceCardSpec>,
     selected: u32,
@@ -61,7 +60,6 @@ pub(super) fn build(
 ) -> ChoiceCards {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     root.set_homogeneous(true);
-    install_style(&root);
 
     let mut buttons = Vec::with_capacity(specs.len());
     for spec in specs {

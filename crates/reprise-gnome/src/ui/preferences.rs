@@ -146,7 +146,6 @@ impl PreferencesContext {
                 }
             }
         });
-        super::list_density::install(context.track_list.column_view_widget());
         context.apply_initial();
         context
     }

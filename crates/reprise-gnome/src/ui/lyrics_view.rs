@@ -33,8 +33,6 @@ pub(super) struct LyricsView {
 
 impl LyricsView {
     pub(super) fn new() -> Rc<Self> {
-        install_css();
-
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
         content.set_margin_top(18);
         content.set_margin_bottom(18);
@@ -329,17 +327,7 @@ pub(super) fn centered_scroll_value(
     (row_y + row_height / 2.0 - page_size / 2.0).clamp(0.0, maximum)
 }
 
-fn install_css() {
-    let Some(display) = gtk4::gdk::Display::default() else {
-        return;
-    };
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(&format!(
-        ".{ACTIVE_LINE_CLASS} {{ color: @accent_color; font-weight: 700; }}"
-    ));
-    gtk4::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+/// Active synchronized-line emphasis; installed app-wide by [`super::style`].
+pub(super) fn css() -> String {
+    format!(".{ACTIVE_LINE_CLASS} {{ color: @accent_color; font-weight: 700; }}")
 }

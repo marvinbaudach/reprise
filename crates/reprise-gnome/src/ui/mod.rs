@@ -122,6 +122,7 @@ mod sidebar_presentation;
 pub mod sidebar_session;
 pub mod status_bar;
 pub mod strings;
+mod style;
 pub mod tag_edit_flow;
 pub mod tag_editor;
 pub mod toasts;

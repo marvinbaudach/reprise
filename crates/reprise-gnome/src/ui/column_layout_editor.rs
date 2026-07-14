@@ -241,17 +241,17 @@ fn build_row(state: &Rc<EditorState>, layout: &ColumnLayout, id: ColumnId) -> ad
     row
 }
 
+/// Before/after drop-position indicators; installed app-wide by
+/// [`super::style`].
+pub(super) fn css() -> String {
+    use super::style::tokens::DROP_INDICATOR_THICKNESS;
+    format!(
+        ".{DROP_BEFORE_CLASS}:drop(active) {{ box-shadow: inset 0 {DROP_INDICATOR_THICKNESS} @accent_color; }}\n\
+         .{DROP_AFTER_CLASS}:drop(active) {{ box-shadow: inset 0 -{DROP_INDICATOR_THICKNESS} @accent_color; }}"
+    )
+}
+
 fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
-    let provider = gtk4::CssProvider::new();
-    provider.load_from_string(&format!(
-        ".{DROP_BEFORE_CLASS}:drop(active) {{ box-shadow: inset 0 2px @accent_color; }}\n\
-         .{DROP_AFTER_CLASS}:drop(active) {{ box-shadow: inset 0 -2px @accent_color; }}"
-    ));
-    gtk4::style_context_add_provider_for_display(
-        &track_list.root_widget().display(),
-        &provider,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
     let list = gtk4::ListBox::new();
     list.add_css_class("boxed-list");
     list.set_selection_mode(gtk4::SelectionMode::None);
