@@ -54,26 +54,34 @@ pub fn listenbrainz_connected(user_name: &str) -> String {
     formatted(N_!("Connected as {user_name}"), &[("user_name", user_name)])
 }
 
-pub fn listenbrainz_pending(prefix: &str, pending: usize) -> String {
-    let pending_text = pending.to_string();
-    plural(
-        "{prefix} · {pending} listen pending",
-        "{prefix} · {pending} listens pending",
-        pending,
-        &[("prefix", prefix), ("pending", &pending_text)],
-    )
-}
-
 pub fn lastfm_connected(user_name: &str) -> String {
     formatted(N_!("Connected as {user_name}"), &[("user_name", user_name)])
 }
 
-pub fn lastfm_pending(prefix: &str, pending: usize) -> String {
-    let pending_text = pending.to_string();
-    plural(
-        "{prefix} · {pending} scrobble pending",
-        "{prefix} · {pending} scrobbles pending",
-        pending,
-        &[("prefix", prefix), ("pending", &pending_text)],
-    )
+/// Builds a combined "N submitted · M queued" suffix.
+/// Returns `None` when both counts are zero.
+pub fn scrobble_counts(submitted: usize, queued: usize) -> Option<String> {
+    let submitted_part = if submitted > 0 {
+        let n = submitted.to_string();
+        Some(plural(
+            "{n} submitted",
+            "{n} submitted",
+            submitted,
+            &[("n", &n)],
+        ))
+    } else {
+        None
+    };
+    let queued_part = if queued > 0 {
+        let n = queued.to_string();
+        Some(plural("{n} queued", "{n} queued", queued, &[("n", &n)]))
+    } else {
+        None
+    };
+    match (submitted_part, queued_part) {
+        (Some(s), Some(q)) => Some(format!("{s} · {q}")),
+        (Some(s), None) => Some(s),
+        (None, Some(q)) => Some(q),
+        (None, None) => None,
+    }
 }

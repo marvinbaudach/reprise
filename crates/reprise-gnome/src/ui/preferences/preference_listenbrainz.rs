@@ -34,24 +34,35 @@ pub(super) fn activation_decision(requested: bool, token_available: bool) -> Act
 }
 
 pub(super) fn status_text(status: &ConnectionStatus) -> String {
-    match status {
-        ConnectionStatus::Disabled => strings::text(strings::LISTENBRAINZ_NOT_CONNECTED),
-        ConnectionStatus::Connecting => strings::text(strings::LISTENBRAINZ_CONNECTING),
+    let (base, submitted, pending) = match status {
+        ConnectionStatus::Disabled => return strings::text(strings::LISTENBRAINZ_NOT_CONNECTED),
+        ConnectionStatus::Connecting => return strings::text(strings::LISTENBRAINZ_CONNECTING),
         ConnectionStatus::Connected {
             user_name,
-            pending: 0,
-        } => strings::listenbrainz_connected(user_name),
-        ConnectionStatus::Connected { user_name, pending } => {
-            strings::listenbrainz_pending(&strings::listenbrainz_connected(user_name), *pending)
-        }
-        ConnectionStatus::Offline { pending } => {
-            strings::listenbrainz_pending(&strings::text(strings::LISTENBRAINZ_OFFLINE), *pending)
-        }
-        ConnectionStatus::Unauthorized => strings::text(strings::LISTENBRAINZ_TOKEN_REJECTED),
-        ConnectionStatus::Error { pending } => strings::listenbrainz_pending(
-            &strings::text(strings::LISTENBRAINZ_CONNECTION_ERROR),
+            pending,
+            submitted,
+        } => (
+            strings::listenbrainz_connected(user_name),
+            *submitted,
             *pending,
         ),
+        ConnectionStatus::Offline { pending, submitted } => (
+            strings::text(strings::LISTENBRAINZ_OFFLINE),
+            *submitted,
+            *pending,
+        ),
+        ConnectionStatus::Unauthorized => {
+            return strings::text(strings::LISTENBRAINZ_TOKEN_REJECTED)
+        }
+        ConnectionStatus::Error { pending, submitted } => (
+            strings::text(strings::LISTENBRAINZ_CONNECTION_ERROR),
+            *submitted,
+            *pending,
+        ),
+    };
+    match strings::scrobble_counts(submitted, pending) {
+        Some(counts) => format!("{base} · {counts}"),
+        None => base,
     }
 }
 
@@ -205,6 +216,7 @@ pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRun
                 tracing::warn!(%error, "could not load ListenBrainz token from keyring");
                 runtime.report_status(&ConnectionStatus::Error {
                     pending: pending_count(&conn),
+                    submitted: 0,
                 });
             }
         }
@@ -350,6 +362,7 @@ impl PreferencesContext {
                         .listenbrainz
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
+                            submitted: 0,
                         });
                     context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_KEYRING_ERROR);
@@ -375,6 +388,7 @@ impl PreferencesContext {
             tracing::warn!(%error, "could not start ListenBrainz validation worker");
             self.listenbrainz.report_status(&ConnectionStatus::Error {
                 pending: pending_count(&self.conn),
+                submitted: 0,
             });
             self.restore_listenbrainz_switch(row);
             self.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
@@ -396,6 +410,7 @@ impl PreferencesContext {
                             .listenbrainz
                             .report_status(&ConnectionStatus::Error {
                                 pending: pending_count(&context.conn),
+                                submitted: 0,
                             });
                         context.restore_listenbrainz_switch(&row);
                         context.show_listenbrainz_error(strings::LISTENBRAINZ_KEYRING_ERROR);
@@ -414,6 +429,7 @@ impl PreferencesContext {
                         .listenbrainz
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
+                            submitted: 0,
                         });
                     context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
@@ -424,6 +440,7 @@ impl PreferencesContext {
                         .listenbrainz
                         .report_status(&ConnectionStatus::Error {
                             pending: pending_count(&context.conn),
+                            submitted: 0,
                         });
                     context.restore_listenbrainz_switch(&row);
                     context.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
@@ -529,12 +546,16 @@ mod tests {
             status_text(&ConnectionStatus::Connected {
                 user_name: "listener".to_string(),
                 pending: 0,
+                submitted: 0,
             }),
             "Connected as listener"
         );
         assert_eq!(
-            status_text(&ConnectionStatus::Offline { pending: 3 }),
-            "Offline · 3 listens pending"
+            status_text(&ConnectionStatus::Offline {
+                pending: 3,
+                submitted: 0,
+            }),
+            "Offline · 3 queued"
         );
         assert_eq!(
             status_text(&ConnectionStatus::Unauthorized),
@@ -556,17 +577,37 @@ mod tests {
     }
 
     #[test]
-    fn connected_status_includes_pending_count() {
+    fn connected_status_includes_submitted_and_queued_counts() {
         assert_eq!(
             status_text(&ConnectionStatus::Connected {
                 user_name: "listener".to_string(),
                 pending: 2,
+                submitted: 0,
             }),
-            "Connected as listener · 2 listens pending"
+            "Connected as listener · 2 queued"
         );
         assert_eq!(
-            status_text(&ConnectionStatus::Error { pending: 1 }),
-            "Connection error · 1 listen pending"
+            status_text(&ConnectionStatus::Connected {
+                user_name: "listener".to_string(),
+                pending: 0,
+                submitted: 42,
+            }),
+            "Connected as listener · 42 submitted"
+        );
+        assert_eq!(
+            status_text(&ConnectionStatus::Connected {
+                user_name: "listener".to_string(),
+                pending: 3,
+                submitted: 42,
+            }),
+            "Connected as listener · 42 submitted · 3 queued"
+        );
+        assert_eq!(
+            status_text(&ConnectionStatus::Error {
+                pending: 1,
+                submitted: 5,
+            }),
+            "Connection error · 5 submitted · 1 queued"
         );
     }
 
