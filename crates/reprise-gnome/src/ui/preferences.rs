@@ -17,6 +17,7 @@ use crate::ui::player_controller::PlayerController;
 use crate::ui::preference_playback::build_equalizer_surface;
 use crate::ui::preference_plugins::{plugin_applies_live, plugin_description, plugin_title};
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
+use crate::ui::sidebar::Sidebar;
 use crate::ui::status_bar::StatusBar;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
@@ -57,6 +58,7 @@ pub(super) struct PreferencesContext {
     pub(super) window: adw::ApplicationWindow,
     pub(super) conn: Rc<RefCell<Connection>>,
     pub(super) track_list: Rc<TrackList>,
+    pub(super) sidebar: Rc<Sidebar>,
     pub(super) split_view: adw::NavigationSplitView,
     pub(super) sidebar_page: adw::NavigationPage,
     pub(super) status_bar: StatusBar,
@@ -88,6 +90,7 @@ impl PreferencesContext {
         window: &adw::ApplicationWindow,
         conn: &Rc<RefCell<Connection>>,
         track_list: &Rc<TrackList>,
+        sidebar: &Rc<Sidebar>,
         split_view: &adw::NavigationSplitView,
         sidebar_page: &adw::NavigationPage,
         status_bar: &StatusBar,
@@ -105,6 +108,7 @@ impl PreferencesContext {
             window: window.clone(),
             conn: conn.clone(),
             track_list: track_list.clone(),
+            sidebar: sidebar.clone(),
             split_view: split_view.clone(),
             sidebar_page: sidebar_page.clone(),
             status_bar: status_bar.clone(),
@@ -202,6 +206,9 @@ impl PreferencesContext {
         let smoke = std::env::var(SMOKE_ENV).ok();
         if matches!(smoke.as_deref(), Some("layout" | "columns")) {
             shell.stack.set_visible_child_name("layout");
+        }
+        if smoke.as_deref() == Some("rhythmbox") {
+            shell.stack.set_visible_child_name("library");
         }
         if smoke.as_deref() == Some("columns") {
             self.open_column_layout_editor();

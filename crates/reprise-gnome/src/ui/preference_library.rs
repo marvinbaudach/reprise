@@ -65,6 +65,8 @@ impl PreferencesContext {
             }),
         ));
 
+        super::preference_rhythmbox::add_rhythmbox_import_row(self, &group);
+
         page.add(&group);
         page
     }

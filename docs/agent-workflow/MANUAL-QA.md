@@ -83,7 +83,9 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   lookup without offering a disable switch. When Rhythmbox is detected, the
   one-time setup dialog shows an `Import from Rhythmbox` section with the explicit
   `Column layout` choice off by default; without the schema/key, the complete
-  section is absent. The main menu and Preferences expose no later Rhythmbox import.
+  section is absent. The main menu exposes no later import; Preferences → Library
+  keeps the explicit read-only migration action available for statistics, static
+  playlists, and layout.
   Both decision paths and explicit fixture import pass in the isolated smoke;
   native copy/layout remains pending.
 - [ ] Skip completes onboarding without opening a picker or scanning music.
@@ -367,6 +369,14 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   is offered only when detected, remains off until selected, maps supported columns
   in order, ignores unknown tokens, and leaves Rhythmbox settings unchanged. A second
   start offers no import surface.
+- [ ] In Preferences → Library, run `Import from Rhythmbox…` against a disposable
+  `rhythmdb.xml` and `playlists.xml`. Expected: Ratings, Play counts, and Playlists
+  start selected while Column layout requires opt-in; exact decoded local paths match,
+  existing Reprise ratings win, play counts only rise to the larger value, static
+  playlist order is retained without duplicates, smart playlists are skipped, repeating
+  the import is a no-op, and Rhythmbox plus audio files remain unchanged. Enable the
+  optional Plays column, sort it in both directions, hide it, and restart to verify
+  layout persistence.
 - [ ] Playlist context-menu add/new/remove, sidebar drag add, multi-select, and M3U8
   import work with Unicode names and paths containing spaces.
 - [ ] Exported M3U opens in another compatible player when one is available.
