@@ -5,9 +5,7 @@
 //!
 //! Colours come from the widget's own CSS `color` (set to
 //! `@reprise_player_accent` by the player-bar CSS), so the waveform recolors
-//! with the active theme. Wired into the player bar in the following slice —
-//! hence the module-level dead-code allow.
-#![allow(dead_code)]
+//! with the active theme.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -49,6 +47,7 @@ struct State {
     fraction: f64,
 }
 
+#[derive(Clone)]
 pub(super) struct WaveformSeek {
     area: gtk4::DrawingArea,
     state: Rc<RefCell<State>>,

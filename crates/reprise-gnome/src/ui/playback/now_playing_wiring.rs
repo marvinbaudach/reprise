@@ -36,6 +36,9 @@ use reprise_core::media_integration::MprisState;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
+/// Number of amplitude bars drawn for the seek waveform.
+const WAVEFORM_BUCKETS: usize = 64;
+
 fn cover_path_to_uri(path: &Path) -> Option<String> {
     match glib::filename_to_uri(path, None) {
         Ok(uri) => Some(uri.to_string()),
@@ -103,6 +106,7 @@ impl PlayerController {
     /// `cover_loader.rs`). This is the "no second cache" half of the single
     /// state path the design rule requires.
     pub(super) fn sync_cover(&self, path: &str) {
+        self.sync_waveform(path);
         let bar_generation = self.bar_cover_generation.get().wrapping_add(1);
         self.bar_cover_generation.set(bar_generation);
         self.cover_loader.load_into(
@@ -163,6 +167,35 @@ impl PlayerController {
                 &self.now_playing_cover_generation,
             );
         }
+    }
+
+    /// Loads the current track's waveform peaks off-main and hands them to the
+    /// player bar, generation-guarded so a rapid track change can't paint a
+    /// stale waveform. Failure to decode leaves the previous waveform in place.
+    pub(super) fn sync_waveform(&self, path: &str) {
+        let generation = self.waveform_generation.get().wrapping_add(1);
+        self.waveform_generation.set(generation);
+        let waveform_generation = self.waveform_generation.clone();
+        let waveform = self.bar.waveform_handle();
+        let path = std::path::PathBuf::from(path);
+        let (sender, receiver) = async_channel::bounded(1);
+        if std::thread::Builder::new()
+            .name("reprise-waveform".to_string())
+            .spawn(move || {
+                let peaks = crate::ui::waveform_peaks::cached_peaks(&path, WAVEFORM_BUCKETS).ok();
+                let _ = sender.send_blocking(peaks);
+            })
+            .is_err()
+        {
+            return;
+        }
+        glib::spawn_future_local(async move {
+            if let Ok(Some(peaks)) = receiver.recv().await {
+                if waveform_generation.get() == generation {
+                    waveform.set_peaks(peaks);
+                }
+            }
+        });
     }
 
     pub(super) fn sync_state(&self, state: PlaybackState) {

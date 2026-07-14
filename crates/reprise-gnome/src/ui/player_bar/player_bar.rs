@@ -1,66 +1,24 @@
 //! The full-width Library player bar: track title/artist, transport controls,
-//! a seek scale, playback modes, and volume.
+//! a click-to-seek waveform, playback modes, and volume.
 //!
 //! `PlayerBar` owns every widget it displays; callers (see
 //! `player_controller.rs`) only interact with it through the `set_*`/
 //! `connect_*` methods below, never by reaching into its widgets directly.
-//! That keeps the seek scale's two feedback-loop guards private
-//! implementation details instead of something every caller has to remember
-//! to respect:
-//!
-//! 1. **Programmatic-vs-user updates** (`updating_scale`): `set_position`
-//!    (called from position ticks/track changes) and the user moving the
-//!    scale both end up firing `value-changed`, and only the latter should
-//!    trigger a seek. `updating_scale` is `true` for the whole duration of
-//!    `set_position`'s `gtk::Range::set_value` call, so `connect_seek`'s
-//!    handler can tell the two apart.
-//! 2. **Ticks-during-drag** (`dragging`): position ticks arrive every
-//!    500 ms regardless of what the user is doing. Without tracking whether
-//!    the user currently has the pointer down on the scale, a tick mid-drag
-//!    would call `set_value` and visibly yank the handle back to the actual
-//!    playback position out from under the user's cursor. A raw capture-
-//!    phase event controller brackets the physical pointer lifetime even if
-//!    GtkRange denies the accompanying `GestureClick` observer. While
-//!    `dragging` is `true`, `set_position` skips `set_value` and `set_range`;
-//!    release fires exactly one seek to the final handle position.
-//!
-//! **The `dragging` guard must never trust GTK to clear it.** A field bug
-//! (found on a real desktop, invisible to headless testing): a pointer
-//! interaction with the scale set `dragging` via the capture-phase
-//! `pressed` handler, but neither `released` nor `cancel` was ever
-//! delivered to this observing gesture afterwards — plausibly because
-//! GtkRange's own internal drag gesture claimed the event sequence
-//! mid-gesture and the denied observer's teardown signals never arrived on
-//! that stack. The guard stayed `true` forever: every later `set_position`
-//! skipped the scale update (frozen progress bar) and the release-side
-//! seek never fired (dead seeking). Two layers of defense now exist:
-//!
-//! - **Independent raw pointer lifetime plus idempotent gesture fallbacks**
-//!   (`connect_seek`): raw primary-button/touch release, `released`,
-//!   `cancel`, `unpaired-release`, and `stopped` all feed one handler.
-//!   `cancel`/`stopped` are ignored while the raw pointer is still down,
-//!   because GtkRange may have claimed the observer rather than ended the
-//!   physical drag. Multiple end signals still produce exactly one seek.
-//! - **Self-healing in `set_position`**: even if *no* end signal ever
-//!   arrives, `set_position` cross-checks a set `dragging` flag against
-//!   both the raw pointer state and `Gesture::is_active()`. Only when all
-//!   observers are inactive is the guard stale and reset. This extra raw
-//!   check is what prevents a denied observer from re-enabling position
-//!   ticks while the user is still holding the handle.
+//! The seek waveform (see `waveform_seek.rs`) has its own click gesture, so —
+//! unlike the previous `GtkScale` — there is no programmatic-vs-user or
+//! ticks-during-drag feedback-loop guard to maintain here: `set_position`
+//! just redraws the played fraction on every tick, and `connect_seek` fires
+//! only on a real user click, never on a programmatic position update.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::{gdk, prelude::*};
+use gtk4::prelude::*;
 
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::player_bar_layout::{self, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
-use crate::ui::player_bar_seek::{
-    should_apply_position_tick, should_clear_drag_guard_on_track_change,
-    should_finish_observer_cancel, should_finish_observer_stop, should_self_heal,
-    should_update_range,
-};
 use crate::ui::strings;
+use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::format_duration;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
@@ -100,35 +58,11 @@ pub struct PlayerBar {
     repeat_button: gtk4::Button,
     position_label: gtk4::Label,
     duration_label: gtk4::Label,
-    scale: gtk4::Scale,
+    waveform: WaveformSeek,
     volume_button: gtk4::ScaleButton,
-    /// True while `set_position`/`set_state` are the ones setting `scale`'s
-    /// value, so `connect_seek`'s handler can tell a programmatic update
-    /// apart from the user dragging the scale. See the module doc comment.
-    updating_scale: Rc<Cell<bool>>,
-    /// True while the user has the pointer down on `scale` (between a
-    /// `GestureClick` press and whichever end-of-drag signal arrives first —
-    /// wired in `connect_seek`). Checked by `set_position` so a mid-drag
-    /// position tick can't yank the handle. See the module doc comment,
-    /// including why this guard is deliberately never trusted to be cleared
-    /// by GTK alone.
-    dragging: Rc<Cell<bool>>,
-    /// Raw physical button/touch state from an `EventControllerLegacy`.
-    /// Unlike an observing `GestureClick`, this remains true if GtkRange's
-    /// internal gesture claims the sequence while the pointer is held.
-    pointer_down: Rc<Cell<bool>>,
-    /// The seek guard's `GestureClick`, kept so `set_position` can
-    /// cross-check a set `dragging` flag against `Gesture::is_active()` and
-    /// self-heal a stuck guard (see the module doc comment). `None` until
-    /// `connect_seek` wires it; holding the gesture here creates no
-    /// reference cycle — the gesture's closures only capture `Cell`s and a
-    /// weak `scale` reference, never `PlayerBar` itself.
-    seek_gesture: RefCell<Option<gtk4::GestureClick>>,
-    /// The `duration_ms` passed to the most recent `set_position` call, so
-    /// it can skip `scale.set_range` when the duration hasn't actually
-    /// changed (it's static per track — this is only ever a real change on
-    /// a track switch, not on every 500 ms tick).
-    last_duration_ms: Cell<i64>,
+    /// Current track duration (ms) from the latest `set_position`, so
+    /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
+    duration_ms: Rc<Cell<i64>>,
     playback_state: Cell<PlaybackState>,
     queue_has_tracks: Cell<bool>,
     /// True for the duration of `set_shuffle_indicator`'s `set_active`
@@ -161,7 +95,7 @@ impl PlayerBar {
             repeat_button,
             position_label,
             duration_label,
-            scale,
+            waveform,
             volume_button,
             ..
         } = player_bar_layout::build();
@@ -190,13 +124,9 @@ impl PlayerBar {
             repeat_button,
             position_label,
             duration_label,
-            scale,
+            waveform,
             volume_button,
-            updating_scale: Rc::new(Cell::new(false)),
-            dragging: Rc::new(Cell::new(false)),
-            pointer_down: Rc::new(Cell::new(false)),
-            seek_gesture: RefCell::new(None),
-            last_duration_ms: Cell::new(0),
+            duration_ms: Rc::new(Cell::new(0)),
             playback_state: Cell::new(PlaybackState::Stopped),
             queue_has_tracks: Cell::new(false),
             updating_shuffle: Rc::new(Cell::new(false)),
@@ -235,16 +165,6 @@ impl PlayerBar {
     /// activation with data already in hand from the `Track` (see
     /// `player_controller.rs`) — no extra DB query needed.
     pub fn set_track(&self, title: &str, artist: &str) {
-        // Only clear the drag guard if neither observer is currently active.
-        // If the user is mid-drag while a track auto-advances (e.g. EOS),
-        // keep the guard set so the next position tick doesn't yank the
-        // handle — the raw/gesture end signals will clear it.
-        if should_clear_drag_guard_on_track_change(
-            self.pointer_down.get(),
-            self.seek_gesture_is_active(),
-        ) {
-            self.dragging.set(false);
-        }
         self.title_label.set_text(title);
         self.artist_label.set_text(artist);
     }
@@ -253,14 +173,6 @@ impl PlayerBar {
     /// no track active. Queueing (auto-advance) is a later stage; see the
     /// module doc comment in `track_list.rs`.
     pub fn clear_track(&self) {
-        // Same observer-activity guard as `set_track` — only clear the drag
-        // guard if no drag is currently in progress.
-        if should_clear_drag_guard_on_track_change(
-            self.pointer_down.get(),
-            self.seek_gesture_is_active(),
-        ) {
-            self.dragging.set(false);
-        }
         self.title_label.set_text("");
         self.artist_label.set_text("");
         self.clear_cover();
@@ -283,75 +195,25 @@ impl PlayerBar {
         self.playback_state.set(state);
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
-            // Force-clear any stale drag state: e.g. the track finishes or
-            // errors out while the user still has the pointer down on the
-            // scale, so there's no `released`/`cancel` to clear it via the
-            // normal `connect_seek` path. Without this, `set_position` below
-            // would (correctly, per its own contract) skip resetting the
-            // handle because it thinks a drag is still in progress.
-            self.pointer_down.set(false);
-            self.dragging.set(false);
             self.set_position(0, 0);
         }
     }
 
-    /// Updates the seek scale and time labels for a `Position` event.
-    ///
-    /// Two guards apply here (see the module doc comment for the full
-    /// rationale): reentrancy against `connect_seek`'s handler
-    /// (`updating_scale`, set for the duration of *both* `set_range` and
-    /// `set_value` below — `set_range` alone can fire `value-changed` too,
-    /// by clamping the current value into the new bounds, so it needs the
-    /// same guard as `set_value`), and suppression of the handle-yanking
-    /// `set_range`/`set_value` calls while the user is actively dragging
-    /// (`dragging`). The time labels are deliberately *not* suppressed
-    /// while dragging: they keep showing the true elapsed/remaining
-    /// playback time, which stays accurate and doesn't visibly jump around
-    /// the way the handle would.
-    ///
-    /// Before honoring `dragging`, the guard is cross-checked against both
-    /// raw physical-down state and gesture activity. Only a set flag with
-    /// neither observer active is stale and self-healed.
+    /// Updates the waveform's played fraction and the time labels for a
+    /// `Position` event. Click-to-seek only means there is no drag to guard
+    /// against, so every tick simply redraws the played/unplayed split.
     pub fn set_position(&self, position_ms: i64, duration_ms: i64) {
         let duration_ms = duration_ms.max(0);
         let position_ms = position_ms.clamp(0, duration_ms);
-
-        if should_self_heal(
-            self.dragging.get(),
-            self.pointer_down.get(),
-            self.seek_gesture_is_active(),
-        ) {
-            tracing::warn!("drag guard was stuck; self-healing");
-            self.dragging.set(false);
-        }
-
-        if should_apply_position_tick(self.dragging.get()) {
-            self.updating_scale.set(true);
-            if should_update_range(self.last_duration_ms.get(), duration_ms) {
-                self.last_duration_ms.set(duration_ms);
-                // A zero-length range would make the scale's drag handle
-                // meaningless (and GTK dislikes a max == min range); floor
-                // it at 1 ms.
-                self.scale.set_range(0.0, duration_ms.max(1) as f64);
-            }
-            self.scale.set_value(position_ms as f64);
-            self.updating_scale.set(false);
-        }
-
+        self.duration_ms.set(duration_ms);
+        let fraction = if duration_ms > 0 {
+            position_ms as f64 / duration_ms as f64
+        } else {
+            0.0
+        };
+        self.waveform.set_fraction(fraction);
         self.position_label.set_text(&format_duration(position_ms));
         self.duration_label.set_text(&format_duration(duration_ms));
-    }
-
-    /// Whether the seek guard's gesture is currently tracking a pointer
-    /// sequence. `false` when `connect_seek` hasn't wired a gesture (there
-    /// is nothing that could legitimately be holding `dragging` then, so a
-    /// set flag is stale by definition). The borrow is hoisted into this
-    /// one expression and dropped before the caller does anything else.
-    fn seek_gesture_is_active(&self) -> bool {
-        self.seek_gesture
-            .borrow()
-            .as_ref()
-            .is_some_and(gtk4::prelude::GestureExt::is_active)
     }
 
     /// Wires the play/pause button; `f` is called on every click with no
@@ -365,173 +227,23 @@ impl PlayerBar {
         self.play_pause_button.emit_clicked();
     }
 
-    /// Wires the seek scale: `f` is called with the target position in
-    /// milliseconds whenever the user changes it — but never for
-    /// programmatic updates (`set_position`/`set_state`, guarded by
-    /// `updating_scale`), and, for pointer drags/clicks specifically, only
-    /// once, when the drag ends (guarded by `dragging`; see the module doc
-    /// comment and the capture-phase note on the `GestureClick` below).
-    /// Concretely: a pointer drag or click-to-position jump seeks exactly
-    /// once, to wherever the user let go — including a plain click on the
-    /// trough, which GTK jumps to synchronously on press when
-    /// `gtk-primary-button-warps-slider` is set (the GNOME default); keyboard
-    /// (arrow-key) and scroll-wheel adjustments — which never touch
-    /// `dragging` — still seek immediately on each `value-changed`.
-    ///
-    /// "When the drag ends" is observed by both raw pointer/touch release
-    /// and gesture teardown fallbacks, all funneled through one idempotent
-    /// handler — see the module doc comment for the field bugs that forced
-    /// this redundancy.
+    /// A cloneable handle to the seek waveform (shared `Rc` state), so an
+    /// off-main peak load can hand its results back to the same widget.
+    pub(super) fn waveform_handle(&self) -> WaveformSeek {
+        self.waveform.clone()
+    }
+
+    /// Wires click-to-seek: `f` is called with the target position in
+    /// milliseconds whenever the user clicks the waveform. The widget reports
+    /// a 0..1 fraction; the latest track duration (from `set_position`)
+    /// converts it to ms. No programmatic-update or drag guard is needed —
+    /// the waveform never emits on a position tick, only on a real click.
     pub fn connect_seek<F: Fn(i64) + 'static>(&self, f: F) {
-        let f = Rc::new(f);
-
-        let updating_scale = self.updating_scale.clone();
-        let dragging = self.dragging.clone();
-        let value_changed_f = Rc::clone(&f);
-        self.scale.connect_value_changed(move |scale| {
-            if updating_scale.get() || dragging.get() {
-                return;
-            }
-            value_changed_f(scale.value() as i64);
+        let duration_ms = self.duration_ms.clone();
+        self.waveform.connect_seek(move |fraction| {
+            let target_ms = (fraction * duration_ms.get() as f64).round() as i64;
+            f(target_ms);
         });
-
-        // A `GestureClick` added alongside the scale's built-in drag. It is
-        // a fallback observer only: GtkRange may claim/deny its sequence,
-        // which is why the raw controller below owns physical-down truth.
-        let click = gtk4::GestureClick::new();
-        click.set_button(gdk::BUTTON_PRIMARY);
-
-        // CAPTURE, not the default BUBBLE: GtkRange registers its own
-        // internal click gesture on `scale` first, also at BUBBLE phase, and
-        // (with the GNOME default `gtk-primary-button-warps-slider=true`) a
-        // primary click on the trough jumps the handle synchronously inside
-        // that internal gesture's press handler
-        // (`gtk_range_click_gesture_pressed` in upstream gtk/gtkrange.c),
-        // firing `value-changed` on press — *before* a same-phase (BUBBLE)
-        // `pressed` handler here would get to set `dragging`. A single event
-        // is dispatched through capture phase (root→target), then bubble
-        // phase (target→root), in that order, so a CAPTURE-phase controller
-        // on this same widget always runs before any BUBBLE-phase one for
-        // the same press. That flips `dragging` true first, so the
-        // synchronous jump-on-press's `value-changed` is correctly
-        // suppressed by `connect_value_changed` below instead of sneaking
-        // through as an extra seek. Deliberately not
-        // `set_state(EventSequenceState::Claimed)`-ing the press: GTK's own
-        // click-to-jump / drag-start handling must still run normally
-        // afterward — this gesture only ever *observes*, never consumes.
-        click.set_propagation_phase(gtk4::PropagationPhase::Capture);
-
-        let press_dragging = self.dragging.clone();
-        click.connect_pressed(move |_, _, _, _| {
-            press_dragging.set(true);
-        });
-
-        // Shared by every end-of-drag signal: clear the flag and fire
-        // exactly one seek to wherever the scale's value ended up. Raw
-        // release and all gesture fallbacks funnel here because no single
-        // observer is reliable on every GTK stack; several can fire for
-        // one interaction, so the handler is idempotent —
-        // `Cell::replace(false)` both clears the flag and tells us whether
-        // this call is the first (and therefore the one that seeks).
-        //
-        // Reading `scale.value()` here is safe even though this whole
-        // gesture (including this `released` callback) runs at CAPTURE
-        // phase, i.e. *before* GtkRange's own BUBBLE-phase release handling
-        // for the same release event: GTK dispatches one event at a time,
-        // fully through capture→target→bubble, before the next event is
-        // even generated. Whatever moves the value for this gesture — the
-        // click-to-jump on press, or the continuous updates GtkRange applies
-        // as separate motion events arrive during an actual drag — happens
-        // as earlier, already-fully-dispatched events, strictly before this
-        // release event exists at all. So by the time *any* handler for
-        // `released` runs, ours included, `scale.value()` already holds
-        // GTK's final applied position; our phase relative to GtkRange's own
-        // release handler (which doesn't touch the value — it only ends the
-        // internal drag/grab state) doesn't matter here.
-        let end_drag: Rc<dyn Fn()> = {
-            let dragging = self.dragging.clone();
-            let pointer_down = self.pointer_down.clone();
-            let scale = self.scale.downgrade();
-            let f = Rc::clone(&f);
-            Rc::new(move || {
-                pointer_down.set(false);
-                // Idempotent: only the first end signal for an interaction
-                // finds `true` here and seeks; the rest are no-ops.
-                if !dragging.replace(false) {
-                    return;
-                }
-                if let Some(scale) = scale.upgrade() {
-                    f(scale.value() as i64);
-                }
-            })
-        };
-
-        // GtkRange's internal drag can deny the observing GestureClick
-        // while the physical button is still held. This raw capture-phase
-        // controller independently brackets the real button/touch lifetime
-        // and cannot be denied by gesture arbitration. It never consumes
-        // the event or interferes with GtkRange's own handling.
-        let raw = gtk4::EventControllerLegacy::new();
-        raw.set_propagation_phase(gtk4::PropagationPhase::Capture);
-        let raw_pointer_down = self.pointer_down.clone();
-        let raw_dragging = self.dragging.clone();
-        let raw_end_drag = Rc::clone(&end_drag);
-        raw.connect_event(move |_, event| {
-            let primary_button = event
-                .downcast_ref::<gdk::ButtonEvent>()
-                .is_some_and(|button| button.button() == gdk::BUTTON_PRIMARY);
-            match event.event_type() {
-                gdk::EventType::ButtonPress if primary_button => {
-                    raw_pointer_down.set(true);
-                    raw_dragging.set(true);
-                }
-                gdk::EventType::TouchBegin => {
-                    raw_pointer_down.set(true);
-                    raw_dragging.set(true);
-                }
-                gdk::EventType::ButtonRelease if primary_button => raw_end_drag(),
-                gdk::EventType::TouchEnd | gdk::EventType::TouchCancel => raw_end_drag(),
-                _ => {}
-            }
-            gtk4::glib::Propagation::Proceed
-        });
-        self.scale.add_controller(raw);
-
-        let released_end_drag = Rc::clone(&end_drag);
-        click.connect_released(move |_, _, _, _| released_end_drag());
-
-        let cancel_end_drag = Rc::clone(&end_drag);
-        let cancel_pointer_down = self.pointer_down.clone();
-        click.connect_cancel(move |_, _| {
-            if should_finish_observer_cancel(cancel_pointer_down.get()) {
-                cancel_end_drag();
-            }
-        });
-
-        let unpaired_end_drag = Rc::clone(&end_drag);
-        click.connect_unpaired_release(move |_, _, _, _, _| unpaired_end_drag());
-
-        // `stopped` needs a gate the other fallbacks don't: GestureClick also
-        // emits it *mid-drag*, the moment the pointer exceeds the
-        // multi-click distance threshold (the press stops counting toward
-        // double-clicks) — while the sequence is still active and the user
-        // is still dragging. Ending the drag there would reintroduce the
-        // exact mid-drag handle-yanking the guard exists to prevent, so
-        // `stopped` only ends the drag after both the raw pointer and gesture
-        // are inactive (e.g. a reset after no `cancel` was delivered).
-        let stopped_end_drag = Rc::clone(&end_drag);
-        let stopped_pointer_down = self.pointer_down.clone();
-        click.connect_stopped(move |gesture| {
-            if should_finish_observer_stop(stopped_pointer_down.get(), gesture.is_active()) {
-                stopped_end_drag();
-            }
-        });
-
-        // Kept for `set_position`'s self-heal cross-check (see the module
-        // doc comment); the borrow is confined to this one statement.
-        *self.seek_gesture.borrow_mut() = Some(click.clone());
-
-        self.scale.add_controller(click);
     }
 
     /// Wires the volume button: `f` is called with a `0.0..=1.0` value on
@@ -638,7 +350,9 @@ impl PlayerBar {
             ));
         self.play_pause_button
             .set_sensitive(state != PlaybackState::Stopped || queue_has_tracks);
-        self.scale.set_sensitive(state != PlaybackState::Stopped);
+        self.waveform
+            .widget()
+            .set_sensitive(state != PlaybackState::Stopped);
     }
 
     /// Reflects the queue's repeat mode on the repeat button: `All`/`One`
