@@ -67,8 +67,8 @@ _As of 2026-07-14: all reviewed local feature work is integrated into main._
 - ✅ **Preferences column-layout navigation**: Layout opens that editor as a native detail page in
   the existing Preferences window with Back navigation instead of an obscured child dialog.
 - ✅ **Whole-row column-layout drag restoration**: movable editor rows use capture-phase drag
-  recognition across labels, empty space and embedded controls, while short Switch and Up/Down
-  clicks keep their existing behavior.
+  recognition across labels, empty space and embedded controls, while Switch clicks and
+  Alt+Up/Down keyboard reordering keep non-drag interaction precise.
 - ✅ **GUI-D**: first-run wizard + validated no-autoplay session restore.
 - ✅ **Release readiness**: Meson install, desktop/AppStream/icons, complete German gettext,
   portal-safe Trash, GNOME-50 Flatpak manifest/offline sources, and release checker/docs.

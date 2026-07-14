@@ -50,8 +50,8 @@ TDD steps:
 1. Add failing pure editor-row tests for fixed/movable row capabilities and drag payload
    parsing, plus a display-only test proving a row owns DragSource/DropTarget controllers.
 2. Build an `AdwDialog` with header, PreferencesGroup/ListBox rows, switches, full-row
-   drag/drop, Up/Down buttons, and Reset. Apply/persist after every successful change;
-   restore the previous working state and toast on failure.
+   drag/drop, Alt+Up/Down keyboard reordering, and Reset. Apply/persist after every
+   successful change; restore the previous working state and toast on failure.
 3. Add `win.edit-column-layout` beside the existing import action and translations.
 4. Run the targeted test (including isolated Xvfb) and all gates.
 5. Commit `feat: add native column layout editor`.

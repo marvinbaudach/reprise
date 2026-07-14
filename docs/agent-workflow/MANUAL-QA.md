@@ -360,11 +360,12 @@ metadata in a terminal command, repository file, issue, screenshot, or log captu
   redundant Reset button is shown; removing the active chips clears the filters.
 - [ ] Search and browse facets combine correctly, including zero-result recovery.
 - [ ] Open `Edit column layout…`. Switch optional columns, reorder through both
-  Up/Down buttons and whole-row dragging, inspect the before/after accent line,
+  Alt+Up/Down and whole-row dragging, inspect the before/after accent line,
   reset, and restart. Expected: changes apply immediately and persist; Cover and
   Title stay fixed/visible; sorting never targets a hidden or invalid column. The
   isolated editor smoke passes toggle/reorder/persist and the display regression
-  proves each movable row owns both controllers; native pointer visuals remain pending.
+  proves each movable row owns drag/drop plus capture-phase keyboard controllers;
+  native pointer visuals remain pending.
 - [ ] During a disposable first-run profile, a real Rhythmbox visible-columns import
   is offered only when detected, remains off until selected, maps supported columns
   in order, ignores unknown tokens, and leaves Rhythmbox settings unchanged. A second
