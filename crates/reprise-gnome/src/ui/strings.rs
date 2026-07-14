@@ -713,3 +713,14 @@ pub fn playlist_export_failed_toast(name: &str) -> String {
 // Application identity and legal information shown in the native About dialog.
 pub const ABOUT: &str = N_!("About");
 pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linux Platform");
+
+// Native offline Help dialog and its keyboard shortcut descriptions.
+pub const HELP: &str = N_!("Help");
+pub const NAVIGATION: &str = N_!("Navigation");
+pub const PLAY_OR_PAUSE: &str = N_!("Play or Pause");
+pub const SEARCH_LIBRARY: &str = N_!("Search Library");
+pub const TOGGLE_COMPACT_VIEW: &str = N_!("Toggle Compact View");
+pub const CLEAR_SEARCH_OR_RETURN_TO_TRACK_LIST: &str = N_!("Clear Search or Return to Track List");
+pub const PLAY_SELECTED_TRACK: &str = N_!("Play Selected Track");
+pub const OPEN_CONTEXT_MENU: &str = N_!("Open Context Menu");
+pub const OPEN_HELP: &str = N_!("Open Help");
