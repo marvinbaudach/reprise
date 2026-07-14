@@ -107,6 +107,8 @@ pub mod shortcuts;
 pub mod sidebar;
 pub mod sidebar_dnd;
 pub mod sidebar_export;
+mod sidebar_issue_cleanup;
+mod sidebar_issue_strings;
 mod sidebar_playlist_creation;
 mod sidebar_presentation;
 pub mod sidebar_session;

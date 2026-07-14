@@ -322,6 +322,14 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     track_list.set_toast_overlay(&toast_overlay);
     // Same reason again: the sidebar is built before `toast_overlay` exists.
     sidebar.set_toast_overlay(&toast_overlay);
+    {
+        let player = player.clone();
+        sidebar.set_on_missing_removed(move |removed_ids| {
+            if let Some(player) = &player {
+                player.purge_queue_ids(removed_ids);
+            }
+        });
+    }
     super::tag_edit_flow::wire_refresh(&track_list, &sidebar, &player);
 
     // Stage 3 Task 5: context menu action wiring. `track_list` stays

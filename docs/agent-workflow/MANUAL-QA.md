@@ -126,6 +126,13 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   each row has a stable aligned symbolic icon, counts align at the end, and long names
   ellipsize without moving the icon or count columns. Problem sources appear below a
   subdued Issues heading, never below a bright blank band that resembles selection.
+- [ ] Seed disposable Import errors and Missing files, then use each issue row's
+  right-click cleanup action. Expected: import diagnostics clear immediately; missing
+  entries require a destructive native confirmation that explicitly promises media
+  files are never deleted. Successful cleanup reports its count, removes the empty row
+  and then the empty Issues group, purges removed IDs from playback/Up next, and falls
+  back to Music if the cleaned source was selected. Verify only with disposable isolated
+  XDG data, never the real library database or music files.
 - [ ] Resize through wide, intermediate, and collapsed navigation widths with the
   Information panel open and closed. Expected: the sidebar stays approximately
   220–280 px while split, collapses through the existing native navigation path, and
