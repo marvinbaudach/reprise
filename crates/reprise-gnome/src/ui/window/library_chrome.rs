@@ -20,7 +20,7 @@ pub(super) struct LibraryMaintenanceActions {
 pub(super) struct LibraryTitle {
     pub(super) root: gtk4::Stack,
     #[cfg(test)]
-    pub(super) switcher: adw::ViewSwitcher,
+    pub(super) switcher: gtk4::StackSwitcher,
 }
 
 impl LibraryTitle {
@@ -63,18 +63,18 @@ pub(super) fn build_maintenance_actions() -> LibraryMaintenanceActions {
 }
 
 pub(super) fn build_library_title(
+    header: &adw::HeaderBar,
     source_title: &adw::WindowTitle,
-    views: &adw::ViewStack,
+    views: &gtk4::Stack,
 ) -> LibraryTitle {
-    let switcher = adw::ViewSwitcher::builder()
-        .policy(adw::ViewSwitcherPolicy::Wide)
-        .stack(views)
-        .build();
+    header.set_title_widget(gtk4::Widget::NONE);
+    let switcher = gtk4::StackSwitcher::builder().stack(views).build();
     switcher.add_css_class("reprise-surface");
     let root = gtk4::Stack::new();
     root.add_named(source_title, Some(LIBRARY_TITLE_SOURCE));
     root.add_named(&switcher, Some(LIBRARY_TITLE_SWITCHER));
     root.set_visible_child_name(LIBRARY_TITLE_SWITCHER);
+    header.set_title_widget(Some(&root));
     LibraryTitle {
         root,
         #[cfg(test)]
@@ -145,12 +145,16 @@ mod tests {
             return;
         }
         let title = adw::WindowTitle::new("Music", "");
-        let views = adw::ViewStack::new();
+        let views = gtk4::Stack::new();
         views.add_titled(&gtk4::Label::new(Some("Tracks")), Some("tracks"), "Tracks");
 
-        let library_title = build_library_title(&title, &views);
+        let header = adw::HeaderBar::new();
+        header.set_title_widget(Some(&title));
+        let library_title = build_library_title(&header, &title, &views);
 
         assert_eq!(library_title.switcher.stack(), Some(views.clone()));
+        assert_eq!(title.parent(), Some(library_title.root.clone().upcast()));
+        assert!(library_title.root.is_ancestor(&header));
         assert_eq!(
             library_title.root.visible_child_name().as_deref(),
             Some(LIBRARY_TITLE_SWITCHER)

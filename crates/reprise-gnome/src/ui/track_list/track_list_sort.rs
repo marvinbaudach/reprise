@@ -132,9 +132,11 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
             field: PLAYLIST_ORDER_SORT_FIELD.to_string(),
             dir: "asc".to_string(),
         }),
-        ViewSource::Library | ViewSource::Smart(_) | ViewSource::Queue | ViewSource::Missing => {
-            None
-        }
+        ViewSource::Library
+        | ViewSource::Smart(_)
+        | ViewSource::Queue
+        | ViewSource::Missing
+        | ViewSource::Album { .. } => None,
         ViewSource::ImportErrors | ViewSource::MyStats => None,
     }
 }
@@ -196,6 +198,13 @@ mod default_sort_for_source_tests {
         assert_eq!(default_sort_for_source(&ViewSource::Queue), None);
         assert_eq!(default_sort_for_source(&ViewSource::Missing), None);
         assert_eq!(default_sort_for_source(&ViewSource::ImportErrors), None);
+        assert_eq!(
+            default_sort_for_source(&ViewSource::Album {
+                album: "Blue".into(),
+                album_artist: "Joni Mitchell".into(),
+            }),
+            None
+        );
     }
 }
 
@@ -264,6 +273,10 @@ mod resolve_sort_on_switch_tests {
             ViewSource::Queue,
             ViewSource::Missing,
             ViewSource::ImportErrors,
+            ViewSource::Album {
+                album: "Blue".into(),
+                album_artist: "Joni Mitchell".into(),
+            },
         ] {
             assert_eq!(
                 resolve_sort_on_switch(&playlist_order_sort(), &target),

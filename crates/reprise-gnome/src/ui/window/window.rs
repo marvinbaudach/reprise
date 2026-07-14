@@ -297,18 +297,21 @@ pub fn build(
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(scan_progress.widget());
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
-    let albums_placeholder = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let album_view =
+        super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
     let artists_placeholder = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let library_views = super::library_shell::build_views(
         &track_content,
-        &albums_placeholder,
+        album_view.widget(),
         &artists_placeholder,
     );
+    super::library_shell::wire_album_view(&library_views, &album_view, &track_list);
+    super::library_shell::arm_smoke_library_view(&library_views);
     let library_title = Rc::new(super::library_chrome::build_library_title(
+        &header,
         &window_title,
         &library_views.stack,
     ));
-    header.set_title_widget(Some(&library_title.root));
     let stats_view = super::stats_view::StatsView::new();
     let content_stack = gtk4::Stack::new();
     content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
