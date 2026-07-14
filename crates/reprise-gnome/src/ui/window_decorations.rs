@@ -148,7 +148,6 @@ mod tests {
         window.set_content(Some(&library_root));
         let compact_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         for layout in [
-            CompactLayout::Bar,
             CompactLayout::Cover,
             CompactLayout::Pill,
             CompactLayout::Card,

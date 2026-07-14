@@ -7,11 +7,11 @@ fn migrated_conn() -> Connection {
 }
 
 #[test]
-fn compact_view_settings_default_to_library_and_bar() {
+fn compact_view_settings_default_to_library_and_card() {
     let conn = migrated_conn();
 
     assert_eq!(get_window_view_mode(&conn), WindowViewMode::Library);
-    assert_eq!(get_compact_layout(&conn), CompactLayout::Bar);
+    assert_eq!(get_compact_layout(&conn), CompactLayout::Card);
 }
 
 #[test]
@@ -29,7 +29,6 @@ fn every_compact_layout_round_trips() {
     let conn = migrated_conn();
 
     for layout in [
-        CompactLayout::Bar,
         CompactLayout::Cover,
         CompactLayout::Pill,
         CompactLayout::Card,
@@ -46,7 +45,7 @@ fn unknown_compact_view_values_fall_back_independently() {
     set_setting(&conn, COMPACT_LAYOUT_KEY, "vinyl").unwrap();
 
     assert_eq!(get_window_view_mode(&conn), WindowViewMode::Library);
-    assert_eq!(get_compact_layout(&conn), CompactLayout::Bar);
+    assert_eq!(get_compact_layout(&conn), CompactLayout::Card);
 }
 
 #[test]
@@ -56,5 +55,13 @@ fn unknown_layout_does_not_change_a_valid_window_mode() {
     set_setting(&conn, COMPACT_LAYOUT_KEY, "unknown").unwrap();
 
     assert_eq!(get_window_view_mode(&conn), WindowViewMode::Compact);
-    assert_eq!(get_compact_layout(&conn), CompactLayout::Bar);
+    assert_eq!(get_compact_layout(&conn), CompactLayout::Card);
+}
+
+#[test]
+fn legacy_bar_layout_loads_as_card() {
+    let conn = migrated_conn();
+    set_setting(&conn, COMPACT_LAYOUT_KEY, "bar").unwrap();
+
+    assert_eq!(get_compact_layout(&conn), CompactLayout::Card);
 }

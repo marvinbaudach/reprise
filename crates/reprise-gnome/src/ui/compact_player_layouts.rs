@@ -35,7 +35,6 @@ impl LayoutMetrics {
 
 pub(super) const fn metrics(layout: CompactLayout) -> LayoutMetrics {
     match layout {
-        CompactLayout::Bar => LayoutMetrics::new(680, 180, true, true, true),
         CompactLayout::Cover => LayoutMetrics::new(380, 560, true, false, false),
         CompactLayout::Pill => LayoutMetrics::new(720, 96, false, false, false),
         CompactLayout::Card => LayoutMetrics::new(520, 300, true, false, false),
@@ -57,7 +56,6 @@ pub(super) const fn control_is_sensitive(role: ControlRole, playback_available: 
 
 pub(super) const fn layout_token(layout: CompactLayout) -> &'static str {
     match layout {
-        CompactLayout::Bar => "bar",
         CompactLayout::Cover => "cover",
         CompactLayout::Pill => "pill",
         CompactLayout::Card => "card",
@@ -66,7 +64,6 @@ pub(super) const fn layout_token(layout: CompactLayout) -> &'static str {
 
 pub(super) fn layout_from_token(token: &str) -> Option<CompactLayout> {
     match token {
-        "bar" => Some(CompactLayout::Bar),
         "cover" => Some(CompactLayout::Cover),
         "pill" => Some(CompactLayout::Pill),
         "card" => Some(CompactLayout::Card),
@@ -191,29 +188,10 @@ impl LayoutWidgets {
 
 pub(super) fn build(layout: CompactLayout) -> LayoutWidgets {
     match layout {
-        CompactLayout::Bar => build_bar(),
         CompactLayout::Cover => build_cover(),
         CompactLayout::Pill => build_pill(),
         CompactLayout::Card => build_card(),
     }
-}
-
-fn build_bar() -> LayoutWidgets {
-    let mut widgets = LayoutWidgets::common(CompactLayout::Bar, 72);
-    let info = metadata_box(&widgets, 180);
-    widgets.volume_scroll_region = info.clone().upcast();
-    let controls = transport_box(&widgets, true);
-    let seek = seek_box(&widgets);
-    let center = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-    center.set_hexpand(true);
-    center.append(&controls);
-    center.append(&seek);
-    let root = padded_box(gtk4::Orientation::Horizontal, 16);
-    root.append(&widgets.cover);
-    root.append(&info);
-    root.append(&center);
-    widgets.root = with_window_chrome(CompactLayout::Bar, root, &widgets);
-    widgets
 }
 
 fn build_cover() -> LayoutWidgets {
@@ -394,10 +372,6 @@ mod tests {
     #[test]
     fn every_layout_has_exact_metrics_and_direct_controls() {
         assert_eq!(
-            metrics(CompactLayout::Bar),
-            LayoutMetrics::new(680, 180, true, true, true)
-        );
-        assert_eq!(
             metrics(CompactLayout::Cover),
             LayoutMetrics::new(380, 560, true, false, false)
         );
@@ -416,7 +390,6 @@ mod tests {
 
     #[test]
     fn every_layout_has_a_stable_stack_token() {
-        assert_eq!(layout_token(CompactLayout::Bar), "bar");
         assert_eq!(layout_token(CompactLayout::Cover), "cover");
         assert_eq!(layout_token(CompactLayout::Pill), "pill");
         assert_eq!(layout_token(CompactLayout::Card), "card");
@@ -424,7 +397,7 @@ mod tests {
 
     #[test]
     fn every_stable_token_maps_back_to_a_layout() {
-        assert_eq!(layout_from_token("bar"), Some(CompactLayout::Bar));
+        assert_eq!(layout_from_token("bar"), None);
         assert_eq!(layout_from_token("cover"), Some(CompactLayout::Cover));
         assert_eq!(layout_from_token("pill"), Some(CompactLayout::Pill));
         assert_eq!(layout_from_token("card"), Some(CompactLayout::Card));
@@ -433,12 +406,10 @@ mod tests {
 
     #[test]
     fn missing_album_and_year_do_not_create_metadata_rows() {
-        for layout in [CompactLayout::Bar, CompactLayout::Pill] {
-            assert_eq!(
-                visible_detail_rows(layout, "Album", Some(2026)),
-                Vec::<MetadataRow>::new()
-            );
-        }
+        assert_eq!(
+            visible_detail_rows(CompactLayout::Pill, "Album", Some(2026)),
+            Vec::<MetadataRow>::new()
+        );
         assert_eq!(
             visible_detail_rows(CompactLayout::Cover, "Album", Some(2026)),
             vec![MetadataRow::Album]

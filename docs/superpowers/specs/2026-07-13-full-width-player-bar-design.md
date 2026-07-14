@@ -98,7 +98,7 @@ Wayland mit geöffnetem und geschlossenem Informationspanel.
 
 ## Explizit nicht enthalten
 
-- Keine Änderung an Compact Bar/Cover/Pill/Card.
+- Keine Änderung an den Compact-Layouts Cover/Pill/Card.
 - Keine neuen Playbackfunktionen oder neue Playerinstanz.
 - Keine schwebende, transparente oder überlagernde Leiste.
 - Kein frei konfigurierbarer Playerleisten-Editor.

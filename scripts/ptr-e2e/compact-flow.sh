@@ -69,11 +69,11 @@ run_compact_flow() {
   click_window_from_right "$COMPACT_BUTTON_FROM_RIGHT" "$header_button_y"
   sleep 0.4
   assert_log_contains_since "$marker" \
-    "window view mode changed.*mode=Compact.*layout=Bar" \
-    "full-header button entered Compact Bar"
-  assert_window_within 740 230 "Bar compact geometry after leaving maximized Library"
-  screenshot "08-compact-bar"
-  assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-compact-bar.png"
+    "window view mode changed.*mode=Compact.*layout=Card" \
+    "full-header button entered Compact Card"
+  assert_window_within 580 360 "Card compact geometry after leaving maximized Library"
+  screenshot "08-compact-card"
+  assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/08-compact-card.png"
 
   marker=$(log_marker)
   key "space"
@@ -82,10 +82,10 @@ run_compact_flow() {
     "Space paused playback before scroll-volume assertions"
   volume_before="$(mpris_volume)"
   position_before="$(mpris_position)"
-  scroll_window_relative 180 90 5
+  scroll_window_relative 300 80 5
   sleep 0.3
   assert_mpris_volume "$(awk -v value="$volume_before" 'BEGIN { value -= 0.05; if (value < 0) value = 0; printf "%.2f", value }')" \
-    "one downward wheel step on Bar metadata changed volume by five percent"
+    "one downward wheel step on Card metadata changed volume by five percent"
   if [ "$(mpris_position)" = "$position_before" ]; then
     log_step "MPRIS check OK: free-region volume scroll left paused seek position unchanged"
   else
@@ -94,7 +94,7 @@ run_compact_flow() {
 
   local volume_after_free
   volume_after_free="$(mpris_volume)"
-  scroll_window_relative 500 120 5
+  scroll_window_relative 350 120 5
   sleep 0.3
   assert_mpris_volume "$volume_after_free" "scroll over Compact seek did not change volume"
   if [ "$(mpris_position)" = "$position_before" ]; then
@@ -111,7 +111,7 @@ run_compact_flow() {
   marker=$(log_marker)
   key "Escape"
   sleep 0.3
-  select_compact_layout 124 28 100
+  select_compact_layout 92 28 100
   sleep 0.4
   assert_log_contains_since "$marker" "compact layout changed.*layout=Cover" \
     "visible menu selected Cover"
@@ -120,7 +120,7 @@ run_compact_flow() {
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/10-compact-cover.png"
 
   marker=$(log_marker)
-  select_compact_layout 156 28 100
+  select_compact_layout 124 28 100
   sleep 0.4
   assert_log_contains_since "$marker" "compact layout changed.*layout=Pill" \
     "visible menu selected Pill"
@@ -138,7 +138,7 @@ run_compact_flow() {
     "Pill visible button opened the compact menu"
   key "Escape"
   sleep 0.3
-  select_compact_layout 219 48 124
+  select_compact_layout 187 48 124
   sleep 0.4
   assert_log_contains_since "$marker" "compact layout changed.*layout=Card" \
     "visible menu selected Card"

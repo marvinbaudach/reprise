@@ -79,12 +79,12 @@ disk except `PTR_E2E_OUT_DIR`.
      presses Space twice and asserts `state=Paused` then `state=Playing` —
      proof a physical keypress reached the window-level action, not just that
      `PlayerController::toggle_pause()` works when called directly.
-   - **Native compact layouts and input policy**: enters Bar through the
+   - **Native compact layouts and input policy**: enters Card through the
      Library header, selects Cover, Pill, and Card through the shared menu,
      and checks every bounded window geometry and screenshot. It opens the
      same menu through its visible button, a free-surface right click, and
      Shift+F10; invokes the menu-only Return to Library action; and proves a
-     Ctrl+M round trip retains Card. One real downward wheel step on Bar
+     Ctrl+M round trip retains Card. One real downward wheel step on the Card
      metadata changes the private MPRIS volume by exactly five percent while
      leaving paused position unchanged; the same wheel input over seek changes
      neither volume nor position.

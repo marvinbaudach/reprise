@@ -326,7 +326,7 @@ mod tests {
     fn toggling_alternates_library_and_compact_modes() {
         let library = ViewTransition {
             mode: WindowViewMode::Library,
-            layout: CompactLayout::Bar,
+            layout: CompactLayout::Card,
         };
         assert_eq!(toggled_transition(library).mode, WindowViewMode::Compact);
         assert_eq!(toggled_transition(toggled_transition(library)), library);
@@ -385,7 +385,7 @@ mod tests {
     fn selecting_a_layout_keeps_compact_mode() {
         let current = ViewTransition {
             mode: WindowViewMode::Compact,
-            layout: CompactLayout::Bar,
+            layout: CompactLayout::Cover,
         };
         assert_eq!(
             selected_layout_transition(current, CompactLayout::Card, true).0,
@@ -409,7 +409,7 @@ mod tests {
     fn failed_layout_persistence_restores_previous_layout_and_metrics() {
         let current = ViewTransition {
             mode: WindowViewMode::Compact,
-            layout: CompactLayout::Bar,
+            layout: CompactLayout::Pill,
         };
         let (transition, committed) =
             selected_layout_transition(current, CompactLayout::Card, false);

@@ -168,22 +168,23 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   narrow-width target comfort remain pending.
 - [ ] Open Compact View through the main menu and Ctrl+M. Return through **Return to
   Library** in the Compact context menu only, then repeat the round trip with Ctrl+M.
-  Expected: Bar, Cover, Pill, and
-  Card have no visible restore or volume control; every route switches the same window
+  Expected: Cover, Pill, and Card have no visible restore or volume control; every route
+  switches the same window
   immediately, retains the selected layout, and never creates a second playback state.
   The mapped real-input harness proves the menu-only return, layout persistence and
   Ctrl+M routes headlessly; native Wayland confirmation remains pending.
-- [ ] Inspect Bar, Cover, Pill, and Card with long English and German metadata, plus
+- [ ] Inspect Cover, Pill, and Card with long English and German metadata, plus
   missing album/year values. Expected: proportions feel intentional, title/artist
-  ellipsize cleanly, optional rows collapse, icons remain legible, and controls meet
-  native Adwaita target sizes. The four isolated display tests prove accessible
+  ellipsize cleanly, optional rows collapse, separate title bars show only `Reprise`
+  without repeating the active layout name, icons remain legible, and controls meet
+  native Adwaita target sizes. The three isolated display tests prove accessible
   controls and natural-size bounds, but visual judgment remains manual.
 - [ ] With playback paused, scroll one wheel/touchpad step vertically on each
   layout's free cover or metadata surface. Expected: volume changes by exactly five
   percent per step and remains clamped from zero to 100 percent. Repeat over seek,
   transport, menu, and window controls: neither volume nor seek position changes.
   Compact exposes no visible volume slider; the Library bar, MPRIS, and media keys
-  remain alternative volume routes. The mapped X11 run proves Bar metadata and seek
+  remain alternative volume routes. The mapped X11 run proves Compact metadata and seek
   separation against private-bus MPRIS values; native Wayland touchpad behavior and
   audible loudness remain pending.
 - [ ] Drag Pill only from its free metadata region under Wayland and try dragging
@@ -195,7 +196,7 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   Library size/maximized state survives and compact geometry never overwrites it;
   the compositor chooses placement. Isolated transition and two-start smokes pass,
   while native window-manager placement and resizing remain pending.
-- [ ] Exercise all four layouts with pointer, keyboard, and touch at 100% and available
+- [ ] Exercise all three layouts with pointer, keyboard, and touch at 100% and available
   HiDPI scales in light and dark appearance. Check real square and non-square covers.
   Expected: focus, tooltips, hit targets, cover cropping/placeholder behavior and
   active Shuffle/Repeat state remain clear without relying on color alone.
@@ -207,7 +208,7 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   pointer harness additionally opens every page and proves Sidebar/Status writes, and
   the GTK regression proves complete sidebar-slot removal/restoration.
 - [ ] On Appearance, confirm **Chromium (CSD)** is the default, then
-  switch repeatedly to **System title bar** and back in Library plus Bar, Cover, Pill,
+  switch repeatedly to **System title bar** and back in Library plus Cover, Pill,
   and Card Compact View; restart once in each mode. Expected: Reprise's flat header and
   native window buttons remain visible until GTK confirms an actual desktop-supplied
   title bar through its documented `ssd` state. With confirmed SSD, Reprise hides its own
@@ -215,7 +216,7 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   safe CSD fallback; drag/resize/close and all header actions stay usable, and the saved
   choice returns on restart. The isolated mapped GDK regression proves both decoration
   requests, GTK's retained resize frame, fallback/confirmed/lost-SSD transitions and all
-  four Compact projections. Actual GNOME/Wayland compositor acceptance, frame appearance,
+  three Compact projections. Actual GNOME/Wayland compositor acceptance, frame appearance,
   HiDPI, touch, and live window-manager behavior remain native manual checks.
 - [ ] On Library, choose/cancel a disposable folder and rescan it. Expected: cancel
   is harmless and actions use the established safe picker/scan paths; Rhythmbox

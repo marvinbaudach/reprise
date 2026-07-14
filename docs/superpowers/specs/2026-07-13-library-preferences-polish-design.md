@@ -368,5 +368,5 @@ mit einem sicheren kleineren Minimum und vertikal scrollenden Seiten.
   fremder GSettings.
 - Keine Fremd-Plugin-Installation und keine Geräte-Synchronisationsseite ohne
   implementiertes Sync-Backend.
-- Keine Änderungen an den vier Kompaktplayer-Layouts oder deren gemeinsamem
+- Keine Änderungen an den drei Kompaktplayer-Layouts oder deren gemeinsamem
   Controllerzustand.

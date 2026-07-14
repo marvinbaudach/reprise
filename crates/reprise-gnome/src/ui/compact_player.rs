@@ -1,4 +1,4 @@
-//! Four compact playback layouts fed by the same `PlayerController::sync_*`
+//! Three compact playback layouts fed by the same `PlayerController::sync_*`
 //! path as the library bar and Now Playing page.
 
 use std::cell::{Cell, RefCell};
@@ -69,7 +69,6 @@ impl CompactPlayer {
         stack.set_hhomogeneous(false);
         stack.set_vhomogeneous(false);
         let views: Vec<_> = [
-            CompactLayout::Bar,
             CompactLayout::Cover,
             CompactLayout::Pill,
             CompactLayout::Card,
@@ -84,14 +83,15 @@ impl CompactPlayer {
                 Some(compact_player_layouts::layout_token(view.layout)),
             );
         }
-        let menu = CompactMenu::build(CompactLayout::Bar);
+        stack.set_visible_child_name(compact_player_layouts::layout_token(CompactLayout::Card));
+        let menu = CompactMenu::build(CompactLayout::Card);
         stack.insert_action_group("compact", Some(&menu.action_group));
 
         let compact = Self {
             stack,
             views,
             menu,
-            layout: Rc::new(Cell::new(CompactLayout::Bar)),
+            layout: Rc::new(Cell::new(CompactLayout::Card)),
             presentation: Rc::new(RefCell::new(CompactPresentation::default())),
             updating_scale: Rc::new(Cell::new(false)),
             dragging: Rc::new(Cell::new(false)),
@@ -602,6 +602,12 @@ mod tests {
             return;
         }
         let compact = CompactPlayer::new();
+        assert_eq!(compact.layout(), CompactLayout::Card);
+        assert_eq!(compact.views.len(), 3);
+        assert_eq!(
+            compact.widget().visible_child_name().as_deref(),
+            Some("card")
+        );
         compact.connect_volume_changed(|_| {});
         compact.set_layout(layout);
         compact.set_track("Track", "Artist", "Album", Some(2026));
@@ -709,12 +715,6 @@ mod tests {
             assert_eq!(view.title.xalign(), 0.5);
             assert_eq!(view.artist.xalign(), 0.5);
         }
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn bar_layout_has_required_accessible_controls_and_fits() {
-        assert_layout_contract(CompactLayout::Bar);
     }
 
     #[test]
