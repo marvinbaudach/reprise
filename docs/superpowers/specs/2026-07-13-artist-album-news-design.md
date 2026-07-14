@@ -100,11 +100,15 @@ eine temporäre Geschwisterdatei veröffentlicht.
 
 Das Panel setzt die bereits beschlossene rechte Spalte konkret um. Ein
 `AdwOverlaySplitView` sitzt innerhalb des Library-Content-Panes mit
-`sidebar-position=end`:
+`sidebar-position=end`, wird aber ausschließlich als angeheftete Split-Spalte
+verwendet:
 
-- Breite Fenster: angeheftet, 340 logische Pixel natürliche Breite.
-- Schmale Fenster: Overlay; der gespeicherte Sichtbarkeitswunsch bleibt davon
-  unabhängig.
+- Sichtbar: immer angeheftet und nicht kollabiert, 340 logische Pixel natürliche
+  Breite; die Tabelle gibt entsprechend Breite ab, das Panel überlagert sie nie.
+- Schmale Fenster: die linke Navigation bleibt unabhängig adaptiv, während die
+  rechte Spalte weiterhin neben dem Tabelleninhalt liegt.
+- Versteckt: der gespeicherte Sichtbarkeitswunsch gibt die volle Breite wieder an
+  die Tabelle frei.
 - Headerbar: „Information“, Refresh, Schließen.
 - Lokaler Kopf: Cover, Titel, Interpret, Album des einzelnen ausgewählten
   Tracks. Bei keiner Auswahl wird der aktuell sichtbare/geladene Track

@@ -12,29 +12,24 @@ fn release(title: &str, kind: NewsKind) -> AlbumNews {
 }
 
 #[test]
-fn panel_metrics_are_pinned_wide_and_overlay_narrow() {
+fn panel_metrics_always_reserve_space_beside_the_library() {
     assert_eq!(
-        panel_metrics(false),
+        panel_metrics_for_width(1_000.0),
         PanelMetrics {
             width: 340.0,
             pinned: true,
             collapsed: false
         }
     );
-    assert_eq!(
-        panel_metrics(true),
-        PanelMetrics {
-            width: 340.0,
-            pinned: false,
-            collapsed: true
-        }
-    );
 }
 
 #[test]
-fn ordinary_desktop_width_uses_a_fixed_information_column() {
-    assert!(panel_metrics_for_width(1_000.0).pinned);
-    assert!(!panel_metrics_for_width(900.0).pinned);
+fn every_window_width_keeps_the_information_column_beside_content() {
+    for width in [600.0, 900.0, 1_000.0, 2_000.0] {
+        let metrics = panel_metrics_for_width(width);
+        assert!(metrics.pinned);
+        assert!(!metrics.collapsed);
+    }
 }
 
 #[test]
@@ -138,15 +133,15 @@ fn provider_errors_have_specific_match_copy_and_generic_network_copy() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn widget_exposes_information_sidebar_metrics() {
+fn widget_keeps_information_beside_instead_of_over_content() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = build_widgets(&content, true);
     assert_eq!(widgets.split.sidebar_position(), gtk4::PackType::End);
     assert_eq!(widgets.split.min_sidebar_width(), 340.0);
     assert_eq!(widgets.split.max_sidebar_width(), 340.0);
-    assert!(!widgets.split.is_pin_sidebar());
-    assert!(widgets.split.is_collapsed());
+    assert!(widgets.split.is_pin_sidebar());
+    assert!(!widgets.split.is_collapsed());
     assert!(!widgets.header.shows_start_title_buttons());
     assert!(!widgets.header.shows_end_title_buttons());
     let pages = widgets.stack.pages();

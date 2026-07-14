@@ -141,7 +141,9 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] Resize through wide, intermediate, and collapsed navigation widths with the
   Information panel open and closed. Expected: the sidebar stays approximately
   220–280 px while split, collapses through the existing native navigation path, and
-  selecting or reselecting a source returns to content without losing state.
+  selecting or reselecting a source returns to content without losing state. The
+  340px Information column always remains beside the table and narrows it; it never
+  overlays rows, filters, headers, status, or player controls.
 - [ ] Exercise sidebar selection, playlist creation/context menus, track-to-playlist
   drag and drop, Queue count/reorder, and Library/Compact round trips. Expected: only
   presentation changed; callbacks, selection, counters, DnD, and restored Library root
