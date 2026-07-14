@@ -21,9 +21,9 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Add native offline Help dialog
+SINCE:    2026-07-14 07:20 CEST
 ```
 
 _As of 2026-07-14: restoring Library from Compact no longer exposes a stretched intermediate frame._
