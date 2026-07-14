@@ -41,9 +41,25 @@ pub struct LastFmClient {
     agent: ureq::Agent,
 }
 
+/// Compile-time API key injected via `REPRISE_LASTFM_API_KEY`.
+/// When absent, `bundled()` returns `None` and the UI falls back to BYO.
+pub const BUNDLED_API_KEY: Option<&str> = option_env!("REPRISE_LASTFM_API_KEY");
+
+/// Compile-time shared secret injected via `REPRISE_LASTFM_SHARED_SECRET`.
+pub const BUNDLED_SHARED_SECRET: Option<&str> = option_env!("REPRISE_LASTFM_SHARED_SECRET");
+
 impl LastFmClient {
     pub fn new(api_key: &str, shared_secret: &str) -> Result<Self, MetadataError> {
         Self::with_roots(API_ROOT, AUTH_ROOT, api_key, shared_secret)
+    }
+
+    /// Build a client from the compile-time bundled credentials.
+    /// Returns `None` when the build was not configured with
+    /// `REPRISE_LASTFM_API_KEY` / `REPRISE_LASTFM_SHARED_SECRET`.
+    pub fn bundled() -> Option<Result<Self, MetadataError>> {
+        let api_key = BUNDLED_API_KEY?;
+        let shared_secret = BUNDLED_SHARED_SECRET?;
+        Some(Self::new(api_key, shared_secret))
     }
 
     /// Constructs a client for loopback-only integration tests and smokes.

@@ -49,6 +49,9 @@ pub const LASTFM_CONNECTION_ERROR: &str = N_!("Could not connect to Last.fm. Try
 pub const LASTFM_DISCONNECT_ERROR: &str =
     N_!("Could not remove Last.fm credentials from the system keyring.");
 pub const OPEN_BROWSER: &str = N_!("Open Browser");
+pub const LASTFM_SIGN_IN: &str = N_!("Sign in with Last.fm");
+pub const LASTFM_BUNDLED_HINT: &str = N_!("Sign in with your Last.fm account. No API key needed.");
+pub const LASTFM_BYO_KEY: &str = N_!("Use your own API key");
 pub const TEST_CONNECTION: &str = N_!("Test connection");
 pub const TEST_CONNECTION_FAILED: &str = N_!("Test failed — try again later.");
 
