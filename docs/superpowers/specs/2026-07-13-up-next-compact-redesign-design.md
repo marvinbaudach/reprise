@@ -104,8 +104,9 @@ Rechtsklick, `Menu` und `Shift+F10` als Zugänge zum gemeinsamen nativen
 - Einstellungen.
 
 „Zur Bibliothek“ existiert in Compact ausschließlich in diesem Menü. Die vier
-sichtbaren Restore-Buttons entfallen. Der Bibliotheks-Headerknopf und `Ctrl+M`
-bleiben als schnelle Wege **in** beziehungsweise aus Compact erhalten.
+sichtbaren Restore-Buttons entfallen. Hauptmenü und `Ctrl+M` bleiben als schnelle
+Wege **in** beziehungsweise aus Compact erhalten; die Bibliotheks-Headerbar
+dupliziert den Menüeintrag nicht mit einem eigenen Knopf.
 
 Es gibt in Compact keinen sichtbaren Lautstärkeregler und keine Lautstärkezeile
 im Kontextmenü. Vertikales Mausrad-/Touchpad-Scrollen auf freien Cover- oder

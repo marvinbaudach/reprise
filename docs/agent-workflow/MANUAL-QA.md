@@ -112,7 +112,7 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
 - [ ] At a wide native GNOME/Wayland size, open and close the Information panel.
   Expected: one flat header spans the sidebar, library, and Information panel; Music
   remains geometrically centered in the complete window rather than the track pane.
-- [ ] Inspect Search plus the menu, Compact, Information, Import, and Scan actions in
+- [ ] Inspect Search plus the menu, Information, Import, and Scan actions in
   light/dark mode and at 100% plus an available HiDPI scale. Expected: every action is
   a compact symbolic icon with a correct tooltip, accessible name, and comfortable
   native target; no header item clips or forces the centered title aside.
@@ -143,9 +143,9 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   width and zone ancestry, both isolated position starts pass, and the real-input
   Compact round-trip preserves Playing state; native Wayland visual judgment and
   narrow-width target comfort remain pending.
-- [ ] Open Compact View through the Library-header button, the main menu,
-  Preferences, and Ctrl+M. Return through **Return to Library in the Compact context
-  menu only**, then repeat the round trip with Ctrl+M. Expected: Bar, Cover, Pill, and
+- [ ] Open Compact View through the main menu and Ctrl+M. Return through **Return to
+  Library** in the Compact context menu only, then repeat the round trip with Ctrl+M.
+  Expected: Bar, Cover, Pill, and
   Card have no visible restore or volume control; every route switches the same window
   immediately, retains the selected layout, and never creates a second playback state.
   The mapped real-input harness proves the menu-only return, layout persistence and

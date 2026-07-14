@@ -543,8 +543,7 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     );
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();
-    let _compact_button = super::compact_mode_controls::install(
-        &header,
+    super::compact_mode_controls::install(
         &minimal_view,
         player.as_ref().map(|player| &player.compact_player),
         Rc::new(move || compact_preferences.present()),

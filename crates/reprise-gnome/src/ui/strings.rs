@@ -38,7 +38,7 @@ pub const ONBOARDING_SKIP: &str = N_!("Skip for Now");
 pub const ONBOARDING_SET_UP: &str = N_!("Set Up Library");
 pub const MAIN_MENU: &str = N_!("Main menu");
 pub const COMPACT_VIEW: &str = N_!("Compact View");
-pub const OPEN_COMPACT_VIEW: &str = N_!("Open Compact View");
+// Compact View opens through the menu action; the Library header has no duplicate control.
 pub const RETURN_TO_LIBRARY: &str = N_!("Return to Library");
 pub const COMPACT_MENU: &str = N_!("Compact player menu");
 pub const COMPACT_LAYOUT: &str = N_!("Layout");

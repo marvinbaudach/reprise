@@ -177,5 +177,6 @@ mod tests {
 
         assert!(!actions.contains(&"win.import-rhythmbox-columns"));
         assert!(actions.contains(&"win.edit-column-layout"));
+        assert!(actions.contains(&"win.toggle-minimal-view"));
     }
 }

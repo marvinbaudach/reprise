@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::library::settings;
 use rusqlite::Connection;
@@ -12,7 +11,6 @@ use super::compact_player::CompactPlayer;
 use super::compact_player_layouts::layout_from_token;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
-use super::strings;
 
 pub(super) const SMOKE_LAYOUT_ENV: &str = "REPRISE_SMOKE_COMPACT_LAYOUT";
 
@@ -44,27 +42,10 @@ pub(super) fn build_mode(
 }
 
 pub(super) fn install(
-    header: &adw::HeaderBar,
     mode: &Rc<MinimalView>,
     compact: Option<&CompactPlayer>,
     on_preferences: Rc<dyn Fn()>,
-) -> gtk4::Button {
-    let open = gtk4::Button::builder()
-        .icon_name("view-grid-symbolic")
-        .tooltip_text(strings::text(strings::OPEN_COMPACT_VIEW))
-        .build();
-    open.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::OPEN_COMPACT_VIEW,
-    ))]);
-    let weak = Rc::downgrade(mode);
-    open.connect_clicked(move |_| {
-        if let Some(mode) = weak.upgrade() {
-            mode.toggle();
-        }
-    });
-    open.set_sensitive(compact.is_some());
-    header.pack_end(&open);
-
+) {
     if let Some(compact) = compact {
         let weak = Rc::downgrade(mode);
         compact.set_on_restore(Rc::new(move || {
@@ -82,7 +63,6 @@ pub(super) fn install(
     }
 
     arm_smoke_layout(mode);
-    open
 }
 
 fn arm_smoke_layout(mode: &Rc<MinimalView>) {
@@ -114,9 +94,24 @@ mod tests {
     use super::*;
     use crate::ui::minimal_view::ViewTransition;
 
+    fn has_button_with_tooltip(root: &impl IsA<gtk4::Widget>, tooltip: &str) -> bool {
+        let mut child = root.first_child();
+        while let Some(widget) = child {
+            if widget
+                .downcast_ref::<gtk4::Button>()
+                .is_some_and(|button| button.tooltip_text().as_deref() == Some(tooltip))
+                || has_button_with_tooltip(&widget, tooltip)
+            {
+                return true;
+            }
+            child = widget.next_sibling();
+        }
+        false
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn header_and_menu_restore_switch_one_application_window_in_one_activation() {
+    fn library_entry_wiring_adds_no_header_button_and_restore_reuses_the_window() {
         if gtk4::init().is_err() {
             return;
         }
@@ -147,12 +142,13 @@ mod tests {
         );
         mode.apply_initial();
         let header = adw::HeaderBar::new();
-        let open = install(&header, &mode, Some(&compact), Rc::new(|| {}));
+        install(&mode, Some(&compact), Rc::new(|| {}));
+        assert!(!has_button_with_tooltip(&header, "Open Compact View"));
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
         let same_window = window.clone();
 
-        open.emit_clicked();
+        mode.toggle();
         while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert_eq!(compact.layout(), CompactLayout::Card);
