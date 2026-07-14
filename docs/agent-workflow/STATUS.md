@@ -21,12 +21,12 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    FREE            # FREE | claude | codex
-TASK:     —
-SINCE:    —
+OWNER:    codex           # FREE | claude | codex
+TASK:     Fix initial library viewport height on main
+SINCE:    2026-07-14 06:27 CEST
 ```
 
-_As of 2026-07-14: Codex merged and released the agent-d UI follow-ups._
+_As of 2026-07-14: Codex is fixing the reproduced initial one-row Library viewport on main._
 
 ## Parallel feature work
 
