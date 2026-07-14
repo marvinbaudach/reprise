@@ -117,9 +117,8 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     super::library_chrome::style_header(&header, &search_entry);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
-    let maintenance_actions = super::library_chrome::build_maintenance_actions(&header);
+    let maintenance_actions = super::library_chrome::build_maintenance_actions();
     let scan_button = maintenance_actions.scan;
-    let import_button = maintenance_actions.import;
 
     // The player is created eagerly at window build (not lazily on first
     // activation): construction is cheap (one playbin, no I/O), the
@@ -702,17 +701,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         }
     }
 
-    // Stage 3 Task 7: wired after every widget/callback it needs
-    // (`track_list`, `sidebar`, `window_title`, `show_content_if_collapsed`)
-    // already exists — the same late-wiring pattern as the shared scan
-    // trigger used by Preferences and initial setup.
-    playlist_io::wire_import_button(
-        &import_button,
-        &window,
-        &toast_overlay,
-        conn.clone(),
-        sidebar.clone(),
-    );
+    // Stage 3 Task 7: the import action lives beside playlist creation in
+    // the sidebar and is wired after every widget/callback it needs exists.
+    playlist_io::wire_import_action(&window, &toast_overlay, conn.clone(), &sidebar);
     playlist_io::arm_smoke_m3u(conn.clone(), &toast_overlay, sidebar.clone());
 
     super::window_smoke::arm_bar_position(conn, &library_player_bar);

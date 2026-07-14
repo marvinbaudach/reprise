@@ -6,7 +6,7 @@
 //! private `Shared` via `pub(super)` fields/functions).
 //!
 //! The actual file-write + M3U-serialize logic lives in `ui::playlist_io`
-//! (shared with the global "Import playlist…" flow in `window.rs`, and with
+//! (shared with the adjacent "Import playlist…" sidebar flow, and with
 //! the `REPRISE_SMOKE_M3U=export:<name>:<path>` dev hook); this module owns
 //! only the widget wiring: the right-click gesture, the `gio::Menu`/
 //! `PopoverMenu`, the `gtk::FileDialog` save flow, and the destructive

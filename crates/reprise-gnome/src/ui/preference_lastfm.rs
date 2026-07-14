@@ -115,33 +115,47 @@ fn disable_module(conn: &Rc<RefCell<Connection>>, runtime: &ScrobbleRuntime) {
 }
 
 impl PreferencesContext {
-    pub(super) fn add_lastfm_account(
-        self: &Rc<Self>,
-        group: &adw::PreferencesGroup,
-        switch: &adw::SwitchRow,
-    ) {
-        let account = adw::ActionRow::builder()
-            .title(strings::text(strings::LASTFM_ACCOUNT))
-            .subtitle(status_text(&self.lastfm.status()))
-            .activatable(true)
-            .build();
-        account.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
+    pub(super) fn add_lastfm_controls(self: &Rc<Self>, switch: &adw::SwitchRow) {
+        let description = switch.subtitle().unwrap_or_default().to_string();
+        switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
+            &description,
+            switch.is_active(),
+            &status_text(&self.lastfm.status()),
+        ));
         self.lastfm.subscribe(Rc::new({
-            let account = account.downgrade();
+            let switch = switch.downgrade();
+            let description = description.clone();
             move |status| {
-                if let Some(account) = account.upgrade() {
-                    account.set_subtitle(&status_text(&status));
+                if let Some(switch) = switch.upgrade() {
+                    switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
+                        &description,
+                        switch.is_active(),
+                        &status_text(&status),
+                    ));
                 }
             }
         }));
-        let weak = Rc::downgrade(self);
-        let switch = switch.clone();
-        account.connect_activated(move |_| {
-            if let Some(context) = weak.upgrade() {
-                context.present_lastfm_dialog(&switch);
-            }
+        let runtime = self.lastfm.clone();
+        let description_for_toggle = description.clone();
+        switch.connect_active_notify(move |switch| {
+            switch.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
+                &description_for_toggle,
+                switch.is_active(),
+                &status_text(&runtime.status()),
+            ));
         });
-        group.add(&account);
+        let configure = crate::ui::preference_dependencies::add_configure_button(
+            switch,
+            &strings::text(strings::CONFIGURE),
+        );
+        let weak = Rc::downgrade(self);
+        let switch = switch.downgrade();
+        configure.connect_clicked(move |_| {
+            let (Some(context), Some(switch)) = (weak.upgrade(), switch.upgrade()) else {
+                return;
+            };
+            context.present_lastfm_dialog(&switch);
+        });
     }
 
     pub(super) fn change_lastfm_activation(self: &Rc<Self>, row: &adw::SwitchRow, requested: bool) {

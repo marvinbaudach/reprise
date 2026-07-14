@@ -211,6 +211,53 @@ fn lyrics_context_is_independent_and_survives_panel_close() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn multiple_selection_uses_a_finished_empty_state_without_refresh() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
+    reprise_core::db::migrate(&conn.borrow()).unwrap();
+    reprise_core::modules::set_enabled(
+        &conn.borrow(),
+        &reprise_core::modules::ARTIST_NEWS_MODULE,
+        true,
+    )
+    .unwrap();
+    let runtime = ArtistNewsRuntime::setup(&conn.borrow());
+    let cover_runtime = crate::ui::cover_download_worker::setup();
+    let cover_loader = CoverLoader::new(cover_runtime);
+    let app = adw::Application::builder()
+        .application_id("org.reprise.Reprise.InfoPanelMultipleTest")
+        .build();
+    app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+    let window = adw::ApplicationWindow::new(&app);
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let panel = InfoPanel::new(&content, &window, conn, runtime, cover_loader);
+
+    panel.set_context(PanelContext::Multiple(4));
+
+    assert!(!panel.widgets.refresh.is_visible());
+    assert!(!panel.widgets.local.is_visible());
+    assert!(panel.widgets.body.vexpands());
+    assert_eq!(
+        panel.widgets.header.centering_policy(),
+        adw::CenteringPolicy::Strict
+    );
+    let status = panel
+        .widgets
+        .local
+        .next_sibling()
+        .unwrap()
+        .downcast::<adw::StatusPage>()
+        .unwrap();
+    assert_eq!(status.title(), "4 tracks selected");
+    assert_eq!(
+        status.description().as_deref(),
+        Some("Artist News is paused while multiple tracks are selected.")
+    );
+    assert!(status.vexpands());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn pinned_panel_owner_survives_and_header_toggle_reopens_it() {
     gtk4::init().unwrap();
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));

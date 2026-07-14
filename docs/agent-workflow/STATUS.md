@@ -168,6 +168,18 @@ _As of 2026-07-14: Codex is merging the reviewed agent-d UI follow-ups into main
   window-decoration configuration; Layout uses Top/Bottom Player Bar previews and persistent Sidebar,
   filter bar, Information panel, status line and density controls that apply only after successful
   storage and rollback on error.
+- ✅ **Live track-table density**: the persisted Comfortable, Standard and Compact preference now
+  reaches concrete virtualized text, cover and rating cells, forces immediate relayout, and is
+  inherited by cells created later while scrolling.
+- ✅ **Grouped playlist import**: the M3U import action now lives directly beside playlist creation
+  in the sidebar instead of occupying a separate Library-header button; picker, result navigation,
+  toasts and repeated-activation protection remain shared with the existing import flow.
+- ✅ **Finished Information-panel unavailable states**: Refresh disappears whenever Artist News
+  cannot run or is already loading; no-selection, multi-selection and missing-artist contexts use
+  centered native placeholders, with multi-selection no longer retaining an empty track card.
+- ✅ **Inline scrobble-service settings**: ListenBrainz and Last.fm no longer add separate Account
+  rows; enabled providers expose a translated Configure action plus live status in the provider row,
+  while disabled providers show only their description and always-available toggle.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
@@ -176,10 +188,9 @@ _As of 2026-07-14: Codex is merging the reviewed agent-d UI follow-ups into main
 
 ## Deferred minors / follow-ups (triage at stage reviews)
 
-- `scrobbling.rs` (795 lines) and `strings.rs` (790 lines) are edge-tight — their next edits
-  must extract cohesive sibling modules rather than adding inline logic. Compact, rating,
-  column-header, and playlist-delete pointer flows are extracted siblings so
-  `scripts/ptr-e2e/run.sh` remains at 732 lines.
+- `scrobbling.rs` (795 lines) is edge-tight — its next edit must extract a cohesive sibling module.
+  Compact, rating, column-header, and playlist-delete pointer flows are already extracted so
+  `scripts/ptr-e2e/run.sh` remains below the file-size limit.
 - Full `flatpak-builder`/sandbox start was unavailable locally because neither the builder nor
   GNOME-50 runtime/SDK is installed; manifest/YAML/checksums and optimized Meson DESTDIR passed.
 - Public release remains externally blocked by the absence of a public immutable source remote

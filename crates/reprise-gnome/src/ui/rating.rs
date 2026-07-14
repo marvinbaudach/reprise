@@ -89,7 +89,7 @@ const RATING_MAX: i32 = STAR_COUNT;
 pub(super) const COMPACT_RATING_COLUMN_WIDTH: i32 = 88;
 const WIDE_RATING_MIN_WIDTH: i32 = 132;
 const COMPACT_CONTROL_MIN_WIDTH: i32 = 44;
-const RATING_CONTROL_MIN_HEIGHT: i32 = 28;
+const RESPONSIVE_MIN_HEIGHT: i32 = 1;
 const COMPACT_STACK_CHILD: &str = "compact";
 const WIDE_STACK_CHILD: &str = "wide";
 const INLINE_STAR_CSS_CLASS: &str = "reprise-rating-inline-star";
@@ -153,7 +153,7 @@ fn install_rating_style(widget: &impl IsA<gtk4::Widget>) {
         provider.load_from_string(&format!(
             ".{INLINE_STAR_CSS_CLASS} {{ min-width: 20px; min-height: 26px; padding: 1px; }}\n\
              .{COMPACT_BUTTON_CSS_CLASS} {{ min-width: {COMPACT_CONTROL_MIN_WIDTH}px; \
-             min-height: {RATING_CONTROL_MIN_HEIGHT}px; padding: 2px 6px; }}"
+             padding: 2px 6px; }}"
         ));
         gtk4::style_context_add_provider_for_display(
             &widget.display(),
@@ -266,6 +266,7 @@ impl RatingWidget {
         compact_button.set_has_frame(false);
         compact_button.set_tooltip_text(Some(&strings::text(strings::RATING)));
         compact_button.add_css_class(COMPACT_BUTTON_CSS_CLASS);
+        compact_button.add_css_class("reprise-rating-star");
         self.imp().compact_label.replace(Some(compact_label));
         self.imp()
             .compact_button
@@ -273,7 +274,7 @@ impl RatingWidget {
 
         let stack = gtk4::Stack::new();
         stack.set_hhomogeneous(false);
-        stack.set_vhomogeneous(true);
+        stack.set_vhomogeneous(false);
         stack.add_named(&compact_button, Some(COMPACT_STACK_CHILD));
         stack.add_named(&wide, Some(WIDE_STACK_CHILD));
         stack
@@ -283,7 +284,7 @@ impl RatingWidget {
         let responsive = adw::BreakpointBin::new();
         responsive.set_hexpand(true);
         responsive.set_width_request(COMPACT_CONTROL_MIN_WIDTH);
-        responsive.set_height_request(RATING_CONTROL_MIN_HEIGHT);
+        responsive.set_height_request(RESPONSIVE_MIN_HEIGHT);
         responsive.set_child(Some(&stack));
         let condition = adw::BreakpointCondition::new_length(
             adw::BreakpointConditionLengthType::MinWidth,
@@ -310,6 +311,7 @@ impl RatingWidget {
         label.add_css_class(STAR_OUTLINE_CSS_CLASS);
 
         let button = gtk4::Button::new();
+        button.add_css_class("reprise-rating-star");
         button.set_child(Some(&label));
         button.set_has_frame(false);
         button.set_valign(gtk4::Align::Center);
