@@ -175,7 +175,8 @@ pub(super) fn css() -> String {
          .{PLAY_CSS_CLASS}:hover {{ \
            box-shadow: 0 0 18px alpha(@reprise_player_accent, 0.6); }}\n\
          .{SURFACE_CSS_CLASS} {{ \
-           border-top: 1px solid alpha(@window_fg_color, 0.06); }}"
+           border-top: 1px solid alpha(@window_fg_color, 0.06); }}\n\
+         .waveform-seek {{ color: @reprise_player_accent; }}"
     )
 }
 
