@@ -21,22 +21,22 @@ local/gitignored; THIS file is the shared, versioned summary.)
 ## 🔒 Lock
 
 ```
-OWNER:    codex           # FREE | claude | codex
-TASK:     Fix live list-density updates in the library track table
-SINCE:    2026-07-14 03:12 CEST
+OWNER:    FREE            # FREE | claude | codex
+TASK:     —
+SINCE:    —
 ```
 
-_As of 2026-07-14: Codex is fixing the reported list-density regression._
+_As of 2026-07-14: free after the live list-density regression fix passed all gates._
 
 ## Current position
 
 - **Completed plan:** `docs/superpowers/plans/2026-07-13-window-decoration-mode.md` (3 tasks).
-- **Last completed:** **Stable track-table column widths** (`1dd55bc`) — every column now has a
-  deterministic width while Title alone absorbs spare space, preventing recycled visible rows
-  from changing the table geometry during scrolling.
+- **Last completed:** **Live track-table list density** (`0379554`) — Comfortable, Standard and
+  Compact now resize concrete virtualized text, cover and rating cells immediately, including
+  cells created later while scrolling.
 - **Current plan:** none.
 - **➡️ NEXT:** joint stage review; do not start another roadmap stage without explicit user direction.
-- **Main implementation:** `1dd55bc`; this QA/coordination close-out follows it.
+- **Main implementation:** `0379554`; this QA/coordination close-out follows it.
 
 ## Done so far (compact)
 
@@ -105,6 +105,9 @@ _As of 2026-07-14: Codex is fixing the reported list-density regression._
   duplicate prevention and insertion feedback; all exact user-reported paths have regression coverage.
 - ✅ **Stable track-table geometry**: fixed per-column sizing prevents virtualized row contents from
   changing widths while scrolling; Title alone expands into spare space and columns remain resizable.
+- ✅ **Live track-table density**: the persisted Comfortable, Standard and Compact preference now
+  reaches concrete virtualized text, cover and rating cells, forces immediate relayout, and is
+  inherited by cells created later while scrolling.
 - ✅ **QA handoff**: confirmed and pending real-desktop checks are consolidated in
   `docs/agent-workflow/MANUAL-QA.md`; display-only test execution is documented in `RELEASING.md`;
   the release checker rejects Rustdoc warnings and broken intra-doc links; a clean release pointer
