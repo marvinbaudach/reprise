@@ -233,6 +233,7 @@ impl RatingWidget {
         self.set_tooltip_text(Some(&strings::text(strings::RATING)));
 
         let wide = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        wide.set_halign(gtk4::Align::Center);
         let stars: Vec<(gtk4::Button, gtk4::Label)> = (1..=STAR_COUNT)
             .map(|star| {
                 let (button, label) = self.build_star_control(star, true, None);
@@ -264,6 +265,7 @@ impl RatingWidget {
         compact_button.set_popover(Some(&popover));
         compact_button.set_always_show_arrow(false);
         compact_button.set_has_frame(false);
+        compact_button.set_halign(gtk4::Align::Center);
         compact_button.set_tooltip_text(Some(&strings::text(strings::RATING)));
         compact_button.add_css_class(COMPACT_BUTTON_CSS_CLASS);
         compact_button.add_css_class("reprise-rating-star");
@@ -510,6 +512,28 @@ mod tests {
         assert_eq!(compact_rating_text(0), "☆ —");
         assert_eq!(compact_rating_text(1), "★ 1");
         assert_eq!(compact_rating_text(5), "★ 5");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn rating_controls_are_centered_within_the_cell() {
+        gtk4::init().unwrap();
+        let widget = RatingWidget::new();
+        let responsive = widget
+            .first_child()
+            .unwrap()
+            .downcast::<adw::BreakpointBin>()
+            .unwrap();
+        let stack = responsive
+            .child()
+            .unwrap()
+            .downcast::<gtk4::Stack>()
+            .unwrap();
+        let compact = stack.child_by_name(COMPACT_STACK_CHILD).unwrap();
+        let wide = stack.child_by_name(WIDE_STACK_CHILD).unwrap();
+
+        assert_eq!(compact.halign(), gtk4::Align::Center);
+        assert_eq!(wide.halign(), gtk4::Align::Center);
     }
 
     #[test]

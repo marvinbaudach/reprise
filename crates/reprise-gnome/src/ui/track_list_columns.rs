@@ -57,6 +57,38 @@ fn rating_refresh_for_sort(sort_field: &str) -> RatingRefresh {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CellAlignment {
+    Text,
+    Numeric,
+}
+
+impl CellAlignment {
+    fn xalign(self) -> f32 {
+        match self {
+            Self::Text => 0.0,
+            Self::Numeric => 0.5,
+        }
+    }
+
+    fn uses_tabular_figures(self) -> bool {
+        matches!(self, Self::Numeric)
+    }
+}
+
+#[cfg(test)]
+mod cell_alignment_tests {
+    use super::*;
+
+    #[test]
+    fn text_cells_stay_left_aligned_while_numeric_cells_are_centered() {
+        assert_eq!(CellAlignment::Text.xalign(), 0.0);
+        assert!(!CellAlignment::Text.uses_tabular_figures());
+        assert_eq!(CellAlignment::Numeric.xalign(), 0.5);
+        assert!(CellAlignment::Numeric.uses_tabular_figures());
+    }
+}
+
 /// Which page of the track-list `Stack` should be visible, and (for the
 /// empty variants) which copy the shared `StatusPage` should carry. A plain
 /// enum decided by a pure function (`empty_state_for`) so the selection
@@ -119,9 +151,8 @@ pub(super) fn build_status_page() -> adw::StatusPage {
 /// Builds one `ColumnViewColumn` bound to a `SignalListItemFactory` that
 /// renders a single `gtk::Label` per cell. `sort_id` is a whitelisted
 /// `queries` sort field name, stashed on the column via `set_id` so header
-/// clicks can be mapped back to it. `right_align` additionally marks the
-/// label with the "numeric" style class (tabular figures, GNOME convention
-/// for right-aligned numeric columns such as file sizes/durations). Returns
+/// clicks can be mapped back to it. Numeric alignment centers the value and
+/// marks the label with the "numeric" style class for tabular figures. Returns
 /// the built column so `TrackList::new` can set the initial sort indicator
 /// on the artist column. `shared`/`column_view` are threaded through to
 /// `wire_context_menu_gesture` (Stage 3 Task 5) so a secondary click on this
@@ -132,8 +163,7 @@ pub(super) fn append_column(
     shared: &Rc<Shared>,
     sort_id: &'static str,
     title: &str,
-    xalign: f32,
-    right_align: bool,
+    alignment: CellAlignment,
     render: impl Fn(&Track) -> String + 'static,
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
@@ -147,8 +177,8 @@ pub(super) fn append_column(
         };
         let label = gtk4::Label::new(None);
         track_list_row_interaction::expand_to_cell(&label);
-        label.set_xalign(xalign);
-        if right_align {
+        label.set_xalign(alignment.xalign());
+        if alignment.uses_tabular_figures() {
             label.add_css_class("numeric");
         }
         track_list_context_menu::wire_context_menu_gesture(
