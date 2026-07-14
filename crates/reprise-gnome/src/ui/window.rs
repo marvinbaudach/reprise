@@ -107,14 +107,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         "folder-open-symbolic",
         &strings::text(strings::SCAN_FOLDER),
     );
-    // Stage 3 Task 7: global "Import playlist…" entry, same header-button
-    // shape as "Scan folder…" — see `wire_import_button`'s doc comment
-    // (`ui::playlist_io`) for the dialog flow this drives.
-    let import_button = super::library_chrome::action_button(
-        "document-open-symbolic",
-        &strings::text(strings::IMPORT_PLAYLIST),
-    );
-
     // Visible only while the split view is collapsed (see `wire_sidebar_
     // toggle`) — at full width both panes already show side by side, so
     // there is nothing to toggle.
@@ -129,7 +121,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
     header.pack_end(&scan_button);
-    header.pack_end(&import_button);
 
     // The player is created eagerly at window build (not lazily on first
     // activation): construction is cheap (one playbin, no I/O), the
@@ -678,17 +669,9 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         }
     }
 
-    // Stage 3 Task 7: wired last among the header buttons, after every
-    // widget/callback it needs (`track_list`, `sidebar`, `window_title`,
-    // `show_content_if_collapsed`) already exists — same reasoning as
-    // `wire_scan_button`'s own placement.
-    playlist_io::wire_import_button(
-        &import_button,
-        &window,
-        &toast_overlay,
-        conn.clone(),
-        sidebar.clone(),
-    );
+    // Stage 3 Task 7: the import action lives beside playlist creation in
+    // the sidebar and is wired after every widget/callback it needs exists.
+    playlist_io::wire_import_action(&window, &toast_overlay, conn.clone(), &sidebar);
     playlist_io::arm_smoke_m3u(conn.clone(), &toast_overlay, sidebar.clone());
 
     super::window_smoke::arm_bar_position(conn, &library_player_bar);

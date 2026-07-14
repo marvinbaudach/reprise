@@ -2,10 +2,10 @@
 //! `library::m3u`'s pure parse/serialize functions and the rest of the app —
 //! reading/writing the actual file, resolving a parsed path line against the
 //! library (exact match, with a best-effort canonicalize fallback), and
-//! driving the two `gtk::FileDialog` flows (a global "Import playlist…"
-//! headerbar button, wired here and called from `window.rs`; a per-playlist
-//! "Export playlist…" sidebar context-menu action, wired in the sibling
-//! `ui::sidebar_export` module and calling back into this one).
+//! driving the two `gtk::FileDialog` flows (an "Import playlist…" action
+//! grouped with playlist creation; a per-playlist "Export playlist…"
+//! sidebar context-menu action, wired in the sibling `ui::sidebar_export`
+//! module and calling back into this one).
 //!
 //! ## Why the core functions take `&Rc<RefCell<Connection>>`, not `&Connection`
 //!
@@ -47,7 +47,7 @@
 //! (rare, since most filesystems normalize to UTF-8 already); such a path
 //! simply fails to match afterward like any other unmatched path.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -246,29 +246,41 @@ pub(super) fn m3u_file_filter() -> gtk4::FileFilter {
     filter
 }
 
-/// Wires the headerbar's "Import playlist…" button: a click opens a
+/// Wires the Playlist section's "Import playlist…" action: activation opens a
 /// portal-friendly `gtk::FileDialog` file picker filtered to `.m3u`/`.m3u8`,
 /// then runs [`import_playlist`] on the chosen file and applies the result
 /// via [`apply_import_result`] — the exact same function `arm_smoke_m3u`'s
 /// `import:<path>` form calls, so this callback is a thin dialog wrapper,
 /// not a second implementation. Dismissing the dialog is a normal, expected
-/// outcome (not an error) — logged at debug and otherwise ignored, matching
-/// `window.rs`'s `wire_scan_button`.
-pub fn wire_import_button(
-    import_button: &gtk4::Button,
+/// outcome (not an error) — logged at debug and otherwise ignored. A shared
+/// guard prevents repeated activation while the picker is open.
+pub fn wire_import_action(
     window: &adw::ApplicationWindow,
     toast_overlay: &adw::ToastOverlay,
     conn: Rc<RefCell<Connection>>,
-    sidebar: Rc<Sidebar>,
+    sidebar: &Rc<Sidebar>,
 ) {
-    let window = window.clone();
-    let toast_overlay = toast_overlay.clone();
-    let import_button_handle = import_button.clone();
+    let window = window.downgrade();
+    let toast_overlay = toast_overlay.downgrade();
+    let weak_sidebar = Rc::downgrade(sidebar);
+    let import_in_progress = Rc::new(Cell::new(false));
 
-    import_button.connect_clicked(move |_| {
-        // Disable synchronously, before the async dialog even opens — same
-        // double-click guard `wire_scan_button` uses.
-        import_button_handle.set_sensitive(false);
+    sidebar.set_on_import_playlist(move || {
+        if import_in_progress.replace(true) {
+            return;
+        }
+        let Some(window) = window.upgrade() else {
+            import_in_progress.set(false);
+            return;
+        };
+        let Some(toast_overlay) = toast_overlay.upgrade() else {
+            import_in_progress.set(false);
+            return;
+        };
+        let Some(sidebar) = weak_sidebar.upgrade() else {
+            import_in_progress.set(false);
+            return;
+        };
 
         let filter = m3u_file_filter();
         let filters = gio::ListStore::new::<gtk4::FileFilter>();
@@ -284,7 +296,7 @@ pub fn wire_import_button(
         let toast_overlay = toast_overlay.clone();
         let conn = conn.clone();
         let sidebar = sidebar.clone();
-        let import_button = import_button_handle.clone();
+        let import_in_progress = import_in_progress.clone();
 
         glib::spawn_future_local(async move {
             let file = match dialog.open_future(Some(&window)).await {
@@ -297,19 +309,20 @@ pub fn wire_import_button(
                     } else {
                         tracing::error!(%error, "import playlist dialog failed");
                     }
-                    import_button.set_sensitive(true);
+                    import_in_progress.set(false);
                     return;
                 }
             };
-            import_button.set_sensitive(true);
             let Some(path) = file.path() else {
                 tracing::warn!(
                     "selected playlist file has no local filesystem path; cannot import"
                 );
+                import_in_progress.set(false);
                 return;
             };
 
             apply_import_result(import_playlist(&conn, &path), &toast_overlay, &sidebar);
+            import_in_progress.set(false);
         });
     });
 }
@@ -322,7 +335,7 @@ pub fn wire_import_button(
 /// (see [`import_playlist`]'s doc comment) — the sidebar/track-list/title
 /// are left untouched and a "0 of N matched" toast is shown instead. On
 /// failure, logs and shows a generic failure toast. Shared by the real
-/// dialog callback ([`wire_import_button`]) and the `REPRISE_SMOKE_M3U=
+/// dialog callback ([`wire_import_action`]) and the `REPRISE_SMOKE_M3U=
 /// import:<path>` hook ([`arm_smoke_m3u`]).
 fn apply_import_result(
     result: Result<ImportOutcome, ImportError>,
@@ -370,7 +383,7 @@ fn apply_import_result(
 /// calls, without a pointer. Two accepted forms:
 ///
 /// - `import:<path>`: reads `<path>` as an M3U file and imports it — calls
-///   [`apply_import_result`], the same function [`wire_import_button`]'s
+///   [`apply_import_result`], the same function [`wire_import_action`]'s
 ///   dialog callback calls, so the sidebar/track-list/toast side effects are
 ///   identical to a real import.
 /// - `export:<playlist_name>:<path>`: looks up the playlist by exact name
