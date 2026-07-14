@@ -265,16 +265,10 @@ fn with_window_chrome(
     if !metrics(layout).separate_header {
         return content.upcast();
     }
-    let subtitle = match layout {
-        CompactLayout::Bar => strings::COMPACT_LAYOUT_BAR,
-        CompactLayout::Cover => strings::COMPACT_LAYOUT_COVER,
-        CompactLayout::Pill => strings::COMPACT_LAYOUT_PILL,
-        CompactLayout::Card => strings::COMPACT_LAYOUT_CARD,
-    };
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new(
         &strings::text(strings::APP_NAME),
-        &strings::text(subtitle),
+        "",
     )));
     header.pack_end(&widgets.menu);
     let toolbar = adw::ToolbarView::new();

@@ -11,6 +11,7 @@ use super::compact_player::CompactPlayer;
 use super::compact_player_layouts::layout_from_token;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
+use super::window_decorations::WindowContentHost;
 
 pub(super) const SMOKE_LAYOUT_ENV: &str = "REPRISE_SMOKE_COMPACT_LAYOUT";
 
@@ -24,6 +25,7 @@ pub(super) fn initial_transition(conn: &Connection, first_run: FirstRunDecision)
 
 pub(super) fn build_mode(
     window: &adw::ApplicationWindow,
+    content_host: &WindowContentHost,
     full_root: &gtk4::Widget,
     compact: Option<&CompactPlayer>,
     conn: &Rc<RefCell<Connection>>,
@@ -33,6 +35,7 @@ pub(super) fn build_mode(
     let toast_overlay = toast_overlay.clone();
     MinimalView::new(
         window,
+        content_host,
         full_root,
         compact,
         conn.clone(),
@@ -129,8 +132,10 @@ mod tests {
         let compact = CompactPlayer::new();
         let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
         reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let content_host = WindowContentHost::new(&window);
         let mode = MinimalView::new(
             &window,
+            &content_host,
             full_root.upcast_ref(),
             Some(&compact),
             conn,
@@ -158,7 +163,10 @@ mod tests {
 
         compact.activate_restore_for_test();
 
-        assert_eq!(window.content().as_ref(), Some(full_root.upcast_ref()));
+        assert_eq!(
+            content_host.content().as_ref(),
+            Some(full_root.upcast_ref())
+        );
         assert_eq!(window, same_window);
         window.close();
     }

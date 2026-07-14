@@ -1459,9 +1459,7 @@ msgid "Window Decorations"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/window_decoration_strings.rs:16
-msgid ""
-"Use Reprise's flat header, or request a title bar and borders from the "
-"desktop"
+msgid "Use Reprise's flat header, or add a separate native title bar"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/window_decoration_strings.rs:17
@@ -1469,5 +1467,5 @@ msgid "Chromium (CSD)"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/window_decoration_strings.rs:18
-msgid "System title bar"
+msgid "Separate title bar"
 msgstr ""

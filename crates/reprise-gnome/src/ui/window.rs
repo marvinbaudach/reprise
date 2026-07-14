@@ -25,7 +25,6 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use rusqlite::Connection;
 
 use reprise_core::library::settings;
@@ -498,19 +497,29 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
         });
     }
     info_panel.arm_smoke(&track_list);
+    let compact_root = player
+        .as_ref()
+        .map(|player| player.compact_player.widget().upcast_ref());
+    let decorations =
+        super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
+    let content_host = decorations.content_host();
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
+        &content_host,
         library_chrome.root.upcast_ref(),
         player.as_ref().map(|player| &player.compact_player),
         conn,
         initial_view,
         &toast_overlay,
     );
-    let compact_root = player
-        .as_ref()
-        .map(|player| player.compact_player.widget().upcast_ref());
-    let decorations =
-        super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
+    {
+        let minimal_view = Rc::downgrade(&minimal_view);
+        decorations.set_on_mode_changed(Rc::new(move || {
+            if let Some(minimal_view) = minimal_view.upgrade() {
+                minimal_view.refresh_geometry();
+            }
+        }));
+    }
     let geometry_guard = minimal_view.geometry_guard();
     let cover_batch = super::cover_download_batch::CoverDownloadBatch::new(
         conn,
@@ -627,8 +636,6 @@ pub fn build(app: &adw::Application, conn: &Rc<RefCell<Connection>>, db_path: &P
             }
         });
     }
-
-    window.set_content(Some(library_player_bar.widget()));
 
     let search_restore_guard = super::view_session::new_search_restore_guard();
     super::view_session::wire_search(

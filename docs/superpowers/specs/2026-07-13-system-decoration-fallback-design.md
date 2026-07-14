@@ -1,5 +1,9 @@
 # Systemdekorations-Fallback — Designspezifikation
 
+> Abgelöst durch `2026-07-14-reliable-separate-title-bar-design.md`: GNOME
+> Wayland liefert keine SSD, daher verwendet der kompatible `system`-Token nun
+> eine stets sichtbare separate GTK-Leiste statt dieses unsichtbaren Fallbacks.
+
 ## Ziel
 
 Die Einstellung „System title bar“ darf Reprise niemals ohne sichtbare

@@ -208,16 +208,16 @@ Use a fresh disposable `XDG_DATA_HOME` for each onboarding variant.
   pointer harness additionally opens every page and proves Sidebar/Status writes, and
   the GTK regression proves complete sidebar-slot removal/restoration.
 - [ ] On Appearance, confirm **Chromium (CSD)** is the default, then
-  switch repeatedly to **System title bar** and back in Library plus Cover, Pill,
-  and Card Compact View; restart once in each mode. Expected: Reprise's flat header and
-  native window buttons remain visible until GTK confirms an actual desktop-supplied
-  title bar through its documented `ssd` state. With confirmed SSD, Reprise hides its own
-  controls so no duplicates appear. Without confirmed SSD, the app controls remain as a
-  safe CSD fallback; drag/resize/close and all header actions stay usable, and the saved
-  choice returns on restart. The isolated mapped GDK regression proves both decoration
-  requests, GTK's retained resize frame, fallback/confirmed/lost-SSD transitions and all
-  three Compact projections. Actual GNOME/Wayland compositor acceptance, frame appearance,
-  HiDPI, touch, and live window-manager behavior remain native manual checks.
+  switch repeatedly to **Separate title bar** and back in Library plus Cover, Pill,
+  and Card Compact View; restart once in each mode. Expected: the alternative always adds
+  one distinct GTK title bar above the app toolbar, with `Reprise`, a draggable surface and
+  the desktop-configured window buttons. Integrated window buttons and duplicate Compact
+  titles disappear only while that separate bar is visible; all app actions remain in the
+  toolbar below. Switching back removes the extra row and restores the integrated controls.
+  The saved choice returns on restart and Compact windows grow by the title-bar height rather
+  than clipping content. The isolated GTK regression proves the persistent outer content host,
+  live roundtrip and all three Compact projections. Actual GNOME/Wayland spacing, dragging,
+  resize edges, HiDPI, touch and desktop button layout remain native manual checks.
 - [ ] On Library, choose/cancel a disposable folder and rescan it. Expected: cancel
   is harmless and actions use the established safe picker/scan paths; Rhythmbox
   import is not offered after first-run setup.
