@@ -38,6 +38,20 @@ pub struct RhythmboxImportSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RhythmboxRollbackEntry {
+    pub path: String,
+    pub rating: i32,
+    pub play_count: i64,
+    pub added_at: i64,
+    pub last_played_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RhythmboxRollback {
+    pub entries: Vec<RhythmboxRollbackEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RhythmboxPlaylist {
     pub name: String,
     pub paths: Vec<PathBuf>,
@@ -241,14 +255,16 @@ pub fn merge_stats(
     conn: &mut Connection,
     tracks: &[RhythmboxTrackStats],
     choices: RhythmboxImportChoices,
-) -> Result<RhythmboxImportSummary, RhythmboxImportError> {
+    on_progress: Option<&dyn Fn(usize)>,
+) -> Result<(RhythmboxImportSummary, RhythmboxRollback), RhythmboxImportError> {
     let transaction = conn.transaction()?;
     let mut summary = RhythmboxImportSummary {
         parsed: tracks.len(),
         ..RhythmboxImportSummary::default()
     };
+    let mut rollback = RhythmboxRollback::default();
 
-    for track in tracks {
+    for (index, track) in tracks.iter().enumerate() {
         let path = track.path.to_string_lossy();
         let current = transaction
             .query_row(
@@ -268,6 +284,9 @@ pub fn merge_stats(
             current
         else {
             summary.skipped += 1;
+            if let Some(cb) = on_progress {
+                cb(index + 1);
+            }
             continue;
         };
         summary.matched += 1;
@@ -314,6 +333,13 @@ pub fn merge_stats(
             || next_added_at != current_added_at
             || next_last_played != current_last_played
         {
+            rollback.entries.push(RhythmboxRollbackEntry {
+                path: path.to_string(),
+                rating: current_rating,
+                play_count: current_play_count,
+                added_at: current_added_at,
+                last_played_at: current_last_played,
+            });
             transaction.execute(
                 "UPDATE tracks SET rating = ?1, play_count = ?2, added_at = ?3, last_played_at = ?4 WHERE path = ?5",
                 rusqlite::params![
@@ -325,10 +351,36 @@ pub fn merge_stats(
                 ],
             )?;
         }
+        if let Some(cb) = on_progress {
+            cb(index + 1);
+        }
     }
 
     transaction.commit()?;
-    Ok(summary)
+    Ok((summary, rollback))
+}
+
+pub fn undo_rhythmbox_import(
+    conn: &mut Connection,
+    rollback: &RhythmboxRollback,
+) -> Result<usize, RhythmboxImportError> {
+    let transaction = conn.transaction()?;
+    let mut restored = 0usize;
+    for entry in &rollback.entries {
+        let affected = transaction.execute(
+            "UPDATE tracks SET rating = ?1, play_count = ?2, added_at = ?3, last_played_at = ?4 WHERE path = ?5",
+            rusqlite::params![
+                entry.rating,
+                entry.play_count,
+                entry.added_at,
+                entry.last_played_at,
+                entry.path,
+            ],
+        )?;
+        restored += affected;
+    }
+    transaction.commit()?;
+    Ok(restored)
 }
 
 pub fn prescan_rhythmdb(
@@ -755,7 +807,7 @@ mod tests {
     fn merge_preserves_local_rating_and_never_decreases_play_count() {
         let path = PathBuf::from("/music/song.ogg");
         let mut conn = database(&path, 5, 20);
-        let summary = merge_stats(
+        let (summary, _) = merge_stats(
             &mut conn,
             &[RhythmboxTrackStats {
                 path,
@@ -769,6 +821,7 @@ mod tests {
                 play_counts_and_last_played: true,
                 added_at: false,
             },
+            None,
         )
         .unwrap();
 
@@ -795,8 +848,8 @@ mod tests {
             added_at: false,
         };
 
-        let first = merge_stats(&mut conn, &imported, choices).unwrap();
-        let second = merge_stats(&mut conn, &imported, choices).unwrap();
+        let (first, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
+        let (second, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
 
         assert_eq!(values(&conn), (4, 11));
         assert_eq!((first.ratings_imported, first.play_counts_raised), (1, 1));
@@ -807,7 +860,7 @@ mod tests {
     fn merge_respects_choices_and_counts_unmatched_entries() {
         let path = PathBuf::from("/music/song.ogg");
         let mut conn = database(&path, 0, 1);
-        let summary = merge_stats(
+        let (summary, _) = merge_stats(
             &mut conn,
             &[
                 RhythmboxTrackStats {
@@ -830,6 +883,7 @@ mod tests {
                 play_counts_and_last_played: true,
                 added_at: false,
             },
+            None,
         )
         .unwrap();
 
@@ -857,9 +911,9 @@ mod tests {
             added_at: true,
         };
 
-        let first = merge_stats(&mut conn, &imported, choices).unwrap();
-        let second = merge_stats(&mut conn, &imported, choices).unwrap();
-        let newer = merge_stats(
+        let (first, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
+        let (second, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
+        let (newer, _) = merge_stats(
             &mut conn,
             &[RhythmboxTrackStats {
                 path: PathBuf::from("/music/song.ogg"),
@@ -869,6 +923,7 @@ mod tests {
                 last_played_at: None,
             }],
             choices,
+            None,
         )
         .unwrap();
         let added_at = conn
@@ -884,7 +939,7 @@ mod tests {
 
         let missing_path = PathBuf::from("/music/without-date.ogg");
         let mut missing_conn = database(&missing_path, 0, 0);
-        let missing = merge_stats(
+        let (missing, _) = merge_stats(
             &mut missing_conn,
             &[RhythmboxTrackStats {
                 path: missing_path,
@@ -894,6 +949,7 @@ mod tests {
                 last_played_at: None,
             }],
             choices,
+            None,
         )
         .unwrap();
         let imported_missing = missing_conn
@@ -924,9 +980,9 @@ mod tests {
             added_at: false,
         };
 
-        let first = merge_stats(&mut conn, &imported, choices).unwrap();
-        let second = merge_stats(&mut conn, &imported, choices).unwrap();
-        let older = merge_stats(
+        let (first, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
+        let (second, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
+        let (older, _) = merge_stats(
             &mut conn,
             &[RhythmboxTrackStats {
                 path: PathBuf::from("/music/song.ogg"),
@@ -936,6 +992,7 @@ mod tests {
                 last_played_at: Some(50),
             }],
             choices,
+            None,
         )
         .unwrap();
         let last_played_at = conn
@@ -951,7 +1008,7 @@ mod tests {
 
         let missing_path = PathBuf::from("/music/never-played.ogg");
         let mut missing_conn = database(&missing_path, 0, 0);
-        let missing = merge_stats(
+        let (missing, _) = merge_stats(
             &mut missing_conn,
             &[RhythmboxTrackStats {
                 path: missing_path,
@@ -961,6 +1018,7 @@ mod tests {
                 last_played_at: Some(200),
             }],
             choices,
+            None,
         )
         .unwrap();
         let imported_missing = missing_conn
@@ -970,6 +1028,103 @@ mod tests {
             .unwrap();
         assert_eq!(imported_missing, Some(200));
         assert_eq!(missing.last_played_imported, 1);
+    }
+
+    #[test]
+    fn merge_returns_rollback_and_undo_restores_original_values() {
+        let path = PathBuf::from("/music/song.ogg");
+        let mut conn = database(&path, 3, 5);
+        conn.execute("UPDATE tracks SET added_at = 100, last_played_at = 200", [])
+            .unwrap();
+
+        let (summary, rollback) = merge_stats(
+            &mut conn,
+            &[RhythmboxTrackStats {
+                path: path.clone(),
+                rating: Some(5),
+                play_count: Some(20),
+                added_at: Some(50),
+                last_played_at: Some(300),
+            }],
+            RhythmboxImportChoices {
+                ratings: true,
+                play_counts_and_last_played: true,
+                added_at: true,
+            },
+            None,
+        )
+        .unwrap();
+
+        // Verify import took effect
+        assert_eq!(summary.play_counts_raised, 1);
+        assert_eq!(summary.dates_imported, 1);
+        assert_eq!(summary.last_played_imported, 1);
+        assert_eq!(values(&conn), (3, 20)); // rating unchanged (was already set)
+
+        // Undo
+        let restored = undo_rhythmbox_import(&mut conn, &rollback).unwrap();
+        assert_eq!(restored, 1);
+        assert_eq!(values(&conn), (3, 5));
+        let (added_at, last_played) = conn
+            .query_row("SELECT added_at, last_played_at FROM tracks", [], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?))
+            })
+            .unwrap();
+        assert_eq!(added_at, 100);
+        assert_eq!(last_played, Some(200));
+    }
+
+    #[test]
+    fn merge_calls_progress_for_each_track() {
+        let path1 = PathBuf::from("/music/a.ogg");
+        let path2 = PathBuf::from("/music/b.ogg");
+        let conn_raw = Connection::open_in_memory().unwrap();
+        crate::db::migrate(&conn_raw).unwrap();
+        conn_raw
+            .execute(
+                "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, 0, 0)",
+                [path1.to_string_lossy()],
+            )
+            .unwrap();
+        conn_raw
+            .execute(
+                "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, 0, 0)",
+                [path2.to_string_lossy()],
+            )
+            .unwrap();
+        let mut conn = conn_raw;
+
+        let progress = std::cell::Cell::new(0usize);
+        let (_, _) = merge_stats(
+            &mut conn,
+            &[
+                RhythmboxTrackStats {
+                    path: path1,
+                    rating: Some(4),
+                    play_count: None,
+                    added_at: None,
+                    last_played_at: None,
+                },
+                RhythmboxTrackStats {
+                    path: path2,
+                    rating: Some(3),
+                    play_count: None,
+                    added_at: None,
+                    last_played_at: None,
+                },
+            ],
+            RhythmboxImportChoices {
+                ratings: true,
+                play_counts_and_last_played: false,
+                added_at: false,
+            },
+            Some(&|n| {
+                progress.set(n);
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(progress.get(), 2);
     }
 }
 
