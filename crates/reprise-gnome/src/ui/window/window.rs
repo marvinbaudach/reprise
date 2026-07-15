@@ -285,8 +285,9 @@ pub fn build(
     }
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
+    sidebar.append_scan_card(scan_progress.widget());
     let toolbar_view = adw::ToolbarView::new();
-    toolbar_view.add_top_bar(scan_progress.widget());
+    // No add_top_bar for scan progress — it lives in the sidebar now.
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
     let album_view =
         super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
