@@ -126,6 +126,7 @@ mod tests {
             ".reprise-reorder-target",
             ".stats-chart",
             ".reprise-tag-editor",
+            "dialog > floating-sheet",
         ] {
             assert!(css.contains(marker), "missing section marker: {marker}");
         }
