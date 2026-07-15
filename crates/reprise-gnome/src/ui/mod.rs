@@ -29,6 +29,8 @@ mod album_card;
 mod album_card_actions;
 #[path = "library_views/album_card_css.rs"]
 mod album_card_css;
+#[path = "library_views/album_header.rs"]
+mod album_header;
 #[path = "info_panel/artist_news_worker.rs"]
 mod artist_news_worker;
 #[path = "library_views/artist_view.rs"]
