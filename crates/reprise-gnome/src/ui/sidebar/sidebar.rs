@@ -431,14 +431,14 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
         shared,
         ViewSource::Library,
         &strings::text(strings::SIDEBAR_MUSIC),
-        Some(music_count),
+        nonzero_count(music_count),
         NavIcon::Library,
     );
     add_row(
         shared,
         ViewSource::Queue,
         &strings::text(strings::SIDEBAR_QUEUE),
-        Some(queue_count),
+        nonzero_count(queue_count),
         NavIcon::Queue,
     );
 
@@ -451,7 +451,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             shared,
             ViewSource::Playlist(playlist.id),
             &playlist.name,
-            Some(playlist.track_count),
+            nonzero_count(playlist.track_count),
             NavIcon::Playlist,
         );
     }
@@ -578,6 +578,15 @@ pub(super) fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4:
         .iter()
         .find(|(_, s, _)| s == source)
         .map(|(row, _, _)| row.clone())
+}
+
+/// A sidebar count badge only renders when non-zero: `0` shows an empty
+/// right-hand column rather than a literal "0" (design mockup 14a). The
+/// problem sources (import errors / missing) go further and hide the whole
+/// row at zero — see the `import_error_count`/`missing_count` guards in
+/// `rebuild`.
+fn nonzero_count(count: i64) -> Option<i64> {
+    (count > 0).then_some(count)
 }
 
 /// Builds one navigation row (title + optional right-aligned count) and

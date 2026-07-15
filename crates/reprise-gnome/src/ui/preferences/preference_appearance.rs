@@ -10,12 +10,14 @@ use crate::ui::style::{self, theme::Theme};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AppearanceSection {
     Theme,
+    ColorScheme,
     WindowDecorations,
 }
 
-fn appearance_sections() -> [AppearanceSection; 2] {
+fn appearance_sections() -> [AppearanceSection; 3] {
     [
         AppearanceSection::Theme,
+        AppearanceSection::ColorScheme,
         AppearanceSection::WindowDecorations,
     ]
 }
@@ -30,6 +32,13 @@ pub(super) fn build(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
             AppearanceSection::Theme => {
                 let group = adw::PreferencesGroup::builder().title("Theme").build();
                 group.add(&theme_row(context));
+                page.add(&group);
+            }
+            AppearanceSection::ColorScheme => {
+                let group = adw::PreferencesGroup::builder()
+                    .title(strings::text(strings::COLOR_SCHEME))
+                    .build();
+                group.add(&color_scheme_row(context));
                 page.add(&group);
             }
             AppearanceSection::WindowDecorations => {
@@ -91,17 +100,61 @@ fn theme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
     row
 }
 
+/// A `ComboRow` that switches between System / Dark / Light color schemes.
+fn color_scheme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
+    let schemes = [
+        strings::text(strings::SCHEME_SYSTEM),
+        strings::text(strings::SCHEME_DARK),
+        strings::text(strings::SCHEME_LIGHT),
+    ];
+    let model = gtk4::StringList::new(&schemes.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+    let row = adw::ComboRow::builder()
+        .title(strings::text(strings::COLOR_SCHEME))
+        .subtitle(strings::text(strings::COLOR_SCHEME_SUBTITLE))
+        .model(&model)
+        .build();
+
+    let stored = reprise_core::library::settings::get_color_scheme(&context.conn.borrow());
+    let index = match stored {
+        "dark" => 1u32,
+        "light" => 2,
+        _ => 0,
+    };
+    row.set_selected(index);
+
+    row.connect_selected_notify({
+        let context = context.clone();
+        move |row| {
+            let scheme = match row.selected() {
+                1 => "dark",
+                2 => "light",
+                _ => "system",
+            };
+            style::set_color_scheme(scheme);
+            if let Err(error) = reprise_core::library::settings::set_color_scheme(
+                &context.conn.borrow(),
+                scheme,
+            ) {
+                tracing::warn!(%error, "could not persist color scheme");
+            }
+        }
+    });
+
+    row
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn appearance_page_lists_theme_then_window_decorations() {
+    fn appearance_page_lists_theme_color_scheme_then_window_decorations() {
         assert_eq!(
             appearance_sections(),
             [
                 AppearanceSection::Theme,
-                AppearanceSection::WindowDecorations
+                AppearanceSection::ColorScheme,
+                AppearanceSection::WindowDecorations,
             ]
         );
     }

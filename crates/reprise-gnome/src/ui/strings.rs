@@ -798,3 +798,10 @@ pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
 // Compact menu items.
 pub const ALWAYS_ON_TOP: &str = N_!("Always on Top");
 pub const QUIT: &str = N_!("Quit");
+
+// Color scheme (dark/light/system preference).
+pub const COLOR_SCHEME: &str = N_!("Color Scheme");
+pub const COLOR_SCHEME_SUBTITLE: &str = N_!("Choose light, dark, or follow system preference");
+pub const SCHEME_LIGHT: &str = N_!("Light");
+pub const SCHEME_DARK: &str = N_!("Dark");
+pub const SCHEME_SYSTEM: &str = N_!("System");

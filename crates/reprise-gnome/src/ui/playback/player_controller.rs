@@ -254,6 +254,12 @@ pub struct PlayerController {
     pub(super) queue_changed: RefCell<Option<Rc<dyn Fn()>>>,
     pub(super) current_track_changed:
         RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
+    /// Fans coarse playback-state changes to the track list's now-playing
+    /// equaliser (freeze on pause, drop the marker on stop) — see `current_
+    /// track_selection.rs`. Same callback seam as `current_track_changed`,
+    /// invoked from `now_playing_wiring.rs`'s `sync_state`.
+    pub(super) playback_state_changed:
+        RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
@@ -418,6 +424,7 @@ impl PlayerController {
             reload_track_list: RefCell::new(None),
             queue_changed: RefCell::new(None),
             current_track_changed: RefCell::new(None),
+            playback_state_changed: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,

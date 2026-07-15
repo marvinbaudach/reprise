@@ -144,6 +144,7 @@ pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
 pub const GAPLESS_ENABLED_KEY: &str = "playback.gapless_enabled";
 pub const CROSSFADE_SECONDS_KEY: &str = "playback.crossfade_seconds";
+pub const COLOR_SCHEME_KEY: &str = "ui.color_scheme";
 
 /// Crossfade overlap in whole seconds. `0` means crossfade is off (the slider's
 /// "Off" position); `1..=MAX` is an active overlap. `DEFAULT` (off) applies when
@@ -457,6 +458,18 @@ pub fn get_crossfade_seconds(conn: &Connection) -> u8 {
 pub fn set_crossfade_seconds(conn: &Connection, seconds: u8) -> Result<(), rusqlite::Error> {
     let clamped = seconds.clamp(CROSSFADE_SECONDS_MIN, CROSSFADE_SECONDS_MAX);
     set_setting(conn, CROSSFADE_SECONDS_KEY, &clamped.to_string())
+}
+
+pub fn get_color_scheme(conn: &Connection) -> &'static str {
+    match get_setting(conn, COLOR_SCHEME_KEY).ok().flatten() {
+        Some(ref v) if v == "light" => "light",
+        Some(ref v) if v == "dark" => "dark",
+        _ => "system",
+    }
+}
+
+pub fn set_color_scheme(conn: &Connection, value: &str) -> Result<(), rusqlite::Error> {
+    set_setting(conn, COLOR_SCHEME_KEY, value)
 }
 
 #[cfg(test)]

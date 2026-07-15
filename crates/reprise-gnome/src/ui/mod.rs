@@ -72,6 +72,7 @@ mod device_sync_smoke;
 #[path = "device_sync/device_sync_strings.rs"]
 mod device_sync_strings;
 pub mod dialogs;
+pub(crate) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;
 mod help;

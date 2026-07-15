@@ -69,7 +69,7 @@ pub(super) fn build_library_title(
 ) -> LibraryTitle {
     header.set_title_widget(gtk4::Widget::NONE);
     let switcher = gtk4::StackSwitcher::builder().stack(views).build();
-    switcher.add_css_class("reprise-surface");
+    switcher.add_css_class("reprise-view-switcher");
     let root = gtk4::Stack::new();
     root.add_named(source_title, Some(LIBRARY_TITLE_SOURCE));
     root.add_named(&switcher, Some(LIBRARY_TITLE_SWITCHER));
@@ -80,6 +80,29 @@ pub(super) fn build_library_title(
         #[cfg(test)]
         switcher,
     }
+}
+
+/// The Tracks/Albums/Artists `GtkStackSwitcher` styled as a rounded pill
+/// group (design mockup 14a): a subtle white-tint container with a soft
+/// radius, and segment buttons that shed the default `.linked` hard edges —
+/// the active segment tinted + bold, inactive quiet, hover a hair brighter.
+/// `@window_fg_color` (near-white on the dark theme) keeps it theme-aware.
+/// Installed app-wide by [`super::style`].
+pub(super) fn css() -> String {
+    ".reprise-view-switcher { \
+       background-color: alpha(@window_fg_color, 0.06); \
+       border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\
+     .reprise-view-switcher > button { \
+       border: none; border-radius: 6px; box-shadow: none; outline: none; \
+       min-height: 0; margin: 0; padding: 2px 14px; \
+       background-color: transparent; background-image: none; \
+       color: alpha(@window_fg_color, 0.60); font-weight: 400; }\n\
+     .reprise-view-switcher > button:hover:not(:checked) { \
+       background-color: alpha(@window_fg_color, 0.08); }\n\
+     .reprise-view-switcher > button:checked { \
+       background-color: alpha(@window_fg_color, 0.14); \
+       color: @window_fg_color; font-weight: 700; }"
+        .to_string()
 }
 
 #[cfg(test)]
