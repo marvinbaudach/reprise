@@ -6,9 +6,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::library::settings::{
-    self, ListDensity, PlayerBarPosition, ReplayGainMode, TrackTransition,
-};
+use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, ReplayGainMode};
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
@@ -54,19 +52,13 @@ pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
     }
 }
 
-fn transition_from_index(index: u32) -> TrackTransition {
-    match index {
-        1 => TrackTransition::Gapless,
-        2 => TrackTransition::Crossfade,
-        _ => TrackTransition::Off,
-    }
-}
-
-fn transition_index(mode: TrackTransition) -> u32 {
-    match mode {
-        TrackTransition::Off => 0,
-        TrackTransition::Gapless => 1,
-        TrackTransition::Crossfade => 2,
+/// Formats the crossfade slider's live value readout: `0` reads as "Off",
+/// otherwise a whole-second overlap ("4.0 s").
+fn crossfade_value_label(seconds: u8) -> String {
+    if seconds == 0 {
+        strings::text(strings::CROSSFADE_OFF)
+    } else {
+        format!("{:.1} s", f64::from(seconds))
     }
 }
 
@@ -417,6 +409,8 @@ impl PreferencesContext {
             .borrow_mut()
             .push(surface.root.clone().upcast());
         equalizer.add(&surface.root);
+        // (equalizer/replaygain are added to the page after Audio Transitions
+        // below, so Transitions leads the Playback page — matching the mockup.)
 
         let weak = Rc::downgrade(self);
         let updating = updating_preset.clone();
@@ -439,8 +433,6 @@ impl PreferencesContext {
             updating.set(false);
             context.apply_audio_effects();
         });
-        page.add(&equalizer);
-
         let replaygain = adw::PreferencesGroup::builder()
             .title(strings::text(strings::REPLAYGAIN))
             .build();
@@ -470,74 +462,118 @@ impl PreferencesContext {
         });
         self.replaygain_mode.borrow_mut().replace(mode.clone());
         replaygain.add(&mode);
-        page.add(&replaygain);
 
+        // Audio Transitions: a crossfade slider + a gapless toggle in one
+        // group (the "NEW" badge sits in the group header suffix). The two
+        // controls are independent; the effective mode is derived from them
+        // (see `settings::get_track_transition`).
         let transitions = adw::PreferencesGroup::builder()
-            .title(strings::text(strings::TRANSITIONS))
+            .title(strings::text(strings::AUDIO_TRANSITIONS))
             .build();
-        let transition_modes = gtk4::StringList::new(&[
-            &strings::text(strings::TRANSITION_OFF),
-            &strings::text(strings::TRANSITION_GAPLESS),
-            &strings::text(strings::TRANSITION_CROSSFADE),
-        ]);
-        let stored_transition = {
+        let new_badge = gtk4::Label::new(Some(&strings::text(strings::BADGE_NEW)));
+        new_badge.add_css_class("stats-badge");
+        new_badge.set_valign(gtk4::Align::Center);
+        transitions.set_header_suffix(Some(&new_badge));
+
+        // Both controls sit in one boxed-list card (crossfade on top, gapless
+        // below), matching the mockup. We build the list ourselves because the
+        // crossfade row is a custom widget — a full-width slider does not fit a
+        // standard AdwActionRow, and a non-row widget added straight to the
+        // group would fall outside its card.
+        let list = gtk4::ListBox::new();
+        list.add_css_class("boxed-list");
+        list.set_selection_mode(gtk4::SelectionMode::None);
+
+        // Crossfade card row: title + live value + subtitle + a 0..10 s slider
+        // ("Off" at 0).
+        let stored_crossfade = {
             let conn = self.conn.borrow();
-            settings::get_track_transition(&conn)
+            settings::get_crossfade_seconds(&conn)
         };
-        let transition = adw::ComboRow::builder()
-            .title(strings::text(strings::TRANSITIONS_MODE))
-            .model(&transition_modes)
-            .selected(transition_index(stored_transition))
-            .build();
-        transitions.add(&transition);
+        let crossfade_content = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        crossfade_content.add_css_class("reprise-crossfade");
+        let crossfade_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let crossfade_title = gtk4::Label::new(Some(&strings::text(strings::CROSSFADE)));
+        crossfade_title.add_css_class("title");
+        crossfade_title.set_xalign(0.0);
+        crossfade_title.set_hexpand(true);
+        let crossfade_value = gtk4::Label::new(Some(&crossfade_value_label(stored_crossfade)));
+        crossfade_value.add_css_class("reprise-crossfade-value");
+        crossfade_value.set_halign(gtk4::Align::End);
+        crossfade_header.append(&crossfade_title);
+        crossfade_header.append(&crossfade_value);
+        crossfade_content.append(&crossfade_header);
+        let crossfade_subtitle =
+            gtk4::Label::new(Some(&strings::text(strings::CROSSFADE_SUBTITLE)));
+        crossfade_subtitle.add_css_class("dim-label");
+        crossfade_subtitle.set_xalign(0.0);
+        crossfade_content.append(&crossfade_subtitle);
+        let crossfade_scale = gtk4::Scale::with_range(
+            gtk4::Orientation::Horizontal,
+            f64::from(settings::CROSSFADE_SECONDS_MIN),
+            f64::from(settings::CROSSFADE_SECONDS_MAX),
+            1.0,
+        );
+        crossfade_scale.set_value(f64::from(stored_crossfade));
+        crossfade_scale.set_draw_value(false);
+        crossfade_scale.set_hexpand(true);
+        crossfade_scale.add_css_class("reprise-crossfade-scale");
+        crossfade_scale.add_mark(
+            0.0,
+            gtk4::PositionType::Bottom,
+            Some(&strings::text(strings::CROSSFADE_OFF)),
+        );
+        crossfade_scale.add_mark(5.0, gtk4::PositionType::Bottom, Some("5 s"));
+        crossfade_scale.add_mark(10.0, gtk4::PositionType::Bottom, Some("10 s"));
+        crossfade_content.append(&crossfade_scale);
+        let crossfade_lbrow = gtk4::ListBoxRow::new();
+        crossfade_lbrow.set_activatable(false);
+        crossfade_lbrow.set_child(Some(&crossfade_content));
+        list.append(&crossfade_lbrow);
 
-        // Crossfade duration: only sensitive while Crossfade is selected.
-        let crossfade_seconds = adw::SpinRow::builder()
-            .title(strings::text(strings::CROSSFADE_DURATION))
-            .adjustment(&gtk4::Adjustment::new(
-                f64::from({
-                    let conn = self.conn.borrow();
-                    settings::get_crossfade_seconds(&conn)
-                }),
-                f64::from(settings::CROSSFADE_SECONDS_MIN),
-                f64::from(settings::CROSSFADE_SECONDS_MAX),
-                1.0,
-                1.0,
-                0.0,
-            ))
+        // Gapless: a standard switch row, the second row of the same card.
+        let gapless_enabled = {
+            let conn = self.conn.borrow();
+            settings::get_gapless_enabled(&conn)
+        };
+        let gapless = adw::SwitchRow::builder()
+            .title(strings::text(strings::GAPLESS_PLAYBACK))
+            .subtitle(strings::text(strings::GAPLESS_SUBTITLE))
+            .active(gapless_enabled)
             .build();
-        crossfade_seconds.set_sensitive(stored_transition == TrackTransition::Crossfade);
-        transitions.add(&crossfade_seconds);
+        list.append(&gapless);
+        transitions.add(&list);
 
         let weak = Rc::downgrade(self);
-        let seconds_row = crossfade_seconds.clone();
-        transition.connect_selected_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            let mode = transition_from_index(row.selected());
-            seconds_row.set_sensitive(mode == TrackTransition::Crossfade);
-            context.set_track_transition(mode);
+        let value_label = crossfade_value.clone();
+        crossfade_scale.connect_value_changed(move |scale| {
+            let seconds = scale.value().round() as u8;
+            value_label.set_label(&crossfade_value_label(seconds));
+            if let Some(context) = weak.upgrade() {
+                context.set_crossfade_seconds(seconds);
+            }
         });
-
         let weak = Rc::downgrade(self);
-        crossfade_seconds.connect_value_notify(move |row| {
-            let Some(context) = weak.upgrade() else {
-                return;
-            };
-            context.set_crossfade_seconds(row.value().round() as u8);
+        gapless.connect_active_notify(move |row| {
+            if let Some(context) = weak.upgrade() {
+                context.set_gapless_enabled(row.is_active());
+            }
         });
+        // Order: Audio Transitions first (matching the mockup), then the
+        // Equalizer and ReplayGain groups built above.
         page.add(&transitions);
+        page.add(&equalizer);
+        page.add(&replaygain);
         page
     }
 
-    /// Persists the track-transition mode and pushes it to the backend (plus a
-    /// re-feed) so the change takes effect immediately, no restart.
-    fn set_track_transition(&self, mode: TrackTransition) {
+    /// Persists the gapless toggle and pushes the derived transition to the
+    /// backend (plus a re-feed) so the change takes effect immediately.
+    fn set_gapless_enabled(&self, enabled: bool) {
         {
             let conn = self.conn.borrow();
-            if let Err(error) = settings::set_track_transition(&conn, mode) {
-                tracing::warn!(%error, "could not save track transition mode");
+            if let Err(error) = settings::set_gapless_enabled(&conn, enabled) {
+                tracing::warn!(%error, "could not save gapless setting");
                 return;
             }
         }

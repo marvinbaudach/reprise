@@ -245,17 +245,23 @@ msgstr "Pro Titel"
 msgid "Per Album"
 msgstr "Pro Album"
 
-msgid "Transitions"
-msgstr "Übergänge"
+msgid "Audio Transitions"
+msgstr "Audio-Übergänge"
 
-msgid "Between Tracks"
-msgstr "Zwischen Titeln"
+msgid "NEW"
+msgstr "NEU"
 
-msgid "Gap (No Blending)"
-msgstr "Lücke (kein Übergang)"
+msgid "Crossfade"
+msgstr "Überblendung"
 
-msgid "Gapless"
-msgstr "Lückenlos"
+msgid "Smoothly blend the end of a track into the next"
+msgstr "Blendet das Ende eines Titels sanft in den nächsten"
+
+msgid "Gapless Playback"
+msgstr "Lückenlose Wiedergabe"
+
+msgid "No silence between tracks of the same album"
+msgstr "Keine Stille zwischen Titeln desselben Albums"
 
 #: crates/reprise-gnome/src/ui/strings.rs:92
 msgid "Could not apply audio effects"
