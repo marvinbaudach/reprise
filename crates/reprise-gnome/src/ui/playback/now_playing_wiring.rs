@@ -108,10 +108,9 @@ impl PlayerController {
     }
 
     /// Feeds Bar, Compact, and Now Playing metadata from one call.
-    pub(super) fn sync_track(&self, title: &str, artist: &str, album: &str, _year: Option<i32>) {
+    pub(super) fn sync_track(&self, title: &str, artist: &str, _album: &str, _year: Option<i32>) {
         self.bar.set_track(title, artist);
         self.compact_player.set_track(title, artist);
-        self.now_playing_view.set_track(title, artist, album);
     }
 
     /// Clears Bar, Compact, and Lyrics together — the `Stopped`/failure-path
@@ -273,8 +272,6 @@ impl PlayerController {
     /// widget (if any) was the origin.
     pub(super) fn sync_shuffle_indicator(&self, active: bool) {
         self.bar.set_shuffle_indicator(active);
-        self.compact_player.set_shuffle_indicator(active);
-        self.now_playing_view.set_shuffle_indicator(active);
         // Shuffle changed the play order, so the upcoming track changed too:
         // re-feed the gapless next. Every shuffle path funnels through here.
         self.feed_next();
@@ -283,8 +280,6 @@ impl PlayerController {
     /// Same shape as `sync_shuffle_indicator`, for the repeat button.
     pub(super) fn sync_repeat_indicator(&self, repeat: Repeat) {
         self.bar.set_repeat_indicator(repeat);
-        self.compact_player.set_repeat_indicator(repeat);
-        self.now_playing_view.set_repeat_indicator(repeat);
         // Repeat mode changes what plays next (All wraps, One suppresses the
         // gapless pre-feed): re-feed. Every repeat path funnels through here.
         self.feed_next();
