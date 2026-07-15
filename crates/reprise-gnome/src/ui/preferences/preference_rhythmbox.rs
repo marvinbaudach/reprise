@@ -257,7 +257,8 @@ impl PreferencesContext {
                         let stats = parsed
                             .tracks
                             .map(|tracks| {
-                                rhythmbox_import::merge_stats(&mut conn, &tracks, choices)
+                                rhythmbox_import::merge_stats(&mut conn, &tracks, choices, None)
+                                    .map(|(summary, _rollback)| summary)
                             })
                             .transpose()
                             .map_err(|error| error.to_string())?;
