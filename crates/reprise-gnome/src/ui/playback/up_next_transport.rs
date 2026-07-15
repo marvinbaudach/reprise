@@ -173,7 +173,7 @@ mod tests {
     use reprise_core::queue::{Queue, Repeat};
     use reprise_core::up_next::UpNextQueue;
 
-    use super::{next_target, play_pending_at, previous_target, AdvanceReason};
+    use super::{next_target, peek_auto_target, play_pending_at, previous_target, AdvanceReason};
 
     fn context(ids: &[i64]) -> Queue {
         let mut queue = Queue::new();
@@ -185,6 +185,38 @@ mod tests {
         let mut queue = UpNextQueue::default();
         queue.append(ids);
         queue
+    }
+
+    #[test]
+    fn peek_auto_target_mirrors_automatic_next_without_mutating() {
+        // Up-next front wins the peek, exactly like next_target(Automatic).
+        let queue = context(&[1, 2, 3]);
+        let up_next = pending(&[10, 20]);
+        assert_eq!(peek_auto_target(&queue, &up_next), Some(10));
+        assert_eq!(up_next.ids(), &[10, 20]); // not consumed
+        assert_eq!(queue.current(), Some(1)); // not advanced
+
+        // No up-next: falls through to the queue's auto-advance preview.
+        assert_eq!(peek_auto_target(&queue, &pending(&[])), Some(2));
+    }
+
+    #[test]
+    fn peek_auto_target_suppresses_gapless_on_repeat_one() {
+        let mut context = context(&[1, 2, 3]);
+        context.set_repeat(Repeat::One);
+        // Repeat-One is intentionally not pre-fed (returns None), even with
+        // pending up-next, so the loop runs through the ordinary EOS path.
+        assert_eq!(peek_auto_target(&context, &pending(&[10])), None);
+    }
+
+    #[test]
+    fn peek_auto_target_at_queue_end_without_repeat_is_none() {
+        let mut context = context(&[1, 2, 3]);
+        // Advance to the last track.
+        context.next_manual();
+        context.next_manual();
+        assert_eq!(context.current(), Some(3));
+        assert_eq!(peek_auto_target(&context, &pending(&[])), None);
     }
 
     #[test]
