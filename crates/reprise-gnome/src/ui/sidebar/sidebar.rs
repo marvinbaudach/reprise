@@ -472,11 +472,11 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             sidebar_presentation::smart_icon(&smart.sort_field),
         );
     }
-    add_row_with_badge(
+    add_row(
         shared,
         ViewSource::MyStats,
         &strings::text(strings::SIDEBAR_MY_STATS),
-        "NEW",
+        None,
         sidebar_presentation::NavIcon::MyStats,
     );
 
@@ -614,6 +614,7 @@ fn add_row(
 /// Builds one navigation row with a badge label (e.g. "NEW") rather than a
 /// count and registers it in `shared.rows` — same as `add_row` but delegates
 /// to `sidebar_presentation::build_nav_row_with_badge`.
+#[allow(dead_code)]
 fn add_row_with_badge(
     shared: &Rc<Shared>,
     source: ViewSource,
