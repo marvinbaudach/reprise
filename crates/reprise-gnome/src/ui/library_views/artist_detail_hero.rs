@@ -35,6 +35,7 @@ impl Hero {
     }
 
     /// The hero name label text — the pane's `#[cfg(test)] hero_name` reads this.
+    #[cfg(test)]
     pub(super) fn name_text(&self) -> String {
         self.name.text().to_string()
     }

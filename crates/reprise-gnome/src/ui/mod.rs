@@ -25,25 +25,22 @@ mod about;
 mod album_view;
 #[path = "library_views/artist_avatar.rs"]
 mod artist_avatar;
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
-#[path = "library_views/artist_master.rs"]
-mod artist_master;
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
-#[path = "library_views/artist_master_row.rs"]
-mod artist_master_row;
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
 #[path = "library_views/artist_detail_hero.rs"]
 mod artist_detail_hero;
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
 #[path = "library_views/artist_detail_pane.rs"]
 mod artist_detail_pane;
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
 #[path = "library_views/artist_detail_row.rs"]
 mod artist_detail_row;
+#[path = "library_views/artist_master.rs"]
+mod artist_master;
+#[path = "library_views/artist_master_row.rs"]
+mod artist_master_row;
 #[path = "info_panel/artist_news_worker.rs"]
 mod artist_news_worker;
 #[path = "library_views/artist_view.rs"]
 mod artist_view;
+#[path = "library_views/artist_view_css.rs"]
+mod artist_view_css;
 #[path = "playback/audio_effects.rs"]
 mod audio_effects;
 #[path = "browse/browse_bar.rs"]
@@ -117,8 +114,6 @@ mod library_chrome;
 mod library_player_bar;
 #[path = "window/library_shell.rs"]
 mod library_shell;
-#[path = "library_views/artist_view_css.rs"]
-mod artist_view_css;
 #[path = "library_views/library_view_css.rs"]
 mod library_view_css;
 #[path = "track_list/list_density.rs"]
