@@ -263,6 +263,97 @@ impl ScanProgressView {
     }
 }
 
+/// A lightweight progress indicator embedded in the EmptyLibrary status page.
+/// Shown during a first scan so the user sees scanning feedback even before
+/// any tracks have appeared in the list. Same `show`/`finish` interface as
+/// `ScanProgressView` so `ScanControls` can push to it uniformly.
+#[derive(Clone)]
+pub(super) struct EmptyScanIndicator {
+    inner: Rc<EmptyScanWidgets>,
+}
+
+struct EmptyScanWidgets {
+    container: gtk4::Box,
+    spinner: gtk4::Spinner,
+    label: gtk4::Label,
+}
+
+impl EmptyScanIndicator {
+    pub(super) fn new() -> Self {
+        let spinner = gtk4::Spinner::builder()
+            .spinning(false)
+            .build();
+        spinner.add_css_class("scan-card-spinner");
+
+        let label = gtk4::Label::builder()
+            .label("")
+            .build();
+        label.add_css_class("dim-label");
+
+        let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        container.set_halign(gtk4::Align::Center);
+        container.append(&spinner);
+        container.append(&label);
+        container.set_visible(false);
+
+        Self {
+            inner: Rc::new(EmptyScanWidgets {
+                container,
+                spinner,
+                label,
+            }),
+        }
+    }
+
+    pub(super) fn widget(&self) -> &gtk4::Box {
+        &self.inner.container
+    }
+
+    pub(super) fn show(&self, progress: &ScanProgress) {
+        self.inner.spinner.set_spinning(true);
+        self.inner.container.set_visible(true);
+        match progress {
+            ScanProgress::Discovering => {
+                self.inner
+                    .label
+                    .set_label(&strings::text(strings::SCAN_DISCOVERING));
+            }
+            ScanProgress::Scanning {
+                processed, total, ..
+            } => {
+                self.inner
+                    .label
+                    .set_label(&strings::scan_progress(*processed, *total));
+            }
+            ScanProgress::Fetching { done, total } => {
+                self.inner
+                    .label
+                    .set_label(&strings::fetch_progress(*done, *total));
+            }
+        }
+    }
+
+    pub(super) fn finish(&self) {
+        self.inner.spinner.set_spinning(false);
+        self.inner.container.set_visible(false);
+    }
+
+    pub(super) fn downgrade(&self) -> WeakEmptyScanIndicator {
+        WeakEmptyScanIndicator(Rc::downgrade(&self.inner))
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct WeakEmptyScanIndicator(Weak<EmptyScanWidgets>);
+
+impl WeakEmptyScanIndicator {
+    pub(super) fn upgrade(&self) -> Option<EmptyScanIndicator> {
+        self.0
+            .upgrade()
+            .map(|inner| EmptyScanIndicator { inner })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
