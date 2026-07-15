@@ -25,3 +25,10 @@ docs/agent-workflow/LOCK
 
 # Claude Code personal settings (machine-specific hooks)
 .claude/settings.local.json
+
+# Agent orchestration artefacts (plans, specs, status)
+.orchestra-plan.json
+.orchestra-status.md
+SPEC.md
+doc/
+docs/superpowers/
