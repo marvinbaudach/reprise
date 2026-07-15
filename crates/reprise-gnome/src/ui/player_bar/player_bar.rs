@@ -94,6 +94,9 @@ pub struct PlayerBar {
     /// Volume level before muting, so unmuting restores it.
     #[allow(dead_code)]
     pre_mute_volume: Cell<f64>,
+    /// Callback fired when the user clicks the title label — wired to
+    /// scroll the library track list to the currently playing track.
+    on_title_click: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
     current_track_animation: RefCell<Option<libadwaita::TimedAnimation>>,
@@ -122,6 +125,17 @@ impl PlayerBar {
             ..
         } = player_bar_layout::build();
 
+        let on_title_click: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let title_click = gtk4::GestureClick::new();
+        let title_click_cb = on_title_click.clone();
+        title_click.connect_released(move |_, _, _, _| {
+            let callback = title_click_cb.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        title_label.add_controller(title_click);
+
         let bar = Self {
             root,
             cover,
@@ -146,6 +160,7 @@ impl PlayerBar {
             updating_volume: Rc::new(Cell::new(false)),
             muted: Cell::new(false),
             pre_mute_volume: Cell::new(1.0),
+            on_title_click,
             current_track_animation: RefCell::new(None),
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
@@ -168,6 +183,10 @@ impl PlayerBar {
     /// stops with no track active (see `clear_track`).
     pub fn clear_cover(&self) {
         CoverLoader::set_placeholder(&self.cover);
+    }
+
+    pub fn set_on_title_click<F: Fn() + 'static>(&self, f: F) {
+        *self.on_title_click.borrow_mut() = Some(Rc::new(f));
     }
 
     /// Shows `title`/`artist` in the left-hand labels. Called on row
