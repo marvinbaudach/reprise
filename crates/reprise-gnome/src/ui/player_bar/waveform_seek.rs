@@ -12,6 +12,7 @@ use std::f64::consts::{FRAC_PI_2, PI};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::format::format_duration;
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
 /// is invoked so no `RefCell` borrow is held across the call).
@@ -115,6 +116,8 @@ struct State {
     min_bar_height: f64,
     max_bar_height: f64,
     fallback_bar_height: f64,
+    // Duration of the current track (ms), for formatted tooltip display.
+    duration_ms: i64,
 }
 
 #[derive(Clone)]
@@ -170,6 +173,7 @@ impl WaveformSeek {
             min_bar_height: min_h,
             max_bar_height: max_h,
             fallback_bar_height: fallback_h,
+            duration_ms: 0,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
         let tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>> = Rc::new(RefCell::new(None));
@@ -258,8 +262,7 @@ impl WaveformSeek {
         });
         area.add_controller(drag);
 
-        // Tooltip: show position as a percentage while hovering.
-        // Task 5 will upgrade this to the actual elapsed/total time display.
+        // Tooltip: show the formatted time at the hovered position.
         area.set_has_tooltip(true);
         area.connect_query_tooltip({
             let state = state.clone();
@@ -269,7 +272,13 @@ impl WaveformSeek {
                     return false;
                 }
                 let frac = fraction_at(x as f64, f64::from(area.width()));
-                tooltip.set_text(Some(&format!("{:.0}%", frac * 100.0)));
+                let text = if s.duration_ms > 0 {
+                    let position_ms = (frac * s.duration_ms as f64).round() as i64;
+                    format_duration(position_ms)
+                } else {
+                    format!("{:.0}%", frac * 100.0)
+                };
+                tooltip.set_text(Some(&text));
                 true
             }
         });
@@ -333,6 +342,12 @@ impl WaveformSeek {
         s.last_tick_us = now;
         drop(s);
         self.ensure_tick_callback();
+    }
+
+    /// Set the track duration so the hover tooltip can show formatted time
+    /// instead of a raw percentage.
+    pub(super) fn set_duration(&self, duration_ms: i64) {
+        self.state.borrow_mut().duration_ms = duration_ms.max(0);
     }
 
     pub(super) fn connect_seek(&self, callback: impl Fn(f64) + 'static) {
@@ -720,6 +735,7 @@ mod tests {
             min_bar_height: MIN_BAR_HEIGHT,
             max_bar_height: MAX_BAR_HEIGHT,
             fallback_bar_height: FALLBACK_BAR_HEIGHT,
+            duration_ms: 0,
         };
         ensure_resampled(&mut state, 200);
         assert!(state.display_peaks.is_empty());
@@ -742,6 +758,7 @@ mod tests {
             min_bar_height: MIN_BAR_HEIGHT,
             max_bar_height: MAX_BAR_HEIGHT,
             fallback_bar_height: FALLBACK_BAR_HEIGHT,
+            duration_ms: 0,
         };
         ensure_resampled(&mut state, 600);
         assert!(!state.display_peaks.is_empty());

@@ -64,6 +64,8 @@ pub(super) fn build_mini() -> MiniWidgets {
     artist_label.set_xalign(0.0);
     artist_label.set_hexpand(true);
     artist_label.add_css_class(CSS_ARTIST);
+    arm_ellipsis_tooltip(&title_label);
+    arm_ellipsis_tooltip(&artist_label);
 
     // — Meta row (title · artist) —
     let meta_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
@@ -120,7 +122,7 @@ pub(super) fn build_mini() -> MiniWidgets {
     let close_button = gtk4::Button::from_icon_name("window-close-symbolic");
     close_button.add_css_class("circular");
     close_button.add_css_class(CSS_ICON_BTN);
-    close_button.set_tooltip_text(Some("Minimize to tray (playback continues)"));
+    close_button.set_tooltip_text(Some("Close mini-player"));
     close_button.set_width_request(26);
     close_button.set_height_request(26);
 
@@ -195,6 +197,20 @@ pub(super) fn mini_css() -> String {
            border-radius: 0 {CARD_RADIUS}px 0 {CARD_RADIUS}px; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}"
     )
+}
+
+/// Installs a tooltip that only appears when the label text is ellipsized.
+fn arm_ellipsis_tooltip(label: &gtk4::Label) {
+    label.set_has_tooltip(true);
+    label.connect_query_tooltip(|label, _x, _y, _keyboard, tooltip| {
+        let (_, natural, _, _) = label.measure(gtk4::Orientation::Horizontal, -1);
+        if natural > label.width() {
+            tooltip.set_text(Some(&label.text()));
+            true
+        } else {
+            false
+        }
+    });
 }
 
 #[cfg(test)]

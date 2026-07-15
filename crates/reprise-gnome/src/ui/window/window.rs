@@ -630,6 +630,27 @@ pub fn build(
             sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
         });
     }
+    // Cover click → toggle info panel (spec 1.5).
+    if let Some(ref player) = player {
+        let toggle = info_panel.toggle_button().clone();
+        player.connect_cover_clicked(move || {
+            toggle.set_active(!toggle.is_active());
+        });
+    }
+    // Artist click → filter library to artist (spec 1.5).
+    if let Some(ref player) = player {
+        let track_list_weak = Rc::downgrade(&track_list);
+        let views_stack = library_views.stack.clone();
+        let controller_weak = Rc::downgrade(player);
+        player.connect_artist_clicked(move || {
+            let Some(controller) = controller_weak.upgrade() else { return };
+            let Some(track_list) = track_list_weak.upgrade() else { return };
+            if let Some(artist) = controller.current_artist() {
+                track_list.set_source(ViewSource::Artist(artist));
+                views_stack.set_visible_child_name("tracks");
+            }
+        });
+    }
     header.pack_end(&search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
