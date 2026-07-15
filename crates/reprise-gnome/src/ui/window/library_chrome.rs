@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn header_stays_above_a_top_player_bar() {
+    fn header_stays_above_a_player_bar_overlay() {
         if gtk4::init().is_err() {
             return;
         }
@@ -188,13 +188,13 @@ mod tests {
             chrome.root.content().as_ref(),
             Some(shell.widget().upcast_ref())
         );
-        let top_bar = shell
-            .widget()
-            .first_child()
-            .unwrap()
-            .downcast::<gtk4::Box>()
-            .unwrap();
-        assert_eq!(top_bar.first_child(), Some(player.upcast()));
+        // The navigation is the overlay's main child; the bar is an overlay
+        // widget, not a positional child.
+        assert_eq!(
+            shell.widget().child().as_ref(),
+            Some(navigation.upcast_ref::<gtk4::Widget>())
+        );
+        assert!(player.is_ancestor(shell.widget()));
     }
 
     fn test_navigation() -> adw::NavigationSplitView {

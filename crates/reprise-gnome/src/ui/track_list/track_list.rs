@@ -351,11 +351,18 @@ impl TrackList {
             .build();
         super::track_list_header_style::mark(&column_view);
 
+        // Reserve space at the bottom for the translucent player bar overlay
+        // (see `ui::player_bar::library_player_bar`). The bar sits on top of
+        // the scroll area via `GtkOverlay`, so without this margin the last
+        // row scrolls behind the bar and is unreachable.
+        const PLAYER_BAR_HEIGHT: i32 = 86;
+
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&column_view)
             .vexpand(true)
             .hexpand(true)
             .build();
+        scrolled.set_margin_bottom(PLAYER_BAR_HEIGHT);
 
         let empty_page = build_status_page();
 
