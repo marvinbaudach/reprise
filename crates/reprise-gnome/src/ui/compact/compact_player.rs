@@ -101,6 +101,7 @@ impl CompactPlayer {
         wire_hover(&inner);
         wire_double_click(&inner);
         wire_right_click(&inner);
+        wire_keyboard_menu(&inner);
         wire_chrome_buttons(&inner);
 
         Self(inner)
@@ -354,6 +355,25 @@ fn wire_right_click(inner: &Rc<Inner>) {
         compact_player_menu::popup_at(&popover, anchor.upcast_ref(), Some((x as i32, y as i32)));
     });
     inner.widgets.card.add_controller(gesture);
+}
+
+/// Opens the context menu on Menu key or Shift+F10 (keyboard accessibility).
+fn wire_keyboard_menu(inner: &Rc<Inner>) {
+    let key_controller = gtk4::EventControllerKey::new();
+    let popover = inner.menu.popover.clone();
+    let anchor = inner.widgets.card.clone();
+    key_controller.connect_key_pressed(move |_, keyval, _, modifier| {
+        let dominated = keyval == gdk::Key::Menu
+            || (keyval == gdk::Key::F10
+                && modifier.contains(gdk::ModifierType::SHIFT_MASK));
+        if dominated {
+            compact_player_menu::popup_at(&popover, anchor.upcast_ref(), None);
+            gtk4::glib::Propagation::Stop
+        } else {
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+    inner.widgets.card.add_controller(key_controller);
 }
 
 /// Cross-fades the title and artist labels: fade out → swap text → fade in.
