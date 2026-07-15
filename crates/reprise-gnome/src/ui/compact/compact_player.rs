@@ -340,7 +340,10 @@ impl CompactPlayer {
 
     pub(super) fn connect_previous(&self, callback: impl Fn() + 'static) {
         let callback = Rc::new(callback);
-        connect_buttons_rc(self.views.iter().map(|view| &view.previous), callback.clone());
+        connect_buttons_rc(
+            self.views.iter().map(|view| &view.previous),
+            callback.clone(),
+        );
         self.menu.set_on_previous(callback);
     }
 
@@ -575,10 +578,7 @@ impl CompactPlayer {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn connect_buttons_rc<'a>(
-    buttons: impl Iterator<Item = &'a gtk4::Button>,
-    callback: Rc<dyn Fn()>,
-) {
+fn connect_buttons_rc<'a>(buttons: impl Iterator<Item = &'a gtk4::Button>, callback: Rc<dyn Fn()>) {
     for button in buttons {
         let callback = callback.clone();
         button.connect_clicked(move |_| callback());

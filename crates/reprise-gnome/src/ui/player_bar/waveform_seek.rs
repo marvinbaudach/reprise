@@ -209,8 +209,7 @@ impl WaveformSeek {
     /// `gtk-enable-animations`).  Use this whenever the track changes.
     pub(super) fn set_peaks(&self, peaks: Vec<f32>) {
         let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
-        let animate = gtk4::Settings::default()
-            .is_none_or(|s| s.is_gtk_enable_animations());
+        let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
         let mut s = self.state.borrow_mut();
         s.peaks = peaks;
         if animate && !s.peaks.is_empty() {
@@ -282,8 +281,7 @@ impl WaveformSeek {
                 s.build_progress = (elapsed / BUILD_DURATION_S).clamp(0.0, 1.0);
             }
 
-            let settled = (s.fraction - s.target_fraction).abs() < 0.001
-                && s.build_progress >= 1.0;
+            let settled = (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
             drop(s);
 
             area.queue_draw();
@@ -402,7 +400,14 @@ fn draw_fallback(
     let remaining_w = w - played_w;
     if remaining_w > 0.0 {
         cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA);
-        rounded_bar(cr, played_w, y, remaining_w, FALLBACK_BAR_HEIGHT, BAR_RADIUS);
+        rounded_bar(
+            cr,
+            played_w,
+            y,
+            remaining_w,
+            FALLBACK_BAR_HEIGHT,
+            BAR_RADIUS,
+        );
         let _ = cr.fill();
     }
 }
@@ -463,14 +468,14 @@ mod tests {
 
         // 4 bars at 0.125 / 0.375 / 0.625 / 0.875; fraction=0.25, drag=0.75
         assert!(!in_ghost(0, 4, 0.25, 0.75)); // centre 0.125 ≤ 0.25
-        assert!(in_ghost(1, 4, 0.25, 0.75));  // centre 0.375 in (0.25, 0.75]
-        assert!(in_ghost(2, 4, 0.25, 0.75));  // centre 0.625 in (0.25, 0.75]
+        assert!(in_ghost(1, 4, 0.25, 0.75)); // centre 0.375 in (0.25, 0.75]
+        assert!(in_ghost(2, 4, 0.25, 0.75)); // centre 0.625 in (0.25, 0.75]
         assert!(!in_ghost(3, 4, 0.25, 0.75)); // centre 0.875 > 0.75
 
         // Reversed drag: drag < fraction should also produce a ghost range.
         assert!(!in_ghost(0, 4, 0.75, 0.25)); // centre 0.125 ≤ 0.25
-        assert!(in_ghost(1, 4, 0.75, 0.25));  // centre 0.375 in (0.25, 0.75]
-        assert!(in_ghost(2, 4, 0.75, 0.25));  // centre 0.625 in (0.25, 0.75]
+        assert!(in_ghost(1, 4, 0.75, 0.25)); // centre 0.375 in (0.25, 0.75]
+        assert!(in_ghost(2, 4, 0.75, 0.25)); // centre 0.625 in (0.25, 0.75]
         assert!(!in_ghost(3, 4, 0.75, 0.25)); // centre 0.875 > 0.75
     }
 
