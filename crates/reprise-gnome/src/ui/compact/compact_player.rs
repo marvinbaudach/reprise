@@ -574,6 +574,7 @@ impl CompactPlayer {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn connect_buttons_rc<'a>(
     buttons: impl Iterator<Item = &'a gtk4::Button>,
     callback: Rc<dyn Fn()>,
