@@ -1,23 +1,21 @@
-//! Waveform peak extraction and file-based caching.
+//! Waveform peak extraction.
 //!
-//! Dekodiert eine Audiodatei per GStreamer in Mono-S16LE-Samples, unterteilt
-//! sie in gleich große Fenster und liefert je Fenster den RMS-Pegel, normalisiert
-//! auf [0, 1]. Ergebnisse werden dateibasiert unter
-//! `glib::user_cache_dir()/reprise/waveforms/` zwischengespeichert.
+//! Dekodiert eine Audiodatei per GStreamer in Mono-S16LE-Samples (max. 8 kHz),
+//! unterteilt sie in gleich große Fenster und liefert je Fenster den RMS-Pegel,
+//! normalisiert auf [0, 1] und via sqrt-Kompression auf [0, 255] quantisiert.
 //!
 //! Rein synchrone Datenschicht — kein UI, keine Wiedergabe.
 
-use std::collections::hash_map::DefaultHasher;
-use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 
-/// Errors during waveform peak extraction or cache I/O.
+/// Number of raw peaks stored per track.
+pub(crate) const STORED_PEAK_COUNT: usize = 1000;
+
+/// Errors during waveform peak extraction.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum WaveformError {
     #[error("file not found: {0}")]
@@ -26,17 +24,15 @@ pub(crate) enum WaveformError {
     DecodeFailed(String),
     #[error("empty audio stream")]
     EmptyStream,
-    #[error("cache I/O: {0}")]
-    CacheIo(#[from] std::io::Error),
 }
 
-/// Extract `buckets` normalized amplitude peaks from an audio file.
+/// Extract `buckets` amplitude peaks from an audio file.
 ///
 /// Each peak is the RMS amplitude of its window, normalized so the global
-/// maximum equals 1.0. All values lie in \[0.0, 1.0\].
+/// maximum equals 1.0, then sqrt-compressed and quantized to \[0, 255\].
 ///
 /// Runs synchronously — caller is expected to invoke this from a worker thread.
-pub(crate) fn extract_peaks(path: &Path, buckets: usize) -> Result<Vec<f32>, WaveformError> {
+pub(crate) fn extract_peaks(path: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError> {
     if !path.exists() {
         return Err(WaveformError::FileNotFound(path.to_path_buf()));
     }
@@ -61,30 +57,13 @@ pub(crate) fn extract_peaks(path: &Path, buckets: usize) -> Result<Vec<f32>, Wav
         return Err(WaveformError::EmptyStream);
     }
 
-    Ok(compute_peaks(&samples, buckets))
-}
+    let effective_buckets = if samples.len() < buckets {
+        samples.len().max(1)
+    } else {
+        buckets
+    };
 
-/// Load cached peaks or extract + cache them (default cache directory).
-pub(crate) fn cached_peaks(path: &Path, buckets: usize) -> Result<Vec<f32>, WaveformError> {
-    let cache_dir = gtk4::glib::user_cache_dir().join("reprise/waveforms");
-    cached_peaks_in(path, buckets, &cache_dir)
-}
-
-/// Testbare Variante mit explizitem Cache-Verzeichnis.
-fn cached_peaks_in(
-    path: &Path,
-    buckets: usize,
-    cache_dir: &Path,
-) -> Result<Vec<f32>, WaveformError> {
-    let cache_path = cache_file_path(path, buckets, cache_dir)?;
-
-    if let Some(peaks) = try_load_cache(&cache_path, buckets) {
-        return Ok(peaks);
-    }
-
-    let peaks = extract_peaks(path, buckets)?;
-    write_cache(&cache_path, &peaks)?;
-    Ok(peaks)
+    Ok(compute_peaks(&samples, effective_buckets))
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +87,7 @@ fn build_decode_pipeline(path: &Path) -> Result<(gst::Pipeline, gst_app::AppSink
     let caps = gst::Caps::builder("audio/x-raw")
         .field("format", "S16LE")
         .field("channels", 1i32)
+        .field("rate", 8000i32)
         .build();
     let capsfilter = make_element("capsfilter")?;
     capsfilter.set_property("caps", &caps);
@@ -203,14 +183,15 @@ fn check_bus_errors(pipeline: &gst::Pipeline) -> Result<(), WaveformError> {
 // ---------------------------------------------------------------------------
 
 /// Teilt die Samples in `buckets` gleich große Fenster, berechnet je Fenster den
-/// RMS-Pegel und normalisiert global auf [0, 1].
-fn compute_peaks(samples: &[i16], buckets: usize) -> Vec<f32> {
+/// RMS-Pegel, normalisiert global auf [0, 1], komprimiert via sqrt und quantisiert
+/// auf [0, 255].
+fn compute_peaks(samples: &[i16], buckets: usize) -> Vec<u8> {
     if buckets == 0 {
         return Vec::new();
     }
 
     let window_size = samples.len() / buckets;
-    let mut peaks = Vec::with_capacity(buckets);
+    let mut rms_values = Vec::with_capacity(buckets);
 
     for i in 0..buckets {
         let start = i * window_size;
@@ -222,76 +203,27 @@ fn compute_peaks(samples: &[i16], buckets: usize) -> Vec<f32> {
         };
         let window = &samples[start..end];
         if window.is_empty() {
-            peaks.push(0.0);
+            rms_values.push(0.0_f32);
             continue;
         }
         let sum_sq: f64 = window.iter().map(|&s| (s as f64) * (s as f64)).sum();
         let rms = (sum_sq / window.len() as f64).sqrt() as f32;
-        peaks.push(rms);
+        rms_values.push(rms);
     }
 
     // Normalisierung auf [0, 1]
-    let max = peaks.iter().copied().fold(0.0_f32, f32::max);
+    let max = rms_values.iter().copied().fold(0.0_f32, f32::max);
     if max > 0.0 {
-        for p in &mut peaks {
+        for p in &mut rms_values {
             *p /= max;
         }
     }
 
-    peaks
-}
-
-// ---------------------------------------------------------------------------
-// Datei-Cache
-// ---------------------------------------------------------------------------
-
-/// Berechnet den Cache-Dateipfad: Hash aus Pfad + mtime + Bucket-Anzahl.
-fn cache_file_path(
-    path: &Path,
-    buckets: usize,
-    cache_dir: &Path,
-) -> Result<PathBuf, WaveformError> {
-    let metadata =
-        fs::metadata(path).map_err(|_| WaveformError::FileNotFound(path.to_path_buf()))?;
-    let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-
-    let mut hasher = DefaultHasher::new();
-    path.hash(&mut hasher);
-    mtime.hash(&mut hasher);
-    buckets.hash(&mut hasher);
-    let hash = hasher.finish();
-
-    fs::create_dir_all(cache_dir)?;
-    Ok(cache_dir.join(format!("{hash:016x}.peaks")))
-}
-
-/// Versucht, gecachte Peaks zu laden. Gibt `None` bei fehlender/kaputter Datei.
-fn try_load_cache(cache_path: &Path, expected_len: usize) -> Option<Vec<f32>> {
-    let data = fs::read(cache_path).ok()?;
-    // Format: u32 LE (Anzahl), dann Anzahl × f32 LE.
-    if data.len() < 4 {
-        return None;
-    }
-    let count = u32::from_le_bytes(data[0..4].try_into().ok()?) as usize;
-    if count != expected_len || data.len() != 4 + count * 4 {
-        return None;
-    }
-    let mut peaks = Vec::with_capacity(count);
-    for i in 0..count {
-        let off = 4 + i * 4;
-        peaks.push(f32::from_le_bytes(data[off..off + 4].try_into().ok()?));
-    }
-    Some(peaks)
-}
-
-fn write_cache(cache_path: &Path, peaks: &[f32]) -> Result<(), WaveformError> {
-    let mut data = Vec::with_capacity(4 + peaks.len() * 4);
-    data.extend_from_slice(&(peaks.len() as u32).to_le_bytes());
-    for &v in peaks {
-        data.extend_from_slice(&v.to_le_bytes());
-    }
-    fs::write(cache_path, &data)?;
-    Ok(())
+    // sqrt-Kompression + Quantisierung auf u8
+    rms_values
+        .iter()
+        .map(|&p| (p.sqrt() * 255.0).round().clamp(0.0, 255.0) as u8)
+        .collect()
 }
 
 #[cfg(test)]
@@ -323,10 +255,7 @@ mod tests {
         init_gst();
         let peaks = extract_peaks(&fixture_path(), 64).unwrap();
         for (i, &p) in peaks.iter().enumerate() {
-            assert!(
-                (0.0..=1.0).contains(&p),
-                "peak[{i}] = {p} out of [0.0, 1.0]"
-            );
+            assert!(p <= 255, "peak[{i}] = {p} out of [0, 255]");
         }
     }
 
@@ -335,7 +264,7 @@ mod tests {
         init_gst();
         let peaks = extract_peaks(&fixture_path(), 64).unwrap();
         assert!(
-            peaks.iter().any(|&p| p > 0.0),
+            peaks.iter().any(|&p| p > 0),
             "sine wave must have positive amplitudes"
         );
     }
@@ -357,71 +286,6 @@ mod tests {
     }
 
     #[test]
-    fn cached_peaks_creates_and_reuses_cache() {
-        init_gst();
-        let tmp = tempfile::tempdir().unwrap();
-        let path = fixture_path();
-
-        let first = cached_peaks_in(&path, 64, tmp.path()).unwrap();
-
-        // Cache-Datei muss existieren
-        let cache_path = cache_file_path(&path, 64, tmp.path()).unwrap();
-        assert!(cache_path.exists(), "cache file must be created");
-
-        // Zweiter Aufruf liefert identische Werte (aus dem Cache)
-        let second = cached_peaks_in(&path, 64, tmp.path()).unwrap();
-        assert_eq!(first, second);
-    }
-
-    #[test]
-    fn mtime_change_invalidates_cache() {
-        init_gst();
-        let tmp_cache = tempfile::tempdir().unwrap();
-        let tmp_file = tempfile::tempdir().unwrap();
-
-        let src = fixture_path();
-        let dest = tmp_file.path().join("sine.flac");
-        fs::copy(&src, &dest).unwrap();
-
-        let first = cached_peaks_in(&dest, 64, tmp_cache.path()).unwrap();
-        let cache_path_1 = cache_file_path(&dest, 64, tmp_cache.path()).unwrap();
-        assert!(cache_path_1.exists());
-
-        // mtime vorstellen → anderer Hash → anderer Cache-Pfad
-        let file = fs::File::options().write(true).open(&dest).unwrap();
-        let future = SystemTime::now() + std::time::Duration::from_secs(100);
-        file.set_times(fs::FileTimes::new().set_modified(future))
-            .unwrap();
-        drop(file);
-
-        let cache_path_2 = cache_file_path(&dest, 64, tmp_cache.path()).unwrap();
-        assert_ne!(
-            cache_path_1, cache_path_2,
-            "mtime change must produce a different cache key"
-        );
-
-        let second = cached_peaks_in(&dest, 64, tmp_cache.path()).unwrap();
-        assert_eq!(first, second); // Gleiche Audiodaten → gleiche Peaks
-        assert!(cache_path_2.exists()); // Neue Cache-Datei angelegt
-    }
-
-    #[test]
-    fn corrupt_cache_is_regenerated() {
-        init_gst();
-        let tmp = tempfile::tempdir().unwrap();
-        let path = fixture_path();
-
-        // Kaputte Datei an die Cache-Position schreiben
-        let cache_path = cache_file_path(&path, 64, tmp.path()).unwrap();
-        fs::write(&cache_path, b"garbage").unwrap();
-
-        // Muss trotz kaputter Cache-Datei korrekt extrahieren
-        let peaks = cached_peaks_in(&path, 64, tmp.path()).unwrap();
-        assert_eq!(peaks.len(), 64);
-        assert!(peaks.iter().any(|&p| p > 0.0));
-    }
-
-    #[test]
     fn compute_peaks_normalizes_correctly() {
         // Reiner Unit-Test — kein GStreamer nötig
         let samples: Vec<i16> = (0..1000)
@@ -429,11 +293,9 @@ mod tests {
             .collect();
         let peaks = compute_peaks(&samples, 10);
         assert_eq!(peaks.len(), 10);
-        let max = peaks.iter().copied().fold(0.0_f32, f32::max);
-        assert!(
-            (max - 1.0).abs() < f32::EPSILON,
-            "max peak should be 1.0, got {max}"
-        );
-        assert!(peaks.iter().all(|&p| (0.0..=1.0).contains(&p)));
+        let max = peaks.iter().copied().max().unwrap_or(0);
+        assert_eq!(max, 255, "max peak should be 255, got {max}");
+        // All values must be valid u8 (trivially true, but let's check non-zero
+        assert!(peaks.iter().any(|&p| p > 0));
     }
 }
