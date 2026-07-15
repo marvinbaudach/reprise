@@ -29,6 +29,7 @@ pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
     pub(super) on_my_stats: Rc<dyn Fn()>,
     pub(super) on_rescan_library: Rc<dyn Fn()>,
+    pub(super) on_cancel_scan: Rc<dyn Fn()>,
     pub(super) on_sync_device: Rc<dyn Fn()>,
     pub(super) on_preferences: Rc<dyn Fn()>,
 }
@@ -44,12 +45,22 @@ fn view_section_entries() -> Vec<(String, &'static str)> {
     ]
 }
 
-/// Library section: maintenance and sync actions.
-fn library_section_entries() -> Vec<(String, &'static str)> {
-    vec![
-        (strings::text(strings::RESCAN_LIBRARY), "win.rescan-library"),
-        (strings::text(strings::SYNC_DEVICE), "win.sync-device"),
-    ]
+/// Rebuilds the library section of the primary menu with the correct label
+/// for the current scan state: "Rescan Library" when idle, "Cancel Scan"
+/// when a scan is running. GTK reads the `gio::Menu` model on each popover
+/// open, so rebuilding here is sufficient.
+pub(super) fn update_library_section(menu: &gio::Menu, is_scanning: bool) {
+    menu.remove_all();
+    let label = if is_scanning {
+        strings::text(strings::CANCEL_SCAN)
+    } else {
+        strings::text(strings::RESCAN_LIBRARY)
+    };
+    menu.append(Some(&label), Some("win.rescan-library"));
+    menu.append(
+        Some(&strings::text(strings::SYNC_DEVICE)),
+        Some("win.sync-device"),
+    );
 }
 
 /// Settings section: preferences, shortcuts, help, and about.
@@ -71,15 +82,14 @@ pub(super) fn install(
     window: &adw::ApplicationWindow,
     track_list: &Rc<TrackList>,
     callbacks: Callbacks,
-) {
+    scan_controls: &super::scan_flow::ScanControls,
+) -> gio::Menu {
     let view = gio::Menu::new();
     for (label, action) in view_section_entries() {
         view.append(Some(&label), Some(action));
     }
     let library = gio::Menu::new();
-    for (label, action) in library_section_entries() {
-        library.append(Some(&label), Some(action));
-    }
+    update_library_section(&library, scan_controls.is_scanning());
     let settings = gio::Menu::new();
     for (label, action) in settings_section_entries() {
         settings.append(Some(&label), Some(action));
@@ -140,8 +150,16 @@ pub(super) fn install(
 
     let rescan = gio::SimpleAction::new(ACTION_RESCAN_LIBRARY, None);
     {
-        let cb = callbacks.on_rescan_library.clone();
-        rescan.connect_activate(move |_, _| cb());
+        let rescan_cb = callbacks.on_rescan_library.clone();
+        let cancel_cb = callbacks.on_cancel_scan.clone();
+        let scan_controls = scan_controls.clone();
+        rescan.connect_activate(move |_, _| {
+            if scan_controls.is_scanning() {
+                cancel_cb();
+            } else {
+                rescan_cb();
+            }
+        });
     }
     window.add_action(&rescan);
 
@@ -195,6 +213,8 @@ pub(super) fn install(
         });
     }
     window.add_action(&about);
+
+    library
 }
 
 fn arm_smoke_minimal_view(action: &gio::SimpleAction) {
@@ -276,12 +296,26 @@ mod tests {
     }
 
     #[test]
-    fn library_section_has_rescan_and_sync() {
-        let actions: Vec<_> = library_section_entries()
-            .into_iter()
-            .map(|(_, action)| action)
+    fn library_section_has_rescan_and_sync_when_idle() {
+        let menu = gio::Menu::new();
+        update_library_section(&menu, false);
+        let actions: Vec<_> = (0..menu.n_items())
+            .filter_map(|i| {
+                menu.item_attribute_value(i, "action", Some(glib::VariantTy::STRING))
+                    .and_then(|v| v.get::<String>())
+            })
             .collect();
         assert_eq!(actions, ["win.rescan-library", "win.sync-device"]);
+    }
+
+    #[test]
+    fn library_section_shows_cancel_when_scanning() {
+        let menu = gio::Menu::new();
+        update_library_section(&menu, true);
+        let label = menu
+            .item_attribute_value(0, "label", Some(glib::VariantTy::STRING))
+            .and_then(|v| v.get::<String>());
+        assert_eq!(label.as_deref(), Some(strings::CANCEL_SCAN));
     }
 
     #[test]
@@ -297,12 +331,21 @@ mod tests {
 
     #[test]
     fn no_rhythmbox_import_in_visible_menu() {
-        let all_actions: Vec<_> = view_section_entries()
+        let library = gio::Menu::new();
+        update_library_section(&library, false);
+        let library_actions: Vec<String> = (0..library.n_items())
+            .filter_map(|i| {
+                library
+                    .item_attribute_value(i, "action", Some(glib::VariantTy::STRING))
+                    .and_then(|v| v.get::<String>())
+            })
+            .collect();
+        let mut all_actions: Vec<&str> = view_section_entries()
             .into_iter()
-            .chain(library_section_entries())
             .chain(settings_section_entries())
             .map(|(_, action)| action)
             .collect();
+        all_actions.extend(library_actions.iter().map(|s| s.as_str()));
         assert!(!all_actions.contains(&"win.import-rhythmbox-columns"));
     }
 }
