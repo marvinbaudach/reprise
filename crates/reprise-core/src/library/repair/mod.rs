@@ -72,3 +72,48 @@ pub enum RepairError {
 pub trait ExternalFixer {
 	fn fix_vbr_header(&self, path: &Path) -> FixOutcome;
 }
+
+/// Diagnose all audio files in `root` (recursive).
+///
+/// Returns a [`Diagnosis`] for every readable audio file — the caller
+/// filters for non-empty `issues` if needed.  Files that lofty cannot
+/// read are silently skipped.
+pub fn diagnose_dir(root: &Path) -> Vec<Diagnosis> {
+	walkdir::WalkDir::new(root)
+		.follow_links(false)
+		.into_iter()
+		.filter_map(Result::ok)
+		.filter(|entry| {
+			entry.file_type().is_file()
+				&& crate::library::scanner::is_audio_file(entry.path())
+		})
+		.filter_map(|entry| diagnosis::diagnose(entry.path()).ok())
+		.collect()
+}
+
+/// Diagnose all tracks registered in the reprise database.
+///
+/// Returns a [`Diagnosis`] for every track whose file still exists on
+/// disk.  Missing files are silently skipped.
+pub fn diagnose_library(conn: &rusqlite::Connection) -> Vec<Diagnosis> {
+	let mut stmt = match conn.prepare("SELECT path FROM tracks") {
+		Ok(s) => s,
+		Err(_) => return Vec::new(),
+	};
+	let paths: Vec<String> = stmt
+		.query_map([], |row| row.get(0))
+		.unwrap_or_else(|_| panic!("failed to query tracks"))
+		.filter_map(Result::ok)
+		.collect();
+
+	paths
+		.iter()
+		.map(std::path::Path::new)
+		.filter(|p| p.exists())
+		.filter_map(|p| diagnosis::diagnose(p).ok())
+		.collect()
+}
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
