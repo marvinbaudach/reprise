@@ -48,6 +48,9 @@ pub(in crate::ui) const RADIUS_SURFACE: &str = "12px";
 /// Hover background alpha for flat interactive elements (over `@accent_bg_color`).
 pub(in crate::ui) const HOVER_BG_ALPHA: &str = "0.10";
 
+/// Stronger background alpha for active+hover panel toggle buttons.
+pub(in crate::ui) const HOVER_BG_ALPHA_STRONG: &str = "0.18";
+
 /// Blur radius of the accent focus glow on text inputs.
 pub(in crate::ui) const FOCUS_GLOW_BLUR: &str = "10px";
 

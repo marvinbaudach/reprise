@@ -128,6 +128,7 @@ pub fn build(
     let sidebar_toggle = gtk4::ToggleButton::builder()
         .icon_name("sidebar-show-symbolic")
         .tooltip_text(strings::text(strings::SIDEBAR_TOGGLE))
+        .css_classes(["flat", "reprise-panel-toggle"])
         .visible(false)
         .build();
 

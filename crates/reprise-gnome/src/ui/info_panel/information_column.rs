@@ -5,8 +5,7 @@ pub(super) const PANEL_WIDTH: i32 = 340;
 
 #[derive(Clone)]
 pub(super) struct InformationColumn {
-    root: gtk4::Box,
-    sidebar: adw::ToolbarView,
+    split: adw::OverlaySplitView,
 }
 
 impl InformationColumn {
@@ -15,37 +14,36 @@ impl InformationColumn {
         sidebar: adw::ToolbarView,
         visible: bool,
     ) -> Self {
-        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        root.set_hexpand(true);
-        root.set_vexpand(true);
-
-        content.set_hexpand(true);
-        content.set_vexpand(true);
         sidebar.set_width_request(PANEL_WIDTH);
-        sidebar.set_hexpand(false);
-        sidebar.set_vexpand(true);
-        sidebar.set_visible(visible);
 
-        root.append(content);
-        root.append(&sidebar);
+        let split = adw::OverlaySplitView::builder()
+            .content(content)
+            .sidebar(&sidebar)
+            .sidebar_position(gtk4::PackType::End)
+            .show_sidebar(visible)
+            .collapsed(false)
+            .build();
 
-        Self { root, sidebar }
+        Self { split }
     }
 
-    pub(super) fn widget(&self) -> &gtk4::Box {
-        &self.root
+    pub(super) fn widget(&self) -> &adw::OverlaySplitView {
+        &self.split
     }
 
-    pub(super) fn sidebar_widget(&self) -> &adw::ToolbarView {
-        &self.sidebar
+    pub(super) fn sidebar_widget(&self) -> adw::ToolbarView {
+        self.split
+            .sidebar()
+            .and_downcast::<adw::ToolbarView>()
+            .expect("sidebar is a ToolbarView")
     }
 
     #[cfg(test)]
     pub(super) fn is_visible(&self) -> bool {
-        self.sidebar.is_visible()
+        self.split.shows_sidebar()
     }
 
     pub(super) fn set_visible(&self, visible: bool) {
-        self.sidebar.set_visible(visible);
+        self.split.set_show_sidebar(visible);
     }
 }
