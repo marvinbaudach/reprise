@@ -1,7 +1,9 @@
+use reprise_core::library::settings::{self, TrackTransition};
+use reprise_core::queries;
 use reprise_core::queue::{Queue, Repeat};
 use reprise_core::up_next::UpNextQueue;
 
-use crate::ui::player_controller::PlayerController;
+use crate::ui::player_controller::{PlayerController, StartPlayback};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AdvanceReason {
@@ -33,6 +35,24 @@ fn next_target(
     }
 }
 
+/// Non-mutating preview of the track an `Automatic` advance would select next,
+/// for the gapless pre-feed (`feed_next`). Mirrors `next_target`'s `Automatic`
+/// branch WITHOUT mutating the queue or up-next.
+///
+/// Repeat-One is deliberately excluded (returns `None`): looping the same track
+/// keeps running through the ordinary end-of-stream path so play-tracking stays
+/// a single, well-understood flow and we avoid a same-URI `about-to-finish`
+/// edge case. The tiny gap on a repeat-one loop is an accepted trade-off.
+fn peek_auto_target(context: &Queue, pending: &UpNextQueue) -> Option<i64> {
+    if context.repeat() == Repeat::One {
+        return None;
+    }
+    if let Some(&next) = pending.ids().first() {
+        return Some(next);
+    }
+    context.peek_auto()
+}
+
 fn previous_target(context: &mut Queue, current_pending: &mut Option<i64>) -> Option<i64> {
     if current_pending.take().is_some() {
         context.current()
@@ -53,6 +73,23 @@ fn play_pending_at(
 
 impl PlayerController {
     pub(super) fn advance_playback(&self, reason: AdvanceReason) {
+        self.advance_common(reason, StartPlayback::Yes);
+    }
+
+    /// Reacts to a gapless hand-off (`PlayerEvent::AdvancedToNext`): the
+    /// pre-fed next track is *already* playing, so advance the queue model by
+    /// one automatic step and reflect the new track WITHOUT restarting the
+    /// pipeline (`StartPlayback::No`). The model step reproduces the same id
+    /// `feed_next` pre-fed, because the queue state is unchanged since the feed
+    /// (every mutation re-feeds).
+    pub(super) fn advance_gaplessly(&self) {
+        self.advance_common(AdvanceReason::Automatic, StartPlayback::No);
+    }
+
+    /// Shared body of `advance_playback`/`advance_gaplessly`: compute the next
+    /// track, then either start it (`StartPlayback::Yes`) or just reflect it
+    /// (`No`, audio already rolling gaplessly).
+    fn advance_common(&self, reason: AdvanceReason, start: StartPlayback) {
         let before = self.up_next.borrow().len();
         let mut current_pending = self.current_up_next.get();
         let next = {
@@ -65,13 +102,41 @@ impl PlayerController {
             self.notify_queue_changed();
         }
         match next {
-            Some(id) => self.play_track_id(id),
+            Some(id) => self.present_track(id, start),
             None => {
                 self.consecutive_skips.set(0);
                 self.failure_skip_limit.set(0);
                 self.reset_to_stopped();
             }
         }
+    }
+
+    /// Pre-feeds the backend with the track that should play next, so it can
+    /// hand off gaplessly on `about-to-finish`. Reads the current transition
+    /// setting: when it is `Off`, clears the queued track (`set_next(None)`),
+    /// so playback falls back to the ordinary `TrackFinished`-driven advance.
+    /// Called after every track start and every queue/up-next/repeat/shuffle
+    /// mutation, and whenever the transition setting changes — the backend
+    /// keeps only the latest value.
+    pub(super) fn feed_next(&self) {
+        let transition = settings::get_track_transition(&self.conn.borrow());
+        if transition == TrackTransition::Off {
+            self.player.set_next(None);
+            return;
+        }
+        let next_id = {
+            let context = self.queue.borrow();
+            let pending = self.up_next.borrow();
+            peek_auto_target(&context, &pending)
+        };
+        let path = next_id.and_then(|id| {
+            let conn = self.conn.borrow();
+            queries::query_track_summary(&conn, id)
+                .ok()
+                .flatten()
+                .map(|summary| summary.path)
+        });
+        self.player.set_next(path.as_deref());
     }
 
     pub(super) fn play_up_next_at(&self, position: usize) {
@@ -108,7 +173,7 @@ mod tests {
     use reprise_core::queue::{Queue, Repeat};
     use reprise_core::up_next::UpNextQueue;
 
-    use super::{next_target, play_pending_at, previous_target, AdvanceReason};
+    use super::{next_target, peek_auto_target, play_pending_at, previous_target, AdvanceReason};
 
     fn context(ids: &[i64]) -> Queue {
         let mut queue = Queue::new();
@@ -120,6 +185,38 @@ mod tests {
         let mut queue = UpNextQueue::default();
         queue.append(ids);
         queue
+    }
+
+    #[test]
+    fn peek_auto_target_mirrors_automatic_next_without_mutating() {
+        // Up-next front wins the peek, exactly like next_target(Automatic).
+        let queue = context(&[1, 2, 3]);
+        let up_next = pending(&[10, 20]);
+        assert_eq!(peek_auto_target(&queue, &up_next), Some(10));
+        assert_eq!(up_next.ids(), &[10, 20]); // not consumed
+        assert_eq!(queue.current(), Some(1)); // not advanced
+
+        // No up-next: falls through to the queue's auto-advance preview.
+        assert_eq!(peek_auto_target(&queue, &pending(&[])), Some(2));
+    }
+
+    #[test]
+    fn peek_auto_target_suppresses_gapless_on_repeat_one() {
+        let mut context = context(&[1, 2, 3]);
+        context.set_repeat(Repeat::One);
+        // Repeat-One is intentionally not pre-fed (returns None), even with
+        // pending up-next, so the loop runs through the ordinary EOS path.
+        assert_eq!(peek_auto_target(&context, &pending(&[10])), None);
+    }
+
+    #[test]
+    fn peek_auto_target_at_queue_end_without_repeat_is_none() {
+        let mut context = context(&[1, 2, 3]);
+        // Advance to the last track.
+        context.next_manual();
+        context.next_manual();
+        assert_eq!(context.current(), Some(3));
+        assert_eq!(peek_auto_target(&context, &pending(&[])), None);
     }
 
     #[test]

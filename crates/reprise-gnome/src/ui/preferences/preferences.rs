@@ -6,7 +6,9 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, ReplayGainMode};
+use reprise_core::library::settings::{
+    self, ListDensity, PlayerBarPosition, ReplayGainMode, TrackTransition,
+};
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
@@ -49,6 +51,24 @@ pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
         ReplayGainMode::Off => 0,
         ReplayGainMode::Track => 1,
         ReplayGainMode::Album => 2,
+    }
+}
+
+// Phase A exposes only Off/Gapless in the ComboRow; Crossfade (Phase B) will
+// extend both the model and these mappings.
+fn transition_from_index(index: u32) -> TrackTransition {
+    match index {
+        1 => TrackTransition::Gapless,
+        _ => TrackTransition::Off,
+    }
+}
+
+fn transition_index(mode: TrackTransition) -> u32 {
+    match mode {
+        TrackTransition::Off => 0,
+        TrackTransition::Gapless => 1,
+        // Not yet offered in the UI; show it as Gapless until Phase B lands.
+        TrackTransition::Crossfade => 1,
     }
 }
 
@@ -442,7 +462,49 @@ impl PreferencesContext {
         self.replaygain_mode.borrow_mut().replace(mode.clone());
         replaygain.add(&mode);
         page.add(&replaygain);
+
+        let transitions = adw::PreferencesGroup::builder()
+            .title(strings::text(strings::TRANSITIONS))
+            .build();
+        let transition_modes = gtk4::StringList::new(&[
+            &strings::text(strings::TRANSITION_OFF),
+            &strings::text(strings::TRANSITION_GAPLESS),
+        ]);
+        let selected_transition = {
+            let conn = self.conn.borrow();
+            transition_index(settings::get_track_transition(&conn))
+        };
+        let transition = adw::ComboRow::builder()
+            .title(strings::text(strings::TRANSITIONS_MODE))
+            .model(&transition_modes)
+            .selected(selected_transition)
+            .build();
+        let weak = Rc::downgrade(self);
+        transition.connect_selected_notify(move |row| {
+            let Some(context) = weak.upgrade() else {
+                return;
+            };
+            context.set_track_transition(transition_from_index(row.selected()));
+        });
+        transitions.add(&transition);
+        page.add(&transitions);
         page
+    }
+
+    /// Persists the track-transition mode and re-feeds the gapless next track
+    /// so the change takes effect immediately (no restart): enabling gapless
+    /// pre-feeds the upcoming URI, disabling it clears the queued track.
+    fn set_track_transition(&self, mode: TrackTransition) {
+        {
+            let conn = self.conn.borrow();
+            if let Err(error) = settings::set_track_transition(&conn, mode) {
+                tracing::warn!(%error, "could not save track transition mode");
+                return;
+            }
+        }
+        if let Some(player) = &self.player {
+            player.feed_next();
+        }
     }
 
     fn plugins_page(self: &Rc<Self>) -> adw::PreferencesPage {

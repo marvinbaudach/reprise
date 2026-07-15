@@ -245,6 +245,18 @@ msgstr "Pro Titel"
 msgid "Per Album"
 msgstr "Pro Album"
 
+msgid "Transitions"
+msgstr "Übergänge"
+
+msgid "Between Tracks"
+msgstr "Zwischen Titeln"
+
+msgid "Gap (No Blending)"
+msgstr "Lücke (kein Übergang)"
+
+msgid "Gapless"
+msgstr "Lückenlos"
+
 #: crates/reprise-gnome/src/ui/strings.rs:92
 msgid "Could not apply audio effects"
 msgstr "Audioeffekte konnten nicht angewendet werden"

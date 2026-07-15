@@ -138,7 +138,7 @@ mod tests {
     use super::*;
 
     fn solid(r: u8, g: u8, b: u8, count: usize) -> Vec<u8> {
-        std::iter::repeat([r, g, b]).take(count).flatten().collect()
+        std::iter::repeat_n([r, g, b], count).flatten().collect()
     }
 
     #[test]

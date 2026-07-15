@@ -53,6 +53,12 @@ impl PlayerController {
         if let Some(callback) = callback {
             callback();
         }
+        // The up-next front / queue order may have changed, so the upcoming
+        // track changed: re-feed the gapless next. All up-next edits funnel
+        // through here. `feed_next` only takes short, sequential borrows, and
+        // every caller of `notify_queue_changed` holds no live borrow across
+        // it (see `## Queue borrow discipline`).
+        self.feed_next();
     }
 
     /// Starts the restored queue's current track while stopped; otherwise
