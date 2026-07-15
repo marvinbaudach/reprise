@@ -101,9 +101,18 @@ pub struct PlayerBar {
     /// Callback fired when the user clicks the title label — wired to
     /// scroll the library track list to the currently playing track.
     on_title_click: TitleClickCallback,
+    /// Callback fired when the user clicks the album cover — toggles the
+    /// Now-Playing info panel (spec 1.5).
+    on_cover_click: TitleClickCallback,
+    /// Callback fired when the user clicks the artist label — navigates to
+    /// the artist view (spec 1.5).
+    on_artist_click: TitleClickCallback,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
     current_track_animation: RefCell<Option<libadwaita::TimedAnimation>>,
+    /// Held for the 120 ms play↔pause icon cross-fade (spec 1.4); replaced on
+    /// each state change. Kept alive to prevent GC between ticks.
+    current_icon_animation: RefCell<Option<libadwaita::TimedAnimation>>,
 }
 
 impl PlayerBar {
@@ -140,6 +149,54 @@ impl PlayerBar {
         });
         title_label.add_controller(title_click);
 
+        // Cover: click → Now-Playing-Panel toggle (spec 1.5).
+        let on_cover_click: TitleClickCallback = Rc::new(RefCell::new(None));
+        let cover_gesture = gtk4::GestureClick::new();
+        let cover_click_cb = on_cover_click.clone();
+        cover_gesture.connect_released(move |_, _, _, _| {
+            let cb = cover_click_cb.borrow().clone();
+            if let Some(cb) = cb {
+                cb();
+            }
+        });
+        cover.add_controller(cover_gesture);
+
+        // Cover: CSS brightness effect on hover (spec 1.5).
+        let cover_motion = gtk4::EventControllerMotion::new();
+        cover_motion.connect_enter({
+            let cover = cover.clone();
+            move |_, _, _| cover.add_css_class("hovered")
+        });
+        cover_motion.connect_leave({
+            let cover = cover.clone();
+            move |_| cover.remove_css_class("hovered")
+        });
+        cover.add_controller(cover_motion);
+
+        // Artist label: hover colour + click → artist view (spec 1.5).
+        let on_artist_click: TitleClickCallback = Rc::new(RefCell::new(None));
+        let artist_gesture = gtk4::GestureClick::new();
+        let artist_click_cb = on_artist_click.clone();
+        artist_gesture.connect_released(move |_, _, _, _| {
+            let cb = artist_click_cb.borrow().clone();
+            if let Some(cb) = cb {
+                cb();
+            }
+        });
+        artist_label.add_controller(artist_gesture);
+        artist_label.set_cursor_from_name(Some("pointer"));
+
+        let artist_motion = gtk4::EventControllerMotion::new();
+        artist_motion.connect_enter({
+            let artist_label = artist_label.clone();
+            move |_, _, _| artist_label.add_css_class("artist-hovered")
+        });
+        artist_motion.connect_leave({
+            let artist_label = artist_label.clone();
+            move |_| artist_label.remove_css_class("artist-hovered")
+        });
+        artist_label.add_controller(artist_motion);
+
         let bar = Self {
             root,
             cover,
@@ -165,7 +222,10 @@ impl PlayerBar {
             muted: Cell::new(false),
             pre_mute_volume: Cell::new(1.0),
             on_title_click,
+            on_cover_click,
+            on_artist_click,
             current_track_animation: RefCell::new(None),
+            current_icon_animation: RefCell::new(None),
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
         bar.set_repeat_indicator(Repeat::Off);
@@ -193,6 +253,18 @@ impl PlayerBar {
         *self.on_title_click.borrow_mut() = Some(Rc::new(f));
     }
 
+    /// Registers a callback invoked when the user clicks the album cover —
+    /// should toggle the Now-Playing info panel (spec 1.5).
+    pub fn connect_cover_clicked<F: Fn() + 'static>(&self, f: F) {
+        *self.on_cover_click.borrow_mut() = Some(Rc::new(f));
+    }
+
+    /// Registers a callback invoked when the user clicks the artist label —
+    /// should navigate to the artist view (spec 1.5).
+    pub fn connect_artist_clicked<F: Fn() + 'static>(&self, f: F) {
+        *self.on_artist_click.borrow_mut() = Some(Rc::new(f));
+    }
+
     /// Shows `title`/`artist` in the left-hand labels. Called on row
     /// activation with data already in hand from the `Track` (see
     /// `player_controller.rs`) — no extra DB query needed.
@@ -204,8 +276,8 @@ impl PlayerBar {
         self.animate_track_change(title, artist);
     }
 
-    /// 250 ms opacity cross-fade: fade out labels, swap text, fade in.
-    /// Gated on `gtk-enable-animations`; instant fallback otherwise.
+    /// 250 ms opacity cross-fade: fade out cover + labels, swap text, fade in.
+    /// Gated on `gtk-enable-animations`; instant fallback otherwise (spec 1.4).
     fn animate_track_change(&self, title: &str, artist: &str) {
         let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
         if !animate {
@@ -218,23 +290,28 @@ impl PlayerBar {
         let artist = artist.to_string();
         let title_label = self.title_label.clone();
         let artist_label = self.artist_label.clone();
+        let cover = self.cover.clone();
 
-        // Fade-out: opacity 1 → 0 over 125 ms.
+        // Fade-out: opacity 1 → 0 over 125 ms (cover + labels together).
         let fade_out_target = libadwaita::CallbackAnimationTarget::new({
             let title_label = title_label.clone();
             let artist_label = artist_label.clone();
+            let cover = cover.clone();
             move |value| {
                 title_label.set_opacity(value);
                 artist_label.set_opacity(value);
+                cover.set_opacity(value);
             }
         });
         let fade_out =
             libadwaita::TimedAnimation::new(&self.title_label, 1.0, 0.0, 125, fade_out_target);
 
         // After fade-out: swap text and fade in (opacity 0 → 1 over 125 ms).
+        // Cover image is swapped externally by CoverLoader; fade-in reveals it.
         fade_out.connect_done({
             let title_label = title_label.clone();
             let artist_label = artist_label.clone();
+            let cover = cover.clone();
             move |_| {
                 title_label.set_text(&title);
                 artist_label.set_text(&artist);
@@ -242,9 +319,11 @@ impl PlayerBar {
                 let fade_in_target = libadwaita::CallbackAnimationTarget::new({
                     let title_label = title_label.clone();
                     let artist_label = artist_label.clone();
+                    let cover = cover.clone();
                     move |value| {
                         title_label.set_opacity(value);
                         artist_label.set_opacity(value);
+                        cover.set_opacity(value);
                     }
                 });
                 let fade_in =
@@ -267,13 +346,11 @@ impl PlayerBar {
         self.clear_cover();
     }
 
-    /// Applies a `PlaybackState`: swaps the play/pause icon and tooltip,
-    /// toggles the mini-EQ animation, and combines the state with queue
-    /// availability when deriving sensitivity.
+    /// Applies a `PlaybackState`: cross-fades the play/pause icon (120 ms, spec
+    /// 1.4), toggles the mini-EQ animation, and refreshes sensitivity.
     pub fn set_state(&self, state: PlaybackState) {
         let is_playing = state == PlaybackState::Playing;
-        self.play_pause_button
-            .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
+        let new_icon = if is_playing { ICON_PAUSE } else { ICON_PLAY };
         let tooltip = if is_playing {
             strings::text(strings::PAUSE)
         } else {
@@ -286,6 +363,38 @@ impl PlayerBar {
         if state == PlaybackState::Stopped {
             self.set_position(0, 0);
         }
+        self.animate_play_icon_change(new_icon);
+    }
+
+    /// 120 ms opacity cross-fade for the play↔pause icon swap (spec 1.4).
+    /// Gated on `gtk-enable-animations`; instant swap otherwise.
+    fn animate_play_icon_change(&self, new_icon: &'static str) {
+        let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
+        if !animate {
+            self.play_pause_button.set_icon_name(new_icon);
+            return;
+        }
+        let button = self.play_pause_button.clone();
+
+        let fade_out_target = libadwaita::CallbackAnimationTarget::new({
+            let button = button.clone();
+            move |value| button.set_opacity(value)
+        });
+        let fade_out =
+            libadwaita::TimedAnimation::new(&self.play_pause_button, 1.0, 0.0, 60, fade_out_target);
+
+        fade_out.connect_done(move |_| {
+            button.set_icon_name(new_icon);
+            let fade_in_target = libadwaita::CallbackAnimationTarget::new({
+                let button = button.clone();
+                move |value| button.set_opacity(value)
+            });
+            let fade_in =
+                libadwaita::TimedAnimation::new(&button, 0.0, 1.0, 60, fade_in_target);
+            fade_in.play();
+        });
+        fade_out.play();
+        *self.current_icon_animation.borrow_mut() = Some(fade_out);
     }
 
     /// Updates the waveform's played fraction and the time labels for a
@@ -295,6 +404,7 @@ impl PlayerBar {
         let duration_ms = duration_ms.max(0);
         let position_ms = position_ms.clamp(0, duration_ms);
         self.duration_ms.set(duration_ms);
+        self.waveform.set_duration(duration_ms);
         let fraction = if duration_ms > 0 {
             position_ms as f64 / duration_ms as f64
         } else {

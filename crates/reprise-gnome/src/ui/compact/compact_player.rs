@@ -161,6 +161,7 @@ impl CompactPlayer {
     pub(super) fn set_position(&self, position_ms: i64, duration_ms: i64) {
         let dur = duration_ms.max(0);
         self.0.current_duration_ms.set(dur);
+        self.0.widgets.waveform.set_duration(dur);
         let fraction = if dur > 0 {
             position_ms.clamp(0, dur) as f64 / dur as f64
         } else {
