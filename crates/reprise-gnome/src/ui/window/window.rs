@@ -409,6 +409,13 @@ pub fn build(
             None => tracing::warn!("player unavailable; ignoring album shuffle action"),
         });
     }
+    // Wire now-playing fan-out to album grid EQ markers.
+    if let Some(ref player) = player {
+        let album_view_np = album_view.now_playing_callback();
+        player.set_on_now_playing_album_changed(move |album| {
+            album_view_np(album);
+        });
+    }
     {
         let player = player.clone();
         track_list.set_on_queue_activate(move |position| {

@@ -391,6 +391,27 @@ impl AlbumView {
         })
     }
 
+    /// Returns a `'static` closure that updates the now-playing album identity
+    /// for this view, triggering card rebinds so EQ markers appear/disappear.
+    /// Used by `window.rs` to wire the `PlayerController` callback without
+    /// needing an `Rc<AlbumView>`.
+    pub(in crate::ui) fn now_playing_callback(
+        &self,
+    ) -> Rc<dyn Fn(Option<(String, String)>)> {
+        let now_playing = self.card_shared.now_playing_album.clone();
+        let store = self.store.clone();
+        Rc::new(move |album: Option<(String, String)>| {
+            let old = now_playing.borrow().clone();
+            *now_playing.borrow_mut() = album.clone();
+            if let Some((old_album, old_artist)) = old {
+                rebind_in_store(&store, &old_album, &old_artist);
+            }
+            if let Some((new_album, new_artist)) = album {
+                rebind_in_store(&store, &new_album, &new_artist);
+            }
+        })
+    }
+
     pub(in crate::ui) fn refresh_callback(&self) -> Rc<dyn Fn()> {
         let root = self.root.downgrade();
         let store = self.store.clone();
@@ -461,6 +482,29 @@ impl AlbumView {
     #[cfg(test)]
     fn album_count(&self) -> u32 {
         self.store.n_items()
+    }
+}
+
+/// Removes and re-inserts an album item in `store` so the card factory rebinds
+/// it. Used by `now_playing_callback` to trigger EQ marker updates without a
+/// full store rebuild.
+fn rebind_in_store(store: &gtk4::gio::ListStore, album: &str, album_artist: &str) {
+    let n = store.n_items();
+    for i in 0..n {
+        if let Some(obj) = store.item(i) {
+            if let Some(boxed) = obj.downcast_ref::<glib::BoxedAnyObject>() {
+                let a: std::cell::Ref<AlbumSummary> = boxed.borrow();
+                if a.album.eq_ignore_ascii_case(album)
+                    && a.album_artist.eq_ignore_ascii_case(album_artist)
+                {
+                    drop(a);
+                    let item = store.item(i).unwrap();
+                    store.remove(i);
+                    store.insert(i, &item);
+                    break;
+                }
+            }
+        }
     }
 }
 
