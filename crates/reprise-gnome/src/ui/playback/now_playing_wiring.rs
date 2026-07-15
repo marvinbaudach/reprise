@@ -37,7 +37,7 @@ use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
 /// Number of amplitude bars drawn for the seek waveform.
-const WAVEFORM_BUCKETS: usize = 64;
+const WAVEFORM_BUCKETS: usize = 88;
 
 fn cover_path_to_uri(path: &Path) -> Option<String> {
     match glib::filename_to_uri(path, None) {
