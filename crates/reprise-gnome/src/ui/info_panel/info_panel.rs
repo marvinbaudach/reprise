@@ -172,7 +172,7 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&stack));
-    let column = InformationColumn::new(content, toolbar, visible);
+    let column = InformationColumn::new(content, &toolbar, visible);
     let enable = adw::SwitchRow::builder()
         .title(strings::text(strings::ARTIST_NEWS))
         .subtitle(strings::text(strings::ARTIST_NEWS_PRIVACY))

@@ -49,6 +49,10 @@ pub(super) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
 const MINI_EQ_PLAYING_CLASS: &str = "playing";
 
+/// Title-click callback storage — factored out to satisfy clippy's
+/// `type_complexity` lint.
+type TitleClickCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 pub struct PlayerBar {
     root: gtk4::Box,
     /// The currently-playing track's album cover thumbnail, packed at the
@@ -96,7 +100,7 @@ pub struct PlayerBar {
     pre_mute_volume: Cell<f64>,
     /// Callback fired when the user clicks the title label — wired to
     /// scroll the library track list to the currently playing track.
-    on_title_click: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    on_title_click: TitleClickCallback,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
     current_track_animation: RefCell<Option<libadwaita::TimedAnimation>>,
@@ -125,7 +129,7 @@ impl PlayerBar {
             ..
         } = player_bar_layout::build();
 
-        let on_title_click: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let on_title_click: TitleClickCallback = Rc::new(RefCell::new(None));
         let title_click = gtk4::GestureClick::new();
         let title_click_cb = on_title_click.clone();
         title_click.connect_released(move |_, _, _, _| {
