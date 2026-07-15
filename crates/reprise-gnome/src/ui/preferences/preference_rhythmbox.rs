@@ -258,7 +258,9 @@ fn build_import_dialog() -> ImportDialogWidgets {
         .title(strings::text(strings::RHYTHMBOX_IMPORT_RATINGS))
         .build();
     let play_counts_result = adw::ActionRow::builder()
-        .title(strings::text(strings::RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED))
+        .title(strings::text(
+            strings::RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED,
+        ))
         .build();
     let dates_result = adw::ActionRow::builder()
         .title(strings::text(strings::RHYTHMBOX_IMPORT_DATE_ADDED))
@@ -398,7 +400,7 @@ impl PreferencesContext {
         let playlists_clone = playlists_path.clone();
         let conn_for_prescan = {
             let conn = self.conn.borrow();
-            conn.path().map(|p| p.to_owned())
+            conn.path().map(str::to_owned)
         };
 
         let info_subtitle = widgets.info_subtitle.clone();
@@ -451,8 +453,10 @@ impl PreferencesContext {
                 let days_ago = result
                     .last_modified
                     .and_then(|m| m.elapsed().ok().map(|d| d.as_secs() / 86400));
-                info_subtitle
-                    .set_label(&strings::rhythmbox_prescan_info(result.song_entries, days_ago));
+                info_subtitle.set_label(&strings::rhythmbox_prescan_info(
+                    result.song_entries,
+                    days_ago,
+                ));
                 match_label.set_label(&strings::rhythmbox_match_count(result.matched));
 
                 // Set subtitles on rows based on prescan
@@ -495,8 +499,7 @@ impl PreferencesContext {
         let skip_outside = widgets.skip_outside.clone();
         let skip_missing = widgets.skip_missing.clone();
         let skip_non_song = widgets.skip_non_song.clone();
-        let rollback_holder: Rc<RefCell<Option<RhythmboxRollback>>> =
-            Rc::new(RefCell::new(None));
+        let rollback_holder: Rc<RefCell<Option<RhythmboxRollback>>> = Rc::new(RefCell::new(None));
         let rollback_for_import = rollback_holder.clone();
         let rows_for_import = widgets.rows.clone();
 
@@ -568,18 +571,10 @@ impl PreferencesContext {
 
                 // Merge on main thread (we need conn)
                 let mut conn = context_c.conn.borrow_mut();
-                let total_tracks = parsed
+                let total_tracks = parsed.tracks.as_ref().map_or(0usize, Vec::len);
+                let stats = parsed
                     .tracks
-                    .as_ref()
-                    .map_or(0usize, |t| t.len());
-                let stats = parsed.tracks.map(|tracks| {
-                    rhythmbox_import::merge_stats(
-                        &mut conn,
-                        &tracks,
-                        choices,
-                        None,
-                    )
-                });
+                    .map(|tracks| rhythmbox_import::merge_stats(&mut conn, &tracks, choices, None));
                 let (summary, rollback) = match stats {
                     Some(Ok((s, r))) => (Some(s), Some(r)),
                     Some(Err(e)) => {
@@ -604,8 +599,10 @@ impl PreferencesContext {
 
                 // Update progress to complete
                 progress_bar_c.set_fraction(1.0);
-                progress_label_c
-                    .set_label(&strings::rhythmbox_progress_count(total_tracks, total_tracks));
+                progress_label_c.set_label(&strings::rhythmbox_progress_count(
+                    total_tracks,
+                    total_tracks,
+                ));
 
                 if column_layout {
                     context_c.import_rhythmbox_column_layout();
@@ -613,7 +610,7 @@ impl PreferencesContext {
                 if summary.is_some() {
                     context_c.track_list.reload();
                 }
-                if playlist_summary.as_ref().is_some_and(|r| r.is_ok()) {
+                if playlist_summary.as_ref().is_some_and(Result::is_ok) {
                     context_c.sidebar.refresh("Rhythmbox playlist import");
                 }
 
@@ -624,8 +621,7 @@ impl PreferencesContext {
                 let prescan = prescan_for_complete.borrow();
                 let matched = summary.map_or(0, |s| s.matched);
                 let total = prescan.as_ref().map_or(0, |p| p.song_entries);
-                complete_subtitle_c
-                    .set_label(&strings::rhythmbox_entries_matched(matched, total));
+                complete_subtitle_c.set_label(&strings::rhythmbox_entries_matched(matched, total));
 
                 if let Some(ref s) = summary {
                     ratings_result_c
