@@ -301,7 +301,8 @@ pub fn build(
         &window_title,
         &library_views.stack,
     ));
-    let stats_view = super::stats_view::StatsView::new();
+    let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
+    stats_view.wire_year_selector(conn);
     let content_stack = gtk4::Stack::new();
     content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     content_stack.set_transition_duration(150);

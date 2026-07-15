@@ -78,6 +78,7 @@ pub(super) fn build_nav_row(title: &str, count: Option<i64>, icon: NavIcon) -> g
 
 /// Builds a navigation row with a trailing badge label instead of a count
 /// (e.g. "NEW"). The badge uses the accent color via `.stats-badge`.
+#[allow(dead_code)]
 pub(super) fn build_nav_row_with_badge(
     title: &str,
     badge_text: &str,

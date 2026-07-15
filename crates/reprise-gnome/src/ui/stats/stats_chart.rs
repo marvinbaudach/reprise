@@ -27,6 +27,7 @@ struct ChartData {
     labels: Vec<String>,
 }
 
+#[derive(Clone)]
 pub(super) struct StatsChart {
     area: gtk4::DrawingArea,
     data: Rc<RefCell<ChartData>>,
