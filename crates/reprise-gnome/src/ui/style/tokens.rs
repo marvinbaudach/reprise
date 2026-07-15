@@ -71,3 +71,15 @@ pub(in crate::ui) const DIALOG_SHADOW: &str = "0 20px 60px rgba(0, 0, 0, 0.60)";
 
 /// White hairline alpha for dialog borders (rgba white).
 pub(in crate::ui) const DIALOG_BORDER_ALPHA: &str = "0.10";
+
+/// Scrim alpha behind modal dialogs — darkens the main window so the dialog
+/// pops (Libadwaita default is 0.35; we go slightly heavier for depth).
+pub(in crate::ui) const SCRIM_ALPHA: &str = "0.40";
+
+/// White tint alpha for dialog headerbars — one elevation step above the
+/// dialog body (the "Dialog-Header" rung in the surface ladder).
+pub(in crate::ui) const DIALOG_HEADER_TINT_ALPHA: &str = "0.04";
+
+/// White tint alpha for card/list surfaces inside dialogs — higher than the
+/// standard 5 % because the dialog body is already elevated.
+pub(in crate::ui) const DIALOG_CARD_ALPHA: &str = "0.07";
