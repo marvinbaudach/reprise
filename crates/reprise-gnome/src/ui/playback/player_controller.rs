@@ -604,10 +604,13 @@ impl PlayerController {
                 });
 
                 // Notify the album grid so it can display the EQ marker on
-                // the now-playing album card.
+                // the now-playing album card. Use the effective album artist
+                // (album_artist when non-empty, artist otherwise) to match the
+                // key `AlbumSummary::album_artist` uses — they must agree so
+                // `rebind_in_store`'s `eq_ignore_ascii_case` comparison hits.
                 self.notify_now_playing_album_changed(Some((
                     summary.album.clone(),
-                    summary.artist.clone(),
+                    summary.effective_album_artist().to_owned(),
                 )));
 
                 // Feeds the bar AND the Now-Playing page from this one call

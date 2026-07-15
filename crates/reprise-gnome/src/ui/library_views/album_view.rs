@@ -116,15 +116,22 @@ impl AlbumView {
                         w = current.parent();
                     }
                     if let Some(card) = w {
-                        // Match album by tooltip text (album title).
+                        // Match album by tooltip text "Title · Artist".
+                        // Split on the middle dot separator (U+00B7) so albums
+                        // with the same title by different artists resolve
+                        // unambiguously to the correct card.
                         let tooltip = card.tooltip_text().unwrap_or_default();
-                        let album_title = tooltip.split(" · ").next().unwrap_or("");
+                        let parts: Vec<&str> = tooltip.split(" \u{00b7} ").collect();
+                        let album_title = parts.first().copied().unwrap_or("");
+                        let album_artist = parts.get(1).copied().unwrap_or("");
                         let n = filter_model_ref.n_items();
                         for i in 0..n {
                             if let Some(obj) = filter_model_ref.item(i) {
                                 if let Some(boxed) = obj.downcast_ref::<glib::BoxedAnyObject>() {
                                     let album: std::cell::Ref<AlbumSummary> = boxed.borrow();
-                                    if album.album == album_title {
+                                    if album.album == album_title
+                                        && album.album_artist == album_artist
+                                    {
                                         let album_clone = album.clone();
                                         drop(album);
                                         album_context_menu::show(
@@ -245,6 +252,17 @@ impl AlbumView {
         });
         *self.card_shared.on_queue.borrow_mut() = Some(queue_cb.clone());
         *self.menu_shared.on_queue.borrow_mut() = Some(queue_cb);
+    }
+
+    /// Wires the toast overlay so the album context menu can surface
+    /// "Added N tracks to Playlist" toasts. Must be called after the window's
+    /// `adw::ToastOverlay` exists — same post-construction injection pattern
+    /// as `PlayerController::set_toast_overlay`.
+    pub(in crate::ui) fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
+        let overlay = overlay.clone();
+        *self.menu_shared.on_toast.borrow_mut() = Some(Rc::new(move |text: String| {
+            crate::ui::toasts::show(&overlay, &text);
+        }));
     }
 
     /// Wires the shuffle-album callback (queue replace + shuffled play).

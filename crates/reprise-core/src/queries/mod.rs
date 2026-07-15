@@ -366,9 +366,30 @@ pub struct TrackSummary {
     /// the player bar (which only shows title/artist), so it went unused
     /// here until MPRIS needed it.
     pub album: String,
+    /// Raw album artist tag (may be empty). Use `effective_album_artist()` to
+    /// get the display value that matches `AlbumSummary::album_artist` — i.e.
+    /// `album_artist` when non-empty, `artist` otherwise. Loaded alongside the
+    /// other summary fields so `notify_now_playing_album_changed` can send the
+    /// same effective-artist key the album grid uses for EQ-marker matching.
+    pub album_artist: String,
     /// Optional release year displayed by metadata-rich player surfaces.
     pub year: Option<i32>,
     pub duration_ms: i64,
+}
+
+impl TrackSummary {
+    /// Returns the effective album artist: `album_artist` when non-empty
+    /// (trimmed), `artist` otherwise. Mirrors the SQL expression
+    /// `CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE
+    /// TRIM(artist) END` that `query_albums` uses for `AlbumSummary::
+    /// album_artist`, so the two sources always agree on the grouping key.
+    pub fn effective_album_artist(&self) -> &str {
+        if self.album_artist.trim().is_empty() {
+            &self.artist
+        } else {
+            &self.album_artist
+        }
+    }
 }
 
 /// Aggregates library-wide stats over all non-missing tracks. Powers the
