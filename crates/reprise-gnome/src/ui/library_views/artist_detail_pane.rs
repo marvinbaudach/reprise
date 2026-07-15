@@ -200,7 +200,7 @@ impl ArtistDetailPane {
     }
 
     #[cfg(test)]
-    fn hero_name(&self) -> String {
+    pub(in crate::ui) fn hero_name(&self) -> String {
         self.inner.hero.name_text()
     }
 

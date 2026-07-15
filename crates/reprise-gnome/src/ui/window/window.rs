@@ -288,7 +288,8 @@ pub fn build(
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
     let album_view =
         super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
-    let artist_view = super::artist_view::ArtistView::new(conn.clone());
+    let artist_view =
+        super::artist_view::ArtistView::new(conn.clone(), track_list.shared_cover_loader());
     let library_views = super::library_shell::build_views(
         &track_content,
         album_view.widget(),
