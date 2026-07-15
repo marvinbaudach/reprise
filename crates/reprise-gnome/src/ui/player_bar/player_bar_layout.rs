@@ -29,31 +29,6 @@ const SURFACE_CSS_CLASS: &str = "player-bar-surface";
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 const ICON_QUEUE: &str = "view-list-symbolic";
 
-/// CSS for the three-bar animated mini-EQ indicator (playing state).
-const MINI_EQ_CSS: &str = "\
-.mini-eq { \
-  display: flex; \
-  align-items: flex-end; \
-  gap: 2px; \
-}\
-.mini-eq > box { \
-  background-color: @reprise_player_accent; \
-  border-radius: 1px; \
-  min-width: 3px; \
-  min-height: 3px; \
-  animation-duration: 600ms; \
-  animation-timing-function: ease-in-out; \
-  animation-iteration-count: infinite; \
-  animation-direction: alternate; \
-}\
-.mini-eq.playing > box:nth-child(1) { animation-name: mini-eq-bar; animation-delay: 0ms; }\
-.mini-eq.playing > box:nth-child(2) { animation-name: mini-eq-bar; animation-delay: 200ms; }\
-.mini-eq.playing > box:nth-child(3) { animation-name: mini-eq-bar; animation-delay: 400ms; }\
-@keyframes mini-eq-bar { \
-  from { min-height: 4px; } \
-  to   { min-height: 14px; } \
-}";
-
 pub(super) struct PlayerBarWidgets {
     pub(super) root: gtk4::Box,
     #[allow(dead_code)]
@@ -105,10 +80,10 @@ pub(super) fn build() -> PlayerBarWidgets {
     track_box.append(&artist_label);
     track_box.set_valign(gtk4::Align::Center);
 
-    // — Start zone (cover + mini-eq + track info) —
+    // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
+    info_box.set_margin_start(12);
     info_box.append(&cover);
-    info_box.append(&mini_eq);
     info_box.append(&track_box);
     info_box.set_valign(gtk4::Align::Center);
     info_box.set_width_request(START_ZONE_WIDTH);
@@ -119,15 +94,19 @@ pub(super) fn build() -> PlayerBarWidgets {
         .tooltip_text(strings::text(strings::SHUFFLE))
         .valign(gtk4::Align::Center)
         .build();
+    shuffle_button.add_css_class("flat");
     let prev_button = transport_button(ICON_PREVIOUS, strings::PREVIOUS);
+    prev_button.add_css_class("flat");
     prev_button.set_sensitive(false);
     let play_pause_button = transport_button(ICON_PLAY, strings::PLAY);
     // The play/pause control is the accent-glow focal point of the bar.
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
     let next_button = transport_button(ICON_NEXT, strings::NEXT);
+    next_button.add_css_class("flat");
     next_button.set_sensitive(false);
     let repeat_button = transport_button(ICON_REPEAT_ALL, strings::REPEAT);
+    repeat_button.add_css_class("flat");
 
     let transport_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     transport_row.append(&shuffle_button);
@@ -230,7 +209,7 @@ pub(super) fn build() -> PlayerBarWidgets {
 }
 
 /// Player-bar chrome CSS: accent-glow play button, hairline top border, cover
-/// border-radius, title/artist/time label styling, and mini-EQ keyframes.
+/// border-radius, and title/artist/time label styling.
 pub(super) fn css() -> String {
     use super::style::tokens::TRANSITION;
     format!(
@@ -252,8 +231,7 @@ pub(super) fn css() -> String {
          .player-bar-title {{ font-weight: bold; font-size: 13.5px; }}\n\
          .player-bar-artist {{ color: alpha(@window_fg_color, 0.50); font-size: 12px; }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
-         .waveform-seek {{ color: @reprise_player_accent; }}\n\
-         {MINI_EQ_CSS}"
+         .waveform-seek {{ color: @reprise_player_accent; }}"
     )
 }
 
@@ -311,7 +289,6 @@ mod tests {
         assert!(layout.cover.is_ancestor(&layout.info_box));
         assert!(layout.title_label.is_ancestor(&layout.info_box));
         assert!(layout.artist_label.is_ancestor(&layout.info_box));
-        assert!(layout.mini_eq.is_ancestor(&layout.info_box));
         // Transport controls are within the center zone.
         assert!(layout.shuffle_button.is_ancestor(&layout.root));
         assert!(layout.play_pause_button.is_ancestor(&layout.root));
@@ -345,12 +322,5 @@ mod tests {
         assert!(css.contains(".player-bar-artist"));
         assert!(css.contains("border-radius: 8px"));
         assert!(css.contains("scale(0.94)"));
-    }
-
-    #[test]
-    fn css_includes_mini_eq_keyframes() {
-        let css = super::css();
-        assert!(css.contains("mini-eq"));
-        assert!(css.contains("mini-eq-bar"));
     }
 }
