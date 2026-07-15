@@ -103,6 +103,8 @@ mod tests {
         fn stop(&self) -> Result<(), PlaybackError> {
             Ok(())
         }
+
+        fn set_next(&self, _path: Option<&str>) {}
     }
 
     #[test]
