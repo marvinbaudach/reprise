@@ -89,7 +89,7 @@ pub(super) struct PreferencesContext {
     pub(super) artist_news: Rc<ArtistNewsRuntime>,
     pub(super) decorations: Rc<WindowDecorations>,
     pub(super) device_sync: Rc<DeviceSyncRuntime>,
-    preferences_window: RefCell<glib::WeakRef<adw::Window>>,
+    preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
 }
@@ -142,7 +142,7 @@ impl PreferencesContext {
             artist_news: artist_news.clone(),
             decorations: decorations.clone(),
             device_sync: device_sync.clone(),
-            preferences_window: RefCell::new(glib::WeakRef::new()),
+            preferences_dialog: RefCell::new(glib::WeakRef::new()),
             preferences_navigation: RefCell::new(glib::WeakRef::new()),
             preferences_stack: RefCell::new(glib::WeakRef::new()),
         });
@@ -190,9 +190,8 @@ impl PreferencesContext {
     }
 
     pub(super) fn present(self: &Rc<Self>) {
-        if let Some(window) = self.preferences_window.borrow().upgrade() {
-            window.present();
-            return;
+        if self.preferences_dialog.borrow().upgrade().is_some() {
+            return; // dialog is already open (modal, always on top)
         }
         self.equalizer_controls.borrow_mut().clear();
         self.equalizer_surfaces.borrow_mut().clear();
@@ -213,18 +212,20 @@ impl PreferencesContext {
         self.scan_controls
             .attach_progress_view(&foreground_scan_progress);
         let shell = super::preferences_window::build(
-            &self.window,
             pages,
             Some(foreground_scan_progress.widget().upcast_ref()),
         );
-        shell.window.connect_destroy(move |_| {
-            let _keep_progress_alive_until_destroy = &foreground_scan_progress;
+        shell.dialog.connect_closed(move |_| {
+            let _keep_progress_alive_until_closed = &foreground_scan_progress;
         });
-        self.preferences_window.borrow().set(Some(&shell.window));
+        self.preferences_dialog
+            .borrow()
+            .set(Some(&shell.dialog));
         self.preferences_navigation
             .borrow()
             .set(Some(&shell.navigation));
         self.preferences_stack.borrow().set(Some(&shell.stack));
+
         let smoke = std::env::var(SMOKE_ENV).ok();
         if matches!(smoke.as_deref(), Some("layout" | "columns")) {
             shell.stack.set_visible_child_name("layout");
@@ -238,7 +239,7 @@ impl PreferencesContext {
         if smoke.as_deref() == Some("exercise") {
             let context = Rc::downgrade(self);
             let exercised = Rc::new(Cell::new(false));
-            shell.window.connect_map(move |_| {
+            shell.dialog.connect_map(move |_| {
                 if exercised.replace(true) {
                     return;
                 }
@@ -250,12 +251,12 @@ impl PreferencesContext {
                 });
             });
         }
-        shell.window.present();
-        tracing::debug!("preferences window presented");
+        shell.dialog.present(Some(&self.window));
+        tracing::debug!("preferences dialog presented");
         if smoke.is_some() {
-            let window = shell.window.clone();
+            let dialog = shell.dialog.clone();
             glib::timeout_add_seconds_local_once(1, move || {
-                window.close();
+                dialog.force_close();
             });
         }
     }
@@ -321,12 +322,12 @@ impl PreferencesContext {
         self.present_rhythmbox_import_dialog();
     }
 
-    pub(super) fn preferences_window(&self) -> Option<adw::Window> {
-        self.preferences_window.borrow().upgrade()
+    pub(super) fn preferences_dialog(&self) -> Option<adw::Dialog> {
+        self.preferences_dialog.borrow().upgrade()
     }
 
     pub(super) fn preferences_parent(&self) -> gtk4::Widget {
-        self.preferences_window()
+        self.preferences_dialog()
             .map_or_else(|| self.window.clone().upcast(), gtk4::Widget::from)
     }
 

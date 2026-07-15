@@ -30,6 +30,7 @@ pub(in crate::ui) struct Palette {
     pub(in crate::ui) headerbar_bg: &'static str,
     pub(in crate::ui) sidebar_bg: &'static str,
     pub(in crate::ui) popover_bg: &'static str,
+    pub(in crate::ui) dialog_bg: &'static str,
     pub(in crate::ui) fg: &'static str,
     pub(in crate::ui) dim_fg: &'static str,
     /// Teal selection/toggle accent.
@@ -82,6 +83,7 @@ impl Theme {
                 headerbar_bg: "#16181b",
                 sidebar_bg: "#191c20",
                 popover_bg: "#24282e",
+                dialog_bg: "#30343a",
                 fg: "#e7e9ec",
                 dim_fg: "#9198a0",
                 accent: "#33c9a3",
@@ -95,6 +97,7 @@ impl Theme {
                 headerbar_bg: "#13161c",
                 sidebar_bg: "#161a21",
                 popover_bg: "#222834",
+                dialog_bg: "#2d3139",
                 fg: "#e4e7ec",
                 dim_fg: "#8b93a1",
                 accent: "#4db6a9",
@@ -108,6 +111,7 @@ impl Theme {
                 headerbar_bg: "#1a1518",
                 sidebar_bg: "#1d171b",
                 popover_bg: "#2a2029",
+                dialog_bg: "#342f33",
                 fg: "#ece6ea",
                 dim_fg: "#a2949c",
                 accent: "#c98bd0",
@@ -136,7 +140,7 @@ pub(in crate::ui) fn theme_css(theme: Theme) -> String {
          @define-color card_fg_color {fg};\n\
          @define-color popover_bg_color {pop};\n\
          @define-color popover_fg_color {fg};\n\
-         @define-color dialog_bg_color {card};\n\
+         @define-color dialog_bg_color {dlg};\n\
          @define-color dialog_fg_color {fg};\n\
          @define-color accent_bg_color {acc};\n\
          @define-color accent_fg_color {accfg};\n\
@@ -150,6 +154,7 @@ pub(in crate::ui) fn theme_css(theme: Theme) -> String {
         sb = p.sidebar_bg,
         card = p.card_bg,
         pop = p.popover_bg,
+        dlg = p.dialog_bg,
         acc = p.accent,
         accfg = p.accent_fg,
         dim = p.dim_fg,
@@ -197,5 +202,14 @@ mod tests {
             theme_css(Theme::NightTerrain)
         );
         assert_ne!(theme_css(Theme::NightTerrain), theme_css(Theme::MutedBloom));
+    }
+
+    #[test]
+    fn dialog_bg_is_distinct_from_card_and_window() {
+        for theme in Theme::all() {
+            let p = theme.palette();
+            assert_ne!(p.dialog_bg, p.card_bg, "{:?} dialog_bg == card_bg", theme);
+            assert_ne!(p.dialog_bg, p.window_bg, "{:?} dialog_bg == window_bg", theme);
+        }
     }
 }
