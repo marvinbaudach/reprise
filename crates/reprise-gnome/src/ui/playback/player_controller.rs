@@ -254,6 +254,12 @@ pub struct PlayerController {
     pub(super) queue_changed: RefCell<Option<Rc<dyn Fn()>>>,
     pub(super) current_track_changed:
         RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
+    /// Fired when playback stops and the current track is cleared (the
+    /// `Stopped` counterpart of `current_track_changed`, which only fires for
+    /// a real track). Lets now-playing observers — e.g. the Artists view's
+    /// mini-EQ — turn off when nothing is playing. `None` until wired via
+    /// `set_on_current_track_cleared`.
+    pub(super) current_track_cleared: RefCell<Option<Rc<dyn Fn()>>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
@@ -418,6 +424,7 @@ impl PlayerController {
             reload_track_list: RefCell::new(None),
             queue_changed: RefCell::new(None),
             current_track_changed: RefCell::new(None),
+            current_track_cleared: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,
@@ -740,6 +747,10 @@ impl PlayerController {
                     // even has a chance to drain, but a stray `Stopped` from
                     // elsewhere must not leave stale metadata mirrored.
                     *self.now_playing.borrow_mut() = None;
+                    // Turn off now-playing observers (e.g. the Artists view's
+                    // mini-EQ). `current_track_changed` only fires for a real
+                    // track, so the clear path needs its own notification.
+                    self.notify_current_track_cleared();
                 }
                 self.update_mpris_mirror(mpris_status_from_playback_state(state));
             }

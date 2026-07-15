@@ -110,8 +110,9 @@ impl ArtistView {
         self.inner.master.select_callback()
     }
 
-    // Task 9: consumed by now-playing wiring (needs PlayerController).
-    #[allow(dead_code)]
+    /// Lights the now-playing mini-EQ: the master row for `artist` and the
+    /// detail pane's top-track row for `track_id`. Driven by the playback
+    /// fan-out in `current_track_selection::wire` (`None`/`None` on stop).
     pub(in crate::ui) fn set_now_playing(&self, artist: Option<String>, track_id: Option<i64>) {
         self.inner.master.set_now_playing_artist(artist);
         self.inner.detail.set_now_playing_track(track_id);
@@ -209,5 +210,40 @@ mod tests {
 
         view.select_index_for_test(0);
         assert_eq!(view.hero_name(), "Artist A");
+    }
+
+    // Regression for Bug 2: `refresh_callback` hands out a `Weak<Inner>`, so it
+    // only reloads while some strong owner keeps `Inner` alive. In production
+    // that owner is the `Rc<ArtistView>` retained by `window::build` (captured
+    // by the playback fan-out). Here we hold the view and prove the handed-out
+    // callback still drives a reload after new rows land — before the fix the
+    // view dropped at end of `build()` and the callback silently no-op'd.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn refresh_callback_reloads_master_while_view_is_retained() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+        let loader =
+            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+
+        let view = Rc::new(ArtistView::new(conn.clone(), loader));
+        assert_eq!(view.master_count(), 0);
+
+        // Grab the callback, then simulate a post-scan library change.
+        let refresh = view.refresh_callback();
+        conn.borrow()
+            .execute_batch(
+                "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
+                 ('/a.flac','A','Artist A','First',0),
+                 ('/b.flac','B','Artist B','Second',0);",
+            )
+            .unwrap();
+
+        refresh();
+        assert_eq!(view.master_count(), 2);
     }
 }

@@ -268,7 +268,6 @@ pub fn build(
         ))
     };
     super::column_header_menu::install(&track_list);
-    super::current_track_selection::wire(player.as_ref(), &track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let track_list_weak = Rc::downgrade(&track_list);
@@ -288,8 +287,14 @@ pub fn build(
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
     let album_view =
         super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
-    let artist_view =
-        super::artist_view::ArtistView::new(conn.clone(), track_list.shared_cover_loader());
+    // Retain the assembled `ArtistView` past `build()`: its `refresh_callback`
+    // and now-playing mini-EQ both hang off a pure-Rust `Rc<Inner>`, so the
+    // view must stay alive. The strong clone captured by the track-change
+    // wiring below (see `current_track_selection::wire`) is what keeps it so.
+    let artist_view = Rc::new(super::artist_view::ArtistView::new(
+        conn.clone(),
+        track_list.shared_cover_loader(),
+    ));
     let library_views = super::library_shell::build_views(
         &track_content,
         album_view.widget(),
@@ -297,6 +302,10 @@ pub fn build(
     );
     super::library_shell::wire_album_view(&library_views, &album_view, &track_list);
     super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list);
+    // Wire playback → track-table selection and Artists-view now-playing. Done
+    // here (not right after `track_list` is built) because the closure captures
+    // a strong `Rc<ArtistView>`, which must exist first.
+    super::current_track_selection::wire(player.as_ref(), &track_list, &artist_view);
     super::library_shell::arm_smoke_library_view(&library_views);
     let library_title = Rc::new(super::library_chrome::build_library_title(
         &header,
