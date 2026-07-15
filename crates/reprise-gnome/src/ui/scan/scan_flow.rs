@@ -498,10 +498,14 @@ fn analyze_waveforms(conn: &rusqlite::Connection) {
     };
 
     if tracks.is_empty() {
+        tracing::info!("waveform backfill: all tracks already analyzed");
         return;
     }
-    tracing::info!(count = tracks.len(), "analyzing waveforms");
+    let total = tracks.len();
+    tracing::info!(total, "waveform backfill: starting analysis");
 
+    let mut done = 0usize;
+    let mut failed = 0usize;
     for (track_id, path) in &tracks {
         let path = std::path::Path::new(path);
         match crate::ui::waveform_peaks::extract_peaks(
@@ -511,14 +515,21 @@ fn analyze_waveforms(conn: &rusqlite::Connection) {
             Ok(peaks) => {
                 if let Err(e) = reprise_core::db::set_waveform_peaks(conn, *track_id, &peaks) {
                     tracing::warn!(track_id, %e, "failed to store waveform peaks");
+                    failed += 1;
+                } else {
+                    done += 1;
                 }
             }
             Err(e) => {
                 tracing::debug!(track_id, path = %path.display(), %e, "waveform analysis skipped");
+                failed += 1;
             }
         }
+        if (done + failed) % 50 == 0 || (done + failed) == total {
+            tracing::info!(done, failed, total, "waveform backfill progress");
+        }
     }
-    tracing::info!("waveform analysis complete");
+    tracing::info!(done, failed, total, "waveform backfill complete");
 }
 
 /// Spawns a background thread that analyzes waveform peaks for all tracks
