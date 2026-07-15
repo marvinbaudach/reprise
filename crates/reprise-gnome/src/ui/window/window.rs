@@ -285,6 +285,11 @@ pub fn build(
     }
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
+    scan_controls.set_sidebar_toggle(&sidebar_toggle);
+    scan_progress.set_on_cancel({
+        let scan_controls = scan_controls.clone();
+        move || scan_controls.request_cancel()
+    });
     sidebar.append_scan_card(scan_progress.widget());
     let toolbar_view = adw::ToolbarView::new();
     // No add_top_bar for scan progress — it lives in the sidebar now.

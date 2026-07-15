@@ -77,6 +77,10 @@ pub(super) struct ScanControls {
     /// page. `None` until `set_empty_indicator` is called from `window.rs`
     /// after both `track_list` and `scan_controls` exist.
     empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
+    /// Weak reference to the sidebar toggle button. When set, the tooltip is
+    /// updated to reflect scan progress so the user can see the status while
+    /// the sidebar is collapsed. `None` until `set_sidebar_toggle` is called.
+    sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
 }
 
 impl ScanControls {
@@ -90,6 +94,7 @@ impl ScanControls {
             cancel_token: Arc::new(AtomicBool::new(false)),
             on_scan_state_changed: Rc::new(RefCell::new(None)),
             empty_indicator: Rc::new(RefCell::new(None)),
+            sidebar_toggle: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -100,6 +105,17 @@ impl ScanControls {
     /// lifetime — same pattern as `foreground_progress`.
     pub(super) fn set_empty_indicator(&self, indicator: &EmptyScanIndicator) {
         *self.empty_indicator.borrow_mut() = Some(indicator.downgrade());
+    }
+
+    /// Registers the sidebar toggle button so its tooltip can be updated to
+    /// reflect scan progress while the sidebar is collapsed. Called from
+    /// `window.rs` after both `scan_controls` and `sidebar_toggle` exist.
+    /// Stored as a `Weak` reference so `ScanControls` cannot keep the button
+    /// alive past the window's lifetime.
+    pub(super) fn set_sidebar_toggle(&self, button: &gtk4::ToggleButton) {
+        let weak = glib::WeakRef::new();
+        weak.set(Some(button));
+        *self.sidebar_toggle.borrow_mut() = Some(weak);
     }
 
     pub(super) fn is_scanning(&self) -> bool {
@@ -221,6 +237,33 @@ impl ScanControls {
         {
             indicator.show(progress);
         }
+        if let Some(button) = self
+            .sidebar_toggle
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            let tooltip = match progress {
+                ScanProgress::Discovering => Some("Scanning\u{2026}".to_string()),
+                ScanProgress::Scanning { processed, total, .. } => {
+                    let pct = if *total > 0 {
+                        (*processed as f64 / *total as f64 * 100.0).round() as u32
+                    } else {
+                        0
+                    };
+                    Some(format!("Scanning \u{00B7} {}%", pct))
+                }
+                ScanProgress::Fetching { done, total } => {
+                    let pct = if *total > 0 {
+                        (*done as f64 / *total as f64 * 100.0).round() as u32
+                    } else {
+                        0
+                    };
+                    Some(format!("Scanning \u{00B7} {}%", pct))
+                }
+            };
+            button.set_tooltip_text(tooltip.as_deref());
+        }
     }
 
     fn finish_progress(&self) {
@@ -236,6 +279,14 @@ impl ScanControls {
             .and_then(|w| w.upgrade())
         {
             indicator.finish();
+        }
+        if let Some(button) = self
+            .sidebar_toggle
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            button.set_tooltip_text(Some(&strings::text(strings::SIDEBAR_TOGGLE)));
         }
     }
 
