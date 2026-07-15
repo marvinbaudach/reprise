@@ -179,6 +179,10 @@ pub(super) struct Shared {
     pub(super) empty_page: adw::StatusPage,
     pub(super) sort: RefCell<SortState>,
     pub(super) restoring_view: Cell<bool>,
+    /// Id of the currently-playing track, or `None` when stopped. Set/cleared
+    /// by `current_track_selection` and read by `track_list_columns::
+    /// apply_now_playing` to mark the now-playing row (and its eq-bars motif).
+    pub(super) playing_track_id: Cell<Option<i64>>,
     pub(super) filter: RefCell<String>,
     /// Which of the six sources (Stage 3 Task 3) the list is currently
     /// showing — defaults to `ViewSource::Library`. Set via `TrackList::
@@ -403,6 +407,7 @@ impl TrackList {
             empty_page,
             sort: RefCell::new(SortState::default()),
             restoring_view: Cell::new(false),
+            playing_track_id: Cell::new(None),
             filter: RefCell::new(String::new()),
             source: RefCell::new(ViewSource::default()),
             queue_ids_provider: Box::new(queue_ids_provider),
