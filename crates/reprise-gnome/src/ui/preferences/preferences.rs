@@ -190,6 +190,10 @@ impl PreferencesContext {
     }
 
     pub(super) fn present(self: &Rc<Self>) {
+        self.open(None);
+    }
+
+    fn open(self: &Rc<Self>, initial_page: Option<&str>) {
         if self.preferences_dialog.borrow().upgrade().is_some() {
             return; // dialog is already open (modal, always on top)
         }
@@ -225,6 +229,17 @@ impl PreferencesContext {
             .borrow()
             .set(Some(&shell.navigation));
         self.preferences_stack.borrow().set(Some(&shell.stack));
+
+        // Navigate to the requested page by selecting its sidebar row,
+        // which drives both the stack and the content title via the
+        // row-selected handler.
+        if let Some(page_name) = initial_page {
+            if let Some(index) = super::preferences_window::page_index_by_name(page_name) {
+                shell
+                    .sidebar
+                    .select_row(shell.sidebar.row_at_index(index).as_ref());
+            }
+        }
 
         let smoke = std::env::var(SMOKE_ENV).ok();
         if matches!(smoke.as_deref(), Some("layout" | "columns")) {
@@ -294,10 +309,7 @@ impl PreferencesContext {
 
     /// Opens (or raises) the preferences window and navigates to `page_name`.
     pub(super) fn present_page(self: &Rc<Self>, page_name: &str) {
-        self.present();
-        if let Some(stack) = self.preferences_stack.borrow().upgrade() {
-            stack.set_visible_child_name(page_name);
-        }
+        self.open(Some(page_name));
     }
 
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {
