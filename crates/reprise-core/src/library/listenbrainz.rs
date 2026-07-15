@@ -183,7 +183,7 @@ fn parse_top_artists(body: &str) -> Result<Vec<TopArtist>, RemoteStatsError> {
         .filter_map(|entry| {
             let artist = entry.get("artist_name")?.as_str()?.to_string();
             let plays = entry.get("listen_count")?.as_i64()?;
-            Some(TopArtist { artist, plays })
+            Some(TopArtist { artist, plays, total_ms: 0, representative_track_path: String::new() })
         })
         .collect();
     Ok(artists)
@@ -205,6 +205,8 @@ fn parse_top_releases(body: &str) -> Result<Vec<TopAlbum>, RemoteStatsError> {
                 album,
                 album_artist,
                 plays,
+                total_ms: 0,
+                track_path: String::new(),
             })
         })
         .collect();

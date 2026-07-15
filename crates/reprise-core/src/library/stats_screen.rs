@@ -14,7 +14,7 @@
 //! Calendar months are bucketed in **UTC** (`played_at` is stored as unix
 //! seconds), which keeps both the storage unit and the tests timezone-free.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 /// Number of trailing calendar months the stats timeseries covers, including
 /// the reference month itself.
@@ -97,20 +97,6 @@ pub struct HourlyListens {
     pub hour: i32,
     pub listens: i64,
     pub total_ms: i64,
-}
-
-/// A top-genres row: a genre and its summed play count across all tracks.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopGenre {
-    pub genre: String,
-    pub plays: i64,
-}
-
-/// One hour-of-day bucket (0-23) with its listen count.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HourlyListens {
-    pub hour: u8,
-    pub listens: i64,
 }
 
 /// Records one completed play into `listen_events`. `played_at` is unix
@@ -593,90 +579,6 @@ pub fn available_years(conn: &Connection) -> Result<Vec<i32>, rusqlite::Error> {
     rows.collect()
 }
 
-/// Top genres by summed all-time play count across all tracks, most-played
-/// first. Tracks with a blank genre or zero plays are excluded. Ties break
-/// alphabetically for a stable order.
-pub fn top_genres(conn: &Connection, limit: usize) -> Result<Vec<TopGenre>, rusqlite::Error> {
-    let mut statement = conn.prepare(
-        "SELECT genre, SUM(play_count) AS plays \
-         FROM tracks \
-         WHERE play_count > 0 AND genre <> '' \
-         GROUP BY genre \
-         ORDER BY plays DESC, genre ASC \
-         LIMIT ?1",
-    )?;
-    let rows = statement.query_map(params![limit as i64], |row| {
-        Ok(TopGenre {
-            genre: row.get(0)?,
-            plays: row.get(1)?,
-        })
-    })?;
-    rows.collect()
-}
-
-/// Listening activity grouped by hour of day (0-23, UTC). Returns up to 24
-/// buckets; hours with no events are omitted (the caller should fill in
-/// zeros for a full 0-23 axis). Uses `listen_events.played_at`.
-pub fn listening_by_hour(conn: &Connection) -> Result<Vec<HourlyListens>, rusqlite::Error> {
-    let mut statement = conn.prepare(
-        "SELECT CAST(strftime('%H', played_at, 'unixepoch') AS INTEGER) AS hour, \
-                COUNT(*) AS listens \
-         FROM listen_events \
-         GROUP BY hour \
-         ORDER BY hour",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok(HourlyListens {
-            hour: row.get::<_, i64>(0)? as u8,
-            listens: row.get(1)?,
-        })
-    })?;
-    rows.collect()
-}
-
-/// Count of distinct artists that have at least one play.
-pub fn distinct_artists_played(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    conn.query_row(
-        "SELECT COUNT(DISTINCT artist) FROM tracks \
-         WHERE play_count > 0 AND artist <> ''",
-        [],
-        |row| row.get(0),
-    )
-}
-
-/// The weekday with the most listen events (from `listen_events`). Returns
-/// `None` when the table is empty. The weekday is derived via
-/// `strftime('%w')` (0=Sunday .. 6=Saturday) and mapped to an English name.
-pub fn most_active_weekday(conn: &Connection) -> Result<Option<String>, rusqlite::Error> {
-    let result: Option<i64> = conn
-        .query_row(
-            "SELECT CAST(strftime('%w', played_at, 'unixepoch') AS INTEGER) AS dow \
-             FROM listen_events \
-             GROUP BY dow \
-             ORDER BY COUNT(*) DESC \
-             LIMIT 1",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(result.map(weekday_name))
-}
-
-/// Maps a SQLite `strftime('%w')` result (0-6) to an English day name.
-fn weekday_name(dow: i64) -> String {
-    match dow {
-        0 => "Sunday",
-        1 => "Monday",
-        2 => "Tuesday",
-        3 => "Wednesday",
-        4 => "Thursday",
-        5 => "Friday",
-        6 => "Saturday",
-        _ => "Unknown",
-    }
-    .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1140,145 +1042,5 @@ mod tests {
         let conn = migrated_conn();
         let years = available_years(&conn).unwrap();
         assert!(years.is_empty());
-    }
-
-    // --- top_genres ---
-
-    fn seed_genre_fixture(conn: &Connection) {
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, genre, play_count, added_at) \
-             VALUES (1, '/x/1.flac', 't1', 'Rock', 10, 0)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, genre, play_count, added_at) \
-             VALUES (2, '/x/2.flac', 't2', 'Rock', 5, 0)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, genre, play_count, added_at) \
-             VALUES (3, '/x/3.flac', 't3', 'Jazz', 8, 0)",
-            [],
-        )
-        .unwrap();
-        // Blank genre — excluded.
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, genre, play_count, added_at) \
-             VALUES (4, '/x/4.flac', 't4', '', 20, 0)",
-            [],
-        )
-        .unwrap();
-        // Zero plays — excluded.
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, genre, play_count, added_at) \
-             VALUES (5, '/x/5.flac', 't5', 'Pop', 0, 0)",
-            [],
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn top_genres_rank_by_summed_plays_excluding_blank_and_zero() {
-        let conn = migrated_conn();
-        seed_genre_fixture(&conn);
-        let top = top_genres(&conn, 10).unwrap();
-        assert_eq!(
-            top,
-            vec![
-                TopGenre {
-                    genre: "Rock".to_string(),
-                    plays: 15
-                },
-                TopGenre {
-                    genre: "Jazz".to_string(),
-                    plays: 8
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn top_genres_respects_limit() {
-        let conn = migrated_conn();
-        seed_genre_fixture(&conn);
-        let top = top_genres(&conn, 1).unwrap();
-        assert_eq!(top.len(), 1);
-        assert_eq!(top[0].genre, "Rock");
-    }
-
-    #[test]
-    fn top_genres_empty_library() {
-        let conn = migrated_conn();
-        let top = top_genres(&conn, 10).unwrap();
-        assert!(top.is_empty());
-    }
-
-    // --- listening_by_hour ---
-
-    #[test]
-    fn listening_by_hour_groups_by_utc_hour() {
-        let conn = migrated_conn();
-        insert_track(&conn, 1, "A", "Alb");
-        // 2026-07-01 00:00:00 UTC -> hour 0
-        record_listen_event(&conn, 1, 1_782_864_000, 100_000).unwrap();
-        // 2026-07-01 00:30:00 UTC -> hour 0
-        record_listen_event(&conn, 1, 1_782_865_800, 100_000).unwrap();
-        // 2026-07-01 13:00:00 UTC -> hour 13
-        record_listen_event(&conn, 1, 1_782_910_800, 100_000).unwrap();
-
-        let hourly = listening_by_hour(&conn).unwrap();
-        assert_eq!(hourly.len(), 2);
-        assert_eq!(hourly[0], HourlyListens { hour: 0, listens: 2 });
-        assert_eq!(hourly[1], HourlyListens { hour: 13, listens: 1 });
-    }
-
-    #[test]
-    fn listening_by_hour_empty_library() {
-        let conn = migrated_conn();
-        let hourly = listening_by_hour(&conn).unwrap();
-        assert!(hourly.is_empty());
-    }
-
-    // --- distinct_artists_played ---
-
-    #[test]
-    fn distinct_artists_played_counts_unique_artists_with_plays() {
-        let conn = migrated_conn();
-        seed_top_fixture(&conn);
-        // Alpha and Beta have plays, Gamma has 0.
-        let count = distinct_artists_played(&conn).unwrap();
-        assert_eq!(count, 2);
-    }
-
-    #[test]
-    fn distinct_artists_played_empty_library() {
-        let conn = migrated_conn();
-        let count = distinct_artists_played(&conn).unwrap();
-        assert_eq!(count, 0);
-    }
-
-    // --- most_active_weekday ---
-
-    #[test]
-    fn most_active_weekday_returns_day_with_most_events() {
-        let conn = migrated_conn();
-        insert_track(&conn, 1, "A", "Alb");
-        // 2026-07-01 is a Wednesday (dow=3). Two events on Wednesday.
-        record_listen_event(&conn, 1, 1_782_864_000, 100_000).unwrap();
-        record_listen_event(&conn, 1, 1_782_865_800, 100_000).unwrap();
-        // 2026-07-02 is a Thursday (dow=4). One event.
-        record_listen_event(&conn, 1, 1_782_950_400, 100_000).unwrap();
-
-        let day = most_active_weekday(&conn).unwrap();
-        assert_eq!(day, Some("Wednesday".to_string()));
-    }
-
-    #[test]
-    fn most_active_weekday_returns_none_for_empty_table() {
-        let conn = migrated_conn();
-        let day = most_active_weekday(&conn).unwrap();
-        assert_eq!(day, None);
     }
 }
