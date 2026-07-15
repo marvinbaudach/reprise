@@ -294,14 +294,27 @@ impl WaveformSeek {
     /// Update the target playback fraction with velocity estimation for smooth
     /// interpolation.  Installs a frame-clock tick callback to animate the fill
     /// toward the new target.
+    ///
+    /// Large jumps (> 5% of the track) are treated as seeks: the fraction snaps
+    /// instantly and velocity resets, preventing the overshoot that occurs when
+    /// a stale pre-seek position tick arrives before the post-seek position.
     pub(super) fn set_fraction_smooth(&self, fraction: f64) {
         let fraction = fraction.clamp(0.0, 1.0);
         let mut s = self.state.borrow_mut();
         let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
-        let dt = (now - s.last_tick_us).max(1) as f64;
-        s.fraction_velocity = (fraction - s.target_fraction) / dt;
-        s.target_fraction = fraction;
-        s.last_tick_us = now;
+        let delta = (fraction - s.target_fraction).abs();
+        if delta > 0.05 {
+            // Large discontinuity (seek) — snap, don't interpolate.
+            s.fraction = fraction;
+            s.target_fraction = fraction;
+            s.fraction_velocity = 0.0;
+            s.last_tick_us = now;
+        } else {
+            let dt = (now - s.last_tick_us).max(1) as f64;
+            s.fraction_velocity = (fraction - s.target_fraction) / dt;
+            s.target_fraction = fraction;
+            s.last_tick_us = now;
+        }
         drop(s);
         self.ensure_tick_callback();
     }
