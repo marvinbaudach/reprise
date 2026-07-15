@@ -34,16 +34,16 @@ pub(super) fn css() -> String {
            background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
          .reprise-panel-toggle:checked:hover {{ \
            background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA_STRONG}); }}\n\
-         dialog > dimming {{ \
-           background: rgba(0,0,0,{SCRIM_ALPHA}); }}\n\
-         dialog > floating-sheet {{ \
+         floating-sheet > dimming {{ \
+           background-color: rgba(0,0,0,{SCRIM_ALPHA}); }}\n\
+         floating-sheet > sheet {{ \
            background-color: @dialog_bg_color; \
-           box-shadow: {DIALOG_SHADOW}; }}\n\
-         dialog > floating-sheet > outline {{ \
-           outline: 1px solid alpha(white, {DIALOG_BORDER_ALPHA}); }}\n\
-         dialog > floating-sheet headerbar {{ \
-           background: alpha(white, {DIALOG_HEADER_TINT_ALPHA}); }}\n\
-         dialog > floating-sheet .boxed-list {{ \
+           box-shadow: {DIALOG_SHADOW}; \
+           outline: 1px solid alpha(white, {DIALOG_BORDER_ALPHA}); \
+           outline-offset: -1px; }}\n\
+         floating-sheet > sheet headerbar {{ \
+           background-color: alpha(white, {DIALOG_HEADER_TINT_ALPHA}); }}\n\
+         floating-sheet > sheet .boxed-list {{ \
            background-color: alpha(white, {DIALOG_CARD_ALPHA}); }}"
     )
 }
@@ -59,10 +59,7 @@ mod tests {
         assert!(css.contains(".reprise-surface"));
         assert!(css.contains(".reprise-panel-toggle:checked"));
         assert!(css.contains("border-radius"));
-        assert!(css.contains("dialog > dimming"));
-        assert!(css.contains("dialog > floating-sheet"));
-        assert!(css.contains("dialog > floating-sheet > outline"));
-        assert!(css.contains("dialog > floating-sheet headerbar"));
-        assert!(css.contains("dialog > floating-sheet .boxed-list"));
+        assert!(css.contains("floating-sheet > dimming"));
+        assert!(css.contains("floating-sheet > sheet"));
     }
 }

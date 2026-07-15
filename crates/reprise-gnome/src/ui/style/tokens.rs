@@ -74,7 +74,7 @@ pub(in crate::ui) const DIALOG_BORDER_ALPHA: &str = "0.10";
 
 /// Scrim alpha behind modal dialogs — darkens the main window so the dialog
 /// pops (Libadwaita default is 0.35; we go slightly heavier for depth).
-pub(in crate::ui) const SCRIM_ALPHA: &str = "0.40";
+pub(in crate::ui) const SCRIM_ALPHA: &str = "0.55";
 
 /// White tint alpha for dialog headerbars — one elevation step above the
 /// dialog body (the "Dialog-Header" rung in the surface ladder).
