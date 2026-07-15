@@ -33,7 +33,6 @@ use reprise_core::view_source::ViewSource;
 
 use super::cover_download_worker;
 use super::file_open::FileOpenHandler;
-use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::playlist_io;
 use super::primary_menu;
@@ -508,7 +507,7 @@ pub fn build(
     );
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;
-    let content_nav = library_shell.content_nav;
+    let _content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
     info_panel.retain_for_window(&window);
     let player_bar_widget = player
@@ -764,10 +763,6 @@ pub fn build(
 
     super::window_smoke::arm_bar_position(conn, &library_player_bar);
 
-    // Task 8: wired after `player`/`content_nav` both exist — see
-    // `now_playing_wiring.rs`'s doc comments for what each call does.
-    now_playing_wiring::wire_bar_expand(player.as_ref(), &content_nav);
-    now_playing_wiring::arm_smoke_nowplaying(player.as_ref(), &content_nav);
     super::lyrics_smoke::arm(player.as_ref(), &info_panel, conn);
 
     super::session_restore::restore_runtime(

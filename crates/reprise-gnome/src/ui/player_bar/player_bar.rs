@@ -49,10 +49,6 @@ pub(super) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
 const MINI_EQ_PLAYING_CLASS: &str = "playing";
 
-/// Cover/track-info click callback storage (Task 8) — factored out to
-/// satisfy clippy's `type_complexity` lint; see `on_expand`'s doc comment.
-type ExpandCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
-
 pub struct PlayerBar {
     root: gtk4::Box,
     /// The currently-playing track's album cover thumbnail, packed at the
@@ -98,11 +94,6 @@ pub struct PlayerBar {
     /// Volume level before muting, so unmuting restores it.
     #[allow(dead_code)]
     pre_mute_volume: Cell<f64>,
-    /// Callback for clicking the cover/track-info area (Task 8); `window.rs`
-    /// sets it, post-construction, to push the Now-Playing page. Shared with
-    /// `new()`'s gesture; cloned out of the borrow before calling — never
-    /// invoked while the borrow is held.
-    on_expand: ExpandCallback,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
     current_track_animation: RefCell<Option<libadwaita::TimedAnimation>>,
@@ -112,7 +103,7 @@ impl PlayerBar {
     pub fn new() -> Self {
         let PlayerBarWidgets {
             root,
-            info_box,
+            info_box: _,
             cover,
             title_label,
             artist_label,
@@ -130,18 +121,6 @@ impl PlayerBar {
             queue_button,
             ..
         } = player_bar_layout::build();
-
-        let on_expand: ExpandCallback = Rc::new(RefCell::new(None));
-        let expand_click = gtk4::GestureClick::new();
-        let expand_click_on_expand = on_expand.clone();
-        // Clone-out-before-call: see the `on_expand` field's doc comment.
-        expand_click.connect_released(move |_, _, _, _| {
-            let callback = expand_click_on_expand.borrow().clone();
-            if let Some(callback) = callback {
-                callback();
-            }
-        });
-        info_box.add_controller(expand_click);
 
         let bar = Self {
             root,
@@ -167,7 +146,6 @@ impl PlayerBar {
             updating_volume: Rc::new(Cell::new(false)),
             muted: Cell::new(false),
             pre_mute_volume: Cell::new(1.0),
-            on_expand,
             current_track_animation: RefCell::new(None),
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
@@ -190,12 +168,6 @@ impl PlayerBar {
     /// stops with no track active (see `clear_track`).
     pub fn clear_cover(&self) {
         CoverLoader::set_placeholder(&self.cover);
-    }
-
-    /// Sets the cover/track-info click callback (Task 8), post-construction —
-    /// same injection shape as `set_toast_overlay`.
-    pub fn set_on_expand<F: Fn() + 'static>(&self, f: F) {
-        *self.on_expand.borrow_mut() = Some(Rc::new(f));
     }
 
     /// Shows `title`/`artist` in the left-hand labels. Called on row

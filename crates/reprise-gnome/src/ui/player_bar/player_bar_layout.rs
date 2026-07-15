@@ -58,6 +58,7 @@ pub(super) struct PlayerBarWidgets {
     pub(super) root: gtk4::Box,
     #[allow(dead_code)]
     pub(super) center_box: gtk4::CenterBox,
+    #[allow(dead_code)]
     pub(super) info_box: gtk4::Box,
     pub(super) cover: gtk4::Image,
     pub(super) title_label: gtk4::Label,
