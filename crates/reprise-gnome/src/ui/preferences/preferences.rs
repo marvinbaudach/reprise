@@ -328,8 +328,7 @@ impl PreferencesContext {
 
     pub(super) fn preferences_parent(&self) -> gtk4::Widget {
         self.preferences_dialog()
-            .map(|d| d.upcast::<gtk4::Widget>())
-            .unwrap_or_else(|| self.window.clone().upcast())
+            .map_or_else(|| self.window.clone().upcast(), gtk4::Widget::from)
     }
 
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {
