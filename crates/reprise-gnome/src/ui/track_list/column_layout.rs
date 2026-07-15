@@ -1,11 +1,16 @@
 //! Typed track-column layout, persistence format, and GTK column registry.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use gtk4::glib;
 use thiserror::Error;
+
+use reprise_core::library::settings::{self, COLUMN_WIDTHS_KEY};
 
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH;
@@ -84,6 +89,13 @@ fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
         fixed_width,
         expand: id == ColumnId::Title,
     }
+}
+
+/// Whether a column's user-dragged width is worth persisting. Cover is not
+/// resizable and Title expands to fill remaining space, so their fixed width is
+/// not a meaningful user preference — every other column is stored.
+pub(super) fn is_width_persistable(id: ColumnId) -> bool {
+    !matches!(id, ColumnId::Cover) && !column_width_policy(id).expand
 }
 
 fn apply_column_width_policy(column: &gtk4::ColumnViewColumn, id: ColumnId) {
@@ -229,8 +241,10 @@ pub fn load_layout(conn: &rusqlite::Connection) -> ColumnLayout {
 }
 
 pub fn import_rhythmbox_tokens(tokens: &[String]) -> ColumnLayout {
-    let mut order = Vec::new();
-    let mut visible = HashSet::new();
+    // Rhythmbox has no Cover/Title columns in this list; a fresh import always
+    // leads with our artwork + title columns, then the mapped Rhythmbox tokens.
+    let mut order = vec![ColumnId::Cover, ColumnId::Title];
+    let mut visible = HashSet::from([ColumnId::Cover, ColumnId::Title]);
     for token in tokens {
         let id = match token.as_str() {
             "track-number" => ColumnId::TrackNumber,
@@ -251,9 +265,6 @@ pub fn import_rhythmbox_tokens(tokens: &[String]) -> ColumnLayout {
 }
 
 pub fn set_column_visible(layout: &ColumnLayout, id: ColumnId, visible: bool) -> ColumnLayout {
-    if matches!(id, ColumnId::Cover | ColumnId::Title) {
-        return layout.clone();
-    }
     let mut next = layout.clone();
     if visible {
         next.visible.insert(id);
@@ -277,10 +288,7 @@ fn move_column_relative(
     target: ColumnId,
     after: bool,
 ) -> ColumnLayout {
-    if id == target
-        || matches!(id, ColumnId::Cover | ColumnId::Title)
-        || matches!(target, ColumnId::Cover | ColumnId::Title)
-    {
+    if id == target {
         return layout.clone();
     }
     let mut order = layout.order.clone();
@@ -343,16 +351,16 @@ fn parse_ids(value: &str) -> Option<Vec<ColumnId>> {
         .collect()
 }
 
-fn normalize(mut order: Vec<ColumnId>, mut visible: HashSet<ColumnId>) -> ColumnLayout {
-    order.retain(|id| !matches!(id, ColumnId::Cover | ColumnId::Title));
-    let mut normalized = vec![ColumnId::Cover, ColumnId::Title];
+fn normalize(order: Vec<ColumnId>, visible: HashSet<ColumnId>) -> ColumnLayout {
+    // The stored order is honored verbatim; any column not mentioned is
+    // appended in the built-in default order so all columns stay reachable.
+    // Cover and Title are ordinary columns — no forced position or visibility.
+    let mut normalized = Vec::with_capacity(DEFAULT_ORDER.len());
     for id in order.into_iter().chain(DEFAULT_ORDER) {
         if !normalized.contains(&id) {
             normalized.push(id);
         }
     }
-    visible.insert(ColumnId::Cover);
-    visible.insert(ColumnId::Title);
     ColumnLayout {
         order: normalized,
         visible,
@@ -373,15 +381,45 @@ pub struct ColumnRegistry {
 impl ColumnRegistry {
     pub fn apply(&self, layout: &ColumnLayout) {
         let layout = normalize(layout.order.clone(), layout.visible.clone());
+        // Visibility is a per-column property — updating it never touches the
+        // view's column list, so scroll position and selection are preserved.
+        for (id, column) in &self.columns {
+            column.set_visible(layout.visible.contains(id));
+        }
+        // Only rebuild the column list when the order genuinely changed;
+        // remove/re-append resets the horizontal scroll offset otherwise.
+        let desired: Vec<ColumnId> = layout
+            .order
+            .iter()
+            .copied()
+            .filter(|id| self.columns.contains_key(id))
+            .collect();
+        if self.current_order() == desired {
+            return;
+        }
         for column in self.columns.values() {
             self.view.remove_column(column);
         }
-        for id in &layout.order {
+        for id in &desired {
             if let Some(column) = self.columns.get(id) {
-                column.set_visible(layout.visible.contains(id));
                 self.view.append_column(column);
             }
         }
+    }
+
+    /// The column ids currently held by the view, in their present order.
+    /// Used to skip a destructive rebuild when only visibility changed.
+    fn current_order(&self) -> Vec<ColumnId> {
+        let model = self.view.columns();
+        (0..model.n_items())
+            .filter_map(|index| {
+                let column = model.item(index)?.downcast::<gtk4::ColumnViewColumn>().ok()?;
+                self.columns
+                    .iter()
+                    .find(|(_, candidate)| **candidate == column)
+                    .map(|(id, _)| *id)
+            })
+            .collect()
     }
 
     pub fn column(&self, id: ColumnId) -> Option<&gtk4::ColumnViewColumn> {
@@ -394,10 +432,86 @@ impl ColumnRegistry {
             .is_some_and(gtk4::ColumnViewColumn::is_visible)
     }
 
-    pub fn set_header_menu(&self, menu: &gio::Menu) {
-        for column in self.columns.values() {
-            column.set_header_menu(Some(menu));
+    /// Restores every column to its built-in policy width. The wired
+    /// `fixed-width` listeners then persist these defaults on the next tick.
+    pub fn reset_widths(&self) {
+        for (id, column) in &self.columns {
+            apply_column_width_policy(column, *id);
         }
+    }
+}
+
+/// Coalescing delay for width writes: header drags fire many `fixed-width`
+/// notifications, so we persist only after the drag settles.
+const WIDTH_SAVE_DEBOUNCE_MS: u64 = 500;
+
+/// Overrides policy default widths with any the user previously stored.
+fn restore_stored_widths(
+    columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>,
+    conn: &rusqlite::Connection,
+) {
+    let stored = settings::get_setting(conn, COLUMN_WIDTHS_KEY)
+        .map_err(|error| tracing::warn!(%error, "could not load stored column widths"))
+        .ok()
+        .flatten();
+    let Some(stored) = stored else {
+        return;
+    };
+    for (id, width) in crate::ui::column_widths::parse_widths(&stored) {
+        if is_width_persistable(id) {
+            if let Some(column) = columns.get(&id) {
+                column.set_fixed_width(width);
+            }
+        }
+    }
+}
+
+/// Persists the current widths of all persistable columns (debounced).
+fn save_widths_now(shared: &Shared, columns: &[(ColumnId, gtk4::ColumnViewColumn)]) {
+    let widths: Vec<(ColumnId, i32)> = columns
+        .iter()
+        .map(|(id, column)| (*id, column.fixed_width()))
+        .collect();
+    let serialized = crate::ui::column_widths::serialize_widths(&widths);
+    if let Err(error) = settings::set_setting(&shared.conn.borrow(), COLUMN_WIDTHS_KEY, &serialized) {
+        tracing::warn!(%error, "could not persist column widths");
+    }
+}
+
+/// Wires a debounced `fixed-width` listener on every persistable column so a
+/// header-drag resize is stored ~500 ms after it settles. Must run after the
+/// initial policy/restore widths are applied, so setup does not self-trigger.
+fn wire_width_persistence(shared: &Rc<Shared>, columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>) {
+    let snapshot: Rc<Vec<(ColumnId, gtk4::ColumnViewColumn)>> = Rc::new(
+        columns
+            .iter()
+            .filter(|(id, _)| is_width_persistable(**id))
+            .map(|(id, column)| (*id, column.clone()))
+            .collect(),
+    );
+    let debounce: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    for (_, column) in snapshot.iter() {
+        let shared_weak = Rc::downgrade(shared);
+        let snapshot = snapshot.clone();
+        let debounce = debounce.clone();
+        column.connect_fixed_width_notify(move |_| {
+            if let Some(pending) = debounce.borrow_mut().take() {
+                pending.remove();
+            }
+            let shared_weak = shared_weak.clone();
+            let snapshot = snapshot.clone();
+            let debounce_inner = debounce.clone();
+            let handle = glib::timeout_add_local_once(
+                Duration::from_millis(WIDTH_SAVE_DEBOUNCE_MS),
+                move || {
+                    *debounce_inner.borrow_mut() = None;
+                    if let Some(shared) = shared_weak.upgrade() {
+                        save_widths_now(&shared, &snapshot);
+                    }
+                },
+            );
+            *debounce.borrow_mut() = Some(handle);
+        });
     }
 }
 
@@ -492,6 +606,8 @@ pub(super) fn build_columns(
     for (id, column) in &columns {
         apply_column_width_policy(column, *id);
     }
+    restore_stored_widths(&columns, &shared.conn.borrow());
+    wire_width_persistence(shared, &columns);
     let registry = ColumnRegistry {
         view: view.clone(),
         columns,
@@ -527,6 +643,26 @@ mod tests {
             ColumnId::Genre,
         ] {
             assert_eq!(cell_alignment(id), CellAlignment::Text);
+        }
+    }
+
+    #[test]
+    fn only_resizable_fixed_width_columns_persist_their_width() {
+        // Cover is not resizable; Title expands — neither has a meaningful,
+        // user-set fixed width to store.
+        assert!(!is_width_persistable(ColumnId::Cover));
+        assert!(!is_width_persistable(ColumnId::Title));
+        for id in [
+            ColumnId::Artist,
+            ColumnId::Album,
+            ColumnId::Genre,
+            ColumnId::Year,
+            ColumnId::Duration,
+            ColumnId::Rating,
+            ColumnId::PlayCount,
+            ColumnId::TrackNumber,
+        ] {
+            assert!(is_width_persistable(id), "{id:?} should persist its width");
         }
     }
 
@@ -578,6 +714,149 @@ mod tests {
         assert!(!layout.visible.contains(&ColumnId::PlayCount));
     }
 
+    fn test_registry(ids: &[ColumnId]) -> ColumnRegistry {
+        let view = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        let mut columns = HashMap::new();
+        for id in ids.iter().copied() {
+            let column = gtk4::ColumnViewColumn::builder().title(id.as_str()).build();
+            view.append_column(&column);
+            columns.insert(id, column);
+        }
+        ColumnRegistry { view, columns }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn visibility_only_apply_does_not_rebuild_the_column_list() {
+        use std::cell::Cell;
+        if gtk4::init().is_err() {
+            return;
+        }
+        let ids = [
+            ColumnId::Cover,
+            ColumnId::Title,
+            ColumnId::Artist,
+            ColumnId::Album,
+        ];
+        let registry = test_registry(&ids);
+        // Align the view order with the layout order first (this may rebuild).
+        let mut visible: HashSet<ColumnId> = ids.iter().copied().collect();
+        registry.apply(&ColumnLayout {
+            order: ids.to_vec(),
+            visible: visible.clone(),
+        });
+
+        let rebuilds = Rc::new(Cell::new(0u32));
+        let counter = rebuilds.clone();
+        registry
+            .view
+            .columns()
+            .connect_items_changed(move |_, _, _, _| counter.set(counter.get() + 1));
+
+        // Hide Artist only — order is unchanged.
+        visible.remove(&ColumnId::Artist);
+        registry.apply(&ColumnLayout {
+            order: ids.to_vec(),
+            visible,
+        });
+
+        assert_eq!(
+            rebuilds.get(),
+            0,
+            "a visibility-only change must not remove/re-append columns"
+        );
+        assert!(!registry.column(ColumnId::Artist).unwrap().is_visible());
+        assert!(registry.column(ColumnId::Album).unwrap().is_visible());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn reordering_apply_rebuilds_the_column_list_once() {
+        use std::cell::Cell;
+        if gtk4::init().is_err() {
+            return;
+        }
+        let ids = [
+            ColumnId::Cover,
+            ColumnId::Title,
+            ColumnId::Artist,
+            ColumnId::Album,
+        ];
+        let registry = test_registry(&ids);
+        let visible: HashSet<ColumnId> = ids.iter().copied().collect();
+        registry.apply(&ColumnLayout {
+            order: ids.to_vec(),
+            visible: visible.clone(),
+        });
+
+        let rebuilds = Rc::new(Cell::new(0u32));
+        let counter = rebuilds.clone();
+        registry
+            .view
+            .columns()
+            .connect_items_changed(move |_, _, _, _| counter.set(counter.get() + 1));
+
+        // Move Album ahead of Artist — order genuinely changes.
+        registry.apply(&ColumnLayout {
+            order: vec![
+                ColumnId::Cover,
+                ColumnId::Title,
+                ColumnId::Album,
+                ColumnId::Artist,
+            ],
+            visible,
+        });
+
+        assert!(
+            rebuilds.get() > 0,
+            "a real reorder must update the column list"
+        );
+        assert_eq!(
+            registry.current_order(),
+            vec![
+                ColumnId::Cover,
+                ColumnId::Title,
+                ColumnId::Album,
+                ColumnId::Artist
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn restore_stored_widths_applies_persistable_columns_only() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        settings::set_setting(&conn, COLUMN_WIDTHS_KEY, "artist:333,cover:999").unwrap();
+        let registry = test_registry(&[ColumnId::Cover, ColumnId::Artist]);
+
+        restore_stored_widths(&registry.columns, &conn);
+
+        assert_eq!(registry.column(ColumnId::Artist).unwrap().fixed_width(), 333);
+        // Cover is not persistable, so its stored value is ignored.
+        assert_ne!(registry.column(ColumnId::Cover).unwrap().fixed_width(), 999);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn reset_widths_restores_the_policy_default() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let registry = test_registry(&[ColumnId::Artist]);
+        registry.column(ColumnId::Artist).unwrap().set_fixed_width(500);
+
+        registry.reset_widths();
+
+        assert_eq!(
+            registry.column(ColumnId::Artist).unwrap().fixed_width(),
+            column_width_policy(ColumnId::Artist).fixed_width
+        );
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn width_policy_is_applied_to_gtk_columns() {
@@ -605,11 +884,16 @@ mod tests {
     }
 
     #[test]
-    fn cover_and_title_are_forced_visible_and_first() {
+    fn parse_layout_respects_order_and_visibility_without_pinning() {
+        // Cover and Title are no longer forced to the front or forced visible:
+        // a stored layout is honored verbatim (missing columns still append).
         let layout = parse_layout("artist,album;artist,album").unwrap();
-        assert_eq!(layout.order[..2], [ColumnId::Cover, ColumnId::Title]);
-        assert!(layout.visible.contains(&ColumnId::Cover));
-        assert!(layout.visible.contains(&ColumnId::Title));
+        assert_eq!(layout.order[..2], [ColumnId::Artist, ColumnId::Album]);
+        assert!(!layout.visible.contains(&ColumnId::Cover));
+        assert!(!layout.visible.contains(&ColumnId::Title));
+        // Every known column is still present in the normalized order.
+        assert!(layout.order.contains(&ColumnId::Cover));
+        assert!(layout.order.contains(&ColumnId::Title));
     }
 
     #[test]
@@ -685,10 +969,14 @@ mod tests {
     }
 
     #[test]
-    fn fixed_columns_cannot_be_hidden() {
+    fn cover_and_title_can_be_hidden_like_any_column() {
         let layout = ColumnLayout::default();
-        assert_eq!(set_column_visible(&layout, ColumnId::Cover, false), layout);
-        assert_eq!(set_column_visible(&layout, ColumnId::Title, false), layout);
+        let cover_hidden = set_column_visible(&layout, ColumnId::Cover, false);
+        assert!(!cover_hidden.visible.contains(&ColumnId::Cover));
+        assert_eq!(cover_hidden.order, layout.order);
+        let title_hidden = set_column_visible(&layout, ColumnId::Title, false);
+        assert!(!title_hidden.visible.contains(&ColumnId::Title));
+        assert_eq!(title_hidden.order, layout.order);
     }
 
     #[test]
@@ -722,20 +1010,29 @@ mod tests {
     }
 
     #[test]
-    fn fixed_target_source_and_self_moves_are_noops() {
+    fn cover_and_title_move_freely_while_self_moves_are_noops() {
         let layout = ColumnLayout::default();
-        assert_eq!(
-            move_column(&layout, ColumnId::Cover, ColumnId::Artist),
-            layout
-        );
-        assert_eq!(
-            move_column(&layout, ColumnId::Artist, ColumnId::Title),
-            layout
-        );
+        // Self-move stays a no-op.
         assert_eq!(
             move_column(&layout, ColumnId::Artist, ColumnId::Artist),
             layout
         );
+        // Cover may be moved after Title (previously forbidden).
+        let moved = move_column_after(&layout, ColumnId::Cover, ColumnId::Title);
+        let title_index = moved
+            .order
+            .iter()
+            .position(|id| *id == ColumnId::Title)
+            .unwrap();
+        assert_eq!(moved.order[title_index + 1], ColumnId::Cover);
+        // Artist may be moved before Title (Title is no longer an anchor).
+        let moved = move_column(&layout, ColumnId::Artist, ColumnId::Title);
+        let title_index = moved
+            .order
+            .iter()
+            .position(|id| *id == ColumnId::Title)
+            .unwrap();
+        assert_eq!(moved.order[title_index - 1], ColumnId::Artist);
     }
 
     #[test]
