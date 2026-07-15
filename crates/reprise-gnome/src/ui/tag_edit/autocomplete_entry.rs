@@ -125,8 +125,13 @@ impl AutocompleteEntry {
                     *debounce_inner.borrow_mut() = None;
                     let suggestions = {
                         let conn = conn.borrow();
-                        query_autocomplete_suggestions(&conn, column, &input, MAX_SUGGESTIONS)
-                            .unwrap_or_default()
+                        match query_autocomplete_suggestions(&conn, column, &input, MAX_SUGGESTIONS) {
+                            Ok(suggestions) => suggestions,
+                            Err(error) => {
+                                tracing::warn!(%error, "autocomplete query failed");
+                                Vec::new()
+                            }
+                        }
                     };
                     populate_listbox(&listbox, &suggestions, &input);
                     if suggestions.is_empty() || input.is_empty() {
@@ -201,6 +206,9 @@ impl AutocompleteEntry {
 
 impl Drop for AutocompleteEntry {
     fn drop(&mut self) {
+        if let Some(id) = self.debounce_source.borrow_mut().take() {
+            id.remove();
+        }
         self.popover.unparent();
     }
 }
@@ -242,7 +250,9 @@ fn populate_listbox(
 ) {
     // Clear existing rows
     while let Some(child) = listbox.first_child() {
-        listbox.remove(&child.downcast::<gtk4::ListBoxRow>().unwrap());
+        if let Ok(row) = child.downcast::<gtk4::ListBoxRow>() {
+            listbox.remove(&row);
+        }
     }
 
     let input_lower = input.to_lowercase();
@@ -271,7 +281,8 @@ fn populate_listbox(
 
         hbox.append(&value_label);
         hbox.append(&count_label);
-        listbox.append(&hbox);
+        let row = gtk4::ListBoxRow::builder().child(&hbox).build();
+        listbox.append(&row);
     }
 }
 
