@@ -581,8 +581,9 @@ rendering, pointer gestures, cover-accent extraction, and live playback).
   folder in the file manager. (Edit-tags-for-all is intentionally deferred to v2.)
 
 ### Albums row + top tracks
-- [ ] Albums row shows newest-first cover cards (radius + inset hairline); hover
-  darkens + reveals a play button; clicking the cover opens the album in the Tracks
+- [ ] Albums row shows newest-first cover cards (radius + inset hairline); hovering
+  a card tints its background (accent-alpha `.artist-album-card:hover`) — there is no
+  separate play button; clicking anywhere on the card opens that album in the Tracks
   table; "Show all" expands beyond one row when there are more.
 - [ ] Top Tracks: 5 rows (rank · cover · title · album · plays · length), hairline
   separators only. Now-playing track shows the mini-EQ + accent row. "Show all N
