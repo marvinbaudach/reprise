@@ -467,8 +467,8 @@ impl PlayerController {
         Ok(controller)
     }
 
-    /// The bottom-bar widget for `ToolbarView::add_bottom_bar`.
-    pub fn bar_widget(&self) -> &gtk4::ActionBar {
+    /// The bottom-bar widget for the library overlay shell.
+    pub fn bar_widget(&self) -> &gtk4::Box {
         self.bar.widget()
     }
 
