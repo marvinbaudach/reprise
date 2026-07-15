@@ -12,7 +12,7 @@ use crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_columns::{
-    append_column, append_cover_column, append_rating_column, CellAlignment,
+    append_column, append_cover_column, append_rating_column, append_title_column, CellAlignment,
 };
 use reprise_core::format::format_duration;
 
@@ -407,14 +407,9 @@ pub(super) fn build_columns(
     cover_loader: &Rc<CoverLoader>,
 ) -> BuiltColumns {
     let cover = append_cover_column(view, shared, cover_loader);
-    let title = append_column(
-        view,
-        shared,
-        "title",
-        &strings::text(strings::COLUMN_TITLE),
-        cell_alignment(ColumnId::Title),
-        |t| t.title.clone(),
-    );
+    // The Title column has its own factory (equaliser + now-playing accent),
+    // not the generic text-cell one — see `append_title_column`.
+    let title = append_title_column(view, shared);
     let track_number = append_column(
         view,
         shared,
