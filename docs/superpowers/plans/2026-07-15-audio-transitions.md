@@ -176,20 +176,26 @@ nur einen dummen String-Slot. Genau der API-Fit, den die Trait erlaubt.
 
 Deutlich größer. `playbin3` kann es **nicht**; braucht parallelen Decode.
 
-### B1. Architektur
+### B1. Architektur (ENTSCHIEDEN — umgesetzt)
 
-- Zwei Decode-Ketten (zwei `playbin3` mit je eigenem `volume`-Element, oder
-  zwei `uridecodebin3`) → je ein `volume` → **`audiomixer`** → gemeinsamer
-  Sink. Der `audiomixer` mischt beide Ströme.
-- **Crossfade** = beim Übergang Track-A-`volume` per **`GstController`
-  Interpolation-Control-Source** über die Fade-Dauer auf 0 rampen, Track-B von
-  0 auf 1 — überlappend. Fade-Dauer aus Setting (z. B. 2–12 s).
-- Das ist ein **paralleler Backend-Typ** neben dem Single-playbin3-`Player`,
-  nicht ein Umbau von `Player`. Wahl über die Trait: entweder ein
-  `CrossfadePlayer: PlaybackBackend` oder ein interner Modus im `Player` mit
-  zwei Sub-Pipelines. Empfehlung: **eigener `CrossfadePlayer`**, ausgewählt zur
-  Konstruktionszeit je nach Setting — hält den bestehenden, gut getesteten
-  `Player`-Pfad unberührt, wenn Crossfade aus ist.
+**Crossfade = interner Modus des bestehenden `Player`**, NICHT ein separater
+Backend-Typ. Grund: **laufzeit-umschaltbar** (Preference wirkt sofort ohne
+Neustart) und **Null-Regressionsrisiko** — bei Off/Gapless verhält sich der
+Player exakt wie zuvor. Trait-Fläche: `set_transition(mode, crossfade_seconds)`
+(bereits gemergt); Frontend pusht Mode+Sekunden beim Start und bei jeder
+Preference-Änderung (`apply_transition`).
+
+**Kein `audiomixer`.** Zwei `playbin3` spielen kurz gleichzeitig, jede mit
+eigenem Sink; der Audio-Server mischt sie. Der Übergang wird **positions-
+getrieben** (nicht via about-to-finish): der Position-Ticker startet die
+Sekundär-`playbin` `crossfade_seconds` vor Ende und rampt beide `volume`-
+Properties invers (Primär 1→0, Sekundär 0→user_volume) über einen kurzlebigen
+Rampen-Thread. Rampenkurve: **equal-power** (`cos`/`sin`), um den Mitten-
+Einbruch zu vermeiden. Nach der Rampe wird die Sekundär zur neuen Primär
+(Swap im `Arc<Mutex>`, frischer bus_watch), `AdvancedToNext` wird gefeuert.
+Im Crossfade-Modus ist der Gapless-about-to-finish-Swap unterdrückt (Modus-
+Check), damit sich beide Mechanismen nicht überlagern. Abbruch bei
+play/stop/seek über einen Generation-/Abort-Guard, den der Rampen-Thread prüft.
 
 ### B2. Verifikation
 
