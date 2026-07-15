@@ -27,9 +27,6 @@ use reprise_core::media_integration::MprisState;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
-/// Number of amplitude bars drawn for the seek waveform.
-const WAVEFORM_BUCKETS: usize = 88;
-
 fn cover_path_to_uri(path: &Path) -> Option<String> {
     match glib::filename_to_uri(path, None) {
         Ok(uri) => Some(uri.to_string()),
@@ -146,7 +143,9 @@ impl PlayerController {
     /// art_url callback and cover-accent extraction (previously on the
     /// now-playing page's full-size load).
     pub(super) fn sync_cover(&self, path: &str) {
-        self.sync_waveform(path);
+        if let Some(track_id) = self.now_playing.borrow().as_ref().map(|t| t.id) {
+            self.sync_waveform(track_id);
+        }
         // Revert to the theme fallback up front: if this track has no usable
         // cover, the loader's `on_loaded` never fires and `apply_cover_accent`
         // is never reached, so without this reset the previous album's accent
@@ -214,20 +213,28 @@ impl PlayerController {
         );
     }
 
-    /// Loads the current track's waveform peaks off-main and hands them to the
-    /// player bar, generation-guarded so a rapid track change can't paint a
-    /// stale waveform. Failure to decode leaves the previous waveform in place.
-    pub(super) fn sync_waveform(&self, path: &str) {
+    /// Loads pre-computed waveform peaks from the DB off-main and hands them
+    /// to the player bar, generation-guarded so a rapid track change can't
+    /// paint a stale waveform. Returns the flat fallback when peaks are not
+    /// yet available (the scanner fills them in the background).
+    pub(super) fn sync_waveform(&self, track_id: i64) {
         let generation = self.waveform_generation.get().wrapping_add(1);
         self.waveform_generation.set(generation);
         let waveform_generation = self.waveform_generation.clone();
         let waveform = self.bar.waveform_handle();
-        let path = std::path::PathBuf::from(path);
+        let db_path = reprise_core::db::default_path();
         let (sender, receiver) = async_channel::bounded(1);
         if std::thread::Builder::new()
             .name("reprise-waveform".to_string())
             .spawn(move || {
-                let peaks = crate::ui::waveform_peaks::cached_peaks(&path, WAVEFORM_BUCKETS).ok();
+                let peaks = reprise_core::db::open(Some(&db_path))
+                    .ok()
+                    .and_then(|conn| {
+                        reprise_core::db::migrate(&conn).ok();
+                        reprise_core::db::get_waveform_peaks(&conn, track_id)
+                            .ok()
+                            .flatten()
+                    });
                 let _ = sender.send_blocking(peaks);
             })
             .is_err()
