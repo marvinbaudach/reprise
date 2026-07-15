@@ -617,8 +617,20 @@ mod tests {
 
         let hourly = listening_by_hour(&conn).unwrap();
         assert_eq!(hourly.len(), 2);
-        assert_eq!(hourly[0], HourlyListens { hour: 0, listens: 2 });
-        assert_eq!(hourly[1], HourlyListens { hour: 13, listens: 1 });
+        assert_eq!(
+            hourly[0],
+            HourlyListens {
+                hour: 0,
+                listens: 2
+            }
+        );
+        assert_eq!(
+            hourly[1],
+            HourlyListens {
+                hour: 13,
+                listens: 1
+            }
+        );
     }
 
     #[test]

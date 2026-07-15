@@ -174,8 +174,7 @@ impl StatsView {
                 // Approximate year from unix seconds.
                 1970 + d.as_secs() / 31_557_600
             });
-        self.year_label
-            .set_text(&format!("{now} SO FAR"));
+        self.year_label.set_text(&format!("{now} SO FAR"));
 
         match stats_screen::headline_totals(conn) {
             Ok(totals) => {
@@ -259,8 +258,7 @@ impl StatsView {
     fn refresh_hourly_chart(&self, conn: &Connection) {
         match stats_screen::listening_by_hour(conn) {
             Ok(hourly) => {
-                let sparse: Vec<(u8, i64)> =
-                    hourly.iter().map(|h| (h.hour, h.listens)).collect();
+                let sparse: Vec<(u8, i64)> = hourly.iter().map(|h| (h.hour, h.listens)).collect();
                 self.hourly_chart.set_data(&sparse);
             }
             Err(error) => {
