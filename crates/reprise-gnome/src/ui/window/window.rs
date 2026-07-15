@@ -81,6 +81,7 @@ pub fn build(
     db_path: &Path,
 ) -> FileOpenHandler {
     super::style::install();
+    super::scan_flow::spawn_waveform_backfill(db_path.to_path_buf());
     {
         let conn = conn.borrow();
         let stored = reprise_core::library::settings::get_setting(
