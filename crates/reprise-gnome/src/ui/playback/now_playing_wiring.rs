@@ -23,6 +23,7 @@
 //!   becomes, and wires the bar's click-to-expand callback and the headless
 //!   smoke hook. Called from `window::build`.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -31,6 +32,7 @@ use gtk4::prelude::IsA;
 use libadwaita as adw;
 
 use crate::ui::player_controller::PlayerController;
+use crate::ui::style::cover_accent::Rgb;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::media_integration::MprisState;
 use reprise_core::playback::PlaybackState;
@@ -50,13 +52,20 @@ fn cover_path_to_uri(path: &Path) -> Option<String> {
 }
 
 /// Off-main cover-accent extraction: decode the cover, derive its dominant
-/// accent, and apply it (generation-guarded so a rapid track change can't
-/// apply a stale album accent). A non-colorful cover clears to the theme
-/// fallback.
-fn apply_cover_accent(generation_cell: &Rc<std::cell::Cell<u64>>, cover_path: &Path) {
+/// accent, and cross-fade to it (generation-guarded so a rapid track change
+/// can't apply a stale album accent). A non-colorful cover cross-fades to the
+/// theme fallback. The previous accent is read from (and written back to)
+/// `last_accent_cell`; `widget` is required for the animation target.
+fn apply_cover_accent(
+    generation_cell: &Rc<std::cell::Cell<u64>>,
+    last_accent_cell: &Rc<RefCell<Option<Rgb>>>,
+    cover_path: &Path,
+    widget: impl IsA<gtk4::Widget> + Clone + 'static,
+) {
     let generation = generation_cell.get().wrapping_add(1);
     generation_cell.set(generation);
     let generation_cell = generation_cell.clone();
+    let last_accent_cell = last_accent_cell.clone();
     let cover_path = cover_path.to_path_buf();
     let (sender, receiver) = async_channel::bounded(1);
     if std::thread::Builder::new()
@@ -71,9 +80,11 @@ fn apply_cover_accent(generation_cell: &Rc<std::cell::Cell<u64>>, cover_path: &P
         return;
     }
     glib::spawn_future_local(async move {
-        if let Ok(color) = receiver.recv().await {
+        if let Ok(new_color) = receiver.recv().await {
             if generation_cell.get() == generation {
-                crate::ui::style::cover_accent::set_cover_accent(color);
+                let old_color = *last_accent_cell.borrow();
+                *last_accent_cell.borrow_mut() = new_color;
+                crate::ui::style::cover_accent::cross_fade_accent(old_color, new_color, &widget);
             }
         }
     });
@@ -138,7 +149,9 @@ impl PlayerController {
     fn reset_cover_accent(&self) {
         let generation = self.cover_accent_generation.get().wrapping_add(1);
         self.cover_accent_generation.set(generation);
-        crate::ui::style::cover_accent::set_cover_accent(None);
+        let old_color = *self.cover_accent_last.borrow();
+        *self.cover_accent_last.borrow_mut() = None;
+        crate::ui::style::cover_accent::cross_fade_accent(old_color, None, self.bar.widget());
     }
 
     /// Loads `path`'s cover into both widgets through the ONE shared
@@ -184,6 +197,8 @@ impl PlayerController {
             let now_playing = self.now_playing.clone();
             let mpris_state = self.mpris_state.clone();
             let cover_accent_generation = self.cover_accent_generation.clone();
+            let cover_accent_last = self.cover_accent_last.clone();
+            let bar_widget = self.bar.widget().clone();
             self.cover_loader.load_into_with_path(
                 self.now_playing_view.cover_image(),
                 path,
@@ -206,7 +221,7 @@ impl PlayerController {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     set_art_url_for_current_track(&mut mirror, track_id, art_url);
-                    apply_cover_accent(&cover_accent_generation, &cover_path);
+                    apply_cover_accent(&cover_accent_generation, &cover_accent_last, &cover_path, bar_widget.clone());
                 },
             );
         } else {
