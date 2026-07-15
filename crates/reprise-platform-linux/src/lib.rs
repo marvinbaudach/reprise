@@ -5,6 +5,7 @@
 //! Windows get sibling crates implementing the same contracts (see the
 //! plan's "Repository & frontend strategy").
 
+mod crossfade;
 pub mod device_sync;
 mod gapless;
 pub mod mpris;
