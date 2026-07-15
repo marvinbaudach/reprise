@@ -1,50 +1,46 @@
-//! Full-window Library content with a movable player bar.
+//! Full-window Library content with a movable player bar overlaid via
+//! `GtkOverlay` so the track list scrolls behind the translucent bar.
 
 use gtk4::prelude::*;
 use reprise_core::library::settings::PlayerBarPosition;
 
 #[derive(Clone)]
 pub(super) struct LibraryPlayerBarShell {
-    root: gtk4::Box,
-    bar_block: gtk4::Box,
+    overlay: gtk4::Overlay,
+    bar_box: gtk4::Box,
 }
 
 impl LibraryPlayerBarShell {
     pub(super) fn new(
         content: &impl IsA<gtk4::Widget>,
         player_bar: Option<&gtk4::Widget>,
-        position: PlayerBarPosition,
+        _position: PlayerBarPosition,
     ) -> Self {
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        root.set_hexpand(true);
-        root.set_vexpand(true);
+        let overlay = gtk4::Overlay::new();
         content.set_hexpand(true);
         content.set_vexpand(true);
-        root.append(content);
+        overlay.set_child(Some(content));
 
-        let bar_block = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        bar_block.set_hexpand(true);
+        let bar_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        bar_box.set_hexpand(true);
+        bar_box.set_valign(gtk4::Align::End);
         if let Some(player_bar) = player_bar {
-            bar_block.append(player_bar);
+            bar_box.append(player_bar);
         }
+        overlay.add_overlay(&bar_box);
 
-        let shell = Self { root, bar_block };
-        shell.set_position(position);
-        shell
+        Self { overlay, bar_box }
     }
 
-    pub(super) fn widget(&self) -> &gtk4::Box {
-        &self.root
+    pub(super) fn widget(&self) -> &gtk4::Overlay {
+        &self.overlay
     }
 
     pub(super) fn set_position(&self, position: PlayerBarPosition) {
-        if self.bar_block.parent().is_some() {
-            self.root.remove(&self.bar_block);
-        }
-        match position {
-            PlayerBarPosition::Top => self.root.prepend(&self.bar_block),
-            PlayerBarPosition::Bottom => self.root.append(&self.bar_block),
-        }
+        self.bar_box.set_valign(match position {
+            PlayerBarPosition::Top => gtk4::Align::Start,
+            PlayerBarPosition::Bottom => gtk4::Align::End,
+        });
     }
 }
 
@@ -66,7 +62,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn bar_spans_the_full_root_at_top_and_bottom() {
+    fn bar_overlay_aligns_to_bottom_and_top() {
         if gtk4::init().is_err() {
             return;
         }
@@ -88,32 +84,25 @@ mod tests {
         window.present();
         wait_for_layout();
 
-        assert_eq!(shell.widget().first_child(), Some(content.clone().upcast()));
+        // Content is the overlay's main child.
         assert_eq!(
-            shell.widget().last_child(),
-            Some(shell.bar_block.clone().upcast())
+            shell.widget().child().as_ref(),
+            Some(content.upcast_ref::<gtk4::Widget>())
         );
-        assert_eq!(shell.bar_block.width(), shell.widget().width());
+        // bar_box is an overlay widget pinned to the bottom.
+        assert_eq!(shell.bar_box.valign(), gtk4::Align::End);
+        assert_eq!(shell.bar_box.width(), shell.widget().width());
 
         shell.set_position(PlayerBarPosition::Top);
         wait_for_layout();
-        assert_eq!(
-            shell.widget().first_child(),
-            Some(shell.bar_block.clone().upcast())
-        );
-        assert_eq!(shell.widget().last_child(), Some(content.clone().upcast()));
-        assert_eq!(shell.bar_block.width(), shell.widget().width());
+        assert_eq!(shell.bar_box.valign(), gtk4::Align::Start);
 
         shell.set_position(PlayerBarPosition::Bottom);
+        assert_eq!(shell.bar_box.valign(), gtk4::Align::End);
+        // Calling set_position twice is a no-op: bar_box stays in the overlay.
         shell.set_position(PlayerBarPosition::Bottom);
-        assert_eq!(
-            shell.bar_block.parent(),
-            Some(shell.widget().clone().upcast())
-        );
-        assert_eq!(
-            shell.widget().last_child(),
-            Some(shell.bar_block.clone().upcast())
-        );
+        assert_eq!(shell.bar_box.parent().as_ref(), Some(shell.widget().upcast_ref::<gtk4::Widget>()));
+
         window.close();
     }
 }
