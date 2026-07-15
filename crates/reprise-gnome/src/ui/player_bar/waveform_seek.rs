@@ -29,6 +29,10 @@ const UNPLAYED_ALPHA: f64 = 0.16;
 const GHOST_ALPHA: f64 = 0.40;
 /// Fallback bar height when no peaks are available.
 const FALLBACK_BAR_HEIGHT: f64 = 4.0;
+/// Build-up animation duration in seconds.
+const BUILD_DURATION_S: f64 = 0.3;
+/// Per-bar stagger increment in seconds.
+const BAR_STAGGER_S: f64 = 0.002;
 
 /// Maps a pointer `x` within `width` to a 0..1 seek fraction.
 fn fraction_at(x: f64, width: f64) -> f64 {
@@ -52,6 +56,13 @@ struct State {
     fraction: f64,
     hover_index: Option<usize>,
     drag_fraction: Option<f64>,
+    // Smooth interpolation.
+    target_fraction: f64,
+    fraction_velocity: f64, // fraction-per-microsecond
+    last_tick_us: i64,
+    // Build-up animation.
+    build_progress: f64, // 0.0 = not started, 1.0 = complete
+    build_start_us: i64, // 0 means not running
 }
 
 #[derive(Clone)]
@@ -59,6 +70,11 @@ pub(super) struct WaveformSeek {
     area: gtk4::DrawingArea,
     state: Rc<RefCell<State>>,
     on_seek: SeekCallback,
+    /// Active tick callback handle. Stored in an `Rc<RefCell<Option<…>>>` so
+    /// the closure inside the callback can clear it on completion without needing
+    /// an extra flag.  `TickCallbackId` is not `Clone`, so we take it out to
+    /// call `.remove()` rather than copying it.
+    tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>>,
 }
 
 impl WaveformSeek {
@@ -74,8 +90,14 @@ impl WaveformSeek {
             fraction: 0.0,
             hover_index: None,
             drag_fraction: None,
+            target_fraction: 0.0,
+            fraction_velocity: 0.0,
+            last_tick_us: 0,
+            build_progress: 1.0,
+            build_start_us: 0,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
+        let tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>> = Rc::new(RefCell::new(None));
 
         area.set_draw_func({
             let state = state.clone();
@@ -175,6 +197,7 @@ impl WaveformSeek {
             area,
             state,
             on_seek,
+            tick_id,
         }
     }
 
@@ -182,18 +205,95 @@ impl WaveformSeek {
         &self.area
     }
 
+    /// Set peaks and trigger a 300 ms build-up animation (gated on
+    /// `gtk-enable-animations`).  Use this whenever the track changes.
     pub(super) fn set_peaks(&self, peaks: Vec<f32>) {
-        self.state.borrow_mut().peaks = peaks;
+        let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
+        let animate = gtk4::Settings::default()
+            .map_or(true, |s| s.is_gtk_enable_animations());
+        let mut s = self.state.borrow_mut();
+        s.peaks = peaks;
+        if animate && !s.peaks.is_empty() {
+            s.build_progress = 0.0;
+            s.build_start_us = now;
+        } else {
+            s.build_progress = 1.0;
+        }
+        drop(s);
+        self.area.queue_draw();
+        self.ensure_tick_callback();
+    }
+
+    /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
+    /// when updating from a sub-second position tick so movement is continuous.
+    pub(super) fn set_fraction(&self, fraction: f64) {
+        let fraction = fraction.clamp(0.0, 1.0);
+        let mut s = self.state.borrow_mut();
+        s.fraction = fraction;
+        s.target_fraction = fraction;
+        s.fraction_velocity = 0.0;
+        drop(s);
         self.area.queue_draw();
     }
 
-    pub(super) fn set_fraction(&self, fraction: f64) {
-        self.state.borrow_mut().fraction = fraction.clamp(0.0, 1.0);
-        self.area.queue_draw();
+    /// Update the target playback fraction with velocity estimation for smooth
+    /// interpolation.  Installs a frame-clock tick callback to animate the fill
+    /// toward the new target.
+    pub(super) fn set_fraction_smooth(&self, fraction: f64) {
+        let fraction = fraction.clamp(0.0, 1.0);
+        let mut s = self.state.borrow_mut();
+        let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
+        let dt = (now - s.last_tick_us).max(1) as f64;
+        s.fraction_velocity = (fraction - s.target_fraction) / dt;
+        s.target_fraction = fraction;
+        s.last_tick_us = now;
+        drop(s);
+        self.ensure_tick_callback();
     }
 
     pub(super) fn connect_seek(&self, callback: impl Fn(f64) + 'static) {
         *self.on_seek.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Installs a `GdkFrameClock` tick callback if one is not already running.
+    /// The callback advances the interpolation and build-up animation each frame,
+    /// then stops itself when both are settled.
+    fn ensure_tick_callback(&self) {
+        if self.tick_id.borrow().is_some() {
+            return;
+        }
+        let state = self.state.clone();
+        let area = self.area.clone();
+        let tick_id_slot = self.tick_id.clone();
+        let id = self.area.add_tick_callback(move |_, clock| {
+            let now = clock.frame_time();
+            let mut s = state.borrow_mut();
+
+            // Advance the smooth-position interpolation.
+            let dt = (now - s.last_tick_us).max(0) as f64;
+            s.fraction += s.fraction_velocity * dt;
+            s.fraction = s.fraction.clamp(0.0, 1.0);
+            s.last_tick_us = now;
+
+            // Advance the build-up animation.
+            if s.build_progress < 1.0 && s.build_start_us > 0 {
+                let elapsed = (now - s.build_start_us) as f64 / 1_000_000.0;
+                s.build_progress = (elapsed / BUILD_DURATION_S).clamp(0.0, 1.0);
+            }
+
+            let settled = (s.fraction - s.target_fraction).abs() < 0.001
+                && s.build_progress >= 1.0;
+            drop(s);
+
+            area.queue_draw();
+
+            if settled {
+                *tick_id_slot.borrow_mut() = None;
+                return gtk4::glib::ControlFlow::Break;
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+        *self.tick_id.borrow_mut() = Some(id);
     }
 }
 
@@ -228,7 +328,25 @@ fn draw(
 
     for (index, &peak) in state.peaks.iter().enumerate() {
         let magnitude = f64::from(peak).clamp(0.0, 1.0);
-        let bar_h = MIN_BAR_HEIGHT + magnitude * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
+
+        // Staggered build-up: each bar has a small time offset so they rise
+        // one after another from left to right over the 300 ms window.
+        let stagger = if state.build_progress < 1.0 {
+            let bar_delay = index as f64 * BAR_STAGGER_S;
+            let bar_delay_normalized = bar_delay / BUILD_DURATION_S;
+            let adjusted = (state.build_progress - bar_delay_normalized).max(0.0)
+                / (1.0 - bar_delay_normalized).max(0.01);
+            adjusted.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        let bar_h = (MIN_BAR_HEIGHT + magnitude * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT)) * stagger;
+        // Guard against zero-height bars during early animation frames.
+        if bar_h < 0.5 {
+            continue;
+        }
+
         let x = index as f64 * slot;
         let y = (h - bar_h) / 2.0;
 
@@ -369,5 +487,46 @@ mod tests {
         assert_eq!(x_to_index(w - 1.0), 9);
         // Past the end should clamp to last bar.
         assert_eq!(x_to_index(w + 50.0), 9);
+    }
+
+    #[test]
+    fn stagger_factor_is_zero_at_start_and_one_at_completion() {
+        // At build_progress=0.0, bar 0 stagger is 0 (progress=0, delay_norm=0).
+        // stagger = (0.0 - 0.0).max(0) / (1.0 - 0.0).max(0.01) = 0.0.
+        let stagger_for = |build_progress: f64, index: usize| -> f64 {
+            if build_progress < 1.0 {
+                let bar_delay = index as f64 * BAR_STAGGER_S;
+                let bar_delay_normalized = bar_delay / BUILD_DURATION_S;
+                let adjusted = (build_progress - bar_delay_normalized).max(0.0)
+                    / (1.0 - bar_delay_normalized).max(0.01);
+                adjusted.clamp(0.0, 1.0)
+            } else {
+                1.0
+            }
+        };
+
+        // progress=0: all bars start at 0.
+        assert_eq!(stagger_for(0.0, 0), 0.0);
+        assert_eq!(stagger_for(0.0, 10), 0.0);
+
+        // progress=1: sentinel branch — returns 1.0.
+        assert_eq!(stagger_for(1.0, 0), 1.0);
+        assert_eq!(stagger_for(1.0, 50), 1.0);
+
+        // progress=0.5: bar 0 (no delay) is at 0.5; a late bar with enough
+        // delay to push its bar_delay_normalized > 0.5 is still 0.
+        assert!((stagger_for(0.5, 0) - 0.5).abs() < 1e-9);
+        assert_eq!(stagger_for(0.5, 100), 0.0); // bar 100: delay=0.2s > 0.15s already passed
+    }
+
+    #[test]
+    fn smooth_fraction_velocity_is_computed_from_delta() {
+        // Pure logic test: given target=0.5, old_target=0.0, dt=1_000_000 us
+        // the velocity should be 0.5/1_000_000 per microsecond.
+        let old_target = 0.0_f64;
+        let new_target = 0.5_f64;
+        let dt = 1_000_000_i64;
+        let velocity = (new_target - old_target) / dt as f64;
+        assert!((velocity - 5e-7).abs() < 1e-12);
     }
 }

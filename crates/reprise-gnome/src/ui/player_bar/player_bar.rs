@@ -211,7 +211,7 @@ impl PlayerBar {
         } else {
             0.0
         };
-        self.waveform.set_fraction(fraction);
+        self.waveform.set_fraction_smooth(fraction);
         self.position_label.set_text(&format_duration(position_ms));
         self.duration_label.set_text(&format_duration(duration_ms));
     }
