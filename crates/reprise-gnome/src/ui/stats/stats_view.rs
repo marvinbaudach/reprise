@@ -175,7 +175,7 @@ impl StatsView {
                 1970 + d.as_secs() / 31_557_600
             });
         self.year_label
-            .set_text(&format!("{} SO FAR", now));
+            .set_text(&format!("{now} SO FAR"));
 
         match stats_screen::headline_totals(conn) {
             Ok(totals) => {
@@ -387,7 +387,7 @@ fn genre_row(name: &str, plays: i64, max_plays: i64, pct: i64) -> gtk4::Box {
 
     let bar = progress_bar(plays, max_plays);
 
-    let pct_label = gtk4::Label::new(Some(&format!("{}%", pct)));
+    let pct_label = gtk4::Label::new(Some(&format!("{pct}%")));
     pct_label.add_css_class("stats-genre-pct");
     pct_label.set_xalign(1.0);
 

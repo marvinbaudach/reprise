@@ -10,7 +10,12 @@ license = "GPL-3.0-or-later"
 name = "reprise"
 path = "src/main.rs"
 
+[[bin]]
+name = "reprise-repair"
+path = "src/bin/repair.rs"
+
 [dependencies]
+clap = { version = "4", features = ["derive"] }
 reprise-core = { path = "../reprise-core" }
 reprise-platform-linux = { path = "../reprise-platform-linux" }
 # Partitioned from the pre-split single-crate dependency set (no new deps):
