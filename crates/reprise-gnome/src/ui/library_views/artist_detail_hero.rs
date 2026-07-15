@@ -45,7 +45,7 @@ impl Hero {
         self.meta.set_text(&strings::artist_detail_meta(
             header.album_count,
             header.track_count,
-            header.total_ms,
+            header.catalog_ms,
             header.plays_this_year,
         ));
         self.initials.set_text(&artist_avatar::initials(artist));
@@ -176,7 +176,8 @@ fn connect_artist_action(
     button.connect_clicked(move |_| {
         let cb = callback.borrow().clone();
         if let Some(cb) = cb {
-            cb(current_artist.borrow().clone());
+            let artist = current_artist.borrow().clone();
+            cb(artist);
         }
     });
 }
