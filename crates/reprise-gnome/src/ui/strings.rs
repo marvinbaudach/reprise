@@ -366,6 +366,11 @@ pub fn scan_progress(processed: u64, total: u64) -> String {
 /// Prefix for the error toast shown after a failed scan; the underlying
 /// `ScanError`'s `Display` text is appended by the caller.
 pub const SCAN_FAILED_PREFIX: &str = N_!("Scan failed: ");
+pub const FETCH_DETAIL: &str = N_!("covers & lyrics…");
+
+pub fn fetch_progress(done: u64, total: u64) -> String {
+    format!("{done} of {total}")
+}
 
 // Status bar (src/ui/status_bar.rs).
 pub const STATUS_TRACK_SINGULAR: &str = N_!("track");

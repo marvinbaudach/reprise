@@ -120,6 +120,10 @@ impl ScanControls {
                         Some(ScanProgress::Scanning { .. }),
                         ScanProgress::Scanning { .. }
                     )
+                    | (
+                        Some(ScanProgress::Fetching { .. }),
+                        ScanProgress::Fetching { .. }
+                    )
             )
         };
         *self.current_progress.borrow_mut() = Some(progress.clone());
@@ -148,6 +152,13 @@ impl ScanControls {
                         file = %current_path.display(),
                         "scan progress: scanning"
                     );
+                }
+            }
+            ScanProgress::Fetching { done, total } => {
+                if phase_changed {
+                    tracing::info!(done, total, "scan progress: fetching");
+                } else {
+                    tracing::debug!(done, total, "scan progress: fetching");
                 }
             }
         }
