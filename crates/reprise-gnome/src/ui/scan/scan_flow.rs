@@ -479,13 +479,21 @@ fn run_scan(
     if let Err(error) = settings::set_library_root(&worker_conn, &folder.to_string_lossy()) {
         tracing::error!(%error, "failed to persist library root after scan");
     }
-    analyze_waveforms(&worker_conn);
+    analyze_waveforms(db_path);
     Ok(report)
 }
 
+/// How many gst-launch subprocesses to run in parallel.
+const WAVEFORM_WORKERS: usize = 4;
+
 /// Analyzes waveform peaks for all tracks that don't have them yet.
-/// Runs synchronously on the caller's thread (scan worker or startup worker).
-fn analyze_waveforms(conn: &rusqlite::Connection) {
+/// Parallelizes across `WAVEFORM_WORKERS` threads, each with its own DB
+/// connection. Uses a shared work queue (atomic index into the track list).
+fn analyze_waveforms(db_path: &std::path::Path) {
+    let conn = match reprise_core::db::open(Some(db_path)) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
     let tracks: Vec<(i64, String)> = match conn.prepare(
         "SELECT id, path FROM tracks WHERE waveform_peaks IS NULL AND missing = 0",
     ) {
@@ -496,40 +504,75 @@ fn analyze_waveforms(conn: &rusqlite::Connection) {
             .unwrap_or_default(),
         Err(_) => return,
     };
+    drop(conn);
 
     if tracks.is_empty() {
         tracing::info!("waveform backfill: all tracks already analyzed");
         return;
     }
     let total = tracks.len();
-    tracing::info!(total, "waveform backfill: starting analysis");
+    tracing::info!(total, workers = WAVEFORM_WORKERS, "waveform backfill: starting");
 
-    let mut done = 0usize;
-    let mut failed = 0usize;
-    for (track_id, path) in &tracks {
-        let path = std::path::Path::new(path);
-        match crate::ui::waveform_peaks::extract_peaks(
-            path,
-            crate::ui::waveform_peaks::STORED_PEAK_COUNT,
-        ) {
-            Ok(peaks) => {
-                if let Err(e) = reprise_core::db::set_waveform_peaks(conn, *track_id, &peaks) {
-                    tracing::warn!(track_id, %e, "failed to store waveform peaks");
-                    failed += 1;
-                } else {
-                    done += 1;
+    let cursor = std::sync::atomic::AtomicUsize::new(0);
+    let done = std::sync::atomic::AtomicUsize::new(0);
+    let failed = std::sync::atomic::AtomicUsize::new(0);
+
+    std::thread::scope(|scope| {
+        for _ in 0..WAVEFORM_WORKERS {
+            scope.spawn(|| {
+                let Ok(worker_conn) = reprise_core::db::open(Some(db_path)) else {
+                    return;
+                };
+                loop {
+                    let idx = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if idx >= total {
+                        break;
+                    }
+                    let (track_id, ref path_str) = tracks[idx];
+                    let path = std::path::Path::new(path_str);
+                    match crate::ui::waveform_peaks::extract_peaks(
+                        path,
+                        crate::ui::waveform_peaks::STORED_PEAK_COUNT,
+                    ) {
+                        Ok(peaks) => {
+                            if reprise_core::db::set_waveform_peaks(
+                                &worker_conn,
+                                track_id,
+                                &peaks,
+                            )
+                            .is_ok()
+                            {
+                                done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            } else {
+                                failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+                        Err(_) => {
+                            failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    let progress =
+                        done.load(std::sync::atomic::Ordering::Relaxed)
+                            + failed.load(std::sync::atomic::Ordering::Relaxed);
+                    if progress % 100 == 0 {
+                        tracing::info!(
+                            done = done.load(std::sync::atomic::Ordering::Relaxed),
+                            failed = failed.load(std::sync::atomic::Ordering::Relaxed),
+                            total,
+                            "waveform backfill progress"
+                        );
+                    }
                 }
-            }
-            Err(e) => {
-                tracing::debug!(track_id, path = %path.display(), %e, "waveform analysis skipped");
-                failed += 1;
-            }
+            });
         }
-        if (done + failed) % 50 == 0 || (done + failed) == total {
-            tracing::info!(done, failed, total, "waveform backfill progress");
-        }
-    }
-    tracing::info!(done, failed, total, "waveform backfill complete");
+    });
+
+    tracing::info!(
+        done = done.load(std::sync::atomic::Ordering::Relaxed),
+        failed = failed.load(std::sync::atomic::Ordering::Relaxed),
+        total,
+        "waveform backfill complete"
+    );
 }
 
 /// Spawns a background thread that analyzes waveform peaks for all tracks
@@ -539,18 +582,7 @@ pub(super) fn spawn_waveform_backfill(db_path: std::path::PathBuf) {
     std::thread::Builder::new()
         .name("reprise-waveform-backfill".to_string())
         .spawn(move || {
-            // GStreamer's decodebin emits pad-added signals via GLib, so the
-            // worker thread needs its own MainContext to process them.
-            let ctx = gtk4::glib::MainContext::new();
-            ctx.with_thread_default(|| {
-                let Ok(conn) = reprise_core::db::open(Some(&db_path)) else {
-                    return;
-                };
-                if reprise_core::db::migrate(&conn).is_err() {
-                    return;
-                }
-                analyze_waveforms(&conn);
-            });
+            analyze_waveforms(&db_path);
         })
         .ok();
 }
