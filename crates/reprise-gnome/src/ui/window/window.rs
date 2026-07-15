@@ -601,7 +601,8 @@ pub fn build(
     let rescan_watcher_state = watcher_state.clone();
     let sync_preferences = preferences.clone();
     let stats_sidebar = sidebar.clone();
-    primary_menu::install(
+    let cancel_scan_controls = scan_controls.clone();
+    let library_menu = primary_menu::install(
         &header,
         &window,
         &track_list,
@@ -621,12 +622,20 @@ pub fn build(
                     &rescan_watcher_state,
                 );
             }),
+            on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
             on_sync_device: Rc::new(move || {
                 sync_preferences.present_page("synchronization");
             }),
             on_preferences: Rc::new(move || preferences.present()),
         },
+        &scan_controls,
     );
+    scan_controls.set_on_scan_state_changed({
+        let library_menu = library_menu.clone();
+        move |is_scanning| {
+            primary_menu::update_library_section(&library_menu, is_scanning);
+        }
+    });
     // Task 7: wire the player bar's queue button to open the Queue sidebar.
     if let Some(ref player) = player {
         let sidebar_for_queue = sidebar.clone();

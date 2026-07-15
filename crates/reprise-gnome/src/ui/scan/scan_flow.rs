@@ -7,6 +7,8 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use gtk4::gio::prelude::*;
 use gtk4::glib;
@@ -69,6 +71,8 @@ pub(super) struct ScanControls {
     foreground_progress: Rc<RefCell<Vec<WeakScanProgressView>>>,
     current_progress: Rc<RefCell<Option<ScanProgress>>>,
     completion: ScanCompletion,
+    cancel_token: Arc<AtomicBool>,
+    on_scan_state_changed: Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>,
 }
 
 impl ScanControls {
@@ -79,6 +83,35 @@ impl ScanControls {
             foreground_progress: Rc::new(RefCell::new(Vec::new())),
             current_progress: Rc::new(RefCell::new(None)),
             completion: ScanCompletion::default(),
+            cancel_token: Arc::new(AtomicBool::new(false)),
+            on_scan_state_changed: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    pub(super) fn is_scanning(&self) -> bool {
+        !self.button.is_sensitive()
+    }
+
+    pub(super) fn request_cancel(&self) {
+        self.cancel_token.store(true, Ordering::Relaxed);
+    }
+
+    pub(super) fn reset_cancel(&self) {
+        self.cancel_token.store(false, Ordering::Relaxed);
+    }
+
+    pub(super) fn is_cancel_requested(&self) -> bool {
+        self.cancel_token.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_on_scan_state_changed(&self, callback: impl Fn(bool) + 'static) {
+        *self.on_scan_state_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    fn notify_scan_state(&self) {
+        let callback = self.on_scan_state_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(self.is_scanning());
         }
     }
 
@@ -367,7 +400,9 @@ fn spawn_scan(
     sidebar: Rc<Sidebar>,
     watcher_state: Rc<RefCell<Option<WatcherHandle>>>,
 ) {
+    controls.reset_cancel();
     controls.button.set_sensitive(false);
+    controls.notify_scan_state();
     controls.button.set_label(&strings::text(strings::SCANNING));
     controls
         .button
@@ -411,21 +446,27 @@ fn spawn_scan(
 
         match outcome {
             Ok(Ok(report)) => {
-                tracing::info!(?report, "scan complete");
-                let result = report.to_scan_result();
-                toasts::show(
-                    &toast_overlay,
-                    &strings::scan_complete_toast(result.new_tracks, result.failed),
-                );
-                track_list.reload();
-                sidebar.refresh("scan completed");
-                start_or_restart_watcher(
-                    &watcher_state,
-                    &folder,
-                    db_path,
-                    Rc::downgrade(&track_list),
-                    Rc::downgrade(&sidebar),
-                );
+                if controls.is_cancel_requested() {
+                    tracing::info!("scan cancelled by user; keeping already-imported tracks");
+                    track_list.reload();
+                    sidebar.refresh("scan cancelled");
+                } else {
+                    tracing::info!(?report, "scan complete");
+                    let result = report.to_scan_result();
+                    toasts::show(
+                        &toast_overlay,
+                        &strings::scan_complete_toast(result.new_tracks, result.failed),
+                    );
+                    track_list.reload();
+                    sidebar.refresh("scan completed");
+                    start_or_restart_watcher(
+                        &watcher_state,
+                        &folder,
+                        db_path,
+                        Rc::downgrade(&track_list),
+                        Rc::downgrade(&sidebar),
+                    );
+                }
                 controls.completion.notify();
             }
             Ok(Err(error)) => {
@@ -468,6 +509,7 @@ fn publish_latest_progress(
 fn finish_scan_ui(controls: &ScanControls) {
     controls.finish_progress();
     controls.button.set_sensitive(true);
+    controls.notify_scan_state();
     controls
         .button
         .set_label(&strings::text(strings::SCAN_FOLDER));
