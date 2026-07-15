@@ -67,6 +67,110 @@ pub fn artist_master_count(count: usize) -> String {
     )
 }
 
+// Artists detail pane (src/ui/library_views/artist_detail_pane.rs).
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+pub const ARTIST_DETAIL_EYEBROW: &str = N_!("ARTIST");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_PLAY_ALL: &str = N_!("Play all");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_MENU: &str = N_!("More artist actions");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_ADD_TO_QUEUE: &str = N_!("Add to queue");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_EDIT_TAGS: &str = N_!("Edit tags for all");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_GO_TO_FOLDER: &str = N_!("Go to folder");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_ALBUMS: &str = N_!("Albums");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_TOP_TRACKS: &str = N_!("Top tracks");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_SHOW_ALL: &str = N_!("Show all");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_SHOW_LESS: &str = N_!("Show less");
+#[allow(dead_code)]
+pub const ARTIST_DETAIL_NO_ALBUMS: &str = N_!("No albums for this artist yet.");
+
+/// The hero meta line, e.g. "3 albums · 12 tracks · 5 hours · 1 play this year".
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+pub fn artist_detail_meta(
+    album_count: i64,
+    track_count: i64,
+    total_ms: i64,
+    plays_this_year: i64,
+) -> String {
+    let album_count = usize::try_from(album_count).unwrap_or(usize::MAX);
+    let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
+    let hours = usize::try_from(total_ms.max(0) / 3_600_000).unwrap_or(usize::MAX);
+    let plays = usize::try_from(plays_this_year.max(0)).unwrap_or(usize::MAX);
+    let albums = plural(
+        "{count} album",
+        "{count} albums",
+        album_count,
+        &[("count", &album_count.to_string())],
+    );
+    let tracks = plural(
+        "{count} track",
+        "{count} tracks",
+        track_count,
+        &[("count", &track_count.to_string())],
+    );
+    let hours = plural(
+        "{count} hour",
+        "{count} hours",
+        hours,
+        &[("count", &hours.to_string())],
+    );
+    let plays = plural(
+        "{count} play this year",
+        "{count} plays this year",
+        plays,
+        &[("count", &plays.to_string())],
+    );
+    format!("{albums} · {tracks} · {hours} · {plays}")
+}
+
+/// An album card's meta line, e.g. "2020 · 12 tracks" (drops the year when 0).
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+pub fn artist_album_meta(year: i64, track_count: i64) -> String {
+    let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
+    let tracks = plural(
+        "{count} track",
+        "{count} tracks",
+        track_count,
+        &[("count", &track_count.to_string())],
+    );
+    if year > 0 {
+        format!("{year} · {tracks}")
+    } else {
+        tracks
+    }
+}
+
+/// A top-track row's play count, e.g. "1 play" / "12 plays".
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+pub fn artist_counts_plays(play_count: i64) -> String {
+    let play_count = usize::try_from(play_count.max(0)).unwrap_or(usize::MAX);
+    plural(
+        "{count} play",
+        "{count} plays",
+        play_count,
+        &[("count", &play_count.to_string())],
+    )
+}
+
+/// The "Show all N tracks ›" button under the top-tracks list.
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+pub fn artist_detail_show_all_tracks(track_count: i64) -> String {
+    let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
+    plural(
+        "Show all {count} track \u{203a}",
+        "Show all {count} tracks \u{203a}",
+        track_count,
+        &[("count", &track_count.to_string())],
+    )
+}
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
