@@ -48,6 +48,10 @@ const NAVIGATION_SHORTCUTS: &[ShortcutSpec] = &[
         accelerator: "<Shift>F10",
     },
     ShortcutSpec {
+        title_message: strings::OPEN_KEYBOARD_SHORTCUTS,
+        accelerator: "<Control>question",
+    },
+    ShortcutSpec {
         title_message: strings::OPEN_HELP,
         accelerator: HELP_ACCELERATOR,
     },
@@ -121,6 +125,7 @@ mod tests {
                 "<Control>m",
                 "Escape",
                 "<Shift>F10",
+                "<Control>question",
                 "F1",
             ]
         );
@@ -137,7 +142,7 @@ mod tests {
         assert_eq!(sections[0].title().as_deref(), Some("Playback"));
         assert_eq!(sections[0].n_items(), 2);
         assert_eq!(sections[1].title().as_deref(), Some("Navigation"));
-        assert_eq!(sections[1].n_items(), 5);
+        assert_eq!(sections[1].n_items(), 6);
 
         let items = sections
             .iter()
@@ -163,6 +168,10 @@ mod tests {
                     "Escape".to_string(),
                 ),
                 ("Open Context Menu".to_string(), "<Shift>F10".to_string()),
+                (
+                    "Open Keyboard Shortcuts".to_string(),
+                    "<Control>question".to_string(),
+                ),
                 ("Open Help".to_string(), HELP_ACCELERATOR.to_string()),
             ]
         );

@@ -165,6 +165,14 @@ impl CompactPlayer {
         self.menu.set_on_preferences(callback);
     }
 
+    pub(super) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
+        self.menu.set_on_always_on_top(callback);
+    }
+
+    pub(super) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
+        self.menu.set_on_quit(callback);
+    }
+
     pub(super) fn set_track(&self, title: &str, artist: &str, album: &str, year: Option<i32>) {
         if should_clear_drag_guard_on_track_change(
             self.pointer_down.get(),
@@ -229,6 +237,7 @@ impl CompactPlayer {
             view.play_pause
                 .update_property(&[gtk4::accessible::Property::Label(&action_label)]);
         }
+        self.menu.set_playing(is_playing);
         if state == PlaybackState::Stopped {
             self.pointer_down.set(false);
             self.dragging.set(false);
@@ -326,14 +335,19 @@ impl CompactPlayer {
             let callback = callback.clone();
             view.play_pause.connect_clicked(move |_| callback());
         }
+        self.menu.set_on_play_pause(callback);
     }
 
     pub(super) fn connect_previous(&self, callback: impl Fn() + 'static) {
-        connect_buttons(self.views.iter().map(|view| &view.previous), callback);
+        let callback = Rc::new(callback);
+        connect_buttons_rc(self.views.iter().map(|view| &view.previous), callback.clone());
+        self.menu.set_on_previous(callback);
     }
 
     pub(super) fn connect_next(&self, callback: impl Fn() + 'static) {
-        connect_buttons(self.views.iter().map(|view| &view.next), callback);
+        let callback = Rc::new(callback);
+        connect_buttons_rc(self.views.iter().map(|view| &view.next), callback.clone());
+        self.menu.set_on_next(callback);
     }
 
     pub(super) fn connect_shuffle_toggled(&self, callback: impl Fn(bool) + 'static) {
@@ -560,11 +574,10 @@ impl CompactPlayer {
     }
 }
 
-fn connect_buttons<'a>(
+fn connect_buttons_rc<'a>(
     buttons: impl Iterator<Item = &'a gtk4::Button>,
-    callback: impl Fn() + 'static,
+    callback: Rc<dyn Fn()>,
 ) {
-    let callback = Rc::new(callback);
     for button in buttons {
         let callback = callback.clone();
         button.connect_clicked(move |_| callback());

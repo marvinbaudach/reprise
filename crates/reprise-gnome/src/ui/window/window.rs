@@ -581,22 +581,51 @@ pub fn build(
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();
     super::compact_mode_controls::install(
+        &window,
         &minimal_view,
         player.as_ref().map(|player| &player.compact_player),
         Rc::new(move || compact_preferences.present()),
     );
+    let rescan_conn = conn.clone();
+    let rescan_scan_controls = scan_controls.clone();
+    let rescan_toast_overlay = toast_overlay.clone();
+    let rescan_db_path = db_path.to_path_buf();
+    let rescan_track_list = track_list.clone();
+    let rescan_sidebar = sidebar.clone();
+    let rescan_watcher_state = watcher_state.clone();
+    let sync_preferences = preferences.clone();
+    let stats_sidebar = sidebar.clone();
     primary_menu::install(
         &header,
         &window,
         &track_list,
         primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
+            on_my_stats: Rc::new(move || {
+                stats_sidebar.refresh_and_select(ViewSource::MyStats, "primary menu");
+            }),
+            on_rescan_library: Rc::new(move || {
+                super::scan_flow::trigger_rescan_of_library_root(
+                    &rescan_conn,
+                    &rescan_scan_controls,
+                    &rescan_toast_overlay,
+                    rescan_db_path.clone(),
+                    rescan_track_list.clone(),
+                    rescan_sidebar.clone(),
+                    &rescan_watcher_state,
+                );
+            }),
+            on_sync_device: Rc::new(move || {
+                sync_preferences.present_page("synchronization");
+            }),
             on_preferences: Rc::new(move || preferences.present()),
         },
     );
     header.pack_end(&search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
+    app.set_accels_for_action("win.preferences", &["<Control>comma"]);
+    app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
     app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
     super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view, &sidebar_page);
     let show_content_if_collapsed = super::window_navigation::show_content_callback(&split_view);

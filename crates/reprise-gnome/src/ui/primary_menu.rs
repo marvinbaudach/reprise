@@ -15,7 +15,11 @@ use crate::ui::track_list::TrackList;
 pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
+pub(super) const ACTION_MY_STATS: &str = "my-stats";
+pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
+pub(super) const ACTION_SYNC_DEVICE: &str = "sync-device";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
+pub(super) const ACTION_KEYBOARD_SHORTCUTS: &str = "keyboard-shortcuts";
 pub(super) const ACTION_HELP: &str = "help";
 pub(super) const ACTION_ABOUT: &str = "about";
 pub(super) const SMOKE_RHYTHMBOX_COLUMNS_ENV_VAR: &str = "REPRISE_SMOKE_RHYTHMBOX_COLUMNS";
@@ -23,22 +27,44 @@ const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
 pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
+    pub(super) on_my_stats: Rc<dyn Fn()>,
+    pub(super) on_rescan_library: Rc<dyn Fn()>,
+    pub(super) on_sync_device: Rc<dyn Fn()>,
     pub(super) on_preferences: Rc<dyn Fn()>,
 }
 
-fn primary_menu_entries() -> Vec<(String, &'static str)> {
+/// View section: mode switches and personal views.
+fn view_section_entries() -> Vec<(String, &'static str)> {
+    vec![
+        (
+            strings::text(strings::COMPACT_MODE),
+            "win.toggle-minimal-view",
+        ),
+        (strings::text(strings::MY_STATS), "win.my-stats"),
+    ]
+}
+
+/// Library section: maintenance and sync actions.
+fn library_section_entries() -> Vec<(String, &'static str)> {
+    vec![
+        (
+            strings::text(strings::RESCAN_LIBRARY),
+            "win.rescan-library",
+        ),
+        (strings::text(strings::SYNC_DEVICE), "win.sync-device"),
+    ]
+}
+
+/// Settings section: preferences, shortcuts, help, and about.
+fn settings_section_entries() -> Vec<(String, &'static str)> {
     vec![
         (strings::text(strings::PREFERENCES), "win.preferences"),
         (
-            strings::text(strings::COMPACT_VIEW),
-            "win.toggle-minimal-view",
-        ),
-        (
-            strings::text(strings::EDIT_COLUMN_LAYOUT),
-            "win.edit-column-layout",
+            strings::text(strings::KEYBOARD_SHORTCUTS),
+            "win.keyboard-shortcuts",
         ),
         (strings::text(strings::HELP), "win.help"),
-        (strings::text(strings::ABOUT), "win.about"),
+        (strings::text(strings::ABOUT_REPRISE), "win.about"),
     ]
 }
 
@@ -48,10 +74,23 @@ pub(super) fn install(
     track_list: &Rc<TrackList>,
     callbacks: Callbacks,
 ) {
-    let menu = gio::Menu::new();
-    for (label, action) in primary_menu_entries() {
-        menu.append(Some(&label), Some(action));
+    let view = gio::Menu::new();
+    for (label, action) in view_section_entries() {
+        view.append(Some(&label), Some(action));
     }
+    let library = gio::Menu::new();
+    for (label, action) in library_section_entries() {
+        library.append(Some(&label), Some(action));
+    }
+    let settings = gio::Menu::new();
+    for (label, action) in settings_section_entries() {
+        settings.append(Some(&label), Some(action));
+    }
+    let menu = gio::Menu::new();
+    menu.append_section(None, &view);
+    menu.append_section(None, &library);
+    menu.append_section(None, &settings);
+
     let menu_button = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu)
@@ -87,17 +126,55 @@ pub(super) fn install(
     arm_smoke_column_layout_editor(&edit);
 
     let minimal = gio::SimpleAction::new(ACTION_TOGGLE_MINIMAL_VIEW, None);
-    minimal.connect_activate(move |_, _| (callbacks.on_minimal_view)());
+    {
+        let cb = callbacks.on_minimal_view.clone();
+        minimal.connect_activate(move |_, _| cb());
+    }
     window.add_action(&minimal);
     arm_smoke_minimal_view(&minimal);
 
+    let my_stats = gio::SimpleAction::new(ACTION_MY_STATS, None);
+    {
+        let cb = callbacks.on_my_stats.clone();
+        my_stats.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&my_stats);
+
+    let rescan = gio::SimpleAction::new(ACTION_RESCAN_LIBRARY, None);
+    {
+        let cb = callbacks.on_rescan_library.clone();
+        rescan.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&rescan);
+
+    let sync_device = gio::SimpleAction::new(ACTION_SYNC_DEVICE, None);
+    {
+        let cb = callbacks.on_sync_device.clone();
+        sync_device.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&sync_device);
+
     let preferences = gio::SimpleAction::new(ACTION_PREFERENCES, None);
-    preferences.connect_activate(move |_, _| (callbacks.on_preferences)());
+    {
+        let cb = callbacks.on_preferences.clone();
+        preferences.connect_activate(move |_, _| cb());
+    }
     window.add_action(&preferences);
     if std::env::var(crate::ui::preferences::SMOKE_ENV).is_ok() {
         let preferences = preferences.clone();
         glib::idle_add_local_once(move || preferences.activate(None));
     }
+
+    let keyboard_shortcuts = gio::SimpleAction::new(ACTION_KEYBOARD_SHORTCUTS, None);
+    {
+        let window = window.downgrade();
+        keyboard_shortcuts.connect_activate(move |_, _| {
+            if let Some(window) = window.upgrade() {
+                crate::ui::help::present(&window);
+            }
+        });
+    }
+    window.add_action(&keyboard_shortcuts);
 
     let help = gio::SimpleAction::new(ACTION_HELP, None);
     {
@@ -195,17 +272,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn persistent_menu_offers_local_help_before_about_without_rhythmbox_import() {
-        let actions = primary_menu_entries()
+    fn view_section_starts_with_compact_mode() {
+        let entries = view_section_entries();
+        assert_eq!(entries[0].1, "win.toggle-minimal-view");
+    }
+
+    #[test]
+    fn library_section_has_rescan_and_sync() {
+        let actions: Vec<_> = library_section_entries()
             .into_iter()
             .map(|(_, action)| action)
-            .collect::<Vec<_>>();
+            .collect();
+        assert_eq!(actions, ["win.rescan-library", "win.sync-device"]);
+    }
 
-        assert!(!actions.contains(&"win.import-rhythmbox-columns"));
-        assert!(actions.contains(&"win.edit-column-layout"));
-        assert!(actions.contains(&"win.toggle-minimal-view"));
-        let help = actions.iter().position(|action| *action == "win.help");
-        let about = actions.iter().position(|action| *action == "win.about");
-        assert_eq!(help.map(|index| index + 1), about);
+    #[test]
+    fn settings_section_has_help_before_about() {
+        let actions: Vec<_> = settings_section_entries()
+            .into_iter()
+            .map(|(_, action)| action)
+            .collect();
+        let help = actions.iter().position(|a| *a == "win.help");
+        let about = actions.iter().position(|a| *a == "win.about");
+        assert_eq!(help.map(|i| i + 1), about);
+    }
+
+    #[test]
+    fn no_rhythmbox_import_in_visible_menu() {
+        let all_actions: Vec<_> = view_section_entries()
+            .into_iter()
+            .chain(library_section_entries())
+            .chain(settings_section_entries())
+            .map(|(_, action)| action)
+            .collect();
+        assert!(!all_actions.contains(&"win.import-rhythmbox-columns"));
     }
 }
