@@ -140,4 +140,55 @@ mod tests {
         artist_top_tracks(&conn, "solo", 5).unwrap();
         assert_eq!(conn.total_changes(), before);
     }
+
+    // 2026-01-01T00:00:00Z — start of the calendar year containing NOW.
+    const YEAR_START: i64 = 1_767_225_600;
+
+    #[test]
+    fn plays_this_year_includes_year_start_and_excludes_after_now() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
+               duration_ms,play_count,last_played_at,added_at,missing) VALUES
+             (1,'/a.flac','A','Solo','One','Solo',2026,180000,1,0,0,0);",
+        )
+        .unwrap();
+        // One event exactly at the year-start boundary (inclusive, `>=`):
+        // must count. One event after NOW, later in the same year (the
+        // upper bound is `<= now_unix`): must be excluded.
+        conn.execute_batch(&format!(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES
+             (1, {YEAR_START}, 180000),
+             (1, {}, 180000);",
+            NOW + 10 * 24 * 60 * 60
+        ))
+        .unwrap();
+        let h = artist_header(&conn, "solo", NOW).unwrap();
+        assert_eq!(h.plays_this_year, 1);
+    }
+
+    #[test]
+    fn top_tracks_tiebreak_by_last_played_then_id() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
+               duration_ms,play_count,last_played_at,added_at,missing) VALUES
+             (1,'/a.flac','A','Solo','One','Solo',2020,180000,5,100,0,0),
+             (2,'/b.flac','B','Solo','One','Solo',2020,120000,5,200,0,0),
+             (3,'/c.flac','C','Solo','Two','Solo',2022,150000,3,300,0,0),
+             (4,'/d.flac','D','Solo','Two','Solo',2022,150000,3,300,0,0);",
+        )
+        .unwrap();
+        let top = artist_top_tracks(&conn, "solo", 10).unwrap();
+        // Track 1 and 2 share play_count=5; track 2 has the later
+        // last_played_at, so it must sort first (tiebreak `last_played_at
+        // DESC`). Track 3 and 4 share both play_count=3 and last_played_at
+        // 300, so the final tiebreak `id ASC` orders 3 before 4.
+        assert_eq!(
+            top.iter().map(|t| t.track_id).collect::<Vec<_>>(),
+            vec![2, 1, 3, 4]
+        );
+    }
 }
