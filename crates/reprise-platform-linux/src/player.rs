@@ -423,6 +423,18 @@ impl PlaybackBackend for Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = resolved;
     }
+
+    // TODO(crossfade Phase B): real implementation pending — store mode +
+    // seconds; in Crossfade mode the position ticker starts the pre-fed next
+    // track on a second playbin `crossfade_seconds` before the end and
+    // inverse-volume-ramps the two. Currently a no-op stub, so Off/Gapless
+    // behavior is unaffected.
+    fn set_transition(
+        &self,
+        _mode: reprise_core::library::settings::TrackTransition,
+        _crossfade_seconds: u8,
+    ) {
+    }
 }
 
 #[cfg(test)]

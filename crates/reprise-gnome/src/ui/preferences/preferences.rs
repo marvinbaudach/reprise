@@ -54,11 +54,10 @@ pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
     }
 }
 
-// Phase A exposes only Off/Gapless in the ComboRow; Crossfade (Phase B) will
-// extend both the model and these mappings.
 fn transition_from_index(index: u32) -> TrackTransition {
     match index {
         1 => TrackTransition::Gapless,
+        2 => TrackTransition::Crossfade,
         _ => TrackTransition::Off,
     }
 }
@@ -67,8 +66,7 @@ fn transition_index(mode: TrackTransition) -> u32 {
     match mode {
         TrackTransition::Off => 0,
         TrackTransition::Gapless => 1,
-        // Not yet offered in the UI; show it as Gapless until Phase B lands.
-        TrackTransition::Crossfade => 1,
+        TrackTransition::Crossfade => 2,
     }
 }
 
@@ -469,31 +467,61 @@ impl PreferencesContext {
         let transition_modes = gtk4::StringList::new(&[
             &strings::text(strings::TRANSITION_OFF),
             &strings::text(strings::TRANSITION_GAPLESS),
+            &strings::text(strings::TRANSITION_CROSSFADE),
         ]);
-        let selected_transition = {
+        let stored_transition = {
             let conn = self.conn.borrow();
-            transition_index(settings::get_track_transition(&conn))
+            settings::get_track_transition(&conn)
         };
         let transition = adw::ComboRow::builder()
             .title(strings::text(strings::TRANSITIONS_MODE))
             .model(&transition_modes)
-            .selected(selected_transition)
+            .selected(transition_index(stored_transition))
             .build();
+        transitions.add(&transition);
+
+        // Crossfade duration: only sensitive while Crossfade is selected.
+        let crossfade_seconds = adw::SpinRow::builder()
+            .title(strings::text(strings::CROSSFADE_DURATION))
+            .adjustment(&gtk4::Adjustment::new(
+                f64::from({
+                    let conn = self.conn.borrow();
+                    settings::get_crossfade_seconds(&conn)
+                }),
+                f64::from(settings::CROSSFADE_SECONDS_MIN),
+                f64::from(settings::CROSSFADE_SECONDS_MAX),
+                1.0,
+                1.0,
+                0.0,
+            ))
+            .build();
+        crossfade_seconds.set_sensitive(stored_transition == TrackTransition::Crossfade);
+        transitions.add(&crossfade_seconds);
+
         let weak = Rc::downgrade(self);
+        let seconds_row = crossfade_seconds.clone();
         transition.connect_selected_notify(move |row| {
             let Some(context) = weak.upgrade() else {
                 return;
             };
-            context.set_track_transition(transition_from_index(row.selected()));
+            let mode = transition_from_index(row.selected());
+            seconds_row.set_sensitive(mode == TrackTransition::Crossfade);
+            context.set_track_transition(mode);
         });
-        transitions.add(&transition);
+
+        let weak = Rc::downgrade(self);
+        crossfade_seconds.connect_value_notify(move |row| {
+            let Some(context) = weak.upgrade() else {
+                return;
+            };
+            context.set_crossfade_seconds(row.value().round() as u8);
+        });
         page.add(&transitions);
         page
     }
 
-    /// Persists the track-transition mode and re-feeds the gapless next track
-    /// so the change takes effect immediately (no restart): enabling gapless
-    /// pre-feeds the upcoming URI, disabling it clears the queued track.
+    /// Persists the track-transition mode and pushes it to the backend (plus a
+    /// re-feed) so the change takes effect immediately, no restart.
     fn set_track_transition(&self, mode: TrackTransition) {
         {
             let conn = self.conn.borrow();
@@ -503,7 +531,20 @@ impl PreferencesContext {
             }
         }
         if let Some(player) = &self.player {
-            player.feed_next();
+            player.apply_transition();
+        }
+    }
+
+    fn set_crossfade_seconds(&self, seconds: u8) {
+        {
+            let conn = self.conn.borrow();
+            if let Err(error) = settings::set_crossfade_seconds(&conn, seconds) {
+                tracing::warn!(%error, "could not save crossfade duration");
+                return;
+            }
+        }
+        if let Some(player) = &self.player {
+            player.apply_transition();
         }
     }
 

@@ -119,6 +119,8 @@ pub const TRANSITIONS: &str = N_!("Transitions");
 pub const TRANSITIONS_MODE: &str = N_!("Between Tracks");
 pub const TRANSITION_OFF: &str = N_!("Gap (No Blending)");
 pub const TRANSITION_GAPLESS: &str = N_!("Gapless");
+pub const TRANSITION_CROSSFADE: &str = N_!("Crossfade");
+pub const CROSSFADE_DURATION: &str = N_!("Crossfade Duration (seconds)");
 pub const AUDIO_EFFECTS_FAILED: &str = N_!("Could not apply audio effects");
 
 #[path = "strings_scrobbling.rs"]

@@ -118,6 +118,22 @@ impl PlayerController {
     /// Called after every track start and every queue/up-next/repeat/shuffle
     /// mutation, and whenever the transition setting changes — the backend
     /// keeps only the latest value.
+    /// Pushes the current transition setting (mode + crossfade seconds) to the
+    /// backend and re-feeds the next track, so a preference change takes effect
+    /// immediately without a restart. Called at startup and from the Transitions
+    /// preference handler.
+    pub(super) fn apply_transition(&self) {
+        let (mode, seconds) = {
+            let conn = self.conn.borrow();
+            (
+                settings::get_track_transition(&conn),
+                settings::get_crossfade_seconds(&conn),
+            )
+        };
+        self.player.set_transition(mode, seconds);
+        self.feed_next();
+    }
+
     pub(super) fn feed_next(&self) {
         let transition = settings::get_track_transition(&self.conn.borrow());
         if transition == TrackTransition::Off {
