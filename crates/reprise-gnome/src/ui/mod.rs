@@ -23,9 +23,14 @@
 mod about;
 #[path = "library_views/album_view.rs"]
 mod album_view;
-#[allow(dead_code)] // gradient_css consumed by artist_master (later task)
 #[path = "library_views/artist_avatar.rs"]
 mod artist_avatar;
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+#[path = "library_views/artist_master.rs"]
+mod artist_master;
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+#[path = "library_views/artist_master_row.rs"]
+mod artist_master_row;
 #[path = "info_panel/artist_news_worker.rs"]
 mod artist_news_worker;
 #[path = "library_views/artist_view.rs"]
@@ -77,7 +82,6 @@ mod device_sync_smoke;
 #[path = "device_sync/device_sync_strings.rs"]
 mod device_sync_strings;
 pub mod dialogs;
-#[allow(dead_code)] // EqBars consumed by artist list / top-tracks wiring (later task)
 pub(in crate::ui) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;

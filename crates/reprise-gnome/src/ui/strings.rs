@@ -52,6 +52,21 @@ pub fn artist_counts(album_count: i64, track_count: i64) -> String {
     );
     format!("{albums} · {tracks}")
 }
+pub const ARTIST_SORT_ALPHABETICAL: &str = N_!("A–Z");
+pub const ARTIST_SORT_MOST_PLAYED: &str = N_!("Most played");
+pub const ARTIST_SORT_RECENTLY_PLAYED: &str = N_!("Recently played");
+
+/// The Artists master-list header count, e.g. "42 artists".
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+pub fn artist_master_count(count: usize) -> String {
+    plural(
+        "{count} artist",
+        "{count} artists",
+        count,
+        &[("count", &count.to_string())],
+    )
+}
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");

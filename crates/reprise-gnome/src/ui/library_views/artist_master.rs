@@ -1,0 +1,431 @@
+//! Artists master list: the left 300px pane of the Artists master/detail view.
+//!
+//! A `GtkListView` (row recycling) over a `gio::ListStore` of
+//! `BoxedAnyObject<ArtistSummary>`, wrapped in a `SortListModel` so alphabet
+//! section headers can be toggled on/off, then a `SingleSelection` that emits
+//! the selected artist's display name. The sort `DropDown` (A–Z / Most played
+//! / Recently played) re-sorts the store in place; section headers show only
+//! in A–Z.
+//!
+//! ## Per-row now-playing EQ and avatar gradient
+//!
+//! Row widgetry (the recycled row, its factory, and the now-playing EQ side
+//! table) lives in the sibling `artist_master_row` module.
+//! `set_now_playing_artist` walks that table to light up whichever realized
+//! row matches, rather than forcing a full model rebind.
+
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use gtk4::gio;
+use gtk4::gio::prelude::*;
+use gtk4::glib;
+use gtk4::prelude::*;
+use libadwaita as adw;
+use rusqlite::Connection;
+
+use crate::ui::artist_master_row::{self, Registry};
+use crate::ui::strings;
+use reprise_core::queries::{self, ArtistSummary};
+
+/// Fixed width of the master pane (the detail pane fills the rest).
+const PANE_WIDTH: i32 = 300;
+
+type OnSelect = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
+
+/// The three sort orders offered by the header `DropDown`, in dropdown order.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SortMode {
+    Alphabetical,
+    MostPlayed,
+    RecentlyPlayed,
+}
+
+impl SortMode {
+    fn from_index(index: u32) -> Self {
+        match index {
+            1 => Self::MostPlayed,
+            2 => Self::RecentlyPlayed,
+            _ => Self::Alphabetical,
+        }
+    }
+}
+
+/// Shared, reference-counted state. Held by `ArtistMaster` and by the pieces
+/// that outlive a single call (the `DropDown`/selection handlers). GTK objects
+/// that themselves store a handler (`selection`, the row factory) capture only
+/// the standalone `Rc` fields below — never `Rc<Inner>` — to avoid a
+/// widget→closure→`Inner`→widget reference cycle.
+struct Inner {
+    conn: Rc<RefCell<Connection>>,
+    store: gio::ListStore,
+    sort_model: gtk4::SortListModel,
+    selection: gtk4::SingleSelection,
+    list_view: gtk4::ListView,
+    header_factory: gtk4::SignalListItemFactory,
+    section_sorter: gtk4::CustomSorter,
+    stack: gtk4::Stack,
+    count_label: gtk4::Label,
+    rows: Rc<RefCell<Vec<ArtistSummary>>>,
+    mode: Rc<Cell<SortMode>>,
+    registry: Registry,
+    now_playing: Rc<RefCell<Option<String>>>,
+    on_select: OnSelect,
+}
+
+pub(in crate::ui) struct ArtistMaster {
+    root: gtk4::Box,
+    inner: Rc<Inner>,
+}
+
+impl ArtistMaster {
+    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>) -> Self {
+        let rows: Rc<RefCell<Vec<ArtistSummary>>> = Rc::new(RefCell::new(Vec::new()));
+        let mode = Rc::new(Cell::new(SortMode::Alphabetical));
+        let registry: Registry = Rc::new(RefCell::new(HashMap::new()));
+        let now_playing: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+        let on_select: OnSelect = Rc::new(RefCell::new(None));
+
+        let store = gio::ListStore::new::<glib::BoxedAnyObject>();
+        let sort_model = gtk4::SortListModel::new(Some(store.clone()), None::<gtk4::Sorter>);
+        let section_sorter = gtk4::CustomSorter::new(section_compare);
+
+        let selection = gtk4::SingleSelection::builder()
+            .model(&sort_model)
+            .autoselect(false)
+            .can_unselect(true)
+            .build();
+        wire_selection(&selection, &on_select);
+
+        let factory = artist_master_row::build_row_factory(&registry, &now_playing);
+        let list_view = gtk4::ListView::new(Some(selection.clone()), Some(factory));
+        list_view.add_css_class("artist-list");
+        let header_factory = build_header_factory();
+
+        let scrolled = gtk4::ScrolledWindow::builder()
+            .child(&list_view)
+            .hscrollbar_policy(gtk4::PolicyType::Never)
+            .vexpand(true)
+            .hexpand(true)
+            .build();
+        let empty = adw::StatusPage::builder()
+            .icon_name("system-users-symbolic")
+            .title(strings::text(strings::ARTISTS_EMPTY_TITLE))
+            .description(strings::text(strings::ARTISTS_EMPTY_DESCRIPTION))
+            .build();
+        let stack = gtk4::Stack::new();
+        stack.add_named(&scrolled, Some("list"));
+        stack.add_named(&empty, Some("empty"));
+        stack.set_vexpand(true);
+
+        let count_label = gtk4::Label::new(None);
+        let (header, dropdown) = build_header(&count_label);
+
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.add_css_class("artist-master");
+        root.set_width_request(PANE_WIDTH);
+        root.append(&header);
+        root.append(&stack);
+
+        let inner = Rc::new(Inner {
+            conn,
+            store,
+            sort_model,
+            selection,
+            list_view,
+            header_factory,
+            section_sorter,
+            stack,
+            count_label,
+            rows,
+            mode,
+            registry,
+            now_playing,
+            on_select,
+        });
+
+        wire_dropdown(&dropdown, &inner);
+
+        let master = Self { root, inner };
+        master.reload();
+        master
+    }
+
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
+        &self.root
+    }
+
+    pub(in crate::ui) fn set_on_select(&self, callback: impl Fn(String) + 'static) {
+        *self.inner.on_select.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Re-runs the query, replaces the cached rows, and re-applies the current
+    /// sort. Degrades to an empty list (logged) on a query error — never
+    /// panics on a bad connection.
+    pub(in crate::ui) fn reload(&self) {
+        let loaded = {
+            let conn = self.inner.conn.borrow();
+            queries::query_artists(&conn).unwrap_or_else(|error| {
+                tracing::error!(%error, "artist master: failed to load artists");
+                Vec::new()
+            })
+        };
+        *self.inner.rows.borrow_mut() = loaded;
+        apply_rows(&self.inner);
+    }
+
+    /// Selects the row whose artist matches `artist` case-insensitively (used
+    /// by the detail-pane deep link). No-op if none match.
+    pub(in crate::ui) fn select_artist(&self, artist: &str) {
+        let count = self.inner.selection.n_items();
+        for index in 0..count {
+            let matches = self
+                .inner
+                .selection
+                .item(index)
+                .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
+                .is_some_and(|boxed| {
+                    boxed
+                        .borrow::<ArtistSummary>()
+                        .artist
+                        .eq_ignore_ascii_case(artist)
+                });
+            if matches {
+                self.inner.selection.set_selected(index);
+                return;
+            }
+        }
+    }
+
+    /// Lights the mini-EQ on whichever realized row matches `artist`
+    /// (case-insensitively), clearing every other row. Newly recycled rows
+    /// pick the state up from `connect_bind`.
+    pub(in crate::ui) fn set_now_playing_artist(&self, artist: Option<String>) {
+        *self.inner.now_playing.borrow_mut() = artist;
+        let now_playing = self.inner.now_playing.borrow();
+        for handles in self.inner.registry.borrow().values() {
+            handles.set_now_playing(now_playing.as_deref());
+        }
+    }
+
+    pub(in crate::ui) fn count(&self) -> u32 {
+        self.inner.store.n_items()
+    }
+
+    #[cfg(test)]
+    fn select_index_for_test(&self, index: u32) {
+        self.inner.selection.set_selected(index);
+    }
+}
+
+/// The alphabet section key for a name: its uppercased first letter, or `#`
+/// for anything non-alphabetic (digits, symbols) or empty.
+fn section_key(name: &str) -> String {
+    name.chars().next().map_or_else(
+        || "#".to_string(),
+        |ch| {
+            let upper = ch.to_uppercase().next().unwrap_or(ch);
+            if upper.is_alphabetic() {
+                upper.to_string()
+            } else {
+                "#".to_string()
+            }
+        },
+    )
+}
+
+/// `CustomSorter` comparator grouping consecutive rows into alphabet sections.
+/// The store is already alphabetically ordered in A–Z mode, so comparing
+/// section keys is enough to mark the section boundaries.
+fn section_compare(a: &glib::Object, b: &glib::Object) -> gtk4::Ordering {
+    let key_a = boxed_section_key(a);
+    let key_b = boxed_section_key(b);
+    key_a.cmp(&key_b).into()
+}
+
+fn boxed_section_key(obj: &glib::Object) -> String {
+    obj.downcast_ref::<glib::BoxedAnyObject>()
+        .map(|boxed| section_key(&boxed.borrow::<ArtistSummary>().artist))
+        .unwrap_or_default()
+}
+
+/// Sorts `rows` in place for `mode`. Ties (and the whole A–Z order) fall back
+/// to case-insensitive artist name so the order is always deterministic.
+fn sort_rows(rows: &mut [ArtistSummary], mode: SortMode) {
+    let by_name = |a: &ArtistSummary, b: &ArtistSummary| {
+        a.artist.to_lowercase().cmp(&b.artist.to_lowercase())
+    };
+    match mode {
+        SortMode::Alphabetical => rows.sort_by(by_name),
+        SortMode::MostPlayed => {
+            rows.sort_by(|a, b| {
+                b.total_plays
+                    .cmp(&a.total_plays)
+                    .then_with(|| by_name(a, b))
+            });
+        }
+        SortMode::RecentlyPlayed => {
+            rows.sort_by(|a, b| {
+                b.last_played_at
+                    .cmp(&a.last_played_at)
+                    .then_with(|| by_name(a, b))
+            });
+        }
+    }
+}
+
+/// Re-sorts the cached rows for the active mode, splices them into the store,
+/// toggles the section headers (A–Z only), and refreshes the header count and
+/// empty-state page.
+fn apply_rows(inner: &Inner) {
+    let mode = inner.mode.get();
+    let mut rows = inner.rows.borrow().clone();
+    sort_rows(&mut rows, mode);
+
+    let objects: Vec<glib::Object> = rows
+        .iter()
+        .map(|row| glib::BoxedAnyObject::new(row.clone()).upcast())
+        .collect();
+    inner.store.splice(0, inner.store.n_items(), &objects);
+
+    if mode == SortMode::Alphabetical {
+        inner
+            .sort_model
+            .set_section_sorter(Some(&inner.section_sorter));
+        inner
+            .list_view
+            .set_header_factory(Some(&inner.header_factory));
+    } else {
+        inner.sort_model.set_section_sorter(gtk4::Sorter::NONE);
+        inner
+            .list_view
+            .set_header_factory(gtk4::ListItemFactory::NONE);
+    }
+
+    inner
+        .count_label
+        .set_text(&strings::artist_master_count(rows.len()));
+    inner
+        .stack
+        .set_visible_child_name(if rows.is_empty() { "empty" } else { "list" });
+}
+
+/// Builds the header bar: title, live count, and the sort `DropDown`. Returns
+/// the row and the dropdown (wired separately, once `Inner` exists).
+fn build_header(count_label: &gtk4::Label) -> (gtk4::Box, gtk4::DropDown) {
+    let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    header.add_css_class("artist-master-header");
+
+    let title = gtk4::Label::new(Some(&strings::text(strings::LIBRARY_VIEW_ARTISTS)));
+    title.add_css_class("artist-master-title");
+    title.set_xalign(0.0);
+
+    count_label.add_css_class("artist-master-count");
+    count_label.add_css_class("dim-label");
+    count_label.set_xalign(0.0);
+    count_label.set_hexpand(true);
+
+    let dropdown = gtk4::DropDown::from_strings(&[
+        &strings::text(strings::ARTIST_SORT_ALPHABETICAL),
+        &strings::text(strings::ARTIST_SORT_MOST_PLAYED),
+        &strings::text(strings::ARTIST_SORT_RECENTLY_PLAYED),
+    ]);
+    dropdown.add_css_class("artist-master-sort");
+
+    header.append(&title);
+    header.append(count_label);
+    header.append(&dropdown);
+    (header, dropdown)
+}
+
+fn wire_dropdown(dropdown: &gtk4::DropDown, inner: &Rc<Inner>) {
+    let inner = inner.clone();
+    dropdown.connect_selected_notify(move |dropdown| {
+        inner.mode.set(SortMode::from_index(dropdown.selected()));
+        apply_rows(&inner);
+    });
+}
+
+/// On any selection change, emit the selected artist's display name. Skips the
+/// no-selection state (nothing selected / just unselected). Captures only the
+/// `on_select` cell — never `Inner` — since the closure is stored inside the
+/// selection object it observes.
+fn wire_selection(selection: &gtk4::SingleSelection, on_select: &OnSelect) {
+    let on_select = on_select.clone();
+    selection.connect_selected_notify(move |selection| {
+        let Some(boxed) = selection
+            .selected_item()
+            .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
+        else {
+            return;
+        };
+        let artist = boxed.borrow::<ArtistSummary>().artist.clone();
+        let callback = on_select.borrow().clone();
+        if let Some(callback) = callback {
+            callback(artist);
+        }
+    });
+}
+
+/// The alphabet section-header factory (A–Z mode only): a single left-aligned
+/// letter label per section.
+fn build_header_factory() -> gtk4::SignalListItemFactory {
+    let factory = gtk4::SignalListItemFactory::new();
+    factory.connect_setup(|_, obj| {
+        let Some(header) = obj.downcast_ref::<gtk4::ListHeader>() else {
+            return;
+        };
+        let label = gtk4::Label::new(None);
+        label.set_xalign(0.0);
+        label.add_css_class("artist-list-section");
+        header.set_child(Some(&label));
+    });
+    factory.connect_bind(|_, obj| {
+        let Some(header) = obj.downcast_ref::<gtk4::ListHeader>() else {
+            return;
+        };
+        let Some(label) = header
+            .child()
+            .and_then(|w| w.downcast::<gtk4::Label>().ok())
+        else {
+            return;
+        };
+        let key = header
+            .item()
+            .map(|obj| boxed_section_key(&obj))
+            .unwrap_or_default();
+        label.set_text(&key);
+    });
+    factory
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn master_lists_artists_and_emits_selection() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
+             ('/1','A','Alpha','X',0),('/2','B','Beta','Y',0);",
+        )
+        .unwrap();
+        let conn = std::rc::Rc::new(std::cell::RefCell::new(conn));
+        let selected = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let master = ArtistMaster::new(conn);
+        master.set_on_select({
+            let selected = selected.clone();
+            move |artist| *selected.borrow_mut() = Some(artist)
+        });
+        assert_eq!(master.count(), 2);
+        master.select_index_for_test(0);
+        assert_eq!(selected.borrow().as_deref(), Some("Alpha"));
+    }
+}
