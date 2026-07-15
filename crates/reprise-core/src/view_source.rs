@@ -49,8 +49,8 @@ pub enum ViewSource {
     /// written when entering or leaving this source.
     Album { album: String, album_artist: String },
     /// A read-only artist detail reached from the visual Artists view.
-    /// Artist identity is the trimmed, case-insensitive track artist used by
-    /// the summary query.
+    /// Artist identity is the trimmed, case-insensitive effective album
+    /// artist used by the summary query.
     Artist(String),
     /// The "My Stats" screen — a dedicated view backed by
     /// `library::stats_screen` rather than the shared track list. The

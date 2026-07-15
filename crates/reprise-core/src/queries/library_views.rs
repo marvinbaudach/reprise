@@ -204,7 +204,7 @@ pub(super) fn query_artist_track_window(
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
          file_mtime, missing, file_size, device, inode \
          FROM tracks WHERE missing = 0 \
-         AND TRIM(artist) = ?3 COLLATE NOCASE{filter_sql} \
+         AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE{filter_sql} \
          ORDER BY {order} {direction} LIMIT ?1 OFFSET ?2"
     );
     let mut params = vec![
@@ -229,7 +229,7 @@ pub(super) fn query_artist_track_count(
     let filter_sql = filter_clause(has_filter, 2);
     let sql = format!(
         "SELECT count(*) FROM tracks WHERE missing = 0 \
-         AND TRIM(artist) = ?1 COLLATE NOCASE{filter_sql}"
+         AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE{filter_sql}"
     );
     let mut params = vec![Value::Text(artist.trim().to_string())];
     if has_filter {
@@ -250,7 +250,7 @@ pub(super) fn query_artist_track_ids(
     let filter_sql = filter_clause(has_filter, 2);
     let sql = format!(
         "SELECT id FROM tracks WHERE missing = 0 \
-         AND TRIM(artist) = ?1 COLLATE NOCASE{filter_sql} \
+         AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE{filter_sql} \
          ORDER BY {order} {direction} LIMIT {QUEUE_LIMIT}"
     );
     let mut params = vec![Value::Text(artist.trim().to_string())];
@@ -437,5 +437,14 @@ mod tests {
             query_track_ids(&conn, &source, "title", "asc", "A", &[]).unwrap(),
             [1]
         );
+    }
+
+    #[test]
+    fn artist_source_matches_by_effective_album_artist() {
+        let conn = seeded_library();
+        let solo = ViewSource::Artist(" SOLO ".into());
+        assert_eq!(query_track_count(&conn, &solo, "", &[]).unwrap(), 2);
+        let va = ViewSource::Artist("Various Artists".into());
+        assert_eq!(query_track_count(&conn, &va, "", &[]).unwrap(), 2);
     }
 }
