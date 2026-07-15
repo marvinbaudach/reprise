@@ -419,6 +419,7 @@ pub const SHUFFLE: &str = N_!("Shuffle");
 pub const PREVIOUS: &str = N_!("Previous");
 pub const NEXT: &str = N_!("Next");
 pub const REPEAT: &str = N_!("Repeat");
+pub const QUEUE: &str = N_!("Queue");
 
 // Rating: used both as the track list's Rating column header
 // (src/ui/track_list.rs) and as the RatingWidget's tooltip
