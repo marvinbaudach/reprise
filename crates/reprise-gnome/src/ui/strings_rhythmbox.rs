@@ -10,16 +10,11 @@ macro_rules! N_ {
 
 pub const RHYTHMBOX_IMPORT_DESCRIPTION: &str =
     N_!("Import ratings, play counts, date-added and last-played information, playlists, and optionally the column layout");
-pub const RHYTHMBOX_IMPORT_DIALOG_BODY: &str = N_!("Choose which information to copy into Reprise. Rhythmbox and your audio files remain unchanged.");
 pub const RHYTHMBOX_IMPORT_RATINGS: &str = N_!("Ratings");
 pub const RHYTHMBOX_IMPORT_DATE_ADDED: &str = N_!("Date added");
 pub const RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED: &str = N_!("Play counts & last played");
 pub const RHYTHMBOX_IMPORT_PLAYLISTS: &str = N_!("Playlists");
 pub const RHYTHMBOX_IMPORT_START: &str = N_!("Import");
-pub const RHYTHMBOX_IMPORT_COMPLETE: &str = N_!("Rhythmbox import complete");
-pub const RHYTHMBOX_IMPORT_FAILED: &str = N_!("Rhythmbox import failed");
-pub const RHYTHMBOX_IMPORT_PARTIAL: &str = N_!("Rhythmbox import completed with warnings");
-pub const RHYTHMBOX_PRESCAN_SCANNING: &str = N_!("Scanning Rhythmbox library\u{2026}");
 pub const RHYTHMBOX_LIBRARY_FOUND: &str = N_!("Rhythmbox library found");
 pub const RHYTHMBOX_IMPORT_BODY_RICH: &str = N_!(
     "Choose what to copy into Reprise. Rhythmbox and your audio files remain unchanged \u{2014} you can undo the whole operation."
@@ -32,65 +27,6 @@ pub const RHYTHMBOX_SKIP_MISSING_ON_DISK: &str = N_!("Files no longer on disk");
 pub const RHYTHMBOX_SKIP_NON_SONG: &str = N_!("Podcasts & radio streams");
 pub const RHYTHMBOX_DONE: &str = N_!("Done");
 pub const RHYTHMBOX_CANCEL: &str = N_!("Cancel");
-
-pub fn rhythmbox_import_summary(
-    matched: usize,
-    ratings: usize,
-    play_counts: usize,
-    dates: usize,
-    last_played: usize,
-    skipped: usize,
-) -> String {
-    let matched = matched.to_string();
-    let ratings = ratings.to_string();
-    let play_counts = play_counts.to_string();
-    let dates = dates.to_string();
-    let last_played = last_played.to_string();
-    let skipped = skipped.to_string();
-    formatted(
-        N_!("Matched {matched} tracks · imported {ratings} ratings · raised {play_counts} play counts · restored {dates} date-added values · restored {last_played} last-played values · skipped {skipped}"),
-        &[
-            ("matched", &matched),
-            ("ratings", &ratings),
-            ("play_counts", &play_counts),
-            ("dates", &dates),
-            ("last_played", &last_played),
-            ("skipped", &skipped),
-        ],
-    )
-}
-
-pub fn rhythmbox_import_error(error: &str) -> String {
-    formatted(
-        N_!("Could not import Rhythmbox data: {error}"),
-        &[("error", error)],
-    )
-}
-
-pub fn rhythmbox_playlist_import_summary(
-    playlists: usize,
-    tracks: usize,
-    skipped: usize,
-) -> String {
-    let playlists = playlists.to_string();
-    let tracks = tracks.to_string();
-    let skipped = skipped.to_string();
-    formatted(
-        N_!("Imported {playlists} playlists with {tracks} tracks · skipped {skipped} unavailable tracks"),
-        &[
-            ("playlists", &playlists),
-            ("tracks", &tracks),
-            ("skipped", &skipped),
-        ],
-    )
-}
-
-pub fn rhythmbox_playlist_import_error(error: &str) -> String {
-    formatted(
-        N_!("Playlists could not be imported: {error}"),
-        &[("error", error)],
-    )
-}
 
 pub fn rhythmbox_entries_matched(matched: usize, total: usize) -> String {
     let matched = matched.to_string();
@@ -130,18 +66,12 @@ pub fn rhythmbox_match_count(matched: usize) -> String {
 
 pub fn rhythmbox_rated_subtitle(count: usize) -> String {
     let count = count.to_string();
-    formatted(
-        N_!("{count} rated tracks found"),
-        &[("count", &count)],
-    )
+    formatted(N_!("{count} rated tracks found"), &[("count", &count)])
 }
 
 pub fn rhythmbox_history_subtitle(count: usize) -> String {
     let count = count.to_string();
-    formatted(
-        N_!("{count} tracks with history"),
-        &[("count", &count)],
-    )
+    formatted(N_!("{count} tracks with history"), &[("count", &count)])
 }
 
 pub fn rhythmbox_date_added_subtitle() -> String {
