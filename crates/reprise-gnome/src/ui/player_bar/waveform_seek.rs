@@ -25,6 +25,8 @@ const MIN_BAR_HEIGHT: f64 = 5.0;
 const MAX_BAR_HEIGHT: f64 = 26.0;
 /// Alpha for not-yet-played bars — white on dark background.
 const UNPLAYED_ALPHA: f64 = 0.16;
+/// Alpha for bars in the drag ghost region.
+const GHOST_ALPHA: f64 = 0.40;
 /// Fallback bar height when no peaks are available.
 const FALLBACK_BAR_HEIGHT: f64 = 4.0;
 
@@ -48,6 +50,8 @@ fn bar_played(index: usize, count: usize, fraction: f64) -> bool {
 struct State {
     peaks: Vec<f32>,
     fraction: f64,
+    hover_index: Option<usize>,
+    drag_fraction: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -68,6 +72,8 @@ impl WaveformSeek {
         let state = Rc::new(RefCell::new(State {
             peaks: Vec::new(),
             fraction: 0.0,
+            hover_index: None,
+            drag_fraction: None,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
 
@@ -76,17 +82,94 @@ impl WaveformSeek {
             move |area, cr, width, height| draw(area, cr, width, height, &state.borrow())
         });
 
-        // Click-to-seek only: a press jumps playback to that position. There is
-        // no drag-scrub, so — unlike GtkScale — there is no tick-vs-drag guard
-        // to maintain; position ticks always update the drawn fraction.
-        let click = gtk4::GestureClick::new();
-        click.connect_pressed({
+        // Hover tracking: update the highlighted bar index as the pointer moves.
+        let motion = gtk4::EventControllerMotion::new();
+        motion.connect_motion({
+            let state = state.clone();
+            let area = area.clone();
+            move |_, x, _| {
+                let count = state.borrow().peaks.len();
+                if count == 0 {
+                    return;
+                }
+                let w = f64::from(area.width());
+                let slot = (w + BAR_GAP) / count as f64;
+                let index = ((x / slot) as usize).min(count.saturating_sub(1));
+                state.borrow_mut().hover_index = Some(index);
+                area.queue_draw();
+            }
+        });
+        motion.connect_leave({
+            let state = state.clone();
+            let area = area.clone();
+            move |_| {
+                state.borrow_mut().hover_index = None;
+                area.queue_draw();
+            }
+        });
+        area.add_controller(motion);
+
+        // Drag-to-seek: begin/update show a ghost fill; end commits the seek.
+        // A single click with no movement still triggers drag_begin + drag_end
+        // with a zero offset, so click-to-seek is handled for free.
+        let drag = gtk4::GestureDrag::new();
+        drag.connect_drag_begin({
+            let state = state.clone();
+            let area = area.clone();
+            move |_, x, _| {
+                let frac = fraction_at(x, f64::from(area.width()));
+                state.borrow_mut().drag_fraction = Some(frac);
+                area.queue_draw();
+            }
+        });
+        drag.connect_drag_update({
+            let state = state.clone();
+            let area = area.clone();
+            move |gesture, offset_x, _| {
+                let (start_x, _) = gesture.start_point().unwrap_or((0.0, 0.0));
+                let frac = fraction_at(start_x + offset_x, f64::from(area.width()));
+                state.borrow_mut().drag_fraction = Some(frac);
+                area.queue_draw();
+            }
+        });
+        drag.connect_drag_end({
             let state = state.clone();
             let on_seek = on_seek.clone();
             let area = area.clone();
-            move |_, _, x, _| seek_to(&area, &state, &on_seek, x)
+            move |gesture, offset_x, _| {
+                let (start_x, _) = gesture.start_point().unwrap_or((0.0, 0.0));
+                let frac = fraction_at(start_x + offset_x, f64::from(area.width()));
+                {
+                    let mut s = state.borrow_mut();
+                    s.drag_fraction = None;
+                    s.fraction = frac;
+                }
+                area.queue_draw();
+                // Clone callback out before invoking; handler may re-enter via a
+                // position tick and would otherwise deadlock on the RefCell.
+                let callback = on_seek.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(frac);
+                }
+            }
         });
-        area.add_controller(click);
+        area.add_controller(drag);
+
+        // Tooltip: show position as a percentage while hovering.
+        // Task 5 will upgrade this to the actual elapsed/total time display.
+        area.set_has_tooltip(true);
+        area.connect_query_tooltip({
+            let state = state.clone();
+            move |area, x, _y, _keyboard, tooltip| {
+                let s = state.borrow();
+                if s.peaks.is_empty() {
+                    return false;
+                }
+                let frac = fraction_at(x as f64, f64::from(area.width()));
+                tooltip.set_text(Some(&format!("{:.0}%", frac * 100.0)));
+                true
+            }
+        });
 
         Self {
             area,
@@ -111,18 +194,6 @@ impl WaveformSeek {
 
     pub(super) fn connect_seek(&self, callback: impl Fn(f64) + 'static) {
         *self.on_seek.borrow_mut() = Some(Rc::new(callback));
-    }
-}
-
-fn seek_to(area: &gtk4::DrawingArea, state: &Rc<RefCell<State>>, on_seek: &SeekCallback, x: f64) {
-    let fraction = fraction_at(x, f64::from(area.width()));
-    state.borrow_mut().fraction = fraction; // optimistic until the tick confirms
-    area.queue_draw();
-    // Clone the callback out before invoking so the RefCell borrow is dropped
-    // (the handler may re-enter through a position tick).
-    let callback = on_seek.borrow().clone();
-    if let Some(callback) = callback {
-        callback(fraction);
     }
 }
 
@@ -161,7 +232,23 @@ fn draw(
         let x = index as f64 * slot;
         let y = (h - bar_h) / 2.0;
 
-        if bar_played(index, count, state.fraction) {
+        let is_hovered = state.hover_index == Some(index);
+        let is_ghost = state.drag_fraction.map_or(false, |drag_frac| {
+            let bar_center = (index as f64 + 0.5) / count as f64;
+            let (lo, hi) = if drag_frac > state.fraction {
+                (state.fraction, drag_frac)
+            } else {
+                (drag_frac, state.fraction)
+            };
+            bar_center > lo && bar_center <= hi
+        });
+
+        if is_hovered {
+            // Highlight: full accent alpha regardless of played/unplayed state.
+            cr.set_source_rgba(r, g, b, 1.0);
+        } else if is_ghost {
+            cr.set_source_rgba(r, g, b, GHOST_ALPHA);
+        } else if bar_played(index, count, state.fraction) {
             cr.set_source_rgba(r, g, b, 1.0);
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA);
@@ -239,5 +326,48 @@ mod tests {
         // No peaks → draw function should not panic, draws fallback.
         // This is a logic test; actual rendering verified in smoke tests.
         assert_eq!(fraction_at(50.0, 100.0), 0.5);
+    }
+
+    #[test]
+    fn ghost_region_spans_between_fraction_and_drag_fraction() {
+        // drag_fraction > fraction: bars with centres in (fraction, drag_fraction]
+        // should be in the ghost region.
+        let in_ghost = |index: usize, count: usize, fraction: f64, drag_frac: f64| -> bool {
+            let bar_center = (index as f64 + 0.5) / count as f64;
+            let (lo, hi) = if drag_frac > fraction {
+                (fraction, drag_frac)
+            } else {
+                (drag_frac, fraction)
+            };
+            bar_center > lo && bar_center <= hi
+        };
+
+        // 4 bars at 0.125 / 0.375 / 0.625 / 0.875; fraction=0.25, drag=0.75
+        assert!(!in_ghost(0, 4, 0.25, 0.75)); // centre 0.125 ≤ 0.25
+        assert!(in_ghost(1, 4, 0.25, 0.75));  // centre 0.375 in (0.25, 0.75]
+        assert!(in_ghost(2, 4, 0.25, 0.75));  // centre 0.625 in (0.25, 0.75]
+        assert!(!in_ghost(3, 4, 0.25, 0.75)); // centre 0.875 > 0.75
+
+        // Reversed drag: drag < fraction should also produce a ghost range.
+        assert!(!in_ghost(0, 4, 0.75, 0.25)); // centre 0.125 ≤ 0.25
+        assert!(in_ghost(1, 4, 0.75, 0.25));  // centre 0.375 in (0.25, 0.75]
+        assert!(in_ghost(2, 4, 0.75, 0.25));  // centre 0.625 in (0.25, 0.75]
+        assert!(!in_ghost(3, 4, 0.75, 0.25)); // centre 0.875 > 0.75
+    }
+
+    #[test]
+    fn hover_index_targets_correct_bar() {
+        // Given 10 bars across 200px, each slot is (200+2)/10 = 20.2px.
+        // Bar 0: x in [0, 20.2), bar 3: x in [60.6, 80.8).
+        let count = 10usize;
+        let w = 200.0_f64;
+        let slot = (w + BAR_GAP) / count as f64;
+        let x_to_index = |x: f64| ((x / slot) as usize).min(count.saturating_sub(1));
+
+        assert_eq!(x_to_index(0.0), 0);
+        assert_eq!(x_to_index(slot * 3.0 + 1.0), 3);
+        assert_eq!(x_to_index(w - 1.0), 9);
+        // Past the end should clamp to last bar.
+        assert_eq!(x_to_index(w + 50.0), 9);
     }
 }
