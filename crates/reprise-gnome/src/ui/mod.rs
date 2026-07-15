@@ -212,6 +212,9 @@ mod sidebar_playlist_creation;
 mod sidebar_presentation;
 #[path = "sidebar/sidebar_session.rs"]
 pub mod sidebar_session;
+#[path = "stats/hourly_chart.rs"]
+mod hourly_chart;
+#[allow(dead_code)] // monthly chart kept for future use; replaced by hourly_chart in redesign
 #[path = "stats/stats_chart.rs"]
 mod stats_chart;
 #[path = "stats/stats_chart_math.rs"]
