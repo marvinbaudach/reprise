@@ -823,3 +823,21 @@ pub const COLOR_SCHEME_SUBTITLE: &str = N_!("Choose light, dark, or follow syste
 pub const SCHEME_LIGHT: &str = N_!("Light");
 pub const SCHEME_DARK: &str = N_!("Dark");
 pub const SCHEME_SYSTEM: &str = N_!("System");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_complete_toast_without_failures() {
+        assert_eq!(scan_complete_toast(38, 0), "Scan complete · 38 new tracks");
+    }
+
+    #[test]
+    fn scan_complete_toast_with_failures() {
+        assert_eq!(
+            scan_complete_toast(38, 3),
+            "Scan complete · 38 new, 3 failed"
+        );
+    }
+}
