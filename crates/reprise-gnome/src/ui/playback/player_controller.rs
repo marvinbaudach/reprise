@@ -173,6 +173,7 @@ use crate::ui::mpris_mirror::{self, mpris_status_from_playback_state};
 use crate::ui::now_playing::NowPlayingView;
 use crate::ui::now_playing_wiring;
 use crate::ui::player_bar::PlayerBar;
+use crate::ui::style::cover_accent::Rgb as AccentRgb;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
 use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
@@ -320,6 +321,12 @@ pub struct PlayerController {
     /// Generation token for the cover-accent off-main extraction, so a rapid
     /// track change can't apply a stale album accent.
     pub(super) cover_accent_generation: Rc<Cell<u64>>,
+    /// The accent most recently applied (or `None` for no-cover / fallback).
+    /// Read by `reset_cover_accent` and `apply_cover_accent` to supply the
+    /// "from" color for the 400 ms cross-fade; written back once each new
+    /// accent is committed. `pub(super)` so `now_playing_wiring.rs` can
+    /// borrow it.
+    pub(super) cover_accent_last: Rc<RefCell<Option<AccentRgb>>>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
     /// notification (Task 9: `app.send_notification`). Passed into `new` from
     /// `window::build`, which already holds the `&adw::Application` it builds
@@ -437,6 +444,7 @@ impl PlayerController {
             now_playing_cover_generation: Rc::new(Cell::new(0)),
             waveform_generation: Rc::new(Cell::new(0)),
             cover_accent_generation: Rc::new(Cell::new(0)),
+            cover_accent_last: Rc::new(RefCell::new(None)),
             application: {
                 let weak = glib::WeakRef::new();
                 weak.set(Some(app.upcast_ref::<gio::Application>()));
