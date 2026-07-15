@@ -115,7 +115,6 @@ struct State {
     build_start_us: i64, // 0 means not running
     min_bar_height: f64,
     max_bar_height: f64,
-    fallback_bar_height: f64,
     // Duration of the current track (ms), for formatted tooltip display.
     duration_ms: i64,
 }
@@ -151,7 +150,7 @@ impl WaveformSeek {
         )
     }
 
-    fn new_with_heights(content_height: i32, max_h: f64, min_h: f64, fallback_h: f64) -> Self {
+    fn new_with_heights(content_height: i32, max_h: f64, min_h: f64, _fallback_h: f64) -> Self {
         let area = gtk4::DrawingArea::new();
         area.add_css_class(WAVEFORM_CSS_CLASS);
         area.set_hexpand(true);
@@ -172,7 +171,6 @@ impl WaveformSeek {
             build_start_us: 0,
             min_bar_height: min_h,
             max_bar_height: max_h,
-            fallback_bar_height: fallback_h,
             duration_ms: 0,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
@@ -734,7 +732,6 @@ mod tests {
             build_start_us: 0,
             min_bar_height: MIN_BAR_HEIGHT,
             max_bar_height: MAX_BAR_HEIGHT,
-            fallback_bar_height: FALLBACK_BAR_HEIGHT,
             duration_ms: 0,
         };
         ensure_resampled(&mut state, 200);
@@ -757,7 +754,6 @@ mod tests {
             build_start_us: 0,
             min_bar_height: MIN_BAR_HEIGHT,
             max_bar_height: MAX_BAR_HEIGHT,
-            fallback_bar_height: FALLBACK_BAR_HEIGHT,
             duration_ms: 0,
         };
         ensure_resampled(&mut state, 600);
