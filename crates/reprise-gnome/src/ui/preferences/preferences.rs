@@ -326,12 +326,7 @@ impl PreferencesContext {
     }
 
     pub(super) fn open_rhythmbox_import(self: &Rc<Self>) {
-        let navigation = self.preferences_navigation.borrow().upgrade();
-        let Some(navigation) = navigation else {
-            tracing::warn!("Rhythmbox import requested without preferences navigation");
-            return;
-        };
-        super::preference_rhythmbox::push_import_page(self, &navigation);
+        self.present_rhythmbox_import_dialog();
     }
 
     pub(super) fn preferences_window(&self) -> Option<adw::Window> {
