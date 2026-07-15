@@ -412,6 +412,11 @@ fn spawn_scan(
         match outcome {
             Ok(Ok(report)) => {
                 tracing::info!(?report, "scan complete");
+                let result = report.to_scan_result();
+                toasts::show(
+                    &toast_overlay,
+                    &strings::scan_complete_toast(result.new_tracks, result.failed),
+                );
                 track_list.reload();
                 sidebar.refresh("scan completed");
                 start_or_restart_watcher(
