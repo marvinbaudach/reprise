@@ -117,6 +117,8 @@ mod library_chrome;
 mod library_player_bar;
 #[path = "window/library_shell.rs"]
 mod library_shell;
+#[path = "library_views/artist_view_css.rs"]
+mod artist_view_css;
 #[path = "library_views/library_view_css.rs"]
 mod library_view_css;
 #[path = "track_list/list_density.rs"]
