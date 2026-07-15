@@ -88,10 +88,11 @@ disk except `PTR_E2E_OUT_DIR`.
      metadata changes the private MPRIS volume by exactly five percent while
      leaving paused position unchanged; the same wheel input over seek changes
      neither volume nor position.
-   - **Preferences**: opens the real primary-menu item, exercises the native
-     Appearance and Player Bar cards, visits every top-level page, and proves
-     all four Library Window switches write the expected values to the scratch
-     SQLite database.
+   - **Preferences**: opens the real primary-menu item, then drives the
+     redesigned vertical settings sidebar (a `.navigation-sidebar` list on the
+     left) to switch pages — exercising the Player Bar choice cards, visiting
+     every top-level page via its sidebar row, and proving all four Library
+     Window switches write the expected values to the scratch SQLite database.
 5. Takes a final screenshot and checks it isn't blank/solid-color (pixel
    standard deviation above a threshold), then rejects any application log
    containing GTK/GLib criticals, a Rust panic, or a `RefCell` borrow failure.
