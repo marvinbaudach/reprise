@@ -32,3 +32,4 @@ docs/agent-workflow/LOCK
 SPEC.md
 doc/
 docs/superpowers/
+.claude/worktrees/
