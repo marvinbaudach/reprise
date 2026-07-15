@@ -260,6 +260,92 @@ pub fn tag_applied_to_all_hint(count: usize) -> String {
         &[("count", &count_text)],
     )
 }
+
+// --- Redesigned tag-editor dialog (Task 3) ---
+// These constants and helpers are consumed by `present_redesigned` in
+// `tag_editor.rs`. Task 4 switches the flow to call that function; until
+// then the compiler sees them as dead code.
+
+#[allow(dead_code)]
+pub const TAG_EDIT_TITLE_SINGLE: &str = N_!("Edit Tags");
+#[allow(dead_code)]
+pub const TAG_EDIT_TITLE_MULTI: &str = N_!("Edit {count} Tracks");
+#[allow(dead_code)]
+pub const TAG_PER_TRACK: &str = N_!("per track");
+#[allow(dead_code)]
+pub const TAG_MIXED_COUNT: &str = N_!("{count} values");
+#[allow(dead_code)]
+pub const TAG_WILL_APPLY: &str = N_!("will be applied to all {count}");
+#[allow(dead_code)]
+pub const TAG_ALBUM_ARTIST_PLACEHOLDER: &str = N_!("Same as artist");
+#[allow(dead_code)]
+pub const TAG_SAVE: &str = N_!("Save");
+#[allow(dead_code)]
+pub const TAG_SAVE_COUNT: &str = N_!("Save {count}");
+#[allow(dead_code)]
+pub const TAG_PENDING_CHANGES: &str = N_!("{count} change pending");
+#[allow(dead_code)]
+pub const TAG_PENDING_CHANGES_PLURAL: &str = N_!("{count} changes pending");
+#[allow(dead_code)]
+pub const TAG_REVERT: &str = N_!("Revert");
+#[allow(dead_code)]
+pub const TAG_FETCH_MUSICBRAINZ: &str = N_!("Fetch tags from MusicBrainz");
+#[allow(dead_code)]
+pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
+#[allow(dead_code)]
+pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
+#[allow(dead_code)]
+pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
+#[allow(dead_code)]
+pub const TAG_TRACK_POSITION: &str = N_!("Track {current} of {total}");
+#[allow(dead_code)]
+pub const TAG_CHANGE_COVER: &str = N_!("Change cover\u{2026}");
+
+#[allow(dead_code)]
+pub fn tag_edit_title_multi(count: usize) -> String {
+    let count_text = count.to_string();
+    formatted(TAG_EDIT_TITLE_MULTI, &[("count", &count_text)])
+}
+
+#[allow(dead_code)]
+pub fn tag_save_count(count: usize) -> String {
+    let count_text = count.to_string();
+    formatted(TAG_SAVE_COUNT, &[("count", &count_text)])
+}
+
+#[allow(dead_code)]
+pub fn tag_pending_count(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        TAG_PENDING_CHANGES,
+        TAG_PENDING_CHANGES_PLURAL,
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+#[allow(dead_code)]
+pub fn tag_track_position(current: usize, total: usize) -> String {
+    formatted(
+        TAG_TRACK_POSITION,
+        &[
+            ("current", &current.to_string()),
+            ("total", &total.to_string()),
+        ],
+    )
+}
+
+#[allow(dead_code)]
+pub fn tag_mixed_count(count: usize) -> String {
+    let count_text = count.to_string();
+    formatted(TAG_MIXED_COUNT, &[("count", &count_text)])
+}
+
+#[allow(dead_code)]
+pub fn tag_will_apply(count: usize) -> String {
+    let count_text = count.to_string();
+    formatted(TAG_WILL_APPLY, &[("count", &count_text)])
+}
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");
 pub const DELETE_TRACKS_HEADING: &str = N_!("Remove Selected Tracks?");
