@@ -8,6 +8,8 @@
 pub mod diagnosis;
 pub mod fix;
 
+pub use diagnosis::{diagnose, classify_warnings, CapturedWarning};
+
 use std::path::{Path, PathBuf};
 
 /// A metadata defect detected in an audio file.
