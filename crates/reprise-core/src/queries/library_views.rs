@@ -194,7 +194,7 @@ pub struct ArtistAlbum {
 }
 
 /// Albums by one effective album artist, newest release year first.
-pub fn query_artist_albums(
+pub fn query_artist_detail_albums(
     conn: &Connection,
     artist: &str,
 ) -> Result<Vec<ArtistAlbum>, rusqlite::Error> {
@@ -496,7 +496,7 @@ mod tests {
              ('/b','B','Solo','New','Solo',2024,0);",
         )
         .unwrap();
-        let albums = query_artist_albums(&conn, "Solo").unwrap();
+        let albums = query_artist_detail_albums(&conn, "Solo").unwrap();
         assert_eq!(
             albums.iter().map(|a| a.album.as_str()).collect::<Vec<_>>(),
             vec!["New", "Old"]
