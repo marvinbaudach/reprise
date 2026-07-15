@@ -483,6 +483,21 @@ impl PlayerController {
         self.bar.set_on_title_click(f);
     }
 
+    /// Wires the cover-image click gesture — see `PlayerBar::connect_cover_clicked`.
+    pub fn connect_cover_clicked(&self, f: impl Fn() + 'static) {
+        self.bar.connect_cover_clicked(f);
+    }
+
+    /// Returns the currently playing artist name, or `None` when stopped.
+    pub fn current_artist(&self) -> Option<String> {
+        self.now_playing.borrow().as_ref().map(|np| np.artist.clone())
+    }
+
+    /// Wires the artist-label click gesture — see `PlayerBar::connect_artist_clicked`.
+    pub fn connect_artist_clicked(&self, f: impl Fn() + 'static) {
+        self.bar.connect_artist_clicked(f);
+    }
+
     pub fn set_track_list_reload(&self, reload: impl Fn() + 'static) {
         *self.reload_track_list.borrow_mut() = Some(Rc::new(reload));
     }

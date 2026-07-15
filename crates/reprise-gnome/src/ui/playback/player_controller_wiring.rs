@@ -152,14 +152,6 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
 }
 
 pub(super) fn wire_compact_controls(controller: &Rc<PlayerController>) {
-    let weak = Rc::downgrade(controller);
-    controller
-        .compact_player
-        .set_on_layout(Rc::new(move |layout| {
-            if let Some(controller) = weak.upgrade() {
-                controller.compact_player.set_layout(layout);
-            }
-        }));
     controller.compact_player.set_on_restore(Rc::new(|| {
         tracing::debug!("compact restore requested before window mode coordinator is installed");
     }));
@@ -208,34 +200,6 @@ pub(super) fn wire_compact_controls(controller: &Rc<PlayerController>) {
         if let Some(controller) = weak.upgrade() {
             controller.next();
         }
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller
-        .compact_player
-        .connect_shuffle_toggled(move |active| {
-            let Some(controller) = weak.upgrade() else {
-                return;
-            };
-            controller.queue.borrow_mut().set_shuffle(active);
-            let shuffled = controller.queue.borrow().is_shuffled();
-            controller.sync_shuffle_indicator(shuffled);
-            controller.update_mpris_shuffle(shuffled);
-        });
-
-    let weak = Rc::downgrade(controller);
-    controller.compact_player.connect_repeat_clicked(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        let repeat = {
-            let mut queue = controller.queue.borrow_mut();
-            let repeat = cycle_repeat(queue.repeat());
-            queue.set_repeat(repeat);
-            repeat
-        };
-        controller.sync_repeat_indicator(repeat);
-        controller.update_mpris_repeat(repeat);
     });
 }
 
