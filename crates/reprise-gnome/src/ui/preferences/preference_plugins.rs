@@ -18,7 +18,6 @@ pub(super) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
 
 pub(super) fn plugin_description(descriptor: &ModuleDescriptor) -> String {
     let message = match descriptor.id {
-        "mpris" => strings::PLUGIN_MPRIS_DESCRIPTION,
         "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
         "lastfm" => strings::PLUGIN_LASTFM_DESCRIPTION,
         "artist_news" => strings::ARTIST_NEWS_DESCRIPTION,

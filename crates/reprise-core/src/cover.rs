@@ -103,12 +103,13 @@ fn folder_image(dir: &Path) -> Option<PathBuf> {
 
 use std::hash::{Hash, Hasher};
 
-/// The three cached edge lengths — one per consumer (list row / player bar /
-/// Now-Playing view). Exactly three (YAGNI).
+/// The cached edge lengths — one per consumer (list row / player bar / album
+/// grid / Now-Playing view). Each maps to its own on-disk cache file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThumbnailSize {
     List,
     Bar,
+    Grid,
     Full,
 }
 
@@ -117,6 +118,7 @@ impl ThumbnailSize {
         match self {
             ThumbnailSize::List => 48,
             ThumbnailSize::Bar => 96,
+            ThumbnailSize::Grid => 256,
             ThumbnailSize::Full => 1024,
         }
     }

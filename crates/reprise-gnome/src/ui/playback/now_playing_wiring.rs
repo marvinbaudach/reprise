@@ -126,6 +126,18 @@ impl PlayerController {
         self.compact_player.clear_track();
         self.now_playing_view.clear_track();
         self.sync_lyrics_track(None);
+        self.reset_cover_accent();
+    }
+
+    /// Reverts the cover-derived accent to the theme fallback AND bumps the
+    /// generation, so an accent extraction still in flight for the previous
+    /// track can't re-apply its (now stale) album accent afterwards. This is
+    /// the clear-path counterpart of `apply_cover_accent`'s own bump — without
+    /// it, a Stop or a switch to a coverless track would leave the previous
+    /// album's hue tinting the waveform and play button.
+    fn reset_cover_accent(&self) {
+        let generation = self.cover_accent_generation.get().wrapping_add(1);
+        self.cover_accent_generation.set(generation);
         crate::ui::style::cover_accent::set_cover_accent(None);
     }
 
@@ -138,6 +150,12 @@ impl PlayerController {
     /// state path the design rule requires.
     pub(super) fn sync_cover(&self, path: &str) {
         self.sync_waveform(path);
+        // Revert to the theme fallback up front: if this track has no usable
+        // cover, the loader's `on_loaded` never fires and `apply_cover_accent`
+        // is never reached, so without this reset the previous album's accent
+        // would linger. A track that *does* have a cover re-applies its accent
+        // once decoding completes.
+        self.reset_cover_accent();
         let bar_generation = self.bar_cover_generation.get().wrapping_add(1);
         self.bar_cover_generation.set(bar_generation);
         self.cover_loader.load_into(
