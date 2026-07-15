@@ -76,16 +76,16 @@ pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -
     let device_id = device.id.clone();
     let runtime = runtime.clone();
     row.connect_activated(move |row| {
-        let Some(parent) = row.root().and_downcast::<gtk4::Window>() else {
+        let Some(root) = row.root() else {
             return;
         };
-        present_device(&parent, &device_id, &runtime);
+        present_device(&root, &device_id, &runtime);
     });
     row
 }
 
 pub(super) fn present_device(
-    parent: &gtk4::Window,
+    parent: &impl IsA<gtk4::Widget>,
     device_id: &str,
     runtime: &Rc<DeviceSyncRuntime>,
 ) {
@@ -107,44 +107,36 @@ pub(super) fn present_device(
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&scroll));
-    let window = adw::Window::builder()
-        .application(
-            &gtk4::prelude::GtkWindowExt::application(parent)
-                .expect("preferences have an application"),
-        )
-        .transient_for(parent)
-        .modal(false)
-        .destroy_with_parent(true)
-        .default_width(680)
-        .default_height(720)
-        .content(&toolbar)
+    let dialog = adw::Dialog::builder()
+        .child(&toolbar)
+        .content_width(680)
+        .content_height(720)
         .build();
-    window.set_size_request(480, 420);
 
     let refresh_id = device_id.to_string();
     let refresh_runtime = runtime.clone();
     refresh.connect_clicked(move |_| refresh_runtime.refresh_contents(&refresh_id));
 
     let update_detail = detail.clone();
-    let update_window = window.clone();
+    let update_dialog = dialog.clone();
     let update_id = device_id.to_string();
     let update_runtime = runtime.clone();
     let subscription = runtime.subscribe(Rc::new(move |state| {
         let Some(device) = state.devices.iter().find(|device| device.id == update_id) else {
-            update_window.set_title(Some(&copy::text(copy::DISCONNECTED)));
+            update_dialog.set_title(&copy::text(copy::DISCONNECTED));
             return;
         };
-        update_window.set_title(Some(&device.name));
-        render_device_detail(&update_detail, device, &update_window, &update_runtime);
+        update_dialog.set_title(&device.name);
+        render_device_detail(&update_detail, device, &update_dialog, &update_runtime);
     }));
-    retain_subscription(&window, subscription);
-    window.present();
+    retain_subscription(&dialog, subscription);
+    dialog.present(Some(parent));
 }
 
 fn render_device_detail(
     detail: &gtk4::Box,
     device: &DeviceView,
-    window: &adw::Window,
+    dialog: &adw::Dialog,
     runtime: &Rc<DeviceSyncRuntime>,
 ) {
     clear_box(detail);
@@ -166,13 +158,13 @@ fn render_device_detail(
     if progress_is_visible(&device.snapshot) {
         detail.append(&progress_group(&device.id, &device.snapshot, runtime));
     }
-    detail.append(&playlist_group(device, window, runtime));
+    detail.append(&playlist_group(device, dialog, runtime));
     detail.append(&music_group(device));
 }
 
 fn playlist_group(
     device: &DeviceView,
-    window: &adw::Window,
+    dialog: &adw::Dialog,
     runtime: &Rc<DeviceSyncRuntime>,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
@@ -186,12 +178,12 @@ fn playlist_group(
     group.set_header_suffix(Some(&add));
     let id = device.id.clone();
     let runtime_for_add = runtime.clone();
-    let window = window.clone();
+    let dialog = dialog.clone();
     add.connect_clicked(move |_| {
         let runtime = runtime_for_add.clone();
         let id = id.clone();
         super::dialogs::prompt_name(
-            &window,
+            &dialog,
             &copy::text(copy::NEW_PHONE_PLAYLIST),
             &copy::text(copy::PLAYLIST_NAME),
             &copy::text(copy::CREATE),
