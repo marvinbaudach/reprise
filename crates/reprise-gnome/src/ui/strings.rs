@@ -115,6 +115,10 @@ pub const REPLAYGAIN_MODE: &str = N_!("Volume Normalization");
 pub const REPLAYGAIN_OFF: &str = N_!("Off");
 pub const REPLAYGAIN_TRACK: &str = N_!("Per Track");
 pub const REPLAYGAIN_ALBUM: &str = N_!("Per Album");
+pub const TRANSITIONS: &str = N_!("Transitions");
+pub const TRANSITIONS_MODE: &str = N_!("Between Tracks");
+pub const TRANSITION_OFF: &str = N_!("Gap (No Blending)");
+pub const TRANSITION_GAPLESS: &str = N_!("Gapless");
 pub const AUDIO_EFFECTS_FAILED: &str = N_!("Could not apply audio effects");
 
 #[path = "strings_scrobbling.rs"]

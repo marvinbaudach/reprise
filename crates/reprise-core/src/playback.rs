@@ -35,7 +35,10 @@ impl Default for AudioEffects {
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
     StateChanged(PlaybackState),
-    Position { position_ms: i64, duration_ms: i64 },
+    Position {
+        position_ms: i64,
+        duration_ms: i64,
+    },
     TrackFinished,
     /// The gaplessly pre-fed next track (see `PlaybackBackend::set_next`) has
     /// taken over without a pipeline restart: `about-to-finish` consumed the

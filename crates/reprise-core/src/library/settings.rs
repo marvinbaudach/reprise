@@ -669,6 +669,39 @@ mod tests {
     }
 
     #[test]
+    fn track_transition_round_trips_and_defaults_to_gapless() {
+        let conn = migrated_conn();
+        // Default when unset: Gapless.
+        assert_eq!(get_track_transition(&conn), TrackTransition::Gapless);
+        for mode in [
+            TrackTransition::Off,
+            TrackTransition::Gapless,
+            TrackTransition::Crossfade,
+        ] {
+            set_track_transition(&conn, mode).unwrap();
+            assert_eq!(get_track_transition(&conn), mode);
+        }
+        // Corrupt value falls back to Gapless.
+        set_setting(&conn, TRANSITION_MODE_KEY, "teleport").unwrap();
+        assert_eq!(get_track_transition(&conn), TrackTransition::Gapless);
+    }
+
+    #[test]
+    fn crossfade_seconds_clamp_and_default() {
+        let conn = migrated_conn();
+        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_DEFAULT);
+        set_crossfade_seconds(&conn, 99).unwrap();
+        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_MAX);
+        set_crossfade_seconds(&conn, 0).unwrap();
+        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_MIN);
+        set_crossfade_seconds(&conn, 6).unwrap();
+        assert_eq!(get_crossfade_seconds(&conn), 6);
+        // Corrupt stored value → default.
+        set_setting(&conn, CROSSFADE_SECONDS_KEY, "loud").unwrap();
+        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_DEFAULT);
+    }
+
+    #[test]
     fn equalizer_bands_reject_corrupt_values_and_clamp_writes() {
         let conn = migrated_conn();
         set_setting(&conn, EQUALIZER_BANDS_KEY, "1,2,broken").unwrap();
