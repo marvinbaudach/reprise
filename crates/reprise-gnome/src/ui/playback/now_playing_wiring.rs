@@ -144,7 +144,7 @@ impl PlayerController {
     /// now-playing page's full-size load).
     pub(super) fn sync_cover(&self, path: &str) {
         if let Some(track_id) = self.now_playing.borrow().as_ref().map(|t| t.id) {
-            self.sync_waveform(track_id);
+            self.sync_waveform(track_id, path);
         }
         // Revert to the theme fallback up front: if this track has no usable
         // cover, the loader's `on_loaded` never fires and `apply_cover_accent`
@@ -214,27 +214,37 @@ impl PlayerController {
     }
 
     /// Loads pre-computed waveform peaks from the DB off-main and hands them
-    /// to the player bar, generation-guarded so a rapid track change can't
-    /// paint a stale waveform. Returns the flat fallback when peaks are not
-    /// yet available (the scanner fills them in the background).
-    pub(super) fn sync_waveform(&self, track_id: i64) {
+    /// to the player bar. If no peaks exist yet, extracts them on demand and
+    /// stores them in the DB so subsequent plays are instant.
+    pub(super) fn sync_waveform(&self, track_id: i64, path: &str) {
         let generation = self.waveform_generation.get().wrapping_add(1);
         self.waveform_generation.set(generation);
         let waveform_generation = self.waveform_generation.clone();
         let waveform = self.bar.waveform_handle();
         let db_path = reprise_core::db::default_path();
+        let track_path = std::path::PathBuf::from(path);
         let (sender, receiver) = async_channel::bounded(1);
         if std::thread::Builder::new()
             .name("reprise-waveform".to_string())
             .spawn(move || {
-                let peaks = reprise_core::db::open(Some(&db_path))
-                    .ok()
-                    .and_then(|conn| {
-                        reprise_core::db::migrate(&conn).ok();
-                        reprise_core::db::get_waveform_peaks(&conn, track_id)
-                            .ok()
-                            .flatten()
-                    });
+                let peaks = reprise_core::db::open(Some(&db_path)).ok().and_then(|conn| {
+                    reprise_core::db::migrate(&conn).ok();
+                    // Try DB first.
+                    if let Some(cached) = reprise_core::db::get_waveform_peaks(&conn, track_id)
+                        .ok()
+                        .flatten()
+                    {
+                        return Some(cached);
+                    }
+                    // Not cached — extract now and store for next time.
+                    let peaks = crate::ui::waveform_peaks::extract_peaks(
+                        &track_path,
+                        crate::ui::waveform_peaks::STORED_PEAK_COUNT,
+                    )
+                    .ok()?;
+                    reprise_core::db::set_waveform_peaks(&conn, track_id, &peaks).ok();
+                    Some(peaks)
+                });
                 let _ = sender.send_blocking(peaks);
             })
             .is_err()
