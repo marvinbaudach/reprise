@@ -23,4 +23,8 @@ SIDEBAR_QUEUE_X=80
 SIDEBAR_QUEUE_Y=150
 INFO_TOGGLE_FROM_RIGHT=222
 COMPACT_BUTTON_FROM_RIGHT=262
-PRIMARY_MENU_FROM_RIGHT=302
+# Redesigned header: the primary "open-menu" button (⋮) sits just left of the
+# panel toggle and the three window controls, ~186px in from the right edge of
+# the maximized 1600-wide window (measured from a 17-main-menu capture). The
+# former value (302) predated the redesign and landed inside the search entry.
+PRIMARY_MENU_FROM_RIGHT=186
