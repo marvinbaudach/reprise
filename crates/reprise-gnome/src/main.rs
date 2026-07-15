@@ -60,7 +60,8 @@ const SEED_PLAYLIST_ENV_VAR: &str = "REPRISE_SMOKE_SEED_PLAYLIST";
 /// `REPRISE_LOG=debug`). This must run before any other startup code so that
 /// failures during database setup are visible on the console.
 fn init_logging() {
-    let filter = EnvFilter::try_from_env("REPRISE_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_env("REPRISE_LOG")
+        .unwrap_or_else(|_| EnvFilter::new("info,lofty=error"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)

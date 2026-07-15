@@ -60,32 +60,6 @@ pub(super) const PAST_MONTH_ALPHA: f64 = 0.55;
 /// Gap between bars as a fraction of each bar's horizontal slot.
 pub(super) const BAR_GAP_FRACTION: f64 = 0.30;
 
-/// Expands sparse hourly data (only hours with events) into a full 24-slot
-/// array (hours 0-23), filling missing hours with zero.
-pub(super) fn expand_hourly(sparse: &[(u8, i64)]) -> [i64; 24] {
-    let mut full = [0i64; 24];
-    for &(hour, listens) in sparse {
-        if (hour as usize) < 24 {
-            full[hour as usize] = listens;
-        }
-    }
-    full
-}
-
-/// Returns the hour (0-23) with the highest listen count in a 24-slot
-/// array. Returns 0 when all values are zero.
-pub(super) fn peak_hour(values: &[i64; 24]) -> u8 {
-    values
-        .iter()
-        .enumerate()
-        .max_by_key(|&(_, &v)| v)
-        .map_or(0, |(i, _)| i as u8)
-}
-
-/// Formats an hour (0-23) as `"H:00"` for the peak annotation label.
-pub(super) fn format_peak_hour(hour: u8) -> String {
-    format!("{hour}:00")
-}
 
 #[cfg(test)]
 mod tests {
@@ -145,44 +119,4 @@ mod tests {
         assert!(!is_current_month(0, 0));
     }
 
-    #[test]
-    fn expand_hourly_fills_missing_hours_with_zero() {
-        let sparse = vec![(0u8, 5i64), (13, 10), (23, 3)];
-        let full = expand_hourly(&sparse);
-        assert_eq!(full[0], 5);
-        assert_eq!(full[1], 0);
-        assert_eq!(full[13], 10);
-        assert_eq!(full[23], 3);
-        assert_eq!(full.iter().sum::<i64>(), 18);
-    }
-
-    #[test]
-    fn expand_hourly_empty_input_returns_all_zeros() {
-        let full = expand_hourly(&[]);
-        assert!(full.iter().all(|&v| v == 0));
-    }
-
-    #[test]
-    fn peak_hour_finds_maximum() {
-        let mut values = [0i64; 24];
-        values[21] = 50;
-        values[9] = 30;
-        assert_eq!(peak_hour(&values), 21);
-    }
-
-    #[test]
-    fn peak_hour_returns_a_valid_hour_when_all_zero() {
-        let values = [0i64; 24];
-        // When all values are zero any hour is valid; the implementation
-        // returns the last index because `max_by_key` picks the rightmost
-        // tie-breaker.
-        assert!(peak_hour(&values) < 24);
-    }
-
-    #[test]
-    fn format_peak_hour_produces_readable_label() {
-        assert_eq!(format_peak_hour(0), "0:00");
-        assert_eq!(format_peak_hour(9), "9:00");
-        assert_eq!(format_peak_hour(21), "21:00");
-    }
 }

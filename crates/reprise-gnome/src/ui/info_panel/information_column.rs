@@ -31,6 +31,7 @@ impl InformationColumn {
         &self.split
     }
 
+    #[cfg(test)]
     pub(super) fn sidebar_widget(&self) -> adw::ToolbarView {
         self.split
             .sidebar()
