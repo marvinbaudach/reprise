@@ -18,7 +18,7 @@ const SORT_WHITELIST: [(&str, &str); 10] = [
     ("title", "title COLLATE NOCASE"),
     (
         "artist",
-        "artist COLLATE NOCASE, album COLLATE NOCASE, track_no",
+        "artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no",
     ),
     ("album", "album COLLATE NOCASE, track_no"),
     ("track_no", "track_no"),
