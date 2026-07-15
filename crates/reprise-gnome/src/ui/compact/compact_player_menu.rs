@@ -32,8 +32,7 @@ type BoolCallback = Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>;
 pub(super) struct CompactMenu {
     pub(super) popover: gtk4::PopoverMenu,
     pub(super) action_group: gio::SimpleActionGroup,
-    #[allow(dead_code)]
-    always_on_top_action: gio::SimpleAction,
+    pub(super) always_on_top_action: gio::SimpleAction,
     playback_section: gio::Menu,
     on_restore: VoidCallback,
     on_play_pause: VoidCallback,

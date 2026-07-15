@@ -586,6 +586,7 @@ pub fn build(
         &window,
         &minimal_view,
         player.as_ref().map(|player| &player.compact_player),
+        conn,
         Rc::new(move || compact_preferences.present()),
     );
     let rescan_conn = conn.clone();

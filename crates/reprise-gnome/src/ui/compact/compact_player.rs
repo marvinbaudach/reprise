@@ -211,6 +211,19 @@ impl CompactPlayer {
         self.0.menu.set_on_always_on_top(callback);
     }
 
+    /// Disables the always-on-top action (grays out the menu item).
+    pub(super) fn set_always_on_top_enabled(&self, enabled: bool) {
+        self.0.menu.always_on_top_action.set_enabled(enabled);
+    }
+
+    /// Sets the always-on-top action state (check mark in the menu).
+    pub(super) fn set_always_on_top_active(&self, active: bool) {
+        self.0
+            .menu
+            .always_on_top_action
+            .set_state(&active.to_variant());
+    }
+
     pub(super) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
         self.0.menu.set_on_quit(callback);
     }
