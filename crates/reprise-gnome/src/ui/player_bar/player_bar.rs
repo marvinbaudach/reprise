@@ -263,6 +263,17 @@ impl PlayerBar {
         self.play_pause_button.connect_clicked(move |_| f());
     }
 
+    /// Wires middle-click (button 2) on the play/pause button as a stop action.
+    /// A `GestureClick` with `set_button(2)` is added to the play/pause button
+    /// and calls `f` on each middle-click release. Wired by Task 7 in
+    /// `player_controller_wiring.rs`.
+    pub fn connect_middle_click_stop<F: Fn() + 'static>(&self, f: F) {
+        let gesture = gtk4::GestureClick::new();
+        gesture.set_button(2);
+        gesture.connect_released(move |_, _, _, _| f());
+        self.play_pause_button.add_controller(gesture);
+    }
+
     pub(super) fn smoke_activate_play_pause(&self) {
         self.play_pause_button.emit_clicked();
     }

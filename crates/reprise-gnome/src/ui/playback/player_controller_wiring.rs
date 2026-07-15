@@ -141,6 +141,14 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         // `update_mpris_repeat`'s doc comment.
         controller.update_mpris_repeat(next_repeat);
     });
+
+    // Task 7: middle-click (button 2) on play/pause = stop.
+    let weak = Rc::downgrade(controller);
+    controller.bar.connect_middle_click_stop(move || {
+        if let Some(controller) = weak.upgrade() {
+            controller.reset_to_stopped();
+        }
+    });
 }
 
 pub(super) fn wire_compact_controls(controller: &Rc<PlayerController>) {

@@ -621,6 +621,13 @@ pub fn build(
             on_preferences: Rc::new(move || preferences.present()),
         },
     );
+    // Task 7: wire the player bar's queue button to open the Queue sidebar.
+    if let Some(ref player) = player {
+        let sidebar_for_queue = sidebar.clone();
+        player.bar.connect_queue_clicked(move || {
+            sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
+        });
+    }
     header.pack_end(&search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
