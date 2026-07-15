@@ -14,6 +14,7 @@
 
 pub(super) mod cover_accent;
 pub(super) mod interactions;
+pub(super) mod menus;
 pub(super) mod theme;
 pub(super) mod tokens;
 
@@ -32,6 +33,7 @@ thread_local! {
 fn app_css() -> String {
     [
         interactions::css(),
+        menus::css(),
         super::browse_bar::css(),
         super::column_layout_editor::css(),
         super::list_density::css(),
@@ -106,6 +108,7 @@ mod tests {
 
         for marker in [
             ".reprise-equalizer scale > trough > highlight",
+            "popover.menu > contents",
             ".toast button.text-button",
             ".player-bar-play",
             ".reprise-surface",
