@@ -70,7 +70,7 @@ pub const ONBOARDING_SET_UP: &str = N_!("Set Up Library");
 pub const MAIN_MENU: &str = N_!("Main menu");
 pub const COMPACT_VIEW: &str = N_!("Compact View");
 // Compact View opens through the menu action; the Library header has no duplicate control.
-pub const RETURN_TO_LIBRARY: &str = N_!("Return to Library");
+pub const RESTORE_FULL_WINDOW: &str = N_!("Restore Full Window");
 pub const COMPACT_MENU: &str = N_!("Compact player menu");
 pub const COMPACT_LAYOUT: &str = N_!("Layout");
 pub const COMPACT_LAYOUT_COVER: &str = N_!("Cover");
