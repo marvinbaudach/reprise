@@ -94,6 +94,9 @@ pub fn set_onboarding_completed(conn: &Connection, completed: bool) -> Result<()
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
 pub const COLUMN_LAYOUT_KEY: &str = "ui.column_layout";
+/// User-adjusted per-column widths (`id:width` pairs), kept separate from the
+/// order/visibility layout so the layout reducers and their tests stay untouched.
+pub const COLUMN_WIDTHS_KEY: &str = "ui.column_widths";
 
 /// Where the player bar docks. `Bottom` is the default and the fallback for any
 /// unknown/hand-edited value (same tolerance posture as `get_bool`).
