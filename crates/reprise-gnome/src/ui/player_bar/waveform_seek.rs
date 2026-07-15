@@ -51,8 +51,52 @@ fn bar_played(index: usize, count: usize, fraction: f64) -> bool {
     ((index as f64 + 0.5) / count as f64) <= fraction
 }
 
+/// Resample `raw` peaks (typically 1000) to `count` display bars by
+/// averaging groups. Returns values in 0.0..1.0.
+fn resample_peaks(raw: &[u8], count: usize) -> Vec<f32> {
+    if raw.is_empty() || count == 0 {
+        return Vec::new();
+    }
+    let mut result = Vec::with_capacity(count);
+    for i in 0..count {
+        let start = i * raw.len() / count;
+        let end = (i + 1) * raw.len() / count;
+        let slice = &raw[start..end];
+        if slice.is_empty() {
+            result.push(0.0);
+        } else {
+            let avg: f32 =
+                slice.iter().map(|&v| f32::from(v)).sum::<f32>() / slice.len() as f32;
+            result.push(avg / 255.0);
+        }
+    }
+    result
+}
+
+/// Compute the number of display bars that fit in `width` pixels.
+fn compute_bar_count(width: i32) -> usize {
+    let w = f64::from(width);
+    ((w / (4.0 + BAR_GAP)).round() as usize).max(1)
+}
+
+/// Ensure `state.display_peaks` is up to date for the given `width`.
+/// Resamples from `raw_peaks` when the width changed or the cache is empty.
+fn ensure_resampled(state: &mut State, width: i32) {
+    if state.raw_peaks.is_empty() {
+        state.display_peaks.clear();
+        return;
+    }
+    if state.last_display_width != width || state.display_peaks.is_empty() {
+        let count = compute_bar_count(width);
+        state.display_peaks = resample_peaks(&state.raw_peaks, count);
+        state.last_display_width = width;
+    }
+}
+
 struct State {
-    peaks: Vec<f32>,
+    raw_peaks: Vec<u8>,         // stored peaks from DB (1000 values, 0-255)
+    display_peaks: Vec<f32>,    // resampled to current bar count (0.0..1.0)
+    last_display_width: i32,    // width used for last resample
     fraction: f64,
     hover_index: Option<usize>,
     drag_fraction: Option<f64>,
@@ -86,7 +130,9 @@ impl WaveformSeek {
         area.set_valign(gtk4::Align::Center);
 
         let state = Rc::new(RefCell::new(State {
-            peaks: Vec::new(),
+            raw_peaks: Vec::new(),
+            display_peaks: Vec::new(),
+            last_display_width: 0,
             fraction: 0.0,
             hover_index: None,
             drag_fraction: None,
@@ -101,7 +147,11 @@ impl WaveformSeek {
 
         area.set_draw_func({
             let state = state.clone();
-            move |area, cr, width, height| draw(area, cr, width, height, &state.borrow())
+            move |area, cr, width, height| {
+                let mut s = state.borrow_mut();
+                ensure_resampled(&mut s, width);
+                draw(area, cr, width, height, &s);
+            }
         });
 
         // Hover tracking: update the highlighted bar index as the pointer moves.
@@ -110,7 +160,7 @@ impl WaveformSeek {
             let state = state.clone();
             let area = area.clone();
             move |_, x, _| {
-                let count = state.borrow().peaks.len();
+                let count = state.borrow().display_peaks.len();
                 if count == 0 {
                     return;
                 }
@@ -165,6 +215,8 @@ impl WaveformSeek {
                     let mut s = state.borrow_mut();
                     s.drag_fraction = None;
                     s.fraction = frac;
+                    s.target_fraction = frac;
+                    s.fraction_velocity = 0.0;
                 }
                 area.queue_draw();
                 // Clone callback out before invoking; handler may re-enter via a
@@ -184,7 +236,7 @@ impl WaveformSeek {
             let state = state.clone();
             move |area, x, _y, _keyboard, tooltip| {
                 let s = state.borrow();
-                if s.peaks.is_empty() {
+                if s.raw_peaks.is_empty() {
                     return false;
                 }
                 let frac = fraction_at(x as f64, f64::from(area.width()));
@@ -205,14 +257,17 @@ impl WaveformSeek {
         &self.area
     }
 
-    /// Set peaks and trigger a 300 ms build-up animation (gated on
-    /// `gtk-enable-animations`).  Use this whenever the track changes.
-    pub(super) fn set_peaks(&self, peaks: Vec<f32>) {
+    /// Set peaks (as raw `u8` values, 0-255) and trigger a 300 ms build-up
+    /// animation (gated on `gtk-enable-animations`). Use this whenever the
+    /// track changes.
+    pub(super) fn set_peaks(&self, peaks: Vec<u8>) {
         let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
         let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
         let mut s = self.state.borrow_mut();
-        s.peaks = peaks;
-        if animate && !s.peaks.is_empty() {
+        s.raw_peaks = peaks;
+        s.display_peaks.clear();
+        s.last_display_width = 0; // force resample on next draw
+        if animate && !s.raw_peaks.is_empty() {
             s.build_progress = 0.0;
             s.build_start_us = now;
         } else {
@@ -281,7 +336,8 @@ impl WaveformSeek {
                 s.build_progress = (elapsed / BUILD_DURATION_S).clamp(0.0, 1.0);
             }
 
-            let settled = (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
+            let settled =
+                (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
             drop(s);
 
             area.queue_draw();
@@ -309,12 +365,12 @@ fn draw(
     let w = f64::from(width);
     let h = f64::from(height);
 
-    if state.peaks.is_empty() {
+    if state.display_peaks.is_empty() {
         draw_fallback(area, cr, w, h, state.fraction);
         return;
     }
 
-    let count = state.peaks.len();
+    let count = state.display_peaks.len();
     let slot = (w + BAR_GAP) / count as f64;
     let bar_w = (slot - BAR_GAP).max(1.0);
 
@@ -325,7 +381,7 @@ fn draw(
         f64::from(color.blue()),
     );
 
-    for (index, &peak) in state.peaks.iter().enumerate() {
+    for (index, &peak) in state.display_peaks.iter().enumerate() {
         let magnitude = f64::from(peak).clamp(0.0, 1.0);
 
         // Staggered build-up: each bar has a small time offset so they rise
@@ -360,18 +416,52 @@ fn draw(
             bar_center > lo && bar_center <= hi
         });
 
-        if is_hovered {
+        // Detect the boundary bar: the one where played transitions to unplayed.
+        let is_boundary = !is_hovered
+            && !is_ghost
+            && state.fraction > (index as f64) / count as f64
+            && state.fraction < (index as f64 + 1.0) / count as f64;
+
+        if is_boundary {
+            // Sub-bar precision: clip to the bar shape and fill played/unplayed
+            // portions as separate rectangles so the split is pixel-accurate.
+            let bar_progress =
+                (state.fraction * count as f64 - index as f64).clamp(0.0, 1.0);
+            let split_x = x + bar_w * bar_progress;
+
+            cr.save().ok();
+            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
+            cr.clip();
+
+            // Played portion (left of split).
+            cr.set_source_rgba(r, g, b, 1.0);
+            cr.rectangle(x, y, split_x - x, bar_h);
+            let _ = cr.fill();
+
+            // Unplayed portion (right of split).
+            cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA);
+            cr.rectangle(split_x, y, (x + bar_w) - split_x, bar_h);
+            let _ = cr.fill();
+
+            cr.restore().ok();
+        } else if is_hovered {
             // Highlight: full accent alpha regardless of played/unplayed state.
             cr.set_source_rgba(r, g, b, 1.0);
+            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
+            let _ = cr.fill();
         } else if is_ghost {
             cr.set_source_rgba(r, g, b, GHOST_ALPHA);
+            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
+            let _ = cr.fill();
         } else if bar_played(index, count, state.fraction) {
             cr.set_source_rgba(r, g, b, 1.0);
+            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
+            let _ = cr.fill();
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA);
+            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
+            let _ = cr.fill();
         }
-        rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
-        let _ = cr.fill();
     }
 }
 
@@ -534,5 +624,91 @@ mod tests {
         let dt = 1_000_000_i64;
         let velocity = (new_target - old_target) / dt as f64;
         assert!((velocity - 5e-7).abs() < 1e-12);
+    }
+
+    #[test]
+    fn resample_peaks_averages_groups() {
+        let raw = vec![0u8, 100, 200, 50];
+        let resampled = resample_peaks(&raw, 2);
+        assert_eq!(resampled.len(), 2);
+        // avg(0, 100) / 255 ≈ 0.196
+        assert!((resampled[0] - 50.0 / 255.0).abs() < 0.01);
+        // avg(200, 50) / 255 ≈ 0.490
+        assert!((resampled[1] - 125.0 / 255.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn resample_peaks_handles_empty() {
+        assert!(resample_peaks(&[], 10).is_empty());
+        assert!(resample_peaks(&[128], 0).is_empty());
+    }
+
+    #[test]
+    fn resample_peaks_identity_when_count_equals_len() {
+        // 4 raw values resampled to 4 bars → each bar gets exactly one value.
+        let raw = vec![0u8, 128, 255, 64];
+        let result = resample_peaks(&raw, 4);
+        assert_eq!(result.len(), 4);
+        assert!((result[0] - 0.0_f32 / 255.0).abs() < 0.001);
+        assert!((result[1] - 128.0_f32 / 255.0).abs() < 0.001);
+        assert!((result[2] - 255.0_f32 / 255.0).abs() < 0.001);
+        assert!((result[3] - 64.0_f32 / 255.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn compute_bar_count_returns_at_least_one() {
+        assert!(compute_bar_count(0) >= 1);
+        assert!(compute_bar_count(1) >= 1);
+    }
+
+    #[test]
+    fn compute_bar_count_scales_with_width() {
+        // At 600px with 4+2=6px per slot, expect ~100 bars.
+        let count = compute_bar_count(600);
+        assert!(count > 50 && count < 200, "unexpected bar count: {count}");
+    }
+
+    #[test]
+    fn ensure_resampled_clears_display_peaks_when_raw_empty() {
+        let mut state = State {
+            raw_peaks: Vec::new(),
+            display_peaks: vec![0.5],
+            last_display_width: 100,
+            fraction: 0.0,
+            hover_index: None,
+            drag_fraction: None,
+            target_fraction: 0.0,
+            fraction_velocity: 0.0,
+            last_tick_us: 0,
+            build_progress: 1.0,
+            build_start_us: 0,
+        };
+        ensure_resampled(&mut state, 200);
+        assert!(state.display_peaks.is_empty());
+    }
+
+    #[test]
+    fn ensure_resampled_populates_on_width_change() {
+        let mut state = State {
+            raw_peaks: vec![128u8; 1000],
+            display_peaks: Vec::new(),
+            last_display_width: 0,
+            fraction: 0.0,
+            hover_index: None,
+            drag_fraction: None,
+            target_fraction: 0.0,
+            fraction_velocity: 0.0,
+            last_tick_us: 0,
+            build_progress: 1.0,
+            build_start_us: 0,
+        };
+        ensure_resampled(&mut state, 600);
+        assert!(!state.display_peaks.is_empty());
+        assert_eq!(state.last_display_width, 600);
+
+        // Calling again with same width should not change the display_peaks vec.
+        let before_len = state.display_peaks.len();
+        ensure_resampled(&mut state, 600);
+        assert_eq!(state.display_peaks.len(), before_len);
     }
 }
