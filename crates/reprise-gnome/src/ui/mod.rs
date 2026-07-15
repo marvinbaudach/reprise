@@ -23,6 +23,8 @@
 mod about;
 #[path = "library_views/album_view.rs"]
 mod album_view;
+#[path = "library_views/album_card.rs"]
+mod album_card;
 #[path = "library_views/album_card_actions.rs"]
 mod album_card_actions;
 #[path = "library_views/album_card_css.rs"]
