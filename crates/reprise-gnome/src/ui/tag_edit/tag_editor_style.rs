@@ -20,7 +20,17 @@ pub(super) fn css() -> String {
            transition: background {TRANSITION}; }}\n\
          .reprise-tag-hint {{ \
            color: @accent_color; \
-           font-size: 12px; }}"
+           font-size: 12px; }}\n\
+         .reprise-autocomplete-popover {{ \
+           background: @window_bg_color; \
+           border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
+           border-radius: 8px; \
+           box-shadow: {SURFACE_SHADOW}; \
+           padding: 4px 0; }}\n\
+         .reprise-autocomplete-list row {{ \
+           padding: 6px 12px; }}\n\
+         .reprise-autocomplete-list row:selected {{ \
+           background: alpha(@accent_bg_color, 0.15); }}"
     )
 }
 

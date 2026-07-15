@@ -231,6 +231,8 @@ pub mod tag_edit_flow;
 pub mod tag_editor;
 #[path = "tag_edit/tag_editor_style.rs"]
 mod tag_editor_style;
+#[path = "tag_edit/autocomplete_entry.rs"]
+mod autocomplete_entry;
 pub mod toasts;
 #[path = "track_list/track_actions.rs"]
 pub mod track_actions;
