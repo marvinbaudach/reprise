@@ -14,6 +14,14 @@ use crate::ui::track_list::TrackList;
 pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_COLUMN_LAYOUT_EDITOR";
 const DROP_BEFORE_CLASS: &str = "reprise-column-drop-before";
 const DROP_AFTER_CLASS: &str = "reprise-column-drop-after";
+/// Draggable reorder row (movable columns) — gets the accent hover surface.
+const ROW_CLASS: &str = "reprise-column-row";
+/// Drag handle icon — dim at rest, accentuated on hover/drag.
+const HANDLE_CLASS: &str = "reprise-column-handle";
+/// Resting opacity of the drag handle (quiet, not disabled-looking).
+const HANDLE_REST_OPACITY: &str = "0.45";
+/// Drag-handle opacity once the row is hovered.
+const HANDLE_ACTIVE_OPACITY: &str = "0.85";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RowCapabilities {
@@ -179,7 +187,9 @@ fn build_row(state: &Rc<EditorState>, layout: &ColumnLayout, id: ColumnId) -> ad
     if is_fixed(id) {
         row.set_subtitle(&strings::text(strings::COLUMN_ALWAYS_VISIBLE));
     } else {
+        row.add_css_class(ROW_CLASS);
         let handle = gtk4::Image::from_icon_name("list-drag-handle-symbolic");
+        handle.add_css_class(HANDLE_CLASS);
         handle.set_tooltip_text(Some(&strings::text(strings::DRAG_TO_REORDER)));
         row.add_prefix(&handle);
     }
@@ -241,12 +251,23 @@ fn build_row(state: &Rc<EditorState>, layout: &ColumnLayout, id: ColumnId) -> ad
     row
 }
 
-/// Before/after drop-position indicators; installed app-wide by
+/// Redesign chrome for the column-layout editor; installed app-wide by
 /// [`super::style`].
+///
+/// Deutsch: Reorder-Reihen bekommen ein sanftes Akzent-Hover-Feedback (wie die
+/// app-weite `.reprise-hover`), damit sie als greifbare Flächen lesbar sind.
+/// Der Griff ist im Ruhezustand gedimmt und wird beim Hover bzw. während eines
+/// aktiven Drops akzentuiert. Die Vorher/Nachher-Drop-Indikatoren bleiben.
 pub(super) fn css() -> String {
-    use super::style::tokens::DROP_INDICATOR_THICKNESS;
+    use super::style::tokens::{DROP_INDICATOR_THICKNESS, HOVER_BG_ALPHA, TRANSITION};
     format!(
-        ".{DROP_BEFORE_CLASS}:drop(active) {{ box-shadow: inset 0 {DROP_INDICATOR_THICKNESS} @accent_color; }}\n\
+        ".{ROW_CLASS} {{ transition: background-color {TRANSITION}; }}\n\
+         .{ROW_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
+         .{HANDLE_CLASS} {{ opacity: {HANDLE_REST_OPACITY}; \
+           transition: opacity {TRANSITION}, color {TRANSITION}; }}\n\
+         .{ROW_CLASS}:hover .{HANDLE_CLASS} {{ opacity: {HANDLE_ACTIVE_OPACITY}; color: @accent_color; }}\n\
+         .{ROW_CLASS}:drop(active) .{HANDLE_CLASS} {{ opacity: 1; color: @accent_color; }}\n\
+         .{DROP_BEFORE_CLASS}:drop(active) {{ box-shadow: inset 0 {DROP_INDICATOR_THICKNESS} @accent_color; }}\n\
          .{DROP_AFTER_CLASS}:drop(active) {{ box-shadow: inset 0 -{DROP_INDICATOR_THICKNESS} @accent_color; }}"
     )
 }
@@ -388,6 +409,15 @@ mod tests {
             None
         );
         assert_eq!(keyboard_reorder_offset(gdk::Key::Return, alt), None);
+    }
+
+    #[test]
+    fn css_styles_reorder_rows_and_drag_handle() {
+        let css = super::css();
+        assert!(css.contains(".reprise-column-row:hover"));
+        assert!(css.contains("@accent_bg_color"));
+        assert!(css.contains(".reprise-column-handle"));
+        assert!(css.contains(".reprise-column-drop-before"));
     }
 
     #[test]
