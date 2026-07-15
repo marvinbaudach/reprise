@@ -24,6 +24,9 @@ pub struct ArtistSummary {
     pub artist: String,
     pub track_count: i64,
     pub album_count: i64,
+    pub total_plays: i64,
+    pub last_played_at: i64,
+    pub representative_path: String,
 }
 
 /// Returns one row per case-insensitive `(album, effective album artist)`
@@ -56,27 +59,37 @@ pub fn query_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Er
     rows.collect()
 }
 
-/// Returns one row per case-insensitive track artist. Blank artists and
-/// missing tracks are excluded; album counts ignore blank album values.
+/// One row per case-insensitive effective album artist. Compilation and
+/// featured tracks collapse under their album artist rather than exploding
+/// the list. Blank artists and missing tracks are excluded.
 pub fn query_artists(conn: &Connection) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
-    let sql = "WITH grouped AS ( \
-                 SELECT LOWER(TRIM(artist)) AS artist_key, MIN(id) AS representative_id, \
-                        COUNT(*) AS track_count, \
-                        COUNT(DISTINCT CASE WHEN TRIM(album) <> '' \
-                                      THEN LOWER(TRIM(album)) END) AS album_count \
-                 FROM tracks \
-                 WHERE missing = 0 AND TRIM(artist) <> '' \
-                 GROUP BY artist_key \
-               ) \
-               SELECT TRIM(tracks.artist), grouped.track_count, grouped.album_count \
-               FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
-               ORDER BY TRIM(tracks.artist) COLLATE NOCASE ASC";
-    let mut statement = conn.prepare(sql)?;
+    let sql = format!(
+        "WITH grouped AS ( \
+           SELECT LOWER({EFFECTIVE_ALBUM_ARTIST}) AS artist_key, \
+                  MIN(id) AS representative_id, \
+                  COUNT(*) AS track_count, \
+                  COUNT(DISTINCT CASE WHEN TRIM(album) <> '' \
+                        THEN LOWER(TRIM(album)) END) AS album_count, \
+                  COALESCE(SUM(play_count), 0) AS total_plays, \
+                  COALESCE(MAX(last_played_at), 0) AS last_played_at \
+           FROM tracks \
+           WHERE missing = 0 AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
+           GROUP BY artist_key \
+         ) \
+         SELECT {EFFECTIVE_ALBUM_ARTIST}, grouped.track_count, grouped.album_count, \
+                grouped.total_plays, grouped.last_played_at, tracks.path \
+         FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
+         ORDER BY {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC"
+    );
+    let mut statement = conn.prepare(&sql)?;
     let rows = statement.query_map([], |row| {
         Ok(ArtistSummary {
             artist: row.get(0)?,
             track_count: row.get(1)?,
             album_count: row.get(2)?,
+            total_plays: row.get(3)?,
+            last_played_at: row.get(4)?,
+            representative_path: row.get(5)?,
         })
     })?;
     rows.collect()
@@ -338,39 +351,24 @@ mod tests {
     }
 
     #[test]
-    fn artists_group_case_insensitively_and_report_track_and_album_counts() {
+    fn artists_group_by_effective_album_artist_with_aggregates() {
         let conn = seeded_library();
-
+        let artists = query_artists(&conn).unwrap();
+        let names: Vec<&str> = artists.iter().map(|a| a.artist.as_str()).collect();
         assert_eq!(
-            query_artists(&conn).unwrap(),
-            vec![
-                ArtistSummary {
-                    artist: "Guest A".into(),
-                    track_count: 1,
-                    album_count: 1,
-                },
-                ArtistSummary {
-                    artist: "Guest B".into(),
-                    track_count: 1,
-                    album_count: 1,
-                },
-                ArtistSummary {
-                    artist: "Nobody".into(),
-                    track_count: 1,
-                    album_count: 0,
-                },
-                ArtistSummary {
-                    artist: "Other Artist".into(),
-                    track_count: 1,
-                    album_count: 1,
-                },
-                ArtistSummary {
-                    artist: "Solo".into(),
-                    track_count: 2,
-                    album_count: 1,
-                },
-            ]
+            names,
+            vec!["Nobody", "Other Artist", "Solo", "Various Artists"]
         );
+        let solo = artists.iter().find(|a| a.artist == "Solo").unwrap();
+        assert_eq!(solo.track_count, 2);
+        assert_eq!(solo.album_count, 1);
+        assert_eq!(solo.total_plays, 0);
+        let va = artists
+            .iter()
+            .find(|a| a.artist == "Various Artists")
+            .unwrap();
+        assert_eq!(va.track_count, 2);
+        assert_eq!(va.album_count, 1);
     }
 
     #[test]
