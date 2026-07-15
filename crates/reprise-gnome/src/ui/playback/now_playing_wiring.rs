@@ -263,6 +263,10 @@ impl PlayerController {
     pub(super) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
         self.compact_player.set_state(state);
+        // Fan the same state out to the track list's now-playing equaliser
+        // (freeze on pause, drop the marker on stop). Cloned-out before the
+        // call inside `notify_playback_state_changed`, per RefCell discipline.
+        self.notify_playback_state_changed(state);
     }
 
     pub(super) fn sync_position(&self, position_ms: i64, duration_ms: i64) {
