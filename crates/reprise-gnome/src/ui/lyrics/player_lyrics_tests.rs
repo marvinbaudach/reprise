@@ -56,6 +56,13 @@ impl PlaybackBackend for FakePlayback {
     }
 
     fn set_next(&self, _path: Option<&str>) {}
+
+    fn set_transition(
+        &self,
+        _mode: reprise_core::library::settings::TrackTransition,
+        _crossfade_seconds: u8,
+    ) {
+    }
 }
 
 fn summary() -> TrackSummary {
