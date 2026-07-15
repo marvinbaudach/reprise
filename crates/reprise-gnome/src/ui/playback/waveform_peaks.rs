@@ -39,20 +39,41 @@ pub(crate) fn extract_peaks(path: &Path, buckets: usize) -> Result<Vec<u8>, Wave
 
     gst::init().map_err(|e| WaveformError::DecodeFailed(format!("GStreamer init: {e}")))?;
 
-    let (pipeline, appsink) = build_decode_pipeline(path)?;
+    // Shell out to gst-launch for the decode — GStreamer pipelines on a
+    // worker thread inside a running GTK4 app deadlock on try_pull_sample
+    // because decodebin/uridecodebin depend on GLib signal dispatch that
+    // only the main thread's context services.
+    let output = std::process::Command::new("gst-launch-1.0")
+        .arg("filesrc")
+        .arg(&format!("location={}", path.to_string_lossy()))
+        .arg("!")
+        .arg("decodebin")
+        .arg("!")
+        .arg("audioconvert")
+        .arg("!")
+        .arg("audioresample")
+        .arg("!")
+        .arg("audio/x-raw,format=S16LE,channels=1,rate=8000")
+        .arg("!")
+        .arg("fdsink")
+        .arg("fd=1")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map_err(|e| WaveformError::DecodeFailed(format!("gst-launch: {e}")))?;
 
-    pipeline
-        .set_state(gst::State::Playing)
-        .map_err(|e| WaveformError::DecodeFailed(format!("set state: {e}")))?;
+    if !output.status.success() {
+        return Err(WaveformError::DecodeFailed(format!(
+            "gst-launch exit code: {:?}",
+            output.status.code()
+        )));
+    }
 
-    let samples = pull_all_samples(&appsink);
-
-    // Prüfe den GStreamer-Bus auf Dekodierungsfehler vor dem Teardown.
-    check_bus_errors(&pipeline)?;
-
-    pipeline.set_state(gst::State::Null).ok();
-
-    let samples = samples?;
+    let raw = &output.stdout;
+    let mut samples = Vec::with_capacity(raw.len() / 2);
+    for chunk in raw.chunks_exact(2) {
+        samples.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+    }
     if samples.is_empty() {
         return Err(WaveformError::EmptyStream);
     }
@@ -66,118 +87,7 @@ pub(crate) fn extract_peaks(path: &Path, buckets: usize) -> Result<Vec<u8>, Wave
     Ok(compute_peaks(&samples, effective_buckets))
 }
 
-// ---------------------------------------------------------------------------
-// GStreamer-Pipeline
-// ---------------------------------------------------------------------------
 
-fn build_decode_pipeline(path: &Path) -> Result<(gst::Pipeline, gst_app::AppSink), WaveformError> {
-    let path_str = path
-        .to_str()
-        .ok_or_else(|| WaveformError::DecodeFailed("path is not valid UTF-8".into()))?;
-
-    let pipeline = gst::Pipeline::default();
-
-    let filesrc = make_element("filesrc")?;
-    filesrc.set_property("location", path_str);
-
-    let decodebin = make_element("decodebin")?;
-    let audioconvert = make_element("audioconvert")?;
-    let audioresample = make_element("audioresample")?;
-
-    let caps = gst::Caps::builder("audio/x-raw")
-        .field("format", "S16LE")
-        .field("channels", 1i32)
-        .field("rate", 8000i32)
-        .build();
-    let capsfilter = make_element("capsfilter")?;
-    capsfilter.set_property("caps", &caps);
-
-    let appsink_el = make_element("appsink")?;
-
-    for el in [
-        &filesrc,
-        &decodebin,
-        &audioconvert,
-        &audioresample,
-        &capsfilter,
-        &appsink_el,
-    ] {
-        pipeline
-            .add(el)
-            .map_err(|e| WaveformError::DecodeFailed(format!("add element: {e}")))?;
-    }
-
-    // Statische Links
-    filesrc
-        .link(&decodebin)
-        .map_err(|e| WaveformError::DecodeFailed(format!("link filesrc→decodebin: {e}")))?;
-    audioconvert
-        .link(&audioresample)
-        .map_err(|e| WaveformError::DecodeFailed(format!("link convert→resample: {e}")))?;
-    audioresample
-        .link(&capsfilter)
-        .map_err(|e| WaveformError::DecodeFailed(format!("link resample→capsfilter: {e}")))?;
-    capsfilter
-        .link(&appsink_el)
-        .map_err(|e| WaveformError::DecodeFailed(format!("link capsfilter→appsink: {e}")))?;
-
-    // Dynamischer Link: decodebin → audioconvert (Pad entsteht erst beim Dekodieren)
-    let convert_weak = audioconvert.downgrade();
-    decodebin.connect_pad_added(move |_el, src_pad| {
-        let Some(convert) = convert_weak.upgrade() else {
-            return;
-        };
-        let Some(sink_pad) = convert.static_pad("sink") else {
-            return;
-        };
-        if sink_pad.is_linked() {
-            return;
-        }
-        src_pad.link(&sink_pad).ok();
-    });
-
-    let appsink = appsink_el
-        .downcast::<gst_app::AppSink>()
-        .map_err(|_| WaveformError::DecodeFailed("appsink downcast failed".into()))?;
-
-    Ok((pipeline, appsink))
-}
-
-fn make_element(factory_name: &str) -> Result<gst::Element, WaveformError> {
-    gst::ElementFactory::make(factory_name)
-        .build()
-        .map_err(|e| WaveformError::DecodeFailed(format!("{factory_name}: {e}")))
-}
-
-fn pull_all_samples(appsink: &gst_app::AppSink) -> Result<Vec<i16>, WaveformError> {
-    let mut samples = Vec::new();
-    let timeout = gst::ClockTime::from_seconds(30);
-    while let Some(sample) = appsink.try_pull_sample(timeout) {
-        let buffer = sample
-            .buffer()
-            .ok_or_else(|| WaveformError::DecodeFailed("sample without buffer".into()))?;
-        let map = buffer
-            .map_readable()
-            .map_err(|e| WaveformError::DecodeFailed(format!("buffer map: {e}")))?;
-        // S16LE: 2 Bytes pro Sample
-        for chunk in map.as_slice().chunks_exact(2) {
-            samples.push(i16::from_le_bytes([chunk[0], chunk[1]]));
-        }
-    }
-    Ok(samples)
-}
-
-fn check_bus_errors(pipeline: &gst::Pipeline) -> Result<(), WaveformError> {
-    let Some(bus) = pipeline.bus() else {
-        return Ok(());
-    };
-    while let Some(msg) = bus.pop() {
-        if let gst::MessageView::Error(err) = msg.view() {
-            return Err(WaveformError::DecodeFailed(err.error().to_string()));
-        }
-    }
-    Ok(())
-}
 
 // ---------------------------------------------------------------------------
 // Peak-Berechnung

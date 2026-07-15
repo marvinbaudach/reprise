@@ -539,13 +539,18 @@ pub(super) fn spawn_waveform_backfill(db_path: std::path::PathBuf) {
     std::thread::Builder::new()
         .name("reprise-waveform-backfill".to_string())
         .spawn(move || {
-            let Ok(conn) = reprise_core::db::open(Some(&db_path)) else {
-                return;
-            };
-            if reprise_core::db::migrate(&conn).is_err() {
-                return;
-            }
-            analyze_waveforms(&conn);
+            // GStreamer's decodebin emits pad-added signals via GLib, so the
+            // worker thread needs its own MainContext to process them.
+            let ctx = gtk4::glib::MainContext::new();
+            ctx.with_thread_default(|| {
+                let Ok(conn) = reprise_core::db::open(Some(&db_path)) else {
+                    return;
+                };
+                if reprise_core::db::migrate(&conn).is_err() {
+                    return;
+                }
+                analyze_waveforms(&conn);
+            });
         })
         .ok();
 }
