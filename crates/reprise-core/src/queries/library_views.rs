@@ -8,7 +8,7 @@ use super::clauses::{filter_clause, like_pattern, order_expr_and_dir, row_to_id,
 use super::queue::QUEUE_LIMIT;
 use super::MAX_WINDOW_LIMIT;
 
-const EFFECTIVE_ALBUM_ARTIST: &str =
+pub(crate) const EFFECTIVE_ALBUM_ARTIST: &str =
     "CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +182,44 @@ pub(super) fn query_album_track_ids(
     }
     let mut statement = conn.prepare(&sql)?;
     let rows = statement.query_map(rusqlite::params_from_iter(params), row_to_id)?;
+    rows.collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtistAlbum {
+    pub album: String,
+    pub year: i64,
+    pub track_count: i64,
+    pub representative_path: String,
+}
+
+/// Albums by one effective album artist, newest release year first.
+pub fn query_artist_albums(
+    conn: &Connection,
+    artist: &str,
+) -> Result<Vec<ArtistAlbum>, rusqlite::Error> {
+    let sql = format!(
+        "WITH grouped AS ( \
+           SELECT LOWER(TRIM(album)) AS album_key, MIN(id) AS representative_id, \
+                  COUNT(*) AS track_count, COALESCE(MAX(year), 0) AS year \
+           FROM tracks \
+           WHERE missing = 0 AND TRIM(album) <> '' \
+             AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+           GROUP BY album_key \
+         ) \
+         SELECT TRIM(tracks.album), grouped.year, grouped.track_count, tracks.path \
+         FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
+         ORDER BY grouped.year DESC, TRIM(tracks.album) COLLATE NOCASE ASC"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(rusqlite::params![artist.trim()], |row| {
+        Ok(ArtistAlbum {
+            album: row.get(0)?,
+            year: row.get(1)?,
+            track_count: row.get(2)?,
+            representative_path: row.get(3)?,
+        })
+    })?;
     rows.collect()
 }
 
@@ -446,5 +484,22 @@ mod tests {
         assert_eq!(query_track_count(&conn, &solo, "", &[]).unwrap(), 2);
         let va = ViewSource::Artist("Various Artists".into());
         assert_eq!(query_track_count(&conn, &va, "", &[]).unwrap(), 2);
+    }
+
+    #[test]
+    fn artist_albums_are_newest_first() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,album_artist,year,added_at) VALUES
+             ('/a','A','Solo','Old','Solo',2010,0),
+             ('/b','B','Solo','New','Solo',2024,0);",
+        )
+        .unwrap();
+        let albums = query_artist_albums(&conn, "Solo").unwrap();
+        assert_eq!(
+            albums.iter().map(|a| a.album.as_str()).collect::<Vec<_>>(),
+            vec!["New", "Old"]
+        );
     }
 }

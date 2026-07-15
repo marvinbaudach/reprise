@@ -88,7 +88,7 @@ mod artist_context;
 mod browse;
 mod clauses;
 mod library;
-mod library_views;
+pub(crate) mod library_views;
 mod maintenance;
 mod playlist;
 mod queue;
