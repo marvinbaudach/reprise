@@ -116,8 +116,6 @@ pub const REPLAYGAIN_OFF: &str = N_!("Off");
 pub const REPLAYGAIN_TRACK: &str = N_!("Per Track");
 pub const REPLAYGAIN_ALBUM: &str = N_!("Per Album");
 pub const AUDIO_EFFECTS_FAILED: &str = N_!("Could not apply audio effects");
-pub const PLUGIN_MPRIS_DESCRIPTION: &str =
-    N_!("GNOME media controls, media keys, and lock-screen integration (D-Bus)");
 
 #[path = "strings_scrobbling.rs"]
 mod scrobbling;

@@ -153,7 +153,7 @@ fn build_card(state: &AlbumState, album: AlbumSummary, generation: u64) -> gtk4:
     state.cover_loader.load_into(
         &image,
         &album.representative_path,
-        ThumbnailSize::Bar,
+        ThumbnailSize::Grid,
         generation,
         &state.generation,
     );
