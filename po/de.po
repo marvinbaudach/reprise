@@ -68,8 +68,8 @@ msgid "Compact View"
 msgstr "Kompaktansicht"
 
 #: crates/reprise-gnome/src/ui/strings.rs:47
-msgid "Return to Library"
-msgstr "Zur Bibliothek"
+msgid "Restore Full Window"
+msgstr "Vollansicht wiederherstellen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:48
 msgid "Compact player menu"
