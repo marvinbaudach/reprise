@@ -109,16 +109,24 @@ impl ArtistView {
         self.inner.detail.set_now_playing_track(track_id);
     }
 
-    // Task 9: wired to PlayerController.
-    #[allow(dead_code)]
+    // Task 9a: wired to PlayerController.
     pub(in crate::ui) fn set_on_play_all(&self, callback: impl Fn(String) + 'static) {
         self.inner.detail.set_on_play_all(callback);
     }
 
-    // Task 9: wired to PlayerController.
-    #[allow(dead_code)]
+    // Task 9a: wired to PlayerController.
     pub(in crate::ui) fn set_on_shuffle(&self, callback: impl Fn(String) + 'static) {
         self.inner.detail.set_on_shuffle(callback);
+    }
+
+    // Task 9a: ⋮ menu "Add to queue" — wired to PlayerController.
+    pub(in crate::ui) fn set_on_add_to_queue(&self, callback: impl Fn(String) + 'static) {
+        self.inner.detail.set_on_add_to_queue(callback);
+    }
+
+    // Task 9a: ⋮ menu "Go to folder" — wired to the desktop file manager.
+    pub(in crate::ui) fn set_on_go_to_folder(&self, callback: impl Fn(String) + 'static) {
+        self.inner.detail.set_on_go_to_folder(callback);
     }
 
     pub(in crate::ui) fn set_on_show_all_tracks(&self, callback: impl Fn(String) + 'static) {

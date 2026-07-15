@@ -47,10 +47,13 @@ pub(in crate::ui) type ArtistCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 /// A shared, settable callback taking an activated album and its artist.
 pub(in crate::ui) type AlbumCallback = Rc<RefCell<Option<Rc<dyn Fn(ArtistAlbum, String)>>>>;
 
-/// The Play all / Shuffle / current-artist plumbing the hero's buttons capture.
+/// The Play all / Shuffle / ⋮-menu / current-artist plumbing the hero's buttons
+/// and menu items capture.
 pub(in crate::ui) struct HeroCallbacks {
     pub(in crate::ui) on_play_all: ArtistCallback,
     pub(in crate::ui) on_shuffle: ArtistCallback,
+    pub(in crate::ui) on_add_to_queue: ArtistCallback,
+    pub(in crate::ui) on_go_to_folder: ArtistCallback,
     pub(in crate::ui) current_artist: Rc<RefCell<String>>,
 }
 
@@ -63,6 +66,8 @@ struct Inner {
     current_artist: Rc<RefCell<String>>,
     on_play_all: ArtistCallback,
     on_shuffle: ArtistCallback,
+    on_add_to_queue: ArtistCallback,
+    on_go_to_folder: ArtistCallback,
     on_show_all_tracks: ArtistCallback,
     on_album_activate: AlbumCallback,
     hero: Hero,
@@ -87,12 +92,16 @@ impl ArtistDetailPane {
         let current_artist = Rc::new(RefCell::new(String::new()));
         let on_play_all: ArtistCallback = Rc::new(RefCell::new(None));
         let on_shuffle: ArtistCallback = Rc::new(RefCell::new(None));
+        let on_add_to_queue: ArtistCallback = Rc::new(RefCell::new(None));
+        let on_go_to_folder: ArtistCallback = Rc::new(RefCell::new(None));
         let on_show_all_tracks: ArtistCallback = Rc::new(RefCell::new(None));
         let on_album_activate: AlbumCallback = Rc::new(RefCell::new(None));
 
         let hero = artist_detail_hero::build_hero(&HeroCallbacks {
             on_play_all: on_play_all.clone(),
             on_shuffle: on_shuffle.clone(),
+            on_add_to_queue: on_add_to_queue.clone(),
+            on_go_to_folder: on_go_to_folder.clone(),
             current_artist: current_artist.clone(),
         });
 
@@ -120,6 +129,8 @@ impl ArtistDetailPane {
             current_artist,
             on_play_all,
             on_shuffle,
+            on_add_to_queue,
+            on_go_to_folder,
             on_show_all_tracks,
             on_album_activate,
             hero,
@@ -150,6 +161,14 @@ impl ArtistDetailPane {
 
     pub(in crate::ui) fn set_on_shuffle(&self, callback: impl Fn(String) + 'static) {
         *self.inner.on_shuffle.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_add_to_queue(&self, callback: impl Fn(String) + 'static) {
+        *self.inner.on_add_to_queue.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_go_to_folder(&self, callback: impl Fn(String) + 'static) {
+        *self.inner.on_go_to_folder.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_on_show_all_tracks(&self, callback: impl Fn(String) + 'static) {
