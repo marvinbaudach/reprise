@@ -17,6 +17,13 @@ pub fn format_duration(ms: i64) -> String {
     }
 }
 
+/// Formats the remaining time as `−M:SS` (or `−H:MM:SS`), using U+2212
+/// MINUS SIGN for visual consistency with tabular-numeral fonts.
+pub fn format_remaining(position_ms: i64, duration_ms: i64) -> String {
+    let remaining = (duration_ms - position_ms).max(0);
+    format!("\u{2212}{}", format_duration(remaining))
+}
+
 /// Formats a duration in milliseconds as a human-readable summary of days,
 /// hours, and minutes — Rhythmbox-style copy for the library status line
 /// (`status_bar.rs`), e.g. `"4 days, 6 hours and 28 minutes"`. Distinct from
@@ -222,5 +229,25 @@ mod tests {
     #[test]
     fn unix_timestamp_clamps_negative_input_to_the_epoch() {
         assert_eq!(format_unix_timestamp(-5), "1970-01-01 00:00");
+    }
+
+    #[test]
+    fn format_remaining_shows_negative_remaining_time() {
+        assert_eq!(format_remaining(8_000, 68_000), "\u{2212}1:00");
+    }
+
+    #[test]
+    fn format_remaining_at_start_shows_full_duration() {
+        assert_eq!(format_remaining(0, 181_000), "\u{2212}3:01");
+    }
+
+    #[test]
+    fn format_remaining_at_end_shows_zero() {
+        assert_eq!(format_remaining(181_000, 181_000), "\u{2212}0:00");
+    }
+
+    #[test]
+    fn format_remaining_with_hours() {
+        assert_eq!(format_remaining(0, 3_753_000), "\u{2212}1:02:33");
     }
 }

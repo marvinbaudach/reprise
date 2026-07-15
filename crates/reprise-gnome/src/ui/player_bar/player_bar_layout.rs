@@ -99,7 +99,9 @@ pub(super) fn build() -> PlayerBarWidgets {
     transport_row.set_halign(gtk4::Align::Center);
 
     let position_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
+    position_label.add_css_class("player-bar-time");
     let duration_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
+    duration_label.add_css_class("player-bar-time");
     let waveform = super::waveform_seek::WaveformSeek::new();
     waveform
         .widget()
@@ -174,7 +176,8 @@ pub(super) fn css() -> String {
            box-shadow: 0 0 18px alpha(@reprise_player_accent, 0.6); }}\n\
          .{SURFACE_CSS_CLASS} {{ \
            border-top: 1px solid alpha(@window_fg_color, 0.06); }}\n\
-         .waveform-seek {{ color: @reprise_player_accent; }}"
+         .waveform-seek {{ color: @reprise_player_accent; }}\n\
+         .player-bar-time {{ font-feature-settings: \"tnum\"; }}"
     )
 }
 
