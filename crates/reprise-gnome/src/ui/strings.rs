@@ -96,12 +96,12 @@ pub const ARTIST_DETAIL_NO_ALBUMS: &str = N_!("No albums for this artist yet.");
 pub fn artist_detail_meta(
     album_count: i64,
     track_count: i64,
-    total_ms: i64,
+    catalog_ms: i64,
     plays_this_year: i64,
 ) -> String {
     let album_count = usize::try_from(album_count).unwrap_or(usize::MAX);
     let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
-    let hours = usize::try_from(total_ms.max(0) / 3_600_000).unwrap_or(usize::MAX);
+    let hours = usize::try_from(catalog_ms.max(0) / 3_600_000).unwrap_or(usize::MAX);
     let plays = usize::try_from(plays_this_year.max(0)).unwrap_or(usize::MAX);
     let albums = plural(
         "{count} album",

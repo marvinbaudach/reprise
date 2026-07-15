@@ -10,7 +10,8 @@ use crate::queries::library_views::EFFECTIVE_ALBUM_ARTIST;
 pub struct ArtistHeader {
     pub album_count: i64,
     pub track_count: i64,
-    pub total_ms: i64,
+    /// Σ duration_ms — total length of the artist's catalog in milliseconds.
+    pub catalog_ms: i64,
     pub plays_this_year: i64,
 }
 
@@ -41,7 +42,7 @@ pub fn artist_header(
         "SELECT \
            COUNT(DISTINCT CASE WHEN TRIM(album) <> '' THEN LOWER(TRIM(album)) END), \
            COUNT(*), \
-           COALESCE(SUM(play_count * duration_ms), 0), \
+           COALESCE(SUM(duration_ms), 0), \
            ( SELECT COUNT(*) FROM listen_events le JOIN tracks t2 ON t2.id = le.track_id \
              WHERE t2.missing = 0 AND {effective_album_artist_t2} = ?1 COLLATE NOCASE \
              AND le.played_at >= ?2 AND le.played_at <= ?3 ) \
@@ -52,7 +53,7 @@ pub fn artist_header(
         Ok(ArtistHeader {
             album_count: row.get(0)?,
             track_count: row.get(1)?,
-            total_ms: row.get(2)?,
+            catalog_ms: row.get(2)?,
             plays_this_year: row.get(3)?,
         })
     })
@@ -116,8 +117,8 @@ mod tests {
         let h = artist_header(&conn, "solo", NOW).unwrap();
         assert_eq!(h.track_count, 3);
         assert_eq!(h.album_count, 2);
-        // Σ play_count×duration_ms = 5*180000 + 2*120000 + 9*200000
-        assert_eq!(h.total_ms, 900_000 + 240_000 + 1_800_000);
+        // Σ duration_ms = 180000 + 120000 + 200000 (catalog length, not weighted by play_count)
+        assert_eq!(h.catalog_ms, 180_000 + 120_000 + 200_000);
         // only the 2026-03 event counts
         assert_eq!(h.plays_this_year, 1);
     }

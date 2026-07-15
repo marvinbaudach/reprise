@@ -177,7 +177,7 @@ impl ArtistDetailPane {
                 reprise_core::library::artist_detail::ArtistHeader {
                     album_count: 0,
                     track_count: 0,
-                    total_ms: 0,
+                    catalog_ms: 0,
                     plays_this_year: 0,
                 }
             });
@@ -337,7 +337,8 @@ fn wire_top_show_all(inner: &Rc<Inner>) {
     inner.top_show_all.connect_clicked(move |_| {
         let cb = on_show_all_tracks.borrow().clone();
         if let Some(cb) = cb {
-            cb(current_artist.borrow().clone());
+            let artist = current_artist.borrow().clone();
+            cb(artist);
         }
     });
 }
