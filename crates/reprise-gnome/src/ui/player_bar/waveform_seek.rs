@@ -210,7 +210,7 @@ impl WaveformSeek {
     pub(super) fn set_peaks(&self, peaks: Vec<f32>) {
         let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
         let animate = gtk4::Settings::default()
-            .map_or(true, |s| s.is_gtk_enable_animations());
+            .is_none_or(|s| s.is_gtk_enable_animations());
         let mut s = self.state.borrow_mut();
         s.peaks = peaks;
         if animate && !s.peaks.is_empty() {
@@ -226,6 +226,7 @@ impl WaveformSeek {
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
     /// when updating from a sub-second position tick so movement is continuous.
+    #[allow(dead_code)]
     pub(super) fn set_fraction(&self, fraction: f64) {
         let fraction = fraction.clamp(0.0, 1.0);
         let mut s = self.state.borrow_mut();
@@ -351,7 +352,7 @@ fn draw(
         let y = (h - bar_h) / 2.0;
 
         let is_hovered = state.hover_index == Some(index);
-        let is_ghost = state.drag_fraction.map_or(false, |drag_frac| {
+        let is_ghost = state.drag_fraction.is_some_and(|drag_frac| {
             let bar_center = (index as f64 + 0.5) / count as f64;
             let (lo, hi) = if drag_frac > state.fraction {
                 (state.fraction, drag_frac)

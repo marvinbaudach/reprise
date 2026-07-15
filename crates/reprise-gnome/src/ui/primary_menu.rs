@@ -68,6 +68,7 @@ fn settings_section_entries() -> Vec<(String, &'static str)> {
     ]
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub(super) fn install(
     header: &adw::HeaderBar,
     window: &adw::ApplicationWindow,
