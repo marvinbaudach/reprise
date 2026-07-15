@@ -409,6 +409,11 @@ pub fn build(
             None => tracing::warn!("player unavailable; ignoring album shuffle action"),
         });
     }
+    // Wire the album context menu's toast overlay so "Added N tracks to
+    // Playlist" toasts reach the window surface. Same post-construction
+    // injection reason as `player.set_toast_overlay` just above: `toast_
+    // overlay` is built after `album_view`.
+    album_view.set_toast_overlay(&toast_overlay);
     // Wire now-playing fan-out to album grid EQ markers.
     if let Some(ref player) = player {
         let album_view_np = album_view.now_playing_callback();
