@@ -40,7 +40,21 @@ pub(crate) fn number_patch(
     Ok(Some(Some(value)))
 }
 
-fn string_row(label: &str, value: &MixedValue<String>) -> adw::EntryRow {
+fn badge_label(is_mixed: bool, track_count: usize) -> Option<gtk4::Label> {
+    if track_count <= 1 {
+        return None;
+    }
+    let text = if is_mixed {
+        strings::text(strings::MULTIPLE_VALUES)
+    } else {
+        strings::text(strings::TAG_SAME_ON_ALL)
+    };
+    let label = gtk4::Label::new(Some(&text));
+    label.add_css_class("reprise-tag-badge");
+    Some(label)
+}
+
+fn string_row(label: &str, value: &MixedValue<String>, track_count: usize) -> adw::EntryRow {
     let title = match value {
         MixedValue::Uniform(_) => label.to_string(),
         MixedValue::Mixed => format!("{label} — {}", &strings::text(strings::MULTIPLE_VALUES)),
@@ -49,10 +63,13 @@ fn string_row(label: &str, value: &MixedValue<String>) -> adw::EntryRow {
     if let MixedValue::Uniform(value) = value {
         row.set_text(value);
     }
+    if let Some(badge) = badge_label(matches!(value, MixedValue::Mixed), track_count) {
+        row.add_suffix(&badge);
+    }
     row
 }
 
-fn number_row(label: &str, value: &MixedValue<Option<u32>>) -> adw::EntryRow {
+fn number_row(label: &str, value: &MixedValue<Option<u32>>, track_count: usize) -> adw::EntryRow {
     let title = match value {
         MixedValue::Mixed => format!("{label} — {}", &strings::text(strings::MULTIPLE_VALUES)),
         MixedValue::Uniform(_) => label.to_string(),
@@ -63,6 +80,9 @@ fn number_row(label: &str, value: &MixedValue<Option<u32>>) -> adw::EntryRow {
         .build();
     if let MixedValue::Uniform(Some(value)) = value {
         row.set_text(&value.to_string());
+    }
+    if let Some(badge) = badge_label(matches!(value, MixedValue::Mixed), track_count) {
+        row.add_suffix(&badge);
     }
     row
 }
@@ -143,18 +163,44 @@ pub fn present(
     parent: &adw::ApplicationWindow,
     summary: &EditableTagSummary,
     rating_summary: &MixedValue<i32>,
+    track_count: usize,
     on_apply: impl Fn(TrackEditPatch) + 'static,
 ) {
-    let title = string_row(&strings::text(strings::TAG_TITLE), &summary.title);
-    let artist = string_row(&strings::text(strings::TAG_ARTIST), &summary.artist);
-    let album = string_row(&strings::text(strings::TAG_ALBUM), &summary.album);
+    let title = string_row(
+        &strings::text(strings::TAG_TITLE),
+        &summary.title,
+        track_count,
+    );
+    let artist = string_row(
+        &strings::text(strings::TAG_ARTIST),
+        &summary.artist,
+        track_count,
+    );
+    let album = string_row(
+        &strings::text(strings::TAG_ALBUM),
+        &summary.album,
+        track_count,
+    );
     let album_artist = string_row(
         &strings::text(strings::TAG_ALBUM_ARTIST),
         &summary.album_artist,
+        track_count,
     );
-    let year = number_row(&strings::text(strings::TAG_YEAR), &summary.year);
-    let track_no = number_row(&strings::text(strings::TAG_TRACK_NUMBER), &summary.track_no);
-    let genre = string_row(&strings::text(strings::TAG_GENRE), &summary.genre);
+    let year = number_row(
+        &strings::text(strings::TAG_YEAR),
+        &summary.year,
+        track_count,
+    );
+    let track_no = number_row(
+        &strings::text(strings::TAG_TRACK_NUMBER),
+        &summary.track_no,
+        track_count,
+    );
+    let genre = string_row(
+        &strings::text(strings::TAG_GENRE),
+        &summary.genre,
+        track_count,
+    );
     let (rating, rating_started_mixed) = rating_row(rating_summary);
 
     let group = adw::PreferencesGroup::new();
@@ -184,6 +230,15 @@ pub fn present(
     content.set_margin_start(18);
     content.set_margin_end(18);
     content.append(&group);
+    if track_count > 1 {
+        let hint = gtk4::Label::builder()
+            .label(strings::tag_applied_to_all_hint(track_count))
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        hint.add_css_class("reprise-tag-hint");
+        content.append(&hint);
+    }
     content.append(&error_label);
     let scrolled = gtk4::ScrolledWindow::builder()
         .child(&content)
@@ -203,6 +258,7 @@ pub fn present(
         .content_width(520)
         .content_height(590)
         .build();
+    dialog.add_css_class("reprise-tag-editor");
     enable_enter_submit(
         &dialog,
         &apply,
