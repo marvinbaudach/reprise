@@ -1,29 +1,32 @@
 //! Pure seek-guard decisions shared by the player bar's GTK callbacks.
 
-pub(super) fn should_apply_position_tick(dragging: bool) -> bool {
+#[cfg(test)]
+fn should_apply_position_tick(dragging: bool) -> bool {
     !dragging
 }
 
-pub(super) fn should_clear_drag_guard_on_track_change(
-    pointer_down: bool,
-    gesture_active: bool,
-) -> bool {
+#[cfg(test)]
+fn should_clear_drag_guard_on_track_change(pointer_down: bool, gesture_active: bool) -> bool {
     !pointer_down && !gesture_active
 }
 
-pub(super) fn should_self_heal(dragging: bool, pointer_down: bool, gesture_active: bool) -> bool {
+#[cfg(test)]
+fn should_self_heal(dragging: bool, pointer_down: bool, gesture_active: bool) -> bool {
     dragging && !pointer_down && !gesture_active
 }
 
-pub(super) fn should_finish_observer_stop(pointer_down: bool, gesture_active: bool) -> bool {
+#[cfg(test)]
+fn should_finish_observer_stop(pointer_down: bool, gesture_active: bool) -> bool {
     !pointer_down && !gesture_active
 }
 
-pub(super) fn should_finish_observer_cancel(pointer_down: bool) -> bool {
+#[cfg(test)]
+fn should_finish_observer_cancel(pointer_down: bool) -> bool {
     !pointer_down
 }
 
-pub(super) fn should_update_range(last_duration_ms: i64, duration_ms: i64) -> bool {
+#[cfg(test)]
+fn should_update_range(last_duration_ms: i64, duration_ms: i64) -> bool {
     duration_ms != last_duration_ms
 }
 

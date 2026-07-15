@@ -383,10 +383,7 @@ impl InfoPanel {
                 }
                 let saved = {
                     let conn = panel.conn.borrow();
-                    reprise_core::library::settings::set_info_panel_visible(
-                        &conn,
-                        visible,
-                    )
+                    reprise_core::library::settings::set_info_panel_visible(&conn, visible)
                 };
                 if let Err(error) = saved {
                     tracing::warn!(%error, "could not save information panel visibility");

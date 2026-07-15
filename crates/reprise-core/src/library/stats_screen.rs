@@ -471,9 +471,7 @@ pub fn listening_by_hour(
         })
     };
     if year.is_some() {
-        statement
-            .query_map(params![year_str], map_row)?
-            .collect()
+        statement.query_map(params![year_str], map_row)?.collect()
     } else {
         statement.query_map([], map_row)?.collect()
     }
@@ -608,6 +606,7 @@ mod tests {
         .unwrap();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn insert_track_full(
         conn: &Connection,
         id: i64,
@@ -751,7 +750,17 @@ mod tests {
         let conn = migrated_conn();
         // Track 1: last_played in 2026, track 2: last_played in 2025.
         insert_track_full(&conn, 1, "A", "Alb", "", "", 3, 200_000, Some(T_2026_07_01));
-        insert_track_full(&conn, 2, "B", "Alb2", "", "", 2, 100_000, Some(T_2025_08_01));
+        insert_track_full(
+            &conn,
+            2,
+            "B",
+            "Alb2",
+            "",
+            "",
+            2,
+            100_000,
+            Some(T_2025_08_01),
+        );
         // listen_events for ms totals
         record_listen_event(&conn, 1, T_2026_07_01, 190_000).unwrap();
         record_listen_event(&conn, 1, T_2026_07_05, 200_000).unwrap();
@@ -817,8 +826,28 @@ mod tests {
     fn top_artists_filtered_by_year() {
         let conn = migrated_conn();
         // Alpha played in 2026, Beta played in 2025.
-        insert_track_full(&conn, 1, "Alpha", "A1", "Alpha", "", 10, 200_000, Some(T_2026_07_01));
-        insert_track_full(&conn, 2, "Beta", "B1", "Beta", "", 8, 250_000, Some(T_2025_08_01));
+        insert_track_full(
+            &conn,
+            1,
+            "Alpha",
+            "A1",
+            "Alpha",
+            "",
+            10,
+            200_000,
+            Some(T_2026_07_01),
+        );
+        insert_track_full(
+            &conn,
+            2,
+            "Beta",
+            "B1",
+            "Beta",
+            "",
+            8,
+            250_000,
+            Some(T_2025_08_01),
+        );
 
         let top_2026 = top_artists(&conn, 10, Some(2026)).unwrap();
         assert_eq!(top_2026.len(), 1);
@@ -848,8 +877,28 @@ mod tests {
     #[test]
     fn top_albums_filtered_by_year() {
         let conn = migrated_conn();
-        insert_track_full(&conn, 1, "Alpha", "A1", "Alpha", "", 10, 200_000, Some(T_2026_07_01));
-        insert_track_full(&conn, 2, "Beta", "B1", "Beta", "", 8, 250_000, Some(T_2025_08_01));
+        insert_track_full(
+            &conn,
+            1,
+            "Alpha",
+            "A1",
+            "Alpha",
+            "",
+            10,
+            200_000,
+            Some(T_2026_07_01),
+        );
+        insert_track_full(
+            &conn,
+            2,
+            "Beta",
+            "B1",
+            "Beta",
+            "",
+            8,
+            250_000,
+            Some(T_2025_08_01),
+        );
 
         let top_2026 = top_albums(&conn, 10, Some(2026)).unwrap();
         assert_eq!(top_2026.len(), 1);
@@ -878,8 +927,28 @@ mod tests {
     #[test]
     fn top_tracks_filtered_by_year() {
         let conn = migrated_conn();
-        insert_track_full(&conn, 1, "Alpha", "A1", "", "", 10, 200_000, Some(T_2026_07_01));
-        insert_track_full(&conn, 2, "Beta", "B1", "", "", 8, 250_000, Some(T_2025_08_01));
+        insert_track_full(
+            &conn,
+            1,
+            "Alpha",
+            "A1",
+            "",
+            "",
+            10,
+            200_000,
+            Some(T_2026_07_01),
+        );
+        insert_track_full(
+            &conn,
+            2,
+            "Beta",
+            "B1",
+            "",
+            "",
+            8,
+            250_000,
+            Some(T_2025_08_01),
+        );
 
         let top_2026 = top_tracks(&conn, 10, Some(2026)).unwrap();
         assert_eq!(top_2026.len(), 1);
@@ -910,8 +979,28 @@ mod tests {
     #[test]
     fn top_genres_filtered_by_year() {
         let conn = migrated_conn();
-        insert_track_full(&conn, 1, "A", "Alb", "", "Rock", 10, 200_000, Some(T_2026_07_01));
-        insert_track_full(&conn, 2, "B", "Alb", "", "Jazz", 5, 180_000, Some(T_2025_08_01));
+        insert_track_full(
+            &conn,
+            1,
+            "A",
+            "Alb",
+            "",
+            "Rock",
+            10,
+            200_000,
+            Some(T_2026_07_01),
+        );
+        insert_track_full(
+            &conn,
+            2,
+            "B",
+            "Alb",
+            "",
+            "Jazz",
+            5,
+            180_000,
+            Some(T_2025_08_01),
+        );
 
         let top_2026 = top_genres(&conn, 10, Some(2026)).unwrap();
         assert_eq!(top_2026.len(), 1);
@@ -971,8 +1060,28 @@ mod tests {
     #[test]
     fn distinct_artists_played_filtered_by_year() {
         let conn = migrated_conn();
-        insert_track_full(&conn, 1, "Alpha", "A1", "", "", 10, 200_000, Some(T_2026_07_01));
-        insert_track_full(&conn, 2, "Beta", "B1", "", "", 8, 250_000, Some(T_2025_08_01));
+        insert_track_full(
+            &conn,
+            1,
+            "Alpha",
+            "A1",
+            "",
+            "",
+            10,
+            200_000,
+            Some(T_2026_07_01),
+        );
+        insert_track_full(
+            &conn,
+            2,
+            "Beta",
+            "B1",
+            "",
+            "",
+            8,
+            250_000,
+            Some(T_2025_08_01),
+        );
 
         assert_eq!(distinct_artists_played(&conn, Some(2026)).unwrap(), 1);
         assert_eq!(distinct_artists_played(&conn, Some(2025)).unwrap(), 1);

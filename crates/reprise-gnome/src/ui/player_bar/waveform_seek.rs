@@ -131,11 +131,21 @@ pub(super) struct WaveformSeek {
 
 impl WaveformSeek {
     pub(super) fn new() -> Self {
-        Self::new_with_heights(CONTENT_HEIGHT, MAX_BAR_HEIGHT, MIN_BAR_HEIGHT, FALLBACK_BAR_HEIGHT)
+        Self::new_with_heights(
+            CONTENT_HEIGHT,
+            MAX_BAR_HEIGHT,
+            MIN_BAR_HEIGHT,
+            FALLBACK_BAR_HEIGHT,
+        )
     }
 
     pub(super) fn new_mini() -> Self {
-        Self::new_with_heights(MINI_CONTENT_HEIGHT, MINI_MAX_BAR_HEIGHT, MINI_MIN_BAR_HEIGHT, MINI_FALLBACK_BAR_HEIGHT)
+        Self::new_with_heights(
+            MINI_CONTENT_HEIGHT,
+            MINI_MAX_BAR_HEIGHT,
+            MINI_MIN_BAR_HEIGHT,
+            MINI_FALLBACK_BAR_HEIGHT,
+        )
     }
 
     fn new_with_heights(content_height: i32, max_h: f64, min_h: f64, fallback_h: f64) -> Self {
@@ -415,7 +425,9 @@ fn draw(
             1.0
         };
 
-        let bar_h = (state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height)) * stagger;
+        let bar_h = (state.min_bar_height
+            + magnitude * (state.max_bar_height - state.min_bar_height))
+            * stagger;
         // Guard against zero-height bars during early animation frames.
         if bar_h < 0.5 {
             continue;
@@ -742,7 +754,11 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn mini_waveform_has_16px_height() {
+        if gtk4::init().is_err() {
+            return;
+        }
         let w = WaveformSeek::new_mini();
         assert_eq!(w.widget().content_height(), 16);
     }

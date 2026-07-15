@@ -123,12 +123,15 @@ impl LfmStatsClient {
         period: LfmPeriod,
         limit: u32,
     ) -> Result<Vec<TopArtist>, RemoteStatsError> {
-        let body = self.api_call(&[
-            ("method", "user.getTopArtists"),
-            ("user", username),
-            ("period", period.as_param()),
-            ("limit", &limit.to_string()),
-        ], username)?;
+        let body = self.api_call(
+            &[
+                ("method", "user.getTopArtists"),
+                ("user", username),
+                ("period", period.as_param()),
+                ("limit", &limit.to_string()),
+            ],
+            username,
+        )?;
         parse_top_artists(&body)
     }
 
@@ -138,12 +141,15 @@ impl LfmStatsClient {
         period: LfmPeriod,
         limit: u32,
     ) -> Result<Vec<TopAlbum>, RemoteStatsError> {
-        let body = self.api_call(&[
-            ("method", "user.getTopAlbums"),
-            ("user", username),
-            ("period", period.as_param()),
-            ("limit", &limit.to_string()),
-        ], username)?;
+        let body = self.api_call(
+            &[
+                ("method", "user.getTopAlbums"),
+                ("user", username),
+                ("period", period.as_param()),
+                ("limit", &limit.to_string()),
+            ],
+            username,
+        )?;
         parse_top_albums(&body)
     }
 
@@ -154,10 +160,10 @@ impl LfmStatsClient {
         &self,
         username: &str,
     ) -> Result<Vec<MonthlyListens>, RemoteStatsError> {
-        let body = self.api_call(&[
-            ("method", "user.getWeeklyChartList"),
-            ("user", username),
-        ], username)?;
+        let body = self.api_call(
+            &[("method", "user.getWeeklyChartList"), ("user", username)],
+            username,
+        )?;
         parse_weekly_chart_list(&body)
     }
 
@@ -166,8 +172,8 @@ impl LfmStatsClient {
         params: &[(&str, &str)],
         username: &str,
     ) -> Result<String, RemoteStatsError> {
-        let mut url =
-            url::Url::parse(&self.api_root).map_err(|e| RemoteStatsError::ParseError(e.to_string()))?;
+        let mut url = url::Url::parse(&self.api_root)
+            .map_err(|e| RemoteStatsError::ParseError(e.to_string()))?;
         {
             let mut query = url.query_pairs_mut();
             for &(key, value) in params {
@@ -241,7 +247,12 @@ fn parse_top_artists(body: &str) -> Result<Vec<TopArtist>, RemoteStatsError> {
         .filter_map(|entry| {
             let artist = entry.get("name")?.as_str()?.to_string();
             let plays = entry.get("playcount")?.as_str()?.parse::<i64>().ok()?;
-            Some(TopArtist { artist, plays, total_ms: 0, representative_track_path: String::new() })
+            Some(TopArtist {
+                artist,
+                plays,
+                total_ms: 0,
+                representative_track_path: String::new(),
+            })
         })
         .collect();
     Ok(artists)

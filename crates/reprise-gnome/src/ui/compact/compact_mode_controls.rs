@@ -10,12 +10,9 @@ use reprise_core::library::settings;
 use rusqlite::Connection;
 
 use super::compact_player::CompactPlayer;
-use super::compact_player_layouts::layout_from_token;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
 use super::window_decorations::WindowContentHost;
-
-pub(super) const SMOKE_LAYOUT_ENV: &str = "REPRISE_SMOKE_COMPACT_LAYOUT";
 
 pub(super) fn initial_transition(conn: &Connection, first_run: FirstRunDecision) -> ViewTransition {
     minimal_view::startup_transition(
@@ -59,12 +56,6 @@ pub(super) fn install(
                 mode.toggle();
             }
         }));
-        let weak = Rc::downgrade(mode);
-        compact.set_on_layout(Rc::new(move |layout| {
-            if let Some(mode) = weak.upgrade() {
-                mode.select_layout(layout);
-            }
-        }));
         compact.set_on_preferences(on_preferences);
 
         let window_weak = glib::WeakRef::new();
@@ -85,25 +76,6 @@ pub(super) fn install(
             }
         }));
     }
-
-    arm_smoke_layout(mode);
-}
-
-fn arm_smoke_layout(mode: &Rc<MinimalView>) {
-    let Ok(token) = std::env::var(SMOKE_LAYOUT_ENV) else {
-        return;
-    };
-    let Some(layout) = layout_from_token(&token) else {
-        tracing::warn!(token, "invalid compact-layout smoke token");
-        return;
-    };
-    let mode = Rc::downgrade(mode);
-    gtk4::glib::idle_add_local_once(move || {
-        if let Some(mode) = mode.upgrade() {
-            mode.select_layout(layout);
-            tracing::info!(?layout, "smoke: compact layout selected");
-        }
-    });
 }
 
 #[cfg(test)]
@@ -177,8 +149,7 @@ mod tests {
         mode.toggle();
         while gtk4::glib::MainContext::default().iteration(false) {}
 
-        assert_eq!(compact.layout(), CompactLayout::Card);
-        assert!(compact.widget().is_ancestor(&window));
+        assert!(compact.handle().is_ancestor(&window));
         assert_eq!(window, same_window);
         assert!(window.is_visible());
 

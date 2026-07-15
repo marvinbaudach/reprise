@@ -15,8 +15,8 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen;
 
-use crate::ui::cover_loader::CoverLoader;
 use super::stats_chart::StatsChart;
+use crate::ui::cover_loader::CoverLoader;
 
 const TOP_LIMIT: usize = 5;
 const CONTENT_MAX_WIDTH: i32 = 680;
@@ -68,9 +68,7 @@ impl StatsView {
 
         // Year selector dropdown
         let year_model = gtk4::StringList::new(&[]);
-        let year_dropdown = gtk4::DropDown::builder()
-            .model(&year_model)
-            .build();
+        let year_dropdown = gtk4::DropDown::builder().model(&year_model).build();
         year_dropdown.add_css_class("stats-year-dropdown");
 
         let year_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
@@ -150,35 +148,16 @@ impl StatsView {
         let album_gen = self.album_cover_gen.clone();
         let track_gen = self.track_cover_gen.clone();
         let year_values = self.year_values.clone();
-        self.year_dropdown
-            .connect_selected_notify(move |dropdown| {
-                let idx = dropdown.selected() as usize;
-                let year = year_values.borrow().get(idx).copied().flatten();
-                let conn = conn.borrow();
-                refresh_headline(&conn, year, &headline_hours, &headline_subtitle);
-                refresh_top_artists(
-                    &conn,
-                    year,
-                    &top_artists_box,
-                    &cover_loader,
-                    &artist_gen,
-                );
-                refresh_top_albums(
-                    &conn,
-                    year,
-                    &top_albums_box,
-                    &cover_loader,
-                    &album_gen,
-                );
-                refresh_top_tracks(
-                    &conn,
-                    year,
-                    &top_tracks_box,
-                    &cover_loader,
-                    &track_gen,
-                );
-                refresh_chart(&conn, &chart);
-            });
+        self.year_dropdown.connect_selected_notify(move |dropdown| {
+            let idx = dropdown.selected() as usize;
+            let year = year_values.borrow().get(idx).copied().flatten();
+            let conn = conn.borrow();
+            refresh_headline(&conn, year, &headline_hours, &headline_subtitle);
+            refresh_top_artists(&conn, year, &top_artists_box, &cover_loader, &artist_gen);
+            refresh_top_albums(&conn, year, &top_albums_box, &cover_loader, &album_gen);
+            refresh_top_tracks(&conn, year, &top_tracks_box, &cover_loader, &track_gen);
+            refresh_chart(&conn, &chart);
+        });
     }
 
     /// Returns the currently selected year from the dropdown.
@@ -438,7 +417,11 @@ fn refresh_chart(conn: &Connection, chart: &StatsChart) {
 
 /// Returns the current calendar year.
 fn current_calendar_year() -> i32 {
-    chrono::Local::now().format("%Y").to_string().parse().unwrap_or(2026)
+    chrono::Local::now()
+        .format("%Y")
+        .to_string()
+        .parse()
+        .unwrap_or(2026)
 }
 
 /// Wraps a child in an `adw::Clamp` for max-width centering.
