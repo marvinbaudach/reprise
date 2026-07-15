@@ -232,8 +232,9 @@ impl InfoPanel {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let widgets = build_widgets(content, visible);
         let toggle = gtk4::ToggleButton::builder()
-            .icon_name("sidebar-show-symbolic")
+            .icon_name("sidebar-show-right-symbolic")
             .tooltip_text(strings::text(strings::INFORMATION))
+            .css_classes(["flat", "reprise-panel-toggle"])
             .active(visible)
             .build();
         let panel = Rc::new(Self {
@@ -255,7 +256,7 @@ impl InfoPanel {
         panel
     }
 
-    pub(super) fn widget(&self) -> &gtk4::Box {
+    pub(super) fn widget(&self) -> &adw::OverlaySplitView {
         self.widgets.column.widget()
     }
 
@@ -369,12 +370,13 @@ impl InfoPanel {
         let weak = Rc::downgrade(self);
         self.widgets
             .column
-            .sidebar_widget()
-            .connect_visible_notify(move |sidebar| {
+            .widget()
+            .connect_show_sidebar_notify(move |split| {
                 let Some(panel) = weak.upgrade() else { return };
+                let visible = split.shows_sidebar();
                 let was_syncing = panel.syncing_visibility.get();
                 panel.syncing_visibility.set(true);
-                panel.toggle.set_active(sidebar.is_visible());
+                panel.toggle.set_active(visible);
                 panel.syncing_visibility.set(was_syncing);
                 if was_syncing {
                     return;
@@ -383,7 +385,7 @@ impl InfoPanel {
                     let conn = panel.conn.borrow();
                     reprise_core::library::settings::set_info_panel_visible(
                         &conn,
-                        sidebar.is_visible(),
+                        visible,
                     )
                 };
                 if let Err(error) = saved {

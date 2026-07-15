@@ -13,8 +13,8 @@
 
 pub(super) fn css() -> String {
     use super::tokens::{
-        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, HOVER_BG_ALPHA, RADIUS_SURFACE, SURFACE_BORDER_ALPHA,
-        SURFACE_SHADOW, TRANSITION,
+        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, HOVER_BG_ALPHA, HOVER_BG_ALPHA_STRONG,
+        RADIUS_SURFACE, SURFACE_BORDER_ALPHA, SURFACE_SHADOW, TRANSITION,
     };
     format!(
         "entry:focus-within, .reprise-focus-glow:focus-within {{ \
@@ -25,7 +25,14 @@ pub(super) fn css() -> String {
          .reprise-surface {{ \
            border-radius: {RADIUS_SURFACE}; \
            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
-           box-shadow: {SURFACE_SHADOW}; }}"
+           box-shadow: {SURFACE_SHADOW}; }}\n\
+         .reprise-panel-toggle {{ \
+           transition: color {TRANSITION}, background-color {TRANSITION}; }}\n\
+         .reprise-panel-toggle:checked {{ \
+           color: @accent_color; \
+           background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
+         .reprise-panel-toggle:checked:hover {{ \
+           background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA_STRONG}); }}"
     )
 }
 
@@ -38,6 +45,7 @@ mod tests {
         assert!(css.contains("@accent_color"));
         assert!(css.contains(".reprise-hover:hover"));
         assert!(css.contains(".reprise-surface"));
+        assert!(css.contains(".reprise-panel-toggle:checked"));
         assert!(css.contains("border-radius"));
     }
 }

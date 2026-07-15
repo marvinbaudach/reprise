@@ -112,19 +112,17 @@ fn provider_errors_have_specific_match_copy_and_generic_network_copy() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn information_panel_uses_fixed_sibling_columns_instead_of_an_overlay() {
+fn information_panel_uses_split_view_with_end_sidebar() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = build_widgets(&content, true);
-    let root = widgets.column.widget();
-    let sidebar = widgets.column.sidebar_widget();
+    let split = widgets.column.widget();
 
-    assert_eq!(root.orientation(), gtk4::Orientation::Horizontal);
-    assert_eq!(root.first_child(), Some(content.clone().upcast()));
-    assert_eq!(root.last_child(), Some(sidebar.clone().upcast()));
-    assert_eq!(content.next_sibling(), Some(sidebar.clone().upcast()));
+    assert_eq!(split.sidebar_position(), gtk4::PackType::End);
+    assert!(!split.is_collapsed());
+    assert!(split.shows_sidebar());
+    let sidebar = widgets.column.sidebar_widget();
     assert_eq!(sidebar.width_request(), PANEL_WIDTH);
-    assert!(sidebar.is_visible());
 }
 
 #[test]
