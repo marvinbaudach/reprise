@@ -244,14 +244,14 @@ impl ScanControls {
             .and_then(|w| w.upgrade())
         {
             let tooltip = match progress {
-                ScanProgress::Discovering => Some("Scanning\u{2026}".to_string()),
+                ScanProgress::Discovering => Some(strings::scan_tooltip_discovering()),
                 ScanProgress::Scanning { processed, total, .. } => {
                     let pct = if *total > 0 {
                         (*processed as f64 / *total as f64 * 100.0).round() as u32
                     } else {
                         0
                     };
-                    Some(format!("Scanning \u{00B7} {}%", pct))
+                    Some(strings::scan_tooltip_progress(pct))
                 }
                 ScanProgress::Fetching { done, total } => {
                     let pct = if *total > 0 {
@@ -259,7 +259,7 @@ impl ScanControls {
                     } else {
                         0
                     };
-                    Some(format!("Scanning \u{00B7} {}%", pct))
+                    Some(strings::scan_tooltip_progress(pct))
                 }
             };
             button.set_tooltip_text(tooltip.as_deref());

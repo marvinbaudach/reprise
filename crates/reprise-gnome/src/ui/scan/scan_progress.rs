@@ -238,6 +238,9 @@ impl ScanProgressView {
                 if let Some(detail) = &state.detail {
                     self.inner.detail.set_label(detail);
                     self.inner.detail.set_visible(true);
+                } else {
+                    self.inner.detail.set_label("");
+                    self.inner.detail.set_visible(false);
                 }
                 let new_phase = match progress {
                     ScanProgress::Fetching { .. } => DisplayPhase::Fetching,

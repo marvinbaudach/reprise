@@ -386,6 +386,14 @@ pub fn fetch_progress(done: u64, total: u64) -> String {
     format!("{done} of {total}")
 }
 
+pub fn scan_tooltip_discovering() -> String {
+    text(N_!("Scanning\u{2026}"))
+}
+
+pub fn scan_tooltip_progress(pct: u32) -> String {
+    format!("Scanning \u{00B7} {}%", pct)
+}
+
 // Status bar (src/ui/status_bar.rs).
 pub const STATUS_TRACK_SINGULAR: &str = N_!("track");
 pub const STATUS_TRACK_PLURAL: &str = N_!("tracks");
