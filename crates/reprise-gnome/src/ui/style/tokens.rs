@@ -65,3 +65,9 @@ pub(in crate::ui) const SURFACE_SHADOW: &str = "0 2px 12px rgba(0, 0, 0, 0.28)";
 
 /// Hairline border alpha for surfaces (over `@window_fg_color`).
 pub(in crate::ui) const SURFACE_BORDER_ALPHA: &str = "0.08";
+
+/// Stronger shadow for modal dialog surfaces (over the scrim).
+pub(in crate::ui) const DIALOG_SHADOW: &str = "0 20px 60px rgba(0, 0, 0, 0.60)";
+
+/// White hairline alpha for dialog borders (rgba white).
+pub(in crate::ui) const DIALOG_BORDER_ALPHA: &str = "0.10";
