@@ -107,7 +107,6 @@ pub const REPLAYGAIN_OFF: &str = N_!("Off");
 pub const REPLAYGAIN_TRACK: &str = N_!("Per Track");
 pub const REPLAYGAIN_ALBUM: &str = N_!("Per Album");
 pub const AUDIO_TRANSITIONS: &str = N_!("Audio Transitions");
-pub const BADGE_NEW: &str = N_!("NEW");
 pub const CROSSFADE: &str = N_!("Crossfade");
 pub const CROSSFADE_SUBTITLE: &str = N_!("Smoothly blend the end of a track into the next");
 pub const CROSSFADE_OFF: &str = N_!("Off");
