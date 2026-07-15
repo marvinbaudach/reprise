@@ -116,6 +116,7 @@ mod tests {
             ".reprise-hover:hover",
             ".reprise-filter-chip",
             ".reprise-column-drop-before",
+            ".reprise-column-row:hover",
             ".reprise-track-cell.reprise-density-comfortable",
             ".library-album-card",
             ".lyrics-line-active",
