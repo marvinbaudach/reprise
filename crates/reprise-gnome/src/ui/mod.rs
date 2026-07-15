@@ -31,6 +31,15 @@ mod artist_master;
 #[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
 #[path = "library_views/artist_master_row.rs"]
 mod artist_master_row;
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+#[path = "library_views/artist_detail_hero.rs"]
+mod artist_detail_hero;
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+#[path = "library_views/artist_detail_pane.rs"]
+mod artist_detail_pane;
+#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
+#[path = "library_views/artist_detail_row.rs"]
+mod artist_detail_row;
 #[path = "info_panel/artist_news_worker.rs"]
 mod artist_news_worker;
 #[path = "library_views/artist_view.rs"]
