@@ -77,6 +77,9 @@ pub mod dialogs;
 pub(crate) mod file_open;
 pub mod first_run;
 mod help;
+#[allow(dead_code)] // hourly chart ready for wiring; not yet referenced in stats_view
+#[path = "stats/hourly_chart.rs"]
+mod hourly_chart;
 pub mod import_errors_view;
 #[path = "info_panel/info_panel.rs"]
 mod info_panel;

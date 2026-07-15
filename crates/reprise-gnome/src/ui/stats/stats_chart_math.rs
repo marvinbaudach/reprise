@@ -60,6 +60,32 @@ pub(super) const PAST_MONTH_ALPHA: f64 = 0.55;
 /// Gap between bars as a fraction of each bar's horizontal slot.
 pub(super) const BAR_GAP_FRACTION: f64 = 0.30;
 
+/// Expands sparse hourly data (only hours with events) into a full 24-slot
+/// array (hours 0-23), filling missing hours with zero.
+pub(super) fn expand_hourly(sparse: &[(u8, i64)]) -> [i64; 24] {
+    let mut full = [0i64; 24];
+    for &(hour, listens) in sparse {
+        if (hour as usize) < 24 {
+            full[hour as usize] = listens;
+        }
+    }
+    full
+}
+
+/// Returns the hour (0-23) with the highest listen count in a 24-slot
+/// array. Returns 0 when all values are zero.
+pub(super) fn peak_hour(values: &[i64; 24]) -> u8 {
+    values
+        .iter()
+        .enumerate()
+        .max_by_key(|&(_, &v)| v)
+        .map_or(0, |(i, _)| i as u8)
+}
+
+/// Formats an hour (0-23) as `"H:00"` for the peak annotation label.
+pub(super) fn format_peak_hour(hour: u8) -> String {
+    format!("{hour}:00")
+}
 
 #[cfg(test)]
 mod tests {

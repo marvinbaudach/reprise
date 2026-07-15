@@ -11,14 +11,14 @@ pub(super) struct InformationColumn {
 impl InformationColumn {
     pub(super) fn new(
         content: &impl IsA<gtk4::Widget>,
-        sidebar: adw::ToolbarView,
+        sidebar: &adw::ToolbarView,
         visible: bool,
     ) -> Self {
         sidebar.set_width_request(PANEL_WIDTH);
 
         let split = adw::OverlaySplitView::builder()
             .content(content)
-            .sidebar(&sidebar)
+            .sidebar(sidebar)
             .sidebar_position(gtk4::PackType::End)
             .show_sidebar(visible)
             .collapsed(false)
