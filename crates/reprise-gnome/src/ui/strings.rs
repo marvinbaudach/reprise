@@ -351,6 +351,20 @@ pub const NOTHING_HERE_TITLE: &str = N_!("Nothing here");
 pub const NOTHING_HERE_DESCRIPTION: &str = N_!("This view has no tracks right now");
 
 // Scan flow (src/ui/scan_flow.rs and src/ui/scan_progress.rs).
+pub const SCAN_CARD_TITLE: &str = N_!("Scanning library");
+
+pub fn scan_card_tooltip(remaining: u64) -> String {
+    format!("Covers & lyrics: {remaining} queued")
+}
+
+pub fn scan_complete_toast(new_tracks: u32, failed: u32) -> String {
+    if failed > 0 {
+        format!("Scan complete · {new_tracks} new, {failed} failed")
+    } else {
+        format!("Scan complete · {new_tracks} new tracks")
+    }
+}
+
 pub const SCAN_DIALOG_TITLE: &str = N_!("Select Music Folder");
 pub const SCANNING: &str = N_!("Scanning…");
 pub const SCAN_DISCOVERING: &str = N_!("Finding music files…");

@@ -184,6 +184,8 @@ pub mod primary_menu;
 pub mod queue_transport;
 #[path = "track_list/rating.rs"]
 pub mod rating;
+#[path = "scan/scan_card_css.rs"]
+pub(crate) mod scan_card_css;
 #[path = "scan/scan_flow.rs"]
 pub mod scan_flow;
 #[path = "scan/scan_progress.rs"]

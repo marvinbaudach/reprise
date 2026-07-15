@@ -78,7 +78,8 @@ fn view_state(progress: &ScanProgress) -> ScanProgressState {
     }
 }
 
-/// Compact progress row displayed directly below its host window's header bar.
+/// Sidebar card widget showing scan progress with a spinner, percent label,
+/// progress bar, and detail label. Replaces the old headerbar banner.
 /// A generation token stops an old pulse timeout whenever the phase changes
 /// or a scan finishes, so repeated scans never retain stale GTK callbacks.
 #[derive(Clone)]
@@ -88,9 +89,12 @@ pub(super) struct ScanProgressView {
 
 struct ScanProgressWidgets {
     revealer: gtk4::Revealer,
+    container: gtk4::Box,
+    spinner: gtk4::Spinner,
     title: gtk4::Label,
-    detail: gtk4::Label,
+    percent: gtk4::Label,
     progress: gtk4::ProgressBar,
+    detail: gtk4::Label,
     pulse_generation: Rc<Cell<u64>>,
     phase: Rc<Cell<DisplayPhase>>,
 }
@@ -106,45 +110,63 @@ impl WeakScanProgressView {
 
 impl ScanProgressView {
     pub(super) fn new() -> Self {
+        let spinner = gtk4::Spinner::builder()
+            .spinning(false)
+            .build();
+        spinner.add_css_class("scan-card-spinner");
+
         let title = gtk4::Label::builder()
+            .label("")
             .halign(gtk4::Align::Start)
             .hexpand(true)
-            .xalign(0.0)
             .build();
-        let detail = gtk4::Label::builder()
+        title.add_css_class("scan-card-title");
+
+        let percent = gtk4::Label::builder()
+            .label("")
             .halign(gtk4::Align::End)
-            .hexpand(true)
-            .xalign(1.0)
             .build();
-        detail.add_css_class("dim-label");
-        detail.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
+        percent.add_css_class("scan-card-percent");
 
-        let labels = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        labels.append(&title);
-        labels.append(&detail);
+        let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        header.append(&spinner);
+        header.append(&title);
+        header.append(&percent);
 
-        let progress = gtk4::ProgressBar::builder().hexpand(true).build();
+        let progress = gtk4::ProgressBar::builder()
+            .hexpand(true)
+            .build();
         progress.set_pulse_step(PULSE_STEP);
 
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        content.set_margin_start(12);
-        content.set_margin_end(12);
-        content.set_margin_top(6);
-        content.set_margin_bottom(6);
-        content.append(&labels);
-        content.append(&progress);
+        let detail = gtk4::Label::builder()
+            .label("")
+            .halign(gtk4::Align::Start)
+            .hexpand(true)
+            .build();
+        detail.add_css_class("scan-card-detail");
+
+        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        container.add_css_class("scan-card");
+        container.append(&header);
+        container.append(&progress);
+        container.append(&detail);
 
         let revealer = gtk4::Revealer::builder()
-            .transition_type(gtk4::RevealerTransitionType::SlideDown)
-            .child(&content)
+            .transition_type(gtk4::RevealerTransitionType::Crossfade)
+            .transition_duration(150)
+            .child(&container)
+            .reveal_child(false)
             .build();
 
         Self {
             inner: Rc::new(ScanProgressWidgets {
                 revealer,
+                container,
+                spinner,
                 title,
-                detail,
+                percent,
                 progress,
+                detail,
                 pulse_generation: Rc::new(Cell::new(0)),
                 phase: Rc::new(Cell::new(DisplayPhase::Hidden)),
             }),
@@ -161,15 +183,15 @@ impl ScanProgressView {
 
     pub(super) fn show(&self, progress: &ScanProgress) {
         let state = view_state(progress);
-        self.inner.title.set_label(&state.title);
-        self.inner
-            .detail
-            .set_label(state.detail.as_deref().unwrap_or(""));
-        self.inner.detail.set_tooltip_text(state.detail.as_deref());
+        self.inner.title.set_label(&strings::text(strings::SCAN_CARD_TITLE));
+        self.inner.spinner.set_spinning(true);
         self.inner.revealer.set_reveal_child(true);
 
         match state.mode {
             ProgressMode::Indeterminate => {
+                self.inner.percent.set_label("");
+                self.inner.detail.set_label("");
+                self.inner.detail.set_visible(false);
                 if self.inner.phase.replace(DisplayPhase::Discovering) != DisplayPhase::Discovering
                 {
                     self.start_pulsing();
@@ -178,6 +200,12 @@ impl ScanProgressView {
             ProgressMode::Determinate(fraction) => {
                 self.cancel_pulsing();
                 self.inner.progress.set_fraction(fraction);
+                let pct = format!("{}%", (fraction * 100.0).round() as u32);
+                self.inner.percent.set_label(&pct);
+                if let Some(detail) = &state.detail {
+                    self.inner.detail.set_label(detail);
+                    self.inner.detail.set_visible(true);
+                }
                 let new_phase = match progress {
                     ScanProgress::Fetching { .. } => DisplayPhase::Fetching,
                     _ => DisplayPhase::Scanning,
@@ -185,11 +213,25 @@ impl ScanProgressView {
                 self.inner.phase.set(new_phase);
             }
         }
+
+        // Update tooltip with queue info for the Fetching phase
+        match progress {
+            ScanProgress::Fetching { done, total } => {
+                let remaining = total.saturating_sub(*done);
+                self.inner.container.set_tooltip_text(Some(
+                    &strings::scan_card_tooltip(remaining),
+                ));
+            }
+            _ => {
+                self.inner.container.set_tooltip_text(None);
+            }
+        }
     }
 
     pub(super) fn finish(&self) {
         self.cancel_pulsing();
         self.inner.phase.set(DisplayPhase::Hidden);
+        self.inner.spinner.set_spinning(false);
         self.inner.revealer.set_reveal_child(false);
         self.inner.progress.set_fraction(0.0);
     }
@@ -290,11 +332,12 @@ mod tests {
         });
 
         assert!(view.inner.revealer.reveals_child());
-        assert_eq!(view.inner.title.label(), "2 of 4 files scanned");
-        assert_eq!(view.inner.detail.label(), "song.flac");
+        assert!(view.inner.spinner.is_spinning());
+        assert_eq!(view.inner.percent.label(), "50%");
         assert_eq!(view.inner.progress.fraction(), 0.5);
 
         view.finish();
         assert!(!view.inner.revealer.reveals_child());
+        assert!(!view.inner.spinner.is_spinning());
     }
 }
