@@ -417,6 +417,58 @@ pub fn build(
             }
         });
     }
+    // Task 9a: Artists detail-pane hero playback actions. Player-dependent, so
+    // wired here (where `player` + `conn` + `artist_view` are all in scope)
+    // rather than in `wire_artist_view`, which handles only the
+    // navigation-only setters. Each closure resolves the artist's ordered track
+    // ids via `query_track_ids` (album-ordered — a natural "Play all") and hands
+    // them to the player.
+    {
+        let player = player.clone();
+        let conn = conn.clone();
+        artist_view.set_on_play_all(move |artist| {
+            let Some(player) = &player else {
+                return;
+            };
+            match artist_track_ids(&conn, artist) {
+                Ok(ids) if !ids.is_empty() => player.play_from_view(ids, 0),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "artist play-all query failed"),
+            }
+        });
+    }
+    {
+        let player = player.clone();
+        let conn = conn.clone();
+        artist_view.set_on_shuffle(move |artist| {
+            let Some(player) = &player else {
+                return;
+            };
+            match artist_track_ids(&conn, artist) {
+                Ok(ids) if !ids.is_empty() => player.play_from_view(shuffle_ids(ids), 0),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "artist shuffle query failed"),
+            }
+        });
+    }
+    {
+        let player = player.clone();
+        let conn = conn.clone();
+        artist_view.set_on_add_to_queue(move |artist| {
+            let Some(player) = &player else {
+                return;
+            };
+            match artist_track_ids(&conn, artist) {
+                Ok(ids) if !ids.is_empty() => player.append_to_queue(&ids),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "artist add-to-queue query failed"),
+            }
+        });
+    }
+    {
+        let conn = conn.clone();
+        artist_view.set_on_go_to_folder(move |artist| open_artist_folder(&conn, &artist));
+    }
     {
         // `Weak`, not a strong `Rc`: mirrors the `sidebar_weak`/`track_list_
         // weak` pattern already used for `player.set_track_list_reload`
@@ -810,4 +862,86 @@ pub fn build(
     tracing::info!("main window built");
     window.present();
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
+}
+
+/// Ordered track ids for `artist`, album-ordered — the natural order for the
+/// Artists hero's Play all / Shuffle / Add-to-queue actions.
+fn artist_track_ids(
+    conn: &Rc<RefCell<Connection>>,
+    artist: String,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = conn.borrow();
+    reprise_core::queries::query_track_ids(
+        &conn,
+        &ViewSource::Artist(artist),
+        "album",
+        "asc",
+        "",
+        &[],
+    )
+}
+
+/// Fisher–Yates shuffle for the Artists hero "Shuffle" action. `reprise-gnome`
+/// carries no direct `rand`/`fastrand` dependency (the crate split kept its dep
+/// set minimal), so this seeds a tiny xorshift64 from the wall clock rather
+/// than pulling in a new crate. A listen-order shuffle is not security
+/// sensitive, so a non-cryptographic PRNG is appropriate here.
+fn shuffle_ids(mut ids: Vec<i64>) -> Vec<i64> {
+    // `| 1` guards against the degenerate all-zero xorshift state.
+    let mut state = (glib::real_time() as u64) | 1;
+    for i in (1..ids.len()).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let j = (state % (i as u64 + 1)) as usize;
+        ids.swap(i, j);
+    }
+    ids
+}
+
+/// Opens the containing folder of the artist's first (album-ordered) track in
+/// the desktop file manager, via `gio::AppInfo::launch_default_for_uri` on the
+/// parent directory's `file://` URI — the same default-handler path
+/// `preference_lastfm.rs` uses for external URLs. Logs and returns on any
+/// lookup/launch failure.
+fn open_artist_folder(conn: &Rc<RefCell<Connection>>, artist: &str) {
+    let path = {
+        let conn = conn.borrow();
+        let ids = match reprise_core::queries::query_track_ids(
+            &conn,
+            &ViewSource::Artist(artist.to_string()),
+            "album",
+            "asc",
+            "",
+            &[],
+        ) {
+            Ok(ids) => ids,
+            Err(error) => {
+                tracing::warn!(%error, "artist go-to-folder query failed");
+                return;
+            }
+        };
+        let Some(&first) = ids.first() else {
+            return;
+        };
+        match reprise_core::queries::query_track_summary(&conn, first) {
+            Ok(Some(summary)) => summary.path,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%error, "artist go-to-folder path lookup failed");
+                return;
+            }
+        }
+    };
+
+    let Some(dir) = Path::new(&path).parent() else {
+        tracing::warn!(path, "artist track has no parent directory");
+        return;
+    };
+    let uri = gtk4::gio::File::for_path(dir).uri();
+    if let Err(error) =
+        gtk4::gio::AppInfo::launch_default_for_uri(&uri, gtk4::gio::AppLaunchContext::NONE)
+    {
+        tracing::warn!(%error, %uri, "failed to open artist folder");
+    }
 }

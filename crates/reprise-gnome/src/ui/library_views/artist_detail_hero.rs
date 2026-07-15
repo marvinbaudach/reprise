@@ -161,7 +161,7 @@ fn build_actions(callbacks: &HeroCallbacks) -> gtk4::Box {
     connect_artist_action(&shuffle, &callbacks.on_shuffle, callbacks);
     actions.append(&shuffle);
 
-    actions.append(&build_menu_button());
+    actions.append(&build_menu_button(callbacks));
     actions
 }
 
@@ -182,18 +182,16 @@ fn connect_artist_action(
     });
 }
 
-/// The ⋮ menu button. Its Add to queue / Edit tags / Go to folder entries are
-/// placeholder `SimpleAction`s (Task 9 routes them); wiring them here keeps the
-/// menu rendering and the app compiling.
-fn build_menu_button() -> gtk4::MenuButton {
+/// The ⋮ menu button. Its Add to queue / Go to folder entries route to the
+/// pane's callbacks with the current artist name (Task 9a), mirroring how the
+/// Play all / Shuffle buttons thread through `connect_artist_action`.
+// v2: Edit tags for all — deferred; the multi-track tag editor's entry point is
+// coupled to track-list selection, so wiring it to arbitrary artist ids waits.
+fn build_menu_button(callbacks: &HeroCallbacks) -> gtk4::MenuButton {
     let menu = gio::Menu::new();
     menu.append(
         Some(&strings::text(strings::ARTIST_DETAIL_ADD_TO_QUEUE)),
         Some("artist-detail.add-to-queue"),
-    );
-    menu.append(
-        Some(&strings::text(strings::ARTIST_DETAIL_EDIT_TAGS)),
-        Some("artist-detail.edit-tags"),
     );
     menu.append(
         Some(&strings::text(strings::ARTIST_DETAIL_GO_TO_FOLDER)),
@@ -201,13 +199,16 @@ fn build_menu_button() -> gtk4::MenuButton {
     );
 
     let group = gio::SimpleActionGroup::new();
-    for name in ["add-to-queue", "edit-tags", "go-to-folder"] {
-        let action = gio::SimpleAction::new(name, None);
-        action.connect_activate(move |_, _| {
-            tracing::debug!(action = name, "artist detail menu action (routing pending)");
-        });
-        group.add_action(&action);
-    }
+    group.add_action(&menu_action(
+        "add-to-queue",
+        &callbacks.on_add_to_queue,
+        &callbacks.current_artist,
+    ));
+    group.add_action(&menu_action(
+        "go-to-folder",
+        &callbacks.on_go_to_folder,
+        &callbacks.current_artist,
+    ));
 
     let button = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
@@ -218,6 +219,28 @@ fn build_menu_button() -> gtk4::MenuButton {
     button.add_css_class("flat");
     button.insert_action_group("artist-detail", Some(&group));
     button
+}
+
+/// Builds a menu `SimpleAction` that invokes `callback` with the pane's current
+/// artist name at activation time. Clones the callback out of its `RefCell`
+/// before calling (never holds the borrow across the invocation) — the same
+/// reentrancy-safe pattern as `connect_artist_action`.
+fn menu_action(
+    name: &str,
+    callback: &ArtistCallback,
+    current_artist: &std::rc::Rc<std::cell::RefCell<String>>,
+) -> gio::SimpleAction {
+    let action = gio::SimpleAction::new(name, None);
+    let callback = callback.clone();
+    let current_artist = current_artist.clone();
+    action.connect_activate(move |_, _| {
+        let cb = callback.borrow().clone();
+        if let Some(cb) = cb {
+            let artist = current_artist.borrow().clone();
+            cb(artist);
+        }
+    });
+    action
 }
 
 /// The avatar's inline gradient rule, scoped to the single avatar box.
