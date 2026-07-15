@@ -138,6 +138,7 @@ pub const INFO_PANEL_VISIBLE_KEY: &str = "ui.info_panel_visible";
 pub const WINDOW_VIEW_MODE_KEY: &str = "ui.window_view_mode";
 pub const COMPACT_LAYOUT_KEY: &str = "ui.compact_layout";
 pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
+pub const COMPACT_ALWAYS_ON_TOP_KEY: &str = "ui.compact_always_on_top";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
 pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
@@ -231,6 +232,21 @@ pub fn set_window_view_mode(
         WindowViewMode::Compact => "compact",
     };
     set_setting(conn, WINDOW_VIEW_MODE_KEY, value)
+}
+
+pub fn get_compact_always_on_top(conn: &Connection) -> bool {
+    get_bool(conn, COMPACT_ALWAYS_ON_TOP_KEY, false).unwrap_or(false)
+}
+
+pub fn set_compact_always_on_top(
+    conn: &Connection,
+    above: bool,
+) -> Result<(), rusqlite::Error> {
+    set_setting(
+        conn,
+        COMPACT_ALWAYS_ON_TOP_KEY,
+        if above { BOOL_TRUE } else { BOOL_FALSE },
+    )
 }
 
 pub fn get_compact_layout(conn: &Connection) -> CompactLayout {
