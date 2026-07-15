@@ -1,9 +1,9 @@
-//! The "My Stats" screen: a scrollable page showing headline listening
-//! totals, top artists/albums/tracks, and a 12-month activity chart.
+//! The "My Stats" screen: a card-based dashboard showing headline listening
+//! totals, top artists/genres, a 24-hour activity chart, and a horizontal
+//! top-albums strip.
 //!
 //! Data comes from `reprise_core::library::stats_screen` (read-only queries
-//! against the existing `tracks` and `listen_events` tables — no migration,
-//! no query changes).
+//! against the existing `tracks` and `listen_events` tables).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,44 +15,108 @@ use rusqlite::Connection;
 use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen;
 
-use super::stats_chart::StatsChart;
+use super::hourly_chart::HourlyChart;
+use super::stats_chart_math::ms_to_hours;
 
 const TOP_LIMIT: usize = 5;
-const CONTENT_MAX_WIDTH: i32 = 680;
-const SECTION_SPACING: i32 = 28;
+const ALBUMS_LIMIT: usize = 10;
+const CONTENT_MAX_WIDTH: i32 = 1100;
+const SECTION_SPACING: i32 = 24;
 const LIST_SPACING: i32 = 6;
+const CARD_GAP: i32 = 16;
 
 pub(in crate::ui) struct StatsView {
     root: gtk4::ScrolledWindow,
-    chart: StatsChart,
+    // Headline widgets
+    year_label: gtk4::Label,
     headline_hours: gtk4::Label,
-    headline_subtitle: gtk4::Label,
+    plays_card_value: gtk4::Label,
+    artists_card_value: gtk4::Label,
+    weekday_card_value: gtk4::Label,
+    // Top artists
     top_artists_box: gtk4::Box,
+    // Top genres
+    top_genres_box: gtk4::Box,
+    // Hourly chart
+    hourly_chart: HourlyChart,
+    // Top albums strip
     top_albums_box: gtk4::Box,
-    top_tracks_box: gtk4::Box,
 }
 
 impl StatsView {
     pub(in crate::ui) fn new() -> Self {
-        let chart = StatsChart::new();
+        let hourly_chart = HourlyChart::new();
 
+        // --- Year label ---
+        let year_label = gtk4::Label::new(None);
+        year_label.add_css_class("stats-year-label");
+        year_label.set_xalign(0.0);
+
+        // --- Headline hours ---
         let headline_hours = gtk4::Label::new(None);
         headline_hours.add_css_class("stats-headline-hours");
         headline_hours.set_xalign(0.0);
+        headline_hours.set_wrap(true);
 
-        let headline_subtitle = gtk4::Label::new(None);
-        headline_subtitle.add_css_class("stats-headline-subtitle");
-        headline_subtitle.set_xalign(0.0);
+        let headline_left = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        headline_left.set_hexpand(true);
+        headline_left.set_valign(gtk4::Align::Center);
+        headline_left.append(&year_label);
+        headline_left.append(&headline_hours);
 
-        let headline_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        headline_box.append(&headline_hours);
-        headline_box.append(&headline_subtitle);
-        headline_box.set_margin_bottom(8);
+        // --- Mini stat cards ---
+        let (plays_card, plays_card_value) = mini_card("plays");
+        let (artists_card, artists_card_value) = mini_card("new artists");
+        let (weekday_card, weekday_card_value) = mini_card("most active day");
 
+        let mini_cards_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        mini_cards_box.set_valign(gtk4::Align::Center);
+        mini_cards_box.append(&plays_card);
+        mini_cards_box.append(&artists_card);
+        mini_cards_box.append(&weekday_card);
+
+        // --- Headline row ---
+        let headline_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 24);
+        headline_row.set_margin_bottom(8);
+        headline_row.append(&headline_left);
+        headline_row.append(&mini_cards_box);
+
+        // --- Top Artists card (left column) ---
         let top_artists_box = gtk4::Box::new(gtk4::Orientation::Vertical, LIST_SPACING);
-        let top_albums_box = gtk4::Box::new(gtk4::Orientation::Vertical, LIST_SPACING);
-        let top_tracks_box = gtk4::Box::new(gtk4::Orientation::Vertical, LIST_SPACING);
+        let artists_card = titled_card("Top Artists", top_artists_box.upcast_ref());
+        artists_card.set_vexpand(true);
 
+        // --- Top Genres card (right column, top) ---
+        let top_genres_box = gtk4::Box::new(gtk4::Orientation::Vertical, LIST_SPACING);
+        let genres_card = titled_card("Top Genres", top_genres_box.upcast_ref());
+
+        // --- Listening by hour card (right column, bottom) ---
+        let hourly_card = titled_card("Listening by hour", hourly_chart.widget().upcast_ref());
+
+        // --- Two-column grid ---
+        let right_column = gtk4::Box::new(gtk4::Orientation::Vertical, CARD_GAP);
+        right_column.set_hexpand(true);
+        right_column.append(&genres_card);
+        right_column.append(&hourly_card);
+
+        let columns = gtk4::Box::new(gtk4::Orientation::Horizontal, CARD_GAP);
+        columns.set_homogeneous(true);
+        columns.append(&artists_card);
+        columns.append(&right_column);
+
+        // --- Top Albums horizontal strip ---
+        let top_albums_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        top_albums_box.add_css_class("stats-albums-strip");
+
+        let albums_scroll = gtk4::ScrolledWindow::builder()
+            .child(&top_albums_box)
+            .hscrollbar_policy(gtk4::PolicyType::Automatic)
+            .vscrollbar_policy(gtk4::PolicyType::Never)
+            .build();
+
+        let albums_section = titled_card("Top Albums", albums_scroll.upcast_ref());
+
+        // --- Main content assembly ---
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
         content.set_margin_top(32);
         content.set_margin_bottom(32);
@@ -62,14 +126,9 @@ impl StatsView {
         content.set_valign(gtk4::Align::Start);
         content.set_hexpand(true);
 
-        content.append(&headline_box);
-
-        let chart_card = card_wrapper(chart.widget().upcast_ref());
-        content.append(&chart_card);
-
-        content.append(&section("TOP ARTISTS", &top_artists_box));
-        content.append(&section("TOP ALBUMS", &top_albums_box));
-        content.append(&section("TOP TRACKS", &top_tracks_box));
+        content.append(&headline_row);
+        content.append(&columns);
+        content.append(&albums_section);
 
         let clamp = adw_clamp(&content, CONTENT_MAX_WIDTH);
 
@@ -82,12 +141,15 @@ impl StatsView {
 
         Self {
             root,
-            chart,
+            year_label,
             headline_hours,
-            headline_subtitle,
+            plays_card_value,
+            artists_card_value,
+            weekday_card_value,
             top_artists_box,
+            top_genres_box,
+            hourly_chart,
             top_albums_box,
-            top_tracks_box,
         }
     }
 
@@ -100,26 +162,50 @@ impl StatsView {
         let conn = conn.borrow();
         self.refresh_headline(&conn);
         self.refresh_top_artists(&conn);
+        self.refresh_top_genres(&conn);
+        self.refresh_hourly_chart(&conn);
         self.refresh_top_albums(&conn);
-        self.refresh_top_tracks(&conn);
-        self.refresh_chart(&conn);
     }
 
     fn refresh_headline(&self, conn: &Connection) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(2026, |d| {
+                // Approximate year from unix seconds.
+                1970 + d.as_secs() / 31_557_600
+            });
+        self.year_label
+            .set_text(&format!("{} SO FAR", now));
+
         match stats_screen::headline_totals(conn) {
             Ok(totals) => {
-                let hours = super::stats_chart_math::ms_to_hours(totals.total_ms);
+                let hours = ms_to_hours(totals.total_ms);
                 self.headline_hours
-                    .set_text(&format!("{} hours", format_thousands(hours)));
-                self.headline_subtitle.set_text(&format!(
-                    "{} plays · all time",
-                    format_thousands(totals.total_plays)
-                ));
+                    .set_text(&format!("{} hours of listening", format_thousands(hours)));
+                self.plays_card_value
+                    .set_text(&format_thousands(totals.total_plays));
             }
             Err(error) => {
                 tracing::error!(%error, "stats: failed to load headline totals");
-                self.headline_hours.set_text("— hours");
-                self.headline_subtitle.set_text("—");
+                self.headline_hours.set_text("-- hours of listening");
+                self.plays_card_value.set_text("--");
+            }
+        }
+
+        match stats_screen::distinct_artists_played(conn) {
+            Ok(count) => self.artists_card_value.set_text(&format_thousands(count)),
+            Err(error) => {
+                tracing::error!(%error, "stats: failed to load distinct artists");
+                self.artists_card_value.set_text("--");
+            }
+        }
+
+        match stats_screen::most_active_weekday(conn) {
+            Ok(Some(day)) => self.weekday_card_value.set_text(&day),
+            Ok(None) => self.weekday_card_value.set_text("--"),
+            Err(error) => {
+                tracing::error!(%error, "stats: failed to load most active weekday");
+                self.weekday_card_value.set_text("--");
             }
         }
     }
@@ -132,13 +218,9 @@ impl StatsView {
                     self.top_artists_box.append(&empty_label());
                     return;
                 }
+                let max_plays = artists.first().map_or(1, |a| a.plays.max(1));
                 for (i, artist) in artists.iter().enumerate() {
-                    let row = list_row(
-                        i + 1,
-                        &artist.artist,
-                        None,
-                        &format!("{} plays", format_thousands(artist.plays)),
-                    );
+                    let row = artist_row(i + 1, &artist.artist, artist.plays, max_plays);
                     self.top_artists_box.append(&row);
                 }
             }
@@ -148,66 +230,60 @@ impl StatsView {
         }
     }
 
+    fn refresh_top_genres(&self, conn: &Connection) {
+        clear_box(&self.top_genres_box);
+        match stats_screen::top_genres(conn, TOP_LIMIT) {
+            Ok(genres) => {
+                if genres.is_empty() {
+                    self.top_genres_box.append(&empty_label());
+                    return;
+                }
+                let total_plays: i64 = genres.iter().map(|g| g.plays).sum();
+                let max_plays = genres.first().map_or(1, |g| g.plays.max(1));
+                for genre in &genres {
+                    let pct = if total_plays > 0 {
+                        (genre.plays as f64 / total_plays as f64 * 100.0).round() as i64
+                    } else {
+                        0
+                    };
+                    let row = genre_row(&genre.genre, genre.plays, max_plays, pct);
+                    self.top_genres_box.append(&row);
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error, "stats: failed to load top genres");
+            }
+        }
+    }
+
+    fn refresh_hourly_chart(&self, conn: &Connection) {
+        match stats_screen::listening_by_hour(conn) {
+            Ok(hourly) => {
+                let sparse: Vec<(u8, i64)> =
+                    hourly.iter().map(|h| (h.hour, h.listens)).collect();
+                self.hourly_chart.set_data(&sparse);
+            }
+            Err(error) => {
+                tracing::error!(%error, "stats: failed to load hourly listens");
+            }
+        }
+    }
+
     fn refresh_top_albums(&self, conn: &Connection) {
         clear_box(&self.top_albums_box);
-        match stats_screen::top_albums(conn, TOP_LIMIT) {
+        match stats_screen::top_albums(conn, ALBUMS_LIMIT) {
             Ok(albums) => {
                 if albums.is_empty() {
                     self.top_albums_box.append(&empty_label());
                     return;
                 }
-                for (i, album) in albums.iter().enumerate() {
-                    let row = list_row(
-                        i + 1,
-                        &album.album,
-                        Some(&album.album_artist),
-                        &format!("{} plays", format_thousands(album.plays)),
-                    );
-                    self.top_albums_box.append(&row);
+                for album in &albums {
+                    let item = album_strip_item(&album.album, album.plays);
+                    self.top_albums_box.append(&item);
                 }
             }
             Err(error) => {
                 tracing::error!(%error, "stats: failed to load top albums");
-            }
-        }
-    }
-
-    fn refresh_top_tracks(&self, conn: &Connection) {
-        clear_box(&self.top_tracks_box);
-        match stats_screen::top_tracks(conn, TOP_LIMIT) {
-            Ok(tracks) => {
-                if tracks.is_empty() {
-                    self.top_tracks_box.append(&empty_label());
-                    return;
-                }
-                for (i, track) in tracks.iter().enumerate() {
-                    let row = list_row(
-                        i + 1,
-                        &track.title,
-                        Some(&track.artist),
-                        &format!("{} plays", format_thousands(track.play_count)),
-                    );
-                    self.top_tracks_box.append(&row);
-                }
-            }
-            Err(error) => {
-                tracing::error!(%error, "stats: failed to load top tracks");
-            }
-        }
-    }
-
-    fn refresh_chart(&self, conn: &Connection) {
-        let now_unix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs() as i64);
-        match stats_screen::monthly_listen_timeseries(conn, now_unix) {
-            Ok(series) => {
-                let labels: Vec<String> = series.iter().map(|b| b.year_month.clone()).collect();
-                let values: Vec<i64> = series.iter().map(|b| b.total_ms).collect();
-                self.chart.set_data(&labels, &values);
-            }
-            Err(error) => {
-                tracing::error!(%error, "stats: failed to load monthly timeseries");
             }
         }
     }
@@ -221,29 +297,42 @@ fn adw_clamp(child: &impl IsA<gtk4::Widget>, max_width: i32) -> libadwaita::Clam
     clamp
 }
 
-/// Builds a section: a title label above the content box.
-fn section(title: &str, content: &gtk4::Box) -> gtk4::Box {
+/// Builds a mini stat card: a large value label above a small description.
+/// Returns (card widget, value label) so the caller can update the value.
+fn mini_card(label_text: &str) -> (gtk4::Box, gtk4::Label) {
+    let value_label = gtk4::Label::new(Some("--"));
+    value_label.add_css_class("stats-mini-card-value");
+    value_label.set_xalign(0.0);
+
+    let desc_label = gtk4::Label::new(Some(label_text));
+    desc_label.add_css_class("stats-mini-card-label");
+    desc_label.set_xalign(0.0);
+
+    let card = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    card.add_css_class("stats-mini-card");
+    card.append(&value_label);
+    card.append(&desc_label);
+
+    (card, value_label)
+}
+
+/// Wraps content in a card with a section title above it.
+fn titled_card(title: &str, content: &gtk4::Widget) -> gtk4::Box {
     let title_label = gtk4::Label::new(Some(title));
     title_label.add_css_class("stats-section-title");
     title_label.set_xalign(0.0);
     title_label.set_margin_bottom(8);
 
-    let wrapper = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    wrapper.append(&title_label);
-    wrapper.append(content);
-    wrapper
-}
-
-/// Wraps a widget in a card-style container using `.stats-card`.
-fn card_wrapper(child: &gtk4::Widget) -> gtk4::Box {
     let card = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     card.add_css_class("stats-card");
-    card.append(child);
+    card.append(&title_label);
+    card.append(content);
     card
 }
 
-/// Builds one row in a top-N list: rank · title (+ optional subtitle) · play count.
-fn list_row(rank: usize, title: &str, subtitle: Option<&str>, count_text: &str) -> gtk4::Box {
+/// Builds one row in the Top Artists list: rank, placeholder circle, name,
+/// progress bar, play count.
+fn artist_row(rank: usize, name: &str, plays: i64, max_plays: i64) -> gtk4::Box {
     let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
     hbox.set_margin_top(4);
     hbox.set_margin_bottom(4);
@@ -254,31 +343,105 @@ fn list_row(rank: usize, title: &str, subtitle: Option<&str>, count_text: &str) 
     rank_label.set_xalign(1.0);
     hbox.append(&rank_label);
 
-    let text_box = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
-    text_box.set_hexpand(true);
+    // Circular cover placeholder
+    let cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    cover.set_size_request(28, 28);
+    cover.add_css_class("stats-album-thumb");
+    // Force circular shape via inline CSS-friendly approach: use a frame.
+    cover.set_halign(gtk4::Align::Center);
+    cover.set_valign(gtk4::Align::Center);
+    hbox.append(&cover);
 
-    let title_label = gtk4::Label::new(Some(title));
-    title_label.add_css_class("stats-item-title");
-    title_label.set_xalign(0.0);
-    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    text_box.append(&title_label);
+    let name_label = gtk4::Label::new(Some(name));
+    name_label.add_css_class("stats-item-title");
+    name_label.set_xalign(0.0);
+    name_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    name_label.set_hexpand(false);
+    name_label.set_width_chars(12);
+    name_label.set_max_width_chars(18);
 
-    if let Some(sub) = subtitle {
-        let sub_label = gtk4::Label::new(Some(sub));
-        sub_label.add_css_class("stats-item-subtitle");
-        sub_label.set_xalign(0.0);
-        sub_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        text_box.append(&sub_label);
-    }
+    let bar = progress_bar(plays, max_plays);
 
-    hbox.append(&text_box);
-
-    let count_label = gtk4::Label::new(Some(count_text));
+    let count_label = gtk4::Label::new(Some(&format_thousands(plays)));
     count_label.add_css_class("stats-play-count");
     count_label.set_valign(gtk4::Align::Center);
+
+    hbox.append(&name_label);
+    hbox.append(&bar);
     hbox.append(&count_label);
 
     hbox
+}
+
+/// Builds one row in the Top Genres list: genre name, progress bar, percentage.
+fn genre_row(name: &str, plays: i64, max_plays: i64, pct: i64) -> gtk4::Box {
+    let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
+    hbox.set_margin_top(4);
+    hbox.set_margin_bottom(4);
+    hbox.set_valign(gtk4::Align::Center);
+
+    let name_label = gtk4::Label::new(Some(name));
+    name_label.add_css_class("stats-genre-name");
+    name_label.set_xalign(0.0);
+    name_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+
+    let bar = progress_bar(plays, max_plays);
+
+    let pct_label = gtk4::Label::new(Some(&format!("{}%", pct)));
+    pct_label.add_css_class("stats-genre-pct");
+    pct_label.set_xalign(1.0);
+
+    hbox.append(&name_label);
+    hbox.append(&bar);
+    hbox.append(&pct_label);
+
+    hbox
+}
+
+/// Creates a horizontal progress bar proportional to `value / max_value`.
+fn progress_bar(value: i64, max_value: i64) -> gtk4::LevelBar {
+    let bar = gtk4::LevelBar::new();
+    bar.add_css_class("stats-progress-bar");
+    bar.set_min_value(0.0);
+    bar.set_max_value(1.0);
+    let fraction = if max_value > 0 {
+        value as f64 / max_value as f64
+    } else {
+        0.0
+    };
+    bar.set_value(fraction);
+    bar.set_hexpand(true);
+    bar.set_valign(gtk4::Align::Center);
+    // Remove default offset markers that add unwanted color bands.
+    bar.remove_offset_value(Some("low"));
+    bar.remove_offset_value(Some("high"));
+    bar.remove_offset_value(Some("full"));
+    bar
+}
+
+/// Builds one item in the horizontal Top Albums strip: a placeholder cover
+/// square with album name and play count below it.
+fn album_strip_item(album_name: &str, plays: i64) -> gtk4::Box {
+    let cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    cover.add_css_class("stats-album-thumb");
+    cover.set_size_request(96, 96);
+
+    let name_label = gtk4::Label::new(Some(album_name));
+    name_label.add_css_class("stats-item-title");
+    name_label.set_xalign(0.0);
+    name_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    name_label.set_max_width_chars(14);
+
+    let plays_label = gtk4::Label::new(Some(&format!("{} plays", format_thousands(plays))));
+    plays_label.add_css_class("stats-item-subtitle");
+    plays_label.set_xalign(0.0);
+
+    let item = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    item.append(&cover);
+    item.append(&name_label);
+    item.append(&plays_label);
+
+    item
 }
 
 fn clear_box(container: &gtk4::Box) {
