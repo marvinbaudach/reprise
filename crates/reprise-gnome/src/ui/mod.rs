@@ -35,12 +35,12 @@ pub mod browse_bar;
 mod browse_filter_count;
 #[path = "browse/browse_filter_strings.rs"]
 mod browse_filter_strings;
-#[path = "track_list/column_header_menu.rs"]
-mod column_header_menu;
 #[path = "track_list/column_layout.rs"]
 pub mod column_layout;
 #[path = "track_list/column_layout_editor.rs"]
 mod column_layout_editor;
+#[path = "track_list/column_widths.rs"]
+mod column_widths;
 #[path = "compact/compact_mode_controls.rs"]
 mod compact_mode_controls;
 #[path = "compact/compact_player.rs"]
