@@ -64,6 +64,7 @@ struct Inner {
     selection: gtk4::SingleSelection,
     list_view: gtk4::ListView,
     header_factory: gtk4::SignalListItemFactory,
+    name_sorter: gtk4::CustomSorter,
     section_sorter: gtk4::CustomSorter,
     stack: gtk4::Stack,
     count_label: gtk4::Label,
@@ -89,6 +90,7 @@ impl ArtistMaster {
 
         let store = gio::ListStore::new::<glib::BoxedAnyObject>();
         let sort_model = gtk4::SortListModel::new(Some(store.clone()), None::<gtk4::Sorter>);
+        let name_sorter = gtk4::CustomSorter::new(name_compare);
         let section_sorter = gtk4::CustomSorter::new(section_compare);
 
         let selection = gtk4::SingleSelection::builder()
@@ -135,6 +137,7 @@ impl ArtistMaster {
             selection,
             list_view,
             header_factory,
+            name_sorter,
             section_sorter,
             stack,
             count_label,
@@ -175,27 +178,10 @@ impl ArtistMaster {
         apply_rows(&self.inner);
     }
 
-    /// Selects the row whose artist matches `artist` case-insensitively (used
+    /// Selects the row whose artist matches `artist` (Unicode case-folded, used
     /// by the detail-pane deep link). No-op if none match.
     pub(in crate::ui) fn select_artist(&self, artist: &str) {
-        let count = self.inner.selection.n_items();
-        for index in 0..count {
-            let matches = self
-                .inner
-                .selection
-                .item(index)
-                .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
-                .is_some_and(|boxed| {
-                    boxed
-                        .borrow::<ArtistSummary>()
-                        .artist
-                        .eq_ignore_ascii_case(artist)
-                });
-            if matches {
-                self.inner.selection.set_selected(index);
-                return;
-            }
-        }
+        select_artist_by_name(&self.inner.selection, artist);
     }
 
     /// Lights the mini-EQ on whichever realized row matches `artist`
@@ -250,6 +236,49 @@ fn boxed_section_key(obj: &glib::Object) -> String {
         .unwrap_or_default()
 }
 
+/// `CustomSorter` comparator sorting rows by case-insensitive artist name.
+/// Set as the `SortListModel`'s main sorter in A–Z mode (in addition to the
+/// `section_sorter`) so GTK is guaranteed to partition the list into alphabet
+/// sections, rather than relying on the pre-sorted splice order alone. The
+/// store is already in this order, so this never actually reorders anything.
+fn name_compare(a: &glib::Object, b: &glib::Object) -> gtk4::Ordering {
+    let name_a = boxed_artist_name(a);
+    let name_b = boxed_artist_name(b);
+    name_a.to_lowercase().cmp(&name_b.to_lowercase()).into()
+}
+
+fn boxed_artist_name(obj: &glib::Object) -> String {
+    obj.downcast_ref::<glib::BoxedAnyObject>()
+        .map(|boxed| boxed.borrow::<ArtistSummary>().artist.clone())
+        .unwrap_or_default()
+}
+
+/// The display name of the currently-selected item, if any (used to restore
+/// selection across a sort-change splice, which invalidates it).
+fn current_selected_artist_name(selection: &gtk4::SingleSelection) -> Option<String> {
+    selection
+        .selected_item()
+        .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
+        .map(|boxed| boxed.borrow::<ArtistSummary>().artist.clone())
+}
+
+/// Selects the row whose artist matches `artist` (Unicode case-folded).
+/// No-op if none match.
+fn select_artist_by_name(selection: &gtk4::SingleSelection, artist: &str) {
+    let target = artist.to_lowercase();
+    let count = selection.n_items();
+    for index in 0..count {
+        let matches = selection
+            .item(index)
+            .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
+            .is_some_and(|boxed| boxed.borrow::<ArtistSummary>().artist.to_lowercase() == target);
+        if matches {
+            selection.set_selected(index);
+            return;
+        }
+    }
+}
+
 /// Sorts `rows` in place for `mode`. Ties (and the whole A–Z order) fall back
 /// to case-insensitive artist name so the order is always deterministic.
 fn sort_rows(rows: &mut [ArtistSummary], mode: SortMode) {
@@ -276,12 +305,16 @@ fn sort_rows(rows: &mut [ArtistSummary], mode: SortMode) {
 }
 
 /// Re-sorts the cached rows for the active mode, splices them into the store,
-/// toggles the section headers (A–Z only), and refreshes the header count and
-/// empty-state page.
+/// toggles the section headers (A–Z only), restores the prior selection, and
+/// refreshes the header count and empty-state page.
 fn apply_rows(inner: &Inner) {
     let mode = inner.mode.get();
     let mut rows = inner.rows.borrow().clone();
     sort_rows(&mut rows, mode);
+
+    // The splice below invalidates `SingleSelection`, so capture the
+    // currently-selected artist first and restore it afterwards.
+    let selected_artist = current_selected_artist_name(&inner.selection);
 
     let objects: Vec<glib::Object> = rows
         .iter()
@@ -290,6 +323,12 @@ fn apply_rows(inner: &Inner) {
     inner.store.splice(0, inner.store.n_items(), &objects);
 
     if mode == SortMode::Alphabetical {
+        // Setting the alphabetical order as the *main* sorter too (on top of
+        // the already-alphabetically-sorted splice above) costs no
+        // reordering, but guarantees GTK actually partitions the list into
+        // sections — relying on section-sorter-without-main-sorter to do
+        // that from pre-sorted store order alone is unverified.
+        inner.sort_model.set_sorter(Some(&inner.name_sorter));
         inner
             .sort_model
             .set_section_sorter(Some(&inner.section_sorter));
@@ -297,10 +336,15 @@ fn apply_rows(inner: &Inner) {
             .list_view
             .set_header_factory(Some(&inner.header_factory));
     } else {
+        inner.sort_model.set_sorter(gtk4::Sorter::NONE);
         inner.sort_model.set_section_sorter(gtk4::Sorter::NONE);
         inner
             .list_view
             .set_header_factory(gtk4::ListItemFactory::NONE);
+    }
+
+    if let Some(artist) = selected_artist {
+        select_artist_by_name(&inner.selection, &artist);
     }
 
     inner
