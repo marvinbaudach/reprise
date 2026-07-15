@@ -101,7 +101,10 @@ mod tests {
         assert_eq!(shell.bar_box.valign(), gtk4::Align::End);
         // Calling set_position twice is a no-op: bar_box stays in the overlay.
         shell.set_position(PlayerBarPosition::Bottom);
-        assert_eq!(shell.bar_box.parent().as_ref(), Some(shell.widget().upcast_ref::<gtk4::Widget>()));
+        assert_eq!(
+            shell.bar_box.parent().as_ref(),
+            Some(shell.widget().upcast_ref::<gtk4::Widget>())
+        );
 
         window.close();
     }

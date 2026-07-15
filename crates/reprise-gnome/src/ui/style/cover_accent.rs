@@ -431,24 +431,41 @@ mod tests {
     #[test]
     fn dominant_accent_returns_colorful_result_for_vivid_input() {
         let pixels = solid(220, 90, 40, 64); // warm orange
-        // Result is OKLCH-clamped so exact match not expected, but should exist.
+                                             // Result is OKLCH-clamped so exact match not expected, but should exist.
         let result = dominant_accent(&pixels, 3);
-        assert!(result.is_some(), "expected a result for vivid orange pixels");
+        assert!(
+            result.is_some(),
+            "expected a result for vivid orange pixels"
+        );
     }
 
     #[test]
     fn usable_accepts_vivid_and_rejects_gray() {
         // A vivid red after OKLCH clamping should be usable.
-        let vivid = oklch_clamp(Rgb { r: 220, g: 90, b: 40 }).expect("orange not gray");
+        let vivid = oklch_clamp(Rgb {
+            r: 220,
+            g: 90,
+            b: 40,
+        })
+        .expect("orange not gray");
         assert!(is_usable(&vivid));
         // Pure mid-gray is not usable.
-        assert!(!is_usable(&Rgb { r: 128, g: 128, b: 128 }));
+        assert!(!is_usable(&Rgb {
+            r: 128,
+            g: 128,
+            b: 128
+        }));
     }
 
     #[test]
     fn accent_css_overrides_when_usable_and_is_empty_otherwise() {
         // A vivid, clamped color should produce a CSS override.
-        let vivid = oklch_clamp(Rgb { r: 220, g: 90, b: 40 }).expect("orange not gray");
+        let vivid = oklch_clamp(Rgb {
+            r: 220,
+            g: 90,
+            b: 40,
+        })
+        .expect("orange not gray");
         let css = accent_css(Some(vivid));
         assert!(
             css.contains("@define-color reprise_player_accent"),
@@ -456,7 +473,12 @@ mod tests {
         );
         assert!(accent_css(None).is_empty());
         // Pure gray should clear to empty.
-        assert!(accent_css(Some(Rgb { r: 128, g: 128, b: 128 })).is_empty());
+        assert!(accent_css(Some(Rgb {
+            r: 128,
+            g: 128,
+            b: 128
+        }))
+        .is_empty());
     }
 
     #[test]
