@@ -478,10 +478,6 @@ impl PreferencesContext {
         let transitions = adw::PreferencesGroup::builder()
             .title(strings::text(strings::AUDIO_TRANSITIONS))
             .build();
-        let new_badge = gtk4::Label::new(Some(&strings::text(strings::BADGE_NEW)));
-        new_badge.add_css_class("stats-badge");
-        new_badge.set_valign(gtk4::Align::Center);
-        transitions.set_header_suffix(Some(&new_badge));
 
         // Both controls sit in one boxed-list card (crossfade on top, gapless
         // below), matching the mockup. We build the list ourselves because the

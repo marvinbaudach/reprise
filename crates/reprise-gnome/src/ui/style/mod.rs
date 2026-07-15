@@ -26,6 +26,9 @@ thread_local! {
     static INSTALLED: Cell<bool> = const { Cell::new(false) };
     /// The dedicated palette provider, kept so [`set_theme`] can reload it.
     static THEME_PROVIDER: RefCell<Option<gtk4::CssProvider>> = const { RefCell::new(None) };
+    /// The currently active theme, kept so appearance changes can reload the
+    /// palette CSS with the correct theme without needing the database.
+    static CURRENT_THEME: Cell<theme::Theme> = const { Cell::new(theme::Theme::DEFAULT) };
 }
 
 /// One entry per feature that ships app-authored (theme-independent) CSS.
@@ -36,7 +39,9 @@ fn app_css() -> String {
         menus::css(),
         super::browse_bar::css(),
         super::column_layout_editor::css(),
+        super::eq_bars::css(),
         super::list_density::css(),
+        super::library_chrome::css(),
         super::library_view_css::css(),
         super::lyrics_view::css(),
         super::player_bar_layout::css(),
@@ -65,8 +70,7 @@ fn info_panel_clip_css() -> String {
 }
 
 /// Installs the structural app CSS and the default theme palette on the
-/// default display, once per process, and forces the dark color scheme (the
-/// redesign is dark across every theme). Safe to call from every window/test
+/// default display, once per process, and applies the default color scheme. Safe to call from every window/test
 /// entry point; calls before GTK has a default display (e.g. plain unit
 /// tests) are ignored without arming the once-guard, so a later call after
 /// `gtk4::init` still installs.
@@ -88,8 +92,9 @@ pub(super) fn install() {
             gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
 
+        let is_dark = adw::StyleManager::default().is_dark();
         let theme_provider = gtk4::CssProvider::new();
-        theme_provider.load_from_string(&theme::theme_css(theme::Theme::DEFAULT));
+        theme_provider.load_from_string(&theme::theme_css(theme::Theme::DEFAULT, is_dark));
         gtk4::style_context_add_provider_for_display(
             &display,
             &theme_provider,
@@ -99,16 +104,43 @@ pub(super) fn install() {
 
         cover_accent::install(&display);
 
-        adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark);
+        adw::StyleManager::default().connect_dark_notify(|_| {
+            reload_theme_for_appearance();
+        });
     });
 }
 
 /// Recolors the whole app to `theme` by reloading the palette provider. A
 /// no-op before [`install`] has run (no display yet).
 pub(in crate::ui) fn set_theme(theme: theme::Theme) {
+    CURRENT_THEME.with(|slot| slot.set(theme));
+    let is_dark = adw::StyleManager::default().is_dark();
     THEME_PROVIDER.with(|slot| {
         if let Some(provider) = slot.borrow().as_ref() {
-            provider.load_from_string(&theme::theme_css(theme));
+            provider.load_from_string(&theme::theme_css(theme, is_dark));
+        }
+    });
+}
+
+/// Sets the libadwaita color scheme preference and reloads the current theme
+/// palette so the dark/light variant matches the new scheme.
+pub(in crate::ui) fn set_color_scheme(scheme: &str) {
+    let adw_scheme = match scheme {
+        "dark" => adw::ColorScheme::ForceDark,
+        "light" => adw::ColorScheme::ForceLight,
+        _ => adw::ColorScheme::Default,
+    };
+    adw::StyleManager::default().set_color_scheme(adw_scheme);
+}
+
+/// Reloads the current theme's palette CSS to match the current system
+/// appearance (dark or light). Called from the `dark_notify` signal handler.
+fn reload_theme_for_appearance() {
+    let theme = CURRENT_THEME.with(|slot| slot.get());
+    let is_dark = adw::StyleManager::default().is_dark();
+    THEME_PROVIDER.with(|slot| {
+        if let Some(provider) = slot.borrow().as_ref() {
+            provider.load_from_string(&theme::theme_css(theme, is_dark));
         }
     });
 }

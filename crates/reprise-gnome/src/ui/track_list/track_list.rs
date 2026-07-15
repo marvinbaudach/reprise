@@ -344,10 +344,15 @@ impl TrackList {
         // multi-select` section.
         let selection = gtk4::MultiSelection::new(Some(model.clone()));
 
+        // Both built-in separators are OFF: the vertical ones are removed
+        // outright (no per-cell rules to fight — see `track_list_header_
+        // style.rs`), and the horizontal row rule is drawn by that same scoped
+        // CSS at an exact hairline colour instead of the theme's default, so
+        // the table reads as clean horizontal bands with no column grid.
         let column_view = gtk4::ColumnView::builder()
             .model(&selection)
-            .show_row_separators(true)
-            .show_column_separators(true)
+            .show_row_separators(false)
+            .show_column_separators(false)
             .build();
         super::track_list_header_style::mark(&column_view);
 

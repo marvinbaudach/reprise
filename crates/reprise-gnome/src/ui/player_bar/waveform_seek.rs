@@ -28,8 +28,6 @@ const MAX_BAR_HEIGHT: f64 = 26.0;
 const UNPLAYED_ALPHA: f64 = 0.16;
 /// Alpha for bars in the drag ghost region.
 const GHOST_ALPHA: f64 = 0.40;
-/// Fallback bar height when no peaks are available.
-const FALLBACK_BAR_HEIGHT: f64 = 4.0;
 /// Build-up animation duration in seconds.
 const BUILD_DURATION_S: f64 = 0.3;
 /// Per-bar stagger increment in seconds.

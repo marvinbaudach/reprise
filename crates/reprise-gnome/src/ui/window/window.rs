@@ -95,6 +95,8 @@ pub fn build(
             .and_then(super::style::theme::Theme::from_id)
             .unwrap_or(super::style::theme::Theme::DEFAULT);
         super::style::set_theme(theme);
+        let scheme = reprise_core::library::settings::get_color_scheme(&conn);
+        super::style::set_color_scheme(scheme);
     }
     let session_state = {
         let conn = conn.borrow();

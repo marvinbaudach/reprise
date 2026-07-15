@@ -9,8 +9,6 @@
 use std::path::{Path, PathBuf};
 
 use gstreamer as gst;
-use gstreamer::prelude::*;
-use gstreamer_app as gst_app;
 
 /// Number of raw peaks stored per track.
 pub(crate) const STORED_PEAK_COUNT: usize = 1000;
