@@ -63,7 +63,6 @@ pub(super) struct PreferencesShell {
     pub(super) dialog: adw::Dialog,
     pub(super) navigation: adw::NavigationView,
     pub(super) stack: adw::ViewStack,
-    #[cfg(test)]
     pub(super) sidebar: gtk4::ListBox,
 }
 
@@ -90,6 +89,15 @@ fn appearance_index() -> i32 {
         .iter()
         .position(|id| *id == PageId::Appearance)
         .unwrap_or(0) as i32
+}
+
+/// Returns the sidebar row index for the page whose stack name matches
+/// `name`, or `None` if no page matches.
+pub(super) fn page_index_by_name(name: &str) -> Option<i32> {
+    PAGE_ORDER
+        .iter()
+        .position(|id| id.name() == name)
+        .map(|i| i as i32)
 }
 
 pub(super) fn build(
@@ -181,7 +189,6 @@ pub(super) fn build(
         dialog,
         navigation,
         stack,
-        #[cfg(test)]
         sidebar: sidebar_list,
     }
 }
