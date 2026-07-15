@@ -15,8 +15,7 @@ license = "MIT"
 
 # Stage 3 Task 1: curated pedantic-lint selection, hardened to `warn` here so
 # `cargo clippy --all-targets -- -D warnings` (the gate every commit must
-# pass — see docs/superpowers/plans/2026-07-11-etappe-3-bibliothek-
-# organisieren.md's Global Constraints) turns them into hard errors. Each one
+# pass) turns them into hard errors. Each one
 # targets a real class of mistake this codebase cares about: needless_pass_by_
 # value/redundant_closure_for_method_calls (unnecessary clones/indirection),
 # semicolon_if_nothing_returned/uninlined_format_args (consistency across a

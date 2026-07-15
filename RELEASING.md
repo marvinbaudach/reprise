@@ -110,8 +110,6 @@ release check.
 
 Use disposable test music and a disposable XDG data directory where practical.
 Do not point development hooks at the maintainer's real library.
-The detailed live ledger of confirmed and pending checks is
-`docs/agent-workflow/MANUAL-QA.md`; keep it synchronized with every manual pass.
 
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
