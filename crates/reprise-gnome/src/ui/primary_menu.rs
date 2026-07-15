@@ -315,7 +315,7 @@ mod tests {
         let label = menu
             .item_attribute_value(0, "label", Some(glib::VariantTy::STRING))
             .and_then(|v| v.get::<String>());
-        assert_eq!(label.as_deref(), Some(strings::CANCEL_SCAN));
+        assert_eq!(label.as_deref(), Some(strings::text(strings::CANCEL_SCAN).as_str()));
     }
 
     #[test]

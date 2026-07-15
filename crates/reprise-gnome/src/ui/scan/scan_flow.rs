@@ -339,7 +339,7 @@ pub(super) fn trigger_rescan_of_library_root(
     sidebar: Rc<Sidebar>,
     watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
 ) {
-    if !controls.button.is_sensitive() {
+    if controls.is_scanning() {
         tracing::debug!("rescan library: a scan is already running; ignoring");
         toasts::show(toast_overlay, &strings::scan_already_running_toast());
         return;
