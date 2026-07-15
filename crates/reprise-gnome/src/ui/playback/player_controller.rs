@@ -260,6 +260,12 @@ pub struct PlayerController {
     /// invoked from `now_playing_wiring.rs`'s `sync_state`.
     pub(super) playback_state_changed:
         RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
+    /// Fans now-playing album identity changes to the album grid's EQ markers.
+    /// Fired with `Some((album, artist))` when a new track starts and `None`
+    /// when playback stops. `pub(super)` field so sibling modules can fire it;
+    /// public setter so `window.rs` can register the album-view callback.
+    pub(super) now_playing_album_changed:
+        RefCell<Option<Rc<dyn Fn(Option<(String, String)>)>>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
@@ -425,6 +431,7 @@ impl PlayerController {
             queue_changed: RefCell::new(None),
             current_track_changed: RefCell::new(None),
             playback_state_changed: RefCell::new(None),
+            now_playing_album_changed: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,
@@ -492,6 +499,25 @@ impl PlayerController {
 
     pub fn set_track_list_reload(&self, reload: impl Fn() + 'static) {
         *self.reload_track_list.borrow_mut() = Some(Rc::new(reload));
+    }
+
+    /// Registers a callback that receives the now-playing album identity
+    /// whenever it changes. Called with `Some((album, artist))` when a new
+    /// track starts and `None` when playback stops. Used by `window.rs` to
+    /// forward now-playing state to the album-grid EQ markers.
+    pub fn set_on_now_playing_album_changed(
+        &self,
+        callback: impl Fn(Option<(String, String)>) + 'static,
+    ) {
+        *self.now_playing_album_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Fires the now-playing-album-changed callback.
+    pub(super) fn notify_now_playing_album_changed(&self, album: Option<(String, String)>) {
+        let callback = self.now_playing_album_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(album);
+        }
     }
 
     /// Starts playback of `ids[start_index]` and loads the rest of `ids` into
@@ -576,6 +602,13 @@ impl PlayerController {
                     duration_ms: summary.duration_ms,
                     path: summary.path.clone(),
                 });
+
+                // Notify the album grid so it can display the EQ marker on
+                // the now-playing album card.
+                self.notify_now_playing_album_changed(Some((
+                    summary.album.clone(),
+                    summary.artist.clone(),
+                )));
 
                 // Feeds the bar AND the Now-Playing page from this one call
                 // — see `now_playing_wiring.rs`'s `sync_track`/`sync_cover`
@@ -796,6 +829,7 @@ impl PlayerController {
         // just always bring it in sync with "stopped, nothing loaded" right
         // here regardless of how `player.stop()` turns out.
         *self.now_playing.borrow_mut() = None;
+        self.notify_now_playing_album_changed(None);
         self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
         match self.player.stop() {
             Ok(()) => {}
