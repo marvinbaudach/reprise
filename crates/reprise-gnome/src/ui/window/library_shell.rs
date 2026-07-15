@@ -68,19 +68,29 @@ pub(super) fn wire_album_view(
     album_view: &AlbumView,
     track_list: &Rc<TrackList>,
 ) {
-    let track_list = Rc::downgrade(track_list);
-    let stack = views.stack.clone();
+    // Card click → switch to Tracks tab with album source.
+    let track_list_clone = track_list.clone();
+    let stack = views.stack.downgrade();
     album_view.set_on_activate(move |album| {
-        let Some(track_list) = track_list.upgrade() else {
-            return;
+        let source = ViewSource::Album {
+            album: album.album.clone(),
+            album_artist: album.album_artist.clone(),
         };
-        track_list.set_source(ViewSource::Album {
-            album: album.album,
-            album_artist: album.album_artist,
-        });
-        stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+        track_list_clone.set_source(source);
+        if let Some(stack) = stack.upgrade() {
+            stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+        }
     });
 
+    // Artist label click → switch to Artists tab.
+    let stack = views.stack.downgrade();
+    album_view.set_on_artist_activate(move |_artist| {
+        if let Some(stack) = stack.upgrade() {
+            stack.set_visible_child_name(LIBRARY_VIEW_ARTISTS);
+        }
+    });
+
+    // Refresh on tab show.
     let refresh = album_view.refresh_callback();
     views.stack.connect_visible_child_name_notify(move |stack| {
         if stack.visible_child_name().as_deref() == Some(LIBRARY_VIEW_ALBUMS) {
