@@ -240,6 +240,17 @@ pub const TAG_NUMBER_ERROR: &str = N_!("Year and track number must be positive w
 pub const TAG_EDIT_DATABASE_UNAVAILABLE: &str =
     N_!("Could not open the library database for tag editing");
 pub const TAG_EDIT_WORKER_FAILED: &str = N_!("Could not start the tag-edit worker");
+pub const TAG_SAME_ON_ALL: &str = N_!("same on all");
+
+pub fn tag_applied_to_all_hint(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "Will be applied to {count} track",
+        "Will be applied to all {count} tracks",
+        count,
+        &[("count", &count_text)],
+    )
+}
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");
 pub const DELETE_TRACKS_HEADING: &str = N_!("Remove Selected Tracks?");

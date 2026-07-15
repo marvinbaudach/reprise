@@ -227,6 +227,8 @@ mod style;
 pub mod tag_edit_flow;
 #[path = "tag_edit/tag_editor.rs"]
 pub mod tag_editor;
+#[path = "tag_edit/tag_editor_style.rs"]
+mod tag_editor_style;
 pub mod toasts;
 #[path = "track_list/track_actions.rs"]
 pub mod track_actions;
