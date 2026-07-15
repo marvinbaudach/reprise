@@ -369,6 +369,29 @@ mod tests {
             .unwrap();
         assert_eq!(va.track_count, 2);
         assert_eq!(va.album_count, 1);
+        assert_eq!(va.representative_path, "/music/mix-a.flac");
+    }
+
+    #[test]
+    fn artists_sum_play_count_and_max_last_played_at_across_group_rows() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks
+               (id,path,title,artist,album,album_artist,added_at,missing,play_count,last_played_at) VALUES
+             (1,'/music/a.flac','Track A','Solo','Album','',0,0,3,100),
+             (2,'/music/b.flac','Track B','Solo','Album','',0,0,5,200);",
+        )
+        .unwrap();
+
+        let artists = query_artists(&conn).unwrap();
+        let solo = artists.iter().find(|a| a.artist == "Solo").unwrap();
+
+        // A per-row read (e.g. only the representative row's play_count) or a
+        // MIN/first-value bug would yield 3 or 5, not the summed/maxed value.
+        assert_eq!(solo.total_plays, 8);
+        assert_eq!(solo.last_played_at, 200);
+        assert_eq!(solo.representative_path, "/music/a.flac");
     }
 
     #[test]
