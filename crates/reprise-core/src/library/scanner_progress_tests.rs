@@ -26,7 +26,7 @@ fn scan_reports_discovery_then_monotone_audio_file_progress() {
                 total,
                 current_path,
             } => Some((*processed, *total, current_path.clone())),
-            ScanProgress::Discovering => None,
+            ScanProgress::Discovering | ScanProgress::Fetching { .. } => None,
         })
         .collect();
     assert_eq!(scanning.len(), 2);

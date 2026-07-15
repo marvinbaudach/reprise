@@ -24,6 +24,7 @@ enum DisplayPhase {
     Hidden,
     Discovering,
     Scanning,
+    Fetching,
 }
 
 #[derive(Debug, PartialEq)]
@@ -59,6 +60,18 @@ fn view_state(progress: &ScanProgress) -> ScanProgressState {
             ScanProgressState {
                 title: strings::scan_progress(*processed, *total),
                 detail: display_name(current_path),
+                mode: ProgressMode::Determinate(fraction),
+            }
+        }
+        ScanProgress::Fetching { done, total } => {
+            let fraction = if *total == 0 {
+                0.0
+            } else {
+                (*done as f64 / *total as f64).clamp(0.0, 1.0)
+            };
+            ScanProgressState {
+                title: strings::fetch_progress(*done, *total),
+                detail: Some(strings::text(strings::FETCH_DETAIL)),
                 mode: ProgressMode::Determinate(fraction),
             }
         }
@@ -165,7 +178,11 @@ impl ScanProgressView {
             ProgressMode::Determinate(fraction) => {
                 self.cancel_pulsing();
                 self.inner.progress.set_fraction(fraction);
-                self.inner.phase.set(DisplayPhase::Scanning);
+                let new_phase = match progress {
+                    ScanProgress::Fetching { .. } => DisplayPhase::Fetching,
+                    _ => DisplayPhase::Scanning,
+                };
+                self.inner.phase.set(new_phase);
             }
         }
     }
@@ -245,6 +262,18 @@ mod tests {
         assert_eq!(state.title, "0 of 0 files scanned");
         assert_eq!(state.detail, None);
         assert_eq!(state.mode, ProgressMode::Determinate(0.0));
+    }
+
+    #[test]
+    fn fetching_shows_counts_and_detail() {
+        let state = view_state(&ScanProgress::Fetching {
+            done: 12,
+            total: 48,
+        });
+
+        assert_eq!(state.title, "12 of 48");
+        assert!(state.detail.as_deref().unwrap().contains("covers"));
+        assert_eq!(state.mode, ProgressMode::Determinate(0.25));
     }
 
     #[test]
