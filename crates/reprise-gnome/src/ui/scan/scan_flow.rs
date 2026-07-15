@@ -21,7 +21,7 @@ use reprise_core::library::scanner::{ScanError, ScanProgress, ScanReport};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::{self, WatcherHandle};
 
-use super::scan_progress::{ScanProgressView, WeakScanProgressView};
+use super::scan_progress::{EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView};
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
@@ -73,6 +73,10 @@ pub(super) struct ScanControls {
     completion: ScanCompletion,
     cancel_token: Arc<AtomicBool>,
     on_scan_state_changed: Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>,
+    /// Weak reference to the indicator embedded in the empty-library status
+    /// page. `None` until `set_empty_indicator` is called from `window.rs`
+    /// after both `track_list` and `scan_controls` exist.
+    empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
 }
 
 impl ScanControls {
@@ -85,7 +89,17 @@ impl ScanControls {
             completion: ScanCompletion::default(),
             cancel_token: Arc::new(AtomicBool::new(false)),
             on_scan_state_changed: Rc::new(RefCell::new(None)),
+            empty_indicator: Rc::new(RefCell::new(None)),
         }
+    }
+
+    /// Registers the lightweight scan indicator embedded in the empty-library
+    /// status page. Called from `window.rs` after both `track_list` and
+    /// `scan_controls` exist. Stored as a `Weak` reference so `ScanControls`
+    /// can never keep the indicator's widget tree alive past the window's own
+    /// lifetime — same pattern as `foreground_progress`.
+    pub(super) fn set_empty_indicator(&self, indicator: &EmptyScanIndicator) {
+        *self.empty_indicator.borrow_mut() = Some(indicator.downgrade());
     }
 
     pub(super) fn is_scanning(&self) -> bool {
@@ -199,6 +213,14 @@ impl ScanControls {
         for view in views {
             view.show(progress);
         }
+        if let Some(indicator) = self
+            .empty_indicator
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            indicator.show(progress);
+        }
     }
 
     fn finish_progress(&self) {
@@ -206,6 +228,14 @@ impl ScanControls {
         let views = self.live_progress_views();
         for view in views {
             view.finish();
+        }
+        if let Some(indicator) = self
+            .empty_indicator
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            indicator.finish();
         }
     }
 

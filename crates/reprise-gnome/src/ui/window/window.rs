@@ -353,6 +353,15 @@ pub fn build(
     // reason as the player's toast overlay above — `track_list` is built
     // before `toast_overlay` exists.
     track_list.set_toast_overlay(&toast_overlay);
+    // Embed a lightweight scan-progress indicator in the empty-library status
+    // page so the user sees scanning feedback during a first scan (before any
+    // tracks are in the list). Created here — after both `track_list` and
+    // `scan_controls` exist — and wired in both directions.
+    {
+        let empty_indicator = super::scan_progress::EmptyScanIndicator::new();
+        track_list.set_empty_scan_widget(empty_indicator.widget());
+        scan_controls.set_empty_indicator(&empty_indicator);
+    }
     // Same reason again: the sidebar is built before `toast_overlay` exists.
     sidebar.set_toast_overlay(&toast_overlay);
     {
