@@ -125,6 +125,30 @@ impl Queue {
         }
     }
 
+    /// Non-mutating preview of what `advance_auto` would return next, without
+    /// moving the position. Used by the gapless pre-feed (`feed_next`) to learn
+    /// the upcoming track ahead of time; the actual advance still runs through
+    /// `advance_auto` on the real transition. Must mirror `advance_auto`'s
+    /// branching exactly.
+    pub fn peek_auto(&self) -> Option<i64> {
+        let idx = self.pos?;
+        if self.repeat == Repeat::One {
+            return self.current();
+        }
+        let next_idx = idx + 1;
+        if next_idx < self.order.len() {
+            self.order
+                .get(next_idx)
+                .and_then(|&track_idx| self.ids.get(track_idx).copied())
+        } else if self.repeat == Repeat::All {
+            self.order
+                .first()
+                .and_then(|&track_idx| self.ids.get(track_idx).copied())
+        } else {
+            None
+        }
+    }
+
     /// Move to the next track (user pressed next button).
     /// Ignores Repeat::One, always moves forward (or wraps if Repeat::All).
     /// Returns None if at the end and Repeat::Off.

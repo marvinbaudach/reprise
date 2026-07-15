@@ -343,6 +343,13 @@ impl PlaybackBackend for Player {
         (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Stopped));
         Ok(())
     }
+
+    // TODO(gapless Phase A): real implementation pending — pre-feed the next
+    // URI into a slot that `playbin3`'s `about-to-finish` signal consumes for a
+    // seamless hand-off, emitting `PlayerEvent::AdvancedToNext` on the actual
+    // stream transition. Currently a no-op, so playback falls back to the
+    // ordinary `TrackFinished`-driven advance.
+    fn set_next(&self, _path: Option<&str>) {}
 }
 
 #[cfg(test)]
