@@ -1,5 +1,5 @@
 //! The full-width Library player bar: track title/artist, transport controls,
-//! a click-to-seek waveform, playback modes, and volume.
+//! a click-to-seek waveform, playback modes, inline volume, and queue button.
 //!
 //! `PlayerBar` owns every widget it displays; callers (see
 //! `player_controller.rs`) only interact with it through the `set_*`/
@@ -19,7 +19,7 @@ use crate::ui::cover_loader::CoverLoader;
 use crate::ui::player_bar_layout::{self, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::strings;
 use crate::ui::waveform_seek::WaveformSeek;
-use reprise_core::format::format_duration;
+use reprise_core::format::{format_duration, format_remaining};
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
@@ -32,18 +32,28 @@ pub(super) const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
 pub(super) const ICON_NEXT: &str = "media-skip-forward-symbolic";
 pub(super) const ICON_REPEAT_ALL: &str = "media-playlist-repeat-symbolic";
 pub(super) const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
+
+/// Volume icon names indexed by loudness tier.
+const ICON_VOLUME_MUTED: &str = "audio-volume-muted-symbolic";
+const ICON_VOLUME_LOW: &str = "audio-volume-low-symbolic";
+const ICON_VOLUME_MEDIUM: &str = "audio-volume-medium-symbolic";
+const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
+
 /// Applied to the repeat button while `Repeat::Off`, so it reads as inactive
 /// without a third icon asset — the same generic "de-emphasize" style class
-/// `artist_label` already uses (see `PlayerBar::new`), which GTK's Adwaita
-/// theme renders as reduced-opacity text/icon content on any widget.
+/// which GTK's Adwaita theme renders as reduced-opacity text/icon content on
+/// any widget.
 pub(super) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
+
+/// Mini-EQ CSS class applied while `PlaybackState::Playing`.
+const MINI_EQ_PLAYING_CLASS: &str = "playing";
 
 /// Cover/track-info click callback storage (Task 8) — factored out to
 /// satisfy clippy's `type_complexity` lint; see `on_expand`'s doc comment.
 type ExpandCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 pub struct PlayerBar {
-    bar: gtk4::ActionBar,
+    root: gtk4::Box,
     /// The currently-playing track's album cover thumbnail, packed at the
     /// start of the bar. Fed by `player_controller.rs`'s `CoverLoader` — this
     /// struct only owns/exposes the widget, never resolves or decodes covers
@@ -51,6 +61,9 @@ pub struct PlayerBar {
     cover: gtk4::Image,
     title_label: gtk4::Label,
     artist_label: gtk4::Label,
+    /// Three-bar animated equalizer indicator — `playing` CSS class toggled by
+    /// `set_mini_eq_playing`.
+    mini_eq: gtk4::Box,
     shuffle_button: gtk4::ToggleButton,
     prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
@@ -59,7 +72,12 @@ pub struct PlayerBar {
     position_label: gtk4::Label,
     duration_label: gtk4::Label,
     waveform: WaveformSeek,
-    volume_button: gtk4::ScaleButton,
+    /// Inline volume slider (replaces the old `ScaleButton`).
+    volume_scale: gtk4::Scale,
+    /// Volume icon button — click toggles mute.
+    volume_icon: gtk4::Button,
+    /// Button that opens the queue panel (Task 7 wires the callback).
+    queue_button: gtk4::Button,
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
     duration_ms: Rc<Cell<i64>>,
@@ -73,6 +91,10 @@ pub struct PlayerBar {
     /// Same guard shape as `updating_shuffle`, for `set_volume_indicator`/
     /// `connect_volume_changed`.
     updating_volume: Rc<Cell<bool>>,
+    /// Whether the volume is currently muted (volume_scale at 0 via the icon).
+    muted: Cell<bool>,
+    /// Volume level before muting, so unmuting restores it.
+    pre_mute_volume: Cell<f64>,
     /// Callback for clicking the cover/track-info area (Task 8); `window.rs`
     /// sets it, post-construction, to push the Now-Playing page. Shared with
     /// `new()`'s gesture; cloned out of the borrow before calling — never
@@ -83,11 +105,12 @@ pub struct PlayerBar {
 impl PlayerBar {
     pub fn new() -> Self {
         let PlayerBarWidgets {
-            root: bar,
+            root,
             info_box,
             cover,
             title_label,
             artist_label,
+            mini_eq,
             shuffle_button,
             prev_button,
             play_pause_button,
@@ -96,7 +119,9 @@ impl PlayerBar {
             position_label,
             duration_label,
             waveform,
-            volume_button,
+            volume_icon,
+            volume_scale,
+            queue_button,
             ..
         } = player_bar_layout::build();
 
@@ -113,10 +138,11 @@ impl PlayerBar {
         info_box.add_controller(expand_click);
 
         let bar = Self {
-            bar,
+            root,
             cover,
             title_label,
             artist_label,
+            mini_eq,
             shuffle_button,
             prev_button,
             play_pause_button,
@@ -125,12 +151,16 @@ impl PlayerBar {
             position_label,
             duration_label,
             waveform,
-            volume_button,
+            volume_scale,
+            volume_icon,
+            queue_button,
             duration_ms: Rc::new(Cell::new(0)),
             playback_state: Cell::new(PlaybackState::Stopped),
             queue_has_tracks: Cell::new(false),
             updating_shuffle: Rc::new(Cell::new(false)),
             updating_volume: Rc::new(Cell::new(false)),
+            muted: Cell::new(false),
+            pre_mute_volume: Cell::new(1.0),
             on_expand,
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
@@ -139,8 +169,8 @@ impl PlayerBar {
     }
 
     /// The root widget to place in the full-width Library player-bar shell.
-    pub fn widget(&self) -> &gtk4::ActionBar {
-        &self.bar
+    pub fn widget(&self) -> &gtk4::Box {
+        &self.root
     }
 
     /// The cover thumbnail widget — `player_controller.rs` feeds it via
@@ -170,18 +200,16 @@ impl PlayerBar {
     }
 
     /// Clears the track labels back to empty — used when playback stops with
-    /// no track active. Queueing (auto-advance) is a later stage; see the
-    /// module doc comment in `track_list.rs`.
+    /// no track active.
     pub fn clear_track(&self) {
         self.title_label.set_text("");
         self.artist_label.set_text("");
         self.clear_cover();
     }
 
-    /// Applies a `PlaybackState`: swaps the play/pause icon and tooltip, and
-    /// combines the state with queue availability when deriving sensitivity.
-    /// A stopped restored queue remains playable, but its seek scale stays
-    /// disabled until a track is actually loaded.
+    /// Applies a `PlaybackState`: swaps the play/pause icon and tooltip,
+    /// toggles the mini-EQ animation, and combines the state with queue
+    /// availability when deriving sensitivity.
     pub fn set_state(&self, state: PlaybackState) {
         let is_playing = state == PlaybackState::Playing;
         self.play_pause_button
@@ -193,6 +221,7 @@ impl PlayerBar {
         };
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
         self.playback_state.set(state);
+        self.set_mini_eq_playing(is_playing);
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
             self.set_position(0, 0);
@@ -200,8 +229,8 @@ impl PlayerBar {
     }
 
     /// Updates the waveform's played fraction and the time labels for a
-    /// `Position` event. Click-to-seek only means there is no drag to guard
-    /// against, so every tick simply redraws the played/unplayed split.
+    /// `Position` event. The position label shows elapsed time; the duration
+    /// label shows remaining time (negative, using `format_remaining`).
     pub fn set_position(&self, position_ms: i64, duration_ms: i64) {
         let duration_ms = duration_ms.max(0);
         let position_ms = position_ms.clamp(0, duration_ms);
@@ -213,7 +242,18 @@ impl PlayerBar {
         };
         self.waveform.set_fraction_smooth(fraction);
         self.position_label.set_text(&format_duration(position_ms));
-        self.duration_label.set_text(&format_duration(duration_ms));
+        self.duration_label
+            .set_text(&format_remaining(position_ms, duration_ms));
+    }
+
+    /// Toggles the mini-EQ animation on/off by adding/removing the `playing`
+    /// CSS class on the `.mini-eq` container.
+    pub fn set_mini_eq_playing(&self, playing: bool) {
+        if playing {
+            self.mini_eq.add_css_class(MINI_EQ_PLAYING_CLASS);
+        } else {
+            self.mini_eq.remove_css_class(MINI_EQ_PLAYING_CLASS);
+        }
     }
 
     /// Wires the play/pause button; `f` is called on every click with no
@@ -246,33 +286,90 @@ impl PlayerBar {
         });
     }
 
-    /// Wires the volume button: `f` is called with a `0.0..=1.0` value on
-    /// every user change, but never for a programmatic set via `set_volume_
-    /// indicator` (guarded by `updating_volume` — same shape as `connect_
-    /// shuffle_toggled`'s `updating_shuffle`, added for the same Stage 3
-    /// Task 10 reason: MPRIS `Volume` writes now set this button
-    /// programmatically, and `gtk::ScaleButton::set_value` fires `value-
-    /// changed` regardless of whether code or the user caused it).
+    /// Wires the inline volume scale: `f` is called with a `0.0..=1.0` value
+    /// on every user change, but never for a programmatic set via
+    /// `set_volume_indicator` (guarded by `updating_volume` — same shape as
+    /// `connect_shuffle_toggled`'s `updating_shuffle`).
     pub fn connect_volume_changed<F: Fn(f64) + 'static>(&self, f: F) {
         let updating_volume = self.updating_volume.clone();
-        self.volume_button.connect_value_changed(move |_, value| {
+        self.volume_scale.connect_value_changed(move |scale| {
             if updating_volume.get() {
                 return;
             }
-            f(value);
+            f(scale.value());
         });
     }
 
-    /// Sets the volume button's value programmatically — used when an
-    /// MPRIS `Volume` write changes the volume externally (Stage 3 Task
-    /// 10), so the on-screen control follows. Guarded by `updating_volume`
-    /// so this doesn't re-fire `connect_volume_changed`'s callback — see
-    /// that method's doc comment.
+    /// Sets the volume scale's value programmatically — used when an MPRIS
+    /// `Volume` write changes the volume externally, so the on-screen control
+    /// follows. Guarded by `updating_volume` so this doesn't re-fire
+    /// `connect_volume_changed`'s callback — see that method's doc comment.
     pub fn set_volume_indicator(&self, volume: f64) {
         self.updating_volume.set(true);
-        self.volume_button
-            .set_value(volume.clamp(VOLUME_MIN, VOLUME_MAX));
+        let clamped = volume.clamp(VOLUME_MIN, VOLUME_MAX);
+        self.volume_scale.set_value(clamped);
+        self.update_volume_icon(clamped);
         self.updating_volume.set(false);
+    }
+
+    /// Wires the queue button; `f` is called on every click — the caller
+    /// decides what "show queue" means (Task 7 wires this).
+    pub fn connect_queue_clicked<F: Fn() + 'static>(&self, f: F) {
+        self.queue_button.connect_clicked(move |_| f());
+    }
+
+    /// Wires the volume icon as a mute toggle. When muted, the scale is driven
+    /// to 0 and `pre_mute_volume` stores the prior level; when unmuted, the
+    /// prior level is restored. `f` is called with the resulting effective
+    /// volume after each toggle.
+    pub fn connect_mute_toggled<F: Fn(f64) + 'static>(&self, f: F) {
+        let volume_scale = self.volume_scale.clone();
+        let muted = Rc::new(Cell::new(false));
+        let pre_mute_volume = Rc::new(Cell::new(1.0f64));
+        let updating_volume = self.updating_volume.clone();
+        let volume_icon = self.volume_icon.clone();
+        self.volume_icon.connect_clicked(move |_| {
+            let is_muted = muted.get();
+            let result_volume = if is_muted {
+                // Unmute: restore previous volume.
+                let restore = pre_mute_volume.get();
+                updating_volume.set(true);
+                volume_scale.set_value(restore);
+                updating_volume.set(false);
+                Self::set_volume_icon_static(&volume_icon, restore);
+                muted.set(false);
+                restore
+            } else {
+                // Mute: save current volume and drive to 0.
+                let current = volume_scale.value();
+                pre_mute_volume.set(current);
+                updating_volume.set(true);
+                volume_scale.set_value(0.0);
+                updating_volume.set(false);
+                Self::set_volume_icon_static(&volume_icon, 0.0);
+                muted.set(true);
+                0.0
+            };
+            f(result_volume);
+        });
+    }
+
+    /// Updates the volume icon name based on the current volume level.
+    fn update_volume_icon(&self, volume: f64) {
+        Self::set_volume_icon_static(&self.volume_icon, volume);
+    }
+
+    fn set_volume_icon_static(button: &gtk4::Button, volume: f64) {
+        let icon = if volume <= 0.0 {
+            ICON_VOLUME_MUTED
+        } else if volume < 0.33 {
+            ICON_VOLUME_LOW
+        } else if volume < 0.66 {
+            ICON_VOLUME_MEDIUM
+        } else {
+            ICON_VOLUME_HIGH
+        };
+        button.set_icon_name(icon);
     }
 
     /// Wires the previous-track button; `f` is called on every click with no
@@ -343,7 +440,7 @@ impl PlayerBar {
     fn refresh_sensitivity(&self) {
         let state = self.playback_state.get();
         let queue_has_tracks = self.queue_has_tracks.get();
-        self.bar
+        self.root
             .set_sensitive(super::player_bar_state::bar_should_be_sensitive(
                 state,
                 queue_has_tracks,
