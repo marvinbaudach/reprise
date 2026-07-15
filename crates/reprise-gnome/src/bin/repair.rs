@@ -10,7 +10,10 @@ use reprise_core::library::repair::{
 };
 
 #[derive(Parser)]
-#[command(name = "reprise-repair", about = "Diagnose and repair audio file metadata")]
+#[command(
+    name = "reprise-repair",
+    about = "Diagnose and repair audio file metadata"
+)]
 struct Cli {
     /// Files or directories to scan (default: all tracks from reprise DB).
     paths: Vec<PathBuf>,
@@ -173,13 +176,15 @@ fn main() -> ExitCode {
         if !cli.quiet {
             print_report(&d.path, &reports);
         }
-        if reports.iter().all(|r| r.outcome == FixOutcome::Fixed) {
-            fixed += 1;
-        } else if reports
+        let any_failed = reports
             .iter()
-            .any(|r| matches!(r.outcome, FixOutcome::Failed { .. }))
-        {
+            .any(|r| matches!(r.outcome, FixOutcome::Failed { .. }));
+        let any_fixed = reports.iter().any(|r| r.outcome == FixOutcome::Fixed);
+
+        if any_failed {
             failed += 1;
+        } else if any_fixed {
+            fixed += 1;
         }
     }
 
@@ -187,11 +192,7 @@ fn main() -> ExitCode {
     println!(
         "Repaired {fixed}/{total} file(s). {failed} failed.{bak_note}",
         total = with_issues.len(),
-        bak_note = if backup {
-            " Backups in *.bak"
-        } else {
-            ""
-        },
+        bak_note = if backup { " Backups in *.bak" } else { "" },
     );
 
     if failed > 0 {
