@@ -51,8 +51,6 @@ mod compact_player_layouts;
 mod compact_player_menu;
 #[path = "compact/compact_player_scroll.rs"]
 mod compact_player_scroll;
-#[path = "compact/compact_player_state.rs"]
-mod compact_player_state;
 #[path = "cover/cover_download_batch.rs"]
 mod cover_download_batch;
 #[path = "cover/cover_download_worker.rs"]

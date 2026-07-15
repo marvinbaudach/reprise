@@ -8,8 +8,8 @@ use libadwaita as adw;
 use reprise_core::library::settings::{self, CompactLayout, WindowViewMode};
 use rusqlite::Connection;
 
-use super::compact_player::{CompactPlayer, CompactPlayerHandle};
-use super::compact_player_layouts::{self, LayoutMetrics};
+use super::compact_player::CompactPlayer;
+use super::compact_player_layouts::{MINI_HEIGHT, MINI_WIDTH};
 use super::first_run::FirstRunDecision;
 use super::strings;
 use super::window_decorations::WindowContentHost;
@@ -57,6 +57,7 @@ fn persisted_mode_transition(current: ViewTransition, persisted: bool) -> (ViewT
     }
 }
 
+#[cfg(test)]
 fn selected_layout_transition(
     current: ViewTransition,
     layout: CompactLayout,
@@ -67,10 +68,6 @@ fn selected_layout_transition(
     } else {
         (current, false)
     }
-}
-
-fn layout_metrics(layout: CompactLayout) -> LayoutMetrics {
-    compact_player_layouts::metrics(layout)
 }
 
 fn full_dimension(value: i32, minimum: i32, fallback: i32) -> i32 {
@@ -96,7 +93,7 @@ pub(super) struct MinimalView {
     window: adw::ApplicationWindow,
     content_host: WindowContentHost,
     full_root: gtk4::Widget,
-    compact: Option<CompactPlayerHandle>,
+    compact: Option<CompactPlayer>,
     compact_root: Option<adw::ToastOverlay>,
     conn: Rc<RefCell<Connection>>,
     transition: Cell<ViewTransition>,
@@ -126,10 +123,10 @@ impl MinimalView {
         } else {
             initial
         };
-        let compact = compact.map(CompactPlayer::handle);
+        let compact = compact.cloned();
         let compact_root = compact.as_ref().map(|compact| {
             let overlay = adw::ToastOverlay::new();
-            overlay.set_child(Some(compact.widget()));
+            overlay.set_child(Some(compact.handle()));
             overlay
         });
         let state = Rc::new(Self {
@@ -187,43 +184,8 @@ impl MinimalView {
         tracing::info!(mode = ?desired.mode, layout = ?desired.layout, "window view mode changed");
     }
 
-    pub(super) fn select_layout(&self, layout: CompactLayout) {
-        let current = self.transition.get();
-        if layout == current.layout {
-            return;
-        }
-        let Some(compact) = &self.compact else {
-            self.show_toast(strings::COMPACT_PLAYER_UNAVAILABLE);
-            return;
-        };
-        let persisted = {
-            let conn = self.conn.borrow();
-            settings::set_compact_layout(&conn, layout)
-        };
-        if let Err(error) = persisted {
-            tracing::warn!(%error, ?layout, "could not persist compact layout");
-            compact.set_layout(current.layout);
-            if current.mode == WindowViewMode::Compact {
-                self.apply_compact_metrics(current.layout);
-            }
-            self.show_toast(strings::COMPACT_LAYOUT_SAVE_FAILED);
-            return;
-        }
-        let (next, committed) = selected_layout_transition(current, layout, true);
-        debug_assert!(committed);
-        compact.set_layout(layout);
-        self.transition.set(next);
-        if next.mode == WindowViewMode::Compact {
-            self.apply_compact_metrics(layout);
-        }
-        tracing::info!(?layout, "compact layout changed");
-    }
-
     pub(super) fn apply_initial(&self) {
         let initial = self.transition.get();
-        if let Some(compact) = &self.compact {
-            compact.set_layout(initial.layout);
-        }
         match initial.mode {
             WindowViewMode::Library => self.restore_library(),
             WindowViewMode::Compact => self.enter_compact(false),
@@ -233,12 +195,12 @@ impl MinimalView {
 
     pub(super) fn refresh_geometry(&self) {
         if self.transition.get().mode == WindowViewMode::Compact {
-            self.apply_compact_metrics(self.transition.get().layout);
+            self.apply_compact_metrics();
         }
     }
 
     fn enter_compact(&self, capture_full_geometry: bool) {
-        let (Some(compact), Some(compact_root)) = (&self.compact, &self.compact_root) else {
+        let Some(compact_root) = &self.compact_root else {
             return;
         };
         if capture_full_geometry {
@@ -256,8 +218,6 @@ impl MinimalView {
         if self.window.is_maximized() {
             self.window.unmaximize();
         }
-        let layout = self.transition.get().layout;
-        compact.set_layout(layout);
         // Drop the Library root and its much larger minimum before making the
         // toplevel non-resizable. Otherwise GTK/WM can freeze the old Library
         // allocation and leave a small compact child floating in a large
@@ -266,7 +226,7 @@ impl MinimalView {
         self.window.set_width_request(-1);
         self.window.set_height_request(-1);
         self.content_host.set_content(compact_root);
-        self.apply_compact_metrics(layout);
+        self.apply_compact_metrics();
     }
 
     fn restore_library(&self) {
@@ -285,13 +245,12 @@ impl MinimalView {
         self.geometry_suppressed.set(false);
     }
 
-    fn apply_compact_metrics(&self, layout: CompactLayout) {
-        let metrics = layout_metrics(layout);
-        let height = metrics.height + self.content_host.additional_height();
+    fn apply_compact_metrics(&self) {
+        let height = MINI_HEIGHT + self.content_host.additional_height();
         self.window.set_resizable(true);
-        self.window.set_width_request(metrics.width);
+        self.window.set_width_request(MINI_WIDTH);
         self.window.set_height_request(height);
-        self.window.set_default_size(metrics.width, height);
+        self.window.set_default_size(MINI_WIDTH, height);
         self.window.set_resizable(false);
     }
 
@@ -478,9 +437,5 @@ mod tests {
             selected_layout_transition(current, CompactLayout::Card, false);
         assert!(!committed);
         assert_eq!(transition, current);
-        assert_eq!(
-            layout_metrics(transition.layout),
-            layout_metrics(current.layout)
-        );
     }
 }

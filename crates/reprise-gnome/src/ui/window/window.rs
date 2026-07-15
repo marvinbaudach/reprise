@@ -532,7 +532,7 @@ pub fn build(
     info_panel.arm_smoke(&track_list);
     let compact_root = player
         .as_ref()
-        .map(|player| player.compact_player.widget().upcast_ref());
+        .map(|player| player.compact_player.handle().upcast_ref());
     let decorations =
         super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
     let content_host = decorations.content_host();
