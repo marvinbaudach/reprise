@@ -542,3 +542,58 @@ These are maintainer actions, not QA failures:
   A public project homepage remains a separate publication prerequisite below.
 - [ ] Add the real homepage, capture authentic screenshots from this manual pass, and
   perform any forge/Flathub upload or submission explicitly.
+
+## Pending: Artists view (master/detail redesign)
+
+Headless tests cover the data queries, list/detail construction, selection→detail
+wiring, and that the Artists tab opens without panic; the following need a real
+GNOME/Wayland desktop with a populated library (they cannot be verified headless —
+rendering, pointer gestures, cover-accent extraction, and live playback).
+
+### Master list (left 300 px)
+- [ ] Open Library → Artists. Expected: alphabetical artist list grouped by
+  **album artist** — compilations/features collapse under one row (no per-guest
+  explosion). Header shows "Artists" + total count + a sort dropdown.
+- [ ] Each row: 38 px round avatar showing initials on a name-derived gradient
+  (no cover I/O; scrolling a large library stays smooth), name over
+  "N albums · M tracks" muted. Verify initials are legible on light gradient hues.
+- [ ] Switch the sort dropdown A–Z / Most played / Recently played. Expected:
+  alphabet **section headers appear only in A–Z**, gone for the other two; the
+  currently-selected artist stays selected across a sort change.
+- [ ] Select a row. Expected: 14% accent-tinted background + bold name.
+- [ ] While a track plays, its artist's row shows the animated mini-EQ (respects
+  `gtk-enable-animations`); selection does NOT follow playback.
+
+### Detail hero
+- [ ] Select an artist with a colorful album cover. Expected: 132 px round avatar,
+  eyebrow "ARTIST", 34 px name, meta "N albums · M tracks · X hours · Y plays this
+  year" (X = total catalog length, not listening time), and a soft blurred glow
+  behind the hero tinted from the top album's dominant color.
+- [ ] Select an artist whose top album has a grey/missing cover. Expected: glow
+  falls back to theme petrol, no stale color from the previous artist (switch
+  A→B→A quickly to check the async accent generation guard).
+- [ ] Artist with no scanned albums → hero renders without glow + a hint; empty
+  library → the empty state page.
+
+### Hero actions + menu
+- [ ] Play all → plays the artist's tracks (album order). Shuffle → plays them
+  shuffled. ⋮ → **Add to queue** appends them; **Go to folder** opens the artist's
+  folder in the file manager. (Edit-tags-for-all is intentionally deferred to v2.)
+
+### Albums row + top tracks
+- [ ] Albums row shows newest-first cover cards (radius + inset hairline); hover
+  darkens + reveals a play button; clicking the cover opens the album in the Tracks
+  table; "Show all" expands beyond one row when there are more.
+- [ ] Top Tracks: 5 rows (rank · cover · title · album · plays · length), hairline
+  separators only. Now-playing track shows the mini-EQ + accent row. "Show all N
+  tracks ›" switches to the Tracks tab scoped to the artist.
+
+### Deep-link
+- [ ] Click the **artist name in the bottom player bar** while something plays.
+  Expected: jumps to Library → Artists and selects that artist (its detail loads).
+  Test a **compilation track** where album-artist ≠ track-artist: it must select
+  the album-artist row. The label shows a pointer cursor + hover affordance.
+
+### Theming
+- [ ] Verify the whole Artists view in each named dark theme/palette: accents,
+  selection tint, hairlines, glow, and the mini-EQ color all track `@accent_color`.
