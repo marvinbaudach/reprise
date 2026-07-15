@@ -15,6 +15,7 @@ pub const RHYTHMBOX_IMPORT_RATINGS: &str = N_!("Ratings");
 pub const RHYTHMBOX_IMPORT_PLAY_COUNTS: &str = N_!("Play counts");
 pub const RHYTHMBOX_IMPORT_DATE_ADDED: &str = N_!("Date added");
 pub const RHYTHMBOX_IMPORT_LAST_PLAYED: &str = N_!("Last played");
+pub const RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED: &str = N_!("Play counts & last played");
 pub const RHYTHMBOX_IMPORT_PLAYLISTS: &str = N_!("Playlists");
 pub const RHYTHMBOX_IMPORT_START: &str = N_!("Import");
 pub const RHYTHMBOX_IMPORT_COMPLETE: &str = N_!("Rhythmbox import complete");

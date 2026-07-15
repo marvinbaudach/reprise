@@ -22,9 +22,8 @@ pub struct RhythmboxTrackStats {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RhythmboxImportChoices {
     pub ratings: bool,
-    pub play_counts: bool,
+    pub play_counts_and_last_played: bool,
     pub added_at: bool,
-    pub last_played_at: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -42,6 +41,22 @@ pub struct RhythmboxImportSummary {
 pub struct RhythmboxPlaylist {
     pub name: String,
     pub paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RhythmboxPrescanResult {
+    pub total_entries: usize,
+    pub song_entries: usize,
+    pub non_song_entries: usize,
+    pub rated_tracks: usize,
+    pub tracks_with_history: usize,
+    pub tracks_with_date_added: usize,
+    pub matched: usize,
+    pub outside_library: usize,
+    pub missing_on_disk: usize,
+    pub playlist_count: usize,
+    pub playlist_track_count: usize,
+    pub last_modified: Option<std::time::SystemTime>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -262,7 +277,7 @@ pub fn merge_stats(
         } else {
             current_rating
         };
-        let next_play_count = if choices.play_counts {
+        let next_play_count = if choices.play_counts_and_last_played {
             track.play_count.map_or(current_play_count, |imported| {
                 current_play_count.max(imported)
             })
@@ -280,7 +295,7 @@ pub fn merge_stats(
         } else {
             current_added_at
         };
-        let next_last_played = if choices.last_played_at {
+        let next_last_played = if choices.play_counts_and_last_played {
             match (current_last_played, track.last_played_at) {
                 (Some(current), Some(imported)) => Some(current.max(imported)),
                 (None, Some(imported)) => Some(imported),
@@ -314,6 +329,150 @@ pub fn merge_stats(
 
     transaction.commit()?;
     Ok(summary)
+}
+
+pub fn prescan_rhythmdb(
+    rhythmdb_path: &Path,
+    playlists_path: &Path,
+    conn: &Connection,
+    library_root: Option<&str>,
+) -> Result<RhythmboxPrescanResult, RhythmboxImportError> {
+    let last_modified = std::fs::metadata(rhythmdb_path)
+        .and_then(|m| m.modified())
+        .ok();
+
+    let file = File::open(rhythmdb_path)?;
+    let mut reader = Reader::from_reader(BufReader::new(file));
+    reader.config_mut().trim_text(true);
+    reader.config_mut().check_end_names = true;
+    let mut buffer = Vec::new();
+    let mut depth = 0usize;
+    let mut result = RhythmboxPrescanResult {
+        last_modified,
+        ..RhythmboxPrescanResult::default()
+    };
+
+    let mut entry_builder: Option<EntryBuilder> = None;
+    let mut field: Option<Field> = None;
+
+    loop {
+        match reader.read_event_into(&mut buffer)? {
+            Event::Start(element) => {
+                depth += 1;
+                if element.name().as_ref() == b"entry" {
+                    let entry_type = element
+                        .attributes()
+                        .flatten()
+                        .find_map(|attr| {
+                            (attr.key.as_ref() == b"type").then(|| {
+                                attr.decoded_and_normalized_value(
+                                    quick_xml::XmlVersion::Implicit1_0,
+                                    reader.decoder(),
+                                )
+                                .ok()
+                                .map(|v| v.into_owned())
+                            })
+                        })
+                        .flatten();
+                    result.total_entries += 1;
+                    match entry_type.as_deref() {
+                        Some("song") => {
+                            result.song_entries += 1;
+                            entry_builder = Some(EntryBuilder::default());
+                        }
+                        _ => {
+                            result.non_song_entries += 1;
+                            entry_builder = None;
+                        }
+                    }
+                    field = None;
+                } else if entry_builder.is_some() {
+                    field = field_for(element.name().as_ref());
+                }
+            }
+            Event::Text(text) => {
+                if let (Some(builder), Some(f)) = (&mut entry_builder, field) {
+                    let decoded = text.decode()?;
+                    builder.push(f, &decoded);
+                }
+            }
+            Event::CData(text) => {
+                if let (Some(builder), Some(f)) = (&mut entry_builder, field) {
+                    let decoded = text.decode()?;
+                    builder.push(f, &decoded);
+                }
+            }
+            Event::GeneralRef(reference) => {
+                if let (Some(builder), Some(f)) = (&mut entry_builder, field) {
+                    let reference = reference.decode()?;
+                    let escaped = format!("&{reference};");
+                    let decoded = quick_xml::escape::unescape(&escaped)?;
+                    builder.push(f, &decoded);
+                }
+            }
+            Event::End(element) => {
+                depth = depth.saturating_sub(1);
+                if element.name().as_ref() == b"entry" {
+                    if let Some(builder) = entry_builder.take() {
+                        if let Some(track) = builder.finish() {
+                            if track.rating.is_some() {
+                                result.rated_tracks += 1;
+                            }
+                            if track.play_count.unwrap_or(0) > 0 || track.last_played_at.is_some() {
+                                result.tracks_with_history += 1;
+                            }
+                            if track.added_at.is_some() {
+                                result.tracks_with_date_added += 1;
+                            }
+                            let path_str = track.path.to_string_lossy();
+                            let in_db = conn
+                                .query_row(
+                                    "SELECT 1 FROM tracks WHERE path = ?1",
+                                    [&path_str],
+                                    |_| Ok(()),
+                                )
+                                .optional()
+                                .unwrap_or(None)
+                                .is_some();
+                            if in_db {
+                                result.matched += 1;
+                            } else {
+                                let under_root = library_root
+                                    .is_some_and(|root| path_str.starts_with(root));
+                                if !under_root {
+                                    result.outside_library += 1;
+                                } else if !track.path.exists() {
+                                    result.missing_on_disk += 1;
+                                } else {
+                                    result.outside_library += 1;
+                                }
+                            }
+                        }
+                    }
+                    field = None;
+                } else if field_for(element.name().as_ref()).is_some() {
+                    field = None;
+                }
+            }
+            Event::Eof => {
+                if depth != 0 {
+                    return Err(RhythmboxImportError::UnexpectedEof);
+                }
+                break;
+            }
+            _ => {}
+        }
+        buffer.clear();
+    }
+
+    if playlists_path.is_file() {
+        if let Ok(playlists) = parse_playlists(playlists_path) {
+            result.playlist_count = playlists.len();
+            result.playlist_track_count = playlists.iter().map(|p| p.paths.len()).sum();
+        }
+    }
+
+    Ok(result)
 }
 
 pub fn parse_playlists(path: &Path) -> Result<Vec<RhythmboxPlaylist>, RhythmboxImportError> {
@@ -462,6 +621,72 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn prescan_counts_entries_and_classifies_skips() {
+        let dir = tempdir().unwrap();
+        let music_dir = dir.path().join("music");
+        fs::create_dir_all(&music_dir).unwrap();
+        let existing = music_dir.join("song.ogg");
+        fs::write(&existing, b"fake").unwrap();
+        let existing_uri = url::Url::from_file_path(&existing).unwrap();
+        let missing_uri =
+            url::Url::from_file_path(music_dir.join("gone.ogg")).unwrap();
+        let outside_uri =
+            url::Url::from_file_path(dir.path().join("elsewhere.ogg")).unwrap();
+        let xml = format!(
+            r#"<?xml version="1.0"?>
+<rhythmdb version="2.0">
+  <entry type="song"><location>{existing_uri}</location><rating>4</rating><play-count>10</play-count><first-seen>1700000000</first-seen><last-played>1700000500</last-played></entry>
+  <entry type="song"><location>{missing_uri}</location><rating>3</rating></entry>
+  <entry type="song"><location>{outside_uri}</location><play-count>5</play-count></entry>
+  <entry type="podcast-post"><location>file:///podcast.ogg</location><rating>5</rating></entry>
+</rhythmdb>"#
+        );
+        let rhythmdb = dir.path().join("rhythmdb.xml");
+        fs::write(&rhythmdb, xml).unwrap();
+        let playlists_path = dir.path().join("playlists.xml");
+        fs::write(
+            &playlists_path,
+            r#"<?xml version="1.0"?>
+<rhythmdb-playlists>
+  <playlist name="Gym" type="static">
+    <location>file:///a.ogg</location>
+    <location>file:///b.ogg</location>
+  </playlist>
+</rhythmdb-playlists>"#,
+        )
+        .unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, 0, 0)",
+            [existing.to_string_lossy()],
+        )
+        .unwrap();
+
+        let library_root = music_dir.to_string_lossy().to_string();
+        let result = prescan_rhythmdb(
+            &rhythmdb,
+            &playlists_path,
+            &conn,
+            Some(&library_root),
+        )
+        .unwrap();
+
+        assert_eq!(result.total_entries, 4);
+        assert_eq!(result.song_entries, 3);
+        assert_eq!(result.non_song_entries, 1);
+        assert_eq!(result.rated_tracks, 2);
+        assert_eq!(result.tracks_with_history, 2);
+        assert_eq!(result.tracks_with_date_added, 1);
+        assert_eq!(result.matched, 1);
+        assert_eq!(result.outside_library, 1);
+        assert_eq!(result.missing_on_disk, 1);
+        assert_eq!(result.playlist_count, 1);
+        assert_eq!(result.playlist_track_count, 2);
+    }
+
     fn database(path: &Path, rating: i32, play_count: i64) -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::migrate(&conn).unwrap();
@@ -541,9 +766,8 @@ mod tests {
             }],
             RhythmboxImportChoices {
                 ratings: true,
-                play_counts: true,
+                play_counts_and_last_played: true,
                 added_at: false,
-                last_played_at: false,
             },
         )
         .unwrap();
@@ -567,9 +791,8 @@ mod tests {
         }];
         let choices = RhythmboxImportChoices {
             ratings: true,
-            play_counts: true,
+            play_counts_and_last_played: true,
             added_at: false,
-            last_played_at: false,
         };
 
         let first = merge_stats(&mut conn, &imported, choices).unwrap();
@@ -604,9 +827,8 @@ mod tests {
             ],
             RhythmboxImportChoices {
                 ratings: false,
-                play_counts: true,
+                play_counts_and_last_played: true,
                 added_at: false,
-                last_played_at: false,
             },
         )
         .unwrap();
@@ -631,9 +853,8 @@ mod tests {
         }];
         let choices = RhythmboxImportChoices {
             ratings: false,
-            play_counts: false,
+            play_counts_and_last_played: false,
             added_at: true,
-            last_played_at: false,
         };
 
         let first = merge_stats(&mut conn, &imported, choices).unwrap();
@@ -699,9 +920,8 @@ mod tests {
         }];
         let choices = RhythmboxImportChoices {
             ratings: false,
-            play_counts: false,
+            play_counts_and_last_played: true,
             added_at: false,
-            last_played_at: true,
         };
 
         let first = merge_stats(&mut conn, &imported, choices).unwrap();
