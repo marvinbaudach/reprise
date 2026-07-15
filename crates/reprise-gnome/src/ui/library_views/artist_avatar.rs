@@ -27,7 +27,7 @@ pub(in crate::ui) fn initials(name: &str) -> String {
     if out.is_empty() {
         "?".to_string()
     } else {
-        out
+        out.chars().take(2).collect()
     }
 }
 
@@ -66,5 +66,13 @@ mod tests {
     fn hue_is_deterministic_and_bounded() {
         assert_eq!(hue_for("Solo"), hue_for("Solo"));
         assert!(hue_for("A Day to Remember") < 360);
+    }
+
+    #[test]
+    fn initials_never_exceed_two_chars_even_with_expanding_uppercase() {
+        // 'ß'.to_uppercase() == "SS" — a single word whose first char expands
+        assert_eq!(initials("ßigband").chars().count(), 2);
+        // ligature first char in a single word
+        assert!(initials("ﬁre").chars().count() <= 2);
     }
 }
