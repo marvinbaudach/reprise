@@ -18,7 +18,10 @@ use gstreamer::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::PlayerEvent;
+
+use crate::crossfade::Transition;
 
 /// Slot für den vorgefütterten nächsten URI. `None` = nichts vorgefüttert
 /// (Gapless aus, Queue-Ende, oder manueller Sprung hat ihn invalidiert).
@@ -36,6 +39,13 @@ pub(crate) type HandoffFlag = Arc<AtomicBool>;
 /// Atomic — keine Cross-Thread-UI-Callbacks. Der URI wird per `take()`
 /// entnommen, damit derselbe Nachfolger nie doppelt gehandet wird.
 ///
+/// **Modus-abhängig:** Der uri-Swap feuert NUR im `Gapless`-Modus. Im
+/// `Crossfade`-Modus wird die Überblendung schon früher, positionsgetrieben,
+/// gestartet (siehe `crossfade.rs`) und entnimmt den Nachfolger selbst — ein
+/// gleichzeitiger Gapless-Swap hier würde damit konkurrieren. Im `Off`-Modus
+/// füttert das Frontend gar keinen Nachfolger, sodass hier ebenfalls nichts zu
+/// tun ist; der strikte `== Gapless`-Check ist die sichere Formulierung davon.
+///
 /// Das emittierende Element kommt aus `values[0]` (statt den playbin in seinen
 /// eigenen Signal-Handler zu capturen — das erzeugte einen Referenzzyklus, der
 /// das Element am Aufräumen hindern würde).
@@ -43,12 +53,17 @@ pub(crate) fn connect_about_to_finish(
     playbin: &gst::Element,
     next_uri: NextUri,
     handoff_pending: HandoffFlag,
+    transition: Transition,
 ) {
     playbin.connect("about-to-finish", false, move |values| {
         let Ok(playbin) = values[0].get::<gst::Element>() else {
             tracing::error!("about-to-finish: emitter was not a gst::Element");
             return None;
         };
+        let mode = transition.lock().unwrap_or_else(PoisonError::into_inner).0;
+        if mode != TrackTransition::Gapless {
+            return None;
+        }
         let queued = next_uri
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
