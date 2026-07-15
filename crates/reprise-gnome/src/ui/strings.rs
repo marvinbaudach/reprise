@@ -72,6 +72,7 @@ pub const COMPACT_MODE: &str = N_!("Compact Mode");
 // Compact Mode opens through the menu action; the Library header has no duplicate control.
 pub const RESTORE_FULL_WINDOW: &str = N_!("Restore Full Window");
 pub const COMPACT_MENU: &str = N_!("Compact player menu");
+#[allow(dead_code)]
 pub const COMPACT_LAYOUT: &str = N_!("Layout");
 pub const COMPACT_LAYOUT_COVER: &str = N_!("Cover");
 pub const COMPACT_LAYOUT_PILL: &str = N_!("Pill");
@@ -82,8 +83,11 @@ pub const COMPACT_ARTIST: &str = N_!("Track artist");
 pub const COMPACT_ALBUM: &str = N_!("Track album");
 pub const CURRENT_POSITION: &str = N_!("Current position");
 pub const TOTAL_DURATION: &str = N_!("Total duration");
+#[allow(dead_code)]
 pub const REPEAT_OFF: &str = N_!("Repeat Off");
+#[allow(dead_code)]
 pub const REPEAT_ALL: &str = N_!("Repeat All");
+#[allow(dead_code)]
 pub const REPEAT_ONE: &str = N_!("Repeat One");
 pub const VIEW_MODE_SAVE_FAILED: &str = N_!("Could not save the window view");
 pub const COMPACT_LAYOUT_SAVE_FAILED: &str = N_!("Could not save the compact layout");
