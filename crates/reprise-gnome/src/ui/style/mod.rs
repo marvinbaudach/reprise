@@ -48,8 +48,19 @@ fn app_css() -> String {
         super::stats_css::css(),
         super::toasts::css(),
         super::tag_editor_style::css(),
+        info_panel_clip_css(),
     ]
     .join("\n")
+}
+
+/// The OverlaySplitView positions children with GPU transforms without
+/// clipping the content pane. Clip the internal wrapper widgets so resized
+/// columns cannot paint behind the info-panel sidebar.
+fn info_panel_clip_css() -> String {
+    concat!(
+        "overlay-split-view > widget { overflow: hidden; } ",
+        "overlay-split-view > widget > * { overflow: hidden; } ",
+    ).into()
 }
 
 /// Installs the structural app CSS and the default theme palette on the

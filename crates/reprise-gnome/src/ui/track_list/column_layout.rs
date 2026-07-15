@@ -67,7 +67,10 @@ struct ColumnWidthPolicy {
 fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
     let fixed_width = match id {
         ColumnId::Cover => 40,
-        ColumnId::Title => 360,
+        // Title uses expand — a low fixed_width keeps the total column
+        // minimum under the content-area width when the info panel is
+        // open, while expand absorbs remaining space.
+        ColumnId::Title => 120,
         ColumnId::TrackNumber => 80,
         ColumnId::Artist => 260,
         ColumnId::Album => 300,
@@ -539,8 +542,15 @@ mod tests {
     fn every_track_column_has_stable_width_and_only_title_expands() {
         for id in DEFAULT_ORDER {
             let policy = column_width_policy(id);
-            assert!(policy.fixed_width > 0, "missing fixed width for {id:?}");
-            assert_eq!(policy.expand, id == ColumnId::Title);
+            if id == ColumnId::Title {
+                // Title uses expand with a low fixed_width so it absorbs
+                // remaining space and shrinks when the info panel is open.
+                assert!(policy.fixed_width > 0 && policy.fixed_width < 200);
+                assert!(policy.expand);
+            } else {
+                assert!(policy.fixed_width > 0, "missing fixed width for {id:?}");
+                assert!(!policy.expand);
+            }
         }
     }
 
