@@ -200,7 +200,7 @@ impl ArtistMaster {
     }
 
     #[cfg(test)]
-    fn select_index_for_test(&self, index: u32) {
+    pub(in crate::ui) fn select_index_for_test(&self, index: u32) {
         self.inner.selection.set_selected(index);
     }
 }
