@@ -9,6 +9,7 @@ pub mod diagnosis;
 pub mod fix;
 
 pub use diagnosis::{diagnose, classify_warnings, CapturedWarning};
+pub use fix::{create_backup, repair};
 
 use std::path::{Path, PathBuf};
 
