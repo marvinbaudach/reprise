@@ -47,10 +47,7 @@ fn view_section_entries() -> Vec<(String, &'static str)> {
 /// Library section: maintenance and sync actions.
 fn library_section_entries() -> Vec<(String, &'static str)> {
     vec![
-        (
-            strings::text(strings::RESCAN_LIBRARY),
-            "win.rescan-library",
-        ),
+        (strings::text(strings::RESCAN_LIBRARY), "win.rescan-library"),
         (strings::text(strings::SYNC_DEVICE), "win.sync-device"),
     ]
 }

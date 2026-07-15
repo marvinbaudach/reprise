@@ -212,8 +212,7 @@ impl PlayerBar {
     /// 250 ms opacity cross-fade: fade out labels, swap text, fade in.
     /// Gated on `gtk-enable-animations`; instant fallback otherwise.
     fn animate_track_change(&self, title: &str, artist: &str) {
-        let animate = gtk4::Settings::default()
-            .is_none_or(|s| s.is_gtk_enable_animations());
+        let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
         if !animate {
             self.title_label.set_text(title);
             self.artist_label.set_text(artist);
@@ -234,13 +233,8 @@ impl PlayerBar {
                 artist_label.set_opacity(value);
             }
         });
-        let fade_out = libadwaita::TimedAnimation::new(
-            &self.title_label,
-            1.0,
-            0.0,
-            125,
-            fade_out_target,
-        );
+        let fade_out =
+            libadwaita::TimedAnimation::new(&self.title_label, 1.0, 0.0, 125, fade_out_target);
 
         // After fade-out: swap text and fade in (opacity 0 → 1 over 125 ms).
         fade_out.connect_done({
@@ -258,13 +252,8 @@ impl PlayerBar {
                         artist_label.set_opacity(value);
                     }
                 });
-                let fade_in = libadwaita::TimedAnimation::new(
-                    &title_label,
-                    0.0,
-                    1.0,
-                    125,
-                    fade_in_target,
-                );
+                let fade_in =
+                    libadwaita::TimedAnimation::new(&title_label, 0.0, 1.0, 125, fade_in_target);
                 fade_in.play();
             }
         });

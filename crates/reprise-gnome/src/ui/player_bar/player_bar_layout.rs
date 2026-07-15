@@ -162,8 +162,12 @@ pub(super) fn build() -> PlayerBarWidgets {
     center_zone.set_valign(gtk4::Align::Center);
 
     // — End zone (volume icon + slider + queue button) —
-    let volume_scale =
-        gtk4::Scale::with_range(gtk4::Orientation::Horizontal, VOLUME_MIN, VOLUME_MAX, VOLUME_STEP);
+    let volume_scale = gtk4::Scale::with_range(
+        gtk4::Orientation::Horizontal,
+        VOLUME_MIN,
+        VOLUME_MAX,
+        VOLUME_STEP,
+    );
     volume_scale.set_value(VOLUME_DEFAULT);
     volume_scale.set_draw_value(false);
     volume_scale.set_width_request(VOLUME_SLIDER_WIDTH);

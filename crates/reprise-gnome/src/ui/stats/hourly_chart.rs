@@ -10,8 +10,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 
 use super::stats_chart_math::{
-    expand_hourly, format_peak_hour, normalize_bars, peak_hour, BAR_GAP_FRACTION,
-    MIN_BAR_FRACTION,
+    expand_hourly, format_peak_hour, normalize_bars, peak_hour, BAR_GAP_FRACTION, MIN_BAR_FRACTION,
 };
 
 pub(super) const HOURLY_CHART_CSS_CLASS: &str = "stats-chart";
