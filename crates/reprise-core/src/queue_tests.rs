@@ -63,6 +63,41 @@ fn test_repeat_all_wrap() {
     assert_eq!(q.advance_auto(), Some(20));
 }
 
+#[test]
+fn peek_auto_matches_advance_auto_without_mutating() {
+    // Across Off / All / One, peek_auto must predict exactly what advance_auto
+    // returns, and must leave the queue position untouched.
+    for repeat in [Repeat::Off, Repeat::All, Repeat::One] {
+        for start in 0..3 {
+            let mut peeker = Queue::new();
+            peeker.set_tracks(vec![10, 20, 30], start);
+            peeker.set_repeat(repeat);
+            let before = peeker.current();
+
+            let predicted = peeker.peek_auto();
+            // peek_auto did not move the position.
+            assert_eq!(peeker.current(), before, "peek mutated at start={start}");
+
+            let mut advancer = Queue::new();
+            advancer.set_tracks(vec![10, 20, 30], start);
+            advancer.set_repeat(repeat);
+            assert_eq!(
+                predicted,
+                advancer.advance_auto(),
+                "peek != advance at repeat={repeat:?} start={start}"
+            );
+        }
+    }
+}
+
+#[test]
+fn peek_auto_at_end_without_repeat_is_none() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 30], 2);
+    assert_eq!(q.peek_auto(), None);
+    assert_eq!(q.current(), Some(30)); // unchanged
+}
+
 // Test 5: Repeat::One behavior
 #[test]
 fn test_repeat_one_advance_auto() {

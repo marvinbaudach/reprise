@@ -141,6 +141,14 @@ pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
 pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
+pub const TRANSITION_MODE_KEY: &str = "playback.transition_mode";
+pub const CROSSFADE_SECONDS_KEY: &str = "playback.crossfade_seconds";
+
+/// Clamp range for the crossfade overlap (Phase B); `DEFAULT` is used when the
+/// stored value is missing or out of range.
+pub const CROSSFADE_SECONDS_MIN: u8 = 1;
+pub const CROSSFADE_SECONDS_MAX: u8 = 12;
+pub const CROSSFADE_SECONDS_DEFAULT: u8 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListDensity {
@@ -173,6 +181,20 @@ pub enum ReplayGainMode {
     Off,
     Track,
     Album,
+}
+
+/// How the player transitions between consecutive tracks.
+/// - `Off`: hard cut (stop the pipeline, start the next) — the pre-gapless
+///   behavior.
+/// - `Gapless`: seamless hand-off via `playbin3`'s `about-to-finish`, no
+///   pipeline restart, no silence between tracks (Phase A).
+/// - `Crossfade`: overlap the tail of the current track with the head of the
+///   next over `crossfade_seconds` (Phase B — dual pipeline + mixer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackTransition {
+    Off,
+    Gapless,
+    Crossfade,
 }
 
 fn typed_value(conn: &Connection, key: &str, default: &'static str) -> String {
@@ -377,6 +399,44 @@ pub fn set_replay_gain_mode(
         ReplayGainMode::Album => "album",
     };
     set_setting(conn, REPLAY_GAIN_MODE_KEY, value)
+}
+
+pub fn get_track_transition(conn: &Connection) -> TrackTransition {
+    // Default: Gapless — the expected modern behavior for a music player.
+    match typed_value(conn, TRANSITION_MODE_KEY, "gapless").as_str() {
+        "off" => TrackTransition::Off,
+        "gapless" => TrackTransition::Gapless,
+        "crossfade" => TrackTransition::Crossfade,
+        value => {
+            tracing::warn!(value, "unrecognized track transition; using Gapless");
+            TrackTransition::Gapless
+        }
+    }
+}
+
+pub fn set_track_transition(
+    conn: &Connection,
+    value: TrackTransition,
+) -> Result<(), rusqlite::Error> {
+    let value = match value {
+        TrackTransition::Off => "off",
+        TrackTransition::Gapless => "gapless",
+        TrackTransition::Crossfade => "crossfade",
+    };
+    set_setting(conn, TRANSITION_MODE_KEY, value)
+}
+
+pub fn get_crossfade_seconds(conn: &Connection) -> u8 {
+    typed_value(conn, CROSSFADE_SECONDS_KEY, "")
+        .parse::<u8>()
+        .ok()
+        .filter(|s| (CROSSFADE_SECONDS_MIN..=CROSSFADE_SECONDS_MAX).contains(s))
+        .unwrap_or(CROSSFADE_SECONDS_DEFAULT)
+}
+
+pub fn set_crossfade_seconds(conn: &Connection, seconds: u8) -> Result<(), rusqlite::Error> {
+    let clamped = seconds.clamp(CROSSFADE_SECONDS_MIN, CROSSFADE_SECONDS_MAX);
+    set_setting(conn, CROSSFADE_SECONDS_KEY, &clamped.to_string())
 }
 
 #[cfg(test)]
@@ -606,6 +666,39 @@ mod tests {
             [1.0, 2.0, 3.0, 4.0, 5.0, -1.0, -2.0, -3.0, -4.0, -5.0]
         );
         assert_eq!(get_replay_gain_mode(&conn), ReplayGainMode::Album);
+    }
+
+    #[test]
+    fn track_transition_round_trips_and_defaults_to_gapless() {
+        let conn = migrated_conn();
+        // Default when unset: Gapless.
+        assert_eq!(get_track_transition(&conn), TrackTransition::Gapless);
+        for mode in [
+            TrackTransition::Off,
+            TrackTransition::Gapless,
+            TrackTransition::Crossfade,
+        ] {
+            set_track_transition(&conn, mode).unwrap();
+            assert_eq!(get_track_transition(&conn), mode);
+        }
+        // Corrupt value falls back to Gapless.
+        set_setting(&conn, TRANSITION_MODE_KEY, "teleport").unwrap();
+        assert_eq!(get_track_transition(&conn), TrackTransition::Gapless);
+    }
+
+    #[test]
+    fn crossfade_seconds_clamp_and_default() {
+        let conn = migrated_conn();
+        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_DEFAULT);
+        set_crossfade_seconds(&conn, 99).unwrap();
+        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_MAX);
+        set_crossfade_seconds(&conn, 0).unwrap();
+        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_MIN);
+        set_crossfade_seconds(&conn, 6).unwrap();
+        assert_eq!(get_crossfade_seconds(&conn), 6);
+        // Corrupt stored value → default.
+        set_setting(&conn, CROSSFADE_SECONDS_KEY, "loud").unwrap();
+        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_DEFAULT);
     }
 
     #[test]

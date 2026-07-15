@@ -6,6 +6,7 @@
 //! plan's "Repository & frontend strategy").
 
 pub mod device_sync;
+mod gapless;
 pub mod mpris;
 pub mod player;
 mod player_effects;

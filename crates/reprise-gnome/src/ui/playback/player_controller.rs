@@ -174,7 +174,7 @@ use crate::ui::now_playing::NowPlayingView;
 use crate::ui::now_playing_wiring;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
-use crate::ui::player_lyrics::{start_track_for_lyrics, PlayerLyrics};
+use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
 use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
 use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
 use reprise_core::queries;
@@ -185,6 +185,15 @@ use reprise_platform_linux::player::Player;
 
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
+
+/// Whether `present_track` should start the pipeline (`Yes` — ordinary path)
+/// or leave it running because `playbin3` already handed off gaplessly to the
+/// pre-fed URI (`No` — see `advance_gaplessly`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StartPlayback {
+    Yes,
+    No,
+}
 
 // `PlayerController::volume`'s initial value is `reprise_platform_linux::mpris::
 // DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
@@ -529,6 +538,17 @@ impl PlayerController {
     /// straight to `skip_after_failure`. `pub(super)` so `mpris_mirror.rs`
     /// and `playback_faults.rs` can call it too.
     pub(super) fn play_track_id(&self, id: i64) {
+        self.present_track(id, StartPlayback::Yes);
+    }
+
+    /// Loads `id` as the now-playing track and reflects it across every
+    /// surface (bar, Now-Playing, cover, lyrics, scrobble, MPRIS). The single
+    /// difference `start` makes: `Yes` starts the pipeline via `play()` (the
+    /// ordinary path — a fresh selection, manual skip, or `TrackFinished`
+    /// advance); `No` means the audio is *already* rolling because `playbin3`
+    /// handed off gaplessly to this track's pre-fed URI (see `advance_
+    /// gaplessly`), so only the metadata/UI catch up — no `play()`, no gap.
+    pub(super) fn present_track(&self, id: i64, start: StartPlayback) {
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
 
@@ -577,11 +597,18 @@ impl PlayerController {
                         &summary.path,
                     );
                 }
-                match start_track_for_lyrics(self.player.as_ref(), &summary) {
+                let lyrics_result = match start {
+                    StartPlayback::Yes => start_track_for_lyrics(self.player.as_ref(), &summary),
+                    // Gapless: the pipeline is already playing this track, so
+                    // don't restart it — just build the lyrics key.
+                    StartPlayback::No => Ok(lyrics_query_for(&summary)),
+                };
+                match lyrics_result {
                     Ok(lyrics_query) => {
                         self.sync_lyrics_track(Some(lyrics_query));
                         tracing::info!(
                             track_id = id,
+                            gapless = matches!(start, StartPlayback::No),
                             from_up_next = self.current_up_next.get() == Some(id),
                             "playback started"
                         );
@@ -615,6 +642,9 @@ impl PlayerController {
                         // (Playing)` event — that event's arrival still
                         // triggers a second, idempotent mirror update.
                         self.update_mpris_mirror(MprisPlaybackStatus::Playing);
+                        // Pre-feed the following track so the backend can hand
+                        // off to it gaplessly when this one is about to finish.
+                        self.feed_next();
                     }
                     Err(error) => {
                         tracing::error!(%error, path = %summary.path, track_id = id, "failed to start playback");
@@ -710,6 +740,13 @@ impl PlayerController {
             PlayerEvent::TrackFinished => {
                 tracing::info!("track finished: advancing queue");
                 self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
+            }
+            PlayerEvent::AdvancedToNext => {
+                // Gapless hand-off: the pre-fed next track is already playing.
+                // Advance the queue model and reflect the new track WITHOUT
+                // restarting the pipeline. (Real handler wired in below.)
+                tracing::info!("gapless hand-off: advancing queue model without restart");
+                self.advance_gaplessly();
             }
             PlayerEvent::Error(message) => {
                 // Stage 2 Task 5: this can fire asynchronously for the

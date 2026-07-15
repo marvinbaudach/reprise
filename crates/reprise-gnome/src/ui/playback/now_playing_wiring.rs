@@ -278,6 +278,9 @@ impl PlayerController {
         self.bar.set_shuffle_indicator(active);
         self.compact_player.set_shuffle_indicator(active);
         self.now_playing_view.set_shuffle_indicator(active);
+        // Shuffle changed the play order, so the upcoming track changed too:
+        // re-feed the gapless next. Every shuffle path funnels through here.
+        self.feed_next();
     }
 
     /// Same shape as `sync_shuffle_indicator`, for the repeat button.
@@ -285,6 +288,9 @@ impl PlayerController {
         self.bar.set_repeat_indicator(repeat);
         self.compact_player.set_repeat_indicator(repeat);
         self.now_playing_view.set_repeat_indicator(repeat);
+        // Repeat mode changes what plays next (All wraps, One suppresses the
+        // gapless pre-feed): re-feed. Every repeat path funnels through here.
+        self.feed_next();
     }
 
     pub(super) fn sync_volume_indicator(&self, volume: f64) {

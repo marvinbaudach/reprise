@@ -165,17 +165,24 @@ impl PlayerLyrics {
     }
 }
 
+/// Builds the lyrics lookup key for `summary` without touching playback. Used
+/// on the gapless hand-off path, where the audio is already rolling and only
+/// the UI/lyrics need to catch up (no `play()` call).
+pub(super) fn lyrics_query_for(summary: &TrackSummary) -> LyricsQuery {
+    LyricsQuery {
+        title: summary.title.clone(),
+        artist: summary.artist.clone(),
+        album: summary.album.clone(),
+        duration_ms: summary.duration_ms,
+    }
+}
+
 pub(super) fn start_track_for_lyrics(
     player: &dyn PlaybackBackend,
     summary: &TrackSummary,
 ) -> Result<LyricsQuery, PlaybackError> {
     player.play(&summary.path)?;
-    Ok(LyricsQuery {
-        title: summary.title.clone(),
-        artist: summary.artist.clone(),
-        album: summary.album.clone(),
-        duration_ms: summary.duration_ms,
-    })
+    Ok(lyrics_query_for(summary))
 }
 
 impl PlayerController {

@@ -35,8 +35,19 @@ impl Default for AudioEffects {
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
     StateChanged(PlaybackState),
-    Position { position_ms: i64, duration_ms: i64 },
+    Position {
+        position_ms: i64,
+        duration_ms: i64,
+    },
     TrackFinished,
+    /// The gaplessly pre-fed next track (see `PlaybackBackend::set_next`) has
+    /// taken over without a pipeline restart: `about-to-finish` consumed the
+    /// queued URI and playback continued seamlessly into it. The frontend
+    /// advances its own queue model by exactly one step in response WITHOUT
+    /// issuing a new `play()` — the audio is already rolling. Contrast
+    /// `TrackFinished`, which fires on a real end-of-stream (no next track was
+    /// pre-fed) and is the frontend's cue to *start* the next track.
+    AdvancedToNext,
     Error(String),
 }
 
@@ -54,6 +65,17 @@ pub trait PlaybackBackend {
     fn set_volume(&self, volume: f64);
     fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError>;
     fn stop(&self) -> Result<(), PlaybackError>;
+
+    /// Pre-feeds the path of the track that should play next, so the backend
+    /// can hand off to it *gaplessly* (no pipeline restart) when the current
+    /// track is about to finish. `None` clears any queued track — call it when
+    /// gapless is disabled, at the end of the queue, or whenever the upcoming
+    /// track changes (queue edit, repeat/shuffle toggle, manual navigation).
+    /// The frontend re-feeds on every such change; the backend keeps only the
+    /// latest value ("last write wins"). A backend that does not support
+    /// gapless handoff may treat this as a no-op — playback then falls back to
+    /// the ordinary `TrackFinished`-driven advance.
+    fn set_next(&self, path: Option<&str>);
 }
 
 /// Platform-neutral playback error. `Backend`'s message is produced by the

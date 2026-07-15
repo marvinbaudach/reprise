@@ -54,6 +54,8 @@ impl PlaybackBackend for FakePlayback {
     fn stop(&self) -> Result<(), PlaybackError> {
         unreachable!()
     }
+
+    fn set_next(&self, _path: Option<&str>) {}
 }
 
 fn summary() -> TrackSummary {
