@@ -16,6 +16,9 @@
 # Session scratch (not part of the repo)
 .superpowers/
 
+# Git worktrees (local development)
+.worktrees/
+
 # Live agent work lock — volatile coordination state, never versioned
 # (committing it produced ~150 noise commits). See docs/agent-workflow/STATUS.md.
 docs/agent-workflow/LOCK
