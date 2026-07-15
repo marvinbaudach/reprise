@@ -99,7 +99,10 @@ pub fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
             t.get_string(&lofty::tag::ItemKey::AlbumArtist)
                 .map(std::string::ToString::to_string)
         }),
-        year: tag.and_then(Accessor::year).map(|y| y as i32),
+        year: tag
+            .and_then(Accessor::year)
+            .or_else(|| tagged.tags().iter().find_map(Accessor::year))
+            .map(|y| y as i32),
         track_no: tag.and_then(Accessor::track).map(|n| n as i32),
         genre: get(&|t| t.genre().map(|s| s.to_string())),
         duration_ms: props.duration().as_millis() as i64,

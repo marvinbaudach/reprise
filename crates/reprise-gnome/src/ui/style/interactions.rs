@@ -13,8 +13,9 @@
 
 pub(super) fn css() -> String {
     use super::tokens::{
-        DIALOG_BORDER_ALPHA, DIALOG_SHADOW, FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, HOVER_BG_ALPHA,
-        HOVER_BG_ALPHA_STRONG, RADIUS_SURFACE, SURFACE_BORDER_ALPHA, SURFACE_SHADOW, TRANSITION,
+        DIALOG_BORDER_ALPHA, DIALOG_CARD_ALPHA, DIALOG_HEADER_TINT_ALPHA, DIALOG_SHADOW,
+        FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, HOVER_BG_ALPHA, HOVER_BG_ALPHA_STRONG, RADIUS_SURFACE,
+        SCRIM_ALPHA, SURFACE_BORDER_ALPHA, SURFACE_SHADOW, TRANSITION,
     };
     format!(
         "entry:focus-within, .reprise-focus-glow:focus-within {{ \
@@ -33,10 +34,17 @@ pub(super) fn css() -> String {
            background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA}); }}\n\
          .reprise-panel-toggle:checked:hover {{ \
            background-color: alpha(@accent_bg_color, {HOVER_BG_ALPHA_STRONG}); }}\n\
+         dialog > dimming {{ \
+           background: rgba(0,0,0,{SCRIM_ALPHA}); }}\n\
          dialog > floating-sheet {{ \
+           background-color: @dialog_bg_color; \
            box-shadow: {DIALOG_SHADOW}; }}\n\
          dialog > floating-sheet > outline {{ \
-           outline: 1px solid alpha(white, {DIALOG_BORDER_ALPHA}); }}"
+           outline: 1px solid alpha(white, {DIALOG_BORDER_ALPHA}); }}\n\
+         dialog > floating-sheet headerbar {{ \
+           background: alpha(white, {DIALOG_HEADER_TINT_ALPHA}); }}\n\
+         dialog > floating-sheet .boxed-list {{ \
+           background-color: alpha(white, {DIALOG_CARD_ALPHA}); }}"
     )
 }
 
@@ -51,7 +59,10 @@ mod tests {
         assert!(css.contains(".reprise-surface"));
         assert!(css.contains(".reprise-panel-toggle:checked"));
         assert!(css.contains("border-radius"));
+        assert!(css.contains("dialog > dimming"));
         assert!(css.contains("dialog > floating-sheet"));
         assert!(css.contains("dialog > floating-sheet > outline"));
+        assert!(css.contains("dialog > floating-sheet headerbar"));
+        assert!(css.contains("dialog > floating-sheet .boxed-list"));
     }
 }

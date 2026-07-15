@@ -22,6 +22,8 @@ impl InformationColumn {
             .sidebar_position(gtk4::PackType::End)
             .show_sidebar(visible)
             .collapsed(false)
+            .min_sidebar_width(f64::from(PANEL_WIDTH))
+            .max_sidebar_width(f64::from(PANEL_WIDTH))
             .build();
 
         Self { split }
