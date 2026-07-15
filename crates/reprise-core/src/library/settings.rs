@@ -141,14 +141,17 @@ pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
 pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
-pub const TRANSITION_MODE_KEY: &str = "playback.transition_mode";
+pub const GAPLESS_ENABLED_KEY: &str = "playback.gapless_enabled";
 pub const CROSSFADE_SECONDS_KEY: &str = "playback.crossfade_seconds";
 
-/// Clamp range for the crossfade overlap (Phase B); `DEFAULT` is used when the
-/// stored value is missing or out of range.
-pub const CROSSFADE_SECONDS_MIN: u8 = 1;
-pub const CROSSFADE_SECONDS_MAX: u8 = 12;
-pub const CROSSFADE_SECONDS_DEFAULT: u8 = 4;
+/// Crossfade overlap in whole seconds. `0` means crossfade is off (the slider's
+/// "Off" position); `1..=MAX` is an active overlap. `DEFAULT` (off) applies when
+/// the stored value is missing or out of range. The `TrackTransition` mode is
+/// *derived* from this plus `GAPLESS_ENABLED_KEY` (see `get_track_transition`):
+/// any crossfade > 0 wins, else gapless-on means Gapless, else Off.
+pub const CROSSFADE_SECONDS_MIN: u8 = 0;
+pub const CROSSFADE_SECONDS_MAX: u8 = 10;
+pub const CROSSFADE_SECONDS_DEFAULT: u8 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListDensity {
@@ -401,29 +404,30 @@ pub fn set_replay_gain_mode(
     set_setting(conn, REPLAY_GAIN_MODE_KEY, value)
 }
 
-pub fn get_track_transition(conn: &Connection) -> TrackTransition {
-    // Default: Gapless — the expected modern behavior for a music player.
-    match typed_value(conn, TRANSITION_MODE_KEY, "gapless").as_str() {
-        "off" => TrackTransition::Off,
-        "gapless" => TrackTransition::Gapless,
-        "crossfade" => TrackTransition::Crossfade,
-        value => {
-            tracing::warn!(value, "unrecognized track transition; using Gapless");
-            TrackTransition::Gapless
-        }
-    }
+/// Whether gapless playback is enabled. Independent of crossfade: it only takes
+/// effect (as the `Gapless` transition) when no crossfade overlap is set.
+/// Default `true` — the expected modern behavior for a music player.
+pub fn get_gapless_enabled(conn: &Connection) -> bool {
+    get_bool(conn, GAPLESS_ENABLED_KEY, true).unwrap_or(true)
 }
 
-pub fn set_track_transition(
-    conn: &Connection,
-    value: TrackTransition,
-) -> Result<(), rusqlite::Error> {
-    let value = match value {
-        TrackTransition::Off => "off",
-        TrackTransition::Gapless => "gapless",
-        TrackTransition::Crossfade => "crossfade",
-    };
-    set_setting(conn, TRANSITION_MODE_KEY, value)
+pub fn set_gapless_enabled(conn: &Connection, enabled: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, GAPLESS_ENABLED_KEY, enabled)
+}
+
+/// The effective transition mode, *derived* from the two independent playback
+/// preferences (`crossfade_seconds` + `gapless_enabled`): any crossfade overlap
+/// wins, else gapless-on means `Gapless`, else `Off`. There is no separately
+/// stored mode — the two controls in the Audio Transitions settings are the
+/// single source of truth.
+pub fn get_track_transition(conn: &Connection) -> TrackTransition {
+    if get_crossfade_seconds(conn) > 0 {
+        TrackTransition::Crossfade
+    } else if get_gapless_enabled(conn) {
+        TrackTransition::Gapless
+    } else {
+        TrackTransition::Off
+    }
 }
 
 pub fn get_crossfade_seconds(conn: &Connection) -> u8 {
@@ -669,34 +673,38 @@ mod tests {
     }
 
     #[test]
-    fn track_transition_round_trips_and_defaults_to_gapless() {
+    fn track_transition_is_derived_from_gapless_and_crossfade() {
         let conn = migrated_conn();
-        // Default when unset: Gapless.
+        // Default (gapless on, no crossfade): Gapless.
         assert_eq!(get_track_transition(&conn), TrackTransition::Gapless);
-        for mode in [
-            TrackTransition::Off,
-            TrackTransition::Gapless,
-            TrackTransition::Crossfade,
-        ] {
-            set_track_transition(&conn, mode).unwrap();
-            assert_eq!(get_track_transition(&conn), mode);
-        }
-        // Corrupt value falls back to Gapless.
-        set_setting(&conn, TRANSITION_MODE_KEY, "teleport").unwrap();
+
+        // Gapless off, no crossfade: Off.
+        set_gapless_enabled(&conn, false).unwrap();
+        assert_eq!(get_track_transition(&conn), TrackTransition::Off);
+
+        // Any crossfade overlap wins, regardless of the gapless toggle.
+        set_crossfade_seconds(&conn, 4).unwrap();
+        assert_eq!(get_track_transition(&conn), TrackTransition::Crossfade);
+        set_gapless_enabled(&conn, true).unwrap();
+        assert_eq!(get_track_transition(&conn), TrackTransition::Crossfade);
+
+        // Crossfade back to 0 falls through to the gapless toggle.
+        set_crossfade_seconds(&conn, 0).unwrap();
         assert_eq!(get_track_transition(&conn), TrackTransition::Gapless);
     }
 
     #[test]
     fn crossfade_seconds_clamp_and_default() {
         let conn = migrated_conn();
-        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_DEFAULT);
+        // Default: 0 (off).
+        assert_eq!(get_crossfade_seconds(&conn), 0);
         set_crossfade_seconds(&conn, 99).unwrap();
         assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_MAX);
         set_crossfade_seconds(&conn, 0).unwrap();
-        assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_MIN);
+        assert_eq!(get_crossfade_seconds(&conn), 0);
         set_crossfade_seconds(&conn, 6).unwrap();
         assert_eq!(get_crossfade_seconds(&conn), 6);
-        // Corrupt stored value → default.
+        // Corrupt stored value → default (off).
         set_setting(&conn, CROSSFADE_SECONDS_KEY, "loud").unwrap();
         assert_eq!(get_crossfade_seconds(&conn), CROSSFADE_SECONDS_DEFAULT);
     }

@@ -84,7 +84,13 @@ pub(super) fn build_equalizer_surface(
 pub(super) fn css() -> String {
     ".reprise-equalizer scale > trough > highlight { background-color: @accent_color; }\n\
      .reprise-equalizer scale > trough > slider { background-color: @accent_color; }\n\
-     .reprise-eq-value { color: @accent_color; font-weight: bold; }"
+     .reprise-eq-value { color: @accent_color; font-weight: bold; }\n\
+     .reprise-crossfade { padding: 12px 6px; }\n\
+     .reprise-crossfade > box > label.title { font-weight: bold; }\n\
+     .reprise-crossfade-value { color: @accent_color; font-weight: bold; }\n\
+     .reprise-crossfade-scale { margin-top: 4px; }\n\
+     .reprise-crossfade-scale > trough > highlight { background-color: @accent_color; }\n\
+     .reprise-crossfade-scale > trough > slider { background-color: @accent_color; }"
         .to_string()
 }
 
