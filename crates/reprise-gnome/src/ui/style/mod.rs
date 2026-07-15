@@ -47,6 +47,7 @@ fn app_css() -> String {
         super::track_list_row_interaction::css(),
         super::stats_css::css(),
         super::toasts::css(),
+        super::tag_editor_style::css(),
     ]
     .join("\n")
 }
@@ -123,6 +124,7 @@ mod tests {
             ".reprise-track-list > header label",
             ".reprise-reorder-target",
             ".stats-chart",
+            ".reprise-tag-editor",
         ] {
             assert!(css.contains(marker), "missing section marker: {marker}");
         }

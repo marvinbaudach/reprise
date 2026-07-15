@@ -93,9 +93,15 @@ fn begin(shared: &Rc<Shared>) {
         return;
     };
     let shared = shared.clone();
-    tag_editor::present(&window, &summary, &rating_summary, move |patch| {
-        start_apply(&shared, tracks.clone(), patch);
-    });
+    tag_editor::present(
+        &window,
+        &summary,
+        &rating_summary,
+        tracks.len(),
+        move |patch| {
+            start_apply(&shared, tracks.clone(), patch);
+        },
+    );
     tracing::debug!(selected = tags.len(), "tag editor presented");
 }
 
