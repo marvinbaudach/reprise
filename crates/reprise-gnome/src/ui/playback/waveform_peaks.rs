@@ -151,7 +151,8 @@ fn make_element(factory_name: &str) -> Result<gst::Element, WaveformError> {
 
 fn pull_all_samples(appsink: &gst_app::AppSink) -> Result<Vec<i16>, WaveformError> {
     let mut samples = Vec::new();
-    while let Ok(sample) = appsink.pull_sample() {
+    let timeout = gst::ClockTime::from_seconds(30);
+    while let Some(sample) = appsink.try_pull_sample(timeout) {
         let buffer = sample
             .buffer()
             .ok_or_else(|| WaveformError::DecodeFailed("sample without buffer".into()))?;
