@@ -4,8 +4,6 @@
 //! button, now-playing EQ bars, tooltips, and artist deep-link.
 
 use std::cell::{Cell, RefCell};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use gtk4::glib;
@@ -33,6 +31,7 @@ pub(in crate::ui) struct AlbumCardShared {
     /// `(album_key, artist_key)` of the currently playing album, if any.
     pub now_playing_album: Rc<RefCell<Option<(String, String)>>>,
     /// True when playback is paused (EQ bars freeze).
+    #[allow(dead_code)]
     pub playback_paused: Rc<Cell<bool>>,
     /// Card click → navigate to Tracks tab with album filter.
     pub on_activate: Rc<RefCell<Option<Rc<dyn Fn(AlbumSummary)>>>>,
@@ -142,27 +141,6 @@ pub(in crate::ui) fn build_factory(
                 .build();
             cover_overlay.add_overlay(&placeholder);
             cover_overlay.add_overlay(&hover_overlay);
-
-            // Hover detection toggles a CSS class; the CSS does the opacity
-            // transition so we don't fight the GTK state machine.
-            let motion = gtk4::EventControllerMotion::new();
-            {
-                let card_ref = cover_overlay.downgrade();
-                motion.connect_enter(move |_ctrl, _x, _y| {
-                    if let Some(card) = card_ref.upgrade() {
-                        card.add_css_class("album-hovered");
-                    }
-                });
-            }
-            {
-                let card_ref = cover_overlay.downgrade();
-                motion.connect_leave(move |_ctrl| {
-                    if let Some(card) = card_ref.upgrade() {
-                        card.remove_css_class("album-hovered");
-                    }
-                });
-            }
-            cover_overlay.add_controller(motion);
 
             // Text labels below cover.
             let title_label = gtk4::Label::builder()
@@ -408,12 +386,13 @@ pub(in crate::ui) fn build_factory(
             }
         }
 
-        // Reset now-playing state.
+        // Reset now-playing state and hide placeholder to prevent stale flash.
         let placeholder = cover_overlay
             .first_child()
             .and_then(|w| w.next_sibling())
             .and_downcast::<gtk4::Box>();
         if let Some(placeholder) = placeholder {
+            placeholder.set_visible(false);
             if let Some(hover_box) = placeholder
                 .next_sibling()
                 .and_downcast::<gtk4::Box>()
@@ -436,13 +415,20 @@ pub(in crate::ui) fn build_factory(
     factory
 }
 
+/// Simple deterministic hasher (multiply-and-xor) for stable color generation.
+fn simple_hash(input: &str) -> u64 {
+    let mut hash: u64 = 5381;
+    for byte in input.bytes() {
+        hash = hash.wrapping_mul(33).wrapping_add(byte as u64);
+    }
+    hash
+}
+
 /// Generates CSS for the placeholder gradient based on album+artist hash.
 /// OKLCH: Start L≈0.45/C≈0.08, End L≈0.18/C≈0.05, angle 135°, hue from hash.
 pub(in crate::ui) fn placeholder_css_for_album(album: &str, album_artist: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    album.to_lowercase().hash(&mut hasher);
-    album_artist.to_lowercase().hash(&mut hasher);
-    let hash = hasher.finish();
+    let input = format!("{}{}", album.to_lowercase(), album_artist.to_lowercase());
+    let hash = simple_hash(&input);
     let hue1 = (hash % 360) as f64;
     let hue2 = ((hash >> 16) % 360) as f64;
     let h2 = if (hue2 - hue1).abs() < 30.0 {
