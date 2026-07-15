@@ -31,7 +31,7 @@ preferences_width() {
 }
 
 run_preferences_flow() {
-  log_step "flow 6: native Preferences cards and Library Window controls…"
+  log_step "flow 6: Preferences page sidebar, cards, and Library Window controls…"
 
   # Compact layouts can replace the mapped surface. Always address the
   # currently active Library window before opening its primary menu.
@@ -55,53 +55,83 @@ run_preferences_flow() {
   fi
   width="$(preferences_width "$preference_window")"
 
+  # --- Vertical settings sidebar geometry (redesign) ----------------------
+  # The redesign replaced the horizontal top ViewSwitcher with a vertical
+  # NavigationSplitView sidebar: a `.navigation-sidebar` ListBox on the LEFT
+  # drives the content ViewStack on the RIGHT. Page switching is now a click on
+  # the target page's SIDEBAR ROW, not a header tab.
+  #
+  # Offsets are relative to the preferences window origin (its own transient
+  # window, default 760x680 — NOT the maximized main window). The Y values are
+  # the row centers measured from an 18-preferences-appearance capture; rows are
+  # evenly spaced (~38px) below the "Preferences" sidebar header, in PAGE_ORDER:
+  # Playback, Appearance, Layout, Library, Synchronization, Plugins. SIDEBAR_X
+  # sits on the row label, comfortably inside the ~190px-wide sidebar.
+  local SIDEBAR_X=70
+  local ROW_PLAYBACK=75
+  local ROW_APPEARANCE=113
+  local ROW_LAYOUT=151
+  local ROW_LIBRARY=189
+  local ROW_SYNC=227
+  local ROW_PLUGINS=264
+
   screenshot "18-preferences-appearance"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/18-preferences-appearance.png"
   assert_db_query_true \
     "SELECT COUNT(*) = 0 FROM settings WHERE key = 'ui.color_scheme';" \
     "Appearance did not persist a manual color scheme"
 
-  # The five native header tabs retain their natural width. Layout is centered
-  # slightly left of the window midpoint because the close button occupies the
-  # trailing header slot.
-  click_preferences_relative "$preference_window" "$((width / 2 - 20))" 28
+  # Switch to the Layout page via its sidebar row.
+  click_preferences_relative "$preference_window" "$SIDEBAR_X" "$ROW_LAYOUT"
   sleep 0.3
   screenshot "19-preferences-layout"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/19-preferences-layout.png"
 
-  click_preferences_relative "$preference_window" "$((width / 2 - 135))" 200
+  # In-page controls live in the content area to the RIGHT of the sidebar.
+  # The Player Bar group shows two choice cards (Top | Bottom) side by side,
+  # near the top of the content region.
+  local CARD_TOP_X=345
+  local CARD_BOTTOM_X=598
+  local CARD_Y=190
+  click_preferences_relative "$preference_window" "$CARD_TOP_X" "$CARD_Y"
   sleep 0.2
   assert_db_value "player_bar_position" "top" "Top Player Bar card persisted"
-  click_preferences_relative "$preference_window" "$((width / 2 + 135))" 200
+  click_preferences_relative "$preference_window" "$CARD_BOTTOM_X" "$CARD_Y"
   sleep 0.2
   assert_db_value "player_bar_position" "bottom" "Bottom Player Bar card persisted"
 
-  local switch_x=$((width - 100))
-  click_preferences_relative "$preference_window" "$switch_x" 360
+  # The four Library Window switch rows stack below the cards; clicking a row
+  # toggles its switch. Their trailing toggles sit near the content's right edge.
+  local SWITCH_X=$((width - 90))
+  local SWITCH_SIDEBAR_Y=361
+  local SWITCH_FILTER_Y=416
+  local SWITCH_INFO_Y=471
+  local SWITCH_STATUS_Y=526
+  click_preferences_relative "$preference_window" "$SWITCH_X" "$SWITCH_SIDEBAR_Y"
   sleep 0.2
   assert_db_value "ui.sidebar_visible" "0" "Layout switch hid the sidebar"
-  click_preferences_relative "$preference_window" "$switch_x" 416
+  click_preferences_relative "$preference_window" "$SWITCH_X" "$SWITCH_FILTER_Y"
   sleep 0.2
   assert_db_value "ui.browse_visible" "0" "Layout switch hid the filter bar"
-  click_preferences_relative "$preference_window" "$switch_x" 472
+  click_preferences_relative "$preference_window" "$SWITCH_X" "$SWITCH_INFO_Y"
   sleep 0.2
   assert_db_value "ui.info_panel_visible" "0" "Layout switch hid the information panel"
-  click_preferences_relative "$preference_window" "$switch_x" 528
+  click_preferences_relative "$preference_window" "$SWITCH_X" "$SWITCH_STATUS_Y"
   sleep 0.2
   assert_db_value "ui.status_visible" "0" "Layout switch hid the status line"
 
-  # Visit every remaining top-level page. Their control semantics have focused
-  # Rust/display coverage; this pointer flow proves the native tabs stay
-  # reachable without the removed bottom navigation obscuring page content.
-  click_preferences_relative "$preference_window" "$((width / 2 + 95))" 28
+  # Visit every remaining top-level page via its sidebar row. Their control
+  # semantics have focused Rust/display coverage; this pointer flow proves each
+  # page stays reachable through the vertical settings sidebar.
+  click_preferences_relative "$preference_window" "$SIDEBAR_X" "$ROW_LIBRARY"
   sleep 0.3
   screenshot "20-preferences-library"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/20-preferences-library.png"
-  click_preferences_relative "$preference_window" "$((width / 2 + 205))" 28
+  click_preferences_relative "$preference_window" "$SIDEBAR_X" "$ROW_PLUGINS"
   sleep 0.3
   screenshot "21-preferences-plugins"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/21-preferences-plugins.png"
-  click_preferences_relative "$preference_window" "$((width / 2 - 255))" 28
+  click_preferences_relative "$preference_window" "$SIDEBAR_X" "$ROW_PLAYBACK"
   sleep 0.3
   screenshot "22-preferences-playback"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/22-preferences-playback.png"
