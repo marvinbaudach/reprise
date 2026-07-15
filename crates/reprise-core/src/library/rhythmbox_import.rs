@@ -422,7 +422,7 @@ pub fn prescan_rhythmdb(
                                     reader.decoder(),
                                 )
                                 .ok()
-                                .map(|v| v.into_owned())
+                                .map(std::borrow::Cow::into_owned)
                             })
                         })
                         .flatten();
@@ -489,8 +489,8 @@ pub fn prescan_rhythmdb(
                             if in_db {
                                 result.matched += 1;
                             } else {
-                                let under_root = library_root
-                                    .is_some_and(|root| path_str.starts_with(root));
+                                let under_root =
+                                    library_root.is_some_and(|root| path_str.starts_with(root));
                                 if !under_root {
                                     result.outside_library += 1;
                                 } else if !track.path.exists() {
@@ -681,10 +681,8 @@ mod tests {
         let existing = music_dir.join("song.ogg");
         fs::write(&existing, b"fake").unwrap();
         let existing_uri = url::Url::from_file_path(&existing).unwrap();
-        let missing_uri =
-            url::Url::from_file_path(music_dir.join("gone.ogg")).unwrap();
-        let outside_uri =
-            url::Url::from_file_path(dir.path().join("elsewhere.ogg")).unwrap();
+        let missing_uri = url::Url::from_file_path(music_dir.join("gone.ogg")).unwrap();
+        let outside_uri = url::Url::from_file_path(dir.path().join("elsewhere.ogg")).unwrap();
         let xml = format!(
             r#"<?xml version="1.0"?>
 <rhythmdb version="2.0">
@@ -718,13 +716,8 @@ mod tests {
         .unwrap();
 
         let library_root = music_dir.to_string_lossy().to_string();
-        let result = prescan_rhythmdb(
-            &rhythmdb,
-            &playlists_path,
-            &conn,
-            Some(&library_root),
-        )
-        .unwrap();
+        let result =
+            prescan_rhythmdb(&rhythmdb, &playlists_path, &conn, Some(&library_root)).unwrap();
 
         assert_eq!(result.total_entries, 4);
         assert_eq!(result.song_entries, 3);
