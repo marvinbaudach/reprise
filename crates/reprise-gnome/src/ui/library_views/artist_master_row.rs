@@ -54,9 +54,10 @@ impl RowHandles {
     }
 }
 
-/// Whether `row_artist` is the currently-playing artist.
+/// Whether `row_artist` is the currently-playing artist (Unicode case-folded,
+/// matching the case-insensitive sort keys elsewhere in the master list).
 fn is_now_playing(now_playing: Option<&str>, row_artist: &str) -> bool {
-    now_playing.is_some_and(|now| now.eq_ignore_ascii_case(row_artist))
+    now_playing.is_some_and(|now| now.to_lowercase() == row_artist.to_lowercase())
 }
 
 /// The row factory: builds each 56px row once (`connect_setup`), registers its
