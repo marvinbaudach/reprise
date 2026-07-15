@@ -121,9 +121,19 @@ impl TrackList {
         };
 
         self.shared.selection.select_item(position, true);
-        self.shared
-            .column_view
-            .scroll_to(position, None, gtk4::ListScrollFlags::NONE, None);
+        // Defer `scroll_to` to an idle tick rather than calling it inline.
+        // During session restore this runs while the window is still being
+        // constructed — before the `ColumnView` has completed its first size
+        // allocation — and a `scroll_to` issued that early corrupts the row
+        // layout near the top of the list, leaving a persistent phantom gap
+        // (an unrendered row) that never resolves on scroll. Running it on the
+        // next idle lets GTK finish the initial allocation first; for the live
+        // track-change path (view already realized) the one-tick delay is
+        // imperceptible.
+        let column_view = self.shared.column_view.clone();
+        gtk4::glib::idle_add_local_once(move || {
+            column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, None);
+        });
         tracing::info!(track_id, position, "table selection followed current track");
     }
 }
