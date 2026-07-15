@@ -102,6 +102,14 @@ impl ArtistView {
         self.inner.master.select_artist(artist);
     }
 
+    /// Task 9b: a self-contained `select_artist` callable for the player-bar
+    /// artist deep-link, handed out so the player bar can select an artist
+    /// without holding a strong reference to this view (see
+    /// `ArtistMaster::select_callback` for the cycle-avoidance rationale).
+    pub(in crate::ui) fn select_artist_callback(&self) -> Rc<dyn Fn(&str)> {
+        self.inner.master.select_callback()
+    }
+
     // Task 9: consumed by now-playing wiring (needs PlayerController).
     #[allow(dead_code)]
     pub(in crate::ui) fn set_now_playing(&self, artist: Option<String>, track_id: Option<i64>) {

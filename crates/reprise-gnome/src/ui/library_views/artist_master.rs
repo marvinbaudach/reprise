@@ -184,6 +184,19 @@ impl ArtistMaster {
         select_artist_by_name(&self.inner.selection, artist);
     }
 
+    /// A self-contained `select_artist` callable for the player-bar artist
+    /// deep-link (Task 9b). Captures a clone of the `SingleSelection` GObject
+    /// only — never `self.inner` — so the returned closure holds no strong
+    /// reference back to `PlayerController`/the widget tree and can be stored
+    /// on the player bar without forming a reference cycle. The selection
+    /// GObject is created once (in `new`) and stays live via the `ListView`
+    /// in the tree, and `reload` splices in place rather than replacing it, so
+    /// the captured handle stays valid across refreshes.
+    pub(in crate::ui) fn select_callback(&self) -> Rc<dyn Fn(&str)> {
+        let selection = self.inner.selection.clone();
+        Rc::new(move |artist: &str| select_artist_by_name(&selection, artist))
+    }
+
     /// Lights the mini-EQ on whichever realized row matches `artist`
     /// (case-insensitively), clearing every other row. Newly recycled rows
     /// pick the state up from `connect_bind`.

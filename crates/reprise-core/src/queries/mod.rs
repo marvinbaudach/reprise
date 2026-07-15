@@ -110,8 +110,8 @@ pub use library_views::{
 };
 pub use maintenance::{
     delete_all_import_errors, delete_import_error, mark_track_missing, query_import_error_count,
-    query_import_errors, query_sync_tracks, query_track_summary, remove_all_missing_tracks,
-    remove_missing_tracks, remove_tracks, track_id_for_path,
+    query_import_errors, query_sync_tracks, query_track_album_artist, query_track_summary,
+    remove_all_missing_tracks, remove_missing_tracks, remove_tracks, track_id_for_path,
 };
 // `remove_missing_track`'s only external caller (beyond `remove_missing_
 // tracks`'s own internal use) is this module's test suite — same reasoning

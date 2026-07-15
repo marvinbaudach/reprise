@@ -101,6 +101,10 @@ pub struct PlayerBar {
     /// Callback fired when the user clicks the title label — wired to
     /// scroll the library track list to the currently playing track.
     on_title_click: TitleClickCallback,
+    /// Callback fired when the user clicks the artist label — wired (Task 9b)
+    /// to deep-link to the Artists tab and select the playing album artist.
+    /// Same storage shape as `on_title_click`.
+    on_artist_click: TitleClickCallback,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
     current_track_animation: RefCell<Option<libadwaita::TimedAnimation>>,
@@ -140,6 +144,23 @@ impl PlayerBar {
         });
         title_label.add_controller(title_click);
 
+        // Task 9b: the artist label mirrors the title's click seam. Marked
+        // interactive (pointer cursor + `player-bar-artist-link` CSS class) so
+        // it reads as a link; the gesture dispatches through `on_artist_click`
+        // the same way `on_title_click` does above.
+        let on_artist_click: TitleClickCallback = Rc::new(RefCell::new(None));
+        let artist_click = gtk4::GestureClick::new();
+        let artist_click_cb = on_artist_click.clone();
+        artist_click.connect_released(move |_, _, _, _| {
+            let callback = artist_click_cb.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        artist_label.add_controller(artist_click);
+        artist_label.set_cursor_from_name(Some("pointer"));
+        artist_label.add_css_class("player-bar-artist-link");
+
         let bar = Self {
             root,
             cover,
@@ -165,6 +186,7 @@ impl PlayerBar {
             muted: Cell::new(false),
             pre_mute_volume: Cell::new(1.0),
             on_title_click,
+            on_artist_click,
             current_track_animation: RefCell::new(None),
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
@@ -191,6 +213,12 @@ impl PlayerBar {
 
     pub fn set_on_title_click<F: Fn() + 'static>(&self, f: F) {
         *self.on_title_click.borrow_mut() = Some(Rc::new(f));
+    }
+
+    /// Task 9b: mirror of `set_on_title_click` for the artist label — the
+    /// caller deep-links to the Artists tab and selects the playing artist.
+    pub fn set_on_artist_click<F: Fn() + 'static>(&self, f: F) {
+        *self.on_artist_click.borrow_mut() = Some(Rc::new(f));
     }
 
     /// Shows `title`/`artist` in the left-hand labels. Called on row
