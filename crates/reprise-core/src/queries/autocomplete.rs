@@ -41,12 +41,18 @@ pub fn query_autocomplete_suggestions(
     let sql = format!(
         "SELECT {col}, COUNT(*) AS cnt \
          FROM tracks \
-         WHERE missing = 0 AND {col} != '' AND {col} LIKE ?1 \
+         WHERE missing = 0 AND {col} != '' AND {col} LIKE ?1 ESCAPE '\\' \
          GROUP BY {col} \
          ORDER BY cnt DESC, {col} COLLATE NOCASE ASC \
          LIMIT ?2"
     );
-    let pattern = format!("%{}%", input.replace('%', "\\%").replace('_', "\\_"));
+    let pattern = format!(
+        "%{}%",
+        input
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params![pattern, limit as i64], |row| {
         Ok(AutocompleteSuggestion {
