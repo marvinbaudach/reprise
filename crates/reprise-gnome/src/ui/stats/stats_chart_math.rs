@@ -79,13 +79,12 @@ pub(super) fn peak_hour(values: &[i64; 24]) -> u8 {
         .iter()
         .enumerate()
         .max_by_key(|&(_, &v)| v)
-        .map(|(i, _)| i as u8)
-        .unwrap_or(0)
+        .map_or(0, |(i, _)| i as u8)
 }
 
 /// Formats an hour (0-23) as `"H:00"` for the peak annotation label.
 pub(super) fn format_peak_hour(hour: u8) -> String {
-    format!("{}:00", hour)
+    format!("{hour}:00")
 }
 
 #[cfg(test)]

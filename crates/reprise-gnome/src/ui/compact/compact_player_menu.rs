@@ -11,7 +11,9 @@ use reprise_core::queue::Repeat;
 use super::compact_player_layouts::{layout_from_token, layout_token};
 use super::strings;
 
+#[allow(dead_code)]
 pub(super) const LAYOUT_TARGETS: [&str; 3] = ["cover", "pill", "card"];
+#[allow(dead_code)]
 pub(super) const LAYOUT_NAMES: [(CompactLayout, &str); 3] = [
     (CompactLayout::Cover, strings::COMPACT_LAYOUT_COVER),
     (CompactLayout::Pill, strings::COMPACT_LAYOUT_PILL),
@@ -56,6 +58,7 @@ pub(super) struct CompactMenu {
     layout_action: gio::SimpleAction,
     shuffle_action: gio::SimpleAction,
     repeat_action: gio::SimpleAction,
+    #[allow(dead_code)]
     always_on_top_action: gio::SimpleAction,
     playback_section: gio::Menu,
     on_restore: VoidCallback,

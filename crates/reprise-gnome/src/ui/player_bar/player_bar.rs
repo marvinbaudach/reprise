@@ -93,8 +93,10 @@ pub struct PlayerBar {
     /// `connect_volume_changed`.
     updating_volume: Rc<Cell<bool>>,
     /// Whether the volume is currently muted (volume_scale at 0 via the icon).
+    #[allow(dead_code)]
     muted: Cell<bool>,
     /// Volume level before muting, so unmuting restores it.
+    #[allow(dead_code)]
     pre_mute_volume: Cell<f64>,
     /// Callback for clicking the cover/track-info area (Task 8); `window.rs`
     /// sets it, post-construction, to push the Now-Playing page. Shared with
@@ -211,7 +213,7 @@ impl PlayerBar {
     /// Gated on `gtk-enable-animations`; instant fallback otherwise.
     fn animate_track_change(&self, title: &str, artist: &str) {
         let animate = gtk4::Settings::default()
-            .map_or(true, |s| s.is_gtk_enable_animations());
+            .is_none_or(|s| s.is_gtk_enable_animations());
         if !animate {
             self.title_label.set_text(title);
             self.artist_label.set_text(artist);
@@ -407,6 +409,7 @@ impl PlayerBar {
     /// to 0 and `pre_mute_volume` stores the prior level; when unmuted, the
     /// prior level is restored. `f` is called with the resulting effective
     /// volume after each toggle.
+    #[allow(dead_code)]
     pub fn connect_mute_toggled<F: Fn(f64) + 'static>(&self, f: F) {
         let volume_scale = self.volume_scale.clone();
         let muted = Rc::new(Cell::new(false));

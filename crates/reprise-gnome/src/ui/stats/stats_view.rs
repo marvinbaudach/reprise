@@ -530,6 +530,80 @@ fn list_row_with_cover(
     hbox
 }
 
+#[allow(dead_code)]
+/// Builds one row in the Top Genres list: genre name, progress bar, percentage.
+fn genre_row(name: &str, plays: i64, max_plays: i64, pct: i64) -> gtk4::Box {
+    let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
+    hbox.set_margin_top(4);
+    hbox.set_margin_bottom(4);
+    hbox.set_valign(gtk4::Align::Center);
+
+    let name_label = gtk4::Label::new(Some(name));
+    name_label.add_css_class("stats-genre-name");
+    name_label.set_xalign(0.0);
+    name_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+
+    let bar = progress_bar(plays, max_plays);
+
+    let pct_label = gtk4::Label::new(Some(&format!("{pct}%")));
+    pct_label.add_css_class("stats-genre-pct");
+    pct_label.set_xalign(1.0);
+
+    hbox.append(&name_label);
+    hbox.append(&bar);
+    hbox.append(&pct_label);
+
+    hbox
+}
+
+#[allow(dead_code)]
+/// Creates a horizontal progress bar proportional to `value / max_value`.
+fn progress_bar(value: i64, max_value: i64) -> gtk4::LevelBar {
+    let bar = gtk4::LevelBar::new();
+    bar.add_css_class("stats-progress-bar");
+    bar.set_min_value(0.0);
+    bar.set_max_value(1.0);
+    let fraction = if max_value > 0 {
+        value as f64 / max_value as f64
+    } else {
+        0.0
+    };
+    bar.set_value(fraction);
+    bar.set_hexpand(true);
+    bar.set_valign(gtk4::Align::Center);
+    // Remove default offset markers that add unwanted color bands.
+    bar.remove_offset_value(Some("low"));
+    bar.remove_offset_value(Some("high"));
+    bar.remove_offset_value(Some("full"));
+    bar
+}
+
+#[allow(dead_code)]
+/// Builds one item in the horizontal Top Albums strip: a placeholder cover
+/// square with album name and play count below it.
+fn album_strip_item(album_name: &str, plays: i64) -> gtk4::Box {
+    let cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    cover.add_css_class("stats-album-thumb");
+    cover.set_size_request(96, 96);
+
+    let name_label = gtk4::Label::new(Some(album_name));
+    name_label.add_css_class("stats-item-title");
+    name_label.set_xalign(0.0);
+    name_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    name_label.set_max_width_chars(14);
+
+    let plays_label = gtk4::Label::new(Some(&format!("{} plays", format_thousands(plays))));
+    plays_label.add_css_class("stats-item-subtitle");
+    plays_label.set_xalign(0.0);
+
+    let item = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    item.append(&cover);
+    item.append(&name_label);
+    item.append(&plays_label);
+
+    item
+}
+
 fn clear_box(container: &gtk4::Box) {
     while let Some(child) = container.first_child() {
         container.remove(&child);

@@ -319,7 +319,7 @@ pub(in crate::ui) fn cross_fade_accent(
     new: Option<Rgb>,
     widget: &impl IsA<gtk4::Widget>,
 ) {
-    let animate = gtk4::Settings::default().map_or(true, |s| s.is_gtk_enable_animations());
+    let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
     if !animate || old == new {
         set_cover_accent(new);
         return;
