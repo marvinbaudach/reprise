@@ -186,7 +186,7 @@ impl CompactMenu {
 fn menu_model() -> gio::Menu {
     let menu = gio::Menu::new();
     menu.append(
-        Some(&strings::text(strings::RETURN_TO_LIBRARY)),
+        Some(&strings::text(strings::RESTORE_FULL_WINDOW)),
         Some("compact.restore"),
     );
 

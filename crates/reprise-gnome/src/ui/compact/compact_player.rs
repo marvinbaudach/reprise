@@ -651,7 +651,7 @@ mod tests {
             .filter_map(|controller| controller.downcast::<gtk4::EventController>().ok())
             .any(|controller| controller.name().as_deref() == Some("compact-seek-scroll-blocker")));
         assert!(!tree_has(&view.root, &|widget| widget.is::<gtk4::ScaleButton>()));
-        assert!(!tree_has_button_tooltip(&view.root, "Return to Library"));
+        assert!(!tree_has_button_tooltip(&view.root, "Restore Full Window"));
         assert!(!tree_has_button_tooltip(&view.root, "Volume"));
         let actions = compact.menu.action_group.list_actions();
         assert_eq!(actions.len(), compact_player_menu::MENU_ACTIONS.len());
