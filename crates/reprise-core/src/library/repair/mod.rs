@@ -100,11 +100,11 @@ pub fn diagnose_library(conn: &rusqlite::Connection) -> Vec<Diagnosis> {
 		Ok(s) => s,
 		Err(_) => return Vec::new(),
 	};
-	let paths: Vec<String> = stmt
-		.query_map([], |row| row.get(0))
-		.unwrap_or_else(|_| panic!("failed to query tracks"))
-		.filter_map(Result::ok)
-		.collect();
+	let rows = match stmt.query_map([], |row| row.get(0)) {
+		Ok(r) => r,
+		Err(_) => return Vec::new(),
+	};
+	let paths: Vec<String> = rows.filter_map(Result::ok).collect();
 
 	paths
 		.iter()
