@@ -165,7 +165,7 @@ mod tests {
             ".library-album-card",
             ".lyrics-line-active",
             "checkbutton.reprise-choice-card",
-            ".reprise-rating-inline-star",
+            ".reprise-rating-star",
             ".reprise-track-list > header label",
             ".reprise-reorder-target",
             ".stats-chart",

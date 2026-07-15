@@ -33,6 +33,8 @@ const BUILD_DURATION_S: f64 = 0.3;
 /// Per-bar stagger increment in seconds.
 const BAR_STAGGER_S: f64 = 0.002;
 
+const FALLBACK_BAR_HEIGHT: f64 = 4.0;
+
 const MINI_CONTENT_HEIGHT: i32 = 16;
 const MINI_MAX_BAR_HEIGHT: f64 = 13.0;
 const MINI_MIN_BAR_HEIGHT: f64 = 2.0;
