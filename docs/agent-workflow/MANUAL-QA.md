@@ -493,6 +493,45 @@ paths are under the disposable QA directory.
   pinned manifest, run inside the sandbox, repeat portal picker/audio/MPRIS/Trash
   checks, and run `flatpak-builder-lint`.
 
+## Redesign visual QA (2026-07-15)
+
+The redesign (P0–P5) is on `main`. Logic, structure and CSS-parse are verified
+headless (unit tests + individually-run display tests: vertical-settings nav,
+player-bar transport regroup, equalizer surface). These items need a **real
+desktop** — pointer/playback/paint behaviours headless cannot drive:
+
+- [ ] **Themes & force-dark:** dark on any system scheme; the Appearance theme
+  picker switches palettes live (Perpetual Rain / Night Terrain / Muted Bloom).
+- [ ] **Player bar:** transport reads shuffle · prev · ⏵ · next · repeat, centred;
+  the play/pause control is a circular accent-glow button.
+- [ ] **Waveform seek:** during playback the bar shows per-track peak bars; a click
+  seeks to that position; time labels stay accurate.
+- [ ] **Cover accent:** a colourful cover tints the waveform + play button (not
+  selection/toggles, which stay teal); a grey/missing cover falls back to Petrol.
+- [ ] **Settings:** Preferences open with a vertical page sidebar; selecting a row
+  switches content + header title; detail pages (column-layout editor) still
+  push/pop inside the window.
+- [ ] **MPRIS:** media keys / lock-screen still work; no MPRIS toggle in Plugins.
+- [ ] **Scrobbling:** ListenBrainz/Last.fm are inline expander rows (enable toggle +
+  connection badge + Test connection + Disconnect + "N submitted · M queued");
+  Last.fm signs in via browser (no API-key fields) with a hidden advanced BYO-key.
+  Release prerequisite: register/own a "Reprise" Last.fm app + fill the bundled
+  key/secret placeholder.
+- [ ] **My Stats:** sidebar entry opens the stats screen (headline hours, top
+  artists/albums/tracks, 12-month bar chart).
+- [ ] **Album/Artist views:** the Tracks | Albums | Artists switcher shows the
+  albums grid and the new artists view; covers + click navigation work.
+- [ ] **Toasts:** transient toasts are a dark pill with an accent action.
+- [ ] **Equalizer:** the ten-band card shows accent fills/handles + accent dB readouts.
+- [ ] **Context menus:** right-click menus are rounded with an accent hover highlight.
+
+## Harness follow-up
+
+- [ ] `scripts/ptr-e2e/preferences.sh` drives the old horizontal top-tab coordinates
+  (y=28) and the menu keyboard-open path; recalibrate for the vertical sidebar
+  (click sidebar rows by increasing Y; re-check the "preferences window presented"
+  open detection). The prefs window itself is verified working (display tests pass).
+
 ## External publication blockers
 
 These are maintainer actions, not QA failures:
