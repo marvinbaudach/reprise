@@ -209,7 +209,6 @@ pub const RESTART_REQUIRED: &str = N_!("Restart required");
 pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");
-pub const COLUMN_ALWAYS_VISIBLE: &str = N_!("Always visible");
 pub const DRAG_TO_REORDER: &str = N_!("Drag to reorder");
 pub const COLUMN_LAYOUT_SAVE_FAILED: &str = N_!("Could not save the column layout");
 pub const RHYTHMBOX_COLUMNS_IMPORTED: &str = N_!("Rhythmbox column layout imported");

@@ -22,7 +22,6 @@ impl TrackList {
             &serialized,
         )?;
         self.column_registry.apply(layout);
-        super::column_header_menu::sync(self, layout);
         let sort = self.shared.sort.borrow().clone();
         let current_id = ColumnId::from_sort_field(&sort.field);
         let (column, order) = if current_id.is_some_and(|id| self.column_registry.is_visible(id)) {
@@ -47,6 +46,12 @@ impl TrackList {
 
     pub(super) fn current_column_layout(&self) -> ColumnLayout {
         column_layout::load_layout(&self.shared.conn.borrow())
+    }
+
+    /// Restores every column to its built-in default width; the wired
+    /// `fixed-width` listeners persist the change.
+    pub(super) fn reset_column_widths(&self) {
+        self.column_registry.reset_widths();
     }
 }
 

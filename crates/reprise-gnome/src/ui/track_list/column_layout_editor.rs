@@ -22,6 +22,8 @@ const HANDLE_CLASS: &str = "reprise-column-handle";
 const HANDLE_REST_OPACITY: &str = "0.45";
 /// Drag-handle opacity once the row is hovered.
 const HANDLE_ACTIVE_OPACITY: &str = "0.85";
+/// Opacity of the row itself while it is being dragged (a translucent ghost).
+const DRAG_GHOST_OPACITY: f64 = 0.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RowCapabilities {
@@ -29,15 +31,12 @@ struct RowCapabilities {
     draggable: bool,
 }
 
-fn is_fixed(id: ColumnId) -> bool {
-    matches!(id, ColumnId::Cover | ColumnId::Title)
-}
-
-fn row_capabilities(id: ColumnId) -> RowCapabilities {
-    let movable = !is_fixed(id);
+fn row_capabilities(_id: ColumnId) -> RowCapabilities {
+    // Every column — including Cover and Title — is an ordinary, equal row:
+    // toggleable and draggable, with no pinned "always visible" entries.
     RowCapabilities {
-        toggleable: movable,
-        draggable: movable,
+        toggleable: true,
+        draggable: true,
     }
 }
 
@@ -53,7 +52,7 @@ fn keyboard_reorder_offset(key: gdk::Key, modifiers: gdk::ModifierType) -> Optio
 }
 
 fn parse_drag_payload(value: &str) -> Option<ColumnId> {
-    ColumnId::parse(value).filter(|id| !is_fixed(*id))
+    ColumnId::parse(value)
 }
 
 fn set_drop_indicator(widget: &impl IsA<gtk4::Widget>, after: Option<bool>) {
@@ -83,6 +82,15 @@ fn wire_row_drag_and_drop(
     source.connect_prepare(move |_, _, _| {
         Some(gdk::ContentProvider::for_value(&id.as_str().to_value()))
     });
+    // Fade the row to a ghost while it is being dragged, restoring it on end.
+    {
+        let ghost = widget.upcast_ref::<gtk4::Widget>().clone();
+        source.connect_drag_begin(move |_, _| ghost.set_opacity(DRAG_GHOST_OPACITY));
+    }
+    {
+        let ghost = widget.upcast_ref::<gtk4::Widget>().clone();
+        source.connect_drag_end(move |_, _, _| ghost.set_opacity(1.0));
+    }
     widget.add_controller(source);
 
     let target = gtk4::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
@@ -184,15 +192,11 @@ fn build_row(state: &Rc<EditorState>, layout: &ColumnLayout, id: ColumnId) -> ad
     let row = adw::ActionRow::builder()
         .title(column_layout::column_label(id))
         .build();
-    if is_fixed(id) {
-        row.set_subtitle(&strings::text(strings::COLUMN_ALWAYS_VISIBLE));
-    } else {
-        row.add_css_class(ROW_CLASS);
-        let handle = gtk4::Image::from_icon_name("list-drag-handle-symbolic");
-        handle.add_css_class(HANDLE_CLASS);
-        handle.set_tooltip_text(Some(&strings::text(strings::DRAG_TO_REORDER)));
-        row.add_prefix(&handle);
-    }
+    row.add_css_class(ROW_CLASS);
+    let handle = gtk4::Image::from_icon_name("list-drag-handle-symbolic");
+    handle.add_css_class(HANDLE_CLASS);
+    handle.set_tooltip_text(Some(&strings::text(strings::DRAG_TO_REORDER)));
+    row.add_prefix(&handle);
 
     if capabilities.toggleable {
         let toggle = gtk4::Switch::builder()
@@ -287,6 +291,9 @@ fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
     let state_guard = state.clone();
     reset.connect_clicked(move |_| {
         state_guard.apply(ColumnLayout::default());
+        if let Some(track_list) = state_guard.track_list.upgrade() {
+            track_list.reset_column_widths();
+        }
     });
     let header = adw::HeaderBar::new();
     header.pack_start(&reset);
@@ -326,6 +333,62 @@ fn build_dialog(track_list: &Rc<TrackList>) -> EditorDialogSurface {
         dialog,
         state: surface.state,
     }
+}
+
+/// True when a click at vertical offset `y` (relative to the ColumnView) landed
+/// on the header row. The header is always the ColumnView's first child and sits
+/// flush at the top, so its height defines the band.
+fn is_header_click(y: f64, header_height: i32) -> bool {
+    header_height > 0 && y <= f64::from(header_height)
+}
+
+/// Builds the header popover: the same editor surface (toggle + drag list with a
+/// Reset action) that the dialog uses, so a right-click on a column header edits
+/// the layout inline instead of showing a plain visibility menu.
+fn build_header_popover(track_list: &Rc<TrackList>) -> gtk4::Popover {
+    let title = strings::text(strings::EDIT_COLUMN_LAYOUT);
+    let surface = build_surface(track_list, &title);
+    let content = gtk4::Frame::builder()
+        .width_request(360)
+        .height_request(440)
+        .child(&surface.toolbar)
+        .build();
+    let popover = gtk4::Popover::builder()
+        .autohide(true)
+        .has_arrow(true)
+        .child(&content)
+        .build();
+    popover.add_css_class("menu");
+    popover.add_css_class("reprise-column-header-popover");
+    popover
+}
+
+/// Installs the right-click-on-header gesture that opens the editor popover.
+/// Replaces the previous GMenu visibility list; row right-clicks are handled by
+/// the per-cell context-menu gesture and never reach this controller.
+pub(super) fn install_header_popover(track_list: &Rc<TrackList>) {
+    let column_view = track_list.column_view_widget().clone();
+    let gesture = gtk4::GestureClick::new();
+    gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
+    let track_list_weak = Rc::downgrade(track_list);
+    let view = column_view.clone();
+    gesture.connect_pressed(move |gesture, _, x, y| {
+        let header_height = view.first_child().map_or(0, |header| header.height());
+        if !is_header_click(y, header_height) {
+            return;
+        }
+        let Some(track_list) = track_list_weak.upgrade() else {
+            return;
+        };
+        gesture.set_state(gtk4::EventSequenceState::Claimed);
+        let popover = build_header_popover(&track_list);
+        popover.set_parent(&view);
+        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        popover.connect_closed(gtk4::Popover::unparent);
+        popover.popup();
+        tracing::debug!("column header popover opened");
+    });
+    column_view.add_controller(gesture);
 }
 
 pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
@@ -389,14 +452,12 @@ mod tests {
     }
 
     #[test]
-    fn fixed_and_movable_rows_expose_the_right_controls() {
-        let fixed = row_capabilities(ColumnId::Title);
-        assert!(!fixed.toggleable);
-        assert!(!fixed.draggable);
-
-        let movable = row_capabilities(ColumnId::Artist);
-        assert!(movable.toggleable);
-        assert!(movable.draggable);
+    fn every_column_including_cover_and_title_is_draggable_and_toggleable() {
+        for id in [ColumnId::Cover, ColumnId::Title, ColumnId::Artist] {
+            let caps = row_capabilities(id);
+            assert!(caps.toggleable, "{id:?} should be toggleable");
+            assert!(caps.draggable, "{id:?} should be draggable");
+        }
     }
 
     #[test]
@@ -421,10 +482,20 @@ mod tests {
     }
 
     #[test]
-    fn drag_payload_accepts_only_movable_column_ids() {
+    fn header_hit_test_matches_only_the_header_band() {
+        assert!(is_header_click(0.0, 25));
+        assert!(is_header_click(25.0, 25));
+        assert!(!is_header_click(25.1, 25));
+        assert!(!is_header_click(200.0, 25));
+        // No measurable header (not yet realized) never counts as a hit.
+        assert!(!is_header_click(0.0, 0));
+    }
+
+    #[test]
+    fn drag_payload_accepts_any_known_column_including_cover_and_title() {
         assert_eq!(parse_drag_payload("artist"), Some(ColumnId::Artist));
-        assert_eq!(parse_drag_payload("cover"), None);
-        assert_eq!(parse_drag_payload("title"), None);
+        assert_eq!(parse_drag_payload("cover"), Some(ColumnId::Cover));
+        assert_eq!(parse_drag_payload("title"), Some(ColumnId::Title));
         assert_eq!(parse_drag_payload("foreign"), None);
     }
 
