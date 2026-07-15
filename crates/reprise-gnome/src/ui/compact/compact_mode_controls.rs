@@ -3,6 +3,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::glib;
+use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::library::settings;
 use rusqlite::Connection;
@@ -45,6 +47,7 @@ pub(super) fn build_mode(
 }
 
 pub(super) fn install(
+    window: &adw::ApplicationWindow,
     mode: &Rc<MinimalView>,
     compact: Option<&CompactPlayer>,
     on_preferences: Rc<dyn Fn()>,
@@ -63,6 +66,24 @@ pub(super) fn install(
             }
         }));
         compact.set_on_preferences(on_preferences);
+
+        let window_weak = glib::WeakRef::new();
+        window_weak.set(Some(window));
+        compact.set_on_always_on_top(Rc::new(move |above| {
+            if let Some(window) = window_weak.upgrade() {
+                // TODO: platform-specific implementation (X11 _NET_WM_STATE_ABOVE).
+                // On Wayland, always-on-top is compositor-managed and may be ignored.
+                tracing::debug!(above, "compact player always-on-top toggled");
+                let _ = &window;
+            }
+        }));
+        let window_weak = glib::WeakRef::new();
+        window_weak.set(Some(window));
+        compact.set_on_quit(Rc::new(move || {
+            if let Some(window) = window_weak.upgrade() {
+                window.close();
+            }
+        }));
     }
 
     arm_smoke_layout(mode);
@@ -147,7 +168,7 @@ mod tests {
         );
         mode.apply_initial();
         let header = adw::HeaderBar::new();
-        install(&mode, Some(&compact), Rc::new(|| {}));
+        install(&window, &mode, Some(&compact), Rc::new(|| {}));
         assert!(!has_button_with_tooltip(&header, "Open Compact View"));
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}

@@ -18,17 +18,31 @@ pub(super) const LAYOUT_NAMES: [(CompactLayout, &str); 3] = [
     (CompactLayout::Card, strings::COMPACT_LAYOUT_CARD),
 ];
 
-const ACTION_LAYOUT: &str = "layout";
 const ACTION_RESTORE: &str = "restore";
+const ACTION_PLAY_PAUSE: &str = "play-pause";
+const ACTION_NEXT: &str = "next";
+const ACTION_PREVIOUS: &str = "previous";
+const ACTION_ALWAYS_ON_TOP: &str = "always-on-top";
+const ACTION_PREFERENCES: &str = "preferences";
+const ACTION_QUIT: &str = "quit";
+
+// Kept for state management by physical controls — not shown in the menu.
+const ACTION_LAYOUT: &str = "layout";
 const ACTION_SHUFFLE: &str = "shuffle";
 const ACTION_REPEAT: &str = "repeat";
-const ACTION_PREFERENCES: &str = "preferences";
-pub(super) const MENU_ACTIONS: [&str; 5] = [
+
+/// Every action name registered in the compact action group.
+pub(super) const MENU_ACTIONS: [&str; 10] = [
     ACTION_RESTORE,
+    ACTION_PLAY_PAUSE,
+    ACTION_NEXT,
+    ACTION_PREVIOUS,
+    ACTION_ALWAYS_ON_TOP,
+    ACTION_PREFERENCES,
+    ACTION_QUIT,
     ACTION_LAYOUT,
     ACTION_SHUFFLE,
     ACTION_REPEAT,
-    ACTION_PREFERENCES,
 ];
 
 type VoidCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
@@ -42,26 +56,77 @@ pub(super) struct CompactMenu {
     layout_action: gio::SimpleAction,
     shuffle_action: gio::SimpleAction,
     repeat_action: gio::SimpleAction,
+    always_on_top_action: gio::SimpleAction,
+    playback_section: gio::Menu,
     on_restore: VoidCallback,
+    on_play_pause: VoidCallback,
+    on_next: VoidCallback,
+    on_previous: VoidCallback,
+    on_always_on_top: BoolCallback,
     on_layout: LayoutCallback,
     on_shuffle: BoolCallback,
     on_repeat: RepeatCallback,
     on_preferences: VoidCallback,
+    on_quit: VoidCallback,
+    is_playing: RefCell<bool>,
 }
 
 impl CompactMenu {
     pub(super) fn build(initial_layout: CompactLayout) -> Self {
         let on_restore = empty_callback();
+        let on_play_pause = empty_callback();
+        let on_next = empty_callback();
+        let on_previous = empty_callback();
+        let on_always_on_top: BoolCallback = Rc::new(RefCell::new(None));
         let on_layout: LayoutCallback = Rc::new(RefCell::new(None));
         let on_shuffle: BoolCallback = Rc::new(RefCell::new(None));
         let on_repeat: RepeatCallback = Rc::new(RefCell::new(None));
         let on_preferences = empty_callback();
+        let on_quit = empty_callback();
         let action_group = gio::SimpleActionGroup::new();
 
         let restore_action = gio::SimpleAction::new(ACTION_RESTORE, None);
         connect_void_action(&restore_action, &on_restore);
         action_group.add_action(&restore_action);
 
+        let play_pause_action = gio::SimpleAction::new(ACTION_PLAY_PAUSE, None);
+        connect_void_action(&play_pause_action, &on_play_pause);
+        action_group.add_action(&play_pause_action);
+
+        let next_action = gio::SimpleAction::new(ACTION_NEXT, None);
+        connect_void_action(&next_action, &on_next);
+        action_group.add_action(&next_action);
+
+        let previous_action = gio::SimpleAction::new(ACTION_PREVIOUS, None);
+        connect_void_action(&previous_action, &on_previous);
+        action_group.add_action(&previous_action);
+
+        let always_on_top_action =
+            gio::SimpleAction::new_stateful(ACTION_ALWAYS_ON_TOP, None, &false.to_variant());
+        {
+            let callback = on_always_on_top.clone();
+            always_on_top_action.connect_change_state(move |action, value| {
+                let Some(active) = value.and_then(glib::Variant::get::<bool>) else {
+                    return;
+                };
+                action.set_state(&active.to_variant());
+                let callback = callback.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(active);
+                }
+            });
+        }
+        action_group.add_action(&always_on_top_action);
+
+        let preferences_action = gio::SimpleAction::new(ACTION_PREFERENCES, None);
+        connect_void_action(&preferences_action, &on_preferences);
+        action_group.add_action(&preferences_action);
+
+        let quit_action = gio::SimpleAction::new(ACTION_QUIT, None);
+        connect_void_action(&quit_action, &on_quit);
+        action_group.add_action(&quit_action);
+
+        // State-only actions for physical controls (not shown in the menu).
         let layout_action = gio::SimpleAction::new_stateful(
             ACTION_LAYOUT,
             Some(glib::VariantTy::STRING),
@@ -124,14 +189,12 @@ impl CompactMenu {
         }
         action_group.add_action(&repeat_action);
 
-        let preferences_action = gio::SimpleAction::new(ACTION_PREFERENCES, None);
-        connect_void_action(&preferences_action, &on_preferences);
-        action_group.add_action(&preferences_action);
         debug_assert!(MENU_ACTIONS
             .iter()
             .all(|action| action_group.has_action(action)));
 
-        let menu_model = menu_model();
+        let playback_section = gio::Menu::new();
+        let menu_model = menu_model(&playback_section, false);
         let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
         popover.set_has_arrow(false);
 
@@ -141,11 +204,19 @@ impl CompactMenu {
             layout_action,
             shuffle_action,
             repeat_action,
+            always_on_top_action,
+            playback_section,
             on_restore,
+            on_play_pause,
+            on_next,
+            on_previous,
+            on_always_on_top,
             on_layout,
             on_shuffle,
             on_repeat,
             on_preferences,
+            on_quit,
+            is_playing: RefCell::new(false),
         }
     }
 
@@ -162,8 +233,33 @@ impl CompactMenu {
             .set_state(&repeat_token(repeat).to_variant());
     }
 
+    pub(super) fn set_playing(&self, playing: bool) {
+        let mut current = self.is_playing.borrow_mut();
+        if *current == playing {
+            return;
+        }
+        *current = playing;
+        rebuild_playback_section(&self.playback_section, playing);
+    }
+
     pub(super) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
         *self.on_restore.borrow_mut() = Some(callback);
+    }
+
+    pub(super) fn set_on_play_pause(&self, callback: Rc<dyn Fn()>) {
+        *self.on_play_pause.borrow_mut() = Some(callback);
+    }
+
+    pub(super) fn set_on_next(&self, callback: Rc<dyn Fn()>) {
+        *self.on_next.borrow_mut() = Some(callback);
+    }
+
+    pub(super) fn set_on_previous(&self, callback: Rc<dyn Fn()>) {
+        *self.on_previous.borrow_mut() = Some(callback);
+    }
+
+    pub(super) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
+        *self.on_always_on_top.borrow_mut() = Some(callback);
     }
 
     pub(super) fn set_on_layout(&self, callback: Rc<dyn Fn(CompactLayout)>) {
@@ -181,47 +277,78 @@ impl CompactMenu {
     pub(super) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
         *self.on_preferences.borrow_mut() = Some(callback);
     }
+
+    pub(super) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
+        *self.on_quit.borrow_mut() = Some(callback);
+    }
 }
 
-fn menu_model() -> gio::Menu {
+/// Builds the four-section menu matching the compact player design:
+///
+/// 1. Restore Full Window (Ctrl+M)
+/// 2. Pause / Next / Previous (Space, Ctrl+→, Ctrl+←)
+/// 3. Always on Top (toggle)
+/// 4. Preferences (Ctrl+,) / Quit (Ctrl+Q)
+fn menu_model(playback_section: &gio::Menu, is_playing: bool) -> gio::Menu {
+    let restore = gio::Menu::new();
+    restore.append_item(&item_with_accel(
+        &strings::text(strings::RESTORE_FULL_WINDOW),
+        "compact.restore",
+        "<Control>m",
+    ));
+
+    rebuild_playback_section(playback_section, is_playing);
+
+    let window = gio::Menu::new();
+    window.append(
+        Some(&strings::text(strings::ALWAYS_ON_TOP)),
+        Some("compact.always-on-top"),
+    );
+
+    let footer = gio::Menu::new();
+    footer.append_item(&item_with_accel(
+        &strings::text(strings::PREFERENCES),
+        "compact.preferences",
+        "<Control>comma",
+    ));
+    footer.append_item(&item_with_accel(
+        &strings::text(strings::QUIT),
+        "compact.quit",
+        "<Control>q",
+    ));
+
     let menu = gio::Menu::new();
-    menu.append(
-        Some(&strings::text(strings::RESTORE_FULL_WINDOW)),
-        Some("compact.restore"),
-    );
-
-    let layouts = gio::Menu::new();
-    for ((layout, name), target) in LAYOUT_NAMES.into_iter().zip(LAYOUT_TARGETS) {
-        debug_assert_eq!(layout_token(layout), target);
-        layouts.append(
-            Some(&strings::text(name)),
-            Some(&format!("compact.layout::{target}")),
-        );
-    }
-    menu.append_submenu(Some(&strings::text(strings::COMPACT_LAYOUT)), &layouts);
-    menu.append(
-        Some(&strings::text(strings::SHUFFLE)),
-        Some("compact.shuffle"),
-    );
-
-    let repeats = gio::Menu::new();
-    for (repeat, name) in [
-        (Repeat::Off, strings::REPEAT_OFF),
-        (Repeat::All, strings::REPEAT_ALL),
-        (Repeat::One, strings::REPEAT_ONE),
-    ] {
-        repeats.append(
-            Some(&strings::text(name)),
-            Some(&format!("compact.repeat::{}", repeat_token(repeat))),
-        );
-    }
-    menu.append_submenu(Some(&strings::text(strings::REPEAT)), &repeats);
-
-    menu.append(
-        Some(&strings::text(strings::PREFERENCES)),
-        Some("compact.preferences"),
-    );
+    menu.append_section(None, &restore);
+    menu.append_section(None, playback_section);
+    menu.append_section(None, &window);
+    menu.append_section(None, &footer);
     menu
+}
+
+fn rebuild_playback_section(section: &gio::Menu, is_playing: bool) {
+    section.remove_all();
+    let label = if is_playing {
+        strings::text(strings::PAUSE)
+    } else {
+        strings::text(strings::PLAY)
+    };
+    section.append_item(&item_with_accel(&label, "compact.play-pause", "space"));
+    section.append_item(&item_with_accel(
+        &strings::text(strings::NEXT),
+        "compact.next",
+        "<Control>Right",
+    ));
+    section.append_item(&item_with_accel(
+        &strings::text(strings::PREVIOUS),
+        "compact.previous",
+        "<Control>Left",
+    ));
+}
+
+fn item_with_accel(label: &str, action: &str, accel: &str) -> gio::MenuItem {
+    let item = gio::MenuItem::new(Some(label), Some(action));
+    item.set_attribute_value("accel", Some(&accel.to_variant()));
+    item
 }
 
 fn connect_void_action(action: &gio::SimpleAction, callback: &VoidCallback) {
@@ -318,22 +445,50 @@ mod tests {
     }
 
     #[test]
+    fn menu_model_has_four_sections() {
+        let playback = gio::Menu::new();
+        let model = menu_model(&playback, false);
+        let mut section_count = 0;
+        for i in 0..model.n_items() {
+            if model.item_link(i, "section").is_some() {
+                section_count += 1;
+            }
+        }
+        assert_eq!(section_count, 4);
+    }
+
+    #[test]
+    fn playback_label_reflects_playing_state() {
+        let section = gio::Menu::new();
+        rebuild_playback_section(&section, true);
+        let label = section
+            .item_attribute_value(0, "label", Some(glib::VariantTy::STRING))
+            .and_then(|v| v.get::<String>());
+        assert_eq!(label.as_deref(), Some("Pause"));
+
+        rebuild_playback_section(&section, false);
+        let label = section
+            .item_attribute_value(0, "label", Some(glib::VariantTy::STRING))
+            .and_then(|v| v.get::<String>());
+        assert_eq!(label.as_deref(), Some("Play"));
+    }
+
+    #[test]
     fn menu_has_only_the_supported_native_actions() {
-        assert_eq!(
-            MENU_ACTIONS,
-            ["restore", "layout", "shuffle", "repeat", "preferences"]
-        );
         let mut actions = BTreeSet::new();
-        let model = menu_model();
+        let playback = gio::Menu::new();
+        let model = menu_model(&playback, false);
         assert!(!collect_model_contract(model.upcast_ref(), &mut actions));
         assert_eq!(
             actions,
             [
-                "compact.layout".to_string(),
+                "compact.always-on-top".to_string(),
+                "compact.next".to_string(),
+                "compact.play-pause".to_string(),
                 "compact.preferences".to_string(),
-                "compact.repeat".to_string(),
+                "compact.previous".to_string(),
+                "compact.quit".to_string(),
                 "compact.restore".to_string(),
-                "compact.shuffle".to_string(),
             ]
             .into_iter()
             .collect()

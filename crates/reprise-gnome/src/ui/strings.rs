@@ -68,8 +68,8 @@ pub use rhythmbox::*;
 pub const ONBOARDING_SKIP: &str = N_!("Skip for Now");
 pub const ONBOARDING_SET_UP: &str = N_!("Set Up Library");
 pub const MAIN_MENU: &str = N_!("Main menu");
-pub const COMPACT_VIEW: &str = N_!("Compact View");
-// Compact View opens through the menu action; the Library header has no duplicate control.
+pub const COMPACT_MODE: &str = N_!("Compact Mode");
+// Compact Mode opens through the menu action; the Library header has no duplicate control.
 pub const RESTORE_FULL_WINDOW: &str = N_!("Restore Full Window");
 pub const COMPACT_MENU: &str = N_!("Compact player menu");
 pub const COMPACT_LAYOUT: &str = N_!("Layout");
@@ -781,7 +781,7 @@ pub fn playlist_export_failed_toast(name: &str) -> String {
 }
 
 // Application identity and legal information shown in the native About dialog.
-pub const ABOUT: &str = N_!("About");
+pub const ABOUT_REPRISE: &str = N_!("About Reprise");
 pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linux Platform");
 
 // Native offline Help dialog and its keyboard shortcut descriptions.
@@ -794,3 +794,14 @@ pub const CLEAR_SEARCH_OR_RETURN_TO_TRACK_LIST: &str = N_!("Clear Search or Retu
 pub const PLAY_SELECTED_TRACK: &str = N_!("Play Selected Track");
 pub const OPEN_CONTEXT_MENU: &str = N_!("Open Context Menu");
 pub const OPEN_HELP: &str = N_!("Open Help");
+
+// Primary menu items.
+pub const MY_STATS: &str = N_!("My Stats");
+pub const RESCAN_LIBRARY: &str = N_!("Rescan Library");
+pub const SYNC_DEVICE: &str = N_!("Sync Device…");
+pub const KEYBOARD_SHORTCUTS: &str = N_!("Keyboard Shortcuts");
+pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
+
+// Compact menu items.
+pub const ALWAYS_ON_TOP: &str = N_!("Always on Top");
+pub const QUIT: &str = N_!("Quit");

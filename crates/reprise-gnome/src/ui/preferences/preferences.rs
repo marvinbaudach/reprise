@@ -99,6 +99,7 @@ pub(super) struct PreferencesContext {
     pub(super) device_sync: Rc<DeviceSyncRuntime>,
     preferences_window: RefCell<glib::WeakRef<adw::Window>>,
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
+    preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
 }
 
 impl PreferencesContext {
@@ -151,6 +152,7 @@ impl PreferencesContext {
             device_sync: device_sync.clone(),
             preferences_window: RefCell::new(glib::WeakRef::new()),
             preferences_navigation: RefCell::new(glib::WeakRef::new()),
+            preferences_stack: RefCell::new(glib::WeakRef::new()),
         });
         let weak = Rc::downgrade(&context);
         context.scan_button.connect_sensitive_notify(move |button| {
@@ -230,6 +232,7 @@ impl PreferencesContext {
         self.preferences_navigation
             .borrow()
             .set(Some(&shell.navigation));
+        self.preferences_stack.borrow().set(Some(&shell.stack));
         let smoke = std::env::var(SMOKE_ENV).ok();
         if matches!(smoke.as_deref(), Some("layout" | "columns")) {
             shell.stack.set_visible_child_name("layout");
@@ -294,6 +297,14 @@ impl PreferencesContext {
         self.set_equalizer_enabled(true);
         self.set_replay_gain_mode(ReplayGainMode::Track);
         tracing::info!("preferences smoke applied layout and audio settings");
+    }
+
+    /// Opens (or raises) the preferences window and navigates to `page_name`.
+    pub(super) fn present_page(self: &Rc<Self>, page_name: &str) {
+        self.present();
+        if let Some(stack) = self.preferences_stack.borrow().upgrade() {
+            stack.set_visible_child_name(page_name);
+        }
     }
 
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {
