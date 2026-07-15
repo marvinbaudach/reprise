@@ -479,6 +479,10 @@ impl PlayerController {
     /// `Weak<TrackList>`, not a strong `Rc` — see the module's `## Toast +
     /// track-list-reload seam` doc section for why a strong reference here
     /// would leak.
+    pub fn set_on_title_click(&self, f: impl Fn() + 'static) {
+        self.bar.set_on_title_click(f);
+    }
+
     pub fn set_track_list_reload(&self, reload: impl Fn() + 'static) {
         *self.reload_track_list.borrow_mut() = Some(Rc::new(reload));
     }

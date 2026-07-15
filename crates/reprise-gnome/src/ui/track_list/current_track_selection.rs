@@ -45,6 +45,13 @@ pub(super) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc<TrackL
             ),
         }
     });
+
+    let weak = Rc::downgrade(player);
+    player.set_on_title_click(move || {
+        if let Some(controller) = weak.upgrade() {
+            controller.notify_restored_current_track();
+        }
+    });
 }
 
 impl PlayerController {
