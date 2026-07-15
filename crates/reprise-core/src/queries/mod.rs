@@ -104,7 +104,7 @@ pub use clauses::build_track_ids_query;
 // where the re-export would otherwise look unused.
 #[allow(unused_imports)]
 pub use clauses::build_track_query;
-pub use library_views::{query_albums, query_artists, AlbumSummary, ArtistSummary};
+pub use library_views::{query_album_track_ids, query_albums, query_artists, AlbumSummary, ArtistSummary};
 pub use maintenance::{
     delete_all_import_errors, delete_import_error, mark_track_missing, query_import_error_count,
     query_import_errors, query_sync_tracks, query_track_summary, remove_all_missing_tracks,
