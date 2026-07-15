@@ -465,6 +465,8 @@ fn draw(
     }
 }
 
+/// Skeleton waveform: deterministic pseudo-random bar heights that look like
+/// a plausible waveform while the real peaks are still being computed.
 fn draw_fallback(
     area: &gtk4::DrawingArea,
     cr: &gtk4::cairo::Context,
@@ -472,7 +474,13 @@ fn draw_fallback(
     h: f64,
     fraction: f64,
 ) {
-    let y = (h - FALLBACK_BAR_HEIGHT) / 2.0;
+    let count = compute_bar_count(w as i32);
+    if count == 0 {
+        return;
+    }
+    let slot = (w + BAR_GAP) / count as f64;
+    let bar_w = (slot - BAR_GAP).max(1.0);
+
     let color = area.color();
     let (r, g, b) = (
         f64::from(color.red()),
@@ -480,24 +488,20 @@ fn draw_fallback(
         f64::from(color.blue()),
     );
 
-    let played_w = (fraction * w).max(0.0);
-    if played_w > 0.0 {
-        cr.set_source_rgba(r, g, b, 1.0);
-        rounded_bar(cr, 0.0, y, played_w, FALLBACK_BAR_HEIGHT, BAR_RADIUS);
-        let _ = cr.fill();
-    }
+    for index in 0..count {
+        // Deterministic pseudo-random height using a simple hash.
+        let seed = (index as u32).wrapping_mul(2654435761); // Knuth multiplicative hash
+        let magnitude = (seed % 200) as f64 / 400.0 + 0.15; // range ~0.15..0.65
+        let bar_h = MIN_BAR_HEIGHT + magnitude * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
+        let x = index as f64 * slot;
+        let y = (h - bar_h) / 2.0;
 
-    let remaining_w = w - played_w;
-    if remaining_w > 0.0 {
-        cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA);
-        rounded_bar(
-            cr,
-            played_w,
-            y,
-            remaining_w,
-            FALLBACK_BAR_HEIGHT,
-            BAR_RADIUS,
-        );
+        if bar_played(index, count, fraction) {
+            cr.set_source_rgba(r, g, b, 0.5);
+        } else {
+            cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * 0.6);
+        }
+        rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
         let _ = cr.fill();
     }
 }
