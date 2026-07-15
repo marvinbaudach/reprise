@@ -16,6 +16,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::list_density;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
@@ -30,6 +31,45 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats;
 use reprise_core::models::Track;
 use reprise_core::view_source::ViewSource;
+
+/// Marker class carried by every cell of the currently-playing row — drives
+/// the accent row background. See `track_list_row_interaction.rs`'s CSS.
+const NOW_PLAYING_CLASS: &str = "now-playing";
+/// Extra class on the leading (cover) cell only, carrying the 2 px left-edge
+/// accent indicator so it sits at the row's left edge without a per-row hunt.
+const NOW_PLAYING_LEADING_CLASS: &str = "now-playing-leading";
+/// Class on the title label of the playing row: bold + theme accent.
+const NOW_PLAYING_TITLE_CLASS: &str = "now-playing-title";
+
+/// Adds or removes `class` on `widget` to match `present` (idempotent, so a
+/// recycled cell rebound to a different row always ends in the right state).
+fn toggle_class(widget: &impl gtk4::prelude::IsA<gtk4::Widget>, class: &str, present: bool) {
+    if present {
+        widget.add_css_class(class);
+    } else {
+        widget.remove_css_class(class);
+    }
+}
+
+/// Toggles the `.now-playing` marker on `cell` by comparing `track_id`
+/// against `shared.playing_track_id`, returning whether this row is the
+/// playing one. Called from every column's `connect_bind` — cells recycle, so
+/// it must set *or* clear on each bind — which is also why a row scrolled into
+/// view while it is the playing track is marked with no extra bookkeeping.
+/// `leading` additionally carries the cover column's left-edge indicator.
+pub(super) fn apply_now_playing(
+    cell: &impl gtk4::prelude::IsA<gtk4::Widget>,
+    track_id: i64,
+    shared: &Shared,
+    leading: bool,
+) -> bool {
+    let playing = shared.playing_track_id.get() == Some(track_id);
+    toggle_class(cell, NOW_PLAYING_CLASS, playing);
+    if leading {
+        toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
+    }
+    playing
+}
 
 /// Icon shown on the empty-library placeholder (nothing has been scanned
 /// in yet).
@@ -171,6 +211,7 @@ pub(super) fn append_column(
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
 
+    let shared_for_bind = shared.clone();
     let shared = shared.clone();
     let column_view_for_setup = column_view.clone();
     factory.connect_setup(move |_, obj| {
@@ -215,6 +256,7 @@ pub(super) fn append_column(
         };
         let track = boxed.borrow::<Track>();
         label.set_text(&render(&track));
+        apply_now_playing(&label, track.id, &shared_for_bind, false);
     });
 
     let column = gtk4::ColumnViewColumn::builder()
@@ -227,6 +269,102 @@ pub(super) fn append_column(
     // Dummy sorter: makes the header clickable/toggleable without ever
     // reordering the model itself (SQL is the sort source of truth — see
     // module doc comment).
+    let never_sorts = gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal);
+    column.set_sorter(Some(&never_sorts));
+
+    column_view.append_column(&column);
+    column
+}
+
+/// Builds the Title column. Unlike the seven generic `append_column` text
+/// columns, its cell is a `Box[eq-bars, label]` so the now-playing row shows
+/// an animated equaliser before the title (hidden on every other row) and
+/// renders the title bold + accent (`.now-playing-title`). The equaliser is
+/// built once per cell (recycled with the row) and only shown when the bound
+/// track is the playing one; its pause is driven by the `.playback-paused`
+/// class on the `ColumnView` (see `TrackList::set_playback_paused`), never
+/// per cell. Same sorter/context-menu/drag wiring as `append_column`.
+pub(super) fn append_title_column(
+    column_view: &gtk4::ColumnView,
+    shared: &Rc<Shared>,
+) -> gtk4::ColumnViewColumn {
+    let factory = gtk4::SignalListItemFactory::new();
+
+    let shared_for_bind = shared.clone();
+    let shared = shared.clone();
+    let column_view_for_setup = column_view.clone();
+    factory.connect_setup(move |_, obj| {
+        let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+            tracing::warn!("title column setup: object is not a ListItem");
+            return;
+        };
+        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        track_list_row_interaction::expand_to_cell(&row);
+        let eq = eq_bars::build(EqVariant::Animated);
+        eq.set_visible(false);
+        let label = gtk4::Label::new(None);
+        label.set_xalign(0.0);
+        label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        label.set_hexpand(true);
+        row.append(&eq);
+        row.append(&label);
+        track_list_context_menu::wire_context_menu_gesture(
+            &row,
+            item,
+            &shared,
+            &column_view_for_setup,
+        );
+        track_list_dnd::wire_row_dnd(&row, item, &shared);
+        item.set_child(Some(&row));
+        list_density::inherit(&column_view_for_setup, &row);
+    });
+
+    factory.connect_bind(move |_, obj| {
+        let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+            tracing::warn!("title column bind: object is not a ListItem");
+            return;
+        };
+        let Some(row) = item.child().and_then(|w| w.downcast::<gtk4::Box>().ok()) else {
+            tracing::warn!("title column bind: list item child is not a Box");
+            return;
+        };
+        let Some(eq) = row.first_child() else {
+            tracing::warn!("title column bind: title cell has no equaliser child");
+            return;
+        };
+        let Some(label) = eq
+            .next_sibling()
+            .and_then(|w| w.downcast::<gtk4::Label>().ok())
+        else {
+            tracing::warn!("title column bind: title cell has no label child");
+            return;
+        };
+        let Some(boxed) = item
+            .item()
+            .and_then(|o| o.downcast::<glib::BoxedAnyObject>().ok())
+        else {
+            tracing::warn!("title column bind: item is not a BoxedAnyObject<Track>");
+            return;
+        };
+        let track = boxed.borrow::<Track>();
+        label.set_text(&track.title);
+        // One comparison drives all three now-playing affordances: the cell
+        // background (via `.now-playing` on the row box), the equaliser's
+        // visibility, and the bold-accent title.
+        let playing = apply_now_playing(&row, track.id, &shared_for_bind, false);
+        eq.set_visible(playing);
+        toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
+    });
+
+    let column = gtk4::ColumnViewColumn::builder()
+        .title(strings::text(strings::COLUMN_TITLE))
+        .factory(&factory)
+        .resizable(true)
+        .build();
+    column.set_id(Some("title"));
+
+    // Dummy sorter: makes the header clickable/toggleable without ever
+    // reordering the model itself (SQL is the sort source of truth).
     let never_sorts = gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal);
     column.set_sorter(Some(&never_sorts));
 
@@ -296,6 +434,7 @@ pub(super) fn append_cover_column(
     {
         let generations = generations.clone();
         let loader = loader.clone();
+        let shared = shared.clone();
         factory.connect_bind(move |_, obj| {
             let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
                 tracing::warn!("cover column bind: object is not a ListItem");
@@ -313,6 +452,7 @@ pub(super) fn append_cover_column(
                 return;
             };
             let track = boxed.borrow::<Track>();
+            apply_now_playing(&cover, track.id, &shared, true);
 
             let key = item.as_ptr() as usize;
             let generation = generations
@@ -424,6 +564,7 @@ pub(super) fn append_rating_column(
             // recurse into `on_rating_changed` below (see the module doc
             // comment on `ui::rating`).
             rating_widget.set_rating(track.rating);
+            apply_now_playing(&rating_widget, track.id, &shared, false);
 
             let track_id = track.id;
             let title = track.title.clone();
