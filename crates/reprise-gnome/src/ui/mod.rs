@@ -27,6 +27,8 @@ mod album_view;
 mod album_card;
 #[path = "library_views/album_card_actions.rs"]
 mod album_card_actions;
+#[path = "library_views/album_context_menu.rs"]
+mod album_context_menu;
 #[path = "library_views/album_card_css.rs"]
 mod album_card_css;
 #[path = "library_views/album_header.rs"]
