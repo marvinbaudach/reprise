@@ -20,7 +20,7 @@
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -433,10 +433,14 @@ pub fn build(
     // ids via `query_track_ids` (album-ordered — a natural "Play all") and hands
     // them to the player.
     {
-        let player = player.clone();
+        // `player` is captured `Weak`: this closure is stored on `ArtistView`,
+        // which the controller retains strongly (see
+        // `current_track_selection::wire`'s doc comment), so a strong capture
+        // here would close the cycle back to the controller.
+        let player = player.as_ref().map(Rc::downgrade);
         let conn = conn.clone();
         artist_view.set_on_play_all(move |artist| {
-            let Some(player) = &player else {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
                 return;
             };
             match artist_track_ids(&conn, artist) {
@@ -447,10 +451,11 @@ pub fn build(
         });
     }
     {
-        let player = player.clone();
+        // Weak `player` capture — see the `set_on_play_all` comment above.
+        let player = player.as_ref().map(Rc::downgrade);
         let conn = conn.clone();
         artist_view.set_on_shuffle(move |artist| {
-            let Some(player) = &player else {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
                 return;
             };
             match artist_track_ids(&conn, artist) {
@@ -461,10 +466,11 @@ pub fn build(
         });
     }
     {
-        let player = player.clone();
+        // Weak `player` capture — see the `set_on_play_all` comment above.
+        let player = player.as_ref().map(Rc::downgrade);
         let conn = conn.clone();
         artist_view.set_on_add_to_queue(move |artist| {
-            let Some(player) = &player else {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
                 return;
             };
             match artist_track_ids(&conn, artist) {

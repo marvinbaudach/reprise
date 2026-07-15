@@ -45,7 +45,9 @@ pub(super) fn wire(
     // controller outlives `window::build`, so this is what keeps `ArtistView`'s
     // pure-Rust `Inner` alive past `build()` — which in turn makes the tab
     // switch's `refresh_callback` (a `Weak<Inner>::upgrade`) succeed. No cycle:
-    // the artist view never holds a strong reference back to the controller.
+    // the artist view's hero play/shuffle/queue closures capture the
+    // controller only via `Weak` (see `window::build`), upgrading it at call
+    // time, so they never hold a strong reference back here.
     let player_weak = Rc::downgrade(player);
     {
         let artist_view = artist_view.clone();
