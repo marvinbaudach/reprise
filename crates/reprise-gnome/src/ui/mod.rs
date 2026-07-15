@@ -23,6 +23,9 @@
 mod about;
 #[path = "library_views/album_view.rs"]
 mod album_view;
+#[allow(dead_code)] // gradient_css consumed by artist_master (later task)
+#[path = "library_views/artist_avatar.rs"]
+mod artist_avatar;
 #[path = "info_panel/artist_news_worker.rs"]
 mod artist_news_worker;
 #[path = "library_views/artist_view.rs"]
