@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
@@ -97,6 +97,7 @@ struct ScanProgressWidgets {
     detail: gtk4::Label,
     pulse_generation: Rc<Cell<u64>>,
     phase: Rc<Cell<DisplayPhase>>,
+    on_cancel: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
 }
 
 #[derive(Clone)]
@@ -158,6 +159,31 @@ impl ScanProgressView {
             .reveal_child(false)
             .build();
 
+        let on_cancel: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+
+        // Right-click (button 3) on the card triggers cancel.
+        let click = gtk4::GestureClick::new();
+        click.set_button(3);
+        let on_cancel_click = on_cancel.clone();
+        click.connect_released(move |_, _, _, _| {
+            let callback = on_cancel_click.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        container.add_controller(click);
+
+        // Long-press on the card triggers cancel (touchscreen support).
+        let long_press = gtk4::GestureLongPress::new();
+        let on_cancel_lp = on_cancel.clone();
+        long_press.connect_pressed(move |_, _, _| {
+            let callback = on_cancel_lp.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        container.add_controller(long_press);
+
         Self {
             inner: Rc::new(ScanProgressWidgets {
                 revealer,
@@ -169,12 +195,19 @@ impl ScanProgressView {
                 detail,
                 pulse_generation: Rc::new(Cell::new(0)),
                 phase: Rc::new(Cell::new(DisplayPhase::Hidden)),
+                on_cancel,
             }),
         }
     }
 
     pub(super) fn downgrade(&self) -> WeakScanProgressView {
         WeakScanProgressView(Rc::downgrade(&self.inner))
+    }
+
+    /// Sets the callback invoked when the user right-clicks or long-presses
+    /// the scan card. Intended to be wired to `ScanControls::request_cancel`.
+    pub(super) fn set_on_cancel(&self, callback: impl Fn() + 'static) {
+        *self.inner.on_cancel.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(super) fn widget(&self) -> &gtk4::Revealer {
