@@ -479,7 +479,64 @@ fn run_scan(
     if let Err(error) = settings::set_library_root(&worker_conn, &folder.to_string_lossy()) {
         tracing::error!(%error, "failed to persist library root after scan");
     }
+    analyze_waveforms(&worker_conn);
     Ok(report)
+}
+
+/// Analyzes waveform peaks for all tracks that don't have them yet.
+/// Runs synchronously on the caller's thread (scan worker or startup worker).
+fn analyze_waveforms(conn: &rusqlite::Connection) {
+    let tracks: Vec<(i64, String)> = match conn.prepare(
+        "SELECT id, path FROM tracks WHERE waveform_peaks IS NULL AND missing = 0",
+    ) {
+        Ok(mut stmt) => stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .ok()
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default(),
+        Err(_) => return,
+    };
+
+    if tracks.is_empty() {
+        return;
+    }
+    tracing::info!(count = tracks.len(), "analyzing waveforms");
+
+    for (track_id, path) in &tracks {
+        let path = std::path::Path::new(path);
+        match crate::ui::waveform_peaks::extract_peaks(
+            path,
+            crate::ui::waveform_peaks::STORED_PEAK_COUNT,
+        ) {
+            Ok(peaks) => {
+                if let Err(e) = reprise_core::db::set_waveform_peaks(conn, *track_id, &peaks) {
+                    tracing::warn!(track_id, %e, "failed to store waveform peaks");
+                }
+            }
+            Err(e) => {
+                tracing::debug!(track_id, path = %path.display(), %e, "waveform analysis skipped");
+            }
+        }
+    }
+    tracing::info!("waveform analysis complete");
+}
+
+/// Spawns a background thread that analyzes waveform peaks for all tracks
+/// without peaks in the DB. Called once at app startup so existing libraries
+/// get peaks without requiring a manual rescan.
+pub(super) fn spawn_waveform_backfill(db_path: std::path::PathBuf) {
+    std::thread::Builder::new()
+        .name("reprise-waveform-backfill".to_string())
+        .spawn(move || {
+            let Ok(conn) = reprise_core::db::open(Some(&db_path)) else {
+                return;
+            };
+            if reprise_core::db::migrate(&conn).is_err() {
+                return;
+            }
+            analyze_waveforms(&conn);
+        })
+        .ok();
 }
 
 /// (Re)starts the folder watcher on `root` (Stage 3 Task 8): builds a fresh
