@@ -1,27 +1,16 @@
-//! Constructs and wires the Now-Playing full view (Task 8) into both the
-//! controller and the window's navigation shell — split out of
+//! Playback-state fan-out and navigation shell helpers — split out of
 //! `player_controller.rs` purely to keep that file under the project's
-//! file-size limit and to give the Now-Playing fan-out one dedicated home
-//! (same rationale, and same sibling-module shape, as `mpris_mirror.rs`/
-//! `playback_faults.rs`/`queue_transport.rs`).
+//! file-size limit (same rationale, and same sibling-module shape, as
+//! `mpris_mirror.rs`/`playback_faults.rs`/`queue_transport.rs`).
 //!
-//! Two halves:
+//! The `sync_*` methods are the ONE place that feeds the `PlayerBar` and
+//! compact player from a single state update — the controller's every
+//! bar-facing call site calls these instead of `self.bar.set_*` directly
+//! (see `player_controller.rs`, `mpris_mirror.rs`,
+//! `player_controller_wiring.rs`).
 //!
-//! - **Controller-facing** (`impl PlayerController`, `wire_now_playing_
-//!   controls`): the `sync_*` methods are the ONE place that feeds both
-//!   `PlayerBar` and `NowPlayingView` from a single state update — the
-//!   controller's every existing bar-facing call site was changed to call
-//!   these instead of `self.bar.set_*` directly (see `player_controller.rs`,
-//!   `mpris_mirror.rs`, `player_controller_wiring.rs`), so the two widgets
-//!   can never drift to two different playback/seek states (the same
-//!   discipline as the MPRIS mirror). `wire_now_playing_controls` connects
-//!   the page's transport signals to the exact same controller actions the
-//!   bar uses (`toggle_pause`/`seek`/`previous`/`next`/queue mutations) —
-//!   same shape as `player_controller_wiring.rs`'s `wire_bar_controls`.
-//! - **Window-facing** (`build_content_nav`/`wire_bar_expand`/`arm_smoke_
-//!   nowplaying`): builds the `adw::NavigationView` the shell's content page
-//!   becomes, and wires the bar's click-to-expand callback and the headless
-//!   smoke hook. Called from `window::build`.
+//! `build_content_nav` builds the `adw::NavigationView` the shell's content
+//! page becomes. Called from `library_shell::build`.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -121,21 +110,19 @@ impl PlayerController {
         self.sync_cover(&current_path);
     }
 
-    /// Feeds Bar, Compact, and Now Playing metadata from one call. Compact
-    /// additionally receives the optional year used by Card; the other
-    /// surfaces retain their existing metadata set.
+    /// Feeds Bar and Compact metadata from one call. Compact additionally
+    /// receives the optional year used by Card; the bar retains its existing
+    /// metadata set (title/artist only).
     pub(super) fn sync_track(&self, title: &str, artist: &str, album: &str, year: Option<i32>) {
         self.bar.set_track(title, artist);
         self.compact_player.set_track(title, artist, album, year);
-        self.now_playing_view.set_track(title, artist, album);
     }
 
-    /// Clears Bar, Compact, Now Playing, and Lyrics together — the
-    /// `Stopped`/failure-path counterpart to `sync_track`.
+    /// Clears Bar, Compact, and Lyrics together — the `Stopped`/failure-path
+    /// counterpart to `sync_track`.
     pub(super) fn sync_clear_track(&self) {
         self.bar.clear_track();
         self.compact_player.clear_track();
-        self.now_playing_view.clear_track();
         self.sync_lyrics_track(None);
         self.reset_cover_accent();
     }
@@ -154,13 +141,10 @@ impl PlayerController {
         crate::ui::style::cover_accent::cross_fade_accent(old_color, None, self.bar.widget());
     }
 
-    /// Loads `path`'s cover into both widgets through the ONE shared
-    /// `CoverLoader` instance (`self.cover_loader`) — same source, same
-    /// on-disk cache, just two sizes and two independent generation tokens
-    /// (`bar_cover_generation`/`now_playing_cover_generation`) so a stale
-    /// in-flight load for either widget can never clobber a newer one (see
-    /// `cover_loader.rs`). This is the "no second cache" half of the single
-    /// state path the design rule requires.
+    /// Loads `path`'s cover into the bar and compact player through the shared
+    /// `CoverLoader` instance. The bar's cover load also carries the MPRIS
+    /// art_url callback and cover-accent extraction (previously on the
+    /// now-playing page's full-size load).
     pub(super) fn sync_cover(&self, path: &str) {
         self.sync_waveform(path);
         // Revert to the theme fallback up front: if this track has no usable
@@ -171,27 +155,6 @@ impl PlayerController {
         self.reset_cover_accent();
         let bar_generation = self.bar_cover_generation.get().wrapping_add(1);
         self.bar_cover_generation.set(bar_generation);
-        self.cover_loader.load_into(
-            self.bar.cover_image(),
-            path,
-            ThumbnailSize::Bar,
-            bar_generation,
-            &self.bar_cover_generation,
-        );
-
-        let compact_generation = self.compact_cover_generation.get().wrapping_add(1);
-        self.compact_cover_generation.set(compact_generation);
-        self.compact_player.set_cover_placeholder();
-        self.cover_loader.load_into(
-            self.compact_player.cover_image(),
-            path,
-            ThumbnailSize::Bar,
-            compact_generation,
-            &self.compact_cover_generation,
-        );
-
-        let full_generation = self.now_playing_cover_generation.get().wrapping_add(1);
-        self.now_playing_cover_generation.set(full_generation);
         let track_id = self.now_playing.borrow().as_ref().map(|track| track.id);
         if let Some(track_id) = track_id {
             let now_playing = self.now_playing.clone();
@@ -200,11 +163,11 @@ impl PlayerController {
             let cover_accent_last = self.cover_accent_last.clone();
             let bar_widget = self.bar.widget().clone();
             self.cover_loader.load_into_with_path(
-                self.now_playing_view.cover_image(),
+                self.bar.cover_image(),
                 path,
-                ThumbnailSize::Full,
-                full_generation,
-                &self.now_playing_cover_generation,
+                ThumbnailSize::Bar,
+                bar_generation,
+                &self.bar_cover_generation,
                 move |cover_path| {
                     let Some(art_url) = cover_path_to_uri(&cover_path) else {
                         return;
@@ -231,13 +194,24 @@ impl PlayerController {
             );
         } else {
             self.cover_loader.load_into(
-                self.now_playing_view.cover_image(),
+                self.bar.cover_image(),
                 path,
-                ThumbnailSize::Full,
-                full_generation,
-                &self.now_playing_cover_generation,
+                ThumbnailSize::Bar,
+                bar_generation,
+                &self.bar_cover_generation,
             );
         }
+
+        let compact_generation = self.compact_cover_generation.get().wrapping_add(1);
+        self.compact_cover_generation.set(compact_generation);
+        self.compact_player.set_cover_placeholder();
+        self.cover_loader.load_into(
+            self.compact_player.cover_image(),
+            path,
+            ThumbnailSize::Bar,
+            compact_generation,
+            &self.compact_cover_generation,
+        );
     }
 
     /// Loads the current track's waveform peaks off-main and hands them to the
@@ -272,20 +246,17 @@ impl PlayerController {
     pub(super) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
         self.compact_player.set_state(state);
-        self.now_playing_view.set_state(state);
     }
 
     pub(super) fn sync_position(&self, position_ms: i64, duration_ms: i64) {
         self.bar.set_position(position_ms, duration_ms);
         self.compact_player.set_position(position_ms, duration_ms);
-        self.now_playing_view.set_position(position_ms, duration_ms);
         self.sync_lyrics_position(position_ms);
     }
 
     pub(super) fn sync_transport_enabled(&self, enabled: bool) {
         self.bar.set_transport_enabled(enabled);
         self.compact_player.set_transport_enabled(enabled);
-        self.now_playing_view.set_transport_enabled(enabled);
     }
 
     /// Sets the shuffle indicator on both widgets — called from whichever
@@ -297,7 +268,6 @@ impl PlayerController {
     pub(super) fn sync_shuffle_indicator(&self, active: bool) {
         self.bar.set_shuffle_indicator(active);
         self.compact_player.set_shuffle_indicator(active);
-        self.now_playing_view.set_shuffle_indicator(active);
         // Shuffle changed the play order, so the upcoming track changed too:
         // re-feed the gapless next. Every shuffle path funnels through here.
         self.feed_next();
@@ -307,7 +277,6 @@ impl PlayerController {
     pub(super) fn sync_repeat_indicator(&self, repeat: Repeat) {
         self.bar.set_repeat_indicator(repeat);
         self.compact_player.set_repeat_indicator(repeat);
-        self.now_playing_view.set_repeat_indicator(repeat);
         // Repeat mode changes what plays next (All wraps, One suppresses the
         // gapless pre-feed): re-feed. Every repeat path funnels through here.
         self.feed_next();
@@ -319,94 +288,10 @@ impl PlayerController {
     }
 }
 
-/// Wires the Now-Playing page's transport signals to the exact same
-/// controller actions `player_controller_wiring.rs`'s `wire_bar_controls`
-/// wires the bar's to — one code path per action, shared by both widgets
-/// (DRY), so pressing play/pause/seek/previous/next/shuffle/repeat on
-/// either widget has identical effect. Each closure holds a `Weak`
-/// controller reference for the same reason `wire_bar_controls`'s do: the
-/// page is owned *by* the controller, so a strong reference here would be a
-/// leak-guaranteeing `Rc` cycle.
-pub(super) fn wire_now_playing_controls(controller: &Rc<PlayerController>) {
-    let weak = Rc::downgrade(controller);
-    controller.now_playing_view.connect_play_pause(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        controller.toggle_pause();
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller
-        .now_playing_view
-        .connect_seek(move |position_ms| {
-            let Some(controller) = weak.upgrade() else {
-                return;
-            };
-            controller.seek(position_ms);
-        });
-
-    let weak = Rc::downgrade(controller);
-    controller.now_playing_view.connect_previous(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        controller.previous();
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller.now_playing_view.connect_next(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        controller.next();
-    });
-
-    let weak = Rc::downgrade(controller);
-    controller
-        .now_playing_view
-        .connect_shuffle_toggled(move |active| {
-            let Some(controller) = weak.upgrade() else {
-                return;
-            };
-            controller.queue.borrow_mut().set_shuffle(active);
-            let is_shuffled = controller.queue.borrow().is_shuffled();
-            controller.sync_shuffle_indicator(is_shuffled);
-            controller.update_mpris_shuffle(is_shuffled);
-            tracing::debug!(is_shuffled, "shuffle toggled (now-playing page)");
-        });
-
-    let weak = Rc::downgrade(controller);
-    controller.now_playing_view.connect_repeat_clicked(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        // Same explicit-block borrow shape as `wire_bar_controls`'s repeat
-        // handler — see `player_controller.rs`'s `## Queue borrow
-        // discipline` doc section.
-        let next_repeat = {
-            let mut queue = controller.queue.borrow_mut();
-            let next_repeat = crate::ui::player_controller_wiring::cycle_repeat(queue.repeat());
-            queue.set_repeat(next_repeat);
-            next_repeat
-        };
-        controller.sync_repeat_indicator(next_repeat);
-        controller.update_mpris_repeat(next_repeat);
-    });
-}
-
 /// Builds the content `adw::NavigationView`: the library page (wrapping the
-/// existing toast overlay) as the static root, plus the Now-Playing page
-/// (if the player is available) as a second static page — added via
-/// `NavigationView::add`, not `push`, so `wire_bar_expand`/`arm_smoke_
-/// nowplaying` pushing it later doesn't destroy/reconstruct it, and popping
-/// it back off leaves it alive for the next bar click (see `AdwNavigation
-/// View`'s doc: a page added this way is "pushed automatically" only for
-/// the FIRST page added — the library page here — every later `add`ed page
-/// stays off the visible stack until explicitly `push`ed).
+/// existing toast overlay) as the static root.
 pub(super) fn build_content_nav(
     library_content: &impl IsA<gtk4::Widget>,
-    now_playing_page: Option<&adw::NavigationPage>,
     app_name: &str,
 ) -> adw::NavigationView {
     let library_page = adw::NavigationPage::builder()
@@ -415,45 +300,7 @@ pub(super) fn build_content_nav(
         .build();
     let nav = adw::NavigationView::new();
     nav.add(&library_page);
-    if let Some(page) = now_playing_page {
-        nav.add(page);
-    }
     nav
-}
-
-/// Wires the bar's cover/track-info click to push the Now-Playing page onto
-/// `nav`. A no-op if the player is unavailable — same player-unavailable
-/// degradation every other bar-driven feature in `window.rs` uses.
-pub(super) fn wire_bar_expand(player: Option<&Rc<PlayerController>>, nav: &adw::NavigationView) {
-    let Some(player) = player else { return };
-    let nav = nav.clone();
-    let page = player.now_playing_widget().clone();
-    player.set_on_expand(move || nav.push(&page));
-}
-
-/// Headless verification hook for Task 8: `REPRISE_SMOKE_NOWPLAYING=1`
-/// pushes the Now-Playing page (deferred via `glib::idle_add_local_once`,
-/// mirroring `player_controller_wiring.rs`'s `arm_smoke_repeat` convention)
-/// and logs so a smoke run can grep for it.
-const SMOKE_NOWPLAYING_ENV_VAR: &str = "REPRISE_SMOKE_NOWPLAYING";
-
-pub(super) fn arm_smoke_nowplaying(
-    player: Option<&Rc<PlayerController>>,
-    nav: &adw::NavigationView,
-) {
-    if std::env::var(SMOKE_NOWPLAYING_ENV_VAR).is_err() {
-        return;
-    }
-    let Some(player) = player else {
-        tracing::warn!("{SMOKE_NOWPLAYING_ENV_VAR} set but no player available; skipping");
-        return;
-    };
-    let nav = nav.clone();
-    let page = player.now_playing_widget().clone();
-    glib::idle_add_local_once(move || {
-        nav.push(&page);
-        tracing::info!("smoke: opened now-playing view");
-    });
 }
 
 #[cfg(test)]

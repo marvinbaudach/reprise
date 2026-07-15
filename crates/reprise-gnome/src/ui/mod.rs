@@ -118,8 +118,6 @@ mod main_cover_download_progress;
 mod minimal_view;
 pub mod mpris_mirror;
 mod notifications;
-#[path = "playback/now_playing.rs"]
-pub mod now_playing;
 #[path = "playback/now_playing_wiring.rs"]
 pub mod now_playing_wiring;
 #[path = "playback/play_tracking.rs"]

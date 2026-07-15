@@ -170,8 +170,6 @@ use crate::ui::compact_player::CompactPlayer;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::mpris_mirror::{self, mpris_status_from_playback_state};
-use crate::ui::now_playing::NowPlayingView;
-use crate::ui::now_playing_wiring;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
@@ -301,20 +299,10 @@ pub struct PlayerController {
     /// clobber a newer one.
     pub(super) bar_cover_generation: Rc<Cell<u64>>,
     pub(super) compact_cover_generation: Rc<Cell<u64>>,
-    /// The Now-Playing full view (Task 8) — the SAME `PlayerController`
-    /// actions and state the bar uses, never a second playback/seek path.
-    /// See `now_playing_wiring.rs`'s module doc for the construction/wiring
-    /// and the `sync_*` fan-out that feeds both widgets from one call site.
-    pub(super) now_playing_view: NowPlayingView,
     /// Shared off-main lyrics runtime and weak target for the Information
     /// panel's Lyrics page. Playback position is fanned into this same owner;
     /// it never starts a second timer.
     pub(super) lyrics: Rc<PlayerLyrics>,
-    /// Generation token for the Now-Playing page's cover widget — separate
-    /// from `bar_cover_generation` because the page loads `ThumbnailSize::
-    /// Full` while the bar loads `ThumbnailSize::Bar`; each widget must only
-    /// ever apply its own most-recent load.
-    pub(super) now_playing_cover_generation: Rc<Cell<u64>>,
     /// Generation token for the seek waveform's off-main peak load, so a
     /// rapid track change can't paint a stale waveform.
     pub(super) waveform_generation: Rc<Cell<u64>>,
@@ -439,9 +427,7 @@ impl PlayerController {
             cover_loader: CoverLoader::new(cover_download),
             bar_cover_generation: Rc::new(Cell::new(0)),
             compact_cover_generation: Rc::new(Cell::new(0)),
-            now_playing_view: NowPlayingView::new(),
             lyrics: PlayerLyrics::new(),
-            now_playing_cover_generation: Rc::new(Cell::new(0)),
             waveform_generation: Rc::new(Cell::new(0)),
             cover_accent_generation: Rc::new(Cell::new(0)),
             cover_accent_last: Rc::new(RefCell::new(None)),
@@ -455,7 +441,6 @@ impl PlayerController {
         player_controller_wiring::wire_bar_controls(&controller);
         player_controller_wiring::wire_compact_controls(&controller);
         player_controller_wiring::arm_smoke_repeat(&controller);
-        now_playing_wiring::wire_now_playing_controls(&controller);
 
         let weak = Rc::downgrade(&controller);
         glib::spawn_future_local(async move {
@@ -478,21 +463,6 @@ impl PlayerController {
     /// The bottom-bar widget for the library overlay shell.
     pub fn bar_widget(&self) -> &gtk4::Box {
         self.bar.widget()
-    }
-
-    /// The Now-Playing page (Task 8), for `now_playing_wiring.rs`'s window-
-    /// side helpers (`build_content_nav`/`wire_bar_expand`/`arm_smoke_
-    /// nowplaying`) to add to the shell's `adw::NavigationView` and push on
-    /// a bar click.
-    pub fn now_playing_widget(&self) -> &adw::NavigationPage {
-        self.now_playing_view.widget()
-    }
-
-    /// Forwards to `PlayerBar::set_on_expand` (Task 8): `window.rs` wires
-    /// this, post-construction, to push the Now-Playing page returned by
-    /// `now_playing_widget` onto its `adw::NavigationView`.
-    pub fn set_on_expand(&self, f: impl Fn() + 'static) {
-        self.bar.set_on_expand(f);
     }
 
     /// Injects the window's toast overlay, once it exists (see the module's

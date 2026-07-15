@@ -198,7 +198,6 @@ pub(super) fn build(
     }
     let content_nav = now_playing_wiring::build_content_nav(
         info_panel.widget(),
-        player.map(|controller| controller.now_playing_widget()),
         &strings::text(strings::APP_NAME),
     );
     let content_page = adw::NavigationPage::builder()
