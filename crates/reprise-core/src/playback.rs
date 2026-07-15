@@ -76,6 +76,20 @@ pub trait PlaybackBackend {
     /// gapless handoff may treat this as a no-op — playback then falls back to
     /// the ordinary `TrackFinished`-driven advance.
     fn set_next(&self, path: Option<&str>);
+
+    /// Selects how the backend transitions into the pre-fed next track (see
+    /// `set_next`): `Off`/`Gapless` hand off at the end (the frontend only
+    /// pre-feeds a next URI when this is `Gapless`), `Crossfade` overlaps the
+    /// current track's tail with the next track's head over `crossfade_seconds`
+    /// (only meaningful for `Crossfade`). The frontend calls this at startup
+    /// and whenever the setting changes, so it takes effect without a restart.
+    /// A backend that does not support crossfade may treat that mode as
+    /// `Gapless` (documented degradation, never a failure).
+    fn set_transition(
+        &self,
+        mode: crate::library::settings::TrackTransition,
+        crossfade_seconds: u8,
+    );
 }
 
 /// Platform-neutral playback error. `Backend`'s message is produced by the

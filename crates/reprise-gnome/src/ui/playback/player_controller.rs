@@ -379,6 +379,16 @@ impl PlayerController {
             }
         }))?;
         let initial_effects = super::audio_effects::apply_initial(&player, &conn);
+        {
+            // Apply the stored transition mode to the backend up front so
+            // Gapless/Crossfade is active from the first track (feed_next then
+            // pre-feeds once playback starts).
+            let conn_ref = conn.borrow();
+            player.set_transition(
+                reprise_core::library::settings::get_track_transition(&conn_ref),
+                reprise_core::library::settings::get_crossfade_seconds(&conn_ref),
+            );
+        }
 
         // Stage 2 Task 6: `mpris::start()` never fails outright (see its own
         // doc comment's `## Failure is never fatal` section) — it always
