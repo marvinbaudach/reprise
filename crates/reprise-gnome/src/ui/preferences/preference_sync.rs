@@ -76,7 +76,7 @@ pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -
     let device_id = device.id.clone();
     let runtime = runtime.clone();
     row.connect_activated(move |row| {
-        let Some(parent) = row.root().and_downcast::<adw::Window>() else {
+        let Some(parent) = row.root().and_downcast::<gtk4::Window>() else {
             return;
         };
         present_device(&parent, &device_id, &runtime);
@@ -85,7 +85,7 @@ pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -
 }
 
 pub(super) fn present_device(
-    parent: &adw::Window,
+    parent: &gtk4::Window,
     device_id: &str,
     runtime: &Rc<DeviceSyncRuntime>,
 ) {
@@ -109,8 +109,7 @@ pub(super) fn present_device(
     toolbar.set_content(Some(&scroll));
     let window = adw::Window::builder()
         .application(
-            &parent
-                .application()
+            &gtk4::prelude::GtkWindowExt::application(parent)
                 .expect("preferences have an application"),
         )
         .transient_for(parent)

@@ -60,7 +60,7 @@ impl PageId {
 }
 
 pub(super) struct PreferencesShell {
-    pub(super) window: adw::Window,
+    pub(super) dialog: adw::Dialog,
     pub(super) navigation: adw::NavigationView,
     pub(super) stack: adw::ViewStack,
     #[cfg(test)]
@@ -93,7 +93,6 @@ fn appearance_index() -> i32 {
 }
 
 pub(super) fn build(
-    parent: &adw::ApplicationWindow,
     pages: [(PageId, adw::PreferencesPage); 6],
     foreground_top_bar: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
@@ -165,27 +164,21 @@ pub(super) fn build(
         adw::NavigationPage::with_tag(&split, &strings::text(strings::PREFERENCES), "preferences");
     let navigation = adw::NavigationView::new();
     navigation.add(&root_page);
-    let window = adw::Window::builder()
-        .application(
-            &parent
-                .application()
-                .expect("main window has an application"),
-        )
+
+    let dialog = adw::Dialog::builder()
+        .child(&navigation)
         .title(strings::text(strings::PREFERENCES))
-        .transient_for(parent)
-        .modal(false)
-        .destroy_with_parent(true)
-        .default_width(760)
-        .default_height(680)
-        .content(&navigation)
+        .content_width(760)
+        .content_height(680)
         .build();
+
     let focus_target = sidebar_list.clone();
-    window.connect_map(move |window| {
-        gtk4::prelude::GtkWindowExt::set_focus(window, Some(&focus_target));
+    dialog.connect_map(move |_| {
+        focus_target.grab_focus();
     });
-    window.set_size_request(560, 480);
+
     PreferencesShell {
-        window,
+        dialog,
         navigation,
         stack,
         #[cfg(test)]
@@ -219,14 +212,13 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn preferences_are_a_movable_window_with_a_page_sidebar() {
+    fn preferences_are_a_dialog_with_a_page_sidebar() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.PreferencesWindowTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
-        let parent = adw::ApplicationWindow::builder().application(&app).build();
         let pages = PAGE_ORDER.map(|id| {
             let page = adw::PreferencesPage::builder()
                 .title(id.title())
@@ -235,14 +227,10 @@ mod tests {
             (id, page)
         });
 
-        let shell = build(&parent, pages, None);
+        let shell = build(pages, None);
 
-        assert!(!shell.window.is_modal());
-        assert_eq!(
-            shell.window.transient_for().as_ref(),
-            Some(parent.upcast_ref())
-        );
-        // One sidebar row per page, and the stack holds every page.
+        assert_eq!(shell.dialog.content_width(), 760);
+        assert_eq!(shell.dialog.content_height(), 680);
         assert!(shell
             .sidebar
             .row_at_index(PAGE_ORDER.len() as i32 - 1)
@@ -252,19 +240,17 @@ mod tests {
             .row_at_index(PAGE_ORDER.len() as i32)
             .is_none());
         assert_eq!(shell.stack.pages().n_items(), PAGE_ORDER.len() as u32);
-        shell.window.close();
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn preferences_push_detail_pages_inside_the_existing_window() {
+    fn preferences_push_detail_pages_inside_the_dialog() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.PreferencesNavigationTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
-        let parent = adw::ApplicationWindow::builder().application(&app).build();
         let pages = PAGE_ORDER.map(|id| {
             let page = adw::PreferencesPage::builder()
                 .title(id.title())
@@ -272,7 +258,7 @@ mod tests {
                 .build();
             (id, page)
         });
-        let shell = build(&parent, pages, None);
+        let shell = build(pages, None);
         let detail =
             adw::NavigationPage::new(&gtk4::Box::new(gtk4::Orientation::Vertical, 0), "Columns");
 
@@ -280,23 +266,21 @@ mod tests {
 
         assert_eq!(shell.navigation.visible_page().as_ref(), Some(&detail));
         assert_eq!(
-            shell.window.content().as_ref(),
+            shell.dialog.child().as_ref(),
             Some(shell.navigation.upcast_ref())
         );
         assert!(shell.navigation.pop());
-        shell.window.close();
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn foreground_progress_is_parented_inside_the_preferences_window() {
+    fn foreground_progress_is_parented_inside_the_preferences_dialog() {
         gtk4::init().unwrap();
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.PreferencesProgressTest")
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.register(None::<&gio::Cancellable>).unwrap();
-        let parent = adw::ApplicationWindow::builder().application(&app).build();
         let pages = PAGE_ORDER.map(|id| {
             let page = adw::PreferencesPage::builder()
                 .title(id.title())
@@ -306,10 +290,9 @@ mod tests {
         });
         let progress = gtk4::Revealer::new();
 
-        let shell = build(&parent, pages, Some(progress.upcast_ref()));
+        let shell = build(pages, Some(progress.upcast_ref()));
 
         assert!(progress.parent().is_some());
-        assert!(progress.is_ancestor(&shell.window));
-        shell.window.close();
+        assert!(progress.is_ancestor(&shell.dialog));
     }
 }
