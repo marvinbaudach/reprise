@@ -49,6 +49,7 @@ fn app_css() -> String {
         super::toasts::css(),
         super::tag_editor_style::css(),
         info_panel_clip_css(),
+        super::compact_player_layouts::mini_css(),
     ]
     .join("\n")
 }
@@ -138,6 +139,7 @@ mod tests {
             ".stats-chart",
             ".reprise-tag-editor",
             "floating-sheet > sheet",
+            ".mini-player-card",
         ] {
             assert!(css.contains(marker), "missing section marker: {marker}");
         }

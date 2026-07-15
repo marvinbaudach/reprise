@@ -10,12 +10,9 @@ use reprise_core::library::settings;
 use rusqlite::Connection;
 
 use super::compact_player::CompactPlayer;
-use super::compact_player_layouts::layout_from_token;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
 use super::window_decorations::WindowContentHost;
-
-pub(super) const SMOKE_LAYOUT_ENV: &str = "REPRISE_SMOKE_COMPACT_LAYOUT";
 
 pub(super) fn initial_transition(conn: &Connection, first_run: FirstRunDecision) -> ViewTransition {
     minimal_view::startup_transition(
@@ -46,10 +43,82 @@ pub(super) fn build_mode(
     )
 }
 
+/// Returns `true` if the current GDK display is X11 (always-on-top is
+/// supported). On Wayland the menu item is grayed out.
+fn is_x11() -> bool {
+    gtk4::gdk::Display::default()
+        .and_then(|d| d.downcast::<gdk4_x11::X11Display>().ok())
+        .is_some()
+}
+
+/// Sets or clears the always-on-top window state. On X11 this sends the
+/// `_NET_WM_STATE_ABOVE` hint via the X11 backend; on non-X11 displays
+/// this is a no-op (the menu item is already disabled).
+fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
+    let Some(surface) = window.surface() else {
+        return;
+    };
+    if surface.downcast_ref::<gdk4_x11::X11Surface>().is_none() {
+        return;
+    }
+
+    // GDK4 X11: the toplevel state API does not expose _NET_WM_STATE_ABOVE
+    // directly, but we can send the client message via the X11 surface.
+    // For now, use the Xlib-level API through gdk4-x11.
+    let x11_surface: &gdk4_x11::X11Surface = surface.downcast_ref().unwrap();
+    let xdisplay = x11_surface
+        .display()
+        .downcast::<gdk4_x11::X11Display>()
+        .unwrap();
+
+    unsafe {
+        let xlib_display = gdk4_x11::ffi::gdk_x11_display_get_xdisplay(
+            xdisplay.as_ptr() as *mut _,
+        );
+        let xwindow = gdk4_x11::ffi::gdk_x11_surface_get_xid(
+            x11_surface.as_ptr() as *mut _,
+        );
+        let root = x11::xlib::XDefaultRootWindow(xlib_display as *mut _);
+        let net_wm_state = x11::xlib::XInternAtom(
+            xlib_display as *mut _,
+            c"_NET_WM_STATE".as_ptr(),
+            x11::xlib::False,
+        );
+        let net_wm_state_above = x11::xlib::XInternAtom(
+            xlib_display as *mut _,
+            c"_NET_WM_STATE_ABOVE".as_ptr(),
+            x11::xlib::False,
+        );
+
+        let action = if above { 1 } else { 0 }; // _NET_WM_STATE_ADD / _NET_WM_STATE_REMOVE
+        let mut event: x11::xlib::XClientMessageEvent = std::mem::zeroed();
+        event.type_ = x11::xlib::ClientMessage;
+        event.window = xwindow as u64;
+        event.message_type = net_wm_state;
+        event.format = 32;
+        event.data.set_long(0, action);
+        event.data.set_long(1, net_wm_state_above as i64);
+        event.data.set_long(2, 0);
+        event.data.set_long(3, 1); // source: application
+
+        x11::xlib::XSendEvent(
+            xlib_display as *mut _,
+            root,
+            x11::xlib::False,
+            x11::xlib::SubstructureRedirectMask | x11::xlib::SubstructureNotifyMask,
+            &mut event as *mut x11::xlib::XClientMessageEvent
+                as *mut x11::xlib::XEvent,
+        );
+        x11::xlib::XFlush(xlib_display as *mut _);
+    }
+    tracing::debug!(above, "X11: _NET_WM_STATE_ABOVE toggled");
+}
+
 pub(super) fn install(
     window: &adw::ApplicationWindow,
     mode: &Rc<MinimalView>,
     compact: Option<&CompactPlayer>,
+    conn: &Rc<RefCell<Connection>>,
     on_preferences: Rc<dyn Fn()>,
 ) {
     if let Some(compact) = compact {
@@ -59,24 +128,44 @@ pub(super) fn install(
                 mode.toggle();
             }
         }));
-        let weak = Rc::downgrade(mode);
-        compact.set_on_layout(Rc::new(move |layout| {
-            if let Some(mode) = weak.upgrade() {
-                mode.select_layout(layout);
-            }
-        }));
         compact.set_on_preferences(on_preferences);
 
+        // Always-on-Top: X11 only; disable the menu item on Wayland.
+        let x11_available = is_x11();
+        if !x11_available {
+            compact.set_always_on_top_enabled(false);
+        }
+
+        // Restore persisted state.
+        if x11_available {
+            let above = settings::get_compact_always_on_top(&conn.borrow());
+            if above {
+                compact.set_always_on_top_active(true);
+                let window_weak = glib::WeakRef::new();
+                window_weak.set(Some(window));
+                // Defer until the window is mapped so the surface exists.
+                gtk4::glib::idle_add_local_once(move || {
+                    if let Some(window) = window_weak.upgrade() {
+                        set_always_on_top(&window, true);
+                    }
+                });
+            }
+        }
+
+        let conn_weak = Rc::downgrade(conn);
         let window_weak = glib::WeakRef::new();
         window_weak.set(Some(window));
         compact.set_on_always_on_top(Rc::new(move |above| {
             if let Some(window) = window_weak.upgrade() {
-                // TODO: platform-specific implementation (X11 _NET_WM_STATE_ABOVE).
-                // On Wayland, always-on-top is compositor-managed and may be ignored.
-                tracing::debug!(above, "compact player always-on-top toggled");
-                let _ = &window;
+                set_always_on_top(&window, above);
+            }
+            if let Some(conn) = conn_weak.upgrade() {
+                if let Err(e) = settings::set_compact_always_on_top(&conn.borrow(), above) {
+                    tracing::warn!(%e, "failed to persist always-on-top");
+                }
             }
         }));
+
         let window_weak = glib::WeakRef::new();
         window_weak.set(Some(window));
         compact.set_on_quit(Rc::new(move || {
@@ -85,25 +174,6 @@ pub(super) fn install(
             }
         }));
     }
-
-    arm_smoke_layout(mode);
-}
-
-fn arm_smoke_layout(mode: &Rc<MinimalView>) {
-    let Ok(token) = std::env::var(SMOKE_LAYOUT_ENV) else {
-        return;
-    };
-    let Some(layout) = layout_from_token(&token) else {
-        tracing::warn!(token, "invalid compact-layout smoke token");
-        return;
-    };
-    let mode = Rc::downgrade(mode);
-    gtk4::glib::idle_add_local_once(move || {
-        if let Some(mode) = mode.upgrade() {
-            mode.select_layout(layout);
-            tracing::info!(?layout, "smoke: compact layout selected");
-        }
-    });
 }
 
 #[cfg(test)]
@@ -159,7 +229,7 @@ mod tests {
             &content_host,
             full_root.upcast_ref(),
             Some(&compact),
-            conn,
+            conn.clone(),
             ViewTransition {
                 mode: WindowViewMode::Library,
                 layout: CompactLayout::Card,
@@ -168,7 +238,7 @@ mod tests {
         );
         mode.apply_initial();
         let header = adw::HeaderBar::new();
-        install(&window, &mode, Some(&compact), Rc::new(|| {}));
+        install(&window, &mode, Some(&compact), &conn, Rc::new(|| {}));
         assert!(!has_button_with_tooltip(&header, "Open Compact View"));
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
@@ -177,8 +247,7 @@ mod tests {
         mode.toggle();
         while gtk4::glib::MainContext::default().iteration(false) {}
 
-        assert_eq!(compact.layout(), CompactLayout::Card);
-        assert!(compact.widget().is_ancestor(&window));
+        assert!(compact.handle().is_ancestor(&window));
         assert_eq!(window, same_window);
         assert!(window.is_visible());
 

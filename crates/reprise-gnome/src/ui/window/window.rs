@@ -532,7 +532,7 @@ pub fn build(
     info_panel.arm_smoke(&track_list);
     let compact_root = player
         .as_ref()
-        .map(|player| player.compact_player.widget().upcast_ref());
+        .map(|player| player.compact_player.handle().upcast_ref());
     let decorations =
         super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
     let content_host = decorations.content_host();
@@ -586,6 +586,7 @@ pub fn build(
         &window,
         &minimal_view,
         player.as_ref().map(|player| &player.compact_player),
+        conn,
         Rc::new(move || compact_preferences.present()),
     );
     let rescan_conn = conn.clone();
@@ -628,6 +629,27 @@ pub fn build(
         let sidebar_for_queue = sidebar.clone();
         player.bar.connect_queue_clicked(move || {
             sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
+        });
+    }
+    // Cover click → toggle info panel (spec 1.5).
+    if let Some(ref player) = player {
+        let toggle = info_panel.toggle_button().clone();
+        player.connect_cover_clicked(move || {
+            toggle.set_active(!toggle.is_active());
+        });
+    }
+    // Artist click → filter library to artist (spec 1.5).
+    if let Some(ref player) = player {
+        let track_list_weak = Rc::downgrade(&track_list);
+        let views_stack = library_views.stack.clone();
+        let controller_weak = Rc::downgrade(player);
+        player.connect_artist_clicked(move || {
+            let Some(controller) = controller_weak.upgrade() else { return };
+            let Some(track_list) = track_list_weak.upgrade() else { return };
+            if let Some(artist) = controller.current_artist() {
+                track_list.set_source(ViewSource::Artist(artist));
+                views_stack.set_visible_child_name("tracks");
+            }
         });
     }
     header.pack_end(&search_entry);

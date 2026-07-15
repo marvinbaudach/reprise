@@ -1,774 +1,473 @@
-//! Three compact playback layouts fed by the same `PlayerController::sync_*`
-//! path as the library bar and Now Playing page.
+//! Single 430×76 px Mini-Player view.
+//!
+//! `CompactPlayer` wraps an `Rc<Inner>` so it is cheap to clone and can be
+//! stored in both `PlayerController` and `MinimalView` without lifetime
+//! gymnastics. All public methods are `pub(super)` (visible within the `ui`
+//! module) to match the existing GTK component conventions in this codebase.
+//!
+//! ## Callback discipline
+//! Restore/preferences/always-on-top/quit callbacks are routed through the
+//! `CompactMenu` action group so they fire identically whether triggered by
+//! the overlay button, the right-click menu, or a keyboard shortcut. This
+//! also keeps `activate_restore_for_test` working at no extra cost.
+//!
+//! ## RefCell discipline
+//! No `Ref`/`RefMut` is held across a GTK call; every borrow is cloned out
+//! before the owning `RefCell` lock is released.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
-use gtk4::{gdk, gio, prelude::*};
-use reprise_core::format::format_duration;
-use reprise_core::library::settings::CompactLayout;
+use gtk4::gdk;
+use gtk4::prelude::*;
+use libadwaita as adw;
+use libadwaita::prelude::AnimationExt;
 use reprise_core::playback::PlaybackState;
-use reprise_core::queue::Repeat;
 
-use super::compact_player_layouts::{self, LayoutMetrics, LayoutWidgets};
+use super::compact_player_layouts::{build_mini, MiniWidgets};
 use super::compact_player_menu::{self, CompactMenu};
 use super::compact_player_scroll;
-use super::compact_player_state::{normalized_position, volume_percent, CompactPresentation};
 use super::cover_loader::CoverLoader;
-use super::player_bar::{
-    ICON_PAUSE, ICON_PLAY, ICON_REPEAT_ALL, ICON_REPEAT_ONE, REPEAT_OFF_CSS_CLASS,
-};
-use super::player_bar_seek::{
-    should_apply_position_tick, should_clear_drag_guard_on_track_change,
-    should_finish_observer_cancel, should_finish_observer_stop, should_self_heal,
-    should_update_range,
-};
-use super::strings;
+use super::style;
 
-const ZERO_TIME: &str = "0:00";
+const ICON_PLAY: &str = "media-playback-start-symbolic";
+const ICON_PAUSE: &str = "media-playback-pause-symbolic";
 
-pub(super) struct CompactPlayer {
-    stack: gtk4::Stack,
-    views: Vec<LayoutWidgets>,
+/// Duration of one half of the label opacity crossfade (fade-out or fade-in).
+const CROSSFADE_HALF_MS: u32 = 125;
+/// How long the volume feedback bar stays visible after a scroll event.
+const VOL_BAR_LINGER_MS: u64 = 800;
+/// Delay before the hover overlay fades out after the pointer leaves.
+const HOVER_HIDE_DELAY_MS: u64 = 1000;
+
+// ── Inner state ─────────────────────────────────────────────────────────────
+
+struct Inner {
+    widgets: MiniWidgets,
     menu: CompactMenu,
-    layout: Rc<Cell<CompactLayout>>,
-    presentation: Rc<RefCell<CompactPresentation>>,
-    updating_scale: Rc<Cell<bool>>,
-    dragging: Rc<Cell<bool>>,
-    pointer_down: Rc<Cell<bool>>,
-    seek_gestures: RefCell<Vec<gtk4::GestureClick>>,
-    last_duration_ms: Cell<i64>,
-    updating_shuffle: Rc<Cell<bool>>,
+    /// Last-known playback duration, used to convert waveform seek fractions
+    /// to absolute millisecond positions for the controller.
+    current_duration_ms: Cell<i64>,
+    /// Last-known volume (0.0–1.0), used as the scroll base for the next step.
+    current_volume: Cell<f64>,
+    /// Pending hide-timer handle for the volume bar.
+    vol_bar_hide_source: RefCell<Option<gtk4::glib::SourceId>>,
+    /// Pending hide-timer handle for the hover overlay.
+    hover_hide_source: RefCell<Option<gtk4::glib::SourceId>>,
 }
 
-#[derive(Clone)]
-pub(super) struct CompactPlayerHandle {
-    stack: gtk4::Stack,
-    layout: Rc<Cell<CompactLayout>>,
-    layout_action: gio::SimpleAction,
-}
+// ── Public type ─────────────────────────────────────────────────────────────
 
-impl CompactPlayerHandle {
-    pub(super) fn widget(&self) -> &gtk4::Stack {
-        &self.stack
-    }
+/// Mini-Player: a single compact 430×76 px widget.
+///
+/// Clone-cheap (wraps `Rc<Inner>`); both `PlayerController` and `MinimalView`
+/// can own a copy without needing `Weak` references to each other.
+pub(super) struct CompactPlayer(Rc<Inner>);
 
-    pub(super) fn set_layout(&self, layout: CompactLayout) {
-        self.layout.set(layout);
-        self.stack
-            .set_visible_child_name(compact_player_layouts::layout_token(layout));
-        self.layout_action
-            .set_state(&compact_player_menu::active_target(layout).to_variant());
+impl Clone for CompactPlayer {
+    fn clone(&self) -> Self {
+        Self(Rc::clone(&self.0))
     }
 }
+
+// ── Construction ─────────────────────────────────────────────────────────────
 
 impl CompactPlayer {
     pub(super) fn new() -> Self {
-        let stack = gtk4::Stack::new();
-        stack.set_transition_type(gtk4::StackTransitionType::None);
-        stack.set_hhomogeneous(false);
-        stack.set_vhomogeneous(false);
-        let views: Vec<_> = [
-            CompactLayout::Cover,
-            CompactLayout::Pill,
-            CompactLayout::Card,
-        ]
-        .into_iter()
-        .map(compact_player_layouts::build)
-        .collect();
-        for view in &views {
-            compact_player_scroll::block_seek_scroll(&view.scale);
-            stack.add_named(
-                &view.root,
-                Some(compact_player_layouts::layout_token(view.layout)),
-            );
-        }
-        stack.set_visible_child_name(compact_player_layouts::layout_token(CompactLayout::Card));
-        let menu = CompactMenu::build(CompactLayout::Card);
-        stack.insert_action_group("compact", Some(&menu.action_group));
+        let widgets = build_mini();
+        let menu = CompactMenu::build();
 
-        let compact = Self {
-            stack,
-            views,
+        // Install the mini-player CSS (once per process; no-op if GTK has no
+        // default display yet, matching the rest of the style pipeline).
+        style::install();
+
+        // Install the "compact" action group on the card so menu accelerators
+        // and keyboard shortcuts resolve correctly.
+        widgets
+            .card
+            .insert_action_group("compact", Some(&menu.action_group));
+
+        let inner = Rc::new(Inner {
+            widgets,
             menu,
-            layout: Rc::new(Cell::new(CompactLayout::Card)),
-            presentation: Rc::new(RefCell::new(CompactPresentation::default())),
-            updating_scale: Rc::new(Cell::new(false)),
-            dragging: Rc::new(Cell::new(false)),
-            pointer_down: Rc::new(Cell::new(false)),
-            seek_gestures: RefCell::new(Vec::new()),
-            last_duration_ms: Cell::new(0),
-            updating_shuffle: Rc::new(Cell::new(false)),
-        };
-        compact.wire_cover_mirror();
-        compact.wire_menu_openers();
-        compact.set_repeat_indicator(Repeat::Off);
-        compact.refresh_sensitivity();
-        compact
+            current_duration_ms: Cell::new(0),
+            current_volume: Cell::new(1.0),
+            vol_bar_hide_source: RefCell::new(None),
+            hover_hide_source: RefCell::new(None),
+        });
+
+        wire_hover(&inner);
+        wire_double_click(&inner);
+        wire_right_click(&inner);
+        wire_keyboard_menu(&inner);
+        wire_chrome_buttons(&inner);
+
+        Self(inner)
+    }
+}
+
+// ── Widget accessors ─────────────────────────────────────────────────────────
+
+impl CompactPlayer {
+    /// The root `WindowHandle` — mount this in `MinimalView`'s toast overlay.
+    pub(super) fn handle(&self) -> &gtk4::WindowHandle {
+        &self.0.widgets.root
     }
 
+    /// The cover `Image` widget, fed by `CoverLoader` in `now_playing_wiring`.
     pub(super) fn cover_image(&self) -> &gtk4::Image {
-        &self.views[0].cover
+        &self.0.widgets.cover
     }
+}
 
-    pub(super) fn widget(&self) -> &gtk4::Stack {
-        &self.stack
-    }
+// ── State setters (called from `now_playing_wiring`) ─────────────────────────
 
-    pub(super) fn handle(&self) -> CompactPlayerHandle {
-        CompactPlayerHandle {
-            stack: self.widget().clone(),
-            layout: self.layout.clone(),
-            layout_action: self.menu.layout_action(),
+impl CompactPlayer {
+    /// Crossfades the title and artist labels when the track changes (gated on
+    /// `gtk-enable-animations`). The cover is not animated here — it is
+    /// managed by `CoverLoader` asynchronously.
+    pub(super) fn set_track(&self, title: &str, artist: &str) {
+        let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
+        if animate {
+            start_label_crossfade(&self.0, title.to_owned(), artist.to_owned());
+        } else {
+            self.0.widgets.title_label.set_text(title);
+            self.0.widgets.artist_label.set_text(artist);
         }
     }
 
-    pub(super) fn set_cover_placeholder(&self) {
-        for view in &self.views {
-            CoverLoader::set_placeholder(&view.cover);
-        }
-    }
-
-    pub(super) fn layout(&self) -> CompactLayout {
-        self.layout.get()
-    }
-
-    pub(super) fn set_layout(&self, layout: CompactLayout) {
-        self.handle().set_layout(layout);
-        let metrics = self.metrics();
-        tracing::debug!(
-            ?layout,
-            width = metrics.width,
-            height = metrics.height,
-            "compact layout selected"
-        );
-    }
-
-    pub(super) fn metrics(&self) -> LayoutMetrics {
-        compact_player_layouts::metrics(self.layout())
-    }
-
-    pub(super) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
-        self.menu.set_on_restore(callback);
-    }
-
-    #[cfg(test)]
-    pub(super) fn activate_restore_for_test(&self) {
-        self.menu.action_group.activate_action("restore", None);
-    }
-
-    pub(super) fn set_on_layout(&self, callback: Rc<dyn Fn(CompactLayout)>) {
-        self.menu.set_on_layout(callback);
-    }
-
-    pub(super) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
-        self.menu.set_on_preferences(callback);
-    }
-
-    pub(super) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
-        self.menu.set_on_always_on_top(callback);
-    }
-
-    pub(super) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
-        self.menu.set_on_quit(callback);
-    }
-
-    pub(super) fn set_track(&self, title: &str, artist: &str, album: &str, year: Option<i32>) {
-        if should_clear_drag_guard_on_track_change(
-            self.pointer_down.get(),
-            self.seek_gesture_is_active(),
-        ) {
-            self.dragging.set(false);
-        }
-        {
-            let mut presentation = self.presentation.borrow_mut();
-            presentation.title = title.to_string();
-            presentation.artist = artist.to_string();
-            presentation.album = album.to_string();
-            presentation.year = year;
-        }
-        for view in &self.views {
-            let detail_rows = compact_player_layouts::visible_detail_rows(view.layout, album, year);
-            view.title.set_text(title);
-            view.artist.set_text(artist);
-            view.album.set_text(album);
-            view.album
-                .set_visible(detail_rows.contains(&compact_player_layouts::MetadataRow::Album));
-            view.year
-                .set_text(&year.map(|value| value.to_string()).unwrap_or_default());
-            view.year
-                .set_visible(detail_rows.contains(&compact_player_layouts::MetadataRow::Year));
-        }
-    }
-
+    /// Resets all displayed metadata to the empty state.
     pub(super) fn clear_track(&self) {
-        if should_clear_drag_guard_on_track_change(
-            self.pointer_down.get(),
-            self.seek_gesture_is_active(),
-        ) {
-            self.dragging.set(false);
-        }
-        self.presentation.borrow_mut().clear_track();
-        for view in &self.views {
-            view.title.set_text("");
-            view.artist.set_text("");
-            view.album.set_text("");
-            view.year.set_text("");
-            view.album.set_visible(false);
-            view.year.set_visible(false);
-            view.position.set_text(ZERO_TIME);
-            view.duration.set_text(ZERO_TIME);
-        }
+        self.0.widgets.title_label.set_text("");
+        self.0.widgets.artist_label.set_text("");
+        self.0.current_duration_ms.set(0);
+        self.0.widgets.waveform.set_fraction_smooth(0.0);
         self.set_cover_placeholder();
     }
 
+    /// Updates the play/pause icon and the menu's play label.
     pub(super) fn set_state(&self, state: PlaybackState) {
-        self.presentation.borrow_mut().set_playback_state(state);
         let is_playing = state == PlaybackState::Playing;
-        let action_label = strings::text(if is_playing {
-            strings::PAUSE
-        } else {
-            strings::PLAY
-        });
-        for view in &self.views {
-            view.play_pause
-                .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
-            view.play_pause.set_tooltip_text(Some(&action_label));
-            view.play_pause
-                .update_property(&[gtk4::accessible::Property::Label(&action_label)]);
-        }
-        self.menu.set_playing(is_playing);
-        if state == PlaybackState::Stopped {
-            self.pointer_down.set(false);
-            self.dragging.set(false);
-            self.set_position(0, 0);
-        }
-        self.refresh_sensitivity();
+        self.0
+            .widgets
+            .play_pause_button
+            .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
+        self.0.menu.set_playing(is_playing);
     }
 
+    /// Advances the waveform seek bar. Stores `duration_ms` for seek-fraction
+    /// conversion.
     pub(super) fn set_position(&self, position_ms: i64, duration_ms: i64) {
-        let (position_ms, duration_ms) = normalized_position(position_ms, duration_ms);
-        {
-            let mut presentation = self.presentation.borrow_mut();
-            presentation.position_ms = position_ms;
-            presentation.duration_ms = duration_ms;
-        }
-        if should_self_heal(
-            self.dragging.get(),
-            self.pointer_down.get(),
-            self.seek_gesture_is_active(),
-        ) {
-            tracing::warn!("compact-player drag guard was stuck; self-healing");
-            self.dragging.set(false);
-        }
-        let update_range = should_update_range(self.last_duration_ms.get(), duration_ms);
-        self.updating_scale.set(true);
-        for view in &self.views {
-            if update_range {
-                view.scale.set_range(0.0, duration_ms.max(1) as f64);
-            }
-            if should_apply_position_tick(self.dragging.get()) {
-                view.scale.set_value(position_ms as f64);
-            }
-            view.position.set_text(&format_duration(position_ms));
-            view.duration.set_text(&format_duration(duration_ms));
-        }
-        self.updating_scale.set(false);
-        if update_range {
-            self.last_duration_ms.set(duration_ms);
-        }
-    }
-
-    pub(super) fn set_transport_enabled(&self, enabled: bool) {
-        self.presentation.borrow_mut().transport_enabled = enabled;
-        for view in &self.views {
-            view.previous.set_sensitive(enabled);
-            view.next.set_sensitive(enabled);
-        }
-        self.refresh_sensitivity();
-    }
-
-    pub(super) fn set_shuffle_indicator(&self, active: bool) {
-        self.presentation.borrow_mut().shuffled = active;
-        self.updating_shuffle.set(true);
-        for view in &self.views {
-            if let Some(shuffle) = &view.shuffle {
-                shuffle.set_active(active);
-            }
-        }
-        self.menu.set_shuffle(active);
-        self.updating_shuffle.set(false);
-    }
-
-    pub(super) fn set_repeat_indicator(&self, repeat: Repeat) {
-        self.presentation.borrow_mut().repeat = repeat;
-        let (icon, off) = match repeat {
-            Repeat::Off => (ICON_REPEAT_ALL, true),
-            Repeat::All => (ICON_REPEAT_ALL, false),
-            Repeat::One => (ICON_REPEAT_ONE, false),
+        let dur = duration_ms.max(0);
+        self.0.current_duration_ms.set(dur);
+        self.0.widgets.waveform.set_duration(dur);
+        let fraction = if dur > 0 {
+            position_ms.clamp(0, dur) as f64 / dur as f64
+        } else {
+            0.0
         };
-        for view in &self.views {
-            if let Some(button) = &view.repeat {
-                button.set_icon_name(icon);
-                if off {
-                    button.add_css_class(REPEAT_OFF_CSS_CLASS);
-                } else {
-                    button.remove_css_class(REPEAT_OFF_CSS_CLASS);
-                }
-            }
-        }
-        self.menu.set_repeat(repeat);
+        self.0.widgets.waveform.set_fraction_smooth(fraction);
     }
 
+    /// Enables or disables the play/pause button.
+    pub(super) fn set_transport_enabled(&self, enabled: bool) {
+        self.0.widgets.play_pause_button.set_sensitive(enabled);
+    }
+
+    /// Stores the current volume and shows the visual feedback bar briefly.
     pub(super) fn set_volume_indicator(&self, volume: f64) {
-        let volume = if volume.is_finite() {
+        let v = if volume.is_finite() {
             volume.clamp(0.0, 1.0)
         } else {
             1.0
         };
-        self.presentation.borrow_mut().volume_percent = volume_percent(volume);
+        self.0.current_volume.set(v);
     }
 
+    /// Resets the cover to the placeholder image.
+    pub(super) fn set_cover_placeholder(&self) {
+        CoverLoader::set_placeholder(&self.0.widgets.cover);
+    }
+}
+
+// ── Callback wiring (called from `compact_mode_controls` and
+//    `player_controller_wiring`) ──────────────────────────────────────────────
+
+impl CompactPlayer {
+    /// Replaces the callback fired by "Restore Full Window" — the overlay
+    /// button, the X button, the menu action, and double-clicking the cover
+    /// or title all route through this.
+    pub(super) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
+        self.0.menu.set_on_restore(callback);
+    }
+
+    pub(super) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
+        self.0.menu.set_on_preferences(callback);
+    }
+
+    pub(super) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
+        self.0.menu.set_on_always_on_top(callback);
+    }
+
+    /// Disables the always-on-top action (grays out the menu item).
+    pub(super) fn set_always_on_top_enabled(&self, enabled: bool) {
+        self.0.menu.always_on_top_action.set_enabled(enabled);
+    }
+
+    /// Sets the always-on-top action state (check mark in the menu).
+    pub(super) fn set_always_on_top_active(&self, active: bool) {
+        self.0
+            .menu
+            .always_on_top_action
+            .set_state(&active.to_variant());
+    }
+
+    pub(super) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
+        self.0.menu.set_on_quit(callback);
+    }
+
+    /// Wires play/pause to both the overlay button and the menu action.
     pub(super) fn connect_play_pause(&self, callback: impl Fn() + 'static) {
-        let callback = Rc::new(callback);
-        for view in &self.views {
-            let callback = callback.clone();
-            view.play_pause.connect_clicked(move |_| callback());
-        }
-        self.menu.set_on_play_pause(callback);
+        let callback: Rc<dyn Fn()> = Rc::new(callback);
+        let cb1 = Rc::clone(&callback);
+        self.0
+            .widgets
+            .play_pause_button
+            .connect_clicked(move |_| cb1());
+        self.0.menu.set_on_play_pause(callback);
     }
 
-    pub(super) fn connect_previous(&self, callback: impl Fn() + 'static) {
-        let callback = Rc::new(callback);
-        connect_buttons_rc(
-            self.views.iter().map(|view| &view.previous),
-            callback.clone(),
-        );
-        self.menu.set_on_previous(callback);
-    }
-
-    pub(super) fn connect_next(&self, callback: impl Fn() + 'static) {
-        let callback = Rc::new(callback);
-        connect_buttons_rc(self.views.iter().map(|view| &view.next), callback.clone());
-        self.menu.set_on_next(callback);
-    }
-
-    pub(super) fn connect_shuffle_toggled(&self, callback: impl Fn(bool) + 'static) {
-        let callback = Rc::new(callback);
-        for view in &self.views {
-            let Some(shuffle) = &view.shuffle else {
-                continue;
-            };
-            let callback = callback.clone();
-            let updating = self.updating_shuffle.clone();
-            shuffle.connect_toggled(move |button| {
-                if !updating.get() {
-                    callback(button.is_active());
-                }
-            });
-        }
-        self.menu.set_on_shuffle(callback);
-    }
-
-    pub(super) fn connect_repeat_clicked(&self, callback: impl Fn() + 'static) {
-        let callback = Rc::new(callback);
-        for view in &self.views {
-            let Some(repeat) = &view.repeat else {
-                continue;
-            };
-            let callback = callback.clone();
-            repeat.connect_clicked(move |_| callback());
-        }
-        let presentation = self.presentation.clone();
-        self.menu.set_on_repeat(Rc::new(move |desired| {
-            let current = presentation.borrow().repeat;
-            let steps = repeat_steps(current, desired);
-            for _ in 0..steps {
-                callback();
-            }
-        }));
-    }
-
-    pub(super) fn connect_volume_changed(&self, callback: impl Fn(f64) + 'static) {
-        let callback = Rc::new(callback);
-        for view in &self.views {
-            let presentation = self.presentation.clone();
-            let current: Rc<dyn Fn() -> f64> =
-                Rc::new(move || f64::from(presentation.borrow().volume_percent) / 100.0);
-            compact_player_scroll::install(&view.volume_scroll_region, current, callback.clone());
-        }
-    }
-
+    /// Wires the waveform's drag-to-seek gesture. The fraction (0..1) is
+    /// converted to milliseconds using the last-known duration.
     pub(super) fn connect_seek(&self, callback: impl Fn(i64) + 'static) {
-        let callback = Rc::new(callback);
-        let mut gestures = Vec::with_capacity(self.views.len());
-        for view in &self.views {
-            self.wire_seek(view, &callback, &mut gestures);
-        }
-        *self.seek_gestures.borrow_mut() = gestures;
-    }
-
-    fn wire_seek(
-        &self,
-        view: &LayoutWidgets,
-        callback: &Rc<impl Fn(i64) + 'static>,
-        gestures: &mut Vec<gtk4::GestureClick>,
-    ) {
-        let updating = self.updating_scale.clone();
-        let dragging = self.dragging.clone();
-        let changed = callback.clone();
-        view.scale.connect_value_changed(move |scale| {
-            if !updating.get() && !dragging.get() {
-                changed(scale.value() as i64);
+        let inner = Rc::clone(&self.0);
+        self.0.widgets.waveform.connect_seek(move |fraction| {
+            let dur_ms = inner.current_duration_ms.get();
+            if dur_ms > 0 {
+                callback((fraction * dur_ms as f64) as i64);
             }
         });
-
-        let click = gtk4::GestureClick::new();
-        click.set_button(gdk::BUTTON_PRIMARY);
-        click.set_propagation_phase(gtk4::PropagationPhase::Capture);
-        let press_dragging = self.dragging.clone();
-        click.connect_pressed(move |_, _, _, _| press_dragging.set(true));
-
-        let end_drag: Rc<dyn Fn()> = {
-            let dragging = self.dragging.clone();
-            let pointer_down = self.pointer_down.clone();
-            let scale = view.scale.downgrade();
-            let callback = callback.clone();
-            Rc::new(move || {
-                pointer_down.set(false);
-                if !dragging.replace(false) {
-                    return;
-                }
-                if let Some(scale) = scale.upgrade() {
-                    callback(scale.value() as i64);
-                }
-            })
-        };
-
-        let raw = gtk4::EventControllerLegacy::new();
-        raw.set_propagation_phase(gtk4::PropagationPhase::Capture);
-        let raw_pointer_down = self.pointer_down.clone();
-        let raw_dragging = self.dragging.clone();
-        let raw_end = end_drag.clone();
-        raw.connect_event(move |_, event| {
-            let primary = event
-                .downcast_ref::<gdk::ButtonEvent>()
-                .is_some_and(|button| button.button() == gdk::BUTTON_PRIMARY);
-            match event.event_type() {
-                gdk::EventType::ButtonPress if primary => {
-                    raw_pointer_down.set(true);
-                    raw_dragging.set(true);
-                }
-                gdk::EventType::TouchBegin => {
-                    raw_pointer_down.set(true);
-                    raw_dragging.set(true);
-                }
-                gdk::EventType::ButtonRelease if primary => raw_end(),
-                gdk::EventType::TouchEnd | gdk::EventType::TouchCancel => raw_end(),
-                _ => {}
-            }
-            gtk4::glib::Propagation::Proceed
-        });
-        view.scale.add_controller(raw);
-
-        let released = end_drag.clone();
-        click.connect_released(move |_, _, _, _| released());
-        let cancel = end_drag.clone();
-        let cancel_pointer_down = self.pointer_down.clone();
-        click.connect_cancel(move |_, _| {
-            if should_finish_observer_cancel(cancel_pointer_down.get()) {
-                cancel();
-            }
-        });
-        let unpaired = end_drag.clone();
-        click.connect_unpaired_release(move |_, _, _, _, _| unpaired());
-        let stopped = end_drag;
-        let stopped_pointer_down = self.pointer_down.clone();
-        click.connect_stopped(move |gesture| {
-            if should_finish_observer_stop(stopped_pointer_down.get(), gesture.is_active()) {
-                stopped();
-            }
-        });
-        view.scale.add_controller(click.clone());
-        gestures.push(click);
     }
 
-    fn wire_cover_mirror(&self) {
-        let secondaries: Vec<_> = self
-            .views
-            .iter()
-            .skip(1)
-            .map(|view| view.cover.clone())
-            .collect();
-        self.views[0]
-            .cover
-            .connect_notify_local(Some("paintable"), move |primary, _| {
-                let paintable = primary.paintable();
-                for image in &secondaries {
-                    image.set_paintable(paintable.as_ref());
-                }
-            });
-    }
-
-    fn wire_menu_openers(&self) {
-        for view in &self.views {
-            let popover = self.menu.popover.clone();
-            let anchor = view.menu.clone();
-            view.menu.connect_clicked(move |_| {
-                compact_player_menu::popup_at(&popover, anchor.upcast_ref(), None);
-            });
-
-            let click = gtk4::GestureClick::new();
-            click.set_button(gdk::BUTTON_SECONDARY);
-            let popover = self.menu.popover.clone();
-            let anchor = view.root.clone();
-            click.connect_pressed(move |_, _, x, y| {
-                let interactive = anchor
-                    .pick(x, y, gtk4::PickFlags::DEFAULT)
-                    .is_some_and(|picked| is_interactive_descendant(&picked, &anchor));
-                if !compact_player_menu::accepts_context_menu(interactive) {
-                    return;
-                }
-                compact_player_menu::popup_at(&popover, &anchor, Some((x as i32, y as i32)));
-            });
-            view.root.add_controller(click);
-
-            let keys = gtk4::EventControllerKey::new();
-            let popover = self.menu.popover.clone();
-            let anchor = view.menu.clone();
-            keys.connect_key_pressed(move |_, key, _, modifiers| {
-                if !compact_player_menu::is_context_menu_shortcut(key, modifiers) {
-                    return gtk4::glib::Propagation::Proceed;
-                }
-                compact_player_menu::popup_at(&popover, anchor.upcast_ref(), None);
-                gtk4::glib::Propagation::Stop
-            });
-            view.root.add_controller(keys);
-        }
-    }
-
-    fn seek_gesture_is_active(&self) -> bool {
-        self.seek_gestures
-            .borrow()
-            .iter()
-            .any(gtk4::prelude::GestureExt::is_active)
-    }
-
-    fn refresh_sensitivity(&self) {
-        let presentation = self.presentation.borrow();
-        let sensitive = super::player_bar_state::bar_should_be_sensitive(
-            presentation.state,
-            presentation.transport_enabled,
+    /// Installs a scroll controller on the card for volume adjustment.
+    /// Calls `on_volume_change` with the new clamped level and briefly shows
+    /// the accent-coloured feedback bar at the top edge.
+    pub(super) fn connect_volume_changed(&self, callback: impl Fn(f64) + 'static) {
+        let inner = Rc::clone(&self.0);
+        let inner2 = Rc::clone(&self.0);
+        let callback: Rc<dyn Fn(f64)> = Rc::new(callback);
+        let card_widget: gtk4::Widget = self.0.widgets.card.clone().upcast();
+        compact_player_scroll::install(
+            &card_widget,
+            Rc::new(move || inner.current_volume.get()),
+            Rc::new(move |volume| {
+                callback(volume);
+                show_volume_bar(&inner2);
+            }),
         );
-        for view in &self.views {
-            view.play_pause
-                .set_sensitive(compact_player_layouts::control_is_sensitive(
-                    compact_player_layouts::ControlRole::Playback,
-                    sensitive,
-                ));
-            view.scale
-                .set_sensitive(presentation.state != PlaybackState::Stopped);
-            view.menu
-                .set_sensitive(compact_player_layouts::control_is_sensitive(
-                    compact_player_layouts::ControlRole::WindowAction,
-                    sensitive,
-                ));
-        }
+    }
+
+    /// Routes "Previous" from the right-click menu to the controller.
+    pub(super) fn connect_previous(&self, callback: impl Fn() + 'static) {
+        self.0.menu.set_on_previous(Rc::new(callback));
+    }
+
+    /// Routes "Next" from the right-click menu to the controller.
+    pub(super) fn connect_next(&self, callback: impl Fn() + 'static) {
+        self.0.menu.set_on_next(Rc::new(callback));
+    }
+
+    /// Test-only: fires the "restore" action as if the user clicked the button
+    /// or chose it from the menu.
+    #[cfg(test)]
+    pub(super) fn activate_restore_for_test(&self) {
+        self.0.menu.action_group.activate_action("restore", None);
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn connect_buttons_rc<'a>(buttons: impl Iterator<Item = &'a gtk4::Button>, callback: Rc<dyn Fn()>) {
-    for button in buttons {
-        let callback = callback.clone();
-        button.connect_clicked(move |_| callback());
-    }
+// ── Private wiring helpers ────────────────────────────────────────────────────
+
+/// Installs a motion controller on the card that shows/hides the hover overlay
+/// (restore + close buttons). The hide is deferred by `HOVER_HIDE_DELAY_MS`
+/// so a slow pointer move does not flicker.
+fn wire_hover(inner: &Rc<Inner>) {
+    let motion = gtk4::EventControllerMotion::new();
+
+    motion.connect_enter({
+        let inner = Rc::clone(inner);
+        move |_, _, _| {
+            // Cancel a pending hide so the overlay stays visible.
+            if let Some(id) = inner.hover_hide_source.borrow_mut().take() {
+                id.remove();
+            }
+            inner.widgets.hover_revealer.set_reveal_child(true);
+            inner.widgets.hover_revealer.set_can_target(true);
+        }
+    });
+
+    motion.connect_leave({
+        let inner = Rc::clone(inner);
+        move |_| {
+            let inner2 = Rc::clone(&inner);
+            let id = gtk4::glib::timeout_add_local_once(
+                Duration::from_millis(HOVER_HIDE_DELAY_MS),
+                move || {
+                    inner2.widgets.hover_revealer.set_reveal_child(false);
+                    inner2.widgets.hover_revealer.set_can_target(false);
+                    *inner2.hover_hide_source.borrow_mut() = None;
+                },
+            );
+            *inner.hover_hide_source.borrow_mut() = Some(id);
+        }
+    });
+
+    inner.widgets.card.add_controller(motion);
 }
 
-fn repeat_steps(current: Repeat, desired: Repeat) -> usize {
-    match (current, desired) {
-        (a, b) if a == b => 0,
-        (Repeat::Off, Repeat::All) | (Repeat::All, Repeat::One) | (Repeat::One, Repeat::Off) => 1,
-        _ => 2,
-    }
+/// Wires the overlay restore/close buttons to the "compact.restore" action,
+/// so they fire the same callback as the menu item and keyboard shortcut.
+fn wire_chrome_buttons(inner: &Rc<Inner>) {
+    let ag = inner.menu.action_group.clone();
+    inner.widgets.restore_button.connect_clicked({
+        let ag = ag.clone();
+        move |_| {
+            ag.activate_action("restore", None);
+        }
+    });
+    inner.widgets.close_button.connect_clicked(move |_| {
+        ag.activate_action("restore", None);
+    });
 }
 
-fn is_interactive_descendant(widget: &gtk4::Widget, root: &gtk4::Widget) -> bool {
-    let mut current = Some(widget.clone());
-    while let Some(widget) = current {
-        if widget.is::<gtk4::Button>() || widget.is::<gtk4::Scale>() {
-            return true;
+/// Double-clicking the cover image or the title label triggers restore.
+fn wire_double_click(inner: &Rc<Inner>) {
+    let ag = inner.menu.action_group.clone();
+    let gesture = gtk4::GestureClick::new();
+    gesture.set_button(gdk::BUTTON_PRIMARY);
+    gesture.connect_pressed(move |g, n_press, _, _| {
+        if n_press == 2 {
+            g.set_state(gtk4::EventSequenceState::Claimed);
+            ag.activate_action("restore", None);
         }
-        if widget == *root {
-            break;
-        }
-        current = widget.parent();
-    }
-    false
+    });
+    // Add to the card; the gesture sees clicks anywhere in it.
+    inner.widgets.card.add_controller(gesture);
 }
+
+/// Right-clicking anywhere on the card (outside interactive controls) opens
+/// the context menu at the pointer position.
+fn wire_right_click(inner: &Rc<Inner>) {
+    let popover = inner.menu.popover.clone();
+    let gesture = gtk4::GestureClick::new();
+    gesture.set_button(gdk::BUTTON_SECONDARY);
+    let anchor = inner.widgets.card.clone();
+    gesture.connect_pressed(move |g, _, x, y| {
+        g.set_state(gtk4::EventSequenceState::Claimed);
+        compact_player_menu::popup_at(&popover, anchor.upcast_ref(), Some((x as i32, y as i32)));
+    });
+    inner.widgets.card.add_controller(gesture);
+}
+
+/// Opens the context menu on Menu key or Shift+F10 (keyboard accessibility).
+fn wire_keyboard_menu(inner: &Rc<Inner>) {
+    let key_controller = gtk4::EventControllerKey::new();
+    let popover = inner.menu.popover.clone();
+    let anchor = inner.widgets.card.clone();
+    key_controller.connect_key_pressed(move |_, keyval, _, modifier| {
+        let dominated = keyval == gdk::Key::Menu
+            || (keyval == gdk::Key::F10
+                && modifier.contains(gdk::ModifierType::SHIFT_MASK));
+        if dominated {
+            compact_player_menu::popup_at(&popover, anchor.upcast_ref(), None);
+            gtk4::glib::Propagation::Stop
+        } else {
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+    inner.widgets.card.add_controller(key_controller);
+}
+
+/// Cross-fades the title and artist labels: fade out → swap text → fade in.
+/// Uses two simultaneous `adw::TimedAnimation`s on `opacity`; the swap and
+/// fade-in are triggered by the `done` signal of the title fade-out.
+fn start_label_crossfade(inner: &Rc<Inner>, title: String, artist: String) {
+    let title_lbl = inner.widgets.title_label.clone();
+    let artist_lbl = inner.widgets.artist_label.clone();
+
+    // Fade out title; on completion, swap and fade in both.
+    let tgt_title = adw::PropertyAnimationTarget::new(&title_lbl, "opacity");
+    let fade_out = adw::TimedAnimation::new(&title_lbl, 1.0, 0.0, CROSSFADE_HALF_MS, tgt_title);
+
+    // Fade out artist simultaneously (no done handler needed).
+    let tgt_artist = adw::PropertyAnimationTarget::new(&artist_lbl, "opacity");
+    let fade_out_a = adw::TimedAnimation::new(&artist_lbl, 1.0, 0.0, CROSSFADE_HALF_MS, tgt_artist);
+
+    fade_out.connect_done(move |_| {
+        title_lbl.set_text(&title);
+        artist_lbl.set_text(&artist);
+
+        let tgt_t = adw::PropertyAnimationTarget::new(&title_lbl, "opacity");
+        adw::TimedAnimation::new(&title_lbl, 0.0, 1.0, CROSSFADE_HALF_MS, tgt_t).play();
+
+        let tgt_a = adw::PropertyAnimationTarget::new(&artist_lbl, "opacity");
+        adw::TimedAnimation::new(&artist_lbl, 0.0, 1.0, CROSSFADE_HALF_MS, tgt_a).play();
+    });
+
+    fade_out.play();
+    fade_out_a.play();
+}
+
+/// Shows the accent-coloured volume bar at the top edge of the card, then
+/// hides it after `VOL_BAR_LINGER_MS`. Cancels any in-flight hide timer so
+/// rapid scroll steps don't flicker.
+fn show_volume_bar(inner: &Rc<Inner>) {
+    inner.widgets.volume_bar.set_opacity(1.0);
+
+    if let Some(id) = inner.vol_bar_hide_source.borrow_mut().take() {
+        id.remove();
+    }
+
+    let bar = inner.widgets.volume_bar.clone();
+    let inner2 = Rc::clone(inner);
+    let id =
+        gtk4::glib::timeout_add_local_once(Duration::from_millis(VOL_BAR_LINGER_MS), move || {
+            bar.set_opacity(0.0);
+            *inner2.vol_bar_hide_source.borrow_mut() = None;
+        });
+    *inner.vol_bar_hide_source.borrow_mut() = Some(id);
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn assert_layout_contract(layout: CompactLayout) {
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mini_player_has_root_handle_and_cover_image() {
         if gtk4::init().is_err() {
             return;
         }
-        let compact = CompactPlayer::new();
-        assert_eq!(compact.layout(), CompactLayout::Card);
-        assert_eq!(compact.views.len(), 3);
-        assert_eq!(
-            compact.widget().visible_child_name().as_deref(),
-            Some("card")
-        );
-        compact.connect_volume_changed(|_| {});
-        compact.set_layout(layout);
-        compact.set_track("Track", "Artist", "Album", Some(2026));
-        let view = compact
-            .views
-            .iter()
-            .find(|view| view.layout == layout)
-            .unwrap();
-        assert!(view.cover.parent().is_some());
-        assert!(view.title.parent().is_some());
-        assert!(view.artist.parent().is_some());
-        assert_eq!(
-            view.album.is_visible(),
-            matches!(layout, CompactLayout::Cover | CompactLayout::Card)
-        );
-        assert_eq!(view.year.is_visible(), layout == CompactLayout::Card);
-        if layout == CompactLayout::Card {
-            assert_eq!(view.year.text(), "2026");
-        }
-        assert_eq!(view.previous.tooltip_text().as_deref(), Some("Previous"));
-        assert_eq!(view.play_pause.tooltip_text().as_deref(), Some("Play"));
-        assert_eq!(view.next.tooltip_text().as_deref(), Some("Next"));
-        assert_eq!(
-            view.scale.tooltip_text().as_deref(),
-            Some("Playback position")
-        );
-        assert_eq!(
-            view.menu.tooltip_text().as_deref(),
-            Some("Compact player menu")
-        );
-        assert!(view.volume_scroll_region.parent().is_some());
-        let controllers = view.volume_scroll_region.observe_controllers();
-        let scroll_controllers = (0..controllers.n_items())
-            .filter_map(|position| controllers.item(position))
-            .filter(gtk4::prelude::ObjectExt::is::<gtk4::EventControllerScroll>)
-            .count();
-        assert_eq!(scroll_controllers, 1);
-        let scale_controllers = view.scale.observe_controllers();
-        assert!((0..scale_controllers.n_items())
-            .filter_map(|position| scale_controllers.item(position))
-            .filter_map(|controller| controller.downcast::<gtk4::EventController>().ok())
-            .any(|controller| controller.name().as_deref() == Some("compact-seek-scroll-blocker")));
-        assert!(!tree_has(&view.root, &|widget| widget.is::<gtk4::ScaleButton>()));
-        assert!(!tree_has_button_tooltip(&view.root, "Restore Full Window"));
-        assert!(!tree_has_button_tooltip(&view.root, "Volume"));
-        let actions = compact.menu.action_group.list_actions();
-        assert_eq!(actions.len(), compact_player_menu::MENU_ACTIONS.len());
-        for action in compact_player_menu::MENU_ACTIONS {
-            assert!(compact.menu.action_group.has_action(action));
-        }
-        let metrics = compact.metrics();
-        let (_, stack_width, _, _) = compact.widget().measure(gtk4::Orientation::Horizontal, -1);
-        let (_, stack_height, _, _) = compact
-            .widget()
-            .measure(gtk4::Orientation::Vertical, metrics.width);
-        assert!(
-            stack_width <= metrics.width,
-            "active {layout:?} stack width {stack_width} > {}",
-            metrics.width
-        );
-        assert!(
-            stack_height <= metrics.height,
-            "active {layout:?} stack height {stack_height} > {}",
-            metrics.height
-        );
-        assert_eq!(
-            tree_has(&view.root, &|widget| widget.is::<libadwaita::HeaderBar>()),
-            metrics.separate_header
-        );
-        if !metrics.separate_header {
-            assert!(tree_has(&view.root, &|widget| widget.is::<gtk4::WindowControls>()));
-        }
-        let (_, natural_width, _, _) = view.root.measure(gtk4::Orientation::Horizontal, -1);
-        let (_, natural_height, _, _) = view
-            .root
-            .measure(gtk4::Orientation::Vertical, metrics.width);
-        assert!(
-            natural_width <= metrics.width,
-            "{layout:?} width {natural_width} > {}",
-            metrics.width
-        );
-        assert!(
-            natural_height <= metrics.height,
-            "{layout:?} height {natural_height} > {}",
-            metrics.height
-        );
-        if metrics.direct_shuffle {
-            assert!(view.shuffle.as_ref().unwrap().parent().is_some());
-            assert!(view.repeat.as_ref().unwrap().parent().is_some());
-            assert_eq!(
-                view.shuffle.as_ref().unwrap().tooltip_text().as_deref(),
-                Some("Shuffle")
-            );
-            assert_eq!(
-                view.repeat.as_ref().unwrap().tooltip_text().as_deref(),
-                Some("Repeat")
-            );
-        } else {
-            assert!(view.shuffle.is_none());
-            assert!(view.repeat.is_none());
-            assert!(compact.menu.action_group.has_action("shuffle"));
-            assert!(compact.menu.action_group.has_action("repeat"));
-        }
-        if layout == CompactLayout::Cover {
-            assert_eq!(view.title.xalign(), 0.5);
-            assert_eq!(view.artist.xalign(), 0.5);
-        }
+        let player = CompactPlayer::new();
+        assert!(player.handle().parent().is_none()); // not yet in a window
+                                                     // cover_image() returns the image widget
+        assert!(player.cover_image().is::<gtk4::Image>());
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn cover_layout_has_required_accessible_controls_and_fits() {
-        assert_layout_contract(CompactLayout::Cover);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn pill_layout_has_required_accessible_controls_and_fits() {
-        assert_layout_contract(CompactLayout::Pill);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn card_layout_has_required_accessible_controls_and_fits() {
-        assert_layout_contract(CompactLayout::Card);
-    }
-
-    fn tree_has(root: &gtk4::Widget, predicate: &dyn Fn(&gtk4::Widget) -> bool) -> bool {
-        if predicate(root) {
-            return true;
+    fn restore_action_fires_callback() {
+        if gtk4::init().is_err() {
+            return;
         }
-        let mut child = root.first_child();
-        while let Some(widget) = child {
-            if tree_has(&widget, predicate) {
-                return true;
-            }
-            child = widget.next_sibling();
-        }
-        false
-    }
-
-    fn tree_has_button_tooltip(root: &gtk4::Widget, tooltip: &str) -> bool {
-        tree_has(root, &|widget| {
-            widget
-                .clone()
-                .downcast::<gtk4::Button>()
-                .is_ok_and(|button| button.tooltip_text().as_deref() == Some(tooltip))
-        })
+        let player = CompactPlayer::new();
+        let fired = Rc::new(Cell::new(false));
+        let fired2 = fired.clone();
+        player.set_on_restore(Rc::new(move || fired2.set(true)));
+        player.activate_restore_for_test();
+        assert!(fired.get());
     }
 }
