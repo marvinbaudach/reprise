@@ -15,6 +15,7 @@ const COVER_PIXEL_SIZE: i32 = 56;
 const BAR_HEIGHT: i32 = 86;
 const START_ZONE_WIDTH: i32 = 300;
 const END_ZONE_WIDTH: i32 = 250;
+const CENTER_ZONE_MAX_WIDTH: i32 = 620;
 const VOLUME_SLIDER_WIDTH: i32 = 80;
 const PLAY_BUTTON_SIZE: i32 = 44;
 
@@ -156,6 +157,7 @@ pub(super) fn build() -> PlayerBarWidgets {
     center_zone.append(&transport_row);
     center_zone.append(&seek_row);
     center_zone.set_hexpand(true);
+    center_zone.set_size_request(CENTER_ZONE_MAX_WIDTH, -1);
     center_zone.set_valign(gtk4::Align::Center);
 
     // — End zone (volume icon + slider + queue button) —
@@ -241,7 +243,7 @@ pub(super) fn css() -> String {
          .{COVER_CSS_CLASS} {{ \
            border-radius: 8px; \
            box-shadow: inset 0 0 0 1px alpha(white, 0.08); }}\n\
-         .player-bar-title {{ font-size: 13.5px; }}\n\
+         .player-bar-title {{ font-weight: bold; font-size: 13.5px; }}\n\
          .player-bar-artist {{ color: alpha(@window_fg_color, 0.50); font-size: 12px; }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}\n\
