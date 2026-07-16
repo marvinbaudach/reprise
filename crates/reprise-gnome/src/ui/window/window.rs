@@ -799,6 +799,20 @@ pub fn build(
             primary_menu::update_library_section(&library_menu, is_scanning);
         }
     });
+    // End-of-queue refill: a manual "next" past an exhausted queue rebuilds
+    // it from the visible view (see `up_next_transport::refill_queue_from_
+    // view`). `Weak` capture, same reasoning as every other cross-widget
+    // callback here.
+    if let Some(ref player) = player {
+        let track_list_weak = Rc::downgrade(&track_list);
+        player.set_view_refill_provider(move || match track_list_weak.upgrade() {
+            Some(track_list) => track_list.transport_refill_ids(),
+            None => {
+                tracing::warn!("track list is gone; transport refill unavailable");
+                Vec::new()
+            }
+        });
+    }
     // Task 7: wire the player bar's queue button to open the Queue sidebar.
     if let Some(ref player) = player {
         let sidebar_for_queue = sidebar.clone();
