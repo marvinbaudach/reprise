@@ -40,6 +40,12 @@ require_pattern 'reqwest::blocking' scripts/check-architecture.sh
 require_pattern 'gst-launch-1\\.0' scripts/check-architecture.sh
 require_pattern 'check-merge-readiness.sh' .githooks/pre-push
 require_pattern 'core.hooksPath .githooks' scripts/install-git-hooks.sh
+require_pattern '^## Current automated baseline' TESTING.md
+require_pattern '^## Required merge gates' TESTING.md
+require_pattern '^## Priority automation gaps' TESTING.md
+require_pattern '^## Isolated GTK and desktop tests' TESTING.md
+require_pattern '^## Manual release checks' TESTING.md
+require_pattern '^## Known harness constraints' TESTING.md
 
 scripts/check-architecture.sh
 
