@@ -86,7 +86,7 @@ fn view_state(progress: &ScanProgress) -> ScanProgressState {
 /// A generation token stops an old pulse timeout whenever the phase changes
 /// or a scan finishes, so repeated scans never retain stale GTK callbacks.
 #[derive(Clone)]
-pub(super) struct ScanProgressView {
+pub(in crate::ui) struct ScanProgressView {
     inner: Rc<ScanProgressWidgets>,
 }
 
@@ -104,16 +104,16 @@ struct ScanProgressWidgets {
 }
 
 #[derive(Clone)]
-pub(super) struct WeakScanProgressView(Weak<ScanProgressWidgets>);
+pub(in crate::ui) struct WeakScanProgressView(Weak<ScanProgressWidgets>);
 
 impl WeakScanProgressView {
-    pub(super) fn upgrade(&self) -> Option<ScanProgressView> {
+    pub(in crate::ui) fn upgrade(&self) -> Option<ScanProgressView> {
         self.0.upgrade().map(|inner| ScanProgressView { inner })
     }
 }
 
 impl ScanProgressView {
-    pub(super) fn new() -> Self {
+    pub(in crate::ui) fn new() -> Self {
         let spinner = gtk4::Spinner::builder().spinning(false).build();
         spinner.add_css_class("scan-card-spinner");
 
@@ -199,21 +199,21 @@ impl ScanProgressView {
         }
     }
 
-    pub(super) fn downgrade(&self) -> WeakScanProgressView {
+    pub(in crate::ui) fn downgrade(&self) -> WeakScanProgressView {
         WeakScanProgressView(Rc::downgrade(&self.inner))
     }
 
     /// Sets the callback invoked when the user right-clicks or long-presses
     /// the scan card. Intended to be wired to `ScanControls::request_cancel`.
-    pub(super) fn set_on_cancel(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn set_on_cancel(&self, callback: impl Fn() + 'static) {
         *self.inner.on_cancel.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn widget(&self) -> &gtk4::Revealer {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Revealer {
         &self.inner.revealer
     }
 
-    pub(super) fn show(&self, progress: &ScanProgress) {
+    pub(in crate::ui) fn show(&self, progress: &ScanProgress) {
         let state = view_state(progress);
         self.inner
             .title
@@ -268,7 +268,7 @@ impl ScanProgressView {
     /// Shows determinate progress with custom title and detail strings,
     /// independent of the `ScanProgress` enum. Used for the cover download
     /// batch whose progress model (`BatchProgress`) lives in the UI layer.
-    pub(super) fn show_batch(&self, title: &str, detail: &str, fraction: f64) {
+    pub(in crate::ui) fn show_batch(&self, title: &str, detail: &str, fraction: f64) {
         self.cancel_pulsing();
         self.inner.title.set_label(title);
         self.inner.spinner.set_spinning(true);
@@ -287,7 +287,7 @@ impl ScanProgressView {
         self.inner.container.set_tooltip_text(None);
     }
 
-    pub(super) fn finish(&self) {
+    pub(in crate::ui) fn finish(&self) {
         self.cancel_pulsing();
         self.inner.phase.set(DisplayPhase::Hidden);
         self.inner.spinner.set_spinning(false);
@@ -327,7 +327,7 @@ impl ScanProgressView {
 /// any tracks have appeared in the list. Same `show`/`finish` interface as
 /// `ScanProgressView` so `ScanControls` can push to it uniformly.
 #[derive(Clone)]
-pub(super) struct EmptyScanIndicator {
+pub(in crate::ui) struct EmptyScanIndicator {
     inner: Rc<EmptyScanWidgets>,
 }
 
@@ -338,7 +338,7 @@ struct EmptyScanWidgets {
 }
 
 impl EmptyScanIndicator {
-    pub(super) fn new() -> Self {
+    pub(in crate::ui) fn new() -> Self {
         let spinner = gtk4::Spinner::builder().spinning(false).build();
         spinner.add_css_class("scan-card-spinner");
 
@@ -360,11 +360,11 @@ impl EmptyScanIndicator {
         }
     }
 
-    pub(super) fn widget(&self) -> &gtk4::Box {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
         &self.inner.container
     }
 
-    pub(super) fn show(&self, progress: &ScanProgress) {
+    pub(in crate::ui) fn show(&self, progress: &ScanProgress) {
         self.inner.spinner.set_spinning(true);
         self.inner.container.set_visible(true);
         match progress {
@@ -388,21 +388,21 @@ impl EmptyScanIndicator {
         }
     }
 
-    pub(super) fn finish(&self) {
+    pub(in crate::ui) fn finish(&self) {
         self.inner.spinner.set_spinning(false);
         self.inner.container.set_visible(false);
     }
 
-    pub(super) fn downgrade(&self) -> WeakEmptyScanIndicator {
+    pub(in crate::ui) fn downgrade(&self) -> WeakEmptyScanIndicator {
         WeakEmptyScanIndicator(Rc::downgrade(&self.inner))
     }
 }
 
 #[derive(Clone)]
-pub(super) struct WeakEmptyScanIndicator(Weak<EmptyScanWidgets>);
+pub(in crate::ui) struct WeakEmptyScanIndicator(Weak<EmptyScanWidgets>);
 
 impl WeakEmptyScanIndicator {
-    pub(super) fn upgrade(&self) -> Option<EmptyScanIndicator> {
+    pub(in crate::ui) fn upgrade(&self) -> Option<EmptyScanIndicator> {
         self.0.upgrade().map(|inner| EmptyScanIndicator { inner })
     }
 }

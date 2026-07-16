@@ -18,7 +18,7 @@ use crate::ui::lastfm_secret::{self, LastFmCredentials};
 use crate::ui::scrobble_runtime::{ConnectionStatus, ScrobbleRuntime};
 use crate::ui::strings;
 
-use super::preferences::PreferencesContext;
+use super::PreferencesContext;
 
 const RESPONSE_CANCEL: &str = "cancel";
 const RESPONSE_CONTINUE: &str = "continue";
@@ -43,7 +43,7 @@ fn authorization_decision(
     }
 }
 
-pub(super) fn status_text(status: &ConnectionStatus) -> String {
+pub(in crate::ui) fn status_text(status: &ConnectionStatus) -> String {
     let (base, submitted, pending) = match status {
         ConnectionStatus::Disabled => return strings::text(strings::LISTENBRAINZ_NOT_CONNECTED),
         ConnectionStatus::Connecting => return strings::text(strings::LISTENBRAINZ_CONNECTING),
@@ -228,7 +228,7 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     }
 }
 
-pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRuntime>) {
+pub(in crate::ui) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRuntime>) {
     let enabled =
         reprise_core::modules::is_enabled(&conn.borrow(), &reprise_core::modules::LASTFM_MODULE)
             .unwrap_or(false);
@@ -291,7 +291,7 @@ fn disable_module(conn: &Rc<RefCell<Connection>>, runtime: &ScrobbleRuntime) {
 }
 
 impl PreferencesContext {
-    pub(super) fn build_lastfm_row(self: &Rc<Self>) -> adw::ExpanderRow {
+    pub(in crate::ui) fn build_lastfm_row(self: &Rc<Self>) -> adw::ExpanderRow {
         let is_enabled = reprise_core::modules::is_enabled(
             &self.conn.borrow(),
             &reprise_core::modules::LASTFM_MODULE,
@@ -423,7 +423,7 @@ impl PreferencesContext {
         surface.expander
     }
 
-    pub(super) fn change_lastfm_activation(
+    pub(in crate::ui) fn change_lastfm_activation(
         self: &Rc<Self>,
         row: &adw::ExpanderRow,
         requested: bool,

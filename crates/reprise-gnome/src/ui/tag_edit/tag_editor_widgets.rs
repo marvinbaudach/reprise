@@ -21,7 +21,7 @@ use crate::ui::tag_editor_state::{
 
 /// Builds the cover art area. For single track, shows a thumbnail. For
 /// multi-track, shows a stacked representation with a count badge.
-pub(super) fn build_cover_area(tracks: &[(i64, PathBuf)], is_multi: bool) -> gtk4::Box {
+pub(in crate::ui) fn build_cover_area(tracks: &[(i64, PathBuf)], is_multi: bool) -> gtk4::Box {
     let outer = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     outer.set_halign(gtk4::Align::Center);
     outer.set_margin_bottom(8);
@@ -65,7 +65,7 @@ pub(super) fn build_cover_area(tracks: &[(i64, PathBuf)], is_multi: bool) -> gtk
 
 /// Loads a cover thumbnail for a track path, returning a `gtk4::Picture`
 /// wrapped in a frame box. Falls back to a placeholder if no cover is found.
-pub(super) fn load_cover_picture(track_path: Option<&Path>) -> gtk4::Box {
+pub(in crate::ui) fn load_cover_picture(track_path: Option<&Path>) -> gtk4::Box {
     let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     frame.add_css_class("reprise-tag-cover");
     frame.set_overflow(gtk4::Overflow::Hidden);
@@ -91,7 +91,7 @@ pub(super) fn load_cover_picture(track_path: Option<&Path>) -> gtk4::Box {
 
 /// Builds the clickable star rating widget. Returns the container box and
 /// a shared `Cell` holding the current rating value.
-pub(super) fn build_star_rating(value: &MixedValue<i32>) -> (gtk4::Box, Rc<Cell<i32>>) {
+pub(in crate::ui) fn build_star_rating(value: &MixedValue<i32>) -> (gtk4::Box, Rc<Cell<i32>>) {
     let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
     container.add_css_class("reprise-tag-stars");
 
@@ -123,7 +123,7 @@ pub(super) fn build_star_rating(value: &MixedValue<i32>) -> (gtk4::Box, Rc<Cell<
 }
 
 /// Updates the visual state of star buttons in a rating box.
-pub(super) fn update_star_display(container: &gtk4::Box, rating: i32) {
+pub(in crate::ui) fn update_star_display(container: &gtk4::Box, rating: i32) {
     let mut child = container.first_child();
     let mut idx = 1;
     while let Some(widget) = child {
@@ -147,7 +147,7 @@ pub(super) fn update_star_display(container: &gtk4::Box, rating: i32) {
 
 /// Wires click handlers on each star button. Clicking star N sets rating
 /// to N; clicking the already-selected star clears to 0.
-pub(super) fn wire_star_clicks(
+pub(in crate::ui) fn wire_star_clicks(
     container: &gtk4::Box,
     rating_value: &Rc<Cell<i32>>,
     on_changed: &UpdateCallback,
@@ -174,7 +174,7 @@ pub(super) fn wire_star_clicks(
 }
 
 /// Sets an `EntryRow` text from a `MixedValue<String>`.
-pub(super) fn set_entry_from_mixed_string(row: &adw::EntryRow, value: &MixedValue<String>) {
+pub(in crate::ui) fn set_entry_from_mixed_string(row: &adw::EntryRow, value: &MixedValue<String>) {
     match value {
         MixedValue::Uniform(text) => row.set_text(text),
         MixedValue::Mixed => {
@@ -184,7 +184,10 @@ pub(super) fn set_entry_from_mixed_string(row: &adw::EntryRow, value: &MixedValu
 }
 
 /// Sets an `EntryRow` text from a `MixedValue<Option<u32>>`.
-pub(super) fn set_entry_from_mixed_number(row: &adw::EntryRow, value: &MixedValue<Option<u32>>) {
+pub(in crate::ui) fn set_entry_from_mixed_number(
+    row: &adw::EntryRow,
+    value: &MixedValue<Option<u32>>,
+) {
     match value {
         MixedValue::Uniform(Some(n)) => row.set_text(&n.to_string()),
         MixedValue::Uniform(None) | MixedValue::Mixed => {}
@@ -194,7 +197,7 @@ pub(super) fn set_entry_from_mixed_number(row: &adw::EntryRow, value: &MixedValu
 /// Initialises an `AutocompleteEntry` from a `MixedValue`, adding
 /// mixed-field annotations in multi-track mode. Returns the annotation label
 /// when the field starts Mixed (needed for click-to-unlock updates).
-pub(super) fn init_autocomplete_from_mixed(
+pub(in crate::ui) fn init_autocomplete_from_mixed(
     ac: &AutocompleteEntry,
     value: &MixedValue<String>,
     _track_count: usize,
@@ -226,7 +229,7 @@ pub(super) fn init_autocomplete_from_mixed(
 
 /// Adds a mixed-field annotation for number fields in multi-track mode.
 /// Returns the annotation label (needed for click-to-unlock updates).
-pub(super) fn apply_mixed_annotation_number(
+pub(in crate::ui) fn apply_mixed_annotation_number(
     row: &adw::EntryRow,
     value: &MixedValue<Option<u32>>,
     _track_count: usize,
@@ -249,7 +252,7 @@ pub(super) fn apply_mixed_annotation_number(
 }
 
 /// Adds a small annotation label as a suffix to an `EntryRow` and returns it.
-pub(super) fn add_annotation(row: &adw::EntryRow, text: &str, accent: bool) -> gtk4::Label {
+pub(in crate::ui) fn add_annotation(row: &adw::EntryRow, text: &str, accent: bool) -> gtk4::Label {
     let label = gtk4::Label::new(Some(text));
     label.add_css_class("reprise-tag-field-annotation");
     if accent {
@@ -263,7 +266,7 @@ pub(super) fn add_annotation(row: &adw::EntryRow, text: &str, accent: bool) -> g
 /// editing. On first click: makes the entry editable, clears the text,
 /// removes the mixed CSS class, and updates the annotation to the
 /// "will be applied to all N" copy.
-pub(super) fn attach_click_to_unlock(
+pub(in crate::ui) fn attach_click_to_unlock(
     row: &adw::EntryRow,
     annotation: Option<&gtk4::Label>,
     track_count: usize,
@@ -289,7 +292,7 @@ pub(super) fn attach_click_to_unlock(
 
 /// Returns the original text value for a given field index from a snapshot.
 /// Returns `None` for fields that were Mixed (no single value).
-pub(super) fn field_snapshot_text(
+pub(in crate::ui) fn field_snapshot_text(
     summary: &EditableTagSummary,
     field_idx: usize,
 ) -> Option<String> {
@@ -319,7 +322,10 @@ pub(super) fn field_snapshot_text(
 }
 
 /// Returns true if the given field was originally Mixed in the snapshot.
-pub(super) fn field_snapshot_is_mixed(summary: &EditableTagSummary, field_idx: usize) -> bool {
+pub(in crate::ui) fn field_snapshot_is_mixed(
+    summary: &EditableTagSummary,
+    field_idx: usize,
+) -> bool {
     match field_idx {
         FIELD_ARTIST => matches!(summary.artist, MixedValue::Mixed),
         FIELD_ALBUM => matches!(summary.album, MixedValue::Mixed),
@@ -331,7 +337,7 @@ pub(super) fn field_snapshot_is_mixed(summary: &EditableTagSummary, field_idx: u
 }
 
 /// Builds a single pending-change item: "Field → Value" with a Revert button.
-pub(super) fn build_pending_item(
+pub(in crate::ui) fn build_pending_item(
     field_name: &str,
     value: &str,
     on_revert: Box<dyn Fn()>,

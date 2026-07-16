@@ -3,8 +3,8 @@ use std::rc::Rc;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use super::preferences::PreferencesContext;
 use super::strings;
+use super::PreferencesContext;
 use crate::ui::style::{self, theme::Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,7 +22,7 @@ fn appearance_sections() -> [AppearanceSection; 3] {
     ]
 }
 
-pub(super) fn build(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
+pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(strings::text(strings::PREFERENCES_APPEARANCE))
         .icon_name("applications-graphics-symbolic")

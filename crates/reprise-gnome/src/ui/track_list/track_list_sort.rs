@@ -15,9 +15,9 @@ use crate::ui::track_list::{reload, Shared};
 use reprise_core::view_source::ViewSource;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SortState {
-    pub(super) field: String,
-    pub(super) dir: String,
+pub(in crate::ui) struct SortState {
+    pub(in crate::ui) field: String,
+    pub(in crate::ui) dir: String,
 }
 
 /// Default sort: artist ascending, matching the secondary-order convention
@@ -31,7 +31,7 @@ impl Default for SortState {
     }
 }
 
-pub(super) fn restored_sort(field: &str, dir: &str) -> SortState {
+pub(in crate::ui) fn restored_sort(field: &str, dir: &str) -> SortState {
     if ColumnId::from_sort_field(field).is_none() {
         return SortState {
             field: "title".into(),
@@ -46,7 +46,7 @@ pub(super) fn restored_sort(field: &str, dir: &str) -> SortState {
 
 /// Observes the `ColumnView`'s aggregate sorter for header clicks and maps
 /// them back to a whitelisted sort field + direction, then reloads.
-pub(super) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
+pub(in crate::ui) fn wire_sort_clicks(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
     let Some(sorter) = column_view.sorter() else {
         tracing::warn!("track list: ColumnView has no aggregate sorter; header clicks won't sort");
         return;
@@ -104,7 +104,7 @@ fn on_sorter_changed(shared: &Rc<Shared>, sorter: &gtk4::ColumnViewSorter) {
 /// Mirrors `queries.rs`'s `"playlist_order"` `SORT_WHITELIST` sentinel (see
 /// that module's `Playlist(id)` doc section) — the one sort field this
 /// module ever sets on a source switch rather than a column-header click.
-pub(super) const PLAYLIST_ORDER_SORT_FIELD: &str = "playlist_order";
+pub(in crate::ui) const PLAYLIST_ORDER_SORT_FIELD: &str = "playlist_order";
 
 /// Pure decision of what `shared.sort` should become when the track list
 /// switches to `source`, *before* the switch's reload runs — factored out of
@@ -157,7 +157,7 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
 /// - otherwise → `current` is kept as-is; a column-header click's sort
 ///   deliberately survives source switches (matching pre-Stage-3 behavior
 ///   for Library/Missing/… hops).
-pub(super) fn resolve_sort_on_switch(current: &SortState, target: &ViewSource) -> SortState {
+pub(in crate::ui) fn resolve_sort_on_switch(current: &SortState, target: &ViewSource) -> SortState {
     match default_sort_for_source(target) {
         Some(sort) => sort,
         None if current.field == PLAYLIST_ORDER_SORT_FIELD => SortState::default(),

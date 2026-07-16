@@ -18,7 +18,7 @@ use reprise_core::format::format_duration;
 /// is invoked so no `RefCell` borrow is held across the call).
 type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>;
 
-pub(super) const WAVEFORM_CSS_CLASS: &str = "waveform-seek";
+pub(in crate::ui) const WAVEFORM_CSS_CLASS: &str = "waveform-seek";
 const CONTENT_HEIGHT: i32 = 28;
 const BAR_RADIUS: f64 = 1.5;
 const BAR_GAP: f64 = 2.0;
@@ -119,7 +119,7 @@ struct State {
 }
 
 #[derive(Clone)]
-pub(super) struct WaveformSeek {
+pub(in crate::ui) struct WaveformSeek {
     area: gtk4::DrawingArea,
     state: Rc<RefCell<State>>,
     on_seek: SeekCallback,
@@ -131,7 +131,7 @@ pub(super) struct WaveformSeek {
 }
 
 impl WaveformSeek {
-    pub(super) fn new() -> Self {
+    pub(in crate::ui) fn new() -> Self {
         Self::new_with_heights(
             CONTENT_HEIGHT,
             MAX_BAR_HEIGHT,
@@ -140,7 +140,7 @@ impl WaveformSeek {
         )
     }
 
-    pub(super) fn new_mini() -> Self {
+    pub(in crate::ui) fn new_mini() -> Self {
         Self::new_with_heights(
             MINI_CONTENT_HEIGHT,
             MINI_MAX_BAR_HEIGHT,
@@ -288,14 +288,14 @@ impl WaveformSeek {
         }
     }
 
-    pub(super) fn widget(&self) -> &gtk4::DrawingArea {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::DrawingArea {
         &self.area
     }
 
     /// Set peaks (as raw `u8` values, 0-255) and trigger a 300 ms build-up
     /// animation (gated on `gtk-enable-animations`). Use this whenever the
     /// track changes.
-    pub(super) fn set_peaks(&self, peaks: Vec<u8>) {
+    pub(in crate::ui) fn set_peaks(&self, peaks: Vec<u8>) {
         let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
         let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
         let mut s = self.state.borrow_mut();
@@ -316,7 +316,7 @@ impl WaveformSeek {
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
     /// when updating from a sub-second position tick so movement is continuous.
     #[allow(dead_code)]
-    pub(super) fn set_fraction(&self, fraction: f64) {
+    pub(in crate::ui) fn set_fraction(&self, fraction: f64) {
         let fraction = fraction.clamp(0.0, 1.0);
         let mut s = self.state.borrow_mut();
         s.fraction = fraction;
@@ -333,7 +333,7 @@ impl WaveformSeek {
     /// Large jumps (> 5% of the track) are treated as seeks: the fraction snaps
     /// instantly and velocity resets, preventing the overshoot that occurs when
     /// a stale pre-seek position tick arrives before the post-seek position.
-    pub(super) fn set_fraction_smooth(&self, fraction: f64) {
+    pub(in crate::ui) fn set_fraction_smooth(&self, fraction: f64) {
         let fraction = fraction.clamp(0.0, 1.0);
         let mut s = self.state.borrow_mut();
         let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
@@ -356,11 +356,11 @@ impl WaveformSeek {
 
     /// Set the track duration so the hover tooltip can show formatted time
     /// instead of a raw percentage.
-    pub(super) fn set_duration(&self, duration_ms: i64) {
+    pub(in crate::ui) fn set_duration(&self, duration_ms: i64) {
         self.state.borrow_mut().duration_ms = duration_ms.max(0);
     }
 
-    pub(super) fn connect_seek(&self, callback: impl Fn(f64) + 'static) {
+    pub(in crate::ui) fn connect_seek(&self, callback: impl Fn(f64) + 'static) {
         *self.on_seek.borrow_mut() = Some(Rc::new(callback));
     }
 

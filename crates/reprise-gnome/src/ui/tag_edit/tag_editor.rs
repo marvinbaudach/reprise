@@ -12,8 +12,8 @@ use rusqlite::Connection;
 use crate::ui::tag_editor_form::{EditorMode, TagEditorForm};
 pub use crate::ui::tag_editor_state::NavigateDirection;
 
-pub(super) const STAR_FILLED: &str = "\u{2605}";
-pub(super) const STAR_OUTLINE: &str = "\u{2606}";
+pub(in crate::ui) const STAR_FILLED: &str = "\u{2605}";
+pub(in crate::ui) const STAR_OUTLINE: &str = "\u{2606}";
 
 pub fn present(
     parent: &adw::ApplicationWindow,

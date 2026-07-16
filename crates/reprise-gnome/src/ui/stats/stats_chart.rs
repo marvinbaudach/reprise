@@ -15,7 +15,7 @@ use super::stats_chart_math::{
     PAST_MONTH_ALPHA,
 };
 
-pub(super) const CHART_CSS_CLASS: &str = "stats-chart";
+pub(in crate::ui) const CHART_CSS_CLASS: &str = "stats-chart";
 const CHART_HEIGHT: i32 = 160;
 const LABEL_AREA_HEIGHT: f64 = 20.0;
 const LABEL_FONT_SIZE: f64 = 9.0;
@@ -28,13 +28,13 @@ struct ChartData {
 }
 
 #[derive(Clone)]
-pub(super) struct StatsChart {
+pub(in crate::ui) struct StatsChart {
     area: gtk4::DrawingArea,
     data: Rc<RefCell<ChartData>>,
 }
 
 impl StatsChart {
-    pub(super) fn new() -> Self {
+    pub(in crate::ui) fn new() -> Self {
         let area = gtk4::DrawingArea::new();
         area.add_css_class(CHART_CSS_CLASS);
         area.set_hexpand(true);
@@ -54,14 +54,14 @@ impl StatsChart {
         Self { area, data }
     }
 
-    pub(super) fn widget(&self) -> &gtk4::DrawingArea {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::DrawingArea {
         &self.area
     }
 
     /// Updates the chart with fresh timeseries data. `year_months` are
     /// `"YYYY-MM"` strings; `values` are the per-month totals (ms or listen
     /// count — the chart only cares about relative heights).
-    pub(super) fn set_data(&self, year_months: &[String], values: &[i64]) {
+    pub(in crate::ui) fn set_data(&self, year_months: &[String], values: &[i64]) {
         let bars = normalize_bars(values);
         let labels = year_months
             .iter()

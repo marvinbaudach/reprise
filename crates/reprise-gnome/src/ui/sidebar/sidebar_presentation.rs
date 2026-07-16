@@ -16,7 +16,7 @@ const SIDEBAR_MAX_WIDTH: f64 = 280.0;
 const SIDEBAR_WIDTH_FRACTION: f64 = 0.22;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum NavIcon {
+pub(in crate::ui) enum NavIcon {
     Library,
     Queue,
     Playlist,
@@ -32,7 +32,7 @@ pub(super) enum NavIcon {
 }
 
 impl NavIcon {
-    pub(super) const fn icon_name(self) -> &'static str {
+    pub(in crate::ui) const fn icon_name(self) -> &'static str {
         match self {
             Self::Library => "folder-music-symbolic",
             Self::Queue | Self::GenericSmart => "view-list-symbolic",
@@ -51,7 +51,7 @@ impl NavIcon {
     }
 }
 
-pub(super) fn smart_icon(sort_field: &str) -> NavIcon {
+pub(in crate::ui) fn smart_icon(sort_field: &str) -> NavIcon {
     match sort_field {
         "last_played_at" => NavIcon::RecentlyPlayed,
         "rating" => NavIcon::TopRated,
@@ -62,11 +62,15 @@ pub(super) fn smart_icon(sort_field: &str) -> NavIcon {
 
 /// A sidebar count badge only renders when non-zero: `0` leaves the
 /// right-hand column empty instead of displaying a literal zero.
-pub(super) fn nonzero_count(count: i64) -> Option<i64> {
+pub(in crate::ui) fn nonzero_count(count: i64) -> Option<i64> {
     (count > 0).then_some(count)
 }
 
-pub(super) fn build_nav_row(title: &str, count: Option<i64>, icon: NavIcon) -> gtk4::ListBoxRow {
+pub(in crate::ui) fn build_nav_row(
+    title: &str,
+    count: Option<i64>,
+    icon: NavIcon,
+) -> gtk4::ListBoxRow {
     let hbox = row_box();
     hbox.append(&nav_icon(icon));
 
@@ -89,7 +93,7 @@ pub(super) fn build_nav_row(title: &str, count: Option<i64>, icon: NavIcon) -> g
 /// Builds a navigation row with a trailing badge label instead of a count
 /// (e.g. "NEW"). The badge uses the accent color via `.stats-badge`.
 #[allow(dead_code)]
-pub(super) fn build_nav_row_with_badge(
+pub(in crate::ui) fn build_nav_row_with_badge(
     title: &str,
     badge_text: &str,
     icon: NavIcon,
@@ -110,7 +114,7 @@ pub(super) fn build_nav_row_with_badge(
     gtk4::ListBoxRow::builder().child(&hbox).build()
 }
 
-pub(super) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBoxRow {
+pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBoxRow {
     let label = gtk4::Label::new(Some(text));
     label.set_xalign(0.0);
     label.add_css_class("caption-heading");
@@ -129,12 +133,12 @@ pub(super) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBo
     row
 }
 
-pub(super) struct PlaylistActionRows {
-    pub(super) new_playlist: gtk4::ListBoxRow,
-    pub(super) import_playlist: gtk4::ListBoxRow,
+pub(in crate::ui) struct PlaylistActionRows {
+    pub(in crate::ui) new_playlist: gtk4::ListBoxRow,
+    pub(in crate::ui) import_playlist: gtk4::ListBoxRow,
 }
 
-pub(super) fn append_playlist_action_rows(listbox: &gtk4::ListBox) -> PlaylistActionRows {
+pub(in crate::ui) fn append_playlist_action_rows(listbox: &gtk4::ListBox) -> PlaylistActionRows {
     let new_playlist =
         append_playlist_action_row(listbox, strings::SIDEBAR_NEW_PLAYLIST, NavIcon::NewPlaylist);
     let import_playlist =
@@ -167,11 +171,11 @@ fn append_playlist_action_row(
     row
 }
 
-pub(super) fn append_problem_header(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
+pub(in crate::ui) fn append_problem_header(listbox: &gtk4::ListBox) -> gtk4::ListBoxRow {
     append_header(listbox, &strings::text(strings::SIDEBAR_SECTION_ISSUES))
 }
 
-pub(super) fn style_split_view(split: &adw::NavigationSplitView) {
+pub(in crate::ui) fn style_split_view(split: &adw::NavigationSplitView) {
     split.set_min_sidebar_width(SIDEBAR_MIN_WIDTH);
     split.set_max_sidebar_width(SIDEBAR_MAX_WIDTH);
     split.set_sidebar_width_fraction(SIDEBAR_WIDTH_FRACTION);

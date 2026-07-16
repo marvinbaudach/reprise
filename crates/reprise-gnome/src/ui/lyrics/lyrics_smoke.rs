@@ -12,7 +12,7 @@ use super::player_controller::PlayerController;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_LYRICS";
 
-pub(super) fn arm(
+pub(in crate::ui) fn arm(
     player: Option<&Rc<PlayerController>>,
     panel: &Rc<InfoPanel>,
     conn: &Rc<RefCell<Connection>>,

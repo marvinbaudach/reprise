@@ -17,7 +17,7 @@ const TRACK_LIST_CLASS: &str = "reprise-track-list";
 /// sortable header. The `rgba(white)` literals are deliberate — these are
 /// fixed hairlines on the dark surface, not theme-tinted borders, so they
 /// don't route through a palette `@`-color.
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     use super::style::tokens::HEADER_TEXT_ALPHA;
     format!(
         ".{TRACK_LIST_CLASS} > header label {{ color: alpha(currentColor, {HEADER_TEXT_ALPHA}); }}\n\
@@ -30,7 +30,7 @@ pub(super) fn css() -> String {
 }
 
 /// Marks a column view as the track table so the scoped header rule applies.
-pub(super) fn mark(view: &gtk4::ColumnView) {
+pub(in crate::ui) fn mark(view: &gtk4::ColumnView) {
     view.add_css_class(TRACK_LIST_CLASS);
 }
 

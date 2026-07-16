@@ -20,11 +20,11 @@ use crate::ui::tag_editor;
 use crate::ui::track_list::{reload, show_toast, Shared, TrackList};
 use crate::ui::track_list_context_menu::current_selection_positions;
 
-pub(super) const ACTION_EDIT_TAGS: &str = "edit-tags";
+pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
 const SMOKE_TAG_EDIT_ENV_VAR: &str = "REPRISE_SMOKE_TAG_EDIT";
 type SelectedTags = (Vec<(i64, PathBuf)>, Vec<EditableTags>, Vec<i32>);
 
-pub(super) fn wire_refresh(
+pub(in crate::ui) fn wire_refresh(
     track_list: &TrackList,
     sidebar: &Rc<Sidebar>,
     player: &Option<Rc<PlayerController>>,
@@ -42,7 +42,7 @@ pub(super) fn wire_refresh(
     });
 }
 
-pub(super) fn add_action(group: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
+pub(in crate::ui) fn add_action(group: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
     let action = gio::SimpleAction::new(ACTION_EDIT_TAGS, None);
     {
         let shared = shared.clone();
@@ -191,7 +191,7 @@ fn finish_apply(
     show_toast(shared, &strings::track_edit_result_toast(updated, failed));
 }
 
-pub(super) fn arm_smoke(shared: &Rc<Shared>) {
+pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
     let Ok(value) = std::env::var(SMOKE_TAG_EDIT_ENV_VAR) else {
         return;
     };

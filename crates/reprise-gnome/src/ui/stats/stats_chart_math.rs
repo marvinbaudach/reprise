@@ -5,7 +5,7 @@
 /// Normalizes a slice of non-negative values into the 0.0..=1.0 range,
 /// dividing each by the maximum. An all-zero (or empty) input returns all
 /// zeros — the chart simply draws nothing.
-pub(super) fn normalize_bars(values: &[i64]) -> Vec<f64> {
+pub(in crate::ui) fn normalize_bars(values: &[i64]) -> Vec<f64> {
     let max = values.iter().copied().max().unwrap_or(0);
     if max == 0 {
         return vec![0.0; values.len()];
@@ -17,7 +17,7 @@ pub(super) fn normalize_bars(values: &[i64]) -> Vec<f64> {
 /// `MonthlyListens::year_month` uses). Returns the 3-letter English
 /// abbreviation (`"Jan"`, `"Feb"`, …) or the raw input if parsing fails.
 #[allow(dead_code)] // used by the monthly StatsChart (currently inactive in the redesign)
-pub(super) fn short_month_label(year_month: &str) -> &str {
+pub(in crate::ui) fn short_month_label(year_month: &str) -> &str {
     let month_part = year_month.get(5..7).unwrap_or(year_month);
     match month_part {
         "01" => "Jan",
@@ -37,7 +37,7 @@ pub(super) fn short_month_label(year_month: &str) -> &str {
 }
 
 /// Converts milliseconds into a human-readable hours string (rounded down).
-pub(super) fn ms_to_hours(ms: i64) -> i64 {
+pub(in crate::ui) fn ms_to_hours(ms: i64) -> i64 {
     ms / 3_600_000
 }
 
@@ -45,24 +45,24 @@ pub(super) fn ms_to_hours(ms: i64) -> i64 {
 /// portion. Currently the last bar (the current month) gets full accent
 /// alpha; the rest are dimmed.
 #[allow(dead_code)] // used by the monthly StatsChart (currently inactive in the redesign)
-pub(super) fn is_current_month(index: usize, count: usize) -> bool {
+pub(in crate::ui) fn is_current_month(index: usize, count: usize) -> bool {
     count > 0 && index == count - 1
 }
 
 /// Floor fraction so every bar — even a near-zero month — draws a visible
 /// sliver (matches `waveform_seek`'s `MIN_BAR_HEIGHT_FRACTION` convention).
-pub(super) const MIN_BAR_FRACTION: f64 = 0.06;
+pub(in crate::ui) const MIN_BAR_FRACTION: f64 = 0.06;
 
 /// Alpha applied to past-month bars (the current month uses full alpha).
 #[allow(dead_code)] // used by the monthly StatsChart (currently inactive in the redesign)
-pub(super) const PAST_MONTH_ALPHA: f64 = 0.55;
+pub(in crate::ui) const PAST_MONTH_ALPHA: f64 = 0.55;
 
 /// Gap between bars as a fraction of each bar's horizontal slot.
-pub(super) const BAR_GAP_FRACTION: f64 = 0.30;
+pub(in crate::ui) const BAR_GAP_FRACTION: f64 = 0.30;
 
 /// Expands sparse hourly data (only hours with events) into a full 24-slot
 /// array (hours 0-23), filling missing hours with zero.
-pub(super) fn expand_hourly(sparse: &[(u8, i64)]) -> [i64; 24] {
+pub(in crate::ui) fn expand_hourly(sparse: &[(u8, i64)]) -> [i64; 24] {
     let mut full = [0i64; 24];
     for &(hour, listens) in sparse {
         if (hour as usize) < 24 {
@@ -74,7 +74,7 @@ pub(super) fn expand_hourly(sparse: &[(u8, i64)]) -> [i64; 24] {
 
 /// Returns the hour (0-23) with the highest listen count in a 24-slot
 /// array. Returns 0 when all values are zero.
-pub(super) fn peak_hour(values: &[i64; 24]) -> u8 {
+pub(in crate::ui) fn peak_hour(values: &[i64; 24]) -> u8 {
     values
         .iter()
         .enumerate()
@@ -83,7 +83,7 @@ pub(super) fn peak_hour(values: &[i64; 24]) -> u8 {
 }
 
 /// Formats an hour (0-23) as `"H:00"` for the peak annotation label.
-pub(super) fn format_peak_hour(hour: u8) -> String {
+pub(in crate::ui) fn format_peak_hour(hour: u8) -> String {
     format!("{hour}:00")
 }
 

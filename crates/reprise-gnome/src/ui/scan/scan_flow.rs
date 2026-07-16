@@ -12,13 +12,13 @@ use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 use rusqlite::Connection;
 
-pub(super) use super::scan_controls::ScanControls;
+pub(in crate::ui) use super::scan_controls::ScanControls;
 #[cfg(test)]
-pub(super) use super::scan_controls::{ScanCancellation, ScanCompletion};
-pub(super) use super::scan_watcher::start_or_restart_watcher;
-pub(super) use super::scan_waveform_analysis::spawn_waveform_backfill;
+pub(in crate::ui) use super::scan_controls::{ScanCancellation, ScanCompletion};
+pub(in crate::ui) use super::scan_watcher::start_or_restart_watcher;
+pub(in crate::ui) use super::scan_waveform_analysis::spawn_waveform_backfill;
 #[cfg(test)]
-pub(super) use super::scan_worker::publish_latest_progress;
+pub(in crate::ui) use super::scan_worker::publish_latest_progress;
 use super::scan_worker::spawn_scan;
 use super::sidebar::Sidebar;
 use super::strings;
@@ -27,7 +27,7 @@ use super::track_list::TrackList;
 
 const SMOKE_RESCAN_ENV_VAR: &str = "REPRISE_SMOKE_RESCAN";
 
-pub(super) fn arm_smoke_rescan(
+pub(in crate::ui) fn arm_smoke_rescan(
     controls: &ScanControls,
     toast_overlay: &adw::ToastOverlay,
     db_path: PathBuf,
@@ -54,7 +54,7 @@ pub(super) fn arm_smoke_rescan(
     });
 }
 
-pub(super) fn wire_scan_button(
+pub(in crate::ui) fn wire_scan_button(
     controls: &ScanControls,
     window: &adw::ApplicationWindow,
     toast_overlay: &adw::ToastOverlay,
@@ -115,7 +115,7 @@ pub(super) fn wire_scan_button(
     });
 }
 
-pub(super) fn trigger_rescan_of_library_root(
+pub(in crate::ui) fn trigger_rescan_of_library_root(
     conn: &Rc<RefCell<Connection>>,
     controls: &ScanControls,
     toast_overlay: &adw::ToastOverlay,

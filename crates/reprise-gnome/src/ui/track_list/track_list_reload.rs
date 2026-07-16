@@ -17,7 +17,7 @@ use reprise_core::view_source::ViewSource;
 /// path, reached via `window.rs`'s debounce timer) and the
 /// `REPRISE_SMOKE_FILTER` dev hook (`arm_smoke_filter`), so both apply a new
 /// filter through the identical code path.
-pub(super) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
+pub(in crate::ui) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
     *shared.filter.borrow_mut() = text.to_string();
     reload(shared);
 }
@@ -36,7 +36,7 @@ pub(super) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
 /// exercised by that module's own unit tests, never by the live UI path.
 /// A column-header click (`on_sorter_changed`) still overrides this
 /// temporarily, exactly as before.
-pub(super) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
+pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
     // Hoisted so the `sort` borrow ends before the `borrow_mut` below.
     let new_sort = resolve_sort_on_switch(&shared.sort.borrow(), &source);
     *shared.sort.borrow_mut() = new_sort;
@@ -51,7 +51,7 @@ pub(super) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
 /// `TrackListModel::set_query`. Switches the stack to whichever page
 /// `empty_state_for` selects for the resulting row count, filter state, and
 /// source.
-pub(super) fn reload(shared: &Rc<Shared>) {
+pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
     let sort = shared.sort.borrow().clone();
     let filter = shared.filter.borrow().clone();
     let source = shared.source.borrow().clone();

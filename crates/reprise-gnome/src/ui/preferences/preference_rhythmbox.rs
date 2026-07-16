@@ -12,8 +12,8 @@ use reprise_core::library::rhythmbox_import::{
     RhythmboxTrackStats,
 };
 
-use super::preferences::PreferencesContext;
 use super::strings;
+use super::PreferencesContext;
 
 const RHYTHMDB_PATH_ENV: &str = "REPRISE_RHYTHMDB_PATH";
 const PLAYLISTS_PATH_ENV: &str = "REPRISE_RHYTHMBOX_PLAYLISTS_PATH";
@@ -109,7 +109,7 @@ fn build_import_row(rhythmdb_path: &Path) -> Option<ImportRowSurface> {
     Some(ImportRowSurface { row })
 }
 
-pub(super) fn add_rhythmbox_import_row(
+pub(in crate::ui) fn add_rhythmbox_import_row(
     context: &Rc<PreferencesContext>,
     group: &adw::PreferencesGroup,
 ) {
@@ -383,7 +383,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
 // ---------------------------------------------------------------------------
 
 impl PreferencesContext {
-    pub(super) fn present_rhythmbox_import_dialog(self: &Rc<Self>) {
+    pub(in crate::ui) fn present_rhythmbox_import_dialog(self: &Rc<Self>) {
         let widgets = build_import_dialog();
         let rhythmdb_path = default_rhythmdb_path();
         let playlists_path = default_playlists_path(&rhythmdb_path);

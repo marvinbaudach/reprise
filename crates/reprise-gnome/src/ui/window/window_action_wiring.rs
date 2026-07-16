@@ -20,23 +20,23 @@ use super::sidebar::Sidebar;
 use super::track_list::TrackList;
 
 #[derive(Clone, Copy)]
-pub(super) struct ActionWiring<'a> {
-    pub(super) conn: &'a Rc<RefCell<Connection>>,
-    pub(super) db_path: &'a Path,
-    pub(super) window: &'a adw::ApplicationWindow,
-    pub(super) toast_overlay: &'a adw::ToastOverlay,
-    pub(super) track_list: &'a Rc<TrackList>,
-    pub(super) sidebar: &'a Rc<Sidebar>,
-    pub(super) album_view: &'a AlbumView,
-    pub(super) artist_view: &'a Rc<ArtistView>,
-    pub(super) player: &'a Option<Rc<PlayerController>>,
-    pub(super) content_stack: &'a gtk4::Stack,
-    pub(super) library_stack: &'a gtk4::Stack,
-    pub(super) scan_controls: &'a ScanControls,
-    pub(super) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
+pub(in crate::ui) struct ActionWiring<'a> {
+    pub(in crate::ui) conn: &'a Rc<RefCell<Connection>>,
+    pub(in crate::ui) db_path: &'a Path,
+    pub(in crate::ui) window: &'a adw::ApplicationWindow,
+    pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
+    pub(in crate::ui) track_list: &'a Rc<TrackList>,
+    pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
+    pub(in crate::ui) album_view: &'a AlbumView,
+    pub(in crate::ui) artist_view: &'a Rc<ArtistView>,
+    pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
+    pub(in crate::ui) content_stack: &'a gtk4::Stack,
+    pub(in crate::ui) library_stack: &'a gtk4::Stack,
+    pub(in crate::ui) scan_controls: &'a ScanControls,
+    pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
 }
 
-pub(super) fn wire(context: ActionWiring<'_>) {
+pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     let ActionWiring {
         conn,
         db_path,

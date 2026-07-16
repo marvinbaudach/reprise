@@ -94,7 +94,7 @@ fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
 /// Whether a column's user-dragged width is worth persisting. Cover is not
 /// resizable and Title expands to fill remaining space, so their fixed width is
 /// not a meaningful user preference — every other column is stored.
-pub(super) fn is_width_persistable(id: ColumnId) -> bool {
+pub(in crate::ui) fn is_width_persistable(id: ColumnId) -> bool {
     !matches!(id, ColumnId::Cover) && !column_width_policy(id).expand
 }
 
@@ -145,7 +145,7 @@ impl ColumnId {
         }
     }
 
-    pub(super) fn parse(value: &str) -> Option<Self> {
+    pub(in crate::ui) fn parse(value: &str) -> Option<Self> {
         match value {
             "cover" => Some(Self::Cover),
             "title" => Some(Self::Title),
@@ -177,7 +177,7 @@ impl ColumnId {
     }
 }
 
-pub(super) fn column_label(id: ColumnId) -> String {
+pub(in crate::ui) fn column_label(id: ColumnId) -> String {
     let message = match id {
         ColumnId::Cover => strings::COLUMN_COVER,
         ColumnId::Title => strings::COLUMN_TITLE,
@@ -522,7 +522,7 @@ fn wire_width_persistence(
     }
 }
 
-pub(super) fn build_columns(
+pub(in crate::ui) fn build_columns(
     view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
     cover_loader: &Rc<CoverLoader>,

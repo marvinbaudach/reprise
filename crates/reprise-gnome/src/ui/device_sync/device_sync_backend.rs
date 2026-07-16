@@ -11,12 +11,12 @@ use reprise_platform_linux::device_sync::{
 
 use super::device_sync_runtime::{BackendFuture, DeviceBackend};
 
-pub(super) struct GioDeviceBackend {
+pub(in crate::ui) struct GioDeviceBackend {
     monitor: DeviceMonitor,
 }
 
 impl GioDeviceBackend {
-    pub(super) fn new(monitor: DeviceMonitor) -> Self {
+    pub(in crate::ui) fn new(monitor: DeviceMonitor) -> Self {
         Self { monitor }
     }
 }

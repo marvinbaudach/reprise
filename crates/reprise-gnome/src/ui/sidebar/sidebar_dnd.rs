@@ -2,7 +2,7 @@
 //! split out of `sidebar.rs` (Stage 3 Task 6 review finding #2) purely to
 //! keep that file under the project's 800-line rule, the same way `track_
 //! list.rs` split `track_list_dnd.rs` out. Reaches into `sidebar.rs`'s
-//! private `Shared` via `pub(super)` fields/functions, exactly the way
+//! private `Shared` via `pub(in crate::ui)` fields/functions, exactly the way
 //! `track_list_dnd.rs` reaches into `track_list.rs`'s.
 //!
 //! ## Two entry points into [`handle_playlist_drop`] (Stage 3 Task 6 review
@@ -48,7 +48,7 @@ fn drop_added_rows(inserted: u32) -> bool {
 /// dnd::parse_drag_payload` itself (already exercised by that module's own
 /// tests) needs to reason about *why* a payload didn't parse. Everything
 /// past parsing is [`handle_playlist_drop`].
-pub(super) fn wire_playlist_drop_target(
+pub(in crate::ui) fn wire_playlist_drop_target(
     shared: &Rc<Shared>,
     row: &gtk4::ListBoxRow,
     playlist_id: i64,
@@ -83,7 +83,7 @@ pub(super) fn wire_playlist_drop_target(
 /// nothing) should never produce user-visible feedback. Returns whether
 /// anything was actually added, mirroring `track_list_dnd`'s reorder
 /// handlers' bool-return convention.
-pub(super) fn handle_playlist_drop(
+pub(in crate::ui) fn handle_playlist_drop(
     shared: &Rc<Shared>,
     playlist_id: i64,
     playlist_name: &str,

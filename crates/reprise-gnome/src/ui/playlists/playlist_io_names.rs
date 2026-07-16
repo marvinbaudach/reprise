@@ -8,7 +8,7 @@ use super::strings;
 
 /// Derives the imported playlist name from the M3U file stem, falling back
 /// to a translated generic name when the stem is missing or blank.
-pub(super) fn playlist_name_from_file(file_path: &Path) -> String {
+pub(in crate::ui) fn playlist_name_from_file(file_path: &Path) -> String {
     let fallback = strings::text(strings::IMPORTED_PLAYLIST_FALLBACK_NAME);
     file_path
         .file_stem()
@@ -20,7 +20,7 @@ pub(super) fn playlist_name_from_file(file_path: &Path) -> String {
 }
 
 /// Returns `"Artist - Title"`, or just the title when the artist is blank.
-pub(super) fn display_name(track: &Track) -> String {
+pub(in crate::ui) fn display_name(track: &Track) -> String {
     if track.artist.trim().is_empty() {
         track.title.clone()
     } else {

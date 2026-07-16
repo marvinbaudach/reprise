@@ -10,7 +10,7 @@ use reprise_core::library::watcher::{self, WatcherHandle};
 use super::sidebar::Sidebar;
 use super::track_list::TrackList;
 
-pub(super) fn start_or_restart_watcher(
+pub(in crate::ui) fn start_or_restart_watcher(
     watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
     root: &Path,
     db_path: PathBuf,

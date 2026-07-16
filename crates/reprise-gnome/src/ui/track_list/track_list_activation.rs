@@ -3,7 +3,7 @@
 //! build the playback queue an activation starts from — `queue_ids_for_
 //! activation` (the full source/sort/filter id list, capped at `QUEUE_LIMIT`)
 //! and `current_queue_ids` (the fresh queue snapshot for the `Queue` source).
-//! Split out of `track_list.rs`; `pub(super)` so both `TrackList::new` and the
+//! Split out of `track_list.rs`; `pub(in crate::ui)` so both `TrackList::new` and the
 //! smoke hooks reach it as `track_list_activation::…`.
 
 use std::rc::Rc;
@@ -17,7 +17,7 @@ use reprise_core::view_source::ViewSource;
 /// row's `Track` via `TrackListModel::track_at`, build its queue via
 /// `queue_ids_for_activation`, and hand both to the `on_activate` callback
 /// (which `window::build` routes to the player).
-pub(super) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
+pub(in crate::ui) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
     let shared = shared.clone();
     column_view.connect_activate(move |_view, position| {
         let Some(track) = shared.model.track_at(position) else {
@@ -28,7 +28,7 @@ pub(super) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>)
     });
 }
 
-pub(super) fn activate_track(shared: &Rc<Shared>, position: u32, track: &Track) {
+pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &Track) {
     tracing::info!(path = %track.path, "activate track");
     if matches!(*shared.source.borrow(), ViewSource::Queue) {
         let callback = shared.on_queue_activate.borrow().clone();
@@ -66,7 +66,7 @@ pub(super) fn activate_track(shared: &Rc<Shared>, position: u32, track: &Track) 
 /// 10,000+ track library with the activated row past the cap). On a query
 /// failure, degrades to a single-track queue (`[activated_id]`, index 0) so
 /// the click still plays something instead of silently doing nothing.
-pub(super) fn queue_ids_for_activation(
+pub(in crate::ui) fn queue_ids_for_activation(
     shared: &Rc<Shared>,
     position: u32,
     activated_id: i64,
@@ -121,6 +121,6 @@ pub(super) fn queue_ids_for_activation(
 /// `queries` layer when `source` is `ViewSource::Queue`. Every call site
 /// already checks `source` first, so this is only ever invoked when a fresh
 /// snapshot is actually needed.
-pub(super) fn current_queue_ids(shared: &Rc<Shared>) -> Vec<i64> {
+pub(in crate::ui) fn current_queue_ids(shared: &Rc<Shared>) -> Vec<i64> {
     (shared.queue_ids_provider)()
 }

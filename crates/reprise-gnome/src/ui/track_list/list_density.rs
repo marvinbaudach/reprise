@@ -12,7 +12,7 @@ use reprise_core::library::settings::ListDensity;
 
 /// Density row minima and rating-control resets; installed app-wide by
 /// [`super::style`].
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     use super::style::tokens::{
         COMPACT_ROW_FONT_SIZE, ROW_MIN_HEIGHT_COMFORTABLE, ROW_MIN_HEIGHT_COMPACT,
         ROW_MIN_HEIGHT_STANDARD,
@@ -36,13 +36,13 @@ fn density_class(density: ListDensity) -> &'static str {
     }
 }
 
-pub(super) fn apply(view: &gtk4::ColumnView, density: ListDensity) {
+pub(in crate::ui) fn apply(view: &gtk4::ColumnView, density: ListDensity) {
     set_density_class(view.upcast_ref(), density);
     apply_to_density_widgets(view.upcast_ref(), density);
     view.queue_resize();
 }
 
-pub(super) fn inherit(view: &gtk4::ColumnView, cell: &impl IsA<gtk4::Widget>) {
+pub(in crate::ui) fn inherit(view: &gtk4::ColumnView, cell: &impl IsA<gtk4::Widget>) {
     let density = if view.has_css_class(density_class(ListDensity::Comfortable)) {
         ListDensity::Comfortable
     } else if view.has_css_class(density_class(ListDensity::Compact)) {

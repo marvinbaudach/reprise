@@ -1,20 +1,23 @@
 use super::column_layout::{self, ColumnId, ColumnLayout};
-use super::track_list::TrackList;
+use super::TrackList;
 
 /// Keeps the track-content viewport filling the window from its first layout.
 /// The initially selected empty page and the later list page have different
 /// natural heights, so relying on child-derived expansion can leave the stack
 /// at a single-row height until a source switch queues another allocation.
-pub(super) fn build_track_content_stack() -> gtk4::Stack {
+pub(in crate::ui) fn build_track_content_stack() -> gtk4::Stack {
     gtk4::Stack::builder().vexpand(true).build()
 }
 
 impl TrackList {
-    pub(super) fn column_view_widget(&self) -> &gtk4::ColumnView {
+    pub(in crate::ui) fn column_view_widget(&self) -> &gtk4::ColumnView {
         &self.shared.column_view
     }
 
-    pub(super) fn apply_column_layout(&self, layout: &ColumnLayout) -> Result<(), rusqlite::Error> {
+    pub(in crate::ui) fn apply_column_layout(
+        &self,
+        layout: &ColumnLayout,
+    ) -> Result<(), rusqlite::Error> {
         let serialized = column_layout::serialize_layout(layout);
         reprise_core::library::settings::set_setting(
             &self.shared.conn.borrow(),
@@ -44,13 +47,13 @@ impl TrackList {
         Ok(())
     }
 
-    pub(super) fn current_column_layout(&self) -> ColumnLayout {
+    pub(in crate::ui) fn current_column_layout(&self) -> ColumnLayout {
         column_layout::load_layout(&self.shared.conn.borrow())
     }
 
     /// Restores every column to its built-in default width; the wired
     /// `fixed-width` listeners persist the change.
-    pub(super) fn reset_column_widths(&self) {
+    pub(in crate::ui) fn reset_column_widths(&self) {
         self.column_registry.reset_widths();
     }
 }

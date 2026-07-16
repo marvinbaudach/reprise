@@ -11,17 +11,17 @@ use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
 
 #[derive(Clone, Copy)]
-pub(super) struct LookupWidgets<'a> {
-    pub(super) button: &'a gtk4::Button,
-    pub(super) hint: &'a gtk4::Label,
-    pub(super) year: &'a libadwaita::EntryRow,
-    pub(super) artist: &'a Rc<AutocompleteEntry>,
-    pub(super) album: &'a Rc<AutocompleteEntry>,
-    pub(super) album_artist: &'a Rc<AutocompleteEntry>,
-    pub(super) genre: &'a Rc<AutocompleteEntry>,
+pub(in crate::ui) struct LookupWidgets<'a> {
+    pub(in crate::ui) button: &'a gtk4::Button,
+    pub(in crate::ui) hint: &'a gtk4::Label,
+    pub(in crate::ui) year: &'a libadwaita::EntryRow,
+    pub(in crate::ui) artist: &'a Rc<AutocompleteEntry>,
+    pub(in crate::ui) album: &'a Rc<AutocompleteEntry>,
+    pub(in crate::ui) album_artist: &'a Rc<AutocompleteEntry>,
+    pub(in crate::ui) genre: &'a Rc<AutocompleteEntry>,
 }
 
-pub(super) fn wire(is_multi: bool, widgets: LookupWidgets<'_>, update: &Rc<dyn Fn()>) {
+pub(in crate::ui) fn wire(is_multi: bool, widgets: LookupWidgets<'_>, update: &Rc<dyn Fn()>) {
     if is_multi {
         return;
     }

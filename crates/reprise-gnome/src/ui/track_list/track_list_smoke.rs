@@ -3,7 +3,7 @@
 //! `_source`/`_sort_column`) plus the `REPRISE_SMOKE_SOURCE` value parser
 //! (`parse_smoke_source`) and its by-name playlist fallback
 //! (`resolve_smoke_source_playlist_by_name`). Split out of `track_list.rs`;
-//! each arm function is `pub(super)` so `TrackList::new` can arm it as
+//! each arm function is `pub(in crate::ui)` so `TrackList::new` can arm it as
 //! `track_list_smoke::…`.
 
 use std::rc::Rc;
@@ -82,7 +82,7 @@ const SMOKE_SORT_COLUMN_ENV_VAR: &str = "REPRISE_SMOKE_SORT_COLUMN";
 /// one idle callback, deferred so it runs once the main loop is up rather
 /// than in the middle of window construction, that pushes the first row
 /// through the same `on_activate` path as a real double-click.
-pub(super) fn arm_smoke_activate(shared: &Rc<Shared>) {
+pub(in crate::ui) fn arm_smoke_activate(shared: &Rc<Shared>) {
     if std::env::var(SMOKE_ACTIVATE_ENV_VAR).is_err() {
         return;
     }
@@ -102,7 +102,7 @@ pub(super) fn arm_smoke_activate(shared: &Rc<Shared>) {
 /// idle callback, deferred so it runs once the main loop is up (matching
 /// `arm_smoke_activate`), that applies the env var's value as the search
 /// filter via `set_filter_and_reload`.
-pub(super) fn arm_smoke_filter(shared: &Rc<Shared>) {
+pub(in crate::ui) fn arm_smoke_filter(shared: &Rc<Shared>) {
     let Ok(text) = std::env::var(SMOKE_FILTER_ENV_VAR) else {
         return;
     };
@@ -187,7 +187,7 @@ fn resolve_smoke_source_playlist_by_name(shared: &Rc<Shared>, value: &str) -> Op
 /// `playlist:<name>`, since ids aren't stable across scratch DBs — see
 /// `resolve_smoke_source_playlist_by_name`) fall back to a by-name playlist
 /// lookup before giving up.
-pub(super) fn arm_smoke_source(shared: &Rc<Shared>) {
+pub(in crate::ui) fn arm_smoke_source(shared: &Rc<Shared>) {
     let Ok(text) = std::env::var(SMOKE_SOURCE_ENV_VAR) else {
         return;
     };
@@ -228,7 +228,7 @@ pub(super) fn arm_smoke_source(shared: &Rc<Shared>) {
 /// keeps a handle to (`artist_column` for the initial-sort call above); an
 /// unrecognized value is logged and ignored rather than silently doing
 /// nothing.
-pub(super) fn arm_smoke_sort_column(
+pub(in crate::ui) fn arm_smoke_sort_column(
     column_view: &gtk4::ColumnView,
     title_column: &gtk4::ColumnViewColumn,
     artist_column: &gtk4::ColumnViewColumn,

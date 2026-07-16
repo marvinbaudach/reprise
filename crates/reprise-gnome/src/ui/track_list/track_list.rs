@@ -32,7 +32,7 @@
 //! in the sibling module `ui::track_list_context_menu` (split out the same
 //! way `player_controller.rs` split into `mpris_mirror.rs`/`playback_
 //! faults.rs`, Stage 3 Task 1), which reaches back into this module's
-//! `Shared`/`reload`/`show_toast` via `pub(super)`. This module still owns
+//! `Shared`/`reload`/`show_toast` via `pub(in crate::ui)`. This module still owns
 //! `Shared` itself and calls that sibling's `wire_context_menu_gesture` from
 //! each column's `connect_setup` and its `wire_context_menu_actions`/`arm_
 //! smoke_menu_action` from `TrackList::new`. The pure-ish *logic* the menu's
@@ -71,7 +71,7 @@ use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
 use crate::ui::toasts;
 use crate::ui::track_list_model::TrackListModel;
-pub(super) use crate::ui::track_list_reload::{
+pub(in crate::ui) use crate::ui::track_list_reload::{
     reload, set_filter_and_reload, set_source_and_reload,
 };
 use crate::ui::track_list_sort::{SortState, PLAYLIST_ORDER_SORT_FIELD};
@@ -79,13 +79,13 @@ use reprise_core::models::Track;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-pub(super) const STACK_PAGE_EMPTY: &str = "empty";
-pub(super) const STACK_PAGE_LIST: &str = "list";
+pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
+pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
 /// Stage 3 Task 8: the ImportErrors source's dedicated path/reason/time panel
 /// (`ui::import_errors_view::ImportErrorsView`) — a third `gtk::Stack` page,
 /// shown instead of `STACK_PAGE_LIST` only while `ViewSource::ImportErrors`
 /// is selected and has rows (see `apply_empty_state`'s `List` arm).
-pub(super) const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
+pub(in crate::ui) const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
 
 /// Callback invoked on row activation (double-click/Enter on a row, or the
 /// `REPRISE_SMOKE_ACTIVATE` hook). Provided by `window::build`, which routes
@@ -129,16 +129,16 @@ type OnLibraryMutated = Rc<dyn Fn(&[i64])>;
 type OnTagsMutated = Rc<dyn Fn(&[PathBuf])>;
 type OnSelectionChanged = Rc<dyn Fn(crate::ui::info_panel_state::PanelContext)>;
 
-/// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
+/// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
 /// fully private: Stage 3 Task 5 splits the context-menu logic out into a
 /// sibling module exactly the way `player_controller.rs` split its MPRIS
 /// mirror and fault-tolerance logic into `mpris_mirror.rs`/`playback_
 /// faults.rs` (Stage 3 Task 1) — same reasoning, same visibility shape. Only
-/// the fields that module actually needs are marked `pub(super)`
+/// the fields that module actually needs are marked `pub(in crate::ui)`
 /// individually below; everything else stays private to this file.
-pub(super) struct Shared {
-    pub(super) model: TrackListModel,
+pub(in crate::ui) struct Shared {
+    pub(in crate::ui) model: TrackListModel,
     /// The `ColumnView`'s selection model (Stage 3 Task 5) — every context-
     /// menu action reads its target row positions from here (`selection()`/
     /// `is_selected()`/`select_range()`), and `wire_context_menu_gesture`'s
@@ -146,14 +146,14 @@ pub(super) struct Shared {
     /// its own field (not re-derived by downcasting `column_view.model()`
     /// on every use) since `TrackList::new` already builds the concrete
     /// `gtk::MultiSelection` directly.
-    pub(super) selection: gtk4::MultiSelection,
+    pub(in crate::ui) selection: gtk4::MultiSelection,
     /// The `ColumnView` widget itself (Stage 3 Task 9): kept so `TrackList::
     /// focus_track_list` can move keyboard focus onto it directly, rather
     /// than relying on `widget()`'s outer `gtk::Stack` to delegate focus to
     /// the right descendant on its own — see that method's doc comment for
     /// why the Escape shortcut (`ui::shortcuts`) needs a precise handle
     /// rather than "whatever's focusable in the current stack page."
-    pub(super) column_view: gtk4::ColumnView,
+    pub(in crate::ui) column_view: gtk4::ColumnView,
     /// Track id of the currently-playing row (the now-playing marker), or
     /// `None` when nothing is playing. Every column's `connect_bind` reads
     /// this to toggle the `.now-playing` marker class on its cell, so a row
@@ -162,30 +162,30 @@ pub(super) struct Shared {
     /// change / stop and invalidates just the old and new rows, so the marker
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
-    pub(super) playing_track_id: Cell<Option<i64>>,
+    pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
     /// without reaching into the model's private state.
-    pub(super) conn: Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: Rc<RefCell<Connection>>,
     /// Shared list-cell cover cache, retained so successful tag writes can
     /// invalidate entries keyed by the same path before rows are rebound.
-    pub(super) cover_loader: Rc<CoverLoader>,
-    pub(super) browse_bar: Rc<BrowseBar>,
-    pub(super) browse_filter: RefCell<BrowseFilter>,
-    pub(super) stack: gtk4::Stack,
+    pub(in crate::ui) cover_loader: Rc<CoverLoader>,
+    pub(in crate::ui) browse_bar: Rc<BrowseBar>,
+    pub(in crate::ui) browse_filter: RefCell<BrowseFilter>,
+    pub(in crate::ui) stack: gtk4::Stack,
     /// The single empty-state placeholder widget. Its title/description/icon
     /// are mutated in place by `apply_empty_state` rather than swapping in a
     /// third stack page — see that function's doc comment.
-    pub(super) empty_page: adw::StatusPage,
-    pub(super) sort: RefCell<SortState>,
-    pub(super) restoring_view: Cell<bool>,
-    pub(super) filter: RefCell<String>,
+    pub(in crate::ui) empty_page: adw::StatusPage,
+    pub(in crate::ui) sort: RefCell<SortState>,
+    pub(in crate::ui) restoring_view: Cell<bool>,
+    pub(in crate::ui) filter: RefCell<String>,
     /// Which of the six sources (Stage 3 Task 3) the list is currently
     /// showing — defaults to `ViewSource::Library`. Set via `TrackList::
     /// set_source` (and the `REPRISE_SMOKE_SOURCE` hook); read by `reload`
     /// and `queue_ids_for_activation`.
-    pub(super) source: RefCell<ViewSource>,
+    pub(in crate::ui) source: RefCell<ViewSource>,
     /// Supplies the current queue's track ids, in play order, when `source`
     /// is `ViewSource::Queue` — see `queries::query_track_window`'s doc
     /// comment for why that source needs an explicit id list. Wired once at
@@ -197,10 +197,10 @@ pub(super) struct Shared {
     /// seam: the closure itself only holds whatever `window::build` gives
     /// it (typically a clone of `Option<Rc<PlayerController>>`), so there's
     /// no ownership cycle back to `TrackList` to worry about.
-    pub(super) queue_ids_provider: Box<dyn Fn() -> Vec<i64>>,
+    pub(in crate::ui) queue_ids_provider: Box<dyn Fn() -> Vec<i64>>,
     /// Shared by `wire_activate` (user activation) and the smoke-activate
     /// hook so both take the identical code path.
-    pub(super) on_activate: OnActivate,
+    pub(in crate::ui) on_activate: OnActivate,
     /// Invoked at the end of every `reload()` — initial load, search-filter
     /// changes, sort-header clicks, source switches, and the explicit
     /// `TrackList::reload()` call `window.rs` makes after a scan completes —
@@ -213,7 +213,7 @@ pub(super) struct Shared {
     /// exposing `TrackList::source()`/`filter()` getters: `reload` already
     /// has all three values in local variables at the one call site that
     /// invokes this hook.
-    pub(super) on_reload: OnReload,
+    pub(in crate::ui) on_reload: OnReload,
     /// Stage 3 Task 1 (a): the window's toast overlay, injected post-
     /// construction via `TrackList::set_toast_overlay` — same seam shape as
     /// `PlayerController::toast_overlay` (see that module's `## Toast +
@@ -221,14 +221,14 @@ pub(super) struct Shared {
     /// `TrackList::new`, so it can't be a constructor parameter. `WeakRef`,
     /// not a strong reference, so `TrackList` can never keep the window
     /// alive past its natural lifetime.
-    pub(super) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// The main window, injected post-construction via `TrackList::set_
     /// window` — same seam shape as `toast_overlay` above. Needed as the
     /// parent for the context menu's "New playlist…" `AdwAlertDialog`
     /// (`show_new_playlist_dialog` below — mirrors `ui::sidebar`'s own
     /// dialog of the same shape). `WeakRef`, not a strong reference, for the
     /// same reason as `toast_overlay`.
-    pub(super) window: glib::WeakRef<adw::ApplicationWindow>,
+    pub(in crate::ui) window: glib::WeakRef<adw::ApplicationWindow>,
     /// Context-menu "Play" action callback (Stage 3 Task 5), injected via
     /// `TrackList::set_on_play_selected` — wraps `PlayerController::
     /// play_from_view` without this module depending on that type directly
@@ -236,13 +236,13 @@ pub(super) struct Shared {
     /// provider`). `RefCell<Option<Rc<dyn Fn>>>`, not a plain field set at
     /// construction, since the player controller is built by `window.rs`
     /// independently of `TrackList` and wired in afterwards.
-    pub(super) on_play_selected: RefCell<Option<OnPlaySelected>>,
+    pub(in crate::ui) on_play_selected: RefCell<Option<OnPlaySelected>>,
     /// Context-menu "Add to queue" action callback, injected via
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`. Same seam shape as `on_play_selected`.
-    pub(super) on_queue_selected: RefCell<Option<OnQueueSelected>>,
-    pub(super) on_queue_activate: RefCell<Option<OnQueueActivate>>,
-    pub(super) on_queue_remove: RefCell<Option<OnQueueRemove>>,
+    pub(in crate::ui) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    pub(in crate::ui) on_queue_activate: RefCell<Option<OnQueueActivate>>,
+    pub(in crate::ui) on_queue_remove: RefCell<Option<OnQueueRemove>>,
     /// Invoked after any context-menu action that mutates a playlist's
     /// membership (add to an existing playlist, add to a brand new one, or
     /// remove) — injected via `TrackList::set_on_playlist_mutated`, wired by
@@ -252,7 +252,7 @@ pub(super) struct Shared {
     /// track counts must stay in sync with playlist changes made from this
     /// menu, exactly as they already do for changes made from the sidebar's
     /// own "New playlist" dialog.
-    pub(super) on_playlist_mutated: RefCell<Option<Rc<dyn Fn()>>>,
+    pub(in crate::ui) on_playlist_mutated: RefCell<Option<Rc<dyn Fn()>>>,
     /// Queue drag-reorder callback (Stage 3 Task 6), injected via
     /// `TrackList::set_on_queue_reorder` — wraps `PlayerController::
     /// move_queue_item`. Same seam shape as `on_play_selected`/`on_queue_
@@ -263,7 +263,7 @@ pub(super) struct Shared {
     /// `false` when no player is available at all, exactly like `Queue::
     /// move_item`'s own no-op cases (Stage 3 Task 6 review finding #3), so a
     /// degraded environment reports failure rather than a false "moved".
-    pub(super) on_queue_reorder: RefCell<Option<OnQueueReorder>>,
+    pub(in crate::ui) on_queue_reorder: RefCell<Option<OnQueueReorder>>,
     /// Sidebar drag-and-drop "add to playlist" callback (Stage 3 Task 6
     /// review finding #1), injected via `TrackList::set_on_sidebar_playlist_
     /// drop` — wraps `Sidebar::handle_playlist_drop`, the same function the
@@ -278,19 +278,19 @@ pub(super) struct Shared {
     /// `on_playlist_mutated`/`on_queue_reorder` are callbacks rather than
     /// direct calls. Takes `(playlist_id, playlist_name, ids)` and returns
     /// whether anything was actually added.
-    pub(super) on_sidebar_playlist_drop: RefCell<Option<OnSidebarPlaylistDrop>>,
+    pub(in crate::ui) on_sidebar_playlist_drop: RefCell<Option<OnSidebarPlaylistDrop>>,
     /// Stage 3 Task 8: the ImportErrors source's dedicated panel — see
     /// `STACK_PAGE_IMPORT_ERRORS`'s doc comment. Built once, alongside every
     /// other widget, and refreshed (not rebuilt) on every `reload()` while
     /// this source is selected.
-    pub(super) import_errors_view: ImportErrorsView,
+    pub(in crate::ui) import_errors_view: ImportErrorsView,
     /// "Rescan library" (Missing-source context menu item, Stage 3 Task 8):
     /// injected via `TrackList::set_on_rescan_library` — wraps `ui::window`'s
     /// scan flow against the persisted library root without this module
     /// depending on the scan machinery/settings table directly (same
     /// decoupling-via-closure seam as `on_play_selected`/`on_queue_
     /// selected`).
-    pub(super) on_rescan_library: RefCell<Option<Rc<dyn Fn()>>>,
+    pub(in crate::ui) on_rescan_library: RefCell<Option<Rc<dyn Fn()>>>,
     /// "Remove from library" (Missing-source context menu item, Stage 3 Task
     /// 8): injected via `TrackList::set_on_library_mutated` — `window.rs`
     /// wires this to `Sidebar::refresh` (the Missing badge count can only
@@ -299,30 +299,31 @@ pub(super) struct Shared {
     /// playback queue). Takes the ids `queries::remove_missing_tracks`
     /// actually deleted — not just a bare notification — so the queue purge
     /// knows exactly which ids to remove.
-    pub(super) on_library_mutated: RefCell<Option<OnLibraryMutated>>,
+    pub(in crate::ui) on_library_mutated: RefCell<Option<OnLibraryMutated>>,
     /// Invoked after successful file-tag writes and DB reconciliation.
     /// Kept separate from `on_library_mutated`: editing tags must never purge
     /// otherwise valid tracks from the playback queue.
-    pub(super) on_tags_mutated: RefCell<Option<OnTagsMutated>>,
+    pub(in crate::ui) on_tags_mutated: RefCell<Option<OnTagsMutated>>,
     /// Invoked after the ImportErrors panel's own Retry/Dismiss actions
     /// mutate `import_errors` — injected via `TrackList::set_on_import_
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the
     /// Import-errors badge count just changed).
-    pub(super) on_import_errors_mutated: RefCell<Option<Rc<dyn Fn()>>>,
-    pub(super) on_selection_changed: RefCell<Option<OnSelectionChanged>>,
+    pub(in crate::ui) on_import_errors_mutated: RefCell<Option<Rc<dyn Fn()>>>,
+    pub(in crate::ui) on_selection_changed: RefCell<Option<OnSelectionChanged>>,
     /// The player controller, injected post-construction via `TrackList::set_
     /// player` — used by tag-edit flow to refresh now-playing metadata after
     /// successful tag edits. `Weak`, not a strong reference, to avoid
     /// circular ownership with the player controller.
-    pub(super) player: RefCell<std::rc::Weak<crate::ui::player_controller::PlayerController>>,
+    pub(in crate::ui) player:
+        RefCell<std::rc::Weak<crate::ui::player_controller::PlayerController>>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
 /// state that the sort-header and search-debounce callbacks close over.
 pub struct TrackList {
-    pub(super) shared: Rc<Shared>,
-    pub(super) root: gtk4::Box,
-    pub(super) column_registry: ColumnRegistry,
+    pub(in crate::ui) shared: Rc<Shared>,
+    pub(in crate::ui) root: gtk4::Box,
+    pub(in crate::ui) column_registry: ColumnRegistry,
 }
 
 impl TrackList {
@@ -396,11 +397,11 @@ impl TrackList {
         }
     }
 
-    pub(super) fn set_browse_visible(&self, visible: bool) {
+    pub(in crate::ui) fn set_browse_visible(&self, visible: bool) {
         self.shared.browse_bar.set_preference_visible(visible);
     }
 
-    pub(super) fn toast(&self, message: &str) {
+    pub(in crate::ui) fn toast(&self, message: &str) {
         show_toast(&self.shared, message);
     }
 
@@ -519,7 +520,7 @@ impl TrackList {
 /// `import_errors_view.rs`'s `notify_mutated_and_refresh`), but only `reload`
 /// re-derives this `TrackList`'s stack-page decision (e.g. switching to the
 /// "nothing here" empty page once the last error is dismissed).
-pub(super) fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
+pub(in crate::ui) fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
     reload(shared);
     let callback = shared.on_import_errors_mutated.borrow().clone();
     match callback {
@@ -548,7 +549,7 @@ pub(super) fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
 /// Missing/ImportErrors have no `pt.position` to reorder in the first place;
 /// Queue has its own reorder path, gated separately — see that module's doc
 /// comment for why Queue never needs this guard at all).
-pub(super) fn playlist_reorder_allowed(shared: &Shared) -> bool {
+pub(in crate::ui) fn playlist_reorder_allowed(shared: &Shared) -> bool {
     matches!(*shared.source.borrow(), ViewSource::Playlist(_))
         && shared.sort.borrow().field == PLAYLIST_ORDER_SORT_FIELD
         && shared.filter.borrow().trim().is_empty()
@@ -558,7 +559,7 @@ pub(super) fn playlist_reorder_allowed(shared: &Shared) -> bool {
 /// wired or it's gone — mirrors `player_controller.rs`'s `show_toast` (same
 /// seam, same degrade behavior), not shared code: the two owning types are
 /// otherwise unrelated and this is a two-line `WeakRef::upgrade` match.
-pub(super) fn show_toast(shared: &Shared, text: &str) {
+pub(in crate::ui) fn show_toast(shared: &Shared, text: &str) {
     match shared.toast_overlay.upgrade() {
         Some(overlay) => toasts::show(&overlay, text),
         None => {

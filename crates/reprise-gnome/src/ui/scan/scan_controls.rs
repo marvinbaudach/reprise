@@ -19,14 +19,14 @@ type OnScanComplete = Rc<dyn Fn()>;
 type OnScanStateChanged = Rc<dyn Fn(bool)>;
 
 #[derive(Clone, Default)]
-pub(super) struct ScanCompletion(Rc<RefCell<Option<OnScanComplete>>>);
+pub(in crate::ui) struct ScanCompletion(Rc<RefCell<Option<OnScanComplete>>>);
 
 impl ScanCompletion {
-    pub(super) fn set(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn set(&self, callback: impl Fn() + 'static) {
         self.0.borrow_mut().replace(Rc::new(callback));
     }
 
-    pub(super) fn notify(&self) {
+    pub(in crate::ui) fn notify(&self) {
         let callback = self.0.borrow().clone();
         if let Some(callback) = callback {
             callback();
@@ -35,27 +35,27 @@ impl ScanCompletion {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct ScanCancellation(Arc<AtomicBool>);
+pub(in crate::ui) struct ScanCancellation(Arc<AtomicBool>);
 
 impl ScanCancellation {
-    pub(super) fn request(&self) {
+    pub(in crate::ui) fn request(&self) {
         self.0.store(true, Ordering::Relaxed);
     }
 
-    pub(super) fn reset(&self) {
+    pub(in crate::ui) fn reset(&self) {
         self.0.store(false, Ordering::Relaxed);
     }
 
-    pub(super) fn is_requested(&self) -> bool {
+    pub(in crate::ui) fn is_requested(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }
 }
 
 #[derive(Clone)]
-pub(super) struct ScanControls {
-    pub(super) button: gtk4::Button,
+pub(in crate::ui) struct ScanControls {
+    pub(in crate::ui) button: gtk4::Button,
     primary_progress: ScanProgressView,
-    pub(super) foreground_progress: Rc<RefCell<Vec<WeakScanProgressView>>>,
+    pub(in crate::ui) foreground_progress: Rc<RefCell<Vec<WeakScanProgressView>>>,
     current_progress: Rc<RefCell<Option<ScanProgress>>>,
     completion: ScanCompletion,
     cancellation: ScanCancellation,
@@ -66,7 +66,7 @@ pub(super) struct ScanControls {
 }
 
 impl ScanControls {
-    pub(super) fn new(
+    pub(in crate::ui) fn new(
         button: &gtk4::Button,
         progress: &ScanProgressView,
         waveform_backend: Arc<dyn WaveformBackend>,
@@ -85,48 +85,48 @@ impl ScanControls {
         }
     }
 
-    pub(super) fn set_empty_indicator(&self, indicator: &EmptyScanIndicator) {
+    pub(in crate::ui) fn set_empty_indicator(&self, indicator: &EmptyScanIndicator) {
         *self.empty_indicator.borrow_mut() = Some(indicator.downgrade());
     }
 
-    pub(super) fn set_sidebar_toggle(&self, button: &gtk4::ToggleButton) {
+    pub(in crate::ui) fn set_sidebar_toggle(&self, button: &gtk4::ToggleButton) {
         let weak = glib::WeakRef::new();
         weak.set(Some(button));
         *self.sidebar_toggle.borrow_mut() = Some(weak);
     }
 
-    pub(super) fn is_scanning(&self) -> bool {
+    pub(in crate::ui) fn is_scanning(&self) -> bool {
         !self.button.is_sensitive()
     }
 
-    pub(super) fn request_cancel(&self) {
+    pub(in crate::ui) fn request_cancel(&self) {
         self.cancellation.request();
     }
 
-    pub(super) fn reset_cancel(&self) {
+    pub(in crate::ui) fn reset_cancel(&self) {
         self.cancellation.reset();
     }
 
-    pub(super) fn is_cancel_requested(&self) -> bool {
+    pub(in crate::ui) fn is_cancel_requested(&self) -> bool {
         self.cancellation.is_requested()
     }
 
-    pub(super) fn waveform_backend(&self) -> Arc<dyn WaveformBackend> {
+    pub(in crate::ui) fn waveform_backend(&self) -> Arc<dyn WaveformBackend> {
         self.waveform_backend.clone()
     }
 
-    pub(super) fn set_on_scan_state_changed(&self, callback: impl Fn(bool) + 'static) {
+    pub(in crate::ui) fn set_on_scan_state_changed(&self, callback: impl Fn(bool) + 'static) {
         *self.on_scan_state_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn notify_scan_state(&self) {
+    pub(in crate::ui) fn notify_scan_state(&self) {
         let callback = self.on_scan_state_changed.borrow().clone();
         if let Some(callback) = callback {
             callback(self.is_scanning());
         }
     }
 
-    pub(super) fn attach_progress_view(&self, progress: &ScanProgressView) {
+    pub(in crate::ui) fn attach_progress_view(&self, progress: &ScanProgressView) {
         self.foreground_progress
             .borrow_mut()
             .push(progress.downgrade());
@@ -154,7 +154,7 @@ impl ScanControls {
             .collect()
     }
 
-    pub(super) fn show_progress(&self, progress: &ScanProgress) {
+    pub(in crate::ui) fn show_progress(&self, progress: &ScanProgress) {
         let phase_changed = {
             let current = self.current_progress.borrow();
             !matches!(
@@ -188,7 +188,7 @@ impl ScanControls {
         }
     }
 
-    pub(super) fn finish_progress(&self) {
+    pub(in crate::ui) fn finish_progress(&self) {
         self.current_progress.borrow_mut().take();
         for view in self.live_progress_views() {
             view.finish();
@@ -206,7 +206,7 @@ impl ScanControls {
         }
     }
 
-    pub(super) fn show_cover_progress(&self, title: &str, detail: &str, fraction: f64) {
+    pub(in crate::ui) fn show_cover_progress(&self, title: &str, detail: &str, fraction: f64) {
         for view in self.live_progress_views() {
             view.show_batch(title, detail, fraction);
         }
@@ -215,11 +215,11 @@ impl ScanControls {
         }
     }
 
-    pub(super) fn set_on_complete(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn set_on_complete(&self, callback: impl Fn() + 'static) {
         self.completion.set(callback);
     }
 
-    pub(super) fn notify_complete(&self) {
+    pub(in crate::ui) fn notify_complete(&self) {
         self.completion.notify();
     }
 

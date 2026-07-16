@@ -3,11 +3,11 @@
 use gtk4::{pango, prelude::*};
 
 use super::cover_loader::CoverLoader;
-use super::player_bar::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
 use super::strings;
+use super::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
 
-pub(super) const VOLUME_MIN: f64 = 0.0;
-pub(super) const VOLUME_MAX: f64 = 1.0;
+pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
+pub(in crate::ui) const VOLUME_MAX: f64 = 1.0;
 const VOLUME_STEP: f64 = 0.05;
 const VOLUME_DEFAULT: f64 = 1.0;
 
@@ -30,35 +30,35 @@ const TRANSPORT_ROW_CSS_CLASS: &str = "player-bar-transport";
 /// CSS class on the volume scale, toggled on hover to reveal the knob.
 const VOLUME_SCALE_CSS_CLASS: &str = "player-bar-volume";
 /// CSS class added/removed by the hover controller to show the volume knob.
-pub(super) const KNOB_VISIBLE_CSS_CLASS: &str = "knob-visible";
+pub(in crate::ui) const KNOB_VISIBLE_CSS_CLASS: &str = "knob-visible";
 
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 const ICON_QUEUE: &str = "view-list-symbolic";
 
-pub(super) struct PlayerBarWidgets {
-    pub(super) root: gtk4::Box,
+pub(in crate::ui) struct PlayerBarWidgets {
+    pub(in crate::ui) root: gtk4::Box,
     #[allow(dead_code)]
-    pub(super) center_box: gtk4::CenterBox,
+    pub(in crate::ui) center_box: gtk4::CenterBox,
     #[allow(dead_code)]
-    pub(super) info_box: gtk4::Box,
-    pub(super) cover: gtk4::Image,
-    pub(super) title_label: gtk4::Label,
-    pub(super) artist_label: gtk4::Label,
-    pub(super) mini_eq: gtk4::Box,
-    pub(super) shuffle_button: gtk4::ToggleButton,
-    pub(super) prev_button: gtk4::Button,
-    pub(super) play_pause_button: gtk4::Button,
-    pub(super) next_button: gtk4::Button,
-    pub(super) repeat_button: gtk4::Button,
-    pub(super) position_label: gtk4::Label,
-    pub(super) duration_label: gtk4::Label,
-    pub(super) waveform: super::waveform_seek::WaveformSeek,
-    pub(super) volume_icon: gtk4::Button,
-    pub(super) volume_scale: gtk4::Scale,
-    pub(super) queue_button: gtk4::Button,
+    pub(in crate::ui) info_box: gtk4::Box,
+    pub(in crate::ui) cover: gtk4::Image,
+    pub(in crate::ui) title_label: gtk4::Label,
+    pub(in crate::ui) artist_label: gtk4::Label,
+    pub(in crate::ui) mini_eq: gtk4::Box,
+    pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
+    pub(in crate::ui) prev_button: gtk4::Button,
+    pub(in crate::ui) play_pause_button: gtk4::Button,
+    pub(in crate::ui) next_button: gtk4::Button,
+    pub(in crate::ui) repeat_button: gtk4::Button,
+    pub(in crate::ui) position_label: gtk4::Label,
+    pub(in crate::ui) duration_label: gtk4::Label,
+    pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
+    pub(in crate::ui) volume_icon: gtk4::Button,
+    pub(in crate::ui) volume_scale: gtk4::Scale,
+    pub(in crate::ui) queue_button: gtk4::Button,
 }
 
-pub(super) fn build() -> PlayerBarWidgets {
+pub(in crate::ui) fn build() -> PlayerBarWidgets {
     // — Cover —
     let cover = gtk4::Image::new();
     cover.set_pixel_size(COVER_PIXEL_SIZE);
@@ -259,7 +259,7 @@ pub(super) fn build() -> PlayerBarWidgets {
 /// Player-bar chrome CSS: accent-glow play button, hairline top border, cover
 /// border-radius, title/artist/time label styling, transport hover, mini-EQ
 /// animation, volume-knob visibility, and artist-label hover colour.
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     use super::style::tokens::TRANSITION;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \

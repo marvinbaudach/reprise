@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use super::track_list::TrackList;
+use super::TrackList;
 
 fn invoke_rescan(callback: Option<Rc<dyn Fn()>>) -> bool {
     let Some(callback) = callback else {
@@ -13,7 +13,7 @@ fn invoke_rescan(callback: Option<Rc<dyn Fn()>>) -> bool {
 }
 
 impl TrackList {
-    pub(super) fn rescan_library(&self) {
+    pub(in crate::ui) fn rescan_library(&self) {
         let callback = self.shared.on_rescan_library.borrow().clone();
         if !invoke_rescan(callback) {
             tracing::warn!("library rescan requested before its callback was wired");

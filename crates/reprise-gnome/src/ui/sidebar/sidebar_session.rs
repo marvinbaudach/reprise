@@ -7,7 +7,10 @@ use reprise_core::view_source::ViewSource;
 use crate::ui::sidebar::{find_row, resolve_select_source, select_row_in_its_listbox, Shared};
 use crate::ui::strings;
 
-pub(super) fn restore_source(shared: &Rc<Shared>, requested: ViewSource) -> (ViewSource, String) {
+pub(in crate::ui) fn restore_source(
+    shared: &Rc<Shared>,
+    requested: ViewSource,
+) -> (ViewSource, String) {
     let row_exists = find_row(shared, &requested).is_some();
     let source = resolve_select_source(requested, row_exists).0;
     let entry = shared

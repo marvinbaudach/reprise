@@ -4,15 +4,15 @@ use gtk4::gdk;
 use gtk4::prelude::*;
 
 use super::popover_lifecycle;
-use super::track_list::Shared;
 use super::track_list_context_menu;
+use super::Shared;
 
 fn is_context_menu_shortcut(key: gdk::Key, modifiers: gdk::ModifierType) -> bool {
     key == gdk::Key::Menu
         || (key == gdk::Key::F10 && modifiers.contains(gdk::ModifierType::SHIFT_MASK))
 }
 
-pub(super) fn wire(column_view: &gtk4::ColumnView, shared: &std::rc::Rc<Shared>) {
+pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &std::rc::Rc<Shared>) {
     let controller = gtk4::EventControllerKey::new();
     let column_view_handle = column_view.clone();
     let shared = shared.clone();

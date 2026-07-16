@@ -6,9 +6,9 @@ const BAND_LABELS: [&str; 10] = [
     "31 Hz", "62 Hz", "125 Hz", "250 Hz", "500 Hz", "1 kHz", "2 kHz", "4 kHz", "8 kHz", "16 kHz",
 ];
 
-pub(super) struct EqualizerSurface {
-    pub(super) root: gtk4::Box,
-    pub(super) scales: Vec<gtk4::Scale>,
+pub(in crate::ui) struct EqualizerSurface {
+    pub(in crate::ui) root: gtk4::Box,
+    pub(in crate::ui) scales: Vec<gtk4::Scale>,
 }
 
 fn gain_label(value: f64) -> String {
@@ -19,7 +19,7 @@ fn gain_label(value: f64) -> String {
     }
 }
 
-pub(super) fn build_equalizer_surface(
+pub(in crate::ui) fn build_equalizer_surface(
     bands: [f64; 10],
     enabled: bool,
     on_changed: &Rc<dyn Fn(usize, f64)>,
@@ -81,7 +81,7 @@ pub(super) fn build_equalizer_surface(
 /// Equalizer chrome: accent-coloured band fills/handles and an accent dB
 /// readout, so the ten-band card reads as part of the redesign's accent
 /// system. Installed app-wide by [`super::style`].
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     ".reprise-equalizer scale > trough > highlight { background-color: @accent_color; }\n\
      .reprise-equalizer scale > trough > slider { background-color: @accent_color; }\n\
      .reprise-eq-value { color: @accent_color; font-weight: bold; }\n\

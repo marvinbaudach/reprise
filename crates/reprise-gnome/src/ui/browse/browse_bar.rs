@@ -34,7 +34,7 @@ fn browse_popup_min_height(_option_count: usize) -> i32 {
 }
 
 /// Chip and value-popover rules; installed app-wide by [`super::style`].
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     use super::style::tokens::{CHIP_BG_ALPHA, CHIP_BG_HOVER_ALPHA};
     format!(
         ".{CHIP_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 8px; \
@@ -242,7 +242,7 @@ impl BrowseBar {
         self.filter.borrow().clone()
     }
 
-    pub(super) fn restore_filter(self: &Rc<Self>, filter: &BrowseFilter) {
+    pub(in crate::ui) fn restore_filter(self: &Rc<Self>, filter: &BrowseFilter) {
         let filter = restored_filter(filter);
         *self.filter.borrow_mut() = filter;
         self.refresh();
@@ -549,7 +549,7 @@ fn load_values(conn: &Connection, facet: BrowseFacet, filter: &BrowseFilter) -> 
     })
 }
 
-pub(super) fn arm_smoke(shared: &Rc<Shared>) {
+pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
     let Ok(value) = std::env::var(SMOKE_ENV) else {
         return;
     };

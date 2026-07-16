@@ -17,20 +17,20 @@ use crate::ui::strings;
 use crate::ui::tag_editor_widgets::*;
 
 #[derive(Clone, Copy)]
-pub(super) struct EditorMode {
+pub(in crate::ui) struct EditorMode {
     track_count: NonZeroUsize,
 }
 
 impl EditorMode {
-    pub(super) fn new(track_count: usize) -> Option<Self> {
+    pub(in crate::ui) fn new(track_count: usize) -> Option<Self> {
         NonZeroUsize::new(track_count).map(|track_count| Self { track_count })
     }
 
-    pub(super) fn track_count(self) -> usize {
+    pub(in crate::ui) fn track_count(self) -> usize {
         self.track_count.get()
     }
 
-    pub(super) fn is_multi(self) -> bool {
+    pub(in crate::ui) fn is_multi(self) -> bool {
         self.track_count.get() > 1
     }
 
@@ -51,34 +51,34 @@ impl EditorMode {
     }
 }
 
-pub(super) struct TagEditorForm {
-    pub(super) save_btn: gtk4::Button,
-    pub(super) cancel_btn: gtk4::Button,
-    pub(super) dialog: adw::Dialog,
-    pub(super) title_row: adw::EntryRow,
-    pub(super) artist_ac: Rc<AutocompleteEntry>,
-    pub(super) album_ac: Rc<AutocompleteEntry>,
-    pub(super) album_artist_ac: Rc<AutocompleteEntry>,
-    pub(super) genre_ac: Rc<AutocompleteEntry>,
-    pub(super) year_row: adw::EntryRow,
-    pub(super) track_no_row: adw::EntryRow,
-    pub(super) artist_annotation: Option<gtk4::Label>,
-    pub(super) album_annotation: Option<gtk4::Label>,
-    pub(super) album_artist_annotation: Option<gtk4::Label>,
-    pub(super) genre_annotation: Option<gtk4::Label>,
-    pub(super) year_annotation: Option<gtk4::Label>,
-    pub(super) rating_box: gtk4::Box,
-    pub(super) rating_value: Rc<Cell<i32>>,
-    pub(super) error_label: gtk4::Label,
-    pub(super) pending_bar: gtk4::Box,
-    pub(super) mb_btn: gtk4::Button,
-    pub(super) mb_hint: gtk4::Label,
-    pub(super) prev_btn: gtk4::Button,
-    pub(super) next_btn: gtk4::Button,
+pub(in crate::ui) struct TagEditorForm {
+    pub(in crate::ui) save_btn: gtk4::Button,
+    pub(in crate::ui) cancel_btn: gtk4::Button,
+    pub(in crate::ui) dialog: adw::Dialog,
+    pub(in crate::ui) title_row: adw::EntryRow,
+    pub(in crate::ui) artist_ac: Rc<AutocompleteEntry>,
+    pub(in crate::ui) album_ac: Rc<AutocompleteEntry>,
+    pub(in crate::ui) album_artist_ac: Rc<AutocompleteEntry>,
+    pub(in crate::ui) genre_ac: Rc<AutocompleteEntry>,
+    pub(in crate::ui) year_row: adw::EntryRow,
+    pub(in crate::ui) track_no_row: adw::EntryRow,
+    pub(in crate::ui) artist_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) album_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) album_artist_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) genre_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) year_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) rating_box: gtk4::Box,
+    pub(in crate::ui) rating_value: Rc<Cell<i32>>,
+    pub(in crate::ui) error_label: gtk4::Label,
+    pub(in crate::ui) pending_bar: gtk4::Box,
+    pub(in crate::ui) mb_btn: gtk4::Button,
+    pub(in crate::ui) mb_hint: gtk4::Label,
+    pub(in crate::ui) prev_btn: gtk4::Button,
+    pub(in crate::ui) next_btn: gtk4::Button,
 }
 
 impl TagEditorForm {
-    pub(super) fn build(
+    pub(in crate::ui) fn build(
         mode: EditorMode,
         conn: &Rc<RefCell<Connection>>,
         tracks: &[(i64, PathBuf)],

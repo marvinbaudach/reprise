@@ -5,7 +5,7 @@ use gtk4::{glib, prelude::*};
 
 /// Layout preference choice-card surfaces; installed app-wide by
 /// [`super::style`].
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     use super::style::tokens::{
         PREVIEW_BORDER_ALPHA, PREVIEW_CONTENT_ALPHA, PREVIEW_SIDEBAR_ALPHA,
     };
@@ -25,13 +25,13 @@ checkbutton.reprise-choice-card {{
     )
 }
 
-pub(super) struct ChoiceCardSpec {
+pub(in crate::ui) struct ChoiceCardSpec {
     title: String,
     preview: gtk4::Widget,
 }
 
 impl ChoiceCardSpec {
-    pub(super) fn new(title: String, preview: &impl IsA<gtk4::Widget>) -> Self {
+    pub(in crate::ui) fn new(title: String, preview: &impl IsA<gtk4::Widget>) -> Self {
         Self {
             title,
             preview: preview.clone().upcast(),
@@ -39,10 +39,10 @@ impl ChoiceCardSpec {
     }
 }
 
-pub(super) struct ChoiceCards {
-    pub(super) root: gtk4::Box,
+pub(in crate::ui) struct ChoiceCards {
+    pub(in crate::ui) root: gtk4::Box,
     #[cfg(test)]
-    pub(super) buttons: Vec<gtk4::CheckButton>,
+    pub(in crate::ui) buttons: Vec<gtk4::CheckButton>,
 }
 
 fn retained_selection(committed: u32, requested: u32, save_succeeded: bool) -> u32 {
@@ -53,7 +53,7 @@ fn retained_selection(committed: u32, requested: u32, save_succeeded: bool) -> u
     }
 }
 
-pub(super) fn build(
+pub(in crate::ui) fn build(
     specs: Vec<ChoiceCardSpec>,
     selected: u32,
     on_selected: &Rc<dyn Fn(u32) -> bool>,

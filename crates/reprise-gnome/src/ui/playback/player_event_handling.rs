@@ -8,7 +8,7 @@ use reprise_core::playback::{PlaybackState, PlayerEvent};
 impl PlayerController {
     /// Applies one marshalled `PlayerEvent` to the bar. Runs on the GTK main
     /// thread (called only from the drain loop in `new`).
-    pub(super) fn apply_event(&self, event: PlayerEvent) {
+    pub(in crate::ui) fn apply_event(&self, event: PlayerEvent) {
         match event {
             PlayerEvent::StateChanged(state) => {
                 tracing::info!(?state, "player bar: applying state change");
@@ -89,9 +89,9 @@ impl PlayerController {
     /// calls `reset_to_stopped`). On success this relies on the `StateChanged
     /// (Stopped)` event `stop()` emits, routed back through `apply_event`, so
     /// the bar isn't reset twice; if `stop()` fails, that event never fires,
-    /// so the bar is reset directly here instead. `pub(super)` so `mpris_
+    /// so the bar is reset directly here instead. `pub(in crate::ui)` so `mpris_
     /// mirror.rs` and `playback_faults.rs` can call it too.
-    pub(super) fn reset_to_stopped(&self) {
+    pub(in crate::ui) fn reset_to_stopped(&self) {
         self.evaluate_play_tracking();
         self.consecutive_skips.set(0);
         self.failure_skip_limit.set(0);

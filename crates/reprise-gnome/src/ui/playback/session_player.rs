@@ -25,22 +25,22 @@ fn validated_up_next(
 }
 
 #[allow(dead_code)] // Called through the Task 5 session orchestration.
-pub(super) fn restore_should_start_playback() -> bool {
+pub(in crate::ui) fn restore_should_start_playback() -> bool {
     false
 }
 
 impl PlayerController {
     #[allow(dead_code)] // Wired into the close handler in Task 5.
-    pub(super) fn session_queue_snapshot(&self) -> QueueSnapshot {
+    pub(in crate::ui) fn session_queue_snapshot(&self) -> QueueSnapshot {
         self.queue.borrow().snapshot()
     }
 
-    pub(super) fn session_up_next_snapshot(&self) -> (UpNextQueue, Option<i64>) {
+    pub(in crate::ui) fn session_up_next_snapshot(&self) -> (UpNextQueue, Option<i64>) {
         (self.up_next.borrow().clone(), self.current_up_next.get())
     }
 
     #[allow(dead_code)] // Wired into startup restoration in Task 5.
-    pub(super) fn restore_session_queue(
+    pub(in crate::ui) fn restore_session_queue(
         &self,
         snapshot: QueueSnapshot,
         up_next: UpNextQueue,
@@ -132,7 +132,7 @@ impl PlayerController {
         );
     }
 
-    pub(super) fn session_playback_status(&self) -> MprisPlaybackStatus {
+    pub(in crate::ui) fn session_playback_status(&self) -> MprisPlaybackStatus {
         self.mpris_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

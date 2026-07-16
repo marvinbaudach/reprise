@@ -28,12 +28,12 @@ const ROW_HEIGHT: i32 = 56;
 const AVATAR_SIZE: i32 = 38;
 
 /// Side table of live (recycled) rows, keyed by `ListItem` pointer identity.
-pub(super) type Registry = Rc<RefCell<HashMap<usize, Rc<RowHandles>>>>;
+pub(in crate::ui) type Registry = Rc<RefCell<HashMap<usize, Rc<RowHandles>>>>;
 
 /// Widgets and per-row state kept alive for a single (recycled) row, so
 /// `connect_bind` can update them and the master's `set_now_playing_artist`
 /// can reach the row's mini-EQ without walking the widget tree.
-pub(super) struct RowHandles {
+pub(in crate::ui) struct RowHandles {
     root: gtk4::Box,
     avatar: gtk4::Box,
     initials: gtk4::Label,
@@ -50,7 +50,7 @@ pub(super) struct RowHandles {
 impl RowHandles {
     /// Shows this row's mini-EQ iff `now_playing` matches the bound artist
     /// (case-insensitively).
-    pub(super) fn set_now_playing(&self, now_playing: Option<&str>) {
+    pub(in crate::ui) fn set_now_playing(&self, now_playing: Option<&str>) {
         self.eq
             .set_visible(is_now_playing(now_playing, &self.artist.borrow()));
     }
@@ -65,7 +65,7 @@ fn is_now_playing(now_playing: Option<&str>, row_artist: &str) -> bool {
 /// The row factory: builds each 56px row once (`connect_setup`), registers its
 /// handles keyed by the cell pointer, updates them on `connect_bind`, and
 /// unregisters on `connect_teardown`.
-pub(super) fn build_row_factory(
+pub(in crate::ui) fn build_row_factory(
     registry: &Registry,
     now_playing: &Rc<RefCell<Option<String>>>,
 ) -> gtk4::SignalListItemFactory {

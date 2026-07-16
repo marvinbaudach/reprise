@@ -9,15 +9,18 @@ use rusqlite::Connection;
 
 use super::player_controller::PlayerController;
 
-pub(super) fn stored(conn: &Connection) -> AudioEffects {
+pub(in crate::ui) fn stored(conn: &Connection) -> AudioEffects {
     audio_effect_settings::load(conn)
 }
 
-pub(super) fn persist(conn: &Connection, effects: &AudioEffects) -> Result<(), rusqlite::Error> {
+pub(in crate::ui) fn persist(
+    conn: &Connection,
+    effects: &AudioEffects,
+) -> Result<(), rusqlite::Error> {
     audio_effect_settings::store(conn, effects)
 }
 
-pub(super) fn apply_initial(
+pub(in crate::ui) fn apply_initial(
     player: &dyn PlaybackBackend,
     conn: &Rc<RefCell<Connection>>,
 ) -> AudioEffects {
@@ -47,13 +50,16 @@ pub(super) fn apply_initial(
 }
 
 impl PlayerController {
-    pub(super) fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError> {
+    pub(in crate::ui) fn set_audio_effects(
+        &self,
+        effects: AudioEffects,
+    ) -> Result<(), PlaybackError> {
         self.player.set_audio_effects(effects.clone())?;
         *self.active_audio_effects.borrow_mut() = effects;
         Ok(())
     }
 
-    pub(super) fn active_audio_effects(&self) -> AudioEffects {
+    pub(in crate::ui) fn active_audio_effects(&self) -> AudioEffects {
         self.active_audio_effects.borrow().clone()
     }
 }

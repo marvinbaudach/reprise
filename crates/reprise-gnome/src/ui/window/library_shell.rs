@@ -22,24 +22,24 @@ use super::track_list::TrackList;
 use reprise_core::queries::ArtistAlbum;
 use reprise_core::view_source::ViewSource;
 
-pub(super) const SIDEBAR_BREAKPOINT_WIDTH: i32 = 800;
-pub(super) const LIBRARY_VIEW_TRACKS: &str = "tracks";
-pub(super) const LIBRARY_VIEW_ALBUMS: &str = "albums";
-pub(super) const LIBRARY_VIEW_ARTISTS: &str = "artists";
+pub(in crate::ui) const SIDEBAR_BREAKPOINT_WIDTH: i32 = 800;
+pub(in crate::ui) const LIBRARY_VIEW_TRACKS: &str = "tracks";
+pub(in crate::ui) const LIBRARY_VIEW_ALBUMS: &str = "albums";
+pub(in crate::ui) const LIBRARY_VIEW_ARTISTS: &str = "artists";
 const SMOKE_LIBRARY_VIEW_ENV: &str = "REPRISE_SMOKE_LIBRARY_VIEW";
 
-pub(super) struct LibraryShell {
+pub(in crate::ui) struct LibraryShell {
     pub sidebar_page: adw::NavigationPage,
     pub split_view: adw::NavigationSplitView,
     pub content_nav: adw::NavigationView,
     pub info_panel: Rc<InfoPanel>,
 }
 
-pub(super) struct LibraryViews {
-    pub(super) stack: gtk4::Stack,
+pub(in crate::ui) struct LibraryViews {
+    pub(in crate::ui) stack: gtk4::Stack,
 }
 
-pub(super) fn build_views(
+pub(in crate::ui) fn build_views(
     tracks: &impl IsA<gtk4::Widget>,
     albums: &impl IsA<gtk4::Widget>,
     artists: &impl IsA<gtk4::Widget>,
@@ -64,7 +64,7 @@ pub(super) fn build_views(
     LibraryViews { stack }
 }
 
-pub(super) fn wire_album_view(
+pub(in crate::ui) fn wire_album_view(
     views: &LibraryViews,
     album_view: &AlbumView,
     track_list: &Rc<TrackList>,
@@ -100,7 +100,7 @@ pub(super) fn wire_album_view(
     });
 }
 
-pub(super) fn wire_artist_view(
+pub(in crate::ui) fn wire_artist_view(
     views: &LibraryViews,
     artist_view: &ArtistView,
     track_list: &Rc<TrackList>,
@@ -155,7 +155,7 @@ fn smoke_library_view_name(value: &str) -> Option<&'static str> {
     }
 }
 
-pub(super) fn arm_smoke_library_view(views: &LibraryViews) {
+pub(in crate::ui) fn arm_smoke_library_view(views: &LibraryViews) {
     let Ok(value) = std::env::var(SMOKE_LIBRARY_VIEW_ENV) else {
         return;
     };
@@ -171,7 +171,7 @@ pub(super) fn arm_smoke_library_view(views: &LibraryViews) {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn wire_source_routing(
+pub(in crate::ui) fn wire_source_routing(
     sidebar: &Rc<Sidebar>,
     track_list: &Rc<TrackList>,
     stats_view: StatsView,
@@ -207,7 +207,7 @@ pub(super) fn wire_source_routing(
     sidebar.set_on_show_content(move || show_content());
 }
 
-pub(super) fn build(
+pub(in crate::ui) fn build(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
     sidebar: &Sidebar,
