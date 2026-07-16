@@ -31,10 +31,7 @@ pub const SCAN_FAILED: &str = N_!("Could not read music on this device");
 pub const SPACE_UNKNOWN: &str = N_!("Available space unknown");
 pub const DEVICE_MUSIC: &str = N_!("Music on Device");
 pub const PHONE_PLAYLISTS: &str = N_!("Phone Playlists");
-pub const NO_DEVICE_MUSIC: &str = N_!(
-    "No Reprise-managed music on this device yet. Reprise keeps its files in \
-     Music/Reprise and never touches music from other apps."
-);
+pub const NO_DEVICE_MUSIC: &str = N_!("No music was found in the device Music folder.");
 pub const NO_PHONE_PLAYLISTS: &str = N_!("Create a phone playlist, then drag tracks onto it.");
 pub const PLAYLIST_DRAFT: &str = N_!("Waiting for tracks");
 pub const NEW_PHONE_PLAYLIST: &str = N_!("New Phone Playlist");
