@@ -196,6 +196,9 @@ private_session_cleanup() {
   if [[ -n "${CUA_DAEMON_PID:-}" ]]; then
     kill -TERM "$CUA_DAEMON_PID" 2>/dev/null || true
   fi
+  if [[ -n "${ATSPI_REGISTRYD_PID:-}" ]]; then
+    kill -TERM "$ATSPI_REGISTRYD_PID" 2>/dev/null || true
+  fi
   if [[ -n "${ATSPI_PID:-}" ]]; then
     kill -TERM "$ATSPI_PID" 2>/dev/null || true
   fi
@@ -209,8 +212,14 @@ run_private_session() {
     --launch-immediately --a11y=1 --screen-reader=1 \
     >"$CUA_E2E_OUT_DIR/at-spi.log" 2>&1 &
   ATSPI_PID=$!
-  sleep 0.5
+  sleep 0.3
 
+  /usr/lib/at-spi2-registryd \
+    >"$CUA_E2E_OUT_DIR/at-spi-registryd.log" 2>&1 &
+  ATSPI_REGISTRYD_PID=$!
+  sleep 0.3
+
+  export CUA_DRIVER_SOCKET="$CUA_E2E_SCRATCH_ROOT/cua-driver.sock"
   "$CUA_DRIVER_BIN" serve --no-overlay \
     >"$CUA_E2E_OUT_DIR/cua-driver.log" 2>&1 &
   CUA_DAEMON_PID=$!
