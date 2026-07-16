@@ -34,6 +34,26 @@ pub enum ScanProgress {
         total: u64,
         current_path: std::path::PathBuf,
     },
+    Fetching {
+        done: u64,
+        total: u64,
+    },
+}
+
+/// Summary passed to the UI after a scan finishes, for the completion toast.
+#[derive(Debug, Clone, Copy)]
+pub struct ScanResult {
+    pub new_tracks: u32,
+    pub failed: u32,
+}
+
+impl ScanReport {
+    pub fn to_scan_result(&self) -> ScanResult {
+        ScanResult {
+            new_tracks: self.added,
+            failed: self.errors,
+        }
+    }
 }
 
 #[derive(Debug, Default)]

@@ -7,6 +7,8 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use gtk4::gio::prelude::*;
 use gtk4::glib;
@@ -19,7 +21,7 @@ use reprise_core::library::scanner::{ScanError, ScanProgress, ScanReport};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::{self, WatcherHandle};
 
-use super::scan_progress::{ScanProgressView, WeakScanProgressView};
+use super::scan_progress::{EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView};
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
@@ -69,6 +71,16 @@ pub(super) struct ScanControls {
     foreground_progress: Rc<RefCell<Vec<WeakScanProgressView>>>,
     current_progress: Rc<RefCell<Option<ScanProgress>>>,
     completion: ScanCompletion,
+    cancel_token: Arc<AtomicBool>,
+    on_scan_state_changed: Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>,
+    /// Weak reference to the indicator embedded in the empty-library status
+    /// page. `None` until `set_empty_indicator` is called from `window.rs`
+    /// after both `track_list` and `scan_controls` exist.
+    empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
+    /// Weak reference to the sidebar toggle button. When set, the tooltip is
+    /// updated to reflect scan progress so the user can see the status while
+    /// the sidebar is collapsed. `None` until `set_sidebar_toggle` is called.
+    sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
 }
 
 impl ScanControls {
@@ -79,6 +91,57 @@ impl ScanControls {
             foreground_progress: Rc::new(RefCell::new(Vec::new())),
             current_progress: Rc::new(RefCell::new(None)),
             completion: ScanCompletion::default(),
+            cancel_token: Arc::new(AtomicBool::new(false)),
+            on_scan_state_changed: Rc::new(RefCell::new(None)),
+            empty_indicator: Rc::new(RefCell::new(None)),
+            sidebar_toggle: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    /// Registers the lightweight scan indicator embedded in the empty-library
+    /// status page. Called from `window.rs` after both `track_list` and
+    /// `scan_controls` exist. Stored as a `Weak` reference so `ScanControls`
+    /// can never keep the indicator's widget tree alive past the window's own
+    /// lifetime — same pattern as `foreground_progress`.
+    pub(super) fn set_empty_indicator(&self, indicator: &EmptyScanIndicator) {
+        *self.empty_indicator.borrow_mut() = Some(indicator.downgrade());
+    }
+
+    /// Registers the sidebar toggle button so its tooltip can be updated to
+    /// reflect scan progress while the sidebar is collapsed. Called from
+    /// `window.rs` after both `scan_controls` and `sidebar_toggle` exist.
+    /// Stored as a `Weak` reference so `ScanControls` cannot keep the button
+    /// alive past the window's lifetime.
+    pub(super) fn set_sidebar_toggle(&self, button: &gtk4::ToggleButton) {
+        let weak = glib::WeakRef::new();
+        weak.set(Some(button));
+        *self.sidebar_toggle.borrow_mut() = Some(weak);
+    }
+
+    pub(super) fn is_scanning(&self) -> bool {
+        !self.button.is_sensitive()
+    }
+
+    pub(super) fn request_cancel(&self) {
+        self.cancel_token.store(true, Ordering::Relaxed);
+    }
+
+    pub(super) fn reset_cancel(&self) {
+        self.cancel_token.store(false, Ordering::Relaxed);
+    }
+
+    pub(super) fn is_cancel_requested(&self) -> bool {
+        self.cancel_token.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_on_scan_state_changed(&self, callback: impl Fn(bool) + 'static) {
+        *self.on_scan_state_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    fn notify_scan_state(&self) {
+        let callback = self.on_scan_state_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(self.is_scanning());
         }
     }
 
@@ -120,6 +183,10 @@ impl ScanControls {
                         Some(ScanProgress::Scanning { .. }),
                         ScanProgress::Scanning { .. }
                     )
+                    | (
+                        Some(ScanProgress::Fetching { .. }),
+                        ScanProgress::Fetching { .. }
+                    )
             )
         };
         *self.current_progress.borrow_mut() = Some(progress.clone());
@@ -150,10 +217,52 @@ impl ScanControls {
                     );
                 }
             }
+            ScanProgress::Fetching { done, total } => {
+                if phase_changed {
+                    tracing::info!(done, total, "scan progress: fetching");
+                } else {
+                    tracing::debug!(done, total, "scan progress: fetching");
+                }
+            }
         }
         let views = self.live_progress_views();
         for view in views {
             view.show(progress);
+        }
+        if let Some(indicator) = self
+            .empty_indicator
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            indicator.show(progress);
+        }
+        if let Some(button) = self
+            .sidebar_toggle
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            let tooltip = match progress {
+                ScanProgress::Discovering => Some(strings::scan_tooltip_discovering()),
+                ScanProgress::Scanning { processed, total, .. } => {
+                    let pct = if *total > 0 {
+                        (*processed as f64 / *total as f64 * 100.0).round() as u32
+                    } else {
+                        0
+                    };
+                    Some(strings::scan_tooltip_progress(pct))
+                }
+                ScanProgress::Fetching { done, total } => {
+                    let pct = if *total > 0 {
+                        (*done as f64 / *total as f64 * 100.0).round() as u32
+                    } else {
+                        0
+                    };
+                    Some(strings::scan_tooltip_progress(pct))
+                }
+            };
+            button.set_tooltip_text(tooltip.as_deref());
         }
     }
 
@@ -162,6 +271,22 @@ impl ScanControls {
         let views = self.live_progress_views();
         for view in views {
             view.finish();
+        }
+        if let Some(indicator) = self
+            .empty_indicator
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            indicator.finish();
+        }
+        if let Some(button) = self
+            .sidebar_toggle
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            button.set_tooltip_text(Some(&strings::text(strings::SIDEBAR_TOGGLE)));
         }
     }
 
@@ -295,7 +420,7 @@ pub(super) fn trigger_rescan_of_library_root(
     sidebar: Rc<Sidebar>,
     watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
 ) {
-    if !controls.button.is_sensitive() {
+    if controls.is_scanning() {
         tracing::debug!("rescan library: a scan is already running; ignoring");
         toasts::show(toast_overlay, &strings::scan_already_running_toast());
         return;
@@ -356,7 +481,9 @@ fn spawn_scan(
     sidebar: Rc<Sidebar>,
     watcher_state: Rc<RefCell<Option<WatcherHandle>>>,
 ) {
+    controls.reset_cancel();
     controls.button.set_sensitive(false);
+    controls.notify_scan_state();
     controls.button.set_label(&strings::text(strings::SCANNING));
     controls
         .button
@@ -400,16 +527,27 @@ fn spawn_scan(
 
         match outcome {
             Ok(Ok(report)) => {
-                tracing::info!(?report, "scan complete");
-                track_list.reload();
-                sidebar.refresh("scan completed");
-                start_or_restart_watcher(
-                    &watcher_state,
-                    &folder,
-                    db_path,
-                    Rc::downgrade(&track_list),
-                    Rc::downgrade(&sidebar),
-                );
+                if controls.is_cancel_requested() {
+                    tracing::info!("scan cancelled by user; keeping already-imported tracks");
+                    track_list.reload();
+                    sidebar.refresh("scan cancelled");
+                } else {
+                    tracing::info!(?report, "scan complete");
+                    let result = report.to_scan_result();
+                    toasts::show(
+                        &toast_overlay,
+                        &strings::scan_complete_toast(result.new_tracks, result.failed),
+                    );
+                    track_list.reload();
+                    sidebar.refresh("scan completed");
+                    start_or_restart_watcher(
+                        &watcher_state,
+                        &folder,
+                        db_path,
+                        Rc::downgrade(&track_list),
+                        Rc::downgrade(&sidebar),
+                    );
+                }
                 controls.completion.notify();
             }
             Ok(Err(error)) => {
@@ -452,6 +590,7 @@ fn publish_latest_progress(
 fn finish_scan_ui(controls: &ScanControls) {
     controls.finish_progress();
     controls.button.set_sensitive(true);
+    controls.notify_scan_state();
     controls
         .button
         .set_label(&strings::text(strings::SCAN_FOLDER));

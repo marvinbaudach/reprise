@@ -362,6 +362,12 @@ impl Sidebar {
         crate::ui::sidebar_session::restore_source(&self.shared, requested)
     }
 
+    /// Appends the scan-progress card widget below the issues list.
+    /// Called once at window build time (after sidebar and scan controls exist).
+    pub fn append_scan_card(&self, widget: &impl IsA<gtk4::Widget>) {
+        self.root.append(widget);
+    }
+
     #[cfg(test)]
     pub(super) fn test_shared(&self) -> &Rc<Shared> {
         &self.shared

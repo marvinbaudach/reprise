@@ -285,8 +285,14 @@ pub fn build(
     }
     let scan_progress = ScanProgressView::new();
     let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
+    scan_controls.set_sidebar_toggle(&sidebar_toggle);
+    scan_progress.set_on_cancel({
+        let scan_controls = scan_controls.clone();
+        move || scan_controls.request_cancel()
+    });
+    sidebar.append_scan_card(scan_progress.widget());
     let toolbar_view = adw::ToolbarView::new();
-    toolbar_view.add_top_bar(scan_progress.widget());
+    // No add_top_bar for scan progress — it lives in the sidebar now.
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
     let album_view =
         super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
@@ -352,6 +358,15 @@ pub fn build(
     // reason as the player's toast overlay above — `track_list` is built
     // before `toast_overlay` exists.
     track_list.set_toast_overlay(&toast_overlay);
+    // Embed a lightweight scan-progress indicator in the empty-library status
+    // page so the user sees scanning feedback during a first scan (before any
+    // tracks are in the list). Created here — after both `track_list` and
+    // `scan_controls` exist — and wired in both directions.
+    {
+        let empty_indicator = super::scan_progress::EmptyScanIndicator::new();
+        track_list.set_empty_scan_widget(empty_indicator.widget());
+        scan_controls.set_empty_indicator(&empty_indicator);
+    }
     // Same reason again: the sidebar is built before `toast_overlay` exists.
     sidebar.set_toast_overlay(&toast_overlay);
     {
@@ -600,7 +615,8 @@ pub fn build(
     let rescan_watcher_state = watcher_state.clone();
     let sync_preferences = preferences.clone();
     let stats_sidebar = sidebar.clone();
-    primary_menu::install(
+    let cancel_scan_controls = scan_controls.clone();
+    let library_menu = primary_menu::install(
         &header,
         &window,
         &track_list,
@@ -620,12 +636,20 @@ pub fn build(
                     &rescan_watcher_state,
                 );
             }),
+            on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
             on_sync_device: Rc::new(move || {
                 sync_preferences.present_page("synchronization");
             }),
             on_preferences: Rc::new(move || preferences.present()),
         },
+        &scan_controls,
     );
+    scan_controls.set_on_scan_state_changed({
+        let library_menu = library_menu.clone();
+        move |is_scanning| {
+            primary_menu::update_library_section(&library_menu, is_scanning);
+        }
+    });
     // Task 7: wire the player bar's queue button to open the Queue sidebar.
     if let Some(ref player) = player {
         let sidebar_for_queue = sidebar.clone();
