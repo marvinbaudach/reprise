@@ -401,6 +401,14 @@ impl DeviceSyncRuntime {
     }
 
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
+        self.refresh_contents_with_delta(device_id, true);
+    }
+
+    fn refresh_contents_after_sync(self: &Rc<Self>, device_id: &str) {
+        self.refresh_contents_with_delta(device_id, false);
+    }
+
+    fn refresh_contents_with_delta(self: &Rc<Self>, device_id: &str, recompute_delta: bool) {
         let request = {
             let mut devices = self.device_states.borrow_mut();
             let Some(device) = devices
@@ -446,7 +454,9 @@ impl DeviceSyncRuntime {
                     }
                 }
             }
-            if let Err(error) = runtime.recompute_delta(&id) {
+            if !recompute_delta {
+                runtime.notify();
+            } else if let Err(error) = runtime.recompute_delta(&id) {
                 if let Some(device) = runtime
                     .device_states
                     .borrow_mut()

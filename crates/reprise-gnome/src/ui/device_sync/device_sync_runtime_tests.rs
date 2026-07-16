@@ -31,29 +31,30 @@ struct FakeState {
     max_total: Cell<usize>,
     playlists: RefCell<Vec<(String, String, Vec<u8>)>>,
     deleted: RefCell<Vec<String>>,
+    available_bytes: Cell<Option<u64>>,
 }
 
 #[derive(Clone)]
 struct FakeBackend {
     state: Rc<FakeState>,
     delay_ms: u64,
-    available_bytes: Option<u64>,
 }
 
 impl FakeBackend {
     fn new(devices: Vec<DeviceDescriptor>, delay_ms: u64) -> Self {
         let state = Rc::new(FakeState::default());
         state.devices.replace(devices);
-        Self {
-            state,
-            delay_ms,
-            available_bytes: Some(1_000_000),
-        }
+        state.available_bytes.set(Some(1_000_000));
+        Self { state, delay_ms }
     }
 
-    fn with_available_bytes(mut self, available_bytes: Option<u64>) -> Self {
-        self.available_bytes = available_bytes;
+    fn with_available_bytes(self, available_bytes: Option<u64>) -> Self {
+        self.state.available_bytes.set(available_bytes);
         self
+    }
+
+    fn set_available_bytes(&self, available_bytes: Option<u64>) {
+        self.state.available_bytes.set(available_bytes);
     }
 
     fn set_devices(&self, devices: &[DeviceDescriptor]) {
@@ -75,7 +76,7 @@ impl DeviceBackend for FakeBackend {
     }
 
     fn inspect(&self, _root_uri: String) -> TestFuture<(DeviceContents, Option<u64>)> {
-        let available_bytes = self.available_bytes;
+        let available_bytes = self.state.available_bytes.get();
         Box::pin(async move { Ok((DeviceContents::default(), available_bytes)) })
     }
 
