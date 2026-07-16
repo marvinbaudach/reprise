@@ -85,6 +85,7 @@ use crate::view_source::ViewSource;
 use rusqlite::Connection;
 
 mod artist_context;
+pub mod autocomplete;
 mod browse;
 mod clauses;
 mod library;
