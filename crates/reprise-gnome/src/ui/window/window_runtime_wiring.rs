@@ -1,0 +1,318 @@
+//! Post-composition wiring for the main window.
+//!
+//! `window::build` constructs the object graph. This module connects runtime
+//! callbacks, startup restoration, scan/watcher triggers, and smoke hooks once
+//! every participant exists.
+
+use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+use gtk4::glib;
+use gtk4::prelude::*;
+use libadwaita as adw;
+use reprise_core::library::session::SessionState;
+use reprise_core::library::watcher::WatcherHandle;
+use reprise_core::view_source::ViewSource;
+use rusqlite::Connection;
+
+use super::album_view::AlbumView;
+use super::cover_download_batch::CoverDownloadBatch;
+use super::first_run::FirstRunDecision;
+use super::info_panel::InfoPanel;
+use super::library_chrome::LibraryTitle;
+use super::library_player_bar::LibraryPlayerBarShell;
+use super::library_shell::LibraryViews;
+use super::minimal_view::MinimalView;
+use super::player_controller::PlayerController;
+use super::preferences::PreferencesContext;
+use super::scan_flow::ScanControls;
+use super::sidebar::Sidebar;
+use super::stats_view::StatsView;
+use super::track_list::TrackList;
+
+const SMOKE_QUIT_ENV_VAR: &str = "REPRISE_SMOKE_QUIT";
+const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
+const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
+
+pub(super) struct RuntimeWiring<'a> {
+    pub(super) app: &'a adw::Application,
+    pub(super) window: &'a adw::ApplicationWindow,
+    pub(super) conn: &'a Rc<RefCell<Connection>>,
+    pub(super) db_path: &'a Path,
+    pub(super) header: &'a adw::HeaderBar,
+    pub(super) search_entry: &'a gtk4::SearchEntry,
+    pub(super) sidebar_toggle: &'a gtk4::ToggleButton,
+    pub(super) sidebar_page: &'a adw::NavigationPage,
+    pub(super) split_view: &'a adw::NavigationSplitView,
+    pub(super) track_list: &'a Rc<TrackList>,
+    pub(super) sidebar: &'a Rc<Sidebar>,
+    pub(super) player: &'a Option<Rc<PlayerController>>,
+    pub(super) stats_view: StatsView,
+    pub(super) content_stack: &'a gtk4::Stack,
+    pub(super) library_views: &'a LibraryViews,
+    pub(super) library_title: &'a Rc<LibraryTitle>,
+    pub(super) window_title: &'a adw::WindowTitle,
+    pub(super) album_view: &'a AlbumView,
+    pub(super) scan_controls: &'a ScanControls,
+    pub(super) toast_overlay: &'a adw::ToastOverlay,
+    pub(super) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
+    pub(super) library_player_bar: &'a LibraryPlayerBarShell,
+    pub(super) info_panel: &'a Rc<InfoPanel>,
+    pub(super) session_state: &'a SessionState,
+    pub(super) geometry_guard: &'a Rc<Cell<bool>>,
+    pub(super) scan_button: &'a gtk4::Button,
+    pub(super) minimal_view: &'a Rc<MinimalView>,
+    pub(super) preferences: &'a Rc<PreferencesContext>,
+    pub(super) cover_batch: &'a Rc<CoverDownloadBatch>,
+    pub(super) first_run_decision: FirstRunDecision,
+}
+
+pub(super) fn wire(args: RuntimeWiring<'_>) {
+    let RuntimeWiring {
+        app,
+        window,
+        conn,
+        db_path,
+        header,
+        search_entry,
+        sidebar_toggle,
+        sidebar_page,
+        split_view,
+        track_list,
+        sidebar,
+        player,
+        stats_view,
+        content_stack,
+        library_views,
+        library_title,
+        window_title,
+        album_view,
+        scan_controls,
+        toast_overlay,
+        watcher_state,
+        library_player_bar,
+        info_panel,
+        session_state,
+        geometry_guard,
+        scan_button,
+        minimal_view,
+        preferences,
+        cover_batch,
+        first_run_decision,
+    } = args;
+
+    let minimal_toggle = minimal_view.clone();
+    let compact_preferences = preferences.clone();
+    super::compact_mode_controls::install(
+        window,
+        minimal_view,
+        player.as_ref().map(|player| &player.compact_player),
+        conn,
+        Rc::new(move || compact_preferences.present()),
+    );
+
+    let rescan_conn = conn.clone();
+    let rescan_scan_controls = scan_controls.clone();
+    let rescan_toast_overlay = toast_overlay.clone();
+    let rescan_db_path = db_path.to_path_buf();
+    let rescan_track_list = track_list.clone();
+    let rescan_sidebar = sidebar.clone();
+    let rescan_watcher_state = watcher_state.clone();
+    let sync_preferences = preferences.clone();
+    let menu_preferences = preferences.clone();
+    let stats_sidebar = sidebar.clone();
+    let cancel_scan_controls = scan_controls.clone();
+    let library_menu = super::primary_menu::install(
+        header,
+        window,
+        track_list,
+        super::primary_menu::Callbacks {
+            on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
+            on_my_stats: Rc::new(move || {
+                stats_sidebar.refresh_and_select(ViewSource::MyStats, "primary menu");
+            }),
+            on_rescan_library: Rc::new(move || {
+                super::scan_flow::trigger_rescan_of_library_root(
+                    &rescan_conn,
+                    &rescan_scan_controls,
+                    &rescan_toast_overlay,
+                    rescan_db_path.clone(),
+                    rescan_track_list.clone(),
+                    rescan_sidebar.clone(),
+                    &rescan_watcher_state,
+                );
+            }),
+            on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
+            on_sync_device: Rc::new(move || {
+                sync_preferences.present_page("synchronization");
+            }),
+            on_preferences: Rc::new(move || menu_preferences.present()),
+        },
+        scan_controls,
+    );
+    scan_controls.set_on_scan_state_changed({
+        let library_menu = library_menu.clone();
+        move |is_scanning| {
+            super::primary_menu::update_library_section(&library_menu, is_scanning);
+        }
+    });
+
+    if let Some(player) = player {
+        let sidebar_for_queue = sidebar.clone();
+        player.bar.connect_queue_clicked(move || {
+            sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
+        });
+        let toggle = info_panel.toggle_button().clone();
+        player.connect_cover_clicked(move || toggle.set_active(!toggle.is_active()));
+    }
+
+    header.pack_end(search_entry);
+    cover_batch.start();
+    app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
+    app.set_accels_for_action("win.preferences", &["<Control>comma"]);
+    app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
+    app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
+
+    super::window_navigation::wire_sidebar_toggle(sidebar_toggle, split_view, sidebar_page);
+    let show_content_if_collapsed = super::window_navigation::show_content_callback(split_view);
+    super::library_shell::wire_source_routing(
+        sidebar,
+        track_list,
+        stats_view,
+        conn,
+        content_stack,
+        library_views,
+        library_title,
+        window_title,
+        show_content_if_collapsed,
+    );
+
+    let track_list_weak = Rc::downgrade(track_list);
+    sidebar.set_on_tracks_added(move || match track_list_weak.upgrade() {
+        Some(track_list) => track_list.reload(),
+        None => tracing::warn!("track list reload skipped: track list is gone"),
+    });
+    let sidebar_weak = Rc::downgrade(sidebar);
+    track_list.set_on_sidebar_playlist_drop(move |playlist_id, playlist_name, ids| {
+        match sidebar_weak.upgrade() {
+            Some(sidebar) => sidebar.handle_playlist_drop(playlist_id, playlist_name, ids),
+            None => {
+                tracing::warn!("sidebar is gone; cannot dispatch simulated playlist drop");
+                false
+            }
+        }
+    });
+
+    let search_restore_guard = super::view_session::new_search_restore_guard();
+    super::view_session::wire_search(
+        search_entry,
+        track_list.clone(),
+        search_restore_guard.clone(),
+    );
+    {
+        use gtk4::prelude::EditableExt as _;
+        let album_filter = album_view.filter_callback();
+        search_entry.connect_search_changed(move |entry| album_filter(&entry.text()));
+    }
+    super::view_session::arm_smoke(
+        search_entry,
+        track_list,
+        sidebar,
+        window_title,
+        &search_restore_guard,
+    );
+    super::shortcuts::wire(app, window, search_entry, track_list, player.clone());
+
+    super::scan_flow::wire_scan_button(
+        scan_controls,
+        window,
+        toast_overlay,
+        db_path.to_path_buf(),
+        track_list.clone(),
+        sidebar.clone(),
+        watcher_state.clone(),
+    );
+    super::scan_flow::arm_smoke_rescan(
+        scan_controls,
+        toast_overlay,
+        db_path.to_path_buf(),
+        track_list.clone(),
+        sidebar.clone(),
+        watcher_state.clone(),
+    );
+    start_persisted_watcher(conn, db_path, track_list, sidebar, watcher_state);
+
+    super::playlist_io::wire_import_action(window, toast_overlay, conn.clone(), sidebar);
+    super::playlist_io::arm_smoke_m3u(conn.clone(), toast_overlay, sidebar.clone());
+    super::window_smoke::arm_bar_position(conn, library_player_bar);
+    super::lyrics_smoke::arm(player.as_ref(), info_panel, conn);
+
+    super::session_restore::restore_runtime(
+        search_entry,
+        track_list,
+        sidebar,
+        window_title,
+        &search_restore_guard,
+        player.as_ref(),
+        session_state,
+    );
+    let restored_source = super::view_session::snapshot(track_list).source;
+    library_title.set_library_navigation_visible(matches!(restored_source, ViewSource::Library));
+    super::session_restore::wire_close(
+        window,
+        conn,
+        track_list,
+        player.as_ref(),
+        session_state,
+        geometry_guard,
+    );
+    super::session_restore::arm_seed_close(window);
+    super::first_run::run(window, scan_button, conn, first_run_decision);
+    minimal_view.apply_initial();
+    arm_smoke_quit(window);
+}
+
+fn start_persisted_watcher(
+    conn: &Rc<RefCell<Connection>>,
+    db_path: &Path,
+    track_list: &Rc<TrackList>,
+    sidebar: &Rc<Sidebar>,
+    watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
+) {
+    let root = {
+        let conn = conn.borrow();
+        reprise_core::library::settings::get_library_root(&conn)
+    };
+    match root {
+        Ok(Some(root)) => super::scan_flow::start_or_restart_watcher(
+            watcher_state,
+            &PathBuf::from(root),
+            db_path.to_path_buf(),
+            Rc::downgrade(track_list),
+            Rc::downgrade(sidebar),
+        ),
+        Ok(None) => tracing::debug!("no persisted library root; watcher not started at startup"),
+        Err(error) => tracing::error!(%error, "failed to read persisted library root at startup"),
+    }
+}
+
+fn arm_smoke_quit(window: &adw::ApplicationWindow) {
+    if std::env::var(SMOKE_QUIT_ENV_VAR).is_err() {
+        return;
+    }
+    let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(SMOKE_QUIT_DELAY_SECS_DEFAULT);
+    tracing::info!(
+        delay_secs,
+        "{SMOKE_QUIT_ENV_VAR} set: arming headless smoke-quit timer"
+    );
+    let window = window.clone();
+    glib::timeout_add_seconds_local(delay_secs, move || {
+        tracing::info!("smoke-quit timer fired: closing main window");
+        window.close();
+        glib::ControlFlow::Break
+    });
+}
