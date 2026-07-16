@@ -78,7 +78,7 @@ fn is_lossless(path: &Path) -> bool {
 }
 
 fn transcode_size(track: &SyncTrack, bitrate: u32) -> u64 {
-    u64::try_from(track.duration_ms.max(0))
+    u64::try_from(track.duration_ms.max(1))
         .unwrap_or(0)
         .saturating_mul(u64::from(bitrate))
         .div_ceil(8)

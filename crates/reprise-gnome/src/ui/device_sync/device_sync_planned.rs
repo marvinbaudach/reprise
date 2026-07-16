@@ -321,7 +321,7 @@ async fn run_transfers(
                     device_serial: work.device_id.clone(),
                     track_id: entry.track.id,
                     device_path: entry.device_path.clone(),
-                    size: actual_size,
+                    size: entry.expected_bytes,
                     mtime: entry.track.source_mtime,
                     pinned: false,
                 };
