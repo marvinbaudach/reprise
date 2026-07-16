@@ -1,6 +1,6 @@
 //! Typed track-column layout, persistence format, and GTK column registry.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
@@ -376,6 +376,10 @@ pub struct BuiltColumns {
 pub struct ColumnRegistry {
     view: gtk4::ColumnView,
     columns: HashMap<ColumnId, gtk4::ColumnViewColumn>,
+    /// Suppresses `wire_order_persistence`'s columns-model listener while
+    /// `apply` rebuilds the column list programmatically — only genuine user
+    /// header drags may persist an order from the model side.
+    syncing_order: Rc<Cell<bool>>,
 }
 
 impl ColumnRegistry {
@@ -397,6 +401,7 @@ impl ColumnRegistry {
         if self.current_order() == desired {
             return;
         }
+        self.syncing_order.set(true);
         for column in self.columns.values() {
             self.view.remove_column(column);
         }
@@ -405,6 +410,7 @@ impl ColumnRegistry {
                 self.view.append_column(column);
             }
         }
+        self.syncing_order.set(false);
     }
 
     /// The column ids currently held by the view, in their present order.
@@ -413,7 +419,10 @@ impl ColumnRegistry {
         let model = self.view.columns();
         (0..model.n_items())
             .filter_map(|index| {
-                let column = model.item(index)?.downcast::<gtk4::ColumnViewColumn>().ok()?;
+                let column = model
+                    .item(index)?
+                    .downcast::<gtk4::ColumnViewColumn>()
+                    .ok()?;
                 self.columns
                     .iter()
                     .find(|(_, candidate)| **candidate == column)
@@ -473,7 +482,8 @@ fn save_widths_now(shared: &Shared, columns: &[(ColumnId, gtk4::ColumnViewColumn
         .map(|(id, column)| (*id, column.fixed_width()))
         .collect();
     let serialized = crate::ui::column_widths::serialize_widths(&widths);
-    if let Err(error) = settings::set_setting(&shared.conn.borrow(), COLUMN_WIDTHS_KEY, &serialized) {
+    if let Err(error) = settings::set_setting(&shared.conn.borrow(), COLUMN_WIDTHS_KEY, &serialized)
+    {
         tracing::warn!(%error, "could not persist column widths");
     }
 }
@@ -481,7 +491,10 @@ fn save_widths_now(shared: &Shared, columns: &[(ColumnId, gtk4::ColumnViewColumn
 /// Wires a debounced `fixed-width` listener on every persistable column so a
 /// header-drag resize is stored ~500 ms after it settles. Must run after the
 /// initial policy/restore widths are applied, so setup does not self-trigger.
-fn wire_width_persistence(shared: &Rc<Shared>, columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>) {
+fn wire_width_persistence(
+    shared: &Rc<Shared>,
+    columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>,
+) {
     let snapshot: Rc<Vec<(ColumnId, gtk4::ColumnViewColumn)>> = Rc::new(
         columns
             .iter()
@@ -513,6 +526,69 @@ fn wire_width_persistence(shared: &Rc<Shared>, columns: &HashMap<ColumnId, gtk4:
             *debounce.borrow_mut() = Some(handle);
         });
     }
+}
+
+/// Persists a header drag-reorder. GTK's built-in column drag (the view is
+/// `reorderable`) mutates the view's columns model directly — without ever
+/// going through `TrackList::apply_column_layout` — so this listens on that
+/// model and stores the resulting order under the same setting the popover/
+/// preferences editor writes. `syncing_order` mutes the events fired by
+/// `ColumnRegistry::apply`'s own remove/re-append rebuild; a mid-mutation
+/// snapshot (fewer columns than registered) is skipped, so only the final
+/// post-drop order is ever persisted.
+fn wire_order_persistence(
+    shared: &Rc<Shared>,
+    view: &gtk4::ColumnView,
+    columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>,
+    syncing_order: &Rc<Cell<bool>>,
+) {
+    let shared_weak = Rc::downgrade(shared);
+    let columns = columns.clone();
+    let syncing_order = syncing_order.clone();
+    view.columns().connect_items_changed(move |model, _, _, _| {
+        if syncing_order.get() {
+            return;
+        }
+        let Some(shared) = shared_weak.upgrade() else {
+            return;
+        };
+        let order: Vec<ColumnId> = (0..model.n_items())
+            .filter_map(|index| {
+                let column = model
+                    .item(index)?
+                    .downcast::<gtk4::ColumnViewColumn>()
+                    .ok()?;
+                columns
+                    .iter()
+                    .find(|(_, candidate)| **candidate == column)
+                    .map(|(id, _)| *id)
+            })
+            .collect();
+        if order.len() != columns.len() {
+            return; // transient mid-mutation state
+        }
+        let visible: HashSet<ColumnId> = order
+            .iter()
+            .copied()
+            .filter(|id| {
+                columns
+                    .get(id)
+                    .is_some_and(gtk4::ColumnViewColumn::is_visible)
+            })
+            .collect();
+        let serialized = serialize_layout(&normalize(order, visible));
+        let saved = settings::set_setting(
+            &shared.conn.borrow(),
+            reprise_core::library::settings::COLUMN_LAYOUT_KEY,
+            &serialized,
+        );
+        match saved {
+            Ok(()) => {
+                tracing::debug!(layout = %serialized, "column order persisted after header drag")
+            }
+            Err(error) => tracing::warn!(%error, "could not persist dragged column order"),
+        }
+    });
 }
 
 pub(super) fn build_columns(
@@ -603,9 +679,15 @@ pub(super) fn build_columns(
     }
     restore_stored_widths(&columns, &shared.conn.borrow());
     wire_width_persistence(shared, &columns);
+    // GTK's native header drag-reorder (on by default; made explicit here) —
+    // the listener below keeps the persisted layout in sync with it.
+    view.set_reorderable(true);
+    let syncing_order = Rc::new(Cell::new(false));
+    wire_order_persistence(shared, view, &columns, &syncing_order);
     let registry = ColumnRegistry {
         view: view.clone(),
         columns,
+        syncing_order,
     };
     let layout = load_layout(&shared.conn.borrow());
     registry.apply(&layout);
@@ -717,7 +799,11 @@ mod tests {
             view.append_column(&column);
             columns.insert(id, column);
         }
-        ColumnRegistry { view, columns }
+        ColumnRegistry {
+            view,
+            columns,
+            syncing_order: Rc::new(Cell::new(false)),
+        }
     }
 
     #[test]
@@ -830,7 +916,10 @@ mod tests {
 
         restore_stored_widths(&registry.columns, &conn);
 
-        assert_eq!(registry.column(ColumnId::Artist).unwrap().fixed_width(), 333);
+        assert_eq!(
+            registry.column(ColumnId::Artist).unwrap().fixed_width(),
+            333
+        );
         // Cover is not persistable, so its stored value is ignored.
         assert_ne!(registry.column(ColumnId::Cover).unwrap().fixed_width(), 999);
     }
@@ -842,7 +931,10 @@ mod tests {
             return;
         }
         let registry = test_registry(&[ColumnId::Artist]);
-        registry.column(ColumnId::Artist).unwrap().set_fixed_width(500);
+        registry
+            .column(ColumnId::Artist)
+            .unwrap()
+            .set_fixed_width(500);
 
         registry.reset_widths();
 
