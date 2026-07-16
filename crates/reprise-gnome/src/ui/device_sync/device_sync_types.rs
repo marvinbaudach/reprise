@@ -114,6 +114,7 @@ pub struct DeviceTrackView {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncStep {
     Removing,
+    Transcoding,
     Copying,
     WritingPlaylists,
 }

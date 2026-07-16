@@ -471,11 +471,10 @@ fn card_subtitle(device: &DeviceView) -> String {
     }
 }
 
-/// What is happening to the named track. Transcoding is deliberately absent:
-/// the encoder pipeline never reports it as a step, so there is no honest
-/// glyph for it yet.
+/// What is happening to the named track.
 fn step_glyph(step: &SyncStep) -> &'static str {
     match step {
+        SyncStep::Transcoding => "⟳ transcoding ·",
         SyncStep::Copying => "↑",
         SyncStep::Removing => "−",
         SyncStep::WritingPlaylists => "≡",
@@ -559,6 +558,20 @@ mod tests {
         assert_eq!(sync_fraction(50, 100), 0.5);
         assert_eq!(sync_fraction(150, 100), 1.0);
         assert_eq!(sync_fraction(50, 0), 0.0);
+    }
+
+    #[test]
+    fn card_activity_distinguishes_transcoding_and_copying_with_artist() {
+        let track = "Immortal — Lorna Shore";
+
+        assert_eq!(
+            device_sync_strings::sync_activity(step_glyph(&SyncStep::Transcoding), track),
+            "⟳ transcoding · Immortal — Lorna Shore"
+        );
+        assert_eq!(
+            device_sync_strings::sync_activity(step_glyph(&SyncStep::Copying), track),
+            "↑ Immortal — Lorna Shore"
+        );
     }
 
     #[test]
