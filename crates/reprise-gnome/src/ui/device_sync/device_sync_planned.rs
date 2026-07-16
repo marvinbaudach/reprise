@@ -257,11 +257,25 @@ async fn run_transfers(
         if work.cancelled.load(Ordering::SeqCst) {
             break;
         }
+        let current_track = track_activity(&entry.track.title, &entry.track.artist);
         let prepared = match entry.mode {
             TransferMode::Copy => {
                 Some((entry.track.source_path.clone(), entry.expected_bytes, false))
             }
             TransferMode::TranscodeOpus { .. } => {
+                set_phase(
+                    runtime,
+                    &work.device_id,
+                    work.generation,
+                    syncing_phase(
+                        SyncStep::Transcoding,
+                        token,
+                        transfers.len(),
+                        current_track.clone(),
+                        completed_bytes,
+                        work.delta.bytes,
+                    ),
+                );
                 receive_ready(receiver.as_ref(), token, &mut ready).await
             }
         };
@@ -277,7 +291,7 @@ async fn run_transfers(
                 SyncStep::Copying,
                 token,
                 transfers.len(),
-                entry.track.title.clone(),
+                current_track,
                 completed_bytes,
                 work.delta.bytes,
             ),
@@ -552,6 +566,15 @@ fn syncing_phase(
         current_track,
         bytes_done: bytes_done.min(bytes_total),
         bytes_total,
+    }
+}
+
+fn track_activity(title: &str, artist: &str) -> String {
+    let artist = artist.trim();
+    if artist.is_empty() {
+        title.to_string()
+    } else {
+        format!("{title} — {artist}")
     }
 }
 

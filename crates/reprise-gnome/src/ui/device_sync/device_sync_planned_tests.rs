@@ -379,6 +379,17 @@ fn local_gio_sync_transcodes_lossless_selection_to_opus() {
         );
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let phases = observed.clone();
+        let _subscription = runtime.subscribe(Rc::new(move |state| {
+            if let Some(device) = state
+                .devices
+                .iter()
+                .find(|device| device.id == crate::ui::device_sync_smoke::DEVICE_ID)
+            {
+                phases.borrow_mut().push(device.sync_phase.clone());
+            }
+        }));
 
         runtime
             .sync_now(crate::ui::device_sync_smoke::DEVICE_ID)
@@ -398,6 +409,22 @@ fn local_gio_sync_transcodes_lossless_selection_to_opus() {
         assert!(device.last_sync.is_some(), "device state: {device:?}");
         assert!(device.sync_error.is_none());
         assert!(device.delta.unwrap().to_copy.is_empty());
+        assert!(observed.borrow().iter().any(|phase| matches!(
+            phase,
+            PlannedSyncPhase::Syncing {
+                step: SyncStep::Transcoding,
+                current_track,
+                ..
+            } if current_track == "Encoded — Artist"
+        )));
+        assert!(observed.borrow().iter().any(|phase| matches!(
+            phase,
+            PlannedSyncPhase::Syncing {
+                step: SyncStep::Copying,
+                current_track,
+                ..
+            } if current_track == "Encoded — Artist"
+        )));
     });
 }
 

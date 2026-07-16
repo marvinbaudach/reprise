@@ -266,6 +266,7 @@ fn delta_copy(device: &DeviceView) -> (String, String, f64) {
         } => {
             let step = match step {
                 SyncStep::Removing => "Removing",
+                SyncStep::Transcoding => "Transcoding",
                 SyncStep::Copying => "Copying",
                 SyncStep::WritingPlaylists => "Writing playlists",
             };

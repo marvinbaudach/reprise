@@ -140,10 +140,8 @@ pub fn sync_percent(bytes_done: u64, bytes_total: u64) -> String {
     formatted(N_!("{percent} %"), &[("percent", &percent.to_string())])
 }
 
-/// `↑ Immortal` — the glyph says what is happening to the named track.
-/// Copying is the only direction the runtime currently reports per track;
-/// transcoding happens inside the encoder pipeline and is not surfaced as a
-/// step yet, so it deliberately has no glyph here rather than a guessed one.
+/// `↑ Immortal — Lorna Shore` — the prefix says what is happening to the
+/// named track and the runtime supplies both title and artist.
 pub fn sync_activity(step: &str, current_track: &str) -> String {
     if current_track.is_empty() {
         return step.to_string();
