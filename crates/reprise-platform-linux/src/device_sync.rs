@@ -11,7 +11,7 @@ use reprise_core::library::m3u::{parse_m3u, M3uEntry};
 const ENUMERATE_ATTRIBUTES: &str = "standard::name,standard::type,standard::size";
 const ENUMERATE_BATCH_SIZE: i32 = 64;
 const MANAGED_ROOT: [&str; 2] = ["Music", "Reprise"];
-const PARTIAL_SUFFIX: &str = ".reprise-part";
+const PARTIAL_SUFFIX: &str = ".part";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceDescriptor {
@@ -72,6 +72,21 @@ impl DeviceMonitor {
         monitor.connect_mount_removed(move |monitor, _| {
             notify_subscribers(monitor, &signal_callbacks);
         });
+        // Devices are projected volume-first (see `projected_devices`), so a
+        // volume appearing/vanishing — or gaining its mount — must re-notify
+        // even when no top-level mount event fires alongside it.
+        let signal_callbacks = callbacks.clone();
+        monitor.connect_volume_added(move |monitor, _| {
+            notify_subscribers(monitor, &signal_callbacks);
+        });
+        let signal_callbacks = callbacks.clone();
+        monitor.connect_volume_changed(move |monitor, _| {
+            notify_subscribers(monitor, &signal_callbacks);
+        });
+        let signal_callbacks = callbacks.clone();
+        monitor.connect_volume_removed(move |monitor, _| {
+            notify_subscribers(monitor, &signal_callbacks);
+        });
         Self { monitor, callbacks }
     }
 
@@ -83,6 +98,35 @@ impl DeviceMonitor {
         callback(self.devices());
         self.callbacks.borrow_mut().push(callback);
     }
+
+    /// Ejects or unmounts the matching MTP device. Returns `false` when the
+    /// device disappeared between the UI action and this lookup.
+    pub async fn eject(&self, id: &str) -> Result<bool, DeviceIoError> {
+        let mount = self.monitor.mounts().into_iter().find(|mount| {
+            descriptor_from_mount(mount).is_some_and(|descriptor| descriptor.id == id)
+        });
+        let Some(mount) = mount else {
+            return Ok(false);
+        };
+        if mount.can_eject() {
+            mount
+                .eject_with_operation_future(
+                    gio::MountUnmountFlags::NONE,
+                    None::<&gio::MountOperation>,
+                )
+                .await?;
+        } else if mount.can_unmount() {
+            mount
+                .unmount_with_operation_future(
+                    gio::MountUnmountFlags::NONE,
+                    None::<&gio::MountOperation>,
+                )
+                .await?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    }
 }
 
 impl Default for DeviceMonitor {
@@ -91,13 +135,71 @@ impl Default for DeviceMonitor {
     }
 }
 
+/// Enumerates MTP devices **volume-first**, the way GNOME apps are expected
+/// to: GVfs models a phone as a `GProxyVolume` ("Pixel 10 Pro XL", themed
+/// `[phone]` icon, `activation_root=mtp://…`) whose mount is a
+/// `GProxyShadowMount` attached to the volume, while the underlying
+/// `GDaemonMount` is a top-level mount named just "mtp" with a
+/// multimedia-player icon and the SHADOWED flag set. Enumerating raw mounts
+/// is therefore order-dependent: depending on when the proxy monitor
+/// registers, `monitor.mounts()` can contain both entries (the shadowed one
+/// used to win and label a Pixel "mtp"), or only the shadowed daemon mount
+/// (filtering it left zero devices). The volume is the stable entity, so it
+/// is the source of identity, name, and icon; unshadowed `mtp://` mounts
+/// that no volume claims are kept as a fallback for exotic backends.
 fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
-    let mut devices = monitor
-        .mounts()
-        .iter()
-        .filter_map(descriptor_from_mount)
-        .collect::<Vec<_>>();
+    let mut devices = Vec::new();
+    let mut seen_roots = std::collections::HashSet::new();
+    for volume in monitor.volumes() {
+        let Some(root) = volume.activation_root() else {
+            continue;
+        };
+        let root_uri = root.uri();
+        if !root_uri.starts_with("mtp://") {
+            continue;
+        }
+        let mounted = volume.get_mount().is_some();
+        tracing::debug!(
+            name = %volume.name(),
+            root = %root_uri,
+            mounted,
+            "device sync: MTP volume observed"
+        );
+        // v1 shows only mounted devices (mount-on-demand is a follow-up);
+        // an unmounted volume simply stays hidden, as before.
+        if !mounted {
+            continue;
+        }
+        let uuid = volume.uuid();
+        let Some(mut descriptor) = project_descriptor(&root_uri, uuid.as_deref(), &volume.name())
+        else {
+            continue;
+        };
+        descriptor.icon = volume.icon();
+        seen_roots.insert(root_uri.to_string());
+        devices.push(descriptor);
+    }
+    for mount in monitor.mounts() {
+        // Shadowed mounts are the volume-owned devices' plumbing (see above);
+        // per g_mount_is_shadowed they must not be displayed.
+        if mount.is_shadowed() {
+            continue;
+        }
+        let Some(descriptor) = descriptor_from_mount(&mount) else {
+            continue;
+        };
+        if seen_roots.contains(&descriptor.root_uri) {
+            continue;
+        }
+        tracing::debug!(
+            name = %descriptor.name,
+            root = %descriptor.root_uri,
+            "device sync: unshadowed MTP mount without a volume"
+        );
+        devices.push(descriptor);
+    }
     devices.sort_by(|left, right| left.name.cmp(&right.name));
+    tracing::debug!(count = devices.len(), "device sync: projected MTP devices");
     devices
 }
 
@@ -163,19 +265,95 @@ impl From<gio::glib::Error> for DeviceIoError {
 #[derive(Clone)]
 pub struct DeviceStorage {
     root: gio::File,
+    /// Cached result of [`Self::storage_root`] — resolving it enumerates the
+    /// device root, which is a round-trip worth doing once per instance.
+    storage: RefCell<Option<gio::File>>,
 }
 
 impl DeviceStorage {
     pub fn from_root(root: &gio::File) -> Self {
-        Self { root: root.clone() }
+        Self {
+            root: root.clone(),
+            storage: RefCell::new(None),
+        }
     }
 
     pub fn from_uri(uri: &str) -> Self {
         Self::from_root(&gio::File::for_uri(uri))
     }
 
+    /// The directory that holds `Music/Reprise`.
+    ///
+    /// Android MTP does not expose a filesystem at the device root: the root
+    /// lists *storage volumes* ("Internal shared storage", plus an SD card on
+    /// some devices) and is itself read-only, so creating `Music` there fails
+    /// with "Cannot make directory in this location" — which made every copy
+    /// fail. The managed folder must live inside a storage volume, which is
+    /// also where every other app (and the phone's own media scanner) expects
+    /// `Music/` to be.
+    ///
+    /// Only `mtp://` roots are resolved this way; other roots (the local
+    /// directories the tests use) already are the storage and are returned
+    /// unchanged.
+    async fn storage_root(&self) -> Result<gio::File, DeviceIoError> {
+        if let Some(cached) = self.storage.borrow().clone() {
+            return Ok(cached);
+        }
+        if self.root.uri_scheme().as_deref() != Some("mtp") {
+            return Ok(self.root.clone());
+        }
+        let enumerator = self
+            .root
+            .enumerate_children_future(
+                ENUMERATE_ATTRIBUTES,
+                gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+                gio::glib::Priority::DEFAULT,
+            )
+            .await?;
+        let mut volumes = Vec::new();
+        loop {
+            let batch = enumerator
+                .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
+                .await?;
+            if batch.is_empty() {
+                break;
+            }
+            for info in batch {
+                if info.file_type() == gio::FileType::Directory {
+                    volumes.push(info.name().to_string_lossy().into_owned());
+                }
+            }
+        }
+        // Prefer the internal storage when a card is also present; otherwise
+        // take the only volume. A root without volumes is left as-is so the
+        // caller still gets a sensible (if failing) error from the operation.
+        let chosen = volumes
+            .iter()
+            .find(|name| name.to_lowercase().contains("internal"))
+            .or_else(|| volumes.first())
+            .cloned();
+        let resolved = match chosen {
+            Some(name) => {
+                tracing::debug!(volume = %name, "device sync: resolved MTP storage volume");
+                self.root.child(name)
+            }
+            None => {
+                tracing::warn!("device sync: MTP root exposes no storage volume");
+                self.root.clone()
+            }
+        };
+        *self.storage.borrow_mut() = Some(resolved.clone());
+        Ok(resolved)
+    }
+
+    /// Lists the audio in `<storage>/Music` — deliberately the whole music
+    /// folder, not just `Music/Reprise`, so the device view can show what is
+    /// already on the phone (playlists are still read only from Reprise's own
+    /// folder). Listing is read-only: removals are scoped to `Music/Reprise`
+    /// and driven by the database inventory, never by this scan.
     pub async fn inspect(&self) -> Result<DeviceContents, DeviceIoError> {
-        let music = self.root.child("Music");
+        let storage = self.storage_root().await?;
+        let music = storage.child("Music");
         let mut pending = VecDeque::from([(music, String::new())]);
         let mut contents = DeviceContents::default();
         while let Some((directory, prefix)) = pending.pop_front() {
@@ -253,6 +431,61 @@ impl DeviceStorage {
         }
     }
 
+    /// Removes transfer remnants left by a disconnect or process exit. Only
+    /// files below `Music/Reprise` with the dedicated `.part` suffix are
+    /// touched; unrelated device content remains outside our ownership.
+    pub async fn cleanup_partials(&self) -> Result<u32, DeviceIoError> {
+        let storage = self.storage_root().await?;
+        let managed_root = Self::managed_child(&storage, &[]);
+        let mut pending = VecDeque::from([managed_root]);
+        let mut removed = 0_u32;
+        while let Some(directory) = pending.pop_front() {
+            let enumerator = match directory
+                .enumerate_children_future(
+                    "standard::name,standard::type",
+                    gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+                    gio::glib::Priority::DEFAULT,
+                )
+                .await
+            {
+                Ok(enumerator) => enumerator,
+                Err(error) if error.matches(gio::IOErrorEnum::NotFound) => continue,
+                Err(error) => return Err(error.into()),
+            };
+            loop {
+                let batch = enumerator
+                    .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
+                    .await?;
+                if batch.is_empty() {
+                    break;
+                }
+                for info in batch {
+                    let child = directory.child(info.name());
+                    if info.file_type() == gio::FileType::Directory {
+                        pending.push_back(child);
+                    } else if info.name().to_string_lossy().ends_with(PARTIAL_SUFFIX) {
+                        child.delete_future(gio::glib::Priority::DEFAULT).await?;
+                        removed = removed.saturating_add(1);
+                    }
+                }
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Deletes one Reprise-managed device track. A missing target is already
+    /// in the desired state and is reported as `false`.
+    pub async fn delete_track(&self, relative_path: &str) -> Result<bool, DeviceIoError> {
+        let components = safe_relative_components(relative_path)?;
+        let storage = self.storage_root().await?;
+        let target = Self::managed_child(&storage, &components);
+        match target.delete_future(gio::glib::Priority::DEFAULT).await {
+            Ok(()) => Ok(true),
+            Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub async fn copy_track<P>(
         &self,
         source: &gio::File,
@@ -264,11 +497,59 @@ impl DeviceStorage {
     where
         P: FnMut(u64, u64) + 'static,
     {
+        self.transfer_track(
+            source,
+            relative_path,
+            expected_size,
+            cancellable,
+            progress,
+            true,
+        )
+        .await
+    }
+
+    /// Copies a track selected by a fresh DB delta, replacing any existing
+    /// target even when the byte count happens to be unchanged.
+    pub async fn replace_track<P>(
+        &self,
+        source: &gio::File,
+        relative_path: &str,
+        expected_size: u64,
+        cancellable: &gio::Cancellable,
+        progress: P,
+    ) -> Result<CopyOutcome, DeviceIoError>
+    where
+        P: FnMut(u64, u64) + 'static,
+    {
+        self.transfer_track(
+            source,
+            relative_path,
+            expected_size,
+            cancellable,
+            progress,
+            false,
+        )
+        .await
+    }
+
+    async fn transfer_track<P>(
+        &self,
+        source: &gio::File,
+        relative_path: &str,
+        expected_size: u64,
+        cancellable: &gio::Cancellable,
+        progress: P,
+        skip_matching_size: bool,
+    ) -> Result<CopyOutcome, DeviceIoError>
+    where
+        P: FnMut(u64, u64) + 'static,
+    {
         let components = safe_relative_components(relative_path)?;
-        self.ensure_managed_directories(&components[..components.len() - 1])
+        let storage = self.storage_root().await?;
+        self.ensure_managed_directories(&storage, &components[..components.len() - 1])
             .await?;
-        let target = self.managed_child(&components);
-        if target_size(&target).await? == Some(expected_size) {
+        let target = Self::managed_child(&storage, &components);
+        if skip_matching_size && target_size(&target).await? == Some(expected_size) {
             return Ok(CopyOutcome::Skipped);
         }
         let target_name = components.last().expect("validated nonempty path");
@@ -277,7 +558,7 @@ impl DeviceStorage {
             .cloned()
             .chain([format!("{target_name}{PARTIAL_SUFFIX}")])
             .collect::<Vec<_>>();
-        let partial = self.managed_child(&partial_components);
+        let partial = Self::managed_child(&storage, &partial_components);
         let progress = Rc::new(RefCell::new(progress));
         let callback_progress = progress.clone();
         let (sender, receiver) = async_channel::bounded(1);
@@ -323,9 +604,10 @@ impl DeviceStorage {
         contents: Vec<u8>,
     ) -> Result<(), DeviceIoError> {
         let playlist = safe_component(playlist, "Playlist");
-        self.ensure_managed_directories(&[]).await?;
-        let final_file = self.managed_child(&[format!("{playlist}.m3u8")]);
-        let partial = self.managed_child(&[format!("{playlist}.m3u8{PARTIAL_SUFFIX}")]);
+        let storage = self.storage_root().await?;
+        self.ensure_managed_directories(&storage, &[]).await?;
+        let final_file = Self::managed_child(&storage, &[format!("{playlist}.m3u8")]);
+        let partial = Self::managed_child(&storage, &[format!("{playlist}.m3u8{PARTIAL_SUFFIX}")]);
         partial
             .replace_contents_future(
                 contents,
@@ -352,7 +634,8 @@ impl DeviceStorage {
 
     pub async fn read_playlist(&self, playlist: &str) -> Result<Vec<M3uEntry>, DeviceIoError> {
         let playlist = safe_component(playlist, "Playlist");
-        let file = self.managed_child(&[format!("{playlist}.m3u8")]);
+        let storage = self.storage_root().await?;
+        let file = Self::managed_child(&storage, &[format!("{playlist}.m3u8")]);
         match file.load_contents_future().await {
             Ok((bytes, _)) => Ok(parse_m3u(&String::from_utf8_lossy(&bytes))),
             Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(Vec::new()),
@@ -362,9 +645,10 @@ impl DeviceStorage {
 
     async fn ensure_managed_directories(
         &self,
+        storage: &gio::File,
         relative_directories: &[String],
     ) -> Result<(), DeviceIoError> {
-        let mut current = self.root.clone();
+        let mut current = storage.clone();
         for component in MANAGED_ROOT
             .iter()
             .map(|value| (*value).to_string())
@@ -383,14 +667,15 @@ impl DeviceStorage {
         Ok(())
     }
 
-    fn managed_child(&self, relative_components: &[String]) -> gio::File {
+    /// `<storage>/Music/Reprise/<relative…>`. Takes the storage root resolved
+    /// by [`Self::storage_root`] rather than reaching for `self.root`, which
+    /// on MTP is the (unwritable) volume list.
+    fn managed_child(storage: &gio::File, relative_components: &[String]) -> gio::File {
         MANAGED_ROOT
             .iter()
             .map(|component| (*component).to_string())
             .chain(relative_components.iter().cloned())
-            .fold(self.root.clone(), |parent, component| {
-                parent.child(component)
-            })
+            .fold(storage.clone(), |parent, component| parent.child(component))
     }
 }
 
@@ -467,196 +752,5 @@ fn is_playlist_file(name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::cell::RefCell;
-    use std::fs;
-    use std::future::Future;
-    use std::rc::Rc;
-
-    use gio::prelude::*;
-    use reprise_core::library::m3u::M3uEntry;
-    use tempfile::TempDir;
-
-    use super::*;
-
-    fn run<T>(future: impl Future<Output = T>) -> T {
-        let context = gio::glib::MainContext::new();
-        context
-            .with_thread_default(|| context.block_on(future))
-            .unwrap()
-    }
-
-    fn fixture() -> (TempDir, DeviceStorage) {
-        let temp = tempfile::tempdir().unwrap();
-        let root = gio::File::for_path(temp.path());
-        (temp, DeviceStorage::from_root(&root))
-    }
-
-    #[test]
-    fn descriptor_projection_accepts_only_mtp_roots() {
-        assert!(project_descriptor("file:///tmp", Some("uuid"), "Disk").is_none());
-        assert!(project_descriptor("gphoto2://phone", Some("uuid"), "Camera").is_none());
-        assert!(project_descriptor("mtp://phone", Some("uuid"), "Phone").is_some());
-    }
-
-    #[test]
-    fn descriptor_prefers_uuid_for_stable_reconnects() {
-        let descriptor = project_descriptor("mtp://phone", Some("serial-1"), "Pixel").unwrap();
-        assert_eq!(descriptor.id, "serial-1");
-        assert!(descriptor.reconnectable);
-    }
-
-    #[test]
-    fn descriptor_falls_back_to_uri_without_claiming_reconnect_support() {
-        let descriptor = project_descriptor("mtp://phone", None, "Pixel").unwrap();
-        assert_eq!(descriptor.id, "mtp://phone");
-        assert!(!descriptor.reconnectable);
-    }
-
-    #[test]
-    fn missing_music_directory_inspects_as_empty() {
-        let (_temp, storage) = fixture();
-        let contents = run(storage.inspect()).unwrap();
-        assert!(contents.files.is_empty());
-        assert!(contents.playlists.is_empty());
-    }
-
-    #[test]
-    fn inspection_finds_audio_and_reprise_playlists_but_not_other_files() {
-        let (temp, storage) = fixture();
-        fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
-        fs::write(temp.path().join("Music/Reprise/Road/1-song.flac"), b"audio").unwrap();
-        fs::write(temp.path().join("Music/loose.mp3"), b"audio2").unwrap();
-        fs::write(temp.path().join("Music/notes.txt"), b"ignore").unwrap();
-        fs::write(
-            temp.path().join("Music/Reprise/Road.m3u8"),
-            b"#EXTM3U\nRoad/1-song.flac\n",
-        )
-        .unwrap();
-
-        let contents = run(storage.inspect()).unwrap();
-        let paths = contents
-            .files
-            .iter()
-            .map(|file| file.relative_path.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(paths, ["Reprise/Road/1-song.flac", "loose.mp3"]);
-        assert_eq!(contents.playlists.len(), 1);
-        assert_eq!(contents.playlists[0].name, "Road");
-        assert_eq!(
-            contents.playlists[0].entries,
-            vec![M3uEntry {
-                path: "Road/1-song.flac".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn copy_creates_managed_directories_and_reports_progress() {
-        let (temp, storage) = fixture();
-        let source_path = temp.path().join("source.flac");
-        fs::write(&source_path, vec![7_u8; 32 * 1024]).unwrap();
-        let progress = Rc::new(RefCell::new(Vec::new()));
-        let observed = progress.clone();
-        let outcome = run(storage.copy_track(
-            &gio::File::for_path(&source_path),
-            "Road/7-source.flac",
-            32 * 1024,
-            &gio::Cancellable::new(),
-            move |copied, total| observed.borrow_mut().push((copied, total)),
-        ))
-        .unwrap();
-
-        assert_eq!(outcome, CopyOutcome::Copied);
-        assert_eq!(
-            fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
-            vec![7_u8; 32 * 1024]
-        );
-        assert!(progress
-            .borrow()
-            .windows(2)
-            .all(|pair| pair[0].0 <= pair[1].0));
-        assert_eq!(
-            progress.borrow().last().copied(),
-            Some((32 * 1024, 32 * 1024))
-        );
-    }
-
-    #[test]
-    fn same_size_destination_is_skipped_without_overwrite() {
-        let (temp, storage) = fixture();
-        fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
-        fs::write(temp.path().join("source.flac"), b"new!").unwrap();
-        fs::write(
-            temp.path().join("Music/Reprise/Road/7-source.flac"),
-            b"old!",
-        )
-        .unwrap();
-        let outcome = run(storage.copy_track(
-            &gio::File::for_path(temp.path().join("source.flac")),
-            "Road/7-source.flac",
-            4,
-            &gio::Cancellable::new(),
-            |_copied, _total| {},
-        ))
-        .unwrap();
-        assert_eq!(outcome, CopyOutcome::Skipped);
-        assert_eq!(
-            fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
-            b"old!"
-        );
-    }
-
-    #[test]
-    fn copy_rejects_paths_outside_the_managed_root() {
-        let (temp, storage) = fixture();
-        fs::write(temp.path().join("source.flac"), b"x").unwrap();
-        let result = run(storage.copy_track(
-            &gio::File::for_path(temp.path().join("source.flac")),
-            "../outside.flac",
-            1,
-            &gio::Cancellable::new(),
-            |_copied, _total| {},
-        ));
-        assert!(matches!(result, Err(DeviceIoError::InvalidRelativePath)));
-        assert!(!temp.path().join("Music/outside.flac").exists());
-    }
-
-    #[test]
-    fn playlist_replace_and_read_round_trip() {
-        let (_temp, storage) = fixture();
-        run(storage.replace_playlist("Road", b"#EXTM3U\nRoad/7-song.flac\n".to_vec())).unwrap();
-        assert_eq!(
-            run(storage.read_playlist("Road")).unwrap(),
-            vec![M3uEntry {
-                path: "Road/7-song.flac".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn pre_cancelled_copy_leaves_no_partial_file() {
-        let (temp, storage) = fixture();
-        fs::write(temp.path().join("source.flac"), vec![1_u8; 1024]).unwrap();
-        let cancellable = gio::Cancellable::new();
-        cancellable.cancel();
-        let result = run(storage.copy_track(
-            &gio::File::for_path(temp.path().join("source.flac")),
-            "Road/1-source.flac",
-            1024,
-            &cancellable,
-            |_copied, _total| {},
-        ));
-        assert!(result.is_err());
-        assert!(!temp
-            .path()
-            .join("Music/Reprise/Road/1-source.flac.reprise-part")
-            .exists());
-    }
-
-    #[test]
-    fn local_fixture_reports_available_space_when_supported() {
-        let (_temp, storage) = fixture();
-        assert!(run(storage.available_bytes()).unwrap().is_some());
-    }
-}
+#[path = "device_sync_tests.rs"]
+mod tests;

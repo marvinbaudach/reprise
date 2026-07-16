@@ -87,7 +87,6 @@ pub(super) fn format_peak_hour(hour: u8) -> String {
     format!("{hour}:00")
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

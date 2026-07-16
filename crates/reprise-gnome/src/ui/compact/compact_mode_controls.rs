@@ -72,12 +72,8 @@ fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
         .unwrap();
 
     unsafe {
-        let xlib_display = gdk4_x11::ffi::gdk_x11_display_get_xdisplay(
-            xdisplay.as_ptr() as *mut _,
-        );
-        let xwindow = gdk4_x11::ffi::gdk_x11_surface_get_xid(
-            x11_surface.as_ptr() as *mut _,
-        );
+        let xlib_display = gdk4_x11::ffi::gdk_x11_display_get_xdisplay(xdisplay.as_ptr() as *mut _);
+        let xwindow = gdk4_x11::ffi::gdk_x11_surface_get_xid(x11_surface.as_ptr() as *mut _);
         let root = x11::xlib::XDefaultRootWindow(xlib_display as *mut _);
         let net_wm_state = x11::xlib::XInternAtom(
             xlib_display as *mut _,
@@ -106,8 +102,7 @@ fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
             root,
             x11::xlib::False,
             x11::xlib::SubstructureRedirectMask | x11::xlib::SubstructureNotifyMask,
-            &mut event as *mut x11::xlib::XClientMessageEvent
-                as *mut x11::xlib::XEvent,
+            &mut event as *mut x11::xlib::XClientMessageEvent as *mut x11::xlib::XEvent,
         );
         x11::xlib::XFlush(xlib_display as *mut _);
     }

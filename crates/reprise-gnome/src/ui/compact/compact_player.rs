@@ -377,8 +377,7 @@ fn wire_keyboard_menu(inner: &Rc<Inner>) {
     let anchor = inner.widgets.card.clone();
     key_controller.connect_key_pressed(move |_, keyval, _, modifier| {
         let dominated = keyval == gdk::Key::Menu
-            || (keyval == gdk::Key::F10
-                && modifier.contains(gdk::ModifierType::SHIFT_MASK));
+            || (keyval == gdk::Key::F10 && modifier.contains(gdk::ModifierType::SHIFT_MASK));
         if dominated {
             compact_player_menu::popup_at(&popover, anchor.upcast_ref(), None);
             gtk4::glib::Propagation::Stop

@@ -7,6 +7,7 @@
 
 mod crossfade;
 pub mod device_sync;
+pub mod device_transfer;
 mod gapless;
 pub mod mpris;
 pub mod player;

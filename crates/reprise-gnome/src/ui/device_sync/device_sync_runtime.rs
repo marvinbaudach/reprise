@@ -1,122 +1,37 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use reprise_core::device_sync::settings::{
+    load_device_files, load_or_create_settings, resolve_selection_track_ids, save_settings,
+    set_file_pinned,
+};
+use reprise_core::device_sync::transfer::{build_transfer_plan, TransferMode, TransferPlanEntry};
 use reprise_core::device_sync::{
-    merge_playlist_entries, track_relative_path, DeviceQueue, SyncJob, SyncPhase, SyncSnapshot,
-    SyncTrack, TrackOutcome,
+    compute_delta, merge_playlist_entries, track_relative_path, DeviceQueue, DeviceSelection,
+    DeviceSettings, SyncCandidate, SyncDelta, SyncJob, SyncPhase, SyncSnapshot, SyncTrack,
+    TrackOutcome,
 };
 use reprise_core::library::m3u::{M3uEntry, M3uExportEntry};
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceContents, DeviceDescriptor, DeviceMonitor,
 };
+use reprise_platform_linux::device_transfer::{EncodeOutcome, EncodeRequest, ReadyFile};
 use rusqlite::Connection;
 
-pub type BackendFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>>>>;
-type StateCallback = Rc<dyn Fn(DeviceSyncState)>;
+#[path = "device_sync_types.rs"]
+mod types;
 
-pub trait DeviceBackend {
-    fn devices(&self) -> Vec<DeviceDescriptor>;
-    fn subscribe_devices(&self, callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>);
-    fn inspect(&self, root_uri: String) -> BackendFuture<(DeviceContents, Option<u64>)>;
-    #[allow(clippy::too_many_arguments)]
-    fn copy_track(
-        &self,
-        device_id: String,
-        root_uri: String,
-        source_path: PathBuf,
-        relative_target: String,
-        expected_size: u64,
-        cancellable: gio::Cancellable,
-        progress: Rc<dyn Fn(u64, u64)>,
-    ) -> BackendFuture<CopyOutcome>;
-    fn read_playlist(&self, root_uri: String, name: String) -> BackendFuture<Vec<M3uEntry>>;
-    fn replace_playlist(
-        &self,
-        device_id: String,
-        root_uri: String,
-        name: String,
-        contents: Vec<u8>,
-    ) -> BackendFuture<()>;
-}
-
-#[derive(Clone, Debug)]
-pub struct DeviceView {
-    pub id: String,
-    pub name: String,
-    pub icon: gio::Icon,
-    pub connected: bool,
-    pub available_bytes: Option<u64>,
-    pub contents: DeviceContents,
-    pub scanning: bool,
-    pub scan_error: Option<String>,
-    pub draft_playlists: Vec<String>,
-    pub last_enqueue: Option<EnqueueReceipt>,
-    pub snapshot: SyncSnapshot,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EnqueueReceipt {
-    pub playlist: String,
-    pub track_count: usize,
-    pub queue_position: usize,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DeviceSyncState {
-    pub devices: Vec<DeviceView>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EnqueueError {
-    UnknownDevice,
-    NoUsableTracks,
-    InsufficientSpace {
-        required_bytes: u64,
-        available_bytes: u64,
-    },
-    Database(String),
-}
-
-impl fmt::Display for EnqueueError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownDevice => formatter.write_str("device is not connected"),
-            Self::NoUsableTracks => formatter.write_str("no available tracks were selected"),
-            Self::InsufficientSpace {
-                required_bytes,
-                available_bytes,
-            } => write!(
-                formatter,
-                "copy needs {required_bytes} bytes but only {available_bytes} bytes are available"
-            ),
-            Self::Database(error) => {
-                write!(formatter, "could not resolve selected tracks: {error}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for EnqueueError {}
-
-pub struct Subscription {
-    cancel: RefCell<Option<Box<dyn FnOnce()>>>,
-}
-
-impl Drop for Subscription {
-    fn drop(&mut self) {
-        if let Some(cancel) = self.cancel.borrow_mut().take() {
-            cancel();
-        }
-    }
-}
-
+use types::StateCallback;
+pub use types::*;
 #[derive(Clone)]
 struct Work {
     job: SyncJob,
@@ -141,10 +56,20 @@ struct DeviceState {
     draft_playlists: Vec<String>,
     last_enqueue: Option<EnqueueReceipt>,
     reserved_bytes: u64,
+    settings: DeviceSettings,
+    delta: Option<SyncDelta>,
+    transfer_plan: Vec<TransferPlanEntry>,
+    sync_phase: PlannedSyncPhase,
+    sync_error: Option<SyncFailure>,
+    planned_cancel: Option<Arc<AtomicBool>>,
+    resume_planned: bool,
+    last_sync: Option<chrono::DateTime<chrono::Utc>>,
+    tracks: Vec<DeviceTrackView>,
+    selected_track_count: usize,
 }
 
 impl DeviceState {
-    fn new(descriptor: DeviceDescriptor) -> Self {
+    fn new(descriptor: DeviceDescriptor, settings: DeviceSettings) -> Self {
         Self {
             descriptor,
             connected: true,
@@ -162,6 +87,16 @@ impl DeviceState {
             draft_playlists: Vec::new(),
             last_enqueue: None,
             reserved_bytes: 0,
+            settings,
+            delta: None,
+            transfer_plan: Vec::new(),
+            sync_phase: PlannedSyncPhase::ComputingDelta,
+            sync_error: None,
+            planned_cancel: None,
+            resume_planned: false,
+            last_sync: None,
+            tracks: Vec::new(),
+            selected_track_count: 0,
         }
     }
 
@@ -178,6 +113,13 @@ impl DeviceState {
             draft_playlists: self.draft_playlists.clone(),
             last_enqueue: self.last_enqueue.clone(),
             snapshot: self.queue.snapshot(),
+            settings: self.settings.clone(),
+            delta: self.delta.clone(),
+            sync_phase: self.sync_phase.clone(),
+            sync_error: self.sync_error.clone(),
+            last_sync: self.last_sync,
+            tracks: self.tracks.clone(),
+            selected_track_count: self.selected_track_count,
         }
     }
 }
@@ -185,10 +127,11 @@ impl DeviceState {
 pub struct DeviceSyncRuntime {
     conn: Rc<RefCell<Connection>>,
     backend: Rc<dyn DeviceBackend>,
-    device_states: RefCell<HashMap<String, DeviceState>>,
+    device_states: RefCell<Vec<DeviceState>>,
     subscribers: RefCell<HashMap<u64, StateCallback>>,
     next_subscription_id: Cell<u64>,
     next_job_id: Cell<u64>,
+    active_device: RefCell<Option<String>>,
     weak_self: RefCell<Weak<Self>>,
 }
 
@@ -207,10 +150,11 @@ impl DeviceSyncRuntime {
         let runtime = Rc::new(Self {
             conn: conn.clone(),
             backend,
-            device_states: RefCell::new(HashMap::new()),
+            device_states: RefCell::new(Vec::new()),
             subscribers: RefCell::new(HashMap::new()),
             next_subscription_id: Cell::new(1),
             next_job_id: Cell::new(1),
+            active_device: RefCell::new(None),
             weak_self: RefCell::new(Weak::new()),
         });
         runtime.weak_self.replace(Rc::downgrade(&runtime));
@@ -228,7 +172,7 @@ impl DeviceSyncRuntime {
         let mut devices = self
             .device_states
             .borrow()
-            .values()
+            .iter()
             .map(DeviceState::view)
             .collect::<Vec<_>>();
         devices.sort_by(|left, right| left.name.cmp(&right.name));
@@ -244,7 +188,8 @@ impl DeviceSyncRuntime {
         let connected = self
             .device_states
             .borrow()
-            .get(device_id)
+            .iter()
+            .find(|device| device.descriptor.id == device_id)
             .is_some_and(|device| device.connected);
         if !connected {
             return Err(EnqueueError::UnknownDevice);
@@ -261,7 +206,8 @@ impl DeviceSyncRuntime {
         let job_id = self.next_job_id.get();
         let mut devices = self.device_states.borrow_mut();
         let device = devices
-            .get_mut(device_id)
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
             .ok_or(EnqueueError::UnknownDevice)?;
         if let Some(available_bytes) = device.available_bytes {
             let unreserved_bytes = available_bytes.saturating_sub(device.reserved_bytes);
@@ -294,8 +240,16 @@ impl DeviceSyncRuntime {
 
     pub fn cancel_current(self: &Rc<Self>, device_id: &str) {
         let mut start_next = false;
-        if let Some(device) = self.device_states.borrow_mut().get_mut(device_id) {
+        if let Some(device) = self
+            .device_states
+            .borrow_mut()
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
             device.interrupted_disconnect = false;
+            if let Some(cancelled) = &device.planned_cancel {
+                cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
             device.queue.request_cancel();
             if let Some(cancellable) = device.cancellable.take() {
                 cancellable.cancel();
@@ -318,7 +272,9 @@ impl DeviceSyncRuntime {
         let name = reprise_core::device_sync::safe_component(name, "Playlist");
         let created = {
             let mut devices = self.device_states.borrow_mut();
-            let device = devices.get_mut(device_id)?;
+            let device = devices
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)?;
             let exists_on_device = device
                 .contents
                 .playlists
@@ -334,10 +290,121 @@ impl DeviceSyncRuntime {
         Some(created)
     }
 
+    pub fn update_settings(self: &Rc<Self>, settings: DeviceSettings) -> Result<(), String> {
+        save_settings(&self.conn.borrow(), &settings).map_err(|error| error.to_string())?;
+        let device_id = settings.device_serial.clone();
+        {
+            let mut devices = self.device_states.borrow_mut();
+            let Some(device) = devices
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)
+            else {
+                return Err("device is not connected".into());
+            };
+            device.settings = settings;
+            device.sync_phase = PlannedSyncPhase::ComputingDelta;
+            device.sync_error = None;
+        }
+        self.recompute_delta(&device_id)
+    }
+
+    pub fn set_pinned(
+        self: &Rc<Self>,
+        device_id: &str,
+        track_id: i64,
+        pinned: bool,
+    ) -> Result<bool, String> {
+        let changed = set_file_pinned(&self.conn.borrow(), device_id, track_id, pinned)
+            .map_err(|error| error.to_string())?;
+        if changed {
+            self.recompute_delta(device_id)?;
+        }
+        Ok(changed)
+    }
+
+    pub fn selection_options(&self) -> Result<Vec<DeviceSelectionOption>, String> {
+        let conn = self.conn.borrow();
+        let mut options = reprise_core::library::playlists::list(&conn)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|playlist| DeviceSelectionOption {
+                source: reprise_core::device_sync::SelectionSource::Playlist(playlist.id),
+                name: playlist.name,
+                track_count: usize::try_from(playlist.track_count.max(0)).unwrap_or(usize::MAX),
+                smart: false,
+            })
+            .collect::<Vec<_>>();
+        for playlist in reprise_core::library::playlists::list_smart(&conn)
+            .map_err(|error| error.to_string())?
+        {
+            let source = reprise_core::device_sync::SelectionSource::Smart(playlist.id);
+            let count =
+                resolve_selection_track_ids(&conn, &DeviceSelection::Sources(vec![source.clone()]))
+                    .map_err(|error| error.to_string())?
+                    .len();
+            options.push(DeviceSelectionOption {
+                source,
+                name: playlist.name,
+                track_count: count,
+                smart: true,
+            });
+        }
+        Ok(options)
+    }
+
+    pub fn recompute_delta(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
+        let settings = self
+            .device_states
+            .borrow()
+            .iter()
+            .find(|device| device.descriptor.id == device_id)
+            .map(|device| device.settings.clone())
+            .ok_or_else(|| "device is not connected".to_string())?;
+        let (delta, transfer_plan, tracks) = {
+            let conn = self.conn.borrow();
+            let ids = resolve_selection_track_ids(&conn, &settings.selection)
+                .map_err(|error| error.to_string())?;
+            let tracks = reprise_core::queries::query_sync_tracks(&conn, &ids)
+                .map_err(|error| error.to_string())?;
+            let transfer_plan = build_transfer_plan(tracks, settings.opus_bitrate);
+            let candidates = transfer_plan
+                .iter()
+                .map(|entry| SyncCandidate {
+                    track_id: entry.track.id,
+                    device_path: entry.device_path.clone(),
+                    transfer_bytes: entry.expected_bytes,
+                    source_mtime: entry.track.source_mtime,
+                })
+                .collect::<Vec<_>>();
+            let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
+            let delta = compute_delta(&candidates, &files, settings.remove_deleted);
+            let tracks = build_device_tracks(&conn, &transfer_plan, &files, &delta);
+            (delta, transfer_plan, tracks)
+        };
+        if let Some(device) = self
+            .device_states
+            .borrow_mut()
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
+            device.delta = Some(delta);
+            device.transfer_plan = transfer_plan;
+            device.tracks = tracks;
+            device.selected_track_count = device.transfer_plan.len();
+            device.sync_phase = PlannedSyncPhase::Idle;
+            device.sync_error = None;
+        }
+        self.notify();
+        Ok(())
+    }
+
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
         let request = {
             let mut devices = self.device_states.borrow_mut();
-            let Some(device) = devices.get_mut(device_id) else {
+            let Some(device) = devices
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)
+            else {
                 return;
             };
             if !device.connected {
@@ -360,21 +427,38 @@ impl DeviceSyncRuntime {
             let Some(runtime) = weak.upgrade() else {
                 return;
             };
-            if let Some(device) = runtime.device_states.borrow_mut().get_mut(&id) {
-                if device.scan_generation != generation {
-                    return;
-                }
-                device.scanning = false;
-                match result {
-                    Ok((contents, available)) => {
-                        device.contents = contents;
-                        device.available_bytes = available;
-                        device.scan_error = None;
+            {
+                let mut devices = runtime.device_states.borrow_mut();
+                if let Some(device) = devices.iter_mut().find(|device| device.descriptor.id == id) {
+                    if device.scan_generation != generation {
+                        return;
                     }
-                    Err(error) => device.scan_error = Some(error),
+                    device.scanning = false;
+                    match result {
+                        Ok((contents, available)) => {
+                            device.contents = contents;
+                            device.available_bytes = available;
+                            device.scan_error = None;
+                        }
+                        Err(error) => device.scan_error = Some(error),
+                    }
                 }
             }
-            runtime.notify();
+            if let Err(error) = runtime.recompute_delta(&id) {
+                if let Some(device) = runtime
+                    .device_states
+                    .borrow_mut()
+                    .iter_mut()
+                    .find(|device| device.descriptor.id == id)
+                {
+                    device.sync_phase = PlannedSyncPhase::Idle;
+                    device.sync_error = Some(SyncFailure {
+                        message: error,
+                        failed_tracks: Vec::new(),
+                    });
+                }
+                runtime.notify();
+            }
         });
     }
 
@@ -401,16 +485,24 @@ impl DeviceSyncRuntime {
             .map(|descriptor| (descriptor.id.clone(), descriptor))
             .collect::<HashMap<_, _>>();
         let mut resume = Vec::new();
+        let mut resume_planned = Vec::new();
         let mut refresh = Vec::new();
         {
             let mut states = self.device_states.borrow_mut();
-            for (id, state) in states.iter_mut() {
-                if incoming.contains_key(id) || !state.connected {
+            for state in states.iter_mut() {
+                if incoming.contains_key(&state.descriptor.id) || !state.connected {
                     continue;
                 }
                 state.connected = false;
                 state.scanning = false;
                 state.scan_generation = state.scan_generation.saturating_add(1);
+                if let Some(cancelled) = &state.planned_cancel {
+                    cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+                    state.resume_planned = state.descriptor.reconnectable;
+                    if let Some(cancellable) = &state.cancellable {
+                        cancellable.cancel();
+                    }
+                }
                 if state.running {
                     state.interrupted_disconnect = true;
                     if state.descriptor.reconnectable {
@@ -425,10 +517,12 @@ impl DeviceSyncRuntime {
                     }
                 }
             }
-            states.retain(|id, state| {
-                incoming.contains_key(id)
+            states.retain(|state| {
+                incoming.contains_key(&state.descriptor.id)
                     || state.running
                     || state.paused_work.is_some()
+                    || state.planned_cancel.is_some()
+                    || state.resume_planned
                     || state.queue.snapshot().queued_jobs > 0
                     || matches!(
                         state.queue.snapshot().phase,
@@ -436,15 +530,35 @@ impl DeviceSyncRuntime {
                     )
             });
             for (id, descriptor) in incoming {
-                if let Some(state) = states.get_mut(&id) {
+                if let Some(state) = states.iter_mut().find(|state| state.descriptor.id == id) {
                     let was_connected = state.connected;
                     state.descriptor = descriptor;
                     state.connected = true;
                     if !was_connected && state.paused_work.is_some() && !state.running {
-                        resume.push(id);
+                        resume.push(id.clone());
+                    }
+                    if !was_connected && state.resume_planned && state.planned_cancel.is_none() {
+                        state.resume_planned = false;
+                        resume_planned.push(id.clone());
                     }
                 } else {
-                    states.insert(id.clone(), DeviceState::new(descriptor));
+                    let settings = load_or_create_settings(
+                        &self.conn.borrow(),
+                        &descriptor.id,
+                        &descriptor.name,
+                    )
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(device_id = descriptor.id, %error, "could not load device settings");
+                        DeviceSettings {
+                            device_serial: descriptor.id.clone(),
+                            device_name: descriptor.name.clone(),
+                            selection: DeviceSelection::default(),
+                            opus_bitrate: 0,
+                            ratings_back: false,
+                            remove_deleted: true,
+                        }
+                    });
+                    states.push(DeviceState::new(descriptor, settings));
                     refresh.push(id);
                 }
             }
@@ -456,12 +570,28 @@ impl DeviceSyncRuntime {
         for id in resume {
             self.start_or_resume(&id);
         }
+        for id in resume_planned {
+            if let Err(error) = self.sync_now(&id) {
+                tracing::warn!(device_id = id, %error, "could not resume device synchronization");
+            }
+        }
     }
 
     fn start_or_resume(self: &Rc<Self>, device_id: &str) {
+        if self
+            .active_device
+            .borrow()
+            .as_deref()
+            .is_some_and(|active| active != device_id)
+        {
+            return;
+        }
         let start = {
             let mut states = self.device_states.borrow_mut();
-            let Some(device) = states.get_mut(device_id) else {
+            let Some(device) = states
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)
+            else {
                 return;
             };
             if device.running || !device.connected {
@@ -487,6 +617,9 @@ impl DeviceSyncRuntime {
             device.cancellable = Some(cancellable.clone());
             Some((device.generation, work, cancellable))
         };
+        if start.is_some() {
+            self.active_device.replace(Some(device_id.to_string()));
+        }
         self.notify();
         let Some((generation, work, cancellable)) = start else {
             return;
@@ -496,6 +629,27 @@ impl DeviceSyncRuntime {
         gtk4::glib::MainContext::ref_thread_default().spawn_local(async move {
             run_work(weak, id, generation, work, cancellable).await;
         });
+    }
+
+    fn release_and_start_next(self: &Rc<Self>, device_id: &str) {
+        if self.active_device.borrow().as_deref() == Some(device_id) {
+            self.active_device.replace(None);
+        }
+        let mut candidates = self
+            .device_states
+            .borrow()
+            .iter()
+            .filter(|device| {
+                device.connected
+                    && !device.running
+                    && (device.paused_work.is_some() || device.queue.snapshot().queued_jobs > 0)
+            })
+            .map(|device| device.descriptor.id.clone())
+            .collect::<Vec<_>>();
+        candidates.sort();
+        if let Some(next) = candidates.first() {
+            self.start_or_resume(next);
+        }
     }
 
     fn notify(&self) {
@@ -514,237 +668,77 @@ impl DeviceSyncRuntime {
     }
 }
 
-async fn run_work(
-    weak: Weak<DeviceSyncRuntime>,
-    device_id: String,
-    generation: u64,
-    mut work: Work,
-    cancellable: gio::Cancellable,
-) {
-    while work.next_track < work.job.tracks.len() {
-        let Some(runtime) = weak.upgrade() else {
-            return;
-        };
-        if cancellable.is_cancelled() {
-            finish_interrupted(&runtime, &device_id, generation, work);
-            return;
-        }
-        let track = work.job.tracks[work.next_track].clone();
-        let root_uri = {
-            let mut states = runtime.device_states.borrow_mut();
-            let Some(device) = states.get_mut(&device_id) else {
-                return;
-            };
-            if device.generation != generation || !device.connected {
-                None
-            } else {
-                device
-                    .queue
-                    .begin_track(&track.original_name, Some(track.size_bytes));
-                Some(device.descriptor.root_uri.clone())
-            }
-        };
-        let Some(root_uri) = root_uri else {
-            finish_interrupted(&runtime, &device_id, generation, work);
-            return;
-        };
-        runtime.notify();
-        let relative_target = track_relative_path(&work.job.playlist, &track);
-        let progress_runtime = Rc::downgrade(&runtime);
-        let progress_id = device_id.clone();
-        let progress: Rc<dyn Fn(u64, u64)> = Rc::new(move |copied, _total| {
-            let Some(runtime) = progress_runtime.upgrade() else {
-                return;
-            };
-            let updated = {
-                let mut states = runtime.device_states.borrow_mut();
-                let Some(device) = states.get_mut(&progress_id) else {
-                    return;
-                };
-                if device.generation != generation {
-                    return;
-                }
-                device.queue.set_track_bytes(copied);
-                true
-            };
-            if updated {
-                runtime.notify();
-            }
-        });
-        let result = runtime
-            .backend
-            .copy_track(
-                device_id.clone(),
-                root_uri,
-                track.source_path.clone(),
-                relative_target.clone(),
-                track.size_bytes,
-                cancellable.clone(),
-                progress,
-            )
-            .await;
-        if cancellable.is_cancelled() {
-            finish_interrupted(&runtime, &device_id, generation, work);
-            return;
-        }
-        match result {
-            Ok(outcome) => {
-                if let Some(device) = runtime.device_states.borrow_mut().get_mut(&device_id) {
-                    if device.generation != generation {
-                        return;
-                    }
-                    device.reserved_bytes = device.reserved_bytes.saturating_sub(track.size_bytes);
-                    if outcome == CopyOutcome::Copied {
-                        device.available_bytes = device
-                            .available_bytes
-                            .map(|available| available.saturating_sub(track.size_bytes));
-                    }
-                    device.queue.set_track_bytes(track.size_bytes);
-                    device.queue.finish_track(match outcome {
-                        CopyOutcome::Copied => TrackOutcome::Copied,
-                        CopyOutcome::Skipped => TrackOutcome::Skipped,
-                    });
-                }
-                work.appended.push(export_entry(&track, relative_target));
-            }
-            Err(error) => {
-                tracing::warn!(device_id, %error, "device track copy failed");
-                if let Some(device) = runtime.device_states.borrow_mut().get_mut(&device_id) {
-                    if device.generation != generation {
-                        return;
-                    }
-                    device.reserved_bytes = device.reserved_bytes.saturating_sub(track.size_bytes);
-                    device.queue.finish_track(TrackOutcome::Failed);
-                }
-            }
-        }
-        work.next_track += 1;
-        runtime.notify();
-    }
-    finish_playlist(&weak, &device_id, generation, work, cancellable).await;
-}
-
-fn finish_interrupted(
-    runtime: &Rc<DeviceSyncRuntime>,
-    device_id: &str,
-    generation: u64,
-    work: Work,
-) {
-    let remaining_bytes = remaining_work_bytes(&work);
-    let mut continue_queue = false;
-    if let Some(device) = runtime.device_states.borrow_mut().get_mut(device_id) {
-        if device.generation != generation {
-            return;
-        }
-        device.running = false;
-        device.cancellable = None;
-        if device.interrupted_disconnect && device.descriptor.reconnectable {
-            device.paused_work = Some(work);
-            device.queue.pause_disconnected();
-            continue_queue = device.connected;
-        } else if device.interrupted_disconnect {
-            device.reserved_bytes = device.reserved_bytes.saturating_sub(remaining_bytes);
-            device
-                .queue
-                .fail_job("Device disconnected; reconnect and enqueue again");
-        } else {
-            device.reserved_bytes = device.reserved_bytes.saturating_sub(remaining_bytes);
-            device.queue.finish_job();
-            continue_queue = device.connected;
-        }
-        device.interrupted_disconnect = false;
-    }
-    runtime.notify();
-    if continue_queue {
-        runtime.start_or_resume(device_id);
-    }
-}
-
-fn remaining_work_bytes(work: &Work) -> u64 {
-    work.job.tracks[work.next_track..]
+fn build_device_tracks(
+    conn: &Connection,
+    transfer_plan: &[TransferPlanEntry],
+    files: &[reprise_core::device_sync::DeviceFileRecord],
+    delta: &SyncDelta,
+) -> Vec<DeviceTrackView> {
+    let files_by_id = files
         .iter()
-        .fold(0_u64, |total, track| total.saturating_add(track.size_bytes))
-}
-
-async fn finish_playlist(
-    weak: &Weak<DeviceSyncRuntime>,
-    device_id: &str,
-    generation: u64,
-    work: Work,
-    cancellable: gio::Cancellable,
-) {
-    let Some(runtime) = weak.upgrade() else {
-        return;
-    };
-    let interrupted = runtime
-        .device_states
-        .borrow()
-        .get(device_id)
-        .is_none_or(|device| {
-            !device.connected || device.interrupted_disconnect || cancellable.is_cancelled()
-        });
-    if interrupted {
-        finish_interrupted(&runtime, device_id, generation, work);
-        return;
-    }
-    let root_uri = {
-        let states = runtime.device_states.borrow();
-        let Some(device) = states.get(device_id) else {
-            return;
-        };
-        device.descriptor.root_uri.clone()
-    };
-    let result = async {
-        let existing = runtime
-            .backend
-            .read_playlist(root_uri.clone(), work.job.playlist.clone())
-            .await?;
-        let contents = merge_playlist_entries(&existing, &work.appended).into_bytes();
-        runtime
-            .backend
-            .replace_playlist(
-                device_id.to_string(),
-                root_uri,
-                work.job.playlist.clone(),
-                contents,
+        .map(|file| (file.track_id, file))
+        .collect::<HashMap<_, _>>();
+    let selected = transfer_plan
+        .iter()
+        .map(|entry| entry.track.id)
+        .collect::<HashSet<_>>();
+    let queued = delta.to_copy.iter().copied().collect::<HashSet<_>>();
+    let removing = delta.to_remove.iter().copied().collect::<HashSet<_>>();
+    let mut tracks = transfer_plan
+        .iter()
+        .map(|entry| {
+            let file = files_by_id.get(&entry.track.id);
+            DeviceTrackView {
+                track_id: entry.track.id,
+                title: entry.track.title.clone(),
+                artist: entry.track.artist.clone(),
+                device_path: entry.device_path.clone(),
+                size: entry.expected_bytes,
+                duration_ms: entry.track.duration_ms,
+                status: if queued.contains(&entry.track.id) {
+                    DeviceTrackStatus::Queued
+                } else {
+                    DeviceTrackStatus::Synced
+                },
+                pinned: file.is_some_and(|file| file.pinned),
+            }
+        })
+        .collect::<Vec<_>>();
+    for file in files
+        .iter()
+        .filter(|file| !selected.contains(&file.track_id))
+    {
+        let metadata = conn
+            .query_row(
+                "SELECT title, artist, duration_ms FROM tracks WHERE id = ?1",
+                [file.track_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .await
+            .unwrap_or_else(|_| (file.device_path.clone(), String::new(), 0));
+        tracks.push(DeviceTrackView {
+            track_id: file.track_id,
+            title: metadata.0,
+            artist: metadata.1,
+            device_path: file.device_path.clone(),
+            size: file.size,
+            duration_ms: metadata.2,
+            status: if removing.contains(&file.track_id) {
+                DeviceTrackStatus::Remove
+            } else {
+                DeviceTrackStatus::Synced
+            },
+            pinned: file.pinned,
+        });
     }
-    .await;
-    let interrupted = runtime
-        .device_states
-        .borrow()
-        .get(device_id)
-        .is_some_and(|device| device.interrupted_disconnect || cancellable.is_cancelled());
-    if interrupted {
-        finish_interrupted(&runtime, device_id, generation, work);
-        return;
-    }
-    if let Some(device) = runtime.device_states.borrow_mut().get_mut(device_id) {
-        if device.generation != generation {
-            return;
-        }
-        device.running = false;
-        device.cancellable = None;
-        match result {
-            Ok(()) => device.queue.finish_job(),
-            Err(error) => device.queue.fail_job(error),
-        }
-    }
-    runtime.notify();
-    runtime.refresh_contents(device_id);
-    runtime.start_or_resume(device_id);
+    tracks.sort_by(|left, right| left.title.cmp(&right.title));
+    tracks
 }
 
-fn export_entry(track: &SyncTrack, path: String) -> M3uExportEntry {
-    let display = if track.artist.trim().is_empty() {
-        track.title.clone()
-    } else {
-        format!("{} - {}", track.artist, track.title)
-    };
-    M3uExportEntry {
-        path,
-        duration_secs: track.duration_ms.max(0) / 1_000,
-        display,
-    }
-}
+#[path = "device_sync_legacy_queue.rs"]
+mod legacy_queue;
+#[path = "device_sync_planned.rs"]
+mod planned;
+
+use legacy_queue::{remaining_work_bytes, run_work};
+#[cfg(test)]
+pub(super) use planned::SyncStartError;

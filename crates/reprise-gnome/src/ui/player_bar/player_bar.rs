@@ -389,8 +389,7 @@ impl PlayerBar {
                 let button = button.clone();
                 move |value| button.set_opacity(value)
             });
-            let fade_in =
-                libadwaita::TimedAnimation::new(&button, 0.0, 1.0, 60, fade_in_target);
+            let fade_in = libadwaita::TimedAnimation::new(&button, 0.0, 1.0, 60, fade_in_target);
             fade_in.play();
         });
         fade_out.play();

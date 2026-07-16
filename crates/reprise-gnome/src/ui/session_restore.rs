@@ -211,9 +211,10 @@ fn apply_view_snapshot(state: &mut SessionState, view: TrackViewSnapshot) {
         ViewSource::Queue => SessionSource::Queue,
         ViewSource::Missing => SessionSource::Missing,
         ViewSource::ImportErrors => SessionSource::ImportErrors,
-        ViewSource::MyStats | ViewSource::Album { .. } | ViewSource::Artist(_) => {
-            SessionSource::Library
-        }
+        ViewSource::MyStats
+        | ViewSource::Album { .. }
+        | ViewSource::Artist(_)
+        | ViewSource::Device { .. } => SessionSource::Library,
     };
     state.search = view.search;
     state.browse = view.browse;
