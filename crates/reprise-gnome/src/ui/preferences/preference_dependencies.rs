@@ -10,7 +10,7 @@ use libadwaita::prelude::*;
 
 use crate::ui::strings;
 
-pub(super) fn service_subtitle(description: &str, enabled: bool, status: &str) -> String {
+pub(in crate::ui) fn service_subtitle(description: &str, enabled: bool, status: &str) -> String {
     if enabled {
         format!("{description} · {status}")
     } else {
@@ -23,7 +23,7 @@ pub(super) fn service_subtitle(description: &str, enabled: bool, status: &str) -
 /// The returned `TestConnectionRow` holds the row and a trigger function. The
 /// caller supplies a `spawn_validate` closure that runs on a dedicated thread
 /// and returns either `Ok(user_name)` or `Err(human_readable_error)`.
-pub(super) struct TestConnectionRow {
+pub(in crate::ui) struct TestConnectionRow {
     pub row: adw::ActionRow,
     pub button: gtk4::Button,
     generation: Rc<Cell<u64>>,
@@ -31,7 +31,7 @@ pub(super) struct TestConnectionRow {
 
 /// A clonable handle for triggering test-connection from a button callback.
 #[derive(Clone)]
-pub(super) struct TestConnectionTrigger {
+pub(in crate::ui) struct TestConnectionTrigger {
     row: glib::WeakRef<adw::ActionRow>,
     button: glib::WeakRef<gtk4::Button>,
     generation: Rc<Cell<u64>>,

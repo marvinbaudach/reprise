@@ -9,34 +9,34 @@ use reprise_core::cover::{read_cover_tag, resolve_source, CoverTag};
 use reprise_core::cover_download::{album_key, fetch_and_cache};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum DownloadOutcome {
+pub(in crate::ui) enum DownloadOutcome {
     AlreadyCovered,
     Downloaded(PathBuf),
     Unavailable,
 }
 
 pub struct DownloadRequest {
-    pub(super) track_path: String,
-    pub(super) skip_if_covered: bool,
-    pub(super) response: async_channel::Sender<DownloadOutcome>,
+    pub(in crate::ui) track_path: String,
+    pub(in crate::ui) skip_if_covered: bool,
+    pub(in crate::ui) response: async_channel::Sender<DownloadOutcome>,
 }
 
 #[derive(Clone)]
 pub struct CoverDownloadRuntime {
-    pub(super) enabled: bool,
-    pub(super) worker: async_channel::Sender<DownloadRequest>,
+    pub(in crate::ui) enabled: bool,
+    pub(in crate::ui) worker: async_channel::Sender<DownloadRequest>,
 }
 
 /// Starts the one shared serial worker. Cover downloads are always enabled and
 /// do not consult legacy `module.cover_download.enabled` rows.
-pub(super) fn setup() -> CoverDownloadRuntime {
+pub(in crate::ui) fn setup() -> CoverDownloadRuntime {
     CoverDownloadRuntime {
         enabled: true,
         worker: spawn(),
     }
 }
 
-pub(super) fn spawn() -> async_channel::Sender<DownloadRequest> {
+pub(in crate::ui) fn spawn() -> async_channel::Sender<DownloadRequest> {
     let (sender, receiver) = async_channel::unbounded::<DownloadRequest>();
     let result = std::thread::Builder::new()
         .name("reprise-cover-download".into())

@@ -4,7 +4,7 @@
 //! faults.rs` (Stage 3 Task 1): same reasoning (keep the owning file from
 //! growing without bound), same shape (this is an `impl`-free sibling module
 //! that reaches into `track_list.rs`'s private `Shared` struct via
-//! `pub(super)` fields/functions, not a separate type). `track_list.rs`
+//! `pub(in crate::ui)` fields/functions, not a separate type). `track_list.rs`
 //! still owns `Shared` itself, `TrackList::new`'s construction order, and
 //! the five column factories (`append_column`/`append_rating_column`) that
 //! call into this module's [`wire_context_menu_gesture`] from their
@@ -140,7 +140,7 @@ const ACTION_GROUP_NAME: &str = "tracklist";
 /// Row position via a stable ListItem handle` section for why this only
 /// needs to run once per widget instance, from `connect_setup`, with no
 /// per-bind rewiring.
-pub(super) fn wire_context_menu_gesture(
+pub(in crate::ui) fn wire_context_menu_gesture(
     widget: &impl IsA<gtk4::Widget>,
     item: &gtk4::ListItem,
     shared: &Rc<Shared>,
@@ -173,11 +173,11 @@ pub(super) fn wire_context_menu_gesture(
 }
 
 /// Reads `shared.selection`'s current selection as row positions, in
-/// ascending order (`gtk::Bitset` iteration order). `pub(super)` (not
+/// ascending order (`gtk::Bitset` iteration order). `pub(in crate::ui)` (not
 /// private): `ui::track_list_dnd`'s drag-prepare handler reuses this exact
 /// same read to decide whether a drag starting on an already-selected row
 /// should carry the *whole* selection — see that module's doc comment.
-pub(super) fn current_selection_positions(shared: &Rc<Shared>) -> Vec<u32> {
+pub(in crate::ui) fn current_selection_positions(shared: &Rc<Shared>) -> Vec<u32> {
     let bitset = shared.selection.selection();
     let Some((mut iter, first)) = gtk4::BitsetIter::init_first(&bitset) else {
         return Vec::new();
@@ -201,7 +201,7 @@ fn current_selection_ids(shared: &Rc<Shared>) -> Vec<i64> {
 /// Building a handful of `gio::MenuItem`s per open is cheap enough that
 /// caching would only add invalidation complexity for no real benefit at
 /// this scale.
-pub(super) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
+pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
     let menu = gio::Menu::new();
 
     let primary = gio::Menu::new();
@@ -290,7 +290,10 @@ pub(super) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
 /// selection to have changed underneath it, but reading it fresh costs
 /// nothing and keeps this action group's wiring independent of any one
 /// popover instance.
-pub(super) fn wire_context_menu_actions(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
+pub(in crate::ui) fn wire_context_menu_actions(
+    column_view: &gtk4::ColumnView,
+    shared: &Rc<Shared>,
+) {
     let action_group = gio::SimpleActionGroup::new();
 
     let play_action = gio::SimpleAction::new(ACTION_PLAY, None);
@@ -683,7 +686,7 @@ fn notify_playlist_mutated(shared: &Rc<Shared>) {
 /// exactly mirroring the real sequence "queue a track, later its file
 /// disappears (or, here, a scan already flagged it missing), then Remove
 /// from library" a real user session could produce.
-pub(super) fn arm_smoke_menu_action(shared: &Rc<Shared>) {
+pub(in crate::ui) fn arm_smoke_menu_action(shared: &Rc<Shared>) {
     let Ok(value) = std::env::var(SMOKE_MENU_ACTION_ENV_VAR) else {
         return;
     };

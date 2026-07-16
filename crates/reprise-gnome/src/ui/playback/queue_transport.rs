@@ -3,7 +3,7 @@
 //! limit. The hidden `queue` remains the selected Library/playlist context;
 //! the visible Queue source is backed only by `up_next`.
 //!
-//! These are `pub(super)` so `mpris_mirror.rs`'s `handle_mpris_command` (and,
+//! These are `pub(in crate::ui)` so `mpris_mirror.rs`'s `handle_mpris_command` (and,
 //! for `queue_ids_snapshot`, `track_list.rs`) can call them too — shared with
 //! the bar's own button clicks so a physical media key and the on-screen
 //! control run exactly one code path (DRY).
@@ -43,11 +43,11 @@ fn toggle_action(
 }
 
 impl PlayerController {
-    pub(super) fn set_on_queue_changed(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn set_on_queue_changed(&self, callback: impl Fn() + 'static) {
         *self.queue_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn notify_queue_changed(&self) {
+    pub(in crate::ui) fn notify_queue_changed(&self) {
         tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
         let callback = self.queue_changed.borrow().clone();
         if let Some(callback) = callback {
@@ -64,7 +64,7 @@ impl PlayerController {
     /// Starts the restored queue's current track while stopped; otherwise
     /// toggles the already-loaded pipeline. Shared by the bar, Space, and
     /// MPRIS PlayPause, without ever introducing startup autoplay.
-    pub(super) fn toggle_pause(&self) {
+    pub(in crate::ui) fn toggle_pause(&self) {
         let status = self
             .mpris_state
             .lock()
@@ -96,21 +96,21 @@ impl PlayerController {
     /// MPRIS's `Previous` method. Borrow discipline: `previous()` runs
     /// inside this one `let` statement, so the borrow drops before
     /// `play_track_id`/`reset_to_stopped` run.
-    pub(super) fn previous(&self) {
+    pub(in crate::ui) fn previous(&self) {
         self.previous_with_up_next();
     }
 
     /// Steps the queue to the next track and plays it (or resets to stopped
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
-    pub(super) fn next(&self) {
+    pub(in crate::ui) fn next(&self) {
         self.advance_playback(AdvanceReason::Manual);
     }
 
     /// Appends explicit user selections to visible Up Next without replacing
     /// or starting the hidden playback context. Duplicates remain meaningful
     /// user choices; an empty slice is a no-op.
-    pub(super) fn append_to_queue(&self, ids: &[i64]) {
+    pub(in crate::ui) fn append_to_queue(&self, ids: &[i64]) {
         if ids.is_empty() {
             tracing::debug!("append to queue: nothing to add; ignoring");
             return;
@@ -125,15 +125,15 @@ impl PlayerController {
     /// Snapshot of pending manual ids in stable visible order. The Queue view
     /// asks for a fresh owned value on each reload, so consumption, removal,
     /// and drag reorder cannot expose the hidden context or a stale list.
-    pub(super) fn queue_ids_snapshot(&self) -> Vec<i64> {
+    pub(in crate::ui) fn queue_ids_snapshot(&self) -> Vec<i64> {
         self.up_next.borrow().ids().to_vec()
     }
 
-    pub(super) fn up_next_len(&self) -> usize {
+    pub(in crate::ui) fn up_next_len(&self) -> usize {
         self.up_next.borrow().len()
     }
 
-    pub(super) fn remove_up_next_positions(&self, positions: &[usize]) -> usize {
+    pub(in crate::ui) fn remove_up_next_positions(&self, positions: &[usize]) -> usize {
         let removed = self.up_next.borrow_mut().remove_positions(positions);
         if removed > 0 {
             self.notify_queue_changed();
@@ -143,7 +143,7 @@ impl PlayerController {
 
     /// Reorders pending manual entries only. The caller reloads Queue after a
     /// successful mutation; invalid and no-op positions return `false`.
-    pub(super) fn move_queue_item(&self, from: usize, to: usize) -> bool {
+    pub(in crate::ui) fn move_queue_item(&self, from: usize, to: usize) -> bool {
         self.up_next.borrow_mut().move_item(from, to)
     }
 
@@ -159,7 +159,7 @@ impl PlayerController {
     /// which could include ids that turned out not to be missing any more
     /// and so were never deleted. A no-op for an empty slice (no `queue`
     /// borrow taken at all).
-    pub(super) fn purge_queue_ids(&self, ids: &[i64]) {
+    pub(in crate::ui) fn purge_queue_ids(&self, ids: &[i64]) {
         if ids.is_empty() {
             return;
         }

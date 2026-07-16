@@ -36,6 +36,8 @@ require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
 require_pattern 'Frontend lint' scripts/check-architecture.sh
 require_pattern 'composition root must stay below 600' scripts/check-architecture.sh
 require_pattern 'UI orchestrators must stay below 600' scripts/check-architecture.sh
+require_pattern 'must declare feature modules instead of flattening feature directories' scripts/check-architecture.sh
+require_pattern 'must own an explicit mod.rs surface' scripts/check-architecture.sh
 require_pattern 'gtk4::CssProvider::new' scripts/check-architecture.sh
 require_pattern 'style_context' scripts/check-architecture.sh
 require_pattern 'reqwest::blocking' scripts/check-architecture.sh

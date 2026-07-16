@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use reprise_core::artist_news::{ArtistNews, NewsError};
 
-pub(super) struct ArtistNewsRequest {
+pub(in crate::ui) struct ArtistNewsRequest {
     pub generation: u64,
     pub artist: String,
     pub local_albums: Vec<String>,
@@ -12,7 +12,7 @@ pub(super) struct ArtistNewsRequest {
 }
 
 #[derive(Debug)]
-pub(super) struct ArtistNewsResponse {
+pub(in crate::ui) struct ArtistNewsResponse {
     pub generation: u64,
     pub result: Result<ArtistNews, NewsError>,
 }
@@ -90,14 +90,14 @@ impl EnabledSubscribers {
     }
 }
 
-pub(super) struct ArtistNewsRuntime {
+pub(in crate::ui) struct ArtistNewsRuntime {
     pub enabled: Rc<Cell<bool>>,
     worker: async_channel::Sender<ArtistNewsRequest>,
     subscribers: EnabledSubscribers,
 }
 
 impl ArtistNewsRuntime {
-    pub(super) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
+    pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
         let enabled = reprise_core::modules::is_enabled(
             conn,
             &reprise_core::modules::ARTIST_NEWS_MODULE,
@@ -113,7 +113,7 @@ impl ArtistNewsRuntime {
         })
     }
 
-    pub(super) fn set_enabled(
+    pub(in crate::ui) fn set_enabled(
         &self,
         conn: &rusqlite::Connection,
         enabled: bool,
@@ -129,7 +129,7 @@ impl ArtistNewsRuntime {
         Ok(())
     }
 
-    pub(super) fn subscribe_enabled(
+    pub(in crate::ui) fn subscribe_enabled(
         &self,
         is_alive: impl Fn() -> bool + 'static,
         callback: impl Fn(bool) + 'static,
@@ -138,7 +138,7 @@ impl ArtistNewsRuntime {
             .subscribe(self.enabled.get(), is_alive, callback);
     }
 
-    pub(super) fn request(&self, request: ArtistNewsRequest) {
+    pub(in crate::ui) fn request(&self, request: ArtistNewsRequest) {
         if !self.enabled.get() || request.artist.trim().is_empty() {
             return;
         }

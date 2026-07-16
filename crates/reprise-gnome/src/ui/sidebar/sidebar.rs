@@ -47,7 +47,7 @@
 //! The playlist row's drop target/drop-handling logic lives in the sibling
 //! `ui::sidebar_dnd` module (split out to keep this file under 800 lines,
 //! mirroring `track_list.rs`/`track_list_dnd.rs`) — hence `Shared`/`conn`/
-//! `rebuild`/`show_toast`/`on_tracks_added` being `pub(super)`.
+//! `rebuild`/`show_toast`/`on_tracks_added` being `pub(in crate::ui)`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -65,48 +65,48 @@ use reprise_core::view_source::ViewSource;
 /// One row's identity: the built widget, the `ViewSource` selecting it
 /// switches to, and its display title (handed to `Shared::on_select` so
 /// `window.rs` can set the headerbar title without re-deriving it).
-pub(super) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
+pub(in crate::ui) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 
 /// Callback invoked whenever the logically selected source changes — see
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
 type OnMissingRemoved = Rc<dyn Fn(&[i64])>;
 
-/// `pub(super)` (visible to `crate::ui` and its descendants, e.g. `ui::
+/// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// sidebar_dnd` — see this file's `## Playlist drop target lives in sidebar_
 /// dnd` module-doc section) rather than fully private, same reasoning/shape
 /// as `track_list.rs`/`track_list_dnd.rs`. Only the fields that module
-/// actually needs are `pub(super)` individually below.
-pub(super) struct Shared {
-    pub(super) conn: Rc<RefCell<Connection>>,
-    pub(super) listbox: gtk4::ListBox,
+/// actually needs are `pub(in crate::ui)` individually below.
+pub(in crate::ui) struct Shared {
+    pub(in crate::ui) conn: Rc<RefCell<Connection>>,
+    pub(in crate::ui) listbox: gtk4::ListBox,
     /// The bottom-pinned "Issues" list (Import errors / Missing files),
     /// outside the scrolling area so it stays anchored at the sidebar's
     /// bottom-left (design mockup 14a). A single `ListBox` can't bottom-pin a
     /// subset of its rows, so this is its own list, with selection mirrored
     /// against `listbox` (`wire_row_selected` clears the sibling on select).
     /// Hidden entirely when there are no issues.
-    pub(super) issues_listbox: gtk4::ListBox,
+    pub(in crate::ui) issues_listbox: gtk4::ListBox,
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
     /// provider`) to a closure over the `PlayerController`.
-    pub(super) queue_len_provider: Box<dyn Fn() -> usize>,
+    pub(in crate::ui) queue_len_provider: Box<dyn Fn() -> usize>,
     /// Which source is logically selected right now — kept in sync by the
     /// `row-selected` handler and used by a routine `rebuild` (`force_select
     /// = None`) to re-select the same source's (rebuilt) row afterwards.
-    pub(super) current_source: RefCell<ViewSource>,
+    pub(in crate::ui) current_source: RefCell<ViewSource>,
     /// Every row built by the most recent `rebuild`, for row-identity lookup
     /// (see the module doc's `## Row identity` section). Rebuilt from
     /// scratch on every `rebuild` call.
-    pub(super) rows: RefCell<Vec<RowEntry>>,
+    pub(in crate::ui) rows: RefCell<Vec<RowEntry>>,
     /// The "New playlist" action row, so `wire_row_activated` can tell it
     /// apart from a normal navigation row (identity compare) — it's
     /// `selectable(false)` so it never appears in `rows`/`row-selected`, only
     /// `row-activated`.
-    pub(super) new_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
+    pub(in crate::ui) new_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
     /// The adjacent "Import playlist…" action row. Kept separately so row
     /// activation can invoke the file-dialog callback wired by `window.rs`.
-    pub(super) import_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
+    pub(in crate::ui) import_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
     /// Invoked whenever the logically selected source *changes* (real user
     /// click or an explicit forced selection) — never
     /// for a same-source reselect (see `wire_row_selected`'s dedup-by-value
@@ -145,17 +145,17 @@ pub(super) struct Shared {
     /// this callback is the *other* direction (sidebar mutation -> track
     /// list refresh), the mirror image of `track_list.rs`'s `on_playlist_
     /// mutated` (track list mutation -> sidebar refresh).
-    pub(super) on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
+    pub(in crate::ui) on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
     /// Invoked with the exact database ids removed by the Missing-files
     /// bulk cleanup. `window.rs` uses this to purge the shared playback
     /// queue; cloned out before invocation to preserve reentrancy safety.
-    pub(super) on_missing_removed: RefCell<Option<OnMissingRemoved>>,
+    pub(in crate::ui) on_missing_removed: RefCell<Option<OnMissingRemoved>>,
     /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
-    /// export dialog plus playlist-delete confirmation — hence `pub(super)`,
+    /// export dialog plus playlist-delete confirmation — hence `pub(in crate::ui)`,
     /// mirroring `conn`/`on_tracks_added`
     /// above. `WeakRef` so the sidebar can never keep the window alive past
     /// its natural lifetime (same shape as `TrackList::toast_overlay`).
-    pub(super) window: glib::WeakRef<adw::ApplicationWindow>,
+    pub(in crate::ui) window: glib::WeakRef<adw::ApplicationWindow>,
     /// Injected post-construction once `window.rs` builds it (same seam
     /// shape as `TrackList::toast_overlay`) — surfaces a failed playlist
     /// creation as a toast rather than only a log line.
@@ -166,7 +166,7 @@ pub(super) struct Shared {
     /// inventory this exists to make visible in headless E2E logs (Stage 3
     /// Task 4 review finding #2: the sidebar was rebuilding on every search
     /// keystroke/sort click before that trigger was narrowed).
-    pub(super) refresh_count: Cell<u64>,
+    pub(in crate::ui) refresh_count: Cell<u64>,
 }
 
 /// Handle to the built sidebar widget (a `ScrolledWindow` wrapping the
@@ -351,7 +351,7 @@ impl Sidebar {
         rebuild(&self.shared, Some(source), reason);
     }
 
-    pub(super) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
+    pub(in crate::ui) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
         crate::ui::sidebar_session::restore_source(&self.shared, requested)
     }
 
@@ -362,7 +362,7 @@ impl Sidebar {
     }
 
     #[cfg(test)]
-    pub(super) fn test_shared(&self) -> &Rc<Shared> {
+    pub(in crate::ui) fn test_shared(&self) -> &Rc<Shared> {
         &self.shared
     }
 }
@@ -370,7 +370,7 @@ impl Sidebar {
 /// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
 /// wired or it's gone — mirrors `track_list.rs`/`player_controller.rs`'s
 /// `show_toast` (same seam, same degrade behavior).
-pub(super) fn show_toast(shared: &Shared, text: &str) {
+pub(in crate::ui) fn show_toast(shared: &Shared, text: &str) {
     match shared.toast_overlay.upgrade() {
         Some(overlay) => toasts::show(&overlay, text),
         None => {
@@ -398,7 +398,7 @@ pub(super) fn show_toast(shared: &Shared, text: &str) {
 /// (reason)"` debug log (`shared.refresh_count`) — see `Sidebar::refresh`'s
 /// doc comment for the full trigger inventory this makes verifiable in
 /// headless E2E output.
-pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
+pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
     crate::ui::sidebar_rebuild::rebuild(shared, force_select, reason);
 }
 
@@ -406,7 +406,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
 /// main scrolling list or the bottom-pinned issues list), so selection-follow
 /// works regardless of which list a source lives in. Its `row-selected`
 /// handler then clears the sibling list, keeping a single visible selection.
-pub(super) fn select_row_in_its_listbox(row: &gtk4::ListBoxRow) {
+pub(in crate::ui) fn select_row_in_its_listbox(row: &gtk4::ListBoxRow) {
     if let Some(listbox) = row
         .parent()
         .and_then(|p| p.downcast::<gtk4::ListBox>().ok())
@@ -424,7 +424,10 @@ pub(super) fn select_row_in_its_listbox(row: &gtk4::ListBoxRow) {
 /// (see the `resolve_select_source_tests` module at the end of this file —
 /// grouped there, not right below this function, per `clippy::items_after_
 /// test_module`).
-pub(super) fn resolve_select_source(requested: ViewSource, row_exists: bool) -> (ViewSource, bool) {
+pub(in crate::ui) fn resolve_select_source(
+    requested: ViewSource,
+    row_exists: bool,
+) -> (ViewSource, bool) {
     if row_exists {
         (requested, false)
     } else {
@@ -434,7 +437,10 @@ pub(super) fn resolve_select_source(requested: ViewSource, row_exists: bool) -> 
 
 /// Looks up the row currently backing `source` in `shared.rows` (rebuilt on
 /// every `rebuild` call, so this only ever searches the *current* row set).
-pub(super) fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4::ListBoxRow> {
+pub(in crate::ui) fn find_row(
+    shared: &Rc<Shared>,
+    source: &ViewSource,
+) -> Option<gtk4::ListBoxRow> {
     shared
         .rows
         .borrow()

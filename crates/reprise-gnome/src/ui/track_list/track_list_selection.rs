@@ -4,10 +4,10 @@ use gtk4::prelude::*;
 use reprise_core::models::Track;
 
 use super::info_panel_state::PanelContext;
-use super::track_list::{Shared, TrackList};
+use super::{Shared, TrackList};
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn context_from_tracks(tracks: Vec<Track>) -> PanelContext {
+pub(in crate::ui) fn context_from_tracks(tracks: Vec<Track>) -> PanelContext {
     match tracks.len() {
         0 => PanelContext::Empty,
         1 => PanelContext::Track(tracks.into_iter().next().expect("one track")),
@@ -15,7 +15,7 @@ pub(super) fn context_from_tracks(tracks: Vec<Track>) -> PanelContext {
     }
 }
 
-pub(super) fn wire(shared: &Rc<Shared>) {
+pub(in crate::ui) fn wire(shared: &Rc<Shared>) {
     let shared_weak = Rc::downgrade(shared);
     shared.selection.connect_selection_changed(move |_, _, _| {
         if let Some(shared) = shared_weak.upgrade() {
@@ -55,16 +55,19 @@ fn notify(shared: &Rc<Shared>) {
 }
 
 impl TrackList {
-    pub(super) fn set_on_selection_changed(&self, callback: impl Fn(PanelContext) + 'static) {
+    pub(in crate::ui) fn set_on_selection_changed(
+        &self,
+        callback: impl Fn(PanelContext) + 'static,
+    ) {
         *self.shared.on_selection_changed.borrow_mut() = Some(Rc::new(callback));
         notify(&self.shared);
     }
 
-    pub(super) fn shared_cover_loader(&self) -> Rc<super::cover_loader::CoverLoader> {
+    pub(in crate::ui) fn shared_cover_loader(&self) -> Rc<super::cover_loader::CoverLoader> {
         self.shared.cover_loader.clone()
     }
 
-    pub(super) fn select_for_smoke(&self, position: u32) {
+    pub(in crate::ui) fn select_for_smoke(&self, position: u32) {
         self.shared.selection.unselect_all();
         self.shared.selection.select_item(position, true);
     }

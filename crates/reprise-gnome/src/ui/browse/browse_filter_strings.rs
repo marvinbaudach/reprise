@@ -9,38 +9,38 @@ macro_rules! N_ {
     };
 }
 
-pub(super) const FILTERS: &str = N_!("FILTER");
-pub(super) const ADD_FILTER: &str = N_!("Add filter");
+pub(in crate::ui) const FILTERS: &str = N_!("FILTER");
+pub(in crate::ui) const ADD_FILTER: &str = N_!("Add filter");
 // Active filters are cleared through their removable chips, not a duplicate Reset action.
-pub(super) const BACK: &str = N_!("Back");
-pub(super) const SEARCH_VALUES: &str = N_!("Search filter values");
-pub(super) const NO_FILTERS_AVAILABLE: &str = N_!("All filters are active");
-pub(super) const BROWSE_GENRE: &str = N_!("Genre");
-pub(super) const BROWSE_ARTIST: &str = N_!("Artist");
-pub(super) const BROWSE_ALBUM: &str = N_!("Album");
-pub(super) const UNKNOWN_GENRE: &str = N_!("Unknown genre");
-pub(super) const UNKNOWN_ARTIST: &str = N_!("Unknown artist");
-pub(super) const UNKNOWN_ALBUM: &str = N_!("Unknown album");
+pub(in crate::ui) const BACK: &str = N_!("Back");
+pub(in crate::ui) const SEARCH_VALUES: &str = N_!("Search filter values");
+pub(in crate::ui) const NO_FILTERS_AVAILABLE: &str = N_!("All filters are active");
+pub(in crate::ui) const BROWSE_GENRE: &str = N_!("Genre");
+pub(in crate::ui) const BROWSE_ARTIST: &str = N_!("Artist");
+pub(in crate::ui) const BROWSE_ALBUM: &str = N_!("Album");
+pub(in crate::ui) const UNKNOWN_GENRE: &str = N_!("Unknown genre");
+pub(in crate::ui) const UNKNOWN_ARTIST: &str = N_!("Unknown artist");
+pub(in crate::ui) const UNKNOWN_ALBUM: &str = N_!("Unknown album");
 
-pub(super) fn text(message: &str) -> String {
+pub(in crate::ui) fn text(message: &str) -> String {
     crate::i18n::gettext(message)
 }
 
-pub(super) fn chip_label(facet: &str, value: &str) -> String {
+pub(in crate::ui) fn chip_label(facet: &str, value: &str) -> String {
     formatted(
         N_!("{facet}: {value}"),
         &[("facet", facet), ("value", value)],
     )
 }
 
-pub(super) fn remove_filter_label(facet: &str, value: &str) -> String {
+pub(in crate::ui) fn remove_filter_label(facet: &str, value: &str) -> String {
     formatted(
         N_!("Remove {facet} filter: {value}"),
         &[("facet", facet), ("value", value)],
     )
 }
 
-pub(super) fn result_count(filtered: usize, total: usize) -> String {
+pub(in crate::ui) fn result_count(filtered: usize, total: usize) -> String {
     let filtered_number = i64::try_from(filtered).unwrap_or(i64::MAX);
     let total_number = i64::try_from(total).unwrap_or(i64::MAX);
     let filtered_text = reprise_core::format::format_thousands(filtered_number);

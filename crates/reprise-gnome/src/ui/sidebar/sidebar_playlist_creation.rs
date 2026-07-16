@@ -10,14 +10,14 @@ use crate::ui::strings;
 /// An empty playlist is only a new destination. Refresh the sidebar while
 /// preserving its current source so the user can keep selecting tracks to
 /// fill it.
-pub(super) fn refresh_target_after_empty_creation() -> Option<ViewSource> {
+pub(in crate::ui) fn refresh_target_after_empty_creation() -> Option<ViewSource> {
     None
 }
 
 /// Shows the "New playlist" `AdwAlertDialog`: a heading, an entry (Create
 /// disabled until non-blank), and Cancel/Create responses. On Create, it
 /// creates the playlist while keeping the current source visible.
-pub(super) fn show_new_playlist_dialog(shared: &Rc<Shared>) {
+pub(in crate::ui) fn show_new_playlist_dialog(shared: &Rc<Shared>) {
     let Some(window) = shared.window.upgrade() else {
         tracing::warn!("sidebar: window is gone; cannot show new-playlist dialog");
         return;

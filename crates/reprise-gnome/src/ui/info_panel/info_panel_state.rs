@@ -2,27 +2,27 @@ use reprise_core::models::Track;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(clippy::large_enum_variant)]
-pub(super) enum PanelContext {
+pub(in crate::ui) enum PanelContext {
     Empty,
     Multiple(usize),
     Track(Track),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct RequestIntent {
+pub(in crate::ui) struct RequestIntent {
     pub generation: u64,
     pub artist: String,
     pub force: bool,
 }
 
-pub(super) struct PanelState {
+pub(in crate::ui) struct PanelState {
     generation: u64,
     enabled: bool,
     context: PanelContext,
 }
 
 impl PanelState {
-    pub(super) fn new(enabled: bool) -> Self {
+    pub(in crate::ui) fn new(enabled: bool) -> Self {
         Self {
             generation: 0,
             enabled,
@@ -31,29 +31,29 @@ impl PanelState {
     }
 
     #[cfg(test)]
-    pub(super) fn generation(&self) -> u64 {
+    pub(in crate::ui) fn generation(&self) -> u64 {
         self.generation
     }
 
-    pub(super) fn context(&self) -> PanelContext {
+    pub(in crate::ui) fn context(&self) -> PanelContext {
         self.context.clone()
     }
 
-    pub(super) fn set_context(&mut self, context: PanelContext) -> Option<RequestIntent> {
+    pub(in crate::ui) fn set_context(&mut self, context: PanelContext) -> Option<RequestIntent> {
         self.context = context;
         self.advance_and_request(false)
     }
 
-    pub(super) fn set_enabled(&mut self, enabled: bool) -> Option<RequestIntent> {
+    pub(in crate::ui) fn set_enabled(&mut self, enabled: bool) -> Option<RequestIntent> {
         self.enabled = enabled;
         self.advance_and_request(false)
     }
 
-    pub(super) fn refresh(&mut self) -> Option<RequestIntent> {
+    pub(in crate::ui) fn refresh(&mut self) -> Option<RequestIntent> {
         self.advance_and_request(true)
     }
 
-    pub(super) fn accepts(&self, generation: u64) -> bool {
+    pub(in crate::ui) fn accepts(&self, generation: u64) -> bool {
         self.enabled && self.generation == generation
     }
 

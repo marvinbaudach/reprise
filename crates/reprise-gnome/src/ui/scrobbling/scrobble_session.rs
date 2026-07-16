@@ -3,12 +3,12 @@
 use reprise_core::scrobbling::{self, Listen, TrackMetadata};
 
 #[derive(Default)]
-pub(super) struct ScrobbleSession {
+pub(in crate::ui) struct ScrobbleSession {
     listen: Option<Listen>,
 }
 
 impl ScrobbleSession {
-    pub(super) fn begin(&mut self, track: TrackMetadata, listened_at: i64) {
+    pub(in crate::ui) fn begin(&mut self, track: TrackMetadata, listened_at: i64) {
         self.listen = Some(Listen {
             id: None,
             listened_at,
@@ -19,7 +19,7 @@ impl ScrobbleSession {
     /// Ends the current session regardless of outcome. Taking the listen
     /// before checking the threshold makes repeated stop/error callbacks
     /// idempotent by construction.
-    pub(super) fn finish(&mut self, max_position_ms: i64, enabled: bool) -> Option<Listen> {
+    pub(in crate::ui) fn finish(&mut self, max_position_ms: i64, enabled: bool) -> Option<Listen> {
         let listen = self.listen.take()?;
         if !enabled || !scrobbling::should_scrobble(max_position_ms, listen.track.duration_ms) {
             return None;

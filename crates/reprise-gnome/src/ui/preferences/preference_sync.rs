@@ -14,7 +14,7 @@ use super::device_sync_runtime::{
 };
 use super::device_sync_strings as copy;
 
-pub(super) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPage {
+pub(in crate::ui) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(copy::text(copy::SYNCHRONIZATION))
         .icon_name("phone-symbolic")
@@ -53,7 +53,10 @@ fn render_devices(list: &gtk4::Box, state: &DeviceSyncState, runtime: &Rc<Device
     }
 }
 
-pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -> adw::ActionRow {
+pub(in crate::ui) fn device_row(
+    device: &DeviceView,
+    runtime: &Rc<DeviceSyncRuntime>,
+) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
         .title(&device.name)
         .subtitle(copy::device_subtitle(
@@ -84,7 +87,7 @@ pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -
     row
 }
 
-pub(super) fn present_device(
+pub(in crate::ui) fn present_device(
     parent: &impl IsA<gtk4::Widget>,
     device_id: &str,
     runtime: &Rc<DeviceSyncRuntime>,

@@ -18,7 +18,7 @@
 //! once, from `PlayerController::new`, before that `Rc` has any other
 //! owner — free functions in a sibling module rather than inherent methods
 //! for the same reason `mpris_mirror.rs`'s `mpris_status_from_playback_state`
-//! is a free function: no `&self` is actually needed. `pub(super)` (visible
+//! is a free function: no `&self` is actually needed. `pub(in crate::ui)` (visible
 //! throughout `ui` and its descendants) so `player_controller.rs` can call
 //! them — same seam idiom as `mpris_mirror.rs`/`playback_faults.rs` use for
 //! the reverse direction (see `player_controller.rs`'s `## Queue borrow
@@ -43,7 +43,7 @@ const SMOKE_REPEAT_ALL_VALUE: &str = "all";
 /// Wires the bar's user-input signals to player calls. Each closure holds a
 /// `Weak` controller reference: the bar is owned *by* the controller, so a
 /// strong reference here would be a leak-guaranteeing Rc cycle.
-pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
+pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
     let weak = Rc::downgrade(controller);
     controller.bar.connect_play_pause(move || {
         let Some(controller) = weak.upgrade() else {
@@ -151,7 +151,7 @@ pub(super) fn wire_bar_controls(controller: &Rc<PlayerController>) {
     });
 }
 
-pub(super) fn wire_compact_controls(controller: &Rc<PlayerController>) {
+pub(in crate::ui) fn wire_compact_controls(controller: &Rc<PlayerController>) {
     controller.compact_player.set_on_restore(Rc::new(|| {
         tracing::debug!("compact restore requested before window mode coordinator is installed");
     }));
@@ -205,9 +205,9 @@ pub(super) fn wire_compact_controls(controller: &Rc<PlayerController>) {
 
 /// Cycles the repeat mode in the mockup's button order: Off -> All -> One ->
 /// Off. Pure (no `Queue`/GTK access) so it's unit-testable directly.
-/// `pub(super)` (Task 8) so `now_playing_wiring.rs`'s repeat-button handler
+/// `pub(in crate::ui)` (Task 8) so `now_playing_wiring.rs`'s repeat-button handler
 /// can share this exact cycling logic (DRY) rather than a second copy.
-pub(super) fn cycle_repeat(current: Repeat) -> Repeat {
+pub(in crate::ui) fn cycle_repeat(current: Repeat) -> Repeat {
     match current {
         Repeat::Off => Repeat::All,
         Repeat::All => Repeat::One,
@@ -219,7 +219,7 @@ pub(super) fn cycle_repeat(current: Repeat) -> Repeat {
 /// forces the queue into `Repeat::All` right after construction and syncs
 /// the bar's repeat indicator to match, so a headless E2E run can observe
 /// auto-advance wrapping from the last queued track back to the first.
-pub(super) fn arm_smoke_repeat(controller: &Rc<PlayerController>) {
+pub(in crate::ui) fn arm_smoke_repeat(controller: &Rc<PlayerController>) {
     let Ok(value) = std::env::var(SMOKE_REPEAT_ENV_VAR) else {
         return;
     };

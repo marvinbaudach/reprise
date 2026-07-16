@@ -8,7 +8,7 @@ use crate::ui::strings;
 #[error("expected a positive whole number")]
 pub struct ParseFieldError;
 
-pub(super) const RATING_MAX: i32 = 5;
+pub(in crate::ui) const RATING_MAX: i32 = 5;
 
 pub(crate) fn string_patch(dirty: bool, text: &str) -> Option<String> {
     dirty.then(|| text.to_string())
@@ -43,19 +43,19 @@ pub enum NavigateDirection {
 // ── Field identity for dirty tracking ────────────────────────────────────────
 
 /// Indices into the `dirty` flags vector.
-pub(super) const FIELD_TITLE: usize = 0;
-pub(super) const FIELD_ARTIST: usize = 1;
-pub(super) const FIELD_ALBUM: usize = 2;
-pub(super) const FIELD_ALBUM_ARTIST: usize = 3;
-pub(super) const FIELD_YEAR: usize = 4;
-pub(super) const FIELD_TRACK_NO: usize = 5;
-pub(super) const FIELD_GENRE: usize = 6;
-pub(super) const FIELD_RATING: usize = 7;
-pub(super) const FIELD_COUNT: usize = 8;
+pub(in crate::ui) const FIELD_TITLE: usize = 0;
+pub(in crate::ui) const FIELD_ARTIST: usize = 1;
+pub(in crate::ui) const FIELD_ALBUM: usize = 2;
+pub(in crate::ui) const FIELD_ALBUM_ARTIST: usize = 3;
+pub(in crate::ui) const FIELD_YEAR: usize = 4;
+pub(in crate::ui) const FIELD_TRACK_NO: usize = 5;
+pub(in crate::ui) const FIELD_GENRE: usize = 6;
+pub(in crate::ui) const FIELD_RATING: usize = 7;
+pub(in crate::ui) const FIELD_COUNT: usize = 8;
 
 /// Human-readable names for the pending-change bar, indexed by `FIELD_*`.
 /// Uses the same i18n constants as the form field labels.
-pub(super) fn field_name(index: usize) -> String {
+pub(in crate::ui) fn field_name(index: usize) -> String {
     use strings::*;
     match index {
         FIELD_TITLE => text(TAG_TITLE),

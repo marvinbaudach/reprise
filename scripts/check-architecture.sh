@@ -45,6 +45,21 @@ if [[ -e crates/reprise-gnome/src/ui/compact/compact_player_state.rs ]]; then
   exit 1
 fi
 
+if rg --quiet '^#\[path = "[^"/]+/' crates/reprise-gnome/src/ui/mod.rs; then
+  echo "ui/mod.rs must declare feature modules instead of flattening feature directories" >&2
+  exit 1
+fi
+
+for feature in \
+  browse compact cover device_sync info_panel library_views lyrics playback \
+  player_bar playlists preferences scan scrobbling sidebar stats tag_edit \
+  track_list window; do
+  if [[ ! -f "crates/reprise-gnome/src/ui/$feature/mod.rs" ]]; then
+    echo "frontend feature $feature must own an explicit mod.rs surface" >&2
+    exit 1
+  fi
+done
+
 echo "== Frontend lint =="
 
 # Keep known frontend debt explicit and prevent it from spreading. Refactoring

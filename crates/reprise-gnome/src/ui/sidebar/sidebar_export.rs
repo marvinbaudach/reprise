@@ -3,7 +3,7 @@
 //! Split out of `sidebar.rs`
 //! for the same file-size reason as `sidebar_dnd.rs` — see that module's own
 //! doc comment for the pattern this mirrors (reaching into `sidebar.rs`'s
-//! private `Shared` via `pub(super)` fields/functions).
+//! private `Shared` via `pub(in crate::ui)` fields/functions).
 //!
 //! The actual file-write + M3U-serialize logic lives in `ui::playlist_io`
 //! (shared with the adjacent "Import playlist…" sidebar flow, and with
@@ -58,7 +58,7 @@ fn playlist_menu_specs() -> [PlaylistMenuSpec; 2] {
 /// playlist row — same pattern as `ui::track_list_context_menu::wire_
 /// context_menu_gesture`, applied to a sidebar `ListBoxRow` instead of a
 /// `ColumnView` cell.
-pub(super) fn wire_playlist_context_menu(
+pub(in crate::ui) fn wire_playlist_context_menu(
     shared: &Rc<Shared>,
     row: &gtk4::ListBoxRow,
     playlist_id: i64,

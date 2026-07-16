@@ -7,16 +7,14 @@ use reprise_core::library::playlists;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
-use super::sidebar::{
-    find_row, resolve_select_source, select_row_in_its_listbox, RowEntry, Shared,
-};
 use super::sidebar_dnd;
 use super::sidebar_export;
 use super::sidebar_issue_cleanup;
 use super::sidebar_presentation::{self, NavIcon};
 use super::strings;
+use super::{find_row, resolve_select_source, select_row_in_its_listbox, RowEntry, Shared};
 
-pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
+pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
     let refresh_number = shared.refresh_count.get() + 1;
     shared.refresh_count.set(refresh_number);
     tracing::debug!(

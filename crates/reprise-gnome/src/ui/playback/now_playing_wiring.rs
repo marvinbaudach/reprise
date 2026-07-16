@@ -89,7 +89,7 @@ impl PlayerController {
     /// Invalidates and reloads the displayed cover when a successful tag
     /// edit touched the currently playing path. Playback itself is left
     /// untouched.
-    pub(super) fn refresh_edited_cover(&self, edited_paths: &[PathBuf]) {
+    pub(in crate::ui) fn refresh_edited_cover(&self, edited_paths: &[PathBuf]) {
         let current_path = self
             .now_playing
             .borrow()
@@ -111,7 +111,7 @@ impl PlayerController {
     /// Re-reads title/artist/album from DB for the currently playing track
     /// when that track was just edited. Updates the player bar and MPRIS
     /// metadata in place without interrupting playback.
-    pub(super) fn refresh_edited_metadata(&self, edited_ids: &[i64]) {
+    pub(in crate::ui) fn refresh_edited_metadata(&self, edited_ids: &[i64]) {
         let current_id = self.current_track.get().map(|(id, _)| id);
         let Some(id) = current_id else {
             return;
@@ -151,14 +151,20 @@ impl PlayerController {
     }
 
     /// Feeds Bar, Compact, and Now Playing metadata from one call.
-    pub(super) fn sync_track(&self, title: &str, artist: &str, _album: &str, _year: Option<i32>) {
+    pub(in crate::ui) fn sync_track(
+        &self,
+        title: &str,
+        artist: &str,
+        _album: &str,
+        _year: Option<i32>,
+    ) {
         self.bar.set_track(title, artist);
         self.compact_player.set_track(title, artist);
     }
 
     /// Clears Bar, Compact, and Lyrics together — the `Stopped`/failure-path
     /// counterpart to `sync_track`.
-    pub(super) fn sync_clear_track(&self) {
+    pub(in crate::ui) fn sync_clear_track(&self) {
         self.bar.clear_track();
         self.compact_player.clear_track();
         self.sync_lyrics_track(None);
@@ -183,7 +189,7 @@ impl PlayerController {
     /// `CoverLoader` instance. The bar's cover load also carries the MPRIS
     /// art_url callback and cover-accent extraction (previously on the
     /// now-playing page's full-size load).
-    pub(super) fn sync_cover(&self, path: &str) {
+    pub(in crate::ui) fn sync_cover(&self, path: &str) {
         if let Some(track_id) = self.now_playing.borrow().as_ref().map(|t| t.id) {
             self.sync_waveform(track_id, path);
         }
@@ -257,7 +263,7 @@ impl PlayerController {
     /// Loads pre-computed waveform peaks from the DB off-main and hands them
     /// to the player bar. If no peaks exist yet, extracts them on demand and
     /// stores them in the DB so subsequent plays are instant.
-    pub(super) fn sync_waveform(&self, track_id: i64, path: &str) {
+    pub(in crate::ui) fn sync_waveform(&self, track_id: i64, path: &str) {
         let generation = self.waveform_generation.get().wrapping_add(1);
         self.waveform_generation.set(generation);
         let waveform_generation = self.waveform_generation.clone();
@@ -301,7 +307,7 @@ impl PlayerController {
         });
     }
 
-    pub(super) fn sync_state(&self, state: PlaybackState) {
+    pub(in crate::ui) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
         self.compact_player.set_state(state);
         // Fan the same state out to the track list's now-playing equaliser
@@ -310,13 +316,13 @@ impl PlayerController {
         self.notify_playback_state_changed(state);
     }
 
-    pub(super) fn sync_position(&self, position_ms: i64, duration_ms: i64) {
+    pub(in crate::ui) fn sync_position(&self, position_ms: i64, duration_ms: i64) {
         self.bar.set_position(position_ms, duration_ms);
         self.compact_player.set_position(position_ms, duration_ms);
         self.sync_lyrics_position(position_ms);
     }
 
-    pub(super) fn sync_transport_enabled(&self, enabled: bool) {
+    pub(in crate::ui) fn sync_transport_enabled(&self, enabled: bool) {
         self.bar.set_transport_enabled(enabled);
         self.compact_player.set_transport_enabled(enabled);
     }
@@ -327,7 +333,7 @@ impl PlayerController {
     /// `updating_shuffle` guard makes re-setting the originating widget's
     /// indicator a harmless no-op, so callers never need to know which
     /// widget (if any) was the origin.
-    pub(super) fn sync_shuffle_indicator(&self, active: bool) {
+    pub(in crate::ui) fn sync_shuffle_indicator(&self, active: bool) {
         self.bar.set_shuffle_indicator(active);
         // Shuffle changed the play order, so the upcoming track changed too:
         // re-feed the gapless next. Every shuffle path funnels through here.
@@ -335,14 +341,14 @@ impl PlayerController {
     }
 
     /// Same shape as `sync_shuffle_indicator`, for the repeat button.
-    pub(super) fn sync_repeat_indicator(&self, repeat: Repeat) {
+    pub(in crate::ui) fn sync_repeat_indicator(&self, repeat: Repeat) {
         self.bar.set_repeat_indicator(repeat);
         // Repeat mode changes what plays next (All wraps, One suppresses the
         // gapless pre-feed): re-feed. Every repeat path funnels through here.
         self.feed_next();
     }
 
-    pub(super) fn sync_volume_indicator(&self, volume: f64) {
+    pub(in crate::ui) fn sync_volume_indicator(&self, volume: f64) {
         self.bar.set_volume_indicator(volume);
         self.compact_player.set_volume_indicator(volume);
     }
@@ -350,7 +356,7 @@ impl PlayerController {
 
 /// Builds the content `adw::NavigationView`: the library page (wrapping the
 /// existing toast overlay) as the static root.
-pub(super) fn build_content_nav(
+pub(in crate::ui) fn build_content_nav(
     library_content: &impl IsA<gtk4::Widget>,
     app_name: &str,
 ) -> adw::NavigationView {

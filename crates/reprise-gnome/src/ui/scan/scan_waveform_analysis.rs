@@ -10,7 +10,10 @@ const WAVEFORM_WORKERS: usize = 4;
 /// Analyzes waveform peaks for all tracks that don't have them yet.
 /// Parallelizes across `WAVEFORM_WORKERS` threads, each with its own DB
 /// connection. Uses a shared work queue (atomic index into the track list).
-pub(super) fn analyze_waveforms(db_path: &std::path::Path, waveform_backend: &dyn WaveformBackend) {
+pub(in crate::ui) fn analyze_waveforms(
+    db_path: &std::path::Path,
+    waveform_backend: &dyn WaveformBackend,
+) {
     let conn = match reprise_core::db::open_migrated(Some(db_path)) {
         Ok(c) => c,
         Err(_) => return,
@@ -89,7 +92,7 @@ pub(super) fn analyze_waveforms(db_path: &std::path::Path, waveform_backend: &dy
 /// Spawns a background thread that analyzes waveform peaks for all tracks
 /// without peaks in the DB. Called once at app startup so existing libraries
 /// get peaks without requiring a manual rescan.
-pub(super) fn spawn_waveform_backfill(
+pub(in crate::ui) fn spawn_waveform_backfill(
     db_path: std::path::PathBuf,
     waveform_backend: Arc<dyn WaveformBackend>,
 ) {

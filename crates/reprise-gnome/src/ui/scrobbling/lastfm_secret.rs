@@ -4,7 +4,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-pub(super) const ATTRIBUTES: [(&str, &str); 2] = [
+pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] = [
     ("application", "org.reprise.Reprise"),
     ("service", "lastfm"),
 ];
@@ -12,7 +12,7 @@ pub(super) const ATTRIBUTES: [(&str, &str); 2] = [
 const LABEL: &str = "Reprise Last.fm credentials";
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct LastFmCredentials {
+pub(in crate::ui) struct LastFmCredentials {
     pub api_key: String,
     pub shared_secret: String,
     pub session_key: String,
@@ -32,14 +32,14 @@ impl fmt::Debug for LastFmCredentials {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum SecretError {
+pub(in crate::ui) enum SecretError {
     #[error("keyring unavailable: {0}")]
     Keyring(#[from] oo7::Error),
     #[error("stored Last.fm credentials are invalid: {0}")]
     Json(#[from] serde_json::Error),
 }
 
-pub(super) async fn load() -> Result<Option<LastFmCredentials>, SecretError> {
+pub(in crate::ui) async fn load() -> Result<Option<LastFmCredentials>, SecretError> {
     let keyring = oo7::Keyring::new().await?;
     let Some(item) = keyring.search_items(&ATTRIBUTES).await?.into_iter().next() else {
         return Ok(None);
@@ -50,7 +50,7 @@ pub(super) async fn load() -> Result<Option<LastFmCredentials>, SecretError> {
         .map_err(SecretError::from)
 }
 
-pub(super) async fn store(credentials: &LastFmCredentials) -> Result<(), SecretError> {
+pub(in crate::ui) async fn store(credentials: &LastFmCredentials) -> Result<(), SecretError> {
     let bytes = serde_json::to_vec(credentials)?;
     let keyring = oo7::Keyring::new().await?;
     keyring
@@ -59,7 +59,7 @@ pub(super) async fn store(credentials: &LastFmCredentials) -> Result<(), SecretE
         .map_err(SecretError::from)
 }
 
-pub(super) async fn delete() -> Result<(), SecretError> {
+pub(in crate::ui) async fn delete() -> Result<(), SecretError> {
     let keyring = oo7::Keyring::new().await?;
     keyring.delete(&ATTRIBUTES).await.map_err(SecretError::from)
 }

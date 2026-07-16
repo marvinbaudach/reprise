@@ -22,7 +22,7 @@ use reprise_core::library::artist_detail::ArtistHeader;
 const AVATAR_SIZE: i32 = 132;
 
 /// The persistent hero widgets, updated in place on each artist switch.
-pub(super) struct Hero {
+pub(in crate::ui) struct Hero {
     root: gtk4::Widget,
     name: gtk4::Label,
     meta: gtk4::Label,
@@ -34,18 +34,18 @@ pub(super) struct Hero {
 
 impl Hero {
     /// The hero's top-level widget, appended into the pane column.
-    pub(super) fn widget(&self) -> &gtk4::Widget {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Widget {
         &self.root
     }
 
     /// The hero name label text — the pane's `#[cfg(test)] hero_name` reads this.
     #[cfg(test)]
-    pub(super) fn name_text(&self) -> String {
+    pub(in crate::ui) fn name_text(&self) -> String {
         self.name.text().to_string()
     }
 
     /// Updates the hero for `artist` with its aggregate `header`.
-    pub(super) fn update(&self, artist: &str, header: &ArtistHeader) {
+    pub(in crate::ui) fn update(&self, artist: &str, header: &ArtistHeader) {
         self.name.set_text(artist);
         self.meta.set_text(&strings::artist_detail_meta(
             header.album_count,
@@ -59,13 +59,13 @@ impl Hero {
 
     /// Sets the glow surface to a static color fill derived from `accent`
     /// (v1: no live blur, no cross-fade).
-    pub(super) fn set_glow_accent(&self, accent: Rgb) {
+    pub(in crate::ui) fn set_glow_accent(&self, accent: Rgb) {
         self.glow_accent.set(Some(accent));
         self.glow.queue_draw();
     }
 
     /// Clears the glow (used for artists without any album cover to sample).
-    pub(super) fn clear_glow(&self) {
+    pub(in crate::ui) fn clear_glow(&self) {
         self.glow_accent.set(None);
         self.glow.queue_draw();
     }
@@ -73,7 +73,7 @@ impl Hero {
 
 /// Builds the hero. The Play all / Shuffle buttons and the ⋮ menu actions read
 /// the pane's current-artist cell at click time and invoke `callbacks`.
-pub(super) fn build_hero(callbacks: &HeroCallbacks) -> Hero {
+pub(in crate::ui) fn build_hero(callbacks: &HeroCallbacks) -> Hero {
     let (glow, glow_accent) = build_glow();
 
     let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 20);

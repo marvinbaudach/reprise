@@ -10,7 +10,7 @@ use super::player_controller::PlayerController;
 use super::track_list::TrackList;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum BatchState {
+pub(in crate::ui) enum BatchState {
     Idle,
     Running,
     Complete,
@@ -18,12 +18,12 @@ pub(super) enum BatchState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct BatchProgress {
-    pub(super) state: BatchState,
-    pub(super) checked: usize,
-    pub(super) total: usize,
-    pub(super) downloaded: usize,
-    pub(super) unavailable: usize,
+pub(in crate::ui) struct BatchProgress {
+    pub(in crate::ui) state: BatchState,
+    pub(in crate::ui) checked: usize,
+    pub(in crate::ui) total: usize,
+    pub(in crate::ui) downloaded: usize,
+    pub(in crate::ui) unavailable: usize,
 }
 
 impl BatchProgress {
@@ -72,7 +72,7 @@ impl BatchProgress {
         self
     }
 
-    pub(super) fn fraction(self) -> f64 {
+    pub(in crate::ui) fn fraction(self) -> f64 {
         if self.total == 0 {
             return f64::from(self.state == BatchState::Complete);
         }
@@ -153,7 +153,7 @@ impl ProgressSubscribers {
     }
 }
 
-pub(super) struct CoverDownloadBatch {
+pub(in crate::ui) struct CoverDownloadBatch {
     conn: Rc<RefCell<Connection>>,
     runtime: CoverDownloadRuntime,
     track_list: Rc<TrackList>,
@@ -164,7 +164,7 @@ pub(super) struct CoverDownloadBatch {
 }
 
 impl CoverDownloadBatch {
-    pub(super) fn new(
+    pub(in crate::ui) fn new(
         conn: &Rc<RefCell<Connection>>,
         runtime: &CoverDownloadRuntime,
         track_list: &Rc<TrackList>,
@@ -181,7 +181,7 @@ impl CoverDownloadBatch {
         })
     }
 
-    pub(super) fn subscribe_progress(
+    pub(in crate::ui) fn subscribe_progress(
         &self,
         is_alive: impl Fn() -> bool + 'static,
         callback: impl Fn(BatchProgress) + 'static,
@@ -190,7 +190,7 @@ impl CoverDownloadBatch {
             .subscribe(self.progress.get(), is_alive, callback);
     }
 
-    pub(super) fn start(self: &Rc<Self>) {
+    pub(in crate::ui) fn start(self: &Rc<Self>) {
         let paths = {
             let conn = self.conn.borrow();
             reprise_core::queries::query_live_track_paths(&conn)

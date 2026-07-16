@@ -13,7 +13,7 @@ use crate::ui::tag_editor_form::{EditorMode, TagEditorForm};
 use crate::ui::tag_editor_state::*;
 use crate::ui::tag_editor_widgets::*;
 
-pub(super) type UpdateCallback = Rc<dyn Fn()>;
+pub(in crate::ui) type UpdateCallback = Rc<dyn Fn()>;
 type UpdateCallbackSlot = Rc<RefCell<Option<UpdateCallback>>>;
 
 struct FieldSnapshot {
@@ -21,12 +21,12 @@ struct FieldSnapshot {
     rating: MixedValue<i32>,
 }
 
-pub(super) struct DirtyState {
-    pub(super) flags: Vec<Rc<Cell<bool>>>,
-    pub(super) update: UpdateCallback,
+pub(in crate::ui) struct DirtyState {
+    pub(in crate::ui) flags: Vec<Rc<Cell<bool>>>,
+    pub(in crate::ui) update: UpdateCallback,
 }
 
-pub(super) fn wire(
+pub(in crate::ui) fn wire(
     mode: EditorMode,
     form: &TagEditorForm,
     summary: &EditableTagSummary,

@@ -13,10 +13,6 @@ use super::column_layout::{self, ColumnId};
 use super::cover_download_worker::CoverDownloadRuntime;
 use super::cover_loader::CoverLoader;
 use super::import_errors_view::ImportErrorsView;
-use super::track_list::{
-    notify_import_errors_mutated_and_reload, OnActivate, Shared, TrackList, STACK_PAGE_EMPTY,
-    STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
-};
 use super::track_list_activation::wire_activate;
 use super::track_list_columns::build_status_page;
 use super::track_list_context_menu;
@@ -28,8 +24,12 @@ use super::track_list_smoke::{
     arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
 };
 use super::track_list_sort::{wire_sort_clicks, SortState};
+use super::{
+    notify_import_errors_mutated_and_reload, OnActivate, Shared, TrackList, STACK_PAGE_EMPTY,
+    STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
+};
 
-pub(super) fn build(
+pub(in crate::ui) fn build(
     conn: Rc<RefCell<Connection>>,
     on_activate: OnActivate,
     on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,

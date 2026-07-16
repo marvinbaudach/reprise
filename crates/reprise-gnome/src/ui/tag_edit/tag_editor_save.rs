@@ -15,24 +15,24 @@ use crate::ui::strings;
 use crate::ui::tag_editor_state::*;
 
 #[derive(Clone, Copy)]
-pub(super) struct SaveWidgets<'a> {
-    pub(super) dialog: &'a adw::Dialog,
-    pub(super) save_button: &'a gtk4::Button,
-    pub(super) cancel_button: &'a gtk4::Button,
-    pub(super) previous_button: &'a gtk4::Button,
-    pub(super) next_button: &'a gtk4::Button,
-    pub(super) title: &'a adw::EntryRow,
-    pub(super) artist: &'a Rc<AutocompleteEntry>,
-    pub(super) album: &'a Rc<AutocompleteEntry>,
-    pub(super) album_artist: &'a Rc<AutocompleteEntry>,
-    pub(super) genre: &'a Rc<AutocompleteEntry>,
-    pub(super) year: &'a adw::EntryRow,
-    pub(super) track_number: &'a adw::EntryRow,
-    pub(super) rating: &'a Cell<i32>,
-    pub(super) error_label: &'a gtk4::Label,
+pub(in crate::ui) struct SaveWidgets<'a> {
+    pub(in crate::ui) dialog: &'a adw::Dialog,
+    pub(in crate::ui) save_button: &'a gtk4::Button,
+    pub(in crate::ui) cancel_button: &'a gtk4::Button,
+    pub(in crate::ui) previous_button: &'a gtk4::Button,
+    pub(in crate::ui) next_button: &'a gtk4::Button,
+    pub(in crate::ui) title: &'a adw::EntryRow,
+    pub(in crate::ui) artist: &'a Rc<AutocompleteEntry>,
+    pub(in crate::ui) album: &'a Rc<AutocompleteEntry>,
+    pub(in crate::ui) album_artist: &'a Rc<AutocompleteEntry>,
+    pub(in crate::ui) genre: &'a Rc<AutocompleteEntry>,
+    pub(in crate::ui) year: &'a adw::EntryRow,
+    pub(in crate::ui) track_number: &'a adw::EntryRow,
+    pub(in crate::ui) rating: &'a Cell<i32>,
+    pub(in crate::ui) error_label: &'a gtk4::Label,
 }
 
-pub(super) fn wire(
+pub(in crate::ui) fn wire(
     widgets: SaveWidgets<'_>,
     dirty: &[Rc<Cell<bool>>],
     on_apply: impl Fn(TrackEditPatch) + Clone + 'static,

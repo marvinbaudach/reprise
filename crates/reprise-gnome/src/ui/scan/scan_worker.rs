@@ -21,7 +21,7 @@ use super::strings;
 use super::toasts;
 use super::track_list::TrackList;
 
-pub(super) fn spawn_scan(
+pub(in crate::ui) fn spawn_scan(
     folder: PathBuf,
     db_path: PathBuf,
     controls: ScanControls,
@@ -134,7 +134,7 @@ fn reconcile_outcome(
     }
 }
 
-pub(super) fn publish_latest_progress(
+pub(in crate::ui) fn publish_latest_progress(
     sender: &async_channel::Sender<ScanProgress>,
     receiver: &async_channel::Receiver<ScanProgress>,
     progress: ScanProgress,
