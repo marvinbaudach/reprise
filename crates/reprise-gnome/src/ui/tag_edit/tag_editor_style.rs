@@ -9,13 +9,13 @@ pub(super) fn css() -> String {
         SURFACE_BORDER_ALPHA, SURFACE_SHADOW, TRANSITION,
     };
     format!(
-        // --- Dialog shell ---
+        /* --- Dialog shell --- */
         ".reprise-tag-editor {{ \
            border-radius: {RADIUS_SURFACE}; \
            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
            box-shadow: {SURFACE_SHADOW}; }}\n\
          \
-         // --- Multi-edit badge (\"same on all\", \"per track\") ---
+         /* --- Multi-edit badge (\"same on all\", \"per track\") --- */
          .reprise-tag-badge {{ \
            font-size: 11px; \
            padding: 1px 8px; \
@@ -24,12 +24,12 @@ pub(super) fn css() -> String {
            color: @reprise_dim_fg_color; \
            transition: background {TRANSITION}; }}\n\
          \
-         // --- Applied-to-all hint ---
+         /* --- Applied-to-all hint --- */
          .reprise-tag-hint {{ \
            color: @accent_color; \
            font-size: 12px; }}\n\
          \
-         // --- Autocomplete popover ---
+         /* --- Autocomplete popover --- */
          .reprise-autocomplete-popover {{ \
            background: @window_bg_color; \
            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
@@ -41,7 +41,7 @@ pub(super) fn css() -> String {
          .reprise-autocomplete-list row:selected {{ \
            background: alpha(@accent_bg_color, 0.15); }}\n\
          \
-         // --- Cover art ---
+         /* --- Cover art --- */
          .reprise-tag-cover {{ \
            border-radius: 8px; \
            background: alpha(@window_fg_color, 0.06); }}\n\
@@ -57,7 +57,7 @@ pub(super) fn css() -> String {
            background: alpha(@window_bg_color, 0.85); \
            color: @window_fg_color; }}\n\
          \
-         // --- Field annotation labels ---
+         /* --- Field annotation labels --- */
          .reprise-tag-field-annotation {{ \
            font-size: 11px; \
            color: @reprise_dim_fg_color; \
@@ -65,13 +65,13 @@ pub(super) fn css() -> String {
          .reprise-tag-field-annotation.accent {{ \
            color: @accent_color; }}\n\
          \
-         // --- Mixed-field state ---
+         /* --- Mixed-field state --- */
          .reprise-tag-mixed > .header {{ \
            border-style: dashed; }}\n\
          .reprise-tag-mixed > .header text {{ \
            font-style: italic; }}\n\
          \
-         // --- Pending-change bar ---
+         /* --- Pending-change bar --- */
          .reprise-tag-pending {{ \
            background: alpha(@accent_bg_color, 0.08); \
            border-radius: 8px; \
@@ -91,7 +91,7 @@ pub(super) fn css() -> String {
            padding: 1px 8px; \
            min-height: 20px; }}\n\
          \
-         // --- Rating stars ---
+         /* --- Rating stars --- */
          .reprise-tag-stars button {{ \
            min-width: 28px; \
            min-height: 28px; \
@@ -105,7 +105,7 @@ pub(super) fn css() -> String {
          .reprise-tag-stars .star-outline {{ \
            color: alpha(@window_fg_color, 0.35); }}\n\
          \
-         // --- Navigation (prev / next) ---
+         /* --- Navigation (prev / next) --- */
          .reprise-tag-nav {{ \
            margin-top: 4px; }}\n\
          .reprise-tag-nav button {{ \
@@ -116,7 +116,7 @@ pub(super) fn css() -> String {
          .reprise-tag-nav button:hover {{ \
            background: alpha(@accent_bg_color, 0.12); }}\n\
          \
-         // --- MusicBrainz button ---
+         /* --- MusicBrainz button --- */
          .reprise-tag-mb {{ \
            margin-top: 4px; }}\n\
          .reprise-tag-mb button {{ \
@@ -131,12 +131,12 @@ pub(super) fn css() -> String {
            color: @reprise_dim_fg_color; \
            margin-top: 2px; }}\n\
          \
-         // --- Error label ---
+         /* --- Error label --- */
          .reprise-tag-error {{ \
            color: @error_color; \
            font-size: 12px; }}\n\
          \
-         // --- Change-cover link ---
+         /* --- Change-cover link --- */
          .reprise-tag-cover-link {{ \
            font-size: 12px; \
            color: @reprise_dim_fg_color; \
@@ -144,14 +144,14 @@ pub(super) fn css() -> String {
          .reprise-tag-cover-link:disabled {{ \
            opacity: 0.5; }}\n\
          \
-         // --- Focus glow on entry rows inside the editor ---
+         /* --- Focus glow on entry rows inside the editor --- */
          .reprise-tag-editor row:focus-within {{ \
            box-shadow: 0 0 {FOCUS_GLOW_BLUR} alpha(@accent_color, {FOCUS_GLOW_ALPHA}); \
            border-radius: 8px; }}\n\
          \
-         // --- Preferences group inside dialog gets card tint ---
+         /* --- Preferences group inside dialog gets card tint --- */
          .reprise-tag-editor preferencesgroup {{ \
-           background: alpha(white, {DIALOG_CARD_ALPHA}); \
+           background: alpha(@window_fg_color, {DIALOG_CARD_ALPHA}); \
            border-radius: 12px; }}"
     )
 }

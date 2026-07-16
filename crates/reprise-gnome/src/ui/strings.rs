@@ -291,6 +291,8 @@ pub const TAG_REVERT: &str = N_!("Revert");
 #[allow(dead_code)]
 pub const TAG_FETCH_MUSICBRAINZ: &str = N_!("Fetch tags from MusicBrainz");
 #[allow(dead_code)]
+pub const TAG_FETCH_HINT: &str = N_!("runs per track, fills only empty fields");
+#[allow(dead_code)]
 pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
 #[allow(dead_code)]
 pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
@@ -345,6 +347,17 @@ pub fn tag_mixed_count(count: usize) -> String {
 pub fn tag_will_apply(count: usize) -> String {
     let count_text = count.to_string();
     formatted(TAG_WILL_APPLY, &[("count", &count_text)])
+}
+
+#[allow(dead_code)]
+pub fn tag_cover_count(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} cover",
+        "{count} covers",
+        count,
+        &[("count", &count_text)],
+    )
 }
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");

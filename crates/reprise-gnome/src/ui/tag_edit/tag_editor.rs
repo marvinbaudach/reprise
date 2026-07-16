@@ -428,11 +428,15 @@ pub fn present_redesigned(
     on_apply: impl Fn(TrackEditPatch) + Clone + 'static,
     on_navigate: impl Fn(NavigateDirection) -> bool + 'static,
 ) {
+    if tracks.is_empty() {
+        tracing::warn!("tag editor called with empty track list");
+        return;
+    }
     let track_count = tracks.len();
     let is_multi = track_count > 1;
     let summary = summarize(&tags).unwrap();
     let rating_summary = summarize_values(&ratings).unwrap();
-    let _snapshot = Rc::new(FieldSnapshot {
+    let snapshot = Rc::new(FieldSnapshot {
         summary: summary.clone(),
         rating: rating_summary.clone(),
     });
@@ -476,7 +480,7 @@ pub fn present_redesigned(
 
     // ── Form fields ──────────────────────────────────────────────────────
 
-    // Title: per-track in multi mode (read-only)
+    // Title: per-track in multi mode (read-only, no click-to-unlock)
     let title_row = adw::EntryRow::builder()
         .title(strings::text(strings::TAG_TITLE))
         .build();
@@ -487,54 +491,78 @@ pub fn present_redesigned(
     }
     set_entry_from_mixed_string(&title_row, &summary.title);
 
-    // Artist (autocomplete)
+    // Artist (autocomplete) — Mixed → click-to-unlock
     let artist_ac = AutocompleteEntry::new(
         &strings::text(strings::TAG_ARTIST),
         AutocompleteColumn::Artist,
         conn.clone(),
     );
-    init_autocomplete_from_mixed(&artist_ac, &summary.artist, track_count, is_multi);
+    let artist_annotation =
+        init_autocomplete_from_mixed(&artist_ac, &summary.artist, track_count, is_multi);
+    if is_multi && matches!(summary.artist, MixedValue::Mixed) {
+        attach_click_to_unlock(artist_ac.row(), artist_annotation.as_ref(), track_count);
+    }
 
-    // Album (autocomplete)
+    // Album (autocomplete) — Mixed → click-to-unlock
     let album_ac = AutocompleteEntry::new(
         &strings::text(strings::TAG_ALBUM),
         AutocompleteColumn::Album,
         conn.clone(),
     );
-    init_autocomplete_from_mixed(&album_ac, &summary.album, track_count, is_multi);
+    let album_annotation =
+        init_autocomplete_from_mixed(&album_ac, &summary.album, track_count, is_multi);
+    if is_multi && matches!(summary.album, MixedValue::Mixed) {
+        attach_click_to_unlock(album_ac.row(), album_annotation.as_ref(), track_count);
+    }
 
-    // Album artist (autocomplete, with placeholder)
+    // Album artist (autocomplete, with placeholder) — Mixed → click-to-unlock
     let album_artist_ac = AutocompleteEntry::new(
         &strings::text(strings::TAG_ALBUM_ARTIST),
         AutocompleteColumn::AlbumArtist,
         conn.clone(),
     );
-    init_autocomplete_from_mixed(
+    let album_artist_annotation = init_autocomplete_from_mixed(
         &album_artist_ac,
         &summary.album_artist,
         track_count,
         is_multi,
     );
+    if is_multi && matches!(summary.album_artist, MixedValue::Mixed) {
+        attach_click_to_unlock(
+            album_artist_ac.row(),
+            album_artist_annotation.as_ref(),
+            track_count,
+        );
+    }
 
-    // Genre (autocomplete)
+    // Genre (autocomplete) — Mixed → click-to-unlock
     let genre_ac = AutocompleteEntry::new(
         &strings::text(strings::TAG_GENRE),
         AutocompleteColumn::Genre,
         conn.clone(),
     );
-    init_autocomplete_from_mixed(&genre_ac, &summary.genre, track_count, is_multi);
+    let genre_annotation =
+        init_autocomplete_from_mixed(&genre_ac, &summary.genre, track_count, is_multi);
+    if is_multi && matches!(summary.genre, MixedValue::Mixed) {
+        attach_click_to_unlock(genre_ac.row(), genre_annotation.as_ref(), track_count);
+    }
 
-    // Year
+    // Year — Mixed → click-to-unlock
     let year_row = adw::EntryRow::builder()
         .title(strings::text(strings::TAG_YEAR))
         .input_purpose(gtk4::InputPurpose::Digits)
         .build();
     set_entry_from_mixed_number(&year_row, &summary.year);
-    if is_multi {
-        apply_mixed_annotation_number(&year_row, &summary.year, track_count);
+    let year_annotation_label: Option<gtk4::Label> = if is_multi {
+        apply_mixed_annotation_number(&year_row, &summary.year, track_count)
+    } else {
+        None
+    };
+    if is_multi && matches!(summary.year, MixedValue::Mixed) {
+        attach_click_to_unlock(&year_row, year_annotation_label.as_ref(), track_count);
     }
 
-    // Track number: per-track in multi mode (read-only)
+    // Track number: per-track in multi mode (read-only, no click-to-unlock)
     let track_no_row = adw::EntryRow::builder()
         .title(strings::text(strings::TAG_TRACK_NUMBER))
         .input_purpose(gtk4::InputPurpose::Digits)
@@ -593,6 +621,10 @@ pub fn present_redesigned(
         gtk4::Button::with_label(&strings::text(strings::TAG_FETCH_MUSICBRAINZ));
     mb_btn.set_sensitive(false); // Task 5 wires this
     mb_box.append(&mb_btn);
+    let mb_hint = gtk4::Label::new(Some(&strings::text(strings::TAG_FETCH_HINT)));
+    mb_hint.add_css_class("reprise-tag-mb-hint");
+    mb_hint.set_xalign(0.0);
+    mb_box.append(&mb_hint);
 
     // Navigation buttons (only useful in single-track mode within a multi-selection)
     let nav_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
@@ -647,14 +679,20 @@ pub fn present_redesigned(
         .map(|_| Rc::new(Cell::new(false)))
         .collect();
 
+    // Late-bound reference so revert callbacks inside update_save_state can
+    // call update_save_state itself without a circular Rc construction.
+    let update_fn_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+
     // Helper: update save-button sensitivity + pending bar
     let update_save_state = {
         let dirty = dirty.clone();
         let save_btn = save_btn.clone();
         let pending_bar = pending_bar.clone();
         let is_multi = is_multi;
+        let snapshot = snapshot.clone();
+        let update_fn_holder = update_fn_holder.clone();
 
-        // Capture field accessors for pending bar text
+        // Capture field accessors for pending bar text and revert
         let title_row_c = title_row.clone();
         let year_row_c = year_row.clone();
         let track_no_row_c = track_no_row.clone();
@@ -663,6 +701,12 @@ pub fn present_redesigned(
         let album_artist_ac_row = album_artist_ac.row().clone();
         let genre_ac_row = genre_ac.row().clone();
         let rating_value_c = rating_value.clone();
+        let rating_box_c = rating_box.clone();
+        let year_annotation_c = year_annotation_label.clone();
+        let artist_annotation_c = artist_annotation.clone();
+        let album_annotation_c = album_annotation.clone();
+        let album_artist_annotation_c = album_artist_annotation.clone();
+        let genre_annotation_c = genre_annotation.clone();
 
         Rc::new(move || {
             let any_dirty = dirty.iter().any(|f| f.get());
@@ -683,32 +727,85 @@ pub fn present_redesigned(
                     header_label.add_css_class("reprise-tag-pending-header");
                     pending_bar.append(&header_label);
 
-                    let rows: [(&adw::EntryRow, usize); 7] = [
-                        (&title_row_c, FIELD_TITLE),
-                        (&artist_ac_row, FIELD_ARTIST),
-                        (&album_ac_row, FIELD_ALBUM),
-                        (&album_artist_ac_row, FIELD_ALBUM_ARTIST),
-                        (&year_row_c, FIELD_YEAR),
-                        (&track_no_row_c, FIELD_TRACK_NO),
-                        (&genre_ac_row, FIELD_GENRE),
+                    // Build a revert callback for each dirty entry-row field.
+                    // Helper captures needed context via clones inside the loop.
+                    let get_update = || {
+                        update_fn_holder
+                            .borrow()
+                            .as_ref()
+                            .expect("update_fn_holder filled before first interaction")
+                            .clone()
+                    };
+
+                    // String/number entry-row fields
+                    let entry_fields: [(&adw::EntryRow, usize, Option<&gtk4::Label>); 7] = [
+                        (&title_row_c, FIELD_TITLE, None),
+                        (&artist_ac_row, FIELD_ARTIST, artist_annotation_c.as_ref()),
+                        (&album_ac_row, FIELD_ALBUM, album_annotation_c.as_ref()),
+                        (
+                            &album_artist_ac_row,
+                            FIELD_ALBUM_ARTIST,
+                            album_artist_annotation_c.as_ref(),
+                        ),
+                        (&year_row_c, FIELD_YEAR, year_annotation_c.as_ref()),
+                        (&track_no_row_c, FIELD_TRACK_NO, None),
+                        (&genre_ac_row, FIELD_GENRE, genre_annotation_c.as_ref()),
                     ];
 
-                    for (row, idx) in rows {
+                    for (row, idx, annotation) in entry_fields {
                         if dirty[idx].get() {
-                            let item = build_pending_item(
-                                FIELD_NAMES[idx],
-                                &row.text(),
-                            );
+                            let dirty_flag = dirty[idx].clone();
+                            let row_c = row.clone();
+                            let annotation_c = annotation.cloned();
+                            let update = get_update();
+                            let snap = snapshot.clone();
+                            let on_revert: Box<dyn Fn()> = Box::new(move || {
+                                // Restore original value
+                                let orig_text =
+                                    field_snapshot_text(&snap.summary, idx);
+                                let was_mixed = field_snapshot_is_mixed(&snap.summary, idx);
+                                if was_mixed {
+                                    row_c.set_editable(false);
+                                    row_c.add_css_class("reprise-tag-mixed");
+                                    if let Some(lbl) = &annotation_c {
+                                        lbl.set_text(&strings::text(strings::MULTIPLE_VALUES));
+                                        lbl.remove_css_class("accent");
+                                    }
+                                    row_c.set_text("");
+                                } else {
+                                    row_c.set_text(orig_text.as_deref().unwrap_or(""));
+                                }
+                                dirty_flag.set(false);
+                                update();
+                            });
+                            let item =
+                                build_pending_item(FIELD_NAMES[idx], &row.text(), on_revert);
                             pending_bar.append(&item);
                         }
                     }
 
                     if dirty[FIELD_RATING].get() {
-                        let rating_text = format!(
-                            "{STAR_FILLED} {}",
-                            rating_value_c.get()
+                        let dirty_flag = dirty[FIELD_RATING].clone();
+                        let rating_val = rating_value_c.clone();
+                        let rating_box_r = rating_box_c.clone();
+                        let orig_rating = snapshot.rating.clone();
+                        let update = get_update();
+                        let rating_text = format!("{STAR_FILLED} {}", rating_value_c.get());
+                        let on_revert: Box<dyn Fn()> = Box::new(move || {
+                            let orig = match &orig_rating {
+                                MixedValue::Uniform(v) => *v,
+                                MixedValue::Mixed => 0,
+                            };
+                            rating_val.set(orig);
+                            update_star_display(&rating_box_r, orig);
+                            dirty_flag.set(false);
+                            update();
+                        });
+                        let item = build_pending_item(
+                            FIELD_NAMES[FIELD_RATING],
+                            &rating_text,
+                            on_revert,
                         );
-                        let item = build_pending_item(FIELD_NAMES[FIELD_RATING], &rating_text);
                         pending_bar.append(&item);
                     }
 
@@ -719,6 +816,9 @@ pub fn present_redesigned(
             }
         })
     };
+
+    // Fill late-bound holder so revert callbacks can call update_save_state
+    *update_fn_holder.borrow_mut() = Some(update_save_state.clone());
 
     // Wire entry-row changed signals
     let update_save_state: Rc<dyn Fn()> = update_save_state;
@@ -806,7 +906,6 @@ pub fn present_redesigned(
         let album_artist_ac = album_artist_ac.clone();
         let genre_ac = genre_ac.clone();
         let rating_value = rating_value.clone();
-        let _rating_summary_clone = rating_summary.clone();
         let error_label = error_label.clone();
         let dialog = dialog.clone();
         let on_apply = on_apply.clone();
@@ -996,7 +1095,7 @@ fn build_cover_area(tracks: &[(i64, PathBuf)], is_multi: bool) -> gtk4::Box {
         overlay.set_child(Some(&cover));
 
         // Badge: "N covers"
-        let badge = gtk4::Label::new(Some(&format!("{} tracks", tracks.len())));
+        let badge = gtk4::Label::new(Some(&strings::tag_cover_count(tracks.len())));
         badge.add_css_class("reprise-tag-cover-badge");
         badge.set_halign(gtk4::Align::End);
         badge.set_valign(gtk4::Align::End);
@@ -1158,14 +1257,15 @@ fn set_entry_from_mixed_number(row: &adw::EntryRow, value: &MixedValue<Option<u3
 }
 
 /// Initialises an `AutocompleteEntry` from a `MixedValue`, adding
-/// mixed-field annotations in multi-track mode.
+/// mixed-field annotations in multi-track mode. Returns the annotation label
+/// when the field starts Mixed (needed for click-to-unlock updates).
 #[allow(dead_code)]
 fn init_autocomplete_from_mixed(
     ac: &AutocompleteEntry,
     value: &MixedValue<String>,
     _track_count: usize,
     is_multi: bool,
-) {
+) -> Option<gtk4::Label> {
     match value {
         MixedValue::Uniform(text) => {
             ac.set_text(text);
@@ -1176,56 +1276,131 @@ fn init_autocomplete_from_mixed(
                     false,
                 );
             }
+            None
         }
         MixedValue::Mixed => {
             if is_multi {
+                ac.row().set_editable(false);
                 ac.row().add_css_class("reprise-tag-mixed");
-                add_annotation(
+                Some(add_annotation(
                     ac.row(),
                     &strings::text(strings::MULTIPLE_VALUES),
                     false,
-                );
+                ))
+            } else {
+                None
             }
         }
     }
 }
 
 /// Adds a mixed-field annotation for number fields in multi-track mode.
+/// Returns the annotation label (needed for click-to-unlock updates).
 #[allow(dead_code)]
 fn apply_mixed_annotation_number(
     row: &adw::EntryRow,
     value: &MixedValue<Option<u32>>,
     _track_count: usize,
-) {
+) -> Option<gtk4::Label> {
     match value {
         MixedValue::Uniform(_) => {
             add_annotation(row, &strings::text(strings::TAG_SAME_ON_ALL), false);
+            None
         }
         MixedValue::Mixed => {
+            row.set_editable(false);
             row.add_css_class("reprise-tag-mixed");
-            add_annotation(
+            Some(add_annotation(
                 row,
                 &strings::text(strings::MULTIPLE_VALUES),
                 false,
-            );
+            ))
         }
     }
 }
 
-/// Adds a small annotation label as a suffix to an `EntryRow`.
+/// Adds a small annotation label as a suffix to an `EntryRow` and returns it.
 #[allow(dead_code)]
-fn add_annotation(row: &adw::EntryRow, text: &str, accent: bool) {
+fn add_annotation(row: &adw::EntryRow, text: &str, accent: bool) -> gtk4::Label {
     let label = gtk4::Label::new(Some(text));
     label.add_css_class("reprise-tag-field-annotation");
     if accent {
         label.add_css_class("accent");
     }
     row.add_suffix(&label);
+    label
 }
 
-/// Builds a single pending-change item: "Field -> Value" with layout.
+/// Attaches a click gesture to a Mixed field so the user can unlock it for
+/// editing. On first click: makes the entry editable, clears the text,
+/// removes the mixed CSS class, and updates the annotation to the
+/// "will be applied to all N" copy.
 #[allow(dead_code)]
-fn build_pending_item(field_name: &str, value: &str) -> gtk4::Box {
+fn attach_click_to_unlock(row: &adw::EntryRow, annotation: Option<&gtk4::Label>, track_count: usize) {
+    let row_c = row.clone();
+    let annotation_c = annotation.cloned();
+    let will_apply = strings::tag_will_apply(track_count);
+    let gesture = gtk4::GestureClick::new();
+    gesture.connect_released(move |_, _, _, _| {
+        if !row_c.is_editable() {
+            row_c.set_editable(true);
+            row_c.remove_css_class("reprise-tag-mixed");
+            row_c.set_text("");
+            if let Some(lbl) = &annotation_c {
+                lbl.set_text(&will_apply);
+                lbl.add_css_class("accent");
+            }
+            row_c.grab_focus();
+        }
+    });
+    row.add_controller(gesture);
+}
+
+/// Returns the original text value for a given field index from a snapshot.
+/// Returns `None` for fields that were Mixed (no single value).
+#[allow(dead_code)]
+fn field_snapshot_text(summary: &EditableTagSummary, field_idx: usize) -> Option<String> {
+    match field_idx {
+        FIELD_ARTIST => match &summary.artist {
+            MixedValue::Uniform(v) => Some(v.clone()),
+            MixedValue::Mixed => None,
+        },
+        FIELD_ALBUM => match &summary.album {
+            MixedValue::Uniform(v) => Some(v.clone()),
+            MixedValue::Mixed => None,
+        },
+        FIELD_ALBUM_ARTIST => match &summary.album_artist {
+            MixedValue::Uniform(v) => Some(v.clone()),
+            MixedValue::Mixed => None,
+        },
+        FIELD_GENRE => match &summary.genre {
+            MixedValue::Uniform(v) => Some(v.clone()),
+            MixedValue::Mixed => None,
+        },
+        FIELD_YEAR => match &summary.year {
+            MixedValue::Uniform(Some(v)) => Some(v.to_string()),
+            MixedValue::Uniform(None) | MixedValue::Mixed => None,
+        },
+        _ => None,
+    }
+}
+
+/// Returns true if the given field was originally Mixed in the snapshot.
+#[allow(dead_code)]
+fn field_snapshot_is_mixed(summary: &EditableTagSummary, field_idx: usize) -> bool {
+    match field_idx {
+        FIELD_ARTIST => matches!(summary.artist, MixedValue::Mixed),
+        FIELD_ALBUM => matches!(summary.album, MixedValue::Mixed),
+        FIELD_ALBUM_ARTIST => matches!(summary.album_artist, MixedValue::Mixed),
+        FIELD_GENRE => matches!(summary.genre, MixedValue::Mixed),
+        FIELD_YEAR => matches!(summary.year, MixedValue::Mixed),
+        _ => false,
+    }
+}
+
+/// Builds a single pending-change item: "Field → Value" with a Revert button.
+#[allow(dead_code)]
+fn build_pending_item(field_name: &str, value: &str, on_revert: Box<dyn Fn()>) -> gtk4::Box {
     let item = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     item.add_css_class("reprise-tag-pending-item");
 
@@ -1237,6 +1412,11 @@ fn build_pending_item(field_name: &str, value: &str) -> gtk4::Box {
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
     item.append(&label);
+
+    let revert_btn = gtk4::Button::with_label(&strings::text(strings::TAG_REVERT));
+    revert_btn.add_css_class("flat");
+    revert_btn.connect_clicked(move |_| on_revert());
+    item.append(&revert_btn);
 
     item
 }
