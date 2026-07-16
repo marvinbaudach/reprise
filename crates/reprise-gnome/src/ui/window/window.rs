@@ -412,6 +412,10 @@ pub fn build(
     // post-construction seam on `track_list` is wired here too, so this
     // keeps all of them in one place.
     track_list.set_window(&window);
+    // Wire player for tag-edit flow to refresh now-playing metadata
+    if let Some(player) = &player {
+        track_list.set_player(player);
+    }
     {
         let player = player.clone();
         track_list.set_on_play_selected(move |ids, start_index| match &player {

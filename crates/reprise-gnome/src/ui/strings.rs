@@ -340,7 +340,6 @@ pub fn rhythmbox_columns_import_failed(error: &str) -> String {
     )
 }
 pub const EDIT_TAGS: &str = N_!("Edit tags…");
-pub const APPLY: &str = N_!("Apply");
 pub const MULTIPLE_VALUES: &str = N_!("(multiple values)");
 pub const TAG_TITLE: &str = N_!("Title");
 pub const TAG_ARTIST: &str = N_!("Artist");
@@ -355,11 +354,88 @@ pub const TAG_EDIT_DATABASE_UNAVAILABLE: &str =
 pub const TAG_EDIT_WORKER_FAILED: &str = N_!("Could not start the tag-edit worker");
 pub const TAG_SAME_ON_ALL: &str = N_!("same on all");
 
-pub fn tag_applied_to_all_hint(count: usize) -> String {
+// --- Tag editor dialog ---
+
+pub const TAG_EDIT_TITLE_SINGLE: &str = N_!("Edit Tags");
+pub const TAG_EDIT_TITLE_MULTI: &str = N_!("Edit {count} Tracks");
+pub const TAG_PER_TRACK: &str = N_!("per track");
+pub const TAG_MIXED_COUNT: &str = N_!("{count} values");
+pub const TAG_WILL_APPLY: &str = N_!("will be applied to all {count}");
+pub const TAG_ALBUM_ARTIST_PLACEHOLDER: &str = N_!("Same as artist");
+pub const TAG_SAVE: &str = N_!("Save");
+pub const TAG_SAVE_COUNT: &str = N_!("Save {count}");
+pub const TAG_PENDING_CHANGES: &str = N_!("{count} change pending");
+pub const TAG_PENDING_CHANGES_PLURAL: &str = N_!("{count} changes pending");
+pub const TAG_REVERT: &str = N_!("Revert");
+pub const TAG_FETCH_MUSICBRAINZ: &str = N_!("Fetch tags from MusicBrainz");
+pub const TAG_FETCH_HINT: &str = N_!("runs per track, fills only empty fields");
+pub const TAG_FETCH_LOADING: &str = N_!("Searching MusicBrainz…");
+pub const TAG_FETCH_NO_RESULTS: &str = N_!("No matching release found");
+pub const TAG_FETCH_NETWORK_ERROR: &str = N_!("Network error — check your connection");
+pub const TAG_FETCH_FIELDS_FILLED: &str = N_!("Done — empty fields filled from MusicBrainz");
+pub const TAG_FETCH_NOTHING_TO_FILL: &str = N_!("Done — all fields already have values");
+pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
+pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
+pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
+pub const TAG_TRACK_POSITION: &str = N_!("Track {current} of {total}");
+pub const TAG_CHANGE_COVER: &str = N_!("Change cover\u{2026}");
+
+pub fn tag_edit_title_multi(count: usize) -> String {
+    let count_text = count.to_string();
+    formatted(TAG_EDIT_TITLE_MULTI, &[("count", &count_text)])
+}
+
+pub fn tag_save_count(count: usize) -> String {
+    let count_text = count.to_string();
+    formatted(TAG_SAVE_COUNT, &[("count", &count_text)])
+}
+
+pub fn tag_pending_count(count: usize) -> String {
     let count_text = count.to_string();
     plural(
-        "Will be applied to {count} track",
-        "Will be applied to all {count} tracks",
+        TAG_PENDING_CHANGES,
+        TAG_PENDING_CHANGES_PLURAL,
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn tag_track_position(current: usize, total: usize) -> String {
+    formatted(
+        TAG_TRACK_POSITION,
+        &[
+            ("current", &current.to_string()),
+            ("total", &total.to_string()),
+        ],
+    )
+}
+
+pub fn tag_mixed_count(count: usize) -> String {
+    let count_text = count.to_string();
+    formatted(TAG_MIXED_COUNT, &[("count", &count_text)])
+}
+
+pub fn tag_will_apply(count: usize) -> String {
+    let count_text = count.to_string();
+    formatted(TAG_WILL_APPLY, &[("count", &count_text)])
+}
+
+pub fn tag_autocomplete_track_count(count: i64) -> String {
+    let count = usize::try_from(count).unwrap_or(usize::MAX);
+    let count_text = count.to_string();
+    plural(
+        "{count} track",
+        "{count} tracks",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn tag_cover_count(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} cover",
+        "{count} covers",
         count,
         &[("count", &count_text)],
     )

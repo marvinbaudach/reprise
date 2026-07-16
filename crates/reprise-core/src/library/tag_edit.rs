@@ -236,6 +236,36 @@ fn validate_registered_track(conn: &Connection, id: i64, path: &Path) -> Result<
     }
 }
 
+/// Duration to suppress watcher events for each written file.
+const IGNORE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Like `apply_patch_batch`, but calls `watcher::ignore_path` on each file
+/// before writing, preventing the watcher from re-scanning our own changes.
+pub fn apply_patch_batch_ignored(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+    patch: &TagPatch,
+) -> TagBatchReport {
+    for (_, path) in tracks {
+        crate::library::watcher::ignore_path(path, IGNORE_DURATION);
+    }
+    apply_patch_batch(conn, tracks, patch)
+}
+
+/// Like `apply_track_edit_batch`, but with watcher-ignore support.
+pub fn apply_track_edit_batch_ignored(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+    patch: &TrackEditPatch,
+) -> TagBatchReport {
+    if !patch.tags.is_empty() {
+        for (_, path) in tracks {
+            crate::library::watcher::ignore_path(path, IGNORE_DURATION);
+        }
+    }
+    apply_track_edit_batch(conn, tracks, patch)
+}
+
 pub fn apply_patch_batch(
     conn: &mut Connection,
     tracks: &[(i64, PathBuf)],
