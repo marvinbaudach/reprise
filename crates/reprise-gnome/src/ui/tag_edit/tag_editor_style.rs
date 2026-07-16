@@ -3,7 +3,7 @@
 //! navigation, and MusicBrainz button. Installed app-wide by
 //! [`super::style`]; palette colors come from the theme provider.
 
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     use crate::ui::style::tokens::{
         DIALOG_CARD_ALPHA, FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, RADIUS_SURFACE, SURFACE_BORDER_ALPHA,
         SURFACE_SHADOW, TRANSITION,

@@ -2,7 +2,7 @@
 
 use reprise_core::playback::PlaybackState;
 
-pub(super) fn bar_should_be_sensitive(state: PlaybackState, queue_has_tracks: bool) -> bool {
+pub(in crate::ui) fn bar_should_be_sensitive(state: PlaybackState, queue_has_tracks: bool) -> bool {
     state != PlaybackState::Stopped || queue_has_tracks
 }
 

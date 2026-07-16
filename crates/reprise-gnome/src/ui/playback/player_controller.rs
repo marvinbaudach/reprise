@@ -11,7 +11,7 @@
 //! PlayerController` blocks living in sibling modules under `ui` — not
 //! separate types — so `PlayerController` still has exactly one owner for
 //! every field: this file. See each module's own doc comment for what moved
-//! there and the `pub(super)` seam (fields/methods marked visible to `ui`
+//! there and the `pub(in crate::ui)` seam (fields/methods marked visible to `ui`
 //! and its descendants) that makes reaching into this struct from a sibling
 //! module possible. This file remains the canonical description of the
 //! borrow-discipline invariant itself (`## Queue borrow discipline` below),
@@ -19,8 +19,8 @@
 //!
 //! ## Event marshalling: `async-channel` + `glib::spawn_future_local`
 //!
-//! Every GTK widget call must happen on the main thread, but `Player::new`'s
-//! callback is invoked from non-GTK threads. The bridge used here is the
+//! Every GTK widget call must happen on the main thread, but the injected
+//! playback backend's callback is invoked from non-GTK threads. The bridge is
 //! pattern the gtk4-rs book recommends: the player callback does a
 //! non-blocking `try_send` into an unbounded `async_channel`, and a single
 //! future spawned on the default (main) `glib::MainContext` drains the
@@ -89,7 +89,7 @@
 //! Both `handle_unplayable_track` (now in `playback_faults.rs`) and this
 //! file need to reach widgets the controller doesn't own outright — this is
 //! why the two fields below stay here (and their accessor methods are
-//! `pub(super)`, so `playback_faults.rs` can call through them):
+//! `pub(in crate::ui)`, so `playback_faults.rs` can call through them):
 //!
 //! - `toast_overlay: glib::WeakRef<adw::ToastOverlay>` — the overlay is built
 //!   in `window::build` *after* `PlayerController::new` (it wraps the whole
@@ -114,23 +114,22 @@
 //!
 //! ## MPRIS (Stage 2 Task 6)
 //!
-//! `mpris::start()` is called once, right after the controller's own `Rc`
-//! exists (see `new`), spawning `mpris.rs`'s dedicated D-Bus thread and
-//! handing back two things this struct holds for its whole life: `mpris_
+//! The window composition root starts media integration once and injects its
+//! handles into `new`, including two things this struct holds for its lifetime: `mpris_
 //! state` (written by `mpris_mirror.rs`'s `update_mpris_mirror`, read by
 //! that thread) and an `async_channel::Receiver<MprisCommand>`, drained by
 //! `mpris_mirror.rs`'s `spawn_command_drain` (called from `new` — see that
 //! function's doc comment for the drain loop). `now_playing` is a small
 //! `RefCell` cache of the currently-loaded track's display fields, set
 //! alongside `current_track` in `play_track_id` and cleared alongside
-//! `bar.clear_track()`; both are `pub(super)` so `mpris_mirror.rs` can reach
+//! `bar.clear_track()`; both are `pub(in crate::ui)` so `mpris_mirror.rs` can reach
 //! them — see that module's doc comment for the mirror-update/command-
 //! handling logic. The two fields look alike but differ: `current_track` is
 //! only `evaluate_play_tracking`'s high-water-mark key (id/duration, never
 //! rendered), while `now_playing` is the display cache MPRIS's `Metadata` is
 //! built from.
 //!
-//! Transport methods `toggle_pause`/`next`/`previous` stay here, `pub(super)`
+//! Transport methods `toggle_pause`/`next`/`previous` stay here, `pub(in crate::ui)`
 //! so `mpris_mirror.rs`'s `handle_mpris_command` can call them too, keeping
 //! one code path for a physical media key and the on-screen button (DRY).
 //! MPRIS's `Play`/`Pause` are distinct from `toggle_pause` — see
@@ -159,6 +158,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
@@ -169,37 +169,45 @@ use rusqlite::Connection;
 use crate::ui::compact_player::CompactPlayer;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::mpris_mirror::{self, mpris_status_from_playback_state};
+use crate::ui::mpris_mirror;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
 use crate::ui::style::cover_accent::Rgb as AccentRgb;
-use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
-use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent};
+use reprise_core::media_integration::{
+    MediaIntegrationHandles, MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME,
+};
+use reprise_core::playback::{PlaybackBackend, PlayerEvent};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::UpNextQueue;
-use reprise_platform_linux::mpris;
-use reprise_platform_linux::player::Player;
+use reprise_core::waveform::WaveformBackend;
+
+type ViewRefillIds = Rc<dyn Fn() -> Vec<i64>>;
 
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
-
-/// Supplies the ids the transport refills an exhausted queue from — named so
-/// the field below stays readable next to its sibling callback seams.
-type ViewRefillIds = Rc<dyn Fn() -> Vec<i64>>;
 
 /// Whether `present_track` should start the pipeline (`Yes` — ordinary path)
 /// or leave it running because `playbin3` already handed off gaplessly to the
 /// pre-fed URI (`No` — see `advance_gaplessly`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StartPlayback {
+pub(in crate::ui) enum StartPlayback {
     Yes,
     No,
 }
 
-// `PlayerController::volume`'s initial value is `reprise_platform_linux::mpris::
-// DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
+/// Contract-only platform resources assembled by the window composition root.
+/// Feature modules consume this bundle without naming a concrete OS backend.
+pub(in crate::ui) struct PlayerControllerBackends {
+    pub(in crate::ui) playback: Box<dyn PlaybackBackend>,
+    pub(in crate::ui) playback_events: async_channel::Receiver<PlayerEvent>,
+    pub(in crate::ui) media: MediaIntegrationHandles,
+    pub(in crate::ui) waveform: Arc<dyn WaveformBackend>,
+}
+
+// `PlayerController::volume`'s initial value is the core media-integration
+// `DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
 // second, separately-defined `const DEFAULT_VOLUME: f64 = 1.0` here — see
 // that constant's doc comment in `mpris::state` for why it's now the single
 // source of truth, and why `ui::player_bar`'s own `VOLUME_DEFAULT` stays a
@@ -210,139 +218,135 @@ pub(super) enum StartPlayback {
 /// GTK main thread — see the module doc comment). Also owns play-count
 /// tracking (see the module's `## Play tracking` section below).
 pub struct PlayerController {
-    /// `pub(super)` (Stage 3 Task 10) so `mpris_mirror.rs`'s `seek`/`mpris_
+    /// `pub(in crate::ui)` (Stage 3 Task 10) so `mpris_mirror.rs`'s `seek`/`mpris_
     /// set_volume` can reach `Player::seek_to`/`set_volume` directly — the
-    /// same `pub(super)` sibling-module seam `queue`/`mpris_state` already
+    /// same `pub(in crate::ui)` sibling-module seam `queue`/`mpris_state` already
     /// use (see the module's `## Queue borrow discipline` doc section).
-    pub(super) player: Box<dyn PlaybackBackend>,
-    pub(super) active_audio_effects: RefCell<reprise_core::playback::AudioEffects>,
-    /// `pub(super)` (Stage 3 Task 10) so `mpris_mirror.rs`'s `mpris_set_
+    pub(in crate::ui) player: Box<dyn PlaybackBackend>,
+    pub(in crate::ui) active_audio_effects: RefCell<reprise_core::playback::AudioEffects>,
+    /// `pub(in crate::ui)` (Stage 3 Task 10) so `mpris_mirror.rs`'s `mpris_set_
     /// shuffle`/`mpris_set_loop`/`mpris_set_volume` can reach `PlayerBar`'s
     /// `set_shuffle_indicator`/`set_repeat_indicator`/`set_volume_indicator`
     /// directly — same reasoning as `player` above.
-    pub(super) bar: PlayerBar,
-    pub(super) compact_player: CompactPlayer,
+    pub(in crate::ui) bar: PlayerBar,
+    pub(in crate::ui) compact_player: CompactPlayer,
     /// The UI-owned database connection, shared with `track_list.rs` (see
     /// `window::build`) — used to write play-count updates via `library::
-    /// stats::record_play`, and (via `playback_faults.rs`, `pub(super)` so
+    /// stats::record_play`, and (via `playback_faults.rs`, `pub(in crate::ui)` so
     /// that sibling module can reach it) to resolve/mark tracks on a
     /// playback failure.
-    pub(super) conn: Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: Rc<RefCell<Connection>>,
     /// `(track_id, duration_ms)` of the track currently loaded, set by
     /// `play_track_id` and cleared once play tracking has been evaluated for
     /// it (see `evaluate_play_tracking`). `None` when no track is loaded.
-    pub(super) current_track: Cell<Option<(i64, i64)>>,
+    pub(in crate::ui) current_track: Cell<Option<(i64, i64)>>,
     /// The highest playback position observed for `current_track` via
     /// `Position` events — not the most recent one, so seeking backward
     /// near the end of a track can't cost a listener credit for having
     /// already passed the 50% mark. Reset to 0 whenever a new track starts.
-    pub(super) max_position_ms: Cell<i64>,
-    pub(super) listenbrainz: Rc<ScrobbleRuntime>,
-    pub(super) lastfm: Rc<ScrobbleRuntime>,
-    pub(super) scrobble_session: RefCell<ScrobbleSession>,
+    pub(in crate::ui) max_position_ms: Cell<i64>,
+    pub(in crate::ui) listenbrainz: Rc<ScrobbleRuntime>,
+    pub(in crate::ui) lastfm: Rc<ScrobbleRuntime>,
+    pub(in crate::ui) scrobble_session: RefCell<ScrobbleSession>,
     /// The playback queue (Stage 2 Task 3/4): track order, shuffle, and
     /// repeat mode. `play_from_view` seeds it; `TrackFinished`/the
-    /// previous/next buttons step through it. `pub(super)` so `mpris_mirror.
+    /// previous/next buttons step through it. `pub(in crate::ui)` so `mpris_mirror.
     /// rs` and `playback_faults.rs` can borrow it too — see the module's
     /// `## Queue borrow discipline` doc section for the rule every call site
     /// (in any of the three files) follows.
-    pub(super) queue: RefCell<Queue>,
-    pub(super) up_next: RefCell<UpNextQueue>,
-    pub(super) current_up_next: Cell<Option<i64>>,
+    pub(in crate::ui) queue: RefCell<Queue>,
+    pub(in crate::ui) up_next: RefCell<UpNextQueue>,
+    pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
-    pub(super) queue_changed: RefCell<Option<Rc<dyn Fn()>>>,
-    pub(super) current_track_changed:
+    pub(in crate::ui) queue_changed: RefCell<Option<Rc<dyn Fn()>>>,
+    pub(in crate::ui) current_track_changed:
         RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
     /// Fans coarse playback-state changes to the track list's now-playing
     /// equaliser (freeze on pause, drop the marker on stop) — see `current_
     /// track_selection.rs`. Same callback seam as `current_track_changed`,
     /// invoked from `now_playing_wiring.rs`'s `sync_state`.
-    pub(super) playback_state_changed:
+    pub(in crate::ui) playback_state_changed:
         RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
     /// Fans now-playing album identity changes to the album grid's EQ markers.
     /// Fired with `Some((album, artist))` when a new track starts and `None`
-    /// when playback stops. `pub(super)` field so sibling modules can fire it;
+    /// when playback stops. `pub(in crate::ui)` field so sibling modules can fire it;
     /// public setter so `window.rs` can register the album-view callback.
-    pub(super) now_playing_album_changed:
+    pub(in crate::ui) now_playing_album_changed:
         RefCell<Option<super::current_track_selection::OnNowPlayingAlbumChanged>>,
     /// Same seam as `playback_state_changed`, but for the album grid's
     /// now-playing equaliser (freeze on pause). Kept as a separate named slot
     /// so the track-list and album-view consumers stay independent.
-    pub(super) playback_state_changed_album:
+    pub(in crate::ui) playback_state_changed_album:
         RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
-    /// Supplies the currently visible view's track ids for the transport's
-    /// end-of-queue refill (see `up_next_transport.rs`'s `advance_common`):
-    /// when a manual "next" runs off the end of an exhausted queue
-    /// (`Repeat::Off`), the queue is rebuilt from these ids instead of going
-    /// silent. `window.rs` wires it to `TrackList::transport_refill_ids`;
-    /// returns an empty vec when refilling makes no sense (Queue view).
-    pub(super) view_refill_ids: RefCell<Option<ViewRefillIds>>,
+    /// Supplies the current view's ids when an exhausted queue needs refill.
+    pub(in crate::ui) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
-    /// `skip_after_failure` (`pub(super)` so that sibling module can reach
+    /// `skip_after_failure` (`pub(in crate::ui)` so that sibling module can reach
     /// it), which consults `should_stop_skipping` against this value and the
     /// queue's length to bound the skip chain. See the module's `## Fault
     /// tolerance` doc section.
-    pub(super) consecutive_skips: Cell<usize>,
-    pub(super) failure_skip_limit: Cell<usize>,
+    pub(in crate::ui) consecutive_skips: Cell<usize>,
+    pub(in crate::ui) failure_skip_limit: Cell<usize>,
     /// Shared with `mpris.rs`'s D-Bus thread — see the module's `## MPRIS`
     /// doc section. Written by `mpris_mirror.rs`'s `update_mpris_mirror`,
     /// never read directly here (the MPRIS thread is the only reader).
-    /// `pub(super)` so that sibling module can reach it.
-    pub(super) mpris_state: SharedMprisState,
+    /// `pub(in crate::ui)` so that sibling module can reach it.
+    pub(in crate::ui) mpris_state: SharedMprisState,
     /// Title/artist/album/duration of the currently-loaded track, for
     /// `mpris_mirror.rs`'s `update_mpris_mirror` to build `mpris::MprisState`'s
     /// `Metadata` fields from — see the module's `## MPRIS` doc section for
     /// why this duplicates `current_track`'s id/duration rather than reusing
-    /// it. `pub(super)` so that sibling module can reach it.
-    pub(super) now_playing: Rc<RefCell<Option<NowPlaying>>>,
+    /// it. `pub(in crate::ui)` so that sibling module can reach it.
+    pub(in crate::ui) now_playing: Rc<RefCell<Option<NowPlaying>>>,
     /// The last volume value applied via the bar's volume control or an
     /// MPRIS `Volume` write (Stage 3 Task 10). `Player::set_volume` is
     /// write-only (no getter), so this is the one source of truth `update_
     /// mpris_mirror`/`mpris_mirror.rs` read from to populate `mpris::
     /// MprisState::volume` — the same "controller owns the last-known
-    /// value" shape `current_track`/`now_playing` already use. `pub(super)`
+    /// value" shape `current_track`/`now_playing` already use. `pub(in crate::ui)`
     /// so that sibling module can reach it.
-    pub(super) volume: Cell<f64>,
+    pub(in crate::ui) volume: Cell<f64>,
     /// See `mpris::start`'s doc comment: the opposite direction from
     /// `mpris_receiver` (below, in `new`) — `mpris_mirror.rs`'s `notify_
     /// mpris_seek` sends the just-seeked position into this after every
     /// successful `seek`, and `mpris.rs`'s dedicated relay thread drains it
-    /// to emit the `Seeked` signal. `pub(super)` so that sibling module can
+    /// to emit the `Seeked` signal. `pub(in crate::ui)` so that sibling module can
     /// reach it.
-    pub(super) mpris_seek_notify: async_channel::Sender<i64>,
+    pub(in crate::ui) mpris_seek_notify: async_channel::Sender<i64>,
     /// Off-thread cover decode/cache substrate (Task 4); `play_track_id`
     /// feeds the bar's and the Now-Playing page's cover widgets through this
     /// one shared instance (see `now_playing_wiring.rs`'s `sync_cover`) —
     /// same loader, two sizes, no second cache.
-    pub(super) cover_loader: Rc<CoverLoader>,
+    pub(in crate::ui) cover_loader: Rc<CoverLoader>,
     /// Generation token for the bar's cover widget (see `cover_loader.rs`):
     /// bumped per `play_track_id` call so a stale in-flight load can't
     /// clobber a newer one.
-    pub(super) bar_cover_generation: Rc<Cell<u64>>,
-    pub(super) compact_cover_generation: Rc<Cell<u64>>,
+    pub(in crate::ui) bar_cover_generation: Rc<Cell<u64>>,
+    pub(in crate::ui) compact_cover_generation: Rc<Cell<u64>>,
     /// Shared off-main lyrics runtime and weak target for the Information
     /// panel's Lyrics page. Playback position is fanned into this same owner;
     /// it never starts a second timer.
-    pub(super) lyrics: Rc<PlayerLyrics>,
+    pub(in crate::ui) lyrics: Rc<PlayerLyrics>,
     /// Generation token for the seek waveform's off-main peak load, so a
     /// rapid track change can't paint a stale waveform.
-    pub(super) waveform_generation: Rc<Cell<u64>>,
+    pub(in crate::ui) waveform_generation: Rc<Cell<u64>>,
+    pub(in crate::ui) waveform_backend: Arc<dyn WaveformBackend>,
     /// Generation token for the cover-accent off-main extraction, so a rapid
     /// track change can't apply a stale album accent.
-    pub(super) cover_accent_generation: Rc<Cell<u64>>,
+    pub(in crate::ui) cover_accent_generation: Rc<Cell<u64>>,
     /// The accent most recently applied (or `None` for no-cover / fallback).
     /// Read by `reset_cover_accent` and `apply_cover_accent` to supply the
     /// "from" color for the 400 ms cross-fade; written back once each new
-    /// accent is committed. `pub(super)` so `now_playing_wiring.rs` can
+    /// accent is committed. `pub(in crate::ui)` so `now_playing_wiring.rs` can
     /// borrow it.
-    pub(super) cover_accent_last: Rc<RefCell<Option<AccentRgb>>>,
+    pub(in crate::ui) cover_accent_last: Rc<RefCell<Option<AccentRgb>>>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
     /// notification (Task 9: `app.send_notification`). Passed into `new` from
     /// `window::build`, which already holds the `&adw::Application` it builds
@@ -352,56 +356,53 @@ pub struct PlayerController {
     /// overlay` above, so the controller can never keep the application alive
     /// past its natural lifetime; `notify_now_playing` degrades to a no-op if
     /// the upgrade ever fails.
-    pub(super) application: glib::WeakRef<gio::Application>,
+    pub(in crate::ui) application: glib::WeakRef<gio::Application>,
 }
 
-/// See `PlayerController::now_playing`'s doc comment. Fields are `pub(super)`
+/// See `PlayerController::now_playing`'s doc comment. Fields are `pub(in crate::ui)`
 /// (like `now_playing` itself) so `mpris_mirror.rs`'s `update_mpris_mirror`
 /// can read them to build `mpris::MprisState`'s `Metadata` fields.
 #[derive(Debug, Clone)]
-pub(super) struct NowPlaying {
-    pub(super) id: i64,
-    pub(super) title: String,
-    pub(super) artist: String,
-    pub(super) album: String,
+pub(in crate::ui) struct NowPlaying {
+    pub(in crate::ui) id: i64,
+    pub(in crate::ui) title: String,
+    pub(in crate::ui) artist: String,
+    pub(in crate::ui) album: String,
     /// File URI for the resolved cached cover. It starts empty while the
     /// off-thread cover pipeline runs and is retained here so later status
     /// changes keep MPRIS metadata complete.
-    pub(super) art_url: Option<String>,
-    pub(super) duration_ms: i64,
+    pub(in crate::ui) art_url: Option<String>,
+    pub(in crate::ui) duration_ms: i64,
     /// On-disk path of the currently-loaded track. Not read yet (`play_
     /// track_id` feeds `now_playing_wiring.rs`'s `sync_cover` from
     /// `summary.path` directly) — kept for parity with the other display
     /// fields above, and as the natural home for a future caller (e.g. a
     /// re-applied MPRIS mirror) that only has this cache to work from.
     #[allow(dead_code)]
-    pub(super) path: String,
+    pub(in crate::ui) path: String,
 }
 
 impl PlayerController {
-    /// Builds the player, the bar, and the event bridge between them.
+    /// Builds the controller and the event bridge around injected platform
+    /// backends assembled by the window composition root.
     /// `conn` is the same UI-owned database connection `track_list.rs`
-    /// holds, used to record plays. Returns `Err` if GStreamer is
-    /// unavailable (no playbin, bad `REPRISE_AUDIO_SINK` override, …) — the
-    /// caller decides how to degrade (see `window::build`: library browsing
-    /// keeps working without a bar).
-    pub(super) fn new(
+    /// holds, used to record plays. Platform construction failures are handled
+    /// before this function is called so feature code only sees core contracts.
+    pub(in crate::ui) fn new(
         conn: Rc<RefCell<Connection>>,
         cover_download: CoverDownloadRuntime,
         listenbrainz: Rc<ScrobbleRuntime>,
         lastfm: Rc<ScrobbleRuntime>,
+        backends: PlayerControllerBackends,
         app: &adw::Application,
-    ) -> Result<Rc<Self>, PlaybackError> {
-        let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
-
-        let player = Player::new(Box::new(move |event| {
-            if let Err(error) = sender.try_send(event) {
-                // Unbounded channel: try_send only fails once the receiver
-                // (the drain loop below) is gone, i.e. during app teardown.
-                tracing::warn!(%error, "player event dropped: UI receiver is gone");
-            }
-        }))?;
-        let initial_effects = super::audio_effects::apply_initial(&player, &conn);
+    ) -> Rc<Self> {
+        let PlayerControllerBackends {
+            playback: player,
+            playback_events: receiver,
+            media: handles,
+            waveform,
+        } = backends;
+        let initial_effects = super::audio_effects::apply_initial(player.as_ref(), &conn);
         {
             // Apply the stored transition mode to the backend up front so
             // Gapless/Crossfade is active from the first track (feed_next then
@@ -413,23 +414,14 @@ impl PlayerController {
             );
         }
 
-        // Stage 2 Task 6: `mpris::start()` never fails outright (see its own
-        // doc comment's `## Failure is never fatal` section) — it always
-        // hands back a working mirror + command receiver, spawning the
-        // actual D-Bus thread in the background. Started here (right before
-        // the fields it feeds), not in `window::build`, since nothing
-        // outside this controller needs either handle — see the module's
-        // `## MPRIS` doc section.
-        //
-        // MPRIS is always on (no user toggle): the redesign integrates media
-        // keys / lock-screen unconditionally.
-        let handles = mpris::start(crate::APP_ID);
+        // Media integration is always on. Its platform handles are assembled
+        // by the window composition root and remain failure-tolerant.
         let mpris_state = handles.shared_state;
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;
 
         let controller = Rc::new(Self {
-            player: Box::new(player),
+            player,
             active_audio_effects: RefCell::new(initial_effects),
             bar: PlayerBar::new(),
             compact_player: CompactPlayer::new(),
@@ -461,6 +453,7 @@ impl PlayerController {
             compact_cover_generation: Rc::new(Cell::new(0)),
             lyrics: PlayerLyrics::new(),
             waveform_generation: Rc::new(Cell::new(0)),
+            waveform_backend: waveform,
             cover_accent_generation: Rc::new(Cell::new(0)),
             cover_accent_last: Rc::new(RefCell::new(None)),
             application: {
@@ -489,7 +482,7 @@ impl PlayerController {
         // line count comfortably under the split-file gate).
         mpris_mirror::spawn_command_drain(&controller, mpris_receiver);
 
-        Ok(controller)
+        controller
     }
 
     /// The bottom-bar widget for the library overlay shell.
@@ -515,8 +508,6 @@ impl PlayerController {
         self.bar.set_on_title_click(f);
     }
 
-    /// Registers the provider for the transport's end-of-queue refill — see
-    /// the `view_refill_ids` field doc.
     pub fn set_view_refill_provider(&self, provider: impl Fn() -> Vec<i64> + 'static) {
         *self.view_refill_ids.borrow_mut() = Some(Rc::new(provider));
     }
@@ -573,7 +564,7 @@ impl PlayerController {
     }
 
     /// Fires the now-playing-album-changed callback.
-    pub(super) fn notify_now_playing_album_changed(&self, album: Option<(String, String)>) {
+    pub(in crate::ui) fn notify_now_playing_album_changed(&self, album: Option<(String, String)>) {
         let callback = self.now_playing_album_changed.borrow().clone();
         if let Some(callback) = callback {
             callback(album);
@@ -620,9 +611,9 @@ impl PlayerController {
     /// track` (diagnose missing-vs-corrupt, mark/toast, then auto-skip)
     /// rather than resetting outright. A missing DB row or a query failure
     /// has no title/path to toast from, so those cases just log and go
-    /// straight to `skip_after_failure`. `pub(super)` so `mpris_mirror.rs`
+    /// straight to `skip_after_failure`. `pub(in crate::ui)` so `mpris_mirror.rs`
     /// and `playback_faults.rs` can call it too.
-    pub(super) fn play_track_id(&self, id: i64) {
+    pub(in crate::ui) fn play_track_id(&self, id: i64) {
         self.present_track(id, StartPlayback::Yes);
     }
 
@@ -633,7 +624,7 @@ impl PlayerController {
     /// advance); `No` means the audio is *already* rolling because `playbin3`
     /// handed off gaplessly to this track's pre-fed URI (see `advance_
     /// gaplessly`), so only the metadata/UI catch up — no `play()`, no gap.
-    pub(super) fn present_track(&self, id: i64, start: StartPlayback) {
+    pub(in crate::ui) fn present_track(&self, id: i64, start: StartPlayback) {
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
 
@@ -764,10 +755,10 @@ impl PlayerController {
     /// Shows `text` as an `adw::Toast` on the window's toast overlay, if one
     /// has been wired via `set_toast_overlay` and is still alive — degrades
     /// to a warn log otherwise (never unwraps the `WeakRef` upgrade). See the
-    /// module's `## Toast + track-list-reload seam` doc section. `pub(super)`
+    /// module's `## Toast + track-list-reload seam` doc section. `pub(in crate::ui)`
     /// so `playback_faults.rs`'s `handle_unplayable_track`/`skip_after_
     /// failure` can call it too.
-    pub(super) fn show_toast(&self, text: &str) {
+    pub(in crate::ui) fn show_toast(&self, text: &str) {
         match self.toast_overlay.upgrade() {
             Some(overlay) => crate::ui::toasts::show(&overlay, text),
             None => {
@@ -784,127 +775,14 @@ impl PlayerController {
     /// the `queue` borrow discipline elsewhere in this file (see the
     /// module's `## Toast + track-list-reload seam` doc section for why this
     /// one field can currently never be re-entered, but the hoist keeps the
-    /// same shape regardless). `pub(super)` so `playback_faults.rs`'s
+    /// same shape regardless). `pub(in crate::ui)` so `playback_faults.rs`'s
     /// `handle_unplayable_track` can call it too.
-    pub(super) fn reload_track_list(&self) {
+    pub(in crate::ui) fn reload_track_list(&self) {
         let reload = self.reload_track_list.borrow().clone();
         match reload {
             Some(reload) => reload(),
             None => {
                 tracing::warn!("track list reload requested but no callback is wired yet");
-            }
-        }
-    }
-
-    /// Applies one marshalled `PlayerEvent` to the bar. Runs on the GTK main
-    /// thread (called only from the drain loop in `new`).
-    fn apply_event(&self, event: PlayerEvent) {
-        match event {
-            PlayerEvent::StateChanged(state) => {
-                tracing::info!(?state, "player bar: applying state change");
-                self.sync_state(state);
-                if state == PlaybackState::Stopped {
-                    self.sync_clear_track();
-                    // Defensive, like the `sync_clear_track()` above:
-                    // `reset_to_stopped` (the only caller of `Player::stop`)
-                    // already clears `now_playing` itself before this event
-                    // even has a chance to drain, but a stray `Stopped` from
-                    // elsewhere must not leave stale metadata mirrored.
-                    *self.now_playing.borrow_mut() = None;
-                    // Now-playing observers (the track table's + the Artists
-                    // view's mini-EQ) are turned off via the
-                    // `playback_state_changed(Stopped)` fan-out that
-                    // `sync_state` above already fires — see
-                    // `current_track_selection::wire`.
-                }
-                self.update_mpris_mirror(mpris_status_from_playback_state(state));
-            }
-            PlayerEvent::Position {
-                position_ms,
-                duration_ms,
-            } => {
-                // Debug, not info: fires every 500 ms during playback.
-                tracing::debug!(
-                    position_ms,
-                    duration_ms,
-                    "player bar: applying position tick"
-                );
-                self.max_position_ms
-                    .set(self.max_position_ms.get().max(position_ms));
-                self.sync_position(position_ms, duration_ms);
-                // Stage 3 Task 10: keeps MPRIS's `Position` current between
-                // `update_mpris_mirror` rebuilds — see `update_mpris_
-                // position`'s doc comment.
-                self.update_mpris_position(position_ms);
-            }
-            PlayerEvent::TrackFinished => {
-                tracing::info!("track finished: advancing queue");
-                self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
-            }
-            PlayerEvent::AdvancedToNext => {
-                // Gapless hand-off: the pre-fed next track is already playing.
-                // Advance the queue model and reflect the new track WITHOUT
-                // restarting the pipeline. (Real handler wired in below.)
-                tracing::info!("gapless hand-off: advancing queue model without restart");
-                self.advance_gaplessly();
-            }
-            PlayerEvent::Error(message) => {
-                // Stage 2 Task 5: this can fire asynchronously for the
-                // *currently loaded* queue track (e.g. GStreamer resolving a
-                // "file not found"/decode error after `play_track_id`
-                // already returned `Ok`) — see `playback_faults.rs`'s doc
-                // comment. Only treat it as a per-track failure (diagnose +
-                // toast + auto-skip) when there is a current track to
-                // attribute it to; otherwise fall back to the pre-Task-5
-                // behavior (log + reset) rather than guessing.
-                match self.current_track.get() {
-                    Some((id, _)) => {
-                        tracing::error!(%message, track_id = id, "player error during queue track playback");
-                        self.handle_unplayable_track(id);
-                    }
-                    None => {
-                        tracing::error!(%message, "player error with no current track; resetting to stopped");
-                        self.reset_to_stopped();
-                    }
-                }
-            }
-        }
-    }
-
-    /// Stops the pipeline and ensures the bar lands in the stopped/empty
-    /// state. Evaluates play tracking for whatever track was loaded first —
-    /// every path that ends a listening session (`TrackFinished`, a player
-    /// error, a future explicit stop) funnels through here (`play_track_id`
-    /// calls it separately for the track-switch case, since that path never
-    /// calls `reset_to_stopped`). On success this relies on the `StateChanged
-    /// (Stopped)` event `stop()` emits, routed back through `apply_event`, so
-    /// the bar isn't reset twice; if `stop()` fails, that event never fires,
-    /// so the bar is reset directly here instead. `pub(super)` so `mpris_
-    /// mirror.rs` and `playback_faults.rs` can call it too.
-    pub(super) fn reset_to_stopped(&self) {
-        self.evaluate_play_tracking();
-        self.consecutive_skips.set(0);
-        self.failure_skip_limit.set(0);
-        let queue_can_resume = self.current_up_next.get().is_some()
-            || self.queue.borrow().current().is_some()
-            || !self.up_next.borrow().is_empty();
-        self.sync_transport_enabled(queue_can_resume);
-        // Stage 2 Task 6: cleared and mirrored unconditionally, before
-        // `player.stop()` even runs — unlike the bar (which relies on the
-        // `StateChanged(Stopped)` event on the success path, only resetting
-        // directly here on failure), the MPRIS mirror has no such event
-        // fallback of its own to lean on, so it's simplest and safest to
-        // just always bring it in sync with "stopped, nothing loaded" right
-        // here regardless of how `player.stop()` turns out.
-        *self.now_playing.borrow_mut() = None;
-        self.notify_now_playing_album_changed(None);
-        self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
-        match self.player.stop() {
-            Ok(()) => {}
-            Err(error) => {
-                tracing::error!(%error, "failed to stop player during reset");
-                self.sync_state(PlaybackState::Stopped);
-                self.sync_clear_track();
             }
         }
     }

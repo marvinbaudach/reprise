@@ -6,7 +6,7 @@ use reprise_core::up_next::UpNextQueue;
 use crate::ui::player_controller::{PlayerController, StartPlayback};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AdvanceReason {
+pub(in crate::ui) enum AdvanceReason {
     Automatic,
     Manual,
 }
@@ -72,7 +72,7 @@ fn play_pending_at(
 }
 
 impl PlayerController {
-    pub(super) fn advance_playback(&self, reason: AdvanceReason) {
+    pub(in crate::ui) fn advance_playback(&self, reason: AdvanceReason) {
         self.advance_common(reason, StartPlayback::Yes);
     }
 
@@ -82,7 +82,7 @@ impl PlayerController {
     /// pipeline (`StartPlayback::No`). The model step reproduces the same id
     /// `feed_next` pre-fed, because the queue state is unchanged since the feed
     /// (every mutation re-feeds).
-    pub(super) fn advance_gaplessly(&self) {
+    pub(in crate::ui) fn advance_gaplessly(&self) {
         self.advance_common(AdvanceReason::Automatic, StartPlayback::No);
     }
 
@@ -170,7 +170,7 @@ impl PlayerController {
     /// backend and re-feeds the next track, so a preference change takes effect
     /// immediately without a restart. Called at startup and from the Transitions
     /// preference handler.
-    pub(super) fn apply_transition(&self) {
+    pub(in crate::ui) fn apply_transition(&self) {
         let (mode, seconds) = {
             let conn = self.conn.borrow();
             (
@@ -182,7 +182,7 @@ impl PlayerController {
         self.feed_next();
     }
 
-    pub(super) fn feed_next(&self) {
+    pub(in crate::ui) fn feed_next(&self) {
         let transition = settings::get_track_transition(&self.conn.borrow());
         if transition == TrackTransition::Off {
             self.player.set_next(None);
@@ -203,7 +203,7 @@ impl PlayerController {
         self.player.set_next(path.as_deref());
     }
 
-    pub(super) fn play_up_next_at(&self, position: usize) {
+    pub(in crate::ui) fn play_up_next_at(&self, position: usize) {
         let mut current_pending = self.current_up_next.get();
         let selected = {
             let mut pending = self.up_next.borrow_mut();
@@ -218,7 +218,7 @@ impl PlayerController {
         self.play_track_id(id);
     }
 
-    pub(super) fn previous_with_up_next(&self) {
+    pub(in crate::ui) fn previous_with_up_next(&self) {
         let mut current_pending = self.current_up_next.get();
         let previous = {
             let mut context = self.queue.borrow_mut();

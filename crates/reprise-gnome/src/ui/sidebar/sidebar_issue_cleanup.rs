@@ -48,7 +48,7 @@ fn issue_menu_spec(source: &ViewSource) -> Option<IssueMenuSpec> {
     }
 }
 
-pub(super) fn wire_issue_context_menu(
+pub(in crate::ui) fn wire_issue_context_menu(
     shared: &Rc<Shared>,
     row: &gtk4::ListBoxRow,
     source: ViewSource,

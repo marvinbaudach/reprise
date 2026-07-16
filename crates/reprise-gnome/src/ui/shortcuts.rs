@@ -95,13 +95,8 @@ pub fn space_should_toggle(focus_is_text_entry: bool) -> bool {
 /// implements `gtk::Editable` — the interface every text-entry-shaped widget
 /// in this app (`gtk::SearchEntry`, and any plain `gtk::Text`/`gtk::Entry`)
 /// implements. `None` (nothing focused) is not a text entry.
-// `ObjectExt::is` has ambiguous candidates in this workspace (both `glib`'s
-// and `gstreamer`'s `prelude::ObjectExt` are in scope transitively), so
-// clippy's suggested point-free rewrite (`ObjectExt::is::<gtk4::Editable>`)
-// doesn't resolve cleanly — the closure stays.
-#[allow(clippy::redundant_closure_for_method_calls)]
 fn focused_widget_is_text_entry(focus: Option<&gtk4::Widget>) -> bool {
-    focus.is_some_and(|widget| widget.is::<gtk4::Editable>())
+    focus.is_some_and(libadwaita::prelude::ObjectExt::is::<gtk4::Editable>)
 }
 
 /// What Escape should do, given whether the search entry currently has any

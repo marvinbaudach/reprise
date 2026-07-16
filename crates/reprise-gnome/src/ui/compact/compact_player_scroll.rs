@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
-pub(super) const VOLUME_STEP: f64 = 0.05;
+pub(in crate::ui) const VOLUME_STEP: f64 = 0.05;
 
-pub(super) fn stepped_volume(current: f64, direction: f64) -> Option<f64> {
+pub(in crate::ui) fn stepped_volume(current: f64, direction: f64) -> Option<f64> {
     if !current.is_finite() || !direction.is_finite() || direction == 0.0 {
         return None;
     }
@@ -16,7 +16,7 @@ pub(super) fn stepped_volume(current: f64, direction: f64) -> Option<f64> {
     Some((current + delta).clamp(0.0, 1.0))
 }
 
-pub(super) fn install(
+pub(in crate::ui) fn install(
     region: &gtk4::Widget,
     current: Rc<dyn Fn() -> f64>,
     changed: Rc<dyn Fn(f64)>,

@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use super::library_shell::SIDEBAR_BREAKPOINT_WIDTH;
 
-pub(super) fn apply_sidebar_visibility(
+pub(in crate::ui) fn apply_sidebar_visibility(
     split_view: &adw::NavigationSplitView,
     sidebar_page: &adw::NavigationPage,
     visible: bool,
@@ -84,7 +84,7 @@ fn hide_sidebar(split_view: &adw::NavigationSplitView, manually_hidden: &std::ce
     split_view.set_collapsed(true);
 }
 
-pub(super) fn show_content_callback(split_view: &adw::NavigationSplitView) -> Rc<dyn Fn()> {
+pub(in crate::ui) fn show_content_callback(split_view: &adw::NavigationSplitView) -> Rc<dyn Fn()> {
     let split_view = split_view.downgrade();
     Rc::new(move || match split_view.upgrade() {
         Some(split_view) => {
@@ -98,7 +98,7 @@ pub(super) fn show_content_callback(split_view: &adw::NavigationSplitView) -> Rc
     })
 }
 
-pub(super) fn wire_sidebar_toggle(
+pub(in crate::ui) fn wire_sidebar_toggle(
     sidebar_toggle: &gtk4::ToggleButton,
     split_view: &adw::NavigationSplitView,
     sidebar_page: &adw::NavigationPage,

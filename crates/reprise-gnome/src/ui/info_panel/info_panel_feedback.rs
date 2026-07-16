@@ -1,12 +1,12 @@
 use super::info_panel_state::PanelContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct RequestFeedback {
-    pub(super) refresh_sensitive: bool,
-    pub(super) progress_visible: bool,
+pub(in crate::ui) struct RequestFeedback {
+    pub(in crate::ui) refresh_sensitive: bool,
+    pub(in crate::ui) progress_visible: bool,
 }
 
-pub(super) fn request_feedback(
+pub(in crate::ui) fn request_feedback(
     enabled: bool,
     context: &PanelContext,
     loading: bool,

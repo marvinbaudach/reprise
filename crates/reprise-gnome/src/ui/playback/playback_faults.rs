@@ -17,14 +17,14 @@
 //!   bound.
 //! - `should_stop_skipping`: the pure decision the guard consults.
 //!
-//! ## Seam: `pub(super)`
+//! ## Seam: `pub(in crate::ui)`
 //!
 //! Sibling of `player_controller` under `ui` — same reasoning as `mpris_
 //! mirror.rs`'s doc comment (read it for the full rationale). This module
 //! reaches into `PlayerController`'s `conn`, `queue`, and `consecutive_skips`
-//! fields (all `pub(super)` on the struct in `player_controller.rs`) and
+//! fields (all `pub(in crate::ui)` on the struct in `player_controller.rs`) and
 //! calls its `play_track_id`, `show_toast`, `reload_track_list`, and `reset_
-//! to_stopped` methods (all `pub(super)` there too). `player_controller.rs`
+//! to_stopped` methods (all `pub(in crate::ui)` there too). `player_controller.rs`
 //! still owns every field; this module only ever borrows `&self`.
 //!
 //! ## Queue borrow discipline
@@ -50,7 +50,7 @@ impl PlayerController {
     /// one function even though only `play_track_id` already has a summary
     /// in hand — one extra small `SELECT` on the failure path is a non-issue
     /// next to never crashing.
-    pub(super) fn handle_unplayable_track(&self, id: i64) {
+    pub(in crate::ui) fn handle_unplayable_track(&self, id: i64) {
         let summary = {
             let conn = self.conn.borrow();
             queries::query_track_summary(&conn, id)
@@ -114,7 +114,7 @@ impl PlayerController {
     /// combined context/Up Next bound — gives up, toasts, and resets to
     /// stopped instead of spinning through entirely broken candidates. All
     /// queue borrows end before advancing playback.
-    pub(super) fn skip_after_failure(&self) {
+    pub(in crate::ui) fn skip_after_failure(&self) {
         let queue_len = failure_limit(
             self.failure_skip_limit.get(),
             self.queue.borrow().len(),

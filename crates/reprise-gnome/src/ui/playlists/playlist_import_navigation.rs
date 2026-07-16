@@ -1,6 +1,6 @@
 use reprise_core::view_source::ViewSource;
 
-pub(super) fn target_for_import(playlist_id: i64) -> ViewSource {
+pub(in crate::ui) fn target_for_import(playlist_id: i64) -> ViewSource {
     ViewSource::Playlist(playlist_id)
 }
 

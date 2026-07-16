@@ -20,12 +20,12 @@ const FULL_DEFAULT_WIDTH: i32 = 1200;
 const FULL_DEFAULT_HEIGHT: i32 = 800;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ViewTransition {
-    pub(super) mode: WindowViewMode,
-    pub(super) layout: CompactLayout,
+pub(in crate::ui) struct ViewTransition {
+    pub(in crate::ui) mode: WindowViewMode,
+    pub(in crate::ui) layout: CompactLayout,
 }
 
-pub(super) fn startup_transition(
+pub(in crate::ui) fn startup_transition(
     persisted_mode: WindowViewMode,
     persisted_layout: CompactLayout,
     first_run: FirstRunDecision,
@@ -89,7 +89,7 @@ fn updated_full_geometry(current: (i32, i32), live: (i32, i32), maximized: bool)
     }
 }
 
-pub(super) struct MinimalView {
+pub(in crate::ui) struct MinimalView {
     window: adw::ApplicationWindow,
     content_host: WindowContentHost,
     full_root: gtk4::Widget,
@@ -105,7 +105,7 @@ pub(super) struct MinimalView {
 }
 
 impl MinimalView {
-    pub(super) fn new(
+    pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
         content_host: &WindowContentHost,
         full_root: &gtk4::Widget,
@@ -155,11 +155,11 @@ impl MinimalView {
         state
     }
 
-    pub(super) fn geometry_guard(&self) -> Rc<Cell<bool>> {
+    pub(in crate::ui) fn geometry_guard(&self) -> Rc<Cell<bool>> {
         self.geometry_suppressed.clone()
     }
 
-    pub(super) fn toggle(&self) {
+    pub(in crate::ui) fn toggle(&self) {
         let current = self.transition.get();
         let desired = toggled_transition(current);
         if desired.mode == WindowViewMode::Compact && self.compact.is_none() {
@@ -184,7 +184,7 @@ impl MinimalView {
         tracing::info!(mode = ?desired.mode, layout = ?desired.layout, "window view mode changed");
     }
 
-    pub(super) fn apply_initial(&self) {
+    pub(in crate::ui) fn apply_initial(&self) {
         let initial = self.transition.get();
         match initial.mode {
             WindowViewMode::Library => self.restore_library(),
@@ -193,7 +193,7 @@ impl MinimalView {
         tracing::info!(mode = ?initial.mode, layout = ?initial.layout, "initial window view applied");
     }
 
-    pub(super) fn refresh_geometry(&self) {
+    pub(in crate::ui) fn refresh_geometry(&self) {
         if self.transition.get().mode == WindowViewMode::Compact {
             self.apply_compact_metrics();
         }

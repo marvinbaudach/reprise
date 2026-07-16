@@ -51,6 +51,7 @@ fn app_css() -> String {
         super::player_bar_layout::css(),
         super::preference_choice_cards::css(),
         super::preference_playback::css(),
+        super::preferences_window::css(),
         super::rating::css(),
         super::track_list_header_style::css(),
         super::track_list_row_interaction::css(),
@@ -62,6 +63,25 @@ fn app_css() -> String {
         super::scan_card_css::css(),
     ]
     .join("\n")
+}
+
+#[cfg(test)]
+pub(in crate::ui) fn css_parse_errors(css: &str) -> Vec<String> {
+    use std::rc::Rc;
+
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let provider = gtk4::CssProvider::new();
+    {
+        let errors = errors.clone();
+        provider.connect_parsing_error(move |_, section, error| {
+            errors.borrow_mut().push(format!("{section:?}: {error}"));
+        });
+    }
+    provider.load_from_string(css);
+    drop(provider);
+    Rc::try_unwrap(errors)
+        .expect("CSS parser callback releases its error collector")
+        .into_inner()
 }
 
 /// The OverlaySplitView positions children with GPU transforms without

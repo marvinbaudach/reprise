@@ -11,7 +11,7 @@ use crate::ui::column_layout::{self, ColumnId, ColumnLayout};
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 
-pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_COLUMN_LAYOUT_EDITOR";
+pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_COLUMN_LAYOUT_EDITOR";
 const DROP_BEFORE_CLASS: &str = "reprise-column-drop-before";
 const DROP_AFTER_CLASS: &str = "reprise-column-drop-after";
 /// Draggable reorder row (movable columns) — gets the accent hover surface.
@@ -262,7 +262,7 @@ fn build_row(state: &Rc<EditorState>, layout: &ColumnLayout, id: ColumnId) -> ad
 /// app-weite `.reprise-hover`), damit sie als greifbare Flächen lesbar sind.
 /// Der Griff ist im Ruhezustand gedimmt und wird beim Hover bzw. während eines
 /// aktiven Drops akzentuiert. Die Vorher/Nachher-Drop-Indikatoren bleiben.
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     use super::style::tokens::{DROP_INDICATOR_THICKNESS, HOVER_BG_ALPHA, TRANSITION};
     format!(
         ".{ROW_CLASS} {{ transition: background-color {TRANSITION}; }}\n\
@@ -313,7 +313,7 @@ fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
     EditorSurface { toolbar, state }
 }
 
-pub(super) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
+pub(in crate::ui) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
     let title = strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT);
     let surface = build_surface(track_list, &title);
     let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
@@ -366,7 +366,7 @@ fn build_header_popover(track_list: &Rc<TrackList>) -> gtk4::Popover {
 /// Installs the right-click-on-header gesture that opens the editor popover.
 /// Replaces the previous GMenu visibility list; row right-clicks are handled by
 /// the per-cell context-menu gesture and never reach this controller.
-pub(super) fn install_header_popover(track_list: &Rc<TrackList>) {
+pub(in crate::ui) fn install_header_popover(track_list: &Rc<TrackList>) {
     let column_view = track_list.column_view_widget().clone();
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
@@ -391,7 +391,7 @@ pub(super) fn install_header_popover(track_list: &Rc<TrackList>) {
     column_view.add_controller(gesture);
 }
 
-pub(super) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
+pub(in crate::ui) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
     let surface = build_dialog(track_list);
     let dialog = surface.dialog;
     dialog.present(Some(window));

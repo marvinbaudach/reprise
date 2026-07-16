@@ -19,25 +19,26 @@
 //! `collapsed` and `show-content` properties.
 
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
-use std::rc::{Rc, Weak};
+use std::path::Path;
+use std::rc::Rc;
+use std::sync::Arc;
 
-use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use rusqlite::Connection;
 
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
+use reprise_core::playback::{PlaybackError, PlayerEvent};
 use reprise_core::view_source::ViewSource;
+use reprise_core::waveform::WaveformBackend;
+use reprise_platform_linux::player::Player;
+use reprise_platform_linux::waveform::GstreamerWaveformBackend;
 
 use super::cover_download_worker;
 use super::file_open::FileOpenHandler;
-use super::player_controller::PlayerController;
-use super::playlist_io;
-use super::primary_menu;
+use super::player_controller::{PlayerController, PlayerControllerBackends};
 use super::scan_progress::ScanProgressView;
-use super::shortcuts;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
 use super::strings;
@@ -47,25 +48,23 @@ use super::track_list::{OnActivate, TrackList};
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
 
-/// Environment variable that, when set to any value, arms a one-shot timer
-/// that closes the window (and thereby quits the app, since it's the only
-/// window) a few seconds after it is shown. This is a standing, permanent
-/// headless-verification hook — not a temporary hack — used to confirm in CI
-/// or over `xvfb-run` that the app starts, builds its window, and exits
-/// cleanly without a human present or a real display driving interaction.
-///
-/// Usage: `REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
-const SMOKE_QUIT_ENV_VAR: &str = "REPRISE_SMOKE_QUIT";
-const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
-/// Overrides `SMOKE_QUIT_DELAY_SECS_DEFAULT` — added for Stage 2 Task 4's
-/// queue E2E, which needs to observe several auto-advances (each a fixture
-/// track's full playback) before the window closes; the 3-second default
-/// (sized for the plain startup/shutdown smoke test) is too short for that.
-/// Every other `REPRISE_SMOKE_QUIT=1` caller is unaffected — unset, this
-/// keeps the original 3-second delay.
-///
-/// Usage: `REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=8 xvfb-run -a cargo run`.
-const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
+fn build_player_backends(
+    waveform: Arc<dyn WaveformBackend>,
+) -> Result<PlayerControllerBackends, PlaybackError> {
+    let (sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
+    let player = Player::new(Box::new(move |event| {
+        if let Err(error) = sender.try_send(event) {
+            tracing::warn!(%error, "player event dropped: UI receiver is gone");
+        }
+    }))?;
+
+    Ok(PlayerControllerBackends {
+        playback: Box::new(player),
+        playback_events,
+        media: reprise_platform_linux::mpris::start(crate::APP_ID),
+        waveform,
+    })
+}
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database connection; the UI layer owns it single-threaded
@@ -81,7 +80,8 @@ pub fn build(
     db_path: &Path,
 ) -> FileOpenHandler {
     super::style::install();
-    super::scan_flow::spawn_waveform_backfill(db_path.to_path_buf());
+    let waveform_backend: Arc<dyn WaveformBackend> = Arc::new(GstreamerWaveformBackend);
+    super::scan_flow::spawn_waveform_backfill(db_path.to_path_buf(), waveform_backend.clone());
     {
         let conn = conn.borrow();
         let stored = reprise_core::library::settings::get_setting(
@@ -173,14 +173,15 @@ pub fn build(
     super::device_sync_actions::install(app, &device_sync);
     super::device_sync_smoke::arm(&device_sync);
 
-    let player = match PlayerController::new(
-        conn.clone(),
-        cover_download.clone(),
-        listenbrainz.clone(),
-        lastfm.clone(),
-        app,
-    ) {
-        Ok(controller) => Some(controller),
+    let player = match build_player_backends(waveform_backend.clone()) {
+        Ok(backends) => Some(PlayerController::new(
+            conn.clone(),
+            cover_download.clone(),
+            listenbrainz.clone(),
+            lastfm.clone(),
+            backends,
+            app,
+        )),
         Err(error) => {
             tracing::error!(%error, "player unavailable: playback disabled");
             None
@@ -283,9 +284,15 @@ pub fn build(
                 track_list.reload_queue_if_visible();
             }
         });
+        let track_list_weak = Rc::downgrade(&track_list);
+        player.set_view_refill_provider(move || match track_list_weak.upgrade() {
+            Some(track_list) => track_list.transport_refill_ids(),
+            None => Vec::new(),
+        });
     }
     let scan_progress = ScanProgressView::new();
-    let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
+    let scan_controls =
+        super::scan_flow::ScanControls::new(&scan_button, &scan_progress, waveform_backend);
     scan_controls.set_sidebar_toggle(&sidebar_toggle);
     scan_progress.set_on_cancel({
         let scan_controls = scan_controls.clone();
@@ -295,8 +302,7 @@ pub fn build(
     let toolbar_view = adw::ToolbarView::new();
     // No add_top_bar for scan progress — it lives in the sidebar now.
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
-    let album_view =
-        super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
+    let album_view = super::album_view::AlbumView::new(conn, track_list.shared_cover_loader());
     // Retain the assembled `ArtistView` past `build()`: its `refresh_callback`
     // and now-playing mini-EQ both hang off a pure-Rust `Rc<Inner>`, so the
     // view must stay alive. The strong clone captured by the track-change
@@ -350,325 +356,25 @@ pub fn build(
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
-    // Created early (many widgets built below need it injected), but its
-    // child is set only after the player-bar overlay exists: the toast layer
-    // must wrap the WHOLE library — split view AND the overlaid player bar —
-    // or toasts render beneath the translucent bar and shine through it.
+    // The toast layer is attached after the player-bar overlay exists so
+    // notifications render above the complete library chrome.
     let toast_overlay = adw::ToastOverlay::new();
 
-    // Stage 2 Task 5 fault-tolerance seam: the toast overlay and the track
-    // list are both built after the controller (see `PlayerController::
-    // new`'s call above and the module doc comment on `set_toast_overlay`/
-    // `set_track_list_reload`), so they're injected here instead of being
-    // constructor parameters. The reload closure captures `Weak<TrackList>`/
-    // `Weak<Sidebar>` — never strong `Rc`s — so the controller can't form an
-    // `Rc` cycle with `track_list`'s own strong `Rc<PlayerController>` (held
-    // by its `on_activate` closure). This is also sidebar-refresh trigger #3
-    // from `Sidebar::refresh`'s doc comment (Stage 3 Task 4 review finding
-    // #2c): `PlayerController::reload_track_list` is called from exactly one
-    // place — `playback_faults.rs`'s `handle_unplayable_track`, after a
-    // successful `mark_track_missing` — so refreshing the sidebar here,
-    // alongside the track-list reload, is the specific "Missing badge can
-    // have changed" hook rather than a blanket one.
-    if let Some(player) = &player {
-        player.set_toast_overlay(&toast_overlay);
-        let track_list_weak = Rc::downgrade(&track_list);
-        let sidebar_weak = Rc::downgrade(&sidebar);
-        player.set_track_list_reload(move || {
-            match track_list_weak.upgrade() {
-                Some(track_list) => track_list.reload(),
-                None => tracing::warn!("track list reload skipped: track list is gone"),
-            }
-            match sidebar_weak.upgrade() {
-                Some(sidebar) => sidebar.refresh("track marked missing"),
-                None => tracing::warn!("sidebar refresh skipped: sidebar is gone"),
-            }
-        });
-    }
-    // Stage 3 Task 1 backlog item (a): same post-construction injection
-    // reason as the player's toast overlay above — `track_list` is built
-    // before `toast_overlay` exists.
-    track_list.set_toast_overlay(&toast_overlay);
-    // Embed a lightweight scan-progress indicator in the empty-library status
-    // page so the user sees scanning feedback during a first scan (before any
-    // tracks are in the list). Created here — after both `track_list` and
-    // `scan_controls` exist — and wired in both directions.
-    {
-        let empty_indicator = super::scan_progress::EmptyScanIndicator::new();
-        track_list.set_empty_scan_widget(empty_indicator.widget());
-        scan_controls.set_empty_indicator(&empty_indicator);
-    }
-    // Same reason again: the sidebar is built before `toast_overlay` exists.
-    sidebar.set_toast_overlay(&toast_overlay);
-    {
-        let player = player.clone();
-        sidebar.set_on_missing_removed(move |removed_ids| {
-            if let Some(player) = &player {
-                player.purge_queue_ids(removed_ids);
-            }
-        });
-    }
-    super::tag_edit_flow::wire_refresh(&track_list, &sidebar, &player);
-
-    // Stage 3 Task 5: context menu action wiring. `track_list` stays
-    // decoupled from `PlayerController`/`Sidebar` themselves (same
-    // decoupling-via-closure seam as `on_activate`/`queue_ids_provider`
-    // above) — these three closures are the only place that bridges them.
-    // `window` already exists (built at the top of this function), so `set_
-    // window` could technically be a constructor parameter, but every other
-    // post-construction seam on `track_list` is wired here too, so this
-    // keeps all of them in one place.
-    track_list.set_window(&window);
-    // Wire player for tag-edit flow to refresh now-playing metadata
-    if let Some(player) = &player {
-        track_list.set_player(player);
-    }
-    {
-        let player = player.clone();
-        track_list.set_on_play_selected(move |ids, start_index| match &player {
-            Some(player) => player.play_from_view(ids, start_index),
-            None => tracing::warn!("player unavailable; ignoring context menu play action"),
-        });
-    }
-    {
-        let player = player.clone();
-        track_list.set_on_queue_selected(move |ids| match &player {
-            Some(player) => player.append_to_queue(&ids),
-            None => {
-                tracing::warn!("player unavailable; ignoring context menu add-to-queue action");
-            }
-        });
-    }
-    // Album view playback wiring.
-    {
-        let player = player.clone();
-        album_view.set_on_play(move |ids, start_index| match &player {
-            Some(player) => player.play_from_view(ids, start_index),
-            None => tracing::warn!("player unavailable; ignoring album play action"),
-        });
-    }
-    {
-        let player = player.clone();
-        album_view.set_on_queue(move |ids| match &player {
-            Some(player) => player.append_to_queue(&ids),
-            None => tracing::warn!("player unavailable; ignoring album queue action"),
-        });
-    }
-    {
-        let player = player.clone();
-        album_view.set_on_shuffle(move |ids, start_index| match &player {
-            Some(player) => player.play_from_view(ids, start_index),
-            None => tracing::warn!("player unavailable; ignoring album shuffle action"),
-        });
-    }
-    // Wire the album context menu's toast overlay so "Added N tracks to
-    // Playlist" toasts reach the window surface. Same post-construction
-    // injection reason as `player.set_toast_overlay` just above: `toast_
-    // overlay` is built after `album_view`.
-    album_view.set_toast_overlay(&toast_overlay);
-    // Wire now-playing fan-out to album grid EQ markers.
-    if let Some(ref player) = player {
-        let album_view_np = album_view.now_playing_callback();
-        player.set_on_now_playing_album_changed(move |album| {
-            album_view_np(album);
-        });
-    }
-    {
-        let player = player.clone();
-        track_list.set_on_queue_activate(move |position| {
-            if let Some(player) = &player {
-                player.play_up_next_at(position);
-            }
-        });
-    }
-    {
-        let player = player.clone();
-        track_list.set_on_queue_remove(move |positions| {
-            player
-                .as_ref()
-                .map_or(0, |player| player.remove_up_next_positions(positions))
-        });
-    }
-    {
-        // Stage 3 Task 6: queue drag-reorder — see `ui::track_list_dnd`'s
-        // doc comment. Same decoupling-via-closure seam as `on_play_
-        // selected`/`on_queue_selected` just above.
-        let player = player.clone();
-        track_list.set_on_queue_reorder(move |from, to| match &player {
-            Some(player) => player.move_queue_item(from, to),
-            None => {
-                tracing::warn!("player unavailable; ignoring queue drag-reorder");
-                false
-            }
-        });
-    }
-    // Task 9a: Artists detail-pane hero playback actions. Player-dependent, so
-    // wired here (where `player` + `conn` + `artist_view` are all in scope)
-    // rather than in `wire_artist_view`, which handles only the
-    // navigation-only setters. Each closure resolves the artist's ordered track
-    // ids via `query_track_ids` (album-ordered — a natural "Play all") and hands
-    // them to the player.
-    {
-        // `player` is captured `Weak`: this closure is stored on `ArtistView`,
-        // which the controller retains strongly (see
-        // `current_track_selection::wire`'s doc comment), so a strong capture
-        // here would close the cycle back to the controller.
-        let player = player.as_ref().map(Rc::downgrade);
-        let conn = conn.clone();
-        artist_view.set_on_play_all(move |artist| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => player.play_from_view(ids, 0),
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "artist play-all query failed"),
-            }
-        });
-    }
-    {
-        // Weak `player` capture — see the `set_on_play_all` comment above.
-        let player = player.as_ref().map(Rc::downgrade);
-        let conn = conn.clone();
-        artist_view.set_on_shuffle(move |artist| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => player.play_from_view(shuffle_ids(ids), 0),
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "artist shuffle query failed"),
-            }
-        });
-    }
-    {
-        // Weak `player` capture — see the `set_on_play_all` comment above.
-        let player = player.as_ref().map(Rc::downgrade);
-        let conn = conn.clone();
-        artist_view.set_on_add_to_queue(move |artist| {
-            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
-                return;
-            };
-            match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => player.append_to_queue(&ids),
-                Ok(_) => {}
-                Err(error) => tracing::warn!(%error, "artist add-to-queue query failed"),
-            }
-        });
-    }
-    {
-        let conn = conn.clone();
-        artist_view.set_on_go_to_folder(move |artist| open_artist_folder(&conn, &artist));
-    }
-    if let Some(player) = &player {
-        // Task 9b: clicking the player-bar artist name deep-links to the
-        // Artists tab and selects the playing album artist (no history/back
-        // stack — out of scope). `player` is captured `Weak`: the closure is
-        // stored on the bar, itself owned by the controller, so a strong
-        // capture would cycle (same reason as `set_track_list_reload` above).
-        // The two stacks are cheap GObject clones; `select_artist` is a
-        // self-contained callable that holds no strong controller/view
-        // reference (see `ArtistMaster::select_callback`).
-        let player_weak = Rc::downgrade(player);
-        let content_stack = content_stack.clone();
-        let library_stack = library_views.stack.clone();
-        let select_artist = artist_view.select_artist_callback();
-        player.connect_artist_clicked(move || {
-            let Some(player) = player_weak.upgrade() else {
-                return;
-            };
-            let Some(artist) = player.current_track_album_artist() else {
-                return;
-            };
-            content_stack.set_visible_child_name("library");
-            // Switching to the Artists tab synchronously fires the stack's
-            // `visible-child-name` notify handler, which reloads the master
-            // (see `library_shell::wire_artist_view`), so the target row
-            // exists by the time `select_artist` runs on the next line.
-            library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_ARTISTS);
-            select_artist(&artist);
-        });
-    }
-    {
-        // `Weak`, not a strong `Rc`: mirrors the `sidebar_weak`/`track_list_
-        // weak` pattern already used for `player.set_track_list_reload`
-        // just above — `track_list` must not keep `sidebar` alive past its
-        // natural lifetime.
-        let sidebar_weak = Rc::downgrade(&sidebar);
-        track_list.set_on_playlist_mutated(move || match sidebar_weak.upgrade() {
-            Some(sidebar) => sidebar.refresh("context menu playlist change"),
-            None => tracing::warn!(
-                "sidebar is gone; skipping refresh after context menu playlist change"
-            ),
-        });
-    }
-    {
-        // Stage 3 Task 8 / Stage-3 close-out: "Remove from library" (Missing
-        // source only) deletes rows outright — the Missing badge count can
-        // only ever shrink from that, exactly like the missing-marking
-        // trigger above, so the sidebar refresh is wired the same way. The
-        // close-out fix adds a second consumer of the same callback: the
-        // exact ids `queries::remove_missing_tracks` actually deleted are
-        // also purged from the playback queue (`PlayerController::purge_
-        // queue_ids`) — a hard-deleted track must not linger as a phantom
-        // queue entry (see that method's doc comment for the full
-        // invariant). `player.clone()` is a cheap `Option<Rc<_>>` clone,
-        // same pattern as every other closure above that needs the
-        // controller.
-        let sidebar_weak = Rc::downgrade(&sidebar);
-        let player = player.clone();
-        track_list.set_on_library_mutated(move |removed_ids| {
-            match sidebar_weak.upgrade() {
-                Some(sidebar) => sidebar.refresh("track removed from library"),
-                None => {
-                    tracing::warn!("sidebar is gone; skipping refresh after a library removal");
-                }
-            }
-            if let Some(player) = &player {
-                player.purge_queue_ids(removed_ids);
-            }
-        });
-    }
-    {
-        // Stage 3 Task 8: the ImportErrors source's own Retry/Dismiss
-        // actions change the Import-errors badge count — a fifth sidebar-
-        // refresh trigger alongside scan completion, playlist CRUD,
-        // missing-marking, and context-menu playlist mutation (see `Sidebar
-        // ::refresh`'s doc comment).
-        let sidebar_weak = Rc::downgrade(&sidebar);
-        track_list.set_on_import_errors_mutated(move || match sidebar_weak.upgrade() {
-            Some(sidebar) => sidebar.refresh("import error mutated"),
-            None => {
-                tracing::warn!("sidebar is gone; skipping refresh after an import-error mutation");
-            }
-        });
-    }
-    {
-        // Stage 3 Task 8: "Rescan library" (Missing source context menu)
-        // re-runs the persisted library root through the exact same scan
-        // flow "Scan folder…" uses — see `trigger_rescan_of_library_root`.
-        // `track_list` stays decoupled from the scan machinery/settings
-        // table itself, same decoupling-via-closure seam as `on_play_
-        // selected`/`on_queue_selected` above.
-        let conn = conn.clone();
-        let scan_controls = scan_controls.clone();
-        let toast_overlay = toast_overlay.clone();
-        let db_path = db_path.to_path_buf();
-        let track_list_for_rescan = track_list.clone();
-        let sidebar_for_rescan = sidebar.clone();
-        let watcher_state = watcher_state.clone();
-        track_list.set_on_rescan_library(move || {
-            super::scan_flow::trigger_rescan_of_library_root(
-                &conn,
-                &scan_controls,
-                &toast_overlay,
-                db_path.clone(),
-                track_list_for_rescan.clone(),
-                sidebar_for_rescan.clone(),
-                &watcher_state,
-            );
-        });
-    }
+    super::window_action_wiring::wire(super::window_action_wiring::ActionWiring {
+        conn,
+        db_path,
+        window: &window,
+        toast_overlay: &toast_overlay,
+        track_list: &track_list,
+        sidebar: &sidebar,
+        album_view: &album_view,
+        artist_view: &artist_view,
+        player: &player,
+        content_stack: &content_stack,
+        library_stack: &library_views.stack,
+        scan_controls: &scan_controls,
+        watcher_state: &watcher_state,
+    });
 
     let library_shell = super::library_shell::build(
         &window,
@@ -694,8 +400,6 @@ pub fn build(
         player_bar_widget,
         bar_position,
     );
-    // The toast layer wraps the player-bar overlay (see the comment at the
-    // overlay's construction above): toasts now stack ABOVE the bar.
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome = super::library_chrome::build(&header, &toast_overlay);
     {
@@ -761,365 +465,41 @@ pub fn build(
         let preferences = preferences.clone();
         device_view.set_on_settings(move || preferences.present_page("synchronization"));
     }
-    let minimal_toggle = minimal_view.clone();
-    let compact_preferences = preferences.clone();
-    super::compact_mode_controls::install(
-        &window,
-        &minimal_view,
-        player.as_ref().map(|player| &player.compact_player),
+    super::window_runtime_wiring::wire(super::window_runtime_wiring::RuntimeWiring {
+        app,
+        window: &window,
         conn,
-        Rc::new(move || compact_preferences.present()),
-    );
-    let rescan_conn = conn.clone();
-    let rescan_scan_controls = scan_controls.clone();
-    let rescan_toast_overlay = toast_overlay.clone();
-    let rescan_db_path = db_path.to_path_buf();
-    let rescan_track_list = track_list.clone();
-    let rescan_sidebar = sidebar.clone();
-    let rescan_watcher_state = watcher_state.clone();
-    let sync_preferences = preferences.clone();
-    let stats_sidebar = sidebar.clone();
-    let cancel_scan_controls = scan_controls.clone();
-    let library_menu = primary_menu::install(
-        &header,
-        &window,
-        &track_list,
-        primary_menu::Callbacks {
-            on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
-            on_my_stats: Rc::new(move || {
-                stats_sidebar.refresh_and_select(ViewSource::MyStats, "primary menu");
-            }),
-            on_rescan_library: Rc::new(move || {
-                super::scan_flow::trigger_rescan_of_library_root(
-                    &rescan_conn,
-                    &rescan_scan_controls,
-                    &rescan_toast_overlay,
-                    rescan_db_path.clone(),
-                    rescan_track_list.clone(),
-                    rescan_sidebar.clone(),
-                    &rescan_watcher_state,
-                );
-            }),
-            on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
-            on_sync_device: Rc::new(move || {
-                sync_preferences.present_page("synchronization");
-            }),
-            on_preferences: Rc::new(move || preferences.present()),
-        },
-        &scan_controls,
-    );
-    scan_controls.set_on_scan_state_changed({
-        let library_menu = library_menu.clone();
-        move |is_scanning| {
-            primary_menu::update_library_section(&library_menu, is_scanning);
-        }
-    });
-    // End-of-queue refill: a manual "next" past an exhausted queue rebuilds
-    // it from the visible view (see `up_next_transport::refill_queue_from_
-    // view`). `Weak` capture, same reasoning as every other cross-widget
-    // callback here.
-    if let Some(ref player) = player {
-        let track_list_weak = Rc::downgrade(&track_list);
-        player.set_view_refill_provider(move || match track_list_weak.upgrade() {
-            Some(track_list) => track_list.transport_refill_ids(),
-            None => {
-                tracing::warn!("track list is gone; transport refill unavailable");
-                Vec::new()
-            }
-        });
-    }
-    // Task 7: wire the player bar's queue button to open the Queue sidebar.
-    if let Some(ref player) = player {
-        let sidebar_for_queue = sidebar.clone();
-        player.bar.connect_queue_clicked(move || {
-            sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
-        });
-    }
-    // Cover click → toggle info panel (spec 1.5).
-    if let Some(ref player) = player {
-        let toggle = info_panel.toggle_button().clone();
-        player.connect_cover_clicked(move || {
-            toggle.set_active(!toggle.is_active());
-        });
-    }
-    // Artist click → jump to the Artists master/detail view and select the
-    // now-playing album artist. Wired above (search for `connect_artist_clicked`)
-    // where `artist_view` is in scope; the earlier `set_source`-to-Tracks
-    // stopgap is superseded by the dedicated Artists view.
-    header.pack_end(&search_entry);
-    cover_batch.start();
-    app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
-    app.set_accels_for_action("win.preferences", &["<Control>comma"]);
-    app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
-    app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
-    super::window_navigation::wire_sidebar_toggle(
-        &sidebar_toggle,
-        &split_view,
-        &sidebar_page,
-        conn,
-    );
-    let show_content_if_collapsed = super::window_navigation::show_content_callback(&split_view);
-    super::library_shell::wire_source_routing(
-        &sidebar,
-        &track_list,
+        db_path,
+        header: &header,
+        search_entry: &search_entry,
+        sidebar_toggle: &sidebar_toggle,
+        sidebar_page: &sidebar_page,
+        split_view: &split_view,
+        track_list: &track_list,
+        sidebar: &sidebar,
+        player: &player,
         stats_view,
-        conn,
-        &content_stack,
-        &device_view,
-        &library_views,
-        &library_title,
-        &window_title,
-        show_content_if_collapsed,
-    );
-    {
-        // Stage 3 Task 6: the mirror image of `track_list.set_on_playlist_
-        // mutated` above — a drag-and-drop drop onto a sidebar playlist row
-        // mutates the playlist from the *sidebar* side, so the track list
-        // needs the reload here instead (covers the edge case where the
-        // playlist just dropped onto is also the one currently on screen).
-        // `Weak`, not a strong `Rc`, same reasoning as every other cross-
-        // widget callback in this function.
-        let track_list_weak = Rc::downgrade(&track_list);
-        sidebar.set_on_tracks_added(move || match track_list_weak.upgrade() {
-            Some(track_list) => track_list.reload(),
-            None => tracing::warn!("track list reload skipped: track list is gone"),
-        });
-    }
-    {
-        // Stage 3 Task 6 review finding #1: lets `ui::track_list_dnd`'s
-        // `REPRISE_SMOKE_DND=addplaylist:<name>` hook drive the exact same
-        // drop-handling sequence a real pointer drag onto a sidebar playlist
-        // row runs (DB write, sidebar rebuild + toast, `on_tracks_added` ->
-        // the `sidebar.set_on_tracks_added` reload just above) instead of
-        // calling `library::playlists::add_tracks` directly — see `Sidebar::
-        // handle_playlist_drop`'s doc comment. `Weak`, not a strong `Rc`,
-        // same reasoning as every other cross-widget callback in this
-        // function.
-        let sidebar_weak = Rc::downgrade(&sidebar);
-        track_list.set_on_sidebar_playlist_drop(move |playlist_id, playlist_name, ids| {
-            match sidebar_weak.upgrade() {
-                Some(sidebar) => sidebar.handle_playlist_drop(playlist_id, playlist_name, ids),
-                None => {
-                    tracing::warn!(
-                        "sidebar is gone; cannot dispatch simulated sidebar playlist drop"
-                    );
-                    false
-                }
-            }
-        });
-    }
-
-    let search_restore_guard = super::view_session::new_search_restore_guard();
-    super::view_session::wire_search(
-        &search_entry,
-        track_list.clone(),
-        search_restore_guard.clone(),
-    );
-    // Wire album view search filter to the same search entry (second
-    // connect_search_changed handler — runs after the track-list debounce).
-    {
-        use gtk4::prelude::EditableExt as _;
-        let album_filter = album_view.filter_callback();
-        search_entry.connect_search_changed(move |entry| {
-            album_filter(&entry.text());
-        });
-    }
-    super::view_session::arm_smoke(
-        &search_entry,
-        &track_list,
-        &sidebar,
-        &window_title,
-        &search_restore_guard,
-    );
-    // Stage 3 Task 9: Space/Ctrl+F/Escape. Wired here, right after `wire_
-    // search` — `search_entry` and `track_list` are both fully built and
-    // wired to each other by this point, and `player`/`window`/`app` all
-    // already exist too, so nothing about shortcut wiring needs to wait for
-    // anything still to come. `track_list` is passed by reference (it's
-    // still needed further down: `wire_scan_button`, `arm_smoke_rescan`, and
-    // eventually a final move into `playlist_io::arm_smoke_m3u`).
-    shortcuts::wire(app, &window, &search_entry, &track_list, player.clone());
-    // Cloned (not moved) here: `arm_smoke_rescan` below needs its own
-    // `db_path`/`track_list`/`sidebar` to call `spawn_scan` with, the same
-    // way a real button click would.
-    super::scan_flow::wire_scan_button(
-        &scan_controls,
-        &window,
-        &toast_overlay,
-        db_path.to_path_buf(),
-        track_list.clone(),
-        sidebar.clone(),
-        watcher_state.clone(),
-    );
-    super::scan_flow::arm_smoke_rescan(
-        &scan_controls,
-        &toast_overlay,
-        db_path.to_path_buf(),
-        track_list.clone(),
-        sidebar.clone(),
-        watcher_state.clone(),
-    );
-
-    // Stage 3 Task 8: if a folder has ever been scanned before (this launch
-    // or a previous one — `library_root` is persisted in the `settings`
-    // table), start the watcher on it immediately so live updates work from
-    // the very first frame, without the user re-scanning just to re-arm it.
-    // No persisted root yet (a fresh install) is the ordinary, expected case
-    // — logged at debug, not a warning.
-    {
-        let root = {
-            let conn = conn.borrow();
-            settings::get_library_root(&conn)
-        };
-        match root {
-            Ok(Some(root)) => super::scan_flow::start_or_restart_watcher(
-                &watcher_state,
-                &PathBuf::from(root),
-                db_path.to_path_buf(),
-                Rc::downgrade(&track_list),
-                Rc::downgrade(&sidebar),
-            ),
-            Ok(None) => {
-                tracing::debug!("no persisted library root; watcher not started at startup");
-            }
-            Err(error) => {
-                tracing::error!(%error, "failed to read persisted library root at startup");
-            }
-        }
-    }
-
-    // Stage 3 Task 7: the import action lives beside playlist creation in
-    // the sidebar and is wired after every widget/callback it needs exists.
-    playlist_io::wire_import_action(&window, &toast_overlay, conn.clone(), &sidebar);
-    playlist_io::arm_smoke_m3u(conn.clone(), &toast_overlay, sidebar.clone());
-
-    super::window_smoke::arm_bar_position(conn, &library_player_bar);
-
-    super::lyrics_smoke::arm(player.as_ref(), &info_panel, conn);
-
-    super::session_restore::restore_runtime(
-        &search_entry,
-        &track_list,
-        &sidebar,
-        &window_title,
-        &search_restore_guard,
-        player.as_ref(),
-        &session_state,
-    );
-    let restored_source = super::view_session::snapshot(&track_list).source;
-    library_title.set_library_navigation_visible(matches!(restored_source, ViewSource::Library));
-    super::session_restore::wire_close(
-        &window,
-        conn,
-        &track_list,
-        player.as_ref(),
-        &session_state,
-        &geometry_guard,
-    );
-    super::session_restore::arm_seed_close(&window);
-    super::first_run::run(&window, &scan_button, conn, first_run_decision);
-    minimal_view.apply_initial();
-    if std::env::var(SMOKE_QUIT_ENV_VAR).is_ok() {
-        let delay_secs = std::env::var(SMOKE_QUIT_DELAY_SECS_ENV_VAR)
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(SMOKE_QUIT_DELAY_SECS_DEFAULT);
-        tracing::info!(
-            delay_secs,
-            "{} set: arming headless smoke-quit timer",
-            SMOKE_QUIT_ENV_VAR
-        );
-        let smoke_window = window.clone();
-        glib::timeout_add_seconds_local(delay_secs, move || {
-            tracing::info!("smoke-quit timer fired: closing main window");
-            smoke_window.close();
-            glib::ControlFlow::Break
-        });
-    }
+        content_stack: &content_stack,
+        device_view: &device_view,
+        library_views: &library_views,
+        library_title: &library_title,
+        window_title: &window_title,
+        album_view: &album_view,
+        scan_controls: &scan_controls,
+        toast_overlay: &toast_overlay,
+        watcher_state: &watcher_state,
+        library_player_bar: &library_player_bar,
+        info_panel: &info_panel,
+        session_state: &session_state,
+        geometry_guard: &geometry_guard,
+        scan_button: &scan_button,
+        minimal_view: &minimal_view,
+        preferences: &preferences,
+        cover_batch: &cover_batch,
+        first_run_decision,
+    });
 
     tracing::info!("main window built");
     window.present();
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
-}
-
-/// Ordered track ids for `artist`, album-ordered — the natural order for the
-/// Artists hero's Play all / Shuffle / Add-to-queue actions.
-fn artist_track_ids(
-    conn: &Rc<RefCell<Connection>>,
-    artist: String,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    let conn = conn.borrow();
-    reprise_core::queries::query_track_ids(
-        &conn,
-        &ViewSource::Artist(artist),
-        "album",
-        "asc",
-        "",
-        &[],
-    )
-}
-
-/// Fisher–Yates shuffle for the Artists hero "Shuffle" action. `reprise-gnome`
-/// carries no direct `rand`/`fastrand` dependency (the crate split kept its dep
-/// set minimal), so this seeds a tiny xorshift64 from the wall clock rather
-/// than pulling in a new crate. A listen-order shuffle is not security
-/// sensitive, so a non-cryptographic PRNG is appropriate here.
-fn shuffle_ids(mut ids: Vec<i64>) -> Vec<i64> {
-    // `| 1` guards against the degenerate all-zero xorshift state.
-    let mut state = (glib::real_time() as u64) | 1;
-    for i in (1..ids.len()).rev() {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        let j = (state % (i as u64 + 1)) as usize;
-        ids.swap(i, j);
-    }
-    ids
-}
-
-/// Opens the containing folder of the artist's first (album-ordered) track in
-/// the desktop file manager, via `gio::AppInfo::launch_default_for_uri` on the
-/// parent directory's `file://` URI — the same default-handler path
-/// `preference_lastfm.rs` uses for external URLs. Logs and returns on any
-/// lookup/launch failure.
-fn open_artist_folder(conn: &Rc<RefCell<Connection>>, artist: &str) {
-    let path = {
-        let conn = conn.borrow();
-        let ids = match reprise_core::queries::query_track_ids(
-            &conn,
-            &ViewSource::Artist(artist.to_string()),
-            "album",
-            "asc",
-            "",
-            &[],
-        ) {
-            Ok(ids) => ids,
-            Err(error) => {
-                tracing::warn!(%error, "artist go-to-folder query failed");
-                return;
-            }
-        };
-        let Some(&first) = ids.first() else {
-            return;
-        };
-        match reprise_core::queries::query_track_summary(&conn, first) {
-            Ok(Some(summary)) => summary.path,
-            Ok(None) => return,
-            Err(error) => {
-                tracing::warn!(%error, "artist go-to-folder path lookup failed");
-                return;
-            }
-        }
-    };
-
-    let Some(dir) = Path::new(&path).parent() else {
-        tracing::warn!(path, "artist track has no parent directory");
-        return;
-    };
-    let uri = gtk4::gio::File::for_path(dir).uri();
-    if let Err(error) =
-        gtk4::gio::AppInfo::launch_default_for_uri(&uri, gtk4::gio::AppLaunchContext::NONE)
-    {
-        tracing::warn!(%error, %uri, "failed to open artist folder");
-    }
 }

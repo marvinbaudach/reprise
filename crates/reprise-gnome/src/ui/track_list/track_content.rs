@@ -4,7 +4,7 @@
 
 use gtk4::prelude::*;
 
-pub(super) fn build(
+pub(in crate::ui) fn build(
     track_list: &impl IsA<gtk4::Widget>,
     status: &impl IsA<gtk4::Widget>,
 ) -> gtk4::Overlay {

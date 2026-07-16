@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::library::playlists;
+use std::collections::HashSet;
 
 fn seeded_sync_tracks() -> (tempfile::TempDir, Connection) {
     let temp = tempfile::tempdir().unwrap();
@@ -41,6 +42,53 @@ fn seeded_conn_with_tracks(count: i64) -> Connection {
         .unwrap();
     }
     conn
+}
+
+#[test]
+fn feature_queries_filter_and_order_tracks_for_their_consumers() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    for (id, path, title, missing) in [
+        (1, "/music/b.flac", "SmokeFirst", 0),
+        (2, "/music/a.flac", "SmokeSlow", 0),
+        (3, "/music/gone.flac", "SmokeFast", 1),
+        (4, "/music/c.flac", "SmokeFirst", 0),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks (id,path,title,artist,added_at,missing) \
+             VALUES (?1,?2,?3,'',0,?4)",
+            rusqlite::params![id, path, title, missing],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(
+        query_live_track_ids(&conn).unwrap(),
+        HashSet::from([1, 2, 4])
+    );
+    assert_eq!(
+        query_live_track_paths(&conn).unwrap(),
+        vec![
+            "/music/a.flac".to_string(),
+            "/music/b.flac".to_string(),
+            "/music/c.flac".to_string()
+        ]
+    );
+    assert_eq!(
+        query_track_ids_by_titles(&conn, &["SmokeFirst", "SmokeFast"])
+            .unwrap()
+            .get("SmokeFirst"),
+        Some(&1)
+    );
+    assert_eq!(
+        query_track_ids_by_titles(&conn, &["SmokeFast"])
+            .unwrap()
+            .get("SmokeFast"),
+        Some(&3)
+    );
+    assert_eq!(
+        query_track_ids_by_title_desc(&conn).unwrap(),
+        vec![2, 1, 4, 3]
+    );
 }
 
 // -- ImportErrors source -------------------------------------------------

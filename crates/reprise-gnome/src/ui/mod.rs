@@ -21,315 +21,144 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
-#[path = "library_views/album_card.rs"]
-mod album_card;
-#[path = "library_views/album_card_actions.rs"]
-mod album_card_actions;
-#[path = "library_views/album_card_css.rs"]
-mod album_card_css;
-#[path = "library_views/album_context_menu.rs"]
-mod album_context_menu;
-#[path = "library_views/album_header.rs"]
-mod album_header;
-#[path = "library_views/album_view.rs"]
-mod album_view;
-#[path = "library_views/artist_avatar.rs"]
-mod artist_avatar;
-#[path = "library_views/artist_detail_hero.rs"]
-mod artist_detail_hero;
-#[path = "library_views/artist_detail_pane.rs"]
-mod artist_detail_pane;
-#[path = "library_views/artist_detail_row.rs"]
-mod artist_detail_row;
-#[path = "library_views/artist_master.rs"]
-mod artist_master;
-#[path = "library_views/artist_master_row.rs"]
-mod artist_master_row;
-#[path = "info_panel/artist_news_worker.rs"]
-mod artist_news_worker;
-#[path = "library_views/artist_view.rs"]
-mod artist_view;
-#[path = "library_views/artist_view_css.rs"]
-mod artist_view_css;
-#[path = "playback/audio_effects.rs"]
-mod audio_effects;
-#[path = "tag_edit/autocomplete_entry.rs"]
-mod autocomplete_entry;
-#[path = "browse/browse_bar.rs"]
-pub mod browse_bar;
-#[path = "browse/browse_filter_count.rs"]
-mod browse_filter_count;
-#[path = "browse/browse_filter_strings.rs"]
-mod browse_filter_strings;
-#[path = "track_list/column_layout.rs"]
-pub mod column_layout;
-#[path = "track_list/column_layout_editor.rs"]
-mod column_layout_editor;
-#[path = "track_list/column_widths.rs"]
-mod column_widths;
-#[path = "compact/compact_mode_controls.rs"]
-mod compact_mode_controls;
-#[path = "compact/compact_player.rs"]
-mod compact_player;
-#[path = "compact/compact_player_layouts.rs"]
-mod compact_player_layouts;
-#[path = "compact/compact_player_menu.rs"]
-mod compact_player_menu;
-#[path = "compact/compact_player_scroll.rs"]
-mod compact_player_scroll;
-#[path = "cover/cover_download_batch.rs"]
-mod cover_download_batch;
-#[path = "cover/cover_download_worker.rs"]
-pub mod cover_download_worker;
-#[path = "cover/cover_loader.rs"]
-pub mod cover_loader;
-#[path = "track_list/current_track_selection.rs"]
-mod current_track_selection;
+mod browse;
+mod compact;
+mod cover;
 pub mod delete_tracks;
-#[path = "device_sync/device_sync_actions.rs"]
-mod device_sync_actions;
-#[path = "device_sync/device_sync_backend.rs"]
-mod device_sync_backend;
-#[path = "device_sync/device_sync_feedback.rs"]
-mod device_sync_feedback;
-#[path = "device_sync/device_sync_runtime.rs"]
-mod device_sync_runtime;
-#[cfg(test)]
-#[path = "device_sync/device_sync_runtime_tests.rs"]
-mod device_sync_runtime_tests;
-#[path = "device_sync/device_sync_smoke.rs"]
-mod device_sync_smoke;
-#[path = "device_sync/device_sync_strings.rs"]
-mod device_sync_strings;
-#[path = "device_view/device_view.rs"]
+mod device_sync;
 mod device_view;
 pub mod dialogs;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;
 mod help;
-#[allow(dead_code)] // hourly chart ready for wiring; not yet referenced in stats_view
-#[path = "stats/hourly_chart.rs"]
-mod hourly_chart;
 pub mod import_errors_view;
-#[path = "info_panel/info_panel.rs"]
-mod info_panel;
-#[path = "info_panel/info_panel_empty_state.rs"]
-mod info_panel_empty_state;
-#[path = "info_panel/info_panel_feedback.rs"]
-mod info_panel_feedback;
-#[path = "info_panel/info_panel_state.rs"]
-mod info_panel_state;
-#[path = "info_panel/information_column.rs"]
-mod information_column;
-#[path = "scrobbling/lastfm_secret.rs"]
-mod lastfm_secret;
-#[path = "window/library_chrome.rs"]
-mod library_chrome;
-#[path = "player_bar/library_player_bar.rs"]
-mod library_player_bar;
-#[path = "window/library_shell.rs"]
-mod library_shell;
-#[path = "library_views/library_view_css.rs"]
-mod library_view_css;
-#[path = "track_list/list_density.rs"]
-mod list_density;
-#[path = "scrobbling/listenbrainz_secret.rs"]
-mod listenbrainz_secret;
-#[path = "lyrics/lyrics_smoke.rs"]
-mod lyrics_smoke;
-#[path = "lyrics/lyrics_state.rs"]
-mod lyrics_state;
-#[path = "lyrics/lyrics_strings.rs"]
-mod lyrics_strings;
-#[path = "lyrics/lyrics_view.rs"]
-mod lyrics_view;
-#[path = "lyrics/lyrics_worker.rs"]
-mod lyrics_worker;
-#[path = "cover/main_cover_download_progress.rs"]
-mod main_cover_download_progress;
-#[path = "compact/minimal_view.rs"]
-mod minimal_view;
+pub(crate) mod info_panel;
+mod library_views;
+mod lyrics;
 pub mod mpris_mirror;
 mod notifications;
-#[path = "playback/now_playing_wiring.rs"]
-pub mod now_playing_wiring;
-#[path = "playback/play_tracking.rs"]
-mod play_tracking;
-#[path = "playback/playback_faults.rs"]
-pub mod playback_faults;
-#[path = "player_bar/player_bar.rs"]
-pub mod player_bar;
-#[path = "player_bar/player_bar_layout.rs"]
-mod player_bar_layout;
-#[path = "player_bar/player_bar_seek.rs"]
-mod player_bar_seek;
-#[path = "player_bar/player_bar_state.rs"]
-mod player_bar_state;
-#[path = "playback/player_controller.rs"]
-pub mod player_controller;
-#[path = "playback/player_controller_wiring.rs"]
-pub mod player_controller_wiring;
-#[path = "lyrics/player_lyrics.rs"]
-mod player_lyrics;
-#[path = "playlists/playlist_import_navigation.rs"]
-mod playlist_import_navigation;
-#[path = "playlists/playlist_io.rs"]
-pub mod playlist_io;
-#[path = "playlists/playlist_io_names.rs"]
-mod playlist_io_names;
+mod one_shot_task;
+mod playback;
+pub(crate) mod player_bar;
+mod playlists;
 mod popover_lifecycle;
-#[path = "preferences/preference_appearance.rs"]
-mod preference_appearance;
-#[path = "preferences/preference_choice_cards.rs"]
-mod preference_choice_cards;
-#[path = "preferences/preference_dependencies.rs"]
-mod preference_dependencies;
-#[path = "preferences/preference_effects.rs"]
-mod preference_effects;
-#[path = "preferences/preference_lastfm.rs"]
-mod preference_lastfm;
-#[path = "preferences/preference_layout.rs"]
-mod preference_layout;
-#[path = "preferences/preference_library.rs"]
-mod preference_library;
-#[path = "preferences/preference_listenbrainz.rs"]
-mod preference_listenbrainz;
-#[path = "preferences/preference_playback.rs"]
-mod preference_playback;
-#[path = "preferences/preference_plugins.rs"]
-mod preference_plugins;
-#[path = "preferences/preference_rhythmbox.rs"]
-mod preference_rhythmbox;
-#[path = "preferences/preference_sync.rs"]
-mod preference_sync;
-#[path = "preferences/preference_visual_strings.rs"]
-mod preference_visual_strings;
-#[path = "preferences/preference_window_decorations.rs"]
-mod preference_window_decorations;
-#[path = "preferences/preferences.rs"]
-mod preferences;
-#[path = "preferences/preferences_window.rs"]
-mod preferences_window;
+pub(crate) mod preferences;
 pub mod primary_menu;
-#[path = "playback/queue_transport.rs"]
-pub mod queue_transport;
-#[path = "track_list/rating.rs"]
-pub mod rating;
-#[path = "scan/scan_card_css.rs"]
-pub(crate) mod scan_card_css;
-#[path = "scan/scan_flow.rs"]
-pub mod scan_flow;
-#[path = "scan/scan_progress.rs"]
-mod scan_progress;
-#[path = "scrobbling/scrobble_runtime.rs"]
-mod scrobble_runtime;
-#[path = "scrobbling/scrobble_session.rs"]
-mod scrobble_session;
-#[path = "playback/session_player.rs"]
-pub mod session_player;
+mod scan;
+mod scrobbling;
 pub mod session_restore;
 pub mod shortcuts;
-#[path = "sidebar/sidebar.rs"]
-pub mod sidebar;
-#[path = "sidebar/sidebar_activity_slot.rs"]
-mod sidebar_activity_slot;
-#[path = "sidebar/sidebar_device_card.rs"]
-mod sidebar_device_card;
-#[path = "sidebar/sidebar_dnd.rs"]
-pub mod sidebar_dnd;
-#[path = "sidebar/sidebar_export.rs"]
-pub mod sidebar_export;
-#[path = "sidebar/sidebar_issue_cleanup.rs"]
-mod sidebar_issue_cleanup;
-#[path = "sidebar/sidebar_issue_strings.rs"]
-mod sidebar_issue_strings;
-#[path = "sidebar/sidebar_playlist_creation.rs"]
-mod sidebar_playlist_creation;
-#[path = "sidebar/sidebar_presentation.rs"]
-mod sidebar_presentation;
-#[path = "sidebar/sidebar_session.rs"]
-pub mod sidebar_session;
-#[allow(dead_code)] // monthly chart kept for future use; replaced by hourly_chart in redesign
-#[path = "stats/stats_chart.rs"]
-mod stats_chart;
-#[path = "stats/stats_chart_math.rs"]
-mod stats_chart_math;
-#[path = "stats/stats_css.rs"]
-pub(crate) mod stats_css;
-#[path = "stats/stats_view.rs"]
-pub(crate) mod stats_view;
+pub(crate) mod sidebar;
+mod stats;
 pub mod status_bar;
 pub mod strings;
 mod style;
-#[path = "tag_edit/tag_edit_flow.rs"]
-pub mod tag_edit_flow;
-#[path = "tag_edit/tag_editor.rs"]
-pub mod tag_editor;
-#[path = "tag_edit/tag_editor_style.rs"]
-mod tag_editor_style;
+mod tag_edit;
 pub mod toasts;
-#[path = "track_list/track_actions.rs"]
-pub mod track_actions;
-#[path = "track_list/track_content.rs"]
-mod track_content;
-#[path = "track_list/track_cover.rs"]
-mod track_cover;
-#[path = "track_list/track_list.rs"]
-pub mod track_list;
-#[path = "track_list/track_list_activation.rs"]
-pub mod track_list_activation;
-#[path = "track_list/track_list_columns.rs"]
-pub mod track_list_columns;
-#[path = "track_list/track_list_context_keys.rs"]
-mod track_list_context_keys;
-#[path = "track_list/track_list_context_menu.rs"]
-pub mod track_list_context_menu;
-#[path = "track_list/track_list_dnd.rs"]
-pub mod track_list_dnd;
-#[path = "track_list/track_list_dnd_smoke.rs"]
-pub mod track_list_dnd_smoke;
-#[path = "track_list/track_list_header_style.rs"]
-mod track_list_header_style;
-#[path = "track_list/track_list_layout.rs"]
-mod track_list_layout;
-#[path = "track_list/track_list_model.rs"]
-pub mod track_list_model;
-#[path = "track_list/track_list_queue_menu.rs"]
-mod track_list_queue_menu;
-#[path = "track_list/track_list_rescan.rs"]
-mod track_list_rescan;
-#[path = "track_list/track_list_row_interaction.rs"]
-mod track_list_row_interaction;
-#[path = "track_list/track_list_selection.rs"]
-mod track_list_selection;
-#[path = "track_list/track_list_smoke.rs"]
-pub mod track_list_smoke;
-#[path = "track_list/track_list_sort.rs"]
-pub mod track_list_sort;
-#[path = "playback/up_next_transport.rs"]
-mod up_next_transport;
+pub(crate) mod track_list;
 pub mod view_session;
-#[allow(dead_code)] // Datenschicht ohne UI-Konsumenten bisher
-#[path = "playback/waveform_peaks.rs"]
-mod waveform_peaks;
-#[path = "player_bar/waveform_seek.rs"]
-mod waveform_seek;
-#[path = "window/window.rs"]
-pub mod window;
-#[path = "window/window_decoration_strings.rs"]
-mod window_decoration_strings;
-#[path = "window/window_decorations.rs"]
-mod window_decorations;
-#[path = "window/window_navigation.rs"]
-mod window_navigation;
-#[path = "window/window_smoke.rs"]
-mod window_smoke;
+pub(crate) mod window;
 
-#[cfg(test)]
-#[path = "lyrics/lyrics_view_tests.rs"]
-mod lyrics_view_tests;
-
-#[cfg(test)]
-#[path = "lyrics/player_lyrics_tests.rs"]
-mod player_lyrics_tests;
+// Compatibility surface for the existing frontend. The ownership of every
+// implementation module now lives with its feature directory; these explicit
+// imports keep call sites stable while preventing ui/mod.rs from becoming a
+// second, flattened module tree again.
+#[allow(unused_imports)]
+pub(crate) use browse::browse_bar;
+#[allow(unused_imports)]
+use browse::{browse_filter_count, browse_filter_strings};
+#[allow(unused_imports)]
+use compact::{
+    compact_mode_controls, compact_player, compact_player_layouts, compact_player_menu,
+    compact_player_scroll, minimal_view,
+};
+#[allow(unused_imports)]
+use cover::{cover_download_batch, main_cover_download_progress};
+#[allow(unused_imports)]
+pub(crate) use cover::{cover_download_worker, cover_loader};
+#[allow(unused_imports)]
+use device_sync::{
+    device_sync_actions, device_sync_backend, device_sync_feedback, device_sync_runtime,
+    device_sync_smoke, device_sync_strings,
+};
+#[allow(unused_imports)]
+use info_panel::{
+    artist_news_worker, info_panel_empty_state, info_panel_feedback, info_panel_state,
+    information_column,
+};
+#[allow(unused_imports)]
+use library_views::{
+    album_card, album_card_actions, album_card_css, album_context_menu, album_header, album_view,
+    album_view_actions, album_view_state, artist_avatar, artist_detail_hero, artist_detail_pane,
+    artist_detail_row, artist_master, artist_master_row, artist_view, artist_view_css,
+    library_view_css,
+};
+#[allow(unused_imports)]
+use lyrics::{
+    lyrics_smoke, lyrics_state, lyrics_strings, lyrics_view, lyrics_worker, player_lyrics,
+};
+#[allow(unused_imports)]
+use playback::{audio_effects, play_tracking, player_event_handling, up_next_transport};
+#[allow(unused_imports)]
+pub(crate) use playback::{
+    now_playing_wiring, playback_faults, player_controller, player_controller_wiring,
+    queue_transport, session_player,
+};
+#[allow(unused_imports)]
+use player_bar::{
+    library_player_bar, player_bar_layout, player_bar_seek, player_bar_state, waveform_seek,
+};
+#[allow(unused_imports)]
+pub(crate) use playlists::playlist_io;
+#[allow(unused_imports)]
+use playlists::{playlist_import_navigation, playlist_io_names};
+#[allow(unused_imports)]
+use preferences::{
+    preference_appearance, preference_choice_cards, preference_dependencies, preference_effects,
+    preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
+    preference_playback, preference_plugins, preference_rhythmbox, preference_sync,
+    preference_visual_strings, preference_window_decorations, preferences_window,
+};
+#[allow(unused_imports)]
+pub(crate) use scan::{scan_card_css, scan_flow};
+#[allow(unused_imports)]
+use scan::{scan_controls, scan_progress, scan_watcher, scan_waveform_analysis, scan_worker};
+#[allow(unused_imports)]
+use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
+#[allow(unused_imports)]
+use sidebar::{
+    sidebar_device_card, sidebar_issue_cleanup, sidebar_issue_strings, sidebar_playlist_creation,
+    sidebar_presentation, sidebar_rebuild,
+};
+#[allow(unused_imports)]
+pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
+#[allow(unused_imports)]
+use stats::{hourly_chart, stats_chart, stats_chart_math};
+#[allow(unused_imports)]
+pub(crate) use stats::{stats_css, stats_view};
+#[allow(unused_imports)]
+use tag_edit::{
+    autocomplete_entry, tag_editor_dirty, tag_editor_form, tag_editor_lookup, tag_editor_save,
+    tag_editor_state, tag_editor_style, tag_editor_widgets,
+};
+#[allow(unused_imports)]
+pub(crate) use tag_edit::{tag_edit_flow, tag_editor};
+#[allow(unused_imports)]
+pub(crate) use track_list::{
+    column_layout, rating, track_actions, track_list_activation, track_list_columns,
+    track_list_context_menu, track_list_dnd, track_list_dnd_smoke, track_list_model,
+    track_list_smoke, track_list_sort,
+};
+#[allow(unused_imports)]
+use track_list::{
+    column_layout_editor, column_widths, current_track_selection, list_density, track_content,
+    track_cover, track_list_builder, track_list_context_keys, track_list_header_style,
+    track_list_layout, track_list_queue_menu, track_list_reload, track_list_rescan,
+    track_list_row_interaction, track_list_selection,
+};
+#[allow(unused_imports)]
+use window::{
+    library_chrome, library_shell, window_action_wiring, window_decoration_strings,
+    window_decorations, window_navigation, window_runtime_wiring, window_smoke,
+};

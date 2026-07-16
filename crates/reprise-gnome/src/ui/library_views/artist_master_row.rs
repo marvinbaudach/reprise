@@ -3,11 +3,11 @@
 //!
 //! Split from `artist_master.rs` (which owns the model, sort, selection, and
 //! public API) so each file stays cohesive. `GtkListView` recycles row
-//! widgets as they scroll, so the per-row `EqBars` and the avatar's inline
-//! gradient `CssProvider` are held in a side table ([`Registry`]) keyed by the
-//! cell's `ListItem` pointer identity — inserted on `connect_setup`, removed
-//! on `connect_teardown`, looked up on `connect_bind` (the same pattern
-//! `track_list_columns.rs` uses for its per-cell cover generation counters).
+//! widgets as they scroll, so the per-row `EqBars` and avatar are held in a
+//! side table ([`Registry`]) keyed by the cell's `ListItem` pointer identity —
+//! inserted on `connect_setup`, removed on `connect_teardown`, looked up on
+//! `connect_bind` (the same pattern `track_list_columns.rs` uses for its
+//! per-cell cover generation counters).
 //! The master walks that table to light the now-playing row's EQ rather than
 //! forcing a full model rebind.
 
@@ -28,14 +28,14 @@ const ROW_HEIGHT: i32 = 56;
 const AVATAR_SIZE: i32 = 38;
 
 /// Side table of live (recycled) rows, keyed by `ListItem` pointer identity.
-pub(super) type Registry = Rc<RefCell<HashMap<usize, Rc<RowHandles>>>>;
+pub(in crate::ui) type Registry = Rc<RefCell<HashMap<usize, Rc<RowHandles>>>>;
 
 /// Widgets and per-row state kept alive for a single (recycled) row, so
 /// `connect_bind` can update them and the master's `set_now_playing_artist`
 /// can reach the row's mini-EQ without walking the widget tree.
-pub(super) struct RowHandles {
+pub(in crate::ui) struct RowHandles {
     root: gtk4::Box,
-    avatar_css: gtk4::CssProvider,
+    avatar: gtk4::Box,
     initials: gtk4::Label,
     name: gtk4::Label,
     meta: gtk4::Label,
@@ -50,7 +50,7 @@ pub(super) struct RowHandles {
 impl RowHandles {
     /// Shows this row's mini-EQ iff `now_playing` matches the bound artist
     /// (case-insensitively).
-    pub(super) fn set_now_playing(&self, now_playing: Option<&str>) {
+    pub(in crate::ui) fn set_now_playing(&self, now_playing: Option<&str>) {
         self.eq
             .set_visible(is_now_playing(now_playing, &self.artist.borrow()));
     }
@@ -65,7 +65,7 @@ fn is_now_playing(now_playing: Option<&str>, row_artist: &str) -> bool {
 /// The row factory: builds each 56px row once (`connect_setup`), registers its
 /// handles keyed by the cell pointer, updates them on `connect_bind`, and
 /// unregisters on `connect_teardown`.
-pub(super) fn build_row_factory(
+pub(in crate::ui) fn build_row_factory(
     registry: &Registry,
     now_playing: &Rc<RefCell<Option<String>>>,
 ) -> gtk4::SignalListItemFactory {
@@ -121,9 +121,8 @@ pub(super) fn build_row_factory(
 }
 
 /// Builds one row's widgets: gradient avatar (initials) + name/meta stack +
-/// trailing mini-EQ. Styling is class-only (Task 10) except the avatar's
-/// per-artist gradient, which is intrinsically per-row data carried on its own
-/// `CssProvider`.
+/// trailing mini-EQ. The avatar identity is represented by one class from the
+/// centrally registered palette.
 fn build_row() -> Rc<RowHandles> {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     root.add_css_class("artist-list-row");
@@ -134,8 +133,6 @@ fn build_row() -> Rc<RowHandles> {
     avatar.set_size_request(AVATAR_SIZE, AVATAR_SIZE);
     avatar.set_halign(gtk4::Align::Center);
     avatar.set_valign(gtk4::Align::Center);
-    let avatar_css = gtk4::CssProvider::new();
-    attach_avatar_provider(&avatar, &avatar_css);
 
     let initials = gtk4::Label::new(None);
     initials.set_halign(gtk4::Align::Center);
@@ -168,7 +165,7 @@ fn build_row() -> Rc<RowHandles> {
 
     Rc::new(RowHandles {
         root,
-        avatar_css,
+        avatar,
         initials,
         name,
         meta,
@@ -182,9 +179,7 @@ fn bind_row(handles: &RowHandles, summary: &ArtistSummary, now_playing: Option<&
     handles
         .initials
         .set_text(&artist_avatar::initials(&summary.artist));
-    handles
-        .avatar_css
-        .load_from_string(&avatar_gradient_css(&summary.artist));
+    set_avatar_gradient(&handles.avatar, &summary.artist);
     handles.name.set_text(&summary.artist);
     handles.meta.set_text(&strings::artist_counts(
         summary.album_count,
@@ -196,22 +191,9 @@ fn bind_row(handles: &RowHandles, summary: &ArtistSummary, now_playing: Option<&
         .set_visible(is_now_playing(now_playing, &summary.artist));
 }
 
-/// The avatar's inline background rule. The provider is scoped to the single
-/// avatar box, so the class selector only ever matches that one widget.
-fn avatar_gradient_css(name: &str) -> String {
-    format!(
-        ".artist-list-avatar {{ background-image: {}; }}",
-        artist_avatar::gradient_css(name)
-    )
-}
-
-/// Attaches a per-widget `CssProvider` to the avatar box. `style_context` is
-/// deprecated in GTK 4.10+, but a per-row gradient is intrinsically per-widget
-/// data (see the module doc and this task's constraints), and there is no
-/// non-deprecated per-widget provider API.
-#[allow(deprecated)]
-fn attach_avatar_provider(avatar: &gtk4::Box, provider: &gtk4::CssProvider) {
-    avatar
-        .style_context()
-        .add_provider(provider, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
+fn set_avatar_gradient(avatar: &gtk4::Box, artist: &str) {
+    for index in 0..artist_avatar::GRADIENT_COUNT {
+        avatar.remove_css_class(&format!("artist-avatar-gradient-{index}"));
+    }
+    avatar.add_css_class(&artist_avatar::gradient_class(artist));
 }

@@ -1,4 +1,4 @@
-//! CSS for the My Stats view, registered in [`super::super::style::app_css`].
+//! CSS for the My Stats view, registered in the shared application stylesheet.
 //!
 //! Uses the existing design-system tokens (`.reprise-surface` for cards,
 //! `@accent_color` for the chart, `@window_fg_color` for text) so the view

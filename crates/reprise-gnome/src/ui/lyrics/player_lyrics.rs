@@ -13,7 +13,7 @@ use super::lyrics_view::LyricsView;
 use super::lyrics_worker::{LyricsRequest, LyricsResponse, LyricsRuntime};
 use super::player_controller::PlayerController;
 
-pub(super) struct PlayerLyrics {
+pub(in crate::ui) struct PlayerLyrics {
     runtime: Rc<LyricsRuntime>,
     state: RefCell<LyricsState>,
     view: RefCell<Weak<LyricsView>>,
@@ -21,7 +21,7 @@ pub(super) struct PlayerLyrics {
 }
 
 impl PlayerLyrics {
-    pub(super) fn new() -> Rc<Self> {
+    pub(in crate::ui) fn new() -> Rc<Self> {
         Self::with_runtime(LyricsRuntime::setup())
     }
 
@@ -35,11 +35,11 @@ impl PlayerLyrics {
     }
 
     #[cfg(test)]
-    pub(super) fn setup_with_runtime(runtime: Rc<LyricsRuntime>) -> Rc<Self> {
+    pub(in crate::ui) fn setup_with_runtime(runtime: Rc<LyricsRuntime>) -> Rc<Self> {
         Self::with_runtime(runtime)
     }
 
-    pub(super) fn set_view(self: &Rc<Self>, view: &Rc<LyricsView>) {
+    pub(in crate::ui) fn set_view(self: &Rc<Self>, view: &Rc<LyricsView>) {
         *self.view.borrow_mut() = Rc::downgrade(view);
         let lyrics = Rc::downgrade(self);
         view.set_on_retry(move || {
@@ -50,7 +50,7 @@ impl PlayerLyrics {
         self.render_current();
     }
 
-    pub(super) fn set_track(self: &Rc<Self>, query: Option<LyricsQuery>) {
+    pub(in crate::ui) fn set_track(self: &Rc<Self>, query: Option<LyricsQuery>) {
         self.position_ms.set(0);
         let clear = query.is_none();
         let intent = self.state.borrow_mut().set_track(query);
@@ -65,7 +65,7 @@ impl PlayerLyrics {
         }
     }
 
-    pub(super) fn set_position(&self, position_ms: i64) {
+    pub(in crate::ui) fn set_position(&self, position_ms: i64) {
         self.position_ms.set(position_ms.max(0));
         let changed = self.state.borrow_mut().update_position(position_ms);
         if let Some(active) = changed {
@@ -168,7 +168,7 @@ impl PlayerLyrics {
 /// Builds the lyrics lookup key for `summary` without touching playback. Used
 /// on the gapless hand-off path, where the audio is already rolling and only
 /// the UI/lyrics need to catch up (no `play()` call).
-pub(super) fn lyrics_query_for(summary: &TrackSummary) -> LyricsQuery {
+pub(in crate::ui) fn lyrics_query_for(summary: &TrackSummary) -> LyricsQuery {
     LyricsQuery {
         title: summary.title.clone(),
         artist: summary.artist.clone(),
@@ -177,7 +177,7 @@ pub(super) fn lyrics_query_for(summary: &TrackSummary) -> LyricsQuery {
     }
 }
 
-pub(super) fn start_track_for_lyrics(
+pub(in crate::ui) fn start_track_for_lyrics(
     player: &dyn PlaybackBackend,
     summary: &TrackSummary,
 ) -> Result<LyricsQuery, PlaybackError> {
@@ -186,15 +186,15 @@ pub(super) fn start_track_for_lyrics(
 }
 
 impl PlayerController {
-    pub(super) fn set_lyrics_view(&self, view: &Rc<LyricsView>) {
+    pub(in crate::ui) fn set_lyrics_view(&self, view: &Rc<LyricsView>) {
         self.lyrics.set_view(view);
     }
 
-    pub(super) fn sync_lyrics_track(&self, query: Option<LyricsQuery>) {
+    pub(in crate::ui) fn sync_lyrics_track(&self, query: Option<LyricsQuery>) {
         self.lyrics.set_track(query);
     }
 
-    pub(super) fn sync_lyrics_position(&self, position_ms: i64) {
+    pub(in crate::ui) fn sync_lyrics_position(&self, position_ms: i64) {
         self.lyrics.set_position(position_ms);
     }
 }

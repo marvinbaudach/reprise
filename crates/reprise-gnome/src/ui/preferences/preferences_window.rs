@@ -5,7 +5,7 @@ use super::device_sync_strings;
 use super::strings;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PageId {
+pub(in crate::ui) enum PageId {
     Playback,
     Appearance,
     Layout,
@@ -14,7 +14,7 @@ pub(super) enum PageId {
     Plugins,
 }
 
-pub(super) const PAGE_ORDER: [PageId; 6] = [
+pub(in crate::ui) const PAGE_ORDER: [PageId; 6] = [
     PageId::Playback,
     PageId::Appearance,
     PageId::Layout,
@@ -35,7 +35,7 @@ impl PageId {
         }
     }
 
-    pub(super) fn title(self) -> String {
+    pub(in crate::ui) fn title(self) -> String {
         let message = match self {
             Self::Playback => strings::PREFERENCES_PLAYBACK,
             Self::Appearance => strings::PREFERENCES_APPEARANCE,
@@ -47,7 +47,7 @@ impl PageId {
         strings::text(message)
     }
 
-    pub(super) fn icon_name(self) -> &'static str {
+    pub(in crate::ui) fn icon_name(self) -> &'static str {
         match self {
             Self::Playback => "audio-speakers-symbolic",
             Self::Appearance => "applications-graphics-symbolic",
@@ -59,11 +59,11 @@ impl PageId {
     }
 }
 
-pub(super) struct PreferencesShell {
-    pub(super) dialog: adw::Dialog,
-    pub(super) navigation: adw::NavigationView,
-    pub(super) stack: adw::ViewStack,
-    pub(super) sidebar: gtk4::ListBox,
+pub(in crate::ui) struct PreferencesShell {
+    pub(in crate::ui) dialog: adw::Dialog,
+    pub(in crate::ui) navigation: adw::NavigationView,
+    pub(in crate::ui) stack: adw::ViewStack,
+    pub(in crate::ui) sidebar: gtk4::ListBox,
 }
 
 /// One sidebar entry (icon + title) for `id`; its list index equals the
@@ -93,19 +93,20 @@ fn appearance_index() -> i32 {
 
 /// Returns the sidebar row index for the page whose stack name matches
 /// `name`, or `None` if no page matches.
-pub(super) fn page_index_by_name(name: &str) -> Option<i32> {
+pub(in crate::ui) fn page_index_by_name(name: &str) -> Option<i32> {
     PAGE_ORDER
         .iter()
         .position(|id| id.name() == name)
         .map(|i| i as i32)
 }
 
-pub(super) fn build(
+pub(in crate::ui) fn build(
     pages: [(PageId, adw::PreferencesPage); 6],
     foreground_top_bar: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
     for (id, page) in pages {
+        page.add_css_class("reprise-preferences-page");
         stack.add_titled_with_icon(&page, Some(id.name()), &id.title(), id.icon_name());
     }
 
@@ -193,6 +194,14 @@ pub(super) fn build(
     }
 }
 
+pub(in crate::ui) fn css() -> String {
+    ".reprise-preferences-page > scrolledwindow > viewport > clamp > box { \
+     margin: 12px; \
+     border-spacing: 18px; \
+     }"
+    .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use gtk4::gio;
@@ -201,6 +210,24 @@ mod tests {
     use libadwaita::prelude::*;
 
     use super::*;
+
+    #[test]
+    fn page_spacing_css_applies_one_compact_inset_to_every_settings_page() {
+        let css = css();
+        assert!(css.contains(".reprise-preferences-page"));
+        assert!(css.contains("margin: 12px"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn page_spacing_css_parses_without_gtk_errors() {
+        gtk4::init().unwrap();
+        let errors = crate::ui::style::css_parse_errors(&css());
+        assert!(
+            errors.is_empty(),
+            "GTK reported CSS parsing errors: {errors:?}"
+        );
+    }
 
     #[test]
     fn page_tabs_follow_the_design_order_with_synchronization() {
@@ -247,6 +274,12 @@ mod tests {
             .row_at_index(PAGE_ORDER.len() as i32)
             .is_none());
         assert_eq!(shell.stack.pages().n_items(), PAGE_ORDER.len() as u32);
+        for id in PAGE_ORDER {
+            assert!(shell
+                .stack
+                .child_by_name(id.name())
+                .is_some_and(|page| page.has_css_class("reprise-preferences-page")));
+        }
     }
 
     #[test]

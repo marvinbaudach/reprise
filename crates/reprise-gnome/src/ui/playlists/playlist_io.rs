@@ -236,9 +236,9 @@ pub fn export_playlist(
 }
 
 /// Builds the `.m3u`/`.m3u8` `gtk::FileFilter` shared by both the import
-/// (open) and export (save) dialogs — `pub(super)` so `ui::sidebar_export`
+/// (open) and export (save) dialogs — `pub(in crate::ui)` so `ui::sidebar_export`
 /// can reuse it for the save dialog rather than duplicating the suffix list.
-pub(super) fn m3u_file_filter() -> gtk4::FileFilter {
+pub(in crate::ui) fn m3u_file_filter() -> gtk4::FileFilter {
     let filter = gtk4::FileFilter::new();
     filter.set_name(Some(&strings::text(strings::M3U_FILE_FILTER_NAME)));
     filter.add_suffix("m3u");
@@ -337,7 +337,7 @@ pub fn wire_import_action(
 /// failure, logs and shows a generic failure toast. Shared by the real
 /// dialog callback ([`wire_import_action`]) and the `REPRISE_SMOKE_M3U=
 /// import:<path>` hook ([`arm_smoke_m3u`]).
-pub(super) fn apply_import_result(
+pub(in crate::ui) fn apply_import_result(
     result: Result<ImportOutcome, ImportError>,
     toast_overlay: &adw::ToastOverlay,
     sidebar: &Rc<Sidebar>,

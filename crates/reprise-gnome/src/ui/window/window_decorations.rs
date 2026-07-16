@@ -13,13 +13,13 @@ fn integrated_chrome_visible(mode: WindowDecorationMode) -> bool {
 }
 
 #[derive(Clone)]
-pub(super) struct WindowContentHost {
+pub(in crate::ui) struct WindowContentHost {
     root: adw::ToolbarView,
     separate_titlebar: gtk4::HeaderBar,
 }
 
 impl WindowContentHost {
-    pub(super) fn new(window: &adw::ApplicationWindow) -> Self {
+    pub(in crate::ui) fn new(window: &adw::ApplicationWindow) -> Self {
         let title = window.title().unwrap_or_else(|| "Reprise".into());
         let separate_titlebar = gtk4::HeaderBar::new();
         separate_titlebar.set_title_widget(Some(&adw::WindowTitle::new(&title, "")));
@@ -35,16 +35,16 @@ impl WindowContentHost {
         }
     }
 
-    pub(super) fn set_content(&self, content: &impl IsA<gtk4::Widget>) {
+    pub(in crate::ui) fn set_content(&self, content: &impl IsA<gtk4::Widget>) {
         self.root.set_content(Some(content));
     }
 
     #[cfg(test)]
-    pub(super) fn content(&self) -> Option<gtk4::Widget> {
+    pub(in crate::ui) fn content(&self) -> Option<gtk4::Widget> {
         self.root.content()
     }
 
-    pub(super) fn additional_height(&self) -> i32 {
+    pub(in crate::ui) fn additional_height(&self) -> i32 {
         if !self.separate_titlebar.is_visible() {
             return 0;
         }
@@ -59,7 +59,7 @@ impl WindowContentHost {
     }
 }
 
-pub(super) struct WindowDecorations {
+pub(in crate::ui) struct WindowDecorations {
     window: adw::ApplicationWindow,
     content_host: WindowContentHost,
     library_header: adw::HeaderBar,
@@ -71,7 +71,7 @@ pub(super) struct WindowDecorations {
 }
 
 impl WindowDecorations {
-    pub(super) fn new(
+    pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
         library_header: &adw::HeaderBar,
         compact_root: Option<&gtk4::Widget>,
@@ -108,7 +108,7 @@ impl WindowDecorations {
         decorations
     }
 
-    pub(super) fn apply(&self, mode: WindowDecorationMode) {
+    pub(in crate::ui) fn apply(&self, mode: WindowDecorationMode) {
         self.window.set_decorated(true);
         self.mode.set(mode);
         self.content_host
@@ -122,15 +122,15 @@ impl WindowDecorations {
         tracing::info!(?mode, "window decoration mode applied");
     }
 
-    pub(super) fn mode(&self) -> WindowDecorationMode {
+    pub(in crate::ui) fn mode(&self) -> WindowDecorationMode {
         self.mode.get()
     }
 
-    pub(super) fn content_host(&self) -> WindowContentHost {
+    pub(in crate::ui) fn content_host(&self) -> WindowContentHost {
         self.content_host.clone()
     }
 
-    pub(super) fn set_on_mode_changed(&self, on_mode_changed: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_mode_changed(&self, on_mode_changed: Rc<dyn Fn()>) {
         self.on_mode_changed.replace(Some(on_mode_changed));
     }
 

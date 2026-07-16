@@ -19,7 +19,7 @@ struct PreviousDevice {
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-pub(super) fn install(
+pub(in crate::ui) fn install(
     header: &adw::HeaderBar,
     split_view: &adw::NavigationSplitView,
     overlay: &adw::ToastOverlay,

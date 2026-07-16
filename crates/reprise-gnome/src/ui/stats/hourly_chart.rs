@@ -13,7 +13,7 @@ use super::stats_chart_math::{
     expand_hourly, format_peak_hour, normalize_bars, peak_hour, BAR_GAP_FRACTION, MIN_BAR_FRACTION,
 };
 
-pub(super) const HOURLY_CHART_CSS_CLASS: &str = "stats-chart";
+pub(in crate::ui) const HOURLY_CHART_CSS_CLASS: &str = "stats-chart";
 const CHART_HEIGHT: i32 = 160;
 const LABEL_AREA_HEIGHT: f64 = 20.0;
 const LABEL_FONT_SIZE: f64 = 9.0;
@@ -29,13 +29,13 @@ struct HourlyData {
     peak_annotation: String,
 }
 
-pub(super) struct HourlyChart {
+pub(in crate::ui) struct HourlyChart {
     area: gtk4::DrawingArea,
     data: Rc<RefCell<HourlyData>>,
 }
 
 impl HourlyChart {
-    pub(super) fn new() -> Self {
+    pub(in crate::ui) fn new() -> Self {
         let area = gtk4::DrawingArea::new();
         area.add_css_class(HOURLY_CHART_CSS_CLASS);
         area.set_hexpand(true);
@@ -55,14 +55,14 @@ impl HourlyChart {
         Self { area, data }
     }
 
-    pub(super) fn widget(&self) -> &gtk4::DrawingArea {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::DrawingArea {
         &self.area
     }
 
     /// Updates the chart with sparse hourly data from `listening_by_hour`.
     /// `sparse` is a list of `(hour, listens)` pairs — only hours with
     /// events are present; this method expands to a full 24-slot array.
-    pub(super) fn set_data(&self, sparse: &[(u8, i64)]) {
+    pub(in crate::ui) fn set_data(&self, sparse: &[(u8, i64)]) {
         let full = expand_hourly(sparse);
         let peak = peak_hour(&full);
         let has_data = full.iter().any(|&v| v > 0);

@@ -6,7 +6,7 @@ use libadwaita as adw;
 use super::info_panel_state::PanelContext;
 use super::strings;
 
-pub(super) fn build(context: &PanelContext) -> Option<adw::StatusPage> {
+pub(in crate::ui) fn build(context: &PanelContext) -> Option<adw::StatusPage> {
     let (icon, title, description) = match context {
         PanelContext::Empty => (
             "folder-music-symbolic",

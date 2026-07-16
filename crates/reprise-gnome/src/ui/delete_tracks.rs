@@ -13,9 +13,9 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::ui::strings;
 use crate::ui::track_list::{reload, show_toast, Shared};
 use crate::ui::track_list_context_menu::current_selection_positions;
+use crate::ui::{one_shot_task, strings};
 
 const ACTION_REMOVE: &str = "remove-selected-from-library";
 const ACTION_TRASH: &str = "trash-selected-tracks";
@@ -172,20 +172,18 @@ fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMo
         show_toast(shared, &strings::text(strings::DELETE_DATABASE_UNAVAILABLE));
         return;
     };
-    let (sender, receiver) = async_channel::bounded(1);
-    let spawned = std::thread::Builder::new()
-        .name("reprise-delete-tracks".into())
-        .spawn(move || {
-            let result = reprise_core::db::open(Some(&db_path))
-                .map_err(|error| error.to_string())
-                .map(|mut conn| run_delete(&mut conn, &tracks, mode));
-            let _ = sender.try_send(result);
-        });
-    if let Err(error) = spawned {
-        tracing::warn!(%error, "could not start removal worker");
-        show_toast(shared, &strings::text(strings::DELETE_WORKER_FAILED));
-        return;
-    }
+    let receiver = match one_shot_task::spawn("reprise-delete-tracks", move || {
+        reprise_core::db::open_migrated(Some(&db_path))
+            .map_err(|error| error.to_string())
+            .map(|mut conn| run_delete(&mut conn, &tracks, mode))
+    }) {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            tracing::warn!(%error, "could not start removal worker");
+            show_toast(shared, &strings::text(strings::DELETE_WORKER_FAILED));
+            return;
+        }
+    };
     let shared_weak = Rc::downgrade(shared);
     glib::spawn_future_local(async move {
         let Ok(result) = receiver.recv().await else {

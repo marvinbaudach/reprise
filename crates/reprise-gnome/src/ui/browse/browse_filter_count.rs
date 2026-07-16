@@ -11,7 +11,7 @@ use rusqlite::Connection;
 
 use super::browse_bar::BrowseBar;
 
-pub(super) fn update(
+pub(in crate::ui) fn update(
     bar: &Rc<BrowseBar>,
     conn: &Rc<RefCell<Connection>>,
     source: &ViewSource,

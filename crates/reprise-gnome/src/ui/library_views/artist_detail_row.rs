@@ -28,16 +28,16 @@ const TRACK_COVER_SIZE: i32 = 30;
 /// A realized top-track row plus the `track_id` it displays, so the pane's
 /// `set_now_playing_track` can light the matching row's mini-EQ without
 /// walking the widget tree.
-pub(super) struct TopTrackRow {
-    pub(super) track_id: i64,
+pub(in crate::ui) struct TopTrackRow {
+    pub(in crate::ui) track_id: i64,
     /// The shared `eq_bars` motif (CSS-animated); visibility is the only
     /// per-row control — shown on the now-playing track's row.
-    pub(super) eq: gtk4::Box,
+    pub(in crate::ui) eq: gtk4::Box,
 }
 
 impl TopTrackRow {
     /// Shows this row's mini-EQ iff `now_playing` is this row's track.
-    pub(super) fn set_now_playing(&self, now_playing: Option<i64>) {
+    pub(in crate::ui) fn set_now_playing(&self, now_playing: Option<i64>) {
         self.eq.set_visible(now_playing == Some(self.track_id));
     }
 }
@@ -45,7 +45,7 @@ impl TopTrackRow {
 /// Builds one album card (cover + title + "YEAR · N tracks"). Clicking it
 /// invokes `on_activate(album, artist)`. v1: the cover and the whole card both
 /// route to the same album source — the play-vs-open distinction is deferred.
-pub(super) fn build_album_card(
+pub(in crate::ui) fn build_album_card(
     cover_loader: &Rc<CoverLoader>,
     generation: &Rc<Cell<u64>>,
     token: u64,
@@ -97,7 +97,7 @@ pub(super) fn build_album_card(
 /// Builds one top-track row: rank, small cover, title/album stack, play count,
 /// duration, and a trailing `EqBars`. Returns the row widget plus its
 /// [`TopTrackRow`] handle (for the now-playing indicator).
-pub(super) fn build_top_track_row(
+pub(in crate::ui) fn build_top_track_row(
     cover_loader: &Rc<CoverLoader>,
     generation: &Rc<Cell<u64>>,
     token: u64,
@@ -167,7 +167,7 @@ pub(super) fn build_top_track_row(
 /// Builds the albums section shell — title, FlowBox, empty hint, Show-all.
 /// Returns `(section, flow, hint, show_all)`; the pane fills the flow and
 /// toggles the hint/button.
-pub(super) fn build_albums_section(
+pub(in crate::ui) fn build_albums_section(
     albums_per_row: u32,
 ) -> (gtk4::Box, gtk4::FlowBox, gtk4::Label, gtk4::Button) {
     let section = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
@@ -205,7 +205,7 @@ pub(super) fn build_albums_section(
 
 /// Builds the top-tracks section shell — title, rows box, Show-all-tracks.
 /// Returns `(section, rows, show_all)`.
-pub(super) fn build_top_section() -> (gtk4::Box, gtk4::Box, gtk4::Button) {
+pub(in crate::ui) fn build_top_section() -> (gtk4::Box, gtk4::Box, gtk4::Button) {
     let section = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
     section.add_css_class("artist-top-section");
     section.append(&section_title(&strings::text(

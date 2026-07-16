@@ -5,30 +5,31 @@ use std::sync::Arc;
 
 use reprise_core::lyrics::{LyricsBody, LyricsError, LyricsQuery};
 
-pub(super) type Lookup = Arc<dyn Fn(&LyricsQuery) -> Result<LyricsBody, LyricsError> + Send + Sync>;
+pub(in crate::ui) type Lookup =
+    Arc<dyn Fn(&LyricsQuery) -> Result<LyricsBody, LyricsError> + Send + Sync>;
 
-pub(super) struct LyricsRequest {
-    pub(super) generation: u64,
-    pub(super) query: LyricsQuery,
-    pub(super) response: async_channel::Sender<LyricsResponse>,
+pub(in crate::ui) struct LyricsRequest {
+    pub(in crate::ui) generation: u64,
+    pub(in crate::ui) query: LyricsQuery,
+    pub(in crate::ui) response: async_channel::Sender<LyricsResponse>,
 }
 
-pub(super) struct LyricsResponse {
-    pub(super) generation: u64,
-    pub(super) result: Result<LyricsBody, LyricsError>,
+pub(in crate::ui) struct LyricsResponse {
+    pub(in crate::ui) generation: u64,
+    pub(in crate::ui) result: Result<LyricsBody, LyricsError>,
 }
 
-pub(super) struct LyricsRuntime {
+pub(in crate::ui) struct LyricsRuntime {
     sender: async_channel::Sender<LyricsRequest>,
 }
 
 impl LyricsRuntime {
-    pub(super) fn setup() -> Rc<Self> {
+    pub(in crate::ui) fn setup() -> Rc<Self> {
         Self::from_lookup(Arc::new(reprise_core::lyrics::load_or_fetch))
     }
 
     #[cfg(test)]
-    pub(super) fn setup_with_lookup(lookup: Lookup) -> Rc<Self> {
+    pub(in crate::ui) fn setup_with_lookup(lookup: Lookup) -> Rc<Self> {
         Self::from_lookup(lookup)
     }
 
@@ -41,7 +42,7 @@ impl LyricsRuntime {
         Rc::new(Self { sender })
     }
 
-    pub(super) fn request(&self, request: LyricsRequest) {
+    pub(in crate::ui) fn request(&self, request: LyricsRequest) {
         if let Err(error) = self.sender.try_send(request) {
             tracing::warn!(%error, "lyrics request dropped: worker is gone");
         }

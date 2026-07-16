@@ -19,7 +19,7 @@ fn active_providers(
 }
 
 impl PlayerController {
-    pub(super) fn begin_scrobble(&self, track: TrackMetadata) {
+    pub(in crate::ui) fn begin_scrobble(&self, track: TrackMetadata) {
         if !self.listenbrainz.is_active() && !self.lastfm.is_active() {
             return;
         }
@@ -37,7 +37,7 @@ impl PlayerController {
     /// Finishes both per-track accounting paths exactly once. The existing
     /// `current_track.take()` remains the idempotency guard for local counts;
     /// `ScrobbleSession::finish` independently takes its pending listen.
-    pub(super) fn evaluate_play_tracking(&self) {
+    pub(in crate::ui) fn evaluate_play_tracking(&self) {
         let Some((track_id, duration_ms)) = self.current_track.take() else {
             return;
         };

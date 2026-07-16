@@ -6,10 +6,10 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
-use super::device_sync_runtime::{
+use crate::ui::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase, SyncStep,
 };
-use super::device_sync_strings;
+use crate::ui::device_sync_strings;
 
 type OpenCallback = Rc<dyn Fn(String, String)>;
 
@@ -650,9 +650,6 @@ mod tests {
 
 #[cfg(test)]
 mod css_tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
     #[test]
     fn css_covers_the_sync_card_vocabulary() {
         let css = super::css();
@@ -678,24 +675,15 @@ mod css_tests {
         if gtk4::init().is_err() {
             return;
         }
-        let errors: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
-        let provider = gtk4::CssProvider::new();
-        {
-            let errors = errors.clone();
-            provider.connect_parsing_error(move |_, section, error| {
-                errors.borrow_mut().push(format!("{section:?}: {error}"));
-            });
-        }
         let combined = format!(
             "{}\n{}",
             crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT, true),
             super::css()
         );
-        provider.load_from_string(&combined);
+        let errors = crate::ui::style::css_parse_errors(&combined);
         assert!(
-            errors.borrow().is_empty(),
-            "GTK reported CSS parsing errors: {:?}",
-            errors.borrow()
+            errors.is_empty(),
+            "GTK reported CSS parsing errors: {errors:?}"
         );
     }
 }

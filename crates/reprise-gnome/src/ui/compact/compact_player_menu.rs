@@ -16,7 +16,7 @@ const ACTION_PREFERENCES: &str = "preferences";
 const ACTION_QUIT: &str = "quit";
 
 /// Every action name registered in the compact action group.
-pub(super) const MENU_ACTIONS: [&str; 7] = [
+pub(in crate::ui) const MENU_ACTIONS: [&str; 7] = [
     ACTION_RESTORE,
     ACTION_PLAY_PAUSE,
     ACTION_NEXT,
@@ -29,10 +29,10 @@ pub(super) const MENU_ACTIONS: [&str; 7] = [
 type VoidCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type BoolCallback = Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>;
 
-pub(super) struct CompactMenu {
-    pub(super) popover: gtk4::PopoverMenu,
-    pub(super) action_group: gio::SimpleActionGroup,
-    pub(super) always_on_top_action: gio::SimpleAction,
+pub(in crate::ui) struct CompactMenu {
+    pub(in crate::ui) popover: gtk4::PopoverMenu,
+    pub(in crate::ui) action_group: gio::SimpleActionGroup,
+    pub(in crate::ui) always_on_top_action: gio::SimpleAction,
     playback_section: gio::Menu,
     on_restore: VoidCallback,
     on_play_pause: VoidCallback,
@@ -45,7 +45,7 @@ pub(super) struct CompactMenu {
 }
 
 impl CompactMenu {
-    pub(super) fn build() -> Self {
+    pub(in crate::ui) fn build() -> Self {
         let on_restore = empty_callback();
         let on_play_pause = empty_callback();
         let on_next = empty_callback();
@@ -121,7 +121,7 @@ impl CompactMenu {
         }
     }
 
-    pub(super) fn set_playing(&self, playing: bool) {
+    pub(in crate::ui) fn set_playing(&self, playing: bool) {
         let mut current = self.is_playing.borrow_mut();
         if *current == playing {
             return;
@@ -130,31 +130,31 @@ impl CompactMenu {
         rebuild_playback_section(&self.playback_section, playing);
     }
 
-    pub(super) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
         *self.on_restore.borrow_mut() = Some(callback);
     }
 
-    pub(super) fn set_on_play_pause(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_play_pause(&self, callback: Rc<dyn Fn()>) {
         *self.on_play_pause.borrow_mut() = Some(callback);
     }
 
-    pub(super) fn set_on_next(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_next(&self, callback: Rc<dyn Fn()>) {
         *self.on_next.borrow_mut() = Some(callback);
     }
 
-    pub(super) fn set_on_previous(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_previous(&self, callback: Rc<dyn Fn()>) {
         *self.on_previous.borrow_mut() = Some(callback);
     }
 
-    pub(super) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
+    pub(in crate::ui) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
         *self.on_always_on_top.borrow_mut() = Some(callback);
     }
 
-    pub(super) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
         *self.on_preferences.borrow_mut() = Some(callback);
     }
 
-    pub(super) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
         *self.on_quit.borrow_mut() = Some(callback);
     }
 }
@@ -242,11 +242,11 @@ fn empty_callback() -> VoidCallback {
 }
 
 #[cfg(test)]
-pub(super) const fn accepts_context_menu(interactive_descendant: bool) -> bool {
+pub(in crate::ui) const fn accepts_context_menu(interactive_descendant: bool) -> bool {
     !interactive_descendant
 }
 
-pub(super) fn popup_at(
+pub(in crate::ui) fn popup_at(
     popover: &gtk4::PopoverMenu,
     anchor: &gtk4::Widget,
     point: Option<(i32, i32)>,

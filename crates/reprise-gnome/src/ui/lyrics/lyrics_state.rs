@@ -3,13 +3,13 @@
 use reprise_core::lyrics::{active_line_index, LyricsBody, LyricsQuery};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct RequestIntent {
-    pub(super) generation: u64,
-    pub(super) query: LyricsQuery,
+pub(in crate::ui) struct RequestIntent {
+    pub(in crate::ui) generation: u64,
+    pub(in crate::ui) query: LyricsQuery,
 }
 
 #[derive(Debug, Default)]
-pub(super) struct LyricsState {
+pub(in crate::ui) struct LyricsState {
     generation: u64,
     query: Option<LyricsQuery>,
     body: Option<LyricsBody>,
@@ -17,7 +17,7 @@ pub(super) struct LyricsState {
 }
 
 impl LyricsState {
-    pub(super) fn set_track(&mut self, query: Option<LyricsQuery>) -> Option<RequestIntent> {
+    pub(in crate::ui) fn set_track(&mut self, query: Option<LyricsQuery>) -> Option<RequestIntent> {
         if self.query == query {
             return None;
         }
@@ -31,7 +31,7 @@ impl LyricsState {
         })
     }
 
-    pub(super) fn retry(&mut self) -> Option<RequestIntent> {
+    pub(in crate::ui) fn retry(&mut self) -> Option<RequestIntent> {
         let query = self.query.clone()?;
         self.generation = self.generation.wrapping_add(1);
         self.body = None;
@@ -42,16 +42,16 @@ impl LyricsState {
         })
     }
 
-    pub(super) fn accepts(&self, generation: u64) -> bool {
+    pub(in crate::ui) fn accepts(&self, generation: u64) -> bool {
         self.query.is_some() && self.generation == generation
     }
 
-    pub(super) fn set_body(&mut self, body: LyricsBody) {
+    pub(in crate::ui) fn set_body(&mut self, body: LyricsBody) {
         self.body = Some(body);
         self.active_line = None;
     }
 
-    pub(super) fn update_position(&mut self, position_ms: i64) -> Option<Option<usize>> {
+    pub(in crate::ui) fn update_position(&mut self, position_ms: i64) -> Option<Option<usize>> {
         let next = match self.body.as_ref() {
             Some(LyricsBody::Synced(lines)) => active_line_index(lines, position_ms),
             Some(LyricsBody::Plain(_) | LyricsBody::Instrumental) | None => None,
@@ -63,15 +63,15 @@ impl LyricsState {
         Some(next)
     }
 
-    pub(super) fn query(&self) -> Option<&LyricsQuery> {
+    pub(in crate::ui) fn query(&self) -> Option<&LyricsQuery> {
         self.query.as_ref()
     }
 
-    pub(super) fn body(&self) -> Option<&LyricsBody> {
+    pub(in crate::ui) fn body(&self) -> Option<&LyricsBody> {
         self.body.as_ref()
     }
 
-    pub(super) fn active_line(&self) -> Option<usize> {
+    pub(in crate::ui) fn active_line(&self) -> Option<usize> {
         self.active_line
     }
 }

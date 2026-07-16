@@ -8,8 +8,8 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::settings;
 
-use super::preferences::{action_row, PreferencesContext};
 use super::strings;
+use super::{action_row, PreferencesContext};
 
 fn library_root_text(context: &PreferencesContext) -> String {
     let root = {
@@ -22,7 +22,7 @@ fn library_root_text(context: &PreferencesContext) -> String {
 }
 
 impl PreferencesContext {
-    pub(super) fn refresh_library_folder_rows(&self) {
+    pub(in crate::ui) fn refresh_library_folder_rows(&self) {
         let subtitle = library_root_text(self);
         let rows = std::mem::take(&mut *self.library_folder_rows.borrow_mut());
         let mut live_rows = Vec::with_capacity(rows.len());
@@ -35,7 +35,7 @@ impl PreferencesContext {
         *self.library_folder_rows.borrow_mut() = live_rows;
     }
 
-    pub(super) fn library_page(self: &Rc<Self>) -> adw::PreferencesPage {
+    pub(in crate::ui) fn library_page(self: &Rc<Self>) -> adw::PreferencesPage {
         let page = adw::PreferencesPage::builder()
             .title(strings::text(strings::PREFERENCES_LIBRARY))
             .icon_name("folder-music-symbolic")

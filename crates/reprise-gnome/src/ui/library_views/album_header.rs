@@ -169,7 +169,7 @@ pub(in crate::ui) fn build_header(
     dropdown.set_selected(initial_index as u32);
 
     // On change: persist + notify.
-    let conn_for_change = conn.clone();
+    let conn_for_change = Rc::clone(conn);
     dropdown.connect_selected_notify(move |dd| {
         let index = dd.selected() as usize;
         let key = AlbumSortKey::ALL

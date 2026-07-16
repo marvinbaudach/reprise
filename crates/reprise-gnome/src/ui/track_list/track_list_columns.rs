@@ -4,7 +4,7 @@
 //! placeholder (`build_status_page`), and the empty-state decision and
 //! application that drives that placeholder (`EmptyState`, `empty_state_for`,
 //! `apply_empty_state`). Split out of `track_list.rs` as a focused sibling;
-//! every function `TrackList::new`/`reload` needs is `pub(super)` while the
+//! every function `TrackList::new`/`reload` needs is `pub(in crate::ui)` while the
 //! `Shared` state and reload orchestration stay in `track_list.rs`.
 
 use std::cell::{Cell, RefCell};
@@ -57,7 +57,7 @@ fn toggle_class(widget: &impl gtk4::prelude::IsA<gtk4::Widget>, class: &str, pre
 /// it must set *or* clear on each bind — which is also why a row scrolled into
 /// view while it is the playing track is marked with no extra bookkeeping.
 /// `leading` additionally carries the cover column's left-edge indicator.
-pub(super) fn apply_now_playing(
+pub(in crate::ui) fn apply_now_playing(
     cell: &impl gtk4::prelude::IsA<gtk4::Widget>,
     track_id: i64,
     shared: &Shared,
@@ -98,7 +98,7 @@ fn rating_refresh_for_sort(sort_field: &str) -> RatingRefresh {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum CellAlignment {
+pub(in crate::ui) enum CellAlignment {
     Text,
     Numeric,
 }
@@ -117,24 +117,15 @@ impl CellAlignment {
 }
 
 #[cfg(test)]
-mod cell_alignment_tests {
-    use super::*;
-
-    #[test]
-    fn text_cells_stay_left_aligned_while_numeric_cells_are_centered() {
-        assert_eq!(CellAlignment::Text.xalign(), 0.0);
-        assert!(!CellAlignment::Text.uses_tabular_figures());
-        assert_eq!(CellAlignment::Numeric.xalign(), 0.5);
-        assert!(CellAlignment::Numeric.uses_tabular_figures());
-    }
-}
+#[path = "track_list_columns_alignment_tests.rs"]
+mod cell_alignment_tests;
 
 /// Which page of the track-list `Stack` should be visible, and (for the
 /// empty variants) which copy the shared `StatusPage` should carry. A plain
 /// enum decided by a pure function (`empty_state_for`) so the selection
 /// logic is unit-testable without a running GTK application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum EmptyState {
+pub(in crate::ui) enum EmptyState {
     /// The library itself has no tracks yet (no filter active either).
     EmptyLibrary,
     /// A neutral "nothing here" state (Stage 3 Task 3): the `Missing`/
@@ -159,7 +150,7 @@ pub(super) enum EmptyState {
 /// (which would be a confusing thing to say about, e.g., a "no files are
 /// currently missing" state — that's good news, not an invitation to scan a
 /// folder).
-pub(super) fn empty_state_for(
+pub(in crate::ui) fn empty_state_for(
     row_count: usize,
     has_filter: bool,
     source: &ViewSource,
@@ -182,7 +173,7 @@ pub(super) fn empty_state_for(
 /// normally confirm, since there's no library yet on first launch).
 /// `apply_empty_state` swaps its title/description/icon in place for the
 /// no-results case rather than building a second widget.
-pub(super) fn build_status_page() -> adw::StatusPage {
+pub(in crate::ui) fn build_status_page() -> adw::StatusPage {
     adw::StatusPage::builder()
         .icon_name(ICON_EMPTY_LIBRARY)
         .title(strings::text(strings::EMPTY_LIBRARY_TITLE))
@@ -201,7 +192,7 @@ pub(super) fn build_status_page() -> adw::StatusPage {
 /// `wire_context_menu_gesture` (Stage 3 Task 5) so a secondary click on this
 /// column's cells opens the row context menu — see that function's doc
 /// comment.
-pub(super) fn append_column(
+pub(in crate::ui) fn append_column(
     column_view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
     sort_id: &'static str,
@@ -284,7 +275,7 @@ pub(super) fn append_column(
 /// track is the playing one; its pause is driven by the `.playback-paused`
 /// class on the `ColumnView` (see `TrackList::set_playback_paused`), never
 /// per cell. Same sorter/context-menu/drag wiring as `append_column`.
-pub(super) fn append_title_column(
+pub(in crate::ui) fn append_title_column(
     column_view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
 ) -> gtk4::ColumnViewColumn {
@@ -399,7 +390,7 @@ pub(super) fn append_title_column(
 /// (`glib::object::ObjectExt::as_ptr`), inserted on `connect_setup` and
 /// removed on `connect_teardown`. This also avoids an unsafe GObject
 /// `set_data`/`data` qdata pair.
-pub(super) fn append_cover_column(
+pub(in crate::ui) fn append_cover_column(
     column_view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
     loader: &Rc<CoverLoader>,
@@ -504,7 +495,7 @@ pub(super) fn append_cover_column(
 /// `conn`/`model` are used by the click handler), which is why
 /// `TrackList::new` calls this after constructing `Shared`, unlike the
 /// other seven columns built by `append_column` beforehand.
-pub(super) fn append_rating_column(
+pub(in crate::ui) fn append_rating_column(
     column_view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
 ) -> gtk4::ColumnViewColumn {
@@ -664,7 +655,7 @@ mod rating_refresh_tests {
 /// (centered icon + title + description, `vexpand`) never changes, only its
 /// copy does, so swapping three properties on one widget is simpler than
 /// building and switching between two near-identical `StatusPage`s.
-pub(super) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
+pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
     match state {
         EmptyState::List => {
             // Stage 3 Task 8: the ImportErrors source's populated page is the
