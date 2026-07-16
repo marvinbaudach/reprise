@@ -285,6 +285,37 @@ fn enqueue_is_rejected_while_a_planned_sync_owns_the_device() {
 }
 
 #[test]
+fn settings_updates_are_rejected_before_persistence_while_syncing() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 40));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        runtime.sync_now("a").unwrap();
+
+        let mut changed = runtime.devices()[0].settings.clone();
+        changed.opus_bitrate = 192;
+        let result = runtime.update_settings(changed);
+
+        assert_eq!(result, Err("device synchronization is active".into()));
+        assert!(matches!(
+            runtime.devices()[0].sync_phase,
+            PlannedSyncPhase::Syncing { .. }
+        ));
+        let persisted = reprise_core::device_sync::settings::load_or_create_settings(
+            &conn.borrow(),
+            "a",
+            "Phone a",
+        )
+        .unwrap();
+        assert_eq!(persisted.opus_bitrate, 0);
+        runtime.cancel_current("a");
+        settle().await;
+    });
+}
+
+#[test]
 fn reconnect_resumes_planned_sync_from_the_remaining_delta() {
     run(async {
         let (_temp, conn) = fixture();
