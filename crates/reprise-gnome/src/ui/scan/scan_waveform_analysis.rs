@@ -1,6 +1,9 @@
 //! Off-thread waveform extraction used after scans and for startup backfill.
 
-/// How many gst-launch subprocesses to run in parallel.
+use reprise_core::waveform::{WaveformBackend, STORED_PEAK_COUNT};
+use reprise_platform_linux::waveform::GstreamerWaveformBackend;
+
+/// How many platform waveform extractions to run in parallel.
 const WAVEFORM_WORKERS: usize = 4;
 
 /// Analyzes waveform peaks for all tracks that don't have them yet.
@@ -51,10 +54,7 @@ pub(super) fn analyze_waveforms(db_path: &std::path::Path) {
                     }
                     let (track_id, ref path_str) = tracks[idx];
                     let path = std::path::Path::new(path_str);
-                    match crate::ui::waveform_peaks::extract_peaks(
-                        path,
-                        crate::ui::waveform_peaks::STORED_PEAK_COUNT,
-                    ) {
+                    match GstreamerWaveformBackend.extract_peaks(path, STORED_PEAK_COUNT) {
                         Ok(peaks) => {
                             if reprise_core::db::set_waveform_peaks(&worker_conn, track_id, &peaks)
                                 .is_ok()
