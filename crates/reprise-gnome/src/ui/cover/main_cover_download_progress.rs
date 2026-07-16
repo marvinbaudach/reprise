@@ -2,8 +2,6 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::glib;
-use gtk4::prelude::*;
-use libadwaita as adw;
 
 use super::cover_download_batch::{BatchProgress, BatchState, CoverDownloadBatch};
 use super::scan_flow::ScanControls;
@@ -41,117 +39,50 @@ fn presentation(progress: BatchProgress) -> ProgressPresentation {
     }
 }
 
-/// Compact main-window projection of the shared cover batch state. Terminal
-/// results remain visible briefly and then hide automatically.
-#[derive(Clone)]
-struct MainCoverProgressView {
-    revealer: gtk4::Revealer,
-    title: gtk4::Label,
-    detail: gtk4::Label,
-    progress: gtk4::ProgressBar,
-    hide_generation: Rc<Cell<u64>>,
-    phase: Rc<Cell<BatchState>>,
-}
+/// Subscribes to cover-download batch progress and projects it onto the
+/// sidebar scan card (via `ScanControls::show_cover_progress`). Terminal
+/// states (complete/failed) remain visible briefly and then hide
+/// automatically, matching the old headerbar banner's behaviour.
+pub(super) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownloadBatch>) {
+    let controls = scan_controls.clone();
+    let hide_generation = Rc::new(Cell::new(0u64));
 
-impl MainCoverProgressView {
-    fn new() -> Self {
-        let title = gtk4::Label::builder()
-            .halign(gtk4::Align::Start)
-            .hexpand(true)
-            .xalign(0.0)
-            .build();
-        let detail = gtk4::Label::builder()
-            .halign(gtk4::Align::End)
-            .hexpand(true)
-            .xalign(1.0)
-            .build();
-        detail.add_css_class("dim-label");
-        detail.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-
-        let labels = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        labels.append(&title);
-        labels.append(&detail);
-        let progress = gtk4::ProgressBar::builder().hexpand(true).build();
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        content.set_margin_start(12);
-        content.set_margin_end(12);
-        content.set_margin_top(6);
-        content.set_margin_bottom(6);
-        content.append(&labels);
-        content.append(&progress);
-
-        Self {
-            revealer: gtk4::Revealer::builder()
-                .transition_type(gtk4::RevealerTransitionType::SlideDown)
-                .child(&content)
-                .build(),
-            title,
-            detail,
-            progress,
-            hide_generation: Rc::new(Cell::new(0)),
-            phase: Rc::new(Cell::new(BatchState::Idle)),
-        }
-    }
-
-    fn widget(&self) -> &gtk4::Revealer {
-        &self.revealer
-    }
-
-    fn apply(&self, progress: BatchProgress) {
-        let state = presentation(progress);
-        let generation = self.hide_generation.get().wrapping_add(1);
-        self.hide_generation.set(generation);
-        let previous = self.phase.replace(progress.state);
-
-        if !state.visible {
-            self.revealer.set_reveal_child(false);
-            return;
-        }
-
-        self.title.set_label(&state.title);
-        self.detail.set_label(&state.detail);
-        self.progress.set_fraction(state.fraction);
-        self.revealer.set_reveal_child(true);
-        if progress.state == BatchState::Running && previous == BatchState::Running {
-            tracing::debug!(
-                checked = progress.checked,
-                total = progress.total,
-                "main cover progress: running"
-            );
-        } else {
-            tracing::info!(
-                state = ?progress.state,
-                checked = progress.checked,
-                total = progress.total,
-                "main cover progress updated"
-            );
-        }
-
-        if state.auto_hide {
-            let revealer = self.revealer.downgrade();
-            let hide_generation = self.hide_generation.clone();
-            let phase = self.phase.clone();
-            glib::timeout_add_seconds_local_once(TERMINAL_HIDE_DELAY_SECS, move || {
-                if hide_generation.get() != generation {
+    batch.subscribe_progress(
+        || true,
+        {
+            let controls = controls.clone();
+            let hide_generation = hide_generation.clone();
+            move |progress| {
+                let pres = presentation(progress);
+                if !pres.visible {
                     return;
                 }
-                if let Some(revealer) = revealer.upgrade() {
-                    revealer.set_reveal_child(false);
+                // A library scan's own progress takes priority over the cover
+                // batch — don't clobber the scan card while a scan is active.
+                if controls.is_scanning() {
+                    return;
                 }
-                phase.set(BatchState::Idle);
-            });
-        }
-    }
-}
 
-pub(super) fn install(
-    toolbar_view: &adw::ToolbarView,
-    batch: &Rc<CoverDownloadBatch>,
-    scan_controls: &ScanControls,
-) {
-    let view = MainCoverProgressView::new();
-    toolbar_view.add_top_bar(view.widget());
-    batch.subscribe_progress(|| true, move |progress| view.apply(progress));
+                controls.show_cover_progress(&pres.title, &pres.detail, pres.fraction);
+
+                if pres.auto_hide {
+                    let generation = hide_generation.get().wrapping_add(1);
+                    hide_generation.set(generation);
+                    let controls = controls.clone();
+                    let hide_generation = hide_generation.clone();
+                    glib::timeout_add_seconds_local_once(TERMINAL_HIDE_DELAY_SECS, move || {
+                        if hide_generation.get() != generation {
+                            return;
+                        }
+                        // Only hide if no scan started in the meantime.
+                        if !controls.is_scanning() {
+                            controls.finish_progress();
+                        }
+                    });
+                }
+            }
+        },
+    );
 
     let batch = batch.clone();
     scan_controls.set_on_complete(move || batch.start());
@@ -159,7 +90,7 @@ pub(super) fn install(
 
 #[cfg(test)]
 mod tests {
-    use super::{presentation, MainCoverProgressView};
+    use super::presentation;
     use crate::ui::cover_download_batch::{BatchProgress, BatchState};
 
     #[test]
@@ -182,7 +113,7 @@ mod tests {
             unavailable: 0,
         });
         assert!(running.visible);
-        assert_eq!(running.title, "Checking missing album covers…");
+        assert_eq!(running.title, "Checking missing album covers\u{2026}");
         assert!(running.detail.contains("2 of 4"));
         assert!(running.detail.contains("1 downloaded"));
         assert_eq!(running.fraction, 0.5);
@@ -207,34 +138,5 @@ mod tests {
             assert_eq!(state.fraction, 1.0);
             assert!(state.auto_hide);
         }
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn widgets_show_running_counts_and_terminal_result() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let view = MainCoverProgressView::new();
-        view.apply(BatchProgress {
-            state: BatchState::Running,
-            checked: 2,
-            total: 4,
-            downloaded: 1,
-            unavailable: 0,
-        });
-        assert!(view.revealer.reveals_child());
-        assert_eq!(view.progress.fraction(), 0.5);
-        assert!(view.detail.label().contains("2 of 4"));
-
-        view.apply(BatchProgress {
-            state: BatchState::Complete,
-            checked: 4,
-            total: 4,
-            downloaded: 1,
-            unavailable: 1,
-        });
-        assert!(view.revealer.reveals_child());
-        assert_eq!(view.title.label(), "Cover check complete");
     }
 }
