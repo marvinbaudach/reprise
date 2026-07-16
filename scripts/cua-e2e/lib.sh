@@ -41,11 +41,22 @@ element_index_for_label() {
   matches=$(jq -r --arg label "$label" '
     [(.structuredContent.elements // .elements // [])[]
       | select(.label == $label)
+      | select(.role == "button" or .role == "text" or .role == "toggle button"
+               or .role == "check box" or .role == "entry" or .role == "switch"
+               or (.actions // [] | any(. == "click")))
       | .element_index]
-    | if length == 1 then .[0] else empty end
+    | if length >= 1 then .[0] else empty end
   ' "$snapshot_path")
   if [[ -z "$matches" ]]; then
-    echo "snapshot must expose exactly one element labelled '$label': $snapshot_path" >&2
+    matches=$(jq -r --arg label "$label" '
+      [(.structuredContent.elements // .elements // [])[]
+        | select(.label == $label)
+        | .element_index]
+      | if length >= 1 then .[0] else empty end
+    ' "$snapshot_path")
+  fi
+  if [[ -z "$matches" ]]; then
+    echo "snapshot does not expose any element labelled '$label': $snapshot_path" >&2
     return 1
   fi
   printf '%s\n' "$matches"

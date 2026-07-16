@@ -123,7 +123,13 @@ pub fn build(
 
     let search_entry = gtk4::SearchEntry::builder()
         .placeholder_text(strings::text(strings::SEARCH_PLACEHOLDER))
+        .accessible_role(gtk4::AccessibleRole::SearchBox)
         .build();
+    search_entry.update_property(
+        &[gtk4::accessible::Property::Label(
+            &strings::text(strings::SEARCH_PLACEHOLDER),
+        )],
+    );
 
     // Starts hidden until `wire_sidebar_toggle` has applied both the persisted
     // Sidebar preference and the current split-view state.
