@@ -295,6 +295,16 @@ impl DeviceSyncRuntime {
     }
 
     pub fn update_settings(self: &Rc<Self>, settings: DeviceSettings) -> Result<(), String> {
+        {
+            let devices = self.device_states.borrow();
+            let device = devices
+                .iter()
+                .find(|device| device.descriptor.id == settings.device_serial)
+                .ok_or_else(|| "device is not connected".to_string())?;
+            if device.running || device.planned_cancel.is_some() {
+                return Err("device synchronization is active".into());
+            }
+        }
         save_settings(&self.conn.borrow(), &settings).map_err(|error| error.to_string())?;
         let device_id = settings.device_serial.clone();
         {
