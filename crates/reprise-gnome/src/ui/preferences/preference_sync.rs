@@ -22,7 +22,11 @@ pub(super) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPag
     let group = adw::PreferencesGroup::builder()
         .title(copy::text(copy::CONNECTED_DEVICES))
         .build();
-    let list = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    // A real GtkListBox, not a styled Box: AdwActionRow's `activated` signal
+    // only fires when a parent list box activates the row — inside a plain
+    // Box the device rows render fine but are dead to clicks.
+    let list = gtk4::ListBox::new();
+    list.set_selection_mode(gtk4::SelectionMode::None);
     list.add_css_class("boxed-list");
     group.add(&list);
     page.add(&group);
@@ -36,8 +40,10 @@ pub(super) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPag
     page
 }
 
-fn render_devices(list: &gtk4::Box, state: &DeviceSyncState, runtime: &Rc<DeviceSyncRuntime>) {
-    clear_box(list);
+fn render_devices(list: &gtk4::ListBox, state: &DeviceSyncState, runtime: &Rc<DeviceSyncRuntime>) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
     if state.devices.is_empty() {
         let empty = adw::StatusPage::builder()
             .icon_name("phone-symbolic")
@@ -76,10 +82,12 @@ pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -
     let device_id = device.id.clone();
     let runtime = runtime.clone();
     row.connect_activated(move |row| {
-        let Some(root) = row.root() else {
-            return;
-        };
-        present_device(&root, &device_id, &runtime);
+        // The row lives inside the Preferences dialog. The device dialog must
+        // be presented with a parent INSIDE that dialog (libadwaita then
+        // stacks it above); presenting on `row.root()` — the toplevel window —
+        // silently fails while another dialog is already presented there,
+        // which made this row appear dead.
+        present_device(row, &device_id, &runtime);
     });
     row
 }
@@ -593,10 +601,14 @@ mod tests {
     fn empty_device_list_builds_the_usb_instructions_status_page() {
         gtk4::init().unwrap();
         let runtime = display_runtime();
-        let list = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let list = gtk4::ListBox::new();
         render_devices(&list, &DeviceSyncState::default(), &runtime);
+        // The list box wraps appended non-row children in a GtkListBoxRow.
         let status = list
             .first_child()
+            .and_downcast::<gtk4::ListBoxRow>()
+            .unwrap()
+            .child()
             .and_downcast::<adw::StatusPage>()
             .unwrap();
         assert_eq!(status.title(), copy::text(copy::NO_DEVICE));
