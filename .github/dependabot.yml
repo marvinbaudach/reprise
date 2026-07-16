@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore"
+    labels:
+      - dependencies
+    groups:
+      gstreamer:
+        patterns:
+          - "gstreamer*"
+      gtk:
+        patterns:
+          - "gtk4"
+          - "gdk4-*"
+          - "libadwaita"
+          - "gio"
+      serde:
+        patterns:
+          - "serde"
+          - "serde_json"
