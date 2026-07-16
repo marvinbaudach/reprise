@@ -107,12 +107,10 @@ impl PlayerController {
         self.sync_cover(&current_path);
     }
 
-    /// Feeds Bar and Compact metadata from one call. Compact additionally
-    /// receives the optional year used by Card; the bar retains its existing
-    /// metadata set (title/artist only).
-    pub(super) fn sync_track(&self, title: &str, artist: &str, album: &str, year: Option<i32>) {
+    /// Feeds Bar, Compact, and Now Playing metadata from one call.
+    pub(super) fn sync_track(&self, title: &str, artist: &str, _album: &str, _year: Option<i32>) {
         self.bar.set_track(title, artist);
-        self.compact_player.set_track(title, artist, album, year);
+        self.compact_player.set_track(title, artist);
     }
 
     /// Clears Bar, Compact, and Lyrics together — the `Stopped`/failure-path
@@ -263,6 +261,10 @@ impl PlayerController {
     pub(super) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
         self.compact_player.set_state(state);
+        // Fan the same state out to the track list's now-playing equaliser
+        // (freeze on pause, drop the marker on stop). Cloned-out before the
+        // call inside `notify_playback_state_changed`, per RefCell discipline.
+        self.notify_playback_state_changed(state);
     }
 
     pub(super) fn sync_position(&self, position_ms: i64, duration_ms: i64) {
@@ -284,7 +286,6 @@ impl PlayerController {
     /// widget (if any) was the origin.
     pub(super) fn sync_shuffle_indicator(&self, active: bool) {
         self.bar.set_shuffle_indicator(active);
-        self.compact_player.set_shuffle_indicator(active);
         // Shuffle changed the play order, so the upcoming track changed too:
         // re-feed the gapless next. Every shuffle path funnels through here.
         self.feed_next();
@@ -293,7 +294,6 @@ impl PlayerController {
     /// Same shape as `sync_shuffle_indicator`, for the repeat button.
     pub(super) fn sync_repeat_indicator(&self, repeat: Repeat) {
         self.bar.set_repeat_indicator(repeat);
-        self.compact_player.set_repeat_indicator(repeat);
         // Repeat mode changes what plays next (All wraps, One suppresses the
         // gapless pre-feed): re-feed. Every repeat path funnels through here.
         self.feed_next();

@@ -1,76 +1,52 @@
-//! `RatingWidget`: a width-responsive interactive rating cell. Its compact
-//! state shows one `★ N` menu button whose popover contains the five rating
-//! choices; when the column is widened it promotes to five inline flat
-//! buttons. Both states use text star glyphs (filled `★` U+2605 vs outline
-//! `☆` U+2606), so they stay readable across icon themes.
+//! `RatingWidget`: an interactive, hover-reveal rating cell.
 //!
-//! ## Why buttons with text glyphs, not images with a `GestureClick`
+//! - **Unrated, at rest:** a single dim dash `—`, nothing else.
+//! - **Rated, at rest:** the five stars, filled (accent) up to the rating and
+//!   empty (dim) after it — a compact read-only summary, and still clickable
+//!   so a rated row stays keyboard-editable.
+//! - **Pointer over the cell:** five clickable star buttons; the star under
+//!   the pointer and every star before it light up in the accent as a live
+//!   preview. Clicking commits that rating (the Rhythmbox re-click-to-clear
+//!   rule still applies). Moving the pointer out without clicking reverts to
+//!   the at-rest summary.
 //!
-//! The first implementation was five `gtk::Image`s (`starred-symbolic` /
-//! `non-starred-symbolic`) with one `GestureClick` on the containing box
-//! mapping the press x-coordinate to a star index. Field testing on a real
-//! desktop killed both halves of that design at once:
+//! This replaced an earlier column-*width*-responsive design (a compact
+//! `★ N` menu button that promoted to five inline stars via `AdwBreakpointBin`).
+//! Hover reveal made that machinery redundant: the cell is always the compact
+//! width and reveals its stars on demand.
 //!
-//! - **Clicks never arrived.** Inside a `GtkColumnView` cell, the list
-//!   row's own click/selection machinery won the event over a plain
-//!   `GestureClick` on a non-interactive `gtk::Box` child — a whole session
-//!   of real pointer clicks produced zero rating-click log lines. Real
-//!   `gtk::Button`s don't have this problem: GTK treats them as genuinely
-//!   interactive children inside list cells and delivers their clicks
-//!   reliably, and they add keyboard focus/activation for free.
-//! - **The icons were theme-dependent.** On Papirus-Dark,
-//!   `non-starred-symbolic` renders nearly identical to `starred-symbolic`,
-//!   so an unrated track (rating 0, confirmed in the DB) looked fully
-//!   rated. Text glyphs `★`/`☆` come from the font, not the icon theme —
-//!   they read correctly on every theme and match the design mockup. The
-//!   outline glyph additionally gets the `dim-label` CSS class so the
-//!   unfilled state is de-emphasized on top of being a different shape.
+//! ## Why real `gtk::Button`s with text glyphs (unchanged rationale)
 //!
-//! ## Why a `gtk::Box` subclass, not a plain Rust struct
+//! The first implementation was `gtk::Image`s (`starred-symbolic` /
+//! `non-starred-symbolic`) with one `GestureClick` mapping the press
+//! x-coordinate to a star. Field testing on a real desktop killed both halves:
 //!
-//! `GtkColumnView`'s `SignalListItemFactory` builds each cell widget once
-//! (`connect_setup`) and rebinds it to a new row many times as the list
-//! recycles/scrolls (`connect_bind`). Rebinding needs to call back into
-//! *this exact* widget instance — set its displayed rating, replace its
-//! click callback with one that closes over the newly-bound row — which
-//! means `connect_bind` must be able to recover it from
-//! `ListItem::child()`. That method only returns a `gtk::Widget`; getting a
-//! usable Rust type back out of it requires either an unsafe `set_data`/
-//! `data` pair on the GObject, or making the widget itself the GObject, so
-//! a plain safe `downcast::<RatingWidget>()` works — exactly the tradeoff
-//! `TrackListModel` (`track_list_model.rs`) already made for the same
-//! reason (a `GListModel` subclass instead of a bespoke Rust struct). This
-//! module follows that precedent: `RatingWidget` extends `gtk::Box`.
+//! - **Clicks never arrived.** Inside a `GtkColumnView` cell, the list row's
+//!   own click/selection machinery won the event over a plain `GestureClick`
+//!   on a non-interactive child. Real `gtk::Button`s don't have this problem —
+//!   GTK treats them as genuinely interactive children and delivers their
+//!   clicks reliably, plus keyboard activation for free.
+//! - **The icons were theme-dependent.** On Papirus-Dark `non-starred-symbolic`
+//!   renders nearly identical to `starred-symbolic`. Text glyphs `★`/`☆` come
+//!   from the font, not the icon theme, so they read correctly everywhere.
 //!
-//! ## Click → rating
+//! ## Why a `gtk::Box` subclass (unchanged)
 //!
-//! Button N sets the rating to N — except the Rhythmbox rule: clicking the
-//! star that already equals the current rating clears it to 0 (a misclick
-//! can be undone with one more click on the same spot, instead of always
-//! increasing). The decision is the pure `next_rating` function.
+//! `GtkColumnView`'s `SignalListItemFactory` builds each cell once and rebinds
+//! it to a new row many times as the list recycles. `connect_bind` must
+//! recover *this exact* instance from `ListItem::child()` — which only returns
+//! a `gtk::Widget` — so the widget must itself be the GObject for a safe
+//! `downcast::<RatingWidget>()`. Hence `RatingWidget` extends `gtk::Box`.
 //!
-//! ## DB-free by design
+//! ## No `RefCell` borrow ever spans an external/GTK call (unchanged)
 //!
-//! This widget only tracks and displays an `i32` rating and reports clicks
-//! through `set_on_changed`'s callback — it has no knowledge of
-//! `library::stats` or any `rusqlite::Connection`. `track_list.rs` is the
-//! only place that turns a click into a persisted write.
-//!
-//! ## No `RefCell` borrow ever spans an external/GTK call
-//!
-//! `track_list.rs`'s `on_changed` callback runs a chain that is *not*
-//! guaranteed to stay inside this module: sqlite write
-//! (`stats::set_rating`) → `TrackListModel::invalidate_window_at` →
-//! `GListModel::items_changed`. If `GtkColumnView` reacts to that signal
-//! synchronously — rebinding the very row being clicked — it calls back
-//! into `set_on_changed` on this exact widget while the click handler that
-//! triggered it all is still on the stack. `handle_star_activated`
-//! therefore never holds the `on_changed` `Ref`/`RefMut` while invoking the
-//! callback: it clones the `Rc<dyn Fn(i32)>` out of the `RefCell` in a
-//! single expression, letting the borrow drop before the callback (and
-//! everything it might reentrantly trigger) runs. The same discipline
-//! applies to any future code here that touches GTK or calls out of the
-//! widget — no `RefCell` borrow may still be alive at that point.
+//! `track_list.rs`'s `on_changed` callback runs sqlite → model
+//! `items_changed`, which `GtkColumnView` may react to synchronously by
+//! rebinding this very row — calling back into `set_on_changed` on this widget
+//! while the click handler is still on the stack. `handle_star_activated`
+//! therefore clones the `Rc<dyn Fn(i32)>` out of the `RefCell` in its own
+//! statement, letting the borrow drop before the callback (and any reentrancy
+//! it triggers) runs.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -78,81 +54,86 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
 use gtk4::prelude::*;
-use libadwaita as adw;
-use libadwaita::prelude::*;
 
 use crate::ui::strings;
 
 const STAR_COUNT: i32 = 5;
 const RATING_MIN: i32 = 0;
 const RATING_MAX: i32 = STAR_COUNT;
-pub(super) const COMPACT_RATING_COLUMN_WIDTH: i32 = 88;
-const WIDE_RATING_MIN_WIDTH: i32 = 132;
-const COMPACT_CONTROL_MIN_WIDTH: i32 = 44;
-const RESPONSIVE_MIN_HEIGHT: i32 = 1;
-const COMPACT_STACK_CHILD: &str = "compact";
-const WIDE_STACK_CHILD: &str = "wide";
-const INLINE_STAR_CSS_CLASS: &str = "reprise-rating-inline-star";
-const COMPACT_BUTTON_CSS_CLASS: &str = "reprise-rating-compact-button";
 
+/// Fixed width of the Rating column (`column_layout.rs`). Five ~16 px star
+/// buttons fit comfortably; the old compact/wide breakpoint is gone — hover
+/// reveal replaces it, so the column is always this width.
+pub(super) const COMPACT_RATING_COLUMN_WIDTH: i32 = 88;
+
+/// Filled star glyph (U+2605), shown for star positions `<= threshold`.
+const STAR_FILLED_GLYPH: &str = "\u{2605}";
+/// Outline star glyph (U+2606), shown for positions `> threshold`.
+const STAR_OUTLINE_GLYPH: &str = "\u{2606}";
+/// Em dash (U+2014) — the unrated, at-rest summary.
+const DASH_GLYPH: &str = "\u{2014}";
+
+const STAR_CSS_CLASS: &str = "reprise-rating-star";
+const FILLED_CSS_CLASS: &str = "reprise-rating-filled";
+const EMPTY_CSS_CLASS: &str = "reprise-rating-empty";
+const DASH_CSS_CLASS: &str = "reprise-rating-dash";
+
+/// Shared alias for the click-reporting callback's storage type.
+type OnChangedCallback = Option<Rc<dyn Fn(i32)>>;
+
+/// Pure decision of what the cell shows, given the stored `rating`, whether
+/// the pointer is over the cell (`hovered`), and which star the pointer is
+/// over (`preview`, 1-based; `0` = none, i.e. just entered). `threshold` is
+/// how many stars are filled. Side-effect free so it is unit-testable without
+/// a running GTK application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RatingPresentation {
-    Compact,
-    Wide,
+struct RatingDisplay {
+    show_stars: bool,
+    threshold: i32,
 }
 
-impl RatingPresentation {
-    fn stack_child(self) -> &'static str {
-        match self {
-            Self::Compact => COMPACT_STACK_CHILD,
-            Self::Wide => WIDE_STACK_CHILD,
+fn rating_display(rating: i32, hovered: bool, preview: i32) -> RatingDisplay {
+    if hovered {
+        // Reveal the interactive stars; the preview drives the fill (0 = all
+        // empty until the pointer reaches a star, per the spec baseline).
+        RatingDisplay {
+            show_stars: true,
+            threshold: preview,
+        }
+    } else if rating > 0 {
+        RatingDisplay {
+            show_stars: true,
+            threshold: rating,
+        }
+    } else {
+        RatingDisplay {
+            show_stars: false,
+            threshold: 0,
         }
     }
 }
 
-fn rating_presentation(width: i32) -> RatingPresentation {
-    if width >= WIDE_RATING_MIN_WIDTH {
-        RatingPresentation::Wide
-    } else {
-        RatingPresentation::Compact
+/// Which star (1-based) a pointer at `x` in a `width`-wide row of `STAR_COUNT`
+/// equal-width stars is over. Clamped to `1..=STAR_COUNT`; `0` only when
+/// `width <= 0` (unallocated).
+fn star_at_x(x: f64, width: f64) -> i32 {
+    if width <= 0.0 {
+        return 0;
     }
+    let slot = width / STAR_COUNT as f64;
+    (((x / slot).floor() as i32) + 1).clamp(1, STAR_COUNT)
 }
 
-fn compact_rating_text(rating: i32) -> String {
-    let rating = rating.clamp(RATING_MIN, RATING_MAX);
-    if rating == RATING_MIN {
-        format!("{STAR_OUTLINE_GLYPH} —")
-    } else {
-        format!("{STAR_FILLED_GLYPH} {rating}")
-    }
-}
-
-/// Filled star glyph (U+2605) — shown for star positions `<= rating`.
-/// Single-codepoint symbol; stays here rather than strings.rs (see module
-/// doc comment in strings.rs).
-const STAR_FILLED_GLYPH: &str = "\u{2605}";
-/// Outline star glyph (U+2606) — shown for star positions `> rating`, and
-/// additionally dimmed via [`STAR_OUTLINE_CSS_CLASS`].
-/// Single-codepoint symbol; stays here rather than strings.rs (see module
-/// doc comment in strings.rs).
-const STAR_OUTLINE_GLYPH: &str = "\u{2606}";
-/// De-emphasizes the outline glyph — the same generic Adwaita "dim" class
-/// `player_bar.rs` already uses for its inactive repeat state.
-const STAR_OUTLINE_CSS_CLASS: &str = "dim-label";
-
-/// Star and compact-chooser hit-area minima; installed app-wide by
+/// Star and dash hit-area + colour rules; installed app-wide by
 /// [`super::style`].
 pub(super) fn css() -> String {
     format!(
-        ".{INLINE_STAR_CSS_CLASS} {{ min-width: 20px; min-height: 26px; padding: 1px; }}\n\
-         .{COMPACT_BUTTON_CSS_CLASS} {{ min-width: {COMPACT_CONTROL_MIN_WIDTH}px; \
-         padding: 2px 6px; }}"
+        ".{STAR_CSS_CLASS} {{ min-width: 16px; min-height: 24px; padding: 0; }}\n\
+         .{FILLED_CSS_CLASS} {{ color: @accent_color; }}\n\
+         .{EMPTY_CSS_CLASS} {{ color: alpha(@window_fg_color, 0.25); }}\n\
+         .{DASH_CSS_CLASS} {{ color: alpha(@window_fg_color, 0.30); }}"
     )
 }
-
-/// Shared alias for the click-reporting callback's storage type — see the
-/// `on_changed` field doc comment for why it's `Rc`-wrapped and `Option`al.
-type OnChangedCallback = Option<Rc<dyn Fn(i32)>>;
 
 mod imp {
     use super::*;
@@ -160,24 +141,18 @@ mod imp {
 
     #[derive(Default)]
     pub struct RatingWidget {
-        /// One `(button, its label child)` pair per star, in order. The
-        /// label is kept alongside the button so display updates don't
-        /// have to re-downcast `button.child()` on every `set_rating`.
+        /// One `(button, its label child)` pair per star, in order.
         pub stars: RefCell<Vec<(gtk4::Button, gtk4::Label)>>,
-        pub chooser_stars: RefCell<Vec<(gtk4::Button, gtk4::Label)>>,
-        pub compact_label: RefCell<Option<gtk4::Label>>,
-        pub compact_button: RefCell<Option<gtk4::MenuButton>>,
-        pub presentation_stack: RefCell<Option<gtk4::Stack>>,
+        pub stars_box: RefCell<Option<gtk4::Box>>,
+        pub dash: RefCell<Option<gtk4::Label>>,
         pub rating: Cell<i32>,
-        /// Replaced wholesale by `set_on_changed` on every list-item
-        /// rebind; `None` before the first `set_on_changed` call, so a
-        /// stray click that arrives before then is simply a no-op instead
-        /// of needing a placeholder closure.
-        ///
-        /// `Rc`, not `Box`: `handle_star_activated` needs to clone the
-        /// callback out of the `RefCell` and drop the borrow before
-        /// invoking it (see the module doc comment), which requires a
-        /// cheaply-cloneable handle rather than owned-in-place storage.
+        /// Whether the pointer is currently over the cell (drives reveal).
+        pub hovered: Cell<bool>,
+        /// Star (1-based) the pointer is over during hover, `0` = none.
+        pub preview: Cell<i32>,
+        /// Replaced wholesale by `set_on_changed` on every rebind; `Rc` so
+        /// `handle_star_activated` can clone it out and drop the borrow before
+        /// invoking (see the module doc comment).
         pub on_changed: RefCell<OnChangedCallback>,
     }
 
@@ -210,203 +185,163 @@ impl RatingWidget {
         glib::Object::new()
     }
 
-    /// Builds compact and wide controls once. The `BreakpointBin` switches
-    /// between them from the cell's own allocation, so a narrow window or a
-    /// user-narrowed Rating column does not reserve five inline buttons.
     fn build_ui(&self) {
         self.set_orientation(gtk4::Orientation::Horizontal);
-        self.set_spacing(0);
         self.set_tooltip_text(Some(&strings::text(strings::RATING)));
 
-        let wide = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        wide.set_halign(gtk4::Align::Center);
+        // Dash summary for the unrated, at-rest state.
+        let dash = gtk4::Label::new(Some(DASH_GLYPH));
+        dash.add_css_class(DASH_CSS_CLASS);
+        dash.set_halign(gtk4::Align::Center);
+        dash.set_hexpand(true);
+        self.append(&dash);
+        self.imp().dash.replace(Some(dash));
+
+        // Five star buttons for the rated / hover-reveal state.
+        let stars_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        stars_box.set_homogeneous(true);
+        stars_box.set_hexpand(true);
         let stars: Vec<(gtk4::Button, gtk4::Label)> = (1..=STAR_COUNT)
             .map(|star| {
-                let (button, label) = self.build_star_control(star, true, None);
-                wide.append(&button);
+                let (button, label) = self.build_star(star);
+                stars_box.append(&button);
                 (button, label)
             })
             .collect();
         self.imp().stars.replace(stars);
+        stars_box.set_visible(false);
+        self.append(&stars_box);
+        self.imp().stars_box.replace(Some(stars_box));
 
-        let chooser = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
-        chooser.set_margin_top(6);
-        chooser.set_margin_bottom(6);
-        chooser.set_margin_start(6);
-        chooser.set_margin_end(6);
-        let popover = gtk4::Popover::new();
-        let chooser_stars: Vec<(gtk4::Button, gtk4::Label)> = (1..=STAR_COUNT)
-            .map(|star| {
-                let (button, label) = self.build_star_control(star, false, Some(&popover));
-                chooser.append(&button);
-                (button, label)
-            })
-            .collect();
-        self.imp().chooser_stars.replace(chooser_stars);
-        popover.set_child(Some(&chooser));
+        // Pointer hover drives reveal + preview. The controller lives on the
+        // widget itself (always present), not on the stars box (hidden while
+        // unrated), so hovering an unrated cell can still reveal the stars.
+        let motion = gtk4::EventControllerMotion::new();
+        let widget = self.downgrade();
+        motion.connect_enter({
+            let widget = widget.clone();
+            move |_, _, _| {
+                if let Some(widget) = widget.upgrade() {
+                    widget.imp().hovered.set(true);
+                    widget.imp().preview.set(0);
+                    widget.refresh();
+                }
+            }
+        });
+        motion.connect_motion({
+            let widget = widget.clone();
+            move |_, x, _| {
+                if let Some(widget) = widget.upgrade() {
+                    let preview = star_at_x(x, f64::from(widget.width()));
+                    if widget.imp().preview.get() != preview {
+                        widget.imp().preview.set(preview);
+                        widget.refresh();
+                    }
+                }
+            }
+        });
+        motion.connect_leave(move |_| {
+            if let Some(widget) = widget.upgrade() {
+                widget.imp().hovered.set(false);
+                widget.imp().preview.set(0);
+                widget.refresh();
+            }
+        });
+        self.add_controller(motion);
 
-        let compact_label = gtk4::Label::new(Some(&compact_rating_text(RATING_MIN)));
-        let compact_button = gtk4::MenuButton::new();
-        compact_button.set_child(Some(&compact_label));
-        compact_button.set_popover(Some(&popover));
-        compact_button.set_always_show_arrow(false);
-        compact_button.set_has_frame(false);
-        compact_button.set_halign(gtk4::Align::Center);
-        compact_button.set_tooltip_text(Some(&strings::text(strings::RATING)));
-        compact_button.add_css_class(COMPACT_BUTTON_CSS_CLASS);
-        compact_button.add_css_class("reprise-rating-star");
-        self.imp().compact_label.replace(Some(compact_label));
-        self.imp()
-            .compact_button
-            .replace(Some(compact_button.clone()));
-
-        let stack = gtk4::Stack::new();
-        stack.set_hhomogeneous(false);
-        stack.set_vhomogeneous(false);
-        stack.add_named(&compact_button, Some(COMPACT_STACK_CHILD));
-        stack.add_named(&wide, Some(WIDE_STACK_CHILD));
-        stack
-            .set_visible_child_name(rating_presentation(COMPACT_RATING_COLUMN_WIDTH).stack_child());
-        self.imp().presentation_stack.replace(Some(stack.clone()));
-
-        let responsive = adw::BreakpointBin::new();
-        responsive.set_hexpand(true);
-        responsive.set_width_request(COMPACT_CONTROL_MIN_WIDTH);
-        responsive.set_height_request(RESPONSIVE_MIN_HEIGHT);
-        responsive.set_child(Some(&stack));
-        let condition = adw::BreakpointCondition::new_length(
-            adw::BreakpointConditionLengthType::MinWidth,
-            f64::from(WIDE_RATING_MIN_WIDTH),
-            adw::LengthUnit::Px,
-        );
-        let breakpoint = adw::Breakpoint::new(condition);
-        breakpoint.add_setter(
-            &stack,
-            "visible-child-name",
-            Some(&WIDE_STACK_CHILD.to_value()),
-        );
-        responsive.add_breakpoint(breakpoint);
-        self.append(&responsive);
+        self.refresh();
     }
 
-    fn build_star_control(
-        &self,
-        star: i32,
-        inline: bool,
-        popover: Option<&gtk4::Popover>,
-    ) -> (gtk4::Button, gtk4::Label) {
+    fn build_star(&self, star: i32) -> (gtk4::Button, gtk4::Label) {
         let label = gtk4::Label::new(Some(STAR_OUTLINE_GLYPH));
-        label.add_css_class(STAR_OUTLINE_CSS_CLASS);
+        label.add_css_class(EMPTY_CSS_CLASS);
 
         let button = gtk4::Button::new();
-        button.add_css_class("reprise-rating-star");
+        button.add_css_class(STAR_CSS_CLASS);
         button.set_child(Some(&label));
         button.set_has_frame(false);
         button.set_valign(gtk4::Align::Center);
         button.set_tooltip_text(Some(&strings::rate_n_stars(star)));
-        if inline {
-            button.add_css_class(INLINE_STAR_CSS_CLASS);
-        }
 
         let widget = self.downgrade();
-        let popover = popover.map(gtk4::glib::object::ObjectExt::downgrade);
         button.connect_clicked(move |_| {
-            let Some(widget) = widget.upgrade() else {
-                return;
-            };
-            widget.handle_star_activated(star);
-            if let Some(popover) = popover.as_ref().and_then(glib::WeakRef::upgrade) {
-                popover.popdown();
+            if let Some(widget) = widget.upgrade() {
+                widget.handle_star_activated(star);
             }
         });
         (button, label)
     }
 
-    /// Applies the Rhythmbox clear-on-reclick rule for a click on star
-    /// `star` (1-based, from `connect_clicked` wiring), updates the
-    /// display, and reports the new value through the current `on_changed`
-    /// callback.
+    /// Applies the Rhythmbox clear-on-reclick rule for a click on `star`,
+    /// updates the display, and reports the new value through `on_changed`.
     fn handle_star_activated(&self, star: i32) {
         let new_rating = next_rating(star, self.imp().rating.get());
-        self.set_rating(new_rating);
-        // Clone the callback out of the `RefCell` first — this borrow ends
-        // when the `let` statement completes — so no borrow is held while
-        // the callback (and whatever it reentrantly triggers, up to and
-        // including a synchronous `set_on_changed` on this same widget) is
-        // running. See the module doc comment.
+        self.imp().rating.set(new_rating);
+        self.refresh();
+        // Clone the callback out first — this borrow ends with the `let`, so
+        // no borrow is held while the callback (and whatever reentrancy it
+        // triggers, up to a synchronous `set_on_changed` on this widget) runs.
         let callback = self.imp().on_changed.borrow().clone();
         if let Some(callback) = callback {
             callback(new_rating);
         }
     }
 
-    /// Sets the displayed rating without invoking the `on_changed`
-    /// callback — used by `track_list.rs` to show a freshly-bound row's
-    /// stored rating, a programmatic update rather than a user click.
-    /// Clamps out-of-range input (e.g. stale/corrupt DB data) rather than
-    /// trusting it.
+    /// Sets the displayed rating without invoking `on_changed` — used by
+    /// `track_list.rs` to show a freshly-bound row's stored rating. Clamps
+    /// out-of-range input rather than trusting stale/corrupt DB data.
     pub fn set_rating(&self, rating: i32) {
-        let clamped = rating.clamp(RATING_MIN, RATING_MAX);
-        self.imp().rating.set(clamped);
-        let Ok(stars) = self.imp().stars.try_borrow() else {
-            tracing::warn!("rating widget: stars borrow unavailable; skipping redraw");
-            return;
-        };
-        let labels = stars
-            .iter()
-            .enumerate()
-            .map(|(index, (_, label))| (index as i32 + 1, label.clone()))
-            .collect::<Vec<_>>();
-        drop(stars);
-        let Ok(chooser_stars) = self.imp().chooser_stars.try_borrow() else {
-            tracing::warn!("rating widget: chooser stars borrow unavailable; skipping redraw");
-            return;
-        };
-        let chooser_labels = chooser_stars
-            .iter()
-            .enumerate()
-            .map(|(index, (_, label))| (index as i32 + 1, label.clone()))
-            .collect::<Vec<_>>();
-        drop(chooser_stars);
-        for (star, label) in labels.into_iter().chain(chooser_labels) {
-            let filled = star <= clamped;
-            if filled {
-                label.set_text(STAR_FILLED_GLYPH);
-                label.remove_css_class(STAR_OUTLINE_CSS_CLASS);
-            } else {
-                label.set_text(STAR_OUTLINE_GLYPH);
-                label.add_css_class(STAR_OUTLINE_CSS_CLASS);
-            }
-        }
-        let compact_label = self.imp().compact_label.borrow().clone();
-        if let Some(compact_label) = compact_label {
-            compact_label.set_text(&compact_rating_text(clamped));
-        }
-        let compact_button = self.imp().compact_button.borrow().clone();
-        if let Some(compact_button) = compact_button {
-            let tooltip = if clamped == RATING_MIN {
-                strings::text(strings::RATING)
-            } else {
-                strings::rate_n_stars(clamped)
-            };
-            compact_button.set_tooltip_text(Some(&tooltip));
-        }
+        self.imp().rating.set(rating.clamp(RATING_MIN, RATING_MAX));
+        self.refresh();
     }
 
-    /// Replaces the click callback. `track_list.rs` calls this on every
-    /// list-item bind so the callback closes over whichever row is
-    /// currently shown — the widget instance itself is recycled across
-    /// many rows as the list scrolls (see the module doc comment).
+    /// Replaces the click callback. `track_list.rs` calls this on every rebind
+    /// so it closes over whichever row is currently shown.
     pub fn set_on_changed(&self, f: impl Fn(i32) + 'static) {
         *self.imp().on_changed.borrow_mut() = Some(Rc::new(f));
     }
 
-    /// Test-only seam for driving a star click without a real pointer:
-    /// presses button `index` (1-based) via `emit_clicked`, so the call
-    /// goes through the exact same `connect_clicked` →
-    /// `handle_star_activated` path a real click or keyboard activation
-    /// would. The `stars` borrow is hoisted into its own statement and
-    /// dropped before the click (which runs arbitrary callback code) fires.
+    /// Recomputes visibility and every star's glyph + colour from the current
+    /// `(rating, hovered, preview)` state. Cheap; called on each state change.
+    fn refresh(&self) {
+        let display = rating_display(
+            self.imp().rating.get(),
+            self.imp().hovered.get(),
+            self.imp().preview.get(),
+        );
+        if let Some(dash) = self.imp().dash.borrow().as_ref() {
+            dash.set_visible(!display.show_stars);
+        }
+        let Some(stars_box) = self.imp().stars_box.borrow().clone() else {
+            return;
+        };
+        stars_box.set_visible(display.show_stars);
+        if !display.show_stars {
+            return;
+        }
+        let Ok(stars) = self.imp().stars.try_borrow() else {
+            tracing::warn!("rating widget: stars borrow unavailable; skipping redraw");
+            return;
+        };
+        for (index, (_, label)) in stars.iter().enumerate() {
+            let filled = (index as i32 + 1) <= display.threshold;
+            if filled {
+                label.set_text(STAR_FILLED_GLYPH);
+                label.add_css_class(FILLED_CSS_CLASS);
+                label.remove_css_class(EMPTY_CSS_CLASS);
+            } else {
+                label.set_text(STAR_OUTLINE_GLYPH);
+                label.add_css_class(EMPTY_CSS_CLASS);
+                label.remove_css_class(FILLED_CSS_CLASS);
+            }
+        }
+    }
+
+    /// Test-only seam: presses star `index` (1-based) via `emit_clicked`, so
+    /// the call goes through the exact `connect_clicked` → `handle_star_
+    /// activated` path a real click would. The `stars` borrow is hoisted into
+    /// its own statement and dropped before the click fires (which runs
+    /// arbitrary callback code).
     #[cfg(test)]
     pub fn click_star_for_test(&self, index: i32) {
         let button = self
@@ -422,38 +357,8 @@ impl RatingWidget {
     }
 
     #[cfg(test)]
-    pub fn click_compact_choice_for_test(&self, index: i32) {
-        let button = self
-            .imp()
-            .chooser_stars
-            .borrow()
-            .get(usize::try_from(index - 1).expect("star index must be >= 1"))
-            .map(|(button, _)| button.clone());
-        match button {
-            Some(button) => button.emit_clicked(),
-            None => panic!("no compact rating choice at index {index}"),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn compact_text_for_test(&self) -> String {
-        self.imp()
-            .compact_label
-            .borrow()
-            .as_ref()
-            .map(|label| label.text().to_string())
-            .unwrap_or_default()
-    }
-
-    #[cfg(test)]
-    pub fn presentation_for_test(&self) -> String {
-        self.imp()
-            .presentation_stack
-            .borrow()
-            .as_ref()
-            .and_then(gtk4::Stack::visible_child_name)
-            .map(|name| name.to_string())
-            .unwrap_or_default()
+    pub fn rating_for_test(&self) -> i32 {
+        self.imp().rating.get()
     }
 }
 
@@ -466,8 +371,7 @@ impl Default for RatingWidget {
 /// The rating a click on star `clicked_star` (1-based) should produce given
 /// the `current` rating: normally the star's own value, but re-clicking the
 /// star that already equals the current rating clears to 0 (the Rhythmbox
-/// rule — see the module doc comment). Pure so the rule is unit-testable
-/// without any GTK widgets.
+/// rule). Pure so the rule is unit-testable without any GTK widgets.
 fn next_rating(clicked_star: i32, current: i32) -> i32 {
     if clicked_star == current {
         RATING_MIN
@@ -481,92 +385,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rating_presentation_adapts_at_the_compact_width_boundary() {
-        assert_eq!(rating_presentation(88), RatingPresentation::Compact);
+    fn unrated_at_rest_shows_only_the_dash() {
+        let display = rating_display(0, false, 0);
+        assert!(!display.show_stars);
+    }
+
+    #[test]
+    fn rated_at_rest_shows_stars_filled_to_the_rating() {
+        let display = rating_display(3, false, 0);
+        assert!(display.show_stars);
+        assert_eq!(display.threshold, 3);
+    }
+
+    #[test]
+    fn hover_reveals_stars_and_preview_drives_the_fill() {
+        // Just entered (preview 0): all stars empty.
         assert_eq!(
-            rating_presentation(WIDE_RATING_MIN_WIDTH - 1),
-            RatingPresentation::Compact
-        );
-        assert_eq!(
-            rating_presentation(WIDE_RATING_MIN_WIDTH),
-            RatingPresentation::Wide
-        );
-    }
-
-    #[test]
-    fn compact_rating_text_keeps_zero_and_values_distinct() {
-        assert_eq!(compact_rating_text(0), "☆ —");
-        assert_eq!(compact_rating_text(1), "★ 1");
-        assert_eq!(compact_rating_text(5), "★ 5");
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn rating_controls_are_centered_within_the_cell() {
-        gtk4::init().unwrap();
-        let widget = RatingWidget::new();
-        let responsive = widget
-            .first_child()
-            .unwrap()
-            .downcast::<adw::BreakpointBin>()
-            .unwrap();
-        let stack = responsive
-            .child()
-            .unwrap()
-            .downcast::<gtk4::Stack>()
-            .unwrap();
-        let compact = stack.child_by_name(COMPACT_STACK_CHILD).unwrap();
-        let wide = stack.child_by_name(WIDE_STACK_CHILD).unwrap();
-
-        assert_eq!(compact.halign(), gtk4::Align::Center);
-        assert_eq!(wide.halign(), gtk4::Align::Center);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn compact_chooser_updates_the_value_and_reports_the_change() {
-        gtk4::init().unwrap();
-        let widget = RatingWidget::new();
-        widget.set_rating(2);
-        assert_eq!(widget.compact_text_for_test(), "★ 2");
-
-        let reported = Rc::new(Cell::new(-1));
-        let reported_for_callback = reported.clone();
-        widget.set_on_changed(move |rating| reported_for_callback.set(rating));
-        widget.click_compact_choice_for_test(4);
-
-        assert_eq!(reported.get(), 4);
-        assert_eq!(widget.compact_text_for_test(), "★ 4");
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn rating_widget_promotes_to_inline_stars_when_given_space() {
-        gtk4::init().unwrap();
-        let widget = RatingWidget::new();
-        let window = gtk4::Window::builder()
-            .default_width(COMPACT_RATING_COLUMN_WIDTH)
-            .default_height(48)
-            .child(&widget)
-            .build();
-        window.present();
-        drain_main_context();
-        assert_eq!(widget.presentation_for_test(), COMPACT_STACK_CHILD);
-
-        window.set_size_request(WIDE_RATING_MIN_WIDTH + 24, 48);
-        drain_main_context();
-        assert_eq!(widget.presentation_for_test(), WIDE_STACK_CHILD);
-        window.close();
-    }
-
-    fn drain_main_context() {
-        let context = glib::MainContext::default();
-        for _ in 0..10 {
-            while context.pending() {
-                context.iteration(false);
+            rating_display(0, true, 0),
+            RatingDisplay {
+                show_stars: true,
+                threshold: 0
             }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+        );
+        // Pointer over star 4: fill four, regardless of the stored rating.
+        assert_eq!(
+            rating_display(2, true, 4),
+            RatingDisplay {
+                show_stars: true,
+                threshold: 4
+            }
+        );
+    }
+
+    #[test]
+    fn star_at_x_maps_pointer_to_the_right_star() {
+        // 100 px wide, 5 stars → 20 px slots.
+        assert_eq!(star_at_x(0.0, 100.0), 1);
+        assert_eq!(star_at_x(25.0, 100.0), 2);
+        assert_eq!(star_at_x(99.0, 100.0), 5);
+        // Past the end clamps to the last star; unallocated width is 0.
+        assert_eq!(star_at_x(500.0, 100.0), 5);
+        assert_eq!(star_at_x(10.0, 0.0), 0);
     }
 
     #[test]
@@ -585,27 +444,30 @@ mod tests {
 
     #[test]
     fn unrated_state_never_clears_on_first_click() {
-        // Star buttons are 1-based, so a click on an unrated (0) row always
-        // rates — it can never accidentally match-and-clear.
         for star in 1..=STAR_COUNT {
             assert_ne!(next_rating(star, 0), RATING_MIN);
         }
     }
 
-    /// Regression test for the `BorrowMutError` described in the module doc
-    /// comment: a click callback that reentrantly calls `set_on_changed` on
-    /// the same widget (simulating GTK synchronously rebinding the just-
-    /// clicked row) must not panic. Needs a real GTK/GDK display, so it's
-    /// `#[ignore]`d by default — run with `xvfb-run -a cargo test --
-    /// --ignored reentrant`.
+    #[test]
+    fn css_defines_star_dash_and_fill_colours() {
+        let css = css();
+        assert!(css.contains(".reprise-rating-star"));
+        assert!(css.contains(".reprise-rating-filled { color: @accent_color; }"));
+        assert!(css.contains(".reprise-rating-empty"));
+        assert!(css.contains(".reprise-rating-dash"));
+    }
+
+    /// Regression test for the `BorrowMutError` in the module doc comment: a
+    /// click callback that reentrantly calls `set_on_changed` on the same
+    /// widget (simulating GTK synchronously rebinding the just-clicked row)
+    /// must not panic. Needs a real GTK/GDK display, so `#[ignore]`d — run
+    /// with `xvfb-run -a cargo test -- --ignored reentrant`.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn reentrant_set_on_changed_does_not_panic() {
         if gtk4::init().is_err() {
-            eprintln!(
-                "skipping reentrant_set_on_changed_does_not_panic: gtk4::init() failed \
-                 (no display available)"
-            );
+            eprintln!("skipping: gtk4::init() failed (no display available)");
             return;
         }
 
@@ -615,20 +477,10 @@ mod tests {
             let Some(widget) = widget_weak.upgrade() else {
                 return;
             };
-            // Simulates `connect_bind` reacting synchronously to this same
-            // callback's side effects (e.g. a DB write triggering a model
-            // `items_changed`) and reinstalling a fresh callback — while
-            // `handle_star_activated` is still on the stack below us.
             widget.set_on_changed(|_| {});
         });
 
-        // Pre-fix, the click handler held a `Ref` on `on_changed` for the
-        // whole statement that invokes the callback above, so the
-        // reentrant `set_on_changed` call's `borrow_mut()` panicked with
-        // `BorrowMutError`. Post-fix, the borrow is dropped before the
-        // callback runs, so this completes cleanly. Driving it through
-        // button 3's `emit_clicked` exercises the real `connect_clicked` →
-        // `handle_star_activated` path.
         widget.click_star_for_test(3);
+        assert_eq!(widget.rating_for_test(), 3);
     }
 }

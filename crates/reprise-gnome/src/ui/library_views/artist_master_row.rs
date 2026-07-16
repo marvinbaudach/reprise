@@ -19,7 +19,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 
 use crate::ui::artist_avatar;
-use crate::ui::eq_bars::EqBars;
+use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::strings;
 use reprise_core::queries::ArtistSummary;
 
@@ -32,25 +32,27 @@ pub(super) type Registry = Rc<RefCell<HashMap<usize, Rc<RowHandles>>>>;
 
 /// Widgets and per-row state kept alive for a single (recycled) row, so
 /// `connect_bind` can update them and the master's `set_now_playing_artist`
-/// can reach the row's `EqBars` without walking the widget tree.
+/// can reach the row's mini-EQ without walking the widget tree.
 pub(super) struct RowHandles {
     root: gtk4::Box,
     avatar_css: gtk4::CssProvider,
     initials: gtk4::Label,
     name: gtk4::Label,
     meta: gtk4::Label,
-    eq: EqBars,
+    /// The shared `eq_bars` motif (CSS-animated); visibility is the only
+    /// per-row control — shown on the now-playing artist's row.
+    eq: gtk4::Box,
     /// The artist currently bound to this row — read by [`Self::set_now_playing`]
     /// to decide whether to light the EQ.
     artist: RefCell<String>,
 }
 
 impl RowHandles {
-    /// Lights this row's mini-EQ iff `now_playing` matches the bound artist
+    /// Shows this row's mini-EQ iff `now_playing` matches the bound artist
     /// (case-insensitively).
     pub(super) fn set_now_playing(&self, now_playing: Option<&str>) {
         self.eq
-            .set_active(is_now_playing(now_playing, &self.artist.borrow()));
+            .set_visible(is_now_playing(now_playing, &self.artist.borrow()));
     }
 }
 
@@ -160,9 +162,9 @@ fn build_row() -> Rc<RowHandles> {
     text_box.append(&meta);
     root.append(&text_box);
 
-    let eq = EqBars::new();
-    eq.widget().set_valign(gtk4::Align::Center);
-    root.append(eq.widget());
+    let eq = eq_bars::build(EqVariant::Animated);
+    eq.set_visible(false);
+    root.append(&eq);
 
     Rc::new(RowHandles {
         root,
@@ -191,7 +193,7 @@ fn bind_row(handles: &RowHandles, summary: &ArtistSummary, now_playing: Option<&
     *handles.artist.borrow_mut() = summary.artist.clone();
     handles
         .eq
-        .set_active(is_now_playing(now_playing, &summary.artist));
+        .set_visible(is_now_playing(now_playing, &summary.artist));
 }
 
 /// The avatar's inline background rule. The provider is scoped to the single

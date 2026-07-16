@@ -254,12 +254,12 @@ pub struct PlayerController {
     pub(super) queue_changed: RefCell<Option<Rc<dyn Fn()>>>,
     pub(super) current_track_changed:
         RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
-    /// Fired when playback stops and the current track is cleared (the
-    /// `Stopped` counterpart of `current_track_changed`, which only fires for
-    /// a real track). Lets now-playing observers — e.g. the Artists view's
-    /// mini-EQ — turn off when nothing is playing. `None` until wired via
-    /// `set_on_current_track_cleared`.
-    pub(super) current_track_cleared: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Fans coarse playback-state changes to the track list's now-playing
+    /// equaliser (freeze on pause, drop the marker on stop) — see `current_
+    /// track_selection.rs`. Same callback seam as `current_track_changed`,
+    /// invoked from `now_playing_wiring.rs`'s `sync_state`.
+    pub(super) playback_state_changed:
+        RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
@@ -424,7 +424,7 @@ impl PlayerController {
             reload_track_list: RefCell::new(None),
             queue_changed: RefCell::new(None),
             current_track_changed: RefCell::new(None),
-            current_track_cleared: RefCell::new(None),
+            playback_state_changed: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,
@@ -490,12 +490,6 @@ impl PlayerController {
         self.bar.set_on_title_click(f);
     }
 
-    /// Task 9b: delegate for the player-bar artist deep-link — mirrors
-    /// `set_on_title_click` above.
-    pub fn set_on_artist_click(&self, f: impl Fn() + 'static) {
-        self.bar.set_on_artist_click(f);
-    }
-
     /// The *effective album artist* of the currently-playing track, or `None`
     /// when nothing is playing / the resolved artist is blank. Used by the
     /// player-bar artist deep-link to select the right Artists-tab master row.
@@ -511,7 +505,7 @@ impl PlayerController {
         let id = self.now_playing.borrow().as_ref().map(|track| track.id)?;
         let artist = {
             let conn = self.conn.borrow();
-            queries::query_track_album_artist(&conn, id)
+            reprise_core::queries::query_track_album_artist(&conn, id)
                 .inspect_err(|error| {
                     tracing::warn!(%error, id, "album-artist deep-link lookup failed");
                 })
@@ -520,6 +514,16 @@ impl PlayerController {
         };
         let trimmed = artist.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }
+
+    /// Wires the cover-image click gesture — see `PlayerBar::connect_cover_clicked`.
+    pub fn connect_cover_clicked(&self, f: impl Fn() + 'static) {
+        self.bar.connect_cover_clicked(f);
+    }
+
+    /// Wires the artist-label click gesture — see `PlayerBar::connect_artist_clicked`.
+    pub fn connect_artist_clicked(&self, f: impl Fn() + 'static) {
+        self.bar.connect_artist_clicked(f);
     }
 
     pub fn set_track_list_reload(&self, reload: impl Fn() + 'static) {
@@ -747,10 +751,11 @@ impl PlayerController {
                     // even has a chance to drain, but a stray `Stopped` from
                     // elsewhere must not leave stale metadata mirrored.
                     *self.now_playing.borrow_mut() = None;
-                    // Turn off now-playing observers (e.g. the Artists view's
-                    // mini-EQ). `current_track_changed` only fires for a real
-                    // track, so the clear path needs its own notification.
-                    self.notify_current_track_cleared();
+                    // Now-playing observers (the track table's + the Artists
+                    // view's mini-EQ) are turned off via the
+                    // `playback_state_changed(Stopped)` fan-out that
+                    // `sync_state` above already fires — see
+                    // `current_track_selection::wire`.
                 }
                 self.update_mpris_mirror(mpris_status_from_playback_state(state));
             }

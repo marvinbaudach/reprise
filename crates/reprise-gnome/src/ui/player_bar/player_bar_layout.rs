@@ -25,6 +25,12 @@ const ZONE_SPACING: i32 = 8;
 const COVER_CSS_CLASS: &str = "player-bar-cover";
 const PLAY_CSS_CLASS: &str = "player-bar-play";
 const SURFACE_CSS_CLASS: &str = "player-bar-surface";
+/// CSS class on the transport button row, targeted by the hover-highlight rules.
+const TRANSPORT_ROW_CSS_CLASS: &str = "player-bar-transport";
+/// CSS class on the volume scale, toggled on hover to reveal the knob.
+const VOLUME_SCALE_CSS_CLASS: &str = "player-bar-volume";
+/// CSS class added/removed by the hover controller to show the volume knob.
+pub(super) const KNOB_VISIBLE_CSS_CLASS: &str = "knob-visible";
 
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 const ICON_QUEUE: &str = "view-list-symbolic";
@@ -75,10 +81,19 @@ pub(super) fn build() -> PlayerBarWidgets {
         mini_eq.append(&bar);
     }
 
+    // Title row: title label + mini-EQ side by side (spec 1.5: "neben dem Titel").
+    let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    title_row.append(&title_label);
+    title_row.append(&mini_eq);
+    title_row.set_valign(gtk4::Align::Center);
+
     let track_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    track_box.append(&title_label);
+    track_box.append(&title_row);
     track_box.append(&artist_label);
     track_box.set_valign(gtk4::Align::Center);
+
+    // Cover: pointer cursor signals interactivity (click → Now-Playing-Panel).
+    cover.set_cursor_from_name(Some("pointer"));
 
     // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
@@ -115,6 +130,8 @@ pub(super) fn build() -> PlayerBarWidgets {
     transport_row.append(&next_button);
     transport_row.append(&repeat_button);
     transport_row.set_halign(gtk4::Align::Center);
+    // CSS class lets transport hover rules target only these buttons (spec 1.5).
+    transport_row.add_css_class(TRANSPORT_ROW_CSS_CLASS);
 
     // — Seek row —
     let position_label = gtk4::Label::new(Some(ZERO_TIME_LABEL));
@@ -153,6 +170,39 @@ pub(super) fn build() -> PlayerBarWidgets {
     volume_scale.set_width_request(VOLUME_SLIDER_WIDTH);
     volume_scale.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
     volume_scale.set_valign(gtk4::Align::Center);
+    // CSS class so knob-hiding rules target this scale specifically.
+    volume_scale.add_css_class(VOLUME_SCALE_CSS_CLASS);
+
+    // Scroll ±5 % per tick on the volume slider (spec 1.5).
+    let volume_scroll = gtk4::EventControllerScroll::new(
+        gtk4::EventControllerScrollFlags::VERTICAL,
+    );
+    volume_scroll.connect_scroll({
+        let volume_scale = volume_scale.clone();
+        move |_, _dx, dy| {
+            let new_val =
+                (volume_scale.value() - dy * VOLUME_STEP).clamp(VOLUME_MIN, VOLUME_MAX);
+            volume_scale.set_value(new_val);
+            gtk4::glib::Propagation::Stop
+        }
+    });
+    volume_scale.add_controller(volume_scroll);
+
+    // Hover controller reveals the knob (spec 1.5: "Knob nur bei Hover sichtbar").
+    let knob_motion = gtk4::EventControllerMotion::new();
+    knob_motion.connect_enter({
+        let volume_scale = volume_scale.clone();
+        move |_, _, _| {
+            volume_scale.add_css_class(KNOB_VISIBLE_CSS_CLASS);
+        }
+    });
+    knob_motion.connect_leave({
+        let volume_scale = volume_scale.clone();
+        move |_| {
+            volume_scale.remove_css_class(KNOB_VISIBLE_CSS_CLASS);
+        }
+    });
+    volume_scale.add_controller(knob_motion);
 
     let volume_icon = gtk4::Button::from_icon_name(ICON_VOLUME_HIGH);
     volume_icon.set_tooltip_text(Some(&strings::text(strings::VOLUME)));
@@ -209,7 +259,8 @@ pub(super) fn build() -> PlayerBarWidgets {
 }
 
 /// Player-bar chrome CSS: accent-glow play button, hairline top border, cover
-/// border-radius, and title/artist/time label styling.
+/// border-radius, title/artist/time label styling, transport hover, mini-EQ
+/// animation, volume-knob visibility, and artist-label hover colour.
 pub(super) fn css() -> String {
     use super::style::tokens::TRANSITION;
     format!(
@@ -227,11 +278,38 @@ pub(super) fn css() -> String {
          .{PLAY_CSS_CLASS}:active {{ transform: scale(0.94); }}\n\
          .{COVER_CSS_CLASS} {{ \
            border-radius: 8px; \
-           box-shadow: inset 0 0 0 1px alpha(white, 0.08); }}\n\
+           box-shadow: inset 0 0 0 1px alpha(white, 0.08); \
+           opacity: 0.92; transition: opacity {TRANSITION}; }}\n\
+         .{COVER_CSS_CLASS}.hovered {{ opacity: 1.0; }}\n\
          .player-bar-title {{ font-weight: bold; font-size: 13.5px; }}\n\
-         .player-bar-artist {{ color: alpha(@window_fg_color, 0.50); font-size: 12px; }}\n\
+         .player-bar-artist {{ \
+           color: alpha(@window_fg_color, 0.50); font-size: 12px; \
+           transition: color {TRANSITION}; }}\n\
+         .player-bar-artist.artist-hovered {{ color: alpha(white, 0.75); }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
-         .waveform-seek {{ color: @reprise_player_accent; }}"
+         .waveform-seek {{ color: @reprise_player_accent; }}\n\
+         .{TRANSPORT_ROW_CSS_CLASS} button.flat {{ \
+           border-radius: 50%; \
+           transition: background-color {TRANSITION}, color {TRANSITION}; }}\n\
+         .{TRANSPORT_ROW_CSS_CLASS} button.flat:hover {{ \
+           background-color: alpha(white, 0.08); color: white; }}\n\
+         .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
+           opacity: 0; transition: opacity {TRANSITION}; }}\n\
+         .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\
+         .mini-eq {{ margin-start: 4px; }}\n\
+         .mini-eq > box {{ \
+           min-width: 3px; min-height: 4px; \
+           border-radius: 1px; \
+           background-color: @reprise_player_accent; }}\n\
+         .mini-eq.playing > box:nth-child(1) {{ \
+           animation: mini-eq-bar 0.65s ease-in-out infinite alternate; }}\n\
+         .mini-eq.playing > box:nth-child(2) {{ \
+           animation: mini-eq-bar 0.65s ease-in-out 0.22s infinite alternate; }}\n\
+         .mini-eq.playing > box:nth-child(3) {{ \
+           animation: mini-eq-bar 0.65s ease-in-out 0.44s infinite alternate; }}\n\
+         @keyframes mini-eq-bar {{ \
+           from {{ min-height: 4px; }} \
+           to   {{ min-height: 14px; }} }}"
     )
 }
 

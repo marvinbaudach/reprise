@@ -95,6 +95,8 @@ pub fn build(
             .and_then(super::style::theme::Theme::from_id)
             .unwrap_or(super::style::theme::Theme::DEFAULT);
         super::style::set_theme(theme);
+        let scheme = reprise_core::library::settings::get_color_scheme(&conn);
+        super::style::set_color_scheme(scheme);
     }
     let session_state = {
         let conn = conn.borrow();
@@ -267,7 +269,7 @@ pub fn build(
             cover_download.clone(),
         ))
     };
-    super::column_header_menu::install(&track_list);
+    super::column_layout_editor::install_header_popover(&track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let track_list_weak = Rc::downgrade(&track_list);
@@ -497,7 +499,7 @@ pub fn build(
         let content_stack = content_stack.clone();
         let library_stack = library_views.stack.clone();
         let select_artist = artist_view.select_artist_callback();
-        player.set_on_artist_click(move || {
+        player.connect_artist_clicked(move || {
             let Some(player) = player_weak.upgrade() else {
                 return;
             };
@@ -629,7 +631,7 @@ pub fn build(
     info_panel.arm_smoke(&track_list);
     let compact_root = player
         .as_ref()
-        .map(|player| player.compact_player.widget().upcast_ref());
+        .map(|player| player.compact_player.handle().upcast_ref());
     let decorations =
         super::window_decorations::WindowDecorations::new(&window, &header, compact_root);
     let content_host = decorations.content_host();
@@ -683,6 +685,7 @@ pub fn build(
         &window,
         &minimal_view,
         player.as_ref().map(|player| &player.compact_player),
+        conn,
         Rc::new(move || compact_preferences.present()),
     );
     let rescan_conn = conn.clone();
@@ -727,6 +730,17 @@ pub fn build(
             sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
         });
     }
+    // Cover click → toggle info panel (spec 1.5).
+    if let Some(ref player) = player {
+        let toggle = info_panel.toggle_button().clone();
+        player.connect_cover_clicked(move || {
+            toggle.set_active(!toggle.is_active());
+        });
+    }
+    // Artist click → jump to the Artists master/detail view and select the
+    // now-playing album artist. Wired above (search for `connect_artist_clicked`)
+    // where `artist_view` is in scope; the earlier `set_source`-to-Tracks
+    // stopgap is superseded by the dedicated Artists view.
     header.pack_end(&search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);

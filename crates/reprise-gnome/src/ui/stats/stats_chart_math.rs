@@ -87,6 +87,7 @@ pub(super) fn format_peak_hour(hour: u8) -> String {
     format!("{hour}:00")
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +145,4 @@ mod tests {
         assert!(!is_current_month(0, 12));
         assert!(!is_current_month(0, 0));
     }
-
 }

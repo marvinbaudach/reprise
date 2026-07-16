@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use reprise_core::view_source::ViewSource;
 
-use crate::ui::sidebar::{find_row, resolve_select_source, Shared};
+use crate::ui::sidebar::{find_row, resolve_select_source, select_row_in_its_listbox, Shared};
 use crate::ui::strings;
 
 pub(super) fn restore_source(shared: &Rc<Shared>, requested: ViewSource) -> (ViewSource, String) {
@@ -20,6 +20,6 @@ pub(super) fn restore_source(shared: &Rc<Shared>, requested: ViewSource) -> (Vie
         return (ViewSource::Library, strings::text(strings::SIDEBAR_MUSIC));
     };
     *shared.current_source.borrow_mut() = source.clone();
-    shared.listbox.select_row(Some(&row));
+    select_row_in_its_listbox(&row);
     (source, title)
 }

@@ -3,6 +3,7 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
+use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::strings;
 use reprise_core::format::format_thousands;
 
@@ -42,6 +43,9 @@ impl NavIcon {
             Self::TopRated => "starred-symbolic",
             Self::ImportErrors => "dialog-warning-symbolic",
             Self::Missing => "edit-delete-symbolic",
+            // Unused: My Stats renders a drawn three-bar chart via `nav_icon`,
+            // not a theme symbolic (so it never collides with `TopRated`'s
+            // star). Kept only to satisfy the exhaustive match.
             Self::MyStats => "starred-symbolic",
         }
     }
@@ -176,12 +180,20 @@ fn row_box() -> gtk4::Box {
     hbox
 }
 
-fn nav_icon(icon: NavIcon) -> gtk4::Image {
+fn nav_icon(icon: NavIcon) -> gtk4::Widget {
+    // My Stats renders a drawn three-bar chart (see `eq_bars`) rather than a
+    // theme symbolic, so it reads as "stats" and is unmistakably distinct from
+    // the "Top rated" star — two identical icons in one section aren't allowed.
+    if matches!(icon, NavIcon::MyStats) {
+        let bars = eq_bars::build(EqVariant::Static);
+        bars.set_valign(gtk4::Align::Center);
+        return bars.upcast();
+    }
     let image = gtk4::Image::from_icon_name(icon.icon_name());
     image.set_width_request(ICON_WIDTH);
     image.set_pixel_size(ICON_WIDTH);
     image.set_valign(gtk4::Align::Center);
-    image
+    image.upcast()
 }
 
 #[cfg(test)]

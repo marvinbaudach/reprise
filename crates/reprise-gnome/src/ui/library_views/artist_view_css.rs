@@ -130,11 +130,7 @@ pub(in crate::ui) fn css() -> String {
            font-size: 12px; color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}\n\
          .artist-top-track-duration {{ \
            font-feature-settings: \"tnum\"; font-size: 12px; \
-           color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}\n\
-         .eq-bars, .mini-eq {{ color: @accent_color; }}\n\
-         .player-bar-artist-link {{ transition: color {TRANSITION}; }}\n\
-         .player-bar-artist-link:hover {{ \
-           color: @accent_color; text-decoration-line: underline; }}"
+           color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}"
     )
 }
 
@@ -179,10 +175,6 @@ mod tests {
             ".artist-top-track-cover",
             ".artist-top-track-plays",
             ".artist-top-track-duration",
-            // Now-playing + deep-link affordances
-            ".eq-bars",
-            ".mini-eq",
-            ".player-bar-artist-link",
         ] {
             assert!(css.contains(marker), "missing artist-view rule: {marker}");
         }
@@ -220,7 +212,7 @@ mod tests {
         }
         let combined = format!(
             "{}\n{}",
-            crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT),
+            crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT, true),
             super::css()
         );
         provider.load_from_string(&combined);
