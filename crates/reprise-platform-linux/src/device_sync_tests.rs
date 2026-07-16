@@ -263,6 +263,16 @@ fn local_fixture_reports_available_space_when_supported() {
     assert!(run(storage.available_bytes()).unwrap().is_some());
 }
 
+#[test]
+fn local_fixture_reports_total_capacity_when_supported() {
+    let (_temp, storage) = fixture();
+    let (available, total) = run(storage.capacity_bytes()).unwrap();
+
+    assert!(available.is_some());
+    assert!(total.is_some());
+    assert!(total >= available);
+}
+
 /// Non-MTP roots (the local directories these tests use, and any future
 /// backend that hands us a real filesystem) must not be re-rooted into a
 /// storage volume: `storage_root` only descends for `mtp://`. Copying into a

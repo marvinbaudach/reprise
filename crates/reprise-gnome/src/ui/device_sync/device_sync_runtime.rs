@@ -52,6 +52,7 @@ struct DeviceState {
     paused_work: Option<Work>,
     contents: DeviceContents,
     available_bytes: Option<u64>,
+    total_bytes: Option<u64>,
     scanning: bool,
     scan_generation: u64,
     scan_error: Option<String>,
@@ -83,6 +84,7 @@ impl DeviceState {
             paused_work: None,
             contents: DeviceContents::default(),
             available_bytes: None,
+            total_bytes: None,
             scanning: false,
             scan_generation: 0,
             scan_error: None,
@@ -109,6 +111,7 @@ impl DeviceState {
             icon: self.descriptor.icon.clone(),
             connected: self.connected,
             available_bytes: self.available_bytes,
+            total_bytes: self.total_bytes,
             contents: self.contents.clone(),
             scanning: self.scanning,
             scan_error: self.scan_error.clone(),
@@ -458,9 +461,10 @@ impl DeviceSyncRuntime {
                     }
                     device.scanning = false;
                     match result {
-                        Ok((contents, available)) => {
+                        Ok((contents, available, total)) => {
                             device.contents = contents;
                             device.available_bytes = available;
+                            device.total_bytes = total;
                             device.scan_error = None;
                         }
                         Err(error) => device.scan_error = Some(error),

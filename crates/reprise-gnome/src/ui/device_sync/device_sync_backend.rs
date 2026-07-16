@@ -33,15 +33,18 @@ impl DeviceBackend for GioDeviceBackend {
         self.monitor.subscribe(callback);
     }
 
-    fn inspect(&self, root_uri: String) -> BackendFuture<(DeviceContents, Option<u64>)> {
+    fn inspect(
+        &self,
+        root_uri: String,
+    ) -> BackendFuture<(DeviceContents, Option<u64>, Option<u64>)> {
         Box::pin(async move {
             let storage = DeviceStorage::from_uri(&root_uri);
             let contents = storage.inspect().await.map_err(|error| error.to_string())?;
-            let available = storage
-                .available_bytes()
+            let (available, total) = storage
+                .capacity_bytes()
                 .await
                 .map_err(|error| error.to_string())?;
-            Ok((contents, available))
+            Ok((contents, available, total))
         })
     }
 

@@ -6,7 +6,10 @@ pub(super) type StateCallback = Rc<dyn Fn(DeviceSyncState)>;
 pub trait DeviceBackend {
     fn devices(&self) -> Vec<DeviceDescriptor>;
     fn subscribe_devices(&self, callback: Rc<dyn Fn(Vec<DeviceDescriptor>)>);
-    fn inspect(&self, root_uri: String) -> BackendFuture<(DeviceContents, Option<u64>)>;
+    fn inspect(
+        &self,
+        root_uri: String,
+    ) -> BackendFuture<(DeviceContents, Option<u64>, Option<u64>)>;
     #[allow(clippy::too_many_arguments)]
     fn copy_track(
         &self,
@@ -73,6 +76,7 @@ pub struct DeviceView {
     pub icon: gio::Icon,
     pub connected: bool,
     pub available_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
     pub contents: DeviceContents,
     pub scanning: bool,
     pub scan_error: Option<String>,
