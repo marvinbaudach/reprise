@@ -72,6 +72,21 @@ impl DeviceMonitor {
         monitor.connect_mount_removed(move |monitor, _| {
             notify_subscribers(monitor, &signal_callbacks);
         });
+        // Devices are projected volume-first (see `projected_devices`), so a
+        // volume appearing/vanishing — or gaining its mount — must re-notify
+        // even when no top-level mount event fires alongside it.
+        let signal_callbacks = callbacks.clone();
+        monitor.connect_volume_added(move |monitor, _| {
+            notify_subscribers(monitor, &signal_callbacks);
+        });
+        let signal_callbacks = callbacks.clone();
+        monitor.connect_volume_changed(move |monitor, _| {
+            notify_subscribers(monitor, &signal_callbacks);
+        });
+        let signal_callbacks = callbacks.clone();
+        monitor.connect_volume_removed(move |monitor, _| {
+            notify_subscribers(monitor, &signal_callbacks);
+        });
         Self { monitor, callbacks }
     }
 
@@ -120,22 +135,71 @@ impl Default for DeviceMonitor {
     }
 }
 
+/// Enumerates MTP devices **volume-first**, the way GNOME apps are expected
+/// to: GVfs models a phone as a `GProxyVolume` ("Pixel 10 Pro XL", themed
+/// `[phone]` icon, `activation_root=mtp://…`) whose mount is a
+/// `GProxyShadowMount` attached to the volume, while the underlying
+/// `GDaemonMount` is a top-level mount named just "mtp" with a
+/// multimedia-player icon and the SHADOWED flag set. Enumerating raw mounts
+/// is therefore order-dependent: depending on when the proxy monitor
+/// registers, `monitor.mounts()` can contain both entries (the shadowed one
+/// used to win and label a Pixel "mtp"), or only the shadowed daemon mount
+/// (filtering it left zero devices). The volume is the stable entity, so it
+/// is the source of identity, name, and icon; unshadowed `mtp://` mounts
+/// that no volume claims are kept as a fallback for exotic backends.
 fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
-    let mut devices = monitor
-        .mounts()
-        .iter()
-        // GVfs exposes MTP phones twice: the GProxyVolumeMonitor mount carries
-        // the human name + phone icon ("Pixel 10 Pro XL", themed [phone]),
-        // while the underlying GDaemonMount is marked SHADOWED and reports the
-        // generic "mtp" name and a multimedia-player icon. Per GIO's contract
-        // (g_mount_is_shadowed), shadowed mounts must not be shown — without
-        // this filter both project to the same root URI and the shadowed
-        // entry's name/icon win, which is how a Pixel ended up labelled "mtp"
-        // with an iPod icon.
-        .filter(|mount| !mount.is_shadowed())
-        .filter_map(descriptor_from_mount)
-        .collect::<Vec<_>>();
+    let mut devices = Vec::new();
+    let mut seen_roots = std::collections::HashSet::new();
+    for volume in monitor.volumes() {
+        let Some(root) = volume.activation_root() else {
+            continue;
+        };
+        let root_uri = root.uri();
+        if !root_uri.starts_with("mtp://") {
+            continue;
+        }
+        let mounted = volume.get_mount().is_some();
+        tracing::debug!(
+            name = %volume.name(),
+            root = %root_uri,
+            mounted,
+            "device sync: MTP volume observed"
+        );
+        // v1 shows only mounted devices (mount-on-demand is a follow-up);
+        // an unmounted volume simply stays hidden, as before.
+        if !mounted {
+            continue;
+        }
+        let uuid = volume.uuid();
+        let Some(mut descriptor) = project_descriptor(&root_uri, uuid.as_deref(), &volume.name())
+        else {
+            continue;
+        };
+        descriptor.icon = volume.icon();
+        seen_roots.insert(root_uri.to_string());
+        devices.push(descriptor);
+    }
+    for mount in monitor.mounts() {
+        // Shadowed mounts are the volume-owned devices' plumbing (see above);
+        // per g_mount_is_shadowed they must not be displayed.
+        if mount.is_shadowed() {
+            continue;
+        }
+        let Some(descriptor) = descriptor_from_mount(&mount) else {
+            continue;
+        };
+        if seen_roots.contains(&descriptor.root_uri) {
+            continue;
+        }
+        tracing::debug!(
+            name = %descriptor.name,
+            root = %descriptor.root_uri,
+            "device sync: unshadowed MTP mount without a volume"
+        );
+        devices.push(descriptor);
+    }
     devices.sort_by(|left, right| left.name.cmp(&right.name));
+    tracing::debug!(count = devices.len(), "device sync: projected MTP devices");
     devices
 }
 
