@@ -80,6 +80,24 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
 }
 
 #[test]
+fn planned_sync_refreshes_available_space_after_finishing() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        assert_eq!(runtime.devices()[0].available_bytes, Some(1_000_000));
+        backend.set_available_bytes(Some(900_000));
+
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        assert_eq!(runtime.devices()[0].available_bytes, Some(900_000));
+    });
+}
+
+#[test]
 fn sync_now_removes_unselected_files_but_preserves_pins() {
     run(async {
         let (_temp, conn) = fixture();
