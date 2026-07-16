@@ -402,7 +402,6 @@ mod css_tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn css_parses_in_gtk_without_dropping_declarations() {
-        use gtk4::prelude::*;
         if gtk4::init().is_err() {
             return;
         }
