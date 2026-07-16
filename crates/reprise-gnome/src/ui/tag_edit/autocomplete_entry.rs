@@ -248,11 +248,9 @@ fn populate_listbox(
     suggestions: &[AutocompleteSuggestion],
     input: &str,
 ) {
-    // Clear existing rows
+    // Clear existing rows — remove accepts &Widget, no downcast needed
     while let Some(child) = listbox.first_child() {
-        if let Ok(row) = child.downcast::<gtk4::ListBoxRow>() {
-            listbox.remove(&row);
-        }
+        listbox.remove(&child);
     }
 
     let input_lower = input.to_lowercase();
@@ -275,7 +273,7 @@ fn populate_listbox(
 
         // Track count label
         let count_label = gtk4::Label::builder()
-            .label(&format!("{} tracks", suggestion.track_count))
+            .label(&crate::ui::strings::tag_autocomplete_track_count(suggestion.track_count))
             .css_classes(["dim-label"])
             .build();
 
