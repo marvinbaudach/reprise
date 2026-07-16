@@ -263,6 +263,28 @@ impl ScanProgressView {
         }
     }
 
+    /// Shows determinate progress with custom title and detail strings,
+    /// independent of the `ScanProgress` enum. Used for the cover download
+    /// batch whose progress model (`BatchProgress`) lives in the UI layer.
+    pub(super) fn show_batch(&self, title: &str, detail: &str, fraction: f64) {
+        self.cancel_pulsing();
+        self.inner.title.set_label(title);
+        self.inner.spinner.set_spinning(true);
+        self.inner.revealer.set_reveal_child(true);
+        self.inner.progress.set_fraction(fraction.clamp(0.0, 1.0));
+        let pct = format!("{}%", (fraction * 100.0).round() as u32);
+        self.inner.percent.set_label(&pct);
+        if detail.is_empty() {
+            self.inner.detail.set_label("");
+            self.inner.detail.set_visible(false);
+        } else {
+            self.inner.detail.set_label(detail);
+            self.inner.detail.set_visible(true);
+        }
+        self.inner.phase.set(DisplayPhase::Scanning);
+        self.inner.container.set_tooltip_text(None);
+    }
+
     pub(super) fn finish(&self) {
         self.cancel_pulsing();
         self.inner.phase.set(DisplayPhase::Hidden);

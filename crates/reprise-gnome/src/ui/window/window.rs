@@ -731,7 +731,7 @@ pub fn build(
         &track_list,
         player.as_ref(),
     );
-    super::main_cover_download_progress::install(&toolbar_view, &cover_batch, &scan_controls);
+    super::main_cover_download_progress::install(&scan_controls, &cover_batch);
     let preferences = super::preferences::PreferencesContext::new(
         &window,
         conn,

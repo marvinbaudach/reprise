@@ -338,8 +338,8 @@ impl WaveformSeek {
         let mut s = self.state.borrow_mut();
         let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
         let delta = (fraction - s.target_fraction).abs();
-        if delta > 0.05 {
-            // Large discontinuity (seek) — snap, don't interpolate.
+        if delta > 0.05 || s.last_tick_us == 0 {
+            // Large discontinuity, seek, or no valid time reference yet — snap.
             s.fraction = fraction;
             s.target_fraction = fraction;
             s.fraction_velocity = 0.0;
