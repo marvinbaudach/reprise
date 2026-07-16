@@ -8,7 +8,7 @@ use reprise_core::lyrics::{LyricsBody, LyricsError};
 
 use super::lyrics_strings;
 
-pub(super) const ACTIVE_LINE_CLASS: &str = "lyrics-line-active";
+pub(in crate::ui) const ACTIVE_LINE_CLASS: &str = "lyrics-line-active";
 const CONTENT_PAGE: &str = "content";
 const LOADING_PAGE: &str = "loading";
 const STATUS_PAGE: &str = "status";
@@ -16,7 +16,7 @@ const STATUS_PAGE: &str = "status";
 type RetryCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type StatusCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
-pub(super) struct LyricsView {
+pub(in crate::ui) struct LyricsView {
     root: gtk4::Stack,
     content: gtk4::Box,
     scrolled: gtk4::ScrolledWindow,
@@ -32,7 +32,7 @@ pub(super) struct LyricsView {
 }
 
 impl LyricsView {
-    pub(super) fn new() -> Rc<Self> {
+    pub(in crate::ui) fn new() -> Rc<Self> {
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
         content.set_margin_top(18);
         content.set_margin_bottom(18);
@@ -113,11 +113,11 @@ impl LyricsView {
         view
     }
 
-    pub(super) fn widget(&self) -> &gtk4::Widget {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Widget {
         self.root.upcast_ref()
     }
 
-    pub(super) fn show_empty(&self) {
+    pub(in crate::ui) fn show_empty(&self) {
         self.clear_lines();
         self.show_status(
             &lyrics_strings::text(lyrics_strings::PLAY_TO_SEE_LYRICS),
@@ -125,7 +125,7 @@ impl LyricsView {
         );
     }
 
-    pub(super) fn show_loading(&self, title: &str, artist: &str) {
+    pub(in crate::ui) fn show_loading(&self, title: &str, artist: &str) {
         self.clear_lines();
         self.loading_track
             .set_text(&format!("{}\n{}", title.trim(), artist.trim()));
@@ -133,7 +133,7 @@ impl LyricsView {
         self.set_feedback(true, false);
     }
 
-    pub(super) fn show_result(&self, body: &LyricsBody) {
+    pub(in crate::ui) fn show_result(&self, body: &LyricsBody) {
         self.clear_lines();
         match body {
             LyricsBody::Synced(lines) => {
@@ -154,7 +154,7 @@ impl LyricsView {
         }
     }
 
-    pub(super) fn show_error(&self, error: &LyricsError) {
+    pub(in crate::ui) fn show_error(&self, error: &LyricsError) {
         self.clear_lines();
         let (message, retry) = match error {
             LyricsError::NotFound | LyricsError::MissingMetadata => {
@@ -167,7 +167,7 @@ impl LyricsView {
         self.show_status(&lyrics_strings::text(message), retry);
     }
 
-    pub(super) fn set_active_line(&self, index: Option<usize>) {
+    pub(in crate::ui) fn set_active_line(&self, index: Option<usize>) {
         if index == self.active_line.get() {
             return;
         }
@@ -189,30 +189,30 @@ impl LyricsView {
         self.scroll_to_label(&label);
     }
 
-    pub(super) fn set_on_retry(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn set_on_retry(&self, callback: impl Fn() + 'static) {
         *self.on_retry.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn retry(&self) {
+    pub(in crate::ui) fn retry(&self) {
         let callback = self.on_retry.borrow().clone();
         if let Some(callback) = callback {
             callback();
         }
     }
 
-    pub(super) fn set_on_status_changed(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn set_on_status_changed(&self, callback: impl Fn() + 'static) {
         *self.on_status_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn is_loading(&self) -> bool {
+    pub(in crate::ui) fn is_loading(&self) -> bool {
         self.loading.get()
     }
 
-    pub(super) fn can_retry(&self) -> bool {
+    pub(in crate::ui) fn can_retry(&self) -> bool {
         self.can_retry.get()
     }
 
-    pub(super) fn smoke_snapshot(
+    pub(in crate::ui) fn smoke_snapshot(
         &self,
         expected: &str,
         rejected: &str,
@@ -284,27 +284,27 @@ impl LyricsView {
     }
 
     #[cfg(test)]
-    pub(super) fn line_labels(&self) -> Vec<gtk4::Label> {
+    pub(in crate::ui) fn line_labels(&self) -> Vec<gtk4::Label> {
         self.line_labels.borrow().clone()
     }
 
     #[cfg(test)]
-    pub(super) fn visible_state_name(&self) -> Option<gtk4::glib::GString> {
+    pub(in crate::ui) fn visible_state_name(&self) -> Option<gtk4::glib::GString> {
         self.root.visible_child_name()
     }
 
     #[cfg(test)]
-    pub(super) fn status_text(&self) -> String {
+    pub(in crate::ui) fn status_text(&self) -> String {
         self.status.text().to_string()
     }
 
     #[cfg(test)]
-    pub(super) fn retry_is_visible(&self) -> bool {
+    pub(in crate::ui) fn retry_is_visible(&self) -> bool {
         self.retry.is_visible()
     }
 
     #[cfg(test)]
-    pub(super) fn scroll_values(&self) -> (f64, f64) {
+    pub(in crate::ui) fn scroll_values(&self) -> (f64, f64) {
         let adjustment = self.scrolled.vadjustment();
         (
             adjustment.value(),
@@ -313,7 +313,7 @@ impl LyricsView {
     }
 }
 
-pub(super) fn centered_scroll_value(
+pub(in crate::ui) fn centered_scroll_value(
     row_y: f64,
     row_height: f64,
     page_size: f64,
@@ -328,6 +328,6 @@ pub(super) fn centered_scroll_value(
 }
 
 /// Active synchronized-line emphasis; installed app-wide by [`super::style`].
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     format!(".{ACTIVE_LINE_CLASS} {{ color: @accent_color; font-weight: 700; }}")
 }

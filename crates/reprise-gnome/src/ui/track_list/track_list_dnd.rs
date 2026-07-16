@@ -2,7 +2,7 @@
 //! way `track_list_context_menu.rs` was (Stage 3 Task 5): same reasoning
 //! (keep the owning file from growing without bound), same shape (an
 //! `impl`-free sibling module that reaches into `track_list.rs`'s private
-//! `Shared` via `pub(super)` fields/functions). This module owns three
+//! `Shared` via `pub(in crate::ui)` fields/functions). This module owns three
 //! things:
 //!
 //! 1. **Drag source** (every track-list cell, wired from `track_list.rs`'s
@@ -91,7 +91,7 @@
 //! `track_list_dnd_smoke`, not this file — split out (Stage 3 Task 6 review
 //! finding #2) purely to keep this file under the project's 800-line rule.
 //! It calls [`handle_playlist_reorder_drop`]/[`handle_queue_reorder_drop`]
-//! (`pub(super)` for exactly that reason), the same functions the real drop
+//! (`pub(in crate::ui)` for exactly that reason), the same functions the real drop
 //! targets [`wire_row_dnd`] wires call.
 
 use std::cell::Cell;
@@ -113,7 +113,7 @@ use reprise_core::view_source::ViewSource;
 /// A parsed drag payload — see the module doc's `## Content payload format`
 /// section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct DragPayload {
+pub(in crate::ui) struct DragPayload {
     /// Every dragged track's id, in drag order (selection order, or a single
     /// id for a lone-row drag).
     pub ids: Vec<i64>,
@@ -130,7 +130,7 @@ pub(super) struct DragPayload {
 /// field serves both `ui::sidebar`'s "add to playlist" drop (only reads
 /// `ids`) and this module's own same-list reorder drop (reads `reorder_
 /// position` too).
-pub(super) fn format_drag_payload(ids: &[i64], reorder_position: Option<i64>) -> String {
+pub(in crate::ui) fn format_drag_payload(ids: &[i64], reorder_position: Option<i64>) -> String {
     let ids_part = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
     match reorder_position {
         Some(pos) => format!("{ids_part}|{pos}"),
@@ -142,10 +142,10 @@ pub(super) fn format_drag_payload(ids: &[i64], reorder_position: Option<i64>) ->
 /// anything malformed: no `|` separator, an empty/all-unparseable ids half,
 /// or a position half that's neither `-` nor a valid `i64` — a corrupt/
 /// foreign payload (e.g. a drop from outside this app that happens to offer
-/// a `text/plain` string) must never be guessed at, only rejected. `pub(super)`
+/// a `text/plain` string) must never be guessed at, only rejected. `pub(in crate::ui)`
 /// (not private): `ui::sidebar`'s playlist-row drop target parses the exact
 /// same payload this module's drag source produces.
-pub(super) fn parse_drag_payload(payload: &str) -> Option<DragPayload> {
+pub(in crate::ui) fn parse_drag_payload(payload: &str) -> Option<DragPayload> {
     let (ids_part, pos_part) = payload.split_once('|')?;
 
     let ids: Vec<i64> = ids_part
@@ -177,7 +177,7 @@ pub(super) fn parse_drag_payload(payload: &str) -> Option<DragPayload> {
 /// testable with a plain `TrackListModel`, matching `ui::track_actions`'s
 /// style). See the module doc's `## The TRUE-position rule` section for why
 /// `Playlist` and `Queue` resolve this so differently.
-pub(super) fn reorder_position_for_drag(
+pub(in crate::ui) fn reorder_position_for_drag(
     model: &TrackListModel,
     source: &ViewSource,
     playlist_reorder_allowed: bool,
@@ -194,7 +194,7 @@ pub(super) fn reorder_position_for_drag(
 
 /// The `(from, to)` true-position move [`resolve_reorder_target`] decided on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ReorderMove {
+pub(in crate::ui) struct ReorderMove {
     pub from: i64,
     pub to: i64,
 }
@@ -208,7 +208,7 @@ pub(super) struct ReorderMove {
 ///   all — a plain "add to playlist" drag, or one that started in a
 ///   non-reorder-eligible state), or
 /// - the resolved `from`/`to` are equal (dropping a row back onto itself).
-pub(super) fn resolve_reorder_target(
+pub(in crate::ui) fn resolve_reorder_target(
     payload: &DragPayload,
     target_true_position: i64,
 ) -> Option<ReorderMove> {
@@ -232,7 +232,7 @@ pub(super) fn resolve_reorder_target(
 /// stable `ListItem` handle read fresh at gesture time" reasoning as that
 /// function's own doc comment — this module relies on the identical pattern
 /// rather than re-explaining it here).
-pub(super) fn wire_row_dnd(
+pub(in crate::ui) fn wire_row_dnd(
     widget: &impl IsA<gtk4::Widget>,
     item: &gtk4::ListItem,
     shared: &Rc<Shared>,
@@ -406,10 +406,10 @@ fn handle_reorder_drop(
 /// too (not just at drag-prepare time): the view's sort/filter state could
 /// in principle change between a drag starting and its drop landing (a
 /// column-header click mid-drag is exotic but not impossible), so the guard
-/// is enforced on both ends rather than trusted from one. `pub(super)`: also
+/// is enforced on both ends rather than trusted from one. `pub(in crate::ui)`: also
 /// called directly by `track_list_dnd_smoke`'s `reorderplaylist:<from>-<to>`
 /// hook.
-pub(super) fn handle_playlist_reorder_drop(
+pub(in crate::ui) fn handle_playlist_reorder_drop(
     shared: &Rc<Shared>,
     playlist_id: i64,
     payload: &DragPayload,
@@ -473,9 +473,9 @@ pub(super) fn handle_playlist_reorder_drop(
 /// "Reorder within the queue" drop handler — no `playlist_reorder_allowed`-
 /// style guard needed at all (see the module doc's `## The TRUE-position
 /// rule` section: the Queue view's row order always *is* the queue's own
-/// play order, unconditionally). `pub(super)`: also called directly by
+/// play order, unconditionally). `pub(in crate::ui)`: also called directly by
 /// `track_list_dnd_smoke`'s `reorderqueue:<from>-<to>` hook.
-pub(super) fn handle_queue_reorder_drop(
+pub(in crate::ui) fn handle_queue_reorder_drop(
     shared: &Rc<Shared>,
     payload: &DragPayload,
     target_view_position: u32,
@@ -523,7 +523,7 @@ pub(super) fn handle_queue_reorder_drop(
 // in the sibling `track_list_dnd_smoke` module — split out so this file
 // stays under the project's 800-line file-size rule (Stage 3 Task 6 review
 // finding #2). It calls back into this module's `handle_playlist_reorder_
-// drop`/`handle_queue_reorder_drop` (both `pub(super)`), the same functions
+// drop`/`handle_queue_reorder_drop` (both `pub(in crate::ui)`), the same functions
 // the real drop targets wired by [`wire_row_dnd`] call.
 
 #[cfg(test)]

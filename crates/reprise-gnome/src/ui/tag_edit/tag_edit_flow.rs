@@ -13,6 +13,7 @@ use reprise_core::library::tag_edit::{
     apply_track_edit_batch_ignored, EditableTags, TagBatchReport, TagPatch, TrackEditPatch,
 };
 
+use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
@@ -20,11 +21,11 @@ use crate::ui::tag_editor;
 use crate::ui::track_list::{reload, show_toast, Shared, TrackList};
 use crate::ui::track_list_context_menu::current_selection_positions;
 
-pub(super) const ACTION_EDIT_TAGS: &str = "edit-tags";
+pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
 const SMOKE_TAG_EDIT_ENV_VAR: &str = "REPRISE_SMOKE_TAG_EDIT";
 type SelectedTags = (Vec<(i64, PathBuf)>, Vec<EditableTags>, Vec<i32>);
 
-pub(super) fn wire_refresh(
+pub(in crate::ui) fn wire_refresh(
     track_list: &TrackList,
     sidebar: &Rc<Sidebar>,
     player: &Option<Rc<PlayerController>>,
@@ -42,7 +43,7 @@ pub(super) fn wire_refresh(
     });
 }
 
-pub(super) fn add_action(group: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
+pub(in crate::ui) fn add_action(group: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
     let action = gio::SimpleAction::new(ACTION_EDIT_TAGS, None);
     {
         let shared = shared.clone();
@@ -117,24 +118,20 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEdi
         );
         return;
     };
-    let (sender, receiver) = async_channel::bounded(1);
     let tracks_for_worker = tracks.clone();
     let tags_changed = !patch.tags.is_empty();
-    let spawned = std::thread::Builder::new()
-        .name("reprise-tag-edit".into())
-        .spawn(move || {
-            let result = reprise_core::db::open(Some(&db_path))
-                .map(|mut conn| {
-                    apply_track_edit_batch_ignored(&mut conn, &tracks_for_worker, &patch)
-                })
-                .map_err(|error| error.to_string());
-            let _ = sender.try_send(result);
-        });
-    if let Err(error) = spawned {
-        tracing::warn!(%error, "could not start tag-edit worker");
-        show_toast(shared, &strings::text(strings::TAG_EDIT_WORKER_FAILED));
-        return;
-    }
+    let receiver = match one_shot_task::spawn("reprise-tag-edit", move || {
+        reprise_core::db::open_migrated(Some(&db_path))
+            .map(|mut conn| apply_track_edit_batch_ignored(&mut conn, &tracks_for_worker, &patch))
+            .map_err(|error| error.to_string())
+    }) {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            tracing::warn!(%error, "could not start tag-edit worker");
+            show_toast(shared, &strings::text(strings::TAG_EDIT_WORKER_FAILED));
+            return;
+        }
+    };
 
     let shared_weak = Rc::downgrade(shared);
     glib::spawn_future_local(async move {
@@ -191,7 +188,7 @@ fn finish_apply(
     show_toast(shared, &strings::track_edit_result_toast(updated, failed));
 }
 
-pub(super) fn arm_smoke(shared: &Rc<Shared>) {
+pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
     let Ok(value) = std::env::var(SMOKE_TAG_EDIT_ENV_VAR) else {
         return;
     };

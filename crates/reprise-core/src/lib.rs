@@ -5,9 +5,10 @@
 //! enforced proof). A frontend consumes: `db` (open/migrate/default_path);
 //! `library` (scanner, watcher, playlists, m3u, settings, stats); the
 //! `queries` and `view_source` windowed query layer; `queue` (playback
-//! order engine); `format`; and the two platform contracts — `playback`
+//! order engine); `format`; and the platform contracts — `playback`
 //! (`PlaybackBackend` trait plus `PlayerEvent`) and `media_integration`
-//! (`MediaIntegrationHandles` plus state/command types) — whose concrete
+//! (`MediaIntegrationHandles` plus state/command types), plus `waveform`
+//! (`WaveformBackend`) — whose concrete
 //! implementations live in per-OS platform crates (Linux: GStreamer and
 //! MPRIS in `reprise-platform-linux`).
 
@@ -30,6 +31,7 @@ pub mod release_lookup;
 pub mod scrobbling;
 pub mod up_next;
 pub mod view_source;
+pub mod waveform;
 
 #[cfg(test)]
 mod artist_news_tests;

@@ -19,17 +19,17 @@ use rusqlite::Connection;
 
 use super::device_sync_runtime::{BackendFuture, DeviceBackend, DeviceSyncRuntime, Subscription};
 
-pub(super) const ROOT_ENV: &str = "REPRISE_SMOKE_DEVICE_ROOT";
+pub(in crate::ui) const ROOT_ENV: &str = "REPRISE_SMOKE_DEVICE_ROOT";
 const IDS_ENV: &str = "REPRISE_SMOKE_DEVICE_TRACK_IDS";
 const PLAYLIST_ENV: &str = "REPRISE_SMOKE_DEVICE_PLAYLIST";
-pub(super) const DEVICE_ID: &str = "reprise-smoke-device";
+pub(in crate::ui) const DEVICE_ID: &str = "reprise-smoke-device";
 
-pub(super) struct SmokeDeviceBackend {
+pub(in crate::ui) struct SmokeDeviceBackend {
     descriptor: DeviceDescriptor,
 }
 
 impl SmokeDeviceBackend {
-    pub(super) fn for_root(root: &Path) -> Option<Self> {
+    pub(in crate::ui) fn for_root(root: &Path) -> Option<Self> {
         let root = safe_smoke_root(root)?;
         Some(Self {
             descriptor: DeviceDescriptor {
@@ -184,13 +184,15 @@ impl DeviceBackend for SmokeDeviceBackend {
     }
 }
 
-pub(super) fn runtime_from_env(conn: &Rc<RefCell<Connection>>) -> Option<Rc<DeviceSyncRuntime>> {
+pub(in crate::ui) fn runtime_from_env(
+    conn: &Rc<RefCell<Connection>>,
+) -> Option<Rc<DeviceSyncRuntime>> {
     let root = std::env::var_os(ROOT_ENV).map(PathBuf::from)?;
     let backend = Rc::new(SmokeDeviceBackend::for_root(&root)?);
     Some(DeviceSyncRuntime::with_backend(conn, backend))
 }
 
-pub(super) fn arm(runtime: &Rc<DeviceSyncRuntime>) {
+pub(in crate::ui) fn arm(runtime: &Rc<DeviceSyncRuntime>) {
     if std::env::var_os(ROOT_ENV).is_none() {
         return;
     }

@@ -13,7 +13,7 @@ use reprise_core::library::playlists;
 use reprise_core::queries::AlbumSummary;
 use rusqlite::Connection;
 
-use crate::ui::album_card::{AlbumRefCallback, CallbackSlot, StringCallback};
+use crate::ui::album_card::AlbumActionSlot;
 use crate::ui::album_card_actions;
 use crate::ui::popover_lifecycle;
 use crate::ui::strings;
@@ -23,6 +23,9 @@ use crate::ui::track_actions;
 /// Task 7 (album view wiring) can reference it without reaching into
 /// this module's private constants.
 pub(in crate::ui) const ACTION_GROUP_NAME: &str = "albumctx";
+
+type ToastCallback = Rc<dyn Fn(String)>;
+type ToastCallbackSlot = Rc<RefCell<Option<ToastCallback>>>;
 
 const ACTION_PLAY: &str = "play";
 const ACTION_SHUFFLE: &str = "shuffle";
@@ -38,13 +41,13 @@ pub(in crate::ui) struct AlbumMenuShared {
     /// The album under the cursor when the menu was opened.
     pub target_album: RefCell<Option<AlbumSummary>>,
     /// Callback: replace queue + play.
-    pub on_play: CallbackSlot<AlbumRefCallback>,
+    pub on_play: AlbumActionSlot,
     /// Callback: append to queue.
-    pub on_queue: CallbackSlot<AlbumRefCallback>,
+    pub on_queue: AlbumActionSlot,
     /// Callback: shuffle + play.
-    pub on_shuffle: CallbackSlot<AlbumRefCallback>,
+    pub on_shuffle: AlbumActionSlot,
     /// Callback: show toast after playlist add.
-    pub on_toast: CallbackSlot<StringCallback>,
+    pub on_toast: ToastCallbackSlot,
 }
 
 /// Builds the full GMenu model (rebuilt on each show to refresh playlists).

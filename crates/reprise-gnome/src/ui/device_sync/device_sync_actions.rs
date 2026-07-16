@@ -10,7 +10,7 @@ use super::device_sync_runtime::{DeviceSyncRuntime, PlannedSyncPhase};
 
 const ACTION_SYNC_DEVICE: &str = "sync-device";
 
-pub(super) fn install(app: &libadwaita::Application, runtime: &Rc<DeviceSyncRuntime>) {
+pub(in crate::ui) fn install(app: &libadwaita::Application, runtime: &Rc<DeviceSyncRuntime>) {
     app.remove_action(ACTION_SYNC_DEVICE);
     let action = gio::SimpleAction::new(ACTION_SYNC_DEVICE, Some(glib::VariantTy::STRING));
     let runtime = runtime.clone();

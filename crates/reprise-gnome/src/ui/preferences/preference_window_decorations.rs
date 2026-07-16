@@ -4,24 +4,24 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::settings::{self, WindowDecorationMode};
 
-use super::preferences::PreferencesContext;
 use super::window_decoration_strings as strings;
+use super::PreferencesContext;
 
-pub(super) fn mode_from_index(index: u32) -> WindowDecorationMode {
+pub(in crate::ui) fn mode_from_index(index: u32) -> WindowDecorationMode {
     match index {
         1 => WindowDecorationMode::System,
         _ => WindowDecorationMode::Client,
     }
 }
 
-pub(super) fn mode_index(mode: WindowDecorationMode) -> u32 {
+pub(in crate::ui) fn mode_index(mode: WindowDecorationMode) -> u32 {
     match mode {
         WindowDecorationMode::Client => 0,
         WindowDecorationMode::System => 1,
     }
 }
 
-pub(super) fn row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
+pub(in crate::ui) fn row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
     let model = gtk4::StringList::new(&[
         &strings::text(strings::DECORATION_CLIENT),
         &strings::text(strings::DECORATION_SYSTEM),

@@ -8,9 +8,9 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::ui::strings;
+use crate::ui::{one_shot_task, strings};
 
-pub(super) fn service_subtitle(description: &str, enabled: bool, status: &str) -> String {
+pub(in crate::ui) fn service_subtitle(description: &str, enabled: bool, status: &str) -> String {
     if enabled {
         format!("{description} · {status}")
     } else {
@@ -23,7 +23,7 @@ pub(super) fn service_subtitle(description: &str, enabled: bool, status: &str) -
 /// The returned `TestConnectionRow` holds the row and a trigger function. The
 /// caller supplies a `spawn_validate` closure that runs on a dedicated thread
 /// and returns either `Ok(user_name)` or `Err(human_readable_error)`.
-pub(super) struct TestConnectionRow {
+pub(in crate::ui) struct TestConnectionRow {
     pub row: adw::ActionRow,
     pub button: gtk4::Button,
     generation: Rc<Cell<u64>>,
@@ -31,7 +31,7 @@ pub(super) struct TestConnectionRow {
 
 /// A clonable handle for triggering test-connection from a button callback.
 #[derive(Clone)]
-pub(super) struct TestConnectionTrigger {
+pub(in crate::ui) struct TestConnectionTrigger {
     row: glib::WeakRef<adw::ActionRow>,
     button: glib::WeakRef<gtk4::Button>,
     generation: Rc<Cell<u64>>,
@@ -102,19 +102,16 @@ impl TestConnectionTrigger {
         }
         row.set_subtitle(&strings::text(strings::LISTENBRAINZ_CONNECTING));
 
-        let (sender, receiver) = async_channel::bounded(1);
-        let spawned = std::thread::Builder::new()
-            .name("reprise-test-connection".to_string())
-            .spawn(move || {
-                let _ = sender.send_blocking(validate());
-            });
-        if spawned.is_err() {
-            if let Some(button) = self.button.upgrade() {
-                button.set_sensitive(true);
+        let receiver = match one_shot_task::spawn("reprise-test-connection", validate) {
+            Ok(receiver) => receiver,
+            Err(_) => {
+                if let Some(button) = self.button.upgrade() {
+                    button.set_sensitive(true);
+                }
+                row.set_subtitle(&strings::text(strings::TEST_CONNECTION_FAILED));
+                return;
             }
-            row.set_subtitle(&strings::text(strings::TEST_CONNECTION_FAILED));
-            return;
-        }
+        };
 
         let row = self.row.clone();
         let button = self.button.clone();

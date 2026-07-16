@@ -59,8 +59,8 @@ impl Theme {
         }
     }
 
-    /// Inverse of [`id`]; unknown ids fall back to `None` so the caller can
-    /// choose [`DEFAULT`].
+    /// Inverse of [`Self::id`]; unknown ids fall back to `None` so the caller can
+    /// choose [`Self::DEFAULT`].
     pub(in crate::ui) fn from_id(id: &str) -> Option<Theme> {
         Theme::all().into_iter().find(|theme| theme.id() == id)
     }

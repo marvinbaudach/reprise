@@ -20,7 +20,7 @@ fn is_loopback_smoke_root(value: &str) -> bool {
         .is_some_and(|port| port.parse::<u16>().is_ok())
 }
 
-pub(super) fn arm_bar_position(
+pub(in crate::ui) fn arm_bar_position(
     conn: &Rc<RefCell<Connection>>,
     library_player_bar: &super::library_player_bar::LibraryPlayerBarShell,
 ) {
@@ -44,7 +44,7 @@ pub(super) fn arm_bar_position(
 /// also has a validated loopback-only API override. The fixed fake token and
 /// metadata never represent user data and the hook cannot redirect a release
 /// build or a real keyring token.
-pub(super) fn arm_listenbrainz(
+pub(in crate::ui) fn arm_listenbrainz(
     conn: &Rc<RefCell<Connection>>,
     runtime: &Rc<super::scrobble_runtime::ScrobbleRuntime>,
 ) {
@@ -84,7 +84,7 @@ pub(super) fn arm_listenbrainz(
 
 /// Exercises Last.fm signing and queue draining only against an explicit
 /// debug-build loopback endpoint with synthetic credentials and metadata.
-pub(super) fn arm_lastfm(
+pub(in crate::ui) fn arm_lastfm(
     conn: &Rc<RefCell<Connection>>,
     runtime: &Rc<super::scrobble_runtime::ScrobbleRuntime>,
 ) {

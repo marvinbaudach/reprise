@@ -55,7 +55,7 @@ const SMOKE_DND_ENV_VAR: &str = "REPRISE_SMOKE_DND";
 /// prove a multi-id drag payload resolves and inserts correctly).
 const SMOKE_DND_ADD_ROW_COUNT: u32 = 2;
 
-pub(super) fn arm_smoke_dnd(shared: &Rc<Shared>) {
+pub(in crate::ui) fn arm_smoke_dnd(shared: &Rc<Shared>) {
     let Ok(value) = std::env::var(SMOKE_DND_ENV_VAR) else {
         return;
     };

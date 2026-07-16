@@ -7,8 +7,8 @@ use super::cover_loader::CoverLoader;
 use super::style::tokens::TRANSITION;
 use super::waveform_seek::WaveformSeek;
 
-pub(super) const MINI_WIDTH: i32 = 430;
-pub(super) const MINI_HEIGHT: i32 = 76;
+pub(in crate::ui) const MINI_WIDTH: i32 = 430;
+pub(in crate::ui) const MINI_HEIGHT: i32 = 76;
 
 const COVER_SIZE: i32 = 52;
 const PLAY_SIZE: i32 = 38;
@@ -27,21 +27,21 @@ const CSS_VOL_BAR: &str = "mini-player-vol-bar";
 
 const ICON_PLAY: &str = "media-playback-start-symbolic";
 
-pub(super) struct MiniWidgets {
-    pub(super) root: gtk4::WindowHandle,
-    pub(super) card: gtk4::Box,
-    pub(super) cover: gtk4::Image,
-    pub(super) title_label: gtk4::Label,
-    pub(super) artist_label: gtk4::Label,
-    pub(super) waveform: WaveformSeek,
-    pub(super) play_pause_button: gtk4::Button,
-    pub(super) hover_revealer: gtk4::Revealer,
-    pub(super) restore_button: gtk4::Button,
-    pub(super) close_button: gtk4::Button,
-    pub(super) volume_bar: gtk4::DrawingArea,
+pub(in crate::ui) struct MiniWidgets {
+    pub(in crate::ui) root: gtk4::WindowHandle,
+    pub(in crate::ui) card: gtk4::Box,
+    pub(in crate::ui) cover: gtk4::Image,
+    pub(in crate::ui) title_label: gtk4::Label,
+    pub(in crate::ui) artist_label: gtk4::Label,
+    pub(in crate::ui) waveform: WaveformSeek,
+    pub(in crate::ui) play_pause_button: gtk4::Button,
+    pub(in crate::ui) hover_revealer: gtk4::Revealer,
+    pub(in crate::ui) restore_button: gtk4::Button,
+    pub(in crate::ui) close_button: gtk4::Button,
+    pub(in crate::ui) volume_bar: gtk4::DrawingArea,
 }
 
-pub(super) fn build_mini() -> MiniWidgets {
+pub(in crate::ui) fn build_mini() -> MiniWidgets {
     // — Cover —
     let cover = gtk4::Image::new();
     cover.set_pixel_size(COVER_SIZE);
@@ -168,7 +168,7 @@ pub(super) fn build_mini() -> MiniWidgets {
     }
 }
 
-pub(super) fn mini_css() -> String {
+pub(in crate::ui) fn mini_css() -> String {
     format!(
         ".{CSS_CARD} {{ \
            background-color: rgba(34, 34, 34, 0.92); \

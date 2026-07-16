@@ -118,6 +118,18 @@ blockers live in [RELEASING.md](RELEASING.md). Development-only
 `REPRISE_SMOKE_*` hooks exist for isolated headless regression tests and must
 never run against a real library.
 
+Before merging a feature branch, run `scripts/check-merge-readiness.sh`. It
+fetches the latest `origin/main` and rejects dirty or stale branches, then runs
+the architecture, formatting, Clippy, Rustdoc, workspace-test, and dependency-
+audit gates. `scripts/check-architecture.sh` is the faster structural linter
+for file-size, crate-purity, orphan-module, gettext-source, and frontend rules.
+The frontend rules prevent new per-widget CSS providers, deprecated styling,
+unsafe blocks, blocking HTTP, and direct GStreamer/process coupling outside a
+small documented legacy allowlist. To enforce the full readiness check
+automatically before every push, enable the tracked hook once with
+`scripts/install-git-hooks.sh`. Use `--no-fetch` only when an offline or CI
+environment has already refreshed `origin/main`.
+
 ## Relation to Rhythmbox
 
 Reprise follows Rhythmbox's proven local-library model with strong GNOME

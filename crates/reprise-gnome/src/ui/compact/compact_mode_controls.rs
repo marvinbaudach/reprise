@@ -14,7 +14,10 @@ use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
 use super::window_decorations::WindowContentHost;
 
-pub(super) fn initial_transition(conn: &Connection, first_run: FirstRunDecision) -> ViewTransition {
+pub(in crate::ui) fn initial_transition(
+    conn: &Connection,
+    first_run: FirstRunDecision,
+) -> ViewTransition {
     minimal_view::startup_transition(
         settings::get_window_view_mode(conn),
         settings::get_compact_layout(conn),
@@ -22,7 +25,7 @@ pub(super) fn initial_transition(conn: &Connection, first_run: FirstRunDecision)
     )
 }
 
-pub(super) fn build_mode(
+pub(in crate::ui) fn build_mode(
     window: &adw::ApplicationWindow,
     content_host: &WindowContentHost,
     full_root: &gtk4::Widget,
@@ -109,7 +112,7 @@ fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
     tracing::debug!(above, "X11: _NET_WM_STATE_ABOVE toggled");
 }
 
-pub(super) fn install(
+pub(in crate::ui) fn install(
     window: &adw::ApplicationWindow,
     mode: &Rc<MinimalView>,
     compact: Option<&CompactPlayer>,

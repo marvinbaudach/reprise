@@ -2,7 +2,7 @@
 //!
 //! `CompactPlayer` wraps an `Rc<Inner>` so it is cheap to clone and can be
 //! stored in both `PlayerController` and `MinimalView` without lifetime
-//! gymnastics. All public methods are `pub(super)` (visible within the `ui`
+//! gymnastics. All public methods are `pub(in crate::ui)` (visible within the `ui`
 //! module) to match the existing GTK component conventions in this codebase.
 //!
 //! ## Callback discipline
@@ -64,7 +64,7 @@ struct Inner {
 ///
 /// Clone-cheap (wraps `Rc<Inner>`); both `PlayerController` and `MinimalView`
 /// can own a copy without needing `Weak` references to each other.
-pub(super) struct CompactPlayer(Rc<Inner>);
+pub(in crate::ui) struct CompactPlayer(Rc<Inner>);
 
 impl Clone for CompactPlayer {
     fn clone(&self) -> Self {
@@ -75,7 +75,7 @@ impl Clone for CompactPlayer {
 // ── Construction ─────────────────────────────────────────────────────────────
 
 impl CompactPlayer {
-    pub(super) fn new() -> Self {
+    pub(in crate::ui) fn new() -> Self {
         let widgets = build_mini();
         let menu = CompactMenu::build();
 
@@ -112,12 +112,12 @@ impl CompactPlayer {
 
 impl CompactPlayer {
     /// The root `WindowHandle` — mount this in `MinimalView`'s toast overlay.
-    pub(super) fn handle(&self) -> &gtk4::WindowHandle {
+    pub(in crate::ui) fn handle(&self) -> &gtk4::WindowHandle {
         &self.0.widgets.root
     }
 
     /// The cover `Image` widget, fed by `CoverLoader` in `now_playing_wiring`.
-    pub(super) fn cover_image(&self) -> &gtk4::Image {
+    pub(in crate::ui) fn cover_image(&self) -> &gtk4::Image {
         &self.0.widgets.cover
     }
 }
@@ -128,7 +128,7 @@ impl CompactPlayer {
     /// Crossfades the title and artist labels when the track changes (gated on
     /// `gtk-enable-animations`). The cover is not animated here — it is
     /// managed by `CoverLoader` asynchronously.
-    pub(super) fn set_track(&self, title: &str, artist: &str) {
+    pub(in crate::ui) fn set_track(&self, title: &str, artist: &str) {
         let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
         if animate {
             start_label_crossfade(&self.0, title.to_owned(), artist.to_owned());
@@ -139,7 +139,7 @@ impl CompactPlayer {
     }
 
     /// Resets all displayed metadata to the empty state.
-    pub(super) fn clear_track(&self) {
+    pub(in crate::ui) fn clear_track(&self) {
         self.0.widgets.title_label.set_text("");
         self.0.widgets.artist_label.set_text("");
         self.0.current_duration_ms.set(0);
@@ -148,7 +148,7 @@ impl CompactPlayer {
     }
 
     /// Updates the play/pause icon and the menu's play label.
-    pub(super) fn set_state(&self, state: PlaybackState) {
+    pub(in crate::ui) fn set_state(&self, state: PlaybackState) {
         let is_playing = state == PlaybackState::Playing;
         self.0
             .widgets
@@ -159,7 +159,7 @@ impl CompactPlayer {
 
     /// Advances the waveform seek bar. Stores `duration_ms` for seek-fraction
     /// conversion.
-    pub(super) fn set_position(&self, position_ms: i64, duration_ms: i64) {
+    pub(in crate::ui) fn set_position(&self, position_ms: i64, duration_ms: i64) {
         let dur = duration_ms.max(0);
         self.0.current_duration_ms.set(dur);
         self.0.widgets.waveform.set_duration(dur);
@@ -172,12 +172,12 @@ impl CompactPlayer {
     }
 
     /// Enables or disables the play/pause button.
-    pub(super) fn set_transport_enabled(&self, enabled: bool) {
+    pub(in crate::ui) fn set_transport_enabled(&self, enabled: bool) {
         self.0.widgets.play_pause_button.set_sensitive(enabled);
     }
 
     /// Stores the current volume and shows the visual feedback bar briefly.
-    pub(super) fn set_volume_indicator(&self, volume: f64) {
+    pub(in crate::ui) fn set_volume_indicator(&self, volume: f64) {
         let v = if volume.is_finite() {
             volume.clamp(0.0, 1.0)
         } else {
@@ -187,7 +187,7 @@ impl CompactPlayer {
     }
 
     /// Resets the cover to the placeholder image.
-    pub(super) fn set_cover_placeholder(&self) {
+    pub(in crate::ui) fn set_cover_placeholder(&self) {
         CoverLoader::set_placeholder(&self.0.widgets.cover);
     }
 }
@@ -199,37 +199,37 @@ impl CompactPlayer {
     /// Replaces the callback fired by "Restore Full Window" — the overlay
     /// button, the X button, the menu action, and double-clicking the cover
     /// or title all route through this.
-    pub(super) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_restore(&self, callback: Rc<dyn Fn()>) {
         self.0.menu.set_on_restore(callback);
     }
 
-    pub(super) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
         self.0.menu.set_on_preferences(callback);
     }
 
-    pub(super) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
+    pub(in crate::ui) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
         self.0.menu.set_on_always_on_top(callback);
     }
 
     /// Disables the always-on-top action (grays out the menu item).
-    pub(super) fn set_always_on_top_enabled(&self, enabled: bool) {
+    pub(in crate::ui) fn set_always_on_top_enabled(&self, enabled: bool) {
         self.0.menu.always_on_top_action.set_enabled(enabled);
     }
 
     /// Sets the always-on-top action state (check mark in the menu).
-    pub(super) fn set_always_on_top_active(&self, active: bool) {
+    pub(in crate::ui) fn set_always_on_top_active(&self, active: bool) {
         self.0
             .menu
             .always_on_top_action
             .set_state(&active.to_variant());
     }
 
-    pub(super) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
+    pub(in crate::ui) fn set_on_quit(&self, callback: Rc<dyn Fn()>) {
         self.0.menu.set_on_quit(callback);
     }
 
     /// Wires play/pause to both the overlay button and the menu action.
-    pub(super) fn connect_play_pause(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn connect_play_pause(&self, callback: impl Fn() + 'static) {
         let callback: Rc<dyn Fn()> = Rc::new(callback);
         let cb1 = Rc::clone(&callback);
         self.0
@@ -241,7 +241,7 @@ impl CompactPlayer {
 
     /// Wires the waveform's drag-to-seek gesture. The fraction (0..1) is
     /// converted to milliseconds using the last-known duration.
-    pub(super) fn connect_seek(&self, callback: impl Fn(i64) + 'static) {
+    pub(in crate::ui) fn connect_seek(&self, callback: impl Fn(i64) + 'static) {
         let inner = Rc::clone(&self.0);
         self.0.widgets.waveform.connect_seek(move |fraction| {
             let dur_ms = inner.current_duration_ms.get();
@@ -254,7 +254,7 @@ impl CompactPlayer {
     /// Installs a scroll controller on the card for volume adjustment.
     /// Calls `on_volume_change` with the new clamped level and briefly shows
     /// the accent-coloured feedback bar at the top edge.
-    pub(super) fn connect_volume_changed(&self, callback: impl Fn(f64) + 'static) {
+    pub(in crate::ui) fn connect_volume_changed(&self, callback: impl Fn(f64) + 'static) {
         let inner = Rc::clone(&self.0);
         let inner2 = Rc::clone(&self.0);
         let callback: Rc<dyn Fn(f64)> = Rc::new(callback);
@@ -270,19 +270,19 @@ impl CompactPlayer {
     }
 
     /// Routes "Previous" from the right-click menu to the controller.
-    pub(super) fn connect_previous(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn connect_previous(&self, callback: impl Fn() + 'static) {
         self.0.menu.set_on_previous(Rc::new(callback));
     }
 
     /// Routes "Next" from the right-click menu to the controller.
-    pub(super) fn connect_next(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn connect_next(&self, callback: impl Fn() + 'static) {
         self.0.menu.set_on_next(Rc::new(callback));
     }
 
     /// Test-only: fires the "restore" action as if the user clicked the button
     /// or chose it from the menu.
     #[cfg(test)]
-    pub(super) fn activate_restore_for_test(&self) {
+    pub(in crate::ui) fn activate_restore_for_test(&self) {
         self.0.menu.action_group.activate_action("restore", None);
     }
 }

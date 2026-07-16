@@ -43,7 +43,7 @@ fn presentation(progress: BatchProgress) -> ProgressPresentation {
 /// sidebar scan card (via `ScanControls::show_cover_progress`). Terminal
 /// states (complete/failed) remain visible briefly and then hide
 /// automatically, matching the old headerbar banner's behaviour.
-pub(super) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownloadBatch>) {
+pub(in crate::ui) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownloadBatch>) {
     let controls = scan_controls.clone();
     let hide_generation = Rc::new(Cell::new(0u64));
 

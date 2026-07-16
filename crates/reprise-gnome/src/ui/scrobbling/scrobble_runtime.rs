@@ -18,7 +18,7 @@ const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
 const MAX_BACKOFF: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum ConnectionStatus {
+pub(in crate::ui) enum ConnectionStatus {
     Disabled,
     Connecting,
     Connected {
@@ -75,7 +75,7 @@ struct WorkerCoordination<'a> {
 
 type StatusCallback = Rc<dyn Fn(ConnectionStatus)>;
 
-pub(super) struct ScrobbleRuntime {
+pub(in crate::ui) struct ScrobbleRuntime {
     database_path: PathBuf,
     provider: ScrobbleProvider,
     service: &'static str,
@@ -88,7 +88,7 @@ pub(super) struct ScrobbleRuntime {
 }
 
 impl ScrobbleRuntime {
-    pub(super) fn new(
+    pub(in crate::ui) fn new(
         database_path: PathBuf,
         provider: ScrobbleProvider,
         service: &'static str,
@@ -106,21 +106,21 @@ impl ScrobbleRuntime {
         })
     }
 
-    pub(super) fn is_active(&self) -> bool {
+    pub(in crate::ui) fn is_active(&self) -> bool {
         self.active.get()
     }
 
-    pub(super) fn status(&self) -> ConnectionStatus {
+    pub(in crate::ui) fn status(&self) -> ConnectionStatus {
         self.status.borrow().clone()
     }
 
-    pub(super) fn subscribe(&self, callback: StatusCallback) {
+    pub(in crate::ui) fn subscribe(&self, callback: StatusCallback) {
         let status = self.status();
         callback(status);
         self.subscribers.borrow_mut().push(callback);
     }
 
-    pub(super) fn configure(
+    pub(in crate::ui) fn configure(
         self: &Rc<Self>,
         credential: String,
         transport: Box<dyn ScrobblerTransport>,
@@ -174,27 +174,27 @@ impl ScrobbleRuntime {
         });
     }
 
-    pub(super) fn disable(&self) {
+    pub(in crate::ui) fn disable(&self) {
         self.active.set(false);
         self.generation.set(self.generation.get().wrapping_add(1));
         self.stop_worker();
         self.set_status(&ConnectionStatus::Disabled);
     }
 
-    pub(super) fn playing_now(&self, track: TrackMetadata) {
+    pub(in crate::ui) fn playing_now(&self, track: TrackMetadata) {
         if !self.active.get() {
             return;
         }
         self.send(WorkerCommand::PlayingNow(track));
     }
 
-    pub(super) fn flush(&self) {
+    pub(in crate::ui) fn flush(&self) {
         if self.active.get() {
             self.send(WorkerCommand::Flush);
         }
     }
 
-    pub(super) fn report_status(&self, status: &ConnectionStatus) {
+    pub(in crate::ui) fn report_status(&self, status: &ConnectionStatus) {
         self.set_status(status);
     }
 
@@ -325,9 +325,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
         credential,
         generation,
     } = config;
-    let conn = match reprise_core::db::open(Some(database_path))
-        .and_then(|conn| reprise_core::db::migrate(&conn).map(|()| conn))
-    {
+    let conn = match reprise_core::db::open_migrated(Some(database_path)) {
         Ok(conn) => conn,
         Err(error) => {
             tracing::warn!(%error, service, "could not open scrobbling queue");
@@ -763,6 +761,7 @@ mod tests {
         assert_eq!(reprise_core::scrobbling::pending_count(&conn).unwrap(), 0);
     }
 
-    #[path = "scrobble_runtime_worker_tests.rs"]
-    mod worker_tests;
+    mod worker_tests {
+        include!("tests/scrobble_runtime_worker_tests.rs");
+    }
 }

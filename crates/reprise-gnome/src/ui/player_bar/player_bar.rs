@@ -24,15 +24,15 @@ use reprise_core::format::{format_duration, format_remaining};
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
-// `pub(super)` (Task 8): `now_playing.rs` reuses these icon names/CSS class
+// `pub(in crate::ui)` (Task 8): `now_playing.rs` reuses these icon names/CSS class
 // for its own transport row (DRY) rather than a second, drifting copy.
-pub(super) const ICON_PLAY: &str = "media-playback-start-symbolic";
-pub(super) const ICON_PAUSE: &str = "media-playback-pause-symbolic";
-pub(super) const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
-pub(super) const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
-pub(super) const ICON_NEXT: &str = "media-skip-forward-symbolic";
-pub(super) const ICON_REPEAT_ALL: &str = "media-playlist-repeat-symbolic";
-pub(super) const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
+pub(in crate::ui) const ICON_PLAY: &str = "media-playback-start-symbolic";
+pub(in crate::ui) const ICON_PAUSE: &str = "media-playback-pause-symbolic";
+pub(in crate::ui) const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
+pub(in crate::ui) const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
+pub(in crate::ui) const ICON_NEXT: &str = "media-skip-forward-symbolic";
+pub(in crate::ui) const ICON_REPEAT_ALL: &str = "media-playlist-repeat-symbolic";
+pub(in crate::ui) const ICON_REPEAT_ONE: &str = "media-playlist-repeat-song-symbolic";
 
 /// Volume icon names indexed by loudness tier.
 const ICON_VOLUME_MUTED: &str = "audio-volume-muted-symbolic";
@@ -44,7 +44,7 @@ const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 /// without a third icon asset — the same generic "de-emphasize" style class
 /// which GTK's Adwaita theme renders as reduced-opacity text/icon content on
 /// any widget.
-pub(super) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
+pub(in crate::ui) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
 const MINI_EQ_PLAYING_CLASS: &str = "playing";
@@ -443,13 +443,13 @@ impl PlayerBar {
         self.play_pause_button.add_controller(gesture);
     }
 
-    pub(super) fn smoke_activate_play_pause(&self) {
+    pub(in crate::ui) fn smoke_activate_play_pause(&self) {
         self.play_pause_button.emit_clicked();
     }
 
     /// A cloneable handle to the seek waveform (shared `Rc` state), so an
     /// off-main peak load can hand its results back to the same widget.
-    pub(super) fn waveform_handle(&self) -> WaveformSeek {
+    pub(in crate::ui) fn waveform_handle(&self) -> WaveformSeek {
         self.waveform.clone()
     }
 

@@ -14,7 +14,7 @@ macro_rules! N_ {
     };
 }
 
-pub(super) const ACTION_REMOVE_FROM_QUEUE: &str = "remove-from-queue";
+pub(in crate::ui) const ACTION_REMOVE_FROM_QUEUE: &str = "remove-from-queue";
 const REMOVE_FROM_QUEUE: &str = N_!("Remove from Queue");
 const REMOVED_ONE: &str = N_!("Removed one track from Queue");
 const REMOVED_MANY: &str = N_!("Removed {count} tracks from Queue");
@@ -27,7 +27,7 @@ fn primary_action_name(source: &ViewSource) -> &'static str {
     }
 }
 
-pub(super) fn append_queue_primary_action(
+pub(in crate::ui) fn append_queue_primary_action(
     primary: &gio::Menu,
     shared: &Rc<Shared>,
     group: &str,
@@ -46,14 +46,14 @@ pub(super) fn append_queue_primary_action(
     }
 }
 
-pub(super) fn add_remove_action(group: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
+pub(in crate::ui) fn add_remove_action(group: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
     let action = gio::SimpleAction::new(ACTION_REMOVE_FROM_QUEUE, None);
     let shared = shared.clone();
     action.connect_activate(move |_, _| remove_selected(&shared));
     group.add_action(&action);
 }
 
-pub(super) fn add_selected(shared: &Rc<Shared>, ids: &[i64]) {
+pub(in crate::ui) fn add_selected(shared: &Rc<Shared>, ids: &[i64]) {
     let Some(ids) = track_actions::queue_selected_ids(ids) else {
         return;
     };
@@ -68,7 +68,7 @@ pub(super) fn add_selected(shared: &Rc<Shared>, ids: &[i64]) {
     }
 }
 
-pub(super) fn play_selected_if_queue(shared: &Rc<Shared>) -> bool {
+pub(in crate::ui) fn play_selected_if_queue(shared: &Rc<Shared>) -> bool {
     if !matches!(*shared.source.borrow(), ViewSource::Queue) {
         return false;
     }
@@ -83,7 +83,7 @@ pub(super) fn play_selected_if_queue(shared: &Rc<Shared>) -> bool {
     true
 }
 
-pub(super) fn remove_selected(shared: &Rc<Shared>) {
+pub(in crate::ui) fn remove_selected(shared: &Rc<Shared>) {
     if !matches!(*shared.source.borrow(), ViewSource::Queue) {
         tracing::warn!("remove-from-queue fired outside the Queue source");
         return;

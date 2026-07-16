@@ -14,7 +14,7 @@ use super::device_sync_runtime::{
 };
 use super::device_sync_strings as copy;
 
-pub(super) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPage {
+pub(in crate::ui) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(copy::text(copy::SYNCHRONIZATION))
         .icon_name("phone-symbolic")

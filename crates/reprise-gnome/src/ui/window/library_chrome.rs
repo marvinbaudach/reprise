@@ -9,22 +9,22 @@ const SEARCH_WIDTH: i32 = 300;
 const LIBRARY_TITLE_SOURCE: &str = "source";
 const LIBRARY_TITLE_SWITCHER: &str = "library-switcher";
 
-pub(super) struct LibraryChrome {
-    pub(super) root: adw::ToolbarView,
+pub(in crate::ui) struct LibraryChrome {
+    pub(in crate::ui) root: adw::ToolbarView,
 }
 
-pub(super) struct LibraryMaintenanceActions {
-    pub(super) scan: gtk4::Button,
+pub(in crate::ui) struct LibraryMaintenanceActions {
+    pub(in crate::ui) scan: gtk4::Button,
 }
 
-pub(super) struct LibraryTitle {
-    pub(super) root: gtk4::Stack,
+pub(in crate::ui) struct LibraryTitle {
+    pub(in crate::ui) root: gtk4::Stack,
     #[cfg(test)]
-    pub(super) switcher: gtk4::StackSwitcher,
+    pub(in crate::ui) switcher: gtk4::StackSwitcher,
 }
 
 impl LibraryTitle {
-    pub(super) fn set_library_navigation_visible(&self, visible: bool) {
+    pub(in crate::ui) fn set_library_navigation_visible(&self, visible: bool) {
         let name = if visible {
             LIBRARY_TITLE_SWITCHER
         } else {
@@ -34,7 +34,10 @@ impl LibraryTitle {
     }
 }
 
-pub(super) fn build(header: &adw::HeaderBar, content: &impl IsA<gtk4::Widget>) -> LibraryChrome {
+pub(in crate::ui) fn build(
+    header: &adw::HeaderBar,
+    content: &impl IsA<gtk4::Widget>,
+) -> LibraryChrome {
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
     root.add_top_bar(header);
@@ -42,13 +45,13 @@ pub(super) fn build(header: &adw::HeaderBar, content: &impl IsA<gtk4::Widget>) -
     LibraryChrome { root }
 }
 
-pub(super) fn style_header(header: &adw::HeaderBar, search: &gtk4::SearchEntry) {
+pub(in crate::ui) fn style_header(header: &adw::HeaderBar, search: &gtk4::SearchEntry) {
     header.set_centering_policy(adw::CenteringPolicy::Strict);
     search.set_width_request(SEARCH_WIDTH);
     search.set_hexpand(false);
 }
 
-pub(super) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
+pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
     let button = gtk4::Button::builder()
         .icon_name(icon_name)
         .tooltip_text(label)
@@ -57,12 +60,12 @@ pub(super) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
     button
 }
 
-pub(super) fn build_maintenance_actions() -> LibraryMaintenanceActions {
+pub(in crate::ui) fn build_maintenance_actions() -> LibraryMaintenanceActions {
     let scan = action_button("folder-open-symbolic", &strings::text(strings::SCAN_FOLDER));
     LibraryMaintenanceActions { scan }
 }
 
-pub(super) fn build_library_title(
+pub(in crate::ui) fn build_library_title(
     header: &adw::HeaderBar,
     source_title: &adw::WindowTitle,
     views: &gtk4::Stack,
@@ -88,7 +91,7 @@ pub(super) fn build_library_title(
 /// the active segment tinted + bold, inactive quiet, hover a hair brighter.
 /// `@window_fg_color` (near-white on the dark theme) keeps it theme-aware.
 /// Installed app-wide by [`super::style`].
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     ".reprise-view-switcher { \
        background-color: alpha(@window_fg_color, 0.06); \
        border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\

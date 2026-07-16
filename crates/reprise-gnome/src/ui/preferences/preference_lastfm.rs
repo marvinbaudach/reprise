@@ -15,10 +15,11 @@ use reprise_core::scrobbling::{
 use rusqlite::Connection;
 
 use crate::ui::lastfm_secret::{self, LastFmCredentials};
+use crate::ui::one_shot_task;
 use crate::ui::scrobble_runtime::{ConnectionStatus, ScrobbleRuntime};
 use crate::ui::strings;
 
-use super::preferences::PreferencesContext;
+use super::PreferencesContext;
 
 const RESPONSE_CANCEL: &str = "cancel";
 const RESPONSE_CONTINUE: &str = "continue";
@@ -43,7 +44,7 @@ fn authorization_decision(
     }
 }
 
-pub(super) fn status_text(status: &ConnectionStatus) -> String {
+pub(in crate::ui) fn status_text(status: &ConnectionStatus) -> String {
     let (base, submitted, pending) = match status {
         ConnectionStatus::Disabled => return strings::text(strings::LISTENBRAINZ_NOT_CONNECTED),
         ConnectionStatus::Connecting => return strings::text(strings::LISTENBRAINZ_CONNECTING),
@@ -228,7 +229,7 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     }
 }
 
-pub(super) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRuntime>) {
+pub(in crate::ui) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRuntime>) {
     let enabled =
         reprise_core::modules::is_enabled(&conn.borrow(), &reprise_core::modules::LASTFM_MODULE)
             .unwrap_or(false);
@@ -291,7 +292,7 @@ fn disable_module(conn: &Rc<RefCell<Connection>>, runtime: &ScrobbleRuntime) {
 }
 
 impl PreferencesContext {
-    pub(super) fn build_lastfm_row(self: &Rc<Self>) -> adw::ExpanderRow {
+    pub(in crate::ui) fn build_lastfm_row(self: &Rc<Self>) -> adw::ExpanderRow {
         let is_enabled = reprise_core::modules::is_enabled(
             &self.conn.borrow(),
             &reprise_core::modules::LASTFM_MODULE,
@@ -423,7 +424,7 @@ impl PreferencesContext {
         surface.expander
     }
 
-    pub(super) fn change_lastfm_activation(
+    pub(in crate::ui) fn change_lastfm_activation(
         self: &Rc<Self>,
         row: &adw::ExpanderRow,
         requested: bool,
@@ -477,25 +478,23 @@ impl PreferencesContext {
             return;
         }
         self.lastfm.report_status(&ConnectionStatus::Connecting);
-        let (sender, receiver) = async_channel::bounded(1);
         let worker_api_key = api_key.clone();
         let worker_secret = shared_secret.clone();
-        let spawned = std::thread::Builder::new()
-            .name("reprise-lastfm-token".to_string())
-            .spawn(move || {
-                let result = (|| {
-                    let client = LastFmClient::new(&worker_api_key, &worker_secret)?;
-                    let token = client.request_token()?;
-                    let url = client.authorization_url(&token)?;
-                    Ok::<_, TransportError>((token, url))
-                })();
-                let _ = sender.send_blocking(result);
-            });
-        if spawned.is_err() {
-            self.restore_lastfm_switch(row);
-            self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
-            return;
-        }
+        let receiver = match one_shot_task::spawn("reprise-lastfm-token", move || {
+            (|| {
+                let client = LastFmClient::new(&worker_api_key, &worker_secret)?;
+                let token = client.request_token()?;
+                let url = client.authorization_url(&token)?;
+                Ok::<_, TransportError>((token, url))
+            })()
+        }) {
+            Ok(receiver) => receiver,
+            Err(_) => {
+                self.restore_lastfm_switch(row);
+                self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
+                return;
+            }
+        };
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
@@ -570,22 +569,20 @@ impl PreferencesContext {
         shared_secret: String,
         token: String,
     ) {
-        let (sender, receiver) = async_channel::bounded(1);
         let worker_api_key = api_key.clone();
         let worker_secret = shared_secret.clone();
-        let spawned = std::thread::Builder::new()
-            .name("reprise-lastfm-session".to_string())
-            .spawn(move || {
-                let result = LastFmClient::new(&worker_api_key, &worker_secret)
-                    .map_err(TransportError::from)
-                    .and_then(|client| client.exchange_token(&token));
-                let _ = sender.send_blocking(result);
-            });
-        if spawned.is_err() {
-            self.restore_lastfm_switch(row);
-            self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
-            return;
-        }
+        let receiver = match one_shot_task::spawn("reprise-lastfm-session", move || {
+            LastFmClient::new(&worker_api_key, &worker_secret)
+                .map_err(TransportError::from)
+                .and_then(|client| client.exchange_token(&token))
+        }) {
+            Ok(receiver) => receiver,
+            Err(_) => {
+                self.restore_lastfm_switch(row);
+                self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
+                return;
+            }
+        };
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
@@ -736,65 +733,5 @@ fn map_transport_error(error: &TransportError) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn authorization_steps_require_credentials_browser_then_confirmation() {
-        assert_eq!(
-            authorization_decision("", "secret", false),
-            AuthorizationDecision::Configure
-        );
-        assert_eq!(
-            authorization_decision("key", "secret", false),
-            AuthorizationDecision::OpenBrowser
-        );
-        assert_eq!(
-            authorization_decision("key", "secret", true),
-            AuthorizationDecision::Exchange
-        );
-    }
-
-    #[test]
-    fn connected_status_includes_lastfm_queued_count() {
-        let text = status_text(&ConnectionStatus::Connected {
-            user_name: "listener".to_string(),
-            pending: 2,
-            submitted: 0,
-        });
-        assert!(text.contains("listener"));
-        assert!(text.contains('2'));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn expander_row_has_enable_switch_credentials_and_action_buttons() {
-        gtk4::init().unwrap();
-        let surface = build_lastfm_expander(false, false, "Not connected");
-        assert!(surface.expander.shows_enable_switch());
-        assert!(!surface.expander.enables_expansion());
-        assert!(surface.api_key.is::<adw::PasswordEntryRow>());
-        assert!(surface.shared_secret.is::<adw::PasswordEntryRow>());
-        assert!(!surface.open_browser.is_sensitive());
-
-        // Disconnect button's parent row is hidden when not connected
-        assert!(surface.disconnect.parent().is_some_and(|p| !p.is_visible()));
-
-        // Credentials gate Open Browser
-        surface.api_key.set_text("key");
-        assert!(!surface.open_browser.is_sensitive());
-        surface.shared_secret.set_text("secret");
-        assert!(surface.open_browser.is_sensitive());
-        surface.api_key.set_text("  ");
-        assert!(!surface.open_browser.is_sensitive());
-
-        // When enabled + connected, body rows are sensitive and disconnect visible
-        let enabled_surface = build_lastfm_expander(true, true, "Connected as listener");
-        assert!(enabled_surface.expander.enables_expansion());
-        assert!(enabled_surface.api_key.is_sensitive());
-        assert!(enabled_surface
-            .disconnect
-            .parent()
-            .is_some_and(|p| p.is_visible()));
-    }
-}
+#[path = "preference_lastfm_tests.rs"]
+mod tests;

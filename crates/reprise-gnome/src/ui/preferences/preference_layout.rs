@@ -8,8 +8,8 @@ use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition};
 
 use super::preference_choice_cards::{self, ChoiceCardSpec};
 use super::preference_visual_strings as visual_strings;
-use super::preferences::{action_row, PreferencesContext};
 use super::strings;
+use super::{action_row, PreferencesContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LibraryWindowControl {
@@ -204,7 +204,7 @@ fn player_bar_preview(position: PlayerBarPosition) -> gtk4::Box {
     root
 }
 
-pub(super) fn build(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
+pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(strings::text(strings::PREFERENCES_LAYOUT))
         .icon_name("view-grid-symbolic")

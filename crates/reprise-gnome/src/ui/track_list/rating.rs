@@ -64,7 +64,7 @@ const RATING_MAX: i32 = STAR_COUNT;
 /// Fixed width of the Rating column (`column_layout.rs`). Five ~16 px star
 /// buttons fit comfortably; the old compact/wide breakpoint is gone — hover
 /// reveal replaces it, so the column is always this width.
-pub(super) const COMPACT_RATING_COLUMN_WIDTH: i32 = 88;
+pub(in crate::ui) const COMPACT_RATING_COLUMN_WIDTH: i32 = 88;
 
 /// Filled star glyph (U+2605), shown for star positions `<= threshold`.
 const STAR_FILLED_GLYPH: &str = "\u{2605}";
@@ -126,7 +126,7 @@ fn star_at_x(x: f64, width: f64) -> i32 {
 
 /// Star and dash hit-area + colour rules; installed app-wide by
 /// [`super::style`].
-pub(super) fn css() -> String {
+pub(in crate::ui) fn css() -> String {
     format!(
         ".{STAR_CSS_CLASS} {{ min-width: 16px; min-height: 24px; padding: 0; }}\n\
          .{FILLED_CSS_CLASS} {{ color: @accent_color; }}\n\

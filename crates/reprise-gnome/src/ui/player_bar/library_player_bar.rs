@@ -5,13 +5,13 @@ use gtk4::prelude::*;
 use reprise_core::library::settings::PlayerBarPosition;
 
 #[derive(Clone)]
-pub(super) struct LibraryPlayerBarShell {
+pub(in crate::ui) struct LibraryPlayerBarShell {
     overlay: gtk4::Overlay,
     bar_box: gtk4::Box,
 }
 
 impl LibraryPlayerBarShell {
-    pub(super) fn new(
+    pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
         player_bar: Option<&gtk4::Widget>,
         _position: PlayerBarPosition,
@@ -32,11 +32,11 @@ impl LibraryPlayerBarShell {
         Self { overlay, bar_box }
     }
 
-    pub(super) fn widget(&self) -> &gtk4::Overlay {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Overlay {
         &self.overlay
     }
 
-    pub(super) fn set_position(&self, position: PlayerBarPosition) {
+    pub(in crate::ui) fn set_position(&self, position: PlayerBarPosition) {
         self.bar_box.set_valign(match position {
             PlayerBarPosition::Top => gtk4::Align::Start,
             PlayerBarPosition::Bottom => gtk4::Align::End,

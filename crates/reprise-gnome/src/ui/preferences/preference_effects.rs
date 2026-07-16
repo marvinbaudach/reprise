@@ -6,11 +6,11 @@
 use libadwaita::prelude::*;
 use reprise_core::library::settings::{self, ReplayGainMode};
 
-use super::preferences::{replay_gain_index, PreferencesContext};
 use super::strings;
+use super::{replay_gain_index, PreferencesContext};
 
 impl PreferencesContext {
-    pub(super) fn apply_audio_effects(&self) {
+    pub(in crate::ui) fn apply_audio_effects(&self) {
         let effects = {
             let conn = self.conn.borrow();
             super::audio_effects::stored(&conn)
@@ -45,7 +45,7 @@ impl PreferencesContext {
         }
     }
 
-    pub(super) fn set_equalizer_enabled(&self, active: bool) {
+    pub(in crate::ui) fn set_equalizer_enabled(&self, active: bool) {
         let saved = {
             let conn = self.conn.borrow();
             settings::set_equalizer_enabled(&conn, active)
@@ -67,7 +67,7 @@ impl PreferencesContext {
         self.apply_audio_effects();
     }
 
-    pub(super) fn set_replay_gain_mode(&self, mode: ReplayGainMode) {
+    pub(in crate::ui) fn set_replay_gain_mode(&self, mode: ReplayGainMode) {
         let saved = {
             let conn = self.conn.borrow();
             settings::set_replay_gain_mode(&conn, mode)

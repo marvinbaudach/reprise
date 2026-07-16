@@ -8,7 +8,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use super::device_sync_runtime::{
+use crate::ui::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceTrackStatus, DeviceTrackView, DeviceView,
     PlannedSyncPhase, Subscription,
 };
@@ -24,7 +24,7 @@ enum TrackFilter {
     Synced,
 }
 
-pub(super) struct DeviceViewPage {
+pub(in crate::ui) struct DeviceViewPage {
     root: gtk4::ScrolledWindow,
     content: gtk4::Box,
     runtime: Rc<DeviceSyncRuntime>,
@@ -36,7 +36,7 @@ pub(super) struct DeviceViewPage {
 }
 
 impl DeviceViewPage {
-    pub(super) fn new(runtime: &Rc<DeviceSyncRuntime>) -> Rc<Self> {
+    pub(in crate::ui) fn new(runtime: &Rc<DeviceSyncRuntime>) -> Rc<Self> {
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 18);
         content.set_margin_top(24);
         content.set_margin_bottom(24);
@@ -66,17 +66,17 @@ impl DeviceViewPage {
         page
     }
 
-    pub(super) fn widget(&self) -> &gtk4::ScrolledWindow {
+    pub(in crate::ui) fn widget(&self) -> &gtk4::ScrolledWindow {
         &self.root
     }
 
-    pub(super) fn show_device(self: &Rc<Self>, serial: &str) {
+    pub(in crate::ui) fn show_device(self: &Rc<Self>, serial: &str) {
         self.serial.replace(Some(serial.to_string()));
         self.filter.set(TrackFilter::All);
         self.render();
     }
 
-    pub(super) fn set_on_settings(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn set_on_settings(&self, callback: impl Fn() + 'static) {
         self.on_settings.replace(Some(Rc::new(callback)));
     }
 
@@ -663,9 +663,6 @@ mod tests {
 
 #[cfg(test)]
 mod css_tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
     #[test]
     fn storage_css_uses_theme_colors_and_covers_every_segment() {
         let css = super::css();
@@ -687,24 +684,15 @@ mod css_tests {
         if gtk4::init().is_err() {
             return;
         }
-        let errors: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
-        let provider = gtk4::CssProvider::new();
-        {
-            let errors = errors.clone();
-            provider.connect_parsing_error(move |_, section, error| {
-                errors.borrow_mut().push(format!("{section:?}: {error}"));
-            });
-        }
         let combined = format!(
             "{}\n{}",
             crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT, true),
             super::css()
         );
-        provider.load_from_string(&combined);
+        let errors = crate::ui::style::css_parse_errors(&combined);
         assert!(
-            errors.borrow().is_empty(),
-            "GTK reported CSS parsing errors: {:?}",
-            errors.borrow()
+            errors.is_empty(),
+            "GTK reported CSS parsing errors: {errors:?}",
         );
     }
 }

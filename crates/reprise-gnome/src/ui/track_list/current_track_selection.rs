@@ -18,13 +18,13 @@ use crate::ui::artist_view::ArtistView;
 /// `true` only when an actual playback start fired the change. Session
 /// restore and player-bar title clicks re-select the row with `false`, so
 /// they never light the now-playing equaliser while nothing is audible.
-pub(super) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, bool)>;
+pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, bool)>;
 /// Callback carrying coarse playback-state changes to the track list, which
 /// uses them to freeze the now-playing equaliser on pause (via the
 /// `.playback-paused` class on the `ColumnView`) and drop the marker on stop.
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
-pub(super) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
-pub(super) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<(String, String)>)>;
+pub(in crate::ui) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
+pub(in crate::ui) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<(String, String)>)>;
 
 fn visible_position_for_track_in_source(
     ids: &[i64],
@@ -71,7 +71,7 @@ fn centered_scroll_target(
     Some((adjustment, value))
 }
 
-pub(super) fn wire(
+pub(in crate::ui) fn wire(
     player: Option<&Rc<PlayerController>>,
     track_list: &Rc<TrackList>,
     artist_view: &Rc<ArtistView>,
@@ -140,14 +140,14 @@ pub(super) fn wire(
 }
 
 impl PlayerController {
-    pub(super) fn set_on_current_track_changed(
+    pub(in crate::ui) fn set_on_current_track_changed(
         &self,
         callback: impl Fn(i64, Option<usize>, bool) + 'static,
     ) {
         *self.current_track_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn notify_current_track_changed(
+    pub(in crate::ui) fn notify_current_track_changed(
         &self,
         track_id: i64,
         queue_position: Option<usize>,
@@ -159,11 +159,14 @@ impl PlayerController {
         }
     }
 
-    pub(super) fn set_on_playback_state_changed(&self, callback: impl Fn(PlaybackState) + 'static) {
+    pub(in crate::ui) fn set_on_playback_state_changed(
+        &self,
+        callback: impl Fn(PlaybackState) + 'static,
+    ) {
         *self.playback_state_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(super) fn set_on_playback_state_changed_album(
+    pub(in crate::ui) fn set_on_playback_state_changed_album(
         &self,
         callback: impl Fn(PlaybackState) + 'static,
     ) {
@@ -174,7 +177,7 @@ impl PlayerController {
     /// (track list + album grid). Clones callbacks out of their `RefCell`s
     /// before invoking — never holds borrows across calls — per this
     /// project's reentrancy discipline.
-    pub(super) fn notify_playback_state_changed(&self, state: PlaybackState) {
+    pub(in crate::ui) fn notify_playback_state_changed(&self, state: PlaybackState) {
         let callback = self.playback_state_changed.borrow().clone();
         if let Some(callback) = callback {
             callback(state);
@@ -185,7 +188,7 @@ impl PlayerController {
         }
     }
 
-    pub(super) fn notify_restored_current_track(&self) {
+    pub(in crate::ui) fn notify_restored_current_track(&self) {
         let current = self
             .current_up_next
             .get()

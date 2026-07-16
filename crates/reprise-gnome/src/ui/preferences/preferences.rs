@@ -25,7 +25,7 @@ use crate::ui::strings;
 use crate::ui::track_list::TrackList;
 use crate::ui::window_decorations::WindowDecorations;
 
-pub(super) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
+pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 
 fn equalizer_preset(index: u32) -> [f64; 10] {
     match index {
@@ -44,7 +44,7 @@ fn replay_gain_from_index(index: u32) -> ReplayGainMode {
     }
 }
 
-pub(super) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
+pub(in crate::ui) fn replay_gain_index(mode: ReplayGainMode) -> u32 {
     match mode {
         ReplayGainMode::Off => 0,
         ReplayGainMode::Track => 1,
@@ -62,33 +62,59 @@ fn crossfade_value_label(seconds: u8) -> String {
     }
 }
 
-pub(super) struct PreferencesContext {
-    pub(super) window: adw::ApplicationWindow,
-    pub(super) conn: Rc<RefCell<Connection>>,
-    pub(super) track_list: Rc<TrackList>,
-    pub(super) sidebar: Rc<Sidebar>,
-    pub(super) split_view: adw::NavigationSplitView,
-    pub(super) sidebar_page: adw::NavigationPage,
-    pub(super) status_bar: StatusBar,
-    pub(super) library_player_bar: LibraryPlayerBarShell,
-    pub(super) info_panel: Rc<InfoPanel>,
-    pub(super) scan_button: gtk4::Button,
+#[derive(Debug, PartialEq, Eq)]
+struct GaplessControlState {
+    sensitive: bool,
+    subtitle: &'static str,
+}
+
+fn gapless_control_state(crossfade_seconds: u8) -> GaplessControlState {
+    if crossfade_seconds == 0 {
+        GaplessControlState {
+            sensitive: true,
+            subtitle: strings::GAPLESS_SUBTITLE,
+        }
+    } else {
+        GaplessControlState {
+            sensitive: false,
+            subtitle: strings::GAPLESS_CROSSFADE_ACTIVE_SUBTITLE,
+        }
+    }
+}
+
+fn apply_gapless_control_state(row: &adw::SwitchRow, crossfade_seconds: u8) {
+    let state = gapless_control_state(crossfade_seconds);
+    row.set_sensitive(state.sensitive);
+    row.set_subtitle(&strings::text(state.subtitle));
+}
+
+pub(in crate::ui) struct PreferencesContext {
+    pub(in crate::ui) window: adw::ApplicationWindow,
+    pub(in crate::ui) conn: Rc<RefCell<Connection>>,
+    pub(in crate::ui) track_list: Rc<TrackList>,
+    pub(in crate::ui) sidebar: Rc<Sidebar>,
+    pub(in crate::ui) split_view: adw::NavigationSplitView,
+    pub(in crate::ui) sidebar_page: adw::NavigationPage,
+    pub(in crate::ui) status_bar: StatusBar,
+    pub(in crate::ui) library_player_bar: LibraryPlayerBarShell,
+    pub(in crate::ui) info_panel: Rc<InfoPanel>,
+    pub(in crate::ui) scan_button: gtk4::Button,
     scan_controls: ScanControls,
-    pub(super) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
-    pub(super) player: Option<Rc<PlayerController>>,
-    pub(super) syncing_effect_controls: Cell<bool>,
-    pub(super) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
-    pub(super) equalizer_surfaces: RefCell<Vec<gtk4::Widget>>,
-    pub(super) replaygain_mode: RefCell<Option<adw::ComboRow>>,
-    pub(super) listenbrainz: Rc<ScrobbleRuntime>,
-    pub(super) syncing_listenbrainz: Cell<bool>,
-    pub(super) listenbrainz_activation_pending: Cell<bool>,
-    pub(super) lastfm: Rc<ScrobbleRuntime>,
-    pub(super) syncing_lastfm: Cell<bool>,
-    pub(super) lastfm_activation_pending: Cell<bool>,
-    pub(super) artist_news: Rc<ArtistNewsRuntime>,
-    pub(super) decorations: Rc<WindowDecorations>,
-    pub(super) device_sync: Rc<DeviceSyncRuntime>,
+    pub(in crate::ui) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
+    pub(in crate::ui) player: Option<Rc<PlayerController>>,
+    pub(in crate::ui) syncing_effect_controls: Cell<bool>,
+    pub(in crate::ui) equalizer_controls: RefCell<Vec<adw::SwitchRow>>,
+    pub(in crate::ui) equalizer_surfaces: RefCell<Vec<gtk4::Widget>>,
+    pub(in crate::ui) replaygain_mode: RefCell<Option<adw::ComboRow>>,
+    pub(in crate::ui) listenbrainz: Rc<ScrobbleRuntime>,
+    pub(in crate::ui) syncing_listenbrainz: Cell<bool>,
+    pub(in crate::ui) listenbrainz_activation_pending: Cell<bool>,
+    pub(in crate::ui) lastfm: Rc<ScrobbleRuntime>,
+    pub(in crate::ui) syncing_lastfm: Cell<bool>,
+    pub(in crate::ui) lastfm_activation_pending: Cell<bool>,
+    pub(in crate::ui) artist_news: Rc<ArtistNewsRuntime>,
+    pub(in crate::ui) decorations: Rc<WindowDecorations>,
+    pub(in crate::ui) device_sync: Rc<DeviceSyncRuntime>,
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
@@ -96,7 +122,7 @@ pub(super) struct PreferencesContext {
 
 impl PreferencesContext {
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn new(
+    pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
         conn: &Rc<RefCell<Connection>>,
         track_list: &Rc<TrackList>,
@@ -189,7 +215,7 @@ impl PreferencesContext {
         );
     }
 
-    pub(super) fn present(self: &Rc<Self>) {
+    pub(in crate::ui) fn present(self: &Rc<Self>) {
         self.open(None);
     }
 
@@ -240,11 +266,20 @@ impl PreferencesContext {
         }
 
         let smoke = std::env::var(SMOKE_ENV).ok();
-        if matches!(smoke.as_deref(), Some("layout" | "columns")) {
-            shell.stack.set_visible_child_name("layout");
-        }
-        if smoke.as_deref() == Some("rhythmbox") {
-            shell.stack.set_visible_child_name("library");
+        let smoke_page = match smoke.as_deref() {
+            Some("columns") => Some("layout"),
+            Some("rhythmbox") => Some("library"),
+            Some(page) if super::preferences_window::page_index_by_name(page).is_some() => {
+                Some(page)
+            }
+            _ => None,
+        };
+        if let Some(page) = smoke_page {
+            let index = super::preferences_window::page_index_by_name(page)
+                .expect("smoke page was normalized to a known page");
+            shell
+                .sidebar
+                .select_row(shell.sidebar.row_at_index(index).as_ref());
         }
         if smoke.as_deref() == Some("columns") {
             self.open_column_layout_editor();
@@ -306,7 +341,7 @@ impl PreferencesContext {
     }
 
     /// Opens (or raises) the preferences window and navigates to `page_name`.
-    pub(super) fn present_page(self: &Rc<Self>, page_name: &str) {
+    pub(in crate::ui) fn present_page(self: &Rc<Self>, page_name: &str) {
         self.open(Some(page_name));
     }
 
@@ -318,7 +353,7 @@ impl PreferencesContext {
         super::preference_layout::build(self)
     }
 
-    pub(super) fn open_column_layout_editor(&self) {
+    pub(in crate::ui) fn open_column_layout_editor(&self) {
         let navigation = self.preferences_navigation.borrow().upgrade();
         let Some(navigation) = navigation else {
             tracing::warn!("column layout editor requested without preferences navigation");
@@ -328,15 +363,15 @@ impl PreferencesContext {
         navigation.push(&page);
     }
 
-    pub(super) fn open_rhythmbox_import(self: &Rc<Self>) {
+    pub(in crate::ui) fn open_rhythmbox_import(self: &Rc<Self>) {
         self.present_rhythmbox_import_dialog();
     }
 
-    pub(super) fn preferences_dialog(&self) -> Option<adw::Dialog> {
+    pub(in crate::ui) fn preferences_dialog(&self) -> Option<adw::Dialog> {
         self.preferences_dialog.borrow().upgrade()
     }
 
-    pub(super) fn preferences_parent(&self) -> gtk4::Widget {
+    pub(in crate::ui) fn preferences_parent(&self) -> gtk4::Widget {
         self.preferences_dialog()
             .map_or_else(|| self.window.clone().upcast(), gtk4::Widget::from)
     }
@@ -540,17 +575,19 @@ impl PreferencesContext {
         };
         let gapless = adw::SwitchRow::builder()
             .title(strings::text(strings::GAPLESS_PLAYBACK))
-            .subtitle(strings::text(strings::GAPLESS_SUBTITLE))
             .active(gapless_enabled)
             .build();
+        apply_gapless_control_state(&gapless, stored_crossfade);
         list.append(&gapless);
         transitions.add(&list);
 
         let weak = Rc::downgrade(self);
         let value_label = crossfade_value.clone();
+        let gapless_for_crossfade = gapless.clone();
         crossfade_scale.connect_value_changed(move |scale| {
             let seconds = scale.value().round() as u8;
             value_label.set_label(&crossfade_value_label(seconds));
+            apply_gapless_control_state(&gapless_for_crossfade, seconds);
             if let Some(context) = weak.upgrade() {
                 context.set_crossfade_seconds(seconds);
             }
@@ -680,7 +717,7 @@ impl PreferencesContext {
     }
 }
 
-pub(super) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow {
+pub(in crate::ui) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
         .title(strings::text(title))
         .activatable(true)
@@ -693,6 +730,17 @@ pub(super) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gapless_control_is_available_only_without_crossfade_overlap() {
+        assert!(gapless_control_state(0).sensitive);
+        assert_eq!(gapless_control_state(0).subtitle, strings::GAPLESS_SUBTITLE);
+        assert!(!gapless_control_state(1).sensitive);
+        assert_eq!(
+            gapless_control_state(10).subtitle,
+            strings::GAPLESS_CROSSFADE_ACTIVE_SUBTITLE
+        );
+    }
 
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {

@@ -207,7 +207,7 @@ fn metadata_label() -> gtk4::Label {
     label
 }
 
-pub(super) struct InfoPanel {
+pub(in crate::ui) struct InfoPanel {
     widgets: PanelWidgets,
     toggle: gtk4::ToggleButton,
     conn: Rc<RefCell<Connection>>,
@@ -222,7 +222,7 @@ pub(super) struct InfoPanel {
 }
 
 impl InfoPanel {
-    pub(super) fn new(
+    pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
         window: &adw::ApplicationWindow,
         conn: Rc<RefCell<Connection>>,
@@ -261,24 +261,24 @@ impl InfoPanel {
         panel
     }
 
-    pub(super) fn widget(&self) -> &adw::OverlaySplitView {
+    pub(in crate::ui) fn widget(&self) -> &adw::OverlaySplitView {
         self.widgets.column.widget()
     }
 
-    pub(super) fn toggle_button(&self) -> gtk4::ToggleButton {
+    pub(in crate::ui) fn toggle_button(&self) -> gtk4::ToggleButton {
         self.toggle.clone()
     }
 
-    pub(super) fn lyrics_view(&self) -> Rc<LyricsView> {
+    pub(in crate::ui) fn lyrics_view(&self) -> Rc<LyricsView> {
         self.widgets.lyrics.clone()
     }
 
-    pub(super) fn show_lyrics(&self) {
+    pub(in crate::ui) fn show_lyrics(&self) {
         self.widgets.stack.set_visible_child_name(LYRICS_PAGE);
         self.widgets.column.set_visible(true);
     }
 
-    pub(super) fn apply_persisted_visibility(&self, visible: bool) {
+    pub(in crate::ui) fn apply_persisted_visibility(&self, visible: bool) {
         self.syncing_visibility.set(true);
         self.widgets.column.set_visible(visible);
         self.toggle.set_active(visible);
@@ -291,20 +291,20 @@ impl InfoPanel {
     /// capture only `Weak<InfoPanel>` values. Without this window-owned
     /// strong reference, the panel would remain painted while every handler
     /// became inert as soon as `window::build` returned.
-    pub(super) fn retain_for_window(self: &Rc<Self>, window: &adw::ApplicationWindow) {
+    pub(in crate::ui) fn retain_for_window(self: &Rc<Self>, window: &adw::ApplicationWindow) {
         let panel = self.clone();
         window.connect_destroy(move |_| {
             let _keep_alive_until_destroy = &panel;
         });
     }
 
-    pub(super) fn set_context(self: &Rc<Self>, context: PanelContext) {
+    pub(in crate::ui) fn set_context(self: &Rc<Self>, context: PanelContext) {
         self.apply_local_context(&context);
         let intent = self.state.borrow_mut().set_context(context);
         self.start_or_render(intent);
     }
 
-    pub(super) fn arm_smoke(self: &Rc<Self>, track_list: &Rc<TrackList>) {
+    pub(in crate::ui) fn arm_smoke(self: &Rc<Self>, track_list: &Rc<TrackList>) {
         if std::env::var(SMOKE_ENV).as_deref() != Ok("1") {
             return;
         }
