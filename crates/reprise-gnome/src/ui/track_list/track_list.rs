@@ -65,24 +65,16 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::browse_bar::BrowseBar;
-use crate::ui::column_layout::{self, ColumnId, ColumnRegistry};
+use crate::ui::column_layout::ColumnRegistry;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
 use crate::ui::toasts;
-use crate::ui::track_list_activation::wire_activate;
-use crate::ui::track_list_columns::build_status_page;
-use crate::ui::track_list_context_menu;
-use crate::ui::track_list_dnd_smoke;
 use crate::ui::track_list_model::TrackListModel;
 pub(super) use crate::ui::track_list_reload::{
     reload, set_filter_and_reload, set_source_and_reload,
 };
-use crate::ui::track_list_selection;
-use crate::ui::track_list_smoke::{
-    arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
-};
-use crate::ui::track_list_sort::{wire_sort_clicks, SortState, PLAYLIST_ORDER_SORT_FIELD};
+use crate::ui::track_list_sort::{SortState, PLAYLIST_ORDER_SORT_FIELD};
 use reprise_core::models::Track;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
@@ -229,7 +221,7 @@ pub(super) struct Shared {
     /// `TrackList::new`, so it can't be a constructor parameter. `WeakRef`,
     /// not a strong reference, so `TrackList` can never keep the window
     /// alive past its natural lifetime.
-    toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    pub(super) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// The main window, injected post-construction via `TrackList::set_
     /// window` — same seam shape as `toast_overlay` above. Needed as the
     /// parent for the context menu's "New playlist…" `AdwAlertDialog`
@@ -348,179 +340,13 @@ impl TrackList {
         queue_ids_provider: impl Fn() -> Vec<i64> + 'static,
         cover_download: CoverDownloadRuntime,
     ) -> Self {
-        let model = TrackListModel::new(conn.clone());
-        // `gtk::MultiSelection`, not `gtk::NoSelection` (Stage 3 Task 5):
-        // the context menu acts on every selected row, not just the one
-        // under the pointer — see the module doc's `## Context menu +
-        // multi-select` section.
-        let selection = gtk4::MultiSelection::new(Some(model.clone()));
-
-        // Both built-in separators are OFF: the vertical ones are removed
-        // outright (no per-cell rules to fight — see `track_list_header_
-        // style.rs`), and the horizontal row rule is drawn by that same scoped
-        // CSS at an exact hairline colour instead of the theme's default, so
-        // the table reads as clean horizontal bands with no column grid.
-        let column_view = gtk4::ColumnView::builder()
-            .model(&selection)
-            .show_row_separators(false)
-            .show_column_separators(false)
-            .build();
-        super::track_list_header_style::mark(&column_view);
-
-        // Reserve space at the bottom for the translucent player bar overlay
-        // (see `ui::player_bar::library_player_bar`). The bar sits on top of
-        // the scroll area via `GtkOverlay`, so without this margin the last
-        // row scrolls behind the bar and is unreachable.
-        const PLAYER_BAR_HEIGHT: i32 = 86;
-
-        let scrolled = gtk4::ScrolledWindow::builder()
-            .child(&column_view)
-            .vexpand(true)
-            .hexpand(true)
-            .build();
-        scrolled.set_margin_bottom(PLAYER_BAR_HEIGHT);
-
-        let empty_page = build_status_page();
-
-        // Stage 3 Task 8: built before the stack so its widget can be added
-        // as a third page alongside empty/list — see `STACK_PAGE_IMPORT_
-        // ERRORS`'s doc comment.
-        let import_errors_view = ImportErrorsView::new(conn.clone());
-
-        let stack = crate::ui::track_list_layout::build_track_content_stack();
-        stack.add_named(&empty_page, Some(STACK_PAGE_EMPTY));
-        stack.add_named(&scrolled, Some(STACK_PAGE_LIST));
-        stack.add_named(import_errors_view.widget(), Some(STACK_PAGE_IMPORT_ERRORS));
-        stack.set_visible_child_name(STACK_PAGE_EMPTY);
-
-        let browse_bar = BrowseBar::new(conn.clone());
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        root.append(browse_bar.widget());
-        root.append(&stack);
-
-        // Built here, before any column is appended — unlike every stage
-        // before Task 5, which built columns first: each column's `connect_
-        // setup` now also wires its cell's context-menu gesture, which needs
-        // `&shared` (see `wire_context_menu_gesture`). Nothing else in
-        // `Shared` depends on the columns existing first, so this reorder
-        // has no other consequence.
-        let cover_loader = CoverLoader::new(cover_download);
-        let shared = Rc::new(Shared {
-            model,
-            selection: selection.clone(),
-            column_view: column_view.clone(),
-            playing_track_id: Cell::new(None),
+        super::track_list_builder::build(
             conn,
-            cover_loader: cover_loader.clone(),
-            browse_bar: browse_bar.clone(),
-            browse_filter: RefCell::new(BrowseFilter::default()),
-            stack,
-            empty_page,
-            sort: RefCell::new(SortState::default()),
-            restoring_view: Cell::new(false),
-            filter: RefCell::new(String::new()),
-            source: RefCell::new(ViewSource::default()),
-            queue_ids_provider: Box::new(queue_ids_provider),
             on_activate,
-            on_reload: Box::new(on_reload),
-            toast_overlay: glib::WeakRef::new(),
-            window: glib::WeakRef::new(),
-            on_play_selected: RefCell::new(None),
-            on_queue_selected: RefCell::new(None),
-            on_queue_activate: RefCell::new(None),
-            on_queue_remove: RefCell::new(None),
-            on_playlist_mutated: RefCell::new(None),
-            on_queue_reorder: RefCell::new(None),
-            on_sidebar_playlist_drop: RefCell::new(None),
-            import_errors_view,
-            on_rescan_library: RefCell::new(None),
-            on_library_mutated: RefCell::new(None),
-            on_tags_mutated: RefCell::new(None),
-            on_import_errors_mutated: RefCell::new(None),
-            on_selection_changed: RefCell::new(None),
-            player: RefCell::new(std::rc::Weak::new()),
-        });
-
-        track_list_selection::wire(&shared);
-
-        {
-            let shared_weak = Rc::downgrade(&shared);
-            browse_bar.set_on_changed(move |filter| {
-                let Some(shared) = shared_weak.upgrade() else {
-                    return;
-                };
-                *shared.browse_filter.borrow_mut() = filter;
-                reload(&shared);
-            });
-        }
-
-        // Stage 3 Task 8: the panel's own Retry/Dismiss actions must both
-        // refresh this `TrackList`'s stack-page/count decision (via `reload`,
-        // which also re-refreshes the panel — cheap, and consistent with
-        // this module's general tolerance for a redundant-but-harmless extra
-        // refresh) and let `window.rs` know the Import-errors badge count may
-        // have changed. `Weak`: this callback lives as long as the panel
-        // widget itself (owned by `shared`), so an `Rc` here would be a
-        // self-referential cycle keeping `shared` alive forever.
-        {
-            let shared_weak = Rc::downgrade(&shared);
-            shared
-                .import_errors_view
-                .set_on_mutated(move || match shared_weak.upgrade() {
-                    Some(shared) => notify_import_errors_mutated_and_reload(&shared),
-                    None => tracing::warn!(
-                        "import errors panel: mutated callback fired after track list was dropped"
-                    ),
-                });
-        }
-
-        let built_columns = column_layout::build_columns(&column_view, &shared, &cover_loader);
-        let title_column = built_columns.title;
-        let artist_column = built_columns.artist;
-        let column_registry = built_columns.registry;
-        let initial_sort_column = if column_registry.is_visible(ColumnId::Artist) {
-            artist_column.clone()
-        } else {
-            *shared.sort.borrow_mut() = SortState {
-                field: "title".into(),
-                dir: "asc".into(),
-            };
-            title_column.clone()
-        };
-
-        wire_sort_clicks(&column_view, &shared);
-
-        // Sets the initial sort indicator (artist ascending, or title when
-        // an imported layout hides artist). `shared.sort` already matches
-        // that choice, so the
-        // `primary-sort-column`/`primary-sort-order` notify signals this
-        // triggers land in `on_sorter_changed`, compute the same
-        // (field, dir) pair already stored in `shared.sort`, and the dedup
-        // guard there (`if *shared.sort.borrow() == new_sort { return; }`)
-        // short-circuits before it would call `reload` — so this call fires
-        // zero SQL queries. The one and only initial load below still runs
-        // exactly once.
-        column_view.sort_by_column(Some(&initial_sort_column), gtk4::SortType::Ascending);
-
-        wire_activate(&column_view, &shared);
-        track_list_context_menu::wire_context_menu_actions(&column_view, &shared);
-
-        reload(&shared);
-        arm_smoke_activate(&shared);
-        arm_smoke_filter(&shared);
-        arm_smoke_source(&shared);
-        arm_smoke_sort_column(&column_view, &title_column, &artist_column);
-        track_list_context_menu::arm_smoke_menu_action(&shared);
-        crate::ui::tag_edit_flow::arm_smoke(&shared);
-        crate::ui::delete_tracks::arm_smoke(&shared);
-        crate::ui::browse_bar::arm_smoke(&shared);
-        track_list_dnd_smoke::arm_smoke_dnd(&shared);
-
-        Self {
-            shared,
-            root,
-            column_registry,
-        }
+            on_reload,
+            queue_ids_provider,
+            cover_download,
+        )
     }
 
     /// The root widget: Library browse bar above the Stack that switches
@@ -693,7 +519,7 @@ impl TrackList {
 /// `import_errors_view.rs`'s `notify_mutated_and_refresh`), but only `reload`
 /// re-derives this `TrackList`'s stack-page decision (e.g. switching to the
 /// "nothing here" empty page once the last error is dismissed).
-fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
+pub(super) fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
     reload(shared);
     let callback = shared.on_import_errors_mutated.borrow().clone();
     match callback {
