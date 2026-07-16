@@ -25,6 +25,7 @@ struct FakeState {
     devices: RefCell<Vec<DeviceDescriptor>>,
     subscribers: RefCell<Vec<DeviceSubscriber>>,
     copy_order: RefCell<Vec<(String, String)>>,
+    copy_attempts: Cell<usize>,
     active_by_device: RefCell<HashMap<String, usize>>,
     max_by_device: RefCell<HashMap<String, usize>>,
     active_total: Cell<usize>,
@@ -93,6 +94,7 @@ impl DeviceBackend for FakeBackend {
         let state = self.state.clone();
         let delay_ms = self.delay_ms;
         Box::pin(async move {
+            state.copy_attempts.set(state.copy_attempts.get() + 1);
             {
                 let mut active = state.active_by_device.borrow_mut();
                 let count = active.entry(device_id.clone()).or_default();

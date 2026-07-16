@@ -44,6 +44,7 @@ impl std::error::Error for SyncStartError {}
 
 struct PlannedWork {
     device_id: String,
+    generation: u64,
     root_uri: String,
     settings: DeviceSettings,
     delta: SyncDelta,
@@ -86,6 +87,7 @@ impl DeviceSyncRuntime {
             }
             let cancelled = Arc::new(AtomicBool::new(false));
             let cancellable = gio::Cancellable::new();
+            device.generation = device.generation.saturating_add(1);
             device.planned_cancel = Some(cancelled.clone());
             device.cancellable = Some(cancellable.clone());
             device.sync_error = None;
@@ -99,6 +101,7 @@ impl DeviceSyncRuntime {
             );
             PlannedWork {
                 device_id: device_id.to_string(),
+                generation: device.generation,
                 root_uri: device.descriptor.root_uri.clone(),
                 settings: device.settings.clone(),
                 delta,
@@ -171,6 +174,7 @@ async fn run_removals(
         set_phase(
             runtime,
             &work.device_id,
+            work.generation,
             syncing_phase(
                 SyncStep::Removing,
                 index,
@@ -268,6 +272,7 @@ async fn run_transfers(
         set_phase(
             runtime,
             &work.device_id,
+            work.generation,
             syncing_phase(
                 SyncStep::Copying,
                 token,
@@ -279,6 +284,7 @@ async fn run_transfers(
         );
         let progress_runtime = Rc::downgrade(runtime);
         let progress_id = work.device_id.clone();
+        let progress_generation = work.generation;
         let base = completed_bytes;
         let estimated = entry.expected_bytes;
         let bytes_total = work.delta.bytes;
@@ -287,6 +293,7 @@ async fn run_transfers(
                 update_copy_bytes(
                     &runtime,
                     &progress_id,
+                    progress_generation,
                     base.saturating_add(copied.min(estimated)),
                     bytes_total,
                 );
@@ -388,6 +395,7 @@ async fn run_playlists(
         set_phase(
             runtime,
             &work.device_id,
+            work.generation,
             syncing_phase(
                 SyncStep::WritingPlaylists,
                 index,
@@ -471,7 +479,12 @@ fn playlist_snapshots(
 fn finish_sync(runtime: &Rc<DeviceSyncRuntime>, work: &PlannedWork, mut failures: Vec<i64>) {
     failures.sort_unstable();
     failures.dedup();
-    set_phase(runtime, &work.device_id, PlannedSyncPhase::Finishing);
+    set_phase(
+        runtime,
+        &work.device_id,
+        work.generation,
+        PlannedSyncPhase::Finishing,
+    );
     if runtime.active_device.borrow().as_deref() == Some(&work.device_id) {
         runtime.active_device.replace(None);
     }
@@ -542,24 +555,35 @@ fn syncing_phase(
     }
 }
 
-fn set_phase(runtime: &DeviceSyncRuntime, device_id: &str, phase: PlannedSyncPhase) {
+fn set_phase(
+    runtime: &DeviceSyncRuntime,
+    device_id: &str,
+    generation: u64,
+    phase: PlannedSyncPhase,
+) {
     if let Some(device) = runtime
         .device_states
         .borrow_mut()
         .iter_mut()
-        .find(|device| device.descriptor.id == device_id)
+        .find(|device| device.descriptor.id == device_id && device.generation == generation)
     {
         device.sync_phase = phase;
     }
     runtime.notify();
 }
 
-fn update_copy_bytes(runtime: &DeviceSyncRuntime, device_id: &str, done: u64, total: u64) {
+fn update_copy_bytes(
+    runtime: &DeviceSyncRuntime,
+    device_id: &str,
+    generation: u64,
+    done: u64,
+    total: u64,
+) {
     if let Some(device) = runtime
         .device_states
         .borrow_mut()
         .iter_mut()
-        .find(|device| device.descriptor.id == device_id)
+        .find(|device| device.descriptor.id == device_id && device.generation == generation)
     {
         if let PlannedSyncPhase::Syncing {
             bytes_done,
