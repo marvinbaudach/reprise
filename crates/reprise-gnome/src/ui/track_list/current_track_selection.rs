@@ -119,10 +119,7 @@ impl PlayerController {
         }
     }
 
-    pub(super) fn set_on_playback_state_changed(
-        &self,
-        callback: impl Fn(PlaybackState) + 'static,
-    ) {
+    pub(super) fn set_on_playback_state_changed(&self, callback: impl Fn(PlaybackState) + 'static) {
         *self.playback_state_changed.borrow_mut() = Some(Rc::new(callback));
     }
 

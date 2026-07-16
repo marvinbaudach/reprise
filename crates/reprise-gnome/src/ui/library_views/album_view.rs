@@ -11,7 +11,7 @@ use libadwaita as adw;
 use reprise_core::queries::{self, AlbumSummary};
 use rusqlite::Connection;
 
-use crate::ui::album_card::{self, AlbumCardShared};
+use crate::ui::album_card::{self, AlbumActivateSlot, AlbumCardShared, ArtistActivateSlot};
 use crate::ui::album_card_actions;
 use crate::ui::album_card_css;
 use crate::ui::album_context_menu::{self, AlbumMenuShared};
@@ -19,7 +19,7 @@ use crate::ui::album_header::{self, AlbumSortKey};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
-type OnActivate = Rc<dyn Fn(AlbumSummary)>;
+type NowPlayingAlbumCallback = Rc<dyn Fn(Option<(String, String)>)>;
 
 pub(in crate::ui) struct AlbumView {
     root: gtk4::Box, // vertical: header + stack(grid | empty | search-empty)
@@ -32,15 +32,12 @@ pub(in crate::ui) struct AlbumView {
     card_shared: Rc<AlbumCardShared>,
     menu_shared: Rc<AlbumMenuShared>,
     conn: Rc<RefCell<Connection>>,
-    on_activate: Rc<RefCell<Option<OnActivate>>>,
-    on_artist_activate: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
+    on_activate: AlbumActivateSlot,
+    on_artist_activate: ArtistActivateSlot,
 }
 
 impl AlbumView {
-    pub(in crate::ui) fn new(
-        conn: Rc<RefCell<Connection>>,
-        cover_loader: Rc<CoverLoader>,
-    ) -> Self {
+    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>, cover_loader: Rc<CoverLoader>) -> Self {
         // ── Model chain: ListStore → SortListModel → FilterListModel ──
         let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
         let initial_sort = {
@@ -53,16 +50,13 @@ impl AlbumView {
         let filter_model = gtk4::FilterListModel::new(Some(sort_model.clone()), Some(filter));
 
         // ── Shared state for card factory ──────────────────────────────
-        let on_activate: Rc<RefCell<Option<OnActivate>>> = Rc::new(RefCell::new(None));
-        let on_artist_activate: Rc<RefCell<Option<Rc<dyn Fn(String)>>>> =
-            Rc::new(RefCell::new(None));
+        let on_activate: AlbumActivateSlot = Rc::new(RefCell::new(None));
+        let on_artist_activate: ArtistActivateSlot = Rc::new(RefCell::new(None));
 
         let card_shared = Rc::new(AlbumCardShared {
-            conn: conn.clone(),
             cover_loader,
             generation: Rc::new(Cell::new(0)),
             now_playing_album: Rc::new(RefCell::new(None)),
-            playback_paused: Rc::new(Cell::new(false)),
             on_activate: on_activate.clone(),
             on_play: Rc::new(RefCell::new(None)),
             on_queue: Rc::new(RefCell::new(None)),
@@ -177,13 +171,11 @@ impl AlbumView {
 
         // ── Header ─────────────────────────────────────────────────────
         let sort_model_for_header = sort_model.clone();
-        let (header, count_label, _dropdown) = album_header::build_header(
-            conn.clone(),
-            move |new_key: AlbumSortKey| {
+        let (header, count_label, _dropdown) =
+            album_header::build_header(&conn, move |new_key: AlbumSortKey| {
                 let new_sorter = album_header::build_sorter(new_key);
                 sort_model_for_header.set_sorter(Some(&new_sorter));
-            },
-        );
+            });
 
         // ── Root layout ────────────────────────────────────────────────
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -289,62 +281,6 @@ impl AlbumView {
         *self.menu_shared.on_shuffle.borrow_mut() = Some(shuffle_cb);
     }
 
-    /// Sets the search filter text. Empty = show all.
-    pub(in crate::ui) fn set_filter(&self, text: &str) {
-        let text = text.trim().to_lowercase();
-        if text.is_empty() {
-            self.filter_model
-                .set_filter(Some(&gtk4::CustomFilter::new(|_| true)));
-            if self.store.n_items() > 0 {
-                self.stack.set_visible_child_name("grid");
-            }
-        } else {
-            let text_clone = text.clone();
-            self.filter_model
-                .set_filter(Some(&gtk4::CustomFilter::new(move |obj| {
-                    let Some(boxed) = obj.downcast_ref::<glib::BoxedAnyObject>() else {
-                        return false;
-                    };
-                    let album: std::cell::Ref<AlbumSummary> = boxed.borrow();
-                    album.album.to_lowercase().contains(&text_clone)
-                        || album.album_artist.to_lowercase().contains(&text_clone)
-                })));
-            if self.filter_model.n_items() == 0 {
-                self.search_empty.set_title(
-                    &strings::text(strings::ALBUM_SEARCH_EMPTY).replace("{}", &text),
-                );
-                self.stack.set_visible_child_name("search-empty");
-            } else {
-                self.stack.set_visible_child_name("grid");
-            }
-        }
-        album_header::update_count(&self.count_label, self.filter_model.n_items());
-    }
-
-    /// Updates the now-playing album identity. Pass `None` when playback stops.
-    pub(in crate::ui) fn set_now_playing_album(&self, album: Option<(String, String)>) {
-        let old = self.card_shared.now_playing_album.borrow().clone();
-        *self.card_shared.now_playing_album.borrow_mut() = album.clone();
-
-        // Trigger rebind for old and new now-playing positions.
-        if let Some((old_album, old_artist)) = old {
-            self.rebind_album(&old_album, &old_artist);
-        }
-        if let Some((new_album, new_artist)) = album {
-            self.rebind_album(&new_album, &new_artist);
-        }
-    }
-
-    /// Sets the playback paused state (freezes EQ bars via CSS class).
-    pub(in crate::ui) fn set_playback_paused(&self, paused: bool) {
-        self.card_shared.playback_paused.set(paused);
-        if paused {
-            self.grid_view.add_css_class("playback-paused");
-        } else {
-            self.grid_view.remove_css_class("playback-paused");
-        }
-    }
-
     pub(in crate::ui) fn refresh(&self) {
         let albums = {
             let conn = self.conn.borrow();
@@ -377,7 +313,7 @@ impl AlbumView {
     }
 
     /// Returns a `'static` closure that applies a search filter to this view.
-    /// Used to wire the search entry in `window.rs` without needing Rc<AlbumView>.
+    /// Used to wire the search entry in `window.rs` without needing `Rc<AlbumView>`.
     pub(in crate::ui) fn filter_callback(&self) -> Rc<dyn Fn(&str)> {
         let store = self.store.clone();
         let filter_model = self.filter_model.clone();
@@ -420,9 +356,7 @@ impl AlbumView {
     /// for this view, triggering card rebinds so EQ markers appear/disappear.
     /// Used by `window.rs` to wire the `PlayerController` callback without
     /// needing an `Rc<AlbumView>`.
-    pub(in crate::ui) fn now_playing_callback(
-        &self,
-    ) -> Rc<dyn Fn(Option<(String, String)>)> {
+    pub(in crate::ui) fn now_playing_callback(&self) -> NowPlayingAlbumCallback {
         let now_playing = self.card_shared.now_playing_album.clone();
         let store = self.store.clone();
         Rc::new(move |album: Option<(String, String)>| {
@@ -482,28 +416,6 @@ impl AlbumView {
         })
     }
 
-    /// Forces a rebind for the card displaying the given album (if visible).
-    fn rebind_album(&self, album: &str, album_artist: &str) {
-        let n = self.store.n_items();
-        for i in 0..n {
-            if let Some(obj) = self.store.item(i) {
-                if let Some(boxed) = obj.downcast_ref::<glib::BoxedAnyObject>() {
-                    let a: std::cell::Ref<AlbumSummary> = boxed.borrow();
-                    if a.album.eq_ignore_ascii_case(album)
-                        && a.album_artist.eq_ignore_ascii_case(album_artist)
-                    {
-                        drop(a);
-                        // Splice: remove + re-insert triggers items_changed → rebind.
-                        let item = self.store.item(i).unwrap();
-                        self.store.remove(i);
-                        self.store.insert(i, &item);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
     #[cfg(test)]
     fn album_count(&self) -> u32 {
         self.store.n_items()
@@ -556,10 +468,11 @@ mod tests {
 
         assert_eq!(view.album_count(), 2);
 
-        view.set_filter("first");
+        let filter = view.filter_callback();
+        filter("first");
         assert_eq!(view.filter_model.n_items(), 1);
 
-        view.set_filter("");
+        filter("");
         assert_eq!(view.filter_model.n_items(), 2);
     }
 }

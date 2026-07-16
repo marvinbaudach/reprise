@@ -13,6 +13,7 @@ use reprise_core::library::playlists;
 use reprise_core::queries::AlbumSummary;
 use rusqlite::Connection;
 
+use crate::ui::album_card::AlbumActionSlot;
 use crate::ui::album_card_actions;
 use crate::ui::popover_lifecycle;
 use crate::ui::strings;
@@ -22,6 +23,9 @@ use crate::ui::track_actions;
 /// Task 7 (album view wiring) can reference it without reaching into
 /// this module's private constants.
 pub(in crate::ui) const ACTION_GROUP_NAME: &str = "albumctx";
+
+type ToastCallback = Rc<dyn Fn(String)>;
+type ToastCallbackSlot = Rc<RefCell<Option<ToastCallback>>>;
 
 const ACTION_PLAY: &str = "play";
 const ACTION_SHUFFLE: &str = "shuffle";
@@ -37,13 +41,13 @@ pub(in crate::ui) struct AlbumMenuShared {
     /// The album under the cursor when the menu was opened.
     pub target_album: RefCell<Option<AlbumSummary>>,
     /// Callback: replace queue + play.
-    pub on_play: Rc<RefCell<Option<Rc<dyn Fn(&AlbumSummary)>>>>,
+    pub on_play: AlbumActionSlot,
     /// Callback: append to queue.
-    pub on_queue: Rc<RefCell<Option<Rc<dyn Fn(&AlbumSummary)>>>>,
+    pub on_queue: AlbumActionSlot,
     /// Callback: shuffle + play.
-    pub on_shuffle: Rc<RefCell<Option<Rc<dyn Fn(&AlbumSummary)>>>>,
+    pub on_shuffle: AlbumActionSlot,
     /// Callback: show toast after playlist add.
-    pub on_toast: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
+    pub on_toast: ToastCallbackSlot,
 }
 
 /// Builds the full GMenu model (rebuilt on each show to refresh playlists).
@@ -159,12 +163,11 @@ pub(in crate::ui) fn wire_actions(shared: &Rc<AlbumMenuShared>) -> gio::SimpleAc
     group.add_action(&add_queue);
 
     // Add to Playlist (with playlist id parameter).
-    let add_playlist =
-        gio::SimpleAction::new(ACTION_ADD_PLAYLIST, Some(glib::VariantTy::INT64));
+    let add_playlist = gio::SimpleAction::new(ACTION_ADD_PLAYLIST, Some(glib::VariantTy::INT64));
     {
         let shared = shared.clone();
         add_playlist.connect_activate(move |_, param| {
-            let Some(playlist_id) = param.and_then(|v| v.get::<i64>()) else {
+            let Some(playlist_id) = param.and_then(libadwaita::glib::Variant::get::<i64>) else {
                 tracing::warn!("album context menu: add-to-playlist fired with no playlist id");
                 return;
             };
@@ -276,12 +279,7 @@ pub(in crate::ui) fn show(
     };
     let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
     popover.set_parent(parent.upcast_ref::<gtk4::Widget>());
-    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(
-        x as i32,
-        y as i32,
-        1,
-        1,
-    )));
+    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
     popover.set_has_arrow(false);
     popover_lifecycle::unparent_after_actions(popover.upcast_ref());
     popover.popup();

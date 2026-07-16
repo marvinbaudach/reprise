@@ -21,7 +21,11 @@ use reprise_core::library::scanner::{ScanError, ScanProgress, ScanReport};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::{self, WatcherHandle};
 
-use super::scan_progress::{EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView};
+use super::scan_progress::{
+    EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView,
+};
+use super::scan_waveform_analysis::analyze_waveforms;
+pub(super) use super::scan_waveform_analysis::spawn_waveform_backfill;
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
@@ -48,6 +52,8 @@ type OnScanComplete = Rc<dyn Fn()>;
 #[derive(Clone, Default)]
 struct ScanCompletion(Rc<RefCell<Option<OnScanComplete>>>);
 
+type OnScanStateChanged = Rc<dyn Fn(bool)>;
+
 impl ScanCompletion {
     fn set(&self, callback: impl Fn() + 'static) {
         self.0.borrow_mut().replace(Rc::new(callback));
@@ -72,7 +78,7 @@ pub(super) struct ScanControls {
     current_progress: Rc<RefCell<Option<ScanProgress>>>,
     completion: ScanCompletion,
     cancel_token: Arc<AtomicBool>,
-    on_scan_state_changed: Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>,
+    on_scan_state_changed: Rc<RefCell<Option<OnScanStateChanged>>>,
     /// Weak reference to the indicator embedded in the empty-library status
     /// page. `None` until `set_empty_indicator` is called from `window.rs`
     /// after both `track_list` and `scan_controls` exist.
@@ -233,7 +239,7 @@ impl ScanControls {
             .empty_indicator
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(super::scan_progress::WeakEmptyScanIndicator::upgrade)
         {
             indicator.show(progress);
         }
@@ -241,11 +247,13 @@ impl ScanControls {
             .sidebar_toggle
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(libadwaita::glib::WeakRef::upgrade)
         {
             let tooltip = match progress {
                 ScanProgress::Discovering => Some(strings::scan_tooltip_discovering()),
-                ScanProgress::Scanning { processed, total, .. } => {
+                ScanProgress::Scanning {
+                    processed, total, ..
+                } => {
                     let pct = if *total > 0 {
                         (*processed as f64 / *total as f64 * 100.0).round() as u32
                     } else {
@@ -276,7 +284,7 @@ impl ScanControls {
             .empty_indicator
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(super::scan_progress::WeakEmptyScanIndicator::upgrade)
         {
             indicator.finish();
         }
@@ -284,7 +292,7 @@ impl ScanControls {
             .sidebar_toggle
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(libadwaita::glib::WeakRef::upgrade)
         {
             button.set_tooltip_text(Some(&strings::text(strings::SIDEBAR_TOGGLE)));
         }
@@ -304,7 +312,7 @@ impl ScanControls {
             .sidebar_toggle
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(libadwaita::glib::WeakRef::upgrade)
         {
             button.set_tooltip_text(Some(title));
         }
@@ -642,110 +650,6 @@ fn run_scan(
     Ok(report)
 }
 
-/// How many gst-launch subprocesses to run in parallel.
-const WAVEFORM_WORKERS: usize = 4;
-
-/// Analyzes waveform peaks for all tracks that don't have them yet.
-/// Parallelizes across `WAVEFORM_WORKERS` threads, each with its own DB
-/// connection. Uses a shared work queue (atomic index into the track list).
-fn analyze_waveforms(db_path: &std::path::Path) {
-    let conn = match reprise_core::db::open(Some(db_path)) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let tracks: Vec<(i64, String)> = match conn.prepare(
-        "SELECT id, path FROM tracks WHERE waveform_peaks IS NULL AND missing = 0",
-    ) {
-        Ok(mut stmt) => stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
-            .unwrap_or_default(),
-        Err(_) => return,
-    };
-    drop(conn);
-
-    if tracks.is_empty() {
-        tracing::info!("waveform backfill: all tracks already analyzed");
-        return;
-    }
-    let total = tracks.len();
-    tracing::info!(total, workers = WAVEFORM_WORKERS, "waveform backfill: starting");
-
-    let cursor = std::sync::atomic::AtomicUsize::new(0);
-    let done = std::sync::atomic::AtomicUsize::new(0);
-    let failed = std::sync::atomic::AtomicUsize::new(0);
-
-    std::thread::scope(|scope| {
-        for _ in 0..WAVEFORM_WORKERS {
-            scope.spawn(|| {
-                let Ok(worker_conn) = reprise_core::db::open(Some(db_path)) else {
-                    return;
-                };
-                loop {
-                    let idx = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if idx >= total {
-                        break;
-                    }
-                    let (track_id, ref path_str) = tracks[idx];
-                    let path = std::path::Path::new(path_str);
-                    match crate::ui::waveform_peaks::extract_peaks(
-                        path,
-                        crate::ui::waveform_peaks::STORED_PEAK_COUNT,
-                    ) {
-                        Ok(peaks) => {
-                            if reprise_core::db::set_waveform_peaks(
-                                &worker_conn,
-                                track_id,
-                                &peaks,
-                            )
-                            .is_ok()
-                            {
-                                done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            } else {
-                                failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            }
-                        }
-                        Err(_) => {
-                            failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                    }
-                    let progress =
-                        done.load(std::sync::atomic::Ordering::Relaxed)
-                            + failed.load(std::sync::atomic::Ordering::Relaxed);
-                    if progress % 100 == 0 {
-                        tracing::info!(
-                            done = done.load(std::sync::atomic::Ordering::Relaxed),
-                            failed = failed.load(std::sync::atomic::Ordering::Relaxed),
-                            total,
-                            "waveform backfill progress"
-                        );
-                    }
-                }
-            });
-        }
-    });
-
-    tracing::info!(
-        done = done.load(std::sync::atomic::Ordering::Relaxed),
-        failed = failed.load(std::sync::atomic::Ordering::Relaxed),
-        total,
-        "waveform backfill complete"
-    );
-}
-
-/// Spawns a background thread that analyzes waveform peaks for all tracks
-/// without peaks in the DB. Called once at app startup so existing libraries
-/// get peaks without requiring a manual rescan.
-pub(super) fn spawn_waveform_backfill(db_path: std::path::PathBuf) {
-    std::thread::Builder::new()
-        .name("reprise-waveform-backfill".to_string())
-        .spawn(move || {
-            analyze_waveforms(&db_path);
-        })
-        .ok();
-}
-
 /// (Re)starts the folder watcher on `root` (Stage 3 Task 8): builds a fresh
 /// `async_channel`, starts `library::watcher::start` with a sender closure as
 /// its `on_event` callback (called on the watcher's own background thread —
@@ -819,88 +723,5 @@ pub(super) fn start_or_restart_watcher(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-    use std::path::PathBuf;
-    use std::rc::Rc;
-
-    use reprise_core::library::scanner::ScanProgress;
-
-    use super::{publish_latest_progress, ScanCompletion, ScanControls};
-    use crate::ui::scan_progress::ScanProgressView;
-
-    #[test]
-    fn scan_completion_callback_runs_without_holding_its_refcell_borrow() {
-        let completion = ScanCompletion::default();
-        let calls = Rc::new(Cell::new(0));
-        let calls_for_callback = calls.clone();
-        let reentrant_completion = completion.clone();
-        completion.set(move || {
-            calls_for_callback.set(calls_for_callback.get() + 1);
-            reentrant_completion.set(|| {});
-        });
-
-        completion.notify();
-
-        assert_eq!(calls.get(), 1);
-    }
-
-    #[test]
-    fn progress_channel_keeps_only_the_latest_pending_update() {
-        let (sender, receiver) = async_channel::bounded(1);
-        publish_latest_progress(&sender, &receiver, ScanProgress::Discovering);
-        publish_latest_progress(
-            &sender,
-            &receiver,
-            ScanProgress::Scanning {
-                processed: 2,
-                total: 9,
-                current_path: PathBuf::from("second.flac"),
-            },
-        );
-
-        let progress = receiver.try_recv().expect("latest progress event");
-        let ScanProgress::Scanning {
-            processed,
-            total,
-            current_path,
-        } = progress
-        else {
-            panic!("expected the newest scanning event");
-        };
-        assert_eq!(processed, 2);
-        assert_eq!(total, 9);
-        assert_eq!(current_path, PathBuf::from("second.flac"));
-        assert!(receiver.is_empty());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn foreground_progress_view_replays_and_tracks_the_active_scan() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let button = gtk4::Button::new();
-        let main = ScanProgressView::new();
-        let controls = ScanControls::new(&button, &main);
-        controls.show_progress(&ScanProgress::Scanning {
-            processed: 2,
-            total: 5,
-            current_path: PathBuf::from("song.flac"),
-        });
-        let foreground = ScanProgressView::new();
-
-        controls.attach_progress_view(&foreground);
-
-        assert!(main.widget().reveals_child());
-        assert!(foreground.widget().reveals_child());
-        controls.finish_progress();
-        assert!(!main.widget().reveals_child());
-        assert!(!foreground.widget().reveals_child());
-
-        drop(foreground);
-        controls.show_progress(&ScanProgress::Discovering);
-        assert!(main.widget().reveals_child());
-        assert!(controls.foreground_progress.borrow().is_empty());
-    }
-}
+#[path = "scan_flow_tests.rs"]
+mod tests;

@@ -73,7 +73,13 @@ mod tests {
         for (id, artist, album, album_artist, genre) in [
             (1, "Cogitations", "Relinquished", "Cogitations", "Ambient"),
             (2, "Cogitations", "Relinquished", "Cogitations", "Ambient"),
-            (3, "Cognitive Dissonance", "Fractures", "Cognitive Dissonance", "Post-Rock"),
+            (
+                3,
+                "Cognitive Dissonance",
+                "Fractures",
+                "Cognitive Dissonance",
+                "Post-Rock",
+            ),
             (4, "Radio Cognac", "Midnight", "Radio Cognac", "Jazz"),
             (5, "Unrelated", "Other", "Unrelated", "Ambient"),
         ] {
@@ -123,7 +129,10 @@ mod tests {
         let conn = seeded_db();
         let results =
             query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "cog", 8).unwrap();
-        assert!(results.len() >= 2, "case-insensitive match should find Cog*");
+        assert!(
+            results.len() >= 2,
+            "case-insensitive match should find Cog*"
+        );
     }
 
     #[test]
@@ -149,7 +158,8 @@ mod tests {
     #[test]
     fn missing_tracks_are_excluded() {
         let conn = seeded_db();
-        conn.execute("UPDATE tracks SET missing = 1 WHERE id = 1", []).unwrap();
+        conn.execute("UPDATE tracks SET missing = 1 WHERE id = 1", [])
+            .unwrap();
         let results =
             query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "Cog", 8).unwrap();
         let cog = results.iter().find(|s| s.value == "Cogitations").unwrap();
@@ -176,13 +186,9 @@ mod tests {
     #[test]
     fn album_artist_column_works() {
         let conn = seeded_db();
-        let results = query_autocomplete_suggestions(
-            &conn,
-            AutocompleteColumn::AlbumArtist,
-            "Cog",
-            8,
-        )
-        .unwrap();
+        let results =
+            query_autocomplete_suggestions(&conn, AutocompleteColumn::AlbumArtist, "Cog", 8)
+                .unwrap();
         assert!(!results.is_empty());
     }
 }

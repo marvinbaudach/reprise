@@ -222,9 +222,7 @@ impl PreferencesContext {
         shell.dialog.connect_closed(move |_| {
             let _keep_progress_alive_until_closed = &foreground_scan_progress;
         });
-        self.preferences_dialog
-            .borrow()
-            .set(Some(&shell.dialog));
+        self.preferences_dialog.borrow().set(Some(&shell.dialog));
         self.preferences_navigation
             .borrow()
             .set(Some(&shell.navigation));

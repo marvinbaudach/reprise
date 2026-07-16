@@ -195,8 +195,6 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
 
-        use gtk4::prelude::*;
-
         if gtk4::init().is_err() {
             return;
         }

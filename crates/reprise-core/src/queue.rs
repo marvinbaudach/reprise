@@ -486,3 +486,7 @@ impl Default for Queue {
 #[cfg(test)]
 #[path = "queue_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "queue_remove_tests.rs"]
+mod remove_tests;

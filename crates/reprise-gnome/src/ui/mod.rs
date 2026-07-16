@@ -21,18 +21,18 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
-#[path = "library_views/album_view.rs"]
-mod album_view;
 #[path = "library_views/album_card.rs"]
 mod album_card;
 #[path = "library_views/album_card_actions.rs"]
 mod album_card_actions;
-#[path = "library_views/album_context_menu.rs"]
-mod album_context_menu;
 #[path = "library_views/album_card_css.rs"]
 mod album_card_css;
+#[path = "library_views/album_context_menu.rs"]
+mod album_context_menu;
 #[path = "library_views/album_header.rs"]
 mod album_header;
+#[path = "library_views/album_view.rs"]
+mod album_view;
 #[path = "library_views/artist_avatar.rs"]
 mod artist_avatar;
 #[path = "library_views/artist_detail_hero.rs"]
@@ -53,6 +53,8 @@ mod artist_view;
 mod artist_view_css;
 #[path = "playback/audio_effects.rs"]
 mod audio_effects;
+#[path = "tag_edit/autocomplete_entry.rs"]
+mod autocomplete_entry;
 #[path = "browse/browse_bar.rs"]
 pub mod browse_bar;
 #[path = "browse/browse_filter_count.rs"]
@@ -162,6 +164,8 @@ mod player_bar_state;
 pub mod player_controller;
 #[path = "playback/player_controller_wiring.rs"]
 pub mod player_controller_wiring;
+#[path = "playback/player_event_handling.rs"]
+mod player_event_handling;
 #[path = "lyrics/player_lyrics.rs"]
 mod player_lyrics;
 #[path = "playlists/playlist_import_navigation.rs"]
@@ -214,6 +218,8 @@ pub(crate) mod scan_card_css;
 pub mod scan_flow;
 #[path = "scan/scan_progress.rs"]
 mod scan_progress;
+#[path = "scan/scan_waveform_analysis.rs"]
+mod scan_waveform_analysis;
 #[path = "scrobbling/scrobble_runtime.rs"]
 mod scrobble_runtime;
 #[path = "scrobbling/scrobble_session.rs"]
@@ -254,10 +260,12 @@ mod style;
 pub mod tag_edit_flow;
 #[path = "tag_edit/tag_editor.rs"]
 pub mod tag_editor;
+#[path = "tag_edit/tag_editor_state.rs"]
+mod tag_editor_state;
 #[path = "tag_edit/tag_editor_style.rs"]
 mod tag_editor_style;
-#[path = "tag_edit/autocomplete_entry.rs"]
-mod autocomplete_entry;
+#[path = "tag_edit/tag_editor_widgets.rs"]
+mod tag_editor_widgets;
 pub mod toasts;
 #[path = "track_list/track_actions.rs"]
 pub mod track_actions;
@@ -287,6 +295,8 @@ mod track_list_layout;
 pub mod track_list_model;
 #[path = "track_list/track_list_queue_menu.rs"]
 mod track_list_queue_menu;
+#[path = "track_list/track_list_reload.rs"]
+mod track_list_reload;
 #[path = "track_list/track_list_rescan.rs"]
 mod track_list_rescan;
 #[path = "track_list/track_list_row_interaction.rs"]
@@ -307,6 +317,8 @@ mod waveform_peaks;
 mod waveform_seek;
 #[path = "window/window.rs"]
 pub mod window;
+#[path = "window/window_action_wiring.rs"]
+mod window_action_wiring;
 #[path = "window/window_decoration_strings.rs"]
 mod window_decoration_strings;
 #[path = "window/window_decorations.rs"]

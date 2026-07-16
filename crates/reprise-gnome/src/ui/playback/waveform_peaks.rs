@@ -43,7 +43,7 @@ pub(crate) fn extract_peaks(path: &Path, buckets: usize) -> Result<Vec<u8>, Wave
     // only the main thread's context services.
     let output = std::process::Command::new("gst-launch-1.0")
         .arg("filesrc")
-        .arg(&format!("location={}", path.to_string_lossy()))
+        .arg(format!("location={}", path.to_string_lossy()))
         .arg("!")
         .arg("decodebin")
         .arg("!")
@@ -84,8 +84,6 @@ pub(crate) fn extract_peaks(path: &Path, buckets: usize) -> Result<Vec<u8>, Wave
 
     Ok(compute_peaks(&samples, effective_buckets))
 }
-
-
 
 // ---------------------------------------------------------------------------
 // Peak-Berechnung
@@ -157,15 +155,6 @@ mod tests {
         init_gst();
         let peaks = extract_peaks(&fixture_path(), 64).unwrap();
         assert_eq!(peaks.len(), 64);
-    }
-
-    #[test]
-    fn extract_peaks_values_in_unit_range() {
-        init_gst();
-        let peaks = extract_peaks(&fixture_path(), 64).unwrap();
-        for (i, &p) in peaks.iter().enumerate() {
-            assert!(p <= 255, "peak[{i}] = {p} out of [0, 255]");
-        }
     }
 
     #[test]

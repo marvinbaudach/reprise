@@ -60,6 +60,12 @@ pub(super) fn smart_icon(sort_field: &str) -> NavIcon {
     }
 }
 
+/// A sidebar count badge only renders when non-zero: `0` leaves the
+/// right-hand column empty instead of displaying a literal zero.
+pub(super) fn nonzero_count(count: i64) -> Option<i64> {
+    (count > 0).then_some(count)
+}
+
 pub(super) fn build_nav_row(title: &str, count: Option<i64>, icon: NavIcon) -> gtk4::ListBoxRow {
     let hbox = row_box();
     hbox.append(&nav_icon(icon));

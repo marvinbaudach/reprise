@@ -117,17 +117,8 @@ impl CellAlignment {
 }
 
 #[cfg(test)]
-mod cell_alignment_tests {
-    use super::*;
-
-    #[test]
-    fn text_cells_stay_left_aligned_while_numeric_cells_are_centered() {
-        assert_eq!(CellAlignment::Text.xalign(), 0.0);
-        assert!(!CellAlignment::Text.uses_tabular_figures());
-        assert_eq!(CellAlignment::Numeric.xalign(), 0.5);
-        assert!(CellAlignment::Numeric.uses_tabular_figures());
-    }
-}
+#[path = "track_list_columns_alignment_tests.rs"]
+mod cell_alignment_tests;
 
 /// Which page of the track-list `Stack` should be visible, and (for the
 /// empty variants) which copy the shared `StatusPage` should carry. A plain
@@ -357,7 +348,7 @@ pub(super) fn append_title_column(
     });
 
     let column = gtk4::ColumnViewColumn::builder()
-        .title(&strings::text(strings::COLUMN_TITLE))
+        .title(strings::text(strings::COLUMN_TITLE))
         .factory(&factory)
         .resizable(true)
         .build();

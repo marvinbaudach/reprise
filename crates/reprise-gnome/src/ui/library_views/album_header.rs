@@ -68,8 +68,9 @@ pub(in crate::ui) fn current_sort_key(conn: &Connection) -> AlbumSortKey {
     reprise_core::library::settings::get_setting(conn, ALBUM_SORT_SETTING_KEY)
         .ok()
         .flatten()
-        .map(|v| AlbumSortKey::from_setting(&v))
-        .unwrap_or(AlbumSortKey::RecentlyAdded)
+        .map_or(AlbumSortKey::RecentlyAdded, |v| {
+            AlbumSortKey::from_setting(&v)
+        })
 }
 
 /// Persists the selected sort key.
@@ -85,12 +86,8 @@ fn save_sort_key(conn: &Connection, key: AlbumSortKey) {
 /// items according to the given sort key.
 pub(in crate::ui) fn build_sorter(sort_key: AlbumSortKey) -> gtk4::CustomSorter {
     gtk4::CustomSorter::new(move |a, b| {
-        let a = a
-            .downcast_ref::<gtk4::glib::BoxedAnyObject>()
-            .unwrap();
-        let b = b
-            .downcast_ref::<gtk4::glib::BoxedAnyObject>()
-            .unwrap();
+        let a = a.downcast_ref::<gtk4::glib::BoxedAnyObject>().unwrap();
+        let b = b.downcast_ref::<gtk4::glib::BoxedAnyObject>().unwrap();
         let a: std::cell::Ref<AlbumSummary> = a.borrow();
         let b: std::cell::Ref<AlbumSummary> = b.borrow();
         let ordering = match sort_key {
@@ -99,7 +96,11 @@ pub(in crate::ui) fn build_sorter(sort_key: AlbumSortKey) -> gtk4::CustomSorter 
                 .album
                 .to_lowercase()
                 .cmp(&b.album.to_lowercase())
-                .then_with(|| a.album_artist.to_lowercase().cmp(&b.album_artist.to_lowercase())),
+                .then_with(|| {
+                    a.album_artist
+                        .to_lowercase()
+                        .cmp(&b.album_artist.to_lowercase())
+                }),
             AlbumSortKey::Artist => a
                 .album_artist
                 .to_lowercase()
@@ -123,12 +124,12 @@ pub(in crate::ui) fn build_sorter(sort_key: AlbumSortKey) -> gtk4::CustomSorter 
 /// Builds the header row: "Albums N albums" (left) + sort dropdown pill (right).
 /// Returns `(root_box, count_label, dropdown)`.
 pub(in crate::ui) fn build_header(
-    conn: Rc<RefCell<Connection>>,
+    conn: &Rc<RefCell<Connection>>,
     on_sort_changed: impl Fn(AlbumSortKey) + 'static,
 ) -> (gtk4::Box, gtk4::Label, gtk4::DropDown) {
     // "Albums" heading.
     let heading = gtk4::Label::builder()
-        .label(&strings::text(strings::LIBRARY_VIEW_ALBUMS))
+        .label(strings::text(strings::LIBRARY_VIEW_ALBUMS))
         .css_classes(["title-2"])
         .halign(gtk4::Align::Start)
         .build();
@@ -147,10 +148,13 @@ pub(in crate::ui) fn build_header(
 
     // Sort dropdown.
     let labels: Vec<String> = AlbumSortKey::ALL.iter().map(|k| k.label()).collect();
-    let string_list = gtk4::StringList::new(&labels.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-    let dropdown = gtk4::DropDown::builder()
-        .model(&string_list)
-        .build();
+    let string_list = gtk4::StringList::new(
+        &labels
+            .iter()
+            .map(std::string::String::as_str)
+            .collect::<Vec<_>>(),
+    );
+    let dropdown = gtk4::DropDown::builder().model(&string_list).build();
     dropdown.add_css_class("flat");
 
     // Set initial selection from settings.
@@ -165,10 +169,13 @@ pub(in crate::ui) fn build_header(
     dropdown.set_selected(initial_index as u32);
 
     // On change: persist + notify.
-    let conn_for_change = conn.clone();
+    let conn_for_change = Rc::clone(conn);
     dropdown.connect_selected_notify(move |dd| {
         let index = dd.selected() as usize;
-        let key = AlbumSortKey::ALL.get(index).copied().unwrap_or(AlbumSortKey::RecentlyAdded);
+        let key = AlbumSortKey::ALL
+            .get(index)
+            .copied()
+            .unwrap_or(AlbumSortKey::RecentlyAdded);
         {
             let conn = conn_for_change.borrow();
             save_sort_key(&conn, key);
