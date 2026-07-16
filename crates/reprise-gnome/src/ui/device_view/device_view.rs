@@ -172,21 +172,32 @@ impl DeviceViewPage {
         row.append(&eject);
         box_.append(&row);
 
-        let managed = device.tracks.iter().map(|track| track.size).sum::<u64>();
-        let available = device.available_bytes.unwrap_or(0);
-        let total = managed.saturating_add(available);
-        let storage = gtk4::ProgressBar::new();
-        storage.set_fraction(if total == 0 {
-            0.0
-        } else {
-            managed as f64 / total as f64
-        });
-        storage.set_tooltip_text(Some(&format!(
-            "{} managed music · {} available",
-            format_bytes(managed),
-            format_bytes(available)
+        let storage = storage_summary(
+            &device.contents.files,
+            device.delta.as_ref(),
+            device.available_bytes,
+            device.total_bytes,
+        );
+        box_.append(&build_storage_bar(&storage));
+        let other = storage.other.map_or_else(
+            || "Other unavailable".to_string(),
+            |bytes| format!("Other {}", format_bytes(bytes)),
+        );
+        let legend = gtk4::Label::new(Some(&format!(
+            "Music {} · after sync +{} · {other} · Free {}",
+            format_bytes(storage.music),
+            format_bytes(storage.after_sync),
+            format_bytes(storage.free_after_sync.saturating_add(storage.after_sync)),
         )));
-        box_.append(&storage);
+        legend.add_css_class("device-storage-legend");
+        legend.set_xalign(0.0);
+        legend.set_wrap(true);
+        if storage.other.is_none() {
+            legend.set_tooltip_text(Some(
+                "GVfs did not report total capacity; the bar shows known music and free space.",
+            ));
+        }
+        box_.append(&legend);
         box_
     }
 
@@ -357,6 +368,91 @@ fn has_delta(delta: &reprise_core::device_sync::SyncDelta) -> bool {
     !delta.to_copy.is_empty() || !delta.to_remove.is_empty()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StorageSummary {
+    music: u64,
+    after_sync: u64,
+    other: Option<u64>,
+    free_after_sync: u64,
+    total: u64,
+}
+
+fn storage_summary(
+    files: &[reprise_platform_linux::device_sync::DeviceFile],
+    delta: Option<&reprise_core::device_sync::SyncDelta>,
+    available: Option<u64>,
+    reported_total: Option<u64>,
+) -> StorageSummary {
+    let music = files
+        .iter()
+        .fold(0_u64, |total, file| total.saturating_add(file.size_bytes));
+    let available = available.unwrap_or(0);
+    let after_sync = delta.map_or(0, |delta| delta.bytes).min(available);
+    let known_total = music.saturating_add(available);
+    // Some GVfs MTP backends omit or misreport total capacity. In that case
+    // render only the two quantities we can prove instead of inventing an
+    // "Other" value from unrelated user data.
+    let total = reported_total
+        .filter(|total| *total >= known_total)
+        .unwrap_or(known_total);
+    let other = reported_total
+        .filter(|reported| *reported >= known_total)
+        .map(|reported| reported.saturating_sub(known_total));
+    StorageSummary {
+        music,
+        after_sync,
+        other,
+        free_after_sync: available.saturating_sub(after_sync),
+        total,
+    }
+}
+
+fn build_storage_bar(storage: &StorageSummary) -> gtk4::Overlay {
+    let overlay = gtk4::Overlay::new();
+    overlay.add_css_class("device-storage-bar");
+    let total = storage.total.max(1) as f64;
+    let other = storage.other.unwrap_or(0);
+    let segments = [
+        ("device-storage-free", storage.total),
+        (
+            "device-storage-other",
+            storage
+                .music
+                .saturating_add(storage.after_sync)
+                .saturating_add(other),
+        ),
+        (
+            "device-storage-after",
+            storage.music.saturating_add(storage.after_sync),
+        ),
+        ("device-storage-music", storage.music),
+    ];
+    for (index, (class, cumulative_bytes)) in segments.into_iter().enumerate() {
+        let bar = gtk4::ProgressBar::new();
+        bar.add_css_class("device-storage-segment");
+        bar.add_css_class(class);
+        bar.set_fraction((cumulative_bytes as f64 / total).clamp(0.0, 1.0));
+        if index == 0 {
+            overlay.set_child(Some(&bar));
+        } else {
+            overlay.add_overlay(&bar);
+        }
+    }
+    overlay
+}
+
+pub(in crate::ui) fn css() -> String {
+    ".device-storage-bar { min-height: 7px; }
+     .device-storage-segment trough { min-height: 7px; border-radius: 4px; background: transparent; }
+     .device-storage-segment progress { min-height: 7px; border-radius: 4px; }
+     .device-storage-free progress { background-color: alpha(@window_fg_color, 0.10); }
+     .device-storage-other progress { background-color: alpha(@window_fg_color, 0.28); }
+     .device-storage-after progress { background-color: alpha(@accent_color, 0.45); }
+     .device-storage-music progress { background-color: @accent_color; }
+     .device-storage-legend { font-size: 10.5px; color: alpha(@window_fg_color, 0.50); }"
+        .into()
+}
+
 fn matches_filter(status: DeviceTrackStatus, filter: TrackFilter) -> bool {
     filter == TrackFilter::All
         || matches!(
@@ -474,5 +570,141 @@ mod tests {
             DeviceTrackStatus::Synced,
         ];
         assert_eq!(status_counts(&statuses), [4, 1, 1, 2]);
+    }
+
+    #[test]
+    fn storage_summary_counts_all_music_and_projects_the_next_sync() {
+        let files = [
+            reprise_platform_linux::device_sync::DeviceFile {
+                relative_path: "Album/one.flac".into(),
+                name: "one.flac".into(),
+                size_bytes: 400,
+            },
+            reprise_platform_linux::device_sync::DeviceFile {
+                relative_path: "Reprise/two.opus".into(),
+                name: "two.opus".into(),
+                size_bytes: 600,
+            },
+        ];
+        let delta = reprise_core::device_sync::SyncDelta {
+            bytes: 200,
+            ..Default::default()
+        };
+
+        let summary = storage_summary(&files, Some(&delta), Some(1_000), Some(3_000));
+
+        assert_eq!(summary.music, 1_000);
+        assert_eq!(summary.after_sync, 200);
+        assert_eq!(summary.other, Some(1_000));
+        assert_eq!(summary.free_after_sync, 800);
+        assert_eq!(summary.total, 3_000);
+    }
+
+    #[test]
+    fn storage_summary_falls_back_to_known_music_plus_free_without_total_capacity() {
+        let files = [reprise_platform_linux::device_sync::DeviceFile {
+            relative_path: "Album/one.flac".into(),
+            name: "one.flac".into(),
+            size_bytes: 1_000,
+        }];
+        let delta = reprise_core::device_sync::SyncDelta {
+            bytes: 200,
+            ..Default::default()
+        };
+
+        let summary = storage_summary(&files, Some(&delta), Some(1_000), None);
+
+        assert_eq!(summary.other, None);
+        assert_eq!(summary.free_after_sync, 800);
+        assert_eq!(summary.total, 2_000);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn storage_bar_builds_all_four_cumulative_segments() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let summary = StorageSummary {
+            music: 1_000,
+            after_sync: 200,
+            other: Some(1_000),
+            free_after_sync: 800,
+            total: 3_000,
+        };
+
+        let overlay = build_storage_bar(&summary);
+        let mut child = overlay.first_child();
+        let mut segments = Vec::new();
+        while let Some(widget) = child {
+            let next = widget.next_sibling();
+            if let Ok(bar) = widget.downcast::<gtk4::ProgressBar>() {
+                segments.push((bar.css_classes(), bar.fraction()));
+            }
+            child = next;
+        }
+
+        assert_eq!(segments.len(), 4);
+        for (class, fraction) in [
+            ("device-storage-free", 1.0),
+            ("device-storage-other", 2_200.0 / 3_000.0),
+            ("device-storage-after", 1_200.0 / 3_000.0),
+            ("device-storage-music", 1_000.0 / 3_000.0),
+        ] {
+            let actual = segments
+                .iter()
+                .find(|(classes, _)| classes.iter().any(|candidate| candidate == class))
+                .map(|(_, fraction)| *fraction)
+                .unwrap();
+            assert!((actual - fraction).abs() < f64::EPSILON);
+        }
+    }
+}
+
+#[cfg(test)]
+mod css_tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn storage_css_uses_theme_colors_and_covers_every_segment() {
+        let css = super::css();
+        for marker in [
+            ".device-storage-free progress",
+            ".device-storage-other progress",
+            ".device-storage-after progress",
+            ".device-storage-music progress",
+        ] {
+            assert!(css.contains(marker), "missing rule: {marker}");
+        }
+        assert!(!css.contains('#'));
+        assert!(!css.contains("@define-color"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn css_parses_in_gtk_without_dropping_declarations() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let errors: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let provider = gtk4::CssProvider::new();
+        {
+            let errors = errors.clone();
+            provider.connect_parsing_error(move |_, section, error| {
+                errors.borrow_mut().push(format!("{section:?}: {error}"));
+            });
+        }
+        let combined = format!(
+            "{}\n{}",
+            crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT, true),
+            super::css()
+        );
+        provider.load_from_string(&combined);
+        assert!(
+            errors.borrow().is_empty(),
+            "GTK reported CSS parsing errors: {:?}",
+            errors.borrow()
+        );
     }
 }

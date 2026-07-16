@@ -349,6 +349,7 @@ mod tests {
                 icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
                 connected: true,
                 available_bytes: None,
+                total_bytes: None,
                 contents: Default::default(),
                 scanning: false,
                 scan_error: None,

@@ -33,6 +33,7 @@ struct FakeState {
     playlists: RefCell<Vec<(String, String, Vec<u8>)>>,
     deleted: RefCell<Vec<String>>,
     available_bytes: Cell<Option<u64>>,
+    total_bytes: Cell<Option<u64>>,
 }
 
 #[derive(Clone)]
@@ -46,6 +47,7 @@ impl FakeBackend {
         let state = Rc::new(FakeState::default());
         state.devices.replace(devices);
         state.available_bytes.set(Some(1_000_000));
+        state.total_bytes.set(Some(2_000_000));
         Self { state, delay_ms }
     }
 
@@ -76,9 +78,10 @@ impl DeviceBackend for FakeBackend {
         self.state.subscribers.borrow_mut().push(callback);
     }
 
-    fn inspect(&self, _root_uri: String) -> TestFuture<(DeviceContents, Option<u64>)> {
+    fn inspect(&self, _root_uri: String) -> TestFuture<(DeviceContents, Option<u64>, Option<u64>)> {
         let available_bytes = self.state.available_bytes.get();
-        Box::pin(async move { Ok((DeviceContents::default(), available_bytes)) })
+        let total_bytes = self.state.total_bytes.get();
+        Box::pin(async move { Ok((DeviceContents::default(), available_bytes, total_bytes)) })
     }
 
     fn copy_track(

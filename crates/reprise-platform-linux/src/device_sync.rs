@@ -415,20 +415,36 @@ impl DeviceStorage {
     }
 
     pub async fn available_bytes(&self) -> Result<Option<u64>, DeviceIoError> {
+        self.filesystem_bytes(gio::FILE_ATTRIBUTE_FILESYSTEM_FREE)
+            .await
+    }
+
+    /// Returns the capacity attributes that GVfs exposes for this storage.
+    /// MTP reliably provides free space on supported phones, while total size
+    /// is backend-dependent and must remain optional for UI fallbacks.
+    pub async fn capacity_bytes(&self) -> Result<(Option<u64>, Option<u64>), DeviceIoError> {
+        let available = self.available_bytes().await?;
+        let total = match self
+            .filesystem_bytes(gio::FILE_ATTRIBUTE_FILESYSTEM_SIZE)
+            .await
+        {
+            Ok(total) => total,
+            Err(error) => {
+                tracing::debug!(%error, "device sync: total capacity is unavailable");
+                None
+            }
+        };
+        Ok((available, total))
+    }
+
+    async fn filesystem_bytes(&self, attribute: &str) -> Result<Option<u64>, DeviceIoError> {
         let info = self
             .root
-            .query_filesystem_info_future(
-                gio::FILE_ATTRIBUTE_FILESYSTEM_FREE,
-                gio::glib::Priority::DEFAULT,
-            )
+            .query_filesystem_info_future(attribute, gio::glib::Priority::DEFAULT)
             .await?;
-        if info.has_attribute(gio::FILE_ATTRIBUTE_FILESYSTEM_FREE) {
-            Ok(Some(
-                info.attribute_uint64(gio::FILE_ATTRIBUTE_FILESYSTEM_FREE),
-            ))
-        } else {
-            Ok(None)
-        }
+        Ok(info
+            .has_attribute(attribute)
+            .then(|| info.attribute_uint64(attribute)))
     }
 
     /// Removes transfer remnants left by a disconnect or process exit. Only
