@@ -19,8 +19,8 @@
 //!
 //! ## Event marshalling: `async-channel` + `glib::spawn_future_local`
 //!
-//! Every GTK widget call must happen on the main thread, but `Player::new`'s
-//! callback is invoked from non-GTK threads. The bridge used here is the
+//! Every GTK widget call must happen on the main thread, but the injected
+//! playback backend's callback is invoked from non-GTK threads. The bridge is
 //! pattern the gtk4-rs book recommends: the player callback does a
 //! non-blocking `try_send` into an unbounded `async_channel`, and a single
 //! future spawned on the default (main) `glib::MainContext` drains the
@@ -114,9 +114,8 @@
 //!
 //! ## MPRIS (Stage 2 Task 6)
 //!
-//! `mpris::start()` is called once, right after the controller's own `Rc`
-//! exists (see `new`), spawning `mpris.rs`'s dedicated D-Bus thread and
-//! handing back two things this struct holds for its whole life: `mpris_
+//! The window composition root starts media integration once and injects its
+//! handles into `new`, including two things this struct holds for its lifetime: `mpris_
 //! state` (written by `mpris_mirror.rs`'s `update_mpris_mirror`, read by
 //! that thread) and an `async_channel::Receiver<MprisCommand>`, drained by
 //! `mpris_mirror.rs`'s `spawn_command_drain` (called from `new` — see that
@@ -159,6 +158,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
@@ -174,13 +174,14 @@ use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
 use crate::ui::style::cover_accent::Rgb as AccentRgb;
-use reprise_core::media_integration::{MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME};
-use reprise_core::playback::{PlaybackBackend, PlaybackError, PlayerEvent};
+use reprise_core::media_integration::{
+    MediaIntegrationHandles, MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME,
+};
+use reprise_core::playback::{PlaybackBackend, PlayerEvent};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::UpNextQueue;
-use reprise_platform_linux::mpris;
-use reprise_platform_linux::player::Player;
+use reprise_core::waveform::WaveformBackend;
 
 type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<(String, String)>)>;
 
@@ -196,8 +197,17 @@ pub(super) enum StartPlayback {
     No,
 }
 
-// `PlayerController::volume`'s initial value is `reprise_platform_linux::mpris::
-// DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
+/// Contract-only platform resources assembled by the window composition root.
+/// Feature modules consume this bundle without naming a concrete OS backend.
+pub(super) struct PlayerControllerBackends {
+    pub(super) playback: Box<dyn PlaybackBackend>,
+    pub(super) playback_events: async_channel::Receiver<PlayerEvent>,
+    pub(super) media: MediaIntegrationHandles,
+    pub(super) waveform: Arc<dyn WaveformBackend>,
+}
+
+// `PlayerController::volume`'s initial value is the core media-integration
+// `DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
 // second, separately-defined `const DEFAULT_VOLUME: f64 = 1.0` here — see
 // that constant's doc comment in `mpris::state` for why it's now the single
 // source of truth, and why `ui::player_bar`'s own `VOLUME_DEFAULT` stays a
@@ -324,6 +334,7 @@ pub struct PlayerController {
     /// Generation token for the seek waveform's off-main peak load, so a
     /// rapid track change can't paint a stale waveform.
     pub(super) waveform_generation: Rc<Cell<u64>>,
+    pub(super) waveform_backend: Arc<dyn WaveformBackend>,
     /// Generation token for the cover-accent off-main extraction, so a rapid
     /// track change can't apply a stale album accent.
     pub(super) cover_accent_generation: Rc<Cell<u64>>,
@@ -369,29 +380,26 @@ pub(super) struct NowPlaying {
 }
 
 impl PlayerController {
-    /// Builds the player, the bar, and the event bridge between them.
+    /// Builds the controller and the event bridge around injected platform
+    /// backends assembled by the window composition root.
     /// `conn` is the same UI-owned database connection `track_list.rs`
-    /// holds, used to record plays. Returns `Err` if GStreamer is
-    /// unavailable (no playbin, bad `REPRISE_AUDIO_SINK` override, …) — the
-    /// caller decides how to degrade (see `window::build`: library browsing
-    /// keeps working without a bar).
+    /// holds, used to record plays. Platform construction failures are handled
+    /// before this function is called so feature code only sees core contracts.
     pub(super) fn new(
         conn: Rc<RefCell<Connection>>,
         cover_download: CoverDownloadRuntime,
         listenbrainz: Rc<ScrobbleRuntime>,
         lastfm: Rc<ScrobbleRuntime>,
+        backends: PlayerControllerBackends,
         app: &adw::Application,
-    ) -> Result<Rc<Self>, PlaybackError> {
-        let (sender, receiver) = async_channel::unbounded::<PlayerEvent>();
-
-        let player = Player::new(Box::new(move |event| {
-            if let Err(error) = sender.try_send(event) {
-                // Unbounded channel: try_send only fails once the receiver
-                // (the drain loop below) is gone, i.e. during app teardown.
-                tracing::warn!(%error, "player event dropped: UI receiver is gone");
-            }
-        }))?;
-        let initial_effects = super::audio_effects::apply_initial(&player, &conn);
+    ) -> Rc<Self> {
+        let PlayerControllerBackends {
+            playback: player,
+            playback_events: receiver,
+            media: handles,
+            waveform,
+        } = backends;
+        let initial_effects = super::audio_effects::apply_initial(player.as_ref(), &conn);
         {
             // Apply the stored transition mode to the backend up front so
             // Gapless/Crossfade is active from the first track (feed_next then
@@ -403,23 +411,14 @@ impl PlayerController {
             );
         }
 
-        // Stage 2 Task 6: `mpris::start()` never fails outright (see its own
-        // doc comment's `## Failure is never fatal` section) — it always
-        // hands back a working mirror + command receiver, spawning the
-        // actual D-Bus thread in the background. Started here (right before
-        // the fields it feeds), not in `window::build`, since nothing
-        // outside this controller needs either handle — see the module's
-        // `## MPRIS` doc section.
-        //
-        // MPRIS is always on (no user toggle): the redesign integrates media
-        // keys / lock-screen unconditionally.
-        let handles = mpris::start(crate::APP_ID);
+        // Media integration is always on. Its platform handles are assembled
+        // by the window composition root and remain failure-tolerant.
         let mpris_state = handles.shared_state;
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;
 
         let controller = Rc::new(Self {
-            player: Box::new(player),
+            player,
             active_audio_effects: RefCell::new(initial_effects),
             bar: PlayerBar::new(),
             compact_player: CompactPlayer::new(),
@@ -450,6 +449,7 @@ impl PlayerController {
             compact_cover_generation: Rc::new(Cell::new(0)),
             lyrics: PlayerLyrics::new(),
             waveform_generation: Rc::new(Cell::new(0)),
+            waveform_backend: waveform,
             cover_accent_generation: Rc::new(Cell::new(0)),
             cover_accent_last: Rc::new(RefCell::new(None)),
             application: {
@@ -478,7 +478,7 @@ impl PlayerController {
         // line count comfortably under the split-file gate).
         mpris_mirror::spawn_command_drain(&controller, mpris_receiver);
 
-        Ok(controller)
+        controller
     }
 
     /// The bottom-bar widget for the library overlay shell.

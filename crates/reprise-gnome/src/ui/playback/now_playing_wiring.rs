@@ -26,8 +26,7 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::media_integration::MprisState;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
-use reprise_core::waveform::{WaveformBackend, STORED_PEAK_COUNT};
-use reprise_platform_linux::waveform::GstreamerWaveformBackend;
+use reprise_core::waveform::STORED_PEAK_COUNT;
 
 fn cover_path_to_uri(path: &Path) -> Option<String> {
     match glib::filename_to_uri(path, None) {
@@ -268,6 +267,7 @@ impl PlayerController {
         let generation = self.waveform_generation.get().wrapping_add(1);
         self.waveform_generation.set(generation);
         let waveform_generation = self.waveform_generation.clone();
+        let waveform_backend = self.waveform_backend.clone();
         let waveform = self.bar.waveform_handle();
         let db_path = reprise_core::db::default_path();
         let track_path = std::path::PathBuf::from(path);
@@ -287,7 +287,7 @@ impl PlayerController {
                             return Some(cached);
                         }
                         // Not cached — extract now and store for next time.
-                        let peaks = GstreamerWaveformBackend
+                        let peaks = waveform_backend
                             .extract_peaks(&track_path, STORED_PEAK_COUNT)
                             .ok()?;
                         reprise_core::db::set_waveform_peaks(&conn, track_id, &peaks).ok();

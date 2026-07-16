@@ -74,6 +74,13 @@ if rg --quiet '^gstreamer(-app)?[[:space:]]*=' crates/reprise-gnome/Cargo.toml; 
   exit 1
 fi
 
+if rg --quiet 'reprise_platform_linux' \
+  crates/reprise-gnome/src/ui/playback \
+  crates/reprise-gnome/src/ui/scan; then
+  echo "playback and scan feature modules must receive platform backends through core contracts" >&2
+  exit 1
+fi
+
 check_frontend_allowlist 'unsafe[[:space:]]*\{' 'unsafe frontend block' \
   crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs
 

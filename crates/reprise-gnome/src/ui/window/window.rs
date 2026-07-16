@@ -21,6 +21,7 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -29,11 +30,15 @@ use rusqlite::Connection;
 
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
+use reprise_core::playback::{PlaybackError, PlayerEvent};
 use reprise_core::view_source::ViewSource;
+use reprise_core::waveform::WaveformBackend;
+use reprise_platform_linux::player::Player;
+use reprise_platform_linux::waveform::GstreamerWaveformBackend;
 
 use super::cover_download_worker;
 use super::file_open::FileOpenHandler;
-use super::player_controller::PlayerController;
+use super::player_controller::{PlayerController, PlayerControllerBackends};
 use super::playlist_io;
 use super::primary_menu;
 use super::scan_progress::ScanProgressView;
@@ -67,6 +72,24 @@ const SMOKE_QUIT_DELAY_SECS_DEFAULT: u32 = 3;
 /// Usage: `REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=8 xvfb-run -a cargo run`.
 const SMOKE_QUIT_DELAY_SECS_ENV_VAR: &str = "REPRISE_SMOKE_QUIT_DELAY_SECS";
 
+fn build_player_backends(
+    waveform: Arc<dyn WaveformBackend>,
+) -> Result<PlayerControllerBackends, PlaybackError> {
+    let (sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
+    let player = Player::new(Box::new(move |event| {
+        if let Err(error) = sender.try_send(event) {
+            tracing::warn!(%error, "player event dropped: UI receiver is gone");
+        }
+    }))?;
+
+    Ok(PlayerControllerBackends {
+        playback: Box::new(player),
+        playback_events,
+        media: reprise_platform_linux::mpris::start(crate::APP_ID),
+        waveform,
+    })
+}
+
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database connection; the UI layer owns it single-threaded
 /// (via `Rc<RefCell<_>>`) and reads through it via `track_list::TrackList`.
@@ -81,7 +104,8 @@ pub fn build(
     db_path: &Path,
 ) -> FileOpenHandler {
     super::style::install();
-    super::scan_flow::spawn_waveform_backfill(db_path.to_path_buf());
+    let waveform_backend: Arc<dyn WaveformBackend> = Arc::new(GstreamerWaveformBackend);
+    super::scan_flow::spawn_waveform_backfill(db_path.to_path_buf(), waveform_backend.clone());
     {
         let conn = conn.borrow();
         let stored = reprise_core::library::settings::get_setting(
@@ -172,14 +196,15 @@ pub fn build(
     });
     super::device_sync_smoke::arm(&device_sync);
 
-    let player = match PlayerController::new(
-        conn.clone(),
-        cover_download.clone(),
-        listenbrainz.clone(),
-        lastfm.clone(),
-        app,
-    ) {
-        Ok(controller) => Some(controller),
+    let player = match build_player_backends(waveform_backend.clone()) {
+        Ok(backends) => Some(PlayerController::new(
+            conn.clone(),
+            cover_download.clone(),
+            listenbrainz.clone(),
+            lastfm.clone(),
+            backends,
+            app,
+        )),
         Err(error) => {
             tracing::error!(%error, "player unavailable: playback disabled");
             None
@@ -283,7 +308,8 @@ pub fn build(
         });
     }
     let scan_progress = ScanProgressView::new();
-    let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
+    let scan_controls =
+        super::scan_flow::ScanControls::new(&scan_button, &scan_progress, waveform_backend);
     scan_controls.set_sidebar_toggle(&sidebar_toggle);
     scan_progress.set_on_cancel({
         let scan_controls = scan_controls.clone();

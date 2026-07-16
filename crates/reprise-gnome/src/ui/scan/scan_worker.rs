@@ -11,6 +11,7 @@ use reprise_core::library;
 use reprise_core::library::scanner::{ScanError, ScanProgress, ScanReport};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
+use reprise_core::waveform::WaveformBackend;
 
 use super::scan_controls::ScanControls;
 use super::scan_watcher::start_or_restart_watcher;
@@ -37,11 +38,17 @@ pub(super) fn spawn_scan(
 
     let thread_folder = folder.clone();
     let thread_db_path = db_path.clone();
+    let waveform_backend = controls.waveform_backend();
     let stale_receiver = progress_receiver.clone();
     std::thread::spawn(move || {
-        let result = run_scan(&thread_db_path, &thread_folder, |progress| {
-            publish_latest_progress(&progress_sender, &stale_receiver, progress);
-        });
+        let result = run_scan(
+            &thread_db_path,
+            &thread_folder,
+            waveform_backend.as_ref(),
+            |progress| {
+                publish_latest_progress(&progress_sender, &stale_receiver, progress);
+            },
+        );
         drop(progress_sender);
         drop(stale_receiver);
         if let Err(error) = result_sender.send_blocking(result) {
@@ -170,6 +177,7 @@ fn finish_scan_ui(controls: &ScanControls) {
 fn run_scan(
     db_path: &std::path::Path,
     folder: &std::path::Path,
+    waveform_backend: &dyn WaveformBackend,
     on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanReport, ScanError> {
     let mut worker_conn = reprise_core::db::open(Some(db_path))?;
@@ -179,6 +187,6 @@ fn run_scan(
     if let Err(error) = settings::set_library_root(&worker_conn, &folder.to_string_lossy()) {
         tracing::error!(%error, "failed to persist library root after scan");
     }
-    analyze_waveforms(db_path);
+    analyze_waveforms(db_path, waveform_backend);
     Ok(report)
 }
