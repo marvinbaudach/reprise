@@ -262,3 +262,29 @@ fn local_fixture_reports_available_space_when_supported() {
     let (_temp, storage) = fixture();
     assert!(run(storage.available_bytes()).unwrap().is_some());
 }
+
+/// Non-MTP roots (the local directories these tests use, and any future
+/// backend that hands us a real filesystem) must not be re-rooted into a
+/// storage volume: `storage_root` only descends for `mtp://`. Copying into a
+/// fixture root therefore lands in `<root>/Music/Reprise`, not one level
+/// deeper — which is what every other test in this file relies on.
+#[test]
+fn non_mtp_root_is_used_verbatim_without_storage_resolution() {
+    let (temp, storage) = fixture();
+    let source_path = temp.path().join("source.flac");
+    fs::write(&source_path, b"audio").unwrap();
+
+    run(storage.copy_track(
+        &gio::File::for_path(&source_path),
+        "Road/song.flac",
+        5,
+        &gio::Cancellable::new(),
+        |_, _| {},
+    ))
+    .unwrap();
+
+    assert!(
+        temp.path().join("Music/Reprise/Road/song.flac").is_file(),
+        "copy lands directly under the fixture root's Music/Reprise"
+    );
+}
