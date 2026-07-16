@@ -24,6 +24,8 @@ require_pattern() {
 require_executable scripts/check-architecture.sh
 require_executable scripts/check-merge-readiness.sh
 require_executable scripts/install-git-hooks.sh
+require_executable scripts/cua-e2e/run.sh
+require_executable scripts/tests/cua-e2e.sh
 require_executable .githooks/pre-push
 
 require_pattern 'merge-base --is-ancestor' scripts/check-merge-readiness.sh
@@ -56,6 +58,7 @@ require_pattern '^## Isolated GTK and desktop tests' TESTING.md
 require_pattern '^## Manual release checks' TESTING.md
 require_pattern '^## Known harness constraints' TESTING.md
 
+scripts/tests/cua-e2e.sh
 scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"

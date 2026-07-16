@@ -204,6 +204,7 @@ pub(super) fn run(
                     scan_button.emit_clicked();
                 }
             }
+            tracing::info!(?response, rhythmbox_columns, "first-run setup completed");
             log_smoke_result(&conn.borrow());
         })
     };
