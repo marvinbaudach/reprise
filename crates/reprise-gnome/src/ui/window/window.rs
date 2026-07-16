@@ -346,8 +346,11 @@ pub fn build(
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
+    // Created early (many widgets built below need it injected), but its
+    // child is set only after the player-bar overlay exists: the toast layer
+    // must wrap the WHOLE library — split view AND the overlaid player bar —
+    // or toasts render beneath the translucent bar and shine through it.
     let toast_overlay = adw::ToastOverlay::new();
-    toast_overlay.set_child(Some(&toolbar_view));
 
     // Stage 2 Task 5 fault-tolerance seam: the toast overlay and the track
     // list are both built after the controller (see `PlayerController::
@@ -667,7 +670,7 @@ pub fn build(
         &window,
         conn,
         &sidebar,
-        &toast_overlay,
+        &toolbar_view,
         &track_list,
         player.as_ref(),
         &artist_news,
@@ -686,7 +689,10 @@ pub fn build(
         player_bar_widget,
         bar_position,
     );
-    let library_chrome = super::library_chrome::build(&header, library_player_bar.widget());
+    // The toast layer wraps the player-bar overlay (see the comment at the
+    // overlay's construction above): toasts now stack ABOVE the bar.
+    toast_overlay.set_child(Some(library_player_bar.widget()));
+    let library_chrome = super::library_chrome::build(&header, &toast_overlay);
     {
         let info_panel = Rc::downgrade(&info_panel);
         track_list.set_on_selection_changed(move |context| {

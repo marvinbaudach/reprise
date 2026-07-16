@@ -9,8 +9,14 @@
 
 use libadwaita as adw;
 
+/// Auto-dismiss for plain informational toasts, in seconds — deliberately
+/// shorter than libadwaita's 5 s default so status blips get out of the way.
+const TOAST_TIMEOUT_S: u32 = 4;
+
 pub(super) fn show(overlay: &adw::ToastOverlay, text: &str) {
-    overlay.add_toast(adw::Toast::new(text));
+    let toast = adw::Toast::new(text);
+    toast.set_timeout(TOAST_TIMEOUT_S);
+    overlay.add_toast(toast);
 }
 
 /// Redesign toast chrome: a fully-rounded dark pill with soft elevation and an
