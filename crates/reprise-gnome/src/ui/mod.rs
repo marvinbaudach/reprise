@@ -49,12 +49,12 @@ pub mod browse_bar;
 mod browse_filter_count;
 #[path = "browse/browse_filter_strings.rs"]
 mod browse_filter_strings;
-#[path = "track_list/column_header_menu.rs"]
-mod column_header_menu;
 #[path = "track_list/column_layout.rs"]
 pub mod column_layout;
 #[path = "track_list/column_layout_editor.rs"]
 mod column_layout_editor;
+#[path = "track_list/column_widths.rs"]
+mod column_widths;
 #[path = "compact/compact_mode_controls.rs"]
 mod compact_mode_controls;
 #[path = "compact/compact_player.rs"]
@@ -65,8 +65,6 @@ mod compact_player_layouts;
 mod compact_player_menu;
 #[path = "compact/compact_player_scroll.rs"]
 mod compact_player_scroll;
-#[path = "compact/compact_player_state.rs"]
-mod compact_player_state;
 #[path = "cover/cover_download_batch.rs"]
 mod cover_download_batch;
 #[path = "cover/cover_download_worker.rs"]
@@ -88,7 +86,7 @@ mod device_sync_smoke;
 #[path = "device_sync/device_sync_strings.rs"]
 mod device_sync_strings;
 pub mod dialogs;
-pub(in crate::ui) mod eq_bars;
+pub(crate) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;
 mod help;

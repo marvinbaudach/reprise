@@ -17,7 +17,7 @@ use reprise_core::queries::ArtistAlbum;
 
 use crate::ui::artist_detail_pane::AlbumCallback;
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::eq_bars::EqBars;
+use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::strings;
 
 /// Album cover edge in the albums row.
@@ -26,17 +26,19 @@ const ALBUM_COVER_SIZE: i32 = 150;
 const TRACK_COVER_SIZE: i32 = 30;
 
 /// A realized top-track row plus the `track_id` it displays, so the pane's
-/// `set_now_playing_track` can light the matching row's `EqBars` without
+/// `set_now_playing_track` can light the matching row's mini-EQ without
 /// walking the widget tree.
 pub(super) struct TopTrackRow {
     pub(super) track_id: i64,
-    pub(super) eq: EqBars,
+    /// The shared `eq_bars` motif (CSS-animated); visibility is the only
+    /// per-row control — shown on the now-playing track's row.
+    pub(super) eq: gtk4::Box,
 }
 
 impl TopTrackRow {
-    /// Lights this row's mini-EQ iff `now_playing` is this row's track.
+    /// Shows this row's mini-EQ iff `now_playing` is this row's track.
     pub(super) fn set_now_playing(&self, now_playing: Option<i64>) {
-        self.eq.set_active(now_playing == Some(self.track_id));
+        self.eq.set_visible(now_playing == Some(self.track_id));
     }
 }
 
@@ -151,9 +153,9 @@ pub(super) fn build_top_track_row(
     duration.add_css_class("dim-label");
     row.append(&duration);
 
-    let eq = EqBars::new();
-    eq.widget().set_valign(gtk4::Align::Center);
-    row.append(eq.widget());
+    let eq = eq_bars::build(EqVariant::Animated);
+    eq.set_visible(false);
+    row.append(&eq);
 
     let handle = TopTrackRow {
         track_id: track.track_id,

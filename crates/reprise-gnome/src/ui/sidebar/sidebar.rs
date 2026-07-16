@@ -87,6 +87,13 @@ type OnMissingRemoved = Rc<dyn Fn(&[i64])>;
 pub(super) struct Shared {
     pub(super) conn: Rc<RefCell<Connection>>,
     pub(super) listbox: gtk4::ListBox,
+    /// The bottom-pinned "Issues" list (Import errors / Missing files),
+    /// outside the scrolling area so it stays anchored at the sidebar's
+    /// bottom-left (design mockup 14a). A single `ListBox` can't bottom-pin a
+    /// subset of its rows, so this is its own list, with selection mirrored
+    /// against `listbox` (`wire_row_selected` clears the sibling on select).
+    /// Hidden entirely when there are no issues.
+    pub(super) issues_listbox: gtk4::ListBox,
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
     /// provider`) to a closure over the `PlayerController`.
@@ -173,7 +180,7 @@ pub(super) struct Shared {
 /// navigation `ListBox`).
 pub struct Sidebar {
     shared: Rc<Shared>,
-    root: gtk4::ScrolledWindow,
+    root: gtk4::Box,
 }
 
 impl Sidebar {
@@ -191,15 +198,29 @@ impl Sidebar {
         listbox.add_css_class("navigation-sidebar");
         listbox.set_selection_mode(gtk4::SelectionMode::Single);
 
-        let root = gtk4::ScrolledWindow::builder()
+        let issues_listbox = gtk4::ListBox::new();
+        issues_listbox.add_css_class("navigation-sidebar");
+        issues_listbox.set_selection_mode(gtk4::SelectionMode::Single);
+        // Natural height, anchored at the bottom, hidden until `rebuild` finds
+        // issues to show.
+        issues_listbox.set_visible(false);
+
+        let scrolled = gtk4::ScrolledWindow::builder()
             .child(&listbox)
             .vexpand(true)
             .hscrollbar_policy(gtk4::PolicyType::Never)
             .build();
 
+        // The scrolling nav list expands to fill; the issues list is pinned
+        // below it at the sidebar's bottom-left.
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&scrolled);
+        root.append(&issues_listbox);
+
         let shared = Rc::new(Shared {
             conn,
             listbox: listbox.clone(),
+            issues_listbox: issues_listbox.clone(),
             queue_len_provider: Box::new(queue_len_provider),
             current_source: RefCell::new(ViewSource::default()),
             rows: RefCell::new(Vec::new()),
@@ -225,7 +246,7 @@ impl Sidebar {
 
     /// The root widget to embed as the `AdwNavigationSplitView`'s sidebar
     /// page content.
-    pub fn widget(&self) -> &gtk4::ScrolledWindow {
+    pub fn widget(&self) -> &gtk4::Box {
         &self.root
     }
 
@@ -419,6 +440,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
     let playlist_count = playlist_rows.len();
 
     shared.listbox.remove_all();
+    shared.issues_listbox.remove_all();
     shared.rows.borrow_mut().clear();
     *shared.new_playlist_row.borrow_mut() = None;
     *shared.import_playlist_row.borrow_mut() = None;
@@ -431,14 +453,14 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
         shared,
         ViewSource::Library,
         &strings::text(strings::SIDEBAR_MUSIC),
-        Some(music_count),
+        nonzero_count(music_count),
         NavIcon::Library,
     );
     add_row(
         shared,
         ViewSource::Queue,
         &strings::text(strings::SIDEBAR_QUEUE),
-        Some(queue_count),
+        nonzero_count(queue_count),
         NavIcon::Queue,
     );
 
@@ -451,7 +473,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             shared,
             ViewSource::Playlist(playlist.id),
             &playlist.name,
-            Some(playlist.track_count),
+            nonzero_count(playlist.track_count),
             NavIcon::Playlist,
         );
     }
@@ -480,12 +502,14 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
         sidebar_presentation::NavIcon::MyStats,
     );
 
-    // Problem sources use the same subdued section-heading grammar as the
-    // groups above. A separator inside `navigation-sidebar` reads like a
-    // broad selected row with some themes, so the explicit label provides
-    // both semantic grouping and an unambiguous non-interactive boundary.
-    if import_error_count > 0 || missing_count > 0 {
-        sidebar_presentation::append_problem_header(&shared.listbox);
+    // Problem sources live in a separate list pinned to the sidebar's bottom
+    // (design mockup 14a), hidden entirely when there are none. They keep the
+    // same subdued section-heading grammar as the groups above; the explicit
+    // label provides both semantic grouping and a non-interactive boundary.
+    let has_issues = import_error_count > 0 || missing_count > 0;
+    shared.issues_listbox.set_visible(has_issues);
+    if has_issues {
+        sidebar_presentation::append_problem_header(&shared.issues_listbox);
         if import_error_count > 0 {
             add_row(
                 shared,
@@ -548,7 +572,17 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
         requested_row
     };
     if let Some(row) = row_to_select {
-        shared.listbox.select_row(Some(&row));
+        select_row_in_its_listbox(&row);
+    }
+}
+
+/// Selects `row` in whichever of the two nav lists actually contains it (the
+/// main scrolling list or the bottom-pinned issues list), so selection-follow
+/// works regardless of which list a source lives in. Its `row-selected`
+/// handler then clears the sibling list, keeping a single visible selection.
+pub(super) fn select_row_in_its_listbox(row: &gtk4::ListBoxRow) {
+    if let Some(listbox) = row.parent().and_then(|p| p.downcast::<gtk4::ListBox>().ok()) {
+        listbox.select_row(Some(row));
     }
 }
 
@@ -580,6 +614,15 @@ pub(super) fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4:
         .map(|(row, _, _)| row.clone())
 }
 
+/// A sidebar count badge only renders when non-zero: `0` shows an empty
+/// right-hand column rather than a literal "0" (design mockup 14a). The
+/// problem sources (import errors / missing) go further and hide the whole
+/// row at zero — see the `import_error_count`/`missing_count` guards in
+/// `rebuild`.
+fn nonzero_count(count: i64) -> Option<i64> {
+    (count > 0).then_some(count)
+}
+
 /// Builds one navigation row (title + optional right-aligned count) and
 /// registers it in `shared.rows` against `source`. Playlist rows additionally
 /// get a drag-and-drop drop target (Stage 3 Task 6) — see `sidebar_dnd::
@@ -604,7 +647,14 @@ fn add_row(
         }
         _ => {}
     }
-    shared.listbox.append(&row);
+    // Problem sources go into the bottom-pinned issues list; everything else
+    // into the main scrolling nav list.
+    let target = if matches!(source, ViewSource::ImportErrors | ViewSource::Missing) {
+        &shared.issues_listbox
+    } else {
+        &shared.listbox
+    };
+    target.append(&row);
     shared
         .rows
         .borrow_mut()
@@ -643,12 +693,23 @@ fn add_row_with_badge(
 /// clears out the previously selected row — see the module doc's
 /// `## Reentrancy` section.
 fn wire_row_selected(shared: &Rc<Shared>) {
-    let listbox = shared.listbox.clone();
+    // Both nav lists share one selection: selecting in either clears the other.
+    wire_row_selected_on(shared, &shared.listbox, &shared.issues_listbox);
+    wire_row_selected_on(shared, &shared.issues_listbox, &shared.listbox);
+}
+
+/// Wires `row-selected` on one nav list. Clears `sibling`'s selection first so
+/// only one row is ever visually selected across the main list and the
+/// bottom-pinned issues list — `sibling`'s handler then fires with `None` and
+/// returns early, so there is no source change and no loop.
+fn wire_row_selected_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox, sibling: &gtk4::ListBox) {
     let shared = shared.clone();
+    let sibling = sibling.clone();
     listbox.connect_row_selected(move |_, row| {
         let Some(row) = row else {
             return;
         };
+        sibling.unselect_all();
         let matched = shared
             .rows
             .borrow()
@@ -696,7 +757,11 @@ fn wire_row_selected(shared: &Rc<Shared>) {
 /// selectable, so it never appears in `shared.rows`) is handled separately:
 /// it opens the dialog instead.
 fn wire_row_activated(shared: &Rc<Shared>) {
-    let listbox = shared.listbox.clone();
+    wire_row_activated_on(shared, &shared.listbox);
+    wire_row_activated_on(shared, &shared.issues_listbox);
+}
+
+fn wire_row_activated_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox) {
     let shared = shared.clone();
     listbox.connect_row_activated(move |_, row| {
         let is_new_playlist_row = shared.new_playlist_row.borrow().as_ref() == Some(row);

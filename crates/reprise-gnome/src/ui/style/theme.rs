@@ -83,7 +83,7 @@ impl Theme {
                 headerbar_bg: "#16181b",
                 sidebar_bg: "#191c20",
                 popover_bg: "#404650",
-                dialog_bg: "#4a5260",
+                dialog_bg: "#353b44",
                 fg: "#e7e9ec",
                 dim_fg: "#9198a0",
                 accent: "#33c9a3",
@@ -97,7 +97,7 @@ impl Theme {
                 headerbar_bg: "#13161c",
                 sidebar_bg: "#161a21",
                 popover_bg: "#3e4452",
-                dialog_bg: "#484e5c",
+                dialog_bg: "#333a48",
                 fg: "#e4e7ec",
                 dim_fg: "#8b93a1",
                 accent: "#4db6a9",
@@ -111,7 +111,7 @@ impl Theme {
                 headerbar_bg: "#1a1518",
                 sidebar_bg: "#1d171b",
                 popover_bg: "#463c48",
-                dialog_bg: "#524a54",
+                dialog_bg: "#3a343c",
                 fg: "#ece6ea",
                 dim_fg: "#a2949c",
                 accent: "#c98bd0",
@@ -120,13 +120,61 @@ impl Theme {
             },
         }
     }
+
+    pub(in crate::ui) fn light_palette(self) -> Palette {
+        let dark = self.palette();
+        match self {
+            Theme::PerpetualRain => Palette {
+                window_bg: "#f4f5f7",
+                view_bg: "#fafbfc",
+                card_bg: "#ffffff",
+                headerbar_bg: "#e8eaed",
+                sidebar_bg: "#eceef1",
+                popover_bg: "#ffffff",
+                dialog_bg: "#f0f2f5",
+                fg: "#1a1c1f",
+                dim_fg: "#6b7280",
+                accent: dark.accent,
+                accent_fg: dark.accent_fg,
+                player_accent: dark.player_accent,
+            },
+            Theme::NightTerrain => Palette {
+                window_bg: "#f2f4f8",
+                view_bg: "#f8f9fc",
+                card_bg: "#ffffff",
+                headerbar_bg: "#e4e8ef",
+                sidebar_bg: "#e8ecf2",
+                popover_bg: "#ffffff",
+                dialog_bg: "#edf0f6",
+                fg: "#181b22",
+                dim_fg: "#636d7e",
+                accent: dark.accent,
+                accent_fg: dark.accent_fg,
+                player_accent: dark.player_accent,
+            },
+            Theme::MutedBloom => Palette {
+                window_bg: "#f6f3f5",
+                view_bg: "#fbf9fa",
+                card_bg: "#ffffff",
+                headerbar_bg: "#ede8eb",
+                sidebar_bg: "#f0ebee",
+                popover_bg: "#ffffff",
+                dialog_bg: "#f2eef1",
+                fg: "#1f1a1d",
+                dim_fg: "#7a6e75",
+                accent: dark.accent,
+                accent_fg: dark.accent_fg,
+                player_accent: dark.player_accent,
+            },
+        }
+    }
 }
 
 /// Produces the `@define-color` overrides that map `theme`'s palette onto the
 /// libadwaita named colors, plus two `reprise_*` colors the app's own CSS
 /// reads. Installed at application priority so it wins over Adwaita's defaults.
-pub(in crate::ui) fn theme_css(theme: Theme) -> String {
-    let p = theme.palette();
+pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
+    let p = if is_dark { theme.palette() } else { theme.light_palette() };
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -184,7 +232,7 @@ mod tests {
 
     #[test]
     fn theme_css_defines_core_named_colors() {
-        let css = theme_css(Theme::PerpetualRain);
+        let css = theme_css(Theme::PerpetualRain, true);
         for name in [
             "@define-color window_bg_color",
             "@define-color view_bg_color",
@@ -198,10 +246,10 @@ mod tests {
     #[test]
     fn distinct_themes_produce_distinct_css() {
         assert_ne!(
-            theme_css(Theme::PerpetualRain),
-            theme_css(Theme::NightTerrain)
+            theme_css(Theme::PerpetualRain, true),
+            theme_css(Theme::NightTerrain, true)
         );
-        assert_ne!(theme_css(Theme::NightTerrain), theme_css(Theme::MutedBloom));
+        assert_ne!(theme_css(Theme::NightTerrain, true), theme_css(Theme::MutedBloom, true));
     }
 
     #[test]

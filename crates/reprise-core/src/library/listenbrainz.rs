@@ -148,15 +148,9 @@ impl LbStatsClient {
 
     fn get(&self, url: &str, username: &str) -> Result<String, RemoteStatsError> {
         let response = self.agent.get(url).call().map_err(|error| match &error {
-            ureq::Error::Status(404, _) => {
-                RemoteStatsError::UserNotFound(username.to_string())
-            }
-            ureq::Error::Status(status, _) => {
-                RemoteStatsError::Network(format!("HTTP {status}"))
-            }
-            ureq::Error::Transport(transport) => {
-                RemoteStatsError::Network(transport.to_string())
-            }
+            ureq::Error::Status(404, _) => RemoteStatsError::UserNotFound(username.to_string()),
+            ureq::Error::Status(status, _) => RemoteStatsError::Network(format!("HTTP {status}")),
+            ureq::Error::Transport(transport) => RemoteStatsError::Network(transport.to_string()),
         })?;
         let mut body = String::new();
         response
@@ -183,7 +177,12 @@ fn parse_top_artists(body: &str) -> Result<Vec<TopArtist>, RemoteStatsError> {
         .filter_map(|entry| {
             let artist = entry.get("artist_name")?.as_str()?.to_string();
             let plays = entry.get("listen_count")?.as_i64()?;
-            Some(TopArtist { artist, plays, total_ms: 0, representative_track_path: String::new() })
+            Some(TopArtist {
+                artist,
+                plays,
+                total_ms: 0,
+                representative_track_path: String::new(),
+            })
         })
         .collect();
     Ok(artists)

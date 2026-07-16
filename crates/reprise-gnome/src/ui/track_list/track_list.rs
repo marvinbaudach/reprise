@@ -55,7 +55,6 @@
 //! `TrackListModel::set_query`.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -163,6 +162,15 @@ pub(super) struct Shared {
     /// why the Escape shortcut (`ui::shortcuts`) needs a precise handle
     /// rather than "whatever's focusable in the current stack page."
     pub(super) column_view: gtk4::ColumnView,
+    /// Track id of the currently-playing row (the now-playing marker), or
+    /// `None` when nothing is playing. Every column's `connect_bind` reads
+    /// this to toggle the `.now-playing` marker class on its cell, so a row
+    /// scrolled into view while it is the playing track is marked with no
+    /// extra bookkeeping. `current_track_selection.rs` updates it on track
+    /// change / stop and invalidates just the old and new rows, so the marker
+    /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
+    /// payload is a `Copy` `Option<i64>` read on every bind.
+    pub(super) playing_track_id: Cell<Option<i64>>,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
@@ -318,8 +326,6 @@ pub struct TrackList {
     pub(super) shared: Rc<Shared>,
     pub(super) root: gtk4::Box,
     pub(super) column_registry: ColumnRegistry,
-    pub(super) column_visibility_actions: RefCell<HashMap<ColumnId, gtk4::gio::SimpleAction>>,
-    pub(super) column_visibility_menu: RefCell<Option<gtk4::gio::Menu>>,
 }
 
 impl TrackList {
@@ -344,10 +350,15 @@ impl TrackList {
         // multi-select` section.
         let selection = gtk4::MultiSelection::new(Some(model.clone()));
 
+        // Both built-in separators are OFF: the vertical ones are removed
+        // outright (no per-cell rules to fight — see `track_list_header_
+        // style.rs`), and the horizontal row rule is drawn by that same scoped
+        // CSS at an exact hairline colour instead of the theme's default, so
+        // the table reads as clean horizontal bands with no column grid.
         let column_view = gtk4::ColumnView::builder()
             .model(&selection)
-            .show_row_separators(true)
-            .show_column_separators(true)
+            .show_row_separators(false)
+            .show_column_separators(false)
             .build();
         super::track_list_header_style::mark(&column_view);
 
@@ -393,6 +404,7 @@ impl TrackList {
             model,
             selection: selection.clone(),
             column_view: column_view.clone(),
+            playing_track_id: Cell::new(None),
             conn,
             cover_loader: cover_loader.clone(),
             browse_bar: browse_bar.clone(),
@@ -502,8 +514,6 @@ impl TrackList {
             shared,
             root,
             column_registry,
-            column_visibility_actions: RefCell::new(HashMap::new()),
-            column_visibility_menu: RefCell::new(None),
         }
     }
 

@@ -187,7 +187,6 @@ fn collect_decorations(
 #[cfg(test)]
 mod tests {
     use gtk4::gio;
-    use reprise_core::library::settings::CompactLayout;
 
     use super::*;
     use crate::ui::compact_player_layouts;
@@ -216,13 +215,7 @@ mod tests {
         library_root.add_top_bar(&library_header);
         library_root.set_content(Some(&gtk4::Label::new(Some("Library"))));
         let compact_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        for layout in [
-            CompactLayout::Cover,
-            CompactLayout::Pill,
-            CompactLayout::Card,
-        ] {
-            compact_root.append(&compact_player_layouts::build(layout).root);
-        }
+        compact_root.append(&compact_player_layouts::build_mini().root);
         let decorations =
             WindowDecorations::new(&window, &library_header, Some(compact_root.upcast_ref()));
         decorations.content_host.set_content(&library_root);
@@ -313,7 +306,7 @@ mod tests {
         let headers = descendants(root)
             .filter_map(|widget| widget.downcast::<adw::HeaderBar>().ok())
             .collect::<Vec<_>>();
-        assert_eq!(headers.len(), 2);
+        assert_eq!(headers.len(), 0);
         headers.into_iter().all(|header| {
             header.shows_start_title_buttons() == expected
                 && header.shows_end_title_buttons() == expected
@@ -324,7 +317,7 @@ mod tests {
         let titles = descendants(root)
             .filter_map(|widget| widget.downcast::<adw::WindowTitle>().ok())
             .collect::<Vec<_>>();
-        assert_eq!(titles.len(), 2);
+        assert_eq!(titles.len(), 0);
         titles
             .into_iter()
             .all(|title| title.is_visible() == expected)

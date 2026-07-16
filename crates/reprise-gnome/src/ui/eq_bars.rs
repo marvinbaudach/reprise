@@ -1,109 +1,116 @@
-//! A tiny three-bar "now playing" indicator (like a mini equalizer). Purely
-//! decorative: drawn on a `DrawingArea`, animated only while active, and static
-//! when the desktop disables animations. Later tasks use this to mark the
-//! now-playing artist/track in the Artists list and top-tracks rows.
+//! A small CSS-drawn three-bar equaliser motif, shared by two surfaces:
+//!
+//! - **Animated** — shown before the now-playing track's title in the track
+//!   table (`track_list_columns.rs`). Its bars pulse in the player accent
+//!   (`@reprise_player_accent`) and freeze when playback is paused, driven
+//!   entirely by CSS `@keyframes` plus an ancestor `.playback-paused` class
+//!   toggled on the `ColumnView` (see `TrackList::set_playback_paused`).
+//! - **Static** — the "My Stats" sidebar icon (`sidebar_presentation.rs`),
+//!   three fixed ascending bars in `currentColor` so it reads like the other
+//!   symbolic nav icons while being visibly distinct from the "Top rated"
+//!   star.
+//!
+//! ## Why a CSS widget, not an icon
+//!
+//! The app ships no symbolic icon resources (no GResource/`build.rs`) and
+//! relies on the system icon theme, which has no dependable "bar chart" name
+//! — and a theme symbolic could never animate anyway. Drawing three
+//! `gtk::Box` bars styled by app-owned CSS renders identically on every icon
+//! theme (the same reasoning the rating widget uses text glyphs over theme
+//! symbolics — see `ui::rating`'s module doc), animates for free, and serves
+//! both surfaces from one widget.
+//!
+//! The bars animate `min-height` (not `transform: scaleY`): GTK4 CSS honours
+//! keyframed `min-height` reliably, and with each bar bottom-aligned
+//! (`valign = End`) inside the fixed-height row it grows upward from a common
+//! baseline — the equaliser look — without depending on `transform-origin`
+//! support.
 
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
-
-use gtk4::glib;
 use gtk4::prelude::*;
 
-const BARS: usize = 3;
-const SIZE: i32 = 14;
+/// Root class carried by every instance; the animated colour + keyframes and
+/// the static heights are scoped under the two modifier classes below.
+pub(in crate::ui) const EQ_BARS_CLASS: &str = "reprise-eq-bars";
+/// Modifier for the animated, accent-coloured now-playing variant.
+const EQ_ANIMATED_CLASS: &str = "reprise-eq-animated";
+/// Modifier for the static, `currentColor` sidebar variant.
+const EQ_STATIC_CLASS: &str = "reprise-eq-static";
+/// Per-bar class (`reprise-eq-bar`) plus a 1-based positional class
+/// (`reprise-eq-bar-1`…) so each bar can carry its own animation delay and
+/// static height without relying on `:nth-child` support.
+const EQ_BAR_CLASS: &str = "reprise-eq-bar";
 
-pub(in crate::ui) struct EqBars {
-    area: gtk4::DrawingArea,
-    phase: Rc<Cell<f64>>,
-    active: Cell<bool>,
-    tick_id: RefCell<Option<gtk4::TickCallbackId>>,
+const BAR_COUNT: usize = 3;
+/// Inter-bar gap and the widget's aligned footprint (matches the 16 px
+/// symbolic nav icons so the static variant lines up with its siblings).
+const BAR_SPACING: i32 = 2;
+const WIDGET_SIZE: i32 = 16;
+
+/// Which of the two presentations to build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) enum EqVariant {
+    /// Pulsing accent bars for the now-playing row.
+    Animated,
+    /// Fixed ascending `currentColor` bars for the My Stats sidebar icon.
+    Static,
 }
 
-impl EqBars {
-    pub(in crate::ui) fn new() -> Self {
-        let area = gtk4::DrawingArea::builder()
-            .content_width(SIZE)
-            .content_height(SIZE)
-            .valign(gtk4::Align::Center)
-            .build();
-        area.add_css_class("eq-bars");
-        area.set_visible(false);
+/// Builds a three-bar equaliser box for `variant`. The caller owns
+/// visibility: the animated variant is created hidden in every title cell and
+/// only shown on the now-playing row (`track_list_columns.rs`).
+pub(in crate::ui) fn build(variant: EqVariant) -> gtk4::Box {
+    let container = gtk4::Box::new(gtk4::Orientation::Horizontal, BAR_SPACING);
+    container.add_css_class(EQ_BARS_CLASS);
+    container.add_css_class(match variant {
+        EqVariant::Animated => EQ_ANIMATED_CLASS,
+        EqVariant::Static => EQ_STATIC_CLASS,
+    });
+    container.set_valign(gtk4::Align::Center);
+    container.set_halign(gtk4::Align::Center);
+    container.set_width_request(WIDGET_SIZE);
+    container.set_height_request(WIDGET_SIZE);
 
-        let phase = Rc::new(Cell::new(0.0));
-
-        area.set_draw_func({
-            let phase = phase.clone();
-            move |area, cr, w, h| {
-                // Current foreground colour from CSS, so the bars recolor
-                // with the active theme (same approach as waveform_seek.rs).
-                let color = area.color();
-                cr.set_source_rgba(
-                    f64::from(color.red()),
-                    f64::from(color.green()),
-                    f64::from(color.blue()),
-                    0.9,
-                );
-                let bar_w = (w as f64) / (BARS as f64 * 1.8);
-                for i in 0..BARS {
-                    let t = phase.get() + i as f64 * 0.7;
-                    let frac = 0.35 + 0.55 * (0.5 + 0.5 * t.sin());
-                    let bh = (h as f64) * frac;
-                    let x = (i as f64) * bar_w * 1.8 + bar_w * 0.4;
-                    cr.rectangle(x, h as f64 - bh, bar_w, bh);
-                }
-                let _ = cr.fill();
-            }
-        });
-
-        Self {
-            area,
-            phase,
-            active: Cell::new(false),
-            tick_id: RefCell::new(None),
-        }
+    for index in 1..=BAR_COUNT {
+        let bar = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        bar.add_css_class(EQ_BAR_CLASS);
+        bar.add_css_class(&format!("{EQ_BAR_CLASS}-{index}"));
+        // Bottom-align so animated `min-height` growth rises from a shared
+        // baseline instead of centring.
+        bar.set_valign(gtk4::Align::End);
+        container.append(&bar);
     }
+    container
+}
 
-    pub(in crate::ui) fn widget(&self) -> &gtk4::DrawingArea {
-        &self.area
-    }
-
-    /// Shows and starts animating (if `gtk-enable-animations` is on), or
-    /// hides and stops animating. Idempotent — calling with the same value
-    /// twice is a no-op, so no double tick-callback registration.
-    pub(in crate::ui) fn set_active(&self, active: bool) {
-        if self.active.get() == active {
-            return;
-        }
-        self.active.set(active);
-        self.area.set_visible(active);
-
-        // Visibility must never depend on animation state — only the tick
-        // callback (and thus the animated redraw) is gated on it.
-        if !active {
-            if let Some(id) = self.tick_id.borrow_mut().take() {
-                id.remove();
-            }
-            self.area.queue_draw();
-            return;
-        }
-
-        let animations = self.area.settings().is_gtk_enable_animations();
-        if animations {
-            if self.tick_id.borrow().is_some() {
-                return;
-            }
-            let phase = self.phase.clone();
-            let id = self.area.add_tick_callback(move |area, clock| {
-                let dt = clock.frame_time() as f64 / 1_000_000.0;
-                phase.set(dt * 4.0);
-                area.queue_draw();
-                glib::ControlFlow::Continue
-            });
-            *self.tick_id.borrow_mut() = Some(id);
-        } else {
-            self.area.queue_draw();
-        }
-    }
+/// The equaliser CSS section; installed app-wide by [`super::style`] (see its
+/// `app_css` list). Keyframed `min-height` per bar, staggered so the three
+/// bars pulse out of phase; `.playback-paused` (on the `ColumnView`) freezes
+/// them; the static variant overrides to fixed ascending heights.
+pub(in crate::ui) fn css() -> String {
+    format!(
+        ".{EQ_BARS_CLASS} {{ min-height: {WIDGET_SIZE}px; }}\n\
+         .{EQ_BARS_CLASS} .{EQ_BAR_CLASS} {{ \
+           min-width: 3px; min-height: 3px; border-radius: 1px; \
+           background-color: currentColor; }}\n\
+         .{EQ_ANIMATED_CLASS} .{EQ_BAR_CLASS} {{ \
+           background-color: @reprise_player_accent; \
+           animation: reprise-eq 1100ms ease-in-out infinite; }}\n\
+         .{EQ_BAR_CLASS}-1 {{ animation-delay: 0ms; }}\n\
+         .{EQ_BAR_CLASS}-2 {{ animation-delay: -450ms; }}\n\
+         .{EQ_BAR_CLASS}-3 {{ animation-delay: -800ms; }}\n\
+         .playback-paused .{EQ_ANIMATED_CLASS} .{EQ_BAR_CLASS} {{ \
+           animation-play-state: paused; }}\n\
+         .{EQ_STATIC_CLASS} .{EQ_BAR_CLASS} {{ animation: none; }}\n\
+         .{EQ_STATIC_CLASS} .{EQ_BAR_CLASS}-1 {{ min-height: 6px; }}\n\
+         .{EQ_STATIC_CLASS} .{EQ_BAR_CLASS}-2 {{ min-height: 10px; }}\n\
+         .{EQ_STATIC_CLASS} .{EQ_BAR_CLASS}-3 {{ min-height: 14px; }}\n\
+         @keyframes reprise-eq {{ \
+           0% {{ min-height: 4px; }} \
+           25% {{ min-height: 14px; }} \
+           50% {{ min-height: 6px; }} \
+           75% {{ min-height: 12px; }} \
+           100% {{ min-height: 4px; }} }}"
+    )
 }
 
 #[cfg(test)]
@@ -112,14 +119,44 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn eq_bars_widget_builds_and_toggles() {
+    fn build_creates_three_marked_bars() {
         if gtk4::init().is_err() {
             return;
         }
-        let bars = EqBars::new();
-        bars.set_active(true);
-        assert!(bars.widget().is_visible());
-        bars.set_active(false);
-        assert!(!bars.widget().is_visible());
+        let bars = build(EqVariant::Animated);
+        assert!(bars.has_css_class(EQ_BARS_CLASS));
+        assert!(bars.has_css_class(EQ_ANIMATED_CLASS));
+
+        let mut count = 0;
+        let mut child = bars.first_child();
+        while let Some(bar) = child {
+            assert!(bar.has_css_class(EQ_BAR_CLASS));
+            count += 1;
+            child = bar.next_sibling();
+        }
+        assert_eq!(count, BAR_COUNT);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn static_variant_is_marked_static_not_animated() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let bars = build(EqVariant::Static);
+        assert!(bars.has_css_class(EQ_STATIC_CLASS));
+        assert!(!bars.has_css_class(EQ_ANIMATED_CLASS));
+    }
+
+    #[test]
+    fn css_defines_animation_pause_and_static_overrides() {
+        let css = css();
+        assert!(css.contains("@keyframes reprise-eq"));
+        assert!(css.contains("animation-play-state: paused"));
+        assert!(css.contains("@reprise_player_accent"));
+        assert!(css.contains(".reprise-eq-static .reprise-eq-bar { animation: none; }"));
+        // Pause must be scoped to the animated variant under the ColumnView's
+        // `.playback-paused`, never the static sidebar icon.
+        assert!(css.contains(".playback-paused .reprise-eq-animated .reprise-eq-bar"));
     }
 }

@@ -9,11 +9,23 @@ use gtk4::prelude::*;
 
 const TRACK_LIST_CLASS: &str = "reprise-track-list";
 
-/// Quieter column-title rule, scoped to [`TRACK_LIST_CLASS`] roots.
+/// Quieter column-title rule plus the table's own hairline separators, all
+/// scoped to [`TRACK_LIST_CLASS`] roots. Both built-in `GtkColumnView`
+/// separators are disabled (`track_list.rs`), so these rules fully own the
+/// grid: a 1 px horizontal rule under each cell at white 4.5 % (no vertical
+/// column lines at all), and a slightly stronger white 7 % rule under the
+/// sortable header. The `rgba(white)` literals are deliberate — these are
+/// fixed hairlines on the dark surface, not theme-tinted borders, so they
+/// don't route through a palette `@`-color.
 pub(super) fn css() -> String {
     use super::style::tokens::HEADER_TEXT_ALPHA;
     format!(
-        ".{TRACK_LIST_CLASS} > header label {{ color: alpha(currentColor, {HEADER_TEXT_ALPHA}); }}"
+        ".{TRACK_LIST_CLASS} > header label {{ color: alpha(currentColor, {HEADER_TEXT_ALPHA}); }}\n\
+         .{TRACK_LIST_CLASS} > header {{ \
+           border-bottom: 1px solid rgba(255, 255, 255, 0.07); }}\n\
+         .{TRACK_LIST_CLASS} > listview > row > cell {{ \
+           border-left: none; border-right: none; \
+           border-bottom: 1px solid rgba(255, 255, 255, 0.045); }}"
     )
 }
 

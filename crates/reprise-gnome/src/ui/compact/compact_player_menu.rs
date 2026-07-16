@@ -1,24 +1,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use super::strings;
 use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
-use reprise_core::library::settings::CompactLayout;
-use reprise_core::queue::Repeat;
-
-use super::compact_player_layouts::{layout_from_token, layout_token};
-use super::strings;
-
-#[allow(dead_code)]
-pub(super) const LAYOUT_TARGETS: [&str; 3] = ["cover", "pill", "card"];
-#[allow(dead_code)]
-pub(super) const LAYOUT_NAMES: [(CompactLayout, &str); 3] = [
-    (CompactLayout::Cover, strings::COMPACT_LAYOUT_COVER),
-    (CompactLayout::Pill, strings::COMPACT_LAYOUT_PILL),
-    (CompactLayout::Card, strings::COMPACT_LAYOUT_CARD),
-];
 
 const ACTION_RESTORE: &str = "restore";
 const ACTION_PLAY_PAUSE: &str = "play-pause";
@@ -28,13 +15,8 @@ const ACTION_ALWAYS_ON_TOP: &str = "always-on-top";
 const ACTION_PREFERENCES: &str = "preferences";
 const ACTION_QUIT: &str = "quit";
 
-// Kept for state management by physical controls — not shown in the menu.
-const ACTION_LAYOUT: &str = "layout";
-const ACTION_SHUFFLE: &str = "shuffle";
-const ACTION_REPEAT: &str = "repeat";
-
 /// Every action name registered in the compact action group.
-pub(super) const MENU_ACTIONS: [&str; 10] = [
+pub(super) const MENU_ACTIONS: [&str; 7] = [
     ACTION_RESTORE,
     ACTION_PLAY_PAUSE,
     ACTION_NEXT,
@@ -42,48 +24,33 @@ pub(super) const MENU_ACTIONS: [&str; 10] = [
     ACTION_ALWAYS_ON_TOP,
     ACTION_PREFERENCES,
     ACTION_QUIT,
-    ACTION_LAYOUT,
-    ACTION_SHUFFLE,
-    ACTION_REPEAT,
 ];
 
 type VoidCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
-type LayoutCallback = Rc<RefCell<Option<Rc<dyn Fn(CompactLayout)>>>>;
 type BoolCallback = Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>;
-type RepeatCallback = Rc<RefCell<Option<Rc<dyn Fn(Repeat)>>>>;
 
 pub(super) struct CompactMenu {
     pub(super) popover: gtk4::PopoverMenu,
     pub(super) action_group: gio::SimpleActionGroup,
-    layout_action: gio::SimpleAction,
-    shuffle_action: gio::SimpleAction,
-    repeat_action: gio::SimpleAction,
-    #[allow(dead_code)]
-    always_on_top_action: gio::SimpleAction,
+    pub(super) always_on_top_action: gio::SimpleAction,
     playback_section: gio::Menu,
     on_restore: VoidCallback,
     on_play_pause: VoidCallback,
     on_next: VoidCallback,
     on_previous: VoidCallback,
     on_always_on_top: BoolCallback,
-    on_layout: LayoutCallback,
-    on_shuffle: BoolCallback,
-    on_repeat: RepeatCallback,
     on_preferences: VoidCallback,
     on_quit: VoidCallback,
     is_playing: RefCell<bool>,
 }
 
 impl CompactMenu {
-    pub(super) fn build(initial_layout: CompactLayout) -> Self {
+    pub(super) fn build() -> Self {
         let on_restore = empty_callback();
         let on_play_pause = empty_callback();
         let on_next = empty_callback();
         let on_previous = empty_callback();
         let on_always_on_top: BoolCallback = Rc::new(RefCell::new(None));
-        let on_layout: LayoutCallback = Rc::new(RefCell::new(None));
-        let on_shuffle: BoolCallback = Rc::new(RefCell::new(None));
-        let on_repeat: RepeatCallback = Rc::new(RefCell::new(None));
         let on_preferences = empty_callback();
         let on_quit = empty_callback();
         let action_group = gio::SimpleActionGroup::new();
@@ -129,69 +96,6 @@ impl CompactMenu {
         connect_void_action(&quit_action, &on_quit);
         action_group.add_action(&quit_action);
 
-        // State-only actions for physical controls (not shown in the menu).
-        let layout_action = gio::SimpleAction::new_stateful(
-            ACTION_LAYOUT,
-            Some(glib::VariantTy::STRING),
-            &layout_token(initial_layout).to_variant(),
-        );
-        {
-            let callback = on_layout.clone();
-            layout_action.connect_change_state(move |_, value| {
-                let Some(layout) = value
-                    .and_then(glib::Variant::get::<String>)
-                    .as_deref()
-                    .and_then(layout_from_token)
-                else {
-                    return;
-                };
-                let callback = callback.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(layout);
-                }
-            });
-        }
-        action_group.add_action(&layout_action);
-
-        let shuffle_action =
-            gio::SimpleAction::new_stateful(ACTION_SHUFFLE, None, &false.to_variant());
-        {
-            let callback = on_shuffle.clone();
-            shuffle_action.connect_change_state(move |_, value| {
-                let Some(active) = value.and_then(glib::Variant::get::<bool>) else {
-                    return;
-                };
-                let callback = callback.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(active);
-                }
-            });
-        }
-        action_group.add_action(&shuffle_action);
-
-        let repeat_action = gio::SimpleAction::new_stateful(
-            ACTION_REPEAT,
-            Some(glib::VariantTy::STRING),
-            &repeat_token(Repeat::Off).to_variant(),
-        );
-        {
-            let callback = on_repeat.clone();
-            repeat_action.connect_change_state(move |_, value| {
-                let Some(repeat) = value
-                    .and_then(glib::Variant::get::<String>)
-                    .as_deref()
-                    .and_then(repeat_from_token)
-                else {
-                    return;
-                };
-                let callback = callback.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(repeat);
-                }
-            });
-        }
-        action_group.add_action(&repeat_action);
-
         debug_assert!(MENU_ACTIONS
             .iter()
             .all(|action| action_group.has_action(action)));
@@ -204,9 +108,6 @@ impl CompactMenu {
         Self {
             popover,
             action_group,
-            layout_action,
-            shuffle_action,
-            repeat_action,
             always_on_top_action,
             playback_section,
             on_restore,
@@ -214,26 +115,10 @@ impl CompactMenu {
             on_next,
             on_previous,
             on_always_on_top,
-            on_layout,
-            on_shuffle,
-            on_repeat,
             on_preferences,
             on_quit,
             is_playing: RefCell::new(false),
         }
-    }
-
-    pub(super) fn layout_action(&self) -> gio::SimpleAction {
-        self.layout_action.clone()
-    }
-
-    pub(super) fn set_shuffle(&self, active: bool) {
-        self.shuffle_action.set_state(&active.to_variant());
-    }
-
-    pub(super) fn set_repeat(&self, repeat: Repeat) {
-        self.repeat_action
-            .set_state(&repeat_token(repeat).to_variant());
     }
 
     pub(super) fn set_playing(&self, playing: bool) {
@@ -263,18 +148,6 @@ impl CompactMenu {
 
     pub(super) fn set_on_always_on_top(&self, callback: Rc<dyn Fn(bool)>) {
         *self.on_always_on_top.borrow_mut() = Some(callback);
-    }
-
-    pub(super) fn set_on_layout(&self, callback: Rc<dyn Fn(CompactLayout)>) {
-        *self.on_layout.borrow_mut() = Some(callback);
-    }
-
-    pub(super) fn set_on_shuffle(&self, callback: Rc<dyn Fn(bool)>) {
-        *self.on_shuffle.borrow_mut() = Some(callback);
-    }
-
-    pub(super) fn set_on_repeat(&self, callback: Rc<dyn Fn(Repeat)>) {
-        *self.on_repeat.borrow_mut() = Some(callback);
     }
 
     pub(super) fn set_on_preferences(&self, callback: Rc<dyn Fn()>) {
@@ -368,27 +241,7 @@ fn empty_callback() -> VoidCallback {
     Rc::new(RefCell::new(None))
 }
 
-pub(super) const fn active_target(layout: CompactLayout) -> &'static str {
-    layout_token(layout)
-}
-
-const fn repeat_token(repeat: Repeat) -> &'static str {
-    match repeat {
-        Repeat::Off => "off",
-        Repeat::All => "all",
-        Repeat::One => "one",
-    }
-}
-
-fn repeat_from_token(token: &str) -> Option<Repeat> {
-    match token {
-        "off" => Some(Repeat::Off),
-        "all" => Some(Repeat::All),
-        "one" => Some(Repeat::One),
-        _ => None,
-    }
-}
-
+#[cfg(test)]
 pub(super) const fn accepts_context_menu(interactive_descendant: bool) -> bool {
     !interactive_descendant
 }
@@ -411,35 +264,11 @@ pub(super) fn popup_at(
     popover.popup();
 }
 
-pub(super) fn is_context_menu_shortcut(
-    key: gtk4::gdk::Key,
-    modifiers: gtk4::gdk::ModifierType,
-) -> bool {
-    key == gtk4::gdk::Key::Menu
-        || (key == gtk4::gdk::Key::F10 && modifiers.contains(gtk4::gdk::ModifierType::SHIFT_MASK))
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-
-    #[test]
-    fn layout_radio_targets_are_complete_and_stable() {
-        assert_eq!(LAYOUT_TARGETS, ["cover", "pill", "card"]);
-    }
-
-    #[test]
-    fn active_radio_follows_the_selected_layout() {
-        for (layout, target) in [
-            (CompactLayout::Cover, "cover"),
-            (CompactLayout::Pill, "pill"),
-            (CompactLayout::Card, "card"),
-        ] {
-            assert_eq!(active_target(layout), target);
-        }
-    }
 
     #[test]
     fn context_menu_is_limited_to_non_interactive_regions() {

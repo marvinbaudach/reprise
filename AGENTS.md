@@ -26,47 +26,33 @@ successor. Three-crate Cargo workspace:
    ground truth; only committed work exists. Nothing is ever pushed — work lives on `main`
    locally.
 
-The **current work plan** is the newest file in `docs/superpowers/plans/`. Right now that is
-`docs/superpowers/plans/2026-07-12-gui-a2-cover-download.md` (GUI-A2: automatic online album-cover
-download, 7 tasks). Each plan has a matching design spec in `docs/superpowers/specs/`.
+Design specs and per-stage implementation plans are no longer kept in the repo — the
+`.superpowers/sdd/progress.md` ledger plus `git log` are the authoritative record of what is
+done and in flight. Work new features via the brainstorm → spec → plan → TDD method below,
+holding any working spec/plan in the session rather than committing it.
 
-## Coordinating two agents (Claude ⇄ Codex) — READ FIRST
+## Shared workflow skills (read these)
 
-`docs/agent-workflow/STATUS.md` is the shared, git-tracked coordination board: who's working,
-what's done, what's next. **Before touching `main`, read it and claim the Lock** by editing the
-gitignored `docs/agent-workflow/LOCK` file (set OWNER to yourself) — **never commit LOCK**; it is
-shared via the working tree on disk, so no commit is needed (this replaced ~150 `docs: work lock`
-noise commits). Release the Lock (set OWNER back to `FREE`) when you finish. Only ONE agent works
-`main` at a time — if the Lock is held by the other agent and recently active, do not start. True
-parallel work needs a separate branch/worktree (ask the user).
-
-## Shared workflow skills (read these — both agents use them)
-
-`docs/agent-workflow/` holds the tool-agnostic working method and the accumulated GTK4 pitfalls,
-so any agent works the same way without a plugin:
-
-- `docs/agent-workflow/development-method.md` — brainstorm → spec → plan → task-by-task TDD →
-  per-task review → stage close-out, and the iron rules (TDD, verify-before-done, hard gates,
-  isolation, honesty).
-- `docs/agent-workflow/building-gtk4-rust-apps.md` — GTK4/gtk4-rs 0.11 / GStreamer / MPRIS /
-  SQLite pitfalls, each a real caught bug. Read before touching frontend/platform code.
+- **`building-gtk4-rust-apps` skill** — GTK4/gtk4-rs 0.11 / GStreamer / MPRIS / SQLite pitfalls,
+  each a real caught bug. Read before touching frontend/platform code.
+- The **superpowers** process skills (brainstorming, TDD, systematic-debugging,
+  verification-before-completion) carry the iron rules: TDD, verify-before-done, hard gates,
+  isolation, honesty.
 
 ## How to resume (the method — no special tooling required)
 
-The project is built **plan-by-plan, task-by-task, test-first** (full detail in
-`docs/agent-workflow/development-method.md`). To continue:
+The project is built **plan-by-plan, task-by-task, test-first**. To continue:
 
-1. Open the current plan. Find the **first task whose steps are not yet done** (cross-check
-   the ledger + `git log`).
-2. Follow that task's steps literally — they contain the exact code and test cases. The
-   flow per task is: **write the failing test → run it, see it fail → implement the minimal
-   code → run tests, see them pass → run the full gate battery → commit.**
-3. Commit message is given verbatim in the task's final step. One commit per task (fixes get
-   their own follow-up commits). **No attribution footer. Do not push.**
+1. Read the ledger + `git log` to find where work left off. For new work, brainstorm and
+   plan the task before writing code (superpowers process skills).
+2. Work each task test-first: **write the failing test → run it, see it fail → implement the
+   minimal code → run tests, see them pass → run the full gate battery → commit.**
+3. One commit per task (fixes get their own follow-up commits). **No attribution footer. Do
+   not push.**
 4. Append one line to `.superpowers/sdd/progress.md`:
    `Task N: complete (commit <hash>, base <hash>, <one-line note>)`.
-5. Recommended: after each task, do (or dispatch) an adversarial review of the diff against
-   the task's spec before moving on — this pipeline has caught several real bugs that way.
+5. Recommended: after each task, do (or dispatch) an adversarial review of the diff before
+   moving on — this pipeline has caught several real bugs that way.
 
 ## Gates — ALL must pass before every commit
 
@@ -127,8 +113,8 @@ Next: **GUI-B** (tag editor with **multi-select batch edit** — mixed fields sh
 plus delete/trash) · **GUI-C** (browse bar + Rhythmbox column-layout import) · **GUI-D**
 (first-run wizard + session restore). Then release (Flatpak/Flathub, gettext, AppStream).
 
-Each next stage starts with a design spec (`docs/superpowers/specs/`) → an implementation plan
-(`docs/superpowers/plans/`) → task-by-task execution as above.
+Each next stage starts with a design spec → an implementation plan (held in-session, not
+committed) → task-by-task execution as above.
 
 ## Key conventions to match
 

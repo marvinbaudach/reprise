@@ -9,6 +9,7 @@ pub(super) struct InformationColumn {
 }
 
 impl InformationColumn {
+    #[allow(clippy::needless_pass_by_value)]
     pub(super) fn new(
         content: &impl IsA<gtk4::Widget>,
         sidebar: &adw::ToolbarView,

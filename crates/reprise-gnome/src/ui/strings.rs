@@ -190,18 +190,6 @@ pub const MAIN_MENU: &str = N_!("Main menu");
 pub const COMPACT_MODE: &str = N_!("Compact Mode");
 // Compact Mode opens through the menu action; the Library header has no duplicate control.
 pub const RESTORE_FULL_WINDOW: &str = N_!("Restore Full Window");
-pub const COMPACT_MENU: &str = N_!("Compact player menu");
-#[allow(dead_code)]
-pub const COMPACT_LAYOUT: &str = N_!("Layout");
-pub const COMPACT_LAYOUT_COVER: &str = N_!("Cover");
-pub const COMPACT_LAYOUT_PILL: &str = N_!("Pill");
-pub const COMPACT_LAYOUT_CARD: &str = N_!("Card");
-pub const COMPACT_COVER: &str = N_!("Album cover");
-pub const COMPACT_TITLE: &str = N_!("Track title");
-pub const COMPACT_ARTIST: &str = N_!("Track artist");
-pub const COMPACT_ALBUM: &str = N_!("Track album");
-pub const CURRENT_POSITION: &str = N_!("Current position");
-pub const TOTAL_DURATION: &str = N_!("Total duration");
 #[allow(dead_code)]
 pub const REPEAT_OFF: &str = N_!("Repeat Off");
 #[allow(dead_code)]
@@ -209,7 +197,6 @@ pub const REPEAT_ALL: &str = N_!("Repeat All");
 #[allow(dead_code)]
 pub const REPEAT_ONE: &str = N_!("Repeat One");
 pub const VIEW_MODE_SAVE_FAILED: &str = N_!("Could not save the window view");
-pub const COMPACT_LAYOUT_SAVE_FAILED: &str = N_!("Could not save the compact layout");
 pub const COMPACT_PLAYER_UNAVAILABLE: &str = N_!("Compact player is unavailable");
 pub const PREFERENCES: &str = N_!("Preferences");
 pub const PREFERENCES_APPEARANCE: &str = N_!("Appearance");
@@ -239,7 +226,6 @@ pub const REPLAYGAIN_OFF: &str = N_!("Off");
 pub const REPLAYGAIN_TRACK: &str = N_!("Per Track");
 pub const REPLAYGAIN_ALBUM: &str = N_!("Per Album");
 pub const AUDIO_TRANSITIONS: &str = N_!("Audio Transitions");
-pub const BADGE_NEW: &str = N_!("NEW");
 pub const CROSSFADE: &str = N_!("Crossfade");
 pub const CROSSFADE_SUBTITLE: &str = N_!("Smoothly blend the end of a track into the next");
 pub const CROSSFADE_OFF: &str = N_!("Off");
@@ -341,7 +327,6 @@ pub const RESTART_REQUIRED: &str = N_!("Restart required");
 pub const EDIT_COLUMN_LAYOUT: &str = N_!("Edit column layout…");
 pub const RESET_TO_DEFAULT: &str = N_!("Reset to Default");
 pub const CLOSE: &str = N_!("Close");
-pub const COLUMN_ALWAYS_VISIBLE: &str = N_!("Always visible");
 pub const DRAG_TO_REORDER: &str = N_!("Drag to reorder");
 pub const COLUMN_LAYOUT_SAVE_FAILED: &str = N_!("Could not save the column layout");
 pub const RHYTHMBOX_COLUMNS_IMPORTED: &str = N_!("Rhythmbox column layout imported");
@@ -930,3 +915,10 @@ pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
 // Compact menu items.
 pub const ALWAYS_ON_TOP: &str = N_!("Always on Top");
 pub const QUIT: &str = N_!("Quit");
+
+// Color scheme (dark/light/system preference).
+pub const COLOR_SCHEME: &str = N_!("Color Scheme");
+pub const COLOR_SCHEME_SUBTITLE: &str = N_!("Choose light, dark, or follow system preference");
+pub const SCHEME_LIGHT: &str = N_!("Light");
+pub const SCHEME_DARK: &str = N_!("Dark");
+pub const SCHEME_SYSTEM: &str = N_!("System");

@@ -12,6 +12,7 @@ use std::f64::consts::{FRAC_PI_2, PI};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::format::format_duration;
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
 /// is invoked so no `RefCell` borrow is held across the call).
@@ -27,12 +28,17 @@ const MAX_BAR_HEIGHT: f64 = 26.0;
 const UNPLAYED_ALPHA: f64 = 0.16;
 /// Alpha for bars in the drag ghost region.
 const GHOST_ALPHA: f64 = 0.40;
-/// Fallback bar height when no peaks are available.
-const FALLBACK_BAR_HEIGHT: f64 = 4.0;
 /// Build-up animation duration in seconds.
 const BUILD_DURATION_S: f64 = 0.3;
 /// Per-bar stagger increment in seconds.
 const BAR_STAGGER_S: f64 = 0.002;
+
+const FALLBACK_BAR_HEIGHT: f64 = 4.0;
+
+const MINI_CONTENT_HEIGHT: i32 = 16;
+const MINI_MAX_BAR_HEIGHT: f64 = 13.0;
+const MINI_MIN_BAR_HEIGHT: f64 = 2.0;
+const MINI_FALLBACK_BAR_HEIGHT: f64 = 3.0;
 
 /// Maps a pointer `x` within `width` to a 0..1 seek fraction.
 fn fraction_at(x: f64, width: f64) -> f64 {
@@ -107,6 +113,10 @@ struct State {
     // Build-up animation.
     build_progress: f64, // 0.0 = not started, 1.0 = complete
     build_start_us: i64, // 0 means not running
+    min_bar_height: f64,
+    max_bar_height: f64,
+    // Duration of the current track (ms), for formatted tooltip display.
+    duration_ms: i64,
 }
 
 #[derive(Clone)]
@@ -123,10 +133,28 @@ pub(super) struct WaveformSeek {
 
 impl WaveformSeek {
     pub(super) fn new() -> Self {
+        Self::new_with_heights(
+            CONTENT_HEIGHT,
+            MAX_BAR_HEIGHT,
+            MIN_BAR_HEIGHT,
+            FALLBACK_BAR_HEIGHT,
+        )
+    }
+
+    pub(super) fn new_mini() -> Self {
+        Self::new_with_heights(
+            MINI_CONTENT_HEIGHT,
+            MINI_MAX_BAR_HEIGHT,
+            MINI_MIN_BAR_HEIGHT,
+            MINI_FALLBACK_BAR_HEIGHT,
+        )
+    }
+
+    fn new_with_heights(content_height: i32, max_h: f64, min_h: f64, _fallback_h: f64) -> Self {
         let area = gtk4::DrawingArea::new();
         area.add_css_class(WAVEFORM_CSS_CLASS);
         area.set_hexpand(true);
-        area.set_content_height(CONTENT_HEIGHT);
+        area.set_content_height(content_height);
         area.set_valign(gtk4::Align::Center);
 
         let state = Rc::new(RefCell::new(State {
@@ -141,6 +169,9 @@ impl WaveformSeek {
             last_tick_us: 0,
             build_progress: 1.0,
             build_start_us: 0,
+            min_bar_height: min_h,
+            max_bar_height: max_h,
+            duration_ms: 0,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
         let tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>> = Rc::new(RefCell::new(None));
@@ -229,8 +260,7 @@ impl WaveformSeek {
         });
         area.add_controller(drag);
 
-        // Tooltip: show position as a percentage while hovering.
-        // Task 5 will upgrade this to the actual elapsed/total time display.
+        // Tooltip: show the formatted time at the hovered position.
         area.set_has_tooltip(true);
         area.connect_query_tooltip({
             let state = state.clone();
@@ -240,7 +270,13 @@ impl WaveformSeek {
                     return false;
                 }
                 let frac = fraction_at(x as f64, f64::from(area.width()));
-                tooltip.set_text(Some(&format!("{:.0}%", frac * 100.0)));
+                let text = if s.duration_ms > 0 {
+                    let position_ms = (frac * s.duration_ms as f64).round() as i64;
+                    format_duration(position_ms)
+                } else {
+                    format!("{:.0}%", frac * 100.0)
+                };
+                tooltip.set_text(Some(&text));
                 true
             }
         });
@@ -319,6 +355,12 @@ impl WaveformSeek {
         self.ensure_tick_callback();
     }
 
+    /// Set the track duration so the hover tooltip can show formatted time
+    /// instead of a raw percentage.
+    pub(super) fn set_duration(&self, duration_ms: i64) {
+        self.state.borrow_mut().duration_ms = duration_ms.max(0);
+    }
+
     pub(super) fn connect_seek(&self, callback: impl Fn(f64) + 'static) {
         *self.on_seek.borrow_mut() = Some(Rc::new(callback));
     }
@@ -379,7 +421,7 @@ fn draw(
     let h = f64::from(height);
 
     if state.display_peaks.is_empty() {
-        draw_fallback(area, cr, w, h, state.fraction);
+        draw_fallback(area, cr, w, h, state);
         return;
     }
 
@@ -409,7 +451,9 @@ fn draw(
             1.0
         };
 
-        let bar_h = (MIN_BAR_HEIGHT + magnitude * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT)) * stagger;
+        let bar_h = (state.min_bar_height
+            + magnitude * (state.max_bar_height - state.min_bar_height))
+            * stagger;
         // Guard against zero-height bars during early animation frames.
         if bar_h < 0.5 {
             continue;
@@ -485,7 +529,7 @@ fn draw_fallback(
     cr: &gtk4::cairo::Context,
     w: f64,
     h: f64,
-    fraction: f64,
+    state: &State,
 ) {
     let count = compute_bar_count(w as i32);
     if count == 0 {
@@ -505,11 +549,11 @@ fn draw_fallback(
         // Deterministic pseudo-random height using a simple hash.
         let seed = (index as u32).wrapping_mul(2654435761); // Knuth multiplicative hash
         let magnitude = (seed % 200) as f64 / 400.0 + 0.15; // range ~0.15..0.65
-        let bar_h = MIN_BAR_HEIGHT + magnitude * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT);
+        let bar_h = state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height);
         let x = index as f64 * slot;
         let y = (h - bar_h) / 2.0;
 
-        if bar_played(index, count, fraction) {
+        if bar_played(index, count, state.fraction) {
             cr.set_source_rgba(r, g, b, 0.5);
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * 0.6);
@@ -699,6 +743,9 @@ mod tests {
             last_tick_us: 0,
             build_progress: 1.0,
             build_start_us: 0,
+            min_bar_height: MIN_BAR_HEIGHT,
+            max_bar_height: MAX_BAR_HEIGHT,
+            duration_ms: 0,
         };
         ensure_resampled(&mut state, 200);
         assert!(state.display_peaks.is_empty());
@@ -718,6 +765,9 @@ mod tests {
             last_tick_us: 0,
             build_progress: 1.0,
             build_start_us: 0,
+            min_bar_height: MIN_BAR_HEIGHT,
+            max_bar_height: MAX_BAR_HEIGHT,
+            duration_ms: 0,
         };
         ensure_resampled(&mut state, 600);
         assert!(!state.display_peaks.is_empty());
@@ -727,5 +777,15 @@ mod tests {
         let before_len = state.display_peaks.len();
         ensure_resampled(&mut state, 600);
         assert_eq!(state.display_peaks.len(), before_len);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mini_waveform_has_16px_height() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let w = WaveformSeek::new_mini();
+        assert_eq!(w.widget().content_height(), 16);
     }
 }

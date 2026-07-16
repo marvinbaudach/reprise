@@ -1,5 +1,4 @@
 use reprise_core::playback::PlaybackState;
-use reprise_core::queue::Repeat;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct CompactPresentation {
@@ -11,8 +10,6 @@ pub(super) struct CompactPresentation {
     pub(super) position_ms: i64,
     pub(super) duration_ms: i64,
     pub(super) transport_enabled: bool,
-    pub(super) shuffled: bool,
-    pub(super) repeat: Repeat,
     pub(super) volume_percent: u8,
 }
 
@@ -27,8 +24,6 @@ impl Default for CompactPresentation {
             position_ms: 0,
             duration_ms: 0,
             transport_enabled: false,
-            shuffled: false,
-            repeat: Repeat::Off,
             volume_percent: 100,
         }
     }
@@ -68,7 +63,6 @@ pub(super) fn volume_percent(volume: f64) -> u8 {
 #[cfg(test)]
 mod tests {
     use reprise_core::playback::PlaybackState;
-    use reprise_core::queue::Repeat;
 
     use super::*;
 
@@ -84,8 +78,6 @@ mod tests {
         assert_eq!(state.position_ms, 0);
         assert_eq!(state.duration_ms, 0);
         assert!(!state.transport_enabled);
-        assert!(!state.shuffled);
-        assert_eq!(state.repeat, Repeat::Off);
         assert_eq!(state.volume_percent, 100);
     }
 
