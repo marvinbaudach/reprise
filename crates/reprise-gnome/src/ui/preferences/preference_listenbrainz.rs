@@ -14,7 +14,7 @@ use reprise_core::scrobbling::{ListenBrainzClient, ScrobblerTransport, Transport
 use rusqlite::Connection;
 
 use crate::ui::scrobble_runtime::{ConnectionStatus, ScrobbleRuntime};
-use crate::ui::{listenbrainz_secret, strings};
+use crate::ui::{listenbrainz_secret, one_shot_task, strings};
 
 use super::PreferencesContext;
 
@@ -423,26 +423,22 @@ impl PreferencesContext {
     fn validate_and_save_listenbrainz(self: &Rc<Self>, row: &adw::ExpanderRow, token: String) {
         self.listenbrainz
             .report_status(&ConnectionStatus::Connecting);
-        let (sender, receiver) = async_channel::bounded(1);
-        let spawned = std::thread::Builder::new()
-            .name("reprise-listenbrainz-validate".to_string())
-            .spawn({
-                let token = token.clone();
-                move || {
-                    let result = ListenBrainzClient::new().validate_token(&token);
-                    let _ = sender.send_blocking(result);
-                }
-            });
-        if let Err(error) = spawned {
-            tracing::warn!(%error, "could not start ListenBrainz validation worker");
-            self.listenbrainz.report_status(&ConnectionStatus::Error {
-                pending: pending_count(&self.conn),
-                submitted: 0,
-            });
-            self.restore_listenbrainz_switch(row);
-            self.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
-            return;
-        }
+        let receiver = match one_shot_task::spawn("reprise-listenbrainz-validate", {
+            let token = token.clone();
+            move || ListenBrainzClient::new().validate_token(&token)
+        }) {
+            Ok(receiver) => receiver,
+            Err(error) => {
+                tracing::warn!(%error, "could not start ListenBrainz validation worker");
+                self.listenbrainz.report_status(&ConnectionStatus::Error {
+                    pending: pending_count(&self.conn),
+                    submitted: 0,
+                });
+                self.restore_listenbrainz_switch(row);
+                self.show_listenbrainz_error(strings::LISTENBRAINZ_VALIDATION_ERROR);
+                return;
+            }
+        };
 
         let weak = Rc::downgrade(self);
         let row = row.clone();

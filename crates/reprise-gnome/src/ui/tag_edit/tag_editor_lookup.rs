@@ -8,7 +8,7 @@ use gtk4::prelude::*;
 use reprise_core::release_lookup;
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
-use crate::ui::strings;
+use crate::ui::{one_shot_task, strings};
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct LookupWidgets<'a> {
@@ -55,18 +55,18 @@ pub(in crate::ui) fn wire(is_multi: bool, widgets: LookupWidgets<'_>, update: &R
 
         button.set_sensitive(false);
         hint.set_text(&strings::text(strings::TAG_FETCH_LOADING));
-        let (tx, rx) =
-            async_channel::bounded::<Result<release_lookup::ReleaseLookupResult, String>>(1);
-        if let Err(error) = std::thread::Builder::new()
-            .name("reprise-mb-lookup".into())
-            .spawn(move || {
-                let result = release_lookup::lookup_release(&artist_name, &album_name)
-                    .map_err(|error| error.to_string());
-                let _ = tx.send_blocking(result);
-            })
-        {
-            tracing::warn!(%error, "could not start MusicBrainz lookup thread");
-        }
+        let rx = match one_shot_task::spawn("reprise-mb-lookup", move || {
+            release_lookup::lookup_release(&artist_name, &album_name)
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(receiver) => receiver,
+            Err(error) => {
+                tracing::warn!(%error, "could not start MusicBrainz lookup thread");
+                button.set_sensitive(true);
+                hint.set_text(&strings::text(strings::TAG_FETCH_NETWORK_ERROR));
+                return;
+            }
+        };
 
         let button = button.clone();
         let hint = hint.clone();

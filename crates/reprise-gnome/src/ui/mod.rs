@@ -37,6 +37,7 @@ mod library_views;
 mod lyrics;
 pub mod mpris_mirror;
 mod notifications;
+mod one_shot_task;
 mod playback;
 pub(crate) mod player_bar;
 mod playlists;

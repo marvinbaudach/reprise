@@ -13,6 +13,7 @@ use reprise_core::library::tag_edit::{
     apply_track_edit_batch_ignored, EditableTags, TagBatchReport, TagPatch, TrackEditPatch,
 };
 
+use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
@@ -117,24 +118,20 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEdi
         );
         return;
     };
-    let (sender, receiver) = async_channel::bounded(1);
     let tracks_for_worker = tracks.clone();
     let tags_changed = !patch.tags.is_empty();
-    let spawned = std::thread::Builder::new()
-        .name("reprise-tag-edit".into())
-        .spawn(move || {
-            let result = reprise_core::db::open_migrated(Some(&db_path))
-                .map(|mut conn| {
-                    apply_track_edit_batch_ignored(&mut conn, &tracks_for_worker, &patch)
-                })
-                .map_err(|error| error.to_string());
-            let _ = sender.try_send(result);
-        });
-    if let Err(error) = spawned {
-        tracing::warn!(%error, "could not start tag-edit worker");
-        show_toast(shared, &strings::text(strings::TAG_EDIT_WORKER_FAILED));
-        return;
-    }
+    let receiver = match one_shot_task::spawn("reprise-tag-edit", move || {
+        reprise_core::db::open_migrated(Some(&db_path))
+            .map(|mut conn| apply_track_edit_batch_ignored(&mut conn, &tracks_for_worker, &patch))
+            .map_err(|error| error.to_string())
+    }) {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            tracing::warn!(%error, "could not start tag-edit worker");
+            show_toast(shared, &strings::text(strings::TAG_EDIT_WORKER_FAILED));
+            return;
+        }
+    };
 
     let shared_weak = Rc::downgrade(shared);
     glib::spawn_future_local(async move {
