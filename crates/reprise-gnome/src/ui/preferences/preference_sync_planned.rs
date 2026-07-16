@@ -285,6 +285,20 @@ fn delta_copy(device: &DeviceView) -> (String, String, f64) {
             "Updating the device inventory".into(),
             1.0,
         ),
+        // Fresh device with nothing selected: prompt to choose rather than
+        // claim it is already in sync (empty selection → empty delta).
+        PlannedSyncPhase::Idle
+            if matches!(
+                &device.settings.selection,
+                DeviceSelection::Sources(sources) if sources.is_empty()
+            ) =>
+        {
+            (
+                "Nothing selected to sync yet".into(),
+                "Tick a playlist or Entire library above to get started.".into(),
+                0.0,
+            )
+        }
         PlannedSyncPhase::Idle => device.delta.as_ref().map_or_else(
             || ("Ready to synchronize".into(), String::new(), 0.0),
             |delta| {

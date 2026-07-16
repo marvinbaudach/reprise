@@ -298,3 +298,54 @@ fn selection_resolves_playlist_union_without_duplicates_and_entire_library_exclu
         vec![1, 3, 2]
     );
 }
+
+/// End-to-end repro of the fresh-device "Entire library" flow: selection →
+/// `query_sync_tracks` (which silently drops rows whose files are absent on
+/// disk, hence the real temp files) → transfer plan → delta. A fresh device
+/// (empty `device_files`) must see every selected track in `to_copy` — the
+/// UI's "Everything in sync ✓" for this state was a rendering bug, not a
+/// delta bug.
+#[test]
+fn entire_library_selection_computes_a_full_copy_delta_for_a_fresh_device() {
+    let conn = migrated();
+    let dir = tempfile::tempdir().unwrap();
+    for (id, title) in [(1, "One"), (2, "Two"), (3, "Three")] {
+        let path = dir.path().join(format!("{title}.flac"));
+        std::fs::write(&path, b"flac").unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, artist, album, duration_ms, added_at) \
+             VALUES (?1, ?2, ?3, 'Artist', 'Album', 180000, 0)",
+            rusqlite::params![id, path.to_string_lossy(), title],
+        )
+        .unwrap();
+    }
+    // A missing-flagged row and a row whose file vanished must be skipped.
+    conn.execute_batch(
+        "INSERT INTO tracks (id, path, title, artist, album, added_at, missing) VALUES
+         (4, '/gone/away.flac', 'Vanished', 'Artist', 'Album', 0, 0),
+         (5, '/marked/missing.flac', 'Missing', 'Artist', 'Album', 0, 1);",
+    )
+    .unwrap();
+
+    let ids = resolve_selection_track_ids(&conn, &DeviceSelection::EntireLibrary).unwrap();
+    let tracks = crate::queries::query_sync_tracks(&conn, &ids).unwrap();
+    let plan = build_transfer_plan(tracks, 0);
+    let candidates = plan
+        .iter()
+        .map(|entry| SyncCandidate {
+            track_id: entry.track.id,
+            device_path: entry.device_path.clone(),
+            transfer_bytes: entry.expected_bytes,
+            source_mtime: entry.track.source_mtime,
+        })
+        .collect::<Vec<_>>();
+    let files = load_device_files(&conn, "serial-fresh").unwrap();
+    assert!(files.is_empty(), "fresh device starts with no inventory");
+
+    let delta = compute_delta(&candidates, &files, true);
+    let mut to_copy = delta.to_copy.clone();
+    to_copy.sort_unstable();
+    assert_eq!(to_copy, vec![1, 2, 3], "every on-disk track is copied");
+    assert!(delta.to_remove.is_empty());
+    assert!(delta.bytes > 0);
+}

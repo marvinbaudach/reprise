@@ -124,6 +124,15 @@ fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
     let mut devices = monitor
         .mounts()
         .iter()
+        // GVfs exposes MTP phones twice: the GProxyVolumeMonitor mount carries
+        // the human name + phone icon ("Pixel 10 Pro XL", themed [phone]),
+        // while the underlying GDaemonMount is marked SHADOWED and reports the
+        // generic "mtp" name and a multimedia-player icon. Per GIO's contract
+        // (g_mount_is_shadowed), shadowed mounts must not be shown — without
+        // this filter both project to the same root URI and the shadowed
+        // entry's name/icon win, which is how a Pixel ended up labelled "mtp"
+        // with an iPod icon.
+        .filter(|mount| !mount.is_shadowed())
         .filter_map(descriptor_from_mount)
         .collect::<Vec<_>>();
     devices.sort_by(|left, right| left.name.cmp(&right.name));
