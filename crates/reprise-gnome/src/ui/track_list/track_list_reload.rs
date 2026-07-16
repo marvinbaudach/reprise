@@ -1,5 +1,6 @@
 //! Query reload and source/filter transitions for TrackList.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::gio::prelude::*;
@@ -11,6 +12,10 @@ use crate::ui::track_list_columns::{apply_empty_state, empty_state_for};
 use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
+
+fn source_snapshot(source: &RefCell<ViewSource>) -> ViewSource {
+    source.borrow().clone()
+}
 
 /// Sets `shared.filter` and reloads — the one place that mutates the filter
 /// before reloading, shared by `TrackList::set_filter` (the typed-search
@@ -41,9 +46,10 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSour
     let new_sort = resolve_sort_on_switch(&shared.sort.borrow(), &source);
     *shared.sort.borrow_mut() = new_sort;
     *shared.source.borrow_mut() = source;
+    let source = source_snapshot(&shared.source);
     shared
         .browse_bar
-        .set_library_visible(matches!(*shared.source.borrow(), ViewSource::Library));
+        .set_library_visible(matches!(source, ViewSource::Library));
     reload(shared);
 }
 
@@ -100,4 +106,22 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
     );
 
     (shared.on_reload)(&source, count, &filter, &browse);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use reprise_core::view_source::ViewSource;
+
+    #[test]
+    fn source_snapshot_releases_the_borrow_before_reentrant_work() {
+        let source = RefCell::new(ViewSource::Library);
+
+        let snapshot = super::source_snapshot(&source);
+        *source.borrow_mut() = ViewSource::Queue;
+
+        assert!(matches!(snapshot, ViewSource::Library));
+        assert!(matches!(*source.borrow(), ViewSource::Queue));
+    }
 }

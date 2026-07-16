@@ -18,6 +18,10 @@ use super::strings;
 type OnScanComplete = Rc<dyn Fn()>;
 type OnScanStateChanged = Rc<dyn Fn(bool)>;
 
+fn cloned_slot<T: Clone>(slot: &RefCell<Option<T>>) -> Option<T> {
+    slot.borrow().clone()
+}
+
 #[derive(Clone, Default)]
 pub(in crate::ui) struct ScanCompletion(Rc<RefCell<Option<OnScanComplete>>>);
 
@@ -175,12 +179,10 @@ impl ScanControls {
         for view in self.live_progress_views() {
             view.show(progress);
         }
-        if let Some(indicator) = self
-            .empty_indicator
-            .borrow()
+        let indicator = cloned_slot(&self.empty_indicator)
             .as_ref()
-            .and_then(WeakEmptyScanIndicator::upgrade)
-        {
+            .and_then(WeakEmptyScanIndicator::upgrade);
+        if let Some(indicator) = indicator {
             indicator.show(progress);
         }
         if let Some(button) = self.sidebar_toggle() {
@@ -193,12 +195,10 @@ impl ScanControls {
         for view in self.live_progress_views() {
             view.finish();
         }
-        if let Some(indicator) = self
-            .empty_indicator
-            .borrow()
+        let indicator = cloned_slot(&self.empty_indicator)
             .as_ref()
-            .and_then(WeakEmptyScanIndicator::upgrade)
-        {
+            .and_then(WeakEmptyScanIndicator::upgrade);
+        if let Some(indicator) = indicator {
             indicator.finish();
         }
         if let Some(button) = self.sidebar_toggle() {
@@ -286,5 +286,21 @@ fn progress_percent(done: u64, total: u64) -> u32 {
         0
     } else {
         (done as f64 / total as f64 * 100.0).round() as u32
+    }
+}
+
+#[cfg(test)]
+mod refcell_tests {
+    use std::cell::RefCell;
+
+    #[test]
+    fn cloned_slot_releases_the_borrow_before_reentrant_work() {
+        let slot = RefCell::new(Some(String::from("indicator")));
+
+        let cloned = super::cloned_slot(&slot);
+        slot.borrow_mut().take();
+
+        assert_eq!(cloned.as_deref(), Some("indicator"));
+        assert!(slot.borrow().is_none());
     }
 }
