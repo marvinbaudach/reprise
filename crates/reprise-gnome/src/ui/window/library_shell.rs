@@ -211,7 +211,7 @@ pub(super) fn build(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
     sidebar: &Sidebar,
-    toast_overlay: &adw::ToastOverlay,
+    content: &impl IsA<gtk4::Widget>,
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     runtime: &Rc<ArtistNewsRuntime>,
@@ -221,7 +221,7 @@ pub(super) fn build(
         .child(sidebar.widget())
         .build();
     let info_panel = InfoPanel::new(
-        toast_overlay,
+        content,
         window,
         conn.clone(),
         runtime.clone(),
