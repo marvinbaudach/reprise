@@ -236,6 +236,15 @@ fn fat_safe_paths_use_album_hierarchy_truncate_components_and_suffix_collisions(
 }
 
 #[test]
+fn component_truncation_does_not_reintroduce_a_trailing_dot() {
+    let input = format!("{}.b", "a".repeat(119));
+
+    let sanitized = sanitize_component(&input, "Unknown");
+
+    assert_eq!(sanitized, "a".repeat(119));
+}
+
+#[test]
 fn named_playlist_is_replaced_with_relative_utf8_entries() {
     let rendered = render_named_playlist(&[
         DevicePlaylistEntry {
