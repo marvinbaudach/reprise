@@ -56,6 +56,20 @@ fn centered_scroll_value(position: u32, n_rows: u32, upper: f64, page_size: f64)
     Some(target.clamp(0.0, upper - page_size))
 }
 
+/// Resolves the adjustment + value that would center row `position`, or
+/// `None` when the list has no usable geometry (not yet allocated, or it
+/// fits the viewport entirely).
+fn centered_scroll_target(
+    column_view: &gtk4::ColumnView,
+    position: u32,
+) -> Option<(gtk4::Adjustment, f64)> {
+    let n_rows = column_view.model().map_or(0, |model| model.n_items());
+    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(column_view)?;
+    let value =
+        centered_scroll_value(position, n_rows, adjustment.upper(), adjustment.page_size())?;
+    Some((adjustment, value))
+}
+
 pub(super) fn wire(
     player: Option<&Rc<PlayerController>>,
     track_list: &Rc<TrackList>,
@@ -271,44 +285,45 @@ impl TrackList {
         // it with the selection (auto-follow, kept by design).
         self.shared.model.invalidate_window_at(position);
         self.shared.selection.select_item(position, true);
-        // Defer the scroll to an idle tick rather than doing it inline.
-        // During session restore this runs while the window is still being
-        // constructed — before the `ColumnView` has completed its first size
-        // allocation — and a scroll issued that early corrupts the row
-        // layout near the top of the list, leaving a persistent phantom gap
-        // (an unrendered row) that never resolves on scroll. Running it on the
-        // next idle lets GTK finish the initial allocation first; for the live
-        // track-change path (view already realized) the one-tick delay is
-        // imperceptible.
+        // Centering happens DIRECTLY through the vadjustment and — when the
+        // list already has usable geometry (the live path: a double-clicked
+        // or auto-advanced row) — SYNCHRONOUSLY, in the same main-loop
+        // iteration as the invalidate/select above. Both halves matter:
         //
-        // Centering happens DIRECTLY through the vadjustment, in one motion:
-        // an earlier version called `scroll_to` first (edge-snap) and centered
-        // on a second idle, which read as one odd jump followed by a second
-        // one — most visibly on a double-clicked, already-visible row.
-        // `scroll_to` remains only as the fallback for a not-yet-allocated
-        // list, where the adjustment has no geometry to center against.
+        // - Direct adjustment write: `scroll_to` only edge-snaps, so an
+        //   earlier two-phase version (snap, then center) read as two jumps.
+        // - Same frame: the `items_changed` above recreates the focused row
+        //   widget, and GTK's focus restore can scroll on its own; a deferred
+        //   (idle) centering let that intermediate jump render for one frame
+        //   ("scrolls up, then back down"). Centering before the next frame
+        //   leaves the row visible mid-viewport, so the focus restore has
+        //   nothing left to scroll.
+        //
+        // The idle + `scroll_to` fallback only remains for a list with no
+        // geometry yet (session restore during window construction — where a
+        // scroll issued inline used to corrupt the row layout, and nothing is
+        // on screen anyway, so the two-phase motion is invisible).
         let column_view = self.shared.column_view.clone();
-        gtk4::glib::idle_add_local_once(move || {
-            let n_rows = column_view.model().map_or(0, |model| model.n_items());
-            let centered =
-                gtk4::prelude::ScrollableExt::vadjustment(&column_view).and_then(|adjustment| {
-                    centered_scroll_value(
-                        position,
-                        n_rows,
-                        adjustment.upper(),
-                        adjustment.page_size(),
-                    )
-                    .map(|value| (adjustment, value))
+        match centered_scroll_target(&column_view, position) {
+            Some((adjustment, value)) => adjustment.set_value(value),
+            None => {
+                gtk4::glib::idle_add_local_once(move || {
+                    match centered_scroll_target(&column_view, position) {
+                        Some((adjustment, value)) => adjustment.set_value(value),
+                        // Still no usable geometry (or the list fits the
+                        // viewport): make the row visible; nothing to center.
+                        None => {
+                            column_view.scroll_to(
+                                position,
+                                None,
+                                gtk4::ListScrollFlags::NONE,
+                                None,
+                            );
+                        }
+                    }
                 });
-            match centered {
-                Some((adjustment, value)) => adjustment.set_value(value),
-                // No usable geometry yet (or the list fits the viewport):
-                // fall back to making the row visible; nothing to center.
-                None => {
-                    column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, None);
-                }
             }
-        });
+        }
         tracing::info!(track_id, position, "table selection followed current track");
     }
 
