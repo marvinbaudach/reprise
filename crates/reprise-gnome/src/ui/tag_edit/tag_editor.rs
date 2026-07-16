@@ -21,6 +21,7 @@ use reprise_core::library::tag_edit::{
     TrackEditPatch,
 };
 use reprise_core::queries::autocomplete::AutocompleteColumn;
+use reprise_core::release_lookup;
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
@@ -580,6 +581,100 @@ pub fn present(
     let album_ac = Rc::new(album_ac);
     let album_artist_ac = Rc::new(album_artist_ac);
     let genre_ac = Rc::new(genre_ac);
+
+    // ── MusicBrainz fetch button (single-track only) ─────────────────────
+
+    if !is_multi {
+        mb_btn.set_sensitive(true);
+        let mb_btn_c = mb_btn.clone();
+        let mb_hint_c = mb_hint.clone();
+        let year_row_c = year_row.clone();
+        let album_artist_ac_c = album_artist_ac.clone();
+        let genre_ac_c = genre_ac.clone();
+        let artist_ac_c = artist_ac.clone();
+        let album_ac_c = album_ac.clone();
+        let update = update_save_state.clone();
+
+        mb_btn.connect_clicked(move |_| {
+            let artist = artist_ac_c.text();
+            let album = album_ac_c.text();
+
+            if artist.trim().is_empty() && album.trim().is_empty() {
+                mb_hint_c.set_text(&strings::text(strings::TAG_FETCH_NO_RESULTS));
+                return;
+            }
+
+            mb_btn_c.set_sensitive(false);
+            mb_hint_c.set_text(&strings::text(strings::TAG_FETCH_LOADING));
+
+            let (tx, rx) = async_channel::bounded::<Result<release_lookup::ReleaseLookupResult, String>>(1);
+
+            if let Err(error) = std::thread::Builder::new()
+                .name("reprise-mb-lookup".into())
+                .spawn(move || {
+                    let result = release_lookup::lookup_release(&artist, &album)
+                        .map_err(|e| e.to_string());
+                    let _ = tx.send_blocking(result);
+                })
+            {
+                tracing::warn!(%error, "could not start MusicBrainz lookup thread");
+            }
+
+            let mb_btn_r = mb_btn_c.clone();
+            let mb_hint_r = mb_hint_c.clone();
+            let year_row_r = year_row_c.clone();
+            let album_artist_ac_r = album_artist_ac_c.clone();
+            let genre_ac_r = genre_ac_c.clone();
+            let update_r = update.clone();
+
+            glib::spawn_future_local(async move {
+                let Ok(result) = rx.recv().await else {
+                    mb_btn_r.set_sensitive(true);
+                    return;
+                };
+                mb_btn_r.set_sensitive(true);
+
+                match result {
+                    Err(error) => {
+                        tracing::warn!(%error, "MusicBrainz lookup failed");
+                        mb_hint_r.set_text(&strings::text(strings::TAG_FETCH_NETWORK_ERROR));
+                    }
+                    Ok(lookup) => {
+                        let mut filled_any = false;
+
+                        if let Some(year) = lookup.year {
+                            if year_row_r.text().is_empty() {
+                                year_row_r.set_text(&year.to_string());
+                                filled_any = true;
+                            }
+                        }
+                        if let Some(album_artist) = &lookup.album_artist {
+                            if album_artist_ac_r.text().is_empty() {
+                                album_artist_ac_r.set_text(album_artist);
+                                filled_any = true;
+                            }
+                        }
+                        if let Some(genre) = &lookup.genre {
+                            if genre_ac_r.text().is_empty() {
+                                genre_ac_r.set_text(genre);
+                                filled_any = true;
+                            }
+                        }
+
+                        // set_text on entryrows/autocompletes fires connect_changed
+                        // which sets dirty flags, but update_save_state must be
+                        // called to refresh the pending bar correctly.
+                        if filled_any {
+                            update_r();
+                            mb_hint_r.set_text(&strings::text(strings::TAG_FETCH_FIELDS_FILLED));
+                        } else {
+                            mb_hint_r.set_text(&strings::text(strings::TAG_FETCH_NOTHING_TO_FILL));
+                        }
+                    }
+                }
+            });
+        });
+    }
 
     let do_save = {
         let dirty = dirty.clone();
