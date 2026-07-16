@@ -297,6 +297,20 @@ pub fn build(
         artist_view.widget(),
     );
     super::library_shell::wire_album_view(&library_views, &album_view, &track_list);
+    if let Some(player) = &player {
+        let grid = album_view.grid_widget().downgrade();
+        player.set_on_playback_state_changed_album(move |state| {
+            let Some(grid) = grid.upgrade() else { return };
+            match state {
+                reprise_core::playback::PlaybackState::Paused => {
+                    grid.add_css_class("playback-paused");
+                }
+                _ => {
+                    grid.remove_css_class("playback-paused");
+                }
+            }
+        });
+    }
     super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list);
     super::library_shell::arm_smoke_library_view(&library_views);
     let library_title = Rc::new(super::library_chrome::build_library_title(

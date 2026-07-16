@@ -92,12 +92,24 @@ impl PlayerController {
         *self.playback_state_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// Fans a coarse playback-state change out to the track list. Clones the
-    /// callback out of the `RefCell` before invoking it — never holds the
-    /// borrow across the call — per this project's reentrancy discipline.
+    pub(super) fn set_on_playback_state_changed_album(
+        &self,
+        callback: impl Fn(PlaybackState) + 'static,
+    ) {
+        *self.playback_state_changed_album.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Fans a coarse playback-state change out to all registered listeners
+    /// (track list + album grid). Clones callbacks out of their `RefCell`s
+    /// before invoking — never holds borrows across calls — per this
+    /// project's reentrancy discipline.
     pub(super) fn notify_playback_state_changed(&self, state: PlaybackState) {
         let callback = self.playback_state_changed.borrow().clone();
         if let Some(callback) = callback {
+            callback(state);
+        }
+        let album_cb = self.playback_state_changed_album.borrow().clone();
+        if let Some(callback) = album_cb {
             callback(state);
         }
     }
