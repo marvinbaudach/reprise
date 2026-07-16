@@ -39,6 +39,7 @@ require_pattern 'style_context' scripts/check-architecture.sh
 require_pattern 'reqwest::blocking' scripts/check-architecture.sh
 require_pattern 'gst-launch-1\\.0' scripts/check-architecture.sh
 require_pattern 'must not depend directly on GStreamer' scripts/check-architecture.sh
+require_pattern 'must receive platform backends through core contracts' scripts/check-architecture.sh
 require_pattern 'check-merge-readiness.sh' .githooks/pre-push
 require_pattern 'core.hooksPath .githooks' scripts/install-git-hooks.sh
 require_pattern '^## Current automated baseline' TESTING.md

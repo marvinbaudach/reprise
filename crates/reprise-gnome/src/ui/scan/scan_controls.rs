@@ -8,6 +8,7 @@ use std::sync::Arc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library::scanner::ScanProgress;
+use reprise_core::waveform::WaveformBackend;
 
 use super::scan_progress::{
     EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView,
@@ -61,10 +62,15 @@ pub(super) struct ScanControls {
     on_scan_state_changed: Rc<RefCell<Option<OnScanStateChanged>>>,
     empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
     sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
+    waveform_backend: Arc<dyn WaveformBackend>,
 }
 
 impl ScanControls {
-    pub(super) fn new(button: &gtk4::Button, progress: &ScanProgressView) -> Self {
+    pub(super) fn new(
+        button: &gtk4::Button,
+        progress: &ScanProgressView,
+        waveform_backend: Arc<dyn WaveformBackend>,
+    ) -> Self {
         Self {
             button: button.clone(),
             primary_progress: progress.clone(),
@@ -75,6 +81,7 @@ impl ScanControls {
             on_scan_state_changed: Rc::new(RefCell::new(None)),
             empty_indicator: Rc::new(RefCell::new(None)),
             sidebar_toggle: Rc::new(RefCell::new(None)),
+            waveform_backend,
         }
     }
 
@@ -102,6 +109,10 @@ impl ScanControls {
 
     pub(super) fn is_cancel_requested(&self) -> bool {
         self.cancellation.is_requested()
+    }
+
+    pub(super) fn waveform_backend(&self) -> Arc<dyn WaveformBackend> {
+        self.waveform_backend.clone()
     }
 
     pub(super) fn set_on_scan_state_changed(&self, callback: impl Fn(bool) + 'static) {
