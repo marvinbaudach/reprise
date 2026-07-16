@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+# Pre-push receives ref updates on stdin. Do not let the nested fetch consume
+# that protocol stream while refreshing origin/main.
+exec "$repo_root/scripts/check-merge-readiness.sh" </dev/null
