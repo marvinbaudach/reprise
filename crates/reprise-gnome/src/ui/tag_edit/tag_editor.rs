@@ -599,7 +599,7 @@ pub fn present(
             let artist = artist_ac_c.text();
             let album = album_ac_c.text();
 
-            if artist.trim().is_empty() && album.trim().is_empty() {
+            if artist.trim().is_empty() || album.trim().is_empty() {
                 mb_hint_c.set_text(&strings::text(strings::TAG_FETCH_NO_RESULTS));
                 return;
             }
@@ -637,7 +637,12 @@ pub fn present(
                 match result {
                     Err(error) => {
                         tracing::warn!(%error, "MusicBrainz lookup failed");
-                        mb_hint_r.set_text(&strings::text(strings::TAG_FETCH_NETWORK_ERROR));
+                        let msg = if error.contains("no matching") {
+                            strings::TAG_FETCH_NO_RESULTS
+                        } else {
+                            strings::TAG_FETCH_NETWORK_ERROR
+                        };
+                        mb_hint_r.set_text(&strings::text(msg));
                     }
                     Ok(lookup) => {
                         let mut filled_any = false;
