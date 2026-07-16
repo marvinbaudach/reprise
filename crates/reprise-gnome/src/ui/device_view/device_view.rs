@@ -399,6 +399,22 @@ fn phase_copy(device: &DeviceView) -> (String, String, f64) {
             },
         ),
         PlannedSyncPhase::Finishing => ("Finishing synchronization…".into(), String::new(), 1.0),
+        // Nothing selected yet (fresh device, empty selection): guide the user
+        // to Sync settings instead of the misleading "Everything in sync ✓" —
+        // an empty selection produces an empty delta, which is not the same as
+        // "already up to date". Keyed on the selection itself, not the delta.
+        PlannedSyncPhase::Idle
+            if matches!(
+                &device.settings.selection,
+                reprise_core::device_sync::DeviceSelection::Sources(sources) if sources.is_empty()
+            ) =>
+        {
+            (
+                "Nothing selected to sync yet".into(),
+                "Open Sync settings to choose playlists or the entire library.".into(),
+                0.0,
+            )
+        }
         PlannedSyncPhase::Idle => device.delta.as_ref().map_or_else(
             || ("Ready to synchronize".into(), String::new(), 0.0),
             |delta| {
