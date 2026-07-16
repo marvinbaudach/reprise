@@ -264,6 +264,14 @@ mod style;
 pub mod tag_edit_flow;
 #[path = "tag_edit/tag_editor.rs"]
 pub mod tag_editor;
+#[path = "tag_edit/tag_editor_dirty.rs"]
+mod tag_editor_dirty;
+#[path = "tag_edit/tag_editor_form.rs"]
+mod tag_editor_form;
+#[path = "tag_edit/tag_editor_lookup.rs"]
+mod tag_editor_lookup;
+#[path = "tag_edit/tag_editor_save.rs"]
+mod tag_editor_save;
 #[path = "tag_edit/tag_editor_state.rs"]
 mod tag_editor_state;
 #[path = "tag_edit/tag_editor_style.rs"]

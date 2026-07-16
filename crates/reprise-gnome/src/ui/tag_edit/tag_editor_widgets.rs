@@ -13,7 +13,8 @@ use reprise_core::library::tag_edit::{EditableTagSummary, MixedValue};
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
-use crate::ui::tag_editor::{UpdateCallback, STAR_FILLED, STAR_OUTLINE};
+use crate::ui::tag_editor::{STAR_FILLED, STAR_OUTLINE};
+use crate::ui::tag_editor_dirty::UpdateCallback;
 use crate::ui::tag_editor_state::{
     FIELD_ALBUM, FIELD_ALBUM_ARTIST, FIELD_ARTIST, FIELD_GENRE, FIELD_YEAR, RATING_MAX,
 };
