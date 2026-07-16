@@ -79,6 +79,32 @@ fn entire_library_uses_the_documented_scalar_json_shape() {
 }
 
 #[test]
+fn unknown_selection_json_is_rejected_instead_of_becoming_an_empty_selection() {
+    let conn = migrated();
+    load_or_create_settings(&conn, "serial-unknown", "Phone").unwrap();
+    conn.execute(
+        "UPDATE device_settings SET selection_json = '{}' WHERE device_serial = 'serial-unknown'",
+        [],
+    )
+    .unwrap();
+
+    assert!(load_or_create_settings(&conn, "serial-unknown", "Phone").is_err());
+}
+
+#[test]
+fn empty_selection_json_remains_a_valid_empty_source_selection() {
+    let conn = migrated();
+    load_or_create_settings(&conn, "serial-empty", "Phone").unwrap();
+
+    assert_eq!(
+        load_or_create_settings(&conn, "serial-empty", "Phone")
+            .unwrap()
+            .selection,
+        DeviceSelection::Sources(Vec::new())
+    );
+}
+
+#[test]
 fn device_file_inventory_round_trips_and_pinning_is_per_device() {
     let conn = migrated();
     conn.execute(

@@ -276,14 +276,24 @@ fn decode_selection(value: &str) -> Result<DeviceSelection, serde_json::Error> {
     if decoded.as_str() == Some("entire_library") {
         return Ok(DeviceSelection::EntireLibrary);
     }
-    let sources = decoded
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(serde_json::Value::as_str)
-        .filter_map(SelectionSource::decode)
-        .collect();
+    let Some(values) = decoded.as_array() else {
+        return Err(unknown_selection_error());
+    };
+    let Some(sources) = values
+        .iter()
+        .map(|value| value.as_str().and_then(SelectionSource::decode))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Err(unknown_selection_error());
+    };
     Ok(DeviceSelection::Sources(sources))
+}
+
+fn unknown_selection_error() -> serde_json::Error {
+    serde_json::Error::io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "unrecognized synchronization selection shape",
+    ))
 }
 
 fn normalized_bitrate(value: u32) -> u32 {
