@@ -40,6 +40,7 @@ fn app_css() -> String {
         super::browse_bar::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
+        super::sidebar_device_card::css(),
         super::list_density::css(),
         super::library_chrome::css(),
         super::library_view_css::css(),
