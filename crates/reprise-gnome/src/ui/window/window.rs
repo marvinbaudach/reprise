@@ -837,7 +837,12 @@ pub fn build(
     app.set_accels_for_action("win.preferences", &["<Control>comma"]);
     app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
     app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
-    super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view, &sidebar_page);
+    super::window_navigation::wire_sidebar_toggle(
+        &sidebar_toggle,
+        &split_view,
+        &sidebar_page,
+        conn,
+    );
     let show_content_if_collapsed = super::window_navigation::show_content_callback(&split_view);
     super::library_shell::wire_source_routing(
         &sidebar,
