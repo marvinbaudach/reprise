@@ -265,19 +265,95 @@ impl From<gio::glib::Error> for DeviceIoError {
 #[derive(Clone)]
 pub struct DeviceStorage {
     root: gio::File,
+    /// Cached result of [`Self::storage_root`] — resolving it enumerates the
+    /// device root, which is a round-trip worth doing once per instance.
+    storage: RefCell<Option<gio::File>>,
 }
 
 impl DeviceStorage {
     pub fn from_root(root: &gio::File) -> Self {
-        Self { root: root.clone() }
+        Self {
+            root: root.clone(),
+            storage: RefCell::new(None),
+        }
     }
 
     pub fn from_uri(uri: &str) -> Self {
         Self::from_root(&gio::File::for_uri(uri))
     }
 
+    /// The directory that holds `Music/Reprise`.
+    ///
+    /// Android MTP does not expose a filesystem at the device root: the root
+    /// lists *storage volumes* ("Internal shared storage", plus an SD card on
+    /// some devices) and is itself read-only, so creating `Music` there fails
+    /// with "Cannot make directory in this location" — which made every copy
+    /// fail. The managed folder must live inside a storage volume, which is
+    /// also where every other app (and the phone's own media scanner) expects
+    /// `Music/` to be.
+    ///
+    /// Only `mtp://` roots are resolved this way; other roots (the local
+    /// directories the tests use) already are the storage and are returned
+    /// unchanged.
+    async fn storage_root(&self) -> Result<gio::File, DeviceIoError> {
+        if let Some(cached) = self.storage.borrow().clone() {
+            return Ok(cached);
+        }
+        if self.root.uri_scheme().as_deref() != Some("mtp") {
+            return Ok(self.root.clone());
+        }
+        let enumerator = self
+            .root
+            .enumerate_children_future(
+                ENUMERATE_ATTRIBUTES,
+                gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+                gio::glib::Priority::DEFAULT,
+            )
+            .await?;
+        let mut volumes = Vec::new();
+        loop {
+            let batch = enumerator
+                .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
+                .await?;
+            if batch.is_empty() {
+                break;
+            }
+            for info in batch {
+                if info.file_type() == gio::FileType::Directory {
+                    volumes.push(info.name().to_string_lossy().into_owned());
+                }
+            }
+        }
+        // Prefer the internal storage when a card is also present; otherwise
+        // take the only volume. A root without volumes is left as-is so the
+        // caller still gets a sensible (if failing) error from the operation.
+        let chosen = volumes
+            .iter()
+            .find(|name| name.to_lowercase().contains("internal"))
+            .or_else(|| volumes.first())
+            .cloned();
+        let resolved = match chosen {
+            Some(name) => {
+                tracing::debug!(volume = %name, "device sync: resolved MTP storage volume");
+                self.root.child(name)
+            }
+            None => {
+                tracing::warn!("device sync: MTP root exposes no storage volume");
+                self.root.clone()
+            }
+        };
+        *self.storage.borrow_mut() = Some(resolved.clone());
+        Ok(resolved)
+    }
+
+    /// Lists the audio in `<storage>/Music` — deliberately the whole music
+    /// folder, not just `Music/Reprise`, so the device view can show what is
+    /// already on the phone (playlists are still read only from Reprise's own
+    /// folder). Listing is read-only: removals are scoped to `Music/Reprise`
+    /// and driven by the database inventory, never by this scan.
     pub async fn inspect(&self) -> Result<DeviceContents, DeviceIoError> {
-        let music = self.root.child("Music");
+        let storage = self.storage_root().await?;
+        let music = storage.child("Music");
         let mut pending = VecDeque::from([(music, String::new())]);
         let mut contents = DeviceContents::default();
         while let Some((directory, prefix)) = pending.pop_front() {
@@ -359,7 +435,8 @@ impl DeviceStorage {
     /// files below `Music/Reprise` with the dedicated `.part` suffix are
     /// touched; unrelated device content remains outside our ownership.
     pub async fn cleanup_partials(&self) -> Result<u32, DeviceIoError> {
-        let managed_root = self.managed_child(&[]);
+        let storage = self.storage_root().await?;
+        let managed_root = Self::managed_child(&storage, &[]);
         let mut pending = VecDeque::from([managed_root]);
         let mut removed = 0_u32;
         while let Some(directory) = pending.pop_front() {
@@ -400,7 +477,8 @@ impl DeviceStorage {
     /// in the desired state and is reported as `false`.
     pub async fn delete_track(&self, relative_path: &str) -> Result<bool, DeviceIoError> {
         let components = safe_relative_components(relative_path)?;
-        let target = self.managed_child(&components);
+        let storage = self.storage_root().await?;
+        let target = Self::managed_child(&storage, &components);
         match target.delete_future(gio::glib::Priority::DEFAULT).await {
             Ok(()) => Ok(true),
             Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(false),
@@ -467,9 +545,10 @@ impl DeviceStorage {
         P: FnMut(u64, u64) + 'static,
     {
         let components = safe_relative_components(relative_path)?;
-        self.ensure_managed_directories(&components[..components.len() - 1])
+        let storage = self.storage_root().await?;
+        self.ensure_managed_directories(&storage, &components[..components.len() - 1])
             .await?;
-        let target = self.managed_child(&components);
+        let target = Self::managed_child(&storage, &components);
         if skip_matching_size && target_size(&target).await? == Some(expected_size) {
             return Ok(CopyOutcome::Skipped);
         }
@@ -479,7 +558,7 @@ impl DeviceStorage {
             .cloned()
             .chain([format!("{target_name}{PARTIAL_SUFFIX}")])
             .collect::<Vec<_>>();
-        let partial = self.managed_child(&partial_components);
+        let partial = Self::managed_child(&storage, &partial_components);
         let progress = Rc::new(RefCell::new(progress));
         let callback_progress = progress.clone();
         let (sender, receiver) = async_channel::bounded(1);
@@ -525,9 +604,10 @@ impl DeviceStorage {
         contents: Vec<u8>,
     ) -> Result<(), DeviceIoError> {
         let playlist = safe_component(playlist, "Playlist");
-        self.ensure_managed_directories(&[]).await?;
-        let final_file = self.managed_child(&[format!("{playlist}.m3u8")]);
-        let partial = self.managed_child(&[format!("{playlist}.m3u8{PARTIAL_SUFFIX}")]);
+        let storage = self.storage_root().await?;
+        self.ensure_managed_directories(&storage, &[]).await?;
+        let final_file = Self::managed_child(&storage, &[format!("{playlist}.m3u8")]);
+        let partial = Self::managed_child(&storage, &[format!("{playlist}.m3u8{PARTIAL_SUFFIX}")]);
         partial
             .replace_contents_future(
                 contents,
@@ -554,7 +634,8 @@ impl DeviceStorage {
 
     pub async fn read_playlist(&self, playlist: &str) -> Result<Vec<M3uEntry>, DeviceIoError> {
         let playlist = safe_component(playlist, "Playlist");
-        let file = self.managed_child(&[format!("{playlist}.m3u8")]);
+        let storage = self.storage_root().await?;
+        let file = Self::managed_child(&storage, &[format!("{playlist}.m3u8")]);
         match file.load_contents_future().await {
             Ok((bytes, _)) => Ok(parse_m3u(&String::from_utf8_lossy(&bytes))),
             Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(Vec::new()),
@@ -564,9 +645,10 @@ impl DeviceStorage {
 
     async fn ensure_managed_directories(
         &self,
+        storage: &gio::File,
         relative_directories: &[String],
     ) -> Result<(), DeviceIoError> {
-        let mut current = self.root.clone();
+        let mut current = storage.clone();
         for component in MANAGED_ROOT
             .iter()
             .map(|value| (*value).to_string())
@@ -585,14 +667,15 @@ impl DeviceStorage {
         Ok(())
     }
 
-    fn managed_child(&self, relative_components: &[String]) -> gio::File {
+    /// `<storage>/Music/Reprise/<relative…>`. Takes the storage root resolved
+    /// by [`Self::storage_root`] rather than reaching for `self.root`, which
+    /// on MTP is the (unwritable) volume list.
+    fn managed_child(storage: &gio::File, relative_components: &[String]) -> gio::File {
         MANAGED_ROOT
             .iter()
             .map(|component| (*component).to_string())
             .chain(relative_components.iter().cloned())
-            .fold(self.root.clone(), |parent, component| {
-                parent.child(component)
-            })
+            .fold(storage.clone(), |parent, component| parent.child(component))
     }
 }
 
