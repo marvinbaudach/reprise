@@ -310,7 +310,7 @@ impl ScanControls {
             .sidebar_toggle
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(libadwaita::glib::WeakRef::upgrade)
         {
             button.set_tooltip_text(Some(title));
         }
