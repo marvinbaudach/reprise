@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -14,6 +15,7 @@ use gstreamer::prelude::*;
 const PIPELINE_DESCRIPTION: &str = "uridecodebin name=decoder ! audioconvert ! audioresample ! \
     opusenc name=encoder ! oggmux ! filesink name=output";
 const BUS_POLL_INTERVAL: gst::ClockTime = gst::ClockTime::from_mseconds(100);
+const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SUPPORTED_BITRATES: [u32; 5] = [64, 96, 128, 160, 192];
 pub const ENCODER_WORKERS: usize = 2;
 pub const MAX_READY_BYTES: u64 = 200 * 1024 * 1024;
@@ -142,6 +144,10 @@ impl EncoderPipeline {
     pub fn next(&self) -> Option<EncodeOutcome> {
         let mut state = lock(&self.ready.state);
         loop {
+            if self.cancelled.load(Ordering::SeqCst) {
+                self.ready.space.notify_all();
+                return None;
+            }
             if let Some(file) = state.files.pop_front() {
                 if let Ok(file) = &file.result {
                     state.buffered_bytes = state.buffered_bytes.saturating_sub(file.size);
@@ -152,11 +158,12 @@ impl EncoderPipeline {
             if state.workers == 0 {
                 return None;
             }
-            state = self
+            let (next_state, _) = self
                 .ready
                 .available
-                .wait(state)
+                .wait_timeout(state, CANCEL_POLL_INTERVAL)
                 .unwrap_or_else(PoisonError::into_inner);
+            state = next_state;
         }
     }
 }
@@ -166,9 +173,20 @@ impl Drop for EncoderPipeline {
         if self.workers.iter().any(|worker| !worker.is_finished()) {
             self.cancelled.store(true, Ordering::SeqCst);
             self.ready.space.notify_all();
+            self.ready.available.notify_all();
         }
         for worker in self.workers.drain(..) {
             let _ = worker.join();
+        }
+        let files = {
+            let mut state = lock(&self.ready.state);
+            state.buffered_bytes = 0;
+            std::mem::take(&mut state.files)
+        };
+        for outcome in files {
+            if let Ok(file) = outcome.result {
+                let _ = std::fs::remove_file(file.path);
+            }
         }
     }
 }
@@ -197,10 +215,11 @@ fn encoder_worker(
             && state.buffered_bytes.saturating_add(size) > MAX_READY_BYTES
             && !cancelled.load(Ordering::SeqCst)
         {
-            state = ready
+            let (next_state, _) = ready
                 .space
-                .wait(state)
+                .wait_timeout(state, CANCEL_POLL_INTERVAL)
                 .unwrap_or_else(PoisonError::into_inner);
+            state = next_state;
         }
         if cancelled.load(Ordering::SeqCst) {
             if let Ok(file) = outcome.result {
@@ -450,5 +469,46 @@ mod tests {
             Ok(true)
         );
         waiting.join().unwrap();
+    }
+
+    #[test]
+    fn mid_run_cancel_stops_delivery_and_removes_buffered_temp_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let outputs = (0..super::ENCODER_WORKERS)
+            .map(|token| temp.path().join(format!("encoded-{token}.opus")))
+            .collect::<Vec<_>>();
+        let requests = outputs
+            .iter()
+            .enumerate()
+            .map(|(token, output)| super::EncodeRequest {
+                token,
+                source: format!("source-{token}.wav").into(),
+                output: output.clone(),
+                bitrate_kbps: 64,
+            })
+            .collect();
+        let encoded = std::sync::Arc::new(std::sync::Barrier::new(super::ENCODER_WORKERS + 1));
+        let worker_encoded = encoded.clone();
+        let encode: std::sync::Arc<super::Encode> = std::sync::Arc::new(move |request, _| {
+            fs::write(&request.output, b"temporary opus").unwrap();
+            worker_encoded.wait();
+            Ok(super::MAX_READY_BYTES)
+        });
+        let cancelled = std::sync::Arc::new(AtomicBool::new(false));
+        let pipeline =
+            super::EncoderPipeline::start_with_encoder(requests, cancelled.clone(), &encode)
+                .unwrap();
+        encoded.wait();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while super::lock(&pipeline.ready.state).files.is_empty() {
+            assert!(std::time::Instant::now() < deadline, "no file was buffered");
+            std::thread::yield_now();
+        }
+
+        cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        assert!(pipeline.next().is_none());
+        drop(pipeline);
+        assert!(outputs.iter().all(|output| !output.exists()));
     }
 }
