@@ -74,6 +74,13 @@ impl AlbumView {
         &self.root
     }
 
+    /// The `FlowBox` that holds album cards — exposed so `window.rs` can grab
+    /// a weak reference for the playback-state callback (the `AlbumView` itself
+    /// is not `Rc`-wrapped, but the GTK widget is ref-counted).
+    pub(in crate::ui) fn grid_widget(&self) -> &gtk4::FlowBox {
+        &self.grid
+    }
+
     pub(in crate::ui) fn set_on_activate(&self, callback: impl Fn(AlbumSummary) + 'static) {
         *self.state.on_activate.borrow_mut() = Some(Rc::new(callback));
     }
