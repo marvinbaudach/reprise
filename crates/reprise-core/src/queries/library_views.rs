@@ -17,6 +17,10 @@ pub struct AlbumSummary {
     pub album_artist: String,
     pub representative_path: String,
     pub track_count: i64,
+    pub year: Option<i32>,
+    pub total_duration_ms: i64,
+    pub max_added_at: i64,
+    pub total_play_count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,12 +38,21 @@ pub fn query_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Er
         "WITH grouped AS ( \
            SELECT LOWER(TRIM(album)) AS album_key, \
                   LOWER({EFFECTIVE_ALBUM_ARTIST}) AS artist_key, \
-                  MIN(id) AS representative_id, COUNT(*) AS track_count \
+                  MIN(id) AS representative_id, \
+                  COUNT(*) AS track_count, \
+                  MIN(CASE WHEN year > 0 THEN year END) AS year, \
+                  SUM(duration_ms) AS total_duration_ms, \
+                  MAX(added_at) AS max_added_at, \
+                  SUM(play_count) AS total_play_count \
            FROM tracks \
            WHERE missing = 0 AND TRIM(album) <> '' \
            GROUP BY album_key, artist_key \
          ) \
-         SELECT TRIM(tracks.album), {EFFECTIVE_ALBUM_ARTIST}, tracks.path, grouped.track_count \
+         SELECT TRIM(tracks.album), {EFFECTIVE_ALBUM_ARTIST}, tracks.path, \
+                grouped.track_count, grouped.year, \
+                COALESCE(grouped.total_duration_ms, 0), \
+                COALESCE(grouped.max_added_at, 0), \
+                COALESCE(grouped.total_play_count, 0) \
          FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
          ORDER BY TRIM(tracks.album) COLLATE NOCASE ASC, \
                   {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC"
@@ -51,6 +64,10 @@ pub fn query_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Er
             album_artist: row.get(1)?,
             representative_path: row.get(2)?,
             track_count: row.get(3)?,
+            year: row.get(4)?,
+            total_duration_ms: row.get(5)?,
+            max_added_at: row.get(6)?,
+            total_play_count: row.get(7)?,
         })
     })?;
     rows.collect()
@@ -143,7 +160,7 @@ pub(super) fn query_album_track_count(
     conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
 }
 
-pub(super) fn query_album_track_ids(
+pub fn query_album_track_ids(
     conn: &Connection,
     album: &str,
     album_artist: &str,
@@ -285,18 +302,30 @@ mod tests {
                     album_artist: "Various Artists".into(),
                     representative_path: "/music/mix-a.flac".into(),
                     track_count: 2,
+                    year: None,
+                    total_duration_ms: 0,
+                    max_added_at: 0,
+                    total_play_count: 0,
                 },
                 AlbumSummary {
                     album: "First".into(),
                     album_artist: "Other Artist".into(),
                     representative_path: "/music/other.flac".into(),
                     track_count: 1,
+                    year: None,
+                    total_duration_ms: 0,
+                    max_added_at: 0,
+                    total_play_count: 0,
                 },
                 AlbumSummary {
                     album: "First".into(),
                     album_artist: "Solo".into(),
                     representative_path: "/music/first-a.flac".into(),
                     track_count: 2,
+                    year: None,
+                    total_duration_ms: 0,
+                    max_added_at: 0,
+                    total_play_count: 0,
                 },
             ]
         );
@@ -416,5 +445,27 @@ mod tests {
             query_track_ids(&conn, &source, "title", "asc", "A", &[]).unwrap(),
             [1]
         );
+    }
+
+    #[test]
+    fn albums_include_year_duration_added_and_play_count_aggregates() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks
+               (id,path,title,artist,album,album_artist,year,duration_ms,added_at,play_count,missing) VALUES
+             (1,'/a.flac','A','Solo','Album','',2020,180000,1000,5,0),
+             (2,'/b.flac','B','Solo','Album','',2020,240000,2000,3,0),
+             (3,'/c.flac','C','Solo','Album','',0,120000,500,0,0);",
+        )
+        .unwrap();
+
+        let albums = super::query_albums(&conn).unwrap();
+        assert_eq!(albums.len(), 1);
+        let album = &albums[0];
+        assert_eq!(album.year, Some(2020));
+        assert_eq!(album.total_duration_ms, 540000);
+        assert_eq!(album.max_added_at, 2000);
+        assert_eq!(album.total_play_count, 8);
     }
 }
