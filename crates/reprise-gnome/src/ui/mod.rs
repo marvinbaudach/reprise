@@ -33,6 +33,10 @@ mod album_context_menu;
 mod album_header;
 #[path = "library_views/album_view.rs"]
 mod album_view;
+#[path = "library_views/album_view_actions.rs"]
+mod album_view_actions;
+#[path = "library_views/album_view_state.rs"]
+mod album_view_state;
 #[path = "library_views/artist_avatar.rs"]
 mod artist_avatar;
 #[path = "library_views/artist_detail_hero.rs"]
