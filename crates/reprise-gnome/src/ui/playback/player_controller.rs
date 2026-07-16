@@ -266,6 +266,11 @@ pub struct PlayerController {
     /// public setter so `window.rs` can register the album-view callback.
     pub(super) now_playing_album_changed:
         RefCell<Option<Rc<dyn Fn(Option<(String, String)>)>>>,
+    /// Same seam as `playback_state_changed`, but for the album grid's
+    /// now-playing equaliser (freeze on pause). Kept as a separate named slot
+    /// so the track-list and album-view consumers stay independent.
+    pub(super) playback_state_changed_album:
+        RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
@@ -432,6 +437,7 @@ impl PlayerController {
             current_track_changed: RefCell::new(None),
             playback_state_changed: RefCell::new(None),
             now_playing_album_changed: RefCell::new(None),
+            playback_state_changed_album: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,
