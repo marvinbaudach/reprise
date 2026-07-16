@@ -1,12 +1,11 @@
 //! Connected-device cards shown below the scrolling navigation rows.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 
 use super::device_sync_runtime::{
-    DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase, Subscription,
+    DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase,
 };
 use super::device_sync_strings;
 
@@ -30,7 +29,7 @@ pub(super) fn bind(
         let section = section.clone();
         move |state| render(&section, &state, &on_open)
     }));
-    retain_subscription(&section, subscription);
+    subscription.retain_for_widget(&section);
 }
 
 fn render(section: &gtk4::Box, state: &DeviceSyncState, on_open: &OpenCallback) {
@@ -165,13 +164,6 @@ fn card_subtitle(device: &DeviceView) -> String {
             )
         }
     }
-}
-
-fn retain_subscription(widget: &impl IsA<gtk4::Widget>, subscription: Subscription) {
-    let subscription = Rc::new(RefCell::new(Some(subscription)));
-    widget.connect_unrealize(move |_| {
-        subscription.borrow_mut().take();
-    });
 }
 
 #[cfg(test)]

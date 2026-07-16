@@ -198,3 +198,23 @@ impl Drop for Subscription {
         }
     }
 }
+
+impl Subscription {
+    /// Keeps this subscription alive for the whole life of `widget`, dropping
+    /// it (and thereby unsubscribing) only when the widget is destroyed.
+    ///
+    /// Deliberately `connect_destroy`, NOT `connect_unrealize`: GTK4 widgets
+    /// unrealize routinely while staying alive — the sidebar's split view
+    /// flips its collapsed state during window construction, folding
+    /// reparents children, and each such step unrealizes them. An earlier
+    /// version dropped the subscription on the first unrealize, which froze
+    /// the sidebar device card on its very first render (stale name, stuck
+    /// "Checking…") while the rest of the UI kept updating.
+    pub(in crate::ui) fn retain_for_widget(self, widget: &impl IsA<gtk4::Widget>) {
+        use gtk4::prelude::WidgetExt;
+        let subscription = RefCell::new(Some(self));
+        widget.connect_destroy(move |_| {
+            subscription.borrow_mut().take();
+        });
+    }
+}
