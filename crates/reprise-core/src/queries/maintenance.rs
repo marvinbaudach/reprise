@@ -123,7 +123,8 @@ pub fn query_sync_tracks(
     ids: &[i64],
 ) -> Result<Vec<SyncTrack>, rusqlite::Error> {
     let mut statement = conn.prepare(
-        "SELECT path,title,artist,duration_ms FROM tracks WHERE id = ?1 AND missing = 0",
+        "SELECT path,title,artist,album,album_artist,track_no,duration_ms \
+         FROM tracks WHERE id = ?1 AND missing = 0",
     )?;
     let mut seen = HashSet::new();
     let mut tracks = Vec::with_capacity(ids.len());
@@ -137,11 +138,15 @@ pub fn query_sync_tracks(
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<u32>>(5)?,
+                    row.get::<_, i64>(6)?,
                 ))
             })
             .optional()?;
-        let Some((path, title, artist, duration_ms)) = row else {
+        let Some((path, title, artist, album, album_artist, track_number, duration_ms)) = row
+        else {
             continue;
         };
         let source_path = PathBuf::from(path);
@@ -160,8 +165,17 @@ pub fn query_sync_tracks(
             original_name: original_name.to_string_lossy().into_owned(),
             title,
             artist,
+            album,
+            album_artist,
+            track_number,
             duration_ms,
             size_bytes: metadata.len(),
+            source_mtime: metadata
+                .modified()
+                .ok()
+                .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+                .and_then(|duration| i64::try_from(duration.as_secs()).ok())
+                .unwrap_or(0),
         });
     }
     Ok(tracks)

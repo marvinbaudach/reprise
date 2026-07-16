@@ -27,5 +27,9 @@
 .orchestra-status.md
 SPEC.md
 doc/
-docs/
 .claude/worktrees/
+
+# `docs/` is tracked on purpose: it is how humans and agents hand work over
+# (conventions in docs/agents, decisions in docs/adr, briefs in docs/plans).
+# It was ignored while it collected generated status dumps — keep those out
+# (session scratch belongs in .superpowers/) and docs/ stays worth reading.

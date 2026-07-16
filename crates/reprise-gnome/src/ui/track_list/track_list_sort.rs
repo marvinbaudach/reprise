@@ -137,7 +137,8 @@ fn default_sort_for_source(source: &ViewSource) -> Option<SortState> {
         | ViewSource::Queue
         | ViewSource::Missing
         | ViewSource::Album { .. }
-        | ViewSource::Artist(_) => None,
+        | ViewSource::Artist(_)
+        | ViewSource::Device { .. } => None,
         ViewSource::ImportErrors | ViewSource::MyStats => None,
     }
 }

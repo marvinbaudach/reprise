@@ -12,6 +12,10 @@ use std::f64::consts::{FRAC_PI_2, PI};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+
+#[cfg(test)]
+use super::waveform_shape::{aggregate_rms, smooth_neighbors};
+use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use reprise_core::format::format_duration;
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
@@ -20,12 +24,24 @@ type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>;
 
 pub(in crate::ui) const WAVEFORM_CSS_CLASS: &str = "waveform-seek";
 const CONTENT_HEIGHT: i32 = 28;
-const BAR_RADIUS: f64 = 1.5;
+/// Fixed bar width; the count varies with the widget width instead.
+const BAR_WIDTH: f64 = 3.0;
+/// Rounded caps: radius = half the bar width.
+const BAR_RADIUS: f64 = BAR_WIDTH / 2.0;
 const BAR_GAP: f64 = 2.0;
-const MIN_BAR_HEIGHT: f64 = 5.0;
+/// Hard cap on displayed bars — beyond this the waveform reads as noise.
+const MAX_BAR_COUNT: usize = 160;
+/// Audible bars span 15%..100% of the max bar height.
+const MIN_BAR_HEIGHT: f64 = MAX_BAR_HEIGHT * 0.15;
 const MAX_BAR_HEIGHT: f64 = 26.0;
-/// Alpha for not-yet-played bars — white on dark background.
-const UNPLAYED_ALPHA: f64 = 0.16;
+/// Alpha for not-yet-played bars — white on dark background, deliberately
+/// receding so the played (accent) part dominates.
+const UNPLAYED_ALPHA: f64 = 0.18;
+/// Alpha for unplayed bars between the playhead and the hovered position —
+/// the seek preview.
+const HOVER_PREVIEW_ALPHA: f64 = 0.30;
+/// Alpha of the 1 px playhead line drawn over the bars.
+const PLAYHEAD_ALPHA: f64 = 0.70;
 /// Alpha for bars in the drag ghost region.
 const GHOST_ALPHA: f64 = 0.40;
 /// Build-up animation duration in seconds.
@@ -39,6 +55,24 @@ const MINI_CONTENT_HEIGHT: i32 = 16;
 const MINI_MAX_BAR_HEIGHT: f64 = 13.0;
 const MINI_MIN_BAR_HEIGHT: f64 = 2.0;
 const MINI_FALLBACK_BAR_HEIGHT: f64 = 3.0;
+
+/// Advances the smooth-fill interpolation by one frame: `fraction` moves by
+/// `velocity * dt_us` but never past `target` — the interpolation chases the
+/// most recent position tick, so overshooting it is always wrong. This bound
+/// is what makes a mis-measured `dt` (and thus an exploded velocity)
+/// harmless: the worst case degrades to snapping straight to the target
+/// instead of pinning the fill at 100% for the rest of the song. A fraction
+/// that is already past the target (a stale stuck state) snaps back to it
+/// for the same reason. Result stays in 0..1.
+fn interpolation_step(fraction: f64, velocity: f64, dt_us: f64, target: f64) -> f64 {
+    let advanced = velocity.mul_add(dt_us, fraction);
+    let bounded = if velocity >= 0.0 {
+        advanced.min(target)
+    } else {
+        advanced.max(target)
+    };
+    bounded.clamp(0.0, 1.0)
+}
 
 /// Maps a pointer `x` within `width` to a 0..1 seek fraction.
 fn fraction_at(x: f64, width: f64) -> f64 {
@@ -57,35 +91,15 @@ fn bar_played(index: usize, count: usize, fraction: f64) -> bool {
     ((index as f64 + 0.5) / count as f64) <= fraction
 }
 
-/// Resample `raw` peaks (typically 1000) to `count` display bars by
-/// averaging groups. Returns values in 0.0..1.0.
-fn resample_peaks(raw: &[u8], count: usize) -> Vec<f32> {
-    if raw.is_empty() || count == 0 {
-        return Vec::new();
-    }
-    let mut result = Vec::with_capacity(count);
-    for i in 0..count {
-        let start = i * raw.len() / count;
-        let end = (i + 1) * raw.len() / count;
-        let slice = &raw[start..end];
-        if slice.is_empty() {
-            result.push(0.0);
-        } else {
-            let avg: f32 = slice.iter().map(|&v| f32::from(v)).sum::<f32>() / slice.len() as f32;
-            result.push(avg / 255.0);
-        }
-    }
-    result
-}
-
-/// Compute the number of display bars that fit in `width` pixels.
+/// Number of display bars for `width` pixels: fixed 3 px bars + 2 px gaps,
+/// hard-capped at [`MAX_BAR_COUNT`] (when capped, the slots widen instead).
 fn compute_bar_count(width: i32) -> usize {
-    let w = f64::from(width);
-    ((w / (4.0 + BAR_GAP)).round() as usize).max(1)
+    ((f64::from(width) / (BAR_WIDTH + BAR_GAP)).floor() as usize).clamp(1, MAX_BAR_COUNT)
 }
 
 /// Ensure `state.display_peaks` is up to date for the given `width`.
-/// Resamples from `raw_peaks` when the width changed or the cache is empty.
+/// Re-aggregates from the cached `raw_peaks` (never re-decodes) when the
+/// width changed or the cache is empty.
 fn ensure_resampled(state: &mut State, width: i32) {
     if state.raw_peaks.is_empty() {
         state.display_peaks.clear();
@@ -93,17 +107,19 @@ fn ensure_resampled(state: &mut State, width: i32) {
     }
     if state.last_display_width != width || state.display_peaks.is_empty() {
         let count = compute_bar_count(width);
-        state.display_peaks = resample_peaks(&state.raw_peaks, count);
+        state.display_peaks = shape_display_peaks(&state.raw_peaks, count);
         state.last_display_width = width;
     }
 }
 
 struct State {
-    raw_peaks: Vec<u8>,      // stored peaks from DB (1000 values, 0-255)
-    display_peaks: Vec<f32>, // resampled to current bar count (0.0..1.0)
-    last_display_width: i32, // width used for last resample
+    raw_peaks: Vec<u8>,             // stored peaks from DB (1000 values, 0-255)
+    display_peaks: Vec<DisplayBar>, // shaped to current bar count
+    last_display_width: i32,        // width used for last resample
     fraction: f64,
-    hover_index: Option<usize>,
+    /// Pointer position as a 0..1 fraction while hovering — drives the
+    /// seek-preview tint on unplayed bars up to the cursor.
+    hover_fraction: Option<f64>,
     drag_fraction: Option<f64>,
     // Smooth interpolation.
     target_fraction: f64,
@@ -161,7 +177,7 @@ impl WaveformSeek {
             display_peaks: Vec::new(),
             last_display_width: 0,
             fraction: 0.0,
-            hover_index: None,
+            hover_fraction: None,
             drag_fraction: None,
             target_fraction: 0.0,
             fraction_velocity: 0.0,
@@ -184,20 +200,18 @@ impl WaveformSeek {
             }
         });
 
-        // Hover tracking: update the highlighted bar index as the pointer moves.
+        // Hover tracking: remember the pointer position as a fraction so the
+        // draw pass can tint unplayed bars up to it (seek preview).
         let motion = gtk4::EventControllerMotion::new();
         motion.connect_motion({
             let state = state.clone();
             let area = area.clone();
             move |_, x, _| {
-                let count = state.borrow().display_peaks.len();
-                if count == 0 {
+                if state.borrow().display_peaks.is_empty() {
                     return;
                 }
-                let w = f64::from(area.width());
-                let slot = (w + BAR_GAP) / count as f64;
-                let index = ((x / slot) as usize).min(count.saturating_sub(1));
-                state.borrow_mut().hover_index = Some(index);
+                let frac = fraction_at(x, f64::from(area.width()));
+                state.borrow_mut().hover_fraction = Some(frac);
                 area.queue_draw();
             }
         });
@@ -205,7 +219,7 @@ impl WaveformSeek {
             let state = state.clone();
             let area = area.clone();
             move |_| {
-                state.borrow_mut().hover_index = None;
+                state.borrow_mut().hover_fraction = None;
                 area.queue_draw();
             }
         });
@@ -336,7 +350,14 @@ impl WaveformSeek {
     pub(in crate::ui) fn set_fraction_smooth(&self, fraction: f64) {
         let fraction = fraction.clamp(0.0, 1.0);
         let mut s = self.state.borrow_mut();
-        let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
+        // Real monotonic time, NOT `frame_clock().frame_time()`: the frame
+        // clock only advances while frames are being produced, so two
+        // position ticks arriving between frames used to read the same
+        // stale timestamp — `dt` collapsed to 1 µs, the velocity exploded,
+        // and the next real frame pinned the fill at 100% (the stuck-full
+        // bar bug). `frame_time` shares `g_get_monotonic_time`'s timescale,
+        // so mixing the two sources in `last_tick_us` is safe.
+        let now = gtk4::glib::monotonic_time();
         let delta = (fraction - s.target_fraction).abs();
         if delta > 0.05 || s.last_tick_us == 0 {
             // Large discontinuity, seek, or no valid time reference yet — snap.
@@ -378,10 +399,10 @@ impl WaveformSeek {
             let now = clock.frame_time();
             let mut s = state.borrow_mut();
 
-            // Advance the smooth-position interpolation.
+            // Advance the smooth-position interpolation (never past the
+            // target — see `interpolation_step`).
             let dt = (now - s.last_tick_us).max(0) as f64;
-            s.fraction += s.fraction_velocity * dt;
-            s.fraction = s.fraction.clamp(0.0, 1.0);
+            s.fraction = interpolation_step(s.fraction, s.fraction_velocity, dt, s.target_fraction);
             s.last_tick_us = now;
 
             // Advance the build-up animation.
@@ -424,8 +445,10 @@ fn draw(
     }
 
     let count = state.display_peaks.len();
-    let slot = (w + BAR_GAP) / count as f64;
-    let bar_w = (slot - BAR_GAP).max(1.0);
+    // Slots fill the full width so the seek mapping stays linear; when the
+    // bar-count cap kicks in the gaps simply widen (bars stay 3 px).
+    let slot = w / count as f64;
+    let bar_w = BAR_WIDTH.min(slot.max(1.0));
 
     let color = area.color();
     let (r, g, b) = (
@@ -434,9 +457,7 @@ fn draw(
         f64::from(color.blue()),
     );
 
-    for (index, &peak) in state.display_peaks.iter().enumerate() {
-        let magnitude = f64::from(peak).clamp(0.0, 1.0);
-
+    for (index, &bar) in state.display_peaks.iter().enumerate() {
         // Staggered build-up: each bar has a small time offset so they rise
         // one after another from left to right over the 300 ms window.
         let stagger = if state.build_progress < 1.0 {
@@ -449,20 +470,26 @@ fn draw(
             1.0
         };
 
-        let bar_h = (state.min_bar_height
-            + magnitude * (state.max_bar_height - state.min_bar_height))
-            * stagger;
+        let bar_h = match bar {
+            // True silence: a fixed dot, unaffected by the height mapping.
+            DisplayBar::Silence => SILENCE_DOT_HEIGHT * stagger,
+            DisplayBar::Level(level) => {
+                let magnitude = f64::from(level).clamp(0.0, 1.0);
+                (state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height))
+                    * stagger
+            }
+        };
         // Guard against zero-height bars during early animation frames.
         if bar_h < 0.5 {
             continue;
         }
 
-        let x = index as f64 * slot;
+        let x = index as f64 * slot + (slot - bar_w) / 2.0;
         let y = (h - bar_h) / 2.0;
 
-        let is_hovered = state.hover_index == Some(index);
+        let bar_center = (index as f64 + 0.5) / count as f64;
+        let played = bar_played(index, count, state.fraction);
         let is_ghost = state.drag_fraction.is_some_and(|drag_frac| {
-            let bar_center = (index as f64 + 0.5) / count as f64;
             let (lo, hi) = if drag_frac > state.fraction {
                 (state.fraction, drag_frac)
             } else {
@@ -470,53 +497,37 @@ fn draw(
             };
             bar_center > lo && bar_center <= hi
         });
+        // Seek preview: unplayed bars between the playhead and the cursor.
+        let is_hover_preview = !played
+            && state
+                .hover_fraction
+                .is_some_and(|hover| bar_center <= hover);
 
-        // Detect the boundary bar: the one where played transitions to unplayed.
-        let is_boundary = !is_hovered
-            && !is_ghost
-            && state.fraction > (index as f64) / count as f64
-            && state.fraction < (index as f64 + 1.0) / count as f64;
-
-        if is_boundary {
-            // Sub-bar precision: clip to the bar shape and fill played/unplayed
-            // portions as separate rectangles so the split is pixel-accurate.
-            let bar_progress = (state.fraction * count as f64 - index as f64).clamp(0.0, 1.0);
-            let split_x = x + bar_w * bar_progress;
-
-            cr.save().ok();
-            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
-            cr.clip();
-
-            // Played portion (left of split).
-            cr.set_source_rgba(r, g, b, 1.0);
-            cr.rectangle(x, y, split_x - x, bar_h);
-            let _ = cr.fill();
-
-            // Unplayed portion (right of split).
-            cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA);
-            cr.rectangle(split_x, y, (x + bar_w) - split_x, bar_h);
-            let _ = cr.fill();
-
-            cr.restore().ok();
-        } else if is_hovered {
-            // Highlight: full accent alpha regardless of played/unplayed state.
-            cr.set_source_rgba(r, g, b, 1.0);
-            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
-            let _ = cr.fill();
-        } else if is_ghost {
+        if is_ghost {
             cr.set_source_rgba(r, g, b, GHOST_ALPHA);
-            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
-            let _ = cr.fill();
-        } else if bar_played(index, count, state.fraction) {
+        } else if played {
             cr.set_source_rgba(r, g, b, 1.0);
-            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
-            let _ = cr.fill();
+        } else if is_hover_preview {
+            cr.set_source_rgba(1.0, 1.0, 1.0, HOVER_PREVIEW_ALPHA);
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA);
-            rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
-            let _ = cr.fill();
         }
+        rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
+        let _ = cr.fill();
     }
+
+    // Playhead: a 1 px line at the exact fraction, drawn over the bars —
+    // replaces the old partially-filled boundary bar (the played/unplayed
+    // switch is a hard per-bucket cut instead).
+    let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
+    cr.set_source_rgba(1.0, 1.0, 1.0, PLAYHEAD_ALPHA);
+    cr.rectangle(
+        playhead_x - 0.5,
+        (h - state.max_bar_height) / 2.0,
+        1.0,
+        state.max_bar_height,
+    );
+    let _ = cr.fill();
 }
 
 /// Skeleton waveform: deterministic pseudo-random bar heights that look like
@@ -532,8 +543,8 @@ fn draw_fallback(
     if count == 0 {
         return;
     }
-    let slot = (w + BAR_GAP) / count as f64;
-    let bar_w = (slot - BAR_GAP).max(1.0);
+    let slot = w / count as f64;
+    let bar_w = BAR_WIDTH.min(slot.max(1.0));
 
     let color = area.color();
     let (r, g, b) = (
@@ -548,7 +559,7 @@ fn draw_fallback(
         let magnitude = (seed % 200) as f64 / 400.0 + 0.15; // range ~0.15..0.65
         let bar_h =
             state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height);
-        let x = index as f64 * slot;
+        let x = index as f64 * slot + (slot - bar_w) / 2.0;
         let y = (h - bar_h) / 2.0;
 
         if bar_played(index, count, state.fraction) {
@@ -572,218 +583,5 @@ fn rounded_bar(cr: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fraction_maps_and_clamps_to_unit_range() {
-        assert_eq!(fraction_at(0.0, 200.0), 0.0);
-        assert_eq!(fraction_at(100.0, 200.0), 0.5);
-        assert_eq!(fraction_at(200.0, 200.0), 1.0);
-        assert_eq!(fraction_at(260.0, 200.0), 1.0);
-        assert_eq!(fraction_at(50.0, 0.0), 0.0);
-    }
-
-    #[test]
-    fn bars_split_played_from_unplayed_at_the_fraction() {
-        // 4 bars, centres at 0.125/0.375/0.625/0.875; fraction 0.5 plays first 2.
-        assert!(bar_played(0, 4, 0.5));
-        assert!(bar_played(1, 4, 0.5));
-        assert!(!bar_played(2, 4, 0.5));
-        assert!(!bar_played(3, 4, 0.5));
-        assert!(!bar_played(0, 0, 1.0));
-    }
-
-    #[test]
-    fn fallback_draws_flat_bar_when_peaks_empty() {
-        // No peaks → draw function should not panic, draws fallback.
-        // This is a logic test; actual rendering verified in smoke tests.
-        assert_eq!(fraction_at(50.0, 100.0), 0.5);
-    }
-
-    #[test]
-    fn ghost_region_spans_between_fraction_and_drag_fraction() {
-        // drag_fraction > fraction: bars with centres in (fraction, drag_fraction]
-        // should be in the ghost region.
-        let in_ghost = |index: usize, count: usize, fraction: f64, drag_frac: f64| -> bool {
-            let bar_center = (index as f64 + 0.5) / count as f64;
-            let (lo, hi) = if drag_frac > fraction {
-                (fraction, drag_frac)
-            } else {
-                (drag_frac, fraction)
-            };
-            bar_center > lo && bar_center <= hi
-        };
-
-        // 4 bars at 0.125 / 0.375 / 0.625 / 0.875; fraction=0.25, drag=0.75
-        assert!(!in_ghost(0, 4, 0.25, 0.75)); // centre 0.125 ≤ 0.25
-        assert!(in_ghost(1, 4, 0.25, 0.75)); // centre 0.375 in (0.25, 0.75]
-        assert!(in_ghost(2, 4, 0.25, 0.75)); // centre 0.625 in (0.25, 0.75]
-        assert!(!in_ghost(3, 4, 0.25, 0.75)); // centre 0.875 > 0.75
-
-        // Reversed drag: drag < fraction should also produce a ghost range.
-        assert!(!in_ghost(0, 4, 0.75, 0.25)); // centre 0.125 ≤ 0.25
-        assert!(in_ghost(1, 4, 0.75, 0.25)); // centre 0.375 in (0.25, 0.75]
-        assert!(in_ghost(2, 4, 0.75, 0.25)); // centre 0.625 in (0.25, 0.75]
-        assert!(!in_ghost(3, 4, 0.75, 0.25)); // centre 0.875 > 0.75
-    }
-
-    #[test]
-    fn hover_index_targets_correct_bar() {
-        // Given 10 bars across 200px, each slot is (200+2)/10 = 20.2px.
-        // Bar 0: x in [0, 20.2), bar 3: x in [60.6, 80.8).
-        let count = 10usize;
-        let w = 200.0_f64;
-        let slot = (w + BAR_GAP) / count as f64;
-        let x_to_index = |x: f64| ((x / slot) as usize).min(count.saturating_sub(1));
-
-        assert_eq!(x_to_index(0.0), 0);
-        assert_eq!(x_to_index(slot * 3.0 + 1.0), 3);
-        assert_eq!(x_to_index(w - 1.0), 9);
-        // Past the end should clamp to last bar.
-        assert_eq!(x_to_index(w + 50.0), 9);
-    }
-
-    #[test]
-    fn stagger_factor_is_zero_at_start_and_one_at_completion() {
-        // At build_progress=0.0, bar 0 stagger is 0 (progress=0, delay_norm=0).
-        // stagger = (0.0 - 0.0).max(0) / (1.0 - 0.0).max(0.01) = 0.0.
-        let stagger_for = |build_progress: f64, index: usize| -> f64 {
-            if build_progress < 1.0 {
-                let bar_delay = index as f64 * BAR_STAGGER_S;
-                let bar_delay_normalized = bar_delay / BUILD_DURATION_S;
-                let adjusted = (build_progress - bar_delay_normalized).max(0.0)
-                    / (1.0 - bar_delay_normalized).max(0.01);
-                adjusted.clamp(0.0, 1.0)
-            } else {
-                1.0
-            }
-        };
-
-        // progress=0: all bars start at 0.
-        assert_eq!(stagger_for(0.0, 0), 0.0);
-        assert_eq!(stagger_for(0.0, 10), 0.0);
-
-        // progress=1: sentinel branch — returns 1.0.
-        assert_eq!(stagger_for(1.0, 0), 1.0);
-        assert_eq!(stagger_for(1.0, 50), 1.0);
-
-        // progress=0.5: bar 0 (no delay) is at 0.5; a late bar with enough
-        // delay to push its bar_delay_normalized > 0.5 is still 0.
-        assert!((stagger_for(0.5, 0) - 0.5).abs() < 1e-9);
-        assert_eq!(stagger_for(0.5, 100), 0.0); // bar 100: delay=0.2s > 0.15s already passed
-    }
-
-    #[test]
-    fn smooth_fraction_velocity_is_computed_from_delta() {
-        // Pure logic test: given target=0.5, old_target=0.0, dt=1_000_000 us
-        // the velocity should be 0.5/1_000_000 per microsecond.
-        let old_target = 0.0_f64;
-        let new_target = 0.5_f64;
-        let dt = 1_000_000_i64;
-        let velocity = (new_target - old_target) / dt as f64;
-        assert!((velocity - 5e-7).abs() < 1e-12);
-    }
-
-    #[test]
-    fn resample_peaks_averages_groups() {
-        let raw = vec![0u8, 100, 200, 50];
-        let resampled = resample_peaks(&raw, 2);
-        assert_eq!(resampled.len(), 2);
-        // avg(0, 100) / 255 ≈ 0.196
-        assert!((resampled[0] - 50.0 / 255.0).abs() < 0.01);
-        // avg(200, 50) / 255 ≈ 0.490
-        assert!((resampled[1] - 125.0 / 255.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn resample_peaks_handles_empty() {
-        assert!(resample_peaks(&[], 10).is_empty());
-        assert!(resample_peaks(&[128], 0).is_empty());
-    }
-
-    #[test]
-    fn resample_peaks_identity_when_count_equals_len() {
-        // 4 raw values resampled to 4 bars → each bar gets exactly one value.
-        let raw = vec![0u8, 128, 255, 64];
-        let result = resample_peaks(&raw, 4);
-        assert_eq!(result.len(), 4);
-        assert!((result[0] - 0.0_f32 / 255.0).abs() < 0.001);
-        assert!((result[1] - 128.0_f32 / 255.0).abs() < 0.001);
-        assert!((result[2] - 255.0_f32 / 255.0).abs() < 0.001);
-        assert!((result[3] - 64.0_f32 / 255.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn compute_bar_count_returns_at_least_one() {
-        assert!(compute_bar_count(0) >= 1);
-        assert!(compute_bar_count(1) >= 1);
-    }
-
-    #[test]
-    fn compute_bar_count_scales_with_width() {
-        // At 600px with 4+2=6px per slot, expect ~100 bars.
-        let count = compute_bar_count(600);
-        assert!(count > 50 && count < 200, "unexpected bar count: {count}");
-    }
-
-    #[test]
-    fn ensure_resampled_clears_display_peaks_when_raw_empty() {
-        let mut state = State {
-            raw_peaks: Vec::new(),
-            display_peaks: vec![0.5],
-            last_display_width: 100,
-            fraction: 0.0,
-            hover_index: None,
-            drag_fraction: None,
-            target_fraction: 0.0,
-            fraction_velocity: 0.0,
-            last_tick_us: 0,
-            build_progress: 1.0,
-            build_start_us: 0,
-            min_bar_height: MIN_BAR_HEIGHT,
-            max_bar_height: MAX_BAR_HEIGHT,
-            duration_ms: 0,
-        };
-        ensure_resampled(&mut state, 200);
-        assert!(state.display_peaks.is_empty());
-    }
-
-    #[test]
-    fn ensure_resampled_populates_on_width_change() {
-        let mut state = State {
-            raw_peaks: vec![128u8; 1000],
-            display_peaks: Vec::new(),
-            last_display_width: 0,
-            fraction: 0.0,
-            hover_index: None,
-            drag_fraction: None,
-            target_fraction: 0.0,
-            fraction_velocity: 0.0,
-            last_tick_us: 0,
-            build_progress: 1.0,
-            build_start_us: 0,
-            min_bar_height: MIN_BAR_HEIGHT,
-            max_bar_height: MAX_BAR_HEIGHT,
-            duration_ms: 0,
-        };
-        ensure_resampled(&mut state, 600);
-        assert!(!state.display_peaks.is_empty());
-        assert_eq!(state.last_display_width, 600);
-
-        // Calling again with same width should not change the display_peaks vec.
-        let before_len = state.display_peaks.len();
-        ensure_resampled(&mut state, 600);
-        assert_eq!(state.display_peaks.len(), before_len);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn mini_waveform_has_16px_height() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let w = WaveformSeek::new_mini();
-        assert_eq!(w.widget().content_height(), 16);
-    }
-}
+#[path = "waveform_seek_tests.rs"]
+mod tests;

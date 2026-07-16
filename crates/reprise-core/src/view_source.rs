@@ -57,6 +57,9 @@ pub enum ViewSource {
     /// sidebar routes to it; the content area shows the stats view widget
     /// instead of the `ColumnView`.
     MyStats,
+    /// A connected MTP device. The device serial is the durable identity
+    /// used by synchronization settings and managed-file inventory.
+    Device { serial: String },
 }
 
 impl ViewSource {
@@ -78,6 +81,7 @@ impl ViewSource {
             } => format!("album:{album}:{album_artist}"),
             Self::Artist(artist) => format!("artist:{artist}"),
             Self::MyStats => "my_stats".to_string(),
+            Self::Device { serial } => format!("device:{serial}"),
         }
     }
 }
@@ -100,6 +104,13 @@ mod tests {
         assert_eq!(ViewSource::Missing.label(), "missing");
         assert_eq!(ViewSource::ImportErrors.label(), "import_errors");
         assert_eq!(ViewSource::MyStats.label(), "my_stats");
+        assert_eq!(
+            ViewSource::Device {
+                serial: "pixel-8".into(),
+            }
+            .label(),
+            "device:pixel-8"
+        );
         assert_eq!(
             ViewSource::Album {
                 album: "Blue".into(),

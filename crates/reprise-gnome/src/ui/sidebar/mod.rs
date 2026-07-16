@@ -1,3 +1,4 @@
+pub(in crate::ui) mod sidebar_device_card;
 pub(crate) mod sidebar_dnd;
 pub(crate) mod sidebar_export;
 pub(in crate::ui) mod sidebar_issue_cleanup;

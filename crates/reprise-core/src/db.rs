@@ -191,6 +191,29 @@ const SCHEMA_V8: &str = r#"
 ALTER TABLE tracks ADD COLUMN waveform_peaks BLOB;
 "#;
 
+/// Schema v9: durable per-device synchronization preferences and the
+/// Reprise-managed file inventory.
+const SCHEMA_V9: &str = r#"
+CREATE TABLE device_settings (
+  device_serial  TEXT PRIMARY KEY,
+  device_name    TEXT NOT NULL,
+  selection_json TEXT NOT NULL DEFAULT '[]',
+  opus_bitrate   INTEGER NOT NULL DEFAULT 0,
+  ratings_back   INTEGER NOT NULL DEFAULT 0,
+  remove_deleted INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE device_files (
+  device_serial TEXT NOT NULL,
+  track_id      INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  device_path   TEXT NOT NULL,
+  size          INTEGER NOT NULL,
+  mtime         INTEGER NOT NULL,
+  pinned        INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (device_serial, track_id)
+);
+CREATE INDEX idx_device_files_serial ON device_files(device_serial);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -292,6 +315,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 8)?;
         tx.commit()?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 9 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V9)?;
+        tx.pragma_update(None, "user_version", 9)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -331,3 +361,7 @@ pub fn pending_waveform_tracks(conn: &Connection) -> Result<Vec<(i64, String)>, 
 #[cfg(test)]
 #[path = "db_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "db_recent_migration_tests.rs"]
+mod recent_migration_tests;

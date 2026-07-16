@@ -18,6 +18,7 @@ use rusqlite::Connection;
 
 use super::album_view::AlbumView;
 use super::cover_download_batch::CoverDownloadBatch;
+use super::device_view::DeviceViewPage;
 use super::first_run::FirstRunDecision;
 use super::info_panel::InfoPanel;
 use super::library_chrome::LibraryTitle;
@@ -50,6 +51,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
     pub(in crate::ui) stats_view: StatsView,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
+    pub(in crate::ui) device_view: &'a Rc<DeviceViewPage>,
     pub(in crate::ui) library_views: &'a LibraryViews,
     pub(in crate::ui) library_title: &'a Rc<LibraryTitle>,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
@@ -84,6 +86,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         player,
         stats_view,
         content_stack,
+        device_view,
         library_views,
         library_title,
         window_title,
@@ -174,7 +177,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
     app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
 
-    super::window_navigation::wire_sidebar_toggle(sidebar_toggle, split_view, sidebar_page);
+    super::window_navigation::wire_sidebar_toggle(sidebar_toggle, split_view, sidebar_page, conn);
     let show_content_if_collapsed = super::window_navigation::show_content_callback(split_view);
     super::library_shell::wire_source_routing(
         sidebar,
@@ -182,6 +185,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         stats_view,
         conn,
         content_stack,
+        device_view,
         library_views,
         library_title,
         window_title,

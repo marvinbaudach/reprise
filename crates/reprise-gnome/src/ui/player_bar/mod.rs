@@ -5,6 +5,7 @@ pub(in crate::ui) mod player_bar_state;
 #[path = "player_bar.rs"]
 mod surface;
 pub(in crate::ui) mod waveform_seek;
+pub(in crate::ui) mod waveform_shape;
 
 #[allow(unused_imports)]
 use super::*;
