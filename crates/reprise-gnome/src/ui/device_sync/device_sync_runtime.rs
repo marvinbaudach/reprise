@@ -14,7 +14,9 @@ use reprise_core::device_sync::settings::{
     load_device_files, load_or_create_settings, resolve_selection_track_ids, save_settings,
     set_file_pinned,
 };
-use reprise_core::device_sync::transfer::{build_transfer_plan, TransferMode, TransferPlanEntry};
+use reprise_core::device_sync::transfer::{
+    build_transfer_plan_with_inventory, TransferMode, TransferPlanEntry,
+};
 use reprise_core::device_sync::{
     compute_delta, merge_playlist_entries, track_relative_path, DeviceQueue, DeviceSelection,
     DeviceSettings, SyncCandidate, SyncDelta, SyncJob, SyncPhase, SyncSnapshot, SyncTrack,
@@ -368,7 +370,9 @@ impl DeviceSyncRuntime {
                 .map_err(|error| error.to_string())?;
             let tracks = reprise_core::queries::query_sync_tracks(&conn, &ids)
                 .map_err(|error| error.to_string())?;
-            let transfer_plan = build_transfer_plan(tracks, settings.opus_bitrate);
+            let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
+            let transfer_plan =
+                build_transfer_plan_with_inventory(tracks, settings.opus_bitrate, &files);
             let candidates = transfer_plan
                 .iter()
                 .map(|entry| SyncCandidate {
@@ -378,7 +382,6 @@ impl DeviceSyncRuntime {
                     source_mtime: entry.track.source_mtime,
                 })
                 .collect::<Vec<_>>();
-            let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
             let delta = compute_delta(&candidates, &files, settings.remove_deleted);
             let tracks = build_device_tracks(&conn, &transfer_plan, &files, &delta);
             (delta, transfer_plan, tracks)

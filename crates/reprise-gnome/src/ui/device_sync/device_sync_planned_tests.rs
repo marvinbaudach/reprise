@@ -47,6 +47,49 @@ fn connected_device_computes_its_persisted_selection_delta() {
 }
 
 #[test]
+fn planned_paths_preserve_existing_collision_slots_across_selection_changes() {
+    run(async {
+        let (_temp, conn) = fixture();
+        conn.borrow()
+            .execute(
+                "UPDATE tracks SET title = 'Same', album = 'Album', album_artist = 'Artist', track_no = 1 WHERE id IN (1, 2, 3)",
+                [],
+            )
+            .unwrap();
+        select_road_playlist(&conn, &[1, 2]);
+        for (track_id, path, pinned) in [
+            (2, "Artist/Album/01 Same.flac", false),
+            (3, "Artist/Album/01 Same (2).flac", true),
+        ] {
+            reprise_core::device_sync::settings::upsert_device_file(
+                &conn.borrow(),
+                &reprise_core::device_sync::DeviceFileRecord {
+                    device_serial: "a".into(),
+                    track_id,
+                    device_path: path.into(),
+                    size: 100,
+                    mtime: 0,
+                    pinned,
+                },
+            )
+            .unwrap();
+        }
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        let device = runtime.devices().remove(0);
+        let paths = device
+            .tracks
+            .iter()
+            .map(|track| (track.track_id, track.device_path.clone()))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(paths[&2], "Artist/Album/01 Same.flac");
+        assert_eq!(paths[&1], "Artist/Album/01 Same (3).flac");
+    });
+}
+
+#[test]
 fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
     run(async {
         let (_temp, conn) = fixture();

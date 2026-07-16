@@ -1,6 +1,6 @@
 //! Transfer decisions and device destinations independent of platform I/O.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use super::sanitize::{device_track_path, sanitize_component, DevicePathMetadata};
@@ -21,10 +21,20 @@ pub struct TransferPlanEntry {
 }
 
 pub fn build_transfer_plan(tracks: Vec<SyncTrack>, opus_bitrate: u32) -> Vec<TransferPlanEntry> {
-    let mut collisions = HashMap::<String, usize>::new();
-    tracks
+    build_transfer_plan_with_inventory(tracks, opus_bitrate, &[])
+}
+
+pub fn build_transfer_plan_with_inventory(
+    tracks: Vec<SyncTrack>,
+    opus_bitrate: u32,
+    inventory: &[super::settings::DeviceFileRecord],
+) -> Vec<TransferPlanEntry> {
+    let mut collisions = HashMap::<String, CollisionSlots>::new();
+    let mut indexed = tracks.into_iter().enumerate().collect::<Vec<_>>();
+    indexed.sort_by_key(|(_, track)| track.id);
+    let mut plan = indexed
         .into_iter()
-        .map(|track| {
+        .map(|(index, track)| {
             let mode = transfer_mode(&track.source_path, opus_bitrate);
             let forced_extension =
                 matches!(mode, TransferMode::TranscodeOpus { .. }).then_some("opus");
@@ -39,21 +49,81 @@ pub fn build_transfer_plan(tracks: Vec<SyncTrack>, opus_bitrate: u32) -> Vec<Tra
             let collision_key = path_stem_key(&metadata);
             let collision_index = collisions
                 .entry(collision_key)
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
-            let device_path = device_track_path(&metadata, forced_extension, *collision_index);
+                .or_insert_with_key(|key| CollisionSlots::from_inventory(key, inventory))
+                .assign(track.id);
+            let device_path = device_track_path(&metadata, forced_extension, collision_index);
             let expected_bytes = match mode {
                 TransferMode::Copy => track.size_bytes,
                 TransferMode::TranscodeOpus { bitrate } => transcode_size(&track, bitrate),
             };
-            TransferPlanEntry {
-                track,
-                device_path,
-                expected_bytes,
-                mode,
-            }
+            (
+                index,
+                TransferPlanEntry {
+                    track,
+                    device_path,
+                    expected_bytes,
+                    mode,
+                },
+            )
         })
-        .collect()
+        .collect::<Vec<_>>();
+    plan.sort_by_key(|(index, _)| *index);
+    plan.into_iter().map(|(_, entry)| entry).collect()
+}
+
+#[derive(Default)]
+struct CollisionSlots {
+    used: HashSet<usize>,
+    owned: HashMap<i64, usize>,
+}
+
+impl CollisionSlots {
+    fn from_inventory(
+        collision_key: &str,
+        inventory: &[super::settings::DeviceFileRecord],
+    ) -> Self {
+        let mut records = inventory.iter().collect::<Vec<_>>();
+        records.sort_by_key(|record| record.track_id);
+        let mut slots = Self::default();
+        for record in records {
+            let Some(index) = inventory_collision_index(&record.device_path, collision_key) else {
+                continue;
+            };
+            if slots.used.insert(index) {
+                slots.owned.insert(record.track_id, index);
+            }
+        }
+        slots
+    }
+
+    fn assign(&mut self, track_id: i64) -> usize {
+        if let Some(index) = self.owned.get(&track_id) {
+            return *index;
+        }
+        let mut index = 1;
+        while !self.used.insert(index) {
+            index = index.saturating_add(1);
+        }
+        index
+    }
+}
+
+fn inventory_collision_index(device_path: &str, collision_key: &str) -> Option<usize> {
+    let (directory, file_name) = device_path.rsplit_once('/').unwrap_or(("", device_path));
+    let file_stem = file_name
+        .rsplit_once('.')
+        .map_or(file_name, |(stem, _)| stem);
+    let inventory_key = if directory.is_empty() {
+        file_stem.to_lowercase()
+    } else {
+        format!("{directory}/{file_stem}").to_lowercase()
+    };
+    if inventory_key == collision_key {
+        return Some(1);
+    }
+    let suffix = inventory_key.strip_prefix(collision_key)?;
+    let index = suffix.strip_prefix(" (")?.strip_suffix(')')?.parse().ok()?;
+    (index >= 2).then_some(index)
 }
 
 pub fn transfer_mode(path: &Path, opus_bitrate: u32) -> TransferMode {

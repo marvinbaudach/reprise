@@ -10,7 +10,7 @@ use super::settings::{
     set_file_pinned, upsert_device_file, DeviceFileRecord, DeviceSelection, DeviceSettings,
     SelectionSource,
 };
-use super::transfer::{build_transfer_plan, TransferMode};
+use super::transfer::{build_transfer_plan, build_transfer_plan_with_inventory, TransferMode};
 use super::SyncTrack;
 
 fn migrated() -> Connection {
@@ -294,6 +294,86 @@ fn transfer_plan_transcodes_only_lossless_sources_and_resolves_name_collisions()
     assert_eq!(plan[1].mode, TransferMode::Copy);
     assert_eq!(plan[1].device_path, "Artist/Album/01 Same (2).mp3");
     assert_eq!(plan[1].expected_bytes, 500_000);
+}
+
+#[test]
+fn collision_suffixes_are_stable_when_track_input_order_changes() {
+    let track = |id, source: &str| SyncTrack {
+        id,
+        source_path: source.into(),
+        original_name: source.into(),
+        title: "Same".into(),
+        artist: "Artist".into(),
+        album: "Album".into(),
+        album_artist: "Artist".into(),
+        track_number: Some(1),
+        duration_ms: 80_000,
+        size_bytes: 500_000,
+        source_mtime: 10,
+    };
+    let ascending = build_transfer_plan(
+        vec![track(1, "/library/one.mp3"), track(2, "/library/two.mp3")],
+        0,
+    );
+    let reversed = build_transfer_plan(
+        vec![track(2, "/library/two.mp3"), track(1, "/library/one.mp3")],
+        0,
+    );
+    let paths = |plan: Vec<super::transfer::TransferPlanEntry>| {
+        plan.into_iter()
+            .map(|entry| (entry.track.id, entry.device_path))
+            .collect::<std::collections::HashMap<_, _>>()
+    };
+
+    assert_eq!(paths(ascending), paths(reversed));
+}
+
+#[test]
+fn collision_suffixes_preserve_selected_and_pinned_inventory_slots() {
+    let track = |id, source: &str| SyncTrack {
+        id,
+        source_path: source.into(),
+        original_name: source.into(),
+        title: "Same".into(),
+        artist: "Artist".into(),
+        album: "Album".into(),
+        album_artist: "Artist".into(),
+        track_number: Some(1),
+        duration_ms: 80_000,
+        size_bytes: 500_000,
+        source_mtime: 10,
+    };
+    let inventory = vec![
+        DeviceFileRecord {
+            device_serial: "phone".into(),
+            track_id: 2,
+            device_path: "Artist/Album/01 Same.mp3".into(),
+            size: 500_000,
+            mtime: 10,
+            pinned: false,
+        },
+        DeviceFileRecord {
+            device_serial: "phone".into(),
+            track_id: 99,
+            device_path: "Artist/Album/01 Same (2).mp3".into(),
+            size: 500_000,
+            mtime: 10,
+            pinned: true,
+        },
+    ];
+
+    let plan = build_transfer_plan_with_inventory(
+        vec![track(1, "/library/one.mp3"), track(2, "/library/two.mp3")],
+        0,
+        &inventory,
+    );
+    let paths = plan
+        .into_iter()
+        .map(|entry| (entry.track.id, entry.device_path))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    assert_eq!(paths[&2], "Artist/Album/01 Same.mp3");
+    assert_eq!(paths[&1], "Artist/Album/01 Same (3).mp3");
 }
 
 #[test]
