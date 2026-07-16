@@ -490,14 +490,35 @@ impl PlayerController {
         self.bar.set_on_title_click(f);
     }
 
+    /// The *effective album artist* of the currently-playing track, or `None`
+    /// when nothing is playing / the resolved artist is blank. Used by the
+    /// player-bar artist deep-link to select the right Artists-tab master row.
+    ///
+    /// The now-playing display cache (`NowPlaying`) only carries the *track*
+    /// artist, but the Artists view groups by album artist, so this resolves
+    /// the effective album artist from the DB by id using the same
+    /// `EFFECTIVE_ALBUM_ARTIST` fallback (album artist when tagged, else track
+    /// artist) that the Artists view groups by — see `queries::
+    /// query_track_album_artist`. Borrow discipline: the `now_playing` borrow
+    /// drops at the end of its own `let` statement before `conn` is borrowed.
+    pub fn current_track_album_artist(&self) -> Option<String> {
+        let id = self.now_playing.borrow().as_ref().map(|track| track.id)?;
+        let artist = {
+            let conn = self.conn.borrow();
+            reprise_core::queries::query_track_album_artist(&conn, id)
+                .inspect_err(|error| {
+                    tracing::warn!(%error, id, "album-artist deep-link lookup failed");
+                })
+                .ok()
+                .flatten()?
+        };
+        let trimmed = artist.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }
+
     /// Wires the cover-image click gesture — see `PlayerBar::connect_cover_clicked`.
     pub fn connect_cover_clicked(&self, f: impl Fn() + 'static) {
         self.bar.connect_cover_clicked(f);
-    }
-
-    /// Returns the currently playing artist name, or `None` when stopped.
-    pub fn current_artist(&self) -> Option<String> {
-        self.now_playing.borrow().as_ref().map(|np| np.artist.clone())
     }
 
     /// Wires the artist-label click gesture — see `PlayerBar::connect_artist_clicked`.
@@ -730,6 +751,11 @@ impl PlayerController {
                     // even has a chance to drain, but a stray `Stopped` from
                     // elsewhere must not leave stale metadata mirrored.
                     *self.now_playing.borrow_mut() = None;
+                    // Now-playing observers (the track table's + the Artists
+                    // view's mini-EQ) are turned off via the
+                    // `playback_state_changed(Stopped)` fan-out that
+                    // `sync_state` above already fires — see
+                    // `current_track_selection::wire`.
                 }
                 self.update_mpris_mirror(mpris_status_from_playback_state(state));
             }

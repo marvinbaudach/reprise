@@ -12,6 +12,7 @@ use reprise_core::view_source::ViewSource;
 use super::player_controller::PlayerController;
 use super::track_list::TrackList;
 use super::track_list_activation::current_queue_ids;
+use crate::ui::artist_view::ArtistView;
 
 pub(super) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>)>;
 /// Callback carrying coarse playback-state changes to the track list, which
@@ -37,26 +38,59 @@ fn visible_position_for_track_in_source(
         .and_then(|position| u32::try_from(position).ok())
 }
 
-pub(super) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc<TrackList>) {
+pub(super) fn wire(
+    player: Option<&Rc<PlayerController>>,
+    track_list: &Rc<TrackList>,
+    artist_view: &Rc<ArtistView>,
+) {
     let Some(player) = player else {
         return;
     };
+    // The two closures below capture a *strong* `Rc<ArtistView>`: the
+    // controller outlives `window::build`, so this keeps `ArtistView`'s
+    // pure-Rust `Inner` alive past `build()` — which is what makes the Artists
+    // tab-switch's `refresh_callback` (a `Weak<Inner>::upgrade`) succeed. No
+    // cycle: the artist view's hero play/shuffle/queue closures capture the
+    // controller only via `Weak` (see `window::build`), upgrading at call time.
     let track_list_for_current = Rc::downgrade(track_list);
-    player.set_on_current_track_changed(move |track_id, queue_position| {
-        match track_list_for_current.upgrade() {
-            Some(track_list) => track_list.select_current_track(track_id, queue_position),
-            None => tracing::warn!(
-                track_id,
-                "current-track selection skipped: track list is gone"
-            ),
-        }
-    });
+    let player_weak = Rc::downgrade(player);
+    {
+        let artist_view = artist_view.clone();
+        player.set_on_current_track_changed(move |track_id, queue_position| {
+            match track_list_for_current.upgrade() {
+                Some(track_list) => track_list.select_current_track(track_id, queue_position),
+                None => tracing::warn!(
+                    track_id,
+                    "current-track selection skipped: track list is gone"
+                ),
+            }
+            // Light the Artists view's mini-EQ. The view groups by *album*
+            // artist, so resolve the effective album artist for the now-playing
+            // track (the same fallback the master rows group by) before handing
+            // it over.
+            if let Some(player) = player_weak.upgrade() {
+                let album_artist = player.current_track_album_artist();
+                artist_view.set_now_playing(album_artist, Some(track_id));
+            }
+        });
+    }
 
     let track_list_for_state = Rc::downgrade(track_list);
-    player.set_on_playback_state_changed(move |state| match track_list_for_state.upgrade() {
-        Some(track_list) => track_list.on_playback_state(state),
-        None => tracing::debug!("playback-state marker skipped: track list is gone"),
-    });
+    {
+        let artist_view = artist_view.clone();
+        player.set_on_playback_state_changed(move |state| {
+            if let Some(track_list) = track_list_for_state.upgrade() {
+                track_list.on_playback_state(state);
+            } else {
+                tracing::debug!("playback-state marker skipped: track list is gone");
+            }
+            // `current_track_changed` never fires on stop, so the Artists
+            // mini-EQ is turned off here — the `Stopped` counterpart.
+            if matches!(state, PlaybackState::Stopped) {
+                artist_view.set_now_playing(None, None);
+            }
+        });
+    }
 
     let weak = Rc::downgrade(player);
     player.set_on_title_click(move || {

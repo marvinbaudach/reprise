@@ -23,10 +23,24 @@
 mod about;
 #[path = "library_views/album_view.rs"]
 mod album_view;
+#[path = "library_views/artist_avatar.rs"]
+mod artist_avatar;
+#[path = "library_views/artist_detail_hero.rs"]
+mod artist_detail_hero;
+#[path = "library_views/artist_detail_pane.rs"]
+mod artist_detail_pane;
+#[path = "library_views/artist_detail_row.rs"]
+mod artist_detail_row;
+#[path = "library_views/artist_master.rs"]
+mod artist_master;
+#[path = "library_views/artist_master_row.rs"]
+mod artist_master_row;
 #[path = "info_panel/artist_news_worker.rs"]
 mod artist_news_worker;
 #[path = "library_views/artist_view.rs"]
 mod artist_view;
+#[path = "library_views/artist_view_css.rs"]
+mod artist_view_css;
 #[path = "playback/audio_effects.rs"]
 mod audio_effects;
 #[path = "browse/browse_bar.rs"]
