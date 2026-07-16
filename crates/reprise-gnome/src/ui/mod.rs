@@ -21,18 +21,18 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
-#[path = "library_views/album_view.rs"]
-mod album_view;
 #[path = "library_views/album_card.rs"]
 mod album_card;
 #[path = "library_views/album_card_actions.rs"]
 mod album_card_actions;
-#[path = "library_views/album_context_menu.rs"]
-mod album_context_menu;
 #[path = "library_views/album_card_css.rs"]
 mod album_card_css;
+#[path = "library_views/album_context_menu.rs"]
+mod album_context_menu;
 #[path = "library_views/album_header.rs"]
 mod album_header;
+#[path = "library_views/album_view.rs"]
+mod album_view;
 #[path = "library_views/artist_avatar.rs"]
 mod artist_avatar;
 #[path = "library_views/artist_detail_hero.rs"]
@@ -53,6 +53,8 @@ mod artist_view;
 mod artist_view_css;
 #[path = "playback/audio_effects.rs"]
 mod audio_effects;
+#[path = "tag_edit/autocomplete_entry.rs"]
+mod autocomplete_entry;
 #[path = "browse/browse_bar.rs"]
 pub mod browse_bar;
 #[path = "browse/browse_filter_count.rs"]
@@ -84,8 +86,12 @@ pub mod cover_loader;
 #[path = "track_list/current_track_selection.rs"]
 mod current_track_selection;
 pub mod delete_tracks;
+#[path = "device_sync/device_sync_actions.rs"]
+mod device_sync_actions;
 #[path = "device_sync/device_sync_backend.rs"]
 mod device_sync_backend;
+#[path = "device_sync/device_sync_feedback.rs"]
+mod device_sync_feedback;
 #[path = "device_sync/device_sync_runtime.rs"]
 mod device_sync_runtime;
 #[cfg(test)]
@@ -95,6 +101,8 @@ mod device_sync_runtime_tests;
 mod device_sync_smoke;
 #[path = "device_sync/device_sync_strings.rs"]
 mod device_sync_strings;
+#[path = "device_view/device_view.rs"]
+mod device_view;
 pub mod dialogs;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
@@ -224,6 +232,8 @@ pub mod session_restore;
 pub mod shortcuts;
 #[path = "sidebar/sidebar.rs"]
 pub mod sidebar;
+#[path = "sidebar/sidebar_device_card.rs"]
+mod sidebar_device_card;
 #[path = "sidebar/sidebar_dnd.rs"]
 pub mod sidebar_dnd;
 #[path = "sidebar/sidebar_export.rs"]
@@ -256,8 +266,6 @@ pub mod tag_edit_flow;
 pub mod tag_editor;
 #[path = "tag_edit/tag_editor_style.rs"]
 mod tag_editor_style;
-#[path = "tag_edit/autocomplete_entry.rs"]
-mod autocomplete_entry;
 pub mod toasts;
 #[path = "track_list/track_actions.rs"]
 pub mod track_actions;

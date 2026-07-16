@@ -47,42 +47,39 @@ pub(super) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownloadBatc
     let controls = scan_controls.clone();
     let hide_generation = Rc::new(Cell::new(0u64));
 
-    batch.subscribe_progress(
-        || true,
-        {
-            let controls = controls.clone();
-            let hide_generation = hide_generation.clone();
-            move |progress| {
-                let pres = presentation(progress);
-                if !pres.visible {
-                    return;
-                }
-                // A library scan's own progress takes priority over the cover
-                // batch — don't clobber the scan card while a scan is active.
-                if controls.is_scanning() {
-                    return;
-                }
-
-                controls.show_cover_progress(&pres.title, &pres.detail, pres.fraction);
-
-                if pres.auto_hide {
-                    let generation = hide_generation.get().wrapping_add(1);
-                    hide_generation.set(generation);
-                    let controls = controls.clone();
-                    let hide_generation = hide_generation.clone();
-                    glib::timeout_add_seconds_local_once(TERMINAL_HIDE_DELAY_SECS, move || {
-                        if hide_generation.get() != generation {
-                            return;
-                        }
-                        // Only hide if no scan started in the meantime.
-                        if !controls.is_scanning() {
-                            controls.finish_progress();
-                        }
-                    });
-                }
+    batch.subscribe_progress(|| true, {
+        let controls = controls.clone();
+        let hide_generation = hide_generation.clone();
+        move |progress| {
+            let pres = presentation(progress);
+            if !pres.visible {
+                return;
             }
-        },
-    );
+            // A library scan's own progress takes priority over the cover
+            // batch — don't clobber the scan card while a scan is active.
+            if controls.is_scanning() {
+                return;
+            }
+
+            controls.show_cover_progress(&pres.title, &pres.detail, pres.fraction);
+
+            if pres.auto_hide {
+                let generation = hide_generation.get().wrapping_add(1);
+                hide_generation.set(generation);
+                let controls = controls.clone();
+                let hide_generation = hide_generation.clone();
+                glib::timeout_add_seconds_local_once(TERMINAL_HIDE_DELAY_SECS, move || {
+                    if hide_generation.get() != generation {
+                        return;
+                    }
+                    // Only hide if no scan started in the meantime.
+                    if !controls.is_scanning() {
+                        controls.finish_progress();
+                    }
+                });
+            }
+        }
+    });
 
     let batch = batch.clone();
     scan_controls.set_on_complete(move || batch.start());

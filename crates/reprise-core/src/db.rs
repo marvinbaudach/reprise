@@ -182,6 +182,31 @@ const SCHEMA_V8: &str = r#"
 ALTER TABLE tracks ADD COLUMN waveform_peaks BLOB;
 "#;
 
+/// Schema v9: durable per-device synchronization preferences and the
+/// Reprise-managed file inventory. The inventory deliberately references
+/// library tracks so removing a track also removes stale synchronization
+/// metadata without touching any file on the device.
+const SCHEMA_V9: &str = r#"
+CREATE TABLE device_settings (
+  device_serial  TEXT PRIMARY KEY,
+  device_name    TEXT NOT NULL,
+  selection_json TEXT NOT NULL DEFAULT '[]',
+  opus_bitrate   INTEGER NOT NULL DEFAULT 0,
+  ratings_back   INTEGER NOT NULL DEFAULT 0,
+  remove_deleted INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE device_files (
+  device_serial TEXT NOT NULL,
+  track_id      INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+  device_path   TEXT NOT NULL,
+  size          INTEGER NOT NULL,
+  mtime         INTEGER NOT NULL,
+  pinned        INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (device_serial, track_id)
+);
+CREATE INDEX idx_device_files_serial ON device_files(device_serial);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -283,6 +308,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 8)?;
         tx.commit()?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 9 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V9)?;
+        tx.pragma_update(None, "user_version", 9)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -346,7 +378,7 @@ mod tests {
         let version_after: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after, 8);
+        assert_eq!(version_after, 9);
     }
 
     #[test]
@@ -361,7 +393,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
     }
 
     /// Builds a v1 DB by hand (SCHEMA_V1 + `user_version = 1`, exactly what a
@@ -386,7 +418,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 8); // Now goes to the current schema (v8)
+        assert_eq!(version, 9); // Now goes to the current schema.
 
         let (title, rating, play_count, added_at, file_size, device, inode): (
             String,
@@ -428,7 +460,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 8); // Current schema
+        assert_eq!(version_after_second_run, 9); // Current schema
     }
 
     #[test]
@@ -460,7 +492,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 8); // walks all the way to the current schema version (v8)
+        assert_eq!(version, 9); // Walks all the way to the current schema.
 
         // Verify tables exist.
         let playlists_exist: bool = conn
@@ -615,7 +647,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
 
         let settings_exist: bool = conn
             .query_row(
@@ -646,7 +678,7 @@ mod tests {
         let version_after_second_run: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version_after_second_run, 8);
+        assert_eq!(version_after_second_run, 9);
     }
 
     #[test]
@@ -668,7 +700,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         let setting: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'keep'", [], |row| {
                 row.get(0)
@@ -707,7 +739,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
 
         let listen_events_exist: bool = conn
             .query_row(
@@ -738,129 +770,10 @@ mod tests {
         let version_after: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version_after, 8);
-    }
-
-    /// The FK on `listen_events.track_id` cascades: deleting a track removes
-    /// its recorded listen events too.
-    #[test]
-    fn migrate_v7_foreign_key_cascades_on_track_delete() {
-        let conn = open(None).unwrap();
-        migrate(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, 100, 200000)",
-            [],
-        )
-        .unwrap();
-
-        conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
-
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM listen_events WHERE track_id = 1",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
-        let conn = open(None).unwrap();
-        conn.execute_batch(SCHEMA_V1).unwrap();
-        conn.execute_batch(SCHEMA_V2).unwrap();
-        conn.execute_batch(SCHEMA_V3).unwrap();
-        conn.execute_batch(SCHEMA_V4).unwrap();
-        conn.execute_batch(SCHEMA_V5).unwrap();
-        conn.execute(
-            "INSERT INTO listenbrainz_queue \
-             (listened_at, artist_name, track_name, release_name, duration_ms) \
-             VALUES (1, 'Artist', 'Track', NULL, 120000)",
-            [],
-        )
-        .unwrap();
-        conn.pragma_update(None, "user_version", 5).unwrap();
-
-        migrate(&conn).unwrap();
-
-        let version: i64 = conn
-            .query_row("PRAGMA user_version", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, 8);
-        let lastfm_exists: bool = conn
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(lastfm_exists);
-        let preserved: i64 = conn
-            .query_row("SELECT COUNT(*) FROM listenbrainz_queue", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(preserved, 1);
-    }
-
-    #[test]
-    fn migrate_v7_to_v8_adds_waveform_peaks_column() {
-        let conn = open(None).unwrap();
-        // Build up to v7 manually
-        migrate(&conn).unwrap(); // goes all the way to current
-        let version: i64 = conn
-            .query_row("PRAGMA user_version", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(version, 8);
-        // Column exists and is nullable
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/test.flac', 'T', 'A', 0)",
-            [],
-        )
-        .unwrap();
-        let peaks: Option<Vec<u8>> = conn
-            .query_row(
-                "SELECT waveform_peaks FROM tracks WHERE path = '/test.flac'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert!(peaks.is_none()); // Default is NULL
-        // Can store and retrieve peaks
-        let test_peaks: Vec<u8> = (0..1000).map(|i| (i % 256) as u8).collect();
-        conn.execute(
-            "UPDATE tracks SET waveform_peaks = ?1 WHERE path = '/test.flac'",
-            [&test_peaks],
-        )
-        .unwrap();
-        let loaded: Option<Vec<u8>> = conn
-            .query_row(
-                "SELECT waveform_peaks FROM tracks WHERE path = '/test.flac'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(loaded.unwrap().len(), 1000);
-    }
-
-    #[test]
-    fn waveform_peaks_crud_round_trips() {
-        let conn = open(None).unwrap();
-        migrate(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/t.flac', 'T', 'A', 0)",
-            [],
-        )
-        .unwrap();
-        assert!(get_waveform_peaks(&conn, 1).unwrap().is_none());
-        let peaks: Vec<u8> = vec![0, 128, 255, 64, 192];
-        set_waveform_peaks(&conn, 1, &peaks).unwrap();
-        assert_eq!(get_waveform_peaks(&conn, 1).unwrap().unwrap(), peaks);
+        assert_eq!(version_after, 9);
     }
 }
+
+#[cfg(test)]
+#[path = "db_recent_migration_tests.rs"]
+mod recent_migration_tests;

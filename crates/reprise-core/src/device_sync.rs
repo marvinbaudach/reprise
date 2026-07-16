@@ -9,6 +9,15 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::library::m3u::{M3uEntry, M3uExportEntry};
 
+pub mod delta;
+pub mod m3u;
+pub mod sanitize;
+pub mod settings;
+pub mod transfer;
+
+pub use delta::{compute_delta, SyncCandidate, SyncDelta};
+pub use settings::{DeviceFileRecord, DeviceSelection, DeviceSettings, SelectionSource};
+
 pub const REPRISE_DEVICE_DIR: &str = "Reprise";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,8 +27,12 @@ pub struct SyncTrack {
     pub original_name: String,
     pub title: String,
     pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub track_number: Option<u32>,
     pub duration_ms: i64,
     pub size_bytes: u64,
+    pub source_mtime: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -306,6 +319,10 @@ fn safe_playlist_path(path: &str) -> bool {
 }
 
 #[cfg(test)]
+#[path = "device_sync/v1_tests.rs"]
+mod v1_tests;
+
+#[cfg(test)]
 mod tests {
     use std::path::{Component, Path};
 
@@ -319,8 +336,12 @@ mod tests {
             original_name: original_name.to_string(),
             title: format!("Track {id}"),
             artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            album_artist: "Artist".to_string(),
+            track_number: Some(id.max(0) as u32),
             duration_ms: 42_000,
             size_bytes,
+            source_mtime: 1,
         }
     }
 

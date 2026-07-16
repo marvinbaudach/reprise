@@ -273,24 +273,26 @@ impl PlayerController {
         if std::thread::Builder::new()
             .name("reprise-waveform".to_string())
             .spawn(move || {
-                let peaks = reprise_core::db::open(Some(&db_path)).ok().and_then(|conn| {
-                    reprise_core::db::migrate(&conn).ok();
-                    // Try DB first.
-                    if let Some(cached) = reprise_core::db::get_waveform_peaks(&conn, track_id)
-                        .ok()
-                        .flatten()
-                    {
-                        return Some(cached);
-                    }
-                    // Not cached — extract now and store for next time.
-                    let peaks = crate::ui::waveform_peaks::extract_peaks(
-                        &track_path,
-                        crate::ui::waveform_peaks::STORED_PEAK_COUNT,
-                    )
-                    .ok()?;
-                    reprise_core::db::set_waveform_peaks(&conn, track_id, &peaks).ok();
-                    Some(peaks)
-                });
+                let peaks = reprise_core::db::open(Some(&db_path))
+                    .ok()
+                    .and_then(|conn| {
+                        reprise_core::db::migrate(&conn).ok();
+                        // Try DB first.
+                        if let Some(cached) = reprise_core::db::get_waveform_peaks(&conn, track_id)
+                            .ok()
+                            .flatten()
+                        {
+                            return Some(cached);
+                        }
+                        // Not cached — extract now and store for next time.
+                        let peaks = crate::ui::waveform_peaks::extract_peaks(
+                            &track_path,
+                            crate::ui::waveform_peaks::STORED_PEAK_COUNT,
+                        )
+                        .ok()?;
+                        reprise_core::db::set_waveform_peaks(&conn, track_id, &peaks).ok();
+                        Some(peaks)
+                    });
                 let _ = sender.send_blocking(peaks);
             })
             .is_err()

@@ -5,8 +5,8 @@
 
 pub(super) fn css() -> String {
     use crate::ui::style::tokens::{
-        DIALOG_CARD_ALPHA, FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, RADIUS_SURFACE,
-        SURFACE_BORDER_ALPHA, SURFACE_SHADOW, TRANSITION,
+        DIALOG_CARD_ALPHA, FOCUS_GLOW_ALPHA, FOCUS_GLOW_BLUR, RADIUS_SURFACE, SURFACE_BORDER_ALPHA,
+        SURFACE_SHADOW, TRANSITION,
     };
     format!(
         /* --- Dialog shell --- */

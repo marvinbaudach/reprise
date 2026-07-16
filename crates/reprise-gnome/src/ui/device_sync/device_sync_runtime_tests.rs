@@ -8,7 +8,10 @@ use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
-use reprise_core::device_sync::{SyncPhase, SyncSnapshot};
+use reprise_core::device_sync::settings::save_settings;
+use reprise_core::device_sync::{
+    DeviceSelection, DeviceSettings, SelectionSource, SyncPhase, SyncSnapshot,
+};
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceContents, DeviceDescriptor};
 use rusqlite::Connection;
 
@@ -26,7 +29,8 @@ struct FakeState {
     max_by_device: RefCell<HashMap<String, usize>>,
     active_total: Cell<usize>,
     max_total: Cell<usize>,
-    playlists: RefCell<Vec<(String, String)>>,
+    playlists: RefCell<Vec<(String, String, Vec<u8>)>>,
+    deleted: RefCell<Vec<String>>,
 }
 
 #[derive(Clone)]
@@ -131,16 +135,27 @@ impl DeviceBackend for FakeBackend {
         Box::pin(async { Ok(Vec::new()) })
     }
 
+    fn delete_track(&self, _root_uri: String, relative_target: String) -> TestFuture<bool> {
+        let state = self.state.clone();
+        Box::pin(async move {
+            state.deleted.borrow_mut().push(relative_target);
+            Ok(true)
+        })
+    }
+
     fn replace_playlist(
         &self,
         device_id: String,
         _root_uri: String,
         name: String,
-        _contents: Vec<u8>,
+        contents: Vec<u8>,
     ) -> TestFuture<()> {
         let state = self.state.clone();
         Box::pin(async move {
-            state.playlists.borrow_mut().push((device_id, name));
+            state
+                .playlists
+                .borrow_mut()
+                .push((device_id, name, contents));
             Ok(())
         })
     }
@@ -170,6 +185,27 @@ fn fixture() -> (tempfile::TempDir, Rc<RefCell<Connection>>) {
         .unwrap();
     }
     (temp, Rc::new(RefCell::new(conn)))
+}
+
+fn write_silent_wav(path: &std::path::Path) {
+    const SAMPLE_RATE: u32 = 8_000;
+    const SAMPLES: u32 = SAMPLE_RATE / 10;
+    const DATA_BYTES: u32 = SAMPLES * 2;
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + DATA_BYTES).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    wav.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    wav.extend_from_slice(&2_u16.to_le_bytes());
+    wav.extend_from_slice(&16_u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&DATA_BYTES.to_le_bytes());
+    wav.resize(wav.len() + DATA_BYTES as usize, 0);
+    std::fs::write(path, wav).unwrap();
 }
 
 fn run(future: impl Future<Output = ()>) {
@@ -229,7 +265,7 @@ fn rapid_jobs_for_one_device_copy_strictly_fifo_without_overlap() {
 }
 
 #[test]
-fn different_devices_may_copy_concurrently() {
+fn different_devices_share_one_global_copy_slot() {
     run(async {
         let (_temp, conn) = fixture();
         let backend = Rc::new(FakeBackend::new(
@@ -240,7 +276,8 @@ fn different_devices_may_copy_concurrently() {
         runtime.enqueue("a", "A", &[1]).unwrap();
         runtime.enqueue("b", "B", &[2]).unwrap();
         settle().await;
-        assert_eq!(backend.state.max_total.get(), 2);
+        assert_eq!(backend.state.max_total.get(), 1);
+        assert_eq!(backend.state.copy_order.borrow().len(), 2);
     });
 }
 
@@ -261,28 +298,6 @@ fn subscriber_receives_initial_state_and_progress_updates() {
         settle().await;
         assert!(states.borrow().len() >= 4);
         assert_eq!(snapshot(&runtime, "a").phase, SyncPhase::Complete);
-    });
-}
-
-#[test]
-fn device_view_projects_descriptor_scan_and_idle_state() {
-    run(async {
-        let (_temp, conn) = fixture();
-        let descriptor = descriptor("a", true);
-        let expected_icon = descriptor.icon.clone();
-        let backend = Rc::new(FakeBackend::new(vec![descriptor], 1));
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
-        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        let device = runtime.devices().remove(0);
-        assert_eq!(device.id, "a");
-        assert_eq!(device.name, "Phone a");
-        assert_eq!(device.icon, expected_icon);
-        assert!(device.connected);
-        assert_eq!(device.available_bytes, Some(1_000_000));
-        assert!(device.contents.files.is_empty());
-        assert!(!device.scanning);
-        assert!(device.scan_error.is_none());
-        assert_eq!(device.snapshot.phase, SyncPhase::Idle);
     });
 }
 
@@ -613,3 +628,6 @@ fn local_gio_cancel_removes_partial_and_runs_the_waiting_job() {
             .exists());
     });
 }
+
+#[path = "device_sync_planned_tests.rs"]
+mod planned_tests;

@@ -22,7 +22,11 @@ pub(super) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPag
     let group = adw::PreferencesGroup::builder()
         .title(copy::text(copy::CONNECTED_DEVICES))
         .build();
-    let list = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    // A real GtkListBox, not a styled Box: AdwActionRow's `activated` signal
+    // only fires when a parent list box activates the row — inside a plain
+    // Box the device rows render fine but are dead to clicks.
+    let list = gtk4::ListBox::new();
+    list.set_selection_mode(gtk4::SelectionMode::None);
     list.add_css_class("boxed-list");
     group.add(&list);
     page.add(&group);
@@ -36,8 +40,10 @@ pub(super) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPag
     page
 }
 
-fn render_devices(list: &gtk4::Box, state: &DeviceSyncState, runtime: &Rc<DeviceSyncRuntime>) {
-    clear_box(list);
+fn render_devices(list: &gtk4::ListBox, state: &DeviceSyncState, runtime: &Rc<DeviceSyncRuntime>) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
     if state.devices.is_empty() {
         let empty = adw::StatusPage::builder()
             .icon_name("phone-symbolic")
@@ -76,19 +82,29 @@ pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -
     let device_id = device.id.clone();
     let runtime = runtime.clone();
     row.connect_activated(move |row| {
-        let Some(root) = row.root() else {
-            return;
-        };
-        present_device(&root, &device_id, &runtime);
+        // The row hands itself over so `present_device` can find the
+        // Preferences NavigationView among its ancestors and push the device
+        // page inside it.
+        present_device(row, &device_id, &runtime);
     });
     row
 }
 
+/// Pushes the device's sync settings as a navigation subpage INSIDE the
+/// Preferences dialog (same level as the other preference pages, back arrow
+/// included) — deliberately not a second stacked modal.
 pub(super) fn present_device(
     parent: &impl IsA<gtk4::Widget>,
     device_id: &str,
     runtime: &Rc<DeviceSyncRuntime>,
 ) {
+    let Some(navigation) = parent
+        .ancestor(adw::NavigationView::static_type())
+        .and_downcast::<adw::NavigationView>()
+    else {
+        tracing::warn!("device row activated outside the preferences navigation");
+        return;
+    };
     let header = adw::HeaderBar::new();
     let refresh = gtk4::Button::builder()
         .icon_name("view-refresh-symbolic")
@@ -104,39 +120,40 @@ pub(super) fn present_device(
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .child(&detail)
         .build();
+    let clamp = adw::Clamp::builder()
+        .maximum_size(680)
+        .child(&scroll)
+        .build();
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&scroll));
-    let dialog = adw::Dialog::builder()
-        .child(&toolbar)
-        .content_width(680)
-        .content_height(720)
-        .build();
+    toolbar.set_content(Some(&clamp));
+    let page = adw::NavigationPage::new(&toolbar, &copy::text(copy::DISCONNECTED));
 
     let refresh_id = device_id.to_string();
     let refresh_runtime = runtime.clone();
     refresh.connect_clicked(move |_| refresh_runtime.refresh_contents(&refresh_id));
 
     let update_detail = detail.clone();
-    let update_dialog = dialog.clone();
+    let update_page = page.clone();
     let update_id = device_id.to_string();
     let update_runtime = runtime.clone();
     let subscription = runtime.subscribe(Rc::new(move |state| {
         let Some(device) = state.devices.iter().find(|device| device.id == update_id) else {
-            update_dialog.set_title(&copy::text(copy::DISCONNECTED));
+            update_page.set_title(&copy::text(copy::DISCONNECTED));
             return;
         };
-        update_dialog.set_title(&device.name);
-        render_device_detail(&update_detail, device, &update_dialog, &update_runtime);
+        update_page.set_title(&device.name);
+        let parent = update_detail.clone().upcast::<gtk4::Widget>();
+        render_device_detail(&update_detail, device, &parent, &update_runtime);
     }));
-    retain_subscription(&dialog, subscription);
-    dialog.present(Some(parent));
+    retain_subscription(&page, subscription);
+    navigation.push(&page);
 }
 
 fn render_device_detail(
     detail: &gtk4::Box,
     device: &DeviceView,
-    dialog: &adw::Dialog,
+    prompt_parent: &gtk4::Widget,
     runtime: &Rc<DeviceSyncRuntime>,
 ) {
     clear_box(detail);
@@ -158,13 +175,17 @@ fn render_device_detail(
     if progress_is_visible(&device.snapshot) {
         detail.append(&progress_group(&device.id, &device.snapshot, runtime));
     }
-    detail.append(&playlist_group(device, dialog, runtime));
+    detail.append(&planned::device_header_group(device, runtime));
+    detail.append(&planned::selection_group(device, runtime));
+    detail.append(&planned::delta_group(device));
+    detail.append(&planned::settings_group(device, runtime));
+    detail.append(&playlist_group(device, prompt_parent, runtime));
     detail.append(&music_group(device));
 }
 
 fn playlist_group(
     device: &DeviceView,
-    dialog: &adw::Dialog,
+    prompt_parent: &gtk4::Widget,
     runtime: &Rc<DeviceSyncRuntime>,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
@@ -178,12 +199,12 @@ fn playlist_group(
     group.set_header_suffix(Some(&add));
     let id = device.id.clone();
     let runtime_for_add = runtime.clone();
-    let dialog = dialog.clone();
+    let prompt_parent = prompt_parent.clone();
     add.connect_clicked(move |_| {
         let runtime = runtime_for_add.clone();
         let id = id.clone();
         super::dialogs::prompt_name(
-            &dialog,
+            &prompt_parent,
             &copy::text(copy::NEW_PHONE_PLAYLIST),
             &copy::text(copy::PLAYLIST_NAME),
             &copy::text(copy::CREATE),
@@ -455,6 +476,9 @@ fn retain_subscription<W: IsA<gtk4::Widget>>(widget: &W, subscription: Subscript
     });
 }
 
+#[path = "preference_sync_planned.rs"]
+mod planned;
+
 #[cfg(test)]
 mod tests {
     use reprise_platform_linux::device_sync::DeviceContents;
@@ -474,6 +498,20 @@ mod tests {
             draft_playlists: vec!["Road".into()],
             last_enqueue: None,
             snapshot: reprise_core::device_sync::DeviceQueue::new().snapshot(),
+            settings: reprise_core::device_sync::DeviceSettings {
+                device_serial: "phone".into(),
+                device_name: "Phone".into(),
+                selection: reprise_core::device_sync::DeviceSelection::default(),
+                opus_bitrate: 0,
+                ratings_back: false,
+                remove_deleted: true,
+            },
+            delta: None,
+            sync_phase: crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+            sync_error: None,
+            last_sync: None,
+            tracks: Vec::new(),
+            selected_track_count: 0,
         }
     }
 
@@ -572,10 +610,14 @@ mod tests {
     fn empty_device_list_builds_the_usb_instructions_status_page() {
         gtk4::init().unwrap();
         let runtime = display_runtime();
-        let list = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let list = gtk4::ListBox::new();
         render_devices(&list, &DeviceSyncState::default(), &runtime);
+        // The list box wraps appended non-row children in a GtkListBoxRow.
         let status = list
             .first_child()
+            .and_downcast::<gtk4::ListBoxRow>()
+            .unwrap()
+            .child()
             .and_downcast::<adw::StatusPage>()
             .unwrap();
         assert_eq!(status.title(), copy::text(copy::NO_DEVICE));
@@ -635,5 +677,36 @@ mod tests {
         assert!(second.first_child().is_some());
         assert_eq!(before, progress_summary(&snapshot));
         assert_eq!(file_fraction(&snapshot), 0.4);
+    }
+}
+
+#[cfg(test)]
+mod nav_push_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn device_row_pushes_a_navigation_subpage_instead_of_a_dialog() {
+        gtk4::init().unwrap();
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let runtime = DeviceSyncRuntime::new(
+            &Rc::new(RefCell::new(conn)),
+            reprise_platform_linux::device_sync::DeviceMonitor::new(),
+        );
+
+        let navigation = adw::NavigationView::new();
+        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let root = adw::NavigationPage::new(&content, "Preferences");
+        navigation.add(&root);
+
+        // `present_device` walks up from any widget inside the preferences
+        // navigation; an unknown device id still pushes the page (titled
+        // Disconnected by the immediate subscription callback).
+        present_device(&content, "unknown-device", &runtime);
+
+        let visible = navigation.visible_page().expect("a page is visible");
+        assert_eq!(visible.title(), copy::text(copy::DISCONNECTED));
     }
 }

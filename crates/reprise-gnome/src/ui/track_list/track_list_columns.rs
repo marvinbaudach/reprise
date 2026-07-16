@@ -357,7 +357,7 @@ pub(super) fn append_title_column(
     });
 
     let column = gtk4::ColumnViewColumn::builder()
-        .title(&strings::text(strings::COLUMN_TITLE))
+        .title(strings::text(strings::COLUMN_TITLE))
         .factory(&factory)
         .resizable(true)
         .build();

@@ -125,6 +125,79 @@ pub fn playlist_entries(count: usize) -> String {
     )
 }
 
+/// Rough USB throughput used for the remaining-time hint — the same
+/// assumption the delta card's estimate is built on, so both agree.
+const ESTIMATED_BYTES_PER_SECOND: u64 = 5 * 1_024 * 1_024;
+
+/// `98 %` — kept in its own label (never folded into the subtitle) so the
+/// track text beside it cannot make the number jump around.
+pub fn sync_percent(bytes_done: u64, bytes_total: u64) -> String {
+    let percent = bytes_done
+        .saturating_mul(100)
+        .checked_div(bytes_total)
+        .unwrap_or(0)
+        .min(100);
+    formatted(N_!("{percent} %"), &[("percent", &percent.to_string())])
+}
+
+/// `↑ Immortal` — the glyph says what is happening to the named track.
+/// Copying is the only direction the runtime currently reports per track;
+/// transcoding happens inside the encoder pipeline and is not surfaced as a
+/// step yet, so it deliberately has no glyph here rather than a guessed one.
+pub fn sync_activity(step: &str, current_track: &str) -> String {
+    if current_track.is_empty() {
+        return step.to_string();
+    }
+    format!("{step} {current_track}")
+}
+
+/// `28 of 82 · 340.0 MiB of 1.2 GiB · ~2 min left · Immortal`
+pub fn sync_tooltip(
+    done: u32,
+    total: u32,
+    bytes_done: u64,
+    bytes_total: u64,
+    current_track: &str,
+) -> String {
+    let mut parts = vec![
+        track_progress(done as usize, total as usize),
+        formatted(
+            N_!("{done} of {total}"),
+            &[
+                ("done", &format_bytes(bytes_done)),
+                ("total", &format_bytes(bytes_total)),
+            ],
+        ),
+    ];
+    if let Some(remaining) = remaining_hint(bytes_done, bytes_total) {
+        parts.push(remaining);
+    }
+    if !current_track.is_empty() {
+        parts.push(current_track.to_string());
+    }
+    parts.join(" · ")
+}
+
+fn remaining_hint(bytes_done: u64, bytes_total: u64) -> Option<String> {
+    let remaining = bytes_total
+        .checked_sub(bytes_done)
+        .filter(|left| *left > 0)?;
+    let seconds = remaining.div_ceil(ESTIMATED_BYTES_PER_SECOND);
+    let text = if seconds >= 60 {
+        let minutes = seconds.div_ceil(60);
+        formatted(
+            N_!("~{minutes} min left"),
+            &[("minutes", &minutes.to_string())],
+        )
+    } else {
+        formatted(
+            N_!("~{seconds} s left"),
+            &[("seconds", &seconds.max(1).to_string())],
+        )
+    };
+    Some(text)
+}
+
 pub fn file_size(bytes: u64) -> String {
     format_bytes(bytes)
 }

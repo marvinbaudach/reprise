@@ -24,6 +24,7 @@ pub(super) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, bool)>;
 /// `.playback-paused` class on the `ColumnView`) and drop the marker on stop.
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
 pub(super) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
+pub(super) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<(String, String)>)>;
 
 fn visible_position_for_track_in_source(
     ids: &[i64],

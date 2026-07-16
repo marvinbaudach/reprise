@@ -185,6 +185,10 @@ use reprise_platform_linux::player::Player;
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
 
+/// Supplies the ids the transport refills an exhausted queue from — named so
+/// the field below stays readable next to its sibling callback seams.
+type ViewRefillIds = Rc<dyn Fn() -> Vec<i64>>;
+
 /// Whether `present_track` should start the pipeline (`Yes` — ordinary path)
 /// or leave it running because `playbin3` already handed off gaplessly to the
 /// pre-fed URI (`No` — see `advance_gaplessly`).
@@ -264,7 +268,8 @@ pub struct PlayerController {
     /// Fired with `Some((album, artist))` when a new track starts and `None`
     /// when playback stops. `pub(super)` field so sibling modules can fire it;
     /// public setter so `window.rs` can register the album-view callback.
-    pub(super) now_playing_album_changed: RefCell<Option<Rc<dyn Fn(Option<(String, String)>)>>>,
+    pub(super) now_playing_album_changed:
+        RefCell<Option<super::current_track_selection::OnNowPlayingAlbumChanged>>,
     /// Same seam as `playback_state_changed`, but for the album grid's
     /// now-playing equaliser (freeze on pause). Kept as a separate named slot
     /// so the track-list and album-view consumers stay independent.
@@ -276,7 +281,7 @@ pub struct PlayerController {
     /// (`Repeat::Off`), the queue is rebuilt from these ids instead of going
     /// silent. `window.rs` wires it to `TrackList::transport_refill_ids`;
     /// returns an empty vec when refilling makes no sense (Queue view).
-    pub(super) view_refill_ids: RefCell<Option<Rc<dyn Fn() -> Vec<i64>>>>,
+    pub(super) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s

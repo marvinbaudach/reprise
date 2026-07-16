@@ -59,7 +59,11 @@ mod tests {
 
     #[test]
     fn serialize_drops_non_positive_widths() {
-        let widths = vec![(ColumnId::Artist, 0), (ColumnId::Album, -5), (ColumnId::Year, 90)];
+        let widths = vec![
+            (ColumnId::Artist, 0),
+            (ColumnId::Album, -5),
+            (ColumnId::Year, 90),
+        ];
         assert_eq!(serialize_widths(&widths), "year:90");
     }
 

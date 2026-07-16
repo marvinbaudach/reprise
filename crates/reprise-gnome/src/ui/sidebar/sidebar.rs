@@ -368,6 +368,28 @@ impl Sidebar {
         self.root.append(widget);
     }
 
+    /// Shows connected MTP devices in a dedicated card section. Device-card
+    /// activation routes through the same source callback as navigation rows.
+    pub fn bind_device_sync(
+        &self,
+        runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+    ) {
+        let shared = Rc::downgrade(&self.shared);
+        crate::ui::sidebar_device_card::bind(
+            &self.root,
+            runtime,
+            Rc::new(move |serial, name| {
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                let callback = shared.on_select.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(ViewSource::Device { serial }, name);
+                }
+            }),
+        );
+    }
+
     #[cfg(test)]
     pub(super) fn test_shared(&self) -> &Rc<Shared> {
         &self.shared
@@ -587,7 +609,10 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
 /// works regardless of which list a source lives in. Its `row-selected`
 /// handler then clears the sibling list, keeping a single visible selection.
 pub(super) fn select_row_in_its_listbox(row: &gtk4::ListBoxRow) {
-    if let Some(listbox) = row.parent().and_then(|p| p.downcast::<gtk4::ListBox>().ok()) {
+    if let Some(listbox) = row
+        .parent()
+        .and_then(|p| p.downcast::<gtk4::ListBox>().ok())
+    {
         listbox.select_row(Some(row));
     }
 }

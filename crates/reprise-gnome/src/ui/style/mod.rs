@@ -40,6 +40,7 @@ fn app_css() -> String {
         super::browse_bar::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
+        super::sidebar_device_card::css(),
         super::list_density::css(),
         super::library_chrome::css(),
         super::library_view_css::css(),
@@ -69,7 +70,8 @@ fn info_panel_clip_css() -> String {
     concat!(
         "overlay-split-view > widget { overflow: hidden; } ",
         "overlay-split-view > widget > * { overflow: hidden; } ",
-    ).into()
+    )
+    .into()
 }
 
 /// Installs the structural app CSS and the default theme palette on the
@@ -139,7 +141,7 @@ pub(in crate::ui) fn set_color_scheme(scheme: &str) {
 /// Reloads the current theme's palette CSS to match the current system
 /// appearance (dark or light). Called from the `dark_notify` signal handler.
 fn reload_theme_for_appearance() {
-    let theme = CURRENT_THEME.with(|slot| slot.get());
+    let theme = CURRENT_THEME.with(std::cell::Cell::get);
     let is_dark = adw::StyleManager::default().is_dark();
     THEME_PROVIDER.with(|slot| {
         if let Some(provider) = slot.borrow().as_ref() {

@@ -584,7 +584,7 @@ fn wire_order_persistence(
         );
         match saved {
             Ok(()) => {
-                tracing::debug!(layout = %serialized, "column order persisted after header drag")
+                tracing::debug!(layout = %serialized, "column order persisted after header drag");
             }
             Err(error) => tracing::warn!(%error, "could not persist dragged column order"),
         }

@@ -25,7 +25,10 @@ pub enum ReleaseLookupError {
 /// Searches MusicBrainz for a release matching `artist` + `album`, then
 /// extracts metadata. Returns the first match's metadata, or an error
 /// if the search fails or returns no results.
-pub fn lookup_release(artist: &str, album: &str) -> Result<ReleaseLookupResult, ReleaseLookupError> {
+pub fn lookup_release(
+    artist: &str,
+    album: &str,
+) -> Result<ReleaseLookupResult, ReleaseLookupError> {
     let query = format!(
         "artist:\"{}\" AND release:\"{}\"",
         artist.replace('"', "\\\""),
@@ -40,8 +43,8 @@ pub fn lookup_release(artist: &str, album: &str) -> Result<ReleaseLookupResult, 
 }
 
 fn parse_release_response(json: &str) -> Result<ReleaseLookupResult, ReleaseLookupError> {
-    let parsed: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| ReleaseLookupError::Parse(e.to_string()))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| ReleaseLookupError::Parse(e.to_string()))?;
 
     let releases = parsed["releases"]
         .as_array()
