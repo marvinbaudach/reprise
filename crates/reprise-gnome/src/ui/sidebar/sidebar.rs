@@ -4,7 +4,8 @@
 //! list`, each with its track count, plus grouped create/import actions), and
 //! SMART (`library::playlists::list_smart`, no counts — the mockup doesn't
 //! show any), followed by the "problem sources" — Import errors / Missing
-//! files — each shown only while its count is non-zero.
+//! files — each shown only while its count is non-zero — and a shared,
+//! bottom-pinned activity slot for connected-device sync and library scans.
 //!
 //! ## Row identity: a plain `Vec`, not GObject data
 //!
@@ -58,6 +59,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::dialogs;
+use crate::ui::sidebar_activity_slot::SidebarActivitySlot;
 use crate::ui::sidebar_dnd;
 use crate::ui::sidebar_export;
 use crate::ui::sidebar_issue_cleanup;
@@ -87,12 +89,12 @@ type OnMissingRemoved = Rc<dyn Fn(&[i64])>;
 pub(super) struct Shared {
     pub(super) conn: Rc<RefCell<Connection>>,
     pub(super) listbox: gtk4::ListBox,
-    /// The bottom-pinned "Issues" list (Import errors / Missing files),
-    /// outside the scrolling area so it stays anchored at the sidebar's
-    /// bottom-left (design mockup 14a). A single `ListBox` can't bottom-pin a
-    /// subset of its rows, so this is its own list, with selection mirrored
-    /// against `listbox` (`wire_row_selected` clears the sibling on select).
-    /// Hidden entirely when there are no issues.
+    /// The non-scrolling "Issues" list (Import errors / Missing files),
+    /// directly above the shared bottom activity slot (design mockup 14a).
+    /// A single `ListBox` can't bottom-pin a subset of its rows, so this is
+    /// its own list, with selection mirrored against `listbox`
+    /// (`wire_row_selected` clears the sibling on select). Hidden entirely
+    /// when there are no issues.
     pub(super) issues_listbox: gtk4::ListBox,
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
@@ -176,11 +178,12 @@ pub(super) struct Shared {
     refresh_count: Cell<u64>,
 }
 
-/// Handle to the built sidebar widget (a `ScrolledWindow` wrapping the
-/// navigation `ListBox`).
+/// Handle to the built sidebar widget: scrolling navigation followed by
+/// non-scrolling issues and the shared bottom activity slot.
 pub struct Sidebar {
     shared: Rc<Shared>,
     root: gtk4::Box,
+    activity_slot: SidebarActivitySlot,
 }
 
 impl Sidebar {
@@ -216,6 +219,8 @@ impl Sidebar {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.append(&scrolled);
         root.append(&issues_listbox);
+        let activity_slot = SidebarActivitySlot::new();
+        root.append(activity_slot.widget());
 
         let shared = Rc::new(Shared {
             conn,
@@ -241,7 +246,11 @@ impl Sidebar {
 
         rebuild(&shared, Some(ViewSource::default()), "initial build");
 
-        Self { shared, root }
+        Self {
+            shared,
+            root,
+            activity_slot,
+        }
     }
 
     /// The root widget to embed as the `AdwNavigationSplitView`'s sidebar
@@ -362,10 +371,10 @@ impl Sidebar {
         crate::ui::sidebar_session::restore_source(&self.shared, requested)
     }
 
-    /// Appends the scan-progress card widget below the issues list.
+    /// Places the scan-progress card in the shared bottom activity slot.
     /// Called once at window build time (after sidebar and scan controls exist).
     pub fn append_scan_card(&self, widget: &impl IsA<gtk4::Widget>) {
-        self.root.append(widget);
+        self.activity_slot.set_scan_card(widget);
     }
 
     /// Shows connected MTP devices in a dedicated card section. Device-card
@@ -375,8 +384,7 @@ impl Sidebar {
         runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
     ) {
         let shared = Rc::downgrade(&self.shared);
-        crate::ui::sidebar_device_card::bind(
-            &self.root,
+        let section = crate::ui::sidebar_device_card::bind(
             runtime,
             Rc::new(move |serial, name| {
                 let Some(shared) = shared.upgrade() else {
@@ -388,6 +396,7 @@ impl Sidebar {
                 }
             }),
         );
+        self.activity_slot.set_device_section(&section);
     }
 
     #[cfg(test)]
