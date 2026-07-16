@@ -146,6 +146,20 @@ if rg --quiet 'reqwest::blocking' crates/reprise-gnome/src --glob '*.rs'; then
   exit 1
 fi
 
+for one_shot_consumer in \
+  crates/reprise-gnome/src/ui/delete_tracks.rs \
+  crates/reprise-gnome/src/ui/playback/now_playing_wiring.rs \
+  crates/reprise-gnome/src/ui/preferences/preference_dependencies.rs \
+  crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs \
+  crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs \
+  crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs \
+  crates/reprise-gnome/src/ui/tag_edit/tag_editor_lookup.rs; do
+  if rg --quiet 'std::thread::Builder::new|async_channel::bounded' "$one_shot_consumer"; then
+    echo "$one_shot_consumer must use the shared one-shot task helper" >&2
+    exit 1
+  fi
+done
+
 for file in \
   crates/reprise-gnome/src/ui/strings_app_shell.rs \
   crates/reprise-gnome/src/ui/strings_artist.rs \

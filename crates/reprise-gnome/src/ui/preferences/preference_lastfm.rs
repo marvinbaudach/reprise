@@ -15,6 +15,7 @@ use reprise_core::scrobbling::{
 use rusqlite::Connection;
 
 use crate::ui::lastfm_secret::{self, LastFmCredentials};
+use crate::ui::one_shot_task;
 use crate::ui::scrobble_runtime::{ConnectionStatus, ScrobbleRuntime};
 use crate::ui::strings;
 
@@ -477,25 +478,23 @@ impl PreferencesContext {
             return;
         }
         self.lastfm.report_status(&ConnectionStatus::Connecting);
-        let (sender, receiver) = async_channel::bounded(1);
         let worker_api_key = api_key.clone();
         let worker_secret = shared_secret.clone();
-        let spawned = std::thread::Builder::new()
-            .name("reprise-lastfm-token".to_string())
-            .spawn(move || {
-                let result = (|| {
-                    let client = LastFmClient::new(&worker_api_key, &worker_secret)?;
-                    let token = client.request_token()?;
-                    let url = client.authorization_url(&token)?;
-                    Ok::<_, TransportError>((token, url))
-                })();
-                let _ = sender.send_blocking(result);
-            });
-        if spawned.is_err() {
-            self.restore_lastfm_switch(row);
-            self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
-            return;
-        }
+        let receiver = match one_shot_task::spawn("reprise-lastfm-token", move || {
+            (|| {
+                let client = LastFmClient::new(&worker_api_key, &worker_secret)?;
+                let token = client.request_token()?;
+                let url = client.authorization_url(&token)?;
+                Ok::<_, TransportError>((token, url))
+            })()
+        }) {
+            Ok(receiver) => receiver,
+            Err(_) => {
+                self.restore_lastfm_switch(row);
+                self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
+                return;
+            }
+        };
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {
@@ -570,22 +569,20 @@ impl PreferencesContext {
         shared_secret: String,
         token: String,
     ) {
-        let (sender, receiver) = async_channel::bounded(1);
         let worker_api_key = api_key.clone();
         let worker_secret = shared_secret.clone();
-        let spawned = std::thread::Builder::new()
-            .name("reprise-lastfm-session".to_string())
-            .spawn(move || {
-                let result = LastFmClient::new(&worker_api_key, &worker_secret)
-                    .map_err(TransportError::from)
-                    .and_then(|client| client.exchange_token(&token));
-                let _ = sender.send_blocking(result);
-            });
-        if spawned.is_err() {
-            self.restore_lastfm_switch(row);
-            self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
-            return;
-        }
+        let receiver = match one_shot_task::spawn("reprise-lastfm-session", move || {
+            LastFmClient::new(&worker_api_key, &worker_secret)
+                .map_err(TransportError::from)
+                .and_then(|client| client.exchange_token(&token))
+        }) {
+            Ok(receiver) => receiver,
+            Err(_) => {
+                self.restore_lastfm_switch(row);
+                self.show_lastfm_error(strings::LASTFM_CONNECTION_ERROR);
+                return;
+            }
+        };
         let weak = Rc::downgrade(self);
         let row = row.clone();
         glib::spawn_future_local(async move {

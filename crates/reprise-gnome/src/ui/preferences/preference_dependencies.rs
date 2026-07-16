@@ -8,7 +8,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::ui::strings;
+use crate::ui::{one_shot_task, strings};
 
 pub(in crate::ui) fn service_subtitle(description: &str, enabled: bool, status: &str) -> String {
     if enabled {
@@ -102,19 +102,16 @@ impl TestConnectionTrigger {
         }
         row.set_subtitle(&strings::text(strings::LISTENBRAINZ_CONNECTING));
 
-        let (sender, receiver) = async_channel::bounded(1);
-        let spawned = std::thread::Builder::new()
-            .name("reprise-test-connection".to_string())
-            .spawn(move || {
-                let _ = sender.send_blocking(validate());
-            });
-        if spawned.is_err() {
-            if let Some(button) = self.button.upgrade() {
-                button.set_sensitive(true);
+        let receiver = match one_shot_task::spawn("reprise-test-connection", validate) {
+            Ok(receiver) => receiver,
+            Err(_) => {
+                if let Some(button) = self.button.upgrade() {
+                    button.set_sensitive(true);
+                }
+                row.set_subtitle(&strings::text(strings::TEST_CONNECTION_FAILED));
+                return;
             }
-            row.set_subtitle(&strings::text(strings::TEST_CONNECTION_FAILED));
-            return;
-        }
+        };
 
         let row = self.row.clone();
         let button = self.button.clone();

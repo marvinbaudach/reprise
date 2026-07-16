@@ -20,6 +20,7 @@ use gtk4::glib;
 use gtk4::prelude::IsA;
 use libadwaita as adw;
 
+use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::style::cover_accent::Rgb;
 use reprise_core::cover::ThumbnailSize;
@@ -54,18 +55,11 @@ fn apply_cover_accent(
     let generation_cell = generation_cell.clone();
     let last_accent_cell = last_accent_cell.clone();
     let cover_path = cover_path.to_path_buf();
-    let (sender, receiver) = async_channel::bounded(1);
-    if std::thread::Builder::new()
-        .name("reprise-cover-accent".to_string())
-        .spawn(move || {
-            let _ = sender.send_blocking(crate::ui::style::cover_accent::accent_from_cover_file(
-                &cover_path,
-            ));
-        })
-        .is_err()
-    {
+    let Ok(receiver) = one_shot_task::spawn("reprise-cover-accent", move || {
+        crate::ui::style::cover_accent::accent_from_cover_file(&cover_path)
+    }) else {
         return;
-    }
+    };
     glib::spawn_future_local(async move {
         if let Ok(new_color) = receiver.recv().await {
             if generation_cell.get() == generation {
@@ -271,33 +265,27 @@ impl PlayerController {
         let waveform = self.bar.waveform_handle();
         let db_path = reprise_core::db::default_path();
         let track_path = std::path::PathBuf::from(path);
-        let (sender, receiver) = async_channel::bounded(1);
-        if std::thread::Builder::new()
-            .name("reprise-waveform".to_string())
-            .spawn(move || {
-                let peaks = reprise_core::db::open_migrated(Some(&db_path))
-                    .ok()
-                    .and_then(|conn| {
-                        // Try DB first.
-                        if let Some(cached) = reprise_core::db::get_waveform_peaks(&conn, track_id)
-                            .ok()
-                            .flatten()
-                        {
-                            return Some(cached);
-                        }
-                        // Not cached — extract now and store for next time.
-                        let peaks = waveform_backend
-                            .extract_peaks(&track_path, STORED_PEAK_COUNT)
-                            .ok()?;
-                        reprise_core::db::set_waveform_peaks(&conn, track_id, &peaks).ok();
-                        Some(peaks)
-                    });
-                let _ = sender.send_blocking(peaks);
-            })
-            .is_err()
-        {
+        let Ok(receiver) = one_shot_task::spawn("reprise-waveform", move || {
+            reprise_core::db::open_migrated(Some(&db_path))
+                .ok()
+                .and_then(|conn| {
+                    // Try DB first.
+                    if let Some(cached) = reprise_core::db::get_waveform_peaks(&conn, track_id)
+                        .ok()
+                        .flatten()
+                    {
+                        return Some(cached);
+                    }
+                    // Not cached — extract now and store for next time.
+                    let peaks = waveform_backend
+                        .extract_peaks(&track_path, STORED_PEAK_COUNT)
+                        .ok()?;
+                    reprise_core::db::set_waveform_peaks(&conn, track_id, &peaks).ok();
+                    Some(peaks)
+                })
+        }) else {
             return;
-        }
+        };
         glib::spawn_future_local(async move {
             if let Ok(Some(peaks)) = receiver.recv().await {
                 if waveform_generation.get() == generation {
