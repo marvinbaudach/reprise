@@ -85,5 +85,7 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     while !value.is_char_boundary(end) {
         end -= 1;
     }
-    value[..end].trim_end().to_string()
+    value[..end]
+        .trim_end_matches(|character: char| character == '.' || character.is_whitespace())
+        .to_string()
 }
