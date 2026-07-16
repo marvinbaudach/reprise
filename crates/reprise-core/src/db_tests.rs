@@ -554,3 +554,39 @@ fn waveform_peaks_crud_round_trips() {
     set_waveform_peaks(&conn, 1, &peaks).unwrap();
     assert_eq!(get_waveform_peaks(&conn, 1).unwrap().unwrap(), peaks);
 }
+
+#[test]
+fn open_migrated_returns_a_ready_to_use_database() {
+    let conn = open_migrated(None).unwrap();
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 8);
+    conn.execute(
+        "INSERT INTO tracks (path, title, added_at) VALUES ('/ready.flac', 'Ready', 0)",
+        [],
+    )
+    .unwrap();
+}
+
+#[test]
+fn pending_waveform_tracks_excludes_cached_and_missing_rows() {
+    let conn = open_migrated(None).unwrap();
+    for (id, path, missing) in [
+        (1, "/one.flac", 0),
+        (2, "/two.flac", 0),
+        (3, "/missing.flac", 1),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks (id, path, title, added_at, missing) VALUES (?1, ?2, '', 0, ?3)",
+            rusqlite::params![id, path, missing],
+        )
+        .unwrap();
+    }
+    set_waveform_peaks(&conn, 2, &[1, 2, 3]).unwrap();
+
+    assert_eq!(
+        pending_waveform_tracks(&conn).unwrap(),
+        vec![(1, "/one.flac".to_string())]
+    );
+}

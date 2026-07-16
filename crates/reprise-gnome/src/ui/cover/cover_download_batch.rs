@@ -193,7 +193,7 @@ impl CoverDownloadBatch {
     pub(super) fn start(self: &Rc<Self>) {
         let paths = {
             let conn = self.conn.borrow();
-            live_track_paths(&conn)
+            reprise_core::queries::query_live_track_paths(&conn)
         };
         let paths = match paths {
             Ok(paths) => paths,
@@ -255,19 +255,13 @@ impl CoverDownloadBatch {
     }
 }
 
-fn live_track_paths(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {
-    let mut statement = conn.prepare("SELECT path FROM tracks WHERE missing = 0 ORDER BY path")?;
-    let paths = statement.query_map([], |row| row.get(0))?.collect();
-    paths
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::path::PathBuf;
     use std::rc::Rc;
 
-    use super::{live_track_paths, BatchProgress, BatchState, ProgressSubscribers};
+    use super::{BatchProgress, BatchState, ProgressSubscribers};
     use crate::ui::cover_download_worker::DownloadOutcome;
 
     #[test]
@@ -310,7 +304,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            live_track_paths(&conn).unwrap(),
+            reprise_core::queries::query_live_track_paths(&conn).unwrap(),
             vec!["/music/a.mp3".to_string(), "/music/b.mp3".to_string()]
         );
     }

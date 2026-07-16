@@ -97,6 +97,32 @@ if rg --quiet 'reprise_platform_linux' \
   exit 1
 fi
 
+# Productive frontend features consume database operations through named core
+# facades.  Keep SQL ownership and schema migration at the engine boundary;
+# test fixtures may still use SQL to arrange and inspect their own data.
+for frontend_sql in \
+  'SELECT title, artist, album, year FROM tracks WHERE id' \
+  'SELECT id FROM tracks WHERE missing = 0' \
+  'SELECT path FROM tracks WHERE missing = 0 ORDER BY path' \
+  'SELECT id, path FROM tracks WHERE waveform_peaks IS NULL' \
+  'SELECT title, id FROM tracks WHERE title IN' \
+  'SELECT id FROM tracks ORDER BY title DESC'; do
+  if rg --fixed-strings --quiet "$frontend_sql" crates/reprise-gnome/src --glob '*.rs'; then
+    echo "productive GNOME code must use core database facades: $frontend_sql" >&2
+    exit 1
+  fi
+done
+
+if rg --quiet 'db::migrate\(&conn\)\.ok' \
+  crates/reprise-gnome/src/ui/playback/now_playing_wiring.rs \
+  || rg --quiet 'db::migrate\(&worker_conn\)' \
+    crates/reprise-gnome/src/ui/scan/scan_worker.rs \
+  || rg --quiet 'db::open\(Some\(database_path\)\)' \
+    crates/reprise-gnome/src/ui/scrobbling/scrobble_runtime.rs; then
+  echo "frontend workers must open ready-to-use databases through the core facade" >&2
+  exit 1
+fi
+
 check_frontend_allowlist 'unsafe[[:space:]]*\{' 'unsafe frontend block' \
   crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs
 

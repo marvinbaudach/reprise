@@ -325,9 +325,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
         credential,
         generation,
     } = config;
-    let conn = match reprise_core::db::open(Some(database_path))
-        .and_then(|conn| reprise_core::db::migrate(&conn).map(|()| conn))
-    {
+    let conn = match reprise_core::db::open_migrated(Some(database_path)) {
         Ok(conn) => conn,
         Err(error) => {
             tracing::warn!(%error, service, "could not open scrobbling queue");

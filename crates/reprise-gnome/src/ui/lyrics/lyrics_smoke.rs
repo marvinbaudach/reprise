@@ -1,7 +1,6 @@
 //! Fully synthetic application smoke for played-track lyrics synchronization.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -92,16 +91,11 @@ pub(super) fn arm(
     });
 }
 
-fn smoke_track_ids(conn: &Connection) -> rusqlite::Result<HashMap<String, i64>> {
-    let mut statement = conn.prepare(
-        "SELECT title, id FROM tracks WHERE title IN ('SmokeFirst', 'SmokeSlow', 'SmokeFast')",
-    )?;
-    let ids = statement
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })?
-        .collect();
-    ids
+fn smoke_track_ids(conn: &Connection) -> rusqlite::Result<std::collections::HashMap<String, i64>> {
+    reprise_core::queries::query_track_ids_by_titles(
+        conn,
+        &["SmokeFirst", "SmokeSlow", "SmokeFast"],
+    )
 }
 
 fn log_snapshot(

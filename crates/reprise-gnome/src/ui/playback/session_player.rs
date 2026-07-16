@@ -49,21 +49,13 @@ impl PlayerController {
         debug_assert!(!restore_should_start_playback());
         let existing = {
             let conn = self.conn.borrow();
-            let mut statement = match conn.prepare("SELECT id FROM tracks WHERE missing = 0") {
-                Ok(statement) => statement,
+            match reprise_core::queries::query_live_track_ids(&conn) {
+                Ok(ids) => ids,
                 Err(error) => {
                     tracing::warn!(%error, "could not validate restored queue IDs");
                     return;
                 }
-            };
-            let result = match statement.query_map([], |row| row.get::<_, i64>(0)) {
-                Ok(rows) => rows.filter_map(Result::ok).collect::<HashSet<_>>(),
-                Err(error) => {
-                    tracing::warn!(%error, "could not read track IDs for restored queue");
-                    return;
-                }
-            };
-            result
+            }
         };
 
         let mut queue = Queue::new();
