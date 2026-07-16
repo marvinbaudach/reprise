@@ -266,7 +266,7 @@ impl ScanControls {
         }
     }
 
-    fn finish_progress(&self) {
+    pub(super) fn finish_progress(&self) {
         self.current_progress.borrow_mut().take();
         let views = self.live_progress_views();
         for view in views {
@@ -287,6 +287,26 @@ impl ScanControls {
             .and_then(|w| w.upgrade())
         {
             button.set_tooltip_text(Some(&strings::text(strings::SIDEBAR_TOGGLE)));
+        }
+    }
+
+    /// Shows cover-download batch progress on all live progress views
+    /// (sidebar card and any open Preferences window). Does not update
+    /// `current_progress` (which tracks scan phases only) and does not
+    /// touch the empty-library indicator (no covers to download when the
+    /// library is empty).
+    pub(super) fn show_cover_progress(&self, title: &str, detail: &str, fraction: f64) {
+        let views = self.live_progress_views();
+        for view in views {
+            view.show_batch(title, detail, fraction);
+        }
+        if let Some(button) = self
+            .sidebar_toggle
+            .borrow()
+            .as_ref()
+            .and_then(|w| w.upgrade())
+        {
+            button.set_tooltip_text(Some(title));
         }
     }
 
