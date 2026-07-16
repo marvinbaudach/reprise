@@ -107,6 +107,54 @@ impl PlayerController {
         self.sync_cover(&current_path);
     }
 
+    /// Re-reads title/artist/album from DB for the currently playing track
+    /// when that track was just edited. Updates the player bar and MPRIS
+    /// metadata in place without interrupting playback.
+    pub(super) fn refresh_edited_metadata(&self, edited_ids: &[i64]) {
+        let current_id = self.current_track.get().map(|(id, _)| id);
+        let Some(id) = current_id else {
+            return;
+        };
+        if !edited_ids.contains(&id) {
+            return;
+        }
+        // Re-read from DB
+        let conn = self.conn.borrow();
+        let Ok((title, artist, album, year)) = conn.query_row(
+            "SELECT title, artist, album, year FROM tracks WHERE id = ?1",
+            [id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<i32>>(3)?,
+                ))
+            },
+        ) else {
+            return;
+        };
+        drop(conn);
+        // Update bar + compact player
+        self.sync_track(&title, &artist, &album, year);
+        // Update MPRIS now_playing cache
+        if let Some(np) = self.now_playing.borrow_mut().as_mut() {
+            np.title = title.clone();
+            np.artist = artist.clone();
+            np.album = album.clone();
+        }
+        // Update MPRIS mirror state (will trigger PropertiesChanged via poll diff)
+        {
+            let mut state = self
+                .mpris_state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.title = title;
+            state.artist = artist;
+            state.album = album;
+        }
+    }
+
     /// Feeds Bar and Compact metadata from one call. Compact additionally
     /// receives the optional year used by Card; the bar retains its existing
     /// metadata set (title/artist only).

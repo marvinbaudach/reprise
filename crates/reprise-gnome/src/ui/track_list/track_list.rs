@@ -310,6 +310,11 @@ pub(super) struct Shared {
     /// Import-errors badge count just changed).
     pub(super) on_import_errors_mutated: RefCell<Option<Rc<dyn Fn()>>>,
     pub(super) on_selection_changed: RefCell<Option<OnSelectionChanged>>,
+    /// The player controller, injected post-construction via `TrackList::set_
+    /// player` — used by tag-edit flow to refresh now-playing metadata after
+    /// successful tag edits. `Weak`, not a strong reference, to avoid
+    /// circular ownership with the player controller.
+    pub(super) player: RefCell<std::rc::Weak<crate::ui::player_controller::PlayerController>>,
 }
 
 /// Handle to the built track list widget. Owns the shared, reference-counted
@@ -421,6 +426,7 @@ impl TrackList {
             on_tags_mutated: RefCell::new(None),
             on_import_errors_mutated: RefCell::new(None),
             on_selection_changed: RefCell::new(None),
+            player: RefCell::new(std::rc::Weak::new()),
         });
 
         track_list_selection::wire(&shared);
@@ -653,6 +659,13 @@ impl TrackList {
     /// this to `Sidebar::refresh`.
     pub fn set_on_import_errors_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_import_errors_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Injects the player controller — injected post-construction via
+    /// `TrackList::set_player`, used by the tag-edit flow to refresh
+    /// now-playing metadata after successful tag edits.
+    pub fn set_player(&self, player: &Rc<crate::ui::player_controller::PlayerController>) {
+        *self.shared.player.borrow_mut() = Rc::downgrade(player);
     }
 }
 

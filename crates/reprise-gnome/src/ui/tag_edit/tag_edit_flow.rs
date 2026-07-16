@@ -176,6 +176,10 @@ fn finish_apply(
         }
         reload(shared);
         if tags_changed {
+            // Refresh now-playing metadata if the playing track was edited
+            if let Some(player) = shared.player.borrow().upgrade() {
+                player.refresh_edited_metadata(&report.updated_ids);
+            }
             let on_tags_mutated = shared.on_tags_mutated.borrow().clone();
             if let Some(on_tags_mutated) = on_tags_mutated {
                 on_tags_mutated(&paths);
