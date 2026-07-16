@@ -3,10 +3,9 @@
 //! Kept out of `library_view_css.rs` (which owns the Albums grid) so each
 //! feature CSS section stays focused. All colors come from the theme's
 //! `@accent_color` / `@accent_bg_color` / `@window_fg_color` vars (never a
-//! hard-coded palette) and the shared [`tokens`]; the per-row avatar gradient
-//! and the hero glow color are applied inline per widget by
-//! `artist_master_row.rs` / `artist_detail_hero.rs`, so this section only
-//! defines their shape, size, blur/opacity, and text — never their fill.
+//! hard-coded palette) and the shared [`tokens`]. Artist avatar gradients are
+//! a finite, centrally registered palette; the cover-derived hero glow is
+//! drawn by its widget because it is genuinely dynamic data.
 
 use crate::ui::style::tokens;
 
@@ -26,7 +25,7 @@ pub(in crate::ui) fn css() -> String {
         AVATAR_INITIALS_COLOR, HOVER_BG_ALPHA, MUTED_TEXT_ALPHA, RADIUS_SURFACE, SUBTLE_FILL_ALPHA,
         SUBTLE_FILL_HOVER_ALPHA, SURFACE_BORDER_ALPHA, TRANSITION,
     };
-    format!(
+    let mut output = format!(
         ".artist-master {{ \
            border-right: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); }}\n\
          .artist-master-header {{ padding: 16px 14px 8px 16px; }}\n\
@@ -131,7 +130,14 @@ pub(in crate::ui) fn css() -> String {
          .artist-top-track-duration {{ \
            font-feature-settings: \"tnum\"; font-size: 12px; \
            color: alpha(@window_fg_color, {MUTED_TEXT_ALPHA}); }}"
-    )
+    );
+    for index in 0..crate::ui::artist_avatar::GRADIENT_COUNT {
+        let gradient = crate::ui::artist_avatar::gradient_css_for_index(index);
+        output.push_str(&format!(
+            ".artist-avatar-gradient-{index} {{ background-image: {gradient}; }}\n"
+        ));
+    }
+    output
 }
 
 #[cfg(test)]
@@ -187,6 +193,14 @@ mod tests {
         assert!(css.contains("@accent_bg_color"));
         assert!(css.contains("@window_fg_color"));
         assert!(!css.contains("@define-color"));
+    }
+
+    #[test]
+    fn css_registers_the_complete_artist_avatar_palette() {
+        let css = super::css();
+        for index in 0..crate::ui::artist_avatar::GRADIENT_COUNT {
+            assert!(css.contains(&format!(".artist-avatar-gradient-{index}")));
+        }
     }
 
     #[test]

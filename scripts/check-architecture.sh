@@ -59,13 +59,9 @@ check_frontend_allowlist() {
 check_frontend_allowlist 'gtk4::CssProvider::new' 'direct CssProvider construction' \
   crates/reprise-gnome/src/ui/style/mod.rs \
   crates/reprise-gnome/src/ui/style/cover_accent.rs \
-  crates/reprise-gnome/src/ui/library_views/artist_view_css.rs \
-  crates/reprise-gnome/src/ui/library_views/artist_detail_hero.rs \
-  crates/reprise-gnome/src/ui/library_views/artist_master_row.rs
+  crates/reprise-gnome/src/ui/library_views/artist_view_css.rs
 
-check_frontend_allowlist 'style_context\(' 'deprecated per-widget style_context use' \
-  crates/reprise-gnome/src/ui/library_views/artist_detail_hero.rs \
-  crates/reprise-gnome/src/ui/library_views/artist_master_row.rs
+check_frontend_allowlist 'style_context\(' 'deprecated per-widget style_context use'
 
 check_frontend_allowlist '(^|[^[:alnum:]_])(gstreamer|gst)::|extern crate gstreamer' \
   'direct GStreamer coupling' \

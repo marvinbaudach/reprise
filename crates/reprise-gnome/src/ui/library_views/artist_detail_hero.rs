@@ -6,6 +6,9 @@
 //! widgets persist across artist switches — `show_artist` only updates their
 //! text, the avatar gradient, and the glow color.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gtk4::gio;
 use gtk4::prelude::*;
 
@@ -24,8 +27,9 @@ pub(super) struct Hero {
     name: gtk4::Label,
     meta: gtk4::Label,
     initials: gtk4::Label,
-    avatar_css: gtk4::CssProvider,
-    glow_css: gtk4::CssProvider,
+    avatar: gtk4::Box,
+    glow: gtk4::DrawingArea,
+    glow_accent: Rc<Cell<Option<Rgb>>>,
 }
 
 impl Hero {
@@ -50,36 +54,32 @@ impl Hero {
             header.plays_this_year,
         ));
         self.initials.set_text(&artist_avatar::initials(artist));
-        self.avatar_css
-            .load_from_string(&avatar_gradient_css(artist));
+        set_avatar_gradient(&self.avatar, artist);
     }
 
     /// Sets the glow surface to a static color fill derived from `accent`
     /// (v1: no live blur, no cross-fade).
     pub(super) fn set_glow_accent(&self, accent: Rgb) {
-        self.glow_css.load_from_string(&glow_css(accent));
+        self.glow_accent.set(Some(accent));
+        self.glow.queue_draw();
     }
 
     /// Clears the glow (used for artists without any album cover to sample).
     pub(super) fn clear_glow(&self) {
-        self.glow_css.load_from_string("");
+        self.glow_accent.set(None);
+        self.glow.queue_draw();
     }
 }
 
 /// Builds the hero. The Play all / Shuffle buttons and the ⋮ menu actions read
 /// the pane's current-artist cell at click time and invoke `callbacks`.
 pub(super) fn build_hero(callbacks: &HeroCallbacks) -> Hero {
-    let glow = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-    glow.add_css_class("artist-hero-glow");
-    glow.set_hexpand(true);
-    glow.set_vexpand(true);
-    let glow_css = gtk4::CssProvider::new();
-    attach_provider(&glow, &glow_css);
+    let (glow, glow_accent) = build_glow();
 
     let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 20);
     content.add_css_class("artist-hero");
 
-    let (avatar, initials, avatar_css) = build_avatar();
+    let (avatar, initials) = build_avatar();
     content.append(&avatar);
 
     let column = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
@@ -120,27 +120,25 @@ pub(super) fn build_hero(callbacks: &HeroCallbacks) -> Hero {
         name,
         meta,
         initials,
-        avatar_css,
-        glow_css,
+        avatar,
+        glow,
+        glow_accent,
     }
 }
 
 /// Builds the round gradient avatar box with its centered initials label.
-fn build_avatar() -> (gtk4::Box, gtk4::Label, gtk4::CssProvider) {
+fn build_avatar() -> (gtk4::Box, gtk4::Label) {
     let avatar = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     avatar.add_css_class("artist-hero-avatar");
     avatar.set_size_request(AVATAR_SIZE, AVATAR_SIZE);
     avatar.set_halign(gtk4::Align::Center);
     avatar.set_valign(gtk4::Align::Center);
-    let avatar_css = gtk4::CssProvider::new();
-    attach_provider(&avatar, &avatar_css);
-
     let initials = gtk4::Label::new(None);
     initials.set_halign(gtk4::Align::Center);
     initials.set_valign(gtk4::Align::Center);
     initials.add_css_class("artist-hero-initials");
     avatar.append(&initials);
-    (avatar, initials, avatar_css)
+    (avatar, initials)
 }
 
 /// Builds the Play all (accent pill) / Shuffle / ⋮ menu action row.
@@ -244,32 +242,41 @@ fn menu_action(
     action
 }
 
-/// The avatar's inline gradient rule, scoped to the single avatar box.
-fn avatar_gradient_css(name: &str) -> String {
-    format!(
-        ".artist-hero-avatar {{ background-image: {}; }}",
-        artist_avatar::gradient_css(name)
-    )
+fn set_avatar_gradient(avatar: &gtk4::Box, artist: &str) {
+    for index in 0..artist_avatar::GRADIENT_COUNT {
+        avatar.remove_css_class(&format!("artist-avatar-gradient-{index}"));
+    }
+    avatar.add_css_class(&artist_avatar::gradient_class(artist));
 }
 
-/// The glow surface's inline fill: a soft radial tint in the accent color.
-fn glow_css(accent: Rgb) -> String {
-    format!(
-        ".artist-hero-glow {{ background-image: radial-gradient(circle at 26% 0%, \
-         rgba({r},{g},{b},0.42), rgba({r},{g},{b},0.0) 62%); }}",
-        r = accent.r,
-        g = accent.g,
-        b = accent.b,
-    )
-}
-
-/// Attaches a per-widget `CssProvider`. `style_context` is deprecated in GTK
-/// 4.10+, but the avatar gradient and glow color are intrinsically per-widget
-/// data, and there is no non-deprecated per-widget provider API — the same
-/// exception `artist_master_row.rs` documents.
-#[allow(deprecated)]
-fn attach_provider(widget: &impl IsA<gtk4::Widget>, provider: &gtk4::CssProvider) {
-    widget
-        .style_context()
-        .add_provider(provider, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
+/// Builds a draw-only glow surface. The sampled cover color stays widget data,
+/// while structural properties remain in the shared stylesheet.
+fn build_glow() -> (gtk4::DrawingArea, Rc<Cell<Option<Rgb>>>) {
+    let glow = gtk4::DrawingArea::new();
+    glow.add_css_class("artist-hero-glow");
+    glow.set_hexpand(true);
+    glow.set_vexpand(true);
+    glow.set_overflow(gtk4::Overflow::Hidden);
+    let accent = Rc::new(Cell::new(None::<Rgb>));
+    let draw_accent = accent.clone();
+    glow.set_draw_func(move |_, context, width, height| {
+        let Some(color) = draw_accent.get() else {
+            return;
+        };
+        let width = f64::from(width);
+        let height = f64::from(height);
+        let radius = width.max(height) * 0.62;
+        let gradient =
+            gtk4::cairo::RadialGradient::new(width * 0.26, 0.0, 0.0, width * 0.26, 0.0, radius);
+        let red = f64::from(color.r) / 255.0;
+        let green = f64::from(color.g) / 255.0;
+        let blue = f64::from(color.b) / 255.0;
+        gradient.add_color_stop_rgba(0.0, red, green, blue, 0.42);
+        gradient.add_color_stop_rgba(1.0, red, green, blue, 0.0);
+        context
+            .set_source(&gradient)
+            .expect("valid artist glow gradient");
+        context.paint().expect("artist glow draw succeeds");
+    });
+    (glow, accent)
 }

@@ -1,8 +1,11 @@
 //! Pure helpers for the deterministic, network-free artist avatar: initials
-//! plus a hue derived from the artist name (used for a two-stop gradient in the
-//! master list, where per-row cover extraction would stall scrolling).
+//! plus a hue derived from the artist name. The hue maps onto a small centrally
+//! registered CSS palette so recycled rows never install per-widget providers.
 
 use std::hash::{Hash, Hasher};
+
+/// Number of centrally registered avatar gradients.
+pub(in crate::ui) const GRADIENT_COUNT: usize = 18;
 
 /// Up to two uppercase initials from the first two words; `"?"` when blank.
 pub(in crate::ui) fn initials(name: &str) -> String {
@@ -38,9 +41,15 @@ pub(in crate::ui) fn hue_for(name: &str) -> u16 {
     (hasher.finish() % 360) as u16
 }
 
-/// A two-stop diagonal gradient CSS value for the avatar background.
-pub(in crate::ui) fn gradient_css(name: &str) -> String {
-    let hue = hue_for(name);
+/// Stable CSS class for the palette entry associated with `name`.
+pub(in crate::ui) fn gradient_class(name: &str) -> String {
+    let index = usize::from(hue_for(name)) * GRADIENT_COUNT / 360;
+    format!("artist-avatar-gradient-{index}")
+}
+
+/// A two-stop diagonal gradient CSS value for one palette entry.
+pub(in crate::ui) fn gradient_css_for_index(index: usize) -> String {
+    let hue = (index % GRADIENT_COUNT) * 360 / GRADIENT_COUNT;
     let hue2 = (hue + 40) % 360;
     format!("linear-gradient(135deg, hsl({hue}, 42%, 32%), hsl({hue2}, 46%, 22%))")
 }
@@ -66,6 +75,18 @@ mod tests {
     fn hue_is_deterministic_and_bounded() {
         assert_eq!(hue_for("Solo"), hue_for("Solo"));
         assert!(hue_for("A Day to Remember") < 360);
+    }
+
+    #[test]
+    fn gradient_class_is_deterministic_and_bounded() {
+        let class = gradient_class("A Day to Remember");
+        assert_eq!(class, gradient_class("A Day to Remember"));
+        let index = class
+            .strip_prefix("artist-avatar-gradient-")
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        assert!(index < GRADIENT_COUNT);
     }
 
     #[test]
