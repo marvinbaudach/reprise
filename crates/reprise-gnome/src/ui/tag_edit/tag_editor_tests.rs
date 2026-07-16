@@ -1,4 +1,9 @@
 use super::*;
+use crate::ui::strings;
+use crate::ui::tag_editor_state::{
+    field_name, number_patch, string_patch, FIELD_COUNT, RATING_MAX,
+};
+use reprise_core::library::tag_edit::MixedValue;
 
 // Legacy rating helpers — kept here because they have value as unit tests
 // but are no longer used in the production rating widget (now star buttons).
