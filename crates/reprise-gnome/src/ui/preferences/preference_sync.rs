@@ -158,6 +158,10 @@ fn render_device_detail(
     if progress_is_visible(&device.snapshot) {
         detail.append(&progress_group(&device.id, &device.snapshot, runtime));
     }
+    detail.append(&planned::device_header_group(device, runtime));
+    detail.append(&planned::selection_group(device, runtime));
+    detail.append(&planned::delta_group(device));
+    detail.append(&planned::settings_group(device, runtime));
     detail.append(&playlist_group(device, dialog, runtime));
     detail.append(&music_group(device));
 }
@@ -455,6 +459,9 @@ fn retain_subscription<W: IsA<gtk4::Widget>>(widget: &W, subscription: Subscript
     });
 }
 
+#[path = "preference_sync_planned.rs"]
+mod planned;
+
 #[cfg(test)]
 mod tests {
     use reprise_platform_linux::device_sync::DeviceContents;
@@ -474,6 +481,20 @@ mod tests {
             draft_playlists: vec!["Road".into()],
             last_enqueue: None,
             snapshot: reprise_core::device_sync::DeviceQueue::new().snapshot(),
+            settings: reprise_core::device_sync::DeviceSettings {
+                device_serial: "phone".into(),
+                device_name: "Phone".into(),
+                selection: reprise_core::device_sync::DeviceSelection::default(),
+                opus_bitrate: 0,
+                ratings_back: false,
+                remove_deleted: true,
+            },
+            delta: None,
+            sync_phase: crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+            sync_error: None,
+            last_sync: None,
+            tracks: Vec::new(),
+            selected_track_count: 0,
         }
     }
 

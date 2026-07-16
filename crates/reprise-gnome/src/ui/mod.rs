@@ -86,8 +86,12 @@ pub mod cover_loader;
 #[path = "track_list/current_track_selection.rs"]
 mod current_track_selection;
 pub mod delete_tracks;
+#[path = "device_sync/device_sync_actions.rs"]
+mod device_sync_actions;
 #[path = "device_sync/device_sync_backend.rs"]
 mod device_sync_backend;
+#[path = "device_sync/device_sync_feedback.rs"]
+mod device_sync_feedback;
 #[path = "device_sync/device_sync_runtime.rs"]
 mod device_sync_runtime;
 #[cfg(test)]
@@ -97,6 +101,8 @@ mod device_sync_runtime_tests;
 mod device_sync_smoke;
 #[path = "device_sync/device_sync_strings.rs"]
 mod device_sync_strings;
+#[path = "device_view/device_view.rs"]
+mod device_view;
 pub mod dialogs;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
@@ -226,6 +232,8 @@ pub mod session_restore;
 pub mod shortcuts;
 #[path = "sidebar/sidebar.rs"]
 pub mod sidebar;
+#[path = "sidebar/sidebar_device_card.rs"]
+mod sidebar_device_card;
 #[path = "sidebar/sidebar_dnd.rs"]
 pub mod sidebar_dnd;
 #[path = "sidebar/sidebar_export.rs"]

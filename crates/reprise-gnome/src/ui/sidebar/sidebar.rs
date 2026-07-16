@@ -368,6 +368,28 @@ impl Sidebar {
         self.root.append(widget);
     }
 
+    /// Shows connected MTP devices in a dedicated card section. Device-card
+    /// activation routes through the same source callback as navigation rows.
+    pub fn bind_device_sync(
+        &self,
+        runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+    ) {
+        let shared = Rc::downgrade(&self.shared);
+        crate::ui::sidebar_device_card::bind(
+            &self.root,
+            runtime,
+            Rc::new(move |serial, name| {
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                let callback = shared.on_select.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(ViewSource::Device { serial }, name);
+                }
+            }),
+        );
+    }
+
     #[cfg(test)]
     pub(super) fn test_shared(&self) -> &Rc<Shared> {
         &self.shared
