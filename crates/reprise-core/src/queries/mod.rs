@@ -221,7 +221,9 @@ pub fn query_track_window_browsed(
         ViewSource::Artist(artist) => library_views::query_artist_track_window(
             conn, artist, sort_field, sort_dir, filter, offset, limit,
         ),
-        ViewSource::ImportErrors | ViewSource::MyStats => Ok(Vec::new()),
+        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
+            Ok(Vec::new())
+        }
     }
 }
 
@@ -266,7 +268,7 @@ pub fn query_track_count_browsed(
             album_artist,
         } => library_views::query_album_track_count(conn, album, album_artist, filter),
         ViewSource::Artist(artist) => library_views::query_artist_track_count(conn, artist, filter),
-        ViewSource::ImportErrors | ViewSource::MyStats => Ok(0),
+        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => Ok(0),
     }
 }
 
@@ -351,7 +353,9 @@ pub fn query_track_ids_browsed(
         ViewSource::Artist(artist) => {
             library_views::query_artist_track_ids(conn, artist, sort_field, sort_dir, filter)
         }
-        ViewSource::ImportErrors | ViewSource::MyStats => Ok(Vec::new()),
+        ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
+            Ok(Vec::new())
+        }
     }
 }
 

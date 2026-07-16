@@ -33,8 +33,14 @@ pub struct ReadyFile {
     pub size: u64,
 }
 
+#[derive(Debug)]
+pub struct EncodeOutcome {
+    pub token: usize,
+    pub result: Result<ReadyFile, TranscodeError>,
+}
+
 struct ReadyState {
-    files: VecDeque<Result<ReadyFile, TranscodeError>>,
+    files: VecDeque<EncodeOutcome>,
     buffered_bytes: u64,
     workers: usize,
 }
@@ -97,11 +103,11 @@ impl EncoderPipeline {
         })
     }
 
-    pub fn next(&self) -> Option<Result<ReadyFile, TranscodeError>> {
+    pub fn next(&self) -> Option<EncodeOutcome> {
         let mut state = lock(&self.ready.state);
         loop {
             if let Some(file) = state.files.pop_front() {
-                if let Ok(file) = &file {
+                if let Ok(file) = &file.result {
                     state.buffered_bytes = state.buffered_bytes.saturating_sub(file.size);
                 }
                 self.ready.space.notify_all();
@@ -121,8 +127,10 @@ impl EncoderPipeline {
 
 impl Drop for EncoderPipeline {
     fn drop(&mut self) {
-        self.cancelled.store(true, Ordering::SeqCst);
-        self.ready.space.notify_all();
+        if self.workers.iter().any(|worker| !worker.is_finished()) {
+            self.cancelled.store(true, Ordering::SeqCst);
+            self.ready.space.notify_all();
+        }
         for worker in self.workers.drain(..) {
             let _ = worker.join();
         }
@@ -138,6 +146,7 @@ fn encoder_worker(
         let Some(request) = lock(requests).pop_front() else {
             break;
         };
+        let token = request.token;
         let result = transcode_to_opus(
             &request.source,
             &request.output,
@@ -145,11 +154,12 @@ fn encoder_worker(
             cancelled,
         )
         .map(|size| ReadyFile {
-            token: request.token,
+            token,
             path: request.output,
             size,
         });
-        let size = result.as_ref().map_or(0, |file| file.size);
+        let outcome = EncodeOutcome { token, result };
+        let size = outcome.result.as_ref().map_or(0, |file| file.size);
         let mut state = lock(&ready.state);
         while state.buffered_bytes > 0
             && state.buffered_bytes.saturating_add(size) > MAX_READY_BYTES
@@ -161,13 +171,13 @@ fn encoder_worker(
                 .unwrap_or_else(PoisonError::into_inner);
         }
         if cancelled.load(Ordering::SeqCst) {
-            if let Ok(file) = result {
+            if let Ok(file) = outcome.result {
                 let _ = std::fs::remove_file(file.path);
             }
             break;
         }
         state.buffered_bytes = state.buffered_bytes.saturating_add(size);
-        state.files.push_back(result);
+        state.files.push_back(outcome);
         ready.available.notify_one();
     }
     let mut state = lock(&ready.state);
@@ -363,8 +373,8 @@ mod tests {
             super::EncoderPipeline::start(requests, std::sync::Arc::new(AtomicBool::new(false)))
                 .unwrap();
         let mut ready = Vec::new();
-        while let Some(result) = pipeline.next() {
-            ready.push(result.unwrap());
+        while let Some(outcome) = pipeline.next() {
+            ready.push(outcome.result.unwrap());
         }
         ready.sort_by_key(|file| file.token);
 
