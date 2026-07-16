@@ -123,7 +123,7 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEdi
     let spawned = std::thread::Builder::new()
         .name("reprise-tag-edit".into())
         .spawn(move || {
-            let result = reprise_core::db::open(Some(&db_path))
+            let result = reprise_core::db::open_migrated(Some(&db_path))
                 .map(|mut conn| {
                     apply_track_edit_batch_ignored(&mut conn, &tracks_for_worker, &patch)
                 })

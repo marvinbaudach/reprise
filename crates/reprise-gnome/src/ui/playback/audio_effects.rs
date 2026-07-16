@@ -3,26 +3,18 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use reprise_core::library::settings;
+use reprise_core::library::{audio_effect_settings, settings};
 use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError};
 use rusqlite::Connection;
 
 use super::player_controller::PlayerController;
 
 pub(super) fn stored(conn: &Connection) -> AudioEffects {
-    AudioEffects {
-        equalizer_enabled: settings::get_equalizer_enabled(conn),
-        equalizer_bands: settings::get_equalizer_bands(conn),
-        replay_gain: settings::get_replay_gain_mode(conn),
-    }
+    audio_effect_settings::load(conn)
 }
 
 pub(super) fn persist(conn: &Connection, effects: &AudioEffects) -> Result<(), rusqlite::Error> {
-    let transaction = conn.unchecked_transaction()?;
-    settings::set_equalizer_enabled(&transaction, effects.equalizer_enabled)?;
-    settings::set_equalizer_bands(&transaction, effects.equalizer_bands)?;
-    settings::set_replay_gain_mode(&transaction, effects.replay_gain)?;
-    transaction.commit()
+    audio_effect_settings::store(conn, effects)
 }
 
 pub(super) fn apply_initial(

@@ -180,8 +180,7 @@ fn run_scan(
     waveform_backend: &dyn WaveformBackend,
     on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanReport, ScanError> {
-    let mut worker_conn = reprise_core::db::open(Some(db_path))?;
-    reprise_core::db::migrate(&worker_conn)?;
+    let mut worker_conn = reprise_core::db::open_migrated(Some(db_path))?;
     let report =
         library::scanner::scan_folder_with_progress(&mut worker_conn, folder, on_progress)?;
     if let Err(error) = settings::set_library_root(&worker_conn, &folder.to_string_lossy()) {

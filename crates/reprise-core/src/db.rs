@@ -28,6 +28,15 @@ pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
     Ok(conn)
 }
 
+/// Opens a database and applies every pending schema migration before it is
+/// returned to a feature. Frontends should use this boundary for worker
+/// connections instead of duplicating schema-readiness details.
+pub fn open_migrated(path: Option<&Path>) -> Result<Connection, DbError> {
+    let conn = open(path)?;
+    migrate(&conn)?;
+    Ok(conn)
+}
+
 /// The on-disk database path (honors `XDG_DATA_HOME` via `dirs::data_dir`,
 /// which is how headless E2E runs point the app at a scratch database
 /// without touching `~/.local/share/reprise`). Lives in `reprise-core` so
@@ -303,6 +312,20 @@ pub fn get_waveform_peaks(conn: &Connection, track_id: i64) -> Result<Option<Vec
         |row| row.get::<_, Option<Vec<u8>>>(0),
     )?;
     Ok(result)
+}
+
+/// Returns live tracks which still need waveform analysis, in stable id
+/// order. SQL ownership stays in core while platform frontends only schedule
+/// extraction work.
+pub fn pending_waveform_tracks(conn: &Connection) -> Result<Vec<(i64, String)>, DbError> {
+    let mut statement = conn.prepare(
+        "SELECT id, path FROM tracks \
+         WHERE waveform_peaks IS NULL AND missing = 0 ORDER BY id",
+    )?;
+    let tracks = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    Ok(tracks)
 }
 
 #[cfg(test)]

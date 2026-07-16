@@ -42,6 +42,8 @@ require_pattern 'reqwest::blocking' scripts/check-architecture.sh
 require_pattern 'gst-launch-1\\.0' scripts/check-architecture.sh
 require_pattern 'must not depend directly on GStreamer' scripts/check-architecture.sh
 require_pattern 'must receive platform backends through core contracts' scripts/check-architecture.sh
+require_pattern 'productive GNOME code must use core database facades' scripts/check-architecture.sh
+require_pattern 'frontend workers must open ready-to-use databases through the core facade' scripts/check-architecture.sh
 require_pattern 'check-merge-readiness.sh' .githooks/pre-push
 require_pattern 'core.hooksPath .githooks' scripts/install-git-hooks.sh
 require_pattern '^## Current automated baseline' TESTING.md

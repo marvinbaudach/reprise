@@ -76,15 +76,7 @@ fn seed_playlist_from_library(
     conn: &mut rusqlite::Connection,
     name: &str,
 ) -> rusqlite::Result<(i64, usize)> {
-    let mut statement = conn.prepare("SELECT id FROM tracks ORDER BY title DESC")?;
-    let ids: Vec<i64> = statement
-        .query_map([], |row| row.get(0))?
-        .collect::<Result<_, _>>()?;
-    // Dropped explicitly, before the `&mut Connection` borrow below: `conn.
-    // prepare` above borrowed `conn` immutably for `statement`'s lifetime,
-    // and `create_with_tracks` needs a `&mut Connection` — the two borrows
-    // can't overlap.
-    drop(statement);
+    let ids = reprise_core::queries::query_track_ids_by_title_desc(conn)?;
     let count = ids.len();
     let playlist_id = library::playlists::create_with_tracks(conn, name, &ids)?;
     Ok((playlist_id, count))
@@ -153,8 +145,7 @@ fn main() -> glib::ExitCode {
 
     let path = db::default_path();
     tracing::info!(db_path = %path.display(), "opening database");
-    let conn = db::open(Some(&path)).expect("failed to open database");
-    db::migrate(&conn).expect("database migration failed");
+    let conn = db::open_migrated(Some(&path)).expect("failed to open or migrate database");
     tracing::info!("database ready");
 
     // Single-threaded UI: the connection is shared via Rc<RefCell<_>>, not

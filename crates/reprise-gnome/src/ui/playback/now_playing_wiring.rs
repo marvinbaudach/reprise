@@ -119,23 +119,17 @@ impl PlayerController {
         if !edited_ids.contains(&id) {
             return;
         }
-        // Re-read from DB
-        let conn = self.conn.borrow();
-        let Ok((title, artist, album, year)) = conn.query_row(
-            "SELECT title, artist, album, year FROM tracks WHERE id = ?1",
-            [id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, Option<i32>>(3)?,
-                ))
-            },
-        ) else {
+        let summary = {
+            let conn = self.conn.borrow();
+            reprise_core::queries::query_track_summary(&conn, id)
+        };
+        let Ok(Some(summary)) = summary else {
             return;
         };
-        drop(conn);
+        let title = summary.title;
+        let artist = summary.artist;
+        let album = summary.album;
+        let year = summary.year;
         // Update bar + compact player
         self.sync_track(&title, &artist, &album, year);
         // Update MPRIS now_playing cache
@@ -275,10 +269,9 @@ impl PlayerController {
         if std::thread::Builder::new()
             .name("reprise-waveform".to_string())
             .spawn(move || {
-                let peaks = reprise_core::db::open(Some(&db_path))
+                let peaks = reprise_core::db::open_migrated(Some(&db_path))
                     .ok()
                     .and_then(|conn| {
-                        reprise_core::db::migrate(&conn).ok();
                         // Try DB first.
                         if let Some(cached) = reprise_core::db::get_waveform_peaks(&conn, track_id)
                             .ok()

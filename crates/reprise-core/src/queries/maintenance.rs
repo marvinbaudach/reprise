@@ -3,7 +3,7 @@
 //! former single-file `queries.rs` (Refactoring & Extensibility Task 1) — a
 //! pure move, no behavior change.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::device_sync::SyncTrack;
@@ -40,6 +40,56 @@ pub fn query_track_summary(
         },
     )
     .optional()
+}
+
+/// Returns every non-missing track id for validating persisted playback
+/// queues. A set matches the caller's membership-only use and avoids leaking
+/// query ordering into session semantics.
+pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite::Error> {
+    let mut statement = conn.prepare("SELECT id FROM tracks WHERE missing = 0")?;
+    let ids = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(ids)
+}
+
+/// Returns every non-missing media path in stable path order for cover batch
+/// scheduling.
+pub fn query_live_track_paths(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {
+    let mut statement = conn.prepare("SELECT path FROM tracks WHERE missing = 0 ORDER BY path")?;
+    let paths = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(paths)
+}
+
+/// Resolves exact titles to deterministic track ids. This is intended for
+/// synthetic smoke fixtures, so duplicate titles choose the lowest id and
+/// missing rows remain eligible exactly as they did in the original hook.
+pub fn query_track_ids_by_titles(
+    conn: &Connection,
+    titles: &[&str],
+) -> Result<HashMap<String, i64>, rusqlite::Error> {
+    let mut statement =
+        conn.prepare("SELECT id FROM tracks WHERE title = ?1 ORDER BY id LIMIT 1")?;
+    let mut ids = HashMap::with_capacity(titles.len());
+    for &title in titles {
+        if let Some(id) = statement.query_row([title], |row| row.get(0)).optional()? {
+            ids.insert(title.to_string(), id);
+        }
+    }
+    Ok(ids)
+}
+
+/// Returns all library ids in descending title order for the playlist smoke
+/// seed. Missing rows are intentionally retained to preserve the hook's
+/// historical behavior.
+pub fn query_track_ids_by_title_desc(conn: &Connection) -> Result<Vec<i64>, rusqlite::Error> {
+    let mut statement = conn.prepare("SELECT id FROM tracks ORDER BY title DESC")?;
+    let ids = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(ids)
 }
 
 /// Resolves one track id to its *effective album artist* — the album artist

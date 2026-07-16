@@ -11,18 +11,12 @@ const WAVEFORM_WORKERS: usize = 4;
 /// Parallelizes across `WAVEFORM_WORKERS` threads, each with its own DB
 /// connection. Uses a shared work queue (atomic index into the track list).
 pub(super) fn analyze_waveforms(db_path: &std::path::Path, waveform_backend: &dyn WaveformBackend) {
-    let conn = match reprise_core::db::open(Some(db_path)) {
+    let conn = match reprise_core::db::open_migrated(Some(db_path)) {
         Ok(c) => c,
         Err(_) => return,
     };
-    let tracks: Vec<(i64, String)> = match conn
-        .prepare("SELECT id, path FROM tracks WHERE waveform_peaks IS NULL AND missing = 0")
-    {
-        Ok(mut stmt) => stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .ok()
-            .map(|rows| rows.filter_map(std::result::Result::ok).collect())
-            .unwrap_or_default(),
+    let tracks = match reprise_core::db::pending_waveform_tracks(&conn) {
+        Ok(tracks) => tracks,
         Err(_) => return,
     };
     drop(conn);
@@ -45,7 +39,7 @@ pub(super) fn analyze_waveforms(db_path: &std::path::Path, waveform_backend: &dy
     std::thread::scope(|scope| {
         for _ in 0..WAVEFORM_WORKERS {
             scope.spawn(|| {
-                let Ok(worker_conn) = reprise_core::db::open(Some(db_path)) else {
+                let Ok(worker_conn) = reprise_core::db::open_migrated(Some(db_path)) else {
                     return;
                 };
                 loop {

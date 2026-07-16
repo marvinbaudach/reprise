@@ -176,7 +176,7 @@ fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMo
     let spawned = std::thread::Builder::new()
         .name("reprise-delete-tracks".into())
         .spawn(move || {
-            let result = reprise_core::db::open(Some(&db_path))
+            let result = reprise_core::db::open_migrated(Some(&db_path))
                 .map_err(|error| error.to_string())
                 .map(|mut conn| run_delete(&mut conn, &tracks, mode));
             let _ = sender.try_send(result);
