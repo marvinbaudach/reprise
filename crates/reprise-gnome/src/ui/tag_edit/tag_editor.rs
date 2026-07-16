@@ -78,16 +78,21 @@ const FIELD_RATING: usize = 7;
 const FIELD_COUNT: usize = 8;
 
 /// Human-readable names for the pending-change bar, indexed by `FIELD_*`.
-const FIELD_NAMES: [&str; FIELD_COUNT] = [
-    "Title",
-    "Artist",
-    "Album",
-    "Album Artist",
-    "Year",
-    "Track",
-    "Genre",
-    "Rating",
-];
+/// Uses the same i18n constants as the form field labels.
+fn field_name(index: usize) -> String {
+    use strings::*;
+    match index {
+        FIELD_TITLE => text(TAG_TITLE),
+        FIELD_ARTIST => text(TAG_ARTIST),
+        FIELD_ALBUM => text(TAG_ALBUM),
+        FIELD_ALBUM_ARTIST => text(TAG_ALBUM_ARTIST),
+        FIELD_YEAR => text(TAG_YEAR),
+        FIELD_TRACK_NO => text(TAG_TRACK_NUMBER),
+        FIELD_GENRE => text(TAG_GENRE),
+        FIELD_RATING => text(RATING),
+        _ => String::new(),
+    }
+}
 
 // ── Star glyphs ──────────────────────────────────────────────────────────────
 
@@ -465,7 +470,7 @@ pub fn present(
                                 update();
                             });
                             let item =
-                                build_pending_item(FIELD_NAMES[idx], &row.text(), on_revert);
+                                build_pending_item(&field_name(idx), &row.text(), on_revert);
                             pending_bar.append(&item);
                         }
                     }
@@ -488,7 +493,7 @@ pub fn present(
                             update();
                         });
                         let item = build_pending_item(
-                            FIELD_NAMES[FIELD_RATING],
+                            &field_name(FIELD_RATING),
                             &rating_text,
                             on_revert,
                         );
@@ -1272,7 +1277,9 @@ mod tests {
     }
 
     #[test]
-    fn field_names_cover_all_fields() {
-        assert_eq!(FIELD_NAMES.len(), FIELD_COUNT);
+    fn field_name_covers_all_indices() {
+        for i in 0..FIELD_COUNT {
+            assert!(!field_name(i).is_empty(), "field_name({i}) should not be empty");
+        }
     }
 }

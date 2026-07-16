@@ -316,6 +316,17 @@ pub fn tag_will_apply(count: usize) -> String {
     formatted(TAG_WILL_APPLY, &[("count", &count_text)])
 }
 
+pub fn tag_autocomplete_track_count(count: i64) -> String {
+    let count = usize::try_from(count).unwrap_or(usize::MAX);
+    let count_text = count.to_string();
+    plural(
+        "{count} track",
+        "{count} tracks",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
 pub fn tag_cover_count(count: usize) -> String {
     let count_text = count.to_string();
     plural(
