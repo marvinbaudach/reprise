@@ -189,6 +189,29 @@ fn delta_copies_new_or_changed_tracks_and_only_removes_unpinned_unselected_track
 }
 
 #[test]
+fn delta_recopies_when_the_expected_transfer_size_changes() {
+    let selected = vec![SyncCandidate {
+        track_id: 1,
+        device_path: "Artist/Album/01 One.opus".into(),
+        transfer_bytes: 640_000,
+        source_mtime: 10,
+    }];
+    let files = vec![DeviceFileRecord {
+        device_serial: "phone".into(),
+        track_id: 1,
+        device_path: "Artist/Album/01 One.opus".into(),
+        size: 1_280_000,
+        mtime: 10,
+        pinned: false,
+    }];
+
+    let delta = compute_delta(&selected, &files, true);
+
+    assert_eq!(delta.to_copy, [1]);
+    assert_eq!(delta.bytes, 640_000);
+}
+
+#[test]
 fn fat_safe_paths_use_album_hierarchy_truncate_components_and_suffix_collisions() {
     assert_eq!(sanitize_component("A?B:C*D", "Unknown"), "A_B_C_D");
     let long = "é".repeat(200);
@@ -291,6 +314,28 @@ fn zero_bitrate_preserves_lossless_files_without_transcoding() {
     let plan = build_transfer_plan(vec![track], 0);
     assert_eq!(plan[0].mode, TransferMode::Copy);
     assert_eq!(plan[0].device_path, "Artist/Album/01 One.flac");
+}
+
+#[test]
+fn unknown_duration_still_produces_a_bitrate_specific_transfer_fingerprint() {
+    let track = SyncTrack {
+        id: 1,
+        source_path: "/library/one.flac".into(),
+        original_name: "one.flac".into(),
+        title: "One".into(),
+        artist: "Artist".into(),
+        album: "Album".into(),
+        album_artist: String::new(),
+        track_number: Some(1),
+        duration_ms: 0,
+        size_bytes: 1_000_000,
+        source_mtime: 10,
+    };
+
+    let at_64 = build_transfer_plan(vec![track.clone()], 64)[0].expected_bytes;
+    let at_128 = build_transfer_plan(vec![track], 128)[0].expected_bytes;
+
+    assert_ne!(at_64, at_128);
 }
 
 #[test]

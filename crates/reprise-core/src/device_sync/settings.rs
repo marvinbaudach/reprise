@@ -60,6 +60,7 @@ pub struct DeviceFileRecord {
     pub device_serial: String,
     pub track_id: i64,
     pub device_path: String,
+    /// Planned transfer size, used as a stable encoding-settings fingerprint.
     pub size: u64,
     pub mtime: i64,
     pub pinned: bool,

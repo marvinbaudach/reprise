@@ -270,6 +270,7 @@ fn local_gio_sync_transcodes_lossless_selection_to_opus() {
         let device = runtime.devices().remove(0);
         assert!(device.last_sync.is_some(), "device state: {device:?}");
         assert!(device.sync_error.is_none());
+        assert!(device.delta.unwrap().to_copy.is_empty());
     });
 }
 

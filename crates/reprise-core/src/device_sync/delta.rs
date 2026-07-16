@@ -40,7 +40,9 @@ pub fn compute_delta(
         }
         let current = existing.get(&candidate.track_id);
         let unchanged = current.is_some_and(|file| {
-            file.device_path == candidate.device_path && file.mtime == candidate.source_mtime
+            file.device_path == candidate.device_path
+                && file.mtime == candidate.source_mtime
+                && file.size == candidate.transfer_bytes
         });
         if !unchanged {
             to_copy.push(candidate.track_id);
