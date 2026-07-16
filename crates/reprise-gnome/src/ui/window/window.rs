@@ -20,7 +20,7 @@
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -270,7 +270,6 @@ pub fn build(
         ))
     };
     super::column_layout_editor::install_header_popover(&track_list);
-    super::current_track_selection::wire(player.as_ref(), &track_list);
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let track_list_weak = Rc::downgrade(&track_list);
@@ -296,7 +295,14 @@ pub fn build(
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
     let album_view =
         super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
-    let artist_view = super::artist_view::ArtistView::new(conn.clone());
+    // Retain the assembled `ArtistView` past `build()`: its `refresh_callback`
+    // and now-playing mini-EQ both hang off a pure-Rust `Rc<Inner>`, so the
+    // view must stay alive. The strong clone captured by the track-change
+    // wiring below (see `current_track_selection::wire`) is what keeps it so.
+    let artist_view = Rc::new(super::artist_view::ArtistView::new(
+        conn.clone(),
+        track_list.shared_cover_loader(),
+    ));
     let library_views = super::library_shell::build_views(
         &track_content,
         album_view.widget(),
@@ -318,6 +324,10 @@ pub fn build(
         });
     }
     super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list);
+    // Wire playback → track-table selection and Artists-view now-playing. Done
+    // here (not right after `track_list` is built) because the closure captures
+    // a strong `Rc<ArtistView>`, which must exist first.
+    super::current_track_selection::wire(player.as_ref(), &track_list, &artist_view);
     super::library_shell::arm_smoke_library_view(&library_views);
     let library_title = Rc::new(super::library_chrome::build_library_title(
         &header,
@@ -479,6 +489,93 @@ pub fn build(
                 tracing::warn!("player unavailable; ignoring queue drag-reorder");
                 false
             }
+        });
+    }
+    // Task 9a: Artists detail-pane hero playback actions. Player-dependent, so
+    // wired here (where `player` + `conn` + `artist_view` are all in scope)
+    // rather than in `wire_artist_view`, which handles only the
+    // navigation-only setters. Each closure resolves the artist's ordered track
+    // ids via `query_track_ids` (album-ordered — a natural "Play all") and hands
+    // them to the player.
+    {
+        // `player` is captured `Weak`: this closure is stored on `ArtistView`,
+        // which the controller retains strongly (see
+        // `current_track_selection::wire`'s doc comment), so a strong capture
+        // here would close the cycle back to the controller.
+        let player = player.as_ref().map(Rc::downgrade);
+        let conn = conn.clone();
+        artist_view.set_on_play_all(move |artist| {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
+                return;
+            };
+            match artist_track_ids(&conn, artist) {
+                Ok(ids) if !ids.is_empty() => player.play_from_view(ids, 0),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "artist play-all query failed"),
+            }
+        });
+    }
+    {
+        // Weak `player` capture — see the `set_on_play_all` comment above.
+        let player = player.as_ref().map(Rc::downgrade);
+        let conn = conn.clone();
+        artist_view.set_on_shuffle(move |artist| {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
+                return;
+            };
+            match artist_track_ids(&conn, artist) {
+                Ok(ids) if !ids.is_empty() => player.play_from_view(shuffle_ids(ids), 0),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "artist shuffle query failed"),
+            }
+        });
+    }
+    {
+        // Weak `player` capture — see the `set_on_play_all` comment above.
+        let player = player.as_ref().map(Rc::downgrade);
+        let conn = conn.clone();
+        artist_view.set_on_add_to_queue(move |artist| {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
+                return;
+            };
+            match artist_track_ids(&conn, artist) {
+                Ok(ids) if !ids.is_empty() => player.append_to_queue(&ids),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "artist add-to-queue query failed"),
+            }
+        });
+    }
+    {
+        let conn = conn.clone();
+        artist_view.set_on_go_to_folder(move |artist| open_artist_folder(&conn, &artist));
+    }
+    if let Some(player) = &player {
+        // Task 9b: clicking the player-bar artist name deep-links to the
+        // Artists tab and selects the playing album artist (no history/back
+        // stack — out of scope). `player` is captured `Weak`: the closure is
+        // stored on the bar, itself owned by the controller, so a strong
+        // capture would cycle (same reason as `set_track_list_reload` above).
+        // The two stacks are cheap GObject clones; `select_artist` is a
+        // self-contained callable that holds no strong controller/view
+        // reference (see `ArtistMaster::select_callback`).
+        let player_weak = Rc::downgrade(player);
+        let content_stack = content_stack.clone();
+        let library_stack = library_views.stack.clone();
+        let select_artist = artist_view.select_artist_callback();
+        player.connect_artist_clicked(move || {
+            let Some(player) = player_weak.upgrade() else {
+                return;
+            };
+            let Some(artist) = player.current_track_album_artist() else {
+                return;
+            };
+            content_stack.set_visible_child_name("library");
+            // Switching to the Artists tab synchronously fires the stack's
+            // `visible-child-name` notify handler, which reloads the master
+            // (see `library_shell::wire_artist_view`), so the target row
+            // exists by the time `select_artist` runs on the next line.
+            library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_ARTISTS);
+            select_artist(&artist);
         });
     }
     {
@@ -712,20 +809,10 @@ pub fn build(
             toggle.set_active(!toggle.is_active());
         });
     }
-    // Artist click → filter library to artist (spec 1.5).
-    if let Some(ref player) = player {
-        let track_list_weak = Rc::downgrade(&track_list);
-        let views_stack = library_views.stack.clone();
-        let controller_weak = Rc::downgrade(player);
-        player.connect_artist_clicked(move || {
-            let Some(controller) = controller_weak.upgrade() else { return };
-            let Some(track_list) = track_list_weak.upgrade() else { return };
-            if let Some(artist) = controller.current_artist() {
-                track_list.set_source(ViewSource::Artist(artist));
-                views_stack.set_visible_child_name("tracks");
-            }
-        });
-    }
+    // Artist click → jump to the Artists master/detail view and select the
+    // now-playing album artist. Wired above (search for `connect_artist_clicked`)
+    // where `artist_view` is in scope; the earlier `set_source`-to-Tracks
+    // stopgap is superseded by the dedicated Artists view.
     header.pack_end(&search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
@@ -914,4 +1001,86 @@ pub fn build(
     tracing::info!("main window built");
     window.present();
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
+}
+
+/// Ordered track ids for `artist`, album-ordered — the natural order for the
+/// Artists hero's Play all / Shuffle / Add-to-queue actions.
+fn artist_track_ids(
+    conn: &Rc<RefCell<Connection>>,
+    artist: String,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = conn.borrow();
+    reprise_core::queries::query_track_ids(
+        &conn,
+        &ViewSource::Artist(artist),
+        "album",
+        "asc",
+        "",
+        &[],
+    )
+}
+
+/// Fisher–Yates shuffle for the Artists hero "Shuffle" action. `reprise-gnome`
+/// carries no direct `rand`/`fastrand` dependency (the crate split kept its dep
+/// set minimal), so this seeds a tiny xorshift64 from the wall clock rather
+/// than pulling in a new crate. A listen-order shuffle is not security
+/// sensitive, so a non-cryptographic PRNG is appropriate here.
+fn shuffle_ids(mut ids: Vec<i64>) -> Vec<i64> {
+    // `| 1` guards against the degenerate all-zero xorshift state.
+    let mut state = (glib::real_time() as u64) | 1;
+    for i in (1..ids.len()).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let j = (state % (i as u64 + 1)) as usize;
+        ids.swap(i, j);
+    }
+    ids
+}
+
+/// Opens the containing folder of the artist's first (album-ordered) track in
+/// the desktop file manager, via `gio::AppInfo::launch_default_for_uri` on the
+/// parent directory's `file://` URI — the same default-handler path
+/// `preference_lastfm.rs` uses for external URLs. Logs and returns on any
+/// lookup/launch failure.
+fn open_artist_folder(conn: &Rc<RefCell<Connection>>, artist: &str) {
+    let path = {
+        let conn = conn.borrow();
+        let ids = match reprise_core::queries::query_track_ids(
+            &conn,
+            &ViewSource::Artist(artist.to_string()),
+            "album",
+            "asc",
+            "",
+            &[],
+        ) {
+            Ok(ids) => ids,
+            Err(error) => {
+                tracing::warn!(%error, "artist go-to-folder query failed");
+                return;
+            }
+        };
+        let Some(&first) = ids.first() else {
+            return;
+        };
+        match reprise_core::queries::query_track_summary(&conn, first) {
+            Ok(Some(summary)) => summary.path,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%error, "artist go-to-folder path lookup failed");
+                return;
+            }
+        }
+    };
+
+    let Some(dir) = Path::new(&path).parent() else {
+        tracing::warn!(path, "artist track has no parent directory");
+        return;
+    };
+    let uri = gtk4::gio::File::for_path(dir).uri();
+    if let Err(error) =
+        gtk4::gio::AppInfo::launch_default_for_uri(&uri, gtk4::gio::AppLaunchContext::NONE)
+    {
+        tracing::warn!(%error, %uri, "failed to open artist folder");
+    }
 }

@@ -42,6 +42,27 @@ pub fn query_track_summary(
     .optional()
 }
 
+/// Resolves one track id to its *effective album artist* — the album artist
+/// when tagged, otherwise the track artist, using the exact same
+/// `EFFECTIVE_ALBUM_ARTIST` SQL fallback (with `TRIM`) the Artists library
+/// view groups by. The player-bar artist deep-link (`ui::player_controller`'s
+/// `current_track_album_artist`) needs this to select the correct master row,
+/// since the now-playing display cache only carries the *track* artist.
+/// `Ok(None)` for an unknown id; the returned string may be empty when neither
+/// tag is set (the caller treats blank as "no artist to navigate to").
+pub fn query_track_album_artist(
+    conn: &Connection,
+    id: i64,
+) -> Result<Option<String>, rusqlite::Error> {
+    let effective = super::library_views::EFFECTIVE_ALBUM_ARTIST;
+    conn.query_row(
+        &format!("SELECT {effective} FROM tracks WHERE id = ?1"),
+        rusqlite::params![id],
+        |r| r.get(0),
+    )
+    .optional()
+}
+
 /// Resolves a drag payload into copy-ready tracks without trusting stale UI
 /// metadata. Input order is preserved, repeated ids are emitted once, and
 /// rows that are unknown, marked missing, or no longer regular local files

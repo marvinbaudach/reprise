@@ -582,3 +582,43 @@ fn sync_tracks_include_copy_metadata_and_actual_file_size() {
     assert_eq!(track.duration_ms, 22_000);
     assert_eq!(track.size_bytes, 22);
 }
+
+// -- query_track_album_artist (player-bar artist deep-link) --------------
+
+#[test]
+fn track_album_artist_prefers_album_artist_then_falls_back_to_artist() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (id,path,title,artist,album_artist,added_at) VALUES \
+         (1,'/a','A','Track Artist','  Album Artist  ',0), \
+         (2,'/b','B','Solo Artist','',0), \
+         (3,'/c','C','Solo Artist','   ',0), \
+         (4,'/d','D','','',0)",
+        [],
+    )
+    .unwrap();
+
+    // Tagged album artist wins, trimmed by the EFFECTIVE_ALBUM_ARTIST fallback.
+    assert_eq!(
+        query_track_album_artist(&conn, 1).unwrap().as_deref(),
+        Some("Album Artist")
+    );
+    // Empty album artist falls back to the (trimmed) track artist.
+    assert_eq!(
+        query_track_album_artist(&conn, 2).unwrap().as_deref(),
+        Some("Solo Artist")
+    );
+    // Whitespace-only album artist also falls back to the track artist.
+    assert_eq!(
+        query_track_album_artist(&conn, 3).unwrap().as_deref(),
+        Some("Solo Artist")
+    );
+    // Neither tagged: SQL yields the empty string (caller treats blank as none).
+    assert_eq!(
+        query_track_album_artist(&conn, 4).unwrap().as_deref(),
+        Some("")
+    );
+    // Unknown id.
+    assert_eq!(query_track_album_artist(&conn, 99).unwrap(), None);
+}
