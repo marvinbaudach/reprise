@@ -33,6 +33,7 @@ For release candidates, also run:
 scripts/check-release.sh
 scripts/check-display-tests.sh
 scripts/ptr-e2e/run.sh
+scripts/cua-e2e/run.sh
 scripts/check-lyrics-smoke.sh
 ```
 
@@ -105,6 +106,9 @@ Every headless GTK command must use a private D-Bus session, Xvfb, temporary
 `REPRISE_AUDIO_SINK=fakesink`. Pointer-driven workflows belong in
 `scripts/ptr-e2e`; fixture-only network workflows need local servers and
 request logs that assert no path, credential, or listening-history leakage.
+Semantic accessibility workflows belong in `scripts/cua-e2e`; its helper
+contract rejects unbracketed actions, degraded AT-SPI trees, and suspected
+no-ops before the workflow can claim success.
 
 Useful additions to the display suite are recycled Artist/Album rows after
 rapid scrolling, live theme changes while transient dialogs are open, compact
