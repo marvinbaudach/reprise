@@ -8,7 +8,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 
 use super::device_sync_runtime::{
-    DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase, Subscription,
+    DeviceSyncRuntime, DeviceSyncState, DeviceView, PlannedSyncPhase,
 };
 
 #[derive(Clone)]
@@ -43,7 +43,7 @@ pub(super) fn install(
         update_header(&spinner, &split_view, &active, &state);
         show_transitions(&overlay, &previous, &state);
     }));
-    retain_subscription(header, subscription);
+    subscription.retain_for_widget(header);
 }
 
 fn update_header(
@@ -153,13 +153,6 @@ fn phase_percent(phase: &PlannedSyncPhase) -> u64 {
         PlannedSyncPhase::Finishing => 100,
         _ => 0,
     }
-}
-
-fn retain_subscription(widget: &impl IsA<gtk4::Widget>, subscription: Subscription) {
-    let subscription = Rc::new(RefCell::new(Some(subscription)));
-    widget.connect_unrealize(move |_| {
-        subscription.borrow_mut().take();
-    });
 }
 
 #[cfg(test)]
