@@ -14,9 +14,25 @@ pub(in crate::ui) const TITLE_CLASS: &str = "album-card-title";
 pub(in crate::ui) const SUBTITLE_CLASS: &str = "album-card-subtitle";
 pub(in crate::ui) const PLACEHOLDER_CLASS: &str = "album-placeholder";
 pub(in crate::ui) const PLACEHOLDER_INITIAL_CLASS: &str = "album-placeholder-initial";
+pub(in crate::ui) const PLACEHOLDER_GRADIENT_COUNT: usize = 12;
+
+const PLACEHOLDER_GRADIENT_HUES: [(u16, u16); PLACEHOLDER_GRADIENT_COUNT] = [
+    (18, 54),
+    (42, 88),
+    (72, 128),
+    (116, 166),
+    (154, 204),
+    (190, 238),
+    (222, 276),
+    (258, 314),
+    (296, 344),
+    (328, 22),
+    (352, 64),
+    (206, 28),
+];
 
 pub(in crate::ui) fn css() -> String {
-    format!(
+    let mut output = format!(
         // Card container: transparent bg, no frame, vertical layout.
         ".{CARD_CLASS} {{ \
            padding: 0; margin: 0; \
@@ -83,7 +99,15 @@ pub(in crate::ui) fn css() -> String {
            color: alpha(white, 0.85); }}",
         radius = tokens::RADIUS_SURFACE,
         transition = tokens::TRANSITION,
-    )
+    );
+    for (index, (start_hue, end_hue)) in PLACEHOLDER_GRADIENT_HUES.iter().enumerate() {
+        output.push_str(&format!(
+            ".album-placeholder-gradient-{index} {{ \
+             background: linear-gradient(135deg, \
+             oklch(0.45 0.08 {start_hue}), oklch(0.18 0.05 {end_hue})); }}\n"
+        ));
+    }
+    output
 }
 
 #[cfg(test)]
@@ -102,5 +126,8 @@ mod tests {
         assert!(css.contains(".album-placeholder"));
         assert!(css.contains("outline: 2px solid @accent_color"));
         assert!(css.contains("box-shadow: 0 4px 14px"));
+        for index in 0..super::PLACEHOLDER_GRADIENT_COUNT {
+            assert!(css.contains(&format!(".album-placeholder-gradient-{index}")));
+        }
     }
 }

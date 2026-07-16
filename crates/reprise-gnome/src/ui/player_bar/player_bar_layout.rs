@@ -174,14 +174,12 @@ pub(super) fn build() -> PlayerBarWidgets {
     volume_scale.add_css_class(VOLUME_SCALE_CSS_CLASS);
 
     // Scroll ±5 % per tick on the volume slider (spec 1.5).
-    let volume_scroll = gtk4::EventControllerScroll::new(
-        gtk4::EventControllerScrollFlags::VERTICAL,
-    );
+    let volume_scroll =
+        gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::VERTICAL);
     volume_scroll.connect_scroll({
         let volume_scale = volume_scale.clone();
         move |_, _dx, dy| {
-            let new_val =
-                (volume_scale.value() - dy * VOLUME_STEP).clamp(VOLUME_MIN, VOLUME_MAX);
+            let new_val = (volume_scale.value() - dy * VOLUME_STEP).clamp(VOLUME_MIN, VOLUME_MAX);
             volume_scale.set_value(new_val);
             gtk4::glib::Propagation::Stop
         }

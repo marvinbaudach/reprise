@@ -65,24 +65,24 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::browse_bar::BrowseBar;
-use crate::ui::browse_filter_count;
 use crate::ui::column_layout::{self, ColumnId, ColumnRegistry};
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
 use crate::ui::toasts;
-use crate::ui::track_list_activation::{current_queue_ids, wire_activate};
-use crate::ui::track_list_columns::{apply_empty_state, build_status_page, empty_state_for};
+use crate::ui::track_list_activation::wire_activate;
+use crate::ui::track_list_columns::build_status_page;
 use crate::ui::track_list_context_menu;
 use crate::ui::track_list_dnd_smoke;
 use crate::ui::track_list_model::TrackListModel;
+pub(super) use crate::ui::track_list_reload::{
+    reload, set_filter_and_reload, set_source_and_reload,
+};
 use crate::ui::track_list_selection;
 use crate::ui::track_list_smoke::{
     arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
 };
-use crate::ui::track_list_sort::{
-    resolve_sort_on_switch, wire_sort_clicks, SortState, PLAYLIST_ORDER_SORT_FIELD,
-};
+use crate::ui::track_list_sort::{wire_sort_clicks, SortState, PLAYLIST_ORDER_SORT_FIELD};
 use reprise_core::models::Track;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
@@ -221,7 +221,7 @@ pub(super) struct Shared {
     /// exposing `TrackList::source()`/`filter()` getters: `reload` already
     /// has all three values in local variables at the one call site that
     /// invokes this hook.
-    on_reload: OnReload,
+    pub(super) on_reload: OnReload,
     /// Stage 3 Task 1 (a): the window's toast overlay, injected post-
     /// construction via `TrackList::set_toast_overlay` — same seam shape as
     /// `PlayerController::toast_overlay` (see that module's `## Toast +
@@ -739,94 +739,4 @@ pub(super) fn show_toast(shared: &Shared, text: &str) {
             tracing::warn!(text, "toast overlay is gone; degrading to log-only");
         }
     }
-}
-
-/// Sets `shared.filter` and reloads — the one place that mutates the filter
-/// before reloading, shared by `TrackList::set_filter` (the typed-search
-/// path, reached via `window.rs`'s debounce timer) and the
-/// `REPRISE_SMOKE_FILTER` dev hook (`arm_smoke_filter`), so both apply a new
-/// filter through the identical code path.
-pub(super) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
-    *shared.filter.borrow_mut() = text.to_string();
-    reload(shared);
-}
-
-/// Sets `shared.source` and reloads — the one place that mutates the source
-/// before reloading, shared by `TrackList::set_source` and the `REPRISE_
-/// SMOKE_SOURCE` dev hook (`arm_smoke_source`), so both switch sources
-/// through the identical code path.
-///
-/// Also resolves `shared.sort` via `resolve_sort_on_switch` (CRITICAL fix,
-/// review round 1; see that function for the full matrix): without this,
-/// switching to a `Playlist` source reloaded with whatever sort was
-/// already active (`SortState::default()`'s artist/asc on first switch),
-/// never the playlist's own `pt.position` order — the `"playlist_order"`
-/// sentinel existed in `queries.rs`'s whitelist but was only ever
-/// exercised by that module's own unit tests, never by the live UI path.
-/// A column-header click (`on_sorter_changed`) still overrides this
-/// temporarily, exactly as before.
-pub(super) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
-    // Hoisted so the `sort` borrow ends before the `borrow_mut` below.
-    let new_sort = resolve_sort_on_switch(&shared.sort.borrow(), &source);
-    *shared.sort.borrow_mut() = new_sort;
-    *shared.source.borrow_mut() = source;
-    shared
-        .browse_bar
-        .set_library_visible(matches!(*shared.source.borrow(), ViewSource::Library));
-    reload(shared);
-}
-
-/// Re-runs the query against the current source/sort/filter state via
-/// `TrackListModel::set_query`. Switches the stack to whichever page
-/// `empty_state_for` selects for the resulting row count, filter state, and
-/// source.
-pub(super) fn reload(shared: &Rc<Shared>) {
-    let sort = shared.sort.borrow().clone();
-    let filter = shared.filter.borrow().clone();
-    let source = shared.source.borrow().clone();
-    let browse = if matches!(source, ViewSource::Library) {
-        shared.browse_filter.borrow().clone()
-    } else {
-        BrowseFilter::default()
-    };
-    let has_filter = !filter.trim().is_empty() || !browse.is_empty();
-
-    let queue_ids = if matches!(source, ViewSource::Queue) {
-        current_queue_ids(shared)
-    } else {
-        Vec::new()
-    };
-
-    shared.model.set_query_browsed(
-        &source,
-        &sort.field,
-        &sort.dir,
-        &filter,
-        &browse,
-        &queue_ids,
-    );
-
-    // Stage 3 Task 8: the ImportErrors source's rows live in `import_errors_
-    // view`, not `shared.model` (which `queries.rs` always resolves to an
-    // empty window/count for this source — see its module doc's `ImportErrors`
-    // section) — so its row count comes from refreshing that panel instead.
-    let count = if matches!(source, ViewSource::ImportErrors) {
-        shared.import_errors_view.refresh()
-    } else {
-        shared.model.n_items() as usize
-    };
-    browse_filter_count::update(&shared.browse_bar, &shared.conn, &source, count, has_filter);
-    apply_empty_state(shared, empty_state_for(count, has_filter, &source));
-
-    tracing::info!(
-        count,
-        field = %sort.field,
-        dir = %sort.dir,
-        filter = %filter,
-        ?browse,
-        source = %source.label(),
-        "query matched {count} tracks"
-    );
-
-    (shared.on_reload)(&source, count, &filter, &browse);
 }

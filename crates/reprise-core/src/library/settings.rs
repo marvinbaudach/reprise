@@ -242,10 +242,7 @@ pub fn get_compact_always_on_top(conn: &Connection) -> bool {
     get_bool(conn, COMPACT_ALWAYS_ON_TOP_KEY, false).unwrap_or(false)
 }
 
-pub fn set_compact_always_on_top(
-    conn: &Connection,
-    above: bool,
-) -> Result<(), rusqlite::Error> {
+pub fn set_compact_always_on_top(conn: &Connection, above: bool) -> Result<(), rusqlite::Error> {
     set_setting(
         conn,
         COMPACT_ALWAYS_ON_TOP_KEY,

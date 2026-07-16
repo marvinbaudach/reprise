@@ -10,7 +10,6 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::queries::AlbumSummary;
-use rusqlite::Connection;
 
 use crate::ui::album_card_css as css;
 use crate::ui::cover_loader::CoverLoader;
@@ -22,30 +21,31 @@ const LEADING_ARTICLES: &[&str] = &[
     "The ", "A ", "An ", "Die ", "Der ", "Das ", "Les ", "La ", "Le ",
 ];
 
+pub(in crate::ui) type AlbumActivate = Rc<dyn Fn(AlbumSummary)>;
+pub(in crate::ui) type AlbumAction = Rc<dyn Fn(&AlbumSummary)>;
+pub(in crate::ui) type ArtistActivate = Rc<dyn Fn(String)>;
+pub(in crate::ui) type AlbumActivateSlot = Rc<RefCell<Option<AlbumActivate>>>;
+pub(in crate::ui) type AlbumActionSlot = Rc<RefCell<Option<AlbumAction>>>;
+pub(in crate::ui) type ArtistActivateSlot = Rc<RefCell<Option<ArtistActivate>>>;
+
 /// Shared state injected into every card's factory closures.
 #[derive(Clone)]
 pub(in crate::ui) struct AlbumCardShared {
-    pub conn: Rc<RefCell<Connection>>,
     pub cover_loader: Rc<CoverLoader>,
     pub generation: Rc<Cell<u64>>,
     /// `(album_key, artist_key)` of the currently playing album, if any.
     pub now_playing_album: Rc<RefCell<Option<(String, String)>>>,
-    /// True when playback is paused (EQ bars freeze).
-    #[allow(dead_code)]
-    pub playback_paused: Rc<Cell<bool>>,
     /// Card click → navigate to Tracks tab with album filter.
-    pub on_activate: Rc<RefCell<Option<Rc<dyn Fn(AlbumSummary)>>>>,
+    pub on_activate: AlbumActivateSlot,
     /// Play button click → replace queue + play.
-    pub on_play: Rc<RefCell<Option<Rc<dyn Fn(&AlbumSummary)>>>>,
+    pub on_play: AlbumActionSlot,
     /// Shift+play button → append to queue.
-    pub on_queue: Rc<RefCell<Option<Rc<dyn Fn(&AlbumSummary)>>>>,
+    pub on_queue: AlbumActionSlot,
     /// Artist label click → navigate to Artists tab.
-    pub on_artist_activate: Rc<RefCell<Option<Rc<dyn Fn(String)>>>>,
+    pub on_artist_activate: ArtistActivateSlot,
 }
 
-pub(in crate::ui) fn build_factory(
-    shared: &Rc<AlbumCardShared>,
-) -> gtk4::SignalListItemFactory {
+pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
 
     // ── setup ──────────────────────────────────────────────────────────────
@@ -76,20 +76,6 @@ pub(in crate::ui) fn build_factory(
                 .vexpand(true)
                 .build();
             placeholder.append(&placeholder_initial);
-
-            // Attach a CssProvider to the placeholder for per-album gradients.
-            // We store it in a RefCell embedded in the widget hierarchy via a
-            // key on the placeholder's qdata so it survives reuse.
-            let gradient_provider = gtk4::CssProvider::new();
-            placeholder
-                .style_context()
-                .add_provider(&gradient_provider, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
-            // SAFETY: The provider is kept alive by the RefCell and the widget
-            // tree. The key is a stable static string. We only read/write on
-            // the GTK main thread.
-            unsafe {
-                placeholder.set_data("gradient-provider", gradient_provider);
-            }
 
             // Hover overlay: gradient scrim + bottom row with EQ + play button.
             let hover_overlay = gtk4::Box::builder()
@@ -202,7 +188,7 @@ pub(in crate::ui) fn build_factory(
                         .display()
                         .default_seat()
                         .and_then(|seat| seat.keyboard())
-                        .map_or(false, |kb| {
+                        .is_some_and(|kb| {
                             kb.modifier_state()
                                 .contains(gtk4::gdk::ModifierType::SHIFT_MASK)
                         });
@@ -305,22 +291,14 @@ pub(in crate::ui) fn build_factory(
                 .and_downcast::<gtk4::Box>()
                 .expect("placeholder Box");
 
-            // Update gradient via the stored CssProvider.
-            let gradient_css =
-                placeholder_css_for_album(&album.album, &album.album_artist);
-            // SAFETY: same thread, same key used in setup.
-            let provider: Option<gtk4::CssProvider> = unsafe {
-                placeholder
-                    .data::<gtk4::CssProvider>("gradient-provider")
-                    .map(|ptr| ptr.as_ref().clone())
-            };
-            if let Some(provider) = provider {
-                provider.load_from_data(&gradient_css);
+            for index in 0..css::PLACEHOLDER_GRADIENT_COUNT {
+                placeholder.remove_css_class(&format!("album-placeholder-gradient-{index}"));
             }
-            if let Some(initial) = placeholder
-                .first_child()
-                .and_downcast::<gtk4::Label>()
-            {
+            placeholder.add_css_class(&placeholder_class_for_album(
+                &album.album,
+                &album.album_artist,
+            ));
+            if let Some(initial) = placeholder.first_child().and_downcast::<gtk4::Label>() {
                 initial.set_text(&derive_initial(&album.album));
             }
             placeholder.set_visible(true);
@@ -336,16 +314,14 @@ pub(in crate::ui) fn build_factory(
                     .now_playing_album
                     .borrow()
                     .as_ref()
-                    .map_or(false, |(a, ar)| {
+                    .is_some_and(|(a, ar)| {
                         a.eq_ignore_ascii_case(&album.album)
                             && ar.eq_ignore_ascii_case(&album.album_artist)
                     });
 
             // Bottom row: spacer (first child), then bottom_row (last child).
             if let Some(bottom_row) = hover_box.last_child().and_downcast::<gtk4::Box>() {
-                if let Some(eq_container) =
-                    bottom_row.first_child().and_downcast::<gtk4::Box>()
-                {
+                if let Some(eq_container) = bottom_row.first_child().and_downcast::<gtk4::Box>() {
                     eq_container.set_visible(is_now_playing);
                 }
                 if let Some(play_btn) = bottom_row.last_child().and_downcast::<gtk4::Button>() {
@@ -393,17 +369,13 @@ pub(in crate::ui) fn build_factory(
             .and_downcast::<gtk4::Box>();
         if let Some(placeholder) = placeholder {
             placeholder.set_visible(false);
-            if let Some(hover_box) = placeholder
-                .next_sibling()
-                .and_downcast::<gtk4::Box>()
-            {
+            if let Some(hover_box) = placeholder.next_sibling().and_downcast::<gtk4::Box>() {
                 hover_box.remove_css_class("album-now-playing");
                 if let Some(bottom_row) = hover_box.last_child().and_downcast::<gtk4::Box>() {
                     if let Some(play_btn) = bottom_row.last_child().and_downcast::<gtk4::Button>() {
                         play_btn.set_icon_name("media-playback-start-symbolic");
                     }
-                    if let Some(eq_container) =
-                        bottom_row.first_child().and_downcast::<gtk4::Box>()
+                    if let Some(eq_container) = bottom_row.first_child().and_downcast::<gtk4::Box>()
                     {
                         eq_container.set_visible(false);
                     }
@@ -424,23 +396,11 @@ fn simple_hash(input: &str) -> u64 {
     hash
 }
 
-/// Generates CSS for the placeholder gradient based on album+artist hash.
-/// OKLCH: Start L≈0.45/C≈0.08, End L≈0.18/C≈0.05, angle 135°, hue from hash.
-pub(in crate::ui) fn placeholder_css_for_album(album: &str, album_artist: &str) -> String {
+/// Maps an album identity onto the centrally registered placeholder palette.
+pub(in crate::ui) fn placeholder_class_for_album(album: &str, album_artist: &str) -> String {
     let input = format!("{}{}", album.to_lowercase(), album_artist.to_lowercase());
-    let hash = simple_hash(&input);
-    let hue1 = (hash % 360) as f64;
-    let hue2 = ((hash >> 16) % 360) as f64;
-    let h2 = if (hue2 - hue1).abs() < 30.0 {
-        hue1 + 40.0
-    } else {
-        hue2
-    };
-    format!(
-        ".{} {{ background: linear-gradient(135deg, \
-           oklch(0.45 0.08 {hue1:.0}), oklch(0.18 0.05 {h2:.0})); }}",
-        css::PLACEHOLDER_CLASS,
-    )
+    let index = simple_hash(&input) as usize % css::PLACEHOLDER_GRADIENT_COUNT;
+    format!("album-placeholder-gradient-{index}")
 }
 
 /// Derives a single initial from the album title: strips leading articles,
@@ -456,8 +416,7 @@ pub(in crate::ui) fn derive_initial(album: &str) -> String {
     title
         .chars()
         .find(|c| c.is_alphanumeric())
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "♪".to_string())
+        .map_or_else(|| "♪".to_string(), |c| c.to_uppercase().to_string())
 }
 
 /// Tooltip: "Title · Artist · Year · N tracks · Duration".
@@ -498,20 +457,24 @@ mod tests {
     }
 
     #[test]
-    fn placeholder_gradient_is_consistent() {
-        let css1 = placeholder_css_for_album("Album", "Artist");
-        let css2 = placeholder_css_for_album("Album", "Artist");
-        assert_eq!(css1, css2);
-        assert!(css1.contains("oklch(0.45"));
-        assert!(css1.contains("oklch(0.18"));
-        assert!(css1.contains("135deg"));
+    fn placeholder_gradient_class_is_consistent() {
+        let class1 = placeholder_class_for_album("Album", "Artist");
+        let class2 = placeholder_class_for_album("Album", "Artist");
+        assert_eq!(class1, class2);
+        assert!(class1.starts_with("album-placeholder-gradient-"));
     }
 
     #[test]
-    fn placeholder_gradient_differs_for_same_album_different_artist() {
-        let css1 = placeholder_css_for_album("Greatest Hits", "Artist A");
-        let css2 = placeholder_css_for_album("Greatest Hits", "Artist B");
-        assert_ne!(css1, css2);
+    fn placeholder_gradient_class_stays_in_palette() {
+        for artist in ["Artist A", "Artist B", "Artist C", "Artist D"] {
+            let class = placeholder_class_for_album("Greatest Hits", artist);
+            let index = class
+                .strip_prefix("album-placeholder-gradient-")
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            assert!(index < css::PLACEHOLDER_GRADIENT_COUNT);
+        }
     }
 
     #[test]

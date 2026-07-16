@@ -59,8 +59,8 @@ impl Theme {
         }
     }
 
-    /// Inverse of [`id`]; unknown ids fall back to `None` so the caller can
-    /// choose [`DEFAULT`].
+    /// Inverse of [`Self::id`]; unknown ids fall back to `None` so the caller can
+    /// choose [`Self::DEFAULT`].
     pub(in crate::ui) fn from_id(id: &str) -> Option<Theme> {
         Theme::all().into_iter().find(|theme| theme.id() == id)
     }
@@ -174,7 +174,11 @@ impl Theme {
 /// libadwaita named colors, plus two `reprise_*` colors the app's own CSS
 /// reads. Installed at application priority so it wins over Adwaita's defaults.
 pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
-    let p = if is_dark { theme.palette() } else { theme.light_palette() };
+    let p = if is_dark {
+        theme.palette()
+    } else {
+        theme.light_palette()
+    };
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -249,15 +253,18 @@ mod tests {
             theme_css(Theme::PerpetualRain, true),
             theme_css(Theme::NightTerrain, true)
         );
-        assert_ne!(theme_css(Theme::NightTerrain, true), theme_css(Theme::MutedBloom, true));
+        assert_ne!(
+            theme_css(Theme::NightTerrain, true),
+            theme_css(Theme::MutedBloom, true)
+        );
     }
 
     #[test]
     fn dialog_bg_is_distinct_from_card_and_window() {
         for theme in Theme::all() {
             let p = theme.palette();
-            assert_ne!(p.dialog_bg, p.card_bg, "{:?} dialog_bg == card_bg", theme);
-            assert_ne!(p.dialog_bg, p.window_bg, "{:?} dialog_bg == window_bg", theme);
+            assert_ne!(p.dialog_bg, p.card_bg, "{theme:?} dialog_bg == card_bg");
+            assert_ne!(p.dialog_bg, p.window_bg, "{theme:?} dialog_bg == window_bg");
         }
     }
 }

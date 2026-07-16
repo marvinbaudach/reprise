@@ -16,160 +16,31 @@ pub fn text(message: &str) -> String {
     crate::i18n::gettext(message)
 }
 
-fn formatted(message: &str, values: &[(&str, &str)]) -> String {
+pub(super) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
     crate::i18n::format_message(&text(message), values)
 }
 
-fn plural(singular: &str, plural: &str, count: usize, values: &[(&str, &str)]) -> String {
+pub(super) fn plural(
+    singular: &str,
+    plural: &str,
+    count: usize,
+    values: &[(&str, &str)],
+) -> String {
     let count = u32::try_from(count).unwrap_or(u32::MAX);
     crate::i18n::format_message(&crate::i18n::ngettext(singular, plural, count), values)
 }
 
-pub const APP_NAME: &str = N_!("Reprise");
-pub const LIBRARY_VIEW_TRACKS: &str = N_!("Tracks");
-pub const LIBRARY_VIEW_ALBUMS: &str = N_!("Albums");
-pub const LIBRARY_VIEW_ARTISTS: &str = N_!("Artists");
-pub const ALBUMS_EMPTY_TITLE: &str = N_!("No Albums Yet");
-pub const ALBUMS_EMPTY_DESCRIPTION: &str = N_!("Scan a music folder to see album covers here.");
-pub const ARTISTS_EMPTY_TITLE: &str = N_!("No Artists Yet");
-pub const ARTISTS_EMPTY_DESCRIPTION: &str = N_!("Scan a music folder to see artists here.");
-pub const UNKNOWN_ARTIST: &str = N_!("Unknown Artist");
+#[path = "strings_artist.rs"]
+mod artist;
+pub use artist::*;
 
-pub fn artist_counts(album_count: i64, track_count: i64) -> String {
-    let album_count = usize::try_from(album_count).unwrap_or(usize::MAX);
-    let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
-    let albums = plural(
-        "{count} album",
-        "{count} albums",
-        album_count,
-        &[("count", &album_count.to_string())],
-    );
-    let tracks = plural(
-        "{count} track",
-        "{count} tracks",
-        track_count,
-        &[("count", &track_count.to_string())],
-    );
-    format!("{albums} · {tracks}")
-}
-pub const ARTIST_SORT_ALPHABETICAL: &str = N_!("A–Z");
-pub const ARTIST_SORT_MOST_PLAYED: &str = N_!("Most played");
-pub const ARTIST_SORT_RECENTLY_PLAYED: &str = N_!("Recently played");
+#[path = "strings_news.rs"]
+mod news;
+pub use news::*;
 
-/// The Artists master-list header count, e.g. "42 artists".
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
-pub fn artist_master_count(count: usize) -> String {
-    plural(
-        "{count} artist",
-        "{count} artists",
-        count,
-        &[("count", &count.to_string())],
-    )
-}
-
-// Artists detail pane (src/ui/library_views/artist_detail_pane.rs).
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
-pub const ARTIST_DETAIL_EYEBROW: &str = N_!("ARTIST");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_PLAY_ALL: &str = N_!("Play all");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_MENU: &str = N_!("More artist actions");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_ADD_TO_QUEUE: &str = N_!("Add to queue");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_EDIT_TAGS: &str = N_!("Edit tags for all");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_GO_TO_FOLDER: &str = N_!("Go to folder");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_ALBUMS: &str = N_!("Albums");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_TOP_TRACKS: &str = N_!("Top tracks");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_SHOW_ALL: &str = N_!("Show all");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_SHOW_LESS: &str = N_!("Show less");
-#[allow(dead_code)]
-pub const ARTIST_DETAIL_NO_ALBUMS: &str = N_!("No albums for this artist yet.");
-
-/// The hero meta line, e.g. "3 albums · 12 tracks · 5 hours · 1 play this year".
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
-pub fn artist_detail_meta(
-    album_count: i64,
-    track_count: i64,
-    catalog_ms: i64,
-    plays_this_year: i64,
-) -> String {
-    let album_count = usize::try_from(album_count).unwrap_or(usize::MAX);
-    let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
-    let hours = usize::try_from(catalog_ms.max(0) / 3_600_000).unwrap_or(usize::MAX);
-    let plays = usize::try_from(plays_this_year.max(0)).unwrap_or(usize::MAX);
-    let albums = plural(
-        "{count} album",
-        "{count} albums",
-        album_count,
-        &[("count", &album_count.to_string())],
-    );
-    let tracks = plural(
-        "{count} track",
-        "{count} tracks",
-        track_count,
-        &[("count", &track_count.to_string())],
-    );
-    let hours = plural(
-        "{count} hour",
-        "{count} hours",
-        hours,
-        &[("count", &hours.to_string())],
-    );
-    let plays = plural(
-        "{count} play this year",
-        "{count} plays this year",
-        plays,
-        &[("count", &plays.to_string())],
-    );
-    format!("{albums} · {tracks} · {hours} · {plays}")
-}
-
-/// An album card's meta line, e.g. "2020 · 12 tracks" (drops the year when 0).
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
-pub fn artist_album_meta(year: i64, track_count: i64) -> String {
-    let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
-    let tracks = plural(
-        "{count} track",
-        "{count} tracks",
-        track_count,
-        &[("count", &track_count.to_string())],
-    );
-    if year > 0 {
-        format!("{year} · {tracks}")
-    } else {
-        tracks
-    }
-}
-
-/// A top-track row's play count, e.g. "1 play" / "12 plays".
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
-pub fn artist_counts_plays(play_count: i64) -> String {
-    let play_count = usize::try_from(play_count.max(0)).unwrap_or(usize::MAX);
-    plural(
-        "{count} play",
-        "{count} plays",
-        play_count,
-        &[("count", &play_count.to_string())],
-    )
-}
-
-/// The "Show all N tracks ›" button under the top-tracks list.
-#[allow(dead_code)] // consumed by the Artists master/detail view wiring (later task)
-pub fn artist_detail_show_all_tracks(track_count: i64) -> String {
-    let track_count = usize::try_from(track_count).unwrap_or(usize::MAX);
-    plural(
-        "Show all {count} track \u{203a}",
-        "Show all {count} tracks \u{203a}",
-        track_count,
-        &[("count", &track_count.to_string())],
-    )
-}
+#[path = "strings_app_shell.rs"]
+mod app_shell;
+pub use app_shell::*;
 
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
@@ -237,89 +108,6 @@ pub const AUDIO_EFFECTS_FAILED: &str = N_!("Could not apply audio effects");
 mod scrobbling;
 pub use scrobbling::*;
 
-pub const INFORMATION: &str = N_!("Information");
-pub const ARTIST_NEWS: &str = N_!("Artist & Album News");
-pub const ARTIST_NEWS_DESCRIPTION: &str =
-    N_!("Show upcoming and newly released albums from MusicBrainz (network; off by default)");
-pub const ARTIST_NEWS_PRIVACY: &str =
-    N_!("When enabled, selected artist names are sent to MusicBrainz. Reprise never sends file paths or listening history.");
-pub const NEWS_DISABLED_TITLE: &str = N_!("Artist News is Off");
-pub const NEWS_SELECT_TRACK: &str = N_!("Select a track to see artist and album news.");
-pub const NEWS_MULTIPLE_SELECTION: &str =
-    N_!("Artist News is paused while multiple tracks are selected.");
-pub const NEWS_NO_ARTIST: &str = N_!("This track has no artist information.");
-pub const NEWS_LOADING: &str = N_!("Checking MusicBrainz for album news…");
-pub const NEWS_NONE: &str = N_!("No new or upcoming regular albums found.");
-pub const NEWS_ERROR: &str = N_!("Artist News is temporarily unavailable.");
-pub const NEWS_UNMATCHED: &str = N_!("Artist could not be matched.");
-pub const NEWS_AMBIGUOUS: &str = N_!("Artist could not be matched unambiguously.");
-pub const NEWS_UPCOMING: &str = N_!("Upcoming");
-pub const NEWS_NEW: &str = N_!("New");
-pub const NEWS_REFRESH: &str = N_!("Refresh Artist News");
-pub const NEWS_OPEN_MUSICBRAINZ: &str = N_!("Open in MusicBrainz");
-
-pub fn tracks_selected(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "{count} track selected",
-        "{count} tracks selected",
-        count,
-        &[("count", &count_text)],
-    )
-}
-
-pub fn news_release_meta(primary_type: &str, date: &str) -> String {
-    formatted(
-        N_!("{type} · {date}"),
-        &[("type", primary_type), ("date", date)],
-    )
-}
-
-pub fn news_updated(timestamp: i64) -> String {
-    let date = news_timestamp_date(timestamp);
-    formatted(N_!("MusicBrainz · Updated {date}"), &[("date", &date)])
-}
-
-pub fn news_cached(timestamp: i64) -> String {
-    let date = news_timestamp_date(timestamp);
-    formatted(N_!("Cached · Updated {date}"), &[("date", &date)])
-}
-
-fn news_timestamp_date(timestamp: i64) -> String {
-    chrono::DateTime::from_timestamp(timestamp, 0).map_or_else(
-        || text(N_!("unknown date")),
-        |value| {
-            value
-                .with_timezone(&chrono::Local)
-                .format("%Y-%m-%d")
-                .to_string()
-        },
-    )
-}
-pub const COVER_DOWNLOAD_CHECKING: &str = N_!("Checking missing album covers…");
-pub const COVER_DOWNLOAD_COMPLETE: &str = N_!("Cover check complete");
-pub const COVER_DOWNLOAD_FAILED: &str = N_!("Could not check album covers");
-
-pub fn cover_download_progress(
-    checked: usize,
-    total: usize,
-    downloaded: usize,
-    unavailable: usize,
-) -> String {
-    let checked = checked.to_string();
-    let total = total.to_string();
-    let downloaded = downloaded.to_string();
-    let unavailable = unavailable.to_string();
-    formatted(
-        N_!("{checked} of {total} checked · {downloaded} downloaded · {unavailable} unavailable"),
-        &[
-            ("checked", &checked),
-            ("total", &total),
-            ("downloaded", &downloaded),
-            ("unavailable", &unavailable),
-        ],
-    )
-}
 pub const LIBRARY_FOLDER: &str = N_!("Library Folder");
 pub const NO_LIBRARY_FOLDER: &str = N_!("No folder selected");
 pub const CHOOSE_FOLDER: &str = N_!("Choose Folder…");
@@ -359,9 +147,7 @@ pub const TAG_SAME_ON_ALL: &str = N_!("same on all");
 pub const TAG_EDIT_TITLE_SINGLE: &str = N_!("Edit Tags");
 pub const TAG_EDIT_TITLE_MULTI: &str = N_!("Edit {count} Tracks");
 pub const TAG_PER_TRACK: &str = N_!("per track");
-pub const TAG_MIXED_COUNT: &str = N_!("{count} values");
 pub const TAG_WILL_APPLY: &str = N_!("will be applied to all {count}");
-pub const TAG_ALBUM_ARTIST_PLACEHOLDER: &str = N_!("Same as artist");
 pub const TAG_SAVE: &str = N_!("Save");
 pub const TAG_SAVE_COUNT: &str = N_!("Save {count}");
 pub const TAG_PENDING_CHANGES: &str = N_!("{count} change pending");
@@ -377,7 +163,6 @@ pub const TAG_FETCH_NOTHING_TO_FILL: &str = N_!("Done — all fields already hav
 pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
 pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
 pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
-pub const TAG_TRACK_POSITION: &str = N_!("Track {current} of {total}");
 pub const TAG_CHANGE_COVER: &str = N_!("Change cover\u{2026}");
 
 pub fn tag_edit_title_multi(count: usize) -> String {
@@ -398,21 +183,6 @@ pub fn tag_pending_count(count: usize) -> String {
         count,
         &[("count", &count_text)],
     )
-}
-
-pub fn tag_track_position(current: usize, total: usize) -> String {
-    formatted(
-        TAG_TRACK_POSITION,
-        &[
-            ("current", &current.to_string()),
-            ("total", &total.to_string()),
-        ],
-    )
-}
-
-pub fn tag_mixed_count(count: usize) -> String {
-    let count_text = count.to_string();
-    formatted(TAG_MIXED_COUNT, &[("count", &count_text)])
 }
 
 pub fn tag_will_apply(count: usize) -> String {
@@ -585,7 +355,7 @@ pub fn scan_tooltip_discovering() -> String {
 }
 
 pub fn scan_tooltip_progress(pct: u32) -> String {
-    format!("Scanning \u{00B7} {}%", pct)
+    format!("Scanning \u{00B7} {pct}%")
 }
 
 // Status bar (src/ui/status_bar.rs).
@@ -995,68 +765,6 @@ pub fn playlist_export_failed_toast(name: &str) -> String {
 
 // Application identity and legal information shown in the native About dialog.
 // Album view (library_views/album_view.rs, album_card.rs).
-pub const ALBUM_SORT_RECENTLY_ADDED: &str = N_!("Recently added");
-pub const ALBUM_SORT_TITLE: &str = N_!("Title A–Z");
-pub const ALBUM_SORT_ARTIST: &str = N_!("Artist A–Z");
-pub const ALBUM_SORT_YEAR: &str = N_!("Year");
-pub const ALBUM_SORT_MOST_PLAYED: &str = N_!("Most played");
-pub const ALBUM_COUNT_FMT: &str = N_!("{} albums");
-pub const ALBUM_SEARCH_EMPTY: &str = N_!("No albums match \"{}\"");
-pub const ALBUM_SEARCH_CLEAR: &str = N_!("Clear");
-
-pub const ALBUM_MENU_PLAY: &str = N_!("Play");
-pub const ALBUM_MENU_SHUFFLE: &str = N_!("Shuffle Album");
-pub const ALBUM_MENU_ADD_QUEUE: &str = N_!("Add to Queue");
-pub const ALBUM_MENU_ADD_PLAYLIST: &str = N_!("Add to Playlist");
-pub const ALBUM_MENU_NEW_PLAYLIST: &str = N_!("New Playlist…");
-pub const ALBUM_MENU_EDIT_TAGS: &str = N_!("Edit Tags");
-pub const ALBUM_MENU_GO_TO_FOLDER: &str = N_!("Go to Folder");
-
-/// Formats album duration: "1h 4min" or "42 min".
-pub fn album_duration(total_ms: i64) -> String {
-    let total_min = total_ms / 60_000;
-    let hours = total_min / 60;
-    let mins = total_min % 60;
-    if hours > 0 {
-        format!("{}h {}min", hours, mins)
-    } else {
-        format!("{} min", mins)
-    }
-}
-
-pub const ABOUT_REPRISE: &str = N_!("About Reprise");
-pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linux Platform");
-
-// Native offline Help dialog and its keyboard shortcut descriptions.
-pub const HELP: &str = N_!("Help");
-pub const NAVIGATION: &str = N_!("Navigation");
-pub const PLAY_OR_PAUSE: &str = N_!("Play or Pause");
-pub const SEARCH_LIBRARY: &str = N_!("Search Library");
-pub const TOGGLE_COMPACT_VIEW: &str = N_!("Toggle Compact View");
-pub const CLEAR_SEARCH_OR_RETURN_TO_TRACK_LIST: &str = N_!("Clear Search or Return to Track List");
-pub const PLAY_SELECTED_TRACK: &str = N_!("Play Selected Track");
-pub const OPEN_CONTEXT_MENU: &str = N_!("Open Context Menu");
-pub const OPEN_HELP: &str = N_!("Open Help");
-
-// Primary menu items.
-pub const MY_STATS: &str = N_!("My Stats");
-pub const RESCAN_LIBRARY: &str = N_!("Rescan Library");
-pub const CANCEL_SCAN: &str = N_!("Cancel Scan");
-pub const SYNC_DEVICE: &str = N_!("Sync Device…");
-pub const KEYBOARD_SHORTCUTS: &str = N_!("Keyboard Shortcuts");
-pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
-
-// Compact menu items.
-pub const ALWAYS_ON_TOP: &str = N_!("Always on Top");
-pub const QUIT: &str = N_!("Quit");
-
-// Color scheme (dark/light/system preference).
-pub const COLOR_SCHEME: &str = N_!("Color Scheme");
-pub const COLOR_SCHEME_SUBTITLE: &str = N_!("Choose light, dark, or follow system preference");
-pub const SCHEME_LIGHT: &str = N_!("Light");
-pub const SCHEME_DARK: &str = N_!("Dark");
-pub const SCHEME_SYSTEM: &str = N_!("System");
-
 #[cfg(test)]
 mod tests {
     use super::*;

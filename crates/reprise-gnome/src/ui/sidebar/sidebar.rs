@@ -57,7 +57,6 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use rusqlite::Connection;
 
-use crate::ui::dialogs;
 use crate::ui::sidebar_dnd;
 use crate::ui::sidebar_export;
 use crate::ui::sidebar_issue_cleanup;
@@ -459,14 +458,14 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
         shared,
         ViewSource::Library,
         &strings::text(strings::SIDEBAR_MUSIC),
-        nonzero_count(music_count),
+        sidebar_presentation::nonzero_count(music_count),
         NavIcon::Library,
     );
     add_row(
         shared,
         ViewSource::Queue,
         &strings::text(strings::SIDEBAR_QUEUE),
-        nonzero_count(queue_count),
+        sidebar_presentation::nonzero_count(queue_count),
         NavIcon::Queue,
     );
 
@@ -479,7 +478,7 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
             shared,
             ViewSource::Playlist(playlist.id),
             &playlist.name,
-            nonzero_count(playlist.track_count),
+            sidebar_presentation::nonzero_count(playlist.track_count),
             NavIcon::Playlist,
         );
     }
@@ -587,7 +586,10 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
 /// works regardless of which list a source lives in. Its `row-selected`
 /// handler then clears the sibling list, keeping a single visible selection.
 pub(super) fn select_row_in_its_listbox(row: &gtk4::ListBoxRow) {
-    if let Some(listbox) = row.parent().and_then(|p| p.downcast::<gtk4::ListBox>().ok()) {
+    if let Some(listbox) = row
+        .parent()
+        .and_then(|p| p.downcast::<gtk4::ListBox>().ok())
+    {
         listbox.select_row(Some(row));
     }
 }
@@ -618,15 +620,6 @@ pub(super) fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4:
         .iter()
         .find(|(_, s, _)| s == source)
         .map(|(row, _, _)| row.clone())
-}
-
-/// A sidebar count badge only renders when non-zero: `0` shows an empty
-/// right-hand column rather than a literal "0" (design mockup 14a). The
-/// problem sources (import errors / missing) go further and hide the whole
-/// row at zero — see the `import_error_count`/`missing_count` guards in
-/// `rebuild`.
-fn nonzero_count(count: i64) -> Option<i64> {
-    (count > 0).then_some(count)
 }
 
 /// Builds one navigation row (title + optional right-aligned count) and
@@ -772,7 +765,7 @@ fn wire_row_activated_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox) {
     listbox.connect_row_activated(move |_, row| {
         let is_new_playlist_row = shared.new_playlist_row.borrow().as_ref() == Some(row);
         if is_new_playlist_row {
-            show_new_playlist_dialog(&shared);
+            sidebar_playlist_creation::show_new_playlist_dialog(&shared);
             return;
         }
         let is_import_playlist_row = shared.import_playlist_row.borrow().as_ref() == Some(row);
@@ -796,82 +789,6 @@ fn wire_row_activated_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox) {
     });
 }
 
-/// Shows the "New playlist" `AdwAlertDialog`: a heading, an entry (Create
-/// disabled until non-blank), and Cancel/Create responses. On Create, it
-/// creates the playlist while keeping the current source visible.
-fn show_new_playlist_dialog(shared: &Rc<Shared>) {
-    let Some(window) = shared.window.upgrade() else {
-        tracing::warn!("sidebar: window is gone; cannot show new-playlist dialog");
-        return;
-    };
-
-    let shared = shared.clone();
-    dialogs::prompt_name(
-        &window,
-        &strings::text(strings::NEW_PLAYLIST_DIALOG_HEADING),
-        &strings::text(strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER),
-        &strings::text(strings::CREATE),
-        move |name| create_playlist_and_stay(&shared, &name),
-    );
-}
-
-/// Creates a playlist named `name` and refreshes the sidebar without leaving
-/// the current source. A creation failure is logged and surfaced as a toast.
-fn create_playlist_and_stay(shared: &Rc<Shared>, name: &str) {
-    let created = {
-        let conn = shared.conn.borrow();
-        playlists::create(&conn, name)
-    };
-    match created {
-        Ok(id) => {
-            tracing::info!(id, name, "playlist created");
-            rebuild(
-                shared,
-                sidebar_playlist_creation::refresh_target_after_empty_creation(),
-                "playlist created",
-            );
-        }
-        Err(error) => {
-            tracing::error!(%error, name, "failed to create playlist");
-            show_toast(shared, &strings::playlist_create_failed_toast(name));
-        }
-    }
-}
-
 #[cfg(test)]
-mod resolve_select_source_tests {
-    use super::*;
-
-    #[test]
-    fn keeps_requested_source_when_its_row_still_exists() {
-        let (source, fell_back) = resolve_select_source(ViewSource::Playlist(3), true);
-        assert_eq!(source, ViewSource::Playlist(3));
-        assert!(!fell_back);
-    }
-
-    #[test]
-    fn falls_back_to_library_when_requested_row_is_gone() {
-        let (source, fell_back) = resolve_select_source(ViewSource::Missing, false);
-        assert_eq!(source, ViewSource::Library);
-        assert!(fell_back);
-    }
-
-    #[test]
-    fn falls_back_to_library_when_a_smart_list_vanished() {
-        let (source, fell_back) = resolve_select_source(ViewSource::Smart(7), false);
-        assert_eq!(source, ViewSource::Library);
-        assert!(fell_back);
-    }
-
-    #[test]
-    fn restored_source_reuses_the_vanished_source_fallback() {
-        assert_eq!(
-            resolve_select_source(ViewSource::Playlist(99), false).0,
-            ViewSource::Library
-        );
-        assert_eq!(
-            resolve_select_source(ViewSource::Queue, true).0,
-            ViewSource::Queue
-        );
-    }
-}
+#[path = "sidebar_tests.rs"]
+mod resolve_select_source_tests;

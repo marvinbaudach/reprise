@@ -5,7 +5,7 @@
 //! summary internally.
 
 use std::cell::{Cell, RefCell};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::gdk;
@@ -15,9 +15,8 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use rusqlite::Connection;
 
-use reprise_core::cover::{self, ThumbnailSize};
 use reprise_core::library::tag_edit::{
-    summarize, summarize_values, EditableTags, EditableTagSummary, MixedValue, TagPatch,
+    summarize, summarize_values, EditableTagSummary, EditableTags, MixedValue, TagPatch,
     TrackEditPatch,
 };
 use reprise_core::queries::autocomplete::AutocompleteColumn;
@@ -25,79 +24,17 @@ use reprise_core::release_lookup;
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
+pub use crate::ui::tag_editor_state::NavigateDirection;
+use crate::ui::tag_editor_state::*;
+use crate::ui::tag_editor_widgets::*;
 
-// ── Pure-logic helpers (unchanged from v1, exercised by the tests below) ─────
-
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("expected a positive whole number")]
-pub struct ParseFieldError;
-
-const RATING_MAX: i32 = 5;
-
-pub(crate) fn string_patch(dirty: bool, text: &str) -> Option<String> {
-    dirty.then(|| text.to_string())
-}
-
-pub(crate) fn number_patch(
-    dirty: bool,
-    text: &str,
-) -> Result<Option<Option<u32>>, ParseFieldError> {
-    if !dirty {
-        return Ok(None);
-    }
-    let text = text.trim();
-    if text.is_empty() {
-        return Ok(Some(None));
-    }
-    let value = text.parse::<u32>().map_err(|_| ParseFieldError)?;
-    if value == 0 {
-        return Err(ParseFieldError);
-    }
-    Ok(Some(Some(value)))
-}
-
-// ── Navigation direction ─────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NavigateDirection {
-    Previous,
-    Next,
-}
-
-// ── Field identity for dirty tracking ────────────────────────────────────────
-
-/// Indices into the `dirty` flags vector.
-const FIELD_TITLE: usize = 0;
-const FIELD_ARTIST: usize = 1;
-const FIELD_ALBUM: usize = 2;
-const FIELD_ALBUM_ARTIST: usize = 3;
-const FIELD_YEAR: usize = 4;
-const FIELD_TRACK_NO: usize = 5;
-const FIELD_GENRE: usize = 6;
-const FIELD_RATING: usize = 7;
-const FIELD_COUNT: usize = 8;
-
-/// Human-readable names for the pending-change bar, indexed by `FIELD_*`.
-/// Uses the same i18n constants as the form field labels.
-fn field_name(index: usize) -> String {
-    use strings::*;
-    match index {
-        FIELD_TITLE => text(TAG_TITLE),
-        FIELD_ARTIST => text(TAG_ARTIST),
-        FIELD_ALBUM => text(TAG_ALBUM),
-        FIELD_ALBUM_ARTIST => text(TAG_ALBUM_ARTIST),
-        FIELD_YEAR => text(TAG_YEAR),
-        FIELD_TRACK_NO => text(TAG_TRACK_NUMBER),
-        FIELD_GENRE => text(TAG_GENRE),
-        FIELD_RATING => text(RATING),
-        _ => String::new(),
-    }
-}
+pub(super) type UpdateCallback = Rc<dyn Fn()>;
+type UpdateCallbackSlot = Rc<RefCell<Option<UpdateCallback>>>;
 
 // ── Star glyphs ──────────────────────────────────────────────────────────────
 
-const STAR_FILLED: &str = "\u{2605}";
-const STAR_OUTLINE: &str = "\u{2606}";
+pub(super) const STAR_FILLED: &str = "\u{2605}";
+pub(super) const STAR_OUTLINE: &str = "\u{2606}";
 
 // ── Snapshot for revert ──────────────────────────────────────────────────────
 
@@ -112,10 +49,10 @@ struct FieldSnapshot {
 
 pub fn present(
     parent: &adw::ApplicationWindow,
-    conn: Rc<RefCell<Connection>>,
-    tracks: Vec<(i64, PathBuf)>,
-    tags: Vec<EditableTags>,
-    ratings: Vec<i32>,
+    conn: &Rc<RefCell<Connection>>,
+    tracks: &[(i64, PathBuf)],
+    tags: &[EditableTags],
+    ratings: &[i32],
     on_apply: impl Fn(TrackEditPatch) + Clone + 'static,
     on_navigate: impl Fn(NavigateDirection) -> bool + 'static,
 ) {
@@ -125,8 +62,8 @@ pub fn present(
     }
     let track_count = tracks.len();
     let is_multi = track_count > 1;
-    let summary = summarize(&tags).unwrap();
-    let rating_summary = summarize_values(&ratings).unwrap();
+    let summary = summarize(tags).unwrap();
+    let rating_summary = summarize_values(ratings).unwrap();
     let snapshot = Rc::new(FieldSnapshot {
         summary: summary.clone(),
         rating: rating_summary.clone(),
@@ -167,7 +104,7 @@ pub fn present(
 
     // ── Cover art ────────────────────────────────────────────────────────
 
-    let cover_area = build_cover_area(&tracks, is_multi);
+    let cover_area = build_cover_area(tracks, is_multi);
 
     // ── Form fields ──────────────────────────────────────────────────────
 
@@ -261,11 +198,7 @@ pub fn present(
     if is_multi {
         track_no_row.set_editable(false);
         track_no_row.add_css_class("reprise-tag-mixed");
-        add_annotation(
-            &track_no_row,
-            &strings::text(strings::TAG_PER_TRACK),
-            false,
-        );
+        add_annotation(&track_no_row, &strings::text(strings::TAG_PER_TRACK), false);
     }
     set_entry_from_mixed_number(&track_no_row, &summary.track_no);
 
@@ -308,8 +241,7 @@ pub fn present(
     // MusicBrainz button
     let mb_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     mb_box.add_css_class("reprise-tag-mb");
-    let mb_btn =
-        gtk4::Button::with_label(&strings::text(strings::TAG_FETCH_MUSICBRAINZ));
+    let mb_btn = gtk4::Button::with_label(&strings::text(strings::TAG_FETCH_MUSICBRAINZ));
     mb_btn.set_sensitive(false); // Task 5 wires this
     mb_box.append(&mb_btn);
     let mb_hint = gtk4::Label::new(Some(&strings::text(strings::TAG_FETCH_HINT)));
@@ -372,14 +304,13 @@ pub fn present(
 
     // Late-bound reference so revert callbacks inside update_save_state can
     // call update_save_state itself without a circular Rc construction.
-    let update_fn_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let update_fn_holder: UpdateCallbackSlot = Rc::new(RefCell::new(None));
 
     // Helper: update save-button sensitivity + pending bar
     let update_save_state = {
         let dirty = dirty.clone();
         let save_btn = save_btn.clone();
         let pending_bar = pending_bar.clone();
-        let is_multi = is_multi;
         let snapshot = snapshot.clone();
         let update_fn_holder = update_fn_holder.clone();
 
@@ -452,8 +383,7 @@ pub fn present(
                             let snap = snapshot.clone();
                             let on_revert: Box<dyn Fn()> = Box::new(move || {
                                 // Restore original value
-                                let orig_text =
-                                    field_snapshot_text(&snap.summary, idx);
+                                let orig_text = field_snapshot_text(&snap.summary, idx);
                                 let was_mixed = field_snapshot_is_mixed(&snap.summary, idx);
                                 if was_mixed {
                                     row_c.set_editable(false);
@@ -469,8 +399,7 @@ pub fn present(
                                 dirty_flag.set(false);
                                 update();
                             });
-                            let item =
-                                build_pending_item(&field_name(idx), &row.text(), on_revert);
+                            let item = build_pending_item(&field_name(idx), &row.text(), on_revert);
                             pending_bar.append(&item);
                         }
                     }
@@ -492,11 +421,8 @@ pub fn present(
                             dirty_flag.set(false);
                             update();
                         });
-                        let item = build_pending_item(
-                            &field_name(FIELD_RATING),
-                            &rating_text,
-                            on_revert,
-                        );
+                        let item =
+                            build_pending_item(&field_name(FIELD_RATING), &rating_text, on_revert);
                         pending_bar.append(&item);
                     }
 
@@ -514,15 +440,14 @@ pub fn present(
     // Wire entry-row changed signals
     let update_save_state: Rc<dyn Fn()> = update_save_state;
 
-    let wire_entry_dirty =
-        |row: &adw::EntryRow, field_idx: usize, update: &Rc<dyn Fn()>| {
-            let dirty_flag = dirty[field_idx].clone();
-            let update = update.clone();
-            row.connect_changed(move |_| {
-                dirty_flag.set(true);
-                update();
-            });
-        };
+    let wire_entry_dirty = |row: &adw::EntryRow, field_idx: usize, update: &Rc<dyn Fn()>| {
+        let dirty_flag = dirty[field_idx].clone();
+        let update = update.clone();
+        row.connect_changed(move |_| {
+            dirty_flag.set(true);
+            update();
+        });
+    };
 
     wire_entry_dirty(&title_row, FIELD_TITLE, &update_save_state);
     wire_entry_dirty(&year_row, FIELD_YEAR, &update_save_state);
@@ -567,14 +492,11 @@ pub fn present(
         let dirty_flag = dirty[FIELD_RATING].clone();
         let update = update_save_state.clone();
         let rating_value_c = rating_value.clone();
-        wire_star_clicks(
-            &rating_box,
-            &rating_value_c,
-            Rc::new(move || {
-                dirty_flag.set(true);
-                update();
-            }),
-        );
+        let on_rating_changed: UpdateCallback = Rc::new(move || {
+            dirty_flag.set(true);
+            update();
+        });
+        wire_star_clicks(&rating_box, &rating_value_c, &on_rating_changed);
     }
 
     // ── Save action ──────────────────────────────────────────────────────
@@ -612,13 +534,14 @@ pub fn present(
             mb_btn_c.set_sensitive(false);
             mb_hint_c.set_text(&strings::text(strings::TAG_FETCH_LOADING));
 
-            let (tx, rx) = async_channel::bounded::<Result<release_lookup::ReleaseLookupResult, String>>(1);
+            let (tx, rx) =
+                async_channel::bounded::<Result<release_lookup::ReleaseLookupResult, String>>(1);
 
             if let Err(error) = std::thread::Builder::new()
                 .name("reprise-mb-lookup".into())
                 .spawn(move || {
-                    let result = release_lookup::lookup_release(&artist, &album)
-                        .map_err(|e| e.to_string());
+                    let result =
+                        release_lookup::lookup_release(&artist, &album).map_err(|e| e.to_string());
                     let _ = tx.send_blocking(result);
                 })
             {
@@ -702,10 +625,7 @@ pub fn present(
 
         Rc::new(move || {
             let year_p = number_patch(dirty[FIELD_YEAR].get(), year_row.text().as_str());
-            let track_p = number_patch(
-                dirty[FIELD_TRACK_NO].get(),
-                track_no_row.text().as_str(),
-            );
+            let track_p = number_patch(dirty[FIELD_TRACK_NO].get(), track_no_row.text().as_str());
             let (Ok(year_p), Ok(track_p)) = (year_p, track_p) else {
                 year_row.add_css_class("error");
                 track_no_row.add_css_class("error");
@@ -864,422 +784,9 @@ pub fn present(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  WIDGET BUILDERS
-// ══════════════════════════════════════════════════════════════════════════════
-
-/// Builds the cover art area. For single track, shows a thumbnail. For
-/// multi-track, shows a stacked representation with a count badge.
-fn build_cover_area(tracks: &[(i64, PathBuf)], is_multi: bool) -> gtk4::Box {
-    let outer = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-    outer.set_halign(gtk4::Align::Center);
-    outer.set_margin_bottom(8);
-
-    if is_multi {
-        // Stacked cover display
-        let overlay = gtk4::Overlay::new();
-        overlay.add_css_class("reprise-tag-cover-stack");
-
-        let cover = load_cover_picture(tracks.first().map(|(_, p)| p.as_path()));
-        cover.set_size_request(180, 180);
-        overlay.set_child(Some(&cover));
-
-        // Badge: "N covers"
-        let badge = gtk4::Label::new(Some(&strings::tag_cover_count(tracks.len())));
-        badge.add_css_class("reprise-tag-cover-badge");
-        badge.set_halign(gtk4::Align::End);
-        badge.set_valign(gtk4::Align::End);
-        badge.set_margin_end(8);
-        badge.set_margin_bottom(8);
-        overlay.add_overlay(&badge);
-
-        outer.append(&overlay);
-    } else {
-        // Single cover
-        let cover = load_cover_picture(tracks.first().map(|(_, p)| p.as_path()));
-        cover.set_size_request(200, 200);
-        outer.append(&cover);
-
-        // "Change cover..." link (disabled for v1)
-        let change_link = gtk4::Button::with_label(&strings::text(strings::TAG_CHANGE_COVER));
-        change_link.add_css_class("flat");
-        change_link.add_css_class("reprise-tag-cover-link");
-        change_link.set_sensitive(false);
-        change_link.set_halign(gtk4::Align::Center);
-        outer.append(&change_link);
-    }
-
-    outer
-}
-
-/// Loads a cover thumbnail for a track path, returning a `gtk4::Picture`
-/// wrapped in a frame box. Falls back to a placeholder if no cover is found.
-fn load_cover_picture(track_path: Option<&Path>) -> gtk4::Box {
-    let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    frame.add_css_class("reprise-tag-cover");
-    frame.set_overflow(gtk4::Overflow::Hidden);
-
-    let picture = gtk4::Picture::new();
-    picture.set_content_fit(gtk4::ContentFit::Cover);
-    picture.set_can_shrink(true);
-
-    let loaded = track_path
-        .and_then(|path| cover::resolve_source(path))
-        .and_then(|source| cover::thumbnail(&source, ThumbnailSize::Grid).ok());
-
-    if let Some(thumb_path) = loaded {
-        let texture = gdk::Texture::from_filename(&thumb_path).ok();
-        if let Some(texture) = texture {
-            picture.set_paintable(Some(&texture));
-        }
-    }
-
-    frame.append(&picture);
-    frame
-}
-
-/// Builds the clickable star rating widget. Returns the container box and
-/// a shared `Cell` holding the current rating value.
-fn build_star_rating(value: &MixedValue<i32>) -> (gtk4::Box, Rc<Cell<i32>>) {
-    let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
-    container.add_css_class("reprise-tag-stars");
-
-    let current = match value {
-        MixedValue::Uniform(v) => *v,
-        MixedValue::Mixed => 0,
-    };
-    let rating_value = Rc::new(Cell::new(current));
-
-    for i in 1..=RATING_MAX {
-        let btn = gtk4::Button::new();
-        btn.add_css_class("flat");
-        let label = gtk4::Label::new(None);
-        btn.set_child(Some(&label));
-
-        if i <= current {
-            label.set_label(STAR_FILLED);
-            btn.add_css_class("star-filled");
-        } else {
-            label.set_label(STAR_OUTLINE);
-            btn.add_css_class("star-outline");
-        }
-        container.append(&btn);
-    }
-
-    // Add a clear button (click current star again clears)
-    update_star_display(&container, current);
-    (container, rating_value)
-}
-
-/// Updates the visual state of star buttons in a rating box.
-fn update_star_display(container: &gtk4::Box, rating: i32) {
-    let mut child = container.first_child();
-    let mut idx = 1;
-    while let Some(widget) = child {
-        if let Some(btn) = widget.downcast_ref::<gtk4::Button>() {
-            if let Some(label) = btn.child().and_then(|c| c.downcast::<gtk4::Label>().ok()) {
-                if idx <= rating {
-                    label.set_label(STAR_FILLED);
-                    btn.remove_css_class("star-outline");
-                    btn.add_css_class("star-filled");
-                } else {
-                    label.set_label(STAR_OUTLINE);
-                    btn.remove_css_class("star-filled");
-                    btn.add_css_class("star-outline");
-                }
-            }
-        }
-        child = widget.next_sibling();
-        idx += 1;
-    }
-}
-
-/// Wires click handlers on each star button. Clicking star N sets rating
-/// to N; clicking the already-selected star clears to 0.
-fn wire_star_clicks(
-    container: &gtk4::Box,
-    rating_value: &Rc<Cell<i32>>,
-    on_changed: Rc<dyn Fn()>,
-) {
-    let mut child = container.first_child();
-    let mut idx: i32 = 1;
-    while let Some(widget) = child {
-        if let Some(btn) = widget.downcast_ref::<gtk4::Button>() {
-            let rating_val = rating_value.clone();
-            let container_c = container.clone();
-            let on_changed_c = on_changed.clone();
-            let star_idx = idx;
-            btn.connect_clicked(move |_| {
-                let current = rating_val.get();
-                let new_rating = if current == star_idx { 0 } else { star_idx };
-                rating_val.set(new_rating);
-                update_star_display(&container_c, new_rating);
-                on_changed_c();
-            });
-        }
-        child = widget.next_sibling();
-        idx += 1;
-    }
-}
-
-/// Sets an `EntryRow` text from a `MixedValue<String>`.
-fn set_entry_from_mixed_string(row: &adw::EntryRow, value: &MixedValue<String>) {
-    match value {
-        MixedValue::Uniform(text) => row.set_text(text),
-        MixedValue::Mixed => {
-            // Leave empty; the placeholder/annotation conveys the state
-        }
-    }
-}
-
-/// Sets an `EntryRow` text from a `MixedValue<Option<u32>>`.
-fn set_entry_from_mixed_number(row: &adw::EntryRow, value: &MixedValue<Option<u32>>) {
-    match value {
-        MixedValue::Uniform(Some(n)) => row.set_text(&n.to_string()),
-        MixedValue::Uniform(None) | MixedValue::Mixed => {}
-    }
-}
-
-/// Initialises an `AutocompleteEntry` from a `MixedValue`, adding
-/// mixed-field annotations in multi-track mode. Returns the annotation label
-/// when the field starts Mixed (needed for click-to-unlock updates).
-fn init_autocomplete_from_mixed(
-    ac: &AutocompleteEntry,
-    value: &MixedValue<String>,
-    _track_count: usize,
-    is_multi: bool,
-) -> Option<gtk4::Label> {
-    match value {
-        MixedValue::Uniform(text) => {
-            ac.set_text(text);
-            if is_multi {
-                add_annotation(
-                    ac.row(),
-                    &strings::text(strings::TAG_SAME_ON_ALL),
-                    false,
-                );
-            }
-            None
-        }
-        MixedValue::Mixed => {
-            if is_multi {
-                ac.row().set_editable(false);
-                ac.row().add_css_class("reprise-tag-mixed");
-                Some(add_annotation(
-                    ac.row(),
-                    &strings::text(strings::MULTIPLE_VALUES),
-                    false,
-                ))
-            } else {
-                None
-            }
-        }
-    }
-}
-
-/// Adds a mixed-field annotation for number fields in multi-track mode.
-/// Returns the annotation label (needed for click-to-unlock updates).
-fn apply_mixed_annotation_number(
-    row: &adw::EntryRow,
-    value: &MixedValue<Option<u32>>,
-    _track_count: usize,
-) -> Option<gtk4::Label> {
-    match value {
-        MixedValue::Uniform(_) => {
-            add_annotation(row, &strings::text(strings::TAG_SAME_ON_ALL), false);
-            None
-        }
-        MixedValue::Mixed => {
-            row.set_editable(false);
-            row.add_css_class("reprise-tag-mixed");
-            Some(add_annotation(
-                row,
-                &strings::text(strings::MULTIPLE_VALUES),
-                false,
-            ))
-        }
-    }
-}
-
-/// Adds a small annotation label as a suffix to an `EntryRow` and returns it.
-fn add_annotation(row: &adw::EntryRow, text: &str, accent: bool) -> gtk4::Label {
-    let label = gtk4::Label::new(Some(text));
-    label.add_css_class("reprise-tag-field-annotation");
-    if accent {
-        label.add_css_class("accent");
-    }
-    row.add_suffix(&label);
-    label
-}
-
-/// Attaches a click gesture to a Mixed field so the user can unlock it for
-/// editing. On first click: makes the entry editable, clears the text,
-/// removes the mixed CSS class, and updates the annotation to the
-/// "will be applied to all N" copy.
-fn attach_click_to_unlock(row: &adw::EntryRow, annotation: Option<&gtk4::Label>, track_count: usize) {
-    let row_c = row.clone();
-    let annotation_c = annotation.cloned();
-    let will_apply = strings::tag_will_apply(track_count);
-    let gesture = gtk4::GestureClick::new();
-    gesture.connect_released(move |_, _, _, _| {
-        if !row_c.is_editable() {
-            row_c.set_editable(true);
-            row_c.remove_css_class("reprise-tag-mixed");
-            row_c.set_text("");
-            if let Some(lbl) = &annotation_c {
-                lbl.set_text(&will_apply);
-                lbl.add_css_class("accent");
-            }
-            row_c.grab_focus();
-        }
-    });
-    row.add_controller(gesture);
-}
-
-/// Returns the original text value for a given field index from a snapshot.
-/// Returns `None` for fields that were Mixed (no single value).
-fn field_snapshot_text(summary: &EditableTagSummary, field_idx: usize) -> Option<String> {
-    match field_idx {
-        FIELD_ARTIST => match &summary.artist {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_ALBUM => match &summary.album {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_ALBUM_ARTIST => match &summary.album_artist {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_GENRE => match &summary.genre {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_YEAR => match &summary.year {
-            MixedValue::Uniform(Some(v)) => Some(v.to_string()),
-            MixedValue::Uniform(None) | MixedValue::Mixed => None,
-        },
-        _ => None,
-    }
-}
-
-/// Returns true if the given field was originally Mixed in the snapshot.
-fn field_snapshot_is_mixed(summary: &EditableTagSummary, field_idx: usize) -> bool {
-    match field_idx {
-        FIELD_ARTIST => matches!(summary.artist, MixedValue::Mixed),
-        FIELD_ALBUM => matches!(summary.album, MixedValue::Mixed),
-        FIELD_ALBUM_ARTIST => matches!(summary.album_artist, MixedValue::Mixed),
-        FIELD_GENRE => matches!(summary.genre, MixedValue::Mixed),
-        FIELD_YEAR => matches!(summary.year, MixedValue::Mixed),
-        _ => false,
-    }
-}
-
-/// Builds a single pending-change item: "Field → Value" with a Revert button.
-fn build_pending_item(field_name: &str, value: &str, on_revert: Box<dyn Fn()>) -> gtk4::Box {
-    let item = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    item.add_css_class("reprise-tag-pending-item");
-
-    let text = format!("{field_name} \u{2192} {value}");
-    let label = gtk4::Label::builder()
-        .label(&text)
-        .xalign(0.0)
-        .hexpand(true)
-        .ellipsize(gtk4::pango::EllipsizeMode::End)
-        .build();
-    item.append(&label);
-
-    let revert_btn = gtk4::Button::with_label(&strings::text(strings::TAG_REVERT));
-    revert_btn.add_css_class("flat");
-    revert_btn.connect_clicked(move |_| on_revert());
-    item.append(&revert_btn);
-
-    item
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
 //  TESTS
 // ══════════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Legacy rating helpers — kept here because they have value as unit tests
-    // but are no longer used in the production rating widget (now star buttons).
-
-    fn rating_choice_labels(value: &MixedValue<i32>) -> Vec<String> {
-        let mut labels = Vec::with_capacity(7);
-        if matches!(value, MixedValue::Mixed) {
-            labels.push(strings::text(strings::MULTIPLE_VALUES));
-        }
-        labels.push("\u{2606} \u{2014}".into());
-        labels.extend((1..=RATING_MAX).map(|rating| format!("\u{2605} {rating}")));
-        labels
-    }
-
-    fn rating_from_selection(started_mixed: bool, selected: u32) -> Option<i32> {
-        let rating = if started_mixed {
-            selected.checked_sub(1)?
-        } else {
-            selected
-        };
-        i32::try_from(rating)
-            .ok()
-            .filter(|rating| *rating <= RATING_MAX)
-    }
-
-    #[test]
-    fn string_patch_writes_only_dirty_fields_and_allows_clear() {
-        assert_eq!(string_patch(false, "replacement"), None);
-        assert_eq!(
-            string_patch(true, "replacement"),
-            Some("replacement".into())
-        );
-        assert_eq!(string_patch(true, ""), Some(String::new()));
-    }
-
-    #[test]
-    fn number_patch_distinguishes_unchanged_clear_set_and_invalid() {
-        assert_eq!(number_patch(false, "bad"), Ok(None));
-        assert_eq!(number_patch(true, ""), Ok(Some(None)));
-        assert_eq!(number_patch(true, " 42 "), Ok(Some(Some(42))));
-        assert!(number_patch(true, "forty-two").is_err());
-        assert!(number_patch(true, "0").is_err());
-    }
-
-    #[test]
-    fn rating_choices_keep_mixed_unrated_and_five_stars_distinct() {
-        assert_eq!(
-            rating_choice_labels(&MixedValue::Mixed),
-            vec![
-                "(multiple values)",
-                "\u{2606} \u{2014}",
-                "\u{2605} 1",
-                "\u{2605} 2",
-                "\u{2605} 3",
-                "\u{2605} 4",
-                "\u{2605} 5"
-            ]
-        );
-        assert_eq!(rating_from_selection(true, 0), None);
-        assert_eq!(rating_from_selection(true, 1), Some(0));
-        assert_eq!(rating_from_selection(true, 6), Some(5));
-        assert_eq!(rating_from_selection(false, 0), Some(0));
-        assert_eq!(rating_from_selection(false, 5), Some(5));
-    }
-
-    #[test]
-    fn navigate_direction_has_expected_variants() {
-        let prev = NavigateDirection::Previous;
-        let next = NavigateDirection::Next;
-        assert_ne!(prev, next);
-    }
-
-    #[test]
-    fn field_name_covers_all_indices() {
-        for i in 0..FIELD_COUNT {
-            assert!(!field_name(i).is_empty(), "field_name({i}) should not be empty");
-        }
-    }
-}
+#[path = "tag_editor_tests.rs"]
+mod tests;
