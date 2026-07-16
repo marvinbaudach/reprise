@@ -19,6 +19,7 @@ use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::strings;
 use super::track_list::TrackList;
+use reprise_core::queries::ArtistAlbum;
 use reprise_core::view_source::ViewSource;
 
 pub(super) const SIDEBAR_BREAKPOINT_WIDTH: i32 = 800;
@@ -94,15 +95,38 @@ pub(super) fn wire_artist_view(
     artist_view: &ArtistView,
     track_list: &Rc<TrackList>,
 ) {
-    let track_list = Rc::downgrade(track_list);
-    let stack = views.stack.clone();
-    artist_view.set_on_activate(move |artist| {
-        let Some(track_list) = track_list.upgrade() else {
-            return;
-        };
-        track_list.set_source(ViewSource::Artist(artist.artist));
-        stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
-    });
+    // "Show all tracks" for the selected artist opens the track table.
+    {
+        let track_list = Rc::downgrade(track_list);
+        let stack = views.stack.clone();
+        artist_view.set_on_show_all_tracks(move |artist| {
+            let Some(track_list) = track_list.upgrade() else {
+                return;
+            };
+            track_list.set_source(ViewSource::Artist(artist));
+            stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+        });
+    }
+
+    // Activating an album card opens that album. `ArtistAlbum` carries no
+    // album_artist, so the detail pane hands us the artist name as the second
+    // argument.
+    {
+        let track_list = Rc::downgrade(track_list);
+        let stack = views.stack.clone();
+        artist_view.set_on_album_activate(move |album: ArtistAlbum, artist: String| {
+            let Some(track_list) = track_list.upgrade() else {
+                return;
+            };
+            track_list.set_source(ViewSource::Album {
+                album: album.album,
+                album_artist: artist,
+            });
+            stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
+        });
+    }
+
+    // Task 9: wire play_all/shuffle/add-to-queue + deep-link (needs PlayerController)
 
     let refresh = artist_view.refresh_callback();
     views.stack.connect_visible_child_name_notify(move |stack| {
