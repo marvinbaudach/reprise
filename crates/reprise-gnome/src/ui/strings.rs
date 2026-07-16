@@ -102,6 +102,7 @@ pub const CROSSFADE_SUBTITLE: &str = N_!("Smoothly blend the end of a track into
 pub const CROSSFADE_OFF: &str = N_!("Off");
 pub const GAPLESS_PLAYBACK: &str = N_!("Gapless Playback");
 pub const GAPLESS_SUBTITLE: &str = N_!("No silence between tracks of the same album");
+pub const GAPLESS_CROSSFADE_ACTIVE_SUBTITLE: &str = N_!("Inactive while Crossfade is enabled");
 pub const AUDIO_EFFECTS_FAILED: &str = N_!("Could not apply audio effects");
 
 #[path = "strings_scrobbling.rs"]

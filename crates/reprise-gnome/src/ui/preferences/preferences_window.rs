@@ -106,6 +106,7 @@ pub(super) fn build(
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
     for (id, page) in pages {
+        page.add_css_class("reprise-preferences-page");
         stack.add_titled_with_icon(&page, Some(id.name()), &id.title(), id.icon_name());
     }
 
@@ -193,6 +194,14 @@ pub(super) fn build(
     }
 }
 
+pub(super) fn css() -> String {
+    ".reprise-preferences-page > scrolledwindow > viewport > clamp > box { \
+     margin: 12px; \
+     border-spacing: 18px; \
+     }"
+    .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use gtk4::gio;
@@ -201,6 +210,24 @@ mod tests {
     use libadwaita::prelude::*;
 
     use super::*;
+
+    #[test]
+    fn page_spacing_css_applies_one_compact_inset_to_every_settings_page() {
+        let css = css();
+        assert!(css.contains(".reprise-preferences-page"));
+        assert!(css.contains("margin: 12px"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn page_spacing_css_parses_without_gtk_errors() {
+        gtk4::init().unwrap();
+        let errors = crate::ui::style::css_parse_errors(&css());
+        assert!(
+            errors.is_empty(),
+            "GTK reported CSS parsing errors: {errors:?}"
+        );
+    }
 
     #[test]
     fn page_tabs_follow_the_design_order_with_synchronization() {
@@ -247,6 +274,12 @@ mod tests {
             .row_at_index(PAGE_ORDER.len() as i32)
             .is_none());
         assert_eq!(shell.stack.pages().n_items(), PAGE_ORDER.len() as u32);
+        for id in PAGE_ORDER {
+            assert!(shell
+                .stack
+                .child_by_name(id.name())
+                .is_some_and(|page| page.has_css_class("reprise-preferences-page")));
+        }
     }
 
     #[test]
