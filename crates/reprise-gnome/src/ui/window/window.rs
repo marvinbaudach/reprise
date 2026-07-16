@@ -293,8 +293,7 @@ pub fn build(
     let toolbar_view = adw::ToolbarView::new();
     // No add_top_bar for scan progress — it lives in the sidebar now.
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
-    let album_view =
-        super::album_view::AlbumView::new(conn.clone(), track_list.shared_cover_loader());
+    let album_view = super::album_view::AlbumView::new(conn, track_list.shared_cover_loader());
     // Retain the assembled `ArtistView` past `build()`: its `refresh_callback`
     // and now-playing mini-EQ both hang off a pure-Rust `Rc<Inner>`, so the
     // view must stay alive. The strong clone captured by the track-change
