@@ -10,8 +10,7 @@ use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library::tag_edit::{
-    apply_track_edit_batch, summarize, summarize_values, EditableTags, TagBatchReport, TagPatch,
-    TrackEditPatch,
+    apply_track_edit_batch_ignored, EditableTags, TagBatchReport, TagPatch, TrackEditPatch,
 };
 
 use crate::ui::player_controller::PlayerController;
@@ -82,27 +81,24 @@ fn begin(shared: &Rc<Shared>) {
         tracing::debug!("tag editor requested without a fully resolvable selection");
         return;
     };
-    let Some(summary) = summarize(&tags) else {
-        return;
-    };
-    let Some(rating_summary) = summarize_values(&ratings) else {
-        return;
-    };
     let Some(window) = shared.window.upgrade() else {
         tracing::warn!("tag editor: window is gone");
         return;
     };
-    let shared = shared.clone();
+    let conn = shared.conn.clone();
+    let shared_for_apply = shared.clone();
     tag_editor::present(
         &window,
-        &summary,
-        &rating_summary,
-        tracks.len(),
+        conn,
+        tracks.clone(),
+        tags,
+        ratings,
         move |patch| {
-            start_apply(&shared, tracks.clone(), patch);
+            start_apply(&shared_for_apply, tracks.clone(), patch);
         },
+        |_direction| false,
     );
-    tracing::debug!(selected = tags.len(), "tag editor presented");
+    tracing::debug!("tag editor presented");
 }
 
 fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEditPatch) {
@@ -127,7 +123,9 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEdi
         .name("reprise-tag-edit".into())
         .spawn(move || {
             let result = reprise_core::db::open(Some(&db_path))
-                .map(|mut conn| apply_track_edit_batch(&mut conn, &tracks_for_worker, &patch))
+                .map(|mut conn| {
+                    apply_track_edit_batch_ignored(&mut conn, &tracks_for_worker, &patch)
+                })
                 .map_err(|error| error.to_string());
             let _ = sender.try_send(result);
         });
