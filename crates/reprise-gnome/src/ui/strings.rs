@@ -799,6 +799,36 @@ pub fn playlist_export_failed_toast(name: &str) -> String {
 }
 
 // Application identity and legal information shown in the native About dialog.
+// Album view (library_views/album_view.rs, album_card.rs).
+pub const ALBUM_SORT_RECENTLY_ADDED: &str = N_!("Recently added");
+pub const ALBUM_SORT_TITLE: &str = N_!("Title A–Z");
+pub const ALBUM_SORT_ARTIST: &str = N_!("Artist A–Z");
+pub const ALBUM_SORT_YEAR: &str = N_!("Year");
+pub const ALBUM_SORT_MOST_PLAYED: &str = N_!("Most played");
+pub const ALBUM_COUNT_FMT: &str = N_!("{} albums");
+pub const ALBUM_SEARCH_EMPTY: &str = N_!("No albums match \"{}\"");
+pub const ALBUM_SEARCH_CLEAR: &str = N_!("Clear");
+
+pub const ALBUM_MENU_PLAY: &str = N_!("Play");
+pub const ALBUM_MENU_SHUFFLE: &str = N_!("Shuffle Album");
+pub const ALBUM_MENU_ADD_QUEUE: &str = N_!("Add to Queue");
+pub const ALBUM_MENU_ADD_PLAYLIST: &str = N_!("Add to Playlist");
+pub const ALBUM_MENU_NEW_PLAYLIST: &str = N_!("New Playlist…");
+pub const ALBUM_MENU_EDIT_TAGS: &str = N_!("Edit Tags");
+pub const ALBUM_MENU_GO_TO_FOLDER: &str = N_!("Go to Folder");
+
+/// Formats album duration: "1h 4min" or "42 min".
+pub fn album_duration(total_ms: i64) -> String {
+    let total_min = total_ms / 60_000;
+    let hours = total_min / 60;
+    let mins = total_min % 60;
+    if hours > 0 {
+        format!("{}h {}min", hours, mins)
+    } else {
+        format!("{} min", mins)
+    }
+}
+
 pub const ABOUT_REPRISE: &str = N_!("About Reprise");
 pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linux Platform");
 

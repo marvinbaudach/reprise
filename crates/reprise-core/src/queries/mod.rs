@@ -104,7 +104,7 @@ pub use clauses::build_track_ids_query;
 // where the re-export would otherwise look unused.
 #[allow(unused_imports)]
 pub use clauses::build_track_query;
-pub use library_views::{query_albums, query_artists, AlbumSummary, ArtistSummary};
+pub use library_views::{query_album_track_ids, query_albums, query_artists, AlbumSummary, ArtistSummary};
 pub use maintenance::{
     delete_all_import_errors, delete_import_error, mark_track_missing, query_import_error_count,
     query_import_errors, query_sync_tracks, query_track_summary, remove_all_missing_tracks,
@@ -366,9 +366,30 @@ pub struct TrackSummary {
     /// the player bar (which only shows title/artist), so it went unused
     /// here until MPRIS needed it.
     pub album: String,
+    /// Raw album artist tag (may be empty). Use `effective_album_artist()` to
+    /// get the display value that matches `AlbumSummary::album_artist` — i.e.
+    /// `album_artist` when non-empty, `artist` otherwise. Loaded alongside the
+    /// other summary fields so `notify_now_playing_album_changed` can send the
+    /// same effective-artist key the album grid uses for EQ-marker matching.
+    pub album_artist: String,
     /// Optional release year displayed by metadata-rich player surfaces.
     pub year: Option<i32>,
     pub duration_ms: i64,
+}
+
+impl TrackSummary {
+    /// Returns the effective album artist: `album_artist` when non-empty
+    /// (trimmed), `artist` otherwise. Mirrors the SQL expression
+    /// `CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE
+    /// TRIM(artist) END` that `query_albums` uses for `AlbumSummary::
+    /// album_artist`, so the two sources always agree on the grouping key.
+    pub fn effective_album_artist(&self) -> &str {
+        if self.album_artist.trim().is_empty() {
+            &self.artist
+        } else {
+            &self.album_artist
+        }
+    }
 }
 
 /// Aggregates library-wide stats over all non-missing tracks. Powers the

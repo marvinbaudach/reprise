@@ -404,6 +404,40 @@ pub fn build(
             }
         });
     }
+    // Album view playback wiring.
+    {
+        let player = player.clone();
+        album_view.set_on_play(move |ids, start_index| match &player {
+            Some(player) => player.play_from_view(ids, start_index),
+            None => tracing::warn!("player unavailable; ignoring album play action"),
+        });
+    }
+    {
+        let player = player.clone();
+        album_view.set_on_queue(move |ids| match &player {
+            Some(player) => player.append_to_queue(&ids),
+            None => tracing::warn!("player unavailable; ignoring album queue action"),
+        });
+    }
+    {
+        let player = player.clone();
+        album_view.set_on_shuffle(move |ids, start_index| match &player {
+            Some(player) => player.play_from_view(ids, start_index),
+            None => tracing::warn!("player unavailable; ignoring album shuffle action"),
+        });
+    }
+    // Wire the album context menu's toast overlay so "Added N tracks to
+    // Playlist" toasts reach the window surface. Same post-construction
+    // injection reason as `player.set_toast_overlay` just above: `toast_
+    // overlay` is built after `album_view`.
+    album_view.set_toast_overlay(&toast_overlay);
+    // Wire now-playing fan-out to album grid EQ markers.
+    if let Some(ref player) = player {
+        let album_view_np = album_view.now_playing_callback();
+        player.set_on_now_playing_album_changed(move |album| {
+            album_view_np(album);
+        });
+    }
     {
         let player = player.clone();
         track_list.set_on_queue_activate(move |position| {
@@ -741,6 +775,15 @@ pub fn build(
         track_list.clone(),
         search_restore_guard.clone(),
     );
+    // Wire album view search filter to the same search entry (second
+    // connect_search_changed handler — runs after the track-list debounce).
+    {
+        use gtk4::prelude::EditableExt as _;
+        let album_filter = album_view.filter_callback();
+        search_entry.connect_search_changed(move |entry| {
+            album_filter(&entry.text());
+        });
+    }
     super::view_session::arm_smoke(
         &search_entry,
         &track_list,
