@@ -799,6 +799,20 @@ pub fn build(
             primary_menu::update_library_section(&library_menu, is_scanning);
         }
     });
+    // End-of-queue refill: a manual "next" past an exhausted queue rebuilds
+    // it from the visible view (see `up_next_transport::refill_queue_from_
+    // view`). `Weak` capture, same reasoning as every other cross-widget
+    // callback here.
+    if let Some(ref player) = player {
+        let track_list_weak = Rc::downgrade(&track_list);
+        player.set_view_refill_provider(move || match track_list_weak.upgrade() {
+            Some(track_list) => track_list.transport_refill_ids(),
+            None => {
+                tracing::warn!("track list is gone; transport refill unavailable");
+                Vec::new()
+            }
+        });
+    }
     // Task 7: wire the player bar's queue button to open the Queue sidebar.
     if let Some(ref player) = player {
         let sidebar_for_queue = sidebar.clone();
@@ -823,7 +837,12 @@ pub fn build(
     app.set_accels_for_action("win.preferences", &["<Control>comma"]);
     app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);
     app.set_accels_for_action("win.help", &[super::help::HELP_ACCELERATOR]);
-    super::window_navigation::wire_sidebar_toggle(&sidebar_toggle, &split_view, &sidebar_page);
+    super::window_navigation::wire_sidebar_toggle(
+        &sidebar_toggle,
+        &split_view,
+        &sidebar_page,
+        conn,
+    );
     let show_content_if_collapsed = super::window_navigation::show_content_callback(&split_view);
     super::library_shell::wire_source_routing(
         &sidebar,

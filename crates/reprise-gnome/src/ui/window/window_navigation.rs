@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
+use rusqlite::Connection;
 
 use super::library_shell::SIDEBAR_BREAKPOINT_WIDTH;
 
@@ -100,9 +102,17 @@ pub(super) fn wire_sidebar_toggle(
     sidebar_toggle: &gtk4::ToggleButton,
     split_view: &adw::NavigationSplitView,
     sidebar_page: &adw::NavigationPage,
+    conn: &Rc<RefCell<Connection>>,
 ) {
     let updating = Rc::new(std::cell::Cell::new(false));
     let manually_hidden = Rc::new(std::cell::Cell::new(false));
+    // Restore last session's manual collapse before the initial toggle sync,
+    // so the button starts in the matching state.
+    if reprise_core::library::settings::get_sidebar_collapsed(&conn.borrow())
+        && sidebar_page.is_visible()
+    {
+        hide_sidebar(split_view, &manually_hidden);
+    }
     sync_sidebar_toggle(
         sidebar_toggle,
         split_view,
@@ -115,12 +125,25 @@ pub(super) fn wire_sidebar_toggle(
         let sidebar_page = sidebar_page.clone();
         let manually_hidden = manually_hidden.clone();
         let updating = updating.clone();
+        let conn = conn.clone();
         sidebar_toggle.connect_toggled(move |button| {
             if !updating.get() && sidebar_page.is_visible() {
                 if button.is_active() {
                     show_sidebar(&split_view, &manually_hidden);
                 } else {
                     hide_sidebar(&split_view, &manually_hidden);
+                }
+                // Persist only real user toggles — never the responsive
+                // (width-driven) collapse, which does not go through here.
+                let saved = {
+                    let conn = conn.borrow();
+                    reprise_core::library::settings::set_sidebar_collapsed(
+                        &conn,
+                        !button.is_active(),
+                    )
+                };
+                if let Err(error) = saved {
+                    tracing::warn!(%error, "could not save sidebar collapse state");
                 }
             }
         });
@@ -183,6 +206,12 @@ pub(super) fn wire_sidebar_toggle(
 mod tests {
     use super::*;
 
+    fn test_conn() -> Rc<RefCell<Connection>> {
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        Rc::new(RefCell::new(conn))
+    }
+
     #[test]
     fn sidebar_toggle_remains_available_whenever_the_sidebar_slot_exists() {
         assert!(sidebar_toggle_is_visible(true));
@@ -217,7 +246,8 @@ mod tests {
         window.set_size_request(900, 600);
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
-        wire_sidebar_toggle(&button, &split, &sidebar);
+        let conn = test_conn();
+        wire_sidebar_toggle(&button, &split, &sidebar, &conn);
 
         assert!(button.is_visible());
         assert!(button.is_active());

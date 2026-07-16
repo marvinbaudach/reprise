@@ -40,6 +40,24 @@ const MINI_MAX_BAR_HEIGHT: f64 = 13.0;
 const MINI_MIN_BAR_HEIGHT: f64 = 2.0;
 const MINI_FALLBACK_BAR_HEIGHT: f64 = 3.0;
 
+/// Advances the smooth-fill interpolation by one frame: `fraction` moves by
+/// `velocity * dt_us` but never past `target` — the interpolation chases the
+/// most recent position tick, so overshooting it is always wrong. This bound
+/// is what makes a mis-measured `dt` (and thus an exploded velocity)
+/// harmless: the worst case degrades to snapping straight to the target
+/// instead of pinning the fill at 100% for the rest of the song. A fraction
+/// that is already past the target (a stale stuck state) snaps back to it
+/// for the same reason. Result stays in 0..1.
+fn interpolation_step(fraction: f64, velocity: f64, dt_us: f64, target: f64) -> f64 {
+    let advanced = velocity.mul_add(dt_us, fraction);
+    let bounded = if velocity >= 0.0 {
+        advanced.min(target)
+    } else {
+        advanced.max(target)
+    };
+    bounded.clamp(0.0, 1.0)
+}
+
 /// Maps a pointer `x` within `width` to a 0..1 seek fraction.
 fn fraction_at(x: f64, width: f64) -> f64 {
     if width <= 0.0 {
@@ -71,8 +89,7 @@ fn resample_peaks(raw: &[u8], count: usize) -> Vec<f32> {
         if slice.is_empty() {
             result.push(0.0);
         } else {
-            let avg: f32 =
-                slice.iter().map(|&v| f32::from(v)).sum::<f32>() / slice.len() as f32;
+            let avg: f32 = slice.iter().map(|&v| f32::from(v)).sum::<f32>() / slice.len() as f32;
             result.push(avg / 255.0);
         }
     }
@@ -100,9 +117,9 @@ fn ensure_resampled(state: &mut State, width: i32) {
 }
 
 struct State {
-    raw_peaks: Vec<u8>,         // stored peaks from DB (1000 values, 0-255)
-    display_peaks: Vec<f32>,    // resampled to current bar count (0.0..1.0)
-    last_display_width: i32,    // width used for last resample
+    raw_peaks: Vec<u8>,      // stored peaks from DB (1000 values, 0-255)
+    display_peaks: Vec<f32>, // resampled to current bar count (0.0..1.0)
+    last_display_width: i32, // width used for last resample
     fraction: f64,
     hover_index: Option<usize>,
     drag_fraction: Option<f64>,
@@ -337,7 +354,14 @@ impl WaveformSeek {
     pub(super) fn set_fraction_smooth(&self, fraction: f64) {
         let fraction = fraction.clamp(0.0, 1.0);
         let mut s = self.state.borrow_mut();
-        let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
+        // Real monotonic time, NOT `frame_clock().frame_time()`: the frame
+        // clock only advances while frames are being produced, so two
+        // position ticks arriving between frames used to read the same
+        // stale timestamp — `dt` collapsed to 1 µs, the velocity exploded,
+        // and the next real frame pinned the fill at 100% (the stuck-full
+        // bar bug). `frame_time` shares `g_get_monotonic_time`'s timescale,
+        // so mixing the two sources in `last_tick_us` is safe.
+        let now = gtk4::glib::monotonic_time();
         let delta = (fraction - s.target_fraction).abs();
         if delta > 0.05 || s.last_tick_us == 0 {
             // Large discontinuity, seek, or no valid time reference yet — snap.
@@ -379,10 +403,10 @@ impl WaveformSeek {
             let now = clock.frame_time();
             let mut s = state.borrow_mut();
 
-            // Advance the smooth-position interpolation.
+            // Advance the smooth-position interpolation (never past the
+            // target — see `interpolation_step`).
             let dt = (now - s.last_tick_us).max(0) as f64;
-            s.fraction += s.fraction_velocity * dt;
-            s.fraction = s.fraction.clamp(0.0, 1.0);
+            s.fraction = interpolation_step(s.fraction, s.fraction_velocity, dt, s.target_fraction);
             s.last_tick_us = now;
 
             // Advance the build-up animation.
@@ -391,8 +415,7 @@ impl WaveformSeek {
                 s.build_progress = (elapsed / BUILD_DURATION_S).clamp(0.0, 1.0);
             }
 
-            let settled =
-                (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
+            let settled = (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
             drop(s);
 
             area.queue_draw();
@@ -482,8 +505,7 @@ fn draw(
         if is_boundary {
             // Sub-bar precision: clip to the bar shape and fill played/unplayed
             // portions as separate rectangles so the split is pixel-accurate.
-            let bar_progress =
-                (state.fraction * count as f64 - index as f64).clamp(0.0, 1.0);
+            let bar_progress = (state.fraction * count as f64 - index as f64).clamp(0.0, 1.0);
             let split_x = x + bar_w * bar_progress;
 
             cr.save().ok();
@@ -549,7 +571,8 @@ fn draw_fallback(
         // Deterministic pseudo-random height using a simple hash.
         let seed = (index as u32).wrapping_mul(2654435761); // Knuth multiplicative hash
         let magnitude = (seed % 200) as f64 / 400.0 + 0.15; // range ~0.15..0.65
-        let bar_h = state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height);
+        let bar_h =
+            state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height);
         let x = index as f64 * slot;
         let y = (h - bar_h) / 2.0;
 
@@ -576,6 +599,33 @@ fn rounded_bar(cr: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interpolation_step_never_overshoots_its_target() {
+        // Ordinary frame: advances proportionally, still below target.
+        let stepped = interpolation_step(0.10, 1e-6, 16_000.0, 0.20);
+        assert!((stepped - 0.116).abs() < 1e-9);
+        // Runaway velocity (the stuck-at-100% bug): a stale frame-clock
+        // reading once produced dt = 1 µs and an exploded velocity; one real
+        // frame then shot the fill to 1.0. The step must stop AT the target.
+        assert_eq!(interpolation_step(0.0, 0.002, 16_000.0, 0.004), 0.004);
+        // Backwards motion clamps at the target from below, too.
+        assert_eq!(interpolation_step(0.5, -0.002, 16_000.0, 0.3), 0.3);
+    }
+
+    #[test]
+    fn interpolation_step_recovers_a_fill_stuck_beyond_the_target() {
+        // Self-healing: if fraction is already past the target (legacy stuck
+        // state at 1.0 while the song still plays), the next step snaps back
+        // to the target instead of staying pinned.
+        assert_eq!(interpolation_step(1.0, 1e-7, 16_000.0, 0.02), 0.02);
+    }
+
+    #[test]
+    fn interpolation_step_stays_inside_the_unit_range() {
+        assert_eq!(interpolation_step(0.99, 0.5, 16_000.0, 1.0), 1.0);
+        assert_eq!(interpolation_step(0.01, -0.5, 16_000.0, 0.0), 0.0);
+    }
 
     #[test]
     fn fraction_maps_and_clamps_to_unit_range() {
