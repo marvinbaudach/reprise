@@ -185,6 +185,10 @@ use reprise_platform_linux::player::Player;
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
 
+/// Supplies the ids the transport refills an exhausted queue from — named so
+/// the field below stays readable next to its sibling callback seams.
+type ViewRefillIds = Rc<dyn Fn() -> Vec<i64>>;
+
 /// Whether `present_track` should start the pipeline (`Yes` — ordinary path)
 /// or leave it running because `playbin3` already handed off gaplessly to the
 /// pre-fed URI (`No` — see `advance_gaplessly`).
@@ -271,6 +275,13 @@ pub struct PlayerController {
     /// so the track-list and album-view consumers stay independent.
     pub(super) playback_state_changed_album:
         RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
+    /// Supplies the currently visible view's track ids for the transport's
+    /// end-of-queue refill (see `up_next_transport.rs`'s `advance_common`):
+    /// when a manual "next" runs off the end of an exhausted queue
+    /// (`Repeat::Off`), the queue is rebuilt from these ids instead of going
+    /// silent. `window.rs` wires it to `TrackList::transport_refill_ids`;
+    /// returns an empty vec when refilling makes no sense (Queue view).
+    pub(super) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
@@ -438,6 +449,7 @@ impl PlayerController {
             playback_state_changed: RefCell::new(None),
             now_playing_album_changed: RefCell::new(None),
             playback_state_changed_album: RefCell::new(None),
+            view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,
@@ -501,6 +513,12 @@ impl PlayerController {
     /// would leak.
     pub fn set_on_title_click(&self, f: impl Fn() + 'static) {
         self.bar.set_on_title_click(f);
+    }
+
+    /// Registers the provider for the transport's end-of-queue refill — see
+    /// the `view_refill_ids` field doc.
+    pub fn set_view_refill_provider(&self, provider: impl Fn() -> Vec<i64> + 'static) {
+        *self.view_refill_ids.borrow_mut() = Some(Rc::new(provider));
     }
 
     /// The *effective album artist* of the currently-playing track, or `None`
@@ -696,7 +714,7 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        self.notify_current_track_changed(id, None);
+                        self.notify_current_track_changed(id, None, true);
                         self.consecutive_skips.set(0);
                         self.failure_skip_limit.set(0);
                         // `reset_to_stopped` disables prev/next, and MPRIS
