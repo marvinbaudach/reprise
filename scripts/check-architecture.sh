@@ -19,6 +19,12 @@ if (( failed != 0 )); then
   exit 1
 fi
 
+window_lines=$(wc -l < crates/reprise-gnome/src/ui/window/window.rs)
+if (( window_lines >= 600 )); then
+  echo "window.rs has $window_lines lines; the composition root must stay below 600" >&2
+  exit 1
+fi
+
 if cargo tree -p reprise-core | rg --quiet '(^| )(gtk4|libadwaita|gstreamer|zbus)( |$| v)'; then
   echo "reprise-core must not depend on GTK, libadwaita, GStreamer, or zbus" >&2
   exit 1

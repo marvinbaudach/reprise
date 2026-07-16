@@ -340,6 +340,8 @@ mod window_decoration_strings;
 mod window_decorations;
 #[path = "window/window_navigation.rs"]
 mod window_navigation;
+#[path = "window/window_runtime_wiring.rs"]
+mod window_runtime_wiring;
 #[path = "window/window_smoke.rs"]
 mod window_smoke;
 
