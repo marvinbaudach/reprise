@@ -58,20 +58,14 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::sidebar_dnd;
-use crate::ui::sidebar_export;
-use crate::ui::sidebar_issue_cleanup;
 use crate::ui::sidebar_playlist_creation;
-use crate::ui::sidebar_presentation::{self, NavIcon};
-use crate::ui::strings;
 use crate::ui::toasts;
-use reprise_core::library::playlists;
-use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
 /// One row's identity: the built widget, the `ViewSource` selecting it
 /// switches to, and its display title (handed to `Shared::on_select` so
 /// `window.rs` can set the headerbar title without re-deriving it).
-type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
+pub(super) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 
 /// Callback invoked whenever the logically selected source changes — see
 /// `Shared::on_select`'s doc comment for the full contract.
@@ -96,7 +90,7 @@ pub(super) struct Shared {
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
     /// provider`) to a closure over the `PlayerController`.
-    queue_len_provider: Box<dyn Fn() -> usize>,
+    pub(super) queue_len_provider: Box<dyn Fn() -> usize>,
     /// Which source is logically selected right now — kept in sync by the
     /// `row-selected` handler and used by a routine `rebuild` (`force_select
     /// = None`) to re-select the same source's (rebuilt) row afterwards.
@@ -109,10 +103,10 @@ pub(super) struct Shared {
     /// apart from a normal navigation row (identity compare) — it's
     /// `selectable(false)` so it never appears in `rows`/`row-selected`, only
     /// `row-activated`.
-    new_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
+    pub(super) new_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
     /// The adjacent "Import playlist…" action row. Kept separately so row
     /// activation can invoke the file-dialog callback wired by `window.rs`.
-    import_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
+    pub(super) import_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
     /// Invoked whenever the logically selected source *changes* (real user
     /// click or an explicit forced selection) — never
     /// for a same-source reselect (see `wire_row_selected`'s dedup-by-value
@@ -172,7 +166,7 @@ pub(super) struct Shared {
     /// inventory this exists to make visible in headless E2E logs (Stage 3
     /// Task 4 review finding #2: the sidebar was rebuilding on every search
     /// keystroke/sort click before that trigger was narrowed).
-    refresh_count: Cell<u64>,
+    pub(super) refresh_count: Cell<u64>,
 }
 
 /// Handle to the built sidebar widget (a `ScrolledWindow` wrapping the
@@ -405,180 +399,7 @@ pub(super) fn show_toast(shared: &Shared, text: &str) {
 /// doc comment for the full trigger inventory this makes verifiable in
 /// headless E2E output.
 pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
-    let refresh_number = shared.refresh_count.get() + 1;
-    shared.refresh_count.set(refresh_number);
-    tracing::debug!(
-        refresh_number,
-        reason,
-        "sidebar refresh #{refresh_number} ({reason})"
-    );
-
-    // One connection borrow, dropped before any row/selection work below —
-    // no GTK/notify call happens while this is alive.
-    let (music_count, missing_count, import_error_count, playlist_rows, smart_rows) = {
-        let conn = shared.conn.borrow();
-        let music_count =
-            queries::query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap_or(0);
-        let missing_count =
-            queries::query_track_count(&conn, &ViewSource::Missing, "", &[]).unwrap_or(0);
-        let import_error_count = queries::query_import_error_count(&conn).unwrap_or_else(|error| {
-            tracing::error!(%error, "failed to count import errors for sidebar badge");
-            0
-        });
-        let playlist_rows = playlists::list(&conn).unwrap_or_else(|error| {
-            tracing::error!(%error, "failed to list playlists for sidebar");
-            Vec::new()
-        });
-        let smart_rows = playlists::list_smart(&conn).unwrap_or_else(|error| {
-            tracing::error!(%error, "failed to list smart playlists for sidebar");
-            Vec::new()
-        });
-        (
-            music_count,
-            missing_count,
-            import_error_count,
-            playlist_rows,
-            smart_rows,
-        )
-    };
-    let queue_count = (shared.queue_len_provider)() as i64;
-    let playlist_count = playlist_rows.len();
-
-    shared.listbox.remove_all();
-    shared.issues_listbox.remove_all();
-    shared.rows.borrow_mut().clear();
-    *shared.new_playlist_row.borrow_mut() = None;
-    *shared.import_playlist_row.borrow_mut() = None;
-
-    sidebar_presentation::append_header(
-        &shared.listbox,
-        &strings::text(strings::SIDEBAR_SECTION_LIBRARY),
-    );
-    add_row(
-        shared,
-        ViewSource::Library,
-        &strings::text(strings::SIDEBAR_MUSIC),
-        sidebar_presentation::nonzero_count(music_count),
-        NavIcon::Library,
-    );
-    add_row(
-        shared,
-        ViewSource::Queue,
-        &strings::text(strings::SIDEBAR_QUEUE),
-        sidebar_presentation::nonzero_count(queue_count),
-        NavIcon::Queue,
-    );
-
-    sidebar_presentation::append_header(
-        &shared.listbox,
-        &strings::text(strings::SIDEBAR_SECTION_PLAYLISTS),
-    );
-    for playlist in &playlist_rows {
-        add_row(
-            shared,
-            ViewSource::Playlist(playlist.id),
-            &playlist.name,
-            sidebar_presentation::nonzero_count(playlist.track_count),
-            NavIcon::Playlist,
-        );
-    }
-    let action_rows = sidebar_presentation::append_playlist_action_rows(&shared.listbox);
-    *shared.new_playlist_row.borrow_mut() = Some(action_rows.new_playlist);
-    *shared.import_playlist_row.borrow_mut() = Some(action_rows.import_playlist);
-
-    sidebar_presentation::append_header(
-        &shared.listbox,
-        &strings::text(strings::SIDEBAR_SECTION_SMART),
-    );
-    for smart in &smart_rows {
-        add_row(
-            shared,
-            ViewSource::Smart(smart.id),
-            &smart.name,
-            None,
-            sidebar_presentation::smart_icon(&smart.sort_field),
-        );
-    }
-    add_row(
-        shared,
-        ViewSource::MyStats,
-        &strings::text(strings::SIDEBAR_MY_STATS),
-        None,
-        sidebar_presentation::NavIcon::MyStats,
-    );
-
-    // Problem sources live in a separate list pinned to the sidebar's bottom
-    // (design mockup 14a), hidden entirely when there are none. They keep the
-    // same subdued section-heading grammar as the groups above; the explicit
-    // label provides both semantic grouping and a non-interactive boundary.
-    let has_issues = import_error_count > 0 || missing_count > 0;
-    shared.issues_listbox.set_visible(has_issues);
-    if has_issues {
-        sidebar_presentation::append_problem_header(&shared.issues_listbox);
-        if import_error_count > 0 {
-            add_row(
-                shared,
-                ViewSource::ImportErrors,
-                &strings::text(strings::SIDEBAR_IMPORT_ERRORS),
-                Some(import_error_count),
-                NavIcon::ImportErrors,
-            );
-        }
-        if missing_count > 0 {
-            add_row(
-                shared,
-                ViewSource::Missing,
-                &strings::text(strings::SIDEBAR_MISSING_FILES),
-                Some(missing_count),
-                NavIcon::Missing,
-            );
-        }
-    }
-
-    tracing::debug!(
-        playlists = playlist_count,
-        missing = missing_count,
-        import_errors = import_error_count,
-        "sidebar built: {playlist_count} playlists, missing={missing_count}, import_errors={import_error_count}"
-    );
-
-    // Either way this just re-selects a (possibly brand new) `ListBoxRow`
-    // object — `wire_row_selected`'s dedup-by-value check (comparing the
-    // `ViewSource`, not row identity) is what decides whether that actually
-    // notifies `on_select`, not anything done here.
-    let requested_source = force_select.unwrap_or_else(|| shared.current_source.borrow().clone());
-    let requested_row = find_row(shared, &requested_source);
-    let (select_source, fell_back) =
-        resolve_select_source(requested_source.clone(), requested_row.is_some());
-    if fell_back {
-        // The previously (or forced-)selected source's row is gone — e.g. a
-        // smart list/playlist that vanished, or a problem-source row whose
-        // count just dropped to zero. Leaving nothing selected would strand
-        // the user on a source `TrackList` still thinks is current (Stage 3
-        // Task 4 review finding #3). `resolve_select_source` already decided
-        // Library is the fallback; `requested_source` (not `Library`, since
-        // it's the very source that just failed to resolve) compares
-        // unequal to `shared.current_source`'s stored value, so `wire_row_
-        // selected`'s dedup-by-value guard does NOT suppress the reselect
-        // below: it notifies `on_select` like any real switch, which is
-        // exactly what's needed to also move `TrackList` off the vanished
-        // source.
-        tracing::debug!(
-            vanished_source = %requested_source.label(),
-            "selected source vanished; falling back to Library"
-        );
-    }
-    // Library's row always exists (added unconditionally above), so this is
-    // only ever `None` in the non-fallback branch (`requested_row` reused,
-    // no second `find_row` scan needed for the common case).
-    let row_to_select = if fell_back {
-        find_row(shared, &select_source)
-    } else {
-        requested_row
-    };
-    if let Some(row) = row_to_select {
-        select_row_in_its_listbox(&row);
-    }
+    crate::ui::sidebar_rebuild::rebuild(shared, force_select, reason);
 }
 
 /// Selects `row` in whichever of the two nav lists actually contains it (the
@@ -620,63 +441,6 @@ pub(super) fn find_row(shared: &Rc<Shared>, source: &ViewSource) -> Option<gtk4:
         .iter()
         .find(|(_, s, _)| s == source)
         .map(|(row, _, _)| row.clone())
-}
-
-/// Builds one navigation row (title + optional right-aligned count) and
-/// registers it in `shared.rows` against `source`. Playlist rows additionally
-/// get a drag-and-drop drop target (Stage 3 Task 6) — see `sidebar_dnd::
-/// wire_playlist_drop_target`'s doc comment — and a right-click export/delete
-/// context menu — see `sidebar_export::
-/// wire_playlist_context_menu`'s doc comment.
-fn add_row(
-    shared: &Rc<Shared>,
-    source: ViewSource,
-    title: &str,
-    count: Option<i64>,
-    icon: NavIcon,
-) {
-    let row = sidebar_presentation::build_nav_row(title, count, icon);
-    match &source {
-        ViewSource::Playlist(playlist_id) => {
-            sidebar_dnd::wire_playlist_drop_target(shared, &row, *playlist_id, title);
-            sidebar_export::wire_playlist_context_menu(shared, &row, *playlist_id, title);
-        }
-        ViewSource::ImportErrors | ViewSource::Missing => {
-            sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());
-        }
-        _ => {}
-    }
-    // Problem sources go into the bottom-pinned issues list; everything else
-    // into the main scrolling nav list.
-    let target = if matches!(source, ViewSource::ImportErrors | ViewSource::Missing) {
-        &shared.issues_listbox
-    } else {
-        &shared.listbox
-    };
-    target.append(&row);
-    shared
-        .rows
-        .borrow_mut()
-        .push((row, source, title.to_string()));
-}
-
-/// Builds one navigation row with a badge label (e.g. "NEW") rather than a
-/// count and registers it in `shared.rows` — same as `add_row` but delegates
-/// to `sidebar_presentation::build_nav_row_with_badge`.
-#[allow(dead_code)]
-fn add_row_with_badge(
-    shared: &Rc<Shared>,
-    source: ViewSource,
-    title: &str,
-    badge_text: &str,
-    icon: sidebar_presentation::NavIcon,
-) {
-    let row = sidebar_presentation::build_nav_row_with_badge(title, badge_text, icon);
-    shared.listbox.append(&row);
-    shared
-        .rows
-        .borrow_mut()
-        .push((row, source, title.to_string()));
 }
 
 /// Wires the `ListBox`'s `row-selected` signal: a navigation row becoming

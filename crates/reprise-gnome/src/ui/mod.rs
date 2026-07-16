@@ -252,6 +252,8 @@ mod sidebar_issue_strings;
 mod sidebar_playlist_creation;
 #[path = "sidebar/sidebar_presentation.rs"]
 mod sidebar_presentation;
+#[path = "sidebar/sidebar_rebuild.rs"]
+mod sidebar_rebuild;
 #[path = "sidebar/sidebar_session.rs"]
 pub mod sidebar_session;
 #[allow(dead_code)] // monthly chart kept for future use; replaced by hourly_chart in redesign
@@ -295,6 +297,8 @@ mod track_cover;
 pub mod track_list;
 #[path = "track_list/track_list_activation.rs"]
 pub mod track_list_activation;
+#[path = "track_list/track_list_builder.rs"]
+mod track_list_builder;
 #[path = "track_list/track_list_columns.rs"]
 pub mod track_list_columns;
 #[path = "track_list/track_list_context_keys.rs"]

@@ -25,6 +25,16 @@ if (( window_lines >= 600 )); then
   exit 1
 fi
 
+for orchestrator in \
+  crates/reprise-gnome/src/ui/track_list/track_list.rs \
+  crates/reprise-gnome/src/ui/sidebar/sidebar.rs; do
+  lines=$(wc -l < "$orchestrator")
+  if (( lines >= 600 )); then
+    echo "$orchestrator has $lines lines; UI orchestrators must stay below 600" >&2
+    exit 1
+  fi
+done
+
 if cargo tree -p reprise-core | rg --quiet '(^| )(gtk4|libadwaita|gstreamer|zbus)( |$| v)'; then
   echo "reprise-core must not depend on GTK, libadwaita, GStreamer, or zbus" >&2
   exit 1
