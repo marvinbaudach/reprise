@@ -8,6 +8,18 @@ use super::{publish_latest_progress, ScanCompletion, ScanControls};
 use crate::ui::scan_progress::ScanProgressView;
 
 #[test]
+fn cancellation_is_shared_across_clones_and_reset_between_scans() {
+    let cancellation = super::ScanCancellation::default();
+    let worker_view = cancellation.clone();
+
+    cancellation.request();
+    assert!(worker_view.is_requested());
+
+    worker_view.reset();
+    assert!(!cancellation.is_requested());
+}
+
+#[test]
 fn scan_completion_callback_runs_without_holding_its_refcell_borrow() {
     let completion = ScanCompletion::default();
     let calls = Rc::new(Cell::new(0));

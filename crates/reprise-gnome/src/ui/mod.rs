@@ -218,12 +218,18 @@ pub mod queue_transport;
 pub mod rating;
 #[path = "scan/scan_card_css.rs"]
 pub(crate) mod scan_card_css;
+#[path = "scan/scan_controls.rs"]
+mod scan_controls;
 #[path = "scan/scan_flow.rs"]
 pub mod scan_flow;
 #[path = "scan/scan_progress.rs"]
 mod scan_progress;
+#[path = "scan/scan_watcher.rs"]
+mod scan_watcher;
 #[path = "scan/scan_waveform_analysis.rs"]
 mod scan_waveform_analysis;
+#[path = "scan/scan_worker.rs"]
+mod scan_worker;
 #[path = "scrobbling/scrobble_runtime.rs"]
 mod scrobble_runtime;
 #[path = "scrobbling/scrobble_session.rs"]
