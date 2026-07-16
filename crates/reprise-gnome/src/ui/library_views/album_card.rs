@@ -275,16 +275,6 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .and_downcast::<gtk4::Image>()
                 .expect("cover Image");
 
-            // Load cover art.
-            let generation = shared.generation.get();
-            shared.cover_loader.load_into(
-                &cover,
-                &album.representative_path,
-                ThumbnailSize::Grid,
-                generation,
-                &shared.generation,
-            );
-
             // Placeholder: next overlay child after aspect.
             let placeholder = aspect
                 .next_sibling()
@@ -302,6 +292,22 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 initial.set_text(&derive_initial(&album.album));
             }
             placeholder.set_visible(true);
+
+            // Load cover art; hide placeholder once cover is available.
+            let generation = shared.generation.get();
+            let placeholder_weak = placeholder.downgrade();
+            shared.cover_loader.load_into_with_path(
+                &cover,
+                &album.representative_path,
+                ThumbnailSize::Grid,
+                generation,
+                &shared.generation,
+                move |_| {
+                    if let Some(ph) = placeholder_weak.upgrade() {
+                        ph.set_visible(false);
+                    }
+                },
+            );
 
             // Hover overlay: next sibling after placeholder.
             let hover_box = placeholder
