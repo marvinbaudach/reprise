@@ -88,7 +88,7 @@ mod artist_context;
 mod browse;
 mod clauses;
 mod library;
-mod library_views;
+pub(crate) mod library_views;
 mod maintenance;
 mod playlist;
 mod queue;
@@ -104,11 +104,14 @@ pub use clauses::build_track_ids_query;
 // where the re-export would otherwise look unused.
 #[allow(unused_imports)]
 pub use clauses::build_track_query;
-pub use library_views::{query_album_track_ids, query_albums, query_artists, AlbumSummary, ArtistSummary};
+pub use library_views::{
+    query_album_track_ids, query_albums, query_artist_detail_albums, query_artists, AlbumSummary,
+    ArtistAlbum, ArtistSummary,
+};
 pub use maintenance::{
     delete_all_import_errors, delete_import_error, mark_track_missing, query_import_error_count,
-    query_import_errors, query_sync_tracks, query_track_summary, remove_all_missing_tracks,
-    remove_missing_tracks, remove_tracks, track_id_for_path,
+    query_import_errors, query_sync_tracks, query_track_album_artist, query_track_summary,
+    remove_all_missing_tracks, remove_missing_tracks, remove_tracks, track_id_for_path,
 };
 // `remove_missing_track`'s only external caller (beyond `remove_missing_
 // tracks`'s own internal use) is this module's test suite — same reasoning
