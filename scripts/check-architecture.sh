@@ -64,14 +64,15 @@ check_frontend_allowlist 'gtk4::CssProvider::new' 'direct CssProvider constructi
 check_frontend_allowlist 'style_context\(' 'deprecated per-widget style_context use'
 
 check_frontend_allowlist '(^|[^[:alnum:]_])(gstreamer|gst)::|extern crate gstreamer' \
-  'direct GStreamer coupling' \
-  crates/reprise-gnome/src/ui/mod.rs \
-  crates/reprise-gnome/src/ui/shortcuts.rs \
-  crates/reprise-gnome/src/ui/playback/waveform_peaks.rs
+  'direct GStreamer coupling'
 
 check_frontend_allowlist 'std::process::Command::new\("gst-launch-1\.0"\)' \
-  'external gst-launch waveform extraction' \
-  crates/reprise-gnome/src/ui/playback/waveform_peaks.rs
+  'external gst-launch waveform extraction'
+
+if rg --quiet '^gstreamer(-app)?[[:space:]]*=' crates/reprise-gnome/Cargo.toml; then
+  echo "the GNOME frontend must not depend directly on GStreamer crates" >&2
+  exit 1
+fi
 
 check_frontend_allowlist 'unsafe[[:space:]]*\{' 'unsafe frontend block' \
   crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs
