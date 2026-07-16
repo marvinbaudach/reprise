@@ -230,6 +230,41 @@ fn cancelling_planned_sync_keeps_remaining_delta_without_failure() {
 }
 
 #[test]
+fn stale_progress_from_a_cancelled_run_does_not_update_its_replacement() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 40));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        backend.set_devices(&[]);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        backend.set_devices(&[descriptor("a", true)]);
+        for _ in 0..100 {
+            if backend.state.copy_attempts.get() == 2 {
+                break;
+            }
+            gtk4::glib::timeout_future(Duration::from_millis(1)).await;
+        }
+        assert_eq!(backend.state.copy_attempts.get(), 2);
+        gtk4::glib::timeout_future(Duration::from_millis(10)).await;
+
+        assert!(matches!(
+            runtime.devices()[0].sync_phase,
+            PlannedSyncPhase::Syncing {
+                bytes_done: 50,
+                bytes_total: 100,
+                ..
+            }
+        ));
+        settle().await;
+    });
+}
+
+#[test]
 fn enqueue_is_rejected_while_a_planned_sync_owns_the_device() {
     run(async {
         let (_temp, conn) = fixture();
