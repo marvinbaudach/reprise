@@ -11,7 +11,7 @@ use reprise_core::library::m3u::{parse_m3u, M3uEntry};
 const ENUMERATE_ATTRIBUTES: &str = "standard::name,standard::type,standard::size";
 const ENUMERATE_BATCH_SIZE: i32 = 64;
 const MANAGED_ROOT: [&str; 2] = ["Music", "Reprise"];
-const PARTIAL_SUFFIX: &str = ".reprise-part";
+const PARTIAL_SUFFIX: &str = ".part";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceDescriptor {
@@ -82,6 +82,35 @@ impl DeviceMonitor {
     pub fn subscribe(&self, callback: DeviceCallback) {
         callback(self.devices());
         self.callbacks.borrow_mut().push(callback);
+    }
+
+    /// Ejects or unmounts the matching MTP device. Returns `false` when the
+    /// device disappeared between the UI action and this lookup.
+    pub async fn eject(&self, id: &str) -> Result<bool, DeviceIoError> {
+        let mount = self.monitor.mounts().into_iter().find(|mount| {
+            descriptor_from_mount(mount).is_some_and(|descriptor| descriptor.id == id)
+        });
+        let Some(mount) = mount else {
+            return Ok(false);
+        };
+        if mount.can_eject() {
+            mount
+                .eject_with_operation_future(
+                    gio::MountUnmountFlags::NONE,
+                    None::<&gio::MountOperation>,
+                )
+                .await?;
+        } else if mount.can_unmount() {
+            mount
+                .unmount_with_operation_future(
+                    gio::MountUnmountFlags::NONE,
+                    None::<&gio::MountOperation>,
+                )
+                .await?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
     }
 }
 
@@ -253,6 +282,59 @@ impl DeviceStorage {
         }
     }
 
+    /// Removes transfer remnants left by a disconnect or process exit. Only
+    /// files below `Music/Reprise` with the dedicated `.part` suffix are
+    /// touched; unrelated device content remains outside our ownership.
+    pub async fn cleanup_partials(&self) -> Result<u32, DeviceIoError> {
+        let managed_root = self.managed_child(&[]);
+        let mut pending = VecDeque::from([managed_root]);
+        let mut removed = 0_u32;
+        while let Some(directory) = pending.pop_front() {
+            let enumerator = match directory
+                .enumerate_children_future(
+                    "standard::name,standard::type",
+                    gio::FileQueryInfoFlags::NOFOLLOW_SYMLINKS,
+                    gio::glib::Priority::DEFAULT,
+                )
+                .await
+            {
+                Ok(enumerator) => enumerator,
+                Err(error) if error.matches(gio::IOErrorEnum::NotFound) => continue,
+                Err(error) => return Err(error.into()),
+            };
+            loop {
+                let batch = enumerator
+                    .next_files_future(ENUMERATE_BATCH_SIZE, gio::glib::Priority::DEFAULT)
+                    .await?;
+                if batch.is_empty() {
+                    break;
+                }
+                for info in batch {
+                    let child = directory.child(info.name());
+                    if info.file_type() == gio::FileType::Directory {
+                        pending.push_back(child);
+                    } else if info.name().to_string_lossy().ends_with(PARTIAL_SUFFIX) {
+                        child.delete_future(gio::glib::Priority::DEFAULT).await?;
+                        removed = removed.saturating_add(1);
+                    }
+                }
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Deletes one Reprise-managed device track. A missing target is already
+    /// in the desired state and is reported as `false`.
+    pub async fn delete_track(&self, relative_path: &str) -> Result<bool, DeviceIoError> {
+        let components = safe_relative_components(relative_path)?;
+        let target = self.managed_child(&components);
+        match target.delete_future(gio::glib::Priority::DEFAULT).await {
+            Ok(()) => Ok(true),
+            Err(error) if error.matches(gio::IOErrorEnum::NotFound) => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub async fn copy_track<P>(
         &self,
         source: &gio::File,
@@ -264,11 +346,58 @@ impl DeviceStorage {
     where
         P: FnMut(u64, u64) + 'static,
     {
+        self.transfer_track(
+            source,
+            relative_path,
+            expected_size,
+            cancellable,
+            progress,
+            true,
+        )
+        .await
+    }
+
+    /// Copies a track selected by a fresh DB delta, replacing any existing
+    /// target even when the byte count happens to be unchanged.
+    pub async fn replace_track<P>(
+        &self,
+        source: &gio::File,
+        relative_path: &str,
+        expected_size: u64,
+        cancellable: &gio::Cancellable,
+        progress: P,
+    ) -> Result<CopyOutcome, DeviceIoError>
+    where
+        P: FnMut(u64, u64) + 'static,
+    {
+        self.transfer_track(
+            source,
+            relative_path,
+            expected_size,
+            cancellable,
+            progress,
+            false,
+        )
+        .await
+    }
+
+    async fn transfer_track<P>(
+        &self,
+        source: &gio::File,
+        relative_path: &str,
+        expected_size: u64,
+        cancellable: &gio::Cancellable,
+        progress: P,
+        skip_matching_size: bool,
+    ) -> Result<CopyOutcome, DeviceIoError>
+    where
+        P: FnMut(u64, u64) + 'static,
+    {
         let components = safe_relative_components(relative_path)?;
         self.ensure_managed_directories(&components[..components.len() - 1])
             .await?;
         let target = self.managed_child(&components);
-        if target_size(&target).await? == Some(expected_size) {
+        if skip_matching_size && target_size(&target).await? == Some(expected_size) {
             return Ok(CopyOutcome::Skipped);
         }
         let target_name = components.last().expect("validated nonempty path");
@@ -467,196 +596,5 @@ fn is_playlist_file(name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::cell::RefCell;
-    use std::fs;
-    use std::future::Future;
-    use std::rc::Rc;
-
-    use gio::prelude::*;
-    use reprise_core::library::m3u::M3uEntry;
-    use tempfile::TempDir;
-
-    use super::*;
-
-    fn run<T>(future: impl Future<Output = T>) -> T {
-        let context = gio::glib::MainContext::new();
-        context
-            .with_thread_default(|| context.block_on(future))
-            .unwrap()
-    }
-
-    fn fixture() -> (TempDir, DeviceStorage) {
-        let temp = tempfile::tempdir().unwrap();
-        let root = gio::File::for_path(temp.path());
-        (temp, DeviceStorage::from_root(&root))
-    }
-
-    #[test]
-    fn descriptor_projection_accepts_only_mtp_roots() {
-        assert!(project_descriptor("file:///tmp", Some("uuid"), "Disk").is_none());
-        assert!(project_descriptor("gphoto2://phone", Some("uuid"), "Camera").is_none());
-        assert!(project_descriptor("mtp://phone", Some("uuid"), "Phone").is_some());
-    }
-
-    #[test]
-    fn descriptor_prefers_uuid_for_stable_reconnects() {
-        let descriptor = project_descriptor("mtp://phone", Some("serial-1"), "Pixel").unwrap();
-        assert_eq!(descriptor.id, "serial-1");
-        assert!(descriptor.reconnectable);
-    }
-
-    #[test]
-    fn descriptor_falls_back_to_uri_without_claiming_reconnect_support() {
-        let descriptor = project_descriptor("mtp://phone", None, "Pixel").unwrap();
-        assert_eq!(descriptor.id, "mtp://phone");
-        assert!(!descriptor.reconnectable);
-    }
-
-    #[test]
-    fn missing_music_directory_inspects_as_empty() {
-        let (_temp, storage) = fixture();
-        let contents = run(storage.inspect()).unwrap();
-        assert!(contents.files.is_empty());
-        assert!(contents.playlists.is_empty());
-    }
-
-    #[test]
-    fn inspection_finds_audio_and_reprise_playlists_but_not_other_files() {
-        let (temp, storage) = fixture();
-        fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
-        fs::write(temp.path().join("Music/Reprise/Road/1-song.flac"), b"audio").unwrap();
-        fs::write(temp.path().join("Music/loose.mp3"), b"audio2").unwrap();
-        fs::write(temp.path().join("Music/notes.txt"), b"ignore").unwrap();
-        fs::write(
-            temp.path().join("Music/Reprise/Road.m3u8"),
-            b"#EXTM3U\nRoad/1-song.flac\n",
-        )
-        .unwrap();
-
-        let contents = run(storage.inspect()).unwrap();
-        let paths = contents
-            .files
-            .iter()
-            .map(|file| file.relative_path.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(paths, ["Reprise/Road/1-song.flac", "loose.mp3"]);
-        assert_eq!(contents.playlists.len(), 1);
-        assert_eq!(contents.playlists[0].name, "Road");
-        assert_eq!(
-            contents.playlists[0].entries,
-            vec![M3uEntry {
-                path: "Road/1-song.flac".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn copy_creates_managed_directories_and_reports_progress() {
-        let (temp, storage) = fixture();
-        let source_path = temp.path().join("source.flac");
-        fs::write(&source_path, vec![7_u8; 32 * 1024]).unwrap();
-        let progress = Rc::new(RefCell::new(Vec::new()));
-        let observed = progress.clone();
-        let outcome = run(storage.copy_track(
-            &gio::File::for_path(&source_path),
-            "Road/7-source.flac",
-            32 * 1024,
-            &gio::Cancellable::new(),
-            move |copied, total| observed.borrow_mut().push((copied, total)),
-        ))
-        .unwrap();
-
-        assert_eq!(outcome, CopyOutcome::Copied);
-        assert_eq!(
-            fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
-            vec![7_u8; 32 * 1024]
-        );
-        assert!(progress
-            .borrow()
-            .windows(2)
-            .all(|pair| pair[0].0 <= pair[1].0));
-        assert_eq!(
-            progress.borrow().last().copied(),
-            Some((32 * 1024, 32 * 1024))
-        );
-    }
-
-    #[test]
-    fn same_size_destination_is_skipped_without_overwrite() {
-        let (temp, storage) = fixture();
-        fs::create_dir_all(temp.path().join("Music/Reprise/Road")).unwrap();
-        fs::write(temp.path().join("source.flac"), b"new!").unwrap();
-        fs::write(
-            temp.path().join("Music/Reprise/Road/7-source.flac"),
-            b"old!",
-        )
-        .unwrap();
-        let outcome = run(storage.copy_track(
-            &gio::File::for_path(temp.path().join("source.flac")),
-            "Road/7-source.flac",
-            4,
-            &gio::Cancellable::new(),
-            |_copied, _total| {},
-        ))
-        .unwrap();
-        assert_eq!(outcome, CopyOutcome::Skipped);
-        assert_eq!(
-            fs::read(temp.path().join("Music/Reprise/Road/7-source.flac")).unwrap(),
-            b"old!"
-        );
-    }
-
-    #[test]
-    fn copy_rejects_paths_outside_the_managed_root() {
-        let (temp, storage) = fixture();
-        fs::write(temp.path().join("source.flac"), b"x").unwrap();
-        let result = run(storage.copy_track(
-            &gio::File::for_path(temp.path().join("source.flac")),
-            "../outside.flac",
-            1,
-            &gio::Cancellable::new(),
-            |_copied, _total| {},
-        ));
-        assert!(matches!(result, Err(DeviceIoError::InvalidRelativePath)));
-        assert!(!temp.path().join("Music/outside.flac").exists());
-    }
-
-    #[test]
-    fn playlist_replace_and_read_round_trip() {
-        let (_temp, storage) = fixture();
-        run(storage.replace_playlist("Road", b"#EXTM3U\nRoad/7-song.flac\n".to_vec())).unwrap();
-        assert_eq!(
-            run(storage.read_playlist("Road")).unwrap(),
-            vec![M3uEntry {
-                path: "Road/7-song.flac".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn pre_cancelled_copy_leaves_no_partial_file() {
-        let (temp, storage) = fixture();
-        fs::write(temp.path().join("source.flac"), vec![1_u8; 1024]).unwrap();
-        let cancellable = gio::Cancellable::new();
-        cancellable.cancel();
-        let result = run(storage.copy_track(
-            &gio::File::for_path(temp.path().join("source.flac")),
-            "Road/1-source.flac",
-            1024,
-            &cancellable,
-            |_copied, _total| {},
-        ));
-        assert!(result.is_err());
-        assert!(!temp
-            .path()
-            .join("Music/Reprise/Road/1-source.flac.reprise-part")
-            .exists());
-    }
-
-    #[test]
-    fn local_fixture_reports_available_space_when_supported() {
-        let (_temp, storage) = fixture();
-        assert!(run(storage.available_bytes()).unwrap().is_some());
-    }
-}
+#[path = "device_sync_tests.rs"]
+mod tests;
