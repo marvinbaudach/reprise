@@ -40,20 +40,13 @@ struct DeviceCard {
     open_name: Rc<RefCell<String>>,
 }
 
-pub(super) fn bind(
-    sidebar_root: &gtk4::Box,
-    runtime: &Rc<DeviceSyncRuntime>,
-    on_open: OpenCallback,
-) {
+pub(super) fn bind(runtime: &Rc<DeviceSyncRuntime>, on_open: OpenCallback) -> gtk4::Box {
     let section = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     section.set_margin_start(10);
     section.set_margin_end(10);
     section.set_margin_top(8);
     section.set_margin_bottom(8);
     section.set_visible(false);
-    let first = sidebar_root.first_child();
-    sidebar_root.insert_child_after(&section, first.as_ref());
-
     let heading = gtk4::Label::new(Some("DEVICES"));
     heading.add_css_class("caption");
     heading.add_css_class("dim-label");
@@ -68,6 +61,7 @@ pub(super) fn bind(
         move |state| render(&section, &cards, &state, &on_open)
     }));
     subscription.retain_for_widget(&section);
+    section
 }
 
 fn render(

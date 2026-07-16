@@ -232,6 +232,8 @@ pub mod session_restore;
 pub mod shortcuts;
 #[path = "sidebar/sidebar.rs"]
 pub mod sidebar;
+#[path = "sidebar/sidebar_activity_slot.rs"]
+mod sidebar_activity_slot;
 #[path = "sidebar/sidebar_device_card.rs"]
 mod sidebar_device_card;
 #[path = "sidebar/sidebar_dnd.rs"]
