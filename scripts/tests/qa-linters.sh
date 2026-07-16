@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+cd "$repo_root"
+
+require_executable() {
+  local path=$1
+  if [[ ! -x "$path" ]]; then
+    echo "$path must exist and be executable" >&2
+    exit 1
+  fi
+}
+
+require_pattern() {
+  local pattern=$1
+  local path=$2
+  if ! rg --quiet "$pattern" "$path"; then
+    echo "$path must contain policy pattern: $pattern" >&2
+    exit 1
+  fi
+}
+
+require_executable scripts/check-architecture.sh
+require_executable scripts/check-merge-readiness.sh
+require_executable scripts/install-git-hooks.sh
+require_executable .githooks/pre-push
+
+require_pattern 'merge-base --is-ancestor' scripts/check-merge-readiness.sh
+require_pattern 'status --porcelain' scripts/check-merge-readiness.sh
+require_pattern 'cargo fmt --check' scripts/check-merge-readiness.sh
+require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings' scripts/check-merge-readiness.sh
+require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
+require_pattern 'cargo audit' scripts/check-merge-readiness.sh
+require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
+require_pattern 'Frontend lint' scripts/check-architecture.sh
+require_pattern 'gtk4::CssProvider::new' scripts/check-architecture.sh
+require_pattern 'style_context' scripts/check-architecture.sh
+require_pattern 'reqwest::blocking' scripts/check-architecture.sh
+require_pattern 'gst-launch-1\\.0' scripts/check-architecture.sh
+require_pattern 'check-merge-readiness.sh' .githooks/pre-push
+require_pattern 'core.hooksPath .githooks' scripts/install-git-hooks.sh
+
+scripts/check-architecture.sh
+
+echo "QA linter policy checks passed"
