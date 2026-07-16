@@ -107,7 +107,12 @@ fn color_scheme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
         strings::text(strings::SCHEME_DARK),
         strings::text(strings::SCHEME_LIGHT),
     ];
-    let model = gtk4::StringList::new(&schemes.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+    let model = gtk4::StringList::new(
+        &schemes
+            .iter()
+            .map(std::string::String::as_str)
+            .collect::<Vec<_>>(),
+    );
     let row = adw::ComboRow::builder()
         .title(strings::text(strings::COLOR_SCHEME))
         .subtitle(strings::text(strings::COLOR_SCHEME_SUBTITLE))
@@ -131,10 +136,9 @@ fn color_scheme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
                 _ => "system",
             };
             style::set_color_scheme(scheme);
-            if let Err(error) = reprise_core::library::settings::set_color_scheme(
-                &context.conn.borrow(),
-                scheme,
-            ) {
+            if let Err(error) =
+                reprise_core::library::settings::set_color_scheme(&context.conn.borrow(), scheme)
+            {
                 tracing::warn!(%error, "could not persist color scheme");
             }
         }

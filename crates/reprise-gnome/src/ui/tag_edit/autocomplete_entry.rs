@@ -33,11 +33,7 @@ pub struct AutocompleteEntry {
 }
 
 impl AutocompleteEntry {
-    pub fn new(
-        title: &str,
-        column: AutocompleteColumn,
-        conn: Rc<RefCell<Connection>>,
-    ) -> Self {
+    pub fn new(title: &str, column: AutocompleteColumn, conn: Rc<RefCell<Connection>>) -> Self {
         let row = adw::EntryRow::builder().title(title).build();
         let listbox = gtk4::ListBox::builder()
             .selection_mode(gtk4::SelectionMode::Single)
@@ -119,29 +115,26 @@ impl AutocompleteEntry {
             let debounce_inner = debounce.clone();
 
             // timeout_add_local returns a SourceId we can cancel later
-            let source = glib::timeout_add_local(
-                Duration::from_millis(DEBOUNCE_MS),
-                move || {
-                    *debounce_inner.borrow_mut() = None;
-                    let suggestions = {
-                        let conn = conn.borrow();
-                        match query_autocomplete_suggestions(&conn, column, &input, MAX_SUGGESTIONS) {
-                            Ok(suggestions) => suggestions,
-                            Err(error) => {
-                                tracing::warn!(%error, "autocomplete query failed");
-                                Vec::new()
-                            }
+            let source = glib::timeout_add_local(Duration::from_millis(DEBOUNCE_MS), move || {
+                *debounce_inner.borrow_mut() = None;
+                let suggestions = {
+                    let conn = conn.borrow();
+                    match query_autocomplete_suggestions(&conn, column, &input, MAX_SUGGESTIONS) {
+                        Ok(suggestions) => suggestions,
+                        Err(error) => {
+                            tracing::warn!(%error, "autocomplete query failed");
+                            Vec::new()
                         }
-                    };
-                    populate_listbox(&listbox, &suggestions, &input);
-                    if suggestions.is_empty() || input.is_empty() {
-                        popover.popdown();
-                    } else {
-                        popover.popup();
                     }
-                    glib::ControlFlow::Break
-                },
-            );
+                };
+                populate_listbox(&listbox, &suggestions, &input);
+                if suggestions.is_empty() || input.is_empty() {
+                    popover.popdown();
+                } else {
+                    popover.popup();
+                }
+                glib::ControlFlow::Break
+            });
             *debounce.borrow_mut() = Some(source);
         });
     }
@@ -216,11 +209,7 @@ impl Drop for AutocompleteEntry {
 /// Extract the plain-text value from a list row built by `populate_listbox`.
 ///
 /// Row structure: `ListBoxRow` → `Box` (hbox) → `Label` (value, first child)
-fn accept_row(
-    entry: &adw::EntryRow,
-    list_row: &gtk4::ListBoxRow,
-    suppress: &Rc<RefCell<bool>>,
-) {
+fn accept_row(entry: &adw::EntryRow, list_row: &gtk4::ListBoxRow, suppress: &Rc<RefCell<bool>>) {
     let Some(label) = list_row
         .child()
         .and_then(|w| w.first_child())
@@ -236,18 +225,14 @@ fn accept_row(
 }
 
 fn move_selection(listbox: &gtk4::ListBox, direction: i32) {
-    let current = listbox.selected_row().map(|r| r.index()).unwrap_or(-1);
+    let current = listbox.selected_row().map_or(-1, |r| r.index());
     let next = current + direction;
     if let Some(row) = listbox.row_at_index(next) {
         listbox.select_row(Some(&row));
     }
 }
 
-fn populate_listbox(
-    listbox: &gtk4::ListBox,
-    suggestions: &[AutocompleteSuggestion],
-    input: &str,
-) {
+fn populate_listbox(listbox: &gtk4::ListBox, suggestions: &[AutocompleteSuggestion], input: &str) {
     // Clear existing rows — remove accepts &Widget, no downcast needed
     while let Some(child) = listbox.first_child() {
         listbox.remove(&child);
@@ -273,7 +258,9 @@ fn populate_listbox(
 
         // Track count label
         let count_label = gtk4::Label::builder()
-            .label(&crate::ui::strings::tag_autocomplete_track_count(suggestion.track_count))
+            .label(crate::ui::strings::tag_autocomplete_track_count(
+                suggestion.track_count,
+            ))
             .css_classes(["dim-label"])
             .build();
 

@@ -87,14 +87,15 @@ fn begin(shared: &Rc<Shared>) {
     };
     let conn = shared.conn.clone();
     let shared_for_apply = shared.clone();
+    let tracks_for_apply = tracks.clone();
     tag_editor::present(
         &window,
-        conn,
-        tracks.clone(),
-        tags,
-        ratings,
+        &conn,
+        &tracks,
+        &tags,
+        &ratings,
         move |patch| {
-            start_apply(&shared_for_apply, tracks.clone(), patch);
+            start_apply(&shared_for_apply, tracks_for_apply.clone(), patch);
         },
         |_direction| false,
     );

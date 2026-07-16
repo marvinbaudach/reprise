@@ -17,7 +17,7 @@ use rusqlite::Connection;
 
 use reprise_core::cover::{self, ThumbnailSize};
 use reprise_core::library::tag_edit::{
-    summarize, summarize_values, EditableTags, EditableTagSummary, MixedValue, TagPatch,
+    summarize, summarize_values, EditableTagSummary, EditableTags, MixedValue, TagPatch,
     TrackEditPatch,
 };
 use reprise_core::queries::autocomplete::AutocompleteColumn;
@@ -99,6 +99,9 @@ fn field_name(index: usize) -> String {
 const STAR_FILLED: &str = "\u{2605}";
 const STAR_OUTLINE: &str = "\u{2606}";
 
+type VoidCallback = Rc<dyn Fn()>;
+type VoidCallbackSlot = Rc<RefCell<Option<VoidCallback>>>;
+
 // ── Snapshot for revert ──────────────────────────────────────────────────────
 
 struct FieldSnapshot {
@@ -112,10 +115,10 @@ struct FieldSnapshot {
 
 pub fn present(
     parent: &adw::ApplicationWindow,
-    conn: Rc<RefCell<Connection>>,
-    tracks: Vec<(i64, PathBuf)>,
-    tags: Vec<EditableTags>,
-    ratings: Vec<i32>,
+    conn: &Rc<RefCell<Connection>>,
+    tracks: &[(i64, PathBuf)],
+    tags: &[EditableTags],
+    ratings: &[i32],
     on_apply: impl Fn(TrackEditPatch) + Clone + 'static,
     on_navigate: impl Fn(NavigateDirection) -> bool + 'static,
 ) {
@@ -125,8 +128,8 @@ pub fn present(
     }
     let track_count = tracks.len();
     let is_multi = track_count > 1;
-    let summary = summarize(&tags).unwrap();
-    let rating_summary = summarize_values(&ratings).unwrap();
+    let summary = summarize(tags).unwrap();
+    let rating_summary = summarize_values(ratings).unwrap();
     let snapshot = Rc::new(FieldSnapshot {
         summary: summary.clone(),
         rating: rating_summary.clone(),
@@ -167,7 +170,7 @@ pub fn present(
 
     // ── Cover art ────────────────────────────────────────────────────────
 
-    let cover_area = build_cover_area(&tracks, is_multi);
+    let cover_area = build_cover_area(tracks, is_multi);
 
     // ── Form fields ──────────────────────────────────────────────────────
 
@@ -261,11 +264,7 @@ pub fn present(
     if is_multi {
         track_no_row.set_editable(false);
         track_no_row.add_css_class("reprise-tag-mixed");
-        add_annotation(
-            &track_no_row,
-            &strings::text(strings::TAG_PER_TRACK),
-            false,
-        );
+        add_annotation(&track_no_row, &strings::text(strings::TAG_PER_TRACK), false);
     }
     set_entry_from_mixed_number(&track_no_row, &summary.track_no);
 
@@ -308,8 +307,7 @@ pub fn present(
     // MusicBrainz button
     let mb_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     mb_box.add_css_class("reprise-tag-mb");
-    let mb_btn =
-        gtk4::Button::with_label(&strings::text(strings::TAG_FETCH_MUSICBRAINZ));
+    let mb_btn = gtk4::Button::with_label(&strings::text(strings::TAG_FETCH_MUSICBRAINZ));
     mb_btn.set_sensitive(false); // Task 5 wires this
     mb_box.append(&mb_btn);
     let mb_hint = gtk4::Label::new(Some(&strings::text(strings::TAG_FETCH_HINT)));
@@ -372,14 +370,13 @@ pub fn present(
 
     // Late-bound reference so revert callbacks inside update_save_state can
     // call update_save_state itself without a circular Rc construction.
-    let update_fn_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let update_fn_holder: VoidCallbackSlot = Rc::new(RefCell::new(None));
 
     // Helper: update save-button sensitivity + pending bar
     let update_save_state = {
         let dirty = dirty.clone();
         let save_btn = save_btn.clone();
         let pending_bar = pending_bar.clone();
-        let is_multi = is_multi;
         let snapshot = snapshot.clone();
         let update_fn_holder = update_fn_holder.clone();
 
@@ -452,8 +449,7 @@ pub fn present(
                             let snap = snapshot.clone();
                             let on_revert: Box<dyn Fn()> = Box::new(move || {
                                 // Restore original value
-                                let orig_text =
-                                    field_snapshot_text(&snap.summary, idx);
+                                let orig_text = field_snapshot_text(&snap.summary, idx);
                                 let was_mixed = field_snapshot_is_mixed(&snap.summary, idx);
                                 if was_mixed {
                                     row_c.set_editable(false);
@@ -469,8 +465,7 @@ pub fn present(
                                 dirty_flag.set(false);
                                 update();
                             });
-                            let item =
-                                build_pending_item(&field_name(idx), &row.text(), on_revert);
+                            let item = build_pending_item(&field_name(idx), &row.text(), on_revert);
                             pending_bar.append(&item);
                         }
                     }
@@ -492,11 +487,8 @@ pub fn present(
                             dirty_flag.set(false);
                             update();
                         });
-                        let item = build_pending_item(
-                            &field_name(FIELD_RATING),
-                            &rating_text,
-                            on_revert,
-                        );
+                        let item =
+                            build_pending_item(&field_name(FIELD_RATING), &rating_text, on_revert);
                         pending_bar.append(&item);
                     }
 
@@ -514,15 +506,14 @@ pub fn present(
     // Wire entry-row changed signals
     let update_save_state: Rc<dyn Fn()> = update_save_state;
 
-    let wire_entry_dirty =
-        |row: &adw::EntryRow, field_idx: usize, update: &Rc<dyn Fn()>| {
-            let dirty_flag = dirty[field_idx].clone();
-            let update = update.clone();
-            row.connect_changed(move |_| {
-                dirty_flag.set(true);
-                update();
-            });
-        };
+    let wire_entry_dirty = |row: &adw::EntryRow, field_idx: usize, update: &Rc<dyn Fn()>| {
+        let dirty_flag = dirty[field_idx].clone();
+        let update = update.clone();
+        row.connect_changed(move |_| {
+            dirty_flag.set(true);
+            update();
+        });
+    };
 
     wire_entry_dirty(&title_row, FIELD_TITLE, &update_save_state);
     wire_entry_dirty(&year_row, FIELD_YEAR, &update_save_state);
@@ -567,14 +558,11 @@ pub fn present(
         let dirty_flag = dirty[FIELD_RATING].clone();
         let update = update_save_state.clone();
         let rating_value_c = rating_value.clone();
-        wire_star_clicks(
-            &rating_box,
-            &rating_value_c,
-            Rc::new(move || {
-                dirty_flag.set(true);
-                update();
-            }),
-        );
+        let on_rating_changed: VoidCallback = Rc::new(move || {
+            dirty_flag.set(true);
+            update();
+        });
+        wire_star_clicks(&rating_box, &rating_value_c, &on_rating_changed);
     }
 
     // ── Save action ──────────────────────────────────────────────────────
@@ -612,13 +600,14 @@ pub fn present(
             mb_btn_c.set_sensitive(false);
             mb_hint_c.set_text(&strings::text(strings::TAG_FETCH_LOADING));
 
-            let (tx, rx) = async_channel::bounded::<Result<release_lookup::ReleaseLookupResult, String>>(1);
+            let (tx, rx) =
+                async_channel::bounded::<Result<release_lookup::ReleaseLookupResult, String>>(1);
 
             if let Err(error) = std::thread::Builder::new()
                 .name("reprise-mb-lookup".into())
                 .spawn(move || {
-                    let result = release_lookup::lookup_release(&artist, &album)
-                        .map_err(|e| e.to_string());
+                    let result =
+                        release_lookup::lookup_release(&artist, &album).map_err(|e| e.to_string());
                     let _ = tx.send_blocking(result);
                 })
             {
@@ -702,10 +691,7 @@ pub fn present(
 
         Rc::new(move || {
             let year_p = number_patch(dirty[FIELD_YEAR].get(), year_row.text().as_str());
-            let track_p = number_patch(
-                dirty[FIELD_TRACK_NO].get(),
-                track_no_row.text().as_str(),
-            );
+            let track_p = number_patch(dirty[FIELD_TRACK_NO].get(), track_no_row.text().as_str());
             let (Ok(year_p), Ok(track_p)) = (year_p, track_p) else {
                 year_row.add_css_class("error");
                 track_no_row.add_css_class("error");
@@ -923,7 +909,7 @@ fn load_cover_picture(track_path: Option<&Path>) -> gtk4::Box {
     picture.set_can_shrink(true);
 
     let loaded = track_path
-        .and_then(|path| cover::resolve_source(path))
+        .and_then(cover::resolve_source)
         .and_then(|source| cover::thumbnail(&source, ThumbnailSize::Grid).ok());
 
     if let Some(thumb_path) = loaded {
@@ -998,7 +984,7 @@ fn update_star_display(container: &gtk4::Box, rating: i32) {
 fn wire_star_clicks(
     container: &gtk4::Box,
     rating_value: &Rc<Cell<i32>>,
-    on_changed: Rc<dyn Fn()>,
+    on_changed: &VoidCallback,
 ) {
     let mut child = container.first_child();
     let mut idx: i32 = 1;
@@ -1052,11 +1038,7 @@ fn init_autocomplete_from_mixed(
         MixedValue::Uniform(text) => {
             ac.set_text(text);
             if is_multi {
-                add_annotation(
-                    ac.row(),
-                    &strings::text(strings::TAG_SAME_ON_ALL),
-                    false,
-                );
+                add_annotation(ac.row(), &strings::text(strings::TAG_SAME_ON_ALL), false);
             }
             None
         }
@@ -1115,7 +1097,11 @@ fn add_annotation(row: &adw::EntryRow, text: &str, accent: bool) -> gtk4::Label 
 /// editing. On first click: makes the entry editable, clears the text,
 /// removes the mixed CSS class, and updates the annotation to the
 /// "will be applied to all N" copy.
-fn attach_click_to_unlock(row: &adw::EntryRow, annotation: Option<&gtk4::Label>, track_count: usize) {
+fn attach_click_to_unlock(
+    row: &adw::EntryRow,
+    annotation: Option<&gtk4::Label>,
+    track_count: usize,
+) {
     let row_c = row.clone();
     let annotation_c = annotation.cloned();
     let will_apply = strings::tag_will_apply(track_count);
@@ -1279,7 +1265,10 @@ mod tests {
     #[test]
     fn field_name_covers_all_indices() {
         for i in 0..FIELD_COUNT {
-            assert!(!field_name(i).is_empty(), "field_name({i}) should not be empty");
+            assert!(
+                !field_name(i).is_empty(),
+                "field_name({i}) should not be empty"
+            );
         }
     }
 }

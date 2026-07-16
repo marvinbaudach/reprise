@@ -359,9 +359,7 @@ pub const TAG_SAME_ON_ALL: &str = N_!("same on all");
 pub const TAG_EDIT_TITLE_SINGLE: &str = N_!("Edit Tags");
 pub const TAG_EDIT_TITLE_MULTI: &str = N_!("Edit {count} Tracks");
 pub const TAG_PER_TRACK: &str = N_!("per track");
-pub const TAG_MIXED_COUNT: &str = N_!("{count} values");
 pub const TAG_WILL_APPLY: &str = N_!("will be applied to all {count}");
-pub const TAG_ALBUM_ARTIST_PLACEHOLDER: &str = N_!("Same as artist");
 pub const TAG_SAVE: &str = N_!("Save");
 pub const TAG_SAVE_COUNT: &str = N_!("Save {count}");
 pub const TAG_PENDING_CHANGES: &str = N_!("{count} change pending");
@@ -377,7 +375,6 @@ pub const TAG_FETCH_NOTHING_TO_FILL: &str = N_!("Done — all fields already hav
 pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
 pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
 pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
-pub const TAG_TRACK_POSITION: &str = N_!("Track {current} of {total}");
 pub const TAG_CHANGE_COVER: &str = N_!("Change cover\u{2026}");
 
 pub fn tag_edit_title_multi(count: usize) -> String {
@@ -398,21 +395,6 @@ pub fn tag_pending_count(count: usize) -> String {
         count,
         &[("count", &count_text)],
     )
-}
-
-pub fn tag_track_position(current: usize, total: usize) -> String {
-    formatted(
-        TAG_TRACK_POSITION,
-        &[
-            ("current", &current.to_string()),
-            ("total", &total.to_string()),
-        ],
-    )
-}
-
-pub fn tag_mixed_count(count: usize) -> String {
-    let count_text = count.to_string();
-    formatted(TAG_MIXED_COUNT, &[("count", &count_text)])
 }
 
 pub fn tag_will_apply(count: usize) -> String {
@@ -585,7 +567,7 @@ pub fn scan_tooltip_discovering() -> String {
 }
 
 pub fn scan_tooltip_progress(pct: u32) -> String {
-    format!("Scanning \u{00B7} {}%", pct)
+    format!("Scanning \u{00B7} {pct}%")
 }
 
 // Status bar (src/ui/status_bar.rs).
@@ -1002,7 +984,6 @@ pub const ALBUM_SORT_YEAR: &str = N_!("Year");
 pub const ALBUM_SORT_MOST_PLAYED: &str = N_!("Most played");
 pub const ALBUM_COUNT_FMT: &str = N_!("{} albums");
 pub const ALBUM_SEARCH_EMPTY: &str = N_!("No albums match \"{}\"");
-pub const ALBUM_SEARCH_CLEAR: &str = N_!("Clear");
 
 pub const ALBUM_MENU_PLAY: &str = N_!("Play");
 pub const ALBUM_MENU_SHUFFLE: &str = N_!("Shuffle Album");
@@ -1018,9 +999,9 @@ pub fn album_duration(total_ms: i64) -> String {
     let hours = total_min / 60;
     let mins = total_min % 60;
     if hours > 0 {
-        format!("{}h {}min", hours, mins)
+        format!("{hours}h {mins}min")
     } else {
-        format!("{} min", mins)
+        format!("{mins} min")
     }
 }
 

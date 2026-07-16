@@ -265,7 +265,7 @@ pub struct PlayerController {
     /// when playback stops. `pub(super)` field so sibling modules can fire it;
     /// public setter so `window.rs` can register the album-view callback.
     pub(super) now_playing_album_changed:
-        RefCell<Option<Rc<dyn Fn(Option<(String, String)>)>>>,
+        RefCell<Option<super::current_track_selection::OnNowPlayingAlbumChanged>>,
     /// Same seam as `playback_state_changed`, but for the album grid's
     /// now-playing equaliser (freeze on pause). Kept as a separate named slot
     /// so the track-list and album-view consumers stay independent.

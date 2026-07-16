@@ -21,7 +21,9 @@ use reprise_core::library::scanner::{ScanError, ScanProgress, ScanReport};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::{self, WatcherHandle};
 
-use super::scan_progress::{EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView};
+use super::scan_progress::{
+    EmptyScanIndicator, ScanProgressView, WeakEmptyScanIndicator, WeakScanProgressView,
+};
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
@@ -48,6 +50,8 @@ type OnScanComplete = Rc<dyn Fn()>;
 #[derive(Clone, Default)]
 struct ScanCompletion(Rc<RefCell<Option<OnScanComplete>>>);
 
+type OnScanStateChanged = Rc<dyn Fn(bool)>;
+
 impl ScanCompletion {
     fn set(&self, callback: impl Fn() + 'static) {
         self.0.borrow_mut().replace(Rc::new(callback));
@@ -72,7 +76,7 @@ pub(super) struct ScanControls {
     current_progress: Rc<RefCell<Option<ScanProgress>>>,
     completion: ScanCompletion,
     cancel_token: Arc<AtomicBool>,
-    on_scan_state_changed: Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>,
+    on_scan_state_changed: Rc<RefCell<Option<OnScanStateChanged>>>,
     /// Weak reference to the indicator embedded in the empty-library status
     /// page. `None` until `set_empty_indicator` is called from `window.rs`
     /// after both `track_list` and `scan_controls` exist.
@@ -233,7 +237,7 @@ impl ScanControls {
             .empty_indicator
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(super::scan_progress::WeakEmptyScanIndicator::upgrade)
         {
             indicator.show(progress);
         }
@@ -241,11 +245,13 @@ impl ScanControls {
             .sidebar_toggle
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(libadwaita::glib::WeakRef::upgrade)
         {
             let tooltip = match progress {
                 ScanProgress::Discovering => Some(strings::scan_tooltip_discovering()),
-                ScanProgress::Scanning { processed, total, .. } => {
+                ScanProgress::Scanning {
+                    processed, total, ..
+                } => {
                     let pct = if *total > 0 {
                         (*processed as f64 / *total as f64 * 100.0).round() as u32
                     } else {
@@ -276,7 +282,7 @@ impl ScanControls {
             .empty_indicator
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(super::scan_progress::WeakEmptyScanIndicator::upgrade)
         {
             indicator.finish();
         }
@@ -284,7 +290,7 @@ impl ScanControls {
             .sidebar_toggle
             .borrow()
             .as_ref()
-            .and_then(|w| w.upgrade())
+            .and_then(libadwaita::glib::WeakRef::upgrade)
         {
             button.set_tooltip_text(Some(&strings::text(strings::SIDEBAR_TOGGLE)));
         }
@@ -633,13 +639,13 @@ fn analyze_waveforms(db_path: &std::path::Path) {
         Ok(c) => c,
         Err(_) => return,
     };
-    let tracks: Vec<(i64, String)> = match conn.prepare(
-        "SELECT id, path FROM tracks WHERE waveform_peaks IS NULL AND missing = 0",
-    ) {
+    let tracks: Vec<(i64, String)> = match conn
+        .prepare("SELECT id, path FROM tracks WHERE waveform_peaks IS NULL AND missing = 0")
+    {
         Ok(mut stmt) => stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .map(|rows| rows.filter_map(std::result::Result::ok).collect())
             .unwrap_or_default(),
         Err(_) => return,
     };
@@ -650,7 +656,11 @@ fn analyze_waveforms(db_path: &std::path::Path) {
         return;
     }
     let total = tracks.len();
-    tracing::info!(total, workers = WAVEFORM_WORKERS, "waveform backfill: starting");
+    tracing::info!(
+        total,
+        workers = WAVEFORM_WORKERS,
+        "waveform backfill: starting"
+    );
 
     let cursor = std::sync::atomic::AtomicUsize::new(0);
     let done = std::sync::atomic::AtomicUsize::new(0);
@@ -674,12 +684,8 @@ fn analyze_waveforms(db_path: &std::path::Path) {
                         crate::ui::waveform_peaks::STORED_PEAK_COUNT,
                     ) {
                         Ok(peaks) => {
-                            if reprise_core::db::set_waveform_peaks(
-                                &worker_conn,
-                                track_id,
-                                &peaks,
-                            )
-                            .is_ok()
+                            if reprise_core::db::set_waveform_peaks(&worker_conn, track_id, &peaks)
+                                .is_ok()
                             {
                                 done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             } else {
@@ -690,10 +696,9 @@ fn analyze_waveforms(db_path: &std::path::Path) {
                             failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         }
                     }
-                    let progress =
-                        done.load(std::sync::atomic::Ordering::Relaxed)
-                            + failed.load(std::sync::atomic::Ordering::Relaxed);
-                    if progress % 100 == 0 {
+                    let progress = done.load(std::sync::atomic::Ordering::Relaxed)
+                        + failed.load(std::sync::atomic::Ordering::Relaxed);
+                    if progress.is_multiple_of(100) {
                         tracing::info!(
                             done = done.load(std::sync::atomic::Ordering::Relaxed),
                             failed = failed.load(std::sync::atomic::Ordering::Relaxed),

@@ -11,6 +11,7 @@ use super::strings;
 
 const PULSE_INTERVAL: Duration = Duration::from_millis(100);
 const PULSE_STEP: f64 = 0.08;
+type OnCancel = Rc<dyn Fn()>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ProgressMode {
@@ -97,7 +98,7 @@ struct ScanProgressWidgets {
     detail: gtk4::Label,
     pulse_generation: Rc<Cell<u64>>,
     phase: Rc<Cell<DisplayPhase>>,
-    on_cancel: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    on_cancel: Rc<RefCell<Option<OnCancel>>>,
 }
 
 #[derive(Clone)]
@@ -111,9 +112,7 @@ impl WeakScanProgressView {
 
 impl ScanProgressView {
     pub(super) fn new() -> Self {
-        let spinner = gtk4::Spinner::builder()
-            .spinning(false)
-            .build();
+        let spinner = gtk4::Spinner::builder().spinning(false).build();
         spinner.add_css_class("scan-card-spinner");
 
         let title = gtk4::Label::builder()
@@ -134,9 +133,7 @@ impl ScanProgressView {
         header.append(&title);
         header.append(&percent);
 
-        let progress = gtk4::ProgressBar::builder()
-            .hexpand(true)
-            .build();
+        let progress = gtk4::ProgressBar::builder().hexpand(true).build();
         progress.set_pulse_step(PULSE_STEP);
 
         let detail = gtk4::Label::builder()
@@ -159,7 +156,7 @@ impl ScanProgressView {
             .reveal_child(false)
             .build();
 
-        let on_cancel: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let on_cancel: Rc<RefCell<Option<OnCancel>>> = Rc::new(RefCell::new(None));
 
         // Right-click (button 3) on the card triggers cancel.
         let click = gtk4::GestureClick::new();
@@ -216,7 +213,9 @@ impl ScanProgressView {
 
     pub(super) fn show(&self, progress: &ScanProgress) {
         let state = view_state(progress);
-        self.inner.title.set_label(&strings::text(strings::SCAN_CARD_TITLE));
+        self.inner
+            .title
+            .set_label(&strings::text(strings::SCAN_CARD_TITLE));
         self.inner.spinner.set_spinning(true);
         self.inner.revealer.set_reveal_child(true);
 
@@ -254,9 +253,9 @@ impl ScanProgressView {
         match progress {
             ScanProgress::Fetching { done, total } => {
                 let remaining = total.saturating_sub(*done);
-                self.inner.container.set_tooltip_text(Some(
-                    &strings::scan_card_tooltip(remaining),
-                ));
+                self.inner
+                    .container
+                    .set_tooltip_text(Some(&strings::scan_card_tooltip(remaining)));
             }
             _ => {
                 self.inner.container.set_tooltip_text(None);
@@ -316,14 +315,10 @@ struct EmptyScanWidgets {
 
 impl EmptyScanIndicator {
     pub(super) fn new() -> Self {
-        let spinner = gtk4::Spinner::builder()
-            .spinning(false)
-            .build();
+        let spinner = gtk4::Spinner::builder().spinning(false).build();
         spinner.add_css_class("scan-card-spinner");
 
-        let label = gtk4::Label::builder()
-            .label("")
-            .build();
+        let label = gtk4::Label::builder().label("").build();
         label.add_css_class("dim-label");
 
         let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
@@ -384,9 +379,7 @@ pub(super) struct WeakEmptyScanIndicator(Weak<EmptyScanWidgets>);
 
 impl WeakEmptyScanIndicator {
     pub(super) fn upgrade(&self) -> Option<EmptyScanIndicator> {
-        self.0
-            .upgrade()
-            .map(|inner| EmptyScanIndicator { inner })
+        self.0.upgrade().map(|inner| EmptyScanIndicator { inner })
     }
 }
 

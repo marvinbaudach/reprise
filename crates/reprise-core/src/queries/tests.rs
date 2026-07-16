@@ -27,9 +27,7 @@ fn seeded_titled_conn() -> Connection {
 #[test]
 fn query_builder_whitelists_and_sorts() {
     let q = build_track_query("artist", "asc", false);
-    assert!(q.contains(
-        "ORDER BY artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no ASC"
-    ));
+    assert!(q.contains("ORDER BY artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no ASC"));
     assert!(q.contains("WHERE missing = 0"));
     assert!(!q.contains("?3")); // no filter placeholder without a filter
 }
