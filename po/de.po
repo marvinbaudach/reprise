@@ -263,6 +263,9 @@ msgstr "Lückenlose Wiedergabe"
 msgid "No silence between tracks of the same album"
 msgstr "Keine Stille zwischen Titeln desselben Albums"
 
+msgid "Inactive while Crossfade is enabled"
+msgstr "Inaktiv, solange Überblendung eingeschaltet ist"
+
 #: crates/reprise-gnome/src/ui/strings.rs:92
 msgid "Could not apply audio effects"
 msgstr "Audioeffekte konnten nicht angewendet werden"

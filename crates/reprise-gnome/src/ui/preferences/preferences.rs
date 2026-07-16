@@ -62,6 +62,32 @@ fn crossfade_value_label(seconds: u8) -> String {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct GaplessControlState {
+    sensitive: bool,
+    subtitle: &'static str,
+}
+
+fn gapless_control_state(crossfade_seconds: u8) -> GaplessControlState {
+    if crossfade_seconds == 0 {
+        GaplessControlState {
+            sensitive: true,
+            subtitle: strings::GAPLESS_SUBTITLE,
+        }
+    } else {
+        GaplessControlState {
+            sensitive: false,
+            subtitle: strings::GAPLESS_CROSSFADE_ACTIVE_SUBTITLE,
+        }
+    }
+}
+
+fn apply_gapless_control_state(row: &adw::SwitchRow, crossfade_seconds: u8) {
+    let state = gapless_control_state(crossfade_seconds);
+    row.set_sensitive(state.sensitive);
+    row.set_subtitle(&strings::text(state.subtitle));
+}
+
 pub(super) struct PreferencesContext {
     pub(super) window: adw::ApplicationWindow,
     pub(super) conn: Rc<RefCell<Connection>>,
@@ -240,11 +266,20 @@ impl PreferencesContext {
         }
 
         let smoke = std::env::var(SMOKE_ENV).ok();
-        if matches!(smoke.as_deref(), Some("layout" | "columns")) {
-            shell.stack.set_visible_child_name("layout");
-        }
-        if smoke.as_deref() == Some("rhythmbox") {
-            shell.stack.set_visible_child_name("library");
+        let smoke_page = match smoke.as_deref() {
+            Some("columns") => Some("layout"),
+            Some("rhythmbox") => Some("library"),
+            Some(page) if super::preferences_window::page_index_by_name(page).is_some() => {
+                Some(page)
+            }
+            _ => None,
+        };
+        if let Some(page) = smoke_page {
+            let index = super::preferences_window::page_index_by_name(page)
+                .expect("smoke page was normalized to a known page");
+            shell
+                .sidebar
+                .select_row(shell.sidebar.row_at_index(index).as_ref());
         }
         if smoke.as_deref() == Some("columns") {
             self.open_column_layout_editor();
@@ -540,17 +575,19 @@ impl PreferencesContext {
         };
         let gapless = adw::SwitchRow::builder()
             .title(strings::text(strings::GAPLESS_PLAYBACK))
-            .subtitle(strings::text(strings::GAPLESS_SUBTITLE))
             .active(gapless_enabled)
             .build();
+        apply_gapless_control_state(&gapless, stored_crossfade);
         list.append(&gapless);
         transitions.add(&list);
 
         let weak = Rc::downgrade(self);
         let value_label = crossfade_value.clone();
+        let gapless_for_crossfade = gapless.clone();
         crossfade_scale.connect_value_changed(move |scale| {
             let seconds = scale.value().round() as u8;
             value_label.set_label(&crossfade_value_label(seconds));
+            apply_gapless_control_state(&gapless_for_crossfade, seconds);
             if let Some(context) = weak.upgrade() {
                 context.set_crossfade_seconds(seconds);
             }
@@ -693,6 +730,17 @@ pub(super) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gapless_control_is_available_only_without_crossfade_overlap() {
+        assert!(gapless_control_state(0).sensitive);
+        assert_eq!(gapless_control_state(0).subtitle, strings::GAPLESS_SUBTITLE);
+        assert!(!gapless_control_state(1).sensitive);
+        assert_eq!(
+            gapless_control_state(10).subtitle,
+            strings::GAPLESS_CROSSFADE_ACTIVE_SUBTITLE
+        );
+    }
 
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {
