@@ -158,6 +158,7 @@ pub struct DeviceSyncState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EnqueueError {
     UnknownDevice,
+    Busy,
     NoUsableTracks,
     InsufficientSpace {
         required_bytes: u64,
@@ -170,6 +171,7 @@ impl fmt::Display for EnqueueError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownDevice => formatter.write_str("device is not connected"),
+            Self::Busy => formatter.write_str("device synchronization is already active"),
             Self::NoUsableTracks => formatter.write_str("no available tracks were selected"),
             Self::InsufficientSpace {
                 required_bytes,

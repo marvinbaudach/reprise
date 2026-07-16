@@ -185,14 +185,16 @@ impl DeviceSyncRuntime {
         playlist: &str,
         ids: &[i64],
     ) -> Result<usize, EnqueueError> {
-        let connected = self
+        let status = self
             .device_states
             .borrow()
             .iter()
             .find(|device| device.descriptor.id == device_id)
-            .is_some_and(|device| device.connected);
-        if !connected {
-            return Err(EnqueueError::UnknownDevice);
+            .map(|device| (device.connected, device.planned_cancel.is_some()));
+        match status {
+            Some((true, false)) => {}
+            Some((true, true)) => return Err(EnqueueError::Busy),
+            Some((false, _)) | None => return Err(EnqueueError::UnknownDevice),
         }
         let tracks = reprise_core::queries::query_sync_tracks(&self.conn.borrow(), ids)
             .map_err(|error| EnqueueError::Database(error.to_string()))?;
@@ -594,7 +596,7 @@ impl DeviceSyncRuntime {
             else {
                 return;
             };
-            if device.running || !device.connected {
+            if device.running || device.planned_cancel.is_some() || !device.connected {
                 return;
             }
             let work = if let Some(work) = device.paused_work.take() {

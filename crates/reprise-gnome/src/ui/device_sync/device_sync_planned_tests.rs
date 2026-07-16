@@ -169,6 +169,26 @@ fn cancelling_planned_sync_keeps_remaining_delta_without_failure() {
 }
 
 #[test]
+fn enqueue_is_rejected_while_a_planned_sync_owns_the_device() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 20));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+
+        runtime.sync_now("a").unwrap();
+
+        assert_eq!(
+            runtime.enqueue("a", "Dropped", &[2]),
+            Err(EnqueueError::Busy)
+        );
+        settle().await;
+        assert_eq!(backend.state.max_by_device.borrow().get("a"), Some(&1));
+    });
+}
+
+#[test]
 fn reconnect_resumes_planned_sync_from_the_remaining_delta() {
     run(async {
         let (_temp, conn) = fixture();
