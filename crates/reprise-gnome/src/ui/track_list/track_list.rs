@@ -664,6 +664,14 @@ impl TrackList {
     pub fn set_on_import_errors_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_import_errors_mutated.borrow_mut() = Some(Rc::new(callback));
     }
+
+    /// Sets a widget as the child of the empty-library status page, so it
+    /// appears below the icon/title/description during a first scan.
+    /// Called from `window.rs` after the `EmptyScanIndicator` is created,
+    /// to embed its container widget in the status page.
+    pub fn set_empty_scan_widget(&self, widget: &impl IsA<gtk4::Widget>) {
+        self.shared.empty_page.set_child(Some(widget));
+    }
 }
 
 /// Clone-out-then-call `on_import_errors_mutated` (hoisted per this

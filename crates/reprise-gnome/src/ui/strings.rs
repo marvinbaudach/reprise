@@ -350,6 +350,20 @@ pub const NOTHING_HERE_TITLE: &str = N_!("Nothing here");
 pub const NOTHING_HERE_DESCRIPTION: &str = N_!("This view has no tracks right now");
 
 // Scan flow (src/ui/scan_flow.rs and src/ui/scan_progress.rs).
+pub const SCAN_CARD_TITLE: &str = N_!("Scanning library");
+
+pub fn scan_card_tooltip(remaining: u64) -> String {
+    format!("Covers & lyrics: {remaining} queued")
+}
+
+pub fn scan_complete_toast(new_tracks: u32, failed: u32) -> String {
+    if failed > 0 {
+        format!("Scan complete · {new_tracks} new, {failed} failed")
+    } else {
+        format!("Scan complete · {new_tracks} new tracks")
+    }
+}
+
 pub const SCAN_DIALOG_TITLE: &str = N_!("Select Music Folder");
 pub const SCANNING: &str = N_!("Scanning…");
 pub const SCAN_DISCOVERING: &str = N_!("Finding music files…");
@@ -365,6 +379,19 @@ pub fn scan_progress(processed: u64, total: u64) -> String {
 /// Prefix for the error toast shown after a failed scan; the underlying
 /// `ScanError`'s `Display` text is appended by the caller.
 pub const SCAN_FAILED_PREFIX: &str = N_!("Scan failed: ");
+pub const FETCH_DETAIL: &str = N_!("covers & lyrics…");
+
+pub fn fetch_progress(done: u64, total: u64) -> String {
+    format!("{done} of {total}")
+}
+
+pub fn scan_tooltip_discovering() -> String {
+    text(N_!("Scanning\u{2026}"))
+}
+
+pub fn scan_tooltip_progress(pct: u32) -> String {
+    format!("Scanning \u{00B7} {}%", pct)
+}
 
 // Status bar (src/ui/status_bar.rs).
 pub const STATUS_TRACK_SINGULAR: &str = N_!("track");
@@ -789,6 +816,7 @@ pub const OPEN_HELP: &str = N_!("Open Help");
 // Primary menu items.
 pub const MY_STATS: &str = N_!("My Stats");
 pub const RESCAN_LIBRARY: &str = N_!("Rescan Library");
+pub const CANCEL_SCAN: &str = N_!("Cancel Scan");
 pub const SYNC_DEVICE: &str = N_!("Sync Device…");
 pub const KEYBOARD_SHORTCUTS: &str = N_!("Keyboard Shortcuts");
 pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
@@ -803,3 +831,21 @@ pub const COLOR_SCHEME_SUBTITLE: &str = N_!("Choose light, dark, or follow syste
 pub const SCHEME_LIGHT: &str = N_!("Light");
 pub const SCHEME_DARK: &str = N_!("Dark");
 pub const SCHEME_SYSTEM: &str = N_!("System");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_complete_toast_without_failures() {
+        assert_eq!(scan_complete_toast(38, 0), "Scan complete · 38 new tracks");
+    }
+
+    #[test]
+    fn scan_complete_toast_with_failures() {
+        assert_eq!(
+            scan_complete_toast(38, 3),
+            "Scan complete · 38 new, 3 failed"
+        );
+    }
+}
