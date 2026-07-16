@@ -40,6 +40,7 @@ fn app_css() -> String {
         super::browse_bar::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
+        super::sidebar_device_card::css(),
         super::list_density::css(),
         super::library_chrome::css(),
         super::library_view_css::css(),
@@ -64,7 +65,7 @@ fn app_css() -> String {
 }
 
 #[cfg(test)]
-pub(super) fn css_parse_errors(css: &str) -> Vec<String> {
+pub(in crate::ui) fn css_parse_errors(css: &str) -> Vec<String> {
     use std::rc::Rc;
 
     let errors = Rc::new(RefCell::new(Vec::new()));

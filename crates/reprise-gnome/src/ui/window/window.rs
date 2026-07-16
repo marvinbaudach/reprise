@@ -170,6 +170,7 @@ pub fn build(
             reprise_platform_linux::device_sync::DeviceMonitor::new(),
         )
     });
+    super::device_sync_actions::install(app, &device_sync);
     super::device_sync_smoke::arm(&device_sync);
 
     let player = match build_player_backends(waveform_backend.clone()) {
@@ -201,6 +202,7 @@ pub fn build(
             None => 0,
         }
     }));
+    sidebar.bind_device_sync(&device_sync);
 
     // Stage 3 Task 8: at most one folder watcher runs at a time. `None`
     // until either the startup check below finds a persisted `library_root`
@@ -282,6 +284,11 @@ pub fn build(
                 track_list.reload_queue_if_visible();
             }
         });
+        let track_list_weak = Rc::downgrade(&track_list);
+        player.set_view_refill_provider(move || match track_list_weak.upgrade() {
+            Some(track_list) => track_list.transport_refill_ids(),
+            None => Vec::new(),
+        });
     }
     let scan_progress = ScanProgressView::new();
     let scan_controls =
@@ -337,18 +344,21 @@ pub fn build(
     ));
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
+    let device_view = super::device_view::DeviceViewPage::new(&device_sync);
     let content_stack = gtk4::Stack::new();
     content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     content_stack.set_transition_duration(150);
     content_stack.add_named(&library_views.stack, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
+    content_stack.add_named(device_view.widget(), Some("device"));
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
+    // The toast layer is attached after the player-bar overlay exists so
+    // notifications render above the complete library chrome.
     let toast_overlay = adw::ToastOverlay::new();
-    toast_overlay.set_child(Some(&toolbar_view));
 
     super::window_action_wiring::wire(super::window_action_wiring::ActionWiring {
         conn,
@@ -370,7 +380,7 @@ pub fn build(
         &window,
         conn,
         &sidebar,
-        &toast_overlay,
+        &toolbar_view,
         &track_list,
         player.as_ref(),
         &artist_news,
@@ -379,6 +389,7 @@ pub fn build(
     let split_view = library_shell.split_view;
     let _content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
+    super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     let player_bar_widget = player
         .as_ref()
@@ -389,7 +400,8 @@ pub fn build(
         player_bar_widget,
         bar_position,
     );
-    let library_chrome = super::library_chrome::build(&header, library_player_bar.widget());
+    toast_overlay.set_child(Some(library_player_bar.widget()));
+    let library_chrome = super::library_chrome::build(&header, &toast_overlay);
     {
         let info_panel = Rc::downgrade(&info_panel);
         track_list.set_on_selection_changed(move |context| {
@@ -449,6 +461,10 @@ pub fn build(
         &decorations,
         &device_sync,
     );
+    {
+        let preferences = preferences.clone();
+        device_view.set_on_settings(move || preferences.present_page("synchronization"));
+    }
     super::window_runtime_wiring::wire(super::window_runtime_wiring::RuntimeWiring {
         app,
         window: &window,
@@ -464,6 +480,7 @@ pub fn build(
         player: &player,
         stats_view,
         content_stack: &content_stack,
+        device_view: &device_view,
         library_views: &library_views,
         library_title: &library_title,
         window_title: &window_title,

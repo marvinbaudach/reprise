@@ -231,6 +231,11 @@ impl InfoPanel {
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let widgets = build_widgets(content, visible);
+        // Restore the last selected tab before `wire` attaches the
+        // persistence handler, so the restore itself is never echoed back
+        // into the settings table.
+        let tab = reprise_core::library::settings::get_info_panel_tab(&conn.borrow());
+        widgets.stack.set_visible_child_name(tab.name());
         let toggle = gtk4::ToggleButton::builder()
             .icon_name("sidebar-show-right-symbolic")
             .tooltip_text(strings::text(strings::INFORMATION))
@@ -407,9 +412,23 @@ impl InfoPanel {
         let weak = Rc::downgrade(self);
         self.widgets
             .stack
-            .connect_visible_child_name_notify(move |_| {
-                if let Some(panel) = weak.upgrade() {
-                    panel.apply_header_feedback();
+            .connect_visible_child_name_notify(move |stack| {
+                let Some(panel) = weak.upgrade() else { return };
+                panel.apply_header_feedback();
+                // Persist the selected tab so the next session reopens on it.
+                let Some(tab) = stack
+                    .visible_child_name()
+                    .as_deref()
+                    .and_then(reprise_core::library::settings::InfoPanelTab::from_name)
+                else {
+                    return;
+                };
+                let saved = {
+                    let conn = panel.conn.borrow();
+                    reprise_core::library::settings::set_info_panel_tab(&conn, tab)
+                };
+                if let Err(error) = saved {
+                    tracing::warn!(%error, "could not save information panel tab");
                 }
             });
         let weak = Rc::downgrade(self);

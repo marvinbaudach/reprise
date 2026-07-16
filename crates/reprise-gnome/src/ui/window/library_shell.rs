@@ -11,6 +11,7 @@ use rusqlite::Connection;
 use super::album_view::AlbumView;
 use super::artist_news_worker::ArtistNewsRuntime;
 use super::artist_view::ArtistView;
+use super::device_view::DeviceViewPage;
 use super::info_panel::InfoPanel;
 use super::library_chrome::LibraryTitle;
 use super::now_playing_wiring;
@@ -177,6 +178,7 @@ pub(in crate::ui) fn wire_source_routing(
     stats_view: StatsView,
     conn: &Rc<RefCell<Connection>>,
     content_stack: &gtk4::Stack,
+    device_view: &Rc<DeviceViewPage>,
     views: &LibraryViews,
     title: &Rc<LibraryTitle>,
     source_title: &adw::WindowTitle,
@@ -188,11 +190,15 @@ pub(in crate::ui) fn wire_source_routing(
     let title = title.clone();
     let source_title = source_title.clone();
     let stats_view = Rc::new(stats_view);
+    let device_view = device_view.clone();
     let conn = conn.clone();
     let show_content_on_select = show_content.clone();
     sidebar.set_on_select(move |source, source_name| {
         let is_library = matches!(source, ViewSource::Library);
-        if matches!(source, ViewSource::MyStats) {
+        if let ViewSource::Device { serial } = &source {
+            device_view.show_device(serial);
+            content_stack.set_visible_child_name("device");
+        } else if matches!(source, ViewSource::MyStats) {
             stats_view.refresh(&conn);
             content_stack.set_visible_child_name("stats");
         } else {
@@ -211,7 +217,7 @@ pub(in crate::ui) fn build(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
     sidebar: &Sidebar,
-    toast_overlay: &adw::ToastOverlay,
+    content: &impl IsA<gtk4::Widget>,
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     runtime: &Rc<ArtistNewsRuntime>,
@@ -221,7 +227,7 @@ pub(in crate::ui) fn build(
         .child(sidebar.widget())
         .build();
     let info_panel = InfoPanel::new(
-        toast_overlay,
+        content,
         window,
         conn.clone(),
         runtime.clone(),

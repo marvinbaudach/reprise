@@ -361,6 +361,28 @@ impl Sidebar {
         self.root.append(widget);
     }
 
+    /// Shows connected devices below the navigation rows and routes card
+    /// activation through the existing source-selection callback.
+    pub fn bind_device_sync(
+        &self,
+        runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+    ) {
+        let shared = Rc::downgrade(&self.shared);
+        super::sidebar_device_card::bind(
+            &self.root,
+            runtime,
+            Rc::new(move |serial, name| {
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                let callback = shared.on_select.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(ViewSource::Device { serial }, name);
+                }
+            }),
+        );
+    }
+
     #[cfg(test)]
     pub(in crate::ui) fn test_shared(&self) -> &Rc<Shared> {
         &self.shared

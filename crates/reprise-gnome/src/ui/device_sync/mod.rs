@@ -1,4 +1,6 @@
+pub(in crate::ui) mod device_sync_actions;
 pub(in crate::ui) mod device_sync_backend;
+pub(in crate::ui) mod device_sync_feedback;
 pub(in crate::ui) mod device_sync_runtime;
 pub(in crate::ui) mod device_sync_smoke;
 pub(in crate::ui) mod device_sync_strings;

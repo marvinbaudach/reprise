@@ -104,10 +104,58 @@ impl PlayerController {
         match next {
             Some(id) => self.present_track(id, start),
             None => {
+                // A *manual* "next" that ran off the end of an exhausted
+                // queue (`Repeat::Off` — often a stale queue restored from
+                // the last session) refills the queue from the currently
+                // visible view instead of going silent; the user explicitly
+                // asked for more music. A natural (automatic) end of the
+                // queue still stops, as it should.
+                if reason == AdvanceReason::Manual && self.refill_queue_from_view() {
+                    return;
+                }
                 self.consecutive_skips.set(0);
                 self.failure_skip_limit.set(0);
                 self.reset_to_stopped();
             }
+        }
+    }
+
+    /// Rebuilds the exhausted playback context from the visible view's ids
+    /// (see `PlayerController::set_view_refill_provider`) and starts playing
+    /// it — at a random position when shuffle is on, from the top otherwise.
+    /// Returns whether a refill actually started playback; `false` (no
+    /// provider, empty view, or the Queue view itself) leaves the caller's
+    /// ordinary stop path in charge.
+    fn refill_queue_from_view(&self) -> bool {
+        let provider = self.view_refill_ids.borrow().clone();
+        let Some(provider) = provider else {
+            return false;
+        };
+        let ids = provider();
+        if ids.is_empty() {
+            return false;
+        }
+        let start_index = if self.queue.borrow().is_shuffled() && ids.len() > 1 {
+            let len = i32::try_from(ids.len()).unwrap_or(i32::MAX);
+            usize::try_from(gtk4::glib::random_int_range(0, len)).unwrap_or(0)
+        } else {
+            0
+        };
+        let refill_len = ids.len();
+        self.queue.borrow_mut().set_tracks(ids, start_index);
+        self.notify_queue_changed();
+        let current = self.queue.borrow().current();
+        match current {
+            Some(id) => {
+                tracing::info!(
+                    refill_len,
+                    start_index,
+                    "queue exhausted on manual next; refilled from the visible view"
+                );
+                self.play_track_id(id);
+                true
+            }
+            None => false,
         }
     }
 

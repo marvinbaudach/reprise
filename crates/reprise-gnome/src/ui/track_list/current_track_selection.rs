@@ -10,16 +10,21 @@ use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
 use super::player_controller::PlayerController;
+use super::track_list::TrackList;
 use super::track_list_activation::current_queue_ids;
-use super::TrackList;
 use crate::ui::artist_view::ArtistView;
 
-pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>)>;
+/// `(track_id, queue_position, playback_started)` — `playback_started` is
+/// `true` only when an actual playback start fired the change. Session
+/// restore and player-bar title clicks re-select the row with `false`, so
+/// they never light the now-playing equaliser while nothing is audible.
+pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, bool)>;
 /// Callback carrying coarse playback-state changes to the track list, which
 /// uses them to freeze the now-playing equaliser on pause (via the
 /// `.playback-paused` class on the `ColumnView`) and drop the marker on stop.
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
 pub(in crate::ui) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
+pub(in crate::ui) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<(String, String)>)>;
 
 fn visible_position_for_track_in_source(
     ids: &[i64],
@@ -36,6 +41,34 @@ fn visible_position_for_track_in_source(
     ids.iter()
         .position(|candidate| *candidate == current_id)
         .and_then(|position| u32::try_from(position).ok())
+}
+
+/// Adjustment value that vertically centers row `position` in the viewport.
+/// Assumes uniform row heights (true for the track table), so a row's offset
+/// is derived from the adjustment's total content height. Returns `None`
+/// when the list is not yet allocated (`upper`/`page_size` unset) or fits
+/// entirely in the viewport — in both cases there is nothing to center.
+fn centered_scroll_value(position: u32, n_rows: u32, upper: f64, page_size: f64) -> Option<f64> {
+    if n_rows == 0 || upper <= 0.0 || page_size <= 0.0 || upper <= page_size {
+        return None;
+    }
+    let row_height = upper / f64::from(n_rows);
+    let target = (f64::from(position) + 0.5) * row_height - page_size / 2.0;
+    Some(target.clamp(0.0, upper - page_size))
+}
+
+/// Resolves the adjustment + value that would center row `position`, or
+/// `None` when the list has no usable geometry (not yet allocated, or it
+/// fits the viewport entirely).
+fn centered_scroll_target(
+    column_view: &gtk4::ColumnView,
+    position: u32,
+) -> Option<(gtk4::Adjustment, f64)> {
+    let n_rows = column_view.model().map_or(0, |model| model.n_items());
+    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(column_view)?;
+    let value =
+        centered_scroll_value(position, n_rows, adjustment.upper(), adjustment.page_size())?;
+    Some((adjustment, value))
 }
 
 pub(in crate::ui) fn wire(
@@ -56,18 +89,24 @@ pub(in crate::ui) fn wire(
     let player_weak = Rc::downgrade(player);
     {
         let artist_view = artist_view.clone();
-        player.set_on_current_track_changed(move |track_id, queue_position| {
+        player.set_on_current_track_changed(move |track_id, queue_position, playback_started| {
             match track_list_for_current.upgrade() {
-                Some(track_list) => track_list.select_current_track(track_id, queue_position),
+                Some(track_list) => {
+                    track_list.select_current_track(track_id, queue_position, playback_started);
+                }
                 None => tracing::warn!(
                     track_id,
                     "current-track selection skipped: track list is gone"
                 ),
             }
-            // Light the Artists view's mini-EQ. The view groups by *album*
-            // artist, so resolve the effective album artist for the now-playing
-            // track (the same fallback the master rows group by) before handing
-            // it over.
+            // Light the Artists view's mini-EQ — only for an actual playback
+            // start; a restored-but-stopped track must not glow. The view
+            // groups by *album* artist, so resolve the effective album artist
+            // for the now-playing track (the same fallback the master rows
+            // group by) before handing it over.
+            if !playback_started {
+                return;
+            }
             if let Some(player) = player_weak.upgrade() {
                 let album_artist = player.current_track_album_artist();
                 artist_view.set_now_playing(album_artist, Some(track_id));
@@ -103,7 +142,7 @@ pub(in crate::ui) fn wire(
 impl PlayerController {
     pub(in crate::ui) fn set_on_current_track_changed(
         &self,
-        callback: impl Fn(i64, Option<usize>) + 'static,
+        callback: impl Fn(i64, Option<usize>, bool) + 'static,
     ) {
         *self.current_track_changed.borrow_mut() = Some(Rc::new(callback));
     }
@@ -112,10 +151,11 @@ impl PlayerController {
         &self,
         track_id: i64,
         queue_position: Option<usize>,
+        playback_started: bool,
     ) {
         let callback = self.current_track_changed.borrow().clone();
         if let Some(callback) = callback {
-            callback(track_id, queue_position);
+            callback(track_id, queue_position, playback_started);
         }
     }
 
@@ -154,7 +194,10 @@ impl PlayerController {
             .get()
             .or_else(|| self.queue.borrow().current());
         if let Some(track_id) = current {
-            self.notify_current_track_changed(track_id, None);
+            // `false`: this is a selection restore, not a playback start —
+            // the row is selected and centered, but the now-playing marker
+            // (equaliser) stays off until real playback fires the callback.
+            self.notify_current_track_changed(track_id, None, false);
         }
     }
 }
@@ -192,22 +235,43 @@ impl TrackList {
         })
     }
 
-    fn select_current_track(&self, track_id: i64, queue_position: Option<usize>) {
+    /// Track ids for the transport's end-of-queue refill (see
+    /// `PlayerController::set_view_refill_provider`): the visible view's
+    /// full id list, or empty when the Queue view itself is showing —
+    /// refilling the exhausted queue from its own (exhausted) contents would
+    /// just loop it, overriding the user's repeat setting.
+    pub fn transport_refill_ids(&self) -> Vec<i64> {
+        if matches!(*self.shared.source.borrow(), ViewSource::Queue) {
+            return Vec::new();
+        }
+        self.current_view_ids()
+    }
+
+    fn select_current_track(
+        &self,
+        track_id: i64,
+        queue_position: Option<usize>,
+        playback_started: bool,
+    ) {
         let ids = self.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
         // Move the now-playing marker id first, then invalidate the
         // previously-marked row so its `.now-playing` class clears. Querying
         // `ids` fresh on each change (rather than caching a position) keeps
-        // this correct across a reload that shifted every row.
-        let previous_id = self.shared.playing_track_id.replace(Some(track_id));
-        if let Some(previous_id) = previous_id.filter(|id| *id != track_id) {
-            if let Some(old_pos) = ids
-                .iter()
-                .position(|candidate| *candidate == previous_id)
-                .and_then(|position| u32::try_from(position).ok())
-            {
-                self.shared.model.invalidate_window_at(old_pos);
+        // this correct across a reload that shifted every row. Restore/title-
+        // click re-selection (`playback_started == false`) leaves the marker
+        // untouched: nothing is audible, so no row may show the equaliser.
+        if playback_started {
+            let previous_id = self.shared.playing_track_id.replace(Some(track_id));
+            if let Some(previous_id) = previous_id.filter(|id| *id != track_id) {
+                if let Some(old_pos) = ids
+                    .iter()
+                    .position(|candidate| *candidate == previous_id)
+                    .and_then(|position| u32::try_from(position).ok())
+                {
+                    self.shared.model.invalidate_window_at(old_pos);
+                }
             }
         }
 
@@ -225,19 +289,45 @@ impl TrackList {
         // it with the selection (auto-follow, kept by design).
         self.shared.model.invalidate_window_at(position);
         self.shared.selection.select_item(position, true);
-        // Defer `scroll_to` to an idle tick rather than calling it inline.
-        // During session restore this runs while the window is still being
-        // constructed — before the `ColumnView` has completed its first size
-        // allocation — and a `scroll_to` issued that early corrupts the row
-        // layout near the top of the list, leaving a persistent phantom gap
-        // (an unrendered row) that never resolves on scroll. Running it on the
-        // next idle lets GTK finish the initial allocation first; for the live
-        // track-change path (view already realized) the one-tick delay is
-        // imperceptible.
+        // Centering happens DIRECTLY through the vadjustment and — when the
+        // list already has usable geometry (the live path: a double-clicked
+        // or auto-advanced row) — SYNCHRONOUSLY, in the same main-loop
+        // iteration as the invalidate/select above. Both halves matter:
+        //
+        // - Direct adjustment write: `scroll_to` only edge-snaps, so an
+        //   earlier two-phase version (snap, then center) read as two jumps.
+        // - Same frame: the `items_changed` above recreates the focused row
+        //   widget, and GTK's focus restore can scroll on its own; a deferred
+        //   (idle) centering let that intermediate jump render for one frame
+        //   ("scrolls up, then back down"). Centering before the next frame
+        //   leaves the row visible mid-viewport, so the focus restore has
+        //   nothing left to scroll.
+        //
+        // The idle + `scroll_to` fallback only remains for a list with no
+        // geometry yet (session restore during window construction — where a
+        // scroll issued inline used to corrupt the row layout, and nothing is
+        // on screen anyway, so the two-phase motion is invisible).
         let column_view = self.shared.column_view.clone();
-        gtk4::glib::idle_add_local_once(move || {
-            column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, None);
-        });
+        match centered_scroll_target(&column_view, position) {
+            Some((adjustment, value)) => adjustment.set_value(value),
+            None => {
+                gtk4::glib::idle_add_local_once(move || {
+                    match centered_scroll_target(&column_view, position) {
+                        Some((adjustment, value)) => adjustment.set_value(value),
+                        // Still no usable geometry (or the list fits the
+                        // viewport): make the row visible; nothing to center.
+                        None => {
+                            column_view.scroll_to(
+                                position,
+                                None,
+                                gtk4::ListScrollFlags::NONE,
+                                None,
+                            );
+                        }
+                    }
+                });
+            }
+        }
         tracing::info!(track_id, position, "table selection followed current track");
     }
 
@@ -286,6 +376,29 @@ impl TrackList {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn centered_scroll_value_centers_a_mid_list_row() {
+        // 100 rows x 10px = 1000px content, 200px viewport. Row 50's middle
+        // sits at 505px; centering puts the viewport at 505 - 100 = 405.
+        assert_eq!(centered_scroll_value(50, 100, 1000.0, 200.0), Some(405.0));
+    }
+
+    #[test]
+    fn centered_scroll_value_clamps_at_both_list_edges() {
+        assert_eq!(centered_scroll_value(0, 100, 1000.0, 200.0), Some(0.0));
+        assert_eq!(centered_scroll_value(99, 100, 1000.0, 200.0), Some(800.0));
+    }
+
+    #[test]
+    fn centered_scroll_value_skips_unallocated_or_short_lists() {
+        // Not yet allocated: no geometry to work with.
+        assert_eq!(centered_scroll_value(5, 100, 0.0, 0.0), None);
+        // Whole list fits in the viewport: nothing to scroll.
+        assert_eq!(centered_scroll_value(5, 10, 100.0, 200.0), None);
+        // Empty model.
+        assert_eq!(centered_scroll_value(0, 0, 1000.0, 200.0), None);
+    }
 
     #[test]
     fn visible_position_finds_the_current_track_in_view_order() {

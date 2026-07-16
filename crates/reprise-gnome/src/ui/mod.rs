@@ -26,6 +26,7 @@ mod compact;
 mod cover;
 pub mod delete_tracks;
 mod device_sync;
+mod device_view;
 pub mod dialogs;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
@@ -78,7 +79,8 @@ use cover::{cover_download_batch, main_cover_download_progress};
 pub(crate) use cover::{cover_download_worker, cover_loader};
 #[allow(unused_imports)]
 use device_sync::{
-    device_sync_backend, device_sync_runtime, device_sync_smoke, device_sync_strings,
+    device_sync_actions, device_sync_backend, device_sync_feedback, device_sync_runtime,
+    device_sync_smoke, device_sync_strings,
 };
 #[allow(unused_imports)]
 use info_panel::{
@@ -125,12 +127,12 @@ use scan::{scan_controls, scan_progress, scan_watcher, scan_waveform_analysis, s
 #[allow(unused_imports)]
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
 #[allow(unused_imports)]
-pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
-#[allow(unused_imports)]
 use sidebar::{
-    sidebar_issue_cleanup, sidebar_issue_strings, sidebar_playlist_creation, sidebar_presentation,
-    sidebar_rebuild,
+    sidebar_device_card, sidebar_issue_cleanup, sidebar_issue_strings, sidebar_playlist_creation,
+    sidebar_presentation, sidebar_rebuild,
 };
+#[allow(unused_imports)]
+pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
 #[allow(unused_imports)]
 use stats::{hourly_chart, stats_chart, stats_chart_math};
 #[allow(unused_imports)]

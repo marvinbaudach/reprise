@@ -183,7 +183,7 @@ use reprise_core::queue::Queue;
 use reprise_core::up_next::UpNextQueue;
 use reprise_core::waveform::WaveformBackend;
 
-type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<(String, String)>)>;
+type ViewRefillIds = Rc<dyn Fn() -> Vec<i64>>;
 
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
@@ -276,12 +276,15 @@ pub struct PlayerController {
     /// Fired with `Some((album, artist))` when a new track starts and `None`
     /// when playback stops. `pub(in crate::ui)` field so sibling modules can fire it;
     /// public setter so `window.rs` can register the album-view callback.
-    pub(in crate::ui) now_playing_album_changed: RefCell<Option<OnNowPlayingAlbumChanged>>,
+    pub(in crate::ui) now_playing_album_changed:
+        RefCell<Option<super::current_track_selection::OnNowPlayingAlbumChanged>>,
     /// Same seam as `playback_state_changed`, but for the album grid's
     /// now-playing equaliser (freeze on pause). Kept as a separate named slot
     /// so the track-list and album-view consumers stay independent.
     pub(in crate::ui) playback_state_changed_album:
         RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
+    /// Supplies the current view's ids when an exhausted queue needs refill.
+    pub(in crate::ui) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
     /// the last successful playback start. Reset to 0 in `play_track_id` on
     /// every `Player::play` success; incremented by `playback_faults.rs`'s
@@ -438,6 +441,7 @@ impl PlayerController {
             playback_state_changed: RefCell::new(None),
             now_playing_album_changed: RefCell::new(None),
             playback_state_changed_album: RefCell::new(None),
+            view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
             mpris_state,
@@ -502,6 +506,10 @@ impl PlayerController {
     /// would leak.
     pub fn set_on_title_click(&self, f: impl Fn() + 'static) {
         self.bar.set_on_title_click(f);
+    }
+
+    pub fn set_view_refill_provider(&self, provider: impl Fn() -> Vec<i64> + 'static) {
+        *self.view_refill_ids.borrow_mut() = Some(Rc::new(provider));
     }
 
     /// The *effective album artist* of the currently-playing track, or `None`
@@ -697,7 +705,7 @@ impl PlayerController {
                                 .then(|| summary.album.clone()),
                             duration_ms: summary.duration_ms,
                         });
-                        self.notify_current_track_changed(id, None);
+                        self.notify_current_track_changed(id, None, true);
                         self.consecutive_skips.set(0);
                         self.failure_skip_limit.set(0);
                         // `reset_to_stopped` disables prev/next, and MPRIS

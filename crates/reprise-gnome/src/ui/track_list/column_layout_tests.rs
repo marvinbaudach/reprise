@@ -97,7 +97,11 @@ fn test_registry(ids: &[ColumnId]) -> ColumnRegistry {
         view.append_column(&column);
         columns.insert(id, column);
     }
-    ColumnRegistry { view, columns }
+    ColumnRegistry {
+        view,
+        columns,
+        syncing_order: Rc::new(Cell::new(false)),
+    }
 }
 
 #[test]

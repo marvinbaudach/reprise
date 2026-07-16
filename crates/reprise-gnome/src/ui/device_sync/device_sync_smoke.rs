@@ -3,6 +3,8 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Duration;
 
 use gtk4::gio;
@@ -12,6 +14,7 @@ use reprise_core::library::m3u::M3uEntry;
 use reprise_platform_linux::device_sync::{
     CopyOutcome, DeviceContents, DeviceDescriptor, DeviceStorage,
 };
+use reprise_platform_linux::device_transfer::{EncodeOutcome, EncodeRequest, EncoderPipeline};
 use rusqlite::Connection;
 
 use super::device_sync_runtime::{BackendFuture, DeviceBackend, DeviceSyncRuntime, Subscription};
@@ -94,6 +97,72 @@ impl DeviceBackend for SmokeDeviceBackend {
                 .await
                 .map_err(|error| error.to_string())
         })
+    }
+
+    fn replace_track(
+        &self,
+        _device_id: String,
+        root_uri: String,
+        source_path: PathBuf,
+        relative_target: String,
+        expected_size: u64,
+        cancellable: gio::Cancellable,
+        progress: Rc<dyn Fn(u64, u64)>,
+    ) -> BackendFuture<CopyOutcome> {
+        Box::pin(async move {
+            Self::storage(&root_uri)
+                .replace_track(
+                    &gio::File::for_path(source_path),
+                    &relative_target,
+                    expected_size,
+                    &cancellable,
+                    move |copied, total| progress(copied, total),
+                )
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn cleanup_partials(&self, root_uri: String) -> BackendFuture<u32> {
+        Box::pin(async move {
+            Self::storage(&root_uri)
+                .cleanup_partials()
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn delete_track(&self, root_uri: String, relative_target: String) -> BackendFuture<bool> {
+        Box::pin(async move {
+            Self::storage(&root_uri)
+                .delete_track(&relative_target)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn start_transcodes(
+        &self,
+        requests: Vec<EncodeRequest>,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<async_channel::Receiver<EncodeOutcome>, String> {
+        let (sender, receiver) = async_channel::bounded(1);
+        std::thread::Builder::new()
+            .name("reprise-smoke-device-encoders".into())
+            .spawn(move || match EncoderPipeline::start(requests, cancelled) {
+                Ok(pipeline) => {
+                    while let Some(result) = pipeline.next() {
+                        if sender.send_blocking(result).is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "could not create smoke encoder pipeline");
+                }
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(receiver)
     }
 
     fn replace_playlist(
