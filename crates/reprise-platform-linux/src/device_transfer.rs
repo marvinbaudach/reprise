@@ -51,6 +51,20 @@ struct SharedReady {
     space: Condvar,
 }
 
+type Encode = dyn Fn(&EncodeRequest, &AtomicBool) -> Result<u64, TranscodeError> + Send + Sync;
+
+struct WorkerCompletionGuard<'a> {
+    ready: &'a SharedReady,
+}
+
+impl Drop for WorkerCompletionGuard<'_> {
+    fn drop(&mut self) {
+        let mut state = lock(&self.ready.state);
+        state.workers = state.workers.saturating_sub(1);
+        self.ready.available.notify_all();
+    }
+}
+
 /// Two encoder workers feeding a byte-bounded ready-file ring buffer. The
 /// consumer is expected to copy each yielded file to MTP before requesting
 /// more, which keeps temporary disk use bounded around 200 MiB.
@@ -64,6 +78,22 @@ impl EncoderPipeline {
     pub fn start(
         requests: Vec<EncodeRequest>,
         cancelled: Arc<AtomicBool>,
+    ) -> Result<Self, std::io::Error> {
+        let encode: Arc<Encode> = Arc::new(|request, cancelled| {
+            transcode_to_opus(
+                &request.source,
+                &request.output,
+                request.bitrate_kbps,
+                cancelled,
+            )
+        });
+        Self::start_with_encoder(requests, cancelled, &encode)
+    }
+
+    fn start_with_encoder(
+        requests: Vec<EncodeRequest>,
+        cancelled: Arc<AtomicBool>,
+        encode: &Arc<Encode>,
     ) -> Result<Self, std::io::Error> {
         let requests = Arc::new(Mutex::new(VecDeque::from(requests)));
         let ready = Arc::new(SharedReady {
@@ -80,10 +110,16 @@ impl EncoderPipeline {
             let worker_requests = requests.clone();
             let worker_ready = ready.clone();
             let worker_cancelled = cancelled.clone();
+            let worker_encode = encode.clone();
             match std::thread::Builder::new()
                 .name(format!("reprise-device-encoder-{index}"))
                 .spawn(move || {
-                    encoder_worker(&worker_requests, &worker_ready, &worker_cancelled);
+                    encoder_worker(
+                        &worker_requests,
+                        &worker_ready,
+                        &worker_cancelled,
+                        worker_encode.as_ref(),
+                    );
                 }) {
                 Ok(worker) => workers.push(worker),
                 Err(error) => {
@@ -141,19 +177,15 @@ fn encoder_worker(
     requests: &Mutex<VecDeque<EncodeRequest>>,
     ready: &SharedReady,
     cancelled: &AtomicBool,
+    encode: &Encode,
 ) {
+    let _completion = WorkerCompletionGuard { ready };
     while !cancelled.load(Ordering::SeqCst) {
         let Some(request) = lock(requests).pop_front() else {
             break;
         };
         let token = request.token;
-        let result = transcode_to_opus(
-            &request.source,
-            &request.output,
-            request.bitrate_kbps,
-            cancelled,
-        )
-        .map(|size| ReadyFile {
+        let result = encode(&request, cancelled).map(|size| ReadyFile {
             token,
             path: request.output,
             size,
@@ -180,9 +212,6 @@ fn encoder_worker(
         state.files.push_back(outcome);
         ready.available.notify_one();
     }
-    let mut state = lock(&ready.state);
-    state.workers = state.workers.saturating_sub(1);
-    ready.available.notify_all();
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -386,5 +415,40 @@ mod tests {
         assert!(ready
             .iter()
             .all(|file| fs::read(&file.path).unwrap().starts_with(b"OggS")));
+    }
+
+    #[test]
+    fn worker_panics_do_not_leave_the_pipeline_waiting_forever() {
+        let requests = (0..super::ENCODER_WORKERS)
+            .map(|token| super::EncodeRequest {
+                token,
+                source: format!("source-{token}.wav").into(),
+                output: format!("encoded-{token}.opus").into(),
+                bitrate_kbps: 64,
+            })
+            .collect();
+        let encode: std::sync::Arc<super::Encode> =
+            std::sync::Arc::new(|_, _| panic!("forced encoder panic"));
+        let pipeline = std::sync::Arc::new(
+            super::EncoderPipeline::start_with_encoder(
+                requests,
+                std::sync::Arc::new(AtomicBool::new(false)),
+                &encode,
+            )
+            .unwrap(),
+        );
+        let waiting_pipeline = pipeline.clone();
+        let (completed_tx, completed_rx) = std::sync::mpsc::channel();
+        let waiting = std::thread::spawn(move || {
+            completed_tx
+                .send(waiting_pipeline.next().is_none())
+                .unwrap();
+        });
+
+        assert_eq!(
+            completed_rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Ok(true)
+        );
+        waiting.join().unwrap();
     }
 }
