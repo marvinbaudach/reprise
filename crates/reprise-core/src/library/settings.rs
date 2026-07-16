@@ -135,9 +135,11 @@ pub fn set_player_bar_position(
 
 pub const LIST_DENSITY_KEY: &str = "ui.list_density";
 pub const SIDEBAR_VISIBLE_KEY: &str = "ui.sidebar_visible";
+pub const SIDEBAR_COLLAPSED_KEY: &str = "ui.sidebar_collapsed";
 pub const BROWSE_VISIBLE_KEY: &str = "ui.browse_visible";
 pub const STATUS_VISIBLE_KEY: &str = "ui.status_visible";
 pub const INFO_PANEL_VISIBLE_KEY: &str = "ui.info_panel_visible";
+pub const INFO_PANEL_TAB_KEY: &str = "ui.info_panel_tab";
 pub const WINDOW_VIEW_MODE_KEY: &str = "ui.window_view_mode";
 pub const COMPACT_LAYOUT_KEY: &str = "ui.compact_layout";
 pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
@@ -242,10 +244,7 @@ pub fn get_compact_always_on_top(conn: &Connection) -> bool {
     get_bool(conn, COMPACT_ALWAYS_ON_TOP_KEY, false).unwrap_or(false)
 }
 
-pub fn set_compact_always_on_top(
-    conn: &Connection,
-    above: bool,
-) -> Result<(), rusqlite::Error> {
+pub fn set_compact_always_on_top(conn: &Connection, above: bool) -> Result<(), rusqlite::Error> {
     set_setting(
         conn,
         COMPACT_ALWAYS_ON_TOP_KEY,
@@ -332,6 +331,21 @@ pub fn set_sidebar_visible(conn: &Connection, value: bool) -> Result<(), rusqlit
     set_bool(conn, SIDEBAR_VISIBLE_KEY, value)
 }
 
+/// Whether the user manually collapsed the sidebar column via the headerbar
+/// toggle. Distinct from `SIDEBAR_VISIBLE_KEY` (the preferences switch that
+/// removes the sidebar slot entirely): this remembers the in-window toggle
+/// so the next session starts with the same layout.
+pub fn get_sidebar_collapsed(conn: &Connection) -> bool {
+    get_bool(conn, SIDEBAR_COLLAPSED_KEY, false).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read sidebar collapse state; using expanded");
+        false
+    })
+}
+
+pub fn set_sidebar_collapsed(conn: &Connection, collapsed: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, SIDEBAR_COLLAPSED_KEY, collapsed)
+}
+
 pub fn get_browse_visible(conn: &Connection) -> bool {
     get_bool(conn, BROWSE_VISIBLE_KEY, true).unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read browse bar visibility; using visible");
@@ -363,6 +377,48 @@ pub fn get_info_panel_visible(conn: &Connection) -> bool {
 
 pub fn set_info_panel_visible(conn: &Connection, visible: bool) -> Result<(), rusqlite::Error> {
     set_bool(conn, INFO_PANEL_VISIBLE_KEY, visible)
+}
+
+/// The information panel's selected tab. The variant names double as the
+/// GTK stack page names the frontend uses, so a persisted value can be fed
+/// straight into `set_visible_child_name`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InfoPanelTab {
+    #[default]
+    Information,
+    Lyrics,
+}
+
+impl InfoPanelTab {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Information => "information",
+            Self::Lyrics => "lyrics",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "information" => Some(Self::Information),
+            "lyrics" => Some(Self::Lyrics),
+            _ => None,
+        }
+    }
+}
+
+pub fn get_info_panel_tab(conn: &Connection) -> InfoPanelTab {
+    let stored = get_setting(conn, INFO_PANEL_TAB_KEY).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read information panel tab; using default");
+        None
+    });
+    stored
+        .as_deref()
+        .and_then(InfoPanelTab::from_name)
+        .unwrap_or_default()
+}
+
+pub fn set_info_panel_tab(conn: &Connection, tab: InfoPanelTab) -> Result<(), rusqlite::Error> {
+    set_setting(conn, INFO_PANEL_TAB_KEY, tab.name())
 }
 
 pub fn get_equalizer_enabled(conn: &Connection) -> bool {
@@ -524,6 +580,43 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn sidebar_collapse_round_trips_and_defaults_to_expanded() {
+        let conn = migrated_conn();
+        assert!(!get_sidebar_collapsed(&conn));
+        set_sidebar_collapsed(&conn, true).unwrap();
+        assert!(get_sidebar_collapsed(&conn));
+        set_sidebar_collapsed(&conn, false).unwrap();
+        assert!(!get_sidebar_collapsed(&conn));
+    }
+
+    #[test]
+    fn info_panel_tab_round_trips_and_rejects_unknown_names() {
+        let conn = migrated_conn();
+        // Default: the information page.
+        assert_eq!(get_info_panel_tab(&conn), InfoPanelTab::Information);
+        set_info_panel_tab(&conn, InfoPanelTab::Lyrics).unwrap();
+        assert_eq!(get_info_panel_tab(&conn), InfoPanelTab::Lyrics);
+        set_info_panel_tab(&conn, InfoPanelTab::Information).unwrap();
+        assert_eq!(get_info_panel_tab(&conn), InfoPanelTab::Information);
+        // A corrupted/unknown stored value degrades to the default.
+        set_setting(&conn, INFO_PANEL_TAB_KEY, "garbage").unwrap();
+        assert_eq!(get_info_panel_tab(&conn), InfoPanelTab::Information);
+    }
+
+    #[test]
+    fn info_panel_tab_names_round_trip() {
+        assert_eq!(
+            InfoPanelTab::from_name(InfoPanelTab::Lyrics.name()),
+            Some(InfoPanelTab::Lyrics)
+        );
+        assert_eq!(
+            InfoPanelTab::from_name(InfoPanelTab::Information.name()),
+            Some(InfoPanelTab::Information)
+        );
+        assert_eq!(InfoPanelTab::from_name("nope"), None);
     }
 
     #[test]
