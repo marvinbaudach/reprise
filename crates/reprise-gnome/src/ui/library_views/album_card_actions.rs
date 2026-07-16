@@ -4,9 +4,6 @@
 //! touching `PlayerController` directly (same closure-injection seam the
 //! track list uses).
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use gtk4::gio;
 use gtk4::glib;
 use reprise_core::queries::{self, AlbumSummary};
@@ -14,12 +11,16 @@ use rusqlite::Connection;
 
 /// Fetches track IDs for an album, ordered by `track_no ASC` (path ASC
 /// fallback — the `order_expr_and_dir("track_no", "asc")` mapping).
-pub(in crate::ui) fn album_track_ids(
-    conn: &Connection,
-    album: &AlbumSummary,
-) -> Vec<i64> {
-    queries::query_album_track_ids(conn, &album.album, &album.album_artist, "track_no", "asc", "")
-        .unwrap_or_default()
+pub(in crate::ui) fn album_track_ids(conn: &Connection, album: &AlbumSummary) -> Vec<i64> {
+    queries::query_album_track_ids(
+        conn,
+        &album.album,
+        &album.album_artist,
+        "track_no",
+        "asc",
+        "",
+    )
+    .unwrap_or_default()
 }
 
 /// Opens the parent folder of a track's path in the default file manager.
@@ -40,7 +41,7 @@ pub(in crate::ui) fn open_folder(representative_path: &str) {
 
 /// Shuffles a slice in-place using Fisher-Yates (the standard library's
 /// `SliceRandom::shuffle` requires the `rand` crate; this is self-contained).
-pub(in crate::ui) fn shuffle_ids(ids: &mut Vec<i64>) {
+pub(in crate::ui) fn shuffle_ids(ids: &mut [i64]) {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
     let state = RandomState::new();

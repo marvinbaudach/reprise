@@ -19,7 +19,6 @@ pub(in crate::ui) fn css() -> String {
          .library-card-subtitle {{ font-size: 12px; color: alpha(@window_fg_color, 0.58); }}",
         radius = tokens::RADIUS_SURFACE,
     )
-    .into()
 }
 
 #[cfg(test)]

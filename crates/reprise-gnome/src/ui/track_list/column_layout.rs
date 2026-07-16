@@ -413,7 +413,10 @@ impl ColumnRegistry {
         let model = self.view.columns();
         (0..model.n_items())
             .filter_map(|index| {
-                let column = model.item(index)?.downcast::<gtk4::ColumnViewColumn>().ok()?;
+                let column = model
+                    .item(index)?
+                    .downcast::<gtk4::ColumnViewColumn>()
+                    .ok()?;
                 self.columns
                     .iter()
                     .find(|(_, candidate)| **candidate == column)
@@ -473,7 +476,8 @@ fn save_widths_now(shared: &Shared, columns: &[(ColumnId, gtk4::ColumnViewColumn
         .map(|(id, column)| (*id, column.fixed_width()))
         .collect();
     let serialized = crate::ui::column_widths::serialize_widths(&widths);
-    if let Err(error) = settings::set_setting(&shared.conn.borrow(), COLUMN_WIDTHS_KEY, &serialized) {
+    if let Err(error) = settings::set_setting(&shared.conn.borrow(), COLUMN_WIDTHS_KEY, &serialized)
+    {
         tracing::warn!(%error, "could not persist column widths");
     }
 }
@@ -481,7 +485,10 @@ fn save_widths_now(shared: &Shared, columns: &[(ColumnId, gtk4::ColumnViewColumn
 /// Wires a debounced `fixed-width` listener on every persistable column so a
 /// header-drag resize is stored ~500 ms after it settles. Must run after the
 /// initial policy/restore widths are applied, so setup does not self-trigger.
-fn wire_width_persistence(shared: &Rc<Shared>, columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>) {
+fn wire_width_persistence(
+    shared: &Rc<Shared>,
+    columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>,
+) {
     let snapshot: Rc<Vec<(ColumnId, gtk4::ColumnViewColumn)>> = Rc::new(
         columns
             .iter()
@@ -830,7 +837,10 @@ mod tests {
 
         restore_stored_widths(&registry.columns, &conn);
 
-        assert_eq!(registry.column(ColumnId::Artist).unwrap().fixed_width(), 333);
+        assert_eq!(
+            registry.column(ColumnId::Artist).unwrap().fixed_width(),
+            333
+        );
         // Cover is not persistable, so its stored value is ignored.
         assert_ne!(registry.column(ColumnId::Cover).unwrap().fixed_width(), 999);
     }
@@ -842,7 +852,10 @@ mod tests {
             return;
         }
         let registry = test_registry(&[ColumnId::Artist]);
-        registry.column(ColumnId::Artist).unwrap().set_fixed_width(500);
+        registry
+            .column(ColumnId::Artist)
+            .unwrap()
+            .set_fixed_width(500);
 
         registry.reset_widths();
 

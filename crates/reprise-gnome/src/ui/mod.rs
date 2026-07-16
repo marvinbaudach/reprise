@@ -21,18 +21,18 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
-#[path = "library_views/album_view.rs"]
-mod album_view;
 #[path = "library_views/album_card.rs"]
 mod album_card;
 #[path = "library_views/album_card_actions.rs"]
 mod album_card_actions;
-#[path = "library_views/album_context_menu.rs"]
-mod album_context_menu;
 #[path = "library_views/album_card_css.rs"]
 mod album_card_css;
+#[path = "library_views/album_context_menu.rs"]
+mod album_context_menu;
 #[path = "library_views/album_header.rs"]
 mod album_header;
+#[path = "library_views/album_view.rs"]
+mod album_view;
 #[path = "library_views/artist_avatar.rs"]
 mod artist_avatar;
 #[path = "library_views/artist_detail_hero.rs"]
@@ -53,6 +53,8 @@ mod artist_view;
 mod artist_view_css;
 #[path = "playback/audio_effects.rs"]
 mod audio_effects;
+#[path = "tag_edit/autocomplete_entry.rs"]
+mod autocomplete_entry;
 #[path = "browse/browse_bar.rs"]
 pub mod browse_bar;
 #[path = "browse/browse_filter_count.rs"]
@@ -256,8 +258,6 @@ pub mod tag_edit_flow;
 pub mod tag_editor;
 #[path = "tag_edit/tag_editor_style.rs"]
 mod tag_editor_style;
-#[path = "tag_edit/autocomplete_entry.rs"]
-mod autocomplete_entry;
 pub mod toasts;
 #[path = "track_list/track_actions.rs"]
 pub mod track_actions;

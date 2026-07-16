@@ -71,8 +71,7 @@ fn resample_peaks(raw: &[u8], count: usize) -> Vec<f32> {
         if slice.is_empty() {
             result.push(0.0);
         } else {
-            let avg: f32 =
-                slice.iter().map(|&v| f32::from(v)).sum::<f32>() / slice.len() as f32;
+            let avg: f32 = slice.iter().map(|&v| f32::from(v)).sum::<f32>() / slice.len() as f32;
             result.push(avg / 255.0);
         }
     }
@@ -100,9 +99,9 @@ fn ensure_resampled(state: &mut State, width: i32) {
 }
 
 struct State {
-    raw_peaks: Vec<u8>,         // stored peaks from DB (1000 values, 0-255)
-    display_peaks: Vec<f32>,    // resampled to current bar count (0.0..1.0)
-    last_display_width: i32,    // width used for last resample
+    raw_peaks: Vec<u8>,      // stored peaks from DB (1000 values, 0-255)
+    display_peaks: Vec<f32>, // resampled to current bar count (0.0..1.0)
+    last_display_width: i32, // width used for last resample
     fraction: f64,
     hover_index: Option<usize>,
     drag_fraction: Option<f64>,
@@ -391,8 +390,7 @@ impl WaveformSeek {
                 s.build_progress = (elapsed / BUILD_DURATION_S).clamp(0.0, 1.0);
             }
 
-            let settled =
-                (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
+            let settled = (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
             drop(s);
 
             area.queue_draw();
@@ -482,8 +480,7 @@ fn draw(
         if is_boundary {
             // Sub-bar precision: clip to the bar shape and fill played/unplayed
             // portions as separate rectangles so the split is pixel-accurate.
-            let bar_progress =
-                (state.fraction * count as f64 - index as f64).clamp(0.0, 1.0);
+            let bar_progress = (state.fraction * count as f64 - index as f64).clamp(0.0, 1.0);
             let split_x = x + bar_w * bar_progress;
 
             cr.save().ok();
@@ -549,7 +546,8 @@ fn draw_fallback(
         // Deterministic pseudo-random height using a simple hash.
         let seed = (index as u32).wrapping_mul(2654435761); // Knuth multiplicative hash
         let magnitude = (seed % 200) as f64 / 400.0 + 0.15; // range ~0.15..0.65
-        let bar_h = state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height);
+        let bar_h =
+            state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height);
         let x = index as f64 * slot;
         let y = (h - bar_h) / 2.0;
 

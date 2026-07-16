@@ -587,7 +587,10 @@ pub(super) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, rea
 /// works regardless of which list a source lives in. Its `row-selected`
 /// handler then clears the sibling list, keeping a single visible selection.
 pub(super) fn select_row_in_its_listbox(row: &gtk4::ListBoxRow) {
-    if let Some(listbox) = row.parent().and_then(|p| p.downcast::<gtk4::ListBox>().ok()) {
+    if let Some(listbox) = row
+        .parent()
+        .and_then(|p| p.downcast::<gtk4::ListBox>().ok())
+    {
         listbox.select_row(Some(row));
     }
 }
