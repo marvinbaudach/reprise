@@ -136,3 +136,16 @@ Started: 2026-07-16
   und in check-merge-readiness verdrahtet; TESTING.md dokumentiert das Gate —
   UX-Regelwerk Task 3. Der Aktiv-Zähler ist auf Regelzeilen verankert, damit
   Prozessbeschreibungen mit `[aktiv]` nicht fälschlich als aktive Regeln zählen.
+
+- Bereich-C-Audit: PLAY-1 ist über `queue_ids_for_activation` und
+  `play_from_view` implementiert, aber noch nicht regelbenannt getestet;
+  PLAY-1a ist für Album-Container implementiert und anderweitig getestet,
+  für alle beschriebenen Container jedoch noch nicht als Gesamtvertrag
+  nachgewiesen; PLAY-2/3/5a sind implementiert und jetzt regelbenannt getestet
+  und deshalb im selben Commit auf `[aktiv]` gesetzt. PLAY-4a ist über
+  Missing-ausschließende Listenabfragen und den Playback-Fault-Skip teilweise
+  implementiert, aber nicht regelbenannt als stiller Gesamtvertrag getestet;
+  PLAY-4b und PLAY-5b sind nicht vollständig implementiert; PLAY-6 ist samt
+  Off→All→One-Zyklus implementiert und anderweitig getestet, aber noch nicht
+  regelbenannt. Pilot-Regeltests stehen in `queue_tests.rs`, QUE-1 bleibt als
+  `[geplant]`-Demo ignored — UX-Regelwerk Task 4.
