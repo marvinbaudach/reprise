@@ -10,6 +10,18 @@ pub fn text(message: &str) -> String {
     crate::i18n::gettext(message)
 }
 
+pub const EJECT_DEVICE: &str = N_!("Eject device");
+pub const EJECT_BLOCKED_SYNCING: &str = N_!("Eject device — Sync in progress");
+
+/// TIP-2a: a disabled eject keeps its tooltip and appends the reason.
+pub fn eject_tooltip(syncing: bool) -> String {
+    text(if syncing {
+        EJECT_BLOCKED_SYNCING
+    } else {
+        EJECT_DEVICE
+    })
+}
+
 fn formatted(message: &str, values: &[(&str, &str)]) -> String {
     crate::i18n::format_message(&text(message), values)
 }
@@ -234,6 +246,12 @@ mod tests {
         assert_eq!(format_bytes(0), "0 B");
         assert_eq!(format_bytes(1_024), "1.0 KiB");
         assert_eq!(format_bytes(2 * 1_024 * 1_024), "2.0 MiB");
+    }
+
+    #[test]
+    fn tip_2a_eject_tooltip_names_reason_while_syncing() {
+        assert_eq!(eject_tooltip(true), "Eject device — Sync in progress");
+        assert_eq!(eject_tooltip(false), "Eject device");
     }
 
     #[test]

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-17 20:26+0200\n"
+"POT-Creation-Date: 2026-07-17 20:38+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -420,7 +420,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_artist.rs:28
 #: crates/reprise-gnome/src/ui/strings_artist.rs:93
 #: crates/reprise-gnome/src/ui/strings_artist.rs:118
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:121
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:133
 #, rust-format
 msgid "{count} track"
 msgid_plural "{count} tracks"
@@ -776,12 +776,12 @@ msgid "Toggle sidebar"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:505
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:38
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:50
 msgid "Playlist name"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:507
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:39
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:51
 msgid "Create"
 msgstr ""
 
@@ -1700,171 +1700,179 @@ msgid_plural "{n} queued"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:22
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:13
+msgid "Eject device"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:14
+msgid "Eject device — Sync in progress"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:34
 msgid "Synchronization"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:23
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:35
 msgid "Connected Android Devices"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:24
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:36
 msgid "No Android Device Connected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:26
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:38
 msgid ""
 "Connect your unlocked Android device by USB and select File transfer in its "
 "USB options."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:27
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:39
 msgid "Connected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:28
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:40
 msgid "Disconnected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:29
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:41
 msgid "Reading music on device…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:30
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:42
 msgid "Could not read music on this device"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:31
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:43
 msgid "Available space unknown"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:32
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:44
 msgid "Music on Device"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:33
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:45
 msgid "Phone Playlists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:34
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:46
 msgid "No music was found in the device Music folder."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:35
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:47
 msgid "Create a phone playlist, then drag tracks onto it."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:36
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:48
 msgid "Waiting for tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:37
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:49
 msgid "New Phone Playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:40
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:52
 msgid "Refresh Device Music"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:41
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:53
 msgid "Not Enough Space on Device"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:42
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:54
 msgid "Synchronization Progress"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:43
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:55
 msgid "Cancel Current Copy"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:44
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:56
 msgid "Preparing copy…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:45
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:57
 msgid "Paused — reconnect the device to continue"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:46
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:58
 msgid "Cancelling current copy…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:47
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:59
 msgid "Synchronization complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:48
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:60
 msgid "Synchronization failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:49
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:61
 msgid "Ready to synchronize"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:50
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:62
 msgid "Current file"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:51
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:63
 msgid "Overall progress"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:58
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:70
 #, rust-format
 msgid "{size} available"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:66
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:78
 #, rust-format
 msgid "{state} · {space}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:81
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:93
 #, rust-format
 msgid "{completed} of {total} tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:89
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:101
 #, rust-format
 msgid "{count} job waiting"
 msgid_plural "{count} jobs waiting"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:98
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:110
 #, rust-format
 msgid "{copied} copied · {skipped} skipped · {failed} failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:111
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:123
 #, rust-format
 msgid "{count} track queued · job {position}"
 msgid_plural "{count} tracks queued · job {position}"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:140
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:152
 #, rust-format
 msgid "{percent} %"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:163
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:175
 #, rust-format
 msgid "{done} of {total}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:187
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:199
 #, rust-format
 msgid "~{minutes} min left"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:192
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:204
 #, rust-format
 msgid "~{seconds} s left"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:207
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:219
 #, rust-format
 msgid ""
 "This copy needs {required}, but only {available} is available for this "

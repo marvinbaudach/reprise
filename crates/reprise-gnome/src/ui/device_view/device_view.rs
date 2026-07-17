@@ -12,6 +12,7 @@ use crate::ui::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceTrackStatus, DeviceTrackView, DeviceView,
     PlannedSyncPhase, Subscription,
 };
+use crate::ui::device_sync_strings;
 
 type SettingsCallback = Rc<dyn Fn()>;
 
@@ -159,11 +160,7 @@ impl DeviceViewPage {
         row.append(&settings);
         let eject = gtk4::Button::builder()
             .icon_name("media-eject-symbolic")
-            .tooltip_text(if syncing {
-                "Sync in progress"
-            } else {
-                "Eject device"
-            })
+            .tooltip_text(device_sync_strings::eject_tooltip(syncing))
             .sensitive(!syncing)
             .build();
         let runtime = self.runtime.clone();
