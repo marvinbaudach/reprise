@@ -22,7 +22,16 @@ Review-Footer, Save-Progress, Fehler-Dialog, Listen-Snapshot + ‹›.
 
 - Gates vor JEDEM Commit: `cargo fmt --check` · `cargo clippy --all-targets
   --workspace -- -D warnings` · `cargo test --workspace` · `cargo audit`
-  (akzeptiert nur RUSTSEC-2024-0436).
+  (akzeptiert nur RUSTSEC-2024-0436) · **`./scripts/check-architecture.sh`**
+  · `./scripts/check-ux-traceability.sh`.
+  **Nachtrag nach Welle 3:** `check-architecture.sh` fehlte hier ursprünglich —
+  entsprechend lief es niemand, und der Branch stand mit zwei Verstößen da
+  (`strings.rs` 24 Zeilen über dem 800-Limit; hand-gebauter Thread in
+  `tag_edit_flow.rs`, wo der Lint den geteilten `one_shot_task`-Helfer
+  verlangt). Es prüft mehr als Dateigrößen: Kern-Reinheit, verbotenes
+  blockierendes HTTP im Frontend, und für bestimmte Dateien den Zwang, über
+  `one_shot_task` statt eigener Threads/Kanäle zu gehen. Am sichersten deckt
+  `./scripts/check-merge-readiness.sh` alles auf einmal ab.
 - reprise-core bleibt dependency-pur (kein gtk4/gstreamer/zbus):
   `cargo tree -p reprise-core | grep -E 'gtk4|libadwaita|gstreamer|zbus'` nach Kern-Änderungen.
 - Dateien < 800 Zeilen; Sibling-Module extrahieren statt Doku kürzen.
