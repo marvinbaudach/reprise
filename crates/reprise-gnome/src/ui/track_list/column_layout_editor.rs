@@ -560,9 +560,9 @@ mod tests {
         let runtime = crate::ui::cover_download_worker::setup();
         let track_list = Rc::new(TrackList::new(
             Rc::new(RefCell::new(conn)),
-            Box::new(|_, _, _| {}),
+            Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
-            Vec::new,
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
             runtime,
         ));
 
@@ -587,9 +587,9 @@ mod tests {
         let runtime = crate::ui::cover_download_worker::setup();
         let track_list = Rc::new(TrackList::new(
             Rc::new(RefCell::new(conn)),
-            Box::new(|_, _, _| {}),
+            Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
-            Vec::new,
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
             runtime,
         ));
 

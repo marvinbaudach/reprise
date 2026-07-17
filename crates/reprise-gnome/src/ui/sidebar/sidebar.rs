@@ -174,7 +174,7 @@ pub(in crate::ui) struct Shared {
 /// Handle to the built sidebar widget: scrolling navigation followed by
 /// non-scrolling issues and the shared bottom activity slot.
 pub struct Sidebar {
-    shared: Rc<Shared>,
+    pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
     activity_slot: SidebarActivitySlot,
 }

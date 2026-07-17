@@ -257,6 +257,10 @@ pub struct PlayerController {
     pub(in crate::ui) queue: RefCell<Queue>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
+    /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
+    /// Queue view's "Up Next · from <label>" title and NAV-9's jump target.
+    /// `None` before the first play and after a stop cleared the context.
+    pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// Empty (`WeakRef::new()`) until `set_toast_overlay` is called.
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -434,6 +438,7 @@ impl PlayerController {
             queue: RefCell::new(Queue::new()),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
+            play_origin: RefCell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
             queue_changed: RefCell::new(None),
@@ -571,34 +576,6 @@ impl PlayerController {
         }
     }
 
-    /// Starts playback of `ids[start_index]` and loads the rest of `ids` into
-    /// the queue as what auto-advance/previous/next step through. Row
-    /// activation lands here — see `ui::track_list`'s `queue_ids_for_
-    /// activation` for how `ids`/`start_index` are built from the currently
-    /// visible sort/filter view. An empty `ids` (nothing to play) resets to
-    /// stopped instead of calling `play_track_id`.
-    ///
-    /// Borrow discipline: `set_tracks` and `current()` each run inside their
-    /// own statement, so their `queue` borrows drop before `play_track_id`/
-    /// `reset_to_stopped` run — see the module's `## Queue borrow
-    /// discipline` doc section.
-    pub fn play_from_view(&self, ids: Vec<i64>, start_index: usize) {
-        self.queue.borrow_mut().set_tracks(ids, start_index);
-        self.current_up_next.set(None);
-
-        let queue_len = self.queue.borrow().len();
-        tracing::info!(queue_len, start_index, "queue set from view");
-
-        let has_transport = !self.queue.borrow().is_empty() || !self.up_next.borrow().is_empty();
-        self.sync_transport_enabled(has_transport);
-
-        let current = self.queue.borrow().current();
-        match current {
-            Some(id) => self.play_track_id(id),
-            None => self.reset_to_stopped(),
-        }
-    }
-
     /// Resolves `id` via `queries::query_track_summary` and starts its
     /// playback — the one place that actually calls `Player::play`, shared
     /// by `play_from_view` and every queue-stepping call site so the
@@ -706,6 +683,11 @@ impl PlayerController {
                             duration_ms: summary.duration_ms,
                         });
                         self.notify_current_track_changed(id, None, true);
+                        // The composite Queue view keys its Now Playing row
+                        // and Up Next tail off the playhead — every track
+                        // change re-partitions it (QUE-1) and shrinks the
+                        // QUE-5 counter.
+                        self.notify_queue_changed();
                         self.consecutive_skips.set(0);
                         self.failure_skip_limit.set(0);
                         // `reset_to_stopped` disables prev/next, and MPRIS

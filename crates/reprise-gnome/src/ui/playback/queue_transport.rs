@@ -42,6 +42,16 @@ fn toggle_action(
     }
 }
 
+/// The Queue view's composite parts (QUE-1), in display order. Produced by
+/// `PlayerController::queue_view_sections`, composed into the visible model
+/// by `ui::track_list::queue_sections::compose`.
+pub(crate) struct QueueViewSections {
+    pub now_playing: Option<i64>,
+    pub play_next: Vec<i64>,
+    pub up_next_rest: Vec<i64>,
+    pub origin_label: Option<String>,
+}
+
 impl PlayerController {
     pub(in crate::ui) fn set_on_queue_changed(&self, callback: impl Fn() + 'static) {
         *self.queue_changed.borrow_mut() = Some(Rc::new(callback));
@@ -122,29 +132,274 @@ impl PlayerController {
         tracing::info!(added = ids.len(), queue_len, "tracks added to queue");
     }
 
-    /// Snapshot of pending manual ids in stable visible order. The Queue view
-    /// asks for a fresh owned value on each reload, so consumption, removal,
-    /// and drag reorder cannot expose the hidden context or a stale list.
-    pub(in crate::ui) fn queue_ids_snapshot(&self) -> Vec<i64> {
-        self.up_next.borrow().ids().to_vec()
+    /// Starts playback of `ids[start_index]` and loads the rest of `ids` into
+    /// the queue as what auto-advance/previous/next step through. Row
+    /// activation lands here — see `ui::track_list`'s `queue_ids_for_
+    /// activation` for how `ids`/`start_index` are built from the currently
+    /// visible sort/filter view. An empty `ids` (nothing to play) resets to
+    /// stopped instead of calling `play_track_id`.
+    ///
+    /// Borrow discipline: `set_tracks` and `current()` each run inside their
+    /// own statement, so their `queue` borrows drop before `play_track_id`/
+    /// `reset_to_stopped` run — see the module's `## Queue borrow
+    /// discipline` doc section.
+    pub fn play_from_view(
+        &self,
+        ids: Vec<i64>,
+        start_index: usize,
+        origin: super::play_origin::PlayOrigin,
+    ) {
+        self.queue.borrow_mut().set_tracks(ids, start_index);
+        self.current_up_next.set(None);
+
+        let queue_len = self.queue.borrow().len();
+        // An empty seed (nothing to play) resets to stopped below and must
+        // not claim an origin for a context that does not exist.
+        *self.play_origin.borrow_mut() = (queue_len > 0).then_some(origin);
+
+        tracing::info!(queue_len, start_index, "queue set from view");
+
+        let has_transport = !self.queue.borrow().is_empty() || !self.up_next.borrow().is_empty();
+        self.sync_transport_enabled(has_transport);
+
+        let current = self.queue.borrow().current();
+        match current {
+            Some(id) => self.play_track_id(id),
+            None => self.reset_to_stopped(),
+        }
+        // The Queue view and sidebar counter render the snapshot (QUE-1/
+        // QUE-5), so a reseeded context is a queue change for them.
+        self.notify_queue_changed();
     }
 
-    pub(in crate::ui) fn up_next_len(&self) -> usize {
-        self.up_next.borrow().len()
+    /// The current playback context's origin, if any — clone-out so no
+    /// borrow escapes (see `## Queue borrow discipline`).
+    pub(in crate::ui) fn current_play_origin(&self) -> Option<super::play_origin::PlayOrigin> {
+        self.play_origin.borrow().clone()
     }
 
-    pub(in crate::ui) fn remove_up_next_positions(&self, positions: &[usize]) -> usize {
-        let removed = self.up_next.borrow_mut().remove_positions(positions);
+    /// The Queue view's three parts in display order (QUE-1): the playing
+    /// track, pending manual entries, and the snapshot's play-order tail —
+    /// plus the origin label for the "Up Next · from <label>" title. Each
+    /// list is cloned out in its own statement (borrow discipline).
+    pub(in crate::ui) fn queue_view_sections(&self) -> QueueViewSections {
+        let now_playing = self.now_playing.borrow().as_ref().map(|np| np.id);
+        let play_next = self.up_next.borrow().ids().to_vec();
+        let up_next_rest = self.queue.borrow().remaining_after_current();
+        let origin_label = self
+            .play_origin
+            .borrow()
+            .as_ref()
+            .map(|origin| origin.label.clone());
+        QueueViewSections {
+            now_playing,
+            play_next,
+            up_next_rest,
+            origin_label,
+        }
+    }
+
+    /// QUE-5: the sidebar's "Queue · N" — pending manual entries plus the
+    /// snapshot tracks still ahead of the playhead, NOT the total snapshot.
+    pub(in crate::ui) fn queue_pending_len(&self) -> usize {
+        let pending = self.up_next.borrow().len();
+        let remaining = self.queue.borrow().remaining_len();
+        pending + remaining
+    }
+
+    /// QUE-3's "Play next": the given ids jump the manual line (front of
+    /// Play Next), unlike `append_to_queue`'s back-of-line append.
+    pub(in crate::ui) fn play_next(&self, ids: &[i64]) {
+        if ids.is_empty() {
+            tracing::debug!("play next: nothing to add; ignoring");
+            return;
+        }
+        self.up_next.borrow_mut().prepend(ids);
+        self.notify_queue_changed();
+        self.sync_transport_enabled(true);
+        tracing::info!(added = ids.len(), "tracks queued to play next");
+    }
+
+    /// QUE-3's "Clear queue" button: empties ONLY the manual Play Next
+    /// list; the playback snapshot survives until stop or a new context.
+    pub(in crate::ui) fn clear_play_next(&self) {
+        let had_any = {
+            let mut up_next = self.up_next.borrow_mut();
+            let had_any = !up_next.is_empty();
+            up_next.clear();
+            had_any
+        };
+        if had_any {
+            self.notify_queue_changed();
+            tracing::info!("play next cleared");
+        }
+    }
+
+    /// QUE-3 remove: each composite row is removed from ITS list — manual
+    /// entries from Play Next, snapshot rows (single occurrence) from the
+    /// context. Removing the Now Playing row skips ahead: the snapshot drops
+    /// it and playback continues with the next target (or stops cleanly).
+    /// Returns how many rows were removed (for the toast).
+    pub(in crate::ui) fn remove_queue_rows(
+        &self,
+        rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
+    ) -> usize {
+        use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+        let mut play_next_indices = Vec::new();
+        let mut up_next_offsets = Vec::new();
+        let mut remove_current = false;
+        for row in rows {
+            match row {
+                QueueRow::PlayNext(index) => play_next_indices.push(*index),
+                QueueRow::UpNext(offset) => up_next_offsets.push(*offset),
+                QueueRow::NowPlaying => remove_current = true,
+            }
+        }
+
+        let mut removed = 0;
+        if !play_next_indices.is_empty() {
+            removed += self
+                .up_next
+                .borrow_mut()
+                .remove_positions(&play_next_indices);
+        }
+        if !up_next_offsets.is_empty() {
+            let did_remove = {
+                let mut queue = self.queue.borrow_mut();
+                match queue.current_order_position() {
+                    Some(base) => {
+                        let positions: Vec<usize> = up_next_offsets
+                            .iter()
+                            .map(|offset| base + 1 + offset)
+                            .collect();
+                        queue.remove_order_positions(&positions)
+                    }
+                    None => false,
+                }
+            };
+            if did_remove {
+                removed += up_next_offsets.len();
+            }
+        }
+        if remove_current {
+            removed += 1;
+            if self.current_up_next.get().is_some() {
+                // The playing track is a consumed manual entry — nothing to
+                // drop from any list; removing it just means "skip it now".
+                self.next();
+            } else {
+                // Drop the current snapshot row (the playhead advances to
+                // the next survivor) and continue playback there.
+                let next = {
+                    let mut queue = self.queue.borrow_mut();
+                    match queue.current_order_position() {
+                        Some(position) => {
+                            queue.remove_order_positions(&[position]);
+                            queue.current()
+                        }
+                        None => None,
+                    }
+                };
+                match next {
+                    Some(id) => self.play_track_id(id),
+                    None => self.reset_to_stopped(),
+                }
+            }
+        }
+
         if removed > 0 {
             self.notify_queue_changed();
         }
         removed
     }
 
-    /// Reorders pending manual entries only. The caller reloads Queue after a
-    /// successful mutation; invalid and no-op positions return `false`.
-    pub(in crate::ui) fn move_queue_item(&self, from: usize, to: usize) -> bool {
-        self.up_next.borrow_mut().move_item(from, to)
+    /// QUE-3 drag semantics over the composite view: reorder within Play
+    /// Next, or promote an Up Next snapshot row into Play Next (removed
+    /// from the snapshot so it can't play twice).
+    pub(in crate::ui) fn reorder_queue_rows(
+        &self,
+        op: crate::ui::track_list::queue_row_mapping::QueueReorderOp,
+    ) -> bool {
+        use crate::ui::track_list::queue_row_mapping::QueueReorderOp;
+
+        let moved = match op {
+            QueueReorderOp::WithinPlayNext { from, to } => {
+                self.up_next.borrow_mut().move_item(from, to)
+            }
+            QueueReorderOp::PromoteUpNext {
+                up_next_offset,
+                insert_at,
+            } => {
+                let promoted = {
+                    let mut queue = self.queue.borrow_mut();
+                    match queue.current_order_position() {
+                        Some(base) => {
+                            let position = base + 1 + up_next_offset;
+                            let id = queue.id_at_order_position(position);
+                            if let Some(id) = id {
+                                queue.remove_order_positions(&[position]);
+                                Some(id)
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    }
+                };
+                match promoted {
+                    Some(id) => {
+                        self.up_next.borrow_mut().insert(insert_at, id);
+                        true
+                    }
+                    None => false,
+                }
+            }
+        };
+        if moved {
+            self.notify_queue_changed();
+        }
+        moved
+    }
+
+    /// QUE-3 double-click on a queue row: move the playhead there — no
+    /// context rebuild. A Play Next row drains the manual line through it
+    /// (`play_up_next_at`); an Up Next row jumps the snapshot playhead; the
+    /// Now Playing row restarts itself.
+    pub(in crate::ui) fn jump_to_queue_row(
+        &self,
+        row: crate::ui::track_list::queue_row_mapping::QueueRow,
+    ) {
+        use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+        match row {
+            QueueRow::PlayNext(index) => self.play_up_next_at(index),
+            QueueRow::UpNext(offset) => {
+                let target = {
+                    let mut queue = self.queue.borrow_mut();
+                    match queue.current_order_position() {
+                        Some(base) => queue.jump_to_order_position(base + 1 + offset),
+                        None => None,
+                    }
+                };
+                let Some(id) = target else {
+                    tracing::warn!(offset, "queue jump target vanished; ignoring");
+                    return;
+                };
+                self.current_up_next.set(None);
+                self.notify_queue_changed();
+                self.play_track_id(id);
+            }
+            QueueRow::NowPlaying => {
+                let current = self
+                    .current_up_next
+                    .get()
+                    .or_else(|| self.queue.borrow().current());
+                if let Some(id) = current {
+                    self.play_track_id(id);
+                }
+            }
+        }
     }
 
     /// Purges hard-deleted track ids from the queue (Stage-3 close-out):
@@ -178,9 +433,22 @@ impl PlayerController {
                 queue_len = self.up_next.borrow().len(),
                 "queue purged of hard-deleted track ids"
             );
-            if pending_changed {
-                self.notify_queue_changed();
-            }
+            // Both lists are visible now (composite Queue view + QUE-5
+            // pending counter), so a context-only purge must refresh too
+            // (adversarial review, queue+nav plan, finding 3).
+            self.notify_queue_changed();
+        }
+        // The loaded track itself was hard-deleted: skip ahead rather than
+        // keeping a dead id as the composite view's Now Playing row (its
+        // model row would silently drop, desyncing the section ranges —
+        // review finding 4). `next` drains pending first, then the already-
+        // purged context, so it lands on a live track or stops cleanly.
+        let now_playing_purged = {
+            let now_playing = self.now_playing.borrow();
+            now_playing.as_ref().is_some_and(|np| ids.contains(&np.id))
+        };
+        if now_playing_purged {
+            self.next();
         }
     }
 }

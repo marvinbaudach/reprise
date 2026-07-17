@@ -141,6 +141,20 @@ plus delete/trash) · **GUI-C** (browse bar + Rhythmbox column-layout import) ·
 Each next stage starts with a design spec → an implementation plan (held in-session, not
 committed) → task-by-task execution as above.
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Key conventions to match
 
 - Immutable data, small focused files, early returns, named constants. See existing modules.

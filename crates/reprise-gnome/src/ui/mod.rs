@@ -37,6 +37,7 @@ pub(crate) mod info_panel;
 mod library_views;
 mod lyrics;
 pub mod mpris_mirror;
+pub(crate) mod nav_history;
 mod notifications;
 mod one_shot_task;
 mod playback;
