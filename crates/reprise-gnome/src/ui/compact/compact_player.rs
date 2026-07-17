@@ -30,6 +30,7 @@ use super::compact_player_layouts::{build_mini, MiniWidgets};
 use super::compact_player_menu::{self, CompactMenu};
 use super::compact_player_scroll;
 use super::cover_loader::CoverLoader;
+use super::strings;
 use super::style;
 
 const ICON_PLAY: &str = "media-playback-start-symbolic";
@@ -154,6 +155,14 @@ impl CompactPlayer {
             .widgets
             .play_pause_button
             .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
+        self.0
+            .widgets
+            .play_pause_button
+            .set_tooltip_text(Some(&strings::text(if is_playing {
+                strings::PAUSE
+            } else {
+                strings::PLAY
+            })));
         self.0.menu.set_playing(is_playing);
     }
 

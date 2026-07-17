@@ -383,6 +383,18 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tip_1a_player_bar_buttons_follow_tooltip_discipline() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let layout = build();
+        let violations =
+            crate::ui::tooltip_discipline::tooltip_violations(layout.root.upcast_ref());
+        assert!(violations.is_empty(), "{violations:?}");
+    }
+
+    #[test]
     fn css_styles_the_glow_play_button_and_surface() {
         let css = super::css();
         assert!(css.contains(".player-bar-play"));

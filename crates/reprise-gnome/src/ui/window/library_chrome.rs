@@ -153,6 +153,19 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
+    fn tip_1a_library_chrome_buttons_follow_tooltip_discipline() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let actions = build_maintenance_actions();
+
+        let violations =
+            crate::ui::tooltip_discipline::tooltip_violations(actions.scan.upcast_ref());
+        assert!(violations.is_empty(), "{violations:?}");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn maintenance_actions_keep_the_scan_trigger_out_of_the_header() {
         if gtk4::init().is_err() {
             return;
