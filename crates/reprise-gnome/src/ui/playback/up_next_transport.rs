@@ -11,28 +11,41 @@ pub(in crate::ui) enum AdvanceReason {
     Manual,
 }
 
-fn next_target(
+fn next_matching_target(
     context: &mut Queue,
     pending: &mut UpNextQueue,
     current_pending: &mut Option<i64>,
     reason: AdvanceReason,
+    mut is_available: impl FnMut(i64) -> bool,
 ) -> Option<i64> {
     if reason == AdvanceReason::Automatic && context.repeat() == Repeat::One {
         if let Some(current) = current_pending.or_else(|| context.current()) {
-            return Some(current);
+            if is_available(current) {
+                return Some(current);
+            }
         }
     }
 
-    if let Some(next) = pending.pop_front() {
+    if let Some(next) = pending.take_first_matching(&mut is_available) {
         *current_pending = Some(next);
         return Some(next);
     }
 
     *current_pending = None;
     match reason {
-        AdvanceReason::Automatic => context.advance_auto(),
-        AdvanceReason::Manual => context.next_manual(),
+        AdvanceReason::Automatic => context.advance_auto_matching(is_available),
+        AdvanceReason::Manual => context.next_manual_matching(is_available),
     }
+}
+
+#[cfg(test)]
+fn next_target(
+    context: &mut Queue,
+    pending: &mut UpNextQueue,
+    current_pending: &mut Option<i64>,
+    reason: AdvanceReason,
+) -> Option<i64> {
+    next_matching_target(context, pending, current_pending, reason, |_| true)
 }
 
 /// Non-mutating preview of the track an `Automatic` advance would select next,
@@ -43,14 +56,23 @@ fn next_target(
 /// keeps running through the ordinary end-of-stream path so play-tracking stays
 /// a single, well-understood flow and we avoid a same-URI `about-to-finish`
 /// edge case. The tiny gap on a repeat-one loop is an accepted trade-off.
-fn peek_auto_target(context: &Queue, pending: &UpNextQueue) -> Option<i64> {
+fn peek_matching_auto_target(
+    context: &Queue,
+    pending: &UpNextQueue,
+    mut is_available: impl FnMut(i64) -> bool,
+) -> Option<i64> {
     if context.repeat() == Repeat::One {
         return None;
     }
-    if let Some(&next) = pending.ids().first() {
+    if let Some(next) = pending.first_matching(&mut is_available) {
         return Some(next);
     }
-    context.peek_auto()
+    context.peek_auto_matching(is_available)
+}
+
+#[cfg(test)]
+fn peek_auto_target(context: &Queue, pending: &UpNextQueue) -> Option<i64> {
+    peek_matching_auto_target(context, pending, |_| true)
 }
 
 fn previous_target(context: &mut Queue, current_pending: &mut Option<i64>) -> Option<i64> {
@@ -90,12 +112,28 @@ impl PlayerController {
     /// track, then either start it (`StartPlayback::Yes`) or just reflect it
     /// (`No`, audio already rolling gaplessly).
     fn advance_common(&self, reason: AdvanceReason, start: StartPlayback) {
+        let live_ids = {
+            let conn = self.conn.borrow();
+            match queries::query_live_track_ids(&conn) {
+                Ok(ids) => Some(ids),
+                Err(error) => {
+                    tracing::error!(%error, "failed to resolve playable queue ids; advancing without filtering");
+                    None
+                }
+            }
+        };
         let before = self.up_next.borrow().len();
         let mut current_pending = self.current_up_next.get();
         let next = {
             let mut context = self.queue.borrow_mut();
             let mut pending = self.up_next.borrow_mut();
-            next_target(&mut context, &mut pending, &mut current_pending, reason)
+            next_matching_target(
+                &mut context,
+                &mut pending,
+                &mut current_pending,
+                reason,
+                |id| live_ids.as_ref().is_none_or(|ids| ids.contains(&id)),
+            )
         };
         self.current_up_next.set(current_pending);
         if self.up_next.borrow().len() != before {
@@ -188,10 +226,22 @@ impl PlayerController {
             self.player.set_next(None);
             return;
         }
+        let live_ids = {
+            let conn = self.conn.borrow();
+            match queries::query_live_track_ids(&conn) {
+                Ok(ids) => Some(ids),
+                Err(error) => {
+                    tracing::error!(%error, "failed to resolve playable pre-feed ids; pre-feeding without filtering");
+                    None
+                }
+            }
+        };
         let next_id = {
             let context = self.queue.borrow();
             let pending = self.up_next.borrow();
-            peek_auto_target(&context, &pending)
+            peek_matching_auto_target(&context, &pending, |id| {
+                live_ids.as_ref().is_none_or(|ids| ids.contains(&id))
+            })
         };
         let path = next_id.and_then(|id| {
             let conn = self.conn.borrow();
@@ -237,7 +287,10 @@ mod tests {
     use reprise_core::queue::{Queue, Repeat};
     use reprise_core::up_next::UpNextQueue;
 
-    use super::{next_target, peek_auto_target, play_pending_at, previous_target, AdvanceReason};
+    use super::{
+        next_matching_target, next_target, peek_auto_target, play_pending_at, previous_target,
+        AdvanceReason,
+    };
 
     fn context(ids: &[i64]) -> Queue {
         let mut queue = Queue::new();
@@ -319,6 +372,37 @@ mod tests {
             Some(2)
         );
         assert_eq!(current_pending, None);
+    }
+
+    #[test]
+    fn availability_filter_skips_pending_and_context_candidates_without_a_fault_path() {
+        let mut context = context(&[1, 2, 3]);
+        let mut pending = pending(&[10, 20]);
+        let mut current_pending = None;
+        let available = |id| !matches!(id, 10 | 2);
+
+        assert_eq!(
+            next_matching_target(
+                &mut context,
+                &mut pending,
+                &mut current_pending,
+                AdvanceReason::Automatic,
+                available,
+            ),
+            Some(20)
+        );
+        assert_eq!(pending.ids(), &[10]);
+        assert_eq!(
+            next_matching_target(
+                &mut context,
+                &mut pending,
+                &mut current_pending,
+                AdvanceReason::Automatic,
+                available,
+            ),
+            Some(3)
+        );
+        assert_eq!(context.ids_in_order(), vec![1, 2, 3]);
     }
 
     #[test]

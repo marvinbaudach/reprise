@@ -147,7 +147,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   tracks"); die Queue ist genau die Treffermenge, kein Track von außerhalb.
 - **PLAY-3b** [geplant] [gtk] — Filter nachträglich ändern fasst eine bereits
   gebaute Queue nicht an (Queue ist ein Snapshot; sichtbar in „Queue").
-- **PLAY-4a** [geplant] [core] — Missing in Listen: Listen-Playback und
+- **PLAY-4a** [aktiv] [core] — Missing in Listen: Listen-Playback und
   Queue-Advance überspringen Missing still.
 - **PLAY-4b** [aktiv] [gtk] — Doppelklick auf konkrete Missing-Row: Toast
   „File missing since …" + Button „Show in Missing files". Einreihen (Play
