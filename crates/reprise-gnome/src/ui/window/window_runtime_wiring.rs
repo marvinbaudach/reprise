@@ -207,6 +207,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             }
         }
     });
+    let sidebar_weak = Rc::downgrade(sidebar);
+    track_list.set_on_sidebar_queue_drop(move |ids| match sidebar_weak.upgrade() {
+        Some(sidebar) => sidebar.handle_queue_drop(ids),
+        None => {
+            tracing::warn!("sidebar is gone; cannot dispatch simulated queue drop");
+            false
+        }
+    });
 
     let search_restore_guard = super::view_session::new_search_restore_guard();
     super::view_session::wire_search(

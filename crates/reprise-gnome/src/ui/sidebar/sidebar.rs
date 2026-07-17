@@ -73,6 +73,9 @@ pub(in crate::ui) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
 type OnMissingRemoved = Rc<dyn Fn(&[i64])>;
+/// Callback for a drag-and-drop drop onto the Queue nav row — see
+/// `Shared::on_queue_drop`'s doc comment.
+type OnQueueDrop = Rc<dyn Fn(&[i64]) -> bool>;
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// sidebar_dnd` — see this file's `## Playlist drop target lives in sidebar_
@@ -152,6 +155,19 @@ pub(in crate::ui) struct Shared {
     /// bulk cleanup. `window.rs` uses this to purge the shared playback
     /// queue; cloned out before invocation to preserve reentrancy safety.
     pub(in crate::ui) on_missing_removed: RefCell<Option<OnMissingRemoved>>,
+    /// Invoked with the dragged track ids when they're dropped onto the
+    /// Queue nav row (the drag-and-drop analogue of the context menu's "Add
+    /// to queue" — the Queue must be fillable by drag exactly like a
+    /// playlist row is). `window.rs` wires this to `PlayerController::
+    /// append_to_queue`; returns whether anything was actually appended
+    /// (`false` when no player is available), mirroring `track_list.rs`'s
+    /// `on_queue_reorder` degraded-no-op convention. No sidebar `rebuild`/
+    /// track-list reload runs from the drop handler itself: `append_to_
+    /// queue` already funnels through `PlayerController::notify_queue_
+    /// changed`, whose `window.rs` wiring refreshes this sidebar's Queue
+    /// count *and* reloads the Queue view if visible (trigger inventory
+    /// item 5 in `Sidebar::refresh`'s doc comment).
+    pub(in crate::ui) on_queue_drop: RefCell<Option<OnQueueDrop>>,
     /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
     /// export dialog plus playlist-delete confirmation — hence `pub(in crate::ui)`,
     /// mirroring `conn`/`on_tracks_added`
@@ -229,6 +245,7 @@ impl Sidebar {
             on_import_playlist: RefCell::new(None),
             on_tracks_added: RefCell::new(None),
             on_missing_removed: RefCell::new(None),
+            on_queue_drop: RefCell::new(None),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
             refresh_count: Cell::new(0),
@@ -292,6 +309,24 @@ impl Sidebar {
     /// Sets the queue-maintenance callback for Missing-files bulk cleanup.
     pub fn set_on_missing_removed(&self, callback: impl Fn(&[i64]) + 'static) {
         *self.shared.on_missing_removed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Sets the callback invoked when tracks are dropped onto the Queue nav
+    /// row — see `Shared::on_queue_drop`'s doc comment. `window.rs` wires
+    /// this to `PlayerController::append_to_queue`.
+    pub fn set_on_queue_drop(&self, callback: impl Fn(&[i64]) -> bool + 'static) {
+        *self.shared.on_queue_drop.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Drives the same drop-handling sequence `sidebar_dnd::wire_queue_drop_
+    /// target`'s real `connect_drop` closure runs, for callers that can't
+    /// synthesize a pointer drag — the Queue-row analogue of [`Self::handle_
+    /// playlist_drop`], reached the same way (`window.rs` wires it to
+    /// `TrackList::set_on_sidebar_queue_drop` for `ui::track_list_dnd_smoke`'s
+    /// `REPRISE_SMOKE_DND=addqueue` hook). Returns whether anything was
+    /// actually appended.
+    pub fn handle_queue_drop(&self, ids: &[i64]) -> bool {
+        sidebar_dnd::handle_queue_drop(&self.shared, ids)
     }
 
     /// Injects the window's toast overlay, once it exists (built after the
