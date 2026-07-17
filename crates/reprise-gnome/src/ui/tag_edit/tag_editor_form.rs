@@ -87,6 +87,11 @@ pub(in crate::ui) struct TagEditorForm {
     pub(in crate::ui) mb_hint: gtk4::Label,
     pub(in crate::ui) prev_btn: gtk4::Button,
     pub(in crate::ui) next_btn: gtk4::Button,
+    /// G1 (TAG-4): exposed so `tag_editor.rs` can prepend the browse
+    /// position ("Track 3 of 12") once it knows the snapshot — this module
+    /// itself never learns about the snapshot, only format/bitrate (see
+    /// `format_track_subtitle`'s doc comment).
+    pub(in crate::ui) title_widget: adw::WindowTitle,
 }
 
 impl TagEditorForm {
@@ -302,7 +307,13 @@ impl TagEditorForm {
         next_btn.set_tooltip_text(Some(&strings::text(strings::NEXT)));
         nav_box.append(&prev_btn);
         nav_box.append(&next_btn);
-        nav_box.set_visible(false);
+        // G1 (TAG-4): hidden by default; `tag_editor.rs` reveals both buttons
+        // once it knows whether a real >1-track browse snapshot exists (a
+        // decision that lives outside this module's construction-time data).
+        // Hiding each button rather than `nav_box` itself keeps this a single
+        // line — no new field needs exposing on `TagEditorForm` for it.
+        prev_btn.set_visible(false);
+        next_btn.set_visible(false);
 
         drop(session_ref);
 
@@ -378,6 +389,7 @@ impl TagEditorForm {
             mb_hint,
             prev_btn,
             next_btn,
+            title_widget,
         }
     }
 }

@@ -369,12 +369,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **TAG-3** [aktiv] [gtk] — Per-Track-Felder sind im Multi-Modus read-only:
   Title und Track number zeigen „—" mit Tooltip „Per-track field — edit
   tracks individually". Ein Massen-Titel ist immer ein Unfall.
-- **TAG-4** [geplant] [core] — Blättern verwirft nichts: Öffnet der Editor
+- **TAG-4** [aktiv] [gtk] — Blättern verwirft nichts: Öffnet der Editor
   mit genau einem Track, blättern ‹ › (Ctrl+Page Up/Down) durch einen
   Snapshot der sichtbaren Liste zum Öffnungszeitpunkt — über Track-IDs, nie
   Indizes, damit „Track 3 of 12" stabil bleibt, während darunter re-sortiert
   wird. Pending Änderungen werden pro Track gehalten; Save schreibt alle
   pending Tracks, Cancel verwirft alle (Bestätigung ab einer Änderung).
+  Invalides Zahlenfeld (Year/Track) blockt sowohl Blättern als auch Save.
 - **TAG-5** [aktiv] [core] — Der Diff steht am Feld, nicht in einem zweiten
   Dialog: Jedes effektiv geänderte Feld zeigt darunter den Altwert („was: …",
   durchgestrichen, gedimmt), Border in Akzent; der Platz dafür ist immer
