@@ -18,6 +18,7 @@ use super::player_controller::PlayerController;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::track_list::TrackList;
+use crate::ui::playback::play_origin;
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct ActionWiring<'a> {
@@ -122,8 +123,15 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         let player = player.clone();
-        track_list.set_on_play_selected(move |ids, start_index| match &player {
-            Some(player) => player.play_from_view(ids, start_index),
+        let conn_for_play = conn.clone();
+        track_list.set_on_play_selected(move |ids, start_index, source| match &player {
+            Some(player) => {
+                let origin = {
+                    let conn = conn_for_play.borrow();
+                    play_origin::resolve(&conn, &source)
+                };
+                player.play_from_view(ids, start_index, origin);
+            }
             None => tracing::warn!("player unavailable; ignoring context menu play action"),
         });
     }
@@ -139,8 +147,10 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     // Album view playback wiring.
     {
         let player = player.clone();
-        album_view.set_on_play(move |ids, start_index| match &player {
-            Some(player) => player.play_from_view(ids, start_index),
+        album_view.set_on_play(move |ids, start_index, source| match &player {
+            Some(player) => {
+                player.play_from_view(ids, start_index, play_origin::from_album_source(source));
+            }
             None => tracing::warn!("player unavailable; ignoring album play action"),
         });
     }
@@ -153,8 +163,10 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         let player = player.clone();
-        album_view.set_on_shuffle(move |ids, start_index| match &player {
-            Some(player) => player.play_from_view(ids, start_index),
+        album_view.set_on_shuffle(move |ids, start_index, source| match &player {
+            Some(player) => {
+                player.play_from_view(ids, start_index, play_origin::from_album_source(source));
+            }
             None => tracing::warn!("player unavailable; ignoring album shuffle action"),
         });
     }
@@ -216,8 +228,9 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
                 return;
             };
+            let origin = play_origin::from_artist(&artist);
             match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => player.play_from_view(ids, 0),
+                Ok(ids) if !ids.is_empty() => player.play_from_view(ids, 0, origin),
                 Ok(_) => {}
                 Err(error) => tracing::warn!(%error, "artist play-all query failed"),
             }
@@ -231,8 +244,9 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
                 return;
             };
+            let origin = play_origin::from_artist(&artist);
             match artist_track_ids(&conn, artist) {
-                Ok(ids) if !ids.is_empty() => player.play_from_view(shuffle_ids(ids), 0),
+                Ok(ids) if !ids.is_empty() => player.play_from_view(shuffle_ids(ids), 0, origin),
                 Ok(_) => {}
                 Err(error) => tracing::warn!(%error, "artist shuffle query failed"),
             }

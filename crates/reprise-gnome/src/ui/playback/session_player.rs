@@ -45,6 +45,7 @@ impl PlayerController {
         snapshot: QueueSnapshot,
         up_next: UpNextQueue,
         current_up_next: Option<i64>,
+        play_origin: Option<super::play_origin::PlayOrigin>,
     ) {
         debug_assert!(!restore_should_start_playback());
         let existing = {
@@ -74,6 +75,10 @@ impl PlayerController {
         *self.queue.borrow_mut() = queue;
         *self.up_next.borrow_mut() = up_next;
         self.current_up_next.set(current_up_next);
+        // Restored alongside the snapshot it describes; a session without a
+        // restorable queue never reaches this line, so a stale origin can't
+        // outlive its context.
+        *self.play_origin.borrow_mut() = play_origin;
         self.notify_queue_changed();
 
         let queue_has_tracks = !self.queue.borrow().is_empty()

@@ -96,7 +96,7 @@ pub(in crate::ui) const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
 /// activated row's current sort/filter view (via `queue_ids_for_activation`)
 /// and `start_index` is the activated row's position within that list —
 /// together, exactly `PlayerController::play_from_view`'s parameters.
-pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize)>;
+pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize, ViewSource)>;
 
 /// Callback invoked at the end of every `reload()` — see the `Shared::
 /// on_reload` doc comment for what each parameter carries and why
@@ -105,7 +105,7 @@ type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFilter)>;
 
 /// Context-menu "Play" action callback — see the `Shared::on_play_selected`
 /// doc comment.
-type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize)>;
+type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize, ViewSource)>;
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
@@ -447,7 +447,7 @@ impl TrackList {
     /// see the `Shared::on_play_selected` doc comment. `window.rs` wires
     /// this to `PlayerController::play_from_view` once the controller
     /// exists.
-    pub fn set_on_play_selected(&self, callback: impl Fn(Vec<i64>, usize) + 'static) {
+    pub fn set_on_play_selected(&self, callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static) {
         *self.shared.on_play_selected.borrow_mut() = Some(Rc::new(callback));
     }
 
