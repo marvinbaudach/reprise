@@ -92,7 +92,7 @@ fn playlist_window_honors_an_explicit_column_sort_override() {
 }
 
 #[test]
-fn playlist_window_excludes_missing_tracks() {
+fn playlist_window_keeps_missing_tracks_at_their_playlist_positions() {
     let mut conn = seeded_conn_with_tracks(3);
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 2",
@@ -113,11 +113,34 @@ fn playlist_window_excludes_missing_tracks() {
         &[],
     )
     .unwrap();
-    let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
-    assert_eq!(ids, vec![1, 3]);
+    let rows: Vec<(i64, Option<i64>, Option<i64>)> = rows
+        .iter()
+        .map(|track| (track.id, track.playlist_position, track.missing_since))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (1, Some(0), None),
+            (2, Some(1), Some(1)),
+            (3, Some(2), None)
+        ]
+    );
+}
+
+#[test]
+fn playlist_count_includes_missing_members() {
+    let mut conn = seeded_conn_with_tracks(3);
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = 2",
+        [],
+    )
+    .unwrap();
+    let playlist_id = playlists::create(&conn, "P1").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+
     assert_eq!(
         query_track_count(&conn, &ViewSource::Playlist(playlist_id), "", &[]).unwrap(),
-        2
+        3
     );
 }
 
@@ -138,6 +161,64 @@ fn playlist_ids_always_follow_position_order_ignoring_sort_param() {
     )
     .unwrap();
     assert_eq!(ids, vec![3, 1, 2]);
+}
+
+#[test]
+fn playlist_playable_ids_exclude_missing_members() {
+    let mut conn = seeded_conn_with_tracks(3);
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unmounted' WHERE id = 2",
+        [],
+    )
+    .unwrap();
+    let playlist_id = playlists::create(&conn, "P1").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+
+    assert_eq!(
+        playlist::query_playable_track_ids_playlist(&conn, playlist_id, "").unwrap(),
+        vec![1, 3]
+    );
+}
+
+#[test]
+fn playlist_visible_ids_include_missing_members_in_position_order() {
+    let mut conn = seeded_conn_with_tracks(3);
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = 2",
+        [],
+    )
+    .unwrap();
+    let playlist_id = playlists::create(&conn, "P1").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[3, 2, 1]).unwrap();
+
+    assert_eq!(
+        playlist::query_visible_track_ids_playlist(
+            &conn,
+            playlist_id,
+            "playlist_order",
+            "asc",
+            "",
+        )
+        .unwrap(),
+        vec![3, 2, 1]
+    );
+}
+
+#[test]
+fn playlist_visible_ids_follow_the_visible_column_sort() {
+    let mut conn = seeded_conn_with_tracks(3);
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = 2",
+        [],
+    )
+    .unwrap();
+    let playlist_id = playlists::create(&conn, "P1").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[3, 2, 1]).unwrap();
+
+    assert_eq!(
+        playlist::query_visible_track_ids_playlist(&conn, playlist_id, "title", "asc", "").unwrap(),
+        vec![1, 2, 3]
+    );
 }
 
 #[test]

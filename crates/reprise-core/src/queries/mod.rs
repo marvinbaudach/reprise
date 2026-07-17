@@ -398,7 +398,7 @@ pub fn query_track_ids_browsed(
             };
             rows.collect()
         }
-        ViewSource::Playlist(id) => playlist::query_track_ids_playlist(conn, *id, filter),
+        ViewSource::Playlist(id) => playlist::query_playable_track_ids_playlist(conn, *id, filter),
         ViewSource::Smart(id) => smart::query_track_ids_smart(conn, *id, filter),
         ViewSource::Queue => Ok(queue_ids.to_vec()),
         ViewSource::Album {
@@ -418,6 +418,29 @@ pub fn query_track_ids_browsed(
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
             Ok(Vec::new())
         }
+    }
+}
+
+/// Returns the ids represented by the current visible view. This differs
+/// from [`query_track_ids_browsed`] only for manual playlists: their missing
+/// members remain selectable at their durable positions, while playback
+/// continues to seed queues from playable rows only.
+pub fn query_visible_track_ids_browsed(
+    conn: &Connection,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    match source {
+        ViewSource::Playlist(id) => {
+            playlist::query_visible_track_ids_playlist(conn, *id, sort_field, sort_dir, filter)
+        }
+        _ => query_track_ids_browsed(
+            conn, source, sort_field, sort_dir, filter, browse, queue_ids,
+        ),
     }
 }
 

@@ -15,9 +15,9 @@ use rusqlite::Connection;
 /// Builds the parameterized SELECT for a `Playlist(id)` window — see the
 /// module doc's `Playlist(id)` section for the join shape, the `"playlist_
 /// order"` sentinel, and the duplicates-as-separate-rows behavior.
-/// [`PRESENT`] is applied here too: a track that later vanishes from disk
-/// drops out of every playlist's view and resurfaces only in the dedicated
-/// `Missing` source, exactly like the library view.
+/// Missing tracks deliberately remain visible at their durable playlist
+/// position. Playback obtains its separately filtered ids below; the window
+/// is the membership view and must not silently rewrite that membership.
 ///
 /// The trailing `pt.position` column (index 22, read by `row_to_playlist_
 /// track`) is the durable fix for the "remove from playlist deletes the
@@ -37,7 +37,7 @@ fn build_playlist_track_query(sort_field: &str, sort_dir: &str, has_filter: bool
          tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
          tracks.inode, pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
-         WHERE pt.playlist_id = ?3 AND {PRESENT}{filter_clause} \
+         WHERE pt.playlist_id = ?3{filter_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
     )
 }
@@ -78,7 +78,7 @@ pub(super) fn query_track_count_playlist(
     let has_filter = !filter.trim().is_empty();
     let sql = format!(
         "SELECT count(*) FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
-         WHERE pt.playlist_id = ?1 AND {PRESENT}{}",
+         WHERE pt.playlist_id = ?1{}",
         filter_clause(has_filter, 2)
     );
     if has_filter {
@@ -89,7 +89,7 @@ pub(super) fn query_track_count_playlist(
     }
 }
 
-pub(super) fn query_track_ids_playlist(
+pub(super) fn query_playable_track_ids_playlist(
     conn: &Connection,
     playlist_id: i64,
     filter: &str,
@@ -115,17 +115,44 @@ pub(super) fn query_track_ids_playlist(
     rows.collect()
 }
 
+/// Returns the ids represented by the playlist membership view, including
+/// missing rows. Selection/highlight and reorder logic use this shape; it is
+/// deliberately distinct from the playable-only queue seed above.
+pub(super) fn query_visible_track_ids_playlist(
+    conn: &Connection,
+    playlist_id: i64,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let has_filter = !filter.trim().is_empty();
+    let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
+    let sql = format!(
+        "SELECT tracks.id FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
+         WHERE pt.playlist_id = ?1{} \
+         ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}",
+        filter_clause(has_filter, 2)
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = if has_filter {
+        let like = like_pattern(filter.trim());
+        stmt.query_map(rusqlite::params![playlist_id, like], row_to_id)?
+    } else {
+        stmt.query_map(rusqlite::params![playlist_id], row_to_id)?
+    };
+    rows.collect()
+}
+
 /// Loads every track in playlist `playlist_id`, in playlist order
 /// (`playlist_tracks.position` ascending), with no window/page limit —
 /// distinct from `query_track_window`'s `Playlist` arm, which is capped at
 /// `MAX_WINDOW_LIMIT` for one `ColumnView` page. Stage 3 Task 7 (M3U export)
 /// needs every track the playlist has, in order, in one call; reusing the
 /// windowed query would mean the caller paging through in a loop for no
-/// benefit at the scale a single playlist reaches. Missing tracks (`missing
-/// = 1`) are excluded, matching every other playlist-facing query in this
-/// module (a track that vanished from disk shouldn't be written into an
-/// exported M3U with a dead path). Capped at `QUEUE_LIMIT` for defense in
-/// depth, same reasoning as `query_track_ids`'s per-source caps.
+/// benefit at the scale a single playlist reaches. Missing tracks remain
+/// excluded here even though the membership window now shows them: an M3U
+/// with dead paths is useless to another player. Capped at `QUEUE_LIMIT` for
+/// defense in depth, same reasoning as `query_track_ids`'s per-source caps.
 pub fn query_playlist_tracks_full(
     conn: &Connection,
     playlist_id: i64,
