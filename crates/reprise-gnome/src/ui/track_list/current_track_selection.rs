@@ -215,23 +215,25 @@ impl PlayerController {
     }
 }
 
-impl TrackList {
+impl super::Shared {
     /// The ordered track ids of the current source/sort/filter view — the
     /// same list used to locate a row's visible position. Returns an empty
     /// vec (and logs) on a query failure rather than propagating, since every
     /// caller degrades to "leave the marker where it is" on an empty result.
-    fn current_view_ids(&self) -> Vec<i64> {
-        let sort = self.shared.sort.borrow().clone();
-        let filter = self.shared.filter.borrow().clone();
-        let source = self.shared.source.borrow().clone();
-        let browse = self.shared.browse_filter.borrow().clone();
+    /// On `Shared` (not `TrackList`) so the reload path can reach it for the
+    /// NAV-5 view-state restore.
+    pub(in crate::ui) fn current_view_ids(&self) -> Vec<i64> {
+        let sort = self.sort.borrow().clone();
+        let filter = self.filter.borrow().clone();
+        let source = self.source.borrow().clone();
+        let browse = self.browse_filter.borrow().clone();
         let queue_ids = if matches!(source, ViewSource::Queue) {
-            current_queue_ids(&self.shared)
+            current_queue_ids(self)
         } else {
             Vec::new()
         };
         let result = {
-            let conn = self.shared.conn.borrow();
+            let conn = self.conn.borrow();
             queries::query_track_ids_browsed(
                 &conn,
                 &source,
@@ -247,7 +249,9 @@ impl TrackList {
             Vec::new()
         })
     }
+}
 
+impl TrackList {
     /// Track ids for the transport's end-of-queue refill (see
     /// `PlayerController::set_view_refill_provider`): the visible view's
     /// full id list, or empty when the Queue view itself is showing —
@@ -257,7 +261,7 @@ impl TrackList {
         if matches!(*self.shared.source.borrow(), ViewSource::Queue) {
             return Vec::new();
         }
-        self.current_view_ids()
+        self.shared.current_view_ids()
     }
 
     fn select_current_track(
@@ -270,7 +274,7 @@ impl TrackList {
         // marker never outlives the track change it was armed for.
         let suppress_scroll =
             take_scroll_suppression(&self.shared.suppress_follow_scroll, track_id);
-        let ids = self.current_view_ids();
+        let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
         // Move the now-playing marker id first, then invalidate the
@@ -392,7 +396,7 @@ impl TrackList {
     fn clear_now_playing(&self) {
         let previous = self.shared.playing_track_id.replace(None);
         if let Some(previous) = previous {
-            let ids = self.current_view_ids();
+            let ids = self.shared.current_view_ids();
             if let Some(position) = ids
                 .iter()
                 .position(|candidate| *candidate == previous)

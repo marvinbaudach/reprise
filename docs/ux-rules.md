@@ -17,7 +17,7 @@ Implementierungs-Commit der Regel. Akzeptanztests referenzieren Regel-IDs.
 - **NAV-3 · Kontext-Klicks in der Player-Leiste** `[aktiv]` ⟲ — Der Artist-Klick in der
   Player-Leiste führt in die Artists-Ansicht mit selektiertem Künstler. Album-/Artist-Klicks
   behalten ihre Ziele auch nach Einführung von NAV-9 — nur Cover/Titel springen zum Track.
-- **NAV-5 · View-State bleibt in der Session erhalten** `[geplant]` ⟲ — Sidebar-/Ortswechsel
+- **NAV-5 · View-State bleibt in der Session erhalten** `[aktiv]` ⟲ — Sidebar-/Ortswechsel
   erhält Scroll-Position und Selektion des verlassenen Modus innerhalb der Session. Beim
   Zurückkommen findet man die Liste wie verlassen vor. Präzisierung: kein Persistieren
   über App-Neustarts — der Zustand lebt nur in der laufenden Session.

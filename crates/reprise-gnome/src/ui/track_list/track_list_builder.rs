@@ -73,6 +73,7 @@ pub(in crate::ui) fn build(
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
         suppress_follow_scroll: Cell::new(None),
+        view_state_memory: RefCell::new(std::collections::HashMap::new()),
         conn,
         cover_loader: cover_loader.clone(),
         browse_bar: browse_bar.clone(),

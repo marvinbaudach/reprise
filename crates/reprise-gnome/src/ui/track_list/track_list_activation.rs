@@ -126,6 +126,6 @@ pub(in crate::ui) fn queue_ids_for_activation(
 /// `queries` layer when `source` is `ViewSource::Queue`. Every call site
 /// already checks `source` first, so this is only ever invoked when a fresh
 /// snapshot is actually needed.
-pub(in crate::ui) fn current_queue_ids(shared: &Rc<Shared>) -> Vec<i64> {
+pub(in crate::ui) fn current_queue_ids(shared: &Shared) -> Vec<i64> {
     (shared.queue_ids_provider)()
 }
