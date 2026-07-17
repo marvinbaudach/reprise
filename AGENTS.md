@@ -94,11 +94,9 @@ states its expected new total.
 cargo tree -p reprise-core | grep -E 'gtk4|libadwaita|gstreamer|zbus'   # MUST be empty
 ```
 
-**File-size rule:** every *code* file created or substantially edited ends **< 800 lines**,
-except the append-oriented UI string catalogs (`ui/strings.rs` and `ui/strings_*.rs`), which
-may exceed 800 lines. For other code files, extract a cohesive sibling module if an edit would
-breach the limit — do NOT trim doc comments to fit. Markdown is exempt: docs are split by
-subject, never by line count.
+**File-size rule:** every *code* file created or substantially edited ends **< 800 lines**. If
+an edit would breach it, extract a cohesive sibling module — do NOT trim doc comments to fit.
+Markdown is exempt: docs are split by subject, never by line count.
 
 ## NON-NEGOTIABLE safety rules
 

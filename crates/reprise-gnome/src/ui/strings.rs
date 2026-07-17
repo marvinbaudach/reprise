@@ -34,6 +34,9 @@ pub(super) fn plural(
 mod artist;
 pub use artist::*;
 
+#[path = "strings_issues.rs"]
+mod issues;
+pub use issues::*;
 #[path = "strings_news.rs"]
 mod news;
 pub use news::*;
@@ -773,20 +776,6 @@ pub fn playlist_exported_toast(name: &str) -> String {
 /// Toast shown when writing the exported `.m3u` file fails.
 pub fn playlist_export_failed_toast(name: &str) -> String {
     formatted(N_!("Could not export “{name}”"), &[("name", name)])
-}
-
-pub const ISSUE_SHOW_ONE_MORE: &str = N_!("Show 1 more");
-pub const ISSUE_SHOW_MORE: &str = N_!("Show {count} more");
-
-pub fn issue_show_more(count: u32) -> String {
-    let count_text = count.to_string();
-    let count = usize::try_from(count).unwrap_or(usize::MAX);
-    plural(
-        ISSUE_SHOW_ONE_MORE,
-        ISSUE_SHOW_MORE,
-        count,
-        &[("count", &count_text)],
-    )
 }
 
 // Application identity and legal information shown in the native About dialog.
