@@ -135,7 +135,7 @@ fn format_status_text(track_count: i64, total_duration_ms: i64) -> String {
     let count_text = format_thousands(track_count);
     format!(
         "{count_text} {track_word}{}{}",
-        &strings::text(strings::STATUS_SEPARATOR),
+        strings::text(strings::STATUS_SEPARATOR),
         format_total_duration(total_duration_ms)
     )
 }
