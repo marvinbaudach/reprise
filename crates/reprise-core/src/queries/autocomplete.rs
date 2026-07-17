@@ -323,14 +323,14 @@ mod tests {
     }
 
     #[test]
-    fn tag_7_ghost_is_best_prefix_by_track_count() {
+    fn tag_7a_ghost_is_best_prefix_by_track_count() {
         let conn = seeded_db();
         let ghost = query_ghost_completion(&conn, AutocompleteColumn::Artist, "Cog");
         assert_eq!(ghost, Some("Cogitations".into()));
     }
 
     #[test]
-    fn tag_7_ghost_none_without_prefix_match() {
+    fn tag_7a_ghost_none_without_prefix_match() {
         let conn = seeded_db();
         // "Radio Cognac" only matches "ognac" as a substring, never a prefix.
         let ghost = query_ghost_completion(&conn, AutocompleteColumn::Artist, "ognac");

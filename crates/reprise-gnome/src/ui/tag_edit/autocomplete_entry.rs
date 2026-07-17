@@ -686,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn tag_7_tab_accepts_only_visible_ghost() {
+    fn tag_7a_tab_accepts_only_visible_ghost() {
         match tab_action(Some("nac")) {
             TabAction::AcceptGhost(text) => assert_eq!(text, "nac"),
             TabAction::MoveFocus => panic!("expected AcceptGhost with a visible ghost"),
@@ -694,12 +694,12 @@ mod tests {
     }
 
     #[test]
-    fn tag_7_tab_moves_focus_without_ghost() {
+    fn tag_7a_tab_moves_focus_without_ghost() {
         assert_eq!(tab_action(None), TabAction::MoveFocus);
     }
 
     #[test]
-    fn tag_7_ghost_disabled_hides_badge() {
+    fn tag_7a_ghost_disabled_hides_badge() {
         // Disabled: no ghost, regardless of a real completion being available
         // — this is the badge's visibility gate too, since the badge only
         // shows when `ghost_display` yields `Some`.

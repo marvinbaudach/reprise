@@ -393,13 +393,28 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Track-Zahl absteigend; maximal 6 Zeilen, Dropdown ab 2 Zeichen,
   Sektionstitel „FROM YOUR LIBRARY". Letzte Zeile ist immer „Use ‚X' as new
   artist…" — ein neuer Wert ist nie blockiert.
-- **TAG-7** [aktiv] [gtk] — Inline-Ghost: Der beste Präfix-Treffer (gleiche
-  Rangfolge wie Dropdown-Zeile 1) erscheint gedimmt hinter dem Cursor, Tab
-  übernimmt ihn. Ohne sichtbaren Ghost ist Tab reiner Fokuswechsel — eine
-  stille Übernahme der ersten Dropdown-Zeile gibt es nicht; das Tab-Badge
-  rendert nur bei sichtbarem Ghost. Der Ghost ist reine Anzeige und wird nie
-  zur Änderung, solange ihn niemand übernimmt. Das Popover ankert am Entry
-  und stiehlt nie den Fokus: Tippen läuft ununterbrochen weiter.
+- **TAG-7** [ersetzt durch TAG-7a/TAG-7b] — Inline-Ghost. Gesplittet, weil die
+  Mechanik einklagbar ist, während das tatsächliche Erscheinen des Ghosts
+  headless nicht beweisbar ist (TESTING.md: Xvfb belegt Konstruktion, Signale
+  und CSS, nicht das finale Rendering) und bis zur Sichtprüfung abgeschaltet
+  bleibt. Ein einziges `[aktiv]` hätte für die eine Hälfte gelogen.
+- **TAG-7a** [aktiv] [gtk] — Ghost-Mechanik: Der vorgeschlagene Ghost ist der
+  beste Präfix-Treffer, in derselben Rangfolge wie Dropdown-Zeile 1 (Tiebreak
+  Track-Zahl) — Ghost und Zeile 1 nennen nie verschiedene Werte; ein reiner
+  Substring-Treffer wird nie geghostet. Tab übernimmt **nur** einen sichtbaren
+  Ghost; ohne Ghost ist Tab reiner Fokuswechsel — eine stille Übernahme der
+  ersten Dropdown-Zeile gibt es nicht. Das Tab-Badge rendert nur bei
+  sichtbarem Ghost. Der Ghost ist reine Anzeige und wird nie zur Änderung,
+  solange ihn niemand übernimmt. Das Popover ankert am Entry und stiehlt nie
+  den Fokus: Tippen läuft ununterbrochen weiter. Gilt unverändert, während
+  der Ghost abgeschaltet ist (dann ist schlicht nie einer sichtbar).
+- **TAG-7b** [geplant] [manuell] — Der Ghost erscheint tatsächlich: gedimmt,
+  bündig hinter dem getippten Text, an der Cursor-Position. Headless nicht
+  beweisbar (TESTING.md: Xvfb belegt Konstruktion, Signale und CSS, nicht das
+  finale Rendering), deshalb bleibt `GHOST_ENABLED = false`, bis eine
+  Sichtprüfung auf einem echten Display es bestätigt — „kein halb kaputtes
+  Ghost im Release". Das Zielbild ist beschlossen, nur die Auslieferung wartet
+  auf die Abnahme; Umschalten kostet dann eine Konstante, keinen Code.
 - **TAG-8** [geplant] [gtk] — Tastatur-Semantik. **Enter:** bei offenem
   Dropdown übernimmt es den markierten Vorschlag (Dropdown zu, Fokus bleibt
   im Feld); bei geschlossenem springt es ins nächste editierbare Feld; im
