@@ -546,9 +546,9 @@ pub fn most_active_weekday(
     };
     let mut statement = conn.prepare(&sql)?;
     let map_row = |row: &rusqlite::Row| {
-        let dow: usize = row.get(0)?;
+        let dow: i64 = row.get(0)?;
         let listens: i64 = row.get(1)?;
-        Ok((dow, listens))
+        Ok((usize::try_from(dow).unwrap_or_default(), listens))
     };
     let mut result_rows = if year.is_some() {
         statement.query_map(params![year_str], map_row)?

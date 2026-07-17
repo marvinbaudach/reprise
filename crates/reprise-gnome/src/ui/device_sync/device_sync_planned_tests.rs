@@ -439,7 +439,7 @@ fn select_road_playlist(conn: &Rc<RefCell<Connection>>, ids: &[i64]) {
         conn.borrow()
             .execute(
                 "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (10, ?1, ?2)",
-                rusqlite::params![track_id, position],
+                rusqlite::params![track_id, position as i64],
             )
             .unwrap();
     }
