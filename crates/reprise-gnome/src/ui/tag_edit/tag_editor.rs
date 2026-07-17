@@ -285,11 +285,11 @@ fn nav_sensitivity(position: (usize, usize)) -> (bool, bool) {
 /// `TagEditSession::effective_display` renders an absent/empty value as the
 /// literal placeholder text `"empty"` (TAG-2's mixed-value vocabulary, e.g.
 /// "Mixed — Deathcore, empty") — exactly wrong for a plain field widget's own
-/// text when nothing is mixed (SingleNav browsing never shows a mixed
-/// placeholder, `is_multi` is always false on this path). Turns that
-/// sentinel back into a real blank string before writing to any text field
-/// while navigating.
-fn display_or_blank(display: Option<String>) -> String {
+/// text when nothing is mixed. Turns that sentinel back into a real blank
+/// string before writing to any text field. Used by the browse-refresh path
+/// here and by `tag_editor_form::text_bridge`'s initial build (a uniformly
+/// empty field must show blank, not the word "empty").
+pub(in crate::ui) fn display_or_blank(display: Option<String>) -> String {
     match display {
         Some(text) if text == "empty" => String::new(),
         Some(text) => text,
