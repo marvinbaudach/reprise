@@ -6,12 +6,10 @@
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-#[allow(dead_code)] // Wired into the filter row in Tasks 2 and 3.
 pub(in crate::ui) fn is_restricted(search: &str, browse: &BrowseFilter) -> bool {
     !search.trim().is_empty() || !browse.is_empty()
 }
 
-#[allow(dead_code)] // Wired into the filter row in Tasks 2 and 3.
 pub(in crate::ui) fn is_track_source(source: &ViewSource) -> bool {
     !matches!(
         source,
@@ -19,7 +17,6 @@ pub(in crate::ui) fn is_track_source(source: &ViewSource) -> bool {
     )
 }
 
-#[allow(dead_code)] // Wired into the filter row in Task 2.
 pub(in crate::ui) fn row_visible(
     is_track_source: bool,
     restricted: bool,
