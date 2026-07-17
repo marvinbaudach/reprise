@@ -320,15 +320,18 @@ mod tests {
         tag.set_artist("Keep artist".into());
         tag.set_album("Keep album".into());
         tag.insert_text(ItemKey::AlbumArtist, "Keep album artist".into());
-        tag.set_year(1999);
+        tag.set_date(lofty::tag::items::Timestamp {
+            year: 1999,
+            ..lofty::tag::items::Timestamp::default()
+        });
         tag.set_track(7);
         tag.set_genre("Keep genre".into());
-        tag.push_picture(Picture::new_unchecked(
-            PictureType::CoverFront,
-            Some(MimeType::Png),
-            None,
-            TINY_PNG.to_vec(),
-        ));
+        tag.push_picture(
+            Picture::unchecked(TINY_PNG.to_vec())
+                .pic_type(PictureType::CoverFront)
+                .mime_type(MimeType::Png)
+                .build(),
+        );
         tag.save_to_path(path, lofty::config::WriteOptions::default())
             .unwrap();
     }

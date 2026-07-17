@@ -276,7 +276,16 @@ pub(in crate::ui) fn css() -> String {
     )
 }
 
-fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
+/// `show_window_controls`: the dialog/preferences variants keep the header
+/// bar's native decoration (adw::Dialog turns it into the dialog's close
+/// button); the header POPOVER variant must not — a popover is no window,
+/// and the default decoration renders stray minimize/maximize/close buttons
+/// inside it.
+fn build_surface(
+    track_list: &Rc<TrackList>,
+    title: &str,
+    show_window_controls: bool,
+) -> EditorSurface {
     let list = gtk4::ListBox::new();
     list.add_css_class("boxed-list");
     list.set_selection_mode(gtk4::SelectionMode::None);
@@ -296,6 +305,8 @@ fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
         }
     });
     let header = adw::HeaderBar::new();
+    header.set_show_start_title_buttons(show_window_controls);
+    header.set_show_end_title_buttons(show_window_controls);
     header.pack_start(&reset);
     header.set_title_widget(Some(&adw::WindowTitle::new(title, "")));
     let scroll = gtk4::ScrolledWindow::builder()
@@ -315,7 +326,7 @@ fn build_surface(track_list: &Rc<TrackList>, title: &str) -> EditorSurface {
 
 pub(in crate::ui) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::NavigationPage {
     let title = strings::text(strings::ONBOARDING_RHYTHMBOX_COLUMN_LAYOUT);
-    let surface = build_surface(track_list, &title);
+    let surface = build_surface(track_list, &title, true);
     let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
     tracing::info!(layout = %serialized, "column layout editor opened in preferences");
     adw::NavigationPage::with_tag(&surface.toolbar, &title, "column-layout")
@@ -323,7 +334,7 @@ pub(in crate::ui) fn build_navigation_page(track_list: &Rc<TrackList>) -> adw::N
 
 fn build_dialog(track_list: &Rc<TrackList>) -> EditorDialogSurface {
     let title = strings::text(strings::EDIT_COLUMN_LAYOUT);
-    let surface = build_surface(track_list, &title);
+    let surface = build_surface(track_list, &title, true);
     let dialog = adw::Dialog::builder()
         .child(&surface.toolbar)
         .content_width(520)
@@ -347,7 +358,7 @@ fn is_header_click(y: f64, header_height: i32) -> bool {
 /// the layout inline instead of showing a plain visibility menu.
 fn build_header_popover(track_list: &Rc<TrackList>) -> gtk4::Popover {
     let title = strings::text(strings::EDIT_COLUMN_LAYOUT);
-    let surface = build_surface(track_list, &title);
+    let surface = build_surface(track_list, &title, false);
     let content = gtk4::Frame::builder()
         .width_request(360)
         .height_request(440)
@@ -370,6 +381,14 @@ pub(in crate::ui) fn install_header_popover(track_list: &Rc<TrackList>) {
     let column_view = track_list.column_view_widget().clone();
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
+    // Capture phase, claiming on press: GtkColumnViewTitle's own click
+    // gesture claims EVERY press (any button) at the target, so a
+    // bubble-phase ancestor gesture loses the sequence before its handler
+    // can run — the exact claim race that also breaks GTK's native column
+    // drag (see `column_header_dnd`'s module doc). At capture this gesture
+    // runs first, and its claim below keeps the title's own gesture (and
+    // GTK's plain visibility menu) from ever seeing header right-clicks.
+    gesture.set_propagation_phase(gtk4::PropagationPhase::Capture);
     let track_list_weak = Rc::downgrade(track_list);
     let view = column_view.clone();
     gesture.connect_pressed(move |gesture, _, x, y| {
