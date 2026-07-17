@@ -7,7 +7,6 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use reprise_core::library::tag_edit::{EditableTagSummary, MixedValue};
 use reprise_core::queries::autocomplete::AutocompleteColumn;
 use rusqlite::Connection;
@@ -92,7 +91,22 @@ impl TagEditorForm {
         save_btn.set_sensitive(false);
         let cancel_btn = gtk4::Button::with_label(&strings::text(strings::CANCEL));
 
-        let title_widget = adw::WindowTitle::new(&mode.title(), "");
+        // Header subtitle (Beschluss #2): Multi explains the batch-write
+        // scope; Single renders "FORMAT · bitrate" from the file extension.
+        // The "Track N of M" position prefix is Package G's job (TAG-4
+        // browse snapshot) — bitrate isn't threaded into this constructor
+        // yet either (see this module's doc comment), so only the format
+        // half renders for now; never a fabricated or stale bitrate.
+        let subtitle = if is_multi {
+            strings::text(strings::TAG_SUBTITLE_MULTI)
+        } else {
+            let extension = tracks
+                .first()
+                .and_then(|(_, path)| path.extension())
+                .and_then(|ext| ext.to_str());
+            format_track_subtitle(extension, None).unwrap_or_default()
+        };
+        let title_widget = adw::WindowTitle::new(&mode.title(), &subtitle);
         let header = adw::HeaderBar::new();
         header.pack_start(&cancel_btn);
         header.pack_end(&save_btn);
@@ -100,16 +114,16 @@ impl TagEditorForm {
         header.set_show_start_title_buttons(false);
         header.set_show_end_title_buttons(false);
 
+        // --- Cover (left) + Title/Artist/Album (right) ---
         let cover_area = build_cover_area(tracks, is_multi);
+
         let title_row = adw::EntryRow::builder()
             .title(strings::text(strings::TAG_TITLE))
             .build();
-        if is_multi {
-            title_row.set_editable(false);
-            title_row.add_css_class("reprise-tag-mixed");
-            add_annotation(&title_row, &strings::text(strings::TAG_PER_TRACK), false);
+        apply_per_track_field(&title_row, is_multi);
+        if !is_multi {
+            set_entry_from_mixed_string(&title_row, &summary.title);
         }
-        set_entry_from_mixed_string(&title_row, &summary.title);
 
         let artist_ac = Rc::new(AutocompleteEntry::new(
             &strings::text(strings::TAG_ARTIST),
@@ -133,6 +147,22 @@ impl TagEditorForm {
             attach_click_to_unlock(album_ac.row(), album_annotation.as_ref(), track_count);
         }
 
+        let (title_col, _title_old_value) = build_field_column(title_row.upcast_ref(), None);
+        let (artist_col, _artist_old_value) =
+            build_field_column(artist_ac.row().upcast_ref(), None);
+        let (album_col, _album_old_value) = build_field_column(album_ac.row().upcast_ref(), None);
+
+        let title_artist_album = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
+        title_artist_album.set_hexpand(true);
+        title_artist_album.append(&title_col);
+        title_artist_album.append(&artist_col);
+        title_artist_album.append(&album_col);
+
+        let top_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 16);
+        top_row.append(&cover_area);
+        top_row.append(&title_artist_album);
+
+        // --- 2-column grid: Album artist/Genre, Year/Track number ---
         let album_artist_ac = Rc::new(AutocompleteEntry::new(
             &strings::text(strings::TAG_ALBUM_ARTIST),
             AutocompleteColumn::AlbumArtist,
@@ -179,27 +209,33 @@ impl TagEditorForm {
             .title(strings::text(strings::TAG_TRACK_NUMBER))
             .input_purpose(gtk4::InputPurpose::Digits)
             .build();
-        if is_multi {
-            track_no_row.set_editable(false);
-            track_no_row.add_css_class("reprise-tag-mixed");
-            add_annotation(&track_no_row, &strings::text(strings::TAG_PER_TRACK), false);
+        apply_per_track_field(&track_no_row, is_multi);
+        if !is_multi {
+            set_entry_from_mixed_number(&track_no_row, &summary.track_no);
         }
-        set_entry_from_mixed_number(&track_no_row, &summary.track_no);
+
+        let (album_artist_col, _album_artist_old_value) =
+            build_field_column(album_artist_ac.row().upcast_ref(), None);
+        let (genre_col, _genre_old_value) = build_field_column(genre_ac.row().upcast_ref(), None);
+        let (year_col, _year_old_value) = build_field_column(year_row.upcast_ref(), None);
+        let (track_no_col, _track_no_old_value) =
+            build_field_column(track_no_row.upcast_ref(), None);
+
+        let grid = gtk4::Grid::builder()
+            .column_spacing(16)
+            .row_spacing(4)
+            .column_homogeneous(true)
+            .build();
+        grid.attach(&album_artist_col, 0, 0, 1, 1);
+        grid.attach(&genre_col, 1, 0, 1, 1);
+        grid.attach(&year_col, 0, 1, 1, 1);
+        grid.attach(&track_no_col, 1, 1, 1, 1);
 
         let (rating_box, rating_value) = build_star_rating(rating);
-        let group = adw::PreferencesGroup::new();
-        group.add(&title_row);
-        group.add(artist_ac.row());
-        group.add(album_ac.row());
-        group.add(album_artist_ac.row());
-        group.add(genre_ac.row());
-        group.add(&year_row);
-        group.add(&track_no_row);
-        let rating_row = adw::ActionRow::builder()
-            .title(strings::text(strings::RATING))
-            .build();
-        rating_row.add_suffix(&rating_box);
-        group.add(&rating_row);
+        let (rating_col, _rating_old_value) = build_field_column(
+            rating_box.upcast_ref(),
+            Some(&strings::text(strings::RATING)),
+        );
 
         let error_label = gtk4::Label::builder()
             .label(strings::text(strings::TAG_NUMBER_ERROR))
@@ -233,13 +269,14 @@ impl TagEditorForm {
         nav_box.append(&next_btn);
         nav_box.set_visible(false);
 
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
         content.set_margin_top(12);
         content.set_margin_bottom(18);
         content.set_margin_start(18);
         content.set_margin_end(18);
-        content.append(&cover_area);
-        content.append(&group);
+        content.append(&top_row);
+        content.append(&grid);
+        content.append(&rating_col);
         content.append(&error_label);
         if is_multi {
             content.append(&pending_bar);

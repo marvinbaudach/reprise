@@ -65,11 +65,34 @@ pub(in crate::ui) fn css() -> String {
          .reprise-tag-field-annotation.accent {{ \
            color: @accent_color; }}\n\
          \
+         /* --- 3a layout: cover-left header row + entry grid (TAG-2/TAG-3) --- */
+         .reprise-tag-field {{ \
+           margin-bottom: 2px; }}\n\
+         .reprise-tag-field-label {{ \
+           font-size: 12px; \
+           font-weight: 600; \
+           color: @reprise_dim_fg_color; \
+           padding: 0 2px; }}\n\
+         /* Reserved \"was: …\" line (TAG-5, P-4): space is always allocated, \
+            even while its text is empty, so the first real edit never \
+            reflows the grid around it. */
+         .reprise-tag-old-value {{ \
+           font-size: 11px; \
+           color: alpha(@window_fg_color, 0.40); \
+           min-height: 14px; }}\n\
+         \
          /* --- Mixed-field state --- */
          .reprise-tag-mixed > .header {{ \
            border-style: dashed; }}\n\
          .reprise-tag-mixed > .header text {{ \
            font-style: italic; }}\n\
+         \
+         /* --- Per-track field lock (TAG-3): Title/Track-number read-only \
+            in Multi mode --- */
+         .reprise-tag-per-track {{ \
+           opacity: 0.6; }}\n\
+         .reprise-tag-per-track > .header text {{ \
+           font-style: normal; }}\n\
          \
          /* --- Pending-change bar --- */
          .reprise-tag-pending {{ \
@@ -136,23 +159,16 @@ pub(in crate::ui) fn css() -> String {
            color: @error_color; \
            font-size: 12px; }}\n\
          \
-         /* --- Change-cover link --- */
-         .reprise-tag-cover-link {{ \
-           font-size: 12px; \
-           color: @reprise_dim_fg_color; \
-           padding: 4px 0; }}\n\
-         .reprise-tag-cover-link:disabled {{ \
-           opacity: 0.5; }}\n\
-         \
          /* --- Focus glow on entry rows inside the editor --- */
          .reprise-tag-editor row:focus-within {{ \
            box-shadow: 0 0 {FOCUS_GLOW_BLUR} alpha(@accent_color, {FOCUS_GLOW_ALPHA}); \
            border-radius: 8px; }}\n\
          \
-         /* --- Preferences group inside dialog gets card tint --- */
-         .reprise-tag-editor preferencesgroup {{ \
+         /* --- Field columns get a subtle card tint, replacing the old \
+            boxed-list/PreferencesGroup look the 3a layout retired --- */
+         .reprise-tag-editor .reprise-tag-field .header {{ \
            background: alpha(@window_fg_color, {DIALOG_CARD_ALPHA}); \
-           border-radius: 12px; }}"
+           border-radius: 8px; }}"
     )
 }
 

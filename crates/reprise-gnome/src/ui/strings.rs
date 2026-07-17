@@ -168,7 +168,15 @@ pub const TAG_FETCH_NOTHING_TO_FILL: &str = N_!("Done — all fields already hav
 pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
 pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
 pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
+// Retained for a future cover-write feature: v1 (3a layout, Beschluss #1)
+// dropped the "Change cover…" affordance from the tag editor entirely.
+#[allow(dead_code)]
 pub const TAG_CHANGE_COVER: &str = N_!("Change cover\u{2026}");
+// 3a layout (TAG-3/Beschluss #2): header subtitle for Multi mode, and the
+// tooltip on Title/Track-number once they're locked read-only there.
+pub const TAG_SUBTITLE_MULTI: &str =
+    N_!("Only changed fields will be written to all selected tracks");
+pub const TAG_PER_TRACK_TOOLTIP: &str = N_!("Per-track field — edit tracks individually");
 
 pub fn tag_edit_title_multi(count: usize) -> String {
     let count_text = count.to_string();
