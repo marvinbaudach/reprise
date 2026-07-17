@@ -131,6 +131,11 @@ pub use clauses::build_track_query;
 // directly, the same reachability fix Task 1's `ImportErrorKind` move to
 // `models` made for the same reason (see that commit's message).
 pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, MissingGroupKind};
+// Task 2.5: the sidebar badge counts, keyed on `last_viewed_*` — see
+// `issues`'s "Badge counts" section for the `count_missing`/`count_new_
+// missing` split. `pub use` for the same cross-crate reachability reason as
+// `query_missing_groups` above.
+pub use issues::{count_missing, count_new_missing};
 // Task 2.3: the auto-clean read/act split — `auto_clean_eligible` for a
 // preview, `run_auto_clean` for the real unattended deletion. `pub use` for
 // the same cross-crate reachability reason as `query_missing_groups` above:
@@ -146,6 +151,11 @@ pub use import_errors::{
     query_dismissed_import_errors, query_import_errors_grouped, restore_import_error,
     ImportErrorEntry,
 };
+// Task 2.5: the import-errors half of the sidebar badge counts — see
+// `import_errors`'s own "Badge counts" section for the hint-inclusion split
+// between the two. `pub use` for the same cross-crate reachability reason as
+// `query_missing_groups` above.
+pub use import_errors::{count_import_errors_active, count_new_import_errors};
 pub use library_views::{
     query_album_track_ids, query_albums, query_artist_detail_albums, query_artists, AlbumSummary,
     ArtistAlbum, ArtistSummary,
@@ -519,6 +529,8 @@ mod tests_auto_clean;
 mod tests_import_errors;
 #[cfg(test)]
 mod tests_issues;
+#[cfg(test)]
+mod tests_issues_badges;
 #[cfg(test)]
 mod tests_maintenance;
 #[cfg(test)]
