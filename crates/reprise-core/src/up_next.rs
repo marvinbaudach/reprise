@@ -74,6 +74,37 @@ impl UpNextQueue {
     pub fn truncate(&mut self, limit: usize) {
         self.ids.truncate(limit);
     }
+
+    /// Inserts one id at `index` (clamped to the end) — QUE-3's drag of an
+    /// Up-Next snapshot row into the Play Next section lands here. Respects
+    /// the same capacity limit as `append`.
+    pub fn insert(&mut self, index: usize, id: i64) {
+        let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
+        if self.ids.len() >= limit {
+            return;
+        }
+        let index = index.min(self.ids.len());
+        self.ids.insert(index, id);
+    }
+
+    /// Puts `ids` at the FRONT in the given order — the "Play next" context
+    /// action (QUE-3), as opposed to `append`'s "Add to queue". Capacity
+    /// overflow drops from the back of the existing list, never the new
+    /// front entries (the user's freshest intent wins).
+    pub fn prepend(&mut self, ids: &[i64]) {
+        let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
+        let mut merged = Vec::with_capacity((ids.len() + self.ids.len()).min(limit));
+        merged.extend(ids.iter().copied().take(limit));
+        let remaining = limit.saturating_sub(merged.len());
+        merged.extend(self.ids.iter().copied().take(remaining));
+        self.ids = merged;
+    }
+
+    /// Empties the manual list — the "Clear queue" button (QUE-3), which
+    /// deliberately touches ONLY Play Next, never the playback snapshot.
+    pub fn clear(&mut self) {
+        self.ids.clear();
+    }
 }
 
 #[cfg(test)]
@@ -149,5 +180,36 @@ mod tests {
         queue.append(&ids);
         assert_eq!(queue.len(), limit);
         assert_eq!(queue.ids().last(), Some(&(limit as i64 - 1)));
+    }
+}
+
+#[cfg(test)]
+mod que3_tests {
+    use super::*;
+
+    #[test]
+    fn insert_places_at_index_and_clamps_past_the_end() {
+        let mut queue = UpNextQueue::default();
+        queue.append(&[1, 3]);
+        queue.insert(1, 2);
+        assert_eq!(queue.ids(), &[1, 2, 3]);
+        queue.insert(99, 4);
+        assert_eq!(queue.ids(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn prepend_puts_ids_at_the_front_in_given_order() {
+        let mut queue = UpNextQueue::default();
+        queue.append(&[9]);
+        queue.prepend(&[1, 2]);
+        assert_eq!(queue.ids(), &[1, 2, 9]);
+    }
+
+    #[test]
+    fn clear_empties_only_this_list() {
+        let mut queue = UpNextQueue::default();
+        queue.append(&[1, 2, 3]);
+        queue.clear();
+        assert!(queue.is_empty());
     }
 }

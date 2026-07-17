@@ -1,5 +1,102 @@
 use super::*;
 
+/// Builds a bare `Shared` over a fresh in-memory database — enough for
+/// `rebuild` and the drop-handler functions, without an `adw::
+/// ApplicationWindow`/`Application` (the `window`/`toast_overlay` weak refs
+/// simply stay unset, which every consumer already degrades on). Display
+/// required (`gtk::ListBox`), hence only the `#[ignore]` tests below use it.
+fn test_shared() -> Rc<Shared> {
+    let conn = reprise_core::db::open(None).unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    Rc::new(Shared {
+        conn: Rc::new(RefCell::new(conn)),
+        listbox: gtk4::ListBox::new(),
+        issues_listbox: gtk4::ListBox::new(),
+        queue_len_provider: Box::new(|| 0),
+        current_source: RefCell::new(ViewSource::default()),
+        rows: RefCell::new(Vec::new()),
+        new_playlist_row: RefCell::new(None),
+        import_playlist_row: RefCell::new(None),
+        on_select: RefCell::new(None),
+        on_show_content: RefCell::new(None),
+        on_import_playlist: RefCell::new(None),
+        on_tracks_added: RefCell::new(None),
+        on_missing_removed: RefCell::new(None),
+        on_queue_drop: RefCell::new(None),
+        window: glib::WeakRef::new(),
+        toast_overlay: glib::WeakRef::new(),
+        refresh_count: Cell::new(0),
+    })
+}
+
+fn has_drop_target(row: &gtk4::ListBoxRow) -> bool {
+    let controllers = row.observe_controllers();
+    (0..controllers.n_items()).any(|index| {
+        controllers
+            .item(index)
+            .is_some_and(|controller| controller.is::<gtk4::DropTarget>())
+    })
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn queue_row_installs_a_drop_target_but_library_row_does_not() {
+    gtk4::init().unwrap();
+    let shared = test_shared();
+    rebuild(&shared, None, "test build");
+
+    let queue_row = find_row(&shared, &ViewSource::Queue).unwrap();
+    assert!(
+        has_drop_target(&queue_row),
+        "the Queue nav row must accept track drops"
+    );
+    let library_row = find_row(&shared, &ViewSource::Library).unwrap();
+    assert!(
+        !has_drop_target(&library_row),
+        "the Library nav row must not accept drops"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn handle_queue_drop_dispatches_ids_to_the_wired_callback() {
+    gtk4::init().unwrap();
+    let shared = test_shared();
+    let seen: Rc<RefCell<Vec<i64>>> = Rc::new(RefCell::new(Vec::new()));
+    {
+        let seen = seen.clone();
+        *shared.on_queue_drop.borrow_mut() = Some(Rc::new(move |ids: &[i64]| {
+            seen.borrow_mut().extend_from_slice(ids);
+            true
+        }));
+    }
+
+    assert!(crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[7, 9]));
+    assert_eq!(*seen.borrow(), vec![7, 9]);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
+    gtk4::init().unwrap();
+    let shared = test_shared();
+
+    // No callback wired at all: report failure, don't panic.
+    assert!(!crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[7]));
+
+    // Callback wired but empty ids: never invoked, reports failure.
+    let invoked = Rc::new(Cell::new(false));
+    {
+        let invoked = invoked.clone();
+        *shared.on_queue_drop.borrow_mut() = Some(Rc::new(move |_: &[i64]| {
+            invoked.set(true);
+            true
+        }));
+    }
+    assert!(!crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[]));
+    assert!(!invoked.get());
+}
+
 #[test]
 fn keeps_requested_source_when_its_row_still_exists() {
     let (source, fell_back) = resolve_select_source(ViewSource::Playlist(3), true);

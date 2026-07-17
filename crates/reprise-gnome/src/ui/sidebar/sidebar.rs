@@ -61,7 +61,6 @@ use rusqlite::Connection;
 use super::sidebar_activity_slot::SidebarActivitySlot;
 use crate::ui::sidebar_dnd;
 use crate::ui::sidebar_playlist_creation;
-use crate::ui::toasts;
 use reprise_core::view_source::ViewSource;
 
 /// One row's identity: the built widget, the `ViewSource` selecting it
@@ -73,6 +72,7 @@ pub(in crate::ui) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
 type OnMissingRemoved = Rc<dyn Fn(&[i64])>;
+use super::sidebar_dnd::OnQueueDrop;
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// sidebar_dnd` — see this file's `## Playlist drop target lives in sidebar_
@@ -152,6 +152,19 @@ pub(in crate::ui) struct Shared {
     /// bulk cleanup. `window.rs` uses this to purge the shared playback
     /// queue; cloned out before invocation to preserve reentrancy safety.
     pub(in crate::ui) on_missing_removed: RefCell<Option<OnMissingRemoved>>,
+    /// Invoked with the dragged track ids when they're dropped onto the
+    /// Queue nav row (the drag-and-drop analogue of the context menu's "Add
+    /// to queue" — the Queue must be fillable by drag exactly like a
+    /// playlist row is). `window.rs` wires this to `PlayerController::
+    /// append_to_queue`; returns whether anything was actually appended
+    /// (`false` when no player is available), mirroring `track_list.rs`'s
+    /// `on_queue_reorder` degraded-no-op convention. No sidebar `rebuild`/
+    /// track-list reload runs from the drop handler itself: `append_to_
+    /// queue` already funnels through `PlayerController::notify_queue_
+    /// changed`, whose `window.rs` wiring refreshes this sidebar's Queue
+    /// count *and* reloads the Queue view if visible (trigger inventory
+    /// item 5 in `Sidebar::refresh`'s doc comment).
+    pub(in crate::ui) on_queue_drop: RefCell<Option<OnQueueDrop>>,
     /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
     /// export dialog plus playlist-delete confirmation — hence `pub(in crate::ui)`,
     /// mirroring `conn`/`on_tracks_added`
@@ -161,7 +174,7 @@ pub(in crate::ui) struct Shared {
     /// Injected post-construction once `window.rs` builds it (same seam
     /// shape as `TrackList::toast_overlay`) — surfaces a failed playlist
     /// creation as a toast rather than only a log line.
-    toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// Counts every `rebuild` call (routine refresh or forced selection
     /// alike), logged alongside each call's `reason` — see `rebuild`'s
     /// tracing line and `Sidebar::refresh`'s doc comment for the trigger
@@ -174,7 +187,7 @@ pub(in crate::ui) struct Shared {
 /// Handle to the built sidebar widget: scrolling navigation followed by
 /// non-scrolling issues and the shared bottom activity slot.
 pub struct Sidebar {
-    shared: Rc<Shared>,
+    pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
     activity_slot: SidebarActivitySlot,
 }
@@ -229,6 +242,7 @@ impl Sidebar {
             on_import_playlist: RefCell::new(None),
             on_tracks_added: RefCell::new(None),
             on_missing_removed: RefCell::new(None),
+            on_queue_drop: RefCell::new(None),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
             refresh_count: Cell::new(0),
@@ -390,23 +404,6 @@ impl Sidebar {
             }),
         );
         self.activity_slot.set_device_section(&section);
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn test_shared(&self) -> &Rc<Shared> {
-        &self.shared
-    }
-}
-
-/// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
-/// wired or it's gone — mirrors `track_list.rs`/`player_controller.rs`'s
-/// `show_toast` (same seam, same degrade behavior).
-pub(in crate::ui) fn show_toast(shared: &Shared, text: &str) {
-    match shared.toast_overlay.upgrade() {
-        Some(overlay) => toasts::show(&overlay, text),
-        None => {
-            tracing::warn!(text, "toast overlay is gone; degrading to log-only");
-        }
     }
 }
 

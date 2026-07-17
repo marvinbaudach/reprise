@@ -15,7 +15,7 @@
 /// Which source the track list is currently querying. `Playlist`/`Smart`
 /// carry the referenced row's id; `Library`/`Queue`/`Missing`/`ImportErrors`
 /// are singletons (only one of each can ever be shown at a time).
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum ViewSource {
     /// The whole present library (`queries::clauses::PRESENT`) — today's
     /// only source before this task, and still the default.

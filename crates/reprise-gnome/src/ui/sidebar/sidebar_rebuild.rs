@@ -179,6 +179,9 @@ fn add_row(
             sidebar_dnd::wire_playlist_drop_target(shared, &row, *playlist_id, title);
             sidebar_export::wire_playlist_context_menu(shared, &row, *playlist_id, title);
         }
+        ViewSource::Queue => {
+            sidebar_dnd::wire_queue_drop_target(shared, &row);
+        }
         ViewSource::ImportErrors | ViewSource::Missing => {
             sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());
         }

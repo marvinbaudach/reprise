@@ -72,6 +72,11 @@ mod imp {
         /// for every other source.
         pub queue_ids: Vec<i64>,
         pub cache: BTreeMap<u32, Vec<Track>>,
+        /// QUE-1 section ranges (half-open, model coordinates) for the
+        /// Queue source; empty = the whole model is one section. Set via
+        /// `TrackListModel::set_sections` BEFORE the query swap whose
+        /// `items_changed` makes GTK re-read sections.
+        pub sections: Vec<(u32, u32)>,
     }
 
     /// `conn` is `None` only in the brief instant between `glib::Object::new`
@@ -90,10 +95,42 @@ mod imp {
         const NAME: &'static str = "RepriseTrackListModel";
         type Type = super::TrackListModel;
         type ParentType = glib::Object;
+        // The `gtk::SectionModel` interface (QUE-1 queue headers) is
+        // test-gated OFF: its `interface_init` asserts the registering
+        // thread called `gtk4::init()`, and `cargo test`'s worker threads
+        // race for that — whichever unit test constructs the first model on
+        // a non-GTK thread would panic. Production always registers on the
+        // main thread after `gtk4::init()`. The section MATH stays fully
+        // unit-tested (`queue_sections::section_ranges` + `section_for`
+        // below); the live interface is exercised by the headless E2E runs.
+        #[cfg(not(test))]
+        type Interfaces = (gio::ListModel, gtk4::SectionModel);
+        #[cfg(test)]
         type Interfaces = (gio::ListModel,);
     }
 
     impl ObjectImpl for TrackListModel {}
+
+    /// The `SectionModel::section` contract, as a plain function so unit
+    /// tests cover it without the GTK interface (see `Interfaces` above).
+    pub(super) fn section_for(sections: &[(u32, u32)], total: u32, position: u32) -> (u32, u32) {
+        for &(start, end) in sections {
+            if position >= start && position < end {
+                return (start, end);
+            }
+        }
+        // No sections declared (every non-Queue source), or a position past
+        // the declared ranges: the whole model is one section.
+        (0, total.max(position.saturating_add(1)))
+    }
+
+    #[cfg(not(test))]
+    impl gtk4::subclass::prelude::SectionModelImpl for TrackListModel {
+        fn section(&self, position: u32) -> (u32, u32) {
+            let state = self.state.borrow();
+            section_for(&state.sections, state.total, position)
+        }
+    }
 
     impl ListModelImpl for TrackListModel {
         fn item_type(&self) -> glib::Type {
@@ -112,6 +149,12 @@ mod imp {
     }
 }
 
+#[cfg(not(test))]
+glib::wrapper! {
+    pub struct TrackListModel(ObjectSubclass<imp::TrackListModel>)
+        @implements gio::ListModel, gtk4::SectionModel;
+}
+#[cfg(test)]
 glib::wrapper! {
     pub struct TrackListModel(ObjectSubclass<imp::TrackListModel>)
         @implements gio::ListModel;
@@ -137,6 +180,14 @@ impl TrackListModel {
     /// signal: `items_changed` can synchronously re-enter this object
     /// (`GtkColumnView`/`NoSelection` typically re-read `n_items`/`item`
     /// right away), so no borrow may still be held when it fires.
+    /// Declares the QUE-1 section ranges the next query swap renders.
+    /// Call BEFORE `set_query`/`set_query_browsed` — their full-range
+    /// `items_changed` is what makes GTK re-read `section()`. Pass an empty
+    /// vec for every non-Queue source (one whole-model section).
+    pub fn set_sections(&self, sections: Vec<(u32, u32)>) {
+        self.imp().state.borrow_mut().sections = sections;
+    }
+
     pub fn set_query(
         &self,
         source: &ViewSource,
@@ -325,6 +376,17 @@ impl TrackListModel {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn section_for_answers_ranges_and_full_model_fallback() {
+        let ranges = [(0u32, 1u32), (1, 3), (3, 6)];
+        assert_eq!(super::imp::section_for(&ranges, 6, 0), (0, 1));
+        assert_eq!(super::imp::section_for(&ranges, 6, 2), (1, 3));
+        assert_eq!(super::imp::section_for(&ranges, 6, 5), (3, 6));
+        // Past the declared ranges (defensive) and the no-sections case.
+        assert_eq!(super::imp::section_for(&ranges, 6, 9), (0, 10));
+        assert_eq!(super::imp::section_for(&[], 42, 7), (0, 42));
+    }
     use super::*;
 
     fn seeded_model(rows: &[(&str, &str)]) -> TrackListModel {

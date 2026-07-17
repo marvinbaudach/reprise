@@ -461,6 +461,94 @@ impl Queue {
         true
     }
 
+    /// QUE-3: removes SINGLE occurrences by their play-order positions —
+    /// unlike `remove_ids`, a duplicate id elsewhere in the queue survives.
+    /// Shares `remove_ids`' current-track contract: removing the current
+    /// track advances the playhead to the next surviving track in play
+    /// order (never backward); an exhausted queue stays exhausted. Returns
+    /// whether anything was removed (out-of-range positions are ignored).
+    pub fn remove_order_positions(&mut self, positions: &[usize]) -> bool {
+        let slots: std::collections::HashSet<usize> = positions
+            .iter()
+            .copied()
+            .filter(|&slot| slot < self.order.len())
+            .collect();
+        if slots.is_empty() {
+            return false;
+        }
+
+        // ids-indices being removed (each order slot maps to a unique index).
+        let removed_indices: std::collections::HashSet<usize> =
+            slots.iter().map(|&slot| self.order[slot]).collect();
+
+        let mut new_ids = Vec::with_capacity(self.ids.len());
+        let mut index_map: Vec<Option<usize>> = Vec::with_capacity(self.ids.len());
+        for (index, &id) in self.ids.iter().enumerate() {
+            if removed_indices.contains(&index) {
+                index_map.push(None);
+            } else {
+                index_map.push(Some(new_ids.len()));
+                new_ids.push(id);
+            }
+        }
+
+        let new_order: Vec<usize> = self
+            .order
+            .iter()
+            .filter_map(|&old_idx| index_map[old_idx])
+            .collect();
+
+        let new_pos = match self.pos {
+            None => None,
+            Some(slot) => {
+                if slots.contains(&slot) {
+                    // Current removed: next surviving slot in play order.
+                    self.order[slot + 1..]
+                        .iter()
+                        .find_map(|&old_idx| index_map[old_idx])
+                        .and_then(|new_idx| new_order.iter().position(|&idx| idx == new_idx))
+                } else {
+                    let old_idx = self.order[slot];
+                    index_map[old_idx]
+                        .and_then(|new_idx| new_order.iter().position(|&idx| idx == new_idx))
+                }
+            }
+        };
+
+        self.ids = new_ids;
+        self.order = new_order;
+        self.pos = new_pos;
+        true
+    }
+
+    /// The playhead's play-order position — the base the composite Queue
+    /// view's Up Next offsets are relative to (QUE-3 remapping).
+    pub fn current_order_position(&self) -> Option<usize> {
+        self.pos
+    }
+
+    /// The id at play-order `position` without moving the playhead — the
+    /// QUE-3 promote-drag reads the dragged row's id through this before
+    /// removing it from the snapshot.
+    pub fn id_at_order_position(&self, position: usize) -> Option<i64> {
+        self.order
+            .get(position)
+            .and_then(|&idx| self.ids.get(idx).copied())
+    }
+
+    /// QUE-3: moves the playhead to play-order position `position` and
+    /// returns the id now current — the queue itself is untouched (no
+    /// rebuild, no reshuffle), so advancing continues from the new spot.
+    /// `None` (no mutation) for an out-of-range position.
+    pub fn jump_to_order_position(&mut self, position: usize) -> Option<i64> {
+        let id = self
+            .order
+            .get(position)
+            .and_then(|&idx| self.ids.get(idx).copied())?;
+        self.pos = Some(position);
+        Some(id)
+    }
+
     /// Every queued track id in current play order — reflecting shuffle, if
     /// active — used by `ViewSource::Queue` (Stage 3 Task 3): `ui::
     /// player_controller::queue_ids_snapshot` clones this out so the "Queue"
@@ -474,6 +562,28 @@ impl Queue {
             .iter()
             .filter_map(|&idx| self.ids.get(idx).copied())
             .collect()
+    }
+
+    /// The play-order tail after the current track — exactly what auto-
+    /// advance will play once any pending manual entries drain (QUE-2), and
+    /// exactly what the Queue view's "Up Next · from <source>" section shows
+    /// (QUE-1). Empty when nothing is current or the current track is last.
+    pub fn remaining_after_current(&self) -> Vec<i64> {
+        let Some(pos) = self.pos else {
+            return Vec::new();
+        };
+        self.order
+            .iter()
+            .skip(pos + 1)
+            .filter_map(|&idx| self.ids.get(idx).copied())
+            .collect()
+    }
+
+    /// `remaining_after_current().len()` without materializing the ids —
+    /// the Queue sidebar counter's share of the snapshot (QUE-5).
+    pub fn remaining_len(&self) -> usize {
+        self.pos
+            .map_or(0, |pos| self.order.len().saturating_sub(pos + 1))
     }
 }
 
@@ -490,3 +600,7 @@ mod tests;
 #[cfg(test)]
 #[path = "queue_remove_tests.rs"]
 mod remove_tests;
+
+#[cfg(test)]
+#[path = "queue_ux_rules_tests.rs"]
+mod ux_rules_tests;
