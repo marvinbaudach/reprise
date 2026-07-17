@@ -412,7 +412,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## M. Track-Kontextmenü
 
-- **CTX-1** [geplant] [gtk] — Ein Builder, ein Kontext-Enum. Alle
+- **CTX-1** [aktiv] [gtk] — Ein Builder, ein Kontext-Enum. Alle
   Track-Row-Menüs entstehen aus einer reinen Funktion `build_track_menu(
   context, selection)` (GMenu-Sections), nie aus fünf handkopierten Menüs.
   Kontexte: `LibraryTracks | AlbumDetail | ArtistDetail | Playlist | Queue`.
@@ -422,7 +422,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   auf eine unselektierte Row selektiert sie zuerst; das Menü gilt immer der
   sichtbaren Selektion. Shift+F10 / Menü-Taste öffnen auf der
   Tastatur-Selektion.
-- **CTX-3** [geplant] [gtk] — Kein „Play"-Eintrag. Primäraktion ist
+- **CTX-3** [aktiv] [gtk] — Kein „Play"-Eintrag. Primäraktion ist
   Doppelklick/Enter (PLAY-2). Erster Menü-Eintrag ist „Play next" (in der
   Queue: „Move to top").
 - **CTX-4** [aktiv] [gtk] — Navigation nur mit eindeutigem Ziel. „Go to
@@ -432,7 +432,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   (Album-)Artist teilen, sonst ausgegraut — nie versteckt, das Menü bleibt
   formstabil. Das Ausgrauen trägt die Bedeutung allein; kein Tooltip (TIP-4,
   sobald verfügbar).
-- **CTX-5a** [geplant] [gtk] — Destruktiv gehört dem Kontext. Playlist → „Remove
+- **CTX-5a** [aktiv] [gtk] — Destruktiv gehört dem Kontext. Playlist → „Remove
   from playlist", Queue → „Remove from queue" (beide sofort, ohne Dialog).
   „Remove from library…" und „Move to Trash…" existieren NUR in
   Library-Kontexten (LibraryTracks/AlbumDetail/ArtistDetail), nie in Playlist
@@ -442,7 +442,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   (FB-7); die Ellipse „…" und der Bestätigungsdialog fallen im selben Commit,
   der den Undo-Toast baut. Bis dahin bleibt der Eintrag „Remove from library…"
   mit Dialog (CTX-5a).
-- **CTX-6** [geplant] [gtk] — Zähl-Währung nur destruktiv. Nur destruktive
+- **CTX-6** [aktiv] [gtk] — Zähl-Währung nur destruktiv. Nur destruktive
   Einträge tragen die Selektionszahl: „Remove 3 from playlist", „Remove 3 from
   queue", „Remove 3 from library…", „Move 3 to Trash…". Alle anderen Einträge
   bleiben unnummeriert; „Edit tags…" öffnet den Multi-Editor, der selbst
@@ -450,7 +450,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **CTX-7** [geplant] [manuell] — Hover neutral (Weiß ~10 %); die Akzentfarbe
   bleibt Selektion und spielendem Track vorbehalten. Das Menü passt ohne Scroll
   ins Fenster (GTK-Popover flippt am Rand).
-- **CTX-8** [geplant] [gtk] — Missing-Rows in der Selektion. „Play next"/„Add to
+- **CTX-8** [aktiv] [gtk] — Missing-Rows in der Selektion. „Play next"/„Add to
   queue"/„Move to top" sind deaktiviert (nicht abspielbar = nicht einreihbar,
   PLAY-4b); „Show in Files"/„Move to Trash…" sind deaktiviert (Datei fehlt).
   Ein zusätzlicher Eintrag „Show in Missing files" erscheint, sobald die
@@ -459,7 +459,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Dateien: bei rein-missing Selektion deaktiviert, bei gemischter auf die
   vorhandenen (der Editor-Titel zählt nur diese). „Remove from
   playlist/library" bleiben aktiv.
-- **CTX-9** [geplant] [gtk] — „Add to playlist ▸". Das Submenu listet Playlists
+- **CTX-9** [aktiv] [gtk] — „Add to playlist ▸". Das Submenu listet Playlists
   alphabetisch, „New playlist…" am Ende. Die aktuell offene Playlist ist
   ausgegraut (kein Duplikat-Einfügen in sich selbst per Menü; DnD bleibt frei).
 - **CTX-10** [aktiv] [gtk] — „Show in Files" ist aktiv, wenn alle selektierten

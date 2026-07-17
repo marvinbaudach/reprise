@@ -11,7 +11,11 @@
 use reprise_core::models::Track;
 use reprise_core::view_source::ViewSource;
 
-#[allow(dead_code)] // All variants become runtime inputs when the builder lands in Task 3.
+use gtk4::gio;
+use gtk4::gio::prelude::*;
+
+use crate::ui::strings;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum MenuContext {
     LibraryTracks,
@@ -50,7 +54,7 @@ pub(in crate::ui) struct SelectionSummary {
     pub same_folder: bool,
 }
 
-#[allow(dead_code)] // Used by the playlist submenu builder in Task 3.
+#[allow(dead_code)] // Used by the live adapter in Task 7.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct PlaylistEntry {
     pub id: i64,
@@ -67,6 +71,14 @@ pub(in crate::ui) struct ActionStates {
     pub show_in_files: bool,
     pub trash: bool,
     pub edit_tags: bool,
+}
+
+#[allow(dead_code)] // Used by the live adapter in Task 7.
+pub(in crate::ui) struct MenuInputs<'a> {
+    pub context: MenuContext,
+    pub selection: &'a SelectionSummary,
+    pub playlists: &'a [PlaylistEntry],
+    pub is_missing_view: bool,
 }
 
 #[allow(dead_code)] // Used by the live adapter in Task 7.
@@ -118,9 +130,112 @@ pub(in crate::ui) fn action_states(
     }
 }
 
+#[allow(dead_code)] // Used by the live adapter in Task 7.
+pub(in crate::ui) fn build_track_menu(inputs: &MenuInputs<'_>) -> gio::Menu {
+    const GROUP: &str = "tracklist";
+    let menu = gio::Menu::new();
+
+    let primary = gio::Menu::new();
+    match inputs.context {
+        MenuContext::Queue => {
+            append_action(&primary, strings::CONTEXT_MENU_MOVE_TO_TOP, "move-to-top");
+        }
+        _ => {
+            append_action(&primary, strings::CONTEXT_MENU_PLAY_NEXT, "play-next");
+            append_action(&primary, strings::CONTEXT_MENU_ADD_TO_QUEUE, "add-to-queue");
+        }
+    }
+    menu.append_section(None, &primary);
+
+    let selection_actions = gio::Menu::new();
+    let playlist_submenu = gio::Menu::new();
+    for playlist in inputs.playlists {
+        let item = gio::MenuItem::new(Some(&playlist.name), None);
+        if !playlist.is_current {
+            item.set_action_and_target_value(
+                Some(&format!("{GROUP}.add-to-playlist")),
+                Some(&playlist.id.to_variant()),
+            );
+        }
+        playlist_submenu.append_item(&item);
+    }
+    playlist_submenu.append(
+        Some(&strings::text(strings::CONTEXT_MENU_NEW_PLAYLIST)),
+        Some(&format!("{GROUP}.new-playlist")),
+    );
+    selection_actions.append_submenu(
+        Some(&strings::text(strings::CONTEXT_MENU_ADD_TO_PLAYLIST)),
+        &playlist_submenu,
+    );
+    append_action(&selection_actions, strings::EDIT_TAGS, "edit-tags");
+    menu.append_section(None, &selection_actions);
+
+    let navigation = gio::Menu::new();
+    if inputs.context != MenuContext::AlbumDetail {
+        append_action(
+            &navigation,
+            strings::CONTEXT_MENU_GO_TO_ALBUM,
+            "go-to-album",
+        );
+    }
+    if inputs.context != MenuContext::ArtistDetail {
+        append_action(
+            &navigation,
+            strings::CONTEXT_MENU_GO_TO_ARTIST,
+            "go-to-artist",
+        );
+    }
+    menu.append_section(None, &navigation);
+
+    let files = gio::Menu::new();
+    append_action(&files, strings::CONTEXT_MENU_SHOW_IN_FILES, "show-in-files");
+    if inputs.selection.any_missing && !inputs.is_missing_view {
+        append_action(
+            &files,
+            strings::CONTEXT_MENU_SHOW_IN_MISSING,
+            "show-in-missing-files",
+        );
+    }
+    menu.append_section(None, &files);
+
+    let destructive = gio::Menu::new();
+    match inputs.context {
+        MenuContext::Playlist => destructive.append(
+            Some(&strings::remove_from_playlist_label(inputs.selection.count)),
+            Some(&format!("{GROUP}.remove-from-playlist")),
+        ),
+        MenuContext::Queue => destructive.append(
+            Some(&strings::remove_from_queue_label(inputs.selection.count)),
+            Some(&format!("{GROUP}.remove-from-queue")),
+        ),
+        MenuContext::LibraryTracks | MenuContext::AlbumDetail | MenuContext::ArtistDetail => {
+            destructive.append(
+                Some(&strings::remove_from_library_label(inputs.selection.count)),
+                Some(&format!("{GROUP}.remove-selected-from-library")),
+            );
+            destructive.append(
+                Some(&strings::move_to_trash_label(inputs.selection.count)),
+                Some(&format!("{GROUP}.trash-selected-tracks")),
+            );
+        }
+    }
+    menu.append_section(None, &destructive);
+
+    menu
+}
+
+#[allow(dead_code)] // Called by the live builder in Task 7.
+fn append_action(menu: &gio::Menu, label: &str, action: &str) {
+    menu.append(
+        Some(&strings::text(label)),
+        Some(&format!("tracklist.{action}")),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gtk4::glib;
 
     fn track(id: i64, album: &str, album_artist: &str, path: &str, missing: bool) -> Track {
         Track {
@@ -159,6 +274,65 @@ mod tests {
             same_artist: true,
             same_folder: true,
         }
+    }
+
+    fn selection(count: usize) -> SelectionSummary {
+        SelectionSummary {
+            count,
+            any_missing: false,
+            all_missing: false,
+            same_album: true,
+            same_artist: true,
+            same_folder: true,
+        }
+    }
+
+    fn menu_item_label(model: &gio::MenuModel, item: i32) -> Option<String> {
+        model
+            .item_attribute_value(item, "label", Some(glib::VariantTy::STRING))
+            .and_then(|value| value.get::<String>())
+    }
+
+    fn menu_item_action(model: &gio::MenuModel, item: i32) -> Option<String> {
+        model
+            .item_attribute_value(item, "action", Some(glib::VariantTy::STRING))
+            .and_then(|value| value.get::<String>())
+    }
+
+    fn collect_labels(model: &gio::MenuModel, labels: &mut Vec<String>) {
+        for item in 0..model.n_items() {
+            if let Some(label) = menu_item_label(model, item) {
+                labels.push(label);
+            }
+            for link in ["section", "submenu"] {
+                if let Some(child) = model.item_link(item, link) {
+                    collect_labels(&child, labels);
+                }
+            }
+        }
+    }
+
+    fn menu_labels(menu: &gio::Menu) -> Vec<String> {
+        let mut labels = Vec::new();
+        collect_labels(menu.upcast_ref(), &mut labels);
+        labels
+    }
+
+    fn add_to_playlist_submenu(menu: &gio::Menu) -> gio::MenuModel {
+        fn find(model: &gio::MenuModel) -> Option<gio::MenuModel> {
+            for item in 0..model.n_items() {
+                if menu_item_label(model, item).as_deref() == Some("Add to playlist") {
+                    return model.item_link(item, "submenu");
+                }
+                if let Some(section) = model.item_link(item, "section") {
+                    if let Some(found) = find(&section) {
+                        return Some(found);
+                    }
+                }
+            }
+            None
+        }
+        find(menu.upcast_ref()).expect("Add to playlist submenu")
     }
 
     #[test]
@@ -233,5 +407,209 @@ mod tests {
                 && summary.any_missing
                 && !summary.all_missing
         );
+    }
+
+    #[test]
+    fn ctx_1_builder_per_context() {
+        let selection = selection(1);
+        let playlists = [PlaylistEntry {
+            id: 1,
+            name: "Alpha".into(),
+            is_current: false,
+        }];
+        for context in [
+            MenuContext::LibraryTracks,
+            MenuContext::AlbumDetail,
+            MenuContext::ArtistDetail,
+            MenuContext::Playlist,
+            MenuContext::Queue,
+        ] {
+            let menu = build_track_menu(&MenuInputs {
+                context,
+                selection: &selection,
+                playlists: &playlists,
+                is_missing_view: false,
+            });
+            assert!(menu.n_items() >= 4, "{context:?} has all sections");
+            let labels = menu_labels(&menu);
+            assert!(labels.iter().any(|label| label == "Edit tags…"));
+            assert!(labels.iter().any(|label| label == "Add to playlist"));
+        }
+    }
+
+    #[test]
+    fn ctx_3_no_play_entry() {
+        let selection = selection(2);
+        let playlists = [];
+        for context in [
+            MenuContext::LibraryTracks,
+            MenuContext::Playlist,
+            MenuContext::Queue,
+        ] {
+            let labels = menu_labels(&build_track_menu(&MenuInputs {
+                context,
+                selection: &selection,
+                playlists: &playlists,
+                is_missing_view: false,
+            }));
+            assert!(
+                !labels.iter().any(|label| label == "Play"),
+                "{context:?} must not offer Play"
+            );
+        }
+        let queue = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::Queue,
+            selection: &selection,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert_eq!(queue.first().map(String::as_str), Some("Move to top"));
+        let library = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::LibraryTracks,
+            selection: &selection,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert_eq!(library.first().map(String::as_str), Some("Play next"));
+    }
+
+    #[test]
+    fn ctx_5a_playlist_and_queue_have_no_library_remove() {
+        let selection = selection(1);
+        let playlists = [];
+        let labels = |context| {
+            menu_labels(&build_track_menu(&MenuInputs {
+                context,
+                selection: &selection,
+                playlists: &playlists,
+                is_missing_view: false,
+            }))
+        };
+        let library = labels(MenuContext::LibraryTracks);
+        assert!(library
+            .iter()
+            .any(|label| label.starts_with("Remove from library")));
+        assert!(library.iter().any(|label| label.starts_with("Move")));
+        let playlist = labels(MenuContext::Playlist);
+        assert!(!playlist
+            .iter()
+            .any(|label| label.starts_with("Remove from library")));
+        assert!(!playlist.iter().any(|label| label.contains("Trash")));
+        assert!(playlist
+            .iter()
+            .any(|label| label.starts_with("Remove from playlist")));
+        let queue = labels(MenuContext::Queue);
+        assert!(!queue
+            .iter()
+            .any(|label| label.starts_with("Remove from library")));
+        assert!(!queue.iter().any(|label| label.contains("Trash")));
+        assert!(queue
+            .iter()
+            .any(|label| label.starts_with("Remove from queue")));
+    }
+
+    #[test]
+    fn ctx_6_count_currency_only_destructive() {
+        let selection = selection(3);
+        let playlists = [];
+        let library = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::LibraryTracks,
+            selection: &selection,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert!(library
+            .iter()
+            .any(|label| label == "Remove 3 from library…"));
+        assert!(library.iter().any(|label| label == "Move 3 to Trash…"));
+        assert!(
+            library.iter().any(|label| label == "Edit tags…"),
+            "non-destructive stays unnumbered"
+        );
+        assert!(library.iter().any(|label| label == "Add to queue"));
+        let playlist = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::Playlist,
+            selection: &selection,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert!(playlist
+            .iter()
+            .any(|label| label == "Remove 3 from playlist"));
+    }
+
+    #[test]
+    fn ctx_8_missing_rows_disable_actions_and_add_show_in_missing() {
+        let playlists = [];
+        let missing = SelectionSummary {
+            count: 2,
+            any_missing: true,
+            all_missing: false,
+            same_album: false,
+            same_artist: false,
+            same_folder: false,
+        };
+        let labels = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::Playlist,
+            selection: &missing,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert!(labels.iter().any(|label| label == "Show in Missing files"));
+        let in_missing = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::LibraryTracks,
+            selection: &missing,
+            playlists: &playlists,
+            is_missing_view: true,
+        }));
+        assert!(!in_missing
+            .iter()
+            .any(|label| label == "Show in Missing files"));
+        let states = action_states(MenuContext::Playlist, &missing);
+        assert!(!states.enqueue && !states.show_in_files && !states.trash && states.edit_tags);
+        let all_missing = SelectionSummary {
+            all_missing: true,
+            ..missing
+        };
+        assert!(!action_states(MenuContext::LibraryTracks, &all_missing).edit_tags);
+    }
+
+    #[test]
+    fn ctx_9_add_to_playlist_alphabetical_current_grayed() {
+        let selection = selection(1);
+        let mut playlists = vec![
+            PlaylistEntry {
+                id: 2,
+                name: "Beta".into(),
+                is_current: false,
+            },
+            PlaylistEntry {
+                id: 1,
+                name: "Alpha".into(),
+                is_current: false,
+            },
+            PlaylistEntry {
+                id: 3,
+                name: "Zulu".into(),
+                is_current: true,
+            },
+        ];
+        playlists.sort_by_key(|entry| entry.name.to_lowercase());
+        let menu = build_track_menu(&MenuInputs {
+            context: MenuContext::Playlist,
+            selection: &selection,
+            playlists: &playlists,
+            is_missing_view: false,
+        });
+        let submenu = add_to_playlist_submenu(&menu);
+        let names: Vec<_> = (0..submenu.n_items())
+            .filter_map(|item| menu_item_label(&submenu, item))
+            .collect();
+        assert_eq!(names, ["Alpha", "Beta", "Zulu", "New playlist…"]);
+        assert!(
+            menu_item_action(&submenu, 2).is_none(),
+            "current playlist item is not actionable"
+        );
+        assert!(menu_item_action(&submenu, 0).is_some());
     }
 }
