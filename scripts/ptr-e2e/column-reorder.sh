@@ -59,6 +59,24 @@ smooth_header_drag() {
   sleep 0.2
 }
 
+# Counts "column order persisted" lines since `since_line`, asserting exactly
+# one fired — mirrors `assert_log_contains_since`'s style (ANSI-stripped
+# since-tail, same log_step/log_fail reporting) but needs a count rather than
+# mere presence: the marker-only rework must fire `wire_order_persistence`
+# exactly once per completed drag, not once per crossed midpoint the way the
+# old live-swap version did (each crossing there did a real remove/insert
+# plus a settings write while the pointer was still moving).
+assert_single_persist_line_since() {
+  local since_line="$1" description="$2"
+  local count
+  count="$(tail -n "+$((since_line + 1))" "$APP_LOG" | sed -E "$ANSI_STRIP_RE" | grep -c 'column order persisted after header drag')"
+  if [ "$count" = "1" ]; then
+    log_step "log check OK: $description (1 persist line)"
+  else
+    log_fail "$description: expected exactly 1 persist line since the drag began, got $count"
+  fi
+}
+
 run_column_reorder_flow() {
   log_step "flow: header drag reorders columns, plain click still sorts…"
 
@@ -85,6 +103,11 @@ run_column_reorder_flow() {
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/24-column-header-dragged.png"
   assert_log_contains_since "$marker" "column order persisted after header drag" \
     "header drag reordered and persisted the column order"
+  # The marker-only rework must mutate `view.columns()` exactly once per
+  # completed drag (in `drag-end`), not once per crossed midpoint the way
+  # the old live-swap version did — see `column_header_dnd.rs`'s module doc.
+  assert_single_persist_line_since "$marker" \
+    "a single drag persists the column order exactly once"
   # `ui.column_layout` is `order;visible` (see column-header-menu.sh) —
   # dragging Title away from its default slot right before Artist must break
   # that adjacency in the order half (before the `;`).

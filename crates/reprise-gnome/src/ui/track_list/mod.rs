@@ -1,4 +1,4 @@
-mod column_header_dnd;
+pub(in crate::ui) mod column_header_dnd;
 pub(crate) mod column_layout;
 pub(in crate::ui) mod column_layout_editor;
 pub(in crate::ui) mod column_widths;

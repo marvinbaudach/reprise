@@ -38,6 +38,7 @@ fn app_css() -> String {
         interactions::css(),
         menus::css(),
         super::browse_bar::css(),
+        super::column_header_dnd::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
         super::sidebar_device_card::css(),
