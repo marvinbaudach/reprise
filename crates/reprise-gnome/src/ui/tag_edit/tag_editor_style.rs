@@ -96,12 +96,14 @@ pub(in crate::ui) fn css() -> String {
          /* --- Hide AdwEntryRow's built-in edit pencil (Beschluss #1: the \
             3a design wants plain entry fields, no pencil chrome). The fields \
             stay AdwEntryRow-based because dirty/save are pinned to that type, \
-            so the icon is suppressed via CSS rather than by swapping the \
-            widget. --- */
-         .reprise-tag-editor row .edit-icon {{ \
+            so the icon is suppressed via CSS. Matches libadwaita's own node \
+            path (row.entry > box.header > .editable-area > .edit-icon) with \
+            the dialog-class prefix, so it outweighs the theme rule that gives \
+            the icon its 24px min-size. --- */
+         .reprise-tag-editor row.entry box.header .editable-area .edit-icon {{ \
            opacity: 0; \
-           -gtk-icon-size: 0px; \
            min-width: 0; \
+           min-height: 0; \
            margin: 0; \
            padding: 0; }}\n\
          \
