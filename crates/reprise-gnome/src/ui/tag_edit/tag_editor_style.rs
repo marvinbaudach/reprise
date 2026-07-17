@@ -93,6 +93,18 @@ pub(in crate::ui) fn css() -> String {
            border-color: @accent_color; \
            border-width: 1.5px; }}\n\
          \
+         /* --- Hide AdwEntryRow's built-in edit pencil (Beschluss #1: the \
+            3a design wants plain entry fields, no pencil chrome). The fields \
+            stay AdwEntryRow-based because dirty/save are pinned to that type, \
+            so the icon is suppressed via CSS rather than by swapping the \
+            widget. --- */
+         .reprise-tag-editor row .edit-icon {{ \
+           opacity: 0; \
+           -gtk-icon-size: 0px; \
+           min-width: 0; \
+           margin: 0; \
+           padding: 0; }}\n\
+         \
          /* --- Per-track field lock (TAG-3): Title/Track-number read-only \
             in Multi mode --- */
          .reprise-tag-per-track {{ \
@@ -212,6 +224,7 @@ mod tests {
         assert!(css.contains(".reprise-tag-hint"));
         assert!(css.contains(".reprise-tag-cover"));
         assert!(css.contains(".reprise-tag-mixed"));
+        assert!(css.contains(".edit-icon"));
         assert!(css.contains("text > placeholder"));
         assert!(css.contains("alpha(@window_fg_color, 0.45)"));
         assert!(css.contains(".reprise-tag-pending"));
