@@ -81,6 +81,7 @@ PTR_E2E_NEWS_ONLY="${PTR_E2E_NEWS_ONLY:-0}"
 PTR_E2E_HEADER_ONLY="${PTR_E2E_HEADER_ONLY:-0}"
 PTR_E2E_PLAYLIST_DELETE_ONLY="${PTR_E2E_PLAYLIST_DELETE_ONLY:-0}"
 PTR_E2E_PREFERENCES_ONLY="${PTR_E2E_PREFERENCES_ONLY:-0}"
+PTR_E2E_COLREORDER_ONLY="${PTR_E2E_COLREORDER_ONLY:-0}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=artist-news.sh
@@ -95,6 +96,8 @@ source "$REPO_ROOT/scripts/ptr-e2e/column-header-menu.sh"
 source "$REPO_ROOT/scripts/ptr-e2e/playlist-delete.sh"
 # shellcheck source=preferences.sh
 source "$REPO_ROOT/scripts/ptr-e2e/preferences.sh"
+# shellcheck source=column-reorder.sh
+source "$REPO_ROOT/scripts/ptr-e2e/column-reorder.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
 APP_ID="org.reprise.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
@@ -507,6 +510,14 @@ fi
 
 if [ "$PTR_E2E_PREFERENCES_ONLY" = "1" ]; then
   run_preferences_flow
+  assert_log_absent \
+    'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
+    'GTK/GLib critical, panic, or RefCell borrow failure'
+  exit 0
+fi
+
+if [ "$PTR_E2E_COLREORDER_ONLY" = "1" ]; then
+  run_column_reorder_flow
   assert_log_absent \
     'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
     'GTK/GLib critical, panic, or RefCell borrow failure'
