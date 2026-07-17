@@ -175,15 +175,15 @@ fn missing_since_excludes_a_row_even_when_the_legacy_missing_column_says_present
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     conn.execute(
-        "INSERT INTO tracks (path, title, artist, added_at, missing, missing_since) \
-         VALUES ('/x/a.flac', 'A', '', 0, 0, 1)",
+        "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
+         VALUES ('/x/a.flac', 'A', '', 0, 1)",
         [],
     )
     .unwrap();
     assert_eq!(
         query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
         0,
-        "a set missing_since must exclude the row regardless of the stale legacy flag"
+        "a set missing_since must exclude the row from the library"
     );
     assert!(query_track_window(
         &mut conn,
