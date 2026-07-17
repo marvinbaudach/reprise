@@ -258,3 +258,35 @@ Task 1.6: complete (commit 0772f48, review clean) — mount_point recorded on sc
   Minor findings (final-review triage): restore-branch test asserts only the prefix half of the mount_point invariant, not dev equality; cache-hit behavior untested (design-verified only).
   WARNING for 1.7/1.8/1.9: scanner.rs is at 796/800 lines — the next task touching it MUST extract a cohesive sibling module first (precedent: scanner_vanish.rs, scanner_mount.rs).
 Task 1.7: complete (TDD, 7 new tests, gates green) — new library/import_errors.rs: ImportErrorKind taxonomy classified at the source (lofty::error::ErrorKind, walkdir::Error::io_error/kind — never Display text), episode upsert (record_error/clear_error), and the dismiss-skip fast path (check_dismissed, stat-only, reactivates a changed file into a fresh episode). ScanError::Tags(String) → ScanError::Import{kind,detail}. scanner.rs's directory-traversal and per-file error branches now call into import_errors instead of inline DELETE+INSERT SQL. Split scanner.rs's own test growth into scanner_import_errors_tests.rs (precedent followed) to stay under 800 lines (799 final). Full report: task-1.7-report.md.
+
+## UX-Tooltips — Sektion L (Branch feat/ux-rules-tooltips, 2026-07-17)
+
+Plan: `docs/superpowers/plans/2026-07-17-ux-tooltips-taskplan.md`. Konsistenz-
+Sektion, kein neues Feature. Codex kam bis Task 3 + Tooling-Fix, brach dann
+kapazitätsbedingt ab; Tasks 4–9 von Opus fertiggestellt (Codex' halbfertige
+Task-4-Übersetzungen waren teils falsch — korrigiert).
+
+**Aktiv (einklagbar):**
+- **TIP-1a** [gtk] (f0b7699) — Icon-only ⇒ Tooltip, gelabelt ⇒ keiner, Ellipsis
+  ⇒ Volltext. Test-Walk `tooltip_discipline.rs`, fünf `tip_1a_*`-Display-Tests.
+- **TIP-2a** [gtk] (cfed981) — disabled icon-only nennt Grund
+  (`eject_tooltip`); pure Test `tip_2a_eject_tooltip_names_reason_while_syncing`.
+- **TIP-3/4/5** [manuell] (6f328c8) — RELEASING.md-Checkliste, Gate deckt sie
+  über wörtliche ID-Referenz (Erweiterung in 836f486/eb9b7cd).
+
+**Geplant (bewusst NICHT geflippt — Flip-Kriterium in gesperrten Verzeichnissen):**
+- **TIP-1b** [manuell] — Verb+Objekt-Wortlaut. Verbalisierung Transport/Panel
+  umgesetzt (771b02c), aber „Previous/Next" im Tag-Editor und „Back" in
+  browse_bar (fremde Branches) noch Substantive.
+- **TIP-2b** [manuell] — gelabelt disabled nennt Grund sichtbar. Preferences-
+  Gründe umgesetzt (7e455d7), aber Save/„Change cover…" (tag_edit) und
+  „Add filter" (browse) fehlen noch.
+
+**Tooling:** `check-ux-traceability.sh` kennt jetzt die `[manuell]`-Ebene
+(beidseitig geprüft); `check-display-tests.sh --rule-named` + Merge-Gate-Eintrag
+machen regelbenannte Display-Tests zu Merge-Blockern; Display-Runner-Ignore gilt
+als Abdeckung auch für `[aktiv]`.
+
+**Container-Klausel-Beschluss:** Player-Bar prev/next bekommen KEINE
+Einzel-Grund-Tooltips — sie werden nur mit der ganzen (dann leeren) Leiste
+deaktiviert; die leere Leiste ist ihre eigene Aussage.
