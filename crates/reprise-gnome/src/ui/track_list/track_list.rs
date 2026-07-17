@@ -195,9 +195,9 @@ pub(in crate::ui) struct Shared {
     /// with the source just queried, the row count it produced, and the
     /// filter string that reload just ran against. `window.rs` uses this
     /// single hook to keep `status_bar::StatusBar` in sync: library-wide
-    /// totals (via the filter string) when `source` is `Library`, a simple
-    /// "{n} tracks" line (via the row count) otherwise — see `status_bar::
-    /// StatusBar::refresh_for_source_count`. This is the seam chosen over
+    /// totals when `source` is `Library`, hidden otherwise (the filter row
+    /// is the per-source count) — see `status_bar::
+    /// StatusBar::hide`. This is the seam chosen over
     /// exposing `TrackList::source()`/`filter()` getters: `reload` already
     /// has all three values in local variables at the one call site that
     /// invokes this hook.
