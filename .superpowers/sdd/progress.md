@@ -119,3 +119,12 @@ Started: 2026-07-16
 - Logging: each scenario retains its own app log plus JSON snapshots and screenshots; a minimal manifest records only commit, build profile, CUA version, platform, display backend, and timestamp. Acceptance requires startup, database-ready, workflow, scan, and clean smoke-shutdown markers and rejects GTK/GLib criticals, panics, and RefCell failures.
 - Deferred host check: run `cargo build && scripts/cua-e2e/run.sh` outside the managed sandbox to collect the first real AT-SPI screenshots and confirm the exact `Search all fields`, fixture-title, and empty/no-results labels exposed by the installed GTK stack.
 - Residual risk: the deterministic driver contract proves orchestration and safety but cannot substitute for the deferred host CUA run; native Wayland rendering, portals, pointer feel, media keys, and audible playback remain release-manual checks.
+
+## 2026-07-17 — UX-Regelwerk Task 1 (docs/ux-rules.md)
+
+- Verbindliches UX-Regelwerk eingecheckt: 60 Regelzeilen (Sektionen A–J,
+  alle `[geplant]`, PLAY-5 als Ersetzt-Wegweiser), mit Prozessregeln
+  (Status, append-only IDs, Ebenen-Tags,
+  Traceability, Änderungsprotokoll). Härtung gemäß Grilling 2026-07-17
+  (docs/plans/ux-rules-acceptance-tests.md). QUE-1–5/NAV-9 aus dem
+  Queue-Fix-Prompt wörtlich übernommen — Implementierung läuft parallel.
