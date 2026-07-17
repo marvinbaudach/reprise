@@ -188,7 +188,7 @@ pub fn query_sync_tracks(
 /// Marks track `track_id` as missing (Stage 2 Task 5: a physically deleted
 /// file must never crash or dead-end the app — this is the DB-side half of
 /// that guarantee). Every windowed/count/id query for `ViewSource::Library`/
-/// `Playlist`/`Smart` already filters on [`PRESENT`], so the row disappears
+/// `Playlist`/`Smart` already filters on `PRESENT`, so the row disappears
 /// from those views and from a freshly-seeded queue on the very next
 /// reload, without deleting the row itself — ratings/play history/etc. are
 /// preserved, and the row resurfaces in `ViewSource::Missing` (Stage 3 Task
@@ -233,7 +233,7 @@ pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqli
 /// this action only exists for a track already flagged `missing` (the file
 /// is already gone from disk by definition).
 ///
-/// The `WHERE ... AND` [`MISSING`] guard is a defensive belt-and-braces
+/// The `WHERE ... AND` `MISSING` guard is a defensive belt-and-braces
 /// check, not just `WHERE id = ?1`: it makes this call a no-op (`Ok(false)`)
 /// against a track that somehow isn't actually missing any more (e.g. a
 /// rescan raced ahead of a stale Missing-view selection and restored the
@@ -478,7 +478,7 @@ pub(crate) fn remove_auto_clean_eligible_tracks(
 /// (not a snapshot-and-delete) is the only race-free way to offer an undo
 /// here.
 ///
-/// [`PRESENT`]/[`MISSING`] both require `removed_at IS NULL`, so a
+/// `PRESENT`/`MISSING` both require `removed_at IS NULL`, so a
 /// tombstoned row disappears from every view (Library, Missing, Playlist,
 /// Smart, …) — including the very Missing card it was just removed from —
 /// the instant this call returns, with zero rows actually deleted: no
@@ -579,7 +579,7 @@ pub fn undo_tombstone(conn: &Connection, ids: &[i64]) -> Result<usize, rusqlite:
 /// transaction, so a resurrection can land in the gap between them — after
 /// an id is captured in `ids` here, but before `remove_tracks_impl`'s loop
 /// reaches that id's `DELETE`. `remove_tracks_impl` is therefore called
-/// with [`RemoveGuard::TombstonedOnly`], which re-checks `removed_at IS NOT
+/// with `RemoveGuard::TombstonedOnly`, which re-checks `removed_at IS NOT
 /// NULL` at delete time rather than trusting this snapshot — a row
 /// resurrected mid-purge is simply not deleted by that guarded statement,
 /// surviving with its playlist membership and listen history intact. See
