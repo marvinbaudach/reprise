@@ -280,9 +280,9 @@ pub fn build(
         Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
-            move |source, count, filter, browse| {
+            move |source, count, _filter, _browse| {
                 if matches!(source, ViewSource::Library) {
-                    status_bar.refresh(&conn_for_status, filter, browse);
+                    status_bar.refresh(&conn_for_status);
                 } else {
                     status_bar.refresh_for_source_count(count as i64);
                 }
