@@ -105,10 +105,16 @@ pub use clauses::build_track_ids_query;
 // pending_waveform_tracks`) can share the exact same "row is present" SQL
 // fragment as every query in this module tree — see `clauses::PRESENT`'s
 // doc comment for why a flag-plus-date pair is retired in favor of this one
-// predicate. `MISSING` has no non-test caller outside this module tree, so
-// it stays reachable only via `super::clauses::MISSING` from this module's
-// own children, to avoid an unused-import warning in the non-test build.
+// predicate.
 pub(crate) use clauses::PRESENT;
+// `MISSING`'s only current caller outside this module tree is `library::
+// scanner_vanished_tests`'s `missing_count` helper, which mirrors this
+// predicate for a direct-SQL assertion — re-exported regardless, same
+// reasoning as `build_track_query` below, to keep that one string in sync
+// with the predicate it is meant to test rather than drifting as a
+// hand-copied literal.
+#[allow(unused_imports)]
+pub(crate) use clauses::MISSING;
 // `build_track_query`'s only current caller is this module's own test suite
 // (`tests::query_builder_whitelists_and_sorts` et al.) — re-exported `pub`
 // regardless, to keep `crate::queries::build_track_query` resolving exactly

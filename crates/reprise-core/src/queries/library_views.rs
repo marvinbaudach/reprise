@@ -447,9 +447,9 @@ mod tests {
         crate::db::migrate(&conn).unwrap();
         conn.execute_batch(
             "INSERT INTO tracks
-               (id,path,title,artist,album,album_artist,added_at,missing,play_count,last_played_at) VALUES
-             (1,'/music/a.flac','Track A','Solo','Album','',0,0,3,100),
-             (2,'/music/b.flac','Track B','Solo','Album','',0,0,5,200);",
+               (id,path,title,artist,album,album_artist,added_at,play_count,last_played_at) VALUES
+             (1,'/music/a.flac','Track A','Solo','Album','',0,3,100),
+             (2,'/music/b.flac','Track B','Solo','Album','',0,5,200);",
         )
         .unwrap();
 
@@ -467,8 +467,8 @@ mod tests {
     fn artists_query_is_read_only_and_excludes_blank_or_missing_rows() {
         let conn = seeded_library();
         conn.execute(
-            "INSERT INTO tracks (path,title,artist,album,added_at,missing) \
-             VALUES ('/music/no-artist.flac','No Artist',' ','First',0,0)",
+            "INSERT INTO tracks (path,title,artist,album,added_at) \
+             VALUES ('/music/no-artist.flac','No Artist',' ','First',0)",
             [],
         )
         .unwrap();
@@ -514,10 +514,10 @@ mod tests {
         crate::db::migrate(&conn).unwrap();
         conn.execute_batch(
             "INSERT INTO tracks
-               (id,path,title,artist,album,album_artist,year,duration_ms,added_at,play_count,missing) VALUES
-             (1,'/a.flac','A','Solo','Album','',2020,180000,1000,5,0),
-             (2,'/b.flac','B','Solo','Album','',2020,240000,2000,3,0),
-             (3,'/c.flac','C','Solo','Album','',0,120000,500,0,0);",
+               (id,path,title,artist,album,album_artist,year,duration_ms,added_at,play_count) VALUES
+             (1,'/a.flac','A','Solo','Album','',2020,180000,1000,5),
+             (2,'/b.flac','B','Solo','Album','',2020,240000,2000,3),
+             (3,'/c.flac','C','Solo','Album','',0,120000,500,0);",
         )
         .unwrap();
 
