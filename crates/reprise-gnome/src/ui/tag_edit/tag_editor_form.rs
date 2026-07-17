@@ -348,10 +348,16 @@ impl TagEditorForm {
         if !is_multi {
             content.append(&nav_box);
         }
+        // Size to content: propagate the content's natural height so the
+        // dialog is as tall as it needs to be (no fixed height leaving empty
+        // space below — which the removed MusicBrainz button used to fill),
+        // capped so a large multi-edit with the review expander open scrolls
+        // instead of growing without bound.
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&content)
             .hscrollbar_policy(gtk4::PolicyType::Never)
-            .vexpand(true)
+            .propagate_natural_height(true)
+            .max_content_height(760)
             .build();
         let toolbar = adw::ToolbarView::new();
         toolbar.add_top_bar(&header);
@@ -359,7 +365,6 @@ impl TagEditorForm {
         let dialog = adw::Dialog::builder()
             .child(&toolbar)
             .content_width(560)
-            .content_height(700)
             .build();
         dialog.add_css_class("reprise-tag-editor");
 
