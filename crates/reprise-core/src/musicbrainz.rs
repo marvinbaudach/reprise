@@ -41,14 +41,18 @@ pub fn get(url: &str) -> Result<String, FetchError> {
     if let Ok(directory) = std::env::var(FIXTURE_DIR_ENV) {
         return fixture_get(url, Path::new(&directory));
     }
-    let response = ureq::builder()
-        .timeout(HTTP_TIMEOUT)
-        .user_agent(&user_agent())
+    let response = ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        .user_agent(user_agent())
         .build()
+        .new_agent()
         .get(url)
         .call()
         .map_err(classify_error)?;
-    response.into_string().map_err(|_| FetchError::Body)
+    response
+        .into_body()
+        .read_to_string()
+        .map_err(|_| FetchError::Body)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -132,9 +136,10 @@ pub(crate) fn urlencode(value: &str) -> String {
 
 fn classify_error(error: ureq::Error) -> FetchError {
     match error {
-        ureq::Error::Status(status, _) => FetchError::HttpStatus(status),
-        ureq::Error::Transport(transport) => {
-            let message = transport.to_string().to_ascii_lowercase();
+        ureq::Error::StatusCode(status) => FetchError::HttpStatus(status),
+        ureq::Error::Timeout(_) => FetchError::Timeout,
+        other => {
+            let message = other.to_string().to_ascii_lowercase();
             if message.contains("timed out") || message.contains("timeout") {
                 FetchError::Timeout
             } else {

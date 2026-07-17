@@ -109,6 +109,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .valign(gtk4::Align::End)
                 .has_frame(false)
                 .build();
+            play_button.set_tooltip_text(Some(&strings::text(strings::PLAY_ALBUM)));
             bottom_row.append(&play_button);
             hover_overlay.append(&bottom_row);
 
@@ -441,7 +442,16 @@ pub(in crate::ui) fn format_tooltip(album: &AlbumSummary) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+
+    fn wait_for_layout() {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(Duration::from_millis(50), move || quit.quit());
+        main_loop.run();
+    }
 
     #[test]
     fn derive_initial_strips_leading_articles() {
@@ -518,5 +528,48 @@ mod tests {
         let tip = format_tooltip(&album);
         // No empty segment from missing year or artist.
         assert!(!tip.contains(" ·  · "));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tip_1a_album_card_play_overlay_has_tooltip() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let (worker, _receiver) = async_channel::unbounded();
+        let cover_loader =
+            CoverLoader::new(crate::ui::cover_download_worker::CoverDownloadRuntime {
+                enabled: false,
+                worker,
+            });
+        let shared = Rc::new(AlbumCardShared {
+            cover_loader,
+            generation: Rc::new(Cell::new(0)),
+            now_playing_album: Rc::new(RefCell::new(None)),
+            on_activate: Rc::new(RefCell::new(None)),
+            on_play: Rc::new(RefCell::new(None)),
+            on_queue: Rc::new(RefCell::new(None)),
+            on_artist_activate: Rc::new(RefCell::new(None)),
+        });
+        let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
+        store.append(&glib::BoxedAnyObject::new(AlbumSummary {
+            album: "Test Album".into(),
+            album_artist: "Test Artist".into(),
+            representative_path: "/nonexistent/test.flac".into(),
+            track_count: 1,
+            year: Some(2026),
+            total_duration_ms: 60_000,
+            max_added_at: 0,
+            total_play_count: 0,
+        }));
+        let selection = gtk4::NoSelection::new(Some(store));
+        let grid = gtk4::GridView::new(Some(selection), Some(build_factory(&shared)));
+        let window = gtk4::Window::builder().child(&grid).build();
+        window.present();
+        wait_for_layout();
+
+        let violations = crate::ui::tooltip_discipline::tooltip_violations(grid.upcast_ref());
+        assert!(violations.is_empty(), "{violations:?}");
+        window.close();
     }
 }

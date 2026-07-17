@@ -5,8 +5,13 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use lofty::prelude::*;
+use lofty::tag::items::Timestamp;
 use lofty::tag::{ItemKey, Tag};
 use rusqlite::{Connection, OptionalExtension};
+
+pub use super::tag_edit_write::{
+    apply_track_writes, classify_write_error, TrackWrite, WriteErrorKind,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MixedValue<T> {
@@ -130,10 +135,12 @@ pub fn read_editable_tags(path: &Path) -> Result<EditableTags, TagEditError> {
             .unwrap_or_default()
             .to_string(),
         album_artist: tag
-            .and_then(|tag| tag.get_string(&ItemKey::AlbumArtist))
+            .and_then(|tag| tag.get_string(ItemKey::AlbumArtist))
             .unwrap_or_default()
             .to_string(),
-        year: tag.and_then(Accessor::year),
+        year: tag
+            .and_then(Accessor::date)
+            .map(|date| u32::from(date.year)),
         track_no: tag.and_then(Accessor::track),
         genre: tag
             .and_then(Accessor::genre)
@@ -181,15 +188,18 @@ pub fn apply_patch_to_file(path: &Path, patch: &TagPatch) -> Result<(), TagEditE
     }
     if let Some(value) = &patch.album_artist {
         if value.is_empty() {
-            tag.remove_key(&ItemKey::AlbumArtist);
+            tag.remove_key(ItemKey::AlbumArtist);
         } else {
             tag.insert_text(ItemKey::AlbumArtist, value.clone());
         }
     }
     if let Some(value) = patch.year {
         match value {
-            Some(year) => tag.set_year(year),
-            None => tag.remove_year(),
+            Some(year) => tag.set_date(Timestamp {
+                year: u16::try_from(year).unwrap_or(u16::MAX),
+                ..Timestamp::default()
+            }),
+            None => tag.remove_date(),
         }
     }
     if let Some(value) = patch.track_no {
@@ -214,6 +224,8 @@ pub fn apply_patch_to_file(path: &Path, patch: &TagPatch) -> Result<(), TagEditE
 pub struct TagWriteFailure {
     pub id: i64,
     pub path: PathBuf,
+    /// Classified reason (FB-3: no raw Lofty prose in user-facing surfaces).
+    pub kind: WriteErrorKind,
     pub error: String,
 }
 
@@ -223,7 +235,11 @@ pub struct TagBatchReport {
     pub failures: Vec<TagWriteFailure>,
 }
 
-fn validate_registered_track(conn: &Connection, id: i64, path: &Path) -> Result<(), String> {
+pub(crate) fn validate_registered_track(
+    conn: &Connection,
+    id: i64,
+    path: &Path,
+) -> Result<(), String> {
     let registered_path = conn
         .query_row(
             "SELECT path FROM tracks WHERE id=?1 AND removed_at IS NULL",
@@ -252,39 +268,43 @@ fn prepare_tag_reconciliation(conn: &Connection, id: i64, path: &Path) -> Result
 }
 
 /// Duration to suppress watcher events for each written file.
-const IGNORE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
+pub(crate) const IGNORE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Like `apply_patch_batch`, but calls `watcher::ignore_path` on each file
-/// before writing, preventing the watcher from re-scanning our own changes.
+/// immediately before *that file's own* write — not upfront for the whole
+/// batch, so an early file's ignore window can't expire while later files
+/// are still being processed (see `tag_edit_write`'s module doc).
 pub fn apply_patch_batch_ignored(
     conn: &mut Connection,
     tracks: &[(i64, PathBuf)],
     patch: &TagPatch,
 ) -> TagBatchReport {
-    for (_, path) in tracks {
-        crate::library::watcher::ignore_path(path, IGNORE_DURATION);
-    }
-    apply_patch_batch(conn, tracks, patch)
+    apply_patch_batch_inner(conn, tracks, patch, true)
 }
 
-/// Like `apply_track_edit_batch`, but with watcher-ignore support.
+/// Like `apply_track_edit_batch`, but with watcher-ignore support (see
+/// `apply_patch_batch_ignored`'s doc comment for the per-file timing).
 pub fn apply_track_edit_batch_ignored(
     conn: &mut Connection,
     tracks: &[(i64, PathBuf)],
     patch: &TrackEditPatch,
 ) -> TagBatchReport {
-    if !patch.tags.is_empty() {
-        for (_, path) in tracks {
-            crate::library::watcher::ignore_path(path, IGNORE_DURATION);
-        }
-    }
-    apply_track_edit_batch(conn, tracks, patch)
+    apply_track_edit_batch_inner(conn, tracks, patch, true)
 }
 
 pub fn apply_patch_batch(
     conn: &mut Connection,
     tracks: &[(i64, PathBuf)],
     patch: &TagPatch,
+) -> TagBatchReport {
+    apply_patch_batch_inner(conn, tracks, patch, false)
+}
+
+fn apply_patch_batch_inner(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+    patch: &TagPatch,
+    ignore_watcher: bool,
 ) -> TagBatchReport {
     let mut report = TagBatchReport::default();
     if patch.is_empty() {
@@ -296,15 +316,21 @@ pub fn apply_patch_batch(
             report.failures.push(TagWriteFailure {
                 id: *id,
                 path: path.clone(),
+                kind: WriteErrorKind::Io,
                 error,
             });
             continue;
+        }
+
+        if ignore_watcher {
+            crate::library::watcher::ignore_path(path, IGNORE_DURATION);
         }
 
         if let Err(error) = apply_patch_to_file(path, patch) {
             report.failures.push(TagWriteFailure {
                 id: *id,
                 path: path.clone(),
+                kind: classify_write_error(&error),
                 error: error.to_string(),
             });
             continue;
@@ -319,6 +345,7 @@ pub fn apply_patch_batch(
             report.failures.push(TagWriteFailure {
                 id: *id,
                 path: path.clone(),
+                kind: WriteErrorKind::Io,
                 error,
             });
             continue;
@@ -332,6 +359,7 @@ pub fn apply_patch_batch(
                 report.failures.push(TagWriteFailure {
                     id: *id,
                     path: path.clone(),
+                    kind: WriteErrorKind::Io,
                     error: format!("tag reconciliation reported {} error(s)", scan.errors),
                 });
             }
@@ -345,6 +373,7 @@ pub fn apply_patch_batch(
                 report.failures.push(TagWriteFailure {
                     id: *id,
                     path: path.clone(),
+                    kind: WriteErrorKind::Io,
                     error: format!(
                         "tag reconciliation failed: library folder unavailable: {}",
                         root.display()
@@ -354,6 +383,7 @@ pub fn apply_patch_batch(
             Err(error) => report.failures.push(TagWriteFailure {
                 id: *id,
                 path: path.clone(),
+                kind: WriteErrorKind::Io,
                 error: format!("tag reconciliation failed: {error}"),
             }),
         }
@@ -366,6 +396,15 @@ pub fn apply_track_edit_batch(
     tracks: &[(i64, PathBuf)],
     patch: &TrackEditPatch,
 ) -> TagBatchReport {
+    apply_track_edit_batch_inner(conn, tracks, patch, false)
+}
+
+fn apply_track_edit_batch_inner(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+    patch: &TrackEditPatch,
+    ignore_watcher: bool,
+) -> TagBatchReport {
     if patch.is_empty() {
         return TagBatchReport::default();
     }
@@ -377,6 +416,7 @@ pub fn apply_track_edit_batch(
                 report.failures.push(TagWriteFailure {
                     id: *id,
                     path: path.clone(),
+                    kind: WriteErrorKind::Io,
                     error,
                 });
                 continue;
@@ -385,7 +425,7 @@ pub fn apply_track_edit_batch(
         }
         report
     } else {
-        apply_patch_batch(conn, tracks, &patch.tags)
+        apply_patch_batch_inner(conn, tracks, &patch.tags, ignore_watcher)
     };
 
     let Some(rating) = patch.rating else {
@@ -403,6 +443,7 @@ pub fn apply_track_edit_batch(
             report.failures.push(TagWriteFailure {
                 id,
                 path,
+                kind: WriteErrorKind::Io,
                 error: format!("could not save rating: {error}"),
             });
         }
@@ -440,16 +481,19 @@ mod tests {
         tag.set_artist("Keep artist".into());
         tag.set_album("Keep album".into());
         tag.insert_text(ItemKey::AlbumArtist, "Keep album artist".into());
-        tag.set_year(1999);
+        tag.set_date(lofty::tag::items::Timestamp {
+            year: 1999,
+            ..lofty::tag::items::Timestamp::default()
+        });
         tag.set_track(7);
         tag.set_genre("Keep genre".into());
         tag.insert_text(ItemKey::Comment, "Keep comment".into());
-        tag.push_picture(Picture::new_unchecked(
-            PictureType::CoverFront,
-            Some(MimeType::Png),
-            None,
-            TINY_PNG.to_vec(),
-        ));
+        tag.push_picture(
+            Picture::unchecked(TINY_PNG.to_vec())
+                .pic_type(PictureType::CoverFront)
+                .mime_type(MimeType::Png)
+                .build(),
+        );
         tag.save_to_path(path, lofty::config::WriteOptions::default())
             .unwrap();
     }
@@ -509,10 +553,10 @@ mod tests {
         assert_eq!(tag.title().as_deref(), Some("New title"));
         assert_eq!(tag.artist().as_deref(), Some("Keep artist"));
         assert_eq!(tag.album().as_deref(), Some("Keep album"));
-        assert_eq!(tag.year(), Some(1999));
+        assert_eq!(tag.date().map(|date| date.year), Some(1999));
         assert_eq!(tag.track(), Some(7));
         assert_eq!(tag.genre().as_deref(), Some("Keep genre"));
-        assert_eq!(tag.get_string(&ItemKey::Comment), Some("Keep comment"));
+        assert_eq!(tag.get_string(ItemKey::Comment), Some("Keep comment"));
         assert_eq!(tag.pictures().len(), 1);
         assert_eq!(tag.pictures()[0].data(), TINY_PNG);
     }

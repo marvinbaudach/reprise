@@ -81,10 +81,11 @@ impl LfmStatsClient {
         Ok(Self {
             api_root: format!("{}/", api_root.trim_end_matches('/')),
             api_key,
-            agent: ureq::builder()
-                .timeout(HTTP_TIMEOUT)
+            agent: ureq::Agent::config_builder()
+                .timeout_global(Some(HTTP_TIMEOUT))
                 .user_agent(USER_AGENT)
-                .build(),
+                .build()
+                .new_agent(),
         })
     }
 
@@ -189,6 +190,7 @@ impl LfmStatsClient {
             .map_err(|error| classify_error(&error, username))?;
         let mut body = String::new();
         response
+            .into_body()
             .into_reader()
             .take(MAX_RESPONSE_BYTES)
             .read_to_string(&mut body)
@@ -203,9 +205,9 @@ impl LfmStatsClient {
 
 fn classify_error(error: &ureq::Error, username: &str) -> RemoteStatsError {
     match error {
-        ureq::Error::Status(404, _) => RemoteStatsError::UserNotFound(username.to_string()),
-        ureq::Error::Status(status, _) => RemoteStatsError::Network(format!("HTTP {status}")),
-        ureq::Error::Transport(transport) => RemoteStatsError::Network(transport.to_string()),
+        ureq::Error::StatusCode(404) => RemoteStatsError::UserNotFound(username.to_string()),
+        ureq::Error::StatusCode(status) => RemoteStatsError::Network(format!("HTTP {status}")),
+        other => RemoteStatsError::Network(other.to_string()),
     }
 }
 

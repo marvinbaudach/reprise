@@ -120,6 +120,7 @@ fn build_listenbrainz_expander(
     connect.set_sensitive(false);
     let connect_row = adw::ActionRow::builder()
         .title(strings::text(strings::LISTENBRAINZ_CONNECT))
+        .subtitle(strings::text(strings::CONNECT_REQUIRES_TOKEN))
         .activatable_widget(&connect)
         .build();
     connect_row.add_suffix(&connect);
@@ -144,10 +145,21 @@ fn build_listenbrainz_expander(
     disconnect_row.set_visible(connected);
     expander.add_row(&disconnect_row);
 
-    // Gate connect button on non-empty token
+    // Gate connect button on non-empty token; name the reason while disabled
+    // (TIP-2b: a disabled labeled control states why, not just via tooltip).
     token.connect_changed({
         let connect = connect.clone();
-        move |token| connect.set_sensitive(!token.text().trim().is_empty())
+        let connect_row = connect_row.clone();
+        move |token| {
+            let has_token = !token.text().trim().is_empty();
+            connect.set_sensitive(has_token);
+            let reason = if has_token {
+                String::new()
+            } else {
+                strings::text(strings::CONNECT_REQUIRES_TOKEN)
+            };
+            connect_row.set_subtitle(&reason);
+        }
     });
 
     // Decouple enable switch from expandability: when the switch is toggled
@@ -676,7 +688,8 @@ mod tests {
         // Disconnect button's parent row is hidden when not connected
         assert!(surface.disconnect.parent().is_some_and(|p| !p.is_visible()));
 
-        // Token gates Connect
+        // Enabling the module exposes the body; the token then gates Connect.
+        surface.expander.set_enable_expansion(true);
         surface.token.set_text("token");
         assert!(surface.connect.is_sensitive());
         surface.token.set_text("  ");

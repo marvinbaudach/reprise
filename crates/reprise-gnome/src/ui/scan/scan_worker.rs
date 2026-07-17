@@ -191,14 +191,14 @@ fn reconcile_outcome(
             tracing::error!(%error, "scan failed");
             toasts::show(
                 toast_overlay,
-                &format!("{}{error}", &strings::text(strings::SCAN_FAILED_PREFIX)),
+                &format!("{}{error}", strings::text(strings::SCAN_FAILED_PREFIX)),
             );
         }
         Err(error) => {
             tracing::error!(%error, "scan worker channel closed unexpectedly");
             toasts::show(
                 toast_overlay,
-                &format!("{}{error}", &strings::text(strings::SCAN_FAILED_PREFIX)),
+                &format!("{}{error}", strings::text(strings::SCAN_FAILED_PREFIX)),
             );
         }
     }
@@ -228,9 +228,6 @@ fn begin_scan_ui(controls: &ScanControls) {
     controls.button.set_sensitive(false);
     controls.notify_scan_state();
     controls.button.set_label(&strings::text(strings::SCANNING));
-    controls
-        .button
-        .set_tooltip_text(Some(&strings::text(strings::SCANNING)));
     controls.show_progress(&ScanProgress::Discovering);
 }
 
@@ -241,7 +238,6 @@ fn finish_scan_ui(controls: &ScanControls) {
     controls
         .button
         .set_label(&strings::text(strings::SCAN_FOLDER));
-    controls.button.set_tooltip_text(None);
 }
 
 fn run_scan(
@@ -388,5 +384,46 @@ mod task_5_5_tests {
                 .unwrap(),
             1
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use reprise_core::waveform::{WaveformBackend, WaveformError};
+
+    use super::*;
+    use crate::ui::scan_progress::ScanProgressView;
+
+    struct FakeWaveformBackend;
+
+    impl WaveformBackend for FakeWaveformBackend {
+        fn extract_peaks(
+            &self,
+            _path: &std::path::Path,
+            buckets: usize,
+        ) -> Result<Vec<u8>, WaveformError> {
+            Ok(vec![0; buckets])
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tip_1a_scan_button_keeps_label_only() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let button = gtk4::Button::with_label(&strings::text(strings::SCAN_FOLDER));
+        let progress = ScanProgressView::new();
+        let controls = ScanControls::new(&button, &progress, Arc::new(FakeWaveformBackend));
+
+        begin_scan_ui(&controls);
+
+        assert_eq!(
+            controls.button.label().as_deref(),
+            Some(strings::text(strings::SCANNING).as_str())
+        );
+        assert!(controls.button.tooltip_text().is_none());
     }
 }

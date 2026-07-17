@@ -489,10 +489,9 @@ impl TrackSummary {
 /// `filter` is non-empty (trimmed) and `None` otherwise, so a status line
 /// with no active search reads exactly as it did before `filter` existed.
 /// Deliberately library-only, unaffected by `ViewSource` (Stage 3 Task 3):
-/// the status line keeps showing library-wide totals regardless of which
-/// source the track list is currently displaying — see `ui::status_bar`'s
-/// `refresh_for_source_count` for the simpler "{n} tracks" line shown
-/// alongside it for non-Library sources.
+/// the status line only ever shows library-wide totals; for non-Library
+/// sources `ui::status_bar` hides the line outright — there the filter
+/// row is the one count on screen.
 pub fn query_library_stats(
     conn: &Connection,
     filter: &str,

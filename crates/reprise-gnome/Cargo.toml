@@ -18,7 +18,7 @@ reprise-platform-linux = { path = "../reprise-platform-linux" }
 # core's query layer (14 `Connection` references across the ui layer), and
 # `ui::playlist_io`/`ui::track_actions` define their own thiserror-derived
 # error enums. Both crates are also core dependencies; Cargo unifies them.
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

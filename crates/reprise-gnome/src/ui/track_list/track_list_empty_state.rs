@@ -116,6 +116,15 @@ pub(in crate::ui) fn empty_state_for_availability(
     }
 }
 
+/// FIL-6: label for the single next step, or `None` when no count is known.
+pub(in crate::ui) fn show_all_action_label(counts: Option<(usize, usize)>) -> Option<String> {
+    counts.and_then(|(_, total)| {
+        (total > 0).then(|| {
+            strings::show_all_tracks_label(&reprise_core::format::format_thousands(total as i64))
+        })
+    })
+}
+
 /// Builds the shared empty-state placeholder, initially carrying the
 /// empty-library copy (the state `TrackList::new`'s first `reload()` will
 /// normally confirm, since there's no library yet on first launch).
@@ -148,6 +157,12 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
                 .unwrap_or_default();
             let surface = unavailable_surface(&root);
             shared.empty_page.remove_css_class("missing-clear-state");
+            // Per-arm child ownership (main's empty-page model): re-attach the
+            // retry actions box for this state, since construction no longer
+            // sets a permanent child.
+            shared
+                .empty_page
+                .set_child(Some(&shared.empty_page_actions));
             shared
                 .empty_page
                 .set_icon_name(Some("drive-harddisk-symbolic"));
@@ -173,6 +188,8 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
         }
         EmptyState::EmptyLibrary => {
             shared.empty_page.remove_css_class("missing-clear-state");
+            let scan_widget = shared.empty_scan_widget.borrow().clone();
+            shared.empty_page.set_child(scan_widget.as_ref());
             shared.empty_page.set_icon_name(Some(ICON_EMPTY_LIBRARY));
             shared
                 .empty_page
@@ -184,6 +201,13 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
         }
         EmptyState::NoResults => {
             shared.empty_page.remove_css_class("missing-clear-state");
+            match show_all_action_label(shared.browse_bar.result_count()) {
+                Some(label) => {
+                    shared.show_all_button.set_label(&label);
+                    shared.empty_page.set_child(Some(&shared.show_all_button));
+                }
+                None => shared.empty_page.set_child(gtk4::Widget::NONE),
+            }
             shared.empty_page.set_icon_name(Some(ICON_NO_RESULTS));
             shared
                 .empty_page
@@ -195,6 +219,7 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
         }
         EmptyState::EmptyQueue => {
             shared.empty_page.remove_css_class("missing-clear-state");
+            shared.empty_page.set_child(gtk4::Widget::NONE);
             shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
             shared
                 .empty_page
@@ -206,6 +231,7 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
         }
         EmptyState::NothingHere => {
             shared.empty_page.remove_css_class("missing-clear-state");
+            shared.empty_page.set_child(gtk4::Widget::NONE);
             shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
             shared
                 .empty_page
@@ -217,6 +243,7 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
         }
         EmptyState::MissingClear => {
             shared.empty_page.add_css_class("missing-clear-state");
+            shared.empty_page.set_child(gtk4::Widget::NONE);
             shared.empty_page.set_icon_name(Some("emblem-ok-symbolic"));
             shared
                 .empty_page
@@ -275,6 +302,35 @@ mod empty_state_tests {
             strings::text(strings::MISSING_CLEAR_TITLE),
             "No missing files ✓"
         );
+    }
+
+    // UX FIL-6: zero hits under restriction is the NoResults state in every
+    // source — the state that carries the single "Show all" action.
+    #[test]
+    fn fil_6_zero_hits_with_restriction_selects_no_results_state() {
+        assert_eq!(
+            empty_state_for(0, true, &ViewSource::Library),
+            EmptyState::NoResults
+        );
+        assert_eq!(
+            empty_state_for(0, true, &ViewSource::Playlist(7)),
+            EmptyState::NoResults
+        );
+        assert_eq!(
+            empty_state_for(0, true, &ViewSource::Queue),
+            EmptyState::NoResults
+        );
+    }
+
+    // UX FIL-6: the action names the outcome with the full count.
+    #[test]
+    fn fil_6_show_all_action_names_the_full_count() {
+        assert_eq!(
+            show_all_action_label(Some((0, 1664))),
+            Some("Show all 1,664 tracks".to_string())
+        );
+        assert_eq!(show_all_action_label(Some((0, 0))), None);
+        assert_eq!(show_all_action_label(None), None);
     }
 
     #[test]

@@ -338,7 +338,7 @@ const SECONDS_PER_DAY: i64 = 86_400;
 /// - No `deleted` row's deadline has actually passed yet.
 ///
 /// A row only ever qualifies via `missing_reason = 'deleted'` (the shared
-/// [`MISSING`] predicate plus this exact reason, mirroring `query_missing_
+/// `MISSING` predicate plus this exact reason, mirroring `query_missing_
 /// groups`'s own `Deleted` filter above) — `unmounted`/`unknown` rows are
 /// NEVER eligible, no matter how long they've sat missing: an unmounted
 /// drive's files are almost certainly fine and will return the moment the

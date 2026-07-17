@@ -9,9 +9,15 @@ use super::reload;
 use super::TrackList;
 
 impl TrackList {
-    /// Adds the first-scan indicator under the shared empty/status page.
-    pub fn set_empty_scan_widget(&self, widget: &impl gtk4::prelude::IsA<gtk4::Widget>) {
-        self.shared.empty_page_actions.append(widget);
+    /// Sets a widget as the child of the empty-library status page, so it
+    /// appears below the icon/title/description during a first scan. Called
+    /// from `window.rs` after the `EmptyScanIndicator` is created, to embed
+    /// its container widget in the status page. Kept here (not in the main
+    /// orchestrator) as a scan/empty-page integration seam.
+    pub fn set_empty_scan_widget(&self, widget: &impl IsA<gtk4::Widget>) {
+        let widget = widget.as_ref().clone();
+        *self.shared.empty_scan_widget.borrow_mut() = Some(widget.clone());
+        self.shared.empty_page.set_child(Some(&widget));
     }
 
     pub(in crate::ui) fn set_on_scan_queue_purge_ids(

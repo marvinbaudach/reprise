@@ -59,6 +59,8 @@ pub mod strings;
 mod style;
 mod tag_edit;
 pub mod toasts;
+#[cfg(test)]
+pub(crate) mod tooltip_discipline;
 pub(crate) mod track_list;
 pub mod view_session;
 pub(crate) mod window;
@@ -142,23 +144,23 @@ use stats::{hourly_chart, stats_chart, stats_chart_math};
 pub(crate) use stats::{stats_css, stats_view};
 #[allow(unused_imports)]
 use tag_edit::{
-    autocomplete_entry, tag_editor_dirty, tag_editor_form, tag_editor_lookup, tag_editor_save,
+    autocomplete_entry, tag_editor_dirty, tag_editor_failures, tag_editor_form, tag_editor_save,
     tag_editor_state, tag_editor_style, tag_editor_widgets,
 };
 #[allow(unused_imports)]
 pub(crate) use tag_edit::{tag_edit_flow, tag_editor};
 #[allow(unused_imports)]
+use track_list::{
+    column_header_dnd, column_layout_editor, column_widths, current_track_selection, list_density,
+    track_content, track_cover, track_list_builder, track_list_context_keys,
+    track_list_header_style, track_list_layout, track_list_queue_menu, track_list_reload,
+    track_list_rescan, track_list_row_interaction, track_list_selection,
+};
+#[allow(unused_imports)]
 pub(crate) use track_list::{
     column_layout, rating, track_actions, track_list_activation, track_list_columns,
     track_list_context_menu, track_list_dnd, track_list_dnd_smoke, track_list_model,
     track_list_smoke, track_list_sort,
-};
-#[allow(unused_imports)]
-use track_list::{
-    column_layout_editor, column_widths, current_track_selection, list_density, track_content,
-    track_cover, track_list_builder, track_list_context_keys, track_list_header_style,
-    track_list_layout, track_list_queue_menu, track_list_reload, track_list_rescan,
-    track_list_row_interaction, track_list_selection,
 };
 #[allow(unused_imports)]
 use window::{

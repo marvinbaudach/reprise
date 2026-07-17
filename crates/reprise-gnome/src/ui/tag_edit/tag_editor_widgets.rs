@@ -1,63 +1,68 @@
 //! Widget builders and mixed-value presentation helpers for the tag editor.
+//!
+//! Layout note (3a rework, TAG-2/TAG-3): fields stay on their existing
+//! concrete types (`adw::EntryRow` for Title/Year/Track-number,
+//! `AutocompleteEntry`-wrapped `adw::EntryRow` for Artist/Album/Album
+//! artist/Genre) — `tag_editor_dirty.rs` and `tag_editor_save.rs` (both
+//! outside this package's ownership this wave) are pinned to those concrete
+//! types (`wire_entry(row: &adw::EntryRow, ..)`, `SaveWidgets { title: &'a
+//! adw::EntryRow, .. }`), so swapping to a plain `gtk4::Entry` here would
+//! break their compilation. This module instead reworks *layout and styling*
+//! around the existing widgets: no boxed-list/`PreferencesGroup` chrome, a
+//! label-bearing column per field, and a reserved (always-present, P-4)
+//! "was: …" line underneath.
 
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::gdk;
+use gtk4::glib;
+use gtk4::pango;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::cover::{self, ThumbnailSize};
-use reprise_core::library::tag_edit::{EditableTagSummary, MixedValue};
+use reprise_core::library::tag_edit::MixedValue;
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
 use crate::ui::tag_editor::{STAR_FILLED, STAR_OUTLINE};
 use crate::ui::tag_editor_dirty::UpdateCallback;
-use crate::ui::tag_editor_state::{
-    FIELD_ALBUM, FIELD_ALBUM_ARTIST, FIELD_ARTIST, FIELD_GENRE, FIELD_YEAR, RATING_MAX,
-};
+use crate::ui::tag_editor_state::RATING_MAX;
 
 /// Builds the cover art area. For single track, shows a thumbnail. For
-/// multi-track, shows a stacked representation with a count badge.
+/// multi-track, shows a stacked representation with a count badge. No
+/// "Change cover…" affordance (Beschluss #1: v1 never writes covers) — the
+/// old disabled link is gone, not just greyed out.
 pub(in crate::ui) fn build_cover_area(tracks: &[(i64, PathBuf)], is_multi: bool) -> gtk4::Box {
+    const COVER_SIDE: i32 = 120;
+
     let outer = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-    outer.set_halign(gtk4::Align::Center);
-    outer.set_margin_bottom(8);
+    outer.set_valign(gtk4::Align::Start);
+    outer.add_css_class("reprise-tag-cover-area");
 
     if is_multi {
-        // Stacked cover display
         let overlay = gtk4::Overlay::new();
         overlay.add_css_class("reprise-tag-cover-stack");
 
         let cover = load_cover_picture(tracks.first().map(|(_, p)| p.as_path()));
-        cover.set_size_request(180, 180);
+        cover.set_size_request(COVER_SIDE, COVER_SIDE);
         overlay.set_child(Some(&cover));
 
-        // Badge: "N covers"
         let badge = gtk4::Label::new(Some(&strings::tag_cover_count(tracks.len())));
         badge.add_css_class("reprise-tag-cover-badge");
         badge.set_halign(gtk4::Align::End);
         badge.set_valign(gtk4::Align::End);
-        badge.set_margin_end(8);
-        badge.set_margin_bottom(8);
+        badge.set_margin_end(6);
+        badge.set_margin_bottom(6);
         overlay.add_overlay(&badge);
 
         outer.append(&overlay);
     } else {
-        // Single cover
         let cover = load_cover_picture(tracks.first().map(|(_, p)| p.as_path()));
-        cover.set_size_request(200, 200);
+        cover.set_size_request(COVER_SIDE, COVER_SIDE);
         outer.append(&cover);
-
-        // "Change cover..." link (disabled for v1)
-        let change_link = gtk4::Button::with_label(&strings::text(strings::TAG_CHANGE_COVER));
-        change_link.add_css_class("flat");
-        change_link.add_css_class("reprise-tag-cover-link");
-        change_link.set_sensitive(false);
-        change_link.set_halign(gtk4::Align::Center);
-        outer.append(&change_link);
     }
 
     outer
@@ -117,7 +122,6 @@ pub(in crate::ui) fn build_star_rating(value: &MixedValue<i32>) -> (gtk4::Box, R
         container.append(&btn);
     }
 
-    // Add a clear button (click current star again clears)
     update_star_display(&container, current);
     (container, rating_value)
 }
@@ -178,7 +182,7 @@ pub(in crate::ui) fn set_entry_from_mixed_string(row: &adw::EntryRow, value: &Mi
     match value {
         MixedValue::Uniform(text) => row.set_text(text),
         MixedValue::Mixed => {
-            // Leave empty; the placeholder/annotation conveys the state
+            // Leave empty; the mixed styling/annotation conveys the state.
         }
     }
 }
@@ -194,9 +198,26 @@ pub(in crate::ui) fn set_entry_from_mixed_number(
     }
 }
 
+/// Sets placeholder copy on the `GtkText` delegated to by `AdwEntryRow`.
+/// `GtkEditable` itself has no placeholder property, so the row's editable
+/// delegate is the type-safe route to the in-entry placeholder node.
+pub(in crate::ui) fn set_entry_placeholder(row: &adw::EntryRow, text: Option<&str>) {
+    let Some(delegate) = row.delegate() else {
+        return;
+    };
+    let Ok(text_widget) = delegate.downcast::<gtk4::Text>() else {
+        return;
+    };
+    text_widget.set_placeholder_text(text);
+}
+
 /// Initialises an `AutocompleteEntry` from a `MixedValue`, adding
 /// mixed-field annotations in multi-track mode. Returns the annotation label
-/// when the field starts Mixed (needed for click-to-unlock updates).
+/// when the field starts Mixed (needed by [`attach_type_to_arm`]).
+///
+/// TAG-2: a Mixed field stays editable from the start — no click-to-unlock.
+/// The dashed/italic `reprise-tag-mixed` styling is purely visual; typing or
+/// Backspace/Delete arms it (see [`attach_type_to_arm`]).
 pub(in crate::ui) fn init_autocomplete_from_mixed(
     ac: &AutocompleteEntry,
     value: &MixedValue<String>,
@@ -213,7 +234,6 @@ pub(in crate::ui) fn init_autocomplete_from_mixed(
         }
         MixedValue::Mixed => {
             if is_multi {
-                ac.row().set_editable(false);
                 ac.row().add_css_class("reprise-tag-mixed");
                 Some(add_annotation(
                     ac.row(),
@@ -228,7 +248,8 @@ pub(in crate::ui) fn init_autocomplete_from_mixed(
 }
 
 /// Adds a mixed-field annotation for number fields in multi-track mode.
-/// Returns the annotation label (needed for click-to-unlock updates).
+/// Returns the annotation label (needed by [`attach_type_to_arm`]). Like
+/// [`init_autocomplete_from_mixed`], a Mixed number field stays editable.
 pub(in crate::ui) fn apply_mixed_annotation_number(
     row: &adw::EntryRow,
     value: &MixedValue<Option<u32>>,
@@ -240,7 +261,6 @@ pub(in crate::ui) fn apply_mixed_annotation_number(
             None
         }
         MixedValue::Mixed => {
-            row.set_editable(false);
             row.add_css_class("reprise-tag-mixed");
             Some(add_annotation(
                 row,
@@ -262,102 +282,240 @@ pub(in crate::ui) fn add_annotation(row: &adw::EntryRow, text: &str, accent: boo
     label
 }
 
-/// Attaches a click gesture to a Mixed field so the user can unlock it for
-/// editing. On first click: makes the entry editable, clears the text,
-/// removes the mixed CSS class, and updates the annotation to the
-/// "will be applied to all N" copy.
-pub(in crate::ui) fn attach_click_to_unlock(
+// ─────────────────────────── TAG-3: per-track fields ───────────────────────
+
+/// Em dash shown in Title/Track-number when they're locked as per-track
+/// (TAG-3) — a single positional glyph, kept at its use site rather than in
+/// `strings.rs` (same carve-out as the rating stars).
+const PER_TRACK_DASH: &str = "\u{2014}";
+
+/// [`per_track_field_projection`]'s result: what Title/Track-number should
+/// show — read-only "—" in Multi mode (TAG-3: "a mass title is always an
+/// accident"), a normal editable empty field otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) struct PerTrackFieldProjection {
+    pub(in crate::ui) text: &'static str,
+    pub(in crate::ui) editable: bool,
+    pub(in crate::ui) has_tooltip: bool,
+}
+
+/// TAG-3: Title and Track-number are per-track fields — a mass edit across
+/// tracks-with-different-titles/positions is always an accident, so Multi
+/// mode locks them to a read-only "—" with an explanatory tooltip rather
+/// than letting a batch save clobber every track to the same value.
+pub(in crate::ui) fn per_track_field_projection(is_multi: bool) -> PerTrackFieldProjection {
+    if is_multi {
+        PerTrackFieldProjection {
+            text: PER_TRACK_DASH,
+            editable: false,
+            has_tooltip: true,
+        }
+    } else {
+        PerTrackFieldProjection {
+            text: "",
+            editable: true,
+            has_tooltip: false,
+        }
+    }
+}
+
+/// Applies [`per_track_field_projection`] to a Title/Track-number row: in
+/// Multi mode, locks it to "—" with the per-track tooltip and annotation; in
+/// Single mode, leaves it alone (caller sets the real value).
+pub(in crate::ui) fn apply_per_track_field(row: &adw::EntryRow, is_multi: bool) {
+    let projection = per_track_field_projection(is_multi);
+    row.set_editable(projection.editable);
+    if !projection.editable {
+        row.set_text(projection.text);
+        row.add_css_class("reprise-tag-per-track");
+        if projection.has_tooltip {
+            row.set_tooltip_text(Some(&strings::text(strings::TAG_PER_TRACK_TOOLTIP)));
+        }
+        add_annotation(row, &strings::text(strings::TAG_PER_TRACK), false);
+    }
+}
+
+// ───────────────────── TAG-2: direct-typable mixed fields ──────────────────
+
+/// TAG-2: the first real keystroke into an unarmed mixed field arms it —
+/// only the empty→non-empty transition matters (callers only invoke this
+/// while the field is still in its unarmed placeholder state).
+pub(in crate::ui) fn mixed_field_arms_on_change(new_text: &str) -> bool {
+    !new_text.is_empty()
+}
+
+/// TAG-2: Backspace/Delete on an unarmed, still-empty mixed field also arms
+/// it, as an explicit "clear for all" — nothing about a mixed field's blank
+/// state is a silently swallowed no-op keypress.
+pub(in crate::ui) fn mixed_field_key_arms_as_clear(keyval: gdk::Key, text_is_empty: bool) -> bool {
+    text_is_empty && matches!(keyval, gdk::Key::BackSpace | gdk::Key::Delete)
+}
+
+/// TAG-2: arms a Mixed field on the user's first real interaction — typing a
+/// character (`changed` sees non-empty text) or pressing Backspace/Delete
+/// while still empty (forced through as a real text round-trip so
+/// `tag_editor_dirty`'s own, separately-connected `changed` listener —
+/// connected later, in `tag_editor_dirty::wire` — actually observes a
+/// change instead of a silently swallowed keypress). Once armed, swaps the
+/// dashed "mixed" styling for the accent "armed" look and updates
+/// `annotation` to "will be applied to all N" (click-to-unlock's old job,
+/// now keystroke-triggered — TAG-2 removes click-to-unlock entirely).
+pub(in crate::ui) fn attach_type_to_arm(
     row: &adw::EntryRow,
     annotation: Option<&gtk4::Label>,
     track_count: usize,
 ) {
-    let row_c = row.clone();
-    let annotation_c = annotation.cloned();
     let will_apply = strings::tag_will_apply(track_count);
-    let gesture = gtk4::GestureClick::new();
-    gesture.connect_released(move |_, _, _, _| {
-        if !row_c.is_editable() {
-            row_c.set_editable(true);
-            row_c.remove_css_class("reprise-tag-mixed");
-            row_c.set_text("");
-            if let Some(lbl) = &annotation_c {
-                lbl.set_text(&will_apply);
-                lbl.add_css_class("accent");
+
+    {
+        let row_c = row.clone();
+        let annotation_c = annotation.cloned();
+        let will_apply_c = will_apply.clone();
+        row.connect_changed(move |entry| {
+            if !row_c.has_css_class("reprise-tag-mixed") {
+                return;
             }
-            row_c.grab_focus();
-        }
-    });
-    row.add_controller(gesture);
+            if mixed_field_arms_on_change(&entry.text()) {
+                arm_mixed_field(&row_c, annotation_c.as_ref(), &will_apply_c);
+            }
+        });
+    }
+
+    let key_controller = gtk4::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    {
+        let row_c = row.clone();
+        let annotation_c = annotation.cloned();
+        key_controller.connect_key_pressed(move |_, keyval, _, _| {
+            if !row_c.has_css_class("reprise-tag-mixed") {
+                return glib::Propagation::Proceed;
+            }
+            let text_is_empty = row_c.text().is_empty();
+            if mixed_field_key_arms_as_clear(keyval, text_is_empty) {
+                // Force a real changed-signal round-trip (empty text alone
+                // has nothing to delete, so a plain Backspace never fires
+                // `changed`) — this also lets `tag_editor_dirty`'s own
+                // listener see it as a genuine pending change.
+                row_c.set_text(" ");
+                row_c.set_text("");
+                arm_mixed_field(&row_c, annotation_c.as_ref(), &will_apply);
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+    }
+    row.add_controller(key_controller);
 }
 
-/// Returns the original text value for a given field index from a snapshot.
-/// Returns `None` for fields that were Mixed (no single value).
-pub(in crate::ui) fn field_snapshot_text(
-    summary: &EditableTagSummary,
-    field_idx: usize,
+fn arm_mixed_field(row: &adw::EntryRow, annotation: Option<&gtk4::Label>, will_apply: &str) {
+    set_entry_placeholder(row, None);
+    row.remove_css_class("reprise-tag-mixed");
+    row.add_css_class("reprise-tag-field-armed");
+    if let Some(label) = annotation {
+        label.set_text(will_apply);
+        label.add_css_class("accent");
+    }
+}
+
+// ───────────────────────── Header subtitle (Beschluss #2) ──────────────────
+
+/// Single-track header subtitle: "FLAC · 987 kbit/s" — format from the file
+/// extension, bitrate from `Track::bitrate_kbps`; either half is omitted if
+/// unavailable (never a stray "·" or a fabricated "unknown"). The "Track N
+/// of M" position prefix is Package G's job (TAG-4 browse snapshot) — this
+/// function only ever renders format/bitrate, by design, until that lands.
+pub(in crate::ui) fn format_track_subtitle(
+    extension: Option<&str>,
+    bitrate_kbps: Option<u32>,
 ) -> Option<String> {
-    match field_idx {
-        FIELD_ARTIST => match &summary.artist {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_ALBUM => match &summary.album {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_ALBUM_ARTIST => match &summary.album_artist {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_GENRE => match &summary.genre {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_YEAR => match &summary.year {
-            MixedValue::Uniform(Some(v)) => Some(v.to_string()),
-            MixedValue::Uniform(None) | MixedValue::Mixed => None,
-        },
-        _ => None,
+    let format = extension.map(str::to_uppercase);
+    let bitrate = bitrate_kbps.map(|kbps| format!("{kbps} kbit/s"));
+    match (format, bitrate) {
+        (Some(format), Some(bitrate)) => Some(format!("{format} \u{00B7} {bitrate}")),
+        (Some(format), None) => Some(format),
+        (None, Some(bitrate)) => Some(bitrate),
+        (None, None) => None,
     }
 }
 
-/// Returns true if the given field was originally Mixed in the snapshot.
-pub(in crate::ui) fn field_snapshot_is_mixed(
-    summary: &EditableTagSummary,
-    field_idx: usize,
-) -> bool {
-    match field_idx {
-        FIELD_ARTIST => matches!(summary.artist, MixedValue::Mixed),
-        FIELD_ALBUM => matches!(summary.album, MixedValue::Mixed),
-        FIELD_ALBUM_ARTIST => matches!(summary.album_artist, MixedValue::Mixed),
-        FIELD_GENRE => matches!(summary.genre, MixedValue::Mixed),
-        FIELD_YEAR => matches!(summary.year, MixedValue::Mixed),
-        _ => false,
+// ───────────────────────────── Layout helpers ───────────────────────────────
+
+/// Wraps a field widget in a vertical column: an optional external label on
+/// top (used for the star rating, which has no built-in title the way
+/// `adw::EntryRow` does), the field itself, then a reserved "was: …" line
+/// (TAG-5, P-4) — present and space-allocated even while empty, styled with
+/// a permanent strikethrough attribute so later callers only ever need to
+/// set its text.
+pub(in crate::ui) fn build_field_column(
+    field_widget: &gtk4::Widget,
+    external_label: Option<&str>,
+) -> (gtk4::Box, gtk4::Label) {
+    let column = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    column.add_css_class("reprise-tag-field");
+
+    if let Some(text) = external_label {
+        let label = gtk4::Label::builder().label(text).xalign(0.0).build();
+        label.add_css_class("reprise-tag-field-label");
+        column.append(&label);
     }
+    column.append(field_widget);
+
+    let old_value = gtk4::Label::builder().label("").xalign(0.0).build();
+    old_value.add_css_class("reprise-tag-old-value");
+    let attrs = pango::AttrList::new();
+    attrs.insert(pango::AttrInt::new_strikethrough(true));
+    old_value.set_attributes(Some(&attrs));
+    column.append(&old_value);
+
+    (column, old_value)
 }
 
-/// Builds a single pending-change item: "Field → Value" with a Revert button.
-pub(in crate::ui) fn build_pending_item(
-    field_name: &str,
-    value: &str,
-    on_revert: Box<dyn Fn()>,
-) -> gtk4::Box {
-    let item = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    item.add_css_class("reprise-tag-pending-item");
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let text = format!("{field_name} \u{2192} {value}");
-    let label = gtk4::Label::builder()
-        .label(&text)
-        .xalign(0.0)
-        .hexpand(true)
-        .ellipsize(gtk4::pango::EllipsizeMode::End)
-        .build();
-    item.append(&label);
+    #[test]
+    fn tag_3_per_track_fields_render_dash_readonly_in_multi() {
+        let multi = per_track_field_projection(true);
+        assert_eq!(multi.text, "\u{2014}");
+        assert!(!multi.editable);
+        assert!(multi.has_tooltip);
 
-    let revert_btn = gtk4::Button::with_label(&strings::text(strings::TAG_REVERT));
-    revert_btn.add_css_class("flat");
-    revert_btn.connect_clicked(move |_| on_revert());
-    item.append(&revert_btn);
+        let single = per_track_field_projection(false);
+        assert!(single.editable);
+        assert!(!single.has_tooltip);
+        assert_eq!(single.text, "");
+    }
 
-    item
+    #[test]
+    fn subtitle_omits_missing_bitrate() {
+        assert_eq!(
+            format_track_subtitle(Some("flac"), None),
+            Some("FLAC".to_string())
+        );
+        assert_eq!(
+            format_track_subtitle(Some("flac"), Some(987)),
+            Some("FLAC \u{00B7} 987 kbit/s".to_string())
+        );
+        assert_eq!(
+            format_track_subtitle(None, Some(987)),
+            Some("987 kbit/s".to_string())
+        );
+        assert_eq!(format_track_subtitle(None, None), None);
+    }
+
+    #[test]
+    fn tag_2_first_keystroke_arms_field() {
+        assert!(!mixed_field_arms_on_change(""));
+        assert!(mixed_field_arms_on_change("a"));
+        assert!(mixed_field_arms_on_change("Suicide Silence"));
+    }
+
+    #[test]
+    fn tag_2_backspace_in_placeholder_arms_as_clear_for_all() {
+        assert!(mixed_field_key_arms_as_clear(gdk::Key::BackSpace, true));
+        assert!(mixed_field_key_arms_as_clear(gdk::Key::Delete, true));
+        assert!(!mixed_field_key_arms_as_clear(gdk::Key::BackSpace, false));
+        assert!(!mixed_field_key_arms_as_clear(gdk::Key::a, true));
+    }
 }

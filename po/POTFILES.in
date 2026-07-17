@@ -3,6 +3,7 @@ crates/reprise-gnome/src/ui/strings_app_shell.rs
 crates/reprise-gnome/src/ui/strings_artist.rs
 crates/reprise-gnome/src/ui/strings_issues.rs
 crates/reprise-gnome/src/ui/strings_news.rs
+crates/reprise-gnome/src/ui/strings_tooltips.rs
 crates/reprise-gnome/src/ui/strings_rhythmbox.rs
 crates/reprise-gnome/src/ui/strings_scrobbling.rs
 crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
