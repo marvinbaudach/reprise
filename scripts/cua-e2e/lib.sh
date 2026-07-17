@@ -94,8 +94,10 @@ assert_action_landed() {
   fi
 }
 
-cua_click_label() {
-  local pid=$1 window_id=$2 label=$3 stem=$4
+# Drive one pointer verb (click, double_click, ...) at a labelled element,
+# snapshotting before and after so the caller has evidence either way.
+cua_pointer_action_label() {
+  local verb=$1 pid=$2 window_id=$3 label=$4 stem=$5
   local before_path action_path index payload
 
   before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
@@ -108,28 +110,17 @@ cua_click_label() {
     --arg session "$CUA_E2E_SESSION" \
     '{pid: $pid, window_id: $window_id, element_index: $element_index,
       session: $session}')
-  "$CUA_DRIVER_BIN" click "$payload" >"$action_path"
+  "$CUA_DRIVER_BIN" "$verb" "$payload" >"$action_path"
   assert_action_landed "$action_path"
   cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null
 }
 
-cua_double_click_label() {
-  local pid=$1 window_id=$2 label=$3 stem=$4
-  local before_path action_path index payload
+cua_click_label() {
+  cua_pointer_action_label click "$@"
+}
 
-  before_path=$(cua_snapshot "$pid" "$window_id" "$stem-before")
-  index=$(element_index_for_label "$before_path" "$label")
-  action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
-  payload=$(jq -nc \
-    --argjson pid "$pid" \
-    --argjson window_id "$window_id" \
-    --argjson element_index "$index" \
-    --arg session "$CUA_E2E_SESSION" \
-    '{pid: $pid, window_id: $window_id, element_index: $element_index,
-      session: $session}')
-  "$CUA_DRIVER_BIN" double_click "$payload" >"$action_path"
-  assert_action_landed "$action_path"
-  cua_snapshot "$pid" "$window_id" "$stem-after" >/dev/null
+cua_double_click_label() {
+  cua_pointer_action_label double_click "$@"
 }
 
 cua_type_text_label() {

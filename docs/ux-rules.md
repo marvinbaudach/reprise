@@ -35,7 +35,15 @@ nebenbei weitere Regeln ab, zählt das nicht — die Zweitregel braucht ihren
 eigenen Test. `#[ignore = "UX <ID> [geplant] — …"]` ist nur auf
 `[geplant]`-Regeln erlaubt. `scripts/check-ux-traceability.sh` (Teil des
 Merge-Gates) erzwingt: jede `[aktiv]`-Regel hat ≥ 1 Test · kein Test
-referenziert eine unbekannte oder ersetzte ID · kein Ignore auf `[aktiv]`.
+referenziert eine unbekannte oder ersetzte ID · kein Ignore auf `[aktiv]` ·
+jedes Ignore auf einem regelbenannten Test hält das Format oben ein. Als
+Abdeckung zählen nur echte `#[test]`-Funktionen bzw. ausgeführte
+cua-e2e-Zeilen — eine gleichnamige Helper-fn oder ein Kommentar greent das
+Gate nicht.
+
+**Sprache.** Dieses Dokument und die Design-Docs sind Deutsch — die
+Arbeitssprache des Projekts. Tests und Skripte sind Code und damit Englisch
+(AGENTS.md); Regel-IDs und Status-Token werden dort wörtlich zitiert.
 
 **Änderungen.** Begegnet dir beim Implementieren oder Testen ein Fall, den
 keine Regel deckt: **Regel ergänzen, nicht lokal entscheiden.** Agenten legen
@@ -131,10 +139,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   erreichbar sind, nie den Queue-Inhalt.
 - **PLAY-2** [aktiv] [core] — Doppelklick spielt die Row und hängt den Rest
   der sichtbaren Liste ab dieser Position in die Queue.
-- **PLAY-3** [aktiv] [core] — Filter schränkt Shuffle ein — absichtlich.
+- **PLAY-3** [ersetzt durch PLAY-3a/PLAY-3b] — Ursprüngliche Sammelregel
+  „Filter schränkt Shuffle ein"; nach der Prozessregel für halb getestete
+  Regeln in Treffer-Shuffle (3a) und Filter-Nachträglichkeit (3b) gesplittet.
+- **PLAY-3a** [aktiv] [core] — Filter schränkt Shuffle ein — absichtlich.
   Gefilterte Playlist + Shuffle = Shuffle über die Treffer („shuffle my 90s
-  tracks"). Filter nachträglich ändern fasst eine bereits gebaute Queue nicht
-  an (Queue ist ein Snapshot; sichtbar in „Queue").
+  tracks"); die Queue ist genau die Treffermenge, kein Track von außerhalb.
+- **PLAY-3b** [geplant] [gtk] — Filter nachträglich ändern fasst eine bereits
+  gebaute Queue nicht an (Queue ist ein Snapshot; sichtbar in „Queue").
 - **PLAY-4a** [geplant] [core] — Missing in Listen: Listen-Playback und
   Queue-Advance überspringen Missing still.
 - **PLAY-4b** [geplant] [gtk] — Doppelklick auf konkrete Missing-Row: Toast

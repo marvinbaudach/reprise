@@ -177,8 +177,8 @@ run_populated_library_scenario() {
   assert_snapshot_contains "$initial_path" "sine_01"
   assert_snapshot_contains "$initial_path" "Tracks"
 
-  # UX PLAY-2 [e2e]-Verdrahtung: Doppelklick auf eine Row baut die Queue aus
-  # der sichtbaren Liste (Log-Marker aus play_from_view) und startet Playback.
+  # UX PLAY-2 [e2e] wiring: double-clicking a row builds the queue from the
+  # visible list (log marker from play_from_view) and starts playback.
   echo "[cua-e2e] play-2-doubleclick-row: activation builds queue from view"
   cua_double_click_label "$APP_PID" "$WINDOW_ID" "sine_01" "play-2-doubleclick-row"
   assert_app_log_contains \

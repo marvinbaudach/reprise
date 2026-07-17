@@ -406,8 +406,10 @@ Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
 Run: `grep -cE '^\- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(aktiv|geplant|ersetzt)' docs/ux-rules.md`
 Expected: `60` (Regelzeilen inkl. der ersetzten PLAY-5; bei Abweichung Zeilenformat fixen)
 
-Run: `grep -c '\[aktiv\]' docs/ux-rules.md`
-Expected: `0` (alles startet geplant)
+Run: `grep -cE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[aktiv\]' docs/ux-rules.md`
+Expected: `0` (alle Regelzeilen starten `[geplant]`; das Muster zählt nur
+Regelzeilen — ein blankes `grep -c '\[aktiv\]'` trifft auch die Prosa der
+Prozessregeln und ist nie `0`)
 
 - [x] **Step 3: Ledger ergänzen** — an `.superpowers/sdd/progress.md` anhängen:
 
@@ -845,3 +847,44 @@ git commit -m "chore: close out UX rulebook foundation"
 ```
 
 - [x] **Step 3: Branch-Abschluss dem User überlassen** — superpowers:finishing-a-development-branch (Merge in main vs. warten auf den parallelen Queue-Agenten im selben Branch — Koordination liegt beim User).
+
+---
+
+## Nachtrag: Review-Korrekturen (2026-07-17)
+
+Der Zwei-Achsen-Review dieses Branches hat die Schritte oben als ausgeführt
+bestätigt, aber fünf Nachbesserungen ausgelöst. Die Task-Blöcke oben bleiben
+als Protokoll des tatsächlich Ausgeführten stehen; verbindlich ist ab hier
+dieser Nachtrag.
+
+- **PLAY-3 → PLAY-3a/PLAY-3b.** Task 4 flippte PLAY-3 komplett auf `[aktiv]`,
+  obwohl der Test nur die Treffer-Shuffle-Klausel abdeckt und die zweite
+  Klausel (Filteränderung fasst die Queue nicht an) keine Assertion hat. Das
+  verstieß gegen die Prozessregel „Halb umgesetzt → a/b-Split". Jetzt:
+  PLAY-3 `[ersetzt durch PLAY-3a/PLAY-3b]`, **PLAY-3a** `[aktiv] [core]`
+  (getestet, `play_3a_shuffle_stays_inside_filtered_snapshot`), **PLAY-3b**
+  `[geplant] [gtk]` — ihr Flip kommt mit ihrem Test.
+- **Sprache.** Tests und Skripte sind Code: englische Kommentare, Bezeichner
+  und Meldungen (AGENTS.md „English everywhere"). Nur das Regelwerk selbst
+  und die Design-Docs sind Deutsch — beabsichtigt, das ist die Arbeitssprache
+  des Projekts. Regel-IDs und Status-Token (`[aktiv]`, `[geplant]`) werden in
+  Code wörtlich zitiert und bleiben dadurch deutsch.
+- **Gate gehärtet** (`scripts/check-ux-traceability.sh`): Präfixe werden aus
+  dem Dokument abgeleitet statt hartkodiert (eine neue Sektion ist damit
+  automatisch gegated); nur `#[test]`-Funktionen zählen als Abdeckung, nicht
+  jede gleichnamige Helper-fn; Kommentarzeilen in `scripts/cua-e2e` zählen
+  nicht mehr als Szenario-Referenz; das Ignore-Format
+  `UX <ID> [geplant] — …` wird erzwungen statt nur dokumentiert.
+- **Duplikat entfernt:** `cua_click_label` / `cua_double_click_label` teilen
+  sich `cua_pointer_action_label <verb>` in `scripts/cua-e2e/lib.sh`.
+- **Falscher Sanity-Check** in Task 1 Step 2 korrigiert: `grep -c '[aktiv]'`
+  war nie `0` (die Prozessregel-Prosa enthält das Token); der Check zählt
+  jetzt nur Regelzeilen.
+
+**Offen (kein Blocker, bewusst verschoben):**
+
+- PLAY-2 ist `[aktiv] [core]`; der gatende Core-Test beweist die
+  `set_tracks`-Semantik, nicht die Doppelklick-Verdrahtung. Deren Beweis liegt
+  im cua-e2e-Szenario `play-2-doubleclick-row`, das nicht Teil des
+  Merge-Gates ist — eine Verdrahtungs-Regression reißt das Gate also nicht.
+  Der e2e-Lauf ist auf den Host-Gate-Check verschoben (Task 5 Step 4).
