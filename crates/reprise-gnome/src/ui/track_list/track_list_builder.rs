@@ -72,6 +72,7 @@ pub(in crate::ui) fn build(
         selection: selection.clone(),
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
+        suppress_follow_scroll: Cell::new(None),
         conn,
         cover_loader: cover_loader.clone(),
         browse_bar: browse_bar.clone(),

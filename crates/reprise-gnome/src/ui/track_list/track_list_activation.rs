@@ -30,6 +30,11 @@ pub(in crate::ui) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<S
 
 pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &Track) {
     tracing::info!(path = %track.path, "activate track");
+    // The user is starting playback from the table itself, so the row is
+    // already on screen — arm the one-shot marker that makes the follow-up
+    // now-playing selection skip the viewport centering (see the
+    // `Shared::suppress_follow_scroll` doc comment).
+    shared.suppress_follow_scroll.set(Some(track.id));
     if matches!(*shared.source.borrow(), ViewSource::Queue) {
         let callback = shared.on_queue_activate.borrow().clone();
         match callback {
