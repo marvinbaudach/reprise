@@ -42,6 +42,12 @@ pub(in crate::ui) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
 /// A column-header click (`on_sorter_changed`) still overrides this
 /// temporarily, exactly as before.
 pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
+    // NAV-5: capture the leaving source's scroll/selection BEFORE the model
+    // is replaced below; restore the entering source's remembered state
+    // after `reload` rebuilt it. Same-source calls are plain reloads and
+    // deliberately skip both halves.
+    let old_source = source_snapshot(&shared.source);
+    super::view_state_memory::remember_on_leave(shared, &old_source, &source);
     // Hoisted so the `sort` borrow ends before the `borrow_mut` below.
     let new_sort = resolve_sort_on_switch(&shared.sort.borrow(), &source);
     *shared.sort.borrow_mut() = new_sort;
@@ -51,6 +57,10 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSour
         .browse_bar
         .set_library_visible(matches!(source, ViewSource::Library));
     reload(shared);
+    if old_source != source {
+        let current_ids = shared.current_view_ids();
+        super::view_state_memory::restore_on_attach(shared, &source, &current_ids);
+    }
 }
 
 /// Re-runs the query against the current source/sort/filter state via

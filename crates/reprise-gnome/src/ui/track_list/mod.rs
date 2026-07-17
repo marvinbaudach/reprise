@@ -26,6 +26,7 @@ pub(in crate::ui) mod track_list_row_interaction;
 pub(in crate::ui) mod track_list_selection;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
+pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]
 use super::*;

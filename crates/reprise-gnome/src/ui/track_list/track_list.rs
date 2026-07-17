@@ -174,6 +174,13 @@ pub(in crate::ui) struct Shared {
     /// A `Cell`: `Copy` payload, single-threaded UI access, same rationale
     /// as `playing_track_id`.
     pub(in crate::ui) suppress_follow_scroll: Cell<Option<i64>>,
+    /// NAV-5: per-source scroll/selection memory for this session. Written
+    /// by `view_state_memory::remember_on_leave` when a source switch leaves
+    /// a view, read by `view_state_memory::restore_on_attach` after the
+    /// switched-to source reloaded. Never persisted (NAV-5 precision: view
+    /// state must not survive an app restart).
+    pub(in crate::ui) view_state_memory:
+        RefCell<std::collections::HashMap<ViewSource, super::view_state_memory::SavedViewState>>,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
