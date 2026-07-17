@@ -87,7 +87,7 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
 
     // — Play/pause button —
     let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
-    play_pause_button.set_tooltip_text(Some(&strings::text(strings::PLAY)));
+    play_pause_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_PLAY)));
     play_pause_button.set_valign(gtk4::Align::Center);
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(CSS_PLAY);

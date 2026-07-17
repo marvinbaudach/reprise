@@ -238,7 +238,7 @@ impl InfoPanel {
         widgets.stack.set_visible_child_name(tab.name());
         let toggle = gtk4::ToggleButton::builder()
             .icon_name("sidebar-show-right-symbolic")
-            .tooltip_text(strings::text(strings::INFORMATION))
+            .tooltip_text(strings::text(strings::INFO_PANEL_TOGGLE))
             .css_classes(["flat", "reprise-panel-toggle"])
             .active(visible)
             .build();

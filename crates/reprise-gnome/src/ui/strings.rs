@@ -38,6 +38,10 @@ pub use artist::*;
 mod news;
 pub use news::*;
 
+#[path = "strings_tooltips.rs"]
+mod tooltips;
+pub use tooltips::*;
+
 #[path = "strings_app_shell.rs"]
 mod app_shell;
 pub use app_shell::*;
@@ -395,15 +399,12 @@ pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
 // Player bar (src/ui/player_bar.rs).
 pub const PLAY: &str = N_!("Play");
 pub const PAUSE: &str = N_!("Pause");
-/// Tooltip of the album-card hover-overlay play button (TIP-1a).
-pub const PLAY_ALBUM: &str = N_!("Play album");
 pub const PLAYBACK_POSITION: &str = N_!("Playback position");
 pub const VOLUME: &str = N_!("Volume");
 pub const SHUFFLE: &str = N_!("Shuffle");
 pub const PREVIOUS: &str = N_!("Previous");
 pub const NEXT: &str = N_!("Next");
 pub const REPEAT: &str = N_!("Repeat");
-pub const QUEUE: &str = N_!("Queue");
 
 // Rating: used both as the track list's Rating column header
 // (src/ui/track_list.rs) and as the RatingWidget's tooltip
