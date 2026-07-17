@@ -576,46 +576,6 @@ impl PlayerController {
         }
     }
 
-    /// Starts playback of `ids[start_index]` and loads the rest of `ids` into
-    /// the queue as what auto-advance/previous/next step through. Row
-    /// activation lands here — see `ui::track_list`'s `queue_ids_for_
-    /// activation` for how `ids`/`start_index` are built from the currently
-    /// visible sort/filter view. An empty `ids` (nothing to play) resets to
-    /// stopped instead of calling `play_track_id`.
-    ///
-    /// Borrow discipline: `set_tracks` and `current()` each run inside their
-    /// own statement, so their `queue` borrows drop before `play_track_id`/
-    /// `reset_to_stopped` run — see the module's `## Queue borrow
-    /// discipline` doc section.
-    pub fn play_from_view(
-        &self,
-        ids: Vec<i64>,
-        start_index: usize,
-        origin: super::play_origin::PlayOrigin,
-    ) {
-        self.queue.borrow_mut().set_tracks(ids, start_index);
-        self.current_up_next.set(None);
-
-        let queue_len = self.queue.borrow().len();
-        // An empty seed (nothing to play) resets to stopped below and must
-        // not claim an origin for a context that does not exist.
-        *self.play_origin.borrow_mut() = (queue_len > 0).then_some(origin);
-
-        tracing::info!(queue_len, start_index, "queue set from view");
-
-        let has_transport = !self.queue.borrow().is_empty() || !self.up_next.borrow().is_empty();
-        self.sync_transport_enabled(has_transport);
-
-        let current = self.queue.borrow().current();
-        match current {
-            Some(id) => self.play_track_id(id),
-            None => self.reset_to_stopped(),
-        }
-        // The Queue view and sidebar counter render the snapshot (QUE-1/
-        // QUE-5), so a reseeded context is a queue change for them.
-        self.notify_queue_changed();
-    }
-
     /// Resolves `id` via `queries::query_track_summary` and starts its
     /// playback — the one place that actually calls `Player::play`, shared
     /// by `play_from_view` and every queue-stepping call site so the
@@ -632,12 +592,6 @@ impl PlayerController {
     /// and `playback_faults.rs` can call it too.
     pub(in crate::ui) fn play_track_id(&self, id: i64) {
         self.present_track(id, StartPlayback::Yes);
-    }
-
-    /// The current playback context's origin, if any — clone-out so no
-    /// borrow escapes (see `## Queue borrow discipline`).
-    pub(in crate::ui) fn current_play_origin(&self) -> Option<super::play_origin::PlayOrigin> {
-        self.play_origin.borrow().clone()
     }
 
     /// Loads `id` as the now-playing track and reflects it across every

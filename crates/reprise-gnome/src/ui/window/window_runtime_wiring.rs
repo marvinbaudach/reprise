@@ -189,7 +189,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 // Re-baseline the sidebar's dedup: cross-navigation paths
                 // (album/artist cards, smoke hooks) switch the table without
                 // it, and a stale baseline would swallow this selection.
-                sidebar.sync_current_source(&track_list.current_source());
+                crate::ui::sidebar_session::sync_current_source(
+                    &sidebar.shared,
+                    &track_list.current_source(),
+                );
                 sidebar.refresh_and_select(origin, "jump to now playing");
                 // Deferred one main-loop round: the routed reload above has
                 // scheduled idle work of its own; centering runs after the
@@ -229,7 +232,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     return;
                 };
                 nav_history.begin_back();
-                sidebar.sync_current_source(&track_list.current_source());
+                crate::ui::sidebar_session::sync_current_source(
+                    &sidebar.shared,
+                    &track_list.current_source(),
+                );
                 sidebar.refresh_and_select(target, "nav back");
                 nav_history.end_back();
             });

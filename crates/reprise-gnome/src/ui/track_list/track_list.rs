@@ -75,9 +75,13 @@ pub(in crate::ui) use crate::ui::track_list_reload::{
     reload, set_filter_and_reload, set_source_and_reload,
 };
 use crate::ui::track_list_sort::{SortState, PLAYLIST_ORDER_SORT_FIELD};
-use reprise_core::models::Track;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
+
+pub(in crate::ui) use super::track_list_callbacks::{
+    OnActivate, OnLibraryMutated, OnPlaySelected, OnQueueActivate, OnQueueRemove, OnQueueReorder,
+    OnQueueSelected, OnReload, OnSelectionChanged, OnSidebarPlaylistDrop, OnTagsMutated,
+};
 
 pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
 pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
@@ -86,48 +90,6 @@ pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
 /// shown instead of `STACK_PAGE_LIST` only while `ViewSource::ImportErrors`
 /// is selected and has rows (see `apply_empty_state`'s `List` arm).
 pub(in crate::ui) const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
-
-/// Callback invoked on row activation (double-click/Enter on a row, or the
-/// `REPRISE_SMOKE_ACTIVATE` hook). Provided by `window::build`, which routes
-/// it to the player — the track list itself stays free of any playback
-/// knowledge. Alongside the activated row's `Track` (for logging/fallback,
-/// see the `None` player branch in `window::build`), it also carries the
-/// full queue this activation should start: `ids` is every track id in the
-/// activated row's current sort/filter view (via `queue_ids_for_activation`)
-/// and `start_index` is the activated row's position within that list —
-/// together, exactly `PlayerController::play_from_view`'s parameters.
-pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize, ViewSource)>;
-
-/// Callback invoked at the end of every `reload()` — see the `Shared::
-/// on_reload` doc comment for what each parameter carries and why
-/// `window.rs` needs all four.
-type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFilter)>;
-
-/// Context-menu "Play" action callback — see the `Shared::on_play_selected`
-/// doc comment.
-type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize, ViewSource)>;
-/// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
-/// selected` doc comment.
-type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
-type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::QueueRow)>;
-type OnQueueRemove = Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
-/// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
-/// comment. Returns whether the move actually happened (`false` for a
-/// degraded no-op, e.g. no player wired — see `Shared::on_queue_reorder`'s
-/// doc comment), which `ui::track_list_dnd`'s drop handler propagates as its
-/// own result rather than reporting success just because a callback was
-/// present (Stage 3 Task 6 review finding #3).
-type OnQueueReorder = Rc<dyn Fn(super::queue_row_mapping::QueueReorderOp) -> bool>;
-/// Sidebar drag-and-drop "add to playlist" callback — see the `Shared::on_
-/// sidebar_playlist_drop` doc comment.
-type OnSidebarPlaylistDrop = Rc<dyn Fn(i64, &str, &[i64]) -> bool>;
-/// "Remove from library" callback — see the `Shared::on_library_mutated` doc
-/// comment. Takes the ids actually deleted (Stage-3 close-out).
-type OnLibraryMutated = Rc<dyn Fn(&[i64])>;
-/// Successful tag-edit callback. Paths let the player invalidate only the
-/// currently displayed cover while the window refreshes sidebar metadata.
-type OnTagsMutated = Rc<dyn Fn(&[PathBuf])>;
-type OnSelectionChanged = Rc<dyn Fn(crate::ui::info_panel_state::PanelContext)>;
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than

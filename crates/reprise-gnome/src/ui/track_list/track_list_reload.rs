@@ -6,8 +6,8 @@ use std::rc::Rc;
 use gtk4::gio::prelude::*;
 
 use crate::ui::browse_filter_count;
+use crate::ui::track_list::track_list_empty_state::{apply_empty_state, empty_state_for};
 use crate::ui::track_list::Shared;
-use crate::ui::track_list_columns::{apply_empty_state, empty_state_for};
 use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;

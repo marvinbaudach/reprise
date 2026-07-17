@@ -174,7 +174,7 @@ pub(in crate::ui) struct Shared {
 /// Handle to the built sidebar widget: scrolling navigation followed by
 /// non-scrolling issues and the shared bottom activity slot.
 pub struct Sidebar {
-    shared: Rc<Shared>,
+    pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
     activity_slot: SidebarActivitySlot,
 }
@@ -358,15 +358,6 @@ impl Sidebar {
     /// navigation synchronized. Used after importing a populated playlist.
     pub fn refresh_and_select(&self, source: ViewSource, reason: &str) {
         rebuild(&self.shared, Some(source), reason);
-    }
-
-    /// Re-baselines the row-selected dedup against the view's ACTUAL source.
-    /// Paths that change the track list without going through the sidebar
-    /// (album/artist cross-navigation, smoke hooks) leave `current_source`
-    /// stale; NAV-9's jump and NAV-2's back call this first so their
-    /// `refresh_and_select` isn't swallowed as a same-source no-op.
-    pub(in crate::ui) fn sync_current_source(&self, source: &ViewSource) {
-        *self.shared.current_source.borrow_mut() = source.clone();
     }
 
     pub(in crate::ui) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
