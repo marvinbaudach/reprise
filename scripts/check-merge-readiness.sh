@@ -45,6 +45,9 @@ scripts/check-architecture.sh
 echo "== UX traceability =="
 scripts/check-ux-traceability.sh
 
+echo "== Motion tokens =="
+scripts/check-motion-tokens.sh
+
 echo "== Rust formatting =="
 cargo fmt --check
 
