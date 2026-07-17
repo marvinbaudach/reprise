@@ -24,25 +24,12 @@ use reprise_core::library::playlists;
 /// context menu's `gio::SimpleAction` handlers call — never the popover
 /// itself, which needs a real pointer and is a manual-check item (see the
 /// Task 5 report) — once the initial load has run and the main loop is
-/// idle. Two accepted forms:
+/// idle. Accepted forms:
 ///
-/// - `play`: calls `handle_play` — the exact same handler `ACTION_PLAY`'s
-///   `gio::SimpleAction` invokes — which starts playback at the first
-///   selected row via `on_play_selected` (`PlayerController::play_from_
-///   view`), with every other selected row queued right behind it. Added for
-///   Stage 3 Task 9's closing E2E: `arm_smoke_menu_action` is armed *after*
-///   `track_list.rs`'s `arm_smoke_source` (construction order in `TrackList::
-///   new`), so — unlike `REPRISE_SMOKE_ACTIVATE`, whose own idle callback is
-///   armed *before* `arm_smoke_source` and therefore always fires against
-///   whatever source was active at construction (`ViewSource::Library`),
-///   never a source a same-run `REPRISE_SMOKE_SOURCE` switch just applied —
-///   this form reliably starts playback against the *current* (possibly
-///   just-switched) source, e.g. combined with `REPRISE_SMOKE_SOURCE=
-///   playlist:<name>` to prove playback follows a playlist's own order
-///   headlessly. This also closes a pre-existing coverage gap: before this
-///   form existed, the "Play" context-menu action had no smoke-hook coverage
-///   at all (only "Add to queue"/"Add to playlist"/"Remove from playlist"
-///   did).
+/// - `play`: calls `handle_context_play` — the exact same handler
+///   `ACTION_PLAY`'s `gio::SimpleAction` invokes — which starts playback via
+///   `on_activate` (PLAY-4b: explains instead of playing an all-missing
+///   selection, plays only the playable ids of a mixed one).
 /// - `queue`: calls `track_actions::queue_selected_ids` then
 ///   `PlayerController::append_to_queue` (via `on_queue_selected`), logging
 ///   "N tracks added to queue".
@@ -85,18 +72,8 @@ const SMOKE_MENU_ACTION_ROW_COUNT: u32 = 2;
 /// queue`/`handle_add_to_playlist` functions the menu's `gio::SimpleAction`
 /// handlers call — never the popover itself (see the const's doc comment).
 ///
-/// Stage-3 close-out: `value` may be a comma-separated LIST of actions
-/// (e.g. `queue,remove-from-library`), run in order against the *same*
-/// selection — this is what lets one headless run prove "a track that's
-/// queued, then hard-deleted, gets purged from the queue": a track already
-/// flagged `missing` is invisible to every OTHER source's own queries, but
-/// `ViewSource::Missing` (switched to beforehand via `REPRISE_SMOKE_SOURCE`)
-/// shows it, so the selection here can queue it there first (queueing a
-/// still-existing-but-missing track is a legitimate action — nothing gates
-/// "Add to queue" by source) and then remove it, in the same callback,
-/// exactly mirroring the real sequence "queue a track, later its file
-/// disappears (or, here, a scan already flagged it missing), then Remove
-/// from library" a real user session could produce.
+/// `value` may be a comma-separated list of actions, run in order against
+/// the same selection.
 pub(in crate::ui) fn arm_smoke_menu_action(shared: &Rc<Shared>) {
     let Ok(value) = std::env::var(SMOKE_MENU_ACTION_ENV_VAR) else {
         return;

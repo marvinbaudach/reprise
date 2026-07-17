@@ -36,19 +36,6 @@ struct DeleteReport {
     failures: usize,
 }
 
-pub(super) fn append_menu_section(menu: &gio::Menu, action_group: &str) {
-    let section = gio::Menu::new();
-    section.append(
-        Some(&strings::text(strings::REMOVE_FROM_LIBRARY)),
-        Some(&format!("{action_group}.{ACTION_REMOVE}")),
-    );
-    section.append(
-        Some(&strings::text(strings::MOVE_TO_TRASH)),
-        Some(&format!("{action_group}.{ACTION_TRASH}")),
-    );
-    menu.append_section(None, &section);
-}
-
 pub(super) fn add_actions(
     group: &gio::SimpleActionGroup,
     column_view: &gtk4::ColumnView,

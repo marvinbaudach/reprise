@@ -153,11 +153,18 @@ fn tracks_and_bitrates_from_selection(
     let mut bitrates = Vec::with_capacity(positions.len());
     for position in positions {
         let track = shared.model.track_at(position)?;
+        // CTX-8: tags are edited on present files only — missing rows are
+        // skipped, so a mixed selection edits the present subset and the
+        // editor title counts only those. An all-missing selection yields
+        // None (no editor), matching the menu's disabled edit-tags state.
+        if track.is_missing() {
+            continue;
+        }
         let (session_track, bitrate) = session_track_from_model(&track);
         tracks.push(session_track);
         bitrates.push(bitrate);
     }
-    Some((tracks, bitrates))
+    (!tracks.is_empty()).then_some((tracks, bitrates))
 }
 
 /// Fresh, pending-free `SessionTrack`s for an explicit id list (FB-3's

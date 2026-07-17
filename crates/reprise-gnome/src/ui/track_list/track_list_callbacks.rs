@@ -26,9 +26,6 @@ pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize, ViewSource)>;
 /// `window.rs` needs all four.
 pub(in crate::ui) type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFilter)>;
 
-/// Context-menu "Play" action callback — see the `Shared::on_play_selected`
-/// doc comment.
-pub(in crate::ui) type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize, ViewSource)>;
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 pub(in crate::ui) type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
@@ -36,6 +33,11 @@ pub(in crate::ui) type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
 pub(in crate::ui) type OnShowMissing = Rc<dyn Fn(ViewSource)>;
 pub(in crate::ui) type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::QueueRow)>;
 pub(in crate::ui) type OnQueueRemove = Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
+pub(in crate::ui) type OnQueueMoveToTop =
+    Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
+pub(in crate::ui) type OnGoToAlbum = Rc<dyn Fn(String, String)>;
+pub(in crate::ui) type OnGoToArtist = Rc<dyn Fn(String)>;
+pub(in crate::ui) type OnShowMissingFiles = Rc<dyn Fn()>;
 /// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
 /// comment. Returns whether the move actually happened (`false` for a
 /// degraded no-op, e.g. no player wired — see `Shared::on_queue_reorder`'s
