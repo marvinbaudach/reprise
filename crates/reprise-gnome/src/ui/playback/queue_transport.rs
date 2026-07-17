@@ -78,6 +78,44 @@ fn toggle_action(
     }
 }
 
+fn move_rows_to_front(
+    context: &mut Queue,
+    pending: &mut UpNextQueue,
+    rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
+) -> usize {
+    use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+    let base = context.current_order_position();
+    let mut ids = Vec::new();
+    let mut play_next_positions = Vec::new();
+    let mut snapshot_positions = Vec::new();
+    for row in rows {
+        match *row {
+            QueueRow::PlayNext(position) => {
+                if let Some(id) = pending.ids().get(position).copied() {
+                    ids.push(id);
+                    play_next_positions.push(position);
+                }
+            }
+            QueueRow::UpNext(offset) => {
+                let Some(position) = base.map(|base| base + 1 + offset) else {
+                    continue;
+                };
+                if let Some(id) = context.id_at_order_position(position) {
+                    ids.push(id);
+                    snapshot_positions.push(position);
+                }
+            }
+            QueueRow::NowPlaying => {}
+        }
+    }
+
+    pending.remove_positions(&play_next_positions);
+    context.remove_order_positions(&snapshot_positions);
+    pending.prepend(&ids);
+    ids.len()
+}
+
 /// The Queue view's composite parts (QUE-1), in display order. Produced by
 /// `PlayerController::queue_view_sections`, composed into the visible model
 /// by `ui::track_list::queue_sections::compose`.
@@ -254,6 +292,25 @@ impl PlayerController {
         self.notify_queue_changed();
         self.sync_transport_enabled(true);
         tracing::info!(added = ids.len(), "tracks queued to play next");
+    }
+
+    /// Moves selected composite Queue rows to the start of Play Next in
+    /// selection order. Snapshot rows are promoted out of their context;
+    /// Now Playing is intentionally skipped.
+    #[allow(dead_code)] // Wired to the track-list callback in Task 8.
+    pub(in crate::ui) fn move_queue_rows_to_top(
+        &self,
+        rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
+    ) -> usize {
+        let moved = {
+            let mut context = self.queue.borrow_mut();
+            let mut pending = self.up_next.borrow_mut();
+            move_rows_to_front(&mut context, &mut pending, rows)
+        };
+        if moved > 0 {
+            self.notify_queue_changed();
+        }
+        moved
     }
 
     /// QUE-3's "Clear queue" button: empties ONLY the manual Play Next
@@ -645,5 +702,34 @@ mod tests {
             toggle_action(MprisPlaybackStatus::Stopped, None, false),
             ToggleAction::Noop
         );
+    }
+
+    #[test]
+    fn move_to_top_promotes_up_next_row_to_front_of_play_next() {
+        use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+        let mut context = context(&[10, 20, 30, 40], 0);
+        let mut pending = pending(&[101, 102]);
+        let moved = move_rows_to_front(&mut context, &mut pending, &[QueueRow::UpNext(2)]);
+
+        assert_eq!(moved, 1);
+        assert_eq!(pending.ids(), &[40, 101, 102]);
+        assert_eq!(context.remaining_after_current(), [20, 30]);
+    }
+
+    #[test]
+    fn move_to_top_reorders_play_next_and_skips_now_playing() {
+        use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+        let mut context = context(&[10, 20], 0);
+        let mut pending = pending(&[101, 102, 103]);
+        let moved = move_rows_to_front(
+            &mut context,
+            &mut pending,
+            &[QueueRow::NowPlaying, QueueRow::PlayNext(2)],
+        );
+
+        assert_eq!(moved, 1);
+        assert_eq!(pending.ids(), &[103, 101, 102]);
     }
 }
