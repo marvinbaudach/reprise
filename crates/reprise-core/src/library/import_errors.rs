@@ -4,10 +4,7 @@
 //! dismissed until the file actually changes). Declared directly in
 //! `library/mod.rs` (`pub(crate) mod import_errors;`), the same way `mounts`
 //! is — NOT via `scanner.rs`'s `#[path = ...] mod vanish;`/`mod mount;`
-//! pattern those two siblings use — because [`ImportErrorKind`] is `pub`: a
-//! future query layer outside `scanner` needs to name it, so this has to be
-//! an ordinary crate module `scanner.rs` merely calls into, not a private
-//! sub-module folded inside it.
+//! pattern those two siblings use.
 //!
 //! ## Classify at the source, never parse error text
 //!
@@ -64,69 +61,7 @@
 
 use rusqlite::{OptionalExtension, Transaction};
 
-/// The taxonomy behind `import_errors.reason_kind`. Every variant groups a
-/// disjoint set of causes that the (future) UI needs to tell apart —
-/// "Unreadable tags" vs "Permission denied" mean different remediation
-/// stories for the user (re-tag the file vs `chmod`/check ownership).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImportErrorKind {
-    /// The file's container/tag data could not be parsed — every lofty
-    /// `ErrorKind` variant that represents a tag- or container-level parse
-    /// failure lands here. See [`classify_lofty`]'s match arms for the full,
-    /// explicitly-enumerated list.
-    UnreadableTags,
-    /// The OS refused access (`EACCES`) — either lofty's `Io` variant wrapped
-    /// an `io::ErrorKind::PermissionDenied`, or a `walkdir` directory-open
-    /// failed the same way.
-    PermissionDenied,
-    /// Lofty could not even guess the file's format (`ErrorKind::
-    /// UnknownFormat`) — the file has an audio extension but isn't
-    /// recognizable audio at all.
-    UnsupportedFormat,
-    /// An I/O failure other than permission-denied (disk error, device
-    /// vanished mid-read, ...), from either lofty's `Io` variant or a
-    /// `walkdir` traversal error.
-    Io,
-    /// Neither of the above could be established — either the underlying
-    /// lofty `ErrorKind` was a variant this classifier has no more specific
-    /// bucket for (see [`classify_lofty`]'s wildcard arm, which always logs
-    /// a `tracing::warn!` when this happens), or a `walkdir` symlink-loop
-    /// error with no underlying `io::Error` to inspect.
-    Unknown,
-}
-
-impl ImportErrorKind {
-    /// The exact string stored in `import_errors.reason_kind` — the inverse
-    /// of [`Self::parse`]. A plain `&'static str` (not `Display`): this is a
-    /// storage format, not user-facing text — see `MissingReason::as_str`'s
-    /// doc comment for the same convention elsewhere in this crate.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::UnreadableTags => "unreadable_tags",
-            Self::PermissionDenied => "permission_denied",
-            Self::UnsupportedFormat => "unsupported_format",
-            Self::Io => "io",
-            Self::Unknown => "unknown",
-        }
-    }
-
-    /// Parses an `import_errors.reason_kind` value back into a kind.
-    /// Anything other than the four named reasons — including a value this
-    /// version of the app has never written, from a future schema or an
-    /// edited-by-hand row — falls back to `Unknown` rather than erroring,
-    /// same convention as `MissingReason::parse`: a row mapper must never
-    /// fail to load a row just because `reason_kind` holds an unrecognized
-    /// string.
-    pub fn parse(s: &str) -> Self {
-        match s {
-            "unreadable_tags" => Self::UnreadableTags,
-            "permission_denied" => Self::PermissionDenied,
-            "unsupported_format" => Self::UnsupportedFormat,
-            "io" => Self::Io,
-            _ => Self::Unknown,
-        }
-    }
-}
+use crate::models::ImportErrorKind;
 
 /// Maps a lofty read failure to `(kind, detail)` at the SOURCE — see this
 /// module's doc comment for why this must stay a match on

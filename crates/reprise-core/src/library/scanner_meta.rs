@@ -49,7 +49,8 @@
 use std::path::Path;
 
 use super::ScanError;
-use crate::library::import_errors::{self, ImportErrorKind};
+use crate::library::import_errors;
+use crate::models::ImportErrorKind;
 
 /// Tag- and properties-derived fields for one audio file. Every field is
 /// left at its `Default` (empty string / `None`) when the corresponding
