@@ -159,9 +159,9 @@ impl CompactPlayer {
             .widgets
             .play_pause_button
             .set_tooltip_text(Some(&strings::text(if is_playing {
-                strings::PAUSE
+                strings::TOOLTIP_PAUSE
             } else {
-                strings::PLAY
+                strings::TOOLTIP_PLAY
             })));
         self.0.menu.set_playing(is_playing);
     }
