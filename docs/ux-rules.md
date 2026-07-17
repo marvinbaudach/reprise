@@ -34,12 +34,17 @@ später automatisierbar, wechselt nur ihr Tag, nie ihre ID.
 nebenbei weitere Regeln ab, zählt das nicht — die Zweitregel braucht ihren
 eigenen Test. `#[ignore = "UX <ID> [geplant] — …"]` ist nur auf
 `[geplant]`-Regeln erlaubt. `scripts/check-ux-traceability.sh` (Teil des
-Merge-Gates) erzwingt: jede `[aktiv]`-Regel hat ≥ 1 Test · kein Test
-referenziert eine unbekannte oder ersetzte ID · kein Ignore auf `[aktiv]` ·
-jedes Ignore auf einem regelbenannten Test hält das Format oben ein. Als
-Abdeckung zählen nur echte `#[test]`-Funktionen bzw. ausgeführte
-cua-e2e-Zeilen — eine gleichnamige Helper-fn oder ein Kommentar greent das
-Gate nicht.
+Merge-Gates) erzwingt: jede `[aktiv]`-Regel hat ≥ 1 Test — bei `[manuell]`
+stattdessen eine wörtliche ID-Referenz in `RELEASING.md` · weder Test noch
+Checkliste referenzieren eine unbekannte oder ersetzte ID · kein
+Deaktivierungs-Ignore auf `[aktiv]` · jedes Deaktivierungs-Ignore auf einem
+regelbenannten Test hält das Format oben ein. Als Abdeckung zählen nur
+echte `#[test]`-Funktionen bzw. ausgeführte cua-e2e-Zeilen — eine
+gleichnamige Helper-fn oder ein Kommentar greent das Gate nicht. Der
+Display-Runner-Marker `#[ignore = "requires a display; run via xvfb-run"]`
+ist kein Deaktivierungs-Ignore: solche Tests laufen als Merge-Blocker über
+`scripts/check-display-tests.sh --rule-named` und zählen als Abdeckung auch
+für `[aktiv]`-Regeln.
 
 **Sprache.** Dieses Dokument und die Design-Docs sind Deutsch — die
 Arbeitssprache des Projekts. Tests und Skripte sind Code und damit Englisch
@@ -492,6 +497,61 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Discard-Frage zählt Tracks („Discard changes to 3 tracks?") und hat zwei
   Antworten: Keep editing (Default) und Discard (destruktiv). Kein Save im
   Prompt: Speichern ist nie der Ausweg aus einer Schließen-Geste.
+
+## M. Tooltips
+
+<!-- Die Sektionsbuchstaben K (Filter- & Such-Sichtbarkeit) und L (Tag-Editor)
+     sind bereits vergeben; Tooltips sind daher Sektion M. -->
+
+Tooltips sind Beschriftung, kein Feedback-Mechanismus — sie tragen nie die
+einzige Aussage (TIP-3) und fallen daher nicht unter P-1s Rollenmodell.
+Wird ein ganzer Container deaktiviert, gilt TIP-2a/b für die
+Container-Aussage, nicht für jedes Kind einzeln (die leere Player-Leiste
+ist ihre eigene Aussage).
+
+- **TIP-1a** [aktiv] [gtk] — Existenz folgt der Beschriftung:
+  Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
+  Textlabel bekommen keinen — das Label ist die Aussage, ein
+  wiederholender Tooltip ist Rauschen. Ausnahme: ellipsierte/abgeschnittene
+  Labels zeigen im Tooltip den vollen Text.
+- **TIP-1b** [geplant] [manuell] — Form: Verb + Objekt („Eject Pixel 8",
+  „Toggle sidebar"); das Objekt darf entfallen, wenn der Button es selbst
+  eindeutig macht („Play", „Shuffle"). Existiert ein Shortcut, steht er in
+  Klammern dahinter („Play (Space)").
+  <!-- Flip-Kriterium TIP-1b: „Previous"/„Next" im Tag-Editor
+       (tag_editor_form.rs, Ownership feat/tag-editor-rework) und „Back" in
+       browse_bar (Ownership feat/global-search-rework) sind noch
+       Substantive. [aktiv] erst, wenn beide nachgezogen sind. -->
+- **TIP-2a** [aktiv] [gtk] — Disabled erklärt sich (icon-only): ein
+  deaktiviertes Icon-only-Control behält seinen Tooltip und ergänzt den
+  Grund („Eject device — Sync in progress"). Nie ein toter Button ohne
+  benannten Grund (Konkretisierung von P-2).
+  <!-- Player-Leiste prev/next: KEINE Einzel-Tooltips. Sie werden nur
+       deaktiviert, wenn die Queue leer ist — und dann ist auch die ganze
+       Leiste deaktiviert (bar_should_be_sensitive), sodass die
+       Container-Klausel oben greift: die leere Leiste ist ihre eigene
+       Aussage. -->
+- **TIP-2b** [geplant] [manuell] — Disabled erklärt sich (gelabelt): ein
+  deaktiviertes gelabeltes Control nennt seinen Grund sichtbar per Label,
+  Subtitle oder Hint-Zeile („Requires same artist & album across
+  selection", „Everything in sync") — nie nur per Tooltip (TIP-3: der
+  Grund wäre sonst exklusive Hover-Information).
+  <!-- Flip-Kriterium TIP-2b: Save/„Change cover…" im Tag-Editor
+       (feat/tag-editor-rework) und der deaktivierte „Add filter"-Zustand
+       in browse_bar (feat/global-search-rework) sind noch unbegründet
+       tot. [aktiv] erst, wenn beide nachgezogen sind. -->
+- **TIP-3** [aktiv] [manuell] — Tooltips sind redundant, nie exklusiv:
+  jede Information in einem Tooltip muss auch ohne Hover erreichbar sein
+  (View, Dialog, sichtbares Label). Hover-Details (Sync-Karte:
+  „28 of 82 · ~2 min left") sind Komfort-Duplikate einer erreichbaren
+  Ansicht — Touch-Bedienung sieht Tooltips nie.
+- **TIP-4** [aktiv] [manuell] — Menüeinträge bekommen keine Tooltips.
+  In Popover-/Kontextmenüs trägt das Label allein; eine feste
+  Subtitle-Zeile („M3U · PLS · XSPF") ist erlaubt. Braucht ein Menüpunkt
+  einen Tooltip, ist er falsch benannt oder gehört in einen Dialog.
+- **TIP-5** [aktiv] [manuell] — GTK-Standardverhalten: keine
+  Custom-Delays, keine interaktiven/Rich-Tooltips; dynamische Werte
+  (Prozent, Zeit, ellipsierter Volltext) sind erlaubt.
 
 ---
 

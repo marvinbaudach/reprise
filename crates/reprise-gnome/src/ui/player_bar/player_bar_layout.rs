@@ -110,14 +110,14 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         .valign(gtk4::Align::Center)
         .build();
     shuffle_button.add_css_class("flat");
-    let prev_button = transport_button(ICON_PREVIOUS, strings::PREVIOUS);
+    let prev_button = transport_button(ICON_PREVIOUS, strings::TOOLTIP_PREVIOUS);
     prev_button.add_css_class("flat");
     prev_button.set_sensitive(false);
-    let play_pause_button = transport_button(ICON_PLAY, strings::PLAY);
+    let play_pause_button = transport_button(ICON_PLAY, strings::TOOLTIP_PLAY);
     // The play/pause control is the accent-glow focal point of the bar.
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
-    let next_button = transport_button(ICON_NEXT, strings::NEXT);
+    let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
     next_button.add_css_class("flat");
     next_button.set_sensitive(false);
     let repeat_button = transport_button(ICON_REPEAT_ALL, strings::REPEAT);
@@ -208,7 +208,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     volume_icon.add_css_class("flat");
 
     let queue_button = gtk4::Button::from_icon_name(ICON_QUEUE);
-    queue_button.set_tooltip_text(Some(&strings::text(strings::QUEUE)));
+    queue_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_QUEUE)));
     queue_button.set_valign(gtk4::Align::Center);
     queue_button.add_css_class("flat");
 
@@ -380,6 +380,18 @@ mod tests {
         assert!(layout.volume_icon.is_ancestor(&layout.root));
         assert!(layout.queue_button.is_ancestor(&layout.root));
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tip_1a_player_bar_buttons_follow_tooltip_discipline() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let layout = build();
+        let violations =
+            crate::ui::tooltip_discipline::tooltip_violations(layout.root.upcast_ref());
+        assert!(violations.is_empty(), "{violations:?}");
     }
 
     #[test]

@@ -9,6 +9,7 @@ use super::super::device_sync_runtime::{
     DeviceSyncRuntime, DeviceView, PlannedSyncPhase, SyncStep,
 };
 use super::copy;
+use crate::ui::device_sync_strings;
 
 pub(super) fn device_header_group(
     device: &DeviceView,
@@ -30,15 +31,16 @@ pub(super) fn device_header_group(
     let icon = gtk4::Image::from_gicon(&device.icon);
     icon.set_pixel_size(36);
     row.add_prefix(&icon);
-    let eject = gtk4::Button::builder()
-        .icon_name("media-eject-symbolic")
-        .tooltip_text("Eject device")
-        .valign(gtk4::Align::Center)
-        .build();
-    eject.set_sensitive(!matches!(
+    let ejecting_blocked = matches!(
         device.sync_phase,
         PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
-    ));
+    );
+    let eject = gtk4::Button::builder()
+        .icon_name("media-eject-symbolic")
+        .tooltip_text(device_sync_strings::eject_tooltip(ejecting_blocked))
+        .valign(gtk4::Align::Center)
+        .build();
+    eject.set_sensitive(!ejecting_blocked);
     let id = device.id.clone();
     let runtime = runtime.clone();
     eject.connect_clicked(move |_| runtime.eject(&id));

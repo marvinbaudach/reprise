@@ -46,6 +46,10 @@ pub use filter::*;
 mod autocomplete;
 pub use autocomplete::*;
 
+#[path = "strings_tooltips.rs"]
+mod tooltips;
+pub use tooltips::*;
+
 #[path = "strings_app_shell.rs"]
 mod app_shell;
 pub use app_shell::*;
@@ -254,10 +258,6 @@ pub const NOTHING_HERE_DESCRIPTION: &str = N_!("This view has no tracks right no
 // Scan flow (src/ui/scan_flow.rs and src/ui/scan_progress.rs).
 pub const SCAN_CARD_TITLE: &str = N_!("Scanning library");
 
-pub fn scan_card_tooltip(remaining: u64) -> String {
-    format!("Covers & lyrics: {remaining} queued")
-}
-
 pub fn scan_complete_toast(new_tracks: u32, failed: u32) -> String {
     if failed > 0 {
         format!("Scan complete · {new_tracks} new, {failed} failed")
@@ -285,14 +285,6 @@ pub const FETCH_DETAIL: &str = N_!("covers & lyrics…");
 
 pub fn fetch_progress(done: u64, total: u64) -> String {
     format!("{done} of {total}")
-}
-
-pub fn scan_tooltip_discovering() -> String {
-    text(N_!("Scanning\u{2026}"))
-}
-
-pub fn scan_tooltip_progress(pct: u32) -> String {
-    format!("Scanning \u{00B7} {pct}%")
 }
 
 // Status bar (src/ui/status_bar.rs).
@@ -325,7 +317,6 @@ pub const SHUFFLE: &str = N_!("Shuffle");
 pub const PREVIOUS: &str = N_!("Previous");
 pub const NEXT: &str = N_!("Next");
 pub const REPEAT: &str = N_!("Repeat");
-pub const QUEUE: &str = N_!("Queue");
 
 // Rating: used both as the track list's Rating column header
 // (src/ui/track_list.rs) and as the RatingWidget's tooltip
