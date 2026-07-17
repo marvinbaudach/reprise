@@ -489,7 +489,7 @@ git commit -m "docs: bind agents to the UX rulebook contract"
 - Consumes: Regelzeilen-Format aus Task 1 (`- **<ID>** [<status>] …`).
 - Produces: `scripts/check-ux-traceability.sh` (exit 0 = konsistent), von Task 4/5 und jedem künftigen Branch als Gate benutzt. Testnamens-Konvention: Rust `fn <prefix>_<nr><suffix?>_…` mit `<prefix>` ∈ {p, nav, play, alb, art, fx, mtp, set, fb, os, start, que}; cua-e2e-Szenario-Stems `<prefix>-<nr><suffix?>-…`.
 
-- [ ] **Step 1: Lint-Skript schreiben** — exakt dieser Inhalt nach `scripts/check-ux-traceability.sh`:
+- [x] **Step 1: Lint-Skript schreiben** — exakt dieser Inhalt nach `scripts/check-ux-traceability.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -556,12 +556,13 @@ done < <(grep -rA3 --include='*.rs' '#\[ignore' crates 2>/dev/null \
   | grep -oE "fn (${prefixes})_[0-9]+[a-z]?_" | sed -E 's/^fn //; s/_$//' | sort -u || true)
 
 if (( fail )); then exit 1; fi
-echo "UX-Traceability ok: $(grep -c '\[aktiv\]' "$doc" || true) aktive Regeln abgedeckt"
+active_count=$(grep -cE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[aktiv\]' "$doc" || true)
+echo "UX-Traceability ok: $active_count aktive Regeln abgedeckt"
 ```
 
 Dann: `chmod +x scripts/check-ux-traceability.sh`
 
-- [ ] **Step 2: Negativ-Test (rot sehen, dann grün)**
+- [x] **Step 2: Negativ-Test (rot sehen, dann grün)**
 
 ```bash
 scripts/check-ux-traceability.sh   # Erwartet: "UX-Traceability ok: 0 aktive Regeln abgedeckt", Exit 0
@@ -571,14 +572,14 @@ git checkout docs/ux-rules.md      # Fixture zurückrollen
 scripts/check-ux-traceability.sh   # Erwartet: wieder ok, Exit 0
 ```
 
-- [ ] **Step 3: In das Merge-Gate hängen** — in `scripts/check-merge-readiness.sh` direkt nach der Zeile `scripts/check-architecture.sh` einfügen:
+- [x] **Step 3: In das Merge-Gate hängen** — in `scripts/check-merge-readiness.sh` direkt nach der Zeile `scripts/check-architecture.sh` einfügen:
 
 ```bash
 echo "== UX traceability =="
 scripts/check-ux-traceability.sh
 ```
 
-- [ ] **Step 4: TESTING.md ergänzen** — im Abschnitt „Required merge gates" nach dem ersten Absatz einfügen:
+- [x] **Step 4: TESTING.md ergänzen** — im Abschnitt „Required merge gates" nach dem ersten Absatz einfügen:
 
 ```markdown
 Merge readiness also runs `scripts/check-ux-traceability.sh`: every `[aktiv]`
@@ -586,12 +587,12 @@ rule in `docs/ux-rules.md` needs a rule-named test, no test may reference an
 unknown or replaced rule ID, and no `[aktiv]` rule test may be `#[ignore]`d.
 ```
 
-- [ ] **Step 5: Gate komplett laufen lassen**
+- [x] **Step 5: Gate komplett laufen lassen**
 
 Run: `scripts/check-merge-readiness.sh`
 Expected: alle Abschnitte grün inkl. `== UX traceability ==`, Abschluss `Merge-readiness checks passed`
 
-- [ ] **Step 6: Ledger + Commit**
+- [x] **Step 6: Ledger + Commit**
 
 ```markdown
 - Traceability-Lint eingeführt (scripts/check-ux-traceability.sh, 3 Richtungen)

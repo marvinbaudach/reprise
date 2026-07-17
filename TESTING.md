@@ -27,6 +27,10 @@ and Rustdoc with warnings denied, the isolated workspace tests, and
 `cargo audit` with no advisory beyond the explicitly accepted `paste`
 maintenance warning.
 
+Merge readiness also runs `scripts/check-ux-traceability.sh`: every `[aktiv]`
+rule in `docs/ux-rules.md` needs a rule-named test, no test may reference an
+unknown or replaced rule ID, and no `[aktiv]` rule test may be `#[ignore]`d.
+
 For release candidates, also run:
 
 ```sh
