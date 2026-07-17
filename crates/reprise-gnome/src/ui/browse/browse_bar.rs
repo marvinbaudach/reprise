@@ -300,7 +300,6 @@ impl BrowseBar {
         *self.on_clear_all.borrow_mut() = Some(Rc::new(callback));
     }
 
-    #[allow(dead_code)] // Reload and session restoration adopt this API in Task 3.
     pub fn set_source_context(&self, source: &ViewSource) {
         self.track_source
             .set(super::filter_restriction::is_track_source(source));
@@ -308,13 +307,6 @@ impl BrowseBar {
         self.sync_visibility();
     }
 
-    pub fn set_library_visible(&self, visible: bool) {
-        self.track_source.set(visible);
-        self.is_library.set(visible);
-        self.sync_visibility();
-    }
-
-    #[allow(dead_code)] // Reload adopts this API in Task 3.
     pub fn set_search(self: &Rc<Self>, text: &str) {
         *self.search.borrow_mut() = text.to_string();
         self.refresh();
