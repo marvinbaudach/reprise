@@ -539,7 +539,8 @@ fn restored_file_at_same_path_clears_missing_flag() {
 /// restored).
 fn tx_insert_import_error(conn: &Connection, path: &str) {
     conn.execute(
-        "INSERT INTO import_errors (path, reason, occurred_at) VALUES (?1, 'stale', 0)",
+        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
+         VALUES (?1, 'tag', 'stale', 0, 0)",
         [path],
     )
     .unwrap();

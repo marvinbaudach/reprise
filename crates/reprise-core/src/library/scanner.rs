@@ -342,11 +342,22 @@ fn scan_folder_inner(
                     || root.to_string_lossy().to_string(),
                     |p| p.to_string_lossy().to_string(),
                 );
+                // Schema v10 (Task 1.1) rebuilt `import_errors` with `path`
+                // as its primary key and typed `reason_kind`/`reason_detail`
+                // columns; the DELETE-then-INSERT pair below (rather than an
+                // upsert) keeps a fresh `first_seen`/`last_seen` pair on
+                // every failing scan, matching this path's pre-v10 behavior
+                // of always refreshing `occurred_at`. `reason_kind` typing
+                // beyond this single "io" bucket is self-healing-list work
+                // for a later task.
                 tx.execute("DELETE FROM import_errors WHERE path = ?1", [&err_path])?;
                 tx.execute(
-                    "INSERT INTO import_errors (path, reason, occurred_at) VALUES (?1,?2,?3)",
+                    "INSERT INTO import_errors \
+                     (path, reason_kind, reason_detail, first_seen, last_seen) \
+                     VALUES (?1,?2,?3,?4,?4)",
                     rusqlite::params![
                         err_path,
+                        "io",
                         format!("directory traversal error: {err}"),
                         now_unix()
                     ],
@@ -544,14 +555,21 @@ fn scan_folder_inner(
                 }
             }
             Err(e) => {
-                // import_errors has no UNIQUE constraint on path, so replace any
-                // prior error row for this file to keep rescans from piling up
-                // duplicate entries for a file that is still broken.
-                // occurred_at is intentionally refreshed to the most recent failing scan.
+                // `path` became `import_errors`'s primary key in schema v10
+                // (Task 1.1), so a plain re-INSERT would now violate that
+                // constraint on a second failing scan of the same file;
+                // explicitly deleting first (rather than an upsert) keeps
+                // this symmetric with the traversal-error site above and
+                // refreshes `first_seen`/`last_seen` to the most recent
+                // failing scan, matching this path's pre-v10 `occurred_at`
+                // behavior. `reason_kind` typing beyond this single "tag"
+                // bucket is self-healing-list work for a later task.
                 tx.execute("DELETE FROM import_errors WHERE path = ?1", [&path_str])?;
                 tx.execute(
-                    "INSERT INTO import_errors (path, reason, occurred_at) VALUES (?1,?2,?3)",
-                    rusqlite::params![path_str, e.to_string(), now_unix()],
+                    "INSERT INTO import_errors \
+                     (path, reason_kind, reason_detail, first_seen, last_seen) \
+                     VALUES (?1,?2,?3,?4,?4)",
+                    rusqlite::params![path_str, "tag", e.to_string(), now_unix()],
                 )?;
                 report.errors += 1;
             }

@@ -214,6 +214,71 @@ CREATE TABLE device_files (
 CREATE INDEX idx_device_files_serial ON device_files(device_serial);
 "#;
 
+/// Schema v10 (Missing/Import-errors rebuild, Task 1.1): the first step of
+/// turning "Missing files" and "Import errors" from static error logs into
+/// self-healing state lists. Two design decisions drive the shape below:
+///
+/// (a) `missing_since IS NULL` becomes the single source of truth for "file
+/// is present". The existing `missing` boolean is being retired *in favor
+/// of* a timestamp rather than kept alongside one permanently: a flag plus a
+/// date can drift out of sync (whoever updates one can forget the other),
+/// and a planned auto-clean feature deletes rows based on how long
+/// `missing_since` has been set — a row with an unclear start date is not
+/// something that feature can ever be allowed to treat as safely removable.
+/// `missing` itself is NOT dropped here — it stays populated (a `missing=1`
+/// row now carries both `missing=1` and `missing_since` set; that
+/// redundancy is intentional and temporary) because a separate later
+/// migration (Task 1.3, schema v11) is responsible for dropping the column
+/// once every reader has moved onto `missing_since`. `missing_reason`,
+/// `mount_point` and `removed_at` are the rest of the self-healing state:
+/// why a file is considered missing, which mount it was last seen under (so
+/// a remount can be recognized instead of misread as a deletion), and when
+/// it was confirmed gone for good. `untagged` is unrelated to the
+/// missing/import-errors rebuild but piggybacks on this migration since it
+/// is the same kind of small non-null tag-derived flag as the rest of the
+/// `tracks` columns (`NOT NULL DEFAULT 0`, matching that column family's
+/// existing convention — see `SCHEMA_V2`'s doc comment).
+///
+/// (b) Existing `import_errors` rows are discarded, not migrated. This
+/// table is `DROP`ped and recreated with an incompatible shape (typed
+/// `reason_kind`/`reason_detail` instead of one free-text `reason`, `path`
+/// promoted to the primary key, `first_seen`/`last_seen`/`seen_count` for
+/// recurrence tracking, and `dismissed_mtime`/`dismissed_size` for a later
+/// task's "this exact broken file was already dismissed" fingerprint).
+/// Unlike `tracks` rows, which carry user data (ratings, playlist
+/// positions) that must survive any migration, `import_errors` rows are
+/// reproducible scan state: the very next scan recreates any row that is
+/// still actually failing, this time correctly typed. Migrating the old
+/// rows instead would mean guessing a `reason_kind` out of free-text
+/// `reason` strings never written with a fixed vocabulary — fragile string
+/// parsing for state a fresh scan reconstructs for free.
+///
+/// Backfilled `missing=1` rows get `missing_reason = 'unknown'`, never
+/// `'deleted'`: the v1 schema had no mount check, so there is no evidence
+/// distinguishing "file was deleted" from "file's mount is currently
+/// absent" for any row that predates this migration. Nothing downstream may
+/// ever treat an `'unknown'`-reason row as safely auto-removable without
+/// re-verifying the file first.
+const SCHEMA_V10: &str = r#"
+ALTER TABLE tracks ADD COLUMN missing_since INTEGER;
+ALTER TABLE tracks ADD COLUMN missing_reason TEXT;
+ALTER TABLE tracks ADD COLUMN mount_point TEXT;
+ALTER TABLE tracks ADD COLUMN removed_at INTEGER;
+ALTER TABLE tracks ADD COLUMN untagged INTEGER NOT NULL DEFAULT 0;
+UPDATE tracks SET missing_since = strftime('%s','now'), missing_reason = 'unknown' WHERE missing = 1;
+DROP TABLE import_errors;
+CREATE TABLE import_errors (
+  path           TEXT PRIMARY KEY,
+  reason_kind    TEXT NOT NULL,
+  reason_detail  TEXT NOT NULL,
+  first_seen     INTEGER NOT NULL,
+  last_seen      INTEGER NOT NULL,
+  seen_count     INTEGER NOT NULL DEFAULT 1,
+  dismissed_mtime INTEGER,
+  dismissed_size  INTEGER
+);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -320,6 +385,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V9)?;
         tx.pragma_update(None, "user_version", 9)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 10 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V10)?;
+        tx.pragma_update(None, "user_version", 10)?;
         tx.commit()?;
     }
     Ok(())

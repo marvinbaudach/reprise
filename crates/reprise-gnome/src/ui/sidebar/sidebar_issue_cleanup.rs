@@ -196,8 +196,9 @@ mod tests {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         conn.execute(
-            "INSERT INTO import_errors (path, reason, occurred_at) \
-             VALUES ('/x/bad.flac', 'bad tag', 0)",
+            "INSERT INTO import_errors \
+             (path, reason_kind, reason_detail, first_seen, last_seen) \
+             VALUES ('/x/bad.flac', 'tag', 'bad tag', 0, 0)",
             [],
         )
         .unwrap();

@@ -223,8 +223,8 @@ fn build_row(shared: &Rc<Shared>, row: &ImportErrorRow) -> gtk4::ListBoxRow {
     let dismiss_button = gtk4::Button::with_label(&strings::text(strings::IMPORT_ERROR_DISMISS));
     {
         let shared = shared.clone();
-        let id = row.id;
-        dismiss_button.connect_clicked(move |_| handle_dismiss(&shared, id));
+        let path = row.path.clone();
+        dismiss_button.connect_clicked(move |_| handle_dismiss(&shared, &path));
     }
     hbox.append(&dismiss_button);
 
@@ -270,14 +270,16 @@ fn handle_retry(shared: &Rc<Shared>, path: &str) {
 }
 
 /// "Dismiss": deletes the `import_errors` row itself — never a file, never
-/// any `tracks` row (there isn't one for an import failure).
-fn handle_dismiss(shared: &Rc<Shared>, id: i64) {
+/// any `tracks` row (there isn't one for an import failure). Keyed by `path`
+/// (the table's primary key since schema v10, Task 1.1) rather than a
+/// surrogate id.
+fn handle_dismiss(shared: &Rc<Shared>, path: &str) {
     let result = {
         let conn = shared.conn.borrow();
-        queries::delete_import_error(&conn, id)
+        queries::delete_import_error(&conn, path)
     };
     if let Err(error) = result {
-        tracing::error!(%error, id, "import errors panel: dismiss failed");
+        tracing::error!(%error, path, "import errors panel: dismiss failed");
     }
     notify_mutated_and_refresh(shared);
 }
