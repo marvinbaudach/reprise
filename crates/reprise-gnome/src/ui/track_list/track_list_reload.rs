@@ -14,7 +14,13 @@
 //! track id, scroll by a track-id + offset anchor — never a raw pixel value,
 //! which would point at the wrong row after a resort) before the swap and
 //! restores it after, via `capture_reload_anchor`/`restore_reload_anchor`
-//! below. A caller that genuinely *wants* the old reset-to-nothing behavior
+//! below. Restoring resolves ids to positions against `Shared::
+//! current_view_ids()` — a sorted full-table query, since `TrackListModel`
+//! deliberately holds no id list of its own (it windows rows from SQL). That
+//! is why an untouched list (nothing selected, scrolled to the top) captures
+//! no anchor at all and skips the restore: watcher reconciles and scan
+//! progress fire `reload()` in bursts on lists nobody is looking at, and
+//! those must not pay for a query whose result would change nothing. A caller that genuinely *wants* the old reset-to-nothing behavior
 //! must ask for it explicitly (`shared.selection.unselect_all()` or a
 //! `clear_selection()` helper) before calling `reload()` — see the TAG-1
 //! commit's message for the sweep across all callers (none currently need
@@ -99,6 +105,13 @@ fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
     let old_total = shared.model.n_items();
     let scroll_value = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
         .map_or(0.0, |adjustment| adjustment.value());
+    // An untouched list (nothing selected, sitting at the top) records no
+    // anchor: the rebuilt list is already at the top, so there is nothing to
+    // put back, and `restore_reload_anchor` can then skip resolving the id
+    // list entirely (see `reload_restore::is_noop`).
+    if selected.is_empty() && scroll_value == 0.0 {
+        return ReloadAnchor::default();
+    }
     let anchor = row_height(&shared.column_view, old_total).and_then(|height| {
         let index = (scroll_value / height).floor().max(0.0) as u32;
         shared
@@ -114,6 +127,11 @@ fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
 /// restore on idle, since a freshly rebuilt list needs at least one
 /// allocation pass before its adjustment reports usable geometry.
 fn restore_reload_anchor(shared: &Shared, captured: &ReloadAnchor) {
+    // Resolving positions costs a sorted full-table id query; skip it when
+    // the capture side already established there is nothing to put back.
+    if reload_restore::is_noop(captured) {
+        return;
+    }
     let current_ids = shared.current_view_ids();
     let positions = reload_restore::positions_for_ids(&captured.selected_ids, &current_ids);
     shared.selection.unselect_all();
