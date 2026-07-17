@@ -113,12 +113,14 @@ fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
 }
 
 #[cfg(test)]
-fn chip_labels(search: &str, filter: &BrowseFilter) -> Vec<String> {
+fn chip_labels(search: &str, filter: &BrowseFilter, is_library: bool) -> Vec<String> {
     let mut labels = Vec::new();
     if !search.trim().is_empty() {
         labels.push(filter_strings::search_chip_label(search.trim()));
     }
-    labels.extend(filter_chips(filter).into_iter().map(|chip| chip.label));
+    if is_library {
+        labels.extend(filter_chips(filter).into_iter().map(|chip| chip.label));
+    }
     labels
 }
 
@@ -280,6 +282,16 @@ impl BrowseBar {
         self.filter.borrow().clone()
     }
 
+    /// The browse filter as the reload path applies it: facets only act in
+    /// the Library source (`track_list_reload::reload` uses default elsewhere).
+    fn effective_filter(&self) -> BrowseFilter {
+        if self.is_library.get() {
+            self.filter.borrow().clone()
+        } else {
+            BrowseFilter::default()
+        }
+    }
+
     pub(in crate::ui) fn restore_filter(self: &Rc<Self>, filter: &BrowseFilter) {
         let filter = restored_filter(filter);
         *self.filter.borrow_mut() = filter;
@@ -298,10 +310,11 @@ impl BrowseBar {
         *self.on_clear_all.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub fn set_source_context(&self, source: &ViewSource) {
+    pub fn set_source_context(self: &Rc<Self>, source: &ViewSource) {
         self.track_source
             .set(super::filter_restriction::is_track_source(source));
         self.is_library.set(matches!(source, ViewSource::Library));
+        self.refresh();
         self.sync_visibility();
     }
 
@@ -317,8 +330,9 @@ impl BrowseBar {
     }
 
     fn sync_visibility(&self) {
-        let restricted =
-            super::filter_restriction::is_restricted(&self.search.borrow(), &self.filter.borrow());
+        let search = self.search.borrow().clone();
+        let filter = self.effective_filter();
+        let restricted = super::filter_restriction::is_restricted(&search, &filter);
         let visible = super::filter_restriction::row_visible(
             self.track_source.get(),
             restricted,
@@ -352,9 +366,10 @@ impl BrowseBar {
     }
 
     pub fn refresh(self: &Rc<Self>) {
-        let filter = self.filter();
-        self.rebuild_chips(&filter);
-        self.rebuild_facet_page(&filter);
+        let stored_filter = self.filter();
+        let effective_filter = self.effective_filter();
+        self.rebuild_chips(&effective_filter);
+        self.rebuild_facet_page(&stored_filter);
     }
 
     pub(super) fn apply_filter(self: &Rc<Self>, next: BrowseFilter) {
@@ -578,7 +593,7 @@ mod tests {
             artist: None,
             album: None,
         };
-        let labels = chip_labels("falling", &browse);
+        let labels = chip_labels("falling", &browse, true);
         assert_eq!(
             labels,
             vec![
@@ -586,7 +601,24 @@ mod tests {
                 "Genre: Rock".to_string()
             ]
         );
-        assert!(chip_labels("  ", &BrowseFilter::default()).is_empty());
+        assert!(chip_labels("  ", &BrowseFilter::default(), true).is_empty());
+    }
+
+    // UX FIL-1a: facet chips and "+ Add filter" stay Library-only — a facet
+    // set in Library must not render as a chip in a playlist, where the
+    // reload path does not apply it.
+    #[test]
+    fn fil_1a_facet_chips_are_library_only() {
+        let browse = BrowseFilter {
+            genre: Some("Rock".into()),
+            artist: None,
+            album: None,
+        };
+        assert_eq!(
+            chip_labels("falling", &browse, false),
+            vec!["⌕ “falling” in any field".to_string()]
+        );
+        assert!(chip_labels("", &browse, false).is_empty());
     }
 
     fn full_filter() -> BrowseFilter {

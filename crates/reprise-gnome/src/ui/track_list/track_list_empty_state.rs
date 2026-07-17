@@ -82,8 +82,10 @@ pub(in crate::ui) fn empty_state_for(
 
 /// FIL-6: label for the single next step, or `None` when no count is known.
 pub(in crate::ui) fn show_all_action_label(counts: Option<(usize, usize)>) -> Option<String> {
-    counts.map(|(_, total)| {
-        strings::show_all_tracks_label(&reprise_core::format::format_thousands(total as i64))
+    counts.and_then(|(_, total)| {
+        (total > 0).then(|| {
+            strings::show_all_tracks_label(&reprise_core::format::format_thousands(total as i64))
+        })
     })
 }
 
@@ -209,6 +211,7 @@ mod empty_state_tests {
             show_all_action_label(Some((0, 1664))),
             Some("Show all 1,664 tracks".to_string())
         );
+        assert_eq!(show_all_action_label(Some((0, 0))), None);
         assert_eq!(show_all_action_label(None), None);
     }
 
