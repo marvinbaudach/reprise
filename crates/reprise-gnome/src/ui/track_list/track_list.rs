@@ -81,8 +81,8 @@ use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
     OnActivate, OnLibraryMutated, OnPlaySelected, OnQueueActivate, OnQueueRemove, OnQueueReorder,
-    OnQueueSelected, OnReload, OnSelectionChanged, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
-    OnTagsMutated,
+    OnQueueSelected, OnReload, OnSelectionChanged, OnShowMissing, OnSidebarPlaylistDrop,
+    OnSidebarQueueDrop, OnTagsMutated,
 };
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
@@ -223,6 +223,8 @@ pub(in crate::ui) struct Shared {
     /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
     /// but the ids jump the manual line instead of appending to it.
     pub(in crate::ui) on_play_next_selected: RefCell<Option<OnQueueSelected>>,
+    /// Toast-button navigation after activating a concrete missing row.
+    pub(in crate::ui) on_show_missing: RefCell<Option<OnShowMissing>>,
     pub(in crate::ui) on_queue_activate: RefCell<Option<OnQueueActivate>>,
     pub(in crate::ui) on_queue_remove: RefCell<Option<OnQueueRemove>>,
     /// Invoked after any context-menu action that mutates a playlist's

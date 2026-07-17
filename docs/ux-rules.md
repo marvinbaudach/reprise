@@ -149,7 +149,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   gebaute Queue nicht an (Queue ist ein Snapshot; sichtbar in „Queue").
 - **PLAY-4a** [geplant] [core] — Missing in Listen: Listen-Playback und
   Queue-Advance überspringen Missing still.
-- **PLAY-4b** [geplant] [gtk] — Doppelklick auf konkrete Missing-Row: Toast
+- **PLAY-4b** [aktiv] [gtk] — Doppelklick auf konkrete Missing-Row: Toast
   „File missing since …" + Button „Show in Missing files". Einreihen (Play
   next/Add to queue) ist für Missing disabled.
 - **PLAY-5** [ersetzt durch PLAY-5a/PLAY-5b] — Ursprüngliche

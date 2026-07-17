@@ -49,6 +49,7 @@ use gtk4::glib;
 use gtk4::graphene;
 use gtk4::prelude::*;
 
+use super::track_playback_selection::{self, PlayableSelection};
 use crate::ui::delete_tracks;
 use crate::ui::dialogs;
 use crate::ui::popover_lifecycle;
@@ -135,6 +136,23 @@ pub(in crate::ui) fn current_selection_positions(shared: &Rc<Shared>) -> Vec<u32
 pub(in crate::ui) fn current_selection_ids(shared: &Rc<Shared>) -> Vec<i64> {
     let positions = current_selection_positions(shared);
     track_actions::selected_track_ids(&positions, &shared.model)
+}
+
+fn current_playable_selection(shared: &Rc<Shared>) -> PlayableSelection {
+    let positions = current_selection_positions(shared);
+    track_playback_selection::selected_playable_tracks(&positions, &shared.model)
+}
+
+fn sync_enqueue_action_sensitivity(
+    shared: &Rc<Shared>,
+    play_next_action: &gio::SimpleAction,
+    queue_action: &gio::SimpleAction,
+) {
+    let positions = current_selection_positions(shared);
+    let enabled = track_playback_selection::selected_playable_tracks(&positions, &shared.model)
+        .enqueue_enabled();
+    play_next_action.set_enabled(enabled);
+    queue_action.set_enabled(enabled);
 }
 
 /// Builds the `gio::Menu` model shown by a right-click — rebuilt fresh on
@@ -262,8 +280,8 @@ pub(in crate::ui) fn wire_context_menu_actions(
     {
         let shared = shared.clone();
         play_next_action.connect_activate(move |_, _| {
-            let ids = current_selection_ids(&shared);
-            track_list_queue_menu::play_next_selected(&shared, &ids);
+            let selection = current_playable_selection(&shared);
+            track_list_queue_menu::play_next_selected(&shared, selection.ids());
         });
     }
     action_group.add_action(&play_next_action);
@@ -272,11 +290,34 @@ pub(in crate::ui) fn wire_context_menu_actions(
     {
         let shared = shared.clone();
         queue_action.connect_activate(move |_, _| {
-            let ids = current_selection_ids(&shared);
-            track_list_queue_menu::add_selected(&shared, &ids);
+            let selection = current_playable_selection(&shared);
+            track_list_queue_menu::add_selected(&shared, selection.ids());
         });
     }
     action_group.add_action(&queue_action);
+    sync_enqueue_action_sensitivity(shared, &play_next_action, &queue_action);
+    {
+        let selection = shared.selection.clone();
+        let shared = Rc::downgrade(shared);
+        let play_next_action = play_next_action.clone();
+        let queue_action = queue_action.clone();
+        selection.connect_selection_changed(move |_, _, _| {
+            if let Some(shared) = shared.upgrade() {
+                sync_enqueue_action_sensitivity(&shared, &play_next_action, &queue_action);
+            }
+        });
+    }
+    {
+        let model = shared.model.clone();
+        let shared = Rc::downgrade(shared);
+        let play_next_action = play_next_action.clone();
+        let queue_action = queue_action.clone();
+        model.connect_items_changed(move |_, _, _, _| {
+            if let Some(shared) = shared.upgrade() {
+                sync_enqueue_action_sensitivity(&shared, &play_next_action, &queue_action);
+            }
+        });
+    }
     track_list_queue_menu::add_remove_action(&action_group, shared);
     tag_edit_flow::add_action(&action_group, shared);
     delete_tracks::add_actions(&action_group, column_view, shared);

@@ -169,6 +169,13 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             }
         });
     }
+    {
+        let sidebar_weak = Rc::downgrade(sidebar);
+        track_list.set_on_show_missing(move |target| match sidebar_weak.upgrade() {
+            Some(sidebar) => sidebar.refresh_and_select(target, "missing row details"),
+            None => tracing::warn!("sidebar is gone; cannot show Missing files"),
+        });
+    }
     // Album view playback wiring.
     {
         let player = player.clone();
