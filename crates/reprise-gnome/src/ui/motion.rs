@@ -115,10 +115,9 @@ mod tests {
         gtk4::init().unwrap();
         let label = gtk4::Label::new(None);
 
-        let raw_target = libadwaita::PropertyAnimationTarget::new(&label, "opacity");
-        let raw = libadwaita::TimedAnimation::new(&label, 0.0, 1.0, 1, raw_target);
-        assert!(!raw.follows_enable_animations_setting());
-
+        // Note: the installed libadwaita already defaults
+        // `follow-enable-animations-setting` to true; `timed()` still pins it
+        // explicitly so the MOT-7 contract holds regardless of library default.
         let target = libadwaita::PropertyAnimationTarget::new(&label, "opacity");
         let animation = timed(&label, 0.0, 1.0, STANDARD, target);
         assert!(animation.follows_enable_animations_setting());
