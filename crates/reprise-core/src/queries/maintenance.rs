@@ -367,6 +367,142 @@ fn remove_tracks_impl(
     Ok(removed)
 }
 
+// -- Tombstone operations (Task 2.2, 10-second undo) ---------------------
+//
+// The Missing source's "Remove all N from library" action needs an undo
+// window, and a hard delete cannot honestly offer one. `remove_tracks`
+// (above) is a real, immediate, irreversible delete — correct for its own
+// callers, but the wrong primitive for a "Remove" the user might click
+// "Undo" on ten seconds later.
+//
+// A snapshot-and-restore undo (save the row, delete it, re-insert on undo)
+// is the obvious design and is DISQUALIFIED, not merely inelegant:
+// `tracks.id` is a plain `INTEGER PRIMARY KEY` with no `AUTOINCREMENT`, so
+// SQLite reuses `max(id)+1` for the next insert. Deleting the
+// highest-numbered row and then having a scan (the folder watcher fires on
+// its own, independent of any UI action) insert a new track during the
+// 10-second window would hand that brand-new track the exact id the undo
+// is about to try to reclaim — the undo then either collides or, worse,
+// silently grafts the deleted row's rating/play history/playlist
+// membership onto a completely unrelated file. An undo that can race the
+// watcher into corrupting unrelated data is not an undo.
+//
+// The tombstone avoids the race by never freeing the id in the first
+// place: `tombstone_tracks` only sets `removed_at`, so the row — and every
+// FK-cascaded child row that depends on it (`playlist_tracks` membership
+// AND position, `listen_events`, `device_files`) — stays exactly where it
+// is for the whole window. `undo_tombstone` is then just clearing that one
+// column back to `NULL`; there is nothing to restore because nothing was
+// ever lost. `purge_tombstones` is the one place a tombstone finally
+// becomes the real, `remove_tracks`-powered delete, once the window has
+// closed without an undo.
+
+/// "Remove from library" for the tombstone/10-second-undo flow: marks every
+/// id in `ids` as removed by setting `removed_at = now`, without touching
+/// anything else. See this section's header comment for why a tombstone
+/// (not a snapshot-and-delete) is the only race-free way to offer an undo
+/// here.
+///
+/// [`PRESENT`]/[`MISSING`] both require `removed_at IS NULL`, so a
+/// tombstoned row disappears from every view (Library, Missing, Playlist,
+/// Smart, …) — including the very Missing card it was just removed from —
+/// the instant this call returns, with zero rows actually deleted: no
+/// cascade fires, so `playlist_tracks` membership/position, `listen_
+/// events`, and `device_files` all survive untouched for the whole undo
+/// window.
+///
+/// The `removed_at IS NULL` guard in the `WHERE` clause makes re-
+/// tombstoning an already-tombstoned id a no-op that keeps its ORIGINAL
+/// timestamp rather than overwriting it — a second "Remove" click on a row
+/// already mid-countdown must not silently restart the toast's 10-second
+/// timer.
+///
+/// Returns the number of rows actually tombstoned — a subset of `ids.len()`
+/// when some ids were already tombstoned or don't exist. `Ok(0)` for an
+/// empty `ids` slice, no query issued.
+pub fn tombstone_tracks(
+    conn: &Connection,
+    ids: &[i64],
+    now: i64,
+) -> Result<usize, rusqlite::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let placeholders = (2..=ids.len() + 1)
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "UPDATE tracks SET removed_at = ?1 WHERE id IN ({placeholders}) AND removed_at IS NULL"
+    );
+    let params: Vec<i64> = std::iter::once(now).chain(ids.iter().copied()).collect();
+    conn.execute(&sql, rusqlite::params_from_iter(params))
+}
+
+/// Reverses [`tombstone_tracks`] within the undo window: clears `removed_at`
+/// on every id in `ids` that is currently tombstoned, restoring it to
+/// whatever presence view (`PRESENT`/`MISSING`) its `missing_since` already
+/// says it belongs to. There is nothing to "restore" beyond that one
+/// column — `tombstone_tracks` never deleted the row, so no data was ever
+/// lost.
+///
+/// The `removed_at IS NOT NULL` guard makes undoing an id that isn't (or is
+/// no longer — e.g. resurrected by a scan in the meantime, see `purge_
+/// tombstones`'s doc comment) tombstoned a no-op rather than an error.
+///
+/// Returns the number of rows actually restored. `Ok(0)` for an empty `ids`
+/// slice, no query issued.
+pub fn undo_tombstone(conn: &Connection, ids: &[i64]) -> Result<usize, rusqlite::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let placeholders = (1..=ids.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "UPDATE tracks SET removed_at = NULL WHERE id IN ({placeholders}) AND removed_at IS NOT NULL"
+    );
+    conn.execute(&sql, rusqlite::params_from_iter(ids.iter()))
+}
+
+/// Hard-deletes every currently-tombstoned row: the real, irreversible
+/// delete a tombstone eventually becomes once its undo window has closed.
+/// This has exactly two callers — the toast's 10-second timeout, and app
+/// startup (a quit that happens *inside* the undo window must commit the
+/// removal on the next launch rather than silently rolling it back, so the
+/// count the user read — "7 removed" — stays true; the startup call site
+/// is wired by a later task). Both funnel through this one function so
+/// there is exactly one place a tombstone turns into a real delete.
+///
+/// Deliberately reuses [`remove_tracks`] rather than re-implementing
+/// deletion: that function already gets the hard part right inside one
+/// transaction — every affected playlist's positions compacted, the FK
+/// cascades (`playlist_tracks`, `listen_events`, `device_files`) fired, and
+/// the exact ids the caller must purge from its own in-memory playback
+/// queue returned. Selecting the tombstoned ids and handing them to
+/// `remove_tracks` keeps there being exactly one deletion path — no risk of
+/// this one drifting from that one over time.
+///
+/// Interop with the scanner's resurrect-on-evidence behavior (`library::
+/// scanner`): a row the scanner finds is still there gets its `removed_at`
+/// cleared back to `NULL` the moment that's discovered — a "Remove" whose
+/// object came back is moot. Such a row is simply not selected by this
+/// function's `WHERE removed_at IS NOT NULL`, so it survives a purge that
+/// runs after the resurrection untouched, with no special-casing needed
+/// here at all.
+pub fn purge_tombstones(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Error> {
+    let ids = {
+        let mut statement =
+            conn.prepare("SELECT id FROM tracks WHERE removed_at IS NOT NULL ORDER BY id")?;
+        let ids = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<i64>, _>>()?;
+        ids
+    };
+    remove_tracks(conn, &ids)
+}
+
 /// Bare count of rows in `import_errors` (the last scan's import failures) —
 /// see the module doc's `ImportErrors` section for why this is the only
 /// piece of that source this task builds. Used by `ui::sidebar` (Task 4) for
