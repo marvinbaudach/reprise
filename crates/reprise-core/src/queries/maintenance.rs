@@ -344,11 +344,17 @@ pub fn remove_tracks(conn: &mut Connection, ids: &[i64]) -> Result<Vec<i64>, rus
 /// this loop reaching that id — without this guard the `DELETE` would still
 /// fire on a row that is, as of the moment it matters, no longer
 /// tombstoned, hard-deleting a live track's playlist history irrecoverably.
+/// `AutoCleanEligible` is [`remove_auto_clean_eligible_tracks`]'s guard for
+/// the same shape of race on `queries::issues::run_auto_clean`'s unattended
+/// delete — see that function's doc comment for the full race description
+/// and why only the missing-state/reason half of eligibility needs
+/// re-checking here, not the deadline arithmetic.
 #[derive(Clone, Copy)]
 pub(crate) enum RemoveGuard {
     Any,
     MissingOnly,
     TombstonedOnly,
+    AutoCleanEligible,
 }
 
 pub(crate) fn remove_tracks_impl(
@@ -381,6 +387,10 @@ pub(crate) fn remove_tracks_impl(
                 "DELETE FROM tracks WHERE id = ?1 AND removed_at IS NOT NULL",
                 rusqlite::params![id],
             )?,
+            RemoveGuard::AutoCleanEligible => tx.execute(
+                &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING} AND missing_reason = ?2"),
+                rusqlite::params![id, MissingReason::Deleted.as_str()],
+            )?,
         };
         if deleted == 0 {
             continue;
@@ -392,6 +402,38 @@ pub(crate) fn remove_tracks_impl(
     }
     tx.commit()?;
     Ok(removed)
+}
+
+/// Auto-clean's own DATABASE-ONLY removal (Finding 1, review pass on Task
+/// 2.3): the guarded version `queries::issues::run_auto_clean` calls instead
+/// of the unguarded [`remove_tracks`]. `run_auto_clean` selects eligible ids
+/// via `auto_clean_eligible`, then hands them here — this function re-checks
+/// each id's eligibility (still missing, still `missing_reason = 'deleted'`)
+/// at delete time via [`RemoveGuard::AutoCleanEligible`], closing the same
+/// shape of TOCTOU window [`purge_tombstones`]'s `TombstonedOnly` guard
+/// closes: the scanner/watcher runs on its own OS thread with its own
+/// `rusqlite::Connection`, a genuine concurrent writer under this database's
+/// WAL mode (see the tombstone section header comment below), and can
+/// resurrect a selected id — the file reappeared, so the row is legitimately
+/// live again — in the window between `auto_clean_eligible`'s `SELECT` and
+/// this loop reaching that id's `DELETE`. Without this guard the row would
+/// be hard-deleted anyway, cascading away a live track's rating, playlist
+/// membership and listening history with no undo — auto-clean runs
+/// completely unattended, so there is nobody watching to notice and nothing
+/// left to restore.
+///
+/// The guard only re-checks what can realistically change under it: the
+/// row's missing state and reason. It deliberately does NOT re-run the
+/// `days`/`armed_at` deadline arithmetic — time only moves forward, so an id
+/// that was already past its deadline at `auto_clean_eligible`'s `SELECT` is
+/// still past it by the time this `DELETE` runs; re-deriving the same
+/// monotonic fact here would be redundant, not safer, so do not "fix" this
+/// by adding it back.
+pub(crate) fn remove_auto_clean_eligible_tracks(
+    conn: &mut Connection,
+    ids: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    remove_tracks_impl(conn, ids, RemoveGuard::AutoCleanEligible)
 }
 
 // -- Tombstone operations (Task 2.2, 10-second undo) ---------------------

@@ -280,10 +280,34 @@ pub fn auto_clean_eligible(conn: &Connection, now: i64) -> Result<Vec<i64>, rusq
 }
 
 /// Runs Task 2.3's unattended cleanup: every id [`auto_clean_eligible`]
-/// returns is hard-deleted via `maintenance::remove_tracks` — the same
-/// transactional, playlist-position-compacting delete path every other real
-/// removal in this crate funnels through — returning the exact ids the
-/// caller must purge from its own in-memory playback queue.
+/// returns is hard-deleted via `maintenance::remove_auto_clean_eligible_
+/// tracks` — the same transactional, playlist-position-compacting delete
+/// path every other real removal in this crate funnels through, guarded by
+/// `RemoveGuard::AutoCleanEligible` so a resurrection racing the delete
+/// itself can never be swept away — returning the exact ids the caller must
+/// purge from its own in-memory playback queue.
+///
+/// Finding 1 (review pass): this function's own call to [`auto_clean_
+/// eligible`] and the per-id `DELETE` inside `remove_auto_clean_eligible_
+/// tracks` are not one atomic transaction, so the scanner/watcher — its own
+/// OS thread, its own `rusqlite::Connection`, a genuine concurrent writer
+/// under this database's WAL mode, not a hypothetical (see `maintenance.rs`'s
+/// tombstone section header comment for the same race on the other
+/// deletion path) — can resurrect a selected id in the window between that
+/// `SELECT` and this loop reaching that id's `DELETE`: the file reappeared,
+/// so the row is legitimately live again. `remove_auto_clean_eligible_
+/// tracks` re-checks eligibility (still missing, still `missing_reason =
+/// 'deleted'`) at delete time instead of trusting this snapshot, so a
+/// resurrected row survives with its rating, playlist membership and
+/// listening history intact rather than being hard-deleted out from under a
+/// track the scanner just proved is live again. The guard does NOT re-run
+/// the `days`/`armed_at` deadline arithmetic — time only moves forward, so
+/// an id already past its deadline at selection time is still past it at
+/// delete time; only the missing state and reason can realistically change
+/// under the race, so only those are re-checked (see `maintenance::
+/// remove_auto_clean_eligible_tracks`'s doc comment). See `tests_auto_
+/// clean.rs`'s `run_auto_clean_survives_a_resurrection_racing_the_delete_
+/// itself` for the regression test this guards against.
 ///
 /// Deliberately NOT routed through the tombstone/10-second-undo mechanism
 /// (`maintenance::tombstone_tracks`) despite deleting the same shape of row
@@ -298,5 +322,5 @@ pub fn auto_clean_eligible(conn: &Connection, now: i64) -> Result<Vec<i64>, rusq
 /// run — the whole point of a hard delete, made deliberately.
 pub fn run_auto_clean(conn: &mut Connection, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
     let ids = auto_clean_eligible(conn, now)?;
-    super::maintenance::remove_tracks(conn, &ids)
+    super::maintenance::remove_auto_clean_eligible_tracks(conn, &ids)
 }
