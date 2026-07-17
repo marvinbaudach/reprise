@@ -392,16 +392,16 @@ ist ihre eigene Aussage).
        (feat/tag-editor-rework) und der deaktivierte „Add filter"-Zustand
        in browse_bar (feat/global-search-rework) sind noch unbegründet
        tot. [aktiv] erst, wenn beide nachgezogen sind. -->
-- **TIP-3** [geplant] [manuell] — Tooltips sind redundant, nie exklusiv:
+- **TIP-3** [aktiv] [manuell] — Tooltips sind redundant, nie exklusiv:
   jede Information in einem Tooltip muss auch ohne Hover erreichbar sein
   (View, Dialog, sichtbares Label). Hover-Details (Sync-Karte:
   „28 of 82 · ~2 min left") sind Komfort-Duplikate einer erreichbaren
   Ansicht — Touch-Bedienung sieht Tooltips nie.
-- **TIP-4** [geplant] [manuell] — Menüeinträge bekommen keine Tooltips.
+- **TIP-4** [aktiv] [manuell] — Menüeinträge bekommen keine Tooltips.
   In Popover-/Kontextmenüs trägt das Label allein; eine feste
   Subtitle-Zeile („M3U · PLS · XSPF") ist erlaubt. Braucht ein Menüpunkt
   einen Tooltip, ist er falsch benannt oder gehört in einen Dialog.
-- **TIP-5** [geplant] [manuell] — GTK-Standardverhalten: keine
+- **TIP-5** [aktiv] [manuell] — GTK-Standardverhalten: keine
   Custom-Delays, keine interaktiven/Rich-Tooltips; dynamische Werte
   (Prozent, Zeit, ellipsierter Volltext) sind erlaubt.
 
