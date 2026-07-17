@@ -18,9 +18,17 @@
 //!    format both sides agree on.
 //! 3. **Drop target: reorder** — every track-list cell also carries a
 //!    `DropTarget` (this module) that reorders *within* the current list:
-//!    `library::playlists::move_position` for a `Playlist` source, `Queue::
-//!    move_item` (via `PlayerController::move_queue_item`, injected through
-//!    `TrackList::set_on_queue_reorder`) for `Queue`.
+//!    `library::playlists::move_position` for a `Playlist` source; for
+//!    `Queue`, `queue_row_mapping::reorder_op` resolves the composite-view
+//!    drag to one of `WithinPlayNext`/`WithinUpNext`/`PromoteUpNext`
+//!    (including the Now-Playing-row drop target, which promotes/moves to
+//!    the front of Play Next), dispatched through `PlayerController::
+//!    reorder_queue_rows` (injected via `TrackList::set_on_queue_reorder`).
+//!    `wire_drop_target`'s `connect_enter` runs the same `reorder_op` (or
+//!    `playlist_reorder_allowed`) check *before* showing the drop indicator,
+//!    so the indicator only lights up where a drop would actually do
+//!    something — it reads `Shared::active_reorder_drag_from`, stashed by
+//!    `wire_drag_source`'s `connect_prepare` and cleared on drag end/cancel.
 //!
 //! ## Content payload format: a comma-joined `String`, not a boxed type
 //!
@@ -64,9 +72,13 @@
 //! - **Queue**: `queries::query_track_window_queue` ignores sort *and*
 //!   filter entirely (pinned by `track_list_model.rs`'s own test,
 //!   `set_query_with_queue_source_follows_queue_ids_order`) — the Queue
-//!   view's row order is always exactly `Queue::ids_in_order()`, so a view
-//!   position *is* the queue index, unconditionally. No guard is needed
-//!   (see [`reorder_position_for_drag`]'s `Queue` arm).
+//!   view's row order is always exactly the composite view GTK renders, so a
+//!   view position *is* the row GTK hands out, unconditionally. No sort/
+//!   filter guard is needed (see [`reorder_position_for_drag`]'s `Queue`
+//!   arm); what still needs resolving is *which* composite-view op a given
+//!   `(from, to)` pair means — that's `queue_row_mapping::reorder_op`
+//!   (`WithinPlayNext`, `WithinUpNext`, or `PromoteUpNext`), called by both
+//!   [`handle_queue_reorder_drop`] and `wire_drop_target`'s `connect_enter`.
 //!
 //! Every reorder path also aborts (does nothing) rather than guess if a
 //! position can't be resolved — see [`resolve_reorder_target`] and the drop
@@ -294,6 +306,9 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
             } else {
                 None
             };
+            shared
+                .active_reorder_drag_from
+                .set(reorder_position.is_some().then_some(dragged_positions[0]));
 
             last_drag_count.set(ids.len());
             let payload = format_drag_payload(&ids, reorder_position);
@@ -321,6 +336,22 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
         });
     }
 
+    {
+        let shared = shared.clone();
+        drag_source.connect_drag_end(move |_source, _drag, _delete_data| {
+            shared.active_reorder_drag_from.set(None);
+        });
+    }
+    {
+        let shared = shared.clone();
+        drag_source.connect_drag_cancel(move |_source, _drag, _reason| {
+            shared.active_reorder_drag_from.set(None);
+            // Keep GTK's default cancel handling (e.g. the snap-back
+            // animation) — this handler only clears the stash.
+            false
+        });
+    }
+
     widget
         .upcast_ref::<gtk4::Widget>()
         .add_controller(drag_source);
@@ -336,16 +367,30 @@ fn wire_drop_target(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
     {
         let widget = widget.upcast_ref::<gtk4::Widget>().clone();
         let shared = shared.clone();
+        let item = item.clone();
         drop_target.connect_enter(move |_target, _x, _y| {
             let source = shared.source.borrow().clone();
-            let eligible = match &source {
-                ViewSource::Playlist(_) => playlist_reorder_allowed(&shared),
-                ViewSource::Queue => true,
+            let from = shared.active_reorder_drag_from.get();
+            let to = item.position();
+            let eligible = match (from, &source) {
+                (Some(from), ViewSource::Queue) if to != gtk4::INVALID_LIST_POSITION => {
+                    let sections = shared.queue_sections.borrow();
+                    crate::ui::track_list::queue_row_mapping::reorder_op(from, to, &sections)
+                        .is_some()
+                }
+                (Some(from), ViewSource::Playlist(_)) if to != gtk4::INVALID_LIST_POSITION => {
+                    playlist_reorder_allowed(&shared) && from != to
+                }
                 _ => false,
             };
             track_list_row_interaction::set_reorder_indicator(&widget, eligible);
             if eligible {
-                tracing::debug!(source = %source.label(), "reorder drop target entered");
+                tracing::debug!(
+                    source = %source.label(),
+                    from,
+                    to,
+                    "reorder drop target entered"
+                );
                 gdk::DragAction::MOVE
             } else {
                 gdk::DragAction::empty()
@@ -487,9 +532,12 @@ pub(in crate::ui) fn handle_queue_reorder_drop(
         return false;
     };
     // QUE-3: composite-view coordinates → section-local operation (reorder
-    // within Play Next, or promote an Up Next row into Play Next). Drags the
-    // rules reject (snapshot-internal reorder, dragging Now Playing) resolve
-    // to `None` and report failure.
+    // within Play Next, reorder within the Up Next snapshot tail, or
+    // promote an Up Next row into Play Next — including a drop onto the Now
+    // Playing row, which promotes/moves to the front of Play Next). Drags
+    // the rules still reject (dragging the Now Playing row itself, demoting
+    // a Play Next row into the snapshot) resolve to `None` and report
+    // failure.
     let op = {
         let sections = shared.queue_sections.borrow();
         crate::ui::track_list::queue_row_mapping::reorder_op(from, to, &sections)

@@ -138,6 +138,12 @@ pub(in crate::ui) struct Shared {
     /// A `Cell`: `Copy` payload, single-threaded UI access, same rationale
     /// as `playing_track_id`.
     pub(in crate::ui) suppress_follow_scroll: Cell<Option<i64>>,
+    /// View position an in-app single-row reorder drag started from — set at
+    /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
+    /// eligible drag is in flight; the drop-indicator eligibility check in
+    /// `track_list_dnd` reads it so markers only appear where a drop would
+    /// actually do something.
+    pub(in crate::ui) active_reorder_drag_from: Cell<Option<u32>>,
     /// NAV-5: per-source scroll/selection memory for this session. Written
     /// by `view_state_memory::remember_on_leave` when a source switch leaves
     /// a view, read by `view_state_memory::restore_on_attach` after the
@@ -458,25 +464,6 @@ impl TrackList {
         callback: impl Fn(&[super::queue_row_mapping::QueueRow]) -> usize + 'static,
     ) {
         *self.shared.on_queue_remove.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub fn set_on_queue_move_to_top(
-        &self,
-        callback: impl Fn(&[super::queue_row_mapping::QueueRow]) -> usize + 'static,
-    ) {
-        *self.shared.on_queue_move_to_top.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub fn set_on_go_to_album(&self, callback: impl Fn(String, String) + 'static) {
-        *self.shared.on_go_to_album.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub fn set_on_go_to_artist(&self, callback: impl Fn(String) + 'static) {
-        *self.shared.on_go_to_artist.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub fn set_on_show_missing_files(&self, callback: impl Fn() + 'static) {
-        *self.shared.on_show_missing_files.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the callback invoked after any context-menu action that
