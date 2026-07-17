@@ -64,6 +64,10 @@ pub use app_shell::*;
 mod tag_edit;
 pub use tag_edit::*;
 
+#[path = "strings_track_menu.rs"]
+mod track_menu;
+pub use track_menu::*;
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
@@ -429,22 +433,6 @@ pub const CREATE: &str = N_!("Create");
 pub fn playlist_create_failed_toast(name: &str) -> String {
     formatted(N_!("Could not create playlist “{name}”"), &[("name", name)])
 }
-
-// Track list context menu (src/ui/track_list.rs, Stage 3 Task 5): row
-// actions on the current selection — Play, Add to queue, Add to playlist
-// (submenu of existing playlists plus "New playlist…"), and — only while
-// viewing a playlist — Remove from playlist.
-
-pub const CONTEXT_MENU_PLAY: &str = N_!("Play");
-pub const CONTEXT_MENU_ADD_TO_QUEUE: &str = N_!("Add to queue");
-pub const CONTEXT_MENU_ADD_TO_PLAYLIST: &str = N_!("Add to playlist");
-/// Leaf item at the bottom of the "Add to playlist" submenu — ellipsis
-/// matches this file's convention for menu items that open a dialog (e.g.
-/// `SCAN_FOLDER`), unlike the sidebar's plain "New playlist" row label
-/// (`SIDEBAR_NEW_PLAYLIST`), which doesn't open a dialog directly from a
-/// menu context.
-pub const CONTEXT_MENU_NEW_PLAYLIST: &str = N_!("New playlist…");
-pub const CONTEXT_MENU_REMOVE_FROM_PLAYLIST: &str = N_!("Remove from playlist");
 
 // Problem-source actions (src/ui/track_list_context_menu.rs, src/ui/
 // import_errors_view.rs, Stage 3 Task 8): the Missing/Import-errors sidebar

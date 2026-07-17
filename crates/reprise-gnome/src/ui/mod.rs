@@ -52,6 +52,7 @@ mod scan;
 mod scrobbling;
 pub mod session_restore;
 pub mod shortcuts;
+pub(in crate::ui) mod show_in_files;
 pub(crate) mod sidebar;
 mod stats;
 pub mod status_bar;

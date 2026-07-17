@@ -5,8 +5,8 @@
 //! `gtk::PopoverMenu`/`gio::SimpleAction` wiring — since that's inseparable
 //! from the live `ColumnView` widget. This module holds the *logic* those
 //! actions invoke: mapping selected row positions to track ids, deciding
-//! what a "Play"/"Add to queue" click should do with them, and performing
-//! the two playlist-mutating actions against the database. Every function
+//! what an "Add to queue" click should do with them, and performing the
+//! playlist-mutating actions against the database. Every function
 //! here is callable (and tested) without a running GTK display.
 //!
 //! ## Position → id seam
@@ -84,23 +84,6 @@ pub fn selected_track_ids(positions: &[u32], model: &TrackListModel) -> Vec<i64>
         })
         .map(|track| track.id)
         .collect()
-}
-
-/// Decides what the "Play" menu action should do with `ids` (selected track
-/// ids, in selection order): `None` for an empty selection (nothing to
-/// play — the menu item shouldn't have been reachable, but a defensive
-/// no-op costs nothing), otherwise `Some((ids, 0))` — Rhythmbox's context-
-/// menu-play semantics: start at the first selected row, with every other
-/// selected row queued right after it. `ids` as given is already exactly the
-/// shape `PlayerController::play_from_view`'s two parameters need, hence the
-/// tuple — deliberately not "queue the whole view starting here", which is
-/// `track_list.rs`'s row-activation seam (`queue_ids_for_activation`)
-/// instead.
-pub fn play_selected_ids(ids: &[i64]) -> Option<(Vec<i64>, usize)> {
-    if ids.is_empty() {
-        return None;
-    }
-    Some((ids.to_vec(), 0))
 }
 
 /// Decides what the "Add to queue" menu action should do with `ids`: `None`
@@ -310,16 +293,6 @@ mod tests {
     fn selected_track_ids_empty_selection_yields_empty_ids() {
         let model = seeded_model(3);
         assert!(selected_track_ids(&[], &model).is_empty());
-    }
-
-    #[test]
-    fn play_selected_ids_empty_is_none() {
-        assert_eq!(play_selected_ids(&[]), None);
-    }
-
-    #[test]
-    fn play_selected_ids_starts_at_first_selected() {
-        assert_eq!(play_selected_ids(&[42, 7, 9]), Some((vec![42, 7, 9], 0)));
     }
 
     #[test]

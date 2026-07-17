@@ -58,6 +58,7 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -78,9 +79,10 @@ use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
-    OnActivate, OnLibraryMutated, OnPlaySelected, OnQueueActivate, OnQueueRemove, OnQueueReorder,
-    OnQueueSelected, OnReload, OnScanQueuePurgeIds, OnSelectionChanged, OnShowMissing,
-    OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
+    OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
+    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds,
+    OnSelectionChanged, OnShowMissing, OnShowMissingFiles, OnSidebarPlaylistDrop,
+    OnSidebarQueueDrop, OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 
@@ -219,17 +221,12 @@ pub(in crate::ui) struct Shared {
     /// dialog of the same shape). `WeakRef`, not a strong reference, for the
     /// same reason as `toast_overlay`.
     pub(in crate::ui) window: glib::WeakRef<adw::ApplicationWindow>,
-    /// Context-menu "Play" action callback (Stage 3 Task 5), injected via
-    /// `TrackList::set_on_play_selected` — wraps `PlayerController::
-    /// play_from_view` without this module depending on that type directly
-    /// (same decoupling-via-closure seam as `on_activate`/`queue_ids_
-    /// provider`). `RefCell<Option<Rc<dyn Fn>>>`, not a plain field set at
-    /// construction, since the player controller is built by `window.rs`
-    /// independently of `TrackList` and wired in afterwards.
-    pub(in crate::ui) on_play_selected: RefCell<Option<OnPlaySelected>>,
+    /// The one action group backing every rebuilt context-menu model.
+    /// Sensitivity is refreshed from the current selection before opening.
+    pub(in crate::ui) menu_actions: gio::SimpleActionGroup,
     /// Context-menu "Add to queue" action callback, injected via
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
-    /// append_to_queue`. Same seam shape as `on_play_selected`.
+    /// append_to_queue`.
     pub(in crate::ui) on_queue_selected: RefCell<Option<OnQueueSelected>>,
     /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
     /// but the ids jump the manual line instead of appending to it.
@@ -238,6 +235,10 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) on_show_missing: RefCell<Option<OnShowMissing>>,
     pub(in crate::ui) on_queue_activate: RefCell<Option<OnQueueActivate>>,
     pub(in crate::ui) on_queue_remove: RefCell<Option<OnQueueRemove>>,
+    pub(in crate::ui) on_queue_move_to_top: RefCell<Option<OnQueueMoveToTop>>,
+    pub(in crate::ui) on_go_to_album: RefCell<Option<OnGoToAlbum>>,
+    pub(in crate::ui) on_go_to_artist: RefCell<Option<OnGoToArtist>>,
+    pub(in crate::ui) on_show_missing_files: RefCell<Option<OnShowMissingFiles>>,
     /// Invoked after any context-menu action that mutates a playlist's
     /// membership (add to an existing playlist, add to a brand new one, or
     /// remove) — injected via `TrackList::set_on_playlist_mutated`, wired by
@@ -250,8 +251,7 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) on_playlist_mutated: RefCell<Option<Rc<dyn Fn()>>>,
     /// Queue drag-reorder callback (Stage 3 Task 6), injected via
     /// `TrackList::set_on_queue_reorder` — wraps `PlayerController::
-    /// move_queue_item`. Same seam shape as `on_play_selected`/`on_queue_
-    /// selected`: `window.rs` wires this once the controller exists, and
+    /// move_queue_item`. `window.rs` wires this once the controller exists, and
     /// `ui::track_list_dnd`'s queue-reorder drop handler is the only caller
     /// (see that module's doc comment for the full drag/drop design). Returns
     /// whether the move actually happened — `window.rs`'s wiring returns
@@ -291,8 +291,7 @@ pub(in crate::ui) struct Shared {
     /// injected via `TrackList::set_on_rescan_library` — wraps `ui::window`'s
     /// scan flow against the persisted library root without this module
     /// depending on the scan machinery/settings table directly (same
-    /// decoupling-via-closure seam as `on_play_selected`/`on_queue_
-    /// selected`).
+    /// decoupling-via-closure seam as the other post-construction callbacks).
     pub(in crate::ui) on_rescan_library: RefCell<Option<Rc<dyn Fn()>>>,
     /// Missing-view mutation callback. Tombstone and Undo notify with an
     /// empty id slice so the sidebar reloads immediately; expiry/auto-clean
@@ -430,14 +429,6 @@ impl TrackList {
         self.shared.missing_files_view.set_window(window);
     }
 
-    /// Injects the context menu's "Play" action callback (Stage 3 Task 5) —
-    /// see the `Shared::on_play_selected` doc comment. `window.rs` wires
-    /// this to `PlayerController::play_from_view` once the controller
-    /// exists.
-    pub fn set_on_play_selected(&self, callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static) {
-        *self.shared.on_play_selected.borrow_mut() = Some(Rc::new(callback));
-    }
-
     /// Injects the context menu's "Add to queue" action callback — see the
     /// `Shared::on_queue_selected` doc comment. `window.rs` wires this to
     /// `PlayerController::append_to_queue`.
@@ -539,7 +530,6 @@ impl TrackList {
     pub fn set_on_import_errors_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_import_errors_mutated.borrow_mut() = Some(Rc::new(callback));
     }
-
 
     /// Injects the player controller — injected post-construction via
     /// `TrackList::set_player`, used by the tag-edit flow to refresh

@@ -27,6 +27,7 @@ pub(crate) mod track_list_empty_state;
 mod track_list_filter_actions;
 pub(in crate::ui) mod track_list_header_style;
 pub(in crate::ui) mod track_list_layout;
+pub(in crate::ui) mod track_list_menu_seams;
 pub(crate) mod track_list_menu_smoke;
 pub(in crate::ui) mod track_list_missing;
 pub(crate) mod track_list_model;
@@ -37,8 +38,9 @@ pub(in crate::ui) mod track_list_row_interaction;
 pub(in crate::ui) mod track_list_selection;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
-pub(crate) mod track_playback_selection;
 mod track_list_toast;
+pub(in crate::ui) mod track_menu;
+pub(crate) mod track_playback_selection;
 pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]

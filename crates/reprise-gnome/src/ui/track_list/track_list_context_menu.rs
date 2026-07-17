@@ -49,10 +49,15 @@ use gtk4::glib;
 use gtk4::graphene;
 use gtk4::prelude::*;
 
+use super::track_menu::{
+    action_states, build_track_menu, playlist_entries, summarize_selection, MenuContext,
+    MenuInputs, SelectionSummary,
+};
 use super::track_playback_selection::{self, ContextPlayDecision, PlayableSelection};
 use crate::ui::delete_tracks;
 use crate::ui::dialogs;
 use crate::ui::popover_lifecycle;
+use crate::ui::show_in_files;
 use crate::ui::strings;
 use crate::ui::tag_edit_flow;
 use crate::ui::track_actions;
@@ -67,12 +72,20 @@ use reprise_core::view_source::ViewSource;
 const ACTION_PLAY: &str = "play";
 const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
 pub(in crate::ui) const ACTION_PLAY_NEXT: &str = "play-next";
+const ACTION_MOVE_TO_TOP: &str = "move-to-top";
 const ACTION_ADD_TO_PLAYLIST: &str = "add-to-playlist";
 const ACTION_NEW_PLAYLIST: &str = "new-playlist";
+const ACTION_GO_TO_ALBUM: &str = "go-to-album";
+const ACTION_GO_TO_ARTIST: &str = "go-to-artist";
+const ACTION_SHOW_IN_FILES: &str = "show-in-files";
+const ACTION_SHOW_IN_MISSING_FILES: &str = "show-in-missing-files";
 pub(in crate::ui) const ACTION_REMOVE_FROM_PLAYLIST: &str = "remove-from-playlist";
-/// Stage 3 Task 8: Missing-source-only actions — see `build_context_menu_
-/// model`'s `ViewSource::Missing` arm.
-const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
+/// Missing-source-only action: see `handle_remove_from_library`'s doc
+/// comment. Distinct from `delete_tracks::ACTION_REMOVE`
+/// (`"remove-selected-from-library"`, the CTX-unified menu's generic
+/// path-matching delete offered elsewhere) — this one goes through
+/// `track_actions::remove_missing_selected`'s batch/transactional delete
+/// instead.
 pub(in crate::ui) const ACTION_REMOVE_FROM_LIBRARY: &str = "remove-from-library";
 /// The action group name every `"tracklist.*"` detailed-action string below
 /// refers to — inserted once on `column_view` by `wire_context_menu_actions`.
@@ -138,21 +151,19 @@ pub(in crate::ui) fn current_selection_ids(shared: &Rc<Shared>) -> Vec<i64> {
     track_actions::selected_track_ids(&positions, &shared.model)
 }
 
+/// PLAY-4b: the current selection with missing rows already filtered out —
+/// the exact ids "Play"/"Play next"/"Add to queue" are allowed to act on.
+/// See `track_playback_selection`'s module doc.
 fn current_playable_selection(shared: &Rc<Shared>) -> PlayableSelection {
     let positions = current_selection_positions(shared);
     track_playback_selection::selected_playable_tracks(&positions, &shared.model)
 }
 
-fn sync_enqueue_action_sensitivity(
-    shared: &Rc<Shared>,
-    play_next_action: &gio::SimpleAction,
-    queue_action: &gio::SimpleAction,
-) {
-    let positions = current_selection_positions(shared);
-    let enabled = track_playback_selection::selected_playable_tracks(&positions, &shared.model)
-        .enqueue_enabled();
-    play_next_action.set_enabled(enabled);
-    queue_action.set_enabled(enabled);
+fn current_selection_tracks(shared: &Rc<Shared>) -> Vec<reprise_core::models::Track> {
+    current_selection_positions(shared)
+        .into_iter()
+        .filter_map(|position| shared.model.track_at(position))
+        .collect()
 }
 
 /// Builds the `gio::Menu` model shown by a right-click — rebuilt fresh on
@@ -163,91 +174,59 @@ fn sync_enqueue_action_sensitivity(
 /// caching would only add invalidation complexity for no real benefit at
 /// this scale.
 pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
-    let menu = gio::Menu::new();
-
-    let primary = gio::Menu::new();
-    primary.append(
-        Some(&strings::text(strings::CONTEXT_MENU_PLAY)),
-        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_PLAY}")),
-    );
-    // QUE-3: "Play next" jumps the manual line; offered wherever tracks can
-    // be queued from (every source except the Queue view itself, whose
-    // primary swap below covers its own actions).
-    if !matches!(*shared.source.borrow(), ViewSource::Queue) {
-        primary.append(
-            Some(&strings::text(strings::CONTEXT_MENU_PLAY_NEXT)),
-            Some(&format!("{ACTION_GROUP_NAME}.{ACTION_PLAY_NEXT}")),
-        );
-    }
-    track_list_queue_menu::append_queue_primary_action(
-        &primary,
-        shared,
-        ACTION_GROUP_NAME,
-        ACTION_ADD_TO_QUEUE,
-        &strings::text(strings::CONTEXT_MENU_ADD_TO_QUEUE),
-    );
-    primary.append(
-        Some(&strings::text(strings::EDIT_TAGS)),
-        Some(&format!(
-            "{ACTION_GROUP_NAME}.{}",
-            tag_edit_flow::ACTION_EDIT_TAGS
-        )),
-    );
-    menu.append_section(None, &primary);
-
-    let playlist_submenu = gio::Menu::new();
-    let existing_playlists = {
+    let source = shared.source.borrow().clone();
+    let context = MenuContext::from_source(&source);
+    let is_missing_view = matches!(&source, ViewSource::Missing);
+    let summary = summarize_selection(&current_selection_tracks(shared));
+    update_menu_action_states(shared, context, &summary);
+    let entries = {
         let conn = shared.conn.borrow();
-        playlists::list(&conn).unwrap_or_else(|error| {
+        let rows = playlists::list(&conn).unwrap_or_else(|error| {
             tracing::error!(%error, "context menu: failed to list playlists");
             Vec::new()
-        })
+        });
+        playlist_entries(&rows, &source)
     };
-    for playlist in &existing_playlists {
-        let item = gio::MenuItem::new(Some(&playlist.name), None);
-        item.set_action_and_target_value(
-            Some(&format!("{ACTION_GROUP_NAME}.{ACTION_ADD_TO_PLAYLIST}")),
-            Some(&playlist.id.to_variant()),
-        );
-        playlist_submenu.append_item(&item);
+    build_track_menu(&MenuInputs {
+        context,
+        selection: &summary,
+        playlists: &entries,
+        is_missing_view,
+    })
+}
+
+/// Greys out the menu actions the current selection cannot support. Takes the
+/// `context`/`summary` already computed by `build_context_menu_model` so the
+/// source and selection are each read exactly once per menu open.
+fn update_menu_action_states(
+    shared: &Rc<Shared>,
+    context: MenuContext,
+    summary: &SelectionSummary,
+) {
+    let states = action_states(context, summary);
+    // PLAY-4b: "Play next"/"Add to queue" use the missing-aware "at least
+    // one playable track survives" rule (`PlayableSelection::
+    // enqueue_enabled`), not `states.enqueue`'s coarser "no missing tracks
+    // at all" rule — a mixed selection still enqueues just the playable ids
+    // instead of being greyed out entirely.
+    let enqueue_enabled = current_playable_selection(shared).enqueue_enabled();
+    for (name, enabled) in [
+        (ACTION_PLAY_NEXT, enqueue_enabled),
+        (ACTION_ADD_TO_QUEUE, enqueue_enabled),
+        (ACTION_MOVE_TO_TOP, states.enqueue),
+        (ACTION_GO_TO_ALBUM, states.go_to_album),
+        (ACTION_GO_TO_ARTIST, states.go_to_artist),
+        (ACTION_SHOW_IN_FILES, states.show_in_files),
+        ("trash-selected-tracks", states.trash),
+        (tag_edit_flow::ACTION_EDIT_TAGS, states.edit_tags),
+    ] {
+        let Some(action) = shared.menu_actions.lookup_action(name) else {
+            continue;
+        };
+        if let Ok(action) = action.downcast::<gio::SimpleAction>() {
+            action.set_enabled(enabled);
+        }
     }
-    playlist_submenu.append(
-        Some(&strings::text(strings::CONTEXT_MENU_NEW_PLAYLIST)),
-        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_NEW_PLAYLIST}")),
-    );
-    menu.append_submenu(
-        Some(&strings::text(strings::CONTEXT_MENU_ADD_TO_PLAYLIST)),
-        &playlist_submenu,
-    );
-
-    if matches!(*shared.source.borrow(), ViewSource::Playlist(_)) {
-        let remove_section = gio::Menu::new();
-        remove_section.append(
-            Some(&strings::text(strings::CONTEXT_MENU_REMOVE_FROM_PLAYLIST)),
-            Some(&format!(
-                "{ACTION_GROUP_NAME}.{ACTION_REMOVE_FROM_PLAYLIST}"
-            )),
-        );
-        menu.append_section(None, &remove_section);
-    }
-
-    // Stage 3 Task 8: the Missing source's problem-source actions — "Rescan
-    // library" acts on the persisted library root regardless of selection
-    // (so it's offered even with nothing selected), "Remove from library"
-    // acts on the current selection, exactly like "Remove from playlist"
-    // above.
-    if matches!(*shared.source.borrow(), ViewSource::Missing) {
-        let missing_section = gio::Menu::new();
-        missing_section.append(
-            Some(&strings::text(strings::CONTEXT_MENU_RESCAN_LIBRARY)),
-            Some(&format!("{ACTION_GROUP_NAME}.{ACTION_RESCAN_LIBRARY}")),
-        );
-        menu.append_section(None, &missing_section);
-    }
-
-    delete_tracks::append_menu_section(&menu, ACTION_GROUP_NAME);
-
-    menu
 }
 
 /// Builds the `"tracklist"` `gio::SimpleActionGroup` once (at `TrackList::
@@ -264,7 +243,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
     column_view: &gtk4::ColumnView,
     shared: &Rc<Shared>,
 ) {
-    let action_group = gio::SimpleActionGroup::new();
+    let action_group = shared.menu_actions.clone();
 
     let play_action = gio::SimpleAction::new(ACTION_PLAY, None);
     {
@@ -294,32 +273,80 @@ pub(in crate::ui) fn wire_context_menu_actions(
         });
     }
     action_group.add_action(&queue_action);
-    sync_enqueue_action_sensitivity(shared, &play_next_action, &queue_action);
+
+    let move_to_top_action = gio::SimpleAction::new(ACTION_MOVE_TO_TOP, None);
     {
-        let selection = shared.selection.clone();
-        let shared = Rc::downgrade(shared);
-        let play_next_action = play_next_action.clone();
-        let queue_action = queue_action.clone();
-        selection.connect_selection_changed(move |_, _, _| {
-            if let Some(shared) = shared.upgrade() {
-                sync_enqueue_action_sensitivity(&shared, &play_next_action, &queue_action);
+        let shared = shared.clone();
+        move_to_top_action.connect_activate(move |_, _| {
+            let rows = track_list_queue_menu::selected_rows(&shared);
+            let callback = shared.on_queue_move_to_top.borrow().clone();
+            let moved = callback.map_or(0, |callback| callback(&rows));
+            if moved > 0 {
+                show_toast(&shared, &strings::tracks_moved_to_top_toast(moved));
             }
         });
     }
-    {
-        let model = shared.model.clone();
-        let shared = Rc::downgrade(shared);
-        let play_next_action = play_next_action.clone();
-        let queue_action = queue_action.clone();
-        model.connect_items_changed(move |_, _, _, _| {
-            if let Some(shared) = shared.upgrade() {
-                sync_enqueue_action_sensitivity(&shared, &play_next_action, &queue_action);
-            }
-        });
-    }
+    action_group.add_action(&move_to_top_action);
+
     track_list_queue_menu::add_remove_action(&action_group, shared);
     tag_edit_flow::add_action(&action_group, shared);
     delete_tracks::add_actions(&action_group, column_view, shared);
+
+    let go_to_album_action = gio::SimpleAction::new(ACTION_GO_TO_ALBUM, None);
+    {
+        let shared = shared.clone();
+        go_to_album_action.connect_activate(move |_, _| {
+            let Some(track) = current_selection_tracks(&shared).into_iter().next() else {
+                return;
+            };
+            let callback = shared.on_go_to_album.borrow().clone();
+            if let Some(callback) = callback {
+                callback(track.album, track.album_artist);
+            }
+        });
+    }
+    action_group.add_action(&go_to_album_action);
+
+    let go_to_artist_action = gio::SimpleAction::new(ACTION_GO_TO_ARTIST, None);
+    {
+        let shared = shared.clone();
+        go_to_artist_action.connect_activate(move |_, _| {
+            let Some(track) = current_selection_tracks(&shared).into_iter().next() else {
+                return;
+            };
+            let callback = shared.on_go_to_artist.borrow().clone();
+            if let Some(callback) = callback {
+                callback(track.album_artist);
+            }
+        });
+    }
+    action_group.add_action(&go_to_artist_action);
+
+    let show_in_files_action = gio::SimpleAction::new(ACTION_SHOW_IN_FILES, None);
+    {
+        let shared = shared.clone();
+        show_in_files_action.connect_activate(move |_, _| {
+            let paths: Vec<_> = current_selection_tracks(&shared)
+                .into_iter()
+                .filter(|track| !track.is_missing())
+                .map(|track| std::path::PathBuf::from(track.path))
+                .collect();
+            show_in_files::show_in_files(&paths);
+        });
+    }
+    action_group.add_action(&show_in_files_action);
+
+    let show_missing_action = gio::SimpleAction::new(ACTION_SHOW_IN_MISSING_FILES, None);
+    {
+        let shared = shared.clone();
+        show_missing_action.connect_activate(move |_, _| {
+            let callback = shared.on_show_missing_files.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+    }
+    action_group.add_action(&show_missing_action);
 
     let add_to_playlist_action =
         gio::SimpleAction::new(ACTION_ADD_TO_PLAYLIST, Some(glib::VariantTy::INT64));
@@ -355,13 +382,6 @@ pub(in crate::ui) fn wire_context_menu_actions(
         });
     }
     action_group.add_action(&remove_action);
-
-    let rescan_library_action = gio::SimpleAction::new(ACTION_RESCAN_LIBRARY, None);
-    {
-        let shared = shared.clone();
-        rescan_library_action.connect_activate(move |_, _| handle_rescan_library(&shared));
-    }
-    action_group.add_action(&rescan_library_action);
 
     let remove_from_library_action = gio::SimpleAction::new(ACTION_REMOVE_FROM_LIBRARY, None);
     {
@@ -413,8 +433,10 @@ fn show_context_menu(
     popover.popup();
 }
 
-/// "Play" action handler (`ACTION_PLAY`) — see `ui::track_actions::
-/// play_selected_ids`'s doc comment for the semantics.
+/// "Play" action handler (`ACTION_PLAY`) — see `ui::track_playback_
+/// selection::context_play_decision`'s doc comment for the PLAY-4b
+/// missing-aware semantics: an all-missing selection explains instead of
+/// playing, a mixed selection plays only the playable ids.
 pub(in crate::ui) fn handle_context_play(shared: &Rc<Shared>) {
     let positions = current_selection_positions(shared);
     match track_playback_selection::context_play_decision(&positions, &shared.model) {
@@ -423,7 +445,7 @@ pub(in crate::ui) fn handle_context_play(shared: &Rc<Shared>) {
             first_position,
         } => {
             if !track_list_queue_menu::play_position_if_queue(shared, first_position) {
-                handle_play(shared, &ids);
+                handle_play(shared, first_position, &ids);
             }
         }
         ContextPlayDecision::Explain(track) => {
@@ -435,21 +457,27 @@ pub(in crate::ui) fn handle_context_play(shared: &Rc<Shared>) {
     }
 }
 
-fn handle_play(shared: &Rc<Shared>, ids: &[i64]) {
-    let Some((ids, start_index)) = track_actions::play_selected_ids(ids) else {
-        tracing::debug!("context menu: play requested with nothing selected; ignoring");
+/// Starts playback for a non-Queue source via the same `on_activate` seam
+/// row activation uses (`ui::track_list_activation::activate_track`) — the
+/// CTX unification folded the dedicated `on_play_selected` callback into
+/// this single playback entry point. `first_position` resolves the
+/// representative `Track` `on_activate` expects; `ids` (already filtered to
+/// playable tracks by `context_play_decision`) with start index `0` are
+/// exactly `PlayerController::play_from_view`'s parameters — Rhythmbox's
+/// context-menu-play semantics: start at the first selected row, with every
+/// other selected row queued right after it.
+fn handle_play(shared: &Rc<Shared>, first_position: u32, ids: &[i64]) {
+    let Some(track) = shared.model.track_at(first_position) else {
+        tracing::warn!(
+            first_position,
+            "context menu: play action fired but no track at the first selected position"
+        );
         return;
     };
     let count = ids.len();
-    let callback = shared.on_play_selected.borrow().clone();
+    tracing::info!(count, "context menu: play action starting playback");
     let source = shared.source.borrow().clone();
-    match callback {
-        Some(callback) => callback(ids, start_index, source),
-        None => tracing::warn!(
-            count,
-            "context menu: play action fired but no on_play_selected callback is wired"
-        ),
-    }
+    (shared.on_activate)(&track, ids.to_vec(), 0, source);
 }
 
 /// Looks up `playlist_id`'s display name for a toast, falling back to a
@@ -564,27 +592,22 @@ pub(in crate::ui) fn handle_remove_from_playlist(shared: &Rc<Shared>, positions:
     }
 }
 
-/// "Rescan library" action handler (`ACTION_RESCAN_LIBRARY`, Missing source
-/// only, Stage 3 Task 8) — hoisted clone-out then call, per this project's
-/// `RefCell` callback discipline; `window.rs`'s `trigger_rescan_of_library_
-/// root` (wired via `TrackList::set_on_rescan_library`) owns the actual scan
-/// flow and its own toasts, so there is nothing further to do here on
-/// either outcome.
-fn handle_rescan_library(shared: &Rc<Shared>) {
-    let callback = shared.on_rescan_library.borrow().clone();
-    match callback {
-        Some(callback) => callback(),
-        None => tracing::warn!(
-            "context menu: rescan-library fired but no on_rescan_library callback is wired"
-        ),
-    }
-}
-
 /// "Remove from library" action handler (`ACTION_REMOVE_FROM_LIBRARY`,
-/// Missing source only, Stage 3 Task 8) — see `ui::track_actions::remove_
-/// missing_selected`'s doc comment for the DB-only delete guarantee. A no-op
-/// for an empty selection.
+/// Missing source only) — see `ui::track_actions::remove_missing_selected`'s
+/// doc comment for the DB-only delete guarantee. Guarded on `ViewSource::
+/// Missing` the same way `handle_remove_from_playlist` guards on
+/// `ViewSource::Playlist`: the CTX-unified menu has no dedicated entry
+/// pointing at this action (its generic `delete_tracks`-owned "Remove from
+/// library…" covers every other source instead), so this stays reachable
+/// only via the `REPRISE_SMOKE_MENU_ACTION=remove-from-library` hook, always
+/// combined with a Missing-source selection. A no-op for an empty selection.
 pub(in crate::ui) fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]) {
+    if !matches!(*shared.source.borrow(), ViewSource::Missing) {
+        tracing::warn!(
+            "context menu: remove-from-library fired outside the Missing source; ignoring"
+        );
+        return;
+    }
     if ids.is_empty() {
         tracing::debug!(
             "context menu: remove-from-library requested with nothing selected; ignoring"
@@ -611,11 +634,11 @@ pub(in crate::ui) fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]
     }
 }
 
-/// Clone-out-then-call `on_library_mutated` (Stage 3 Task 8) — see the
-/// `Shared::on_library_mutated` doc comment in `track_list.rs`. `removed_
-/// ids` is the exact set `queries::remove_missing_tracks` actually deleted
-/// (Stage-3 close-out), passed through so `window.rs`'s wiring can purge
-/// those same ids from the playback queue.
+/// Clone-out-then-call `on_library_mutated` — see the `Shared::on_library_
+/// mutated` doc comment in `track_list.rs`. `removed_ids` is the exact set
+/// `queries::remove_missing_tracks` actually deleted, passed through so
+/// `window.rs`'s wiring can purge those same ids from the playback queue
+/// (`PlayerController::purge_queue_ids`).
 fn notify_library_mutated(shared: &Rc<Shared>, removed_ids: &[i64]) {
     let callback = shared.on_library_mutated.borrow().clone();
     match callback {

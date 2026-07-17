@@ -78,6 +78,44 @@ fn toggle_action(
     }
 }
 
+fn move_rows_to_front(
+    context: &mut Queue,
+    pending: &mut UpNextQueue,
+    rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
+) -> usize {
+    use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+    let base = context.current_order_position();
+    let mut ids = Vec::new();
+    let mut play_next_positions = Vec::new();
+    let mut snapshot_positions = Vec::new();
+    for row in rows {
+        match *row {
+            QueueRow::PlayNext(position) => {
+                if let Some(id) = pending.ids().get(position).copied() {
+                    ids.push(id);
+                    play_next_positions.push(position);
+                }
+            }
+            QueueRow::UpNext(offset) => {
+                let Some(position) = base.map(|base| base + 1 + offset) else {
+                    continue;
+                };
+                if let Some(id) = context.id_at_order_position(position) {
+                    ids.push(id);
+                    snapshot_positions.push(position);
+                }
+            }
+            QueueRow::NowPlaying => {}
+        }
+    }
+
+    pending.remove_positions(&play_next_positions);
+    context.remove_order_positions(&snapshot_positions);
+    pending.prepend(&ids);
+    ids.len()
+}
+
 /// The Queue view's composite parts (QUE-1), in display order. Produced by
 /// `PlayerController::queue_view_sections`, composed into the visible model
 /// by `ui::track_list::queue_sections::compose`.
@@ -288,6 +326,24 @@ impl PlayerController {
         self.notify_queue_changed();
         self.sync_transport_enabled(true);
         tracing::info!(added = ids.len(), "tracks queued to play next");
+    }
+
+    /// Moves selected composite Queue rows to the start of Play Next in
+    /// selection order. Snapshot rows are promoted out of their context;
+    /// Now Playing is intentionally skipped.
+    pub(in crate::ui) fn move_queue_rows_to_top(
+        &self,
+        rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
+    ) -> usize {
+        let moved = {
+            let mut context = self.queue.borrow_mut();
+            let mut pending = self.up_next.borrow_mut();
+            move_rows_to_front(&mut context, &mut pending, rows)
+        };
+        if moved > 0 {
+            self.notify_queue_changed();
+        }
+        moved
     }
 
     /// QUE-3's "Clear queue" button: empties ONLY the manual Play Next
@@ -586,107 +642,5 @@ impl PlayerController {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use reprise_core::queue::Repeat;
-
-    /// Context queue seeded with `ids`, currently playing the one at
-    /// `start_index` — the ordinary "playing from the Library view" shape.
-    fn context(ids: &[i64], start_index: usize) -> Queue {
-        let mut queue = Queue::new();
-        queue.set_tracks(ids.to_vec(), start_index);
-        queue
-    }
-
-    fn pending(ids: &[i64]) -> UpNextQueue {
-        let mut up_next = UpNextQueue::default();
-        up_next.append(ids);
-        up_next
-    }
-
-    #[test]
-    fn purging_the_playing_context_track_plays_the_next_surviving_one() {
-        let mut queue = context(&[10, 20, 30], 0);
-        let mut up_next = pending(&[]);
-        let mut current_pending = None;
-        // `purge_queue_ids` runs this first; it already steps the cursor onto
-        // the next survivor, which is why the successor must NOT advance again.
-        queue.remove_ids(&[10]);
-
-        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
-
-        assert_eq!(next, Some(20));
-        assert_eq!(current_pending, None);
-    }
-
-    #[test]
-    fn purging_the_playing_context_track_prefers_a_pending_up_next_track() {
-        let mut queue = context(&[10, 20], 0);
-        let mut up_next = pending(&[99]);
-        let mut current_pending = None;
-        queue.remove_ids(&[10]);
-
-        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
-
-        assert_eq!(next, Some(99));
-        assert_eq!(current_pending, Some(99));
-        assert!(up_next.is_empty());
-    }
-
-    #[test]
-    fn purging_the_playing_up_next_track_steps_the_context_forward() {
-        // The context cursor still sits on 10 — the track that played before
-        // the up-next interjection — so resuming it would replay it.
-        let mut queue = context(&[10, 20], 0);
-        let mut up_next = pending(&[]);
-        let mut current_pending = None;
-
-        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, true);
-
-        assert_eq!(next, Some(20));
-        assert_eq!(current_pending, None);
-    }
-
-    #[test]
-    fn purging_the_last_surviving_track_stops_playback() {
-        let mut queue = context(&[10], 0);
-        let mut up_next = pending(&[]);
-        let mut current_pending = None;
-        queue.remove_ids(&[10]);
-
-        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
-
-        assert_eq!(next, None);
-    }
-
-    #[test]
-    fn purging_the_playing_track_under_repeat_one_moves_on_instead_of_looping() {
-        // Repeat::One cannot repeat a track that no longer exists, so the
-        // deleted track's successor wins over the repeat mode.
-        let mut queue = context(&[10, 20], 0);
-        queue.set_repeat(Repeat::One);
-        let mut up_next = pending(&[]);
-        let mut current_pending = None;
-        queue.remove_ids(&[10]);
-
-        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
-
-        assert_eq!(next, Some(20));
-    }
-
-    #[test]
-    fn stopped_toggle_starts_current_queue_track_without_autoplay() {
-        assert_eq!(
-            toggle_action(MprisPlaybackStatus::Stopped, Some(42), false),
-            ToggleAction::StartCurrent
-        );
-        assert_eq!(
-            toggle_action(MprisPlaybackStatus::Stopped, None, true),
-            ToggleAction::StartPending
-        );
-        assert_eq!(
-            toggle_action(MprisPlaybackStatus::Stopped, None, false),
-            ToggleAction::Noop
-        );
-    }
-}
+#[path = "queue_transport_tests.rs"]
+mod tests;
