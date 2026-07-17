@@ -158,7 +158,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **PLAY-5a** [aktiv] [core] — Deleted-Hygiene: Extern gelöschte Tracks
   verlassen die Queue still; der spielende Track wird dadurch nie gestoppt
   (faultet der spielende Track selbst, gilt FB-6: Skip + ein Toast).
-- **PLAY-5b** [geplant] [core] — Unmounted-Hygiene: Unmountete Tracks bleiben
+- **PLAY-5b** [aktiv] [core] — Unmounted-Hygiene: Unmountete Tracks bleiben
   grau in der Queue, werden beim Advance übersprungen und heilen beim
   Mount-Event (P-6). Kein Hintergrundereignis (deleted, unmounted,
   Sync-Removal, Watcher) stoppt den spielenden Track — explizite
