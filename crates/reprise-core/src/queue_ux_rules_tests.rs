@@ -37,6 +37,81 @@ fn play_3a_shuffle_stays_inside_filtered_snapshot() {
     );
 }
 
+// UX PLAY-4a: list playback never seeds missing rows, and a track that goes
+// missing after it was queued is skipped silently in either pending layer.
+#[test]
+fn play_4a_list_playback_and_queue_advance_skip_missing_silently() {
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    for (id, missing_since) in [(1_i64, None), (2, Some(1_i64)), (3, None)] {
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, added_at, missing_since, missing_reason) \
+             VALUES (?1, ?2, ?3, 'Artist', 0, ?4, \
+                     CASE WHEN ?4 IS NULL THEN NULL ELSE 'deleted' END)",
+            rusqlite::params![
+                id,
+                format!("/x/{id}.flac"),
+                format!("Track {id}"),
+                missing_since
+            ],
+        )
+        .unwrap();
+    }
+    let playlist_id = crate::library::playlists::create(&conn, "P1").unwrap();
+    crate::library::playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playable = crate::queries::query_track_ids(
+        &conn,
+        &crate::view_source::ViewSource::Playlist(playlist_id),
+        "playlist_order",
+        "asc",
+        "",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(playable, vec![1, 3], "Play all skips missing list rows");
+    let mut shuffled = Queue::new();
+    shuffled.set_tracks(playable.clone(), 0);
+    shuffled.set_shuffle(true);
+    let mut shuffled_ids = shuffled.ids_in_order();
+    shuffled_ids.sort_unstable();
+    assert_eq!(
+        shuffled_ids,
+        vec![1, 3],
+        "Shuffle uses the same playable set"
+    );
+
+    let mut context = Queue::new();
+    context.set_tracks(vec![1, 2, 2, 3], 0);
+    assert_eq!(context.peek_auto_matching(|id| id != 2), Some(3));
+    assert_eq!(
+        context.current(),
+        Some(1),
+        "pre-feed must not move the playhead"
+    );
+    assert_eq!(
+        context.advance_auto_matching(|id| id != 2),
+        Some(3),
+        "every row that became missing after queue creation is skipped"
+    );
+    assert_eq!(context.ids_in_order(), vec![1, 2, 2, 3]);
+
+    let mut unavailable = Queue::new();
+    unavailable.set_tracks(vec![1, 2, 3], 0);
+    unavailable.set_repeat(Repeat::All);
+    assert_eq!(unavailable.advance_auto_matching(|_| false), None);
+    assert_eq!(
+        unavailable.ids_in_order(),
+        vec![1, 2, 3],
+        "skipped unavailable entries stay in the durable queue"
+    );
+
+    let mut pending = crate::up_next::UpNextQueue::default();
+    pending.append(&[2, 2, 3]);
+    assert_eq!(pending.take_first_matching(|id| id != 2), Some(3));
+    assert_eq!(pending.ids(), &[2, 2]);
+}
+
 // UX PLAY-5a: externally deleted tracks leave the queue silently; the
 // playing track stays untouched.
 #[test]
