@@ -423,8 +423,9 @@ fn handle_play(shared: &Rc<Shared>, ids: &[i64]) {
     };
     let count = ids.len();
     let callback = shared.on_play_selected.borrow().clone();
+    let source = shared.source.borrow().clone();
     match callback {
-        Some(callback) => callback(ids, start_index),
+        Some(callback) => callback(ids, start_index, source),
         None => tracing::warn!(
             count,
             "context menu: play action fired but no on_play_selected callback is wired"

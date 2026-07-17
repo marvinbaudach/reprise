@@ -220,8 +220,15 @@ pub fn build(
 
     let on_activate: OnActivate = {
         let player = player.clone();
-        Box::new(move |track, ids, start_index| match &player {
-            Some(player) => player.play_from_view(ids, start_index),
+        let conn = conn.clone();
+        Box::new(move |track, ids, start_index, source| match &player {
+            Some(player) => {
+                let origin = {
+                    let conn = conn.borrow();
+                    crate::ui::playback::play_origin::resolve(&conn, &source)
+                };
+                player.play_from_view(ids, start_index, origin);
+            }
             None => {
                 tracing::warn!(path = %track.path, "player unavailable; ignoring activation");
             }

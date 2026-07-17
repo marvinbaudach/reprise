@@ -44,7 +44,8 @@ pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &
         return;
     }
     let (ids, start_index) = queue_ids_for_activation(shared, position, track.id);
-    (shared.on_activate)(track, ids, start_index);
+    let source = shared.source.borrow().clone();
+    (shared.on_activate)(track, ids, start_index, source);
 }
 
 /// Builds the `(ids, start_index)` pair `OnActivate` carries: every track id

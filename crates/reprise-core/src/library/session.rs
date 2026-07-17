@@ -41,6 +41,16 @@ pub struct SessionState {
     pub up_next: UpNextQueue,
     #[serde(default, deserialize_with = "deserialize_current_up_next")]
     pub current_up_next: Option<i64>,
+    /// Where the current playback snapshot was started from (QUE-1's
+    /// "Up Next · from <source>" and NAV-9's jump target). `None` for
+    /// sessions saved before the field existed or when nothing was played.
+    #[serde(default, deserialize_with = "deserialize_play_origin")]
+    pub play_origin: Option<SessionSource>,
+    /// Display label resolved at play time (playlist/album/artist name, or
+    /// the localized "Music") — stored so the Queue view's section title
+    /// survives a restart without re-resolving names that may have changed.
+    #[serde(default, deserialize_with = "deserialize_play_origin_label")]
+    pub play_origin_label: Option<String>,
 }
 
 impl Default for SessionState {
@@ -58,6 +68,8 @@ impl Default for SessionState {
             queue: empty_queue(),
             up_next: UpNextQueue::default(),
             current_up_next: None,
+            play_origin: None,
+            play_origin_label: None,
         }
     }
 }
@@ -136,6 +148,17 @@ fn normalize(mut state: SessionState) -> SessionState {
     } else if state.sort_dir != "desc" {
         state.sort_dir = "asc".into();
     }
+    if matches!(
+        state.play_origin,
+        Some(SessionSource::Playlist(id) | SessionSource::Smart(id)) if id <= 0
+    ) {
+        state.play_origin = None;
+    }
+    if state.play_origin.is_none() {
+        state.play_origin_label = None;
+    } else if let Some(label) = state.play_origin_label.as_mut() {
+        truncate_utf8(label, 256);
+    }
     let queue_limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
     state.up_next.truncate(queue_limit);
     if state.queue.ids.len() > queue_limit {
@@ -159,6 +182,22 @@ where
 }
 
 fn deserialize_current_up_next<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+fn deserialize_play_origin<'de, D>(deserializer: D) -> Result<Option<SessionSource>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+fn deserialize_play_origin_label<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -211,6 +250,8 @@ mod tests {
             },
             up_next: UpNextQueue::default(),
             current_up_next: None,
+            play_origin: None,
+            play_origin_label: None,
         }
     }
 
@@ -263,6 +304,45 @@ mod tests {
         state.queue.position = Some(0);
         save(&conn, &state).unwrap();
         assert_eq!(load(&conn).queue, empty_queue());
+    }
+
+    #[test]
+    fn legacy_json_without_play_origin_loads_none() {
+        let mut value = serde_json::to_value(full_state()).unwrap();
+        value.as_object_mut().unwrap().remove("play_origin");
+        value.as_object_mut().unwrap().remove("play_origin_label");
+        let state: SessionState = serde_json::from_value(value).unwrap();
+        assert_eq!(state.play_origin, None);
+        assert_eq!(state.play_origin_label, None);
+    }
+
+    #[test]
+    fn play_origin_round_trips_and_corrupt_degrades_to_none() {
+        let conn = conn();
+        let mut state = full_state();
+        state.play_origin = Some(SessionSource::Playlist(7));
+        state.play_origin_label = Some("Late Night".into());
+        save(&conn, &state).unwrap();
+        assert_eq!(load(&conn), state);
+
+        let mut value = serde_json::to_value(&state).unwrap();
+        value["play_origin"] = serde_json::json!({ "kind": "nonsense" });
+        value["play_origin_label"] = serde_json::json!(42);
+        let degraded: SessionState = serde_json::from_value(value).unwrap();
+        assert_eq!(degraded.play_origin, None);
+        assert_eq!(degraded.play_origin_label, None);
+    }
+
+    #[test]
+    fn play_origin_with_invalid_playlist_id_is_dropped_by_normalize() {
+        let conn = conn();
+        let mut state = full_state();
+        state.play_origin = Some(SessionSource::Smart(0));
+        state.play_origin_label = Some("Broken".into());
+        save(&conn, &state).unwrap();
+        let loaded = load(&conn);
+        assert_eq!(loaded.play_origin, None);
+        assert_eq!(loaded.play_origin_label, None);
     }
 
     #[test]
