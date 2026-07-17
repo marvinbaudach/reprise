@@ -22,10 +22,12 @@ require_pattern() {
 }
 
 require_executable scripts/check-architecture.sh
+require_executable scripts/check-motion-tokens.sh
 require_executable scripts/check-merge-readiness.sh
 require_executable scripts/install-git-hooks.sh
 require_executable scripts/cua-e2e/run.sh
 require_executable scripts/tests/cua-e2e.sh
+require_executable scripts/tests/motion-tokens.sh
 require_executable .githooks/pre-push
 
 require_pattern 'merge-base --is-ancestor' scripts/check-merge-readiness.sh
@@ -35,6 +37,7 @@ require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings'
 require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
 require_pattern 'cargo audit' scripts/check-merge-readiness.sh
 require_pattern 'check-architecture.sh' scripts/check-merge-readiness.sh
+require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
 require_pattern 'Frontend lint' scripts/check-architecture.sh
 require_pattern 'composition root must stay below 600' scripts/check-architecture.sh
 require_pattern 'UI orchestrators must stay below 600' scripts/check-architecture.sh
@@ -59,6 +62,7 @@ require_pattern '^## Manual release checks' TESTING.md
 require_pattern '^## Known harness constraints' TESTING.md
 
 scripts/tests/cua-e2e.sh
+scripts/tests/motion-tokens.sh
 scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"
