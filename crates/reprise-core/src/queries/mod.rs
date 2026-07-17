@@ -8,10 +8,12 @@
 //!
 //! ## Per-source shape
 //!
-//! - **Library**: `missing = 0` — unchanged from before this task.
-//! - **Missing**: identical shape to Library, `missing = 1` instead.
+//! - **Library**: `clauses::PRESENT` — unchanged in shape from before this
+//!   task; only the underlying predicate moved from the legacy `missing = 0`
+//!   literal to `missing_since IS NULL AND removed_at IS NULL` (Task 1.2).
+//! - **Missing**: identical shape to Library, `clauses::MISSING` instead.
 //! - **Playlist(id)**: `JOIN playlist_tracks pt ON pt.track_id = tracks.id
-//!   WHERE pt.playlist_id = id AND missing = 0`. Duplicates (the same track
+//!   WHERE pt.playlist_id = id AND` `clauses::PRESENT`. Duplicates (the same track
 //!   added to a playlist twice) surface as separate, position-keyed rows —
 //!   a natural consequence of the join, matching Task 2's manual-playlist
 //!   semantics. Default order is `pt.position` via a whitelist *sentinel*
@@ -31,7 +33,7 @@
 //!   `pt.position`; see that field's doc comment and `ui::track_actions::
 //!   remove_selected_from_playlist`.
 //! - **Smart(id)**: loads the `SmartPlaylist` row, ANDs `library::playlists::
-//!   smart_rules_to_sql`'s WHERE fragment with `missing = 0` and the live
+//!   smart_rules_to_sql`'s WHERE fragment with `clauses::PRESENT` and the live
 //!   search filter, and orders/limits by the smart playlist's *own*
 //!   `sort_field`/`sort_dir`/`limit_count` — not whatever `track_list.rs`'s
 //!   current column sort happens to be (a smart playlist's sort is part of
@@ -88,6 +90,7 @@ mod artist_context;
 pub mod autocomplete;
 mod browse;
 mod clauses;
+mod issues;
 mod library;
 pub(crate) mod library_views;
 mod maintenance;
@@ -98,6 +101,21 @@ mod smart;
 pub use artist_context::query_artist_albums;
 pub use browse::{query_browse_values, BrowseFacet, BrowseFilter, BrowseValue};
 pub use clauses::build_track_ids_query;
+// Task 1.2: the centralized presence predicate, re-exported so modules
+// outside this one (`library::scanner`, `library::artist_detail`, `db::
+// pending_waveform_tracks`) can share the exact same "row is present" SQL
+// fragment as every query in this module tree — see `clauses::PRESENT`'s
+// doc comment for why a flag-plus-date pair is retired in favor of this one
+// predicate.
+pub(crate) use clauses::PRESENT;
+// `MISSING`'s only current caller outside this module tree is `library::
+// scanner_vanished_tests`'s `missing_count` helper, which mirrors this
+// predicate for a direct-SQL assertion — re-exported regardless, same
+// reasoning as `build_track_query` below, to keep that one string in sync
+// with the predicate it is meant to test rather than drifting as a
+// hand-copied literal.
+#[allow(unused_imports)]
+pub(crate) use clauses::MISSING;
 // `build_track_query`'s only current caller is this module's own test suite
 // (`tests::query_builder_whitelists_and_sorts` et al.) — re-exported `pub`
 // regardless, to keep `crate::queries::build_track_query` resolving exactly
@@ -105,22 +123,44 @@ pub use clauses::build_track_ids_query;
 // where the re-export would otherwise look unused.
 #[allow(unused_imports)]
 pub use clauses::build_track_query;
+// Task 2.1: the missing-file group queries the 18a "self-healing" card list
+// is built directly against — see `issues`'s module doc for the full
+// `MissingGroupKind` taxonomy and why `unknown` never joins `Deleted`.
+// `pub use` (not `pub(crate)`) so `reprise-gnome` can name these types
+// directly, the same reachability fix Task 1's `ImportErrorKind` move to
+// `models` made for the same reason (see that commit's message).
+pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, MissingGroupKind};
+// Task 2.3: the auto-clean read/act split — `auto_clean_eligible` for a
+// preview, `run_auto_clean` for the real unattended deletion. `pub use` for
+// the same cross-crate reachability reason as `query_missing_groups` above:
+// the GUI (a later task) needs to name both directly as `reprise_core::
+// queries::{auto_clean_eligible, run_auto_clean}`.
+pub use issues::{auto_clean_eligible, run_auto_clean};
 pub use library_views::{
     query_album_track_ids, query_albums, query_artist_detail_albums, query_artists, AlbumSummary,
     ArtistAlbum, ArtistSummary,
 };
 pub use maintenance::{
-    delete_all_import_errors, delete_import_error, mark_track_missing, query_import_error_count,
-    query_import_errors, query_live_track_ids, query_live_track_paths, query_sync_tracks,
-    query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
-    query_track_summary, remove_all_missing_tracks, remove_missing_tracks, remove_tracks,
-    track_id_for_path,
+    delete_all_import_errors, delete_import_error, mark_track_missing, purge_tombstones,
+    query_import_error_count, query_import_errors, query_live_track_ids, query_live_track_paths,
+    query_sync_tracks, query_track_album_artist, query_track_ids_by_title_desc,
+    query_track_ids_by_titles, query_track_summary, remove_all_missing_tracks,
+    remove_missing_tracks, remove_tracks, tombstone_tracks, track_id_for_path, undo_tombstone,
 };
 // `remove_missing_track`'s only external caller (beyond `remove_missing_
 // tracks`'s own internal use) is this module's test suite — same reasoning
 // as `build_track_query` above.
 #[allow(unused_imports)]
 pub use maintenance::remove_missing_track;
+// `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
+// `remove_tracks`/`remove_missing_tracks`/`purge_tombstones` all funnel
+// through; not part of the crate's public API, but `tests_issues.rs`'s
+// mid-purge-resurrection regression test (Finding 1) needs to call the
+// `TombstonedOnly`-guarded delete directly — a real thread race can't be
+// scheduled deterministically, so the test proves the guard by driving this
+// same statement with a stale id snapshot instead.
+#[cfg(test)]
+pub(crate) use maintenance::{remove_tracks_impl, RemoveGuard};
 pub use playlist::query_playlist_tracks_full;
 pub use queue::{is_queue_capped, QUEUE_LIMIT};
 
@@ -426,7 +466,7 @@ pub fn query_library_stats_browsed(
     browse: &BrowseFilter,
 ) -> Result<LibraryStats, rusqlite::Error> {
     let (track_count, total_duration_ms) = conn.query_row(
-        "SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE missing = 0",
+        &format!("SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE {PRESENT}"),
         [],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
@@ -443,12 +483,14 @@ pub fn query_library_stats_browsed(
 }
 
 /// One `import_errors` row, as rendered by the ImportErrors source (Stage 3
-/// Task 8: this task builds the real backing query/columns the module doc's
-/// `ImportErrors` section describes — `path`/`reason`/`occurred_at`, the
-/// exact three columns `import_errors` has always had).
+/// Task 8). `path` is the table's primary key as of schema v10 (Task 1.1),
+/// so there is no separate surrogate id to expose. `reason` surfaces the
+/// v10 `reason_detail` column (the human-readable message; the newer typed
+/// `reason_kind` column is scan/self-healing-logic state, not display text,
+/// so it deliberately isn't projected here), and `occurred_at` surfaces
+/// `last_seen` — the most recent scan that still saw this failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportErrorRow {
-    pub id: i64,
     pub path: String,
     pub reason: String,
     pub occurred_at: i64,
@@ -461,6 +503,10 @@ pub struct ImportErrorRow {
 // `tests.rs`'s own doc comment.
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_auto_clean;
+#[cfg(test)]
+mod tests_issues;
 #[cfg(test)]
 mod tests_maintenance;
 #[cfg(test)]

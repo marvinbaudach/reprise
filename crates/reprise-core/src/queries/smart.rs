@@ -7,7 +7,9 @@
 use crate::library::playlists::{self, SmartPlaylist};
 use crate::models::Track;
 
-use super::clauses::{filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track};
+use super::clauses::{
+    filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track, PRESENT,
+};
 use super::queue::QUEUE_LIMIT;
 use super::MAX_WINDOW_LIMIT;
 use rusqlite::Connection;
@@ -47,8 +49,8 @@ fn build_smart_window_query(
     let mut inner_sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing, file_size, device, inode \
-         FROM tracks WHERE missing = 0 AND ({rules_frag})"
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         FROM tracks WHERE {PRESENT} AND ({rules_frag})"
     );
     if has_filter {
         inner_sql.push_str(&filter_clause(true, next_idx));
@@ -123,7 +125,7 @@ pub(super) fn query_track_count_smart(
         }
     };
     let next_idx = params.len() as u8 + 1;
-    let mut sql = format!("SELECT count(*) FROM tracks WHERE missing = 0 AND ({rules_frag})");
+    let mut sql = format!("SELECT count(*) FROM tracks WHERE {PRESENT} AND ({rules_frag})");
     if has_filter {
         sql.push_str(&filter_clause(true, next_idx));
         params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
@@ -159,7 +161,7 @@ pub(super) fn query_track_ids_smart(
         }
     };
     let next_idx = params.len() as u8 + 1;
-    let mut sql = format!("SELECT id FROM tracks WHERE missing = 0 AND ({rules_frag})");
+    let mut sql = format!("SELECT id FROM tracks WHERE {PRESENT} AND ({rules_frag})");
     if has_filter {
         sql.push_str(&filter_clause(true, next_idx));
         params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));

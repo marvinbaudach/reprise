@@ -321,12 +321,32 @@ pub fn apply_patch_batch(
         }
 
         match crate::library::scanner::scan_folder(conn, path) {
-            Ok(scan) if scan.errors == 0 => report.updated_ids.push(*id),
-            Ok(scan) => report.failures.push(TagWriteFailure {
-                id: *id,
-                path: path.clone(),
-                error: format!("tag reconciliation reported {} error(s)", scan.errors),
-            }),
+            Ok(crate::library::scanner::ScanOutcome::Completed(scan)) if scan.errors == 0 => {
+                report.updated_ids.push(*id);
+            }
+            Ok(crate::library::scanner::ScanOutcome::Completed(scan)) => {
+                report.failures.push(TagWriteFailure {
+                    id: *id,
+                    path: path.clone(),
+                    error: format!("tag reconciliation reported {} error(s)", scan.errors),
+                });
+            }
+            // The "root" here is always a single already-registered file
+            // (never a directory), so `RootUnavailable` means it vanished
+            // out from under the tag write between the write above and this
+            // reconciliation scan (e.g. its mount was pulled mid-batch) —
+            // treated as a reconciliation failure like the `Err` arm below,
+            // since there is nothing left to reconcile against.
+            Ok(crate::library::scanner::ScanOutcome::RootUnavailable { root }) => {
+                report.failures.push(TagWriteFailure {
+                    id: *id,
+                    path: path.clone(),
+                    error: format!(
+                        "tag reconciliation failed: library folder unavailable: {}",
+                        root.display()
+                    ),
+                });
+            }
             Err(error) => report.failures.push(TagWriteFailure {
                 id: *id,
                 path: path.clone(),

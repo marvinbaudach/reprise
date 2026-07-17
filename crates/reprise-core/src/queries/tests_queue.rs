@@ -266,7 +266,8 @@ fn import_errors_source_is_always_empty_for_now() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     conn.execute(
-        "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/x/a.flac', 'bad tag', 0)",
+        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
+         VALUES ('/x/a.flac', 'tag', 'bad tag', 0, 0)",
         [],
     )
     .unwrap();

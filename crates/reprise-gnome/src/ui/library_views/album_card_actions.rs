@@ -62,10 +62,10 @@ mod tests {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         conn.execute_batch(
-            "INSERT INTO tracks (id,path,title,artist,album,album_artist,track_no,added_at,missing) VALUES
-             (1,'/a.flac','A','Art','Alb','',3,0,0),
-             (2,'/b.flac','B','Art','Alb','',1,0,0),
-             (3,'/c.flac','C','Art','Alb','',2,0,0);",
+            "INSERT INTO tracks (id,path,title,artist,album,album_artist,track_no,added_at) VALUES
+             (1,'/a.flac','A','Art','Alb','',3,0),
+             (2,'/b.flac','B','Art','Alb','',1,0),
+             (3,'/c.flac','C','Art','Alb','',2,0);",
         )
         .unwrap();
         let album = AlbumSummary {

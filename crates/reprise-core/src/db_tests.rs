@@ -37,7 +37,7 @@ fn migrate_version_step_is_atomic_a_rollback_leaves_no_partial_schema() {
     let version_after: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version_after, 9);
+    assert_eq!(version_after, 11);
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn migrate_creates_tracks_table_and_is_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
 }
 
 /// Builds a v1 DB by hand (SCHEMA_V1 + `user_version = 1`, exactly what a
@@ -77,7 +77,7 @@ fn migrate_v1_to_v2_adds_columns_preserves_data_and_is_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 9); // Now goes to the current schema (v9)
+    assert_eq!(version, 11); // Now goes to the current schema (v11)
 
     let (title, rating, play_count, added_at, file_size, device, inode): (
         String,
@@ -119,7 +119,7 @@ fn migrate_v1_to_v2_adds_columns_preserves_data_and_is_idempotent() {
     let version_after_second_run: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version_after_second_run, 9); // Current schema
+    assert_eq!(version_after_second_run, 11); // Current schema
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn migrate_v2_to_v3_creates_playlist_tables_and_seeds_smart_playlists() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 9); // walks all the way to the current schema version (v9)
+    assert_eq!(version, 11); // walks all the way to the current schema version (v11)
 
     // Verify tables exist.
     let playlists_exist: bool = conn
@@ -306,7 +306,7 @@ fn migrate_v3_to_v4_creates_settings_table_preserves_data_and_is_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
 
     let settings_exist: bool = conn
         .query_row(
@@ -337,7 +337,7 @@ fn migrate_v3_to_v4_creates_settings_table_preserves_data_and_is_idempotent() {
     let version_after_second_run: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version_after_second_run, 9);
+    assert_eq!(version_after_second_run, 11);
 }
 
 #[test]
@@ -359,7 +359,7 @@ fn migrate_v4_to_v5_creates_listenbrainz_queue_and_preserves_settings() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
     let setting: String = conn
         .query_row("SELECT value FROM settings WHERE key = 'keep'", [], |row| {
             row.get(0)
@@ -398,7 +398,7 @@ fn migrate_v6_to_v7_creates_listen_events_and_preserves_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
 
     let listen_events_exist: bool = conn
             .query_row(
@@ -429,7 +429,7 @@ fn migrate_v6_to_v7_creates_listen_events_and_preserves_tracks() {
     let version_after: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version_after, 9);
+    assert_eq!(version_after, 11);
 }
 
 /// The FK on `listen_events.track_id` cascades: deleting a track removes
@@ -483,7 +483,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
     let lastfm_exists: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",
@@ -508,7 +508,7 @@ fn migrate_v7_to_v8_adds_waveform_peaks_column() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
     // Column exists and is nullable
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/test.flac', 'T', 'A', 0)",
@@ -561,7 +561,7 @@ fn open_migrated_returns_a_ready_to_use_database() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
     conn.execute(
         "INSERT INTO tracks (path, title, added_at) VALUES ('/ready.flac', 'Ready', 0)",
         [],
@@ -572,14 +572,15 @@ fn open_migrated_returns_a_ready_to_use_database() {
 #[test]
 fn pending_waveform_tracks_excludes_cached_and_missing_rows() {
     let conn = open_migrated(None).unwrap();
-    for (id, path, missing) in [
-        (1, "/one.flac", 0),
-        (2, "/two.flac", 0),
-        (3, "/missing.flac", 1),
+    for (id, path, missing_since) in [
+        (1, "/one.flac", None),
+        (2, "/two.flac", None),
+        (3, "/missing.flac", Some(1)),
     ] {
         conn.execute(
-            "INSERT INTO tracks (id, path, title, added_at, missing) VALUES (?1, ?2, '', 0, ?3)",
-            rusqlite::params![id, path, missing],
+            "INSERT INTO tracks (id, path, title, added_at, missing_since) \
+             VALUES (?1, ?2, '', 0, ?3)",
+            rusqlite::params![id, path, missing_since],
         )
         .unwrap();
     }

@@ -5,6 +5,7 @@
 use rusqlite::{params, Connection};
 
 use crate::queries::library_views::EFFECTIVE_ALBUM_ARTIST;
+use crate::queries::PRESENT;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtistHeader {
@@ -44,10 +45,10 @@ pub fn artist_header(
            COUNT(*), \
            COALESCE(SUM(duration_ms), 0), \
            ( SELECT COUNT(*) FROM listen_events le JOIN tracks t2 ON t2.id = le.track_id \
-             WHERE t2.missing = 0 AND {effective_album_artist_t2} = ?1 COLLATE NOCASE \
+             WHERE {PRESENT} AND {effective_album_artist_t2} = ?1 COLLATE NOCASE \
              AND le.played_at >= ?2 AND le.played_at <= ?3 ) \
          FROM tracks \
-         WHERE missing = 0 AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE"
+         WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE"
     );
     conn.query_row(&sql, params![artist.trim(), year_start, now_unix], |row| {
         Ok(ArtistHeader {
@@ -66,7 +67,7 @@ pub fn artist_top_tracks(
 ) -> Result<Vec<ArtistTopTrack>, rusqlite::Error> {
     let sql = format!(
         "SELECT id, title, album, path, play_count, duration_ms FROM tracks \
-         WHERE missing = 0 AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+         WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
          ORDER BY play_count DESC, last_played_at DESC, id ASC LIMIT ?2"
     );
     let mut statement = conn.prepare(&sql)?;
@@ -92,10 +93,10 @@ mod tests {
         crate::db::migrate(&conn).unwrap();
         conn.execute_batch(
             "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
-               duration_ms,play_count,last_played_at,added_at,missing) VALUES
-             (1,'/a.flac','A','Solo','One','Solo',2020,180000,5,100,0,0),
-             (2,'/b.flac','B','Solo','One','Solo',2020,120000,2,50,0,0),
-             (3,'/c.flac','C','Solo','Two','Solo',2022,200000,9,200,0,0);",
+               duration_ms,play_count,last_played_at,added_at) VALUES
+             (1,'/a.flac','A','Solo','One','Solo',2020,180000,5,100,0),
+             (2,'/b.flac','B','Solo','One','Solo',2020,120000,2,50,0),
+             (3,'/c.flac','C','Solo','Two','Solo',2022,200000,9,200,0);",
         )
         .unwrap();
         // one in-year event (2026-03), one prior-year (2025-03)
@@ -151,8 +152,8 @@ mod tests {
         crate::db::migrate(&conn).unwrap();
         conn.execute_batch(
             "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
-               duration_ms,play_count,last_played_at,added_at,missing) VALUES
-             (1,'/a.flac','A','Solo','One','Solo',2026,180000,1,0,0,0);",
+               duration_ms,play_count,last_played_at,added_at) VALUES
+             (1,'/a.flac','A','Solo','One','Solo',2026,180000,1,0,0);",
         )
         .unwrap();
         // One event exactly at the year-start boundary (inclusive, `>=`):
@@ -175,11 +176,11 @@ mod tests {
         crate::db::migrate(&conn).unwrap();
         conn.execute_batch(
             "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
-               duration_ms,play_count,last_played_at,added_at,missing) VALUES
-             (1,'/a.flac','A','Solo','One','Solo',2020,180000,5,100,0,0),
-             (2,'/b.flac','B','Solo','One','Solo',2020,120000,5,200,0,0),
-             (3,'/c.flac','C','Solo','Two','Solo',2022,150000,3,300,0,0),
-             (4,'/d.flac','D','Solo','Two','Solo',2022,150000,3,300,0,0);",
+               duration_ms,play_count,last_played_at,added_at) VALUES
+             (1,'/a.flac','A','Solo','One','Solo',2020,180000,5,100,0),
+             (2,'/b.flac','B','Solo','One','Solo',2020,120000,5,200,0),
+             (3,'/c.flac','C','Solo','Two','Solo',2022,150000,3,300,0),
+             (4,'/d.flac','D','Solo','Two','Solo',2022,150000,3,300,0);",
         )
         .unwrap();
         let top = artist_top_tracks(&conn, "solo", 10).unwrap();

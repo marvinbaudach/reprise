@@ -7,6 +7,7 @@ use crate::models::Track;
 
 use super::clauses::{
     build_track_query_base, build_track_query_browsed, filter_clause, like_pattern, row_to_track,
+    MISSING, PRESENT,
 };
 use super::MAX_WINDOW_LIMIT;
 use super::{browse::browse_clause, BrowseFilter};
@@ -66,7 +67,7 @@ pub(super) fn query_track_count_library(
     let browse_first_param = if has_filter { 2 } else { 1 };
     let (browse_clause, browse_values) = browse_clause(browse, browse_first_param);
     let sql = format!(
-        "SELECT count(*) FROM tracks WHERE missing = 0{}{browse_clause}",
+        "SELECT count(*) FROM tracks WHERE {PRESENT}{}{browse_clause}",
         filter_clause(has_filter, 1),
     );
     let mut params = Vec::new();
@@ -83,7 +84,7 @@ pub(super) fn query_track_count_missing(
 ) -> Result<i64, rusqlite::Error> {
     let has_filter = !filter.trim().is_empty();
     let sql = format!(
-        "SELECT count(*) FROM tracks WHERE missing = 1{}",
+        "SELECT count(*) FROM tracks WHERE {MISSING}{}",
         filter_clause(has_filter, 1)
     );
     if has_filter {

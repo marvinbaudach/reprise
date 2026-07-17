@@ -94,8 +94,11 @@ fn playlist_window_honors_an_explicit_column_sort_override() {
 #[test]
 fn playlist_window_excludes_missing_tracks() {
     let mut conn = seeded_conn_with_tracks(3);
-    conn.execute("UPDATE tracks SET missing = 1 WHERE id = 2", [])
-        .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 2",
+        [],
+    )
+    .unwrap();
     let playlist_id = playlists::create(&conn, "P1").unwrap();
     playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
 
@@ -163,8 +166,11 @@ fn playlist_tracks_full_returns_all_rows_in_position_order() {
 #[test]
 fn playlist_tracks_full_excludes_missing_tracks() {
     let mut conn = seeded_conn_with_tracks(3);
-    conn.execute("UPDATE tracks SET missing = 1 WHERE id = 2", [])
-        .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 2",
+        [],
+    )
+    .unwrap();
     let playlist_id = playlists::create(&conn, "P1").unwrap();
     playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
 
