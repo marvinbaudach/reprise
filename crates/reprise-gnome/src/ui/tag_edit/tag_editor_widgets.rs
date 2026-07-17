@@ -23,15 +23,13 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::cover::{self, ThumbnailSize};
-use reprise_core::library::tag_edit::{EditableTagSummary, MixedValue};
+use reprise_core::library::tag_edit::MixedValue;
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
 use crate::ui::tag_editor::{STAR_FILLED, STAR_OUTLINE};
 use crate::ui::tag_editor_dirty::UpdateCallback;
-use crate::ui::tag_editor_state::{
-    FIELD_ALBUM, FIELD_ALBUM_ARTIST, FIELD_ARTIST, FIELD_GENRE, FIELD_YEAR, RATING_MAX,
-};
+use crate::ui::tag_editor_state::RATING_MAX;
 
 /// Builds the cover art area. For single track, shows a thumbnail. For
 /// multi-track, shows a stacked representation with a count badge. No
@@ -460,78 +458,6 @@ pub(in crate::ui) fn build_field_column(
     column.append(&old_value);
 
     (column, old_value)
-}
-
-/// Returns the original text value for a given field index from a snapshot.
-/// Returns `None` for fields that were Mixed (no single value).
-pub(in crate::ui) fn field_snapshot_text(
-    summary: &EditableTagSummary,
-    field_idx: usize,
-) -> Option<String> {
-    match field_idx {
-        FIELD_ARTIST => match &summary.artist {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_ALBUM => match &summary.album {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_ALBUM_ARTIST => match &summary.album_artist {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_GENRE => match &summary.genre {
-            MixedValue::Uniform(v) => Some(v.clone()),
-            MixedValue::Mixed => None,
-        },
-        FIELD_YEAR => match &summary.year {
-            MixedValue::Uniform(Some(v)) => Some(v.to_string()),
-            MixedValue::Uniform(None) | MixedValue::Mixed => None,
-        },
-        _ => None,
-    }
-}
-
-/// Returns true if the given field was originally Mixed in the snapshot.
-pub(in crate::ui) fn field_snapshot_is_mixed(
-    summary: &EditableTagSummary,
-    field_idx: usize,
-) -> bool {
-    match field_idx {
-        FIELD_ARTIST => matches!(summary.artist, MixedValue::Mixed),
-        FIELD_ALBUM => matches!(summary.album, MixedValue::Mixed),
-        FIELD_ALBUM_ARTIST => matches!(summary.album_artist, MixedValue::Mixed),
-        FIELD_GENRE => matches!(summary.genre, MixedValue::Mixed),
-        FIELD_YEAR => matches!(summary.year, MixedValue::Mixed),
-        _ => false,
-    }
-}
-
-/// Builds a single pending-change item: "Field → Value" with a Revert button.
-pub(in crate::ui) fn build_pending_item(
-    field_name: &str,
-    value: &str,
-    on_revert: Box<dyn Fn()>,
-) -> gtk4::Box {
-    let item = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    item.add_css_class("reprise-tag-pending-item");
-
-    let text = format!("{field_name} \u{2192} {value}");
-    let label = gtk4::Label::builder()
-        .label(&text)
-        .xalign(0.0)
-        .hexpand(true)
-        .ellipsize(gtk4::pango::EllipsizeMode::End)
-        .build();
-    item.append(&label);
-
-    let revert_btn = gtk4::Button::with_label(&strings::text(strings::TAG_REVERT));
-    revert_btn.add_css_class("flat");
-    revert_btn.connect_clicked(move |_| on_revert());
-    item.append(&revert_btn);
-
-    item
 }
 
 #[cfg(test)]
