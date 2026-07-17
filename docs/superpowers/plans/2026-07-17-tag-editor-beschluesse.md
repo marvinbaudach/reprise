@@ -3,15 +3,19 @@
 Normativer Kontext für den Umbau des Tag-Editors nach den Designs 3a (Multi-Track)
 und 4a (Autocomplete). Alle Beschlüsse wurden am 2026-07-17 gegrillt und bestätigt.
 
-> **Ownership-Vermerk:** `docs/ux-rules.md` gehört dem Rules-Branch
-> (`feat/ux-rules-acceptance-tests`). Dieser Branch schreibt **nicht** in diese Datei.
-> Die TAG-Regeln und die fünf referenzierten Regeltexte unten sind bis zum Merge hier
-> normativ; **Integration in `docs/ux-rules.md` nach Merge des Rules-Branch** — landet
-> der Tag-Editor zuerst, trägt der Rules-Branch die TAG-Regeln beim Landen nach. Genau
-> einer integriert, nie beide parallel. Statuswechsel `[geplant] → [aktiv]` passieren
-> bis dahin **in diesem Dokument**, im Implementierungs-Commit der Regel.
+> **Regelwerk-Vermerk (aktualisiert 2026-07-17):** Der Rules-Branch ist inzwischen in
+> `main` gelandet — `docs/ux-rules.md` ist damit die verbindliche UX-Wahrheitsquelle
+> und dieser Branch trägt seine Regeln selbst ein. **TAG-1–8 leben ab sofort in
+> Abschnitt K von `docs/ux-rules.md`** (dort `[geplant]`), ebenso die früher hier
+> rekonstruierten Regeln SET-3, FB-1, FB-3, P-2, P-4 — deren Wortlaut stand bereits
+> im Regelwerk und deckt sich mit dem Diktat. Statuswechsel `[geplant] → [aktiv]`
+> passieren im Implementierungs-Commit der Regel **im Regelwerk**, und nur mit einem
+> regelbenannten Test (`fn tag_1_…` / cua-e2e `tag-1-…`); erzwungen von
+> `scripts/check-ux-traceability.sh`. Dieses Dokument bleibt das Beschluss-Ledger:
+> es hält das *Warum* und die Detailentscheidungen, die unterhalb der Regel-Ebene
+> liegen.
 
-## TAG-Regeln (finaler Wortlaut)
+## TAG-Regeln (Zusammenfassung — normativ ist Abschnitt K in `docs/ux-rules.md`)
 
 - **TAG-1 · Save ist navigationsneutral** `[geplant]` — Speichern ändert weder
   Scroll noch Ansicht der Library (NAV-5 gilt durch den Dialog hindurch); das alte
@@ -90,30 +94,18 @@ und 4a (Autocomplete). Alle Beschlüsse wurden am 2026-07-17 gegrillt und bestä
   Keep editing (Default) / Discard (destruktiv) — kein Save im Prompt; Speichern ist
   nie der Ausweg aus einer Schließen-Geste.
 
-## Referenzierte Regeln (Original-Wortlaut, diktiert 2026-07-17)
+## Referenzierte Regeln
 
-Zur Integration in `docs/ux-rules.md` durch den integrierenden Branch:
+SET-3 (Modal-Ebenen), FB-1 (Zwei-Klassen-Toasts), FB-3 (Fehler sammeln + Details),
+P-2 (Sofort-Feedback, kein toter Button ohne Grund), P-4 (nichts verschiebt sich
+ungefragt) und NAV-5 (Modus-Gedächtnis) stehen im Wortlaut in `docs/ux-rules.md` und
+decken sich mit dem Diktat vom 2026-07-17 — hier keine Zweitfassung, sonst
+divergieren sie. Zwei Präzisierungen, die dieses Vorhaben aus ihnen ableitet:
 
-- **SET-3 · Modal-Ebenen** — Maximal zwei. Ebene 1 = ein Fenster über dem
-  Hauptfenster (Preferences ODER Tag-Editor ODER Shortcuts — nie zwei gleichzeitig).
-  Ebene 2 = genau ein Dialog darüber (FileChooser, Bestätigung). Ein Dialog öffnet
-  nie einen weiteren Dialog. Esc schließt immer die oberste Ebene.
-- **FB-1 · Toasts** — Pill unten zentriert, eine Zeile, max. 1 Action-Button, 4 s
-  (mit Undo: 10 s). Nur für abgeschlossene Aktionen/Ereignisse. Härtung: aktionslose
-  Ereignis-Toasts ersetzen einander (max. 1 wartend); Toasts mit Aktion (Undo) sind
-  unverdrängbar und laufen ihre 10 s.
-- **FB-3 · Fehler** — Einzelfehler im Lauf werden gesammelt, nie einzeln getoastet.
-  Am Ende EIN Toast „N failed · Details" → Details öffnet die zuständige View/den
-  Dialog. Persistente Probleme leben als Badge + ISSUES-Eintrag, nicht als
-  wiederkehrende Toasts.
-- **P-2 · Sofort-Feedback** — Jeder Klick erzeugt in < 100 ms sichtbares Feedback
-  (Zustandswechsel, Spinner im Button, Selektion). Nie ein Klick ins Leere. Kein
-  toter Button ohne benannten Grund (disabled ⇒ Tooltip). Test-Ebene: das Was
-  automatisiert, das Wie-schnell in der [manuell]-Checkliste.
-- **P-4 · Kein ungefragtes Verschieben** — Layout-Shifts nur als direkte Folge einer
-  Nutzeraktion oder eines vom User gestarteten Prozesses. Einblendungen faden ohne
-  Reflow benachbarter Inhalte; für dynamische Elemente (Altwert-Zeile!) ist Platz
-  reserviert.
+- P-2 · „kein toter Button ohne benannten Grund" heißt hier: disabled ⇒ Tooltip
+  (MB-Button, Save-Button).
+- P-4 · „für dynamische Elemente ist Platz reserviert" heißt hier: die Altwert-Zeile
+  unter jedem Feld belegt ihren Platz immer, auch leer.
 
 ## Weitere Beschlüsse (ohne eigene Regel-ID)
 
