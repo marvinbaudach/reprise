@@ -9,6 +9,11 @@ use gtk4::prelude::*;
 
 use super::Shared;
 
+/// Vertical space between the final result row and the explanatory line.
+const LINE_TOP_GAP: i32 = 12;
+/// Vertical space between the final result row and the recovery pill.
+const PILL_TOP_GAP: i32 = 44;
+
 pub(in crate::ui) fn end_line_margin(
     content_height: f64,
     viewport_height: f64,
@@ -74,8 +79,8 @@ fn recompute(
             pill.set_label(&crate::ui::strings::show_all_tracks_label(
                 &reprise_core::format::format_thousands(total as i64),
             ));
-            line_box.set_margin_top(margin + 12);
-            pill.set_margin_top(margin + 44);
+            line_box.set_margin_top(margin + LINE_TOP_GAP);
+            pill.set_margin_top(margin + PILL_TOP_GAP);
             line_box.set_visible(true);
             pill.set_visible(true);
         }
