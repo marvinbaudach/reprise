@@ -387,7 +387,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   — Tracks: Save-Button („Save 30"), Fortschritt („Saving… 12/30") und Toast
   („Tags updated · 30 tracks"). Ohne effektive Änderung ist Save disabled und
   benennt den Grund (P-2).
-- **TAG-6** [geplant] [core] — Autocomplete-Quelle für Artist, Album, Album
+- **TAG-6** [aktiv] [core] — Autocomplete-Quelle für Artist, Album, Album
   Artist und Genre: distinct-Werte der eigenen Library mit Track-Zahl,
   case-insensitive; Präfix-Treffer vor Substring-Treffern, darin nach
   Track-Zahl absteigend; maximal 6 Zeilen, Dropdown ab 2 Zeichen,
