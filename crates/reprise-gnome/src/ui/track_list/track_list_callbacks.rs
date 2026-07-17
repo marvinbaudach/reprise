@@ -32,6 +32,8 @@ pub(in crate::ui) type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize, ViewSource)>;
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 pub(in crate::ui) type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
+/// Navigation callback for the action on a concrete missing-row toast.
+pub(in crate::ui) type OnShowMissing = Rc<dyn Fn(ViewSource)>;
 pub(in crate::ui) type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::QueueRow)>;
 pub(in crate::ui) type OnQueueRemove = Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
 /// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc

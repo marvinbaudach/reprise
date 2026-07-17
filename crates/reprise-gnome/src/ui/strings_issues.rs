@@ -59,6 +59,7 @@ pub const MISSING_TRACKS: &str = N_!("{count} tracks");
 pub const MISSING_SINCE: &str = N_!("since {date}");
 pub const MISSING_ROW_UNAVAILABLE: &str = N_!("On unavailable drive — returns when mounted");
 pub const MISSING_ROW_FILE_SINCE: &str = N_!("File missing since {date}");
+pub const MISSING_SHOW_IN_FILES: &str = N_!("Show in Missing files");
 
 pub fn missing_tracks(count: u32) -> String {
     let value = count.to_string();

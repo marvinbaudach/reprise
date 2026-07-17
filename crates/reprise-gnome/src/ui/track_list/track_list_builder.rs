@@ -96,6 +96,7 @@ pub(in crate::ui) fn build(
         on_play_selected: RefCell::new(None),
         on_queue_selected: RefCell::new(None),
         on_play_next_selected: RefCell::new(None),
+        on_show_missing: RefCell::new(None),
         on_queue_activate: RefCell::new(None),
         on_queue_remove: RefCell::new(None),
         on_playlist_mutated: RefCell::new(None),
