@@ -159,6 +159,8 @@ pub(in crate::ui) struct Shared {
     /// are mutated in place by `apply_empty_state` rather than swapping in a
     /// third stack page — see that function's doc comment.
     pub(in crate::ui) empty_page: adw::StatusPage,
+    pub(in crate::ui) show_all_button: gtk4::Button,
+    pub(in crate::ui) empty_scan_widget: RefCell<Option<gtk4::Widget>>,
     pub(in crate::ui) sort: RefCell<SortState>,
     pub(in crate::ui) restoring_view: Cell<bool>,
     pub(in crate::ui) filter: RefCell<String>,
@@ -533,7 +535,9 @@ impl TrackList {
     /// Called from `window.rs` after the `EmptyScanIndicator` is created,
     /// to embed its container widget in the status page.
     pub fn set_empty_scan_widget(&self, widget: &impl IsA<gtk4::Widget>) {
-        self.shared.empty_page.set_child(Some(widget));
+        let widget = widget.as_ref().clone();
+        *self.shared.empty_scan_widget.borrow_mut() = Some(widget.clone());
+        self.shared.empty_page.set_child(Some(&widget));
     }
 
     /// Injects the player controller — injected post-construction via
