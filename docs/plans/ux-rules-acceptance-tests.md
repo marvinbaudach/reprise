@@ -751,7 +751,7 @@ git commit -m "test: pilot UX rule tests for queue area, flip PLAY-2/3/5a to akt
 - Consumes: Helper aus `lib.sh` (`cua_snapshot`, `element_index_for_label`, `assert_action_landed`, `assert_snapshot_contains`), Log-Marker `queue set from view` aus `player_controller.rs::play_from_view`, Fixtures `sine_01.flac`/`sine_02.flac` (kopiert in `run.sh` Zeile ~172).
 - Produces: Szenario-Stem `play-2-doubleclick-row`, den der Lint als kebab-Referenz auf PLAY-2 zählt.
 
-- [ ] **Step 1: Double-Click-Helper in `lib.sh`** — nach `cua_click_label` einfügen (identisch zum Click-Helper, nur Verb `double_click`):
+- [x] **Step 1: Double-Click-Helper in `lib.sh`** — nach `cua_click_label` einfügen (identisch zum Click-Helper, nur Verb `double_click`):
 
 ```bash
 cua_double_click_label() {
@@ -774,14 +774,15 @@ cua_double_click_label() {
 }
 ```
 
-- [ ] **Step 2: Szenario in `run.sh`** — im populated-library-Workflow, nach der bestehenden Such-Interaktion und vor `finish_scenario` einfügen (PID-/Window-Variablennamen des umgebenden Blocks übernehmen — im Zweifel die des Such-Workflows wiederverwenden):
+- [x] **Step 2: Szenario in `run.sh`** — im populated-library-Workflow, vor dem Suchfilter (danach ist die Row absichtlich verborgen) und vor `finish_scenario` einfügen (PID-/Window-Variablennamen des umgebenden Blocks übernehmen — im Zweifel die des Such-Workflows wiederverwenden):
 
 ```bash
 # UX PLAY-2 [e2e]-Verdrahtung: Doppelklick auf eine Row baut die Queue aus
 # der sichtbaren Liste (Log-Marker aus play_from_view) und startet Playback.
 echo "[cua-e2e] play-2-doubleclick-row: activation builds queue from view"
 cua_double_click_label "$APP_PID" "$WINDOW_ID" "sine_01" "play-2-doubleclick-row"
-require_marker "$APP_LOG" "queue set from view" "play-2-doubleclick-row"
+assert_app_log_contains \
+  "$APP_LOG" "queue set from view" "play-2-doubleclick-row"
 ```
 
 Hinweis: Das Row-Label ist der Fixture-Titel (`sine_01`); laut Ledger ist die
@@ -790,12 +791,12 @@ exakte Label-Form erst im Host-Lauf verifizierbar. Liefert
 (`play-2-doubleclick-row-before.json`) inspizieren und das Label anpassen —
 NICHT das Szenario löschen.
 
-- [ ] **Step 3: Lint prüfen (kebab-Referenz zählt)**
+- [x] **Step 3: Lint prüfen (kebab-Referenz zählt)**
 
 Run: `scripts/check-ux-traceability.sh`
 Expected: weiterhin ok (PLAY-2 ist `[aktiv]` und hat jetzt core- + e2e-Referenz)
 
-- [ ] **Step 4: Harness-Lauf versuchen**
+- [x] **Step 4: Harness-Lauf versuchen**
 
 Run: `cargo build && scripts/cua-e2e/run.sh`
 Expected: alle Szenarien grün inkl. `play-2-doubleclick-row` mit Marker.
@@ -803,7 +804,7 @@ Falls die Umgebung keinen Xvfb/AT-SPI-Lauf erlaubt (Sandbox): NICHT grün
 behaupten — im Ledger als „deferred host check" eintragen (bestehende
 Konvention) und den Lauf dem Host-Release-Gate überlassen.
 
-- [ ] **Step 5: Ledger + Commit**
+- [x] **Step 5: Ledger + Commit**
 
 ```markdown
 - cua-e2e: play-2-doubleclick-row-Szenario + cua_double_click_label-Helper;
