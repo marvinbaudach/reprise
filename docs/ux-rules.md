@@ -393,7 +393,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Track-Zahl absteigend; maximal 6 Zeilen, Dropdown ab 2 Zeichen,
   Sektionstitel „FROM YOUR LIBRARY". Letzte Zeile ist immer „Use ‚X' as new
   artist…" — ein neuer Wert ist nie blockiert.
-- **TAG-7** [geplant] [gtk] — Inline-Ghost: Der beste Präfix-Treffer (gleiche
+- **TAG-7** [aktiv] [gtk] — Inline-Ghost: Der beste Präfix-Treffer (gleiche
   Rangfolge wie Dropdown-Zeile 1) erscheint gedimmt hinter dem Cursor, Tab
   übernimmt ihn. Ohne sichtbaren Ghost ist Tab reiner Fokuswechsel — eine
   stille Übernahme der ersten Dropdown-Zeile gibt es nicht; das Tab-Badge

@@ -1,7 +1,9 @@
 //! Autocomplete text entry for the tag editor. Wraps `adw::EntryRow`
 //! with a `GtkPopover` dropdown showing library suggestions ranked by
-//! track count (TAG-6). Popover is `can-focus = false` — focus stays in
-//! the entry. Esc closes only the popup.
+//! track count (TAG-6), plus an inline ghost completion (TAG-7): the best
+//! prefix match rendered dimmed in a second borderless popover anchored to
+//! the entry, accepted with Tab. Both popovers are `can-focus = false` —
+//! focus stays in the entry. Esc closes only the suggestion dropdown.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,14 +13,26 @@ use gtk4::glib;
 use gtk4::pango;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use libadwaita::prelude::EntryRowExt;
 use rusqlite::Connection;
 
 use reprise_core::queries::autocomplete::{
-    query_autocomplete_suggestions, AutocompleteColumn, AutocompleteSuggestion, MAX_SUGGESTIONS,
-    MIN_DROPDOWN_CHARS,
+    query_autocomplete_suggestions, query_ghost_completion, AutocompleteColumn,
+    AutocompleteSuggestion, MAX_SUGGESTIONS, MIN_DROPDOWN_CHARS,
 };
 
 const DEBOUNCE_MS: u64 = 100;
+
+/// TAG-7 kill switch. `false`: no ghost text, no Tab badge, Tab is a pure
+/// focus change, and the dropdown (TAG-6) is completely unaffected — the
+/// fallback the rule text explicitly sanctions ("kein halb kaputtes Ghost
+/// im Release"). The mechanism below (query wiring, Tab semantics, badge
+/// visibility) is fully implemented and covered by tests either way; what
+/// is *not* verifiable headless is the popover's pixel alignment "behind
+/// the cursor" — this file was authored without a display to eyeball that
+/// against. Flip to `true` only after a sighted pass confirms the ghost
+/// popover reads correctly next to real typed text.
+const GHOST_ENABLED: bool = false;
 
 /// A row in the autocomplete dropdown: either a ranked library value or the
 /// trailing "use as new value" row, which is always present so a genuinely
@@ -65,11 +79,77 @@ pub(crate) fn should_show_dropdown(input: &str) -> bool {
     input.chars().count() >= MIN_DROPDOWN_CHARS
 }
 
+/// The remaining characters `completion` adds after `typed`, or `None` if
+/// `completion` is not a case-insensitive extension of `typed` (nothing to
+/// ghost) or is identical to it (nothing left to complete).
+pub(crate) fn ghost_suffix(typed: &str, completion: &str) -> Option<String> {
+    if typed.is_empty() {
+        return None;
+    }
+    let typed_lower = typed.to_lowercase();
+    let completion_lower = completion.to_lowercase();
+    if !completion_lower.starts_with(&typed_lower) {
+        return None;
+    }
+    // Byte-length parity between `typed` and its lowercased form holds for
+    // ASCII/most Latin text (see `highlight_match`'s comment for the same
+    // caveat); guard the boundary defensively rather than assume it.
+    if !completion.is_char_boundary(typed.len()) {
+        return None;
+    }
+    let suffix = &completion[typed.len()..];
+    if suffix.is_empty() {
+        return None;
+    }
+    Some(suffix.to_string())
+}
+
+/// TAG-7's display gate: the ghost (and, by extension, the Tab badge) is
+/// visible only when the feature is enabled and there is a real, non-empty
+/// completion left to show. Pure so both states of the kill switch are
+/// testable without a running display.
+pub(crate) fn ghost_display(
+    enabled: bool,
+    typed: &str,
+    completion: Option<&str>,
+) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    ghost_suffix(typed, completion?)
+}
+
+/// What Tab does (TAG-7): narrowed to accepting a *visible* ghost only —
+/// with no ghost shown, Tab is a pure focus change. There is no silent
+/// first-row dropdown accept via Tab anymore.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TabAction {
+    AcceptGhost(String),
+    MoveFocus,
+}
+
+pub(crate) fn tab_action(ghost: Option<&str>) -> TabAction {
+    match ghost {
+        Some(text) if !text.is_empty() => TabAction::AcceptGhost(text.to_string()),
+        _ => TabAction::MoveFocus,
+    }
+}
+
 pub struct AutocompleteEntry {
     row: adw::EntryRow,
     popover: gtk4::Popover,
     listbox: gtk4::ListBox,
     section_header: gtk4::Label,
+    /// Borderless popover anchored to `row` (not the grid cell — TAG-7)
+    /// showing the dimmed ghost suffix. Separate from `popover` since the
+    /// ghost can be visible below `MIN_DROPDOWN_CHARS`, where the
+    /// suggestion dropdown never appears at all.
+    ghost_popover: gtk4::Popover,
+    ghost_label: gtk4::Label,
+    /// "Tab" hint shown in the entry's suffix slot only while a ghost is
+    /// visible (TAG-7); added via `EntryRow::add_suffix`, so it lives
+    /// inside the row itself rather than needing a separate parent.
+    tab_badge: gtk4::Label,
     conn: Rc<RefCell<Connection>>,
     column: AutocompleteColumn,
     debounce_source: Rc<RefCell<Option<glib::SourceId>>>,
@@ -80,6 +160,10 @@ pub struct AutocompleteEntry {
     /// accepting a row (click or Enter) can look up its literal value by
     /// index instead of re-parsing the widget tree.
     current_rows: Rc<RefCell<Vec<SuggestionRow>>>,
+    /// The full completion string currently ghosted, if any (TAG-7). This
+    /// is pure display state — it is never read as a pending value; only
+    /// an explicit Tab accept ever writes it into the entry's real text.
+    current_ghost: Rc<RefCell<Option<String>>>,
 }
 
 impl AutocompleteEntry {
@@ -119,20 +203,47 @@ impl AutocompleteEntry {
         popover.set_parent(&row);
         popover.add_css_class("reprise-autocomplete-popover");
 
+        let ghost_label = gtk4::Label::builder()
+            .xalign(0.0)
+            .css_classes(["reprise-autocomplete-ghost-label"])
+            .build();
+        let ghost_popover = gtk4::Popover::builder()
+            .child(&ghost_label)
+            .autohide(false)
+            .can_focus(false)
+            .has_arrow(false)
+            .build();
+        ghost_popover.set_parent(&row);
+        ghost_popover.add_css_class("reprise-autocomplete-ghost-popover");
+
+        let tab_badge = gtk4::Label::builder()
+            .label(crate::ui::strings::text(
+                crate::ui::strings::TAG_AUTOCOMPLETE_GHOST_TAB_HINT,
+            ))
+            .visible(false)
+            .css_classes(["reprise-autocomplete-ghost-badge"])
+            .build();
+        row.add_suffix(&tab_badge);
+
         let suppress_query = Rc::new(RefCell::new(false));
         let debounce_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
         let current_rows = Rc::new(RefCell::new(Vec::new()));
+        let current_ghost = Rc::new(RefCell::new(None));
 
         let entry = Self {
             row,
             popover,
             listbox,
             section_header,
+            ghost_popover,
+            ghost_label,
+            tab_badge,
             conn,
             column,
             debounce_source,
             suppress_query,
             current_rows,
+            current_ghost,
         };
         entry.wire_changed();
         entry.wire_key_navigation();
@@ -167,6 +278,10 @@ impl AutocompleteEntry {
         let suppress = self.suppress_query.clone();
         let debounce = self.debounce_source.clone();
         let current_rows = self.current_rows.clone();
+        let ghost_popover = self.ghost_popover.clone();
+        let ghost_label = self.ghost_label.clone();
+        let tab_badge = self.tab_badge.clone();
+        let current_ghost = self.current_ghost.clone();
 
         self.row.connect_changed(move |row| {
             if *suppress.borrow() {
@@ -183,6 +298,10 @@ impl AutocompleteEntry {
             let section_header = section_header.clone();
             let debounce_inner = debounce.clone();
             let current_rows = current_rows.clone();
+            let ghost_popover = ghost_popover.clone();
+            let ghost_label = ghost_label.clone();
+            let tab_badge = tab_badge.clone();
+            let current_ghost = current_ghost.clone();
 
             // timeout_add_local returns a SourceId we can cancel later
             let source = glib::timeout_add_local(Duration::from_millis(DEBOUNCE_MS), move || {
@@ -211,6 +330,23 @@ impl AutocompleteEntry {
                     popover.popdown();
                     current_rows.borrow_mut().clear();
                 }
+
+                // TAG-7: the ghost is queried independently of the dropdown
+                // gate above — it can show below MIN_DROPDOWN_CHARS, where
+                // the dropdown never appears.
+                let ghost_completion = {
+                    let conn = conn.borrow();
+                    query_ghost_completion(&conn, column, &input)
+                };
+                apply_ghost(
+                    &ghost_popover,
+                    &ghost_label,
+                    &tab_badge,
+                    &current_ghost,
+                    &input,
+                    ghost_completion.as_deref(),
+                );
+
                 glib::ControlFlow::Break
             });
             *debounce.borrow_mut() = Some(source);
@@ -223,11 +359,33 @@ impl AutocompleteEntry {
         let row = self.row.clone();
         let suppress = self.suppress_query.clone();
         let current_rows = self.current_rows.clone();
+        let ghost_popover = self.ghost_popover.clone();
+        let tab_badge = self.tab_badge.clone();
+        let current_ghost = self.current_ghost.clone();
 
         let key_controller = gtk4::EventControllerKey::new();
         key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
 
         key_controller.connect_key_pressed(move |_, keyval, _, _| {
+            if keyval == gtk4::gdk::Key::Tab {
+                // TAG-7: Tab is judged purely on ghost visibility, entirely
+                // independent of whether the suggestion dropdown happens to
+                // be open — the ghost can be showing below
+                // MIN_DROPDOWN_CHARS, where the dropdown never appears.
+                let ghost = current_ghost.borrow().clone();
+                return match tab_action(ghost.as_deref()) {
+                    TabAction::AcceptGhost(full) => {
+                        accept_text(&row, &full, &suppress);
+                        popover.popdown();
+                        ghost_popover.popdown();
+                        tab_badge.set_visible(false);
+                        *current_ghost.borrow_mut() = None;
+                        glib::Propagation::Stop
+                    }
+                    TabAction::MoveFocus => glib::Propagation::Proceed,
+                };
+            }
+
             if !popover.is_visible() {
                 return glib::Propagation::Proceed;
             }
@@ -286,6 +444,36 @@ impl Drop for AutocompleteEntry {
             id.remove();
         }
         self.popover.unparent();
+        self.ghost_popover.unparent();
+    }
+}
+
+/// Updates the ghost popover, its label text, and the Tab badge from the
+/// current typed text and the core's best prefix completion (TAG-7). Ghost
+/// state is purely for display: `current_ghost` records the full
+/// completion string so Tab-accept knows what to write, but nothing here
+/// ever touches the entry's real text or fires `changed` — only an
+/// explicit accept does that.
+fn apply_ghost(
+    ghost_popover: &gtk4::Popover,
+    ghost_label: &gtk4::Label,
+    tab_badge: &gtk4::Label,
+    current_ghost: &Rc<RefCell<Option<String>>>,
+    typed: &str,
+    completion: Option<&str>,
+) {
+    match ghost_display(GHOST_ENABLED, typed, completion) {
+        Some(suffix) => {
+            ghost_label.set_label(&suffix);
+            ghost_popover.popup();
+            tab_badge.set_visible(true);
+            *current_ghost.borrow_mut() = completion.map(str::to_string);
+        }
+        None => {
+            ghost_popover.popdown();
+            tab_badge.set_visible(false);
+            *current_ghost.borrow_mut() = None;
+        }
     }
 }
 
@@ -472,5 +660,59 @@ mod tests {
         let rows = build_rows(&[], "Sui");
         assert_eq!(row_value(&rows, 5), None);
         assert_eq!(row_value(&rows, -1), None);
+    }
+
+    #[test]
+    fn ghost_suffix_case_insensitive_prefix() {
+        assert_eq!(
+            ghost_suffix("Cog", "Cognac").as_deref(),
+            Some("nac"),
+            "the completion keeps its own casing beyond the typed prefix"
+        );
+        assert_eq!(ghost_suffix("cog", "Cognac").as_deref(), Some("nac"));
+    }
+
+    #[test]
+    fn ghost_suffix_none_when_not_a_prefix() {
+        // "ognac" is a substring of "Cognac" but never a prefix completion
+        // of what's typed — the ghost must not offer it (TAG-7).
+        assert_eq!(ghost_suffix("ognac", "Cognac"), None);
+    }
+
+    #[test]
+    fn ghost_suffix_none_when_nothing_left_to_complete() {
+        assert_eq!(ghost_suffix("Cognac", "Cognac"), None);
+        assert_eq!(ghost_suffix("", "Cognac"), None);
+    }
+
+    #[test]
+    fn tag_7_tab_accepts_only_visible_ghost() {
+        match tab_action(Some("nac")) {
+            TabAction::AcceptGhost(text) => assert_eq!(text, "nac"),
+            TabAction::MoveFocus => panic!("expected AcceptGhost with a visible ghost"),
+        }
+    }
+
+    #[test]
+    fn tag_7_tab_moves_focus_without_ghost() {
+        assert_eq!(tab_action(None), TabAction::MoveFocus);
+    }
+
+    #[test]
+    fn tag_7_ghost_disabled_hides_badge() {
+        // Disabled: no ghost, regardless of a real completion being available
+        // — this is the badge's visibility gate too, since the badge only
+        // shows when `ghost_display` yields `Some`.
+        assert_eq!(ghost_display(false, "Cog", Some("Cognac")), None);
+        // Enabled: the same input does produce a ghost.
+        assert_eq!(
+            ghost_display(true, "Cog", Some("Cognac")).as_deref(),
+            Some("nac")
+        );
+    }
+
+    #[test]
+    fn ghost_display_none_without_a_completion() {
+        assert_eq!(ghost_display(true, "Cog", None), None);
     }
 }

@@ -15,6 +15,7 @@ pub const TAG_AUTOCOMPLETE_USE_AS_NEW_ALBUM: &str = N_!("Use “{value}” as ne
 pub const TAG_AUTOCOMPLETE_USE_AS_NEW_ALBUM_ARTIST: &str =
     N_!("Use “{value}” as new album artist…");
 pub const TAG_AUTOCOMPLETE_USE_AS_NEW_GENRE: &str = N_!("Use “{value}” as new genre…");
+pub const TAG_AUTOCOMPLETE_GHOST_TAB_HINT: &str = N_!("Tab");
 
 pub fn tag_autocomplete_use_as_new_artist(value: &str) -> String {
     formatted(TAG_AUTOCOMPLETE_USE_AS_NEW_ARTIST, &[("value", value)])
