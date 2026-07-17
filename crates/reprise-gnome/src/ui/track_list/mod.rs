@@ -2,7 +2,9 @@ pub(crate) mod column_layout;
 pub(in crate::ui) mod column_layout_editor;
 pub(in crate::ui) mod column_widths;
 pub(in crate::ui) mod current_track_selection;
+pub(in crate::ui) mod end_of_results;
 pub(in crate::ui) mod list_density;
+pub(in crate::ui) mod match_highlight;
 pub(crate) mod queue_row_mapping;
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
@@ -20,6 +22,7 @@ pub(crate) mod track_list_context_menu;
 pub(crate) mod track_list_dnd;
 pub(crate) mod track_list_dnd_smoke;
 pub(crate) mod track_list_empty_state;
+mod track_list_filter_actions;
 pub(in crate::ui) mod track_list_header_style;
 pub(in crate::ui) mod track_list_layout;
 pub(crate) mod track_list_menu_smoke;
@@ -31,6 +34,7 @@ pub(in crate::ui) mod track_list_row_interaction;
 pub(in crate::ui) mod track_list_selection;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
+mod track_list_toast;
 pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]

@@ -6,6 +6,7 @@ use libadwaita::prelude::*;
 use super::strings;
 
 const SEARCH_WIDTH: i32 = 300;
+pub(in crate::ui) const SEARCH_ACTIVE_CLASS: &str = "reprise-search-active";
 const LIBRARY_TITLE_SOURCE: &str = "source";
 const LIBRARY_TITLE_SWITCHER: &str = "library-switcher";
 
@@ -45,10 +46,21 @@ pub(in crate::ui) fn build(
     LibraryChrome { root }
 }
 
+pub(in crate::ui) fn search_accent_active(text: &str) -> bool {
+    !text.trim().is_empty()
+}
+
 pub(in crate::ui) fn style_header(header: &adw::HeaderBar, search: &gtk4::SearchEntry) {
     header.set_centering_policy(adw::CenteringPolicy::Strict);
     search.set_width_request(SEARCH_WIDTH);
     search.set_hexpand(false);
+    search.connect_search_changed(|entry| {
+        if search_accent_active(&entry.text()) {
+            entry.add_css_class(SEARCH_ACTIVE_CLASS);
+        } else {
+            entry.remove_css_class(SEARCH_ACTIVE_CLASS);
+        }
+    });
 }
 
 pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
@@ -113,6 +125,15 @@ mod tests {
     use libadwaita::prelude::*;
 
     use super::*;
+
+    // UX FIL-4: the field is marked as soon as it carries real text — also
+    // unfocused; whitespace-only never claims state (mirrors is_restricted).
+    #[test]
+    fn fil_4_search_accent_tracks_trimmed_text() {
+        assert!(search_accent_active("falling"));
+        assert!(!search_accent_active(""));
+        assert!(!search_accent_active("   "));
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]

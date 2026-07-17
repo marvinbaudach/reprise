@@ -333,6 +333,10 @@ mod tests {
         let shell = build(pages, Some(progress.upcast_ref()));
 
         assert!(progress.parent().is_some());
-        assert!(progress.is_ancestor(&shell.dialog));
+        assert_eq!(
+            shell.dialog.child().as_ref(),
+            Some(shell.navigation.upcast_ref())
+        );
+        assert!(progress.is_ancestor(&shell.navigation));
     }
 }

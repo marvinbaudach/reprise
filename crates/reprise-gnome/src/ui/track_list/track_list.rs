@@ -69,7 +69,6 @@ use crate::ui::column_layout::ColumnRegistry;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
-use crate::ui::toasts;
 use crate::ui::track_list_model::TrackListModel;
 pub(in crate::ui) use crate::ui::track_list_reload::{
     reload, set_filter_and_reload, set_source_and_reload,
@@ -83,6 +82,7 @@ pub(in crate::ui) use super::track_list_callbacks::{
     OnQueueSelected, OnReload, OnSelectionChanged, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
     OnTagsMutated,
 };
+pub(in crate::ui) use super::track_list_toast::show_toast;
 
 pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
 pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
@@ -159,6 +159,8 @@ pub(in crate::ui) struct Shared {
     /// are mutated in place by `apply_empty_state` rather than swapping in a
     /// third stack page — see that function's doc comment.
     pub(in crate::ui) empty_page: adw::StatusPage,
+    pub(in crate::ui) show_all_button: gtk4::Button,
+    pub(in crate::ui) empty_scan_widget: RefCell<Option<gtk4::Widget>>,
     pub(in crate::ui) sort: RefCell<SortState>,
     pub(in crate::ui) restoring_view: Cell<bool>,
     pub(in crate::ui) filter: RefCell<String>,
@@ -193,9 +195,9 @@ pub(in crate::ui) struct Shared {
     /// with the source just queried, the row count it produced, and the
     /// filter string that reload just ran against. `window.rs` uses this
     /// single hook to keep `status_bar::StatusBar` in sync: library-wide
-    /// totals (via the filter string) when `source` is `Library`, a simple
-    /// "{n} tracks" line (via the row count) otherwise — see `status_bar::
-    /// StatusBar::refresh_for_source_count`. This is the seam chosen over
+    /// totals when `source` is `Library`, hidden otherwise (the filter row
+    /// is the per-source count) — see `status_bar::
+    /// StatusBar::hide`. This is the seam chosen over
     /// exposing `TrackList::source()`/`filter()` getters: `reload` already
     /// has all three values in local variables at the one call site that
     /// invokes this hook.
@@ -533,7 +535,9 @@ impl TrackList {
     /// Called from `window.rs` after the `EmptyScanIndicator` is created,
     /// to embed its container widget in the status page.
     pub fn set_empty_scan_widget(&self, widget: &impl IsA<gtk4::Widget>) {
-        self.shared.empty_page.set_child(Some(widget));
+        let widget = widget.as_ref().clone();
+        *self.shared.empty_scan_widget.borrow_mut() = Some(widget.clone());
+        self.shared.empty_page.set_child(Some(&widget));
     }
 
     /// Injects the player controller — injected post-construction via
@@ -583,17 +587,4 @@ pub(in crate::ui) fn playlist_reorder_allowed(shared: &Shared) -> bool {
     matches!(*shared.source.borrow(), ViewSource::Playlist(_))
         && shared.sort.borrow().field == PLAYLIST_ORDER_SORT_FIELD
         && shared.filter.borrow().trim().is_empty()
-}
-
-/// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
-/// wired or it's gone — mirrors `player_controller.rs`'s `show_toast` (same
-/// seam, same degrade behavior), not shared code: the two owning types are
-/// otherwise unrelated and this is a two-line `WeakRef::upgrade` match.
-pub(in crate::ui) fn show_toast(shared: &Shared, text: &str) {
-    match shared.toast_overlay.upgrade() {
-        Some(overlay) => toasts::show(&overlay, text),
-        None => {
-            tracing::warn!(text, "toast overlay is gone; degrading to log-only");
-        }
-    }
 }
