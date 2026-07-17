@@ -324,3 +324,64 @@ pub fn run_auto_clean(conn: &mut Connection, now: i64) -> Result<Vec<i64>, rusql
     let ids = auto_clean_eligible(conn, now)?;
     super::maintenance::remove_auto_clean_eligible_tracks(conn, &ids)
 }
+
+// -- Badge counts (Task 2.5) -------------------------------------------------
+//
+// The sidebar's ISSUES section needs two different questions answered about
+// the Missing-files state, and conflating them is exactly the Rhythmbox
+// failure mode this rebuild exists to avoid: a badge that always shows the
+// full backlog trains the user to ignore it, because it never goes away no
+// matter how much they've already looked at. So the two are kept as two
+// separate functions with two separate contracts:
+//
+// - [`count_missing`] answers "does the Missing files row exist at all?" —
+//   the full `MISSING` total, unconditional on anything the user has seen.
+//   Zero here means the row (and the ISSUES section itself, if this and the
+//   import-errors sibling are both zero) simply isn't shown.
+// - [`count_new_missing`] answers "what's the badge number?" — only rows
+//   that went missing strictly after `last_viewed`, a unix-seconds
+//   timestamp the caller reads via `library::settings::get_last_viewed_
+//   missing` and passes in explicitly (kept a parameter, not read inside,
+//   for the same testability reason `auto_clean_eligible`'s `now: i64`
+//   parameter above is). Opening the Missing files view calls `library::
+//   settings::set_last_viewed_missing(conn, now)`, which clears this count
+//   back to whatever goes missing next — the total itself never moves, it
+//   just stops being new.
+
+/// Total count of `MISSING` tracks (`missing_since IS NOT NULL AND
+/// removed_at IS NULL`), across every `missing_reason` — see this section's
+/// header comment for why this is a different question from [`count_new_
+/// missing`]. Tombstoned rows (`removed_at` set) are excluded by [`MISSING`]
+/// itself: the user already asked for those to be gone, so they can't be
+/// what makes the sidebar row exist.
+pub fn count_missing(conn: &Connection) -> Result<u32, rusqlite::Error> {
+    let count: i64 = conn.query_row(
+        &format!("SELECT count(*) FROM tracks WHERE {MISSING}"),
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(count.max(0) as u32)
+}
+
+/// The Missing-files sidebar badge: `MISSING` tracks whose `missing_since`
+/// is strictly AFTER `last_viewed` — see this section's header comment for
+/// why "strictly after", not the full total, is the badge's definition.
+/// `missing_since > last_viewed` already implies `missing_since IS NOT
+/// NULL` on its own (SQLite's `>` against `NULL` is never true), but this
+/// still composes the shared [`MISSING`] predicate rather than relying on
+/// that implication implicitly — the `removed_at IS NULL` half has no such
+/// free ride, and a reader should never have to re-derive "why is this
+/// query safe" from a comparison operator's NULL semantics.
+///
+/// Boundary is exclusive (`>`, not `>=`) on purpose: a row whose
+/// `missing_since` equals `last_viewed` exactly went missing in the very
+/// scan/second the user's last view already covered, so it must not
+/// re-badge as new.
+pub fn count_new_missing(conn: &Connection, last_viewed: i64) -> Result<u32, rusqlite::Error> {
+    let count: i64 = conn.query_row(
+        &format!("SELECT count(*) FROM tracks WHERE {MISSING} AND missing_since > ?1"),
+        rusqlite::params![last_viewed],
+        |r| r.get(0),
+    )?;
+    Ok(count.max(0) as u32)
+}

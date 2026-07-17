@@ -330,3 +330,122 @@ fn dismiss_all_import_errors_is_a_noop_on_an_empty_table() {
         0
     );
 }
+
+// -- Badge counts (Task 2.5) -------------------------------------------------
+//
+// `count_import_errors_active` decides whether the sidebar's "Import
+// errors" ISSUES row exists at all, so it counts every non-dismissed row —
+// hints included, because a hint row must stay reachable for the user to
+// act on (add real tags) even though it must never badge. `count_new_
+// import_errors` is the badge itself: non-dismissed, non-hint rows whose
+// `first_seen` is strictly after `last_viewed`.
+
+#[test]
+fn count_import_errors_active_includes_hints_but_excludes_dismissed() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    insert_error(&conn, "/x/plain.flac", "io", 100, 100);
+    insert_error(&conn, "/x/hint.flac", "unreadable_tags", 100, 100);
+    insert_untagged_present_track(&conn, "/x/hint.flac");
+    insert_dismissed_error(&conn, "/x/dismissed.flac", "io", 100, 100, 1, 2);
+
+    // The View-visibility count includes the hint (the row must stay
+    // reachable) but not the dismissed row.
+    assert_eq!(count_import_errors_active(&conn).unwrap(), 2);
+}
+
+#[test]
+fn count_import_errors_active_is_zero_on_an_empty_table() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    assert_eq!(count_import_errors_active(&conn).unwrap(), 0);
+}
+
+#[test]
+fn count_new_import_errors_counts_only_first_seen_after_last_viewed() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    insert_error(&conn, "/x/old.flac", "io", 50, 50); // before last_viewed
+    insert_error(&conn, "/x/new-a.flac", "io", 150, 150); // after
+    insert_error(&conn, "/x/new-b.flac", "unreadable_tags", 200, 200); // after
+
+    assert_eq!(count_new_import_errors(&conn, 100).unwrap(), 2);
+}
+
+#[test]
+fn count_new_import_errors_boundary_equal_to_last_viewed_does_not_count() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    insert_error(&conn, "/x/a.flac", "io", 100, 100);
+    assert_eq!(count_new_import_errors(&conn, 100).unwrap(), 0);
+}
+
+/// A hint must NEVER badge, even when it is freshly seen — the app already
+/// solved this file (stem-derived title, `tracks.untagged = 1`); it is
+/// asking for tags, not for help. `count_import_errors_active` (the row-
+/// visibility count) includes it; the badge must not.
+#[test]
+fn count_new_import_errors_excludes_hints_even_when_freshly_seen() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    insert_error(&conn, "/x/hint.flac", "unreadable_tags", 200, 200);
+    insert_untagged_present_track(&conn, "/x/hint.flac");
+    insert_error(&conn, "/x/real.flac", "unreadable_tags", 200, 200);
+
+    assert_eq!(
+        count_new_import_errors(&conn, 100).unwrap(),
+        1,
+        "only the non-hint row may badge"
+    );
+}
+
+#[test]
+fn count_new_import_errors_excludes_dismissed_rows_even_when_freshly_seen() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    insert_dismissed_error(&conn, "/x/dismissed.flac", "io", 200, 200, 1, 2);
+    assert_eq!(count_new_import_errors(&conn, 100).unwrap(), 0);
+}
+
+#[test]
+fn count_new_import_errors_zero_last_viewed_treats_every_active_non_hint_row_as_new() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    insert_error(&conn, "/x/a.flac", "io", 1, 1);
+    insert_error(&conn, "/x/b.flac", "io", 100_000, 100_000);
+    assert_eq!(count_new_import_errors(&conn, 0).unwrap(), 2);
+}
+
+/// The subtlest interaction in the badge design (see the task brief): when
+/// a DISMISSED row's underlying file changes on disk, `library::import_
+/// errors::check_dismissed` starts a NEW episode — it nulls `dismissed_*`
+/// and resets `first_seen = now`/`seen_count = 0` (see that function's own
+/// doc comment). This test simulates exactly that reactivation via direct
+/// SQL (mirroring `check_dismissed`'s own `UPDATE`, not calling it — that
+/// function lives outside this task's file ownership and takes a
+/// `Transaction`, which would be a heavier, less direct fixture for what is
+/// purely a `count_new_import_errors` query test) to prove the badge query
+/// gets the "changed file re-badges" behavior for free, with no special
+/// casing: a reactivated row's `first_seen` is fresh, so a `last_viewed`
+/// from BEFORE the reactivation (even one that is AFTER the original,
+/// dismissed episode's `first_seen`) must still count it as new.
+#[test]
+fn count_new_import_errors_recounts_a_reactivated_episode_as_new() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    // Original episode: seen and dismissed long ago.
+    insert_dismissed_error(&conn, "/x/changed.flac", "io", 10, 10, 111, 222);
+    // The user last viewed the Import errors list well after that original
+    // episode — a naive `first_seen > last_viewed` on the STALE first_seen
+    // (10) would correctly stay silent here, but the row is about to become
+    // new again for a different reason.
+    let last_viewed = 500;
+
+    // The file changed on disk; the scanner's `check_dismissed` reactivates
+    // the episode: clears the dismissal, restarts `first_seen`/`seen_count`.
+    conn.execute(
+        "UPDATE import_errors SET dismissed_mtime = NULL, dismissed_size = NULL, \
+         first_seen = ?2, seen_count = 0 WHERE path = ?1",
+        rusqlite::params!["/x/changed.flac", 900],
+    )
+    .unwrap();
+
+    assert_eq!(
+        count_new_import_errors(&conn, last_viewed).unwrap(),
+        1,
+        "a reactivated episode (fresh first_seen) must badge again, even \
+         though the user viewed the list after the ORIGINAL episode started"
+    );
+}

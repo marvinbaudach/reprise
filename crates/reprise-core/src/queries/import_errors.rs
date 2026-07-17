@@ -305,3 +305,79 @@ pub fn restore_import_error(conn: &Connection, path: &str) -> Result<(), rusqlit
     )?;
     Ok(())
 }
+
+// -- Badge counts (Task 2.5) -------------------------------------------------
+//
+// Same "two questions, two functions" split as `issues.rs`'s own badge-
+// count section — see that section's header comment for the full
+// reasoning. The one extra wrinkle here is hints (this module's own "hint
+// contract" above): [`count_import_errors_active`] INCLUDES them, because a
+// hint row must stay reachable in the triage view (the user may still want
+// to add real tags), while [`count_new_import_errors`] EXCLUDES them,
+// because a hint is not a problem asking for the user's attention — the app
+// already solved it.
+
+/// Total non-dismissed `import_errors` rows — the ImportErrors sidebar
+/// row's "does this row exist at all?" question, hints included. A
+/// dismissed row is excluded: the user already said "stop showing me
+/// this", the same reasoning [`query_import_errors_grouped`]'s own
+/// `NOT_DISMISSED` filter rests on.
+pub fn count_import_errors_active(conn: &Connection) -> Result<u32, rusqlite::Error> {
+    let count: i64 = conn.query_row(
+        &format!("SELECT count(*) FROM import_errors WHERE {NOT_DISMISSED}"),
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(count.max(0) as u32)
+}
+
+/// The ImportErrors sidebar badge: non-dismissed, non-hint rows whose
+/// `first_seen` is strictly after `last_viewed`.
+///
+/// `first_seen`, deliberately NOT `last_seen`: a permanently broken file
+/// (e.g. a corrupt container that will never parse) gets re-seen — and its
+/// `last_seen` re-stamped — on every single scan. Keying the badge on
+/// `last_seen` would re-badge that file after every scan forever, nagging
+/// the user about something they already looked at and chose to leave
+/// alone. `first_seen` only ever moves when a row is genuinely new or has
+/// started a new episode (see below) — an error is announced once, not
+/// re-announced on a timer disguised as "activity".
+///
+/// Excludes hints via [`is_hint_expr`] — see this module's doc comment's
+/// "hint contract" section and this section's own header comment for why a
+/// hint must never count toward this badge even though [`count_import_
+/// errors_active`] counts it. Reuses the exact same `EXISTS` fragment
+/// [`entry_select`] composes into `ImportErrorEntry::is_hint`, rather than
+/// hand-writing the `untagged = 1 AND {PRESENT}` condition a second time —
+/// the "one source of truth" reasoning that function's own doc comment
+/// argues for.
+///
+/// ## The episode/reactivation interaction
+///
+/// When a DISMISSED row's file changes on disk, `library::import_errors::
+/// check_dismissed` starts a brand-new episode for it: it nulls
+/// `dismissed_*` and resets `first_seen = now`/`seen_count = 0` (see that
+/// function's own doc comment). This query's plain `first_seen >
+/// last_viewed` gets the right behavior for that case with no special
+/// casing at all: the old, dismissed episode's story ended when the user
+/// dismissed it, and a changed file is genuinely new information, so it
+/// SHOULD badge again — which is exactly what a fresh `first_seen` produces
+/// against any `last_viewed` recorded before the reactivation, even one
+/// recorded after the row's ORIGINAL `first_seen`. See `tests_import_
+/// errors.rs`'s `count_new_import_errors_recounts_a_reactivated_episode_
+/// as_new` for the regression test pinning this.
+pub fn count_new_import_errors(
+    conn: &Connection,
+    last_viewed: i64,
+) -> Result<u32, rusqlite::Error> {
+    let is_hint = is_hint_expr();
+    let count: i64 = conn.query_row(
+        &format!(
+            "SELECT count(*) FROM import_errors WHERE {NOT_DISMISSED} \
+             AND first_seen > ?1 AND NOT ({is_hint})"
+        ),
+        rusqlite::params![last_viewed],
+        |r| r.get(0),
+    )?;
+    Ok(count.max(0) as u32)
+}
