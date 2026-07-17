@@ -52,13 +52,22 @@ Review-Footer, Save-Progress, Fehler-Dialog, Listen-Snapshot + ‹›.
 | 1 | **B** Kern | `reprise-core/src/library/tag_edit.rs`, neu `tag_edit_session.rs`, `queries/autocomplete.rs`, `library/watcher.rs` |
 | 2 | **C** Form-Layout | `ui/tag_edit/tag_editor_form.rs`, `tag_editor_widgets.rs`, `tag_editor_style.rs` |
 | 2 | **D** Autocomplete-UI | `ui/tag_edit/autocomplete_entry.rs` |
-| 3 | **E** Tastatur | `ui/tag_edit/tag_editor_save.rs`, `tag_editor_state.rs` |
-| 3 | **F** Review + Save-Flow | `ui/tag_edit/tag_editor_dirty.rs`, `tag_edit_flow.rs`, neu `tag_editor_failures.rs`, `ui/toasts.rs` |
-| 4 | **G** Navigation + MB | `ui/tag_edit/tag_editor.rs`, `tag_editor_lookup.rs` (+ Integrationsfäden durch C/E/F-Dateien — Welle 4 läuft **allein**) |
+| 3 | **F** Session-Integration + Review + Save-Flow (**allein**) | `ui/tag_edit/tag_editor.rs`, `tag_editor_dirty.rs`, `tag_editor_form.rs`, `tag_editor_save.rs` (nur Signatur), `tag_edit_flow.rs`, neu `tag_editor_failures.rs`, `ui/toasts.rs` |
+| 4 | **E** Tastatur | `ui/tag_edit/tag_editor_save.rs` (Innereien), `tag_editor_state.rs` |
+| 4 | **G** Navigation + MB | `ui/tag_edit/tag_editor.rs`, `tag_editor_lookup.rs`, `tag_edit_flow.rs`, `tag_editor_form.rs` (Subzeile) |
 | 5 | **H** Abnahme | CUA-Szenarien, `docs/ux-rules.md` (TAG-Zeilen), Beschluss-Ledger |
 
-Wellen 1–3: Pakete innerhalb einer Welle laufen parallel (disjunkte Dateien).
+Pakete innerhalb einer Welle laufen parallel (disjunkte Dateien).
 `strings.rs` und `tag_edit/mod.rs` sind geteilt: nur append/eigene Zeilen.
+
+**Korrektur nach Welle 2 (2026-07-17):** E und F waren als parallel geplant — das
+geht nicht. `tag_editor.rs` ist der einzige Verdrahtungspunkt (ruft `dirty::wire`,
+`lookup::wire`, `save::wire`), und `save::wire` nimmt heute das Dirty-Array
+`&[Rc<Cell<bool>>]` entgegen: genau den Zustand, den F auf `TagEditSession` umbaut.
+Dazu braucht Es Esc-Kaskade (Stufe 2 = Feld-Revert) die Revert-API, die erst F
+schafft. F läuft deshalb allein und stabilisiert die Signaturen; E und G bauen
+danach parallel darauf auf (disjunkte Dateien: E = Innereien von `save.rs`,
+G = `tag_editor.rs`/`lookup.rs`).
 
 ---
 
@@ -139,7 +148,44 @@ Wellen 1–3: Pakete innerhalb einer Welle laufen parallel (disjunkte Dateien).
 - [ ] Test: `tag_8_esc_cascade_dropdown_then_revert_then_discard`, `tag_8_discard_prompt_counts_tracks_two_answers`.
 - [ ] Gates. Commit `feat(tag-editor): esc cascade and two-answer discard prompt (TAG-8)` — Statusflip TAG-8 → `[aktiv]` in `docs/ux-rules.md` (setzt E1 voraus: Enter-Kette + Esc-Kaskade sind eine Regel).
 
-## Paket F — Review + Save-Flow (Welle 3)
+## Paket F — Session-Integration + Review + Save-Flow (Welle 3, läuft allein)
+
+### Task F0: Session-Verdrahtung (neu, entdeckt in Welle 2)
+
+Paket C konnte TAG-2 nicht fertigstellen, weil die Daten nicht bis zum Formular
+reichen — beide Lücken sind reine Verdrahtung, keine fehlende Kern-API:
+
+1. `tag_editor.rs::present()` reicht nur das **kollabierte** `EditableTagSummary`
+   durch (`MixedValue::Mixed` trägt keine Werte). Der reiche Platzhalter
+   („Mixed — Ambient, Post-Rock" / „8 different values") braucht die
+   Pro-Track-Distinct-Werte, die `TagEditSession::mixed_placeholder()` liefert.
+2. Das In-Feld-↺ ist bewusst nicht verdrahtet: `tag_editor_dirty.rs` hält das
+   Dirty-`Cell<bool>`-Array privat. Ein Revert von außen würde den sichtbaren Text
+   zurücksetzen, ohne das Flag zu löschen — bei einem Mixed-Feld schriebe der Save
+   dann einen Leerstring über tatsächlich unterschiedliche Werte.
+
+Ebenso fehlt `bitrate_kbps` im Formular (nur `(id, PathBuf)` kommt an), weshalb die
+Header-Subzeile bis heute nur das Format zeigt.
+
+**Files:** Modify `tag_editor.rs`, `tag_editor_dirty.rs`, `tag_editor_form.rs`, `tag_edit_flow.rs`
+
+- [ ] `TagEditSession` (aus `reprise-core`) wird in `present()` gebaut und bis
+  `TagEditorForm::build` + `tag_editor_dirty::wire` durchgereicht; das Dirty-Array
+  aus `Cell<bool>` weicht der Session als einziger Wahrheit (kein Doppel-State!).
+  `SaveWidgets`/`save::wire` verlieren dabei den `dirty`-Parameter — **Signatur
+  hier festlegen und stabil lassen**, Paket E baut in Welle 4 darauf auf.
+- [ ] Pro-Track-Tags **und** `bitrate_kbps` bis zum Formular durchreichen (Subzeile
+  zeigt dann Format + Bitrate; die Position „3 of 12" liefert erst Paket G).
+- [ ] Reicher Mixed-Platzhalter aus `mixed_placeholder()`; In-Feld-↺ verdrahtet
+  (revert über die Session, Flag und Text immer gemeinsam).
+- [ ] Feld-Revert als **öffentliche API** für Paket E (Esc-Kaskade Stufe 2)
+  bereitstellen — z. B. `pub(in crate::ui) fn revert_field(...)` oder ein Handle im
+  Rückgabewert von `dirty::wire`. Ohne das kann E seine Kaskade nicht bauen.
+- [ ] Tests: `tag_2_rich_placeholder_lists_values_from_session`,
+  `tag_2_in_field_revert_clears_text_and_pending_together`.
+- [ ] Gates. Commit `feat(tag-editor): thread the edit session through the dialog (TAG-2)`
+  — Statusflip **TAG-2 → `[aktiv]`** in `docs/ux-rules.md`, sobald reicher
+  Platzhalter + Revert stehen (sonst weiter `[geplant]` + Begründung).
 
 ### Task F1: Review-Footer
 **Files:** Modify `tag_editor_dirty.rs` (→ Review-Projektion aus `TagEditSession`)
