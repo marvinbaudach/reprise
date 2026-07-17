@@ -80,7 +80,7 @@ pub(super) fn query_track_window_queue(
     // invariant: an id in `ids` with no matching `tracks` row is silently
     // dropped here (via `filter_map`), so this window's row count can be
     // *less* than `slice.len()`. Stage-3 close-out: hard-delete now exists
-    // (`remove_missing_track`/`remove_missing_tracks`), so this is reachable
+    // (`remove_missing_tracks`), so this is reachable
     // — a queued id can genuinely stop resolving mid-life. Two things keep
     // this from desyncing the UI: (1) the queue itself is purged of any
     // hard-deleted id in lockstep, via `ui::player_controller::
@@ -110,7 +110,7 @@ pub(super) fn query_track_window_queue(
 
 /// Counts how many of `queue_ids` still resolve to a live `tracks` row —
 /// the `Queue` count arm of `query_track_count` (Stage-3 close-out: hard-
-/// delete now exists — `remove_missing_track`/`remove_missing_tracks` — so a
+/// delete now exists — `remove_missing_tracks` — so a
 /// queued id can no longer be assumed to resolve; see that function's doc
 /// comment for the full history). Every occurrence in `queue_ids` is
 /// counted independently (not deduplicated first), matching `query_track_

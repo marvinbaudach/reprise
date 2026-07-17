@@ -30,11 +30,22 @@ impl UpNextQueue {
     }
 
     pub fn pop_front(&mut self) -> Option<i64> {
-        if self.ids.is_empty() {
-            None
-        } else {
-            Some(self.ids.remove(0))
-        }
+        self.take_first_matching(|_| true)
+    }
+
+    /// Removes and returns the first available id while retaining rejected
+    /// entries at their exact positions. This lets unavailable manual queue
+    /// entries heal in place instead of an unmount destroying user intent.
+    pub fn take_first_matching(
+        &mut self,
+        mut is_available: impl FnMut(i64) -> bool,
+    ) -> Option<i64> {
+        let position = self.ids.iter().position(|&id| is_available(id))?;
+        Some(self.ids.remove(position))
+    }
+
+    pub fn first_matching(&self, mut is_available: impl FnMut(i64) -> bool) -> Option<i64> {
+        self.ids.iter().copied().find(|&id| is_available(id))
     }
 
     pub fn take_through(&mut self, position: usize) -> Option<i64> {

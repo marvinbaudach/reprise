@@ -241,15 +241,30 @@ pub(crate) fn validate_registered_track(
     path: &Path,
 ) -> Result<(), String> {
     let registered_path = conn
-        .query_row("SELECT path FROM tracks WHERE id=?1", [id], |row| {
-            row.get::<_, String>(0)
-        })
+        .query_row(
+            "SELECT path FROM tracks WHERE id=?1 AND removed_at IS NULL",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
         .optional()
         .map_err(|error| format!("could not validate track path before edit: {error}"))?;
     match registered_path {
         Some(registered) if registered == path.to_string_lossy() => Ok(()),
         _ => Err("track path changed before edit; refusing stale request".into()),
     }
+}
+
+fn prepare_tag_reconciliation(conn: &Connection, id: i64, path: &Path) -> Result<(), String> {
+    let changed = conn
+        .execute(
+            "UPDATE tracks SET file_mtime=-1 \
+             WHERE id=?1 AND path=?2 AND removed_at IS NULL",
+            rusqlite::params![id, path.to_string_lossy()],
+        )
+        .map_err(|error| format!("could not prepare tag reconciliation: {error}"))?;
+    (changed == 1)
+        .then_some(())
+        .ok_or_else(|| "track path changed before tag reconciliation; refusing stale write".into())
 }
 
 /// Duration to suppress watcher events for each written file.
@@ -326,26 +341,14 @@ fn apply_patch_batch_inner(
         // unchanged; invalidate only this row first so reconciliation is
         // guaranteed. If scanning fails, -1 intentionally causes the next
         // watcher/manual scan to retry instead of preserving stale DB tags.
-        match conn.execute("UPDATE tracks SET file_mtime=-1 WHERE id=?1", [id]) {
-            Ok(1) => {}
-            Ok(_) => {
-                report.failures.push(TagWriteFailure {
-                    id: *id,
-                    path: path.clone(),
-                    kind: WriteErrorKind::Io,
-                    error: "track row disappeared before tag reconciliation".into(),
-                });
-                continue;
-            }
-            Err(error) => {
-                report.failures.push(TagWriteFailure {
-                    id: *id,
-                    path: path.clone(),
-                    kind: WriteErrorKind::Io,
-                    error: format!("could not prepare tag reconciliation: {error}"),
-                });
-                continue;
-            }
+        if let Err(error) = prepare_tag_reconciliation(conn, *id, path) {
+            report.failures.push(TagWriteFailure {
+                id: *id,
+                path: path.clone(),
+                kind: WriteErrorKind::Io,
+                error,
+            });
+            continue;
         }
 
         match crate::library::scanner::scan_folder(conn, path) {
@@ -757,3 +760,7 @@ mod tests {
         .is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "tag_edit_reread_tests.rs"]
+mod reread_tests;

@@ -21,7 +21,7 @@ fn test_shared() -> Rc<Shared> {
         on_show_content: RefCell::new(None),
         on_import_playlist: RefCell::new(None),
         on_tracks_added: RefCell::new(None),
-        on_missing_removed: RefCell::new(None),
+        on_remove_missing: RefCell::new(None),
         on_queue_drop: RefCell::new(None),
         window: glib::WeakRef::new(),
         toast_overlay: glib::WeakRef::new(),

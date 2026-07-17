@@ -15,6 +15,7 @@ use rusqlite::{Connection, OptionalExtension};
 /// risking a typo'd duplicate string.
 pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
+pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
 /// an error — for a key that has never been written, matching every other
@@ -82,6 +83,14 @@ pub fn get_library_root(conn: &Connection) -> Result<Option<String>, rusqlite::E
 
 pub fn set_library_root(conn: &Connection, root: &str) -> Result<(), rusqlite::Error> {
     set_setting(conn, LIBRARY_ROOT_KEY, root)
+}
+
+pub fn get_last_scan_relinked(conn: &Connection) -> Result<Option<u32>, rusqlite::Error> {
+    Ok(get_setting(conn, LAST_SCAN_RELINKED_KEY)?.and_then(|value| value.parse::<u32>().ok()))
+}
+
+pub fn set_last_scan_relinked(conn: &Connection, count: u32) -> Result<(), rusqlite::Error> {
+    set_setting(conn, LAST_SCAN_RELINKED_KEY, &count.to_string())
 }
 
 pub fn get_onboarding_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
@@ -639,6 +648,56 @@ pub fn get_auto_clean_armed_at(conn: &Connection) -> Result<Option<i64>, rusqlit
 /// the setting is enabled.
 pub fn set_auto_clean_armed_at(conn: &Connection, armed_at: i64) -> Result<(), rusqlite::Error> {
     set_setting(conn, AUTO_CLEAN_ARMED_AT_KEY, &armed_at.to_string())
+}
+
+/// Unix-seconds timestamp of the last time the user opened the Missing
+/// files / Import errors views — the clock the sidebar's ISSUES badges
+/// (Task 2.5) are keyed on. `queries::count_new_missing`/`queries::count_
+/// new_import_errors` take this as a plain `i64` parameter rather than
+/// reading it internally, the same "boundary arithmetic stays testable"
+/// shape `auto_clean_eligible`'s `now: i64` parameter already uses above —
+/// a pure function over an explicit timestamp needs no fake clock to test
+/// its `>` boundary.
+///
+/// A never-written key reads back as `0`, not an error and not `None`:
+/// `0` is deliberately BELOW any real `first_seen`/`missing_since` unix
+/// timestamp this app will ever record, so "never viewed" naturally makes
+/// every existing issue count as new — exactly the behavior a first-run
+/// user should see (there IS a backlog, and they haven't looked at it yet).
+/// A stored value that fails to parse as `i64` (hand-edited/corrupt
+/// database) degrades to this same `0` fallback, never an error — the same
+/// "fail toward showing more, not toward crashing" posture `AutoCleanSetting
+/// ::parse`'s doc comment argues for on the opposite (destructive) side of
+/// this codebase's settings.
+pub const LAST_VIEWED_MISSING_KEY: &str = "last_viewed_missing";
+pub const LAST_VIEWED_IMPORT_ERRORS_KEY: &str = "last_viewed_import_errors";
+
+/// See [`LAST_VIEWED_MISSING_KEY`]'s doc comment for the "missing key or
+/// corrupt value both read back as 0" contract this and its three siblings
+/// below share.
+pub fn get_last_viewed_missing(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    let stored = get_setting(conn, LAST_VIEWED_MISSING_KEY)?;
+    Ok(stored
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0))
+}
+
+/// Writes `now` as the Missing-files view's last-viewed timestamp — the
+/// view (a later task) calls this the moment it opens, which is what clears
+/// `queries::count_new_missing`'s badge for everything currently visible.
+pub fn set_last_viewed_missing(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
+    set_setting(conn, LAST_VIEWED_MISSING_KEY, &now.to_string())
+}
+
+pub fn get_last_viewed_import_errors(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    let stored = get_setting(conn, LAST_VIEWED_IMPORT_ERRORS_KEY)?;
+    Ok(stored
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0))
+}
+
+pub fn set_last_viewed_import_errors(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
+    set_setting(conn, LAST_VIEWED_IMPORT_ERRORS_KEY, &now.to_string())
 }
 
 #[cfg(test)]

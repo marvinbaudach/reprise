@@ -12,8 +12,7 @@ use crate::models::MissingReason;
 use rusqlite::{Connection, OptionalExtension};
 
 use super::clauses::{MISSING, PRESENT};
-use super::queue::QUEUE_LIMIT;
-use super::{ImportErrorRow, TrackSummary};
+use super::TrackSummary;
 
 /// Resolves one track id to its `TrackSummary` — the queue's per-track
 /// playback step (`play_track_id` in `ui::player_controller`) calls this for
@@ -53,6 +52,38 @@ pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite:
         .query_map([], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
     Ok(ids)
+}
+
+/// IDs safe to retain across queue/session restoration. Present rows and
+/// unmounted/unknown missing rows stay because their files can return;
+/// proven-deleted and tombstoned rows do not. This is intentionally broader
+/// than [`query_live_track_ids`], which remains the playback predicate.
+pub fn query_queue_retained_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT id FROM tracks \
+         WHERE removed_at IS NULL \
+           AND (missing_since IS NULL OR coalesce(missing_reason, 'unknown') != 'deleted')",
+    )?;
+    let ids = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(ids)
+}
+
+/// Filters a current playback snapshot through the queue-retention policy.
+/// Input order is preserved and duplicate ids are collapsed because callers
+/// pass the result to id-based purge operations, not position-based edits.
+pub fn query_queue_purge_track_ids(
+    conn: &Connection,
+    candidates: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let retained = query_queue_retained_track_ids(conn)?;
+    let mut seen = HashSet::new();
+    Ok(candidates
+        .iter()
+        .copied()
+        .filter(|id| !retained.contains(id) && seen.insert(*id))
+        .collect())
 }
 
 /// Returns every non-missing media path in stable path order for cover batch
@@ -185,7 +216,8 @@ pub fn query_sync_tracks(
     Ok(tracks)
 }
 
-/// Marks track `track_id` as missing (Stage 2 Task 5: a physically deleted
+/// Marks `track_id` missing only while it is still the live row at
+/// `expected_path` (Stage 2 Task 5: a physically deleted
 /// file must never crash or dead-end the app — this is the DB-side half of
 /// that guarantee). Every windowed/count/id query for `ViewSource::Library`/
 /// `Playlist`/`Smart` already filters on `PRESENT`, so the row disappears
@@ -199,72 +231,46 @@ pub fn query_sync_tracks(
 /// this used to always write for a real verdict from `library::mounts::
 /// classify_missing`, the same classifier the scanner's own folded-in
 /// mark-vanished phase (`library::scanner::scan_folder`) uses — one `SELECT`
-/// of the row's `path`/`device` first, since this function's only input is
-/// `track_id`. `Ok(())` no-ops (writes `Unknown`, same as the pre-classifier
-/// behavior, then updates 0 rows) for an id that no longer exists, matching
-/// this function's pre-1.5 contract of never erroring on a stale id — the
-/// playback-fault call site races against the row being removed out from
-/// under it (e.g. a concurrent watcher reconcile) more plausibly than most
-/// callers in this codebase.
-pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqlite::Error> {
+/// of the row's `path`/`device` first. The expected path is the identity
+/// snapshot taken before the asynchronous backend fault arrived. Both the
+/// read and write require that same path plus [`PRESENT`], and the file is
+/// rechecked immediately before writing. A watcher/Locate reconcile that
+/// wins the race therefore survives instead of having its new live identity
+/// marked missing by stale fault work. Returns whether one row changed.
+pub fn mark_track_missing_if_current(
+    conn: &Connection,
+    track_id: i64,
+    expected_path: &Path,
+) -> Result<bool, rusqlite::Error> {
+    let expected_path = expected_path.to_string_lossy();
     let row: Option<(String, Option<i64>)> = conn
         .query_row(
-            "SELECT path, device FROM tracks WHERE id = ?1",
-            [track_id],
+            &format!("SELECT path,device FROM tracks WHERE id=?1 AND path=?2 AND {PRESENT}"),
+            rusqlite::params![track_id, expected_path.as_ref()],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    let reason = match &row {
-        Some((path, device)) => crate::library::mounts::classify_missing(*device, Path::new(path)),
-        None => MissingReason::Unknown,
+    let Some((path, device)) = row else {
+        return Ok(false);
     };
-    conn.execute(
-        "UPDATE tracks SET missing_since = strftime('%s','now'), missing_reason = ?2 \
-         WHERE id = ?1",
-        rusqlite::params![track_id, reason.as_str()],
+    if Path::new(&path).is_file() {
+        return Ok(false);
+    }
+    let reason = crate::library::mounts::classify_missing(device, Path::new(&path));
+    let changed = conn.execute(
+        &format!(
+            "UPDATE tracks SET missing_since=strftime('%s','now'),missing_reason=?3 \
+             WHERE id=?1 AND path=?2 AND {PRESENT}"
+        ),
+        rusqlite::params![track_id, path, reason.as_str()],
     )?;
-    Ok(())
-}
-
-/// "Remove from library" (Stage 3 Task 8's Missing-source action): deletes
-/// `track_id`'s row outright. This is a DATABASE-ONLY delete — it never
-/// touches the file on disk, which is the whole point of the app's "we never
-/// delete your files" promise; there is nothing to delete here anyway, since
-/// this action only exists for a track already flagged `missing` (the file
-/// is already gone from disk by definition).
-///
-/// The `WHERE ... AND` `MISSING` guard is a defensive belt-and-braces
-/// check, not just `WHERE id = ?1`: it makes this call a no-op (`Ok(false)`)
-/// against a track that somehow isn't actually missing any more (e.g. a
-/// rescan raced ahead of a stale Missing-view selection and restored the
-/// file), rather than silently deleting a live library row's history because
-/// the UI's idea of "this row is missing" was one reload out of date.
-/// Returns whether a row was actually deleted.
-///
-/// This lone-row primitive does NOT renumber any playlist the deleted track
-/// belonged to, or purge it from the playback queue — see [`remove_missing_
-/// tracks`]'s doc comment for the cross-task invariant a bare delete like
-/// this one breaks (`playlist_tracks.position` gaps -> `library::playlists::
-/// move_position` moving the wrong row; a phantom id left in `queue::
-/// Queue`). Every real caller should go through `remove_missing_tracks`
-/// instead — this function is kept for the tests that pin its own no-op
-/// guard in isolation. The batch path now shares `remove_tracks_impl` with
-/// the explicit live-row removal API rather than calling this wrapper.
-pub fn remove_missing_track(conn: &Connection, track_id: i64) -> Result<bool, rusqlite::Error> {
-    let deleted = conn.execute(
-        &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING}"),
-        rusqlite::params![track_id],
-    )?;
-    Ok(deleted > 0)
+    Ok(changed == 1)
 }
 
 /// Batch, TRANSACTIONAL "Remove from library" (Stage-3 close-out fix): the
-/// version the bulk `remove_all_missing_tracks` path (the sidebar's "remove
-/// all missing" cleanup) uses instead of looping over
-/// [`remove_missing_track`] directly — the difference matters. A bare per-id
-/// `remove_missing_track` loop deletes each `tracks` row but leaves two
-/// cross-task invariants broken behind it
-/// (this is the bug this function's introduction fixes; Task 3's own
+/// version every real caller (`ui::track_actions::remove_missing_selected`)
+/// uses. A bare per-id delete would leave two cross-task invariants broken
+/// behind it (this is the bug this function's introduction fixes; Task 3's own
 /// `playlist_tracks`-related comments in this module documented reliance on
 /// "nothing hard-deletes a `tracks` row" — see the two `invariant:` comments
 /// this task updated, on `query_track_window_queue` and `query_track_count`):
@@ -292,33 +298,13 @@ pub fn remove_missing_track(conn: &Connection, track_id: i64) -> Result<bool, ru
 /// *before* each delete (the FK cascade is about to remove those very
 /// `playlist_tracks` rows). Returns the ids actually deleted — a subset of
 /// `ids`, in input order; an id that wasn't/isn't-anymore missing is
-/// silently skipped (matching `remove_missing_track`'s own no-op contract),
-/// not an error. A no-op (`Ok(vec![])`, no transaction opened) for an empty
+/// silently skipped, not an error. A no-op (`Ok(vec![])`, no transaction opened) for an empty
 /// `ids` slice.
 pub fn remove_missing_tracks(
     conn: &mut Connection,
     ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
     remove_tracks_impl(conn, ids, RemoveGuard::MissingOnly)
-}
-
-/// Removes every row currently marked missing from the library database.
-/// This is the bulk counterpart to [`remove_missing_tracks`]: it never
-/// touches media files, preserves live rows, compacts affected playlists in
-/// the same transaction, and returns the exact ids the caller must purge
-/// from its playback queue. The stable id order keeps callback behavior and
-/// tests deterministic.
-pub fn remove_all_missing_tracks(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Error> {
-    let ids = {
-        let mut statement = conn.prepare(&format!(
-            "SELECT id FROM tracks WHERE {MISSING} ORDER BY id"
-        ))?;
-        let ids = statement
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<Vec<i64>, _>>()?;
-        ids
-    };
-    remove_missing_tracks(conn, &ids)
 }
 
 /// Explicit, DATABASE-ONLY removal for live or missing tracks. This never
@@ -330,14 +316,29 @@ pub fn remove_tracks(conn: &mut Connection, ids: &[i64]) -> Result<Vec<i64>, rus
     remove_tracks_impl(conn, ids, RemoveGuard::Any)
 }
 
+/// Deletes only rows whose current `(id, path)` identity still matches the
+/// caller's snapshot. Dialog and filesystem operations can outlive the row
+/// they started from, and track ids are reusable, so an id-only delete would
+/// be allowed to hit an unrelated replacement row. Playlist compaction and
+/// the identity check share one transaction.
+pub fn remove_tracks_matching_paths(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    remove_track_requests_impl(
+        conn,
+        tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
+        RemoveGuard::Any,
+    )
+}
+
 /// Which rows `remove_tracks_impl`'s per-id `DELETE` is allowed to actually
 /// touch — an extra condition appended to `WHERE id = ?1`, re-checked at
 /// delete time rather than trusted from whatever snapshot the caller
 /// selected `ids` from. `Any` is the explicit live-or-missing removal API
-/// (`remove_tracks`, no extra guard). `MissingOnly` is `remove_missing_
-/// track[s]`'s belt-and-braces check against a row that raced back to
-/// present since the caller's selection (see `remove_missing_track`'s doc
-/// comment). `TombstonedOnly` is `purge_tombstones`'s guard against the
+/// (`remove_tracks`, no extra guard). `MissingOnly` is `remove_missing_tracks`'s
+/// belt-and-braces check against a row that raced back to present since the
+/// caller's selection. `TombstonedOnly` is `purge_tombstones`'s guard against the
 /// mirror race on the other side of the same problem: the scanner's
 /// resurrect-on-evidence write (`library::watcher`, its own OS thread and
 /// `rusqlite::Connection`, racing the purge's connection under WAL) can
@@ -363,12 +364,21 @@ pub(crate) fn remove_tracks_impl(
     ids: &[i64],
     guard: RemoveGuard,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    if ids.is_empty() {
+    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard)
+}
+
+fn remove_track_requests_impl<'a>(
+    conn: &mut Connection,
+    requests: impl IntoIterator<Item = (i64, Option<&'a Path>)>,
+    guard: RemoveGuard,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let requests = requests.into_iter().collect::<Vec<_>>();
+    if requests.is_empty() {
         return Ok(Vec::new());
     }
     let tx = conn.transaction()?;
-    let mut removed = Vec::with_capacity(ids.len());
-    for &id in ids {
+    let mut removed = Vec::with_capacity(requests.len());
+    for (id, expected_path) in requests {
         let mut stmt =
             tx.prepare("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1")?;
         let affected_playlists: Vec<i64> = stmt
@@ -376,22 +386,27 @@ pub(crate) fn remove_tracks_impl(
             .collect::<Result<_, _>>()?;
         drop(stmt);
 
-        let deleted = match guard {
-            RemoveGuard::Any => {
+        let deleted = match (guard, expected_path) {
+            (RemoveGuard::Any, Some(expected_path)) => tx.execute(
+                "DELETE FROM tracks WHERE id = ?1 AND path = ?2",
+                rusqlite::params![id, expected_path.to_string_lossy()],
+            )?,
+            (RemoveGuard::Any, None) => {
                 tx.execute("DELETE FROM tracks WHERE id = ?1", rusqlite::params![id])?
             }
-            RemoveGuard::MissingOnly => tx.execute(
+            (RemoveGuard::MissingOnly, None) => tx.execute(
                 &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING}"),
                 rusqlite::params![id],
             )?,
-            RemoveGuard::TombstonedOnly => tx.execute(
+            (RemoveGuard::TombstonedOnly, None) => tx.execute(
                 "DELETE FROM tracks WHERE id = ?1 AND removed_at IS NOT NULL",
                 rusqlite::params![id],
             )?,
-            RemoveGuard::AutoCleanEligible => tx.execute(
+            (RemoveGuard::AutoCleanEligible, None) => tx.execute(
                 &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING} AND missing_reason = ?2"),
                 rusqlite::params![id, MissingReason::Deleted.as_str()],
             )?,
+            (_, Some(_)) => unreachable!("path identity is only valid with RemoveGuard::Any"),
         };
         if deleted == 0 {
             continue;
@@ -607,47 +622,6 @@ pub fn purge_tombstones(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Err
 /// the "Import errors" badge count.
 pub fn query_import_error_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
     conn.query_row("SELECT count(*) FROM import_errors", [], |r| r.get(0))
-}
-
-/// Loads every `import_errors` row, most recent first (`last_seen DESC`,
-/// falling back to `path DESC` for same-second ties so the ordering is
-/// deterministic — schema v10 (Task 1.1) made `path` the table's primary
-/// key, so it replaces the old surrogate `id` as the tie-break column) —
-/// capped at `QUEUE_LIMIT` for the same defense-in-depth reason every other
-/// unbounded list query in this module is.
-pub fn query_import_errors(conn: &Connection) -> Result<Vec<ImportErrorRow>, rusqlite::Error> {
-    let sql = format!(
-        "SELECT path, reason_detail, last_seen FROM import_errors \
-         ORDER BY last_seen DESC, path DESC LIMIT {QUEUE_LIMIT}"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |r| {
-        Ok(ImportErrorRow {
-            path: r.get(0)?,
-            reason: r.get(1)?,
-            occurred_at: r.get(2)?,
-        })
-    })?;
-    rows.collect()
-}
-
-/// "Dismiss" action (Stage 3 Task 8's ImportErrors source): deletes one
-/// `import_errors` row by its `path` — the table's primary key since schema
-/// v10 (Task 1.1). This never touches `tracks` or any file on disk — it
-/// only clears the recorded failure itself.
-pub fn delete_import_error(conn: &Connection, path: &str) -> Result<(), rusqlite::Error> {
-    conn.execute(
-        "DELETE FROM import_errors WHERE path = ?1",
-        rusqlite::params![path],
-    )?;
-    Ok(())
-}
-
-/// Dismisses every recorded import failure and returns the number cleared.
-/// The diagnostic table is independent of `tracks`; no library row or media
-/// file is touched.
-pub fn delete_all_import_errors(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute("DELETE FROM import_errors", [])
 }
 
 /// Looks up a track's id by its exact, parameterized `path` (Stage 3 Task 7:

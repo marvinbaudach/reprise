@@ -193,12 +193,29 @@ pub(in crate::ui) fn wire_source_routing(
     let stats_view = Rc::new(stats_view);
     let device_view = device_view.clone();
     let conn = conn.clone();
+    let sidebar_for_select = sidebar.clone();
     let show_content_on_select = show_content.clone();
     let nav_history = nav_history.clone();
     sidebar.set_on_select(move |source, source_name| {
         // NAV-2: every routed switch records the place it leaves. Back
         // re-routes through here too, silenced by its suppression flag.
         nav_history.record_route(&source);
+        let viewed = {
+            let conn = conn.borrow();
+            crate::ui::view_session::record_issue_viewed(
+                &conn,
+                &source,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+            )
+        };
+        match viewed {
+            Ok(true) => sidebar_for_select.refresh("issue view opened"),
+            Ok(false) => {}
+            Err(error) => tracing::error!(%error, "failed to record issue view as viewed"),
+        }
         let is_library = matches!(source, ViewSource::Library);
         if let ViewSource::Device { serial } = &source {
             device_view.show_device(serial);

@@ -303,3 +303,33 @@ fn equalizer_bands_reject_corrupt_values_and_clamp_writes() {
     set_equalizer_bands(&conn, [50.0; 10]).unwrap();
     assert_eq!(get_equalizer_bands(&conn), [12.0; 10]);
 }
+
+#[test]
+fn last_viewed_missing_defaults_to_zero_round_trips_and_tolerates_corruption() {
+    let conn = migrated_conn();
+    // Never written — "never viewed" reads back as 0 (queries::count_new_
+    // missing then treats every missing row as new).
+    assert_eq!(get_last_viewed_missing(&conn).unwrap(), 0);
+
+    set_last_viewed_missing(&conn, 1_700_000_000).unwrap();
+    assert_eq!(get_last_viewed_missing(&conn).unwrap(), 1_700_000_000);
+
+    // A hand-edited/corrupt value falls back to 0 — same "never viewed"
+    // fallback as a missing key, never an error: a badge that fails closed
+    // (shows too much) is far safer than one that panics or silently hides
+    // real issues.
+    set_setting(&conn, LAST_VIEWED_MISSING_KEY, "not-a-number").unwrap();
+    assert_eq!(get_last_viewed_missing(&conn).unwrap(), 0);
+}
+
+#[test]
+fn last_viewed_import_errors_defaults_to_zero_round_trips_and_tolerates_corruption() {
+    let conn = migrated_conn();
+    assert_eq!(get_last_viewed_import_errors(&conn).unwrap(), 0);
+
+    set_last_viewed_import_errors(&conn, 1_700_000_500).unwrap();
+    assert_eq!(get_last_viewed_import_errors(&conn).unwrap(), 1_700_000_500);
+
+    set_setting(&conn, LAST_VIEWED_IMPORT_ERRORS_KEY, "nope").unwrap();
+    assert_eq!(get_last_viewed_import_errors(&conn).unwrap(), 0);
+}

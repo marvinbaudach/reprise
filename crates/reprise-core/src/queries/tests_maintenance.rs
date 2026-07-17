@@ -1,4 +1,4 @@
-//! Maintenance test coverage: hard-delete (`remove_missing_track[s]`),
+//! Maintenance test coverage: hard-delete (`remove_missing_tracks`),
 //! import-error triage, and `track_id_for_path` — split out of the former
 //! single-file `queries.rs`'s inline test module (Refactoring &
 //! Extensibility Task 1) purely to keep every file under the project's
@@ -118,152 +118,6 @@ fn query_import_error_count_counts_the_table() {
     )
     .unwrap();
     assert_eq!(query_import_error_count(&conn).unwrap(), 2);
-}
-
-#[test]
-fn query_import_errors_returns_rows_most_recent_first() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
-         VALUES ('/x/a.flac', 'tag', 'bad tag', 100, 100)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
-         VALUES ('/x/b.flac', 'io', 'io error', 200, 200)",
-        [],
-    )
-    .unwrap();
-
-    let rows = query_import_errors(&conn).unwrap();
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].path, "/x/b.flac");
-    assert_eq!(rows[0].reason, "io error");
-    assert_eq!(rows[0].occurred_at, 200);
-    assert_eq!(rows[1].path, "/x/a.flac");
-}
-
-#[test]
-fn query_import_errors_empty_table_returns_empty_vec() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    assert!(query_import_errors(&conn).unwrap().is_empty());
-}
-
-#[test]
-fn delete_import_error_removes_only_the_given_row() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
-         VALUES ('/x/a.flac', 'tag', 'bad tag', 100, 100)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
-         VALUES ('/x/b.flac', 'io', 'io error', 200, 200)",
-        [],
-    )
-    .unwrap();
-    let rows = query_import_errors(&conn).unwrap();
-    let to_delete = rows
-        .iter()
-        .find(|r| r.path == "/x/a.flac")
-        .unwrap()
-        .path
-        .clone();
-
-    delete_import_error(&conn, &to_delete).unwrap();
-
-    let remaining = query_import_errors(&conn).unwrap();
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].path, "/x/b.flac");
-}
-
-#[test]
-fn delete_all_import_errors_clears_only_recorded_failures() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
-         VALUES ('/x/a.flac', 'tag', 'bad tag', 100, 100)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
-         VALUES ('/x/b.flac', 'io', 'io error', 200, 200)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/live.flac', 'Live', '', 0)",
-        [],
-    )
-    .unwrap();
-
-    assert_eq!(delete_all_import_errors(&conn).unwrap(), 2);
-    assert_eq!(query_import_error_count(&conn).unwrap(), 0);
-    assert_eq!(delete_all_import_errors(&conn).unwrap(), 0);
-    let track_count: i64 = conn
-        .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(
-        track_count, 1,
-        "clearing diagnostics must not delete tracks"
-    );
-}
-
-#[test]
-fn remove_missing_track_deletes_a_missing_row() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
-         VALUES ('/x/a.flac', 'A', '', 0, 1)",
-        [],
-    )
-    .unwrap();
-    let id: i64 = conn
-        .query_row("SELECT id FROM tracks", [], |r| r.get(0))
-        .unwrap();
-
-    let removed = remove_missing_track(&conn, id).unwrap();
-
-    assert!(removed);
-    let count: i64 = conn
-        .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(count, 0);
-}
-
-/// Defensive guard: a track that is NOT (or no longer) missing must
-/// survive a `remove_missing_track` call untouched — see that function's
-/// doc comment for why this guard exists (a stale Missing-view selection
-/// racing a rescan that just restored the file).
-#[test]
-fn remove_missing_track_is_a_no_op_when_the_track_is_not_missing() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/a.flac', 'A', '', 0)",
-        [],
-    )
-    .unwrap();
-    let id: i64 = conn
-        .query_row("SELECT id FROM tracks", [], |r| r.get(0))
-        .unwrap();
-
-    let removed = remove_missing_track(&conn, id).unwrap();
-
-    assert!(!removed);
-    let count: i64 = conn
-        .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(count, 1, "the non-missing row must survive untouched");
 }
 
 // -- remove_missing_tracks (Stage-3 close-out) ----------------------
@@ -403,42 +257,6 @@ fn remove_missing_tracks_empty_slice_is_a_no_op() {
         .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 2);
-}
-
-#[test]
-fn remove_all_missing_tracks_preserves_live_rows_and_compacts_playlists() {
-    let mut conn = seeded_conn_with_tracks(4);
-    let playlist_id = playlists::create(&conn, "Cleanup").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4]).unwrap();
-    conn.execute(
-        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id IN (2, 3)",
-        [],
-    )
-    .unwrap();
-
-    let removed = remove_all_missing_tracks(&mut conn).unwrap();
-
-    assert_eq!(removed, vec![2, 3]);
-    let tracks: Vec<(i64, Option<i64>)> = conn
-        .prepare("SELECT id, missing_since FROM tracks ORDER BY id")
-        .unwrap()
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(tracks, vec![(1, None), (4, None)]);
-    let playlist_rows: Vec<(i64, i64)> = conn
-        .prepare(
-            "SELECT track_id, position FROM playlist_tracks \
-             WHERE playlist_id = ?1 ORDER BY position",
-        )
-        .unwrap()
-        .query_map([playlist_id], |row| Ok((row.get(0)?, row.get(1)?)))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(playlist_rows, vec![(1, 0), (4, 1)]);
-    assert!(remove_all_missing_tracks(&mut conn).unwrap().is_empty());
 }
 
 #[test]
@@ -651,6 +469,19 @@ fn sync_tracks_exclude_unknown_missing_and_unavailable_paths() {
 
     let tracks = query_sync_tracks(&conn, &[999, 1, 2, 3]).unwrap();
     assert_eq!(tracks.iter().map(|track| track.id).collect::<Vec<_>>(), [1]);
+}
+
+#[test]
+fn sync_tracks_exclude_tombstoned_rows_even_when_the_file_still_exists() {
+    let (_temp, conn) = seeded_sync_tracks();
+    conn.execute("UPDATE tracks SET removed_at = 1 WHERE id = 2", [])
+        .unwrap();
+
+    let tracks = query_sync_tracks(&conn, &[1, 2, 3]).unwrap();
+    assert_eq!(
+        tracks.iter().map(|track| track.id).collect::<Vec<_>>(),
+        [1, 3]
+    );
 }
 
 #[test]

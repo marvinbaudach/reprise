@@ -48,9 +48,9 @@ impl PlayerController {
         play_origin: Option<super::play_origin::PlayOrigin>,
     ) {
         debug_assert!(!restore_should_start_playback());
-        let existing = {
+        let retained = {
             let conn = self.conn.borrow();
-            match reprise_core::queries::query_live_track_ids(&conn) {
+            match reprise_core::queries::query_queue_retained_track_ids(&conn) {
                 Ok(ids) => ids,
                 Err(error) => {
                     tracing::warn!(%error, "could not validate restored queue IDs");
@@ -68,10 +68,10 @@ impl PlayerController {
             .snapshot()
             .ids
             .into_iter()
-            .filter(|id| !existing.contains(id))
+            .filter(|id| !retained.contains(id))
             .collect();
         queue.remove_ids(&missing);
-        let (up_next, current_up_next) = validated_up_next(up_next, current_up_next, &existing);
+        let (up_next, current_up_next) = validated_up_next(up_next, current_up_next, &retained);
         *self.queue.borrow_mut() = queue;
         *self.up_next.borrow_mut() = up_next;
         self.current_up_next.set(current_up_next);

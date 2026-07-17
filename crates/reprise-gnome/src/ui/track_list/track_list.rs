@@ -59,7 +59,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::gio;
-use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -70,6 +69,7 @@ use crate::ui::column_layout::ColumnRegistry;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
+use crate::ui::issues::MissingFilesView;
 use crate::ui::track_list_model::TrackListModel;
 pub(in crate::ui) use crate::ui::track_list_reload::{
     reload, set_filter_and_reload, set_source_and_reload,
@@ -80,18 +80,11 @@ use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
     OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
-    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnSelectionChanged,
-    OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
+    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds,
+    OnSelectionChanged, OnShowMissing, OnShowMissingFiles, OnSidebarPlaylistDrop,
+    OnSidebarQueueDrop, OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
-
-pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
-pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
-/// Stage 3 Task 8: the ImportErrors source's dedicated path/reason/time panel
-/// (`ui::import_errors_view::ImportErrorsView`) — a third `gtk::Stack` page,
-/// shown instead of `STACK_PAGE_LIST` only while `ViewSource::ImportErrors`
-/// is selected and has rows (see `apply_empty_state`'s `List` arm).
-pub(in crate::ui) const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -166,6 +159,10 @@ pub(in crate::ui) struct Shared {
     /// are mutated in place by `apply_empty_state` rather than swapping in a
     /// third stack page — see that function's doc comment.
     pub(in crate::ui) empty_page: adw::StatusPage,
+    pub(in crate::ui) empty_page_actions: gtk4::Box,
+    pub(in crate::ui) retry_library_button: gtk4::Button,
+    pub(in crate::ui) library_root_unavailable: Cell<bool>,
+    pub(in crate::ui) unavailable_library_root: RefCell<Option<PathBuf>>,
     pub(in crate::ui) show_all_button: gtk4::Button,
     pub(in crate::ui) empty_scan_widget: RefCell<Option<gtk4::Widget>>,
     pub(in crate::ui) sort: RefCell<SortState>,
@@ -234,6 +231,8 @@ pub(in crate::ui) struct Shared {
     /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
     /// but the ids jump the manual line instead of appending to it.
     pub(in crate::ui) on_play_next_selected: RefCell<Option<OnQueueSelected>>,
+    /// Toast-button navigation after activating a concrete missing row.
+    pub(in crate::ui) on_show_missing: RefCell<Option<OnShowMissing>>,
     pub(in crate::ui) on_queue_activate: RefCell<Option<OnQueueActivate>>,
     pub(in crate::ui) on_queue_remove: RefCell<Option<OnQueueRemove>>,
     pub(in crate::ui) on_queue_move_to_top: RefCell<Option<OnQueueMoveToTop>>,
@@ -287,21 +286,21 @@ pub(in crate::ui) struct Shared {
     /// other widget, and refreshed (not rebuilt) on every `reload()` while
     /// this source is selected.
     pub(in crate::ui) import_errors_view: ImportErrorsView,
+    pub(in crate::ui) missing_files_view: MissingFilesView,
     /// "Rescan library" (Missing-source context menu item, Stage 3 Task 8):
     /// injected via `TrackList::set_on_rescan_library` — wraps `ui::window`'s
     /// scan flow against the persisted library root without this module
     /// depending on the scan machinery/settings table directly (same
     /// decoupling-via-closure seam as the other post-construction callbacks).
     pub(in crate::ui) on_rescan_library: RefCell<Option<Rc<dyn Fn()>>>,
-    /// "Remove from library" (Missing-source context menu item, Stage 3 Task
-    /// 8): injected via `TrackList::set_on_library_mutated` — `window.rs`
-    /// wires this to `Sidebar::refresh` (the Missing badge count can only
-    /// ever shrink from this action) AND `PlayerController::purge_queue_ids`
-    /// (Stage-3 close-out: a hard-deleted track must also be purged from the
-    /// playback queue). Takes the ids `queries::remove_missing_tracks`
-    /// actually deleted — not just a bare notification — so the queue purge
-    /// knows exactly which ids to remove.
+    /// Missing-view mutation callback. Tombstone and Undo notify with an
+    /// empty id slice so the sidebar reloads immediately; expiry/auto-clean
+    /// notify with the exact hard-purged ids so the playback queue can purge
+    /// them only once removal is committed.
     pub(in crate::ui) on_library_mutated: RefCell<Option<OnLibraryMutated>>,
+    /// Read only after a completed manual scan or watcher reconcile, so the
+    /// snapshot and DB retention state are both current at reconciliation.
+    pub(in crate::ui) on_scan_queue_purge_ids: RefCell<Option<OnScanQueuePurgeIds>>,
     /// Invoked after successful file-tag writes and DB reconciliation.
     /// Kept separate from `on_library_mutated`: editing tags must never purge
     /// otherwise valid tracks from the playback queue.
@@ -418,6 +417,7 @@ impl TrackList {
         // separately, since `window.rs` already calls this one method at the
         // right point in construction.
         self.shared.import_errors_view.set_toast_overlay(overlay);
+        self.shared.missing_files_view.set_toast_overlay(overlay);
     }
 
     /// Injects the main window, once it exists — see the `Shared::window`
@@ -425,6 +425,8 @@ impl TrackList {
     /// it's used for (the context menu's "New playlist…" dialog parent).
     pub fn set_window(&self, window: &adw::ApplicationWindow) {
         self.shared.window.set(Some(window));
+        self.shared.import_errors_view.set_window(window);
+        self.shared.missing_files_view.set_window(window);
     }
 
     /// Injects the context menu's "Add to queue" action callback — see the
@@ -507,11 +509,14 @@ impl TrackList {
         *self.shared.on_rescan_library.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// Injects the callback invoked after "Remove from library" deletes rows
-    /// (Missing source, Stage 3 Task 8) — see the `Shared::on_library_
-    /// mutated` doc comment. `window.rs` wires this to `Sidebar::refresh`.
+    /// Injects the Missing-view mutation callback — see `Shared::on_library_
+    /// mutated` for the empty-vs-purged id contract.
     pub fn set_on_library_mutated(&self, callback: impl Fn(&[i64]) + 'static) {
         *self.shared.on_library_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn remove_missing_with_undo(&self, ids: &[i64]) {
+        self.shared.missing_files_view.remove_with_undo(ids);
     }
 
     pub fn set_on_tags_mutated(&self, callback: impl Fn(&[PathBuf]) + 'static) {
@@ -524,16 +529,6 @@ impl TrackList {
     /// this to `Sidebar::refresh`.
     pub fn set_on_import_errors_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_import_errors_mutated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Sets a widget as the child of the empty-library status page, so it
-    /// appears below the icon/title/description during a first scan.
-    /// Called from `window.rs` after the `EmptyScanIndicator` is created,
-    /// to embed its container widget in the status page.
-    pub fn set_empty_scan_widget(&self, widget: &impl IsA<gtk4::Widget>) {
-        let widget = widget.as_ref().clone();
-        *self.shared.empty_scan_widget.borrow_mut() = Some(widget.clone());
-        self.shared.empty_page.set_child(Some(&widget));
     }
 
     /// Injects the player controller — injected post-construction via

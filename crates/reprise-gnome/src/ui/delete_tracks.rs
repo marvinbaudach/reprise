@@ -199,8 +199,7 @@ fn run_delete(
 ) -> DeleteReport {
     match mode {
         DeleteMode::Remove => {
-            let ids: Vec<_> = tracks.iter().map(|(id, _)| *id).collect();
-            match reprise_core::queries::remove_tracks(conn, &ids) {
+            match reprise_core::queries::remove_tracks_matching_paths(conn, tracks) {
                 Ok(removed_ids) => {
                     let failures = tracks.len().saturating_sub(removed_ids.len());
                     DeleteReport {
@@ -317,6 +316,14 @@ fn paths_within_temp_root(root: &Path, paths: &[PathBuf]) -> bool {
 mod tests {
     use super::*;
 
+    fn insert_track(conn: &rusqlite::Connection, id: i64, path: &Path, title: &str) {
+        conn.execute(
+            "INSERT INTO tracks (id,path,title,artist,added_at) VALUES (?1,?2,?3,'',0)",
+            rusqlite::params![id, path.to_string_lossy(), title],
+        )
+        .unwrap();
+    }
+
     #[test]
     fn smoke_guard_accepts_only_existing_files_inside_temporary_root() {
         let root = tempfile::tempdir().unwrap();
@@ -335,5 +342,68 @@ mod tests {
             root.path(),
             &[root.path().join("missing.flac")],
         ));
+    }
+
+    #[test]
+    fn stale_track_identity_survives_remove_dialog_and_trash_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("delete-race.sqlite");
+        let mut conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
+
+        let old_remove_path = temp.path().join("old-remove.flac");
+        let replacement_remove_path = temp.path().join("replacement-remove.flac");
+        insert_track(&conn, 1, &old_remove_path, "Old remove row");
+        let stale_remove = vec![(1, old_remove_path)];
+        conn.execute("DELETE FROM tracks WHERE id=1", []).unwrap();
+        insert_track(&conn, 1, &replacement_remove_path, "Replacement remove row");
+
+        let remove_report = run_delete(&mut conn, &stale_remove, DeleteMode::Remove);
+        let remove_path_after = conn
+            .query_row("SELECT path FROM tracks WHERE id=1", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .ok();
+
+        let old_trash_path = temp.path().join("old-trash.flac");
+        let replacement_trash_path = temp.path().join("replacement-trash.flac");
+        std::fs::write(&old_trash_path, b"scratch").unwrap();
+        insert_track(&conn, 2, &old_trash_path, "Old trash row");
+        let stale_trash = vec![(2, old_trash_path.clone())];
+        let race_conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
+
+        let trash_report = reprise_core::library::trash_tracks::trash_tracks_with(
+            &mut conn,
+            &stale_trash,
+            |path| {
+                std::fs::remove_file(path).map_err(|error| error.to_string())?;
+                race_conn
+                    .execute("DELETE FROM tracks WHERE id=2", [])
+                    .map_err(|error| error.to_string())?;
+                insert_track(
+                    &race_conn,
+                    2,
+                    &replacement_trash_path,
+                    "Replacement trash row",
+                );
+                Ok(())
+            },
+        );
+
+        let trash_path_after = conn
+            .query_row("SELECT path FROM tracks WHERE id=2", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .ok();
+
+        assert!(trash_report.removed_ids.is_empty());
+        assert_eq!(
+            trash_path_after.as_deref(),
+            Some(replacement_trash_path.to_string_lossy().as_ref())
+        );
+        assert!(remove_report.removed_ids.is_empty());
+        assert_eq!(
+            remove_path_after.as_deref(),
+            Some(replacement_remove_path.to_string_lossy().as_ref())
+        );
     }
 }

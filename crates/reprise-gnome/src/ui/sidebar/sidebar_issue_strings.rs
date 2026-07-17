@@ -21,27 +21,16 @@ fn plural(singular: &str, plural: &str, count: usize) -> String {
 
 pub const DISMISS_ALL_IMPORT_ERRORS: &str = N_!("Dismiss all import errors");
 pub const REMOVE_ALL_MISSING_ENTRIES: &str = N_!("Remove all missing entries…");
-pub const IMPORT_ERRORS_CLEAR_FAILED: &str = N_!("Could not clear import errors");
+pub const IMPORT_ERRORS_DISMISS_FAILED: &str = N_!("Could not dismiss import errors");
 pub const REMOVE_MISSING_HEADING: &str = N_!("Remove All Missing Entries?");
-pub const REMOVE_MISSING_BODY: &str = N_!(
-    "This removes the missing tracks from the Reprise library. Your media files are never deleted."
-);
 pub const MISSING_ENTRIES_REMOVE_FAILED: &str = N_!("Could not remove missing entries");
 pub const CANCEL: &str = N_!("Cancel");
 pub const REMOVE: &str = N_!("Remove");
 
-pub fn import_errors_cleared(count: usize) -> String {
+pub fn import_errors_dismissed(count: usize) -> String {
     plural(
-        "Cleared {count} import error",
-        "Cleared {count} import errors",
-        count,
-    )
-}
-
-pub fn missing_entries_removed(count: usize) -> String {
-    plural(
-        "Removed {count} missing entry",
-        "Removed {count} missing entries",
+        "Dismissed {count} import error",
+        "Dismissed {count} import errors",
         count,
     )
 }

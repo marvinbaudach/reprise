@@ -34,6 +34,12 @@ pub(super) fn plural(
 mod artist;
 pub use artist::*;
 
+#[path = "strings_issues.rs"]
+mod issues;
+pub use issues::*;
+#[path = "strings_scan.rs"]
+mod scan;
+pub use scan::*;
 #[path = "strings_news.rs"]
 mod news;
 pub use news::*;
@@ -453,14 +459,29 @@ pub fn scan_already_running_toast() -> String {
     text(N_!("A scan is already running"))
 }
 
+/// Toast for the "Remove from library" context-menu action — plural-correct,
+/// same convention as the playlist-mutation toasts above.
+pub fn tracks_removed_from_library_toast(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} track removed from library",
+        "{count} tracks removed from library",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+/// Toast shown when `queries::remove_missing_tracks` fails while handling
+/// the context menu's "Remove from library" action.
+pub fn tracks_removed_from_library_failed_toast() -> String {
+    text(N_!("Could not remove tracks from library"))
+}
+
 // Import-errors panel (src/ui/import_errors_view.rs, Stage 3 Task 8): a
 // dedicated three-column (path/reason/time) view for the `import_errors`
 // table, since its rows aren't `Track`s and don't fit the shared
 // title/artist/… `ColumnView`.
 
-pub const IMPORT_ERROR_COLUMN_PATH: &str = N_!("Path");
-pub const IMPORT_ERROR_COLUMN_REASON: &str = N_!("Reason");
-pub const IMPORT_ERROR_COLUMN_TIME: &str = N_!("Time");
 /// "Retry" re-scans just that one path (`library::scanner::scan_folder`
 /// against the single file); success clears the row, failure refreshes its
 /// `reason`/`occurred_at`.

@@ -29,6 +29,8 @@ pub(in crate::ui) type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFi
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 pub(in crate::ui) type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
+/// Navigation callback for the action on a concrete missing-row toast.
+pub(in crate::ui) type OnShowMissing = Rc<dyn Fn(ViewSource)>;
 pub(in crate::ui) type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::QueueRow)>;
 pub(in crate::ui) type OnQueueRemove = Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
 pub(in crate::ui) type OnQueueMoveToTop =
@@ -53,6 +55,9 @@ pub(in crate::ui) type OnSidebarQueueDrop = Rc<dyn Fn(&[i64]) -> bool>;
 /// "Remove from library" callback — see the `Shared::on_library_mutated` doc
 /// comment. Takes the ids actually deleted (Stage-3 close-out).
 pub(in crate::ui) type OnLibraryMutated = Rc<dyn Fn(&[i64])>;
+/// Supplies ids in the live playback queues that no longer satisfy the
+/// core queue-retention policy after a completed scan.
+pub(in crate::ui) type OnScanQueuePurgeIds = Rc<dyn Fn() -> Vec<i64>>;
 /// Successful tag-edit callback. Paths let the player invalidate only the
 /// currently displayed cover while the window refreshes sidebar metadata.
 pub(in crate::ui) type OnTagsMutated = Rc<dyn Fn(&[PathBuf])>;

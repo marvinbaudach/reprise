@@ -50,7 +50,9 @@ use gtk4::prelude::*;
 
 use crate::ui::browse_filter_count;
 use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
-use crate::ui::track_list::track_list_empty_state::{apply_empty_state, empty_state_for};
+use crate::ui::track_list::track_list_empty_state::{
+    apply_empty_state, empty_state_for_availability,
+};
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
@@ -288,10 +290,10 @@ fn run_query(shared: &Rc<Shared>) {
     // view`, not `shared.model` (which `queries.rs` always resolves to an
     // empty window/count for this source — see its module doc's `ImportErrors`
     // section) — so its row count comes from refreshing that panel instead.
-    let count = if matches!(source, ViewSource::ImportErrors) {
-        shared.import_errors_view.refresh()
-    } else {
-        shared.model.n_items() as usize
+    let count = match source {
+        ViewSource::ImportErrors => shared.import_errors_view.refresh(),
+        ViewSource::Missing => shared.missing_files_view.refresh(),
+        _ => shared.model.n_items() as usize,
     };
     browse_filter_count::update(
         &shared.browse_bar,
@@ -302,7 +304,15 @@ fn run_query(shared: &Rc<Shared>) {
         &browse,
         &queue_ids,
     );
-    apply_empty_state(shared, empty_state_for(count, has_filter, &source));
+    apply_empty_state(
+        shared,
+        empty_state_for_availability(
+            count,
+            has_filter,
+            &source,
+            shared.library_root_unavailable.get(),
+        ),
+    );
 
     tracing::info!(
         count,

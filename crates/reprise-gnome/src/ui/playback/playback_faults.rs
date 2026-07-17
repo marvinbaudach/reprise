@@ -38,7 +38,17 @@
 use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
 use crate::ui::up_next_transport::AdvanceReason;
+use reprise_core::playback::{playback_fault_policy, PlaybackFaultNotice};
 use reprise_core::queries;
+
+fn notice_text(notice: PlaybackFaultNotice, title: &str) -> String {
+    match notice {
+        PlaybackFaultNotice::TrackUnavailableSkipped => {
+            strings::text(strings::TRACK_UNAVAILABLE_SKIPPED)
+        }
+        PlaybackFaultNotice::CouldNotPlaySkipped => strings::could_not_play_toast(title),
+    }
+}
 
 impl PlayerController {
     /// Diagnoses and reports a playback failure for `id` (shared by
@@ -58,41 +68,49 @@ impl PlayerController {
 
         match summary {
             Ok(Some(summary)) => {
-                if std::path::Path::new(&summary.path).exists() {
+                let policy = playback_fault_policy(std::path::Path::new(&summary.path).is_file());
+                if !policy.mark_missing {
                     tracing::error!(
                         track_id = id,
                         path = %summary.path,
                         title = %summary.title,
                         "playback failed for a file that still exists; skipping"
                     );
-                    self.show_toast(&strings::could_not_play_toast(&summary.title));
                 } else {
+                    let diagnostic = strings::file_missing_toast(&summary.title);
                     tracing::error!(
                         track_id = id,
                         path = %summary.path,
                         title = %summary.title,
+                        diagnostic,
                         "file no longer exists on disk; marking missing and skipping"
                     );
                     let mark_result = {
                         let conn = self.conn.borrow();
-                        queries::mark_track_missing(&conn, id)
+                        queries::mark_track_missing_if_current(
+                            &conn,
+                            id,
+                            std::path::Path::new(&summary.path),
+                        )
                     };
                     match mark_result {
-                        Ok(()) => {
-                            self.show_toast(&strings::file_missing_toast(&summary.title));
+                        Ok(true) => {
                             self.reload_track_list();
                         }
+                        Ok(false) => tracing::info!(
+                            track_id = id,
+                            "stale playback fault did not mark a reconciled track missing"
+                        ),
                         Err(error) => {
-                            // The row still shows in the list, but playback
-                            // already failed and is about to be skipped — the
-                            // user still needs to know *something* went
-                            // wrong, so fall back to the generic toast rather
-                            // than showing nothing.
                             tracing::error!(%error, track_id = id, "failed to mark track missing");
-                            self.show_toast(&strings::could_not_play_toast(&summary.title));
                         }
                     }
                 }
+                self.show_toast(&notice_text(policy.notices[0], &summary.title));
+                if policy.skip {
+                    self.skip_after_failure();
+                }
+                return;
             }
             Ok(None) => {
                 tracing::warn!(
@@ -170,6 +188,14 @@ fn failure_limit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_fault_notice_matches_fb_6_copy_exactly() {
+        assert_eq!(
+            notice_text(PlaybackFaultNotice::TrackUnavailableSkipped, "Ignored"),
+            "Track unavailable — skipped"
+        );
+    }
 
     #[test]
     fn should_stop_skipping_table() {

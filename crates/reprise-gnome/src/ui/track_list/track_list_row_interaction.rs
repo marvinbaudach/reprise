@@ -19,7 +19,8 @@ pub(in crate::ui) fn css() -> String {
          .reprise-track-cell.now-playing {{ \
            background-color: alpha(@accent_color, 0.09); }}\n\
          .now-playing-leading {{ box-shadow: inset 2px 0 0 @accent_color; }}\n\
-         .now-playing-title {{ color: @accent_color; font-weight: bold; }}"
+         .now-playing-title {{ color: @accent_color; font-weight: bold; }}\n\
+         .missing-track-title {{ opacity: 0.5; }}"
     )
 }
 

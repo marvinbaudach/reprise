@@ -26,7 +26,7 @@ use crate::ui::track_list_dnd;
 use crate::ui::track_list_row_interaction;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats;
-use reprise_core::models::Track;
+use reprise_core::models::{MissingReason, Track};
 
 /// Marker class carried by every cell of the currently-playing row — drives
 /// the accent row background. See `track_list_row_interaction.rs`'s CSS.
@@ -36,6 +36,8 @@ const NOW_PLAYING_CLASS: &str = "now-playing";
 const NOW_PLAYING_LEADING_CLASS: &str = "now-playing-leading";
 /// Class on the title label of the playing row: bold + theme accent.
 const NOW_PLAYING_TITLE_CLASS: &str = "now-playing-title";
+/// Class on a missing track's title label; set and cleared on every bind.
+const MISSING_TRACK_TITLE_CLASS: &str = "missing-track-title";
 
 /// Adds or removes `class` on `widget` to match `present` (idempotent, so a
 /// recycled cell rebound to a different row always ends in the right state).
@@ -45,6 +47,36 @@ fn toggle_class(widget: &impl gtk4::prelude::IsA<gtk4::Widget>, class: &str, pre
     } else {
         widget.remove_css_class(class);
     }
+}
+
+/// Human explanation shared by the missing-row tooltip and the explicit
+/// activation feedback. Presence is decided by `missing_since`; a missing
+/// reason absent from an old/migrated row degrades honestly to `Unknown`.
+pub(in crate::ui) fn missing_track_explanation(
+    missing_since: Option<i64>,
+    reason: Option<MissingReason>,
+) -> Option<String> {
+    let missing_since = missing_since?;
+    match reason.unwrap_or(MissingReason::Unknown) {
+        MissingReason::Unmounted => Some(strings::issue_text(strings::MISSING_ROW_UNAVAILABLE)),
+        MissingReason::Deleted | MissingReason::Unknown => {
+            let date = reprise_core::format::format_unix_timestamp(missing_since);
+            Some(strings::missing_row_file_since(&date))
+        }
+    }
+}
+
+fn apply_missing_title(label: &gtk4::Label, track: &Track) {
+    let missing = track.is_missing();
+    toggle_class(label, MISSING_TRACK_TITLE_CLASS, missing);
+    let attributes = missing.then(|| {
+        let attributes = gtk4::pango::AttrList::new();
+        attributes.insert(gtk4::pango::AttrInt::new_strikethrough(true));
+        attributes
+    });
+    label.set_attributes(attributes.as_ref());
+    let explanation = missing_track_explanation(track.missing_since, track.missing_reason);
+    label.set_tooltip_text(explanation.as_deref());
 }
 
 /// Toggles the `.now-playing` marker on `cell` by comparing `track_id`
@@ -274,14 +306,25 @@ pub(in crate::ui) fn append_title_column(
             return;
         };
         let track = boxed.borrow::<Track>();
-        let needle = shared_for_bind.filter.borrow().clone();
-        match super::match_highlight::highlight_markup(
-            &track.title,
-            &needle,
-            super::match_highlight::accent_foreground(&label).as_deref(),
-        ) {
-            Some(markup) => label.set_markup(&markup),
-            None => label.set_text(&track.title),
+        if track.is_missing() {
+            // Missing rows are de-emphasised (grey + strikethrough per the
+            // missing rules); the plain title carries no search highlight.
+            label.set_text(&track.title);
+            apply_missing_title(&label, &track);
+        } else {
+            // Clear any leftover missing styling from a recycled row FIRST
+            // (class off, attributes cleared, tooltip cleared), then let the
+            // search-match highlight own the label's final markup.
+            apply_missing_title(&label, &track);
+            let needle = shared_for_bind.filter.borrow().clone();
+            match super::match_highlight::highlight_markup(
+                &track.title,
+                &needle,
+                super::match_highlight::accent_foreground(&label).as_deref(),
+            ) {
+                Some(markup) => label.set_markup(&markup),
+                None => label.set_text(&track.title),
+            }
         }
         // One comparison drives all three now-playing affordances: the cell
         // background (via `.now-playing` on the row box), the equaliser's
@@ -589,5 +632,34 @@ mod rating_refresh_tests {
     fn rating_sort_requires_query_reload_but_other_sorts_need_one_row() {
         assert_eq!(rating_refresh_for_sort("rating"), RatingRefresh::Query);
         assert_eq!(rating_refresh_for_sort("title"), RatingRefresh::Row);
+    }
+}
+
+#[cfg(test)]
+mod missing_track_tests {
+    use reprise_core::models::MissingReason;
+
+    use super::*;
+
+    #[test]
+    fn missing_track_explanation_distinguishes_unavailable_drive_from_missing_file() {
+        assert_eq!(
+            missing_track_explanation(Some(1_000_000_000), Some(MissingReason::Unmounted)),
+            Some("On unavailable drive — returns when mounted".into())
+        );
+        for reason in [MissingReason::Deleted, MissingReason::Unknown] {
+            assert_eq!(
+                missing_track_explanation(Some(1_000_000_000), Some(reason)),
+                Some("File missing since 2001-09-09 01:46".into())
+            );
+        }
+        assert_eq!(missing_track_explanation(None, None), None);
+    }
+
+    #[test]
+    fn missing_title_css_uses_half_opacity() {
+        let css = crate::ui::track_list_row_interaction::css();
+        assert!(css.contains(".missing-track-title"));
+        assert!(css.contains("opacity: 0.5"));
     }
 }

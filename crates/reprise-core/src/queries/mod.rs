@@ -90,6 +90,7 @@ mod artist_context;
 pub mod autocomplete;
 mod browse;
 mod clauses;
+mod import_errors;
 mod issues;
 mod library;
 pub(crate) mod library_views;
@@ -130,28 +131,44 @@ pub use clauses::build_track_query;
 // directly, the same reachability fix Task 1's `ImportErrorKind` move to
 // `models` made for the same reason (see that commit's message).
 pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, MissingGroupKind};
+// Task 2.5: the sidebar badge counts, keyed on `last_viewed_*` — see
+// `issues`'s "Badge counts" section for the `count_missing`/`count_new_
+// missing` split. `pub use` for the same cross-crate reachability reason as
+// `query_missing_groups` above.
+pub use issues::{count_missing, count_new_missing};
+pub use issues::{mark_mount_unavailable, verify_unmounted_tracks};
 // Task 2.3: the auto-clean read/act split — `auto_clean_eligible` for a
 // preview, `run_auto_clean` for the real unattended deletion. `pub use` for
 // the same cross-crate reachability reason as `query_missing_groups` above:
 // the GUI (a later task) needs to name both directly as `reprise_core::
 // queries::{auto_clean_eligible, run_auto_clean}`.
 pub use issues::{auto_clean_eligible, run_auto_clean};
+// Task 2.4: the grouped import-error read/write queries the ImportErrors
+// triage UI is built against — see `import_errors`'s module doc for the
+// hint contract and the dismiss/restore semantics. `pub use` for the same
+// cross-crate reachability reason as `query_missing_groups` above.
+pub use import_errors::{
+    count_dismissed_import_errors, dismiss_all_import_errors, dismiss_import_error,
+    query_dismissed_import_errors, query_import_errors_grouped, restore_import_error,
+    ImportErrorEntry,
+};
+// Task 2.5: the import-errors half of the sidebar badge counts — see
+// `import_errors`'s own "Badge counts" section for the hint-inclusion split
+// between the two. `pub use` for the same cross-crate reachability reason as
+// `query_missing_groups` above.
+pub use import_errors::{count_import_errors_active, count_new_import_errors};
 pub use library_views::{
     query_album_track_ids, query_albums, query_artist_detail_albums, query_artists, AlbumSummary,
     ArtistAlbum, ArtistSummary,
 };
 pub use maintenance::{
-    delete_all_import_errors, delete_import_error, mark_track_missing, purge_tombstones,
-    query_import_error_count, query_import_errors, query_live_track_ids, query_live_track_paths,
-    query_sync_tracks, query_track_album_artist, query_track_ids_by_title_desc,
-    query_track_ids_by_titles, query_track_summary, remove_all_missing_tracks,
-    remove_missing_tracks, remove_tracks, tombstone_tracks, track_id_for_path, undo_tombstone,
+    mark_track_missing_if_current, purge_tombstones, query_import_error_count,
+    query_live_track_ids, query_live_track_paths, query_queue_purge_track_ids,
+    query_queue_retained_track_ids, query_sync_tracks, query_track_album_artist,
+    query_track_ids_by_title_desc, query_track_ids_by_titles, query_track_summary,
+    remove_missing_tracks, remove_tracks, remove_tracks_matching_paths, tombstone_tracks,
+    track_id_for_path, undo_tombstone,
 };
-// `remove_missing_track`'s only external caller (beyond `remove_missing_
-// tracks`'s own internal use) is this module's test suite — same reasoning
-// as `build_track_query` above.
-#[allow(unused_imports)]
-pub use maintenance::remove_missing_track;
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_tracks`/`remove_missing_tracks`/`purge_tombstones` all funnel
 // through; not part of the crate's public API, but `tests_issues.rs`'s
@@ -295,8 +312,8 @@ pub fn query_track_count_browsed(
         ViewSource::Smart(id) => smart::query_track_count_smart(conn, *id, filter),
         // Stage-3 close-out fix: this used to trust `queue_ids.len()`
         // verbatim, on the documented assumption that nothing hard-deletes a
-        // `tracks` row. That assumption no longer holds (`remove_missing_
-        // track`/`remove_missing_tracks` do exactly that) — the queue itself
+        // `tracks` row. That assumption no longer holds (`remove_missing_tracks`
+        // does exactly that) — the queue itself
         // is purged in lockstep by `ui::player_controller::PlayerController::
         // purge_queue_ids` whenever a hard-delete happens through the app's
         // own UI, but counting matched rows here (rather than trusting the
@@ -378,7 +395,7 @@ pub fn query_track_ids_browsed(
             };
             rows.collect()
         }
-        ViewSource::Playlist(id) => playlist::query_track_ids_playlist(conn, *id, filter),
+        ViewSource::Playlist(id) => playlist::query_playable_track_ids_playlist(conn, *id, filter),
         ViewSource::Smart(id) => smart::query_track_ids_smart(conn, *id, filter),
         ViewSource::Queue => Ok(queue_ids.to_vec()),
         ViewSource::Album {
@@ -398,6 +415,29 @@ pub fn query_track_ids_browsed(
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Device { .. } => {
             Ok(Vec::new())
         }
+    }
+}
+
+/// Returns the ids represented by the current visible view. This differs
+/// from [`query_track_ids_browsed`] only for manual playlists: their missing
+/// members remain selectable at their durable positions, while playback
+/// continues to seed queues from playable rows only.
+pub fn query_visible_track_ids_browsed(
+    conn: &Connection,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    match source {
+        ViewSource::Playlist(id) => {
+            playlist::query_visible_track_ids_playlist(conn, *id, sort_field, sort_dir, filter)
+        }
+        _ => query_track_ids_browsed(
+            conn, source, sort_field, sort_dir, filter, browse, queue_ids,
+        ),
     }
 }
 
@@ -481,20 +521,6 @@ pub fn query_library_stats_browsed(
     })
 }
 
-/// One `import_errors` row, as rendered by the ImportErrors source (Stage 3
-/// Task 8). `path` is the table's primary key as of schema v10 (Task 1.1),
-/// so there is no separate surrogate id to expose. `reason` surfaces the
-/// v10 `reason_detail` column (the human-readable message; the newer typed
-/// `reason_kind` column is scan/self-healing-logic state, not display text,
-/// so it deliberately isn't projected here), and `occurred_at` surfaces
-/// `last_seen` — the most recent scan that still saw this failure.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ImportErrorRow {
-    pub path: String,
-    pub reason: String,
-    pub occurred_at: i64,
-}
-
 // `tests.rs` holds the core suite (query-builder/whitelist/LIKE-escaping,
 // Library/Missing); the Playlist/Smart/Queue/maintenance sections of the
 // same original `queries.rs` test module are split into the sibling files
@@ -505,12 +531,20 @@ mod tests;
 #[cfg(test)]
 mod tests_auto_clean;
 #[cfg(test)]
+mod tests_import_errors;
+#[cfg(test)]
 mod tests_issues;
 #[cfg(test)]
+mod tests_issues_badges;
+#[cfg(test)]
 mod tests_maintenance;
+#[cfg(test)]
+mod tests_mount_events;
 #[cfg(test)]
 mod tests_playlist;
 #[cfg(test)]
 mod tests_queue;
 #[cfg(test)]
 mod tests_smart;
+#[cfg(test)]
+mod tests_ux_feedback;

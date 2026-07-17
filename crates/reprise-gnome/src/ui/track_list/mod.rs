@@ -29,6 +29,7 @@ pub(in crate::ui) mod track_list_header_style;
 pub(in crate::ui) mod track_list_layout;
 pub(in crate::ui) mod track_list_menu_seams;
 pub(crate) mod track_list_menu_smoke;
+pub(in crate::ui) mod track_list_missing;
 pub(crate) mod track_list_model;
 pub(in crate::ui) mod track_list_queue_menu;
 pub(in crate::ui) mod track_list_reload;
@@ -39,6 +40,7 @@ pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
 mod track_list_toast;
 pub(in crate::ui) mod track_menu;
+pub(crate) mod track_playback_selection;
 pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]
@@ -46,5 +48,7 @@ use super::*;
 pub(in crate::ui) use surface::{
     notify_import_errors_mutated_and_reload, playlist_reorder_allowed, reload,
     set_filter_and_reload, set_source_and_reload, show_toast, OnActivate, Shared, TrackList,
-    STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
+};
+pub(in crate::ui) use track_list_layout::{
+    STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,
 };
