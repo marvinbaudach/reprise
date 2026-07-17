@@ -4,6 +4,12 @@
 //! Extensibility Task 1) purely to keep every file under the project's
 //! 800-line rule; see `tests.rs`'s doc comment for the full split map. A
 //! pure move, no assertion change.
+//!
+//! The tombstone/10-second-undo functions (`tombstone_tracks`/`undo_
+//! tombstone`/`purge_tombstones`) also live in `maintenance.rs`, but their
+//! tests live in `tests_issues.rs` instead of here — this file was already
+//! close to the 800-line rule when that feature landed (Task 2.2); see
+//! `tests_issues.rs`'s own module doc comment for the full rationale.
 
 use super::*;
 use crate::library::playlists;
