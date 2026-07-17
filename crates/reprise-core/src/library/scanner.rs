@@ -111,14 +111,14 @@ impl ScanReport {
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
 
-fn is_audio_file(path: &Path) -> bool {
+pub(crate) fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .is_some_and(|extension| AUDIO_EXTENSIONS.contains(&extension.as_str()))
 }
 
-fn count_audio_files(root: &Path) -> u64 {
+pub(crate) fn count_audio_files(root: &Path) -> u64 {
     walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()

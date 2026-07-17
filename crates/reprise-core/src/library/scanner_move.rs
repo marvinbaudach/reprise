@@ -7,6 +7,7 @@
 //! relocation, not a rewrite — the logic and its doc comments are unchanged
 //! from when they lived inline in `scanner.rs`.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use super::track_meta::TrackMeta;
@@ -15,23 +16,23 @@ use super::ScanError;
 /// A DB row that is a *candidate* to be the pre-move identity of a file at
 /// an unknown path: `id`/`path` to perform the move `UPDATE` against.
 #[derive(Debug, PartialEq)]
-pub(super) struct MoveCandidate {
-    pub(super) id: i64,
-    pub(super) path: String,
+pub(crate) struct MoveCandidate {
+    pub(crate) id: i64,
+    pub(crate) path: String,
 }
 
 /// Everything `find_move_candidate` needs to know about the file it's
 /// looking for a pre-move identity of. Bundled into one struct (rather than
 /// seven positional arguments) purely to stay under clippy's
 /// `too_many_arguments` lint.
-pub(super) struct MoveLookup<'a> {
-    pub(super) device: i64,
-    pub(super) inode: i64,
-    pub(super) title: &'a str,
-    pub(super) artist: &'a str,
-    pub(super) album: &'a str,
-    pub(super) duration_ms: i64,
-    pub(super) file_size: i64,
+pub(crate) struct MoveLookup<'a> {
+    pub(crate) device: i64,
+    pub(crate) inode: i64,
+    pub(crate) title: &'a str,
+    pub(crate) artist: &'a str,
+    pub(crate) album: &'a str,
+    pub(crate) duration_ms: i64,
+    pub(crate) file_size: i64,
 }
 
 /// Filters raw SQL matches down to *valid* move candidates: rows whose old
@@ -43,8 +44,12 @@ pub(super) struct MoveLookup<'a> {
 /// matches would flag that as a false ambiguity and refuse a move that is in
 /// fact unambiguous (see the
 /// `one_deleted_one_alive_duplicate_is_still_an_unambiguous_move` test).
-fn valid_candidates(rows: Vec<(i64, String, Option<i64>)>) -> Vec<MoveCandidate> {
+fn valid_candidates(
+    rows: Vec<(i64, String, Option<i64>)>,
+    allowed_ids: Option<&HashSet<i64>>,
+) -> Vec<MoveCandidate> {
     rows.into_iter()
+        .filter(|(id, _, _)| allowed_ids.is_none_or(|allowed| allowed.contains(id)))
         .filter(|(_, path, missing_since)| missing_since.is_some() || !Path::new(path).exists())
         .map(|(id, path, _)| MoveCandidate { id, path })
         .collect()
@@ -61,6 +66,22 @@ pub(super) fn find_move_candidate(
     tx: &rusqlite::Transaction,
     lookup: &MoveLookup,
 ) -> Result<Option<MoveCandidate>, ScanError> {
+    find_move_candidate_inner(tx, lookup, None)
+}
+
+pub(crate) fn find_move_candidate_in(
+    tx: &rusqlite::Transaction,
+    lookup: &MoveLookup,
+    allowed_ids: &HashSet<i64>,
+) -> Result<Option<MoveCandidate>, ScanError> {
+    find_move_candidate_inner(tx, lookup, Some(allowed_ids))
+}
+
+fn find_move_candidate_inner(
+    tx: &rusqlite::Transaction,
+    lookup: &MoveLookup,
+    allowed_ids: Option<&HashSet<i64>>,
+) -> Result<Option<MoveCandidate>, ScanError> {
     let rows: Vec<(i64, String, Option<i64>)> = {
         let mut stmt = tx.prepare(
             "SELECT id, path, missing_since FROM tracks WHERE device = ?1 AND inode = ?2",
@@ -72,7 +93,7 @@ pub(super) fn find_move_candidate(
             .collect::<Result<_, _>>()?;
         mapped
     };
-    let mut candidates = valid_candidates(rows);
+    let mut candidates = valid_candidates(rows, allowed_ids);
     match candidates.len() {
         1 => return Ok(Some(candidates.remove(0))),
         n if n > 1 => {
@@ -106,7 +127,7 @@ pub(super) fn find_move_candidate(
             .collect::<Result<_, _>>()?;
         mapped
     };
-    let mut candidates = valid_candidates(rows);
+    let mut candidates = valid_candidates(rows, allowed_ids);
     match candidates.len() {
         1 => Ok(Some(candidates.remove(0))),
         n if n > 1 => {
