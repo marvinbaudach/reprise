@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::gdk;
+use gtk4::glib;
 use gtk4::pango;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -201,7 +202,11 @@ pub(in crate::ui) fn set_entry_from_mixed_number(
 
 /// Initialises an `AutocompleteEntry` from a `MixedValue`, adding
 /// mixed-field annotations in multi-track mode. Returns the annotation label
-/// when the field starts Mixed (needed for click-to-unlock updates).
+/// when the field starts Mixed (needed by [`attach_type_to_arm`]).
+///
+/// TAG-2: a Mixed field stays editable from the start — no click-to-unlock.
+/// The dashed/italic `reprise-tag-mixed` styling is purely visual; typing or
+/// Backspace/Delete arms it (see [`attach_type_to_arm`]).
 pub(in crate::ui) fn init_autocomplete_from_mixed(
     ac: &AutocompleteEntry,
     value: &MixedValue<String>,
@@ -218,7 +223,6 @@ pub(in crate::ui) fn init_autocomplete_from_mixed(
         }
         MixedValue::Mixed => {
             if is_multi {
-                ac.row().set_editable(false);
                 ac.row().add_css_class("reprise-tag-mixed");
                 Some(add_annotation(
                     ac.row(),
@@ -233,7 +237,8 @@ pub(in crate::ui) fn init_autocomplete_from_mixed(
 }
 
 /// Adds a mixed-field annotation for number fields in multi-track mode.
-/// Returns the annotation label (needed for click-to-unlock updates).
+/// Returns the annotation label (needed by [`attach_type_to_arm`]). Like
+/// [`init_autocomplete_from_mixed`], a Mixed number field stays editable.
 pub(in crate::ui) fn apply_mixed_annotation_number(
     row: &adw::EntryRow,
     value: &MixedValue<Option<u32>>,
@@ -245,7 +250,6 @@ pub(in crate::ui) fn apply_mixed_annotation_number(
             None
         }
         MixedValue::Mixed => {
-            row.set_editable(false);
             row.add_css_class("reprise-tag-mixed");
             Some(add_annotation(
                 row,
@@ -254,34 +258,6 @@ pub(in crate::ui) fn apply_mixed_annotation_number(
             ))
         }
     }
-}
-
-/// Attaches a click gesture to a Mixed field so the user can unlock it for
-/// editing. On first click: makes the entry editable, clears the text,
-/// removes the mixed CSS class, and updates the annotation to the
-/// "will be applied to all N" copy.
-pub(in crate::ui) fn attach_click_to_unlock(
-    row: &adw::EntryRow,
-    annotation: Option<&gtk4::Label>,
-    track_count: usize,
-) {
-    let row_c = row.clone();
-    let annotation_c = annotation.cloned();
-    let will_apply = strings::tag_will_apply(track_count);
-    let gesture = gtk4::GestureClick::new();
-    gesture.connect_released(move |_, _, _, _| {
-        if !row_c.is_editable() {
-            row_c.set_editable(true);
-            row_c.remove_css_class("reprise-tag-mixed");
-            row_c.set_text("");
-            if let Some(lbl) = &annotation_c {
-                lbl.set_text(&will_apply);
-                lbl.add_css_class("accent");
-            }
-            row_c.grab_focus();
-        }
-    });
-    row.add_controller(gesture);
 }
 
 /// Adds a small annotation label as a suffix to an `EntryRow` and returns it.
@@ -345,6 +321,91 @@ pub(in crate::ui) fn apply_per_track_field(row: &adw::EntryRow, is_multi: bool) 
             row.set_tooltip_text(Some(&strings::text(strings::TAG_PER_TRACK_TOOLTIP)));
         }
         add_annotation(row, &strings::text(strings::TAG_PER_TRACK), false);
+    }
+}
+
+// ───────────────────── TAG-2: direct-typable mixed fields ──────────────────
+
+/// TAG-2: the first real keystroke into an unarmed mixed field arms it —
+/// only the empty→non-empty transition matters (callers only invoke this
+/// while the field is still in its unarmed placeholder state).
+pub(in crate::ui) fn mixed_field_arms_on_change(new_text: &str) -> bool {
+    !new_text.is_empty()
+}
+
+/// TAG-2: Backspace/Delete on an unarmed, still-empty mixed field also arms
+/// it, as an explicit "clear for all" — nothing about a mixed field's blank
+/// state is a silently swallowed no-op keypress.
+pub(in crate::ui) fn mixed_field_key_arms_as_clear(keyval: gdk::Key, text_is_empty: bool) -> bool {
+    text_is_empty && matches!(keyval, gdk::Key::BackSpace | gdk::Key::Delete)
+}
+
+/// TAG-2: arms a Mixed field on the user's first real interaction — typing a
+/// character (`changed` sees non-empty text) or pressing Backspace/Delete
+/// while still empty (forced through as a real text round-trip so
+/// `tag_editor_dirty`'s own, separately-connected `changed` listener —
+/// connected later, in `tag_editor_dirty::wire` — actually observes a
+/// change instead of a silently swallowed keypress). Once armed, swaps the
+/// dashed "mixed" styling for the accent "armed" look and updates
+/// `annotation` to "will be applied to all N" (click-to-unlock's old job,
+/// now keystroke-triggered — TAG-2 removes click-to-unlock entirely).
+pub(in crate::ui) fn attach_type_to_arm(
+    row: &adw::EntryRow,
+    annotation: Option<&gtk4::Label>,
+    track_count: usize,
+) {
+    let armed = Rc::new(Cell::new(false));
+    let will_apply = strings::tag_will_apply(track_count);
+
+    {
+        let row_c = row.clone();
+        let annotation_c = annotation.cloned();
+        let armed_c = armed.clone();
+        let will_apply_c = will_apply.clone();
+        row.connect_changed(move |entry| {
+            if armed_c.get() {
+                return;
+            }
+            if mixed_field_arms_on_change(&entry.text()) {
+                armed_c.set(true);
+                arm_mixed_field(&row_c, annotation_c.as_ref(), &will_apply_c);
+            }
+        });
+    }
+
+    let key_controller = gtk4::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    {
+        let row_c = row.clone();
+        let annotation_c = annotation.cloned();
+        key_controller.connect_key_pressed(move |_, keyval, _, _| {
+            if armed.get() {
+                return glib::Propagation::Proceed;
+            }
+            let text_is_empty = row_c.text().is_empty();
+            if mixed_field_key_arms_as_clear(keyval, text_is_empty) {
+                armed.set(true);
+                // Force a real changed-signal round-trip (empty text alone
+                // has nothing to delete, so a plain Backspace never fires
+                // `changed`) — this also lets `tag_editor_dirty`'s own
+                // listener see it as a genuine pending change.
+                row_c.set_text(" ");
+                row_c.set_text("");
+                arm_mixed_field(&row_c, annotation_c.as_ref(), &will_apply);
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+    }
+    row.add_controller(key_controller);
+}
+
+fn arm_mixed_field(row: &adw::EntryRow, annotation: Option<&gtk4::Label>, will_apply: &str) {
+    row.remove_css_class("reprise-tag-mixed");
+    row.add_css_class("reprise-tag-field-armed");
+    if let Some(label) = annotation {
+        label.set_text(will_apply);
+        label.add_css_class("accent");
     }
 }
 
@@ -505,5 +566,20 @@ mod tests {
             Some("987 kbit/s".to_string())
         );
         assert_eq!(format_track_subtitle(None, None), None);
+    }
+
+    #[test]
+    fn tag_2_first_keystroke_arms_field() {
+        assert!(!mixed_field_arms_on_change(""));
+        assert!(mixed_field_arms_on_change("a"));
+        assert!(mixed_field_arms_on_change("Suicide Silence"));
+    }
+
+    #[test]
+    fn tag_2_backspace_in_placeholder_arms_as_clear_for_all() {
+        assert!(mixed_field_key_arms_as_clear(gdk::Key::BackSpace, true));
+        assert!(mixed_field_key_arms_as_clear(gdk::Key::Delete, true));
+        assert!(!mixed_field_key_arms_as_clear(gdk::Key::BackSpace, false));
+        assert!(!mixed_field_key_arms_as_clear(gdk::Key::a, true));
     }
 }

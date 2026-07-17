@@ -133,7 +133,7 @@ impl TagEditorForm {
         let artist_annotation =
             init_autocomplete_from_mixed(&artist_ac, &summary.artist, track_count, is_multi);
         if is_multi && matches!(summary.artist, MixedValue::Mixed) {
-            attach_click_to_unlock(artist_ac.row(), artist_annotation.as_ref(), track_count);
+            attach_type_to_arm(artist_ac.row(), artist_annotation.as_ref(), track_count);
         }
 
         let album_ac = Rc::new(AutocompleteEntry::new(
@@ -144,7 +144,7 @@ impl TagEditorForm {
         let album_annotation =
             init_autocomplete_from_mixed(&album_ac, &summary.album, track_count, is_multi);
         if is_multi && matches!(summary.album, MixedValue::Mixed) {
-            attach_click_to_unlock(album_ac.row(), album_annotation.as_ref(), track_count);
+            attach_type_to_arm(album_ac.row(), album_annotation.as_ref(), track_count);
         }
 
         let (title_col, _title_old_value) = build_field_column(title_row.upcast_ref(), None);
@@ -175,7 +175,7 @@ impl TagEditorForm {
             is_multi,
         );
         if is_multi && matches!(summary.album_artist, MixedValue::Mixed) {
-            attach_click_to_unlock(
+            attach_type_to_arm(
                 album_artist_ac.row(),
                 album_artist_annotation.as_ref(),
                 track_count,
@@ -190,7 +190,7 @@ impl TagEditorForm {
         let genre_annotation =
             init_autocomplete_from_mixed(&genre_ac, &summary.genre, track_count, is_multi);
         if is_multi && matches!(summary.genre, MixedValue::Mixed) {
-            attach_click_to_unlock(genre_ac.row(), genre_annotation.as_ref(), track_count);
+            attach_type_to_arm(genre_ac.row(), genre_annotation.as_ref(), track_count);
         }
 
         let year_row = adw::EntryRow::builder()
@@ -202,7 +202,7 @@ impl TagEditorForm {
             .then(|| apply_mixed_annotation_number(&year_row, &summary.year, track_count))
             .flatten();
         if is_multi && matches!(summary.year, MixedValue::Mixed) {
-            attach_click_to_unlock(&year_row, year_annotation.as_ref(), track_count);
+            attach_type_to_arm(&year_row, year_annotation.as_ref(), track_count);
         }
 
         let track_no_row = adw::EntryRow::builder()

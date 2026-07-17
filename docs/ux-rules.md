@@ -366,7 +366,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   applied to all N"). Backspace/Entf im Platzhalter macht ebenso scharf — als
   „leeren für alle N", mit voller Review-Behandlung. Nichts wird still
   verschluckt.
-- **TAG-3** [geplant] [gtk] — Per-Track-Felder sind im Multi-Modus read-only:
+- **TAG-3** [aktiv] [gtk] — Per-Track-Felder sind im Multi-Modus read-only:
   Title und Track number zeigen „—" mit Tooltip „Per-track field — edit
   tracks individually". Ein Massen-Titel ist immer ein Unfall.
 - **TAG-4** [geplant] [core] — Blättern verwirft nichts: Öffnet der Editor
