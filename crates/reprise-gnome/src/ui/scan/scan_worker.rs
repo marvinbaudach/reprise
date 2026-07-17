@@ -134,9 +134,7 @@ fn reconcile_outcome(
             auto_cleaned_ids,
         })) => {
             controls.set_library_root_unavailable(false);
-            if !auto_cleaned_ids.is_empty() {
-                track_list.notify_library_purged(&auto_cleaned_ids);
-            }
+            track_list.notify_scan_postprocessed(&auto_cleaned_ids);
             if controls.is_cancel_requested() {
                 tracing::info!("scan cancelled by user; keeping already-imported tracks");
                 track_list.reload();

@@ -70,6 +70,22 @@ pub fn query_queue_retained_track_ids(conn: &Connection) -> Result<HashSet<i64>,
     Ok(ids)
 }
 
+/// Filters a current playback snapshot through the queue-retention policy.
+/// Input order is preserved and duplicate ids are collapsed because callers
+/// pass the result to id-based purge operations, not position-based edits.
+pub fn query_queue_purge_track_ids(
+    conn: &Connection,
+    candidates: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let retained = query_queue_retained_track_ids(conn)?;
+    let mut seen = HashSet::new();
+    Ok(candidates
+        .iter()
+        .copied()
+        .filter(|id| !retained.contains(id) && seen.insert(*id))
+        .collect())
+}
+
 /// Returns every non-missing media path in stable path order for cover batch
 /// scheduling.
 pub fn query_live_track_paths(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {

@@ -53,6 +53,9 @@ pub(in crate::ui) type OnSidebarQueueDrop = Rc<dyn Fn(&[i64]) -> bool>;
 /// "Remove from library" callback — see the `Shared::on_library_mutated` doc
 /// comment. Takes the ids actually deleted (Stage-3 close-out).
 pub(in crate::ui) type OnLibraryMutated = Rc<dyn Fn(&[i64])>;
+/// Supplies ids in the live playback queues that no longer satisfy the
+/// core queue-retention policy after a completed scan.
+pub(in crate::ui) type OnScanQueuePurgeIds = Rc<dyn Fn() -> Vec<i64>>;
 /// Successful tag-edit callback. Paths let the player invalidate only the
 /// currently displayed cover while the window refreshes sidebar metadata.
 pub(in crate::ui) type OnTagsMutated = Rc<dyn Fn(&[PathBuf])>;

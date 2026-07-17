@@ -360,6 +360,12 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         // hard-purged ids, which are then removed from the playback queue.
         let sidebar_weak = Rc::downgrade(sidebar);
         let player = player.clone();
+        let scan_player = player.clone();
+        track_list.set_on_scan_queue_purge_ids(move || {
+            scan_player
+                .as_ref()
+                .map_or_else(Vec::new, |player| player.scan_queue_purge_ids())
+        });
         track_list.set_on_library_mutated(move |removed_ids| {
             match sidebar_weak.upgrade() {
                 Some(sidebar) => sidebar.refresh("track removed from library"),

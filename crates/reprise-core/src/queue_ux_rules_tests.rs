@@ -127,6 +127,96 @@ fn play_5a_deleted_tracks_leave_queue_silently() {
     );
 }
 
+// UX PLAY-5a: scan-detected deleted tracks leave both queue layers silently;
+// unmounted tracks and the playing track remain untouched.
+#[test]
+fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_tracks() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("library");
+    std::fs::create_dir(&root).unwrap();
+    let deleted_path = root.join("deleted.flac");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+    std::fs::copy(fixture, &deleted_path).unwrap();
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let initial = crate::library::scanner::scan_folder(&mut conn, &root).unwrap();
+    assert!(matches!(
+        initial,
+        crate::library::scanner::ScanOutcome::Completed(_)
+    ));
+    let deleted_id: i64 = conn
+        .query_row(
+            "SELECT id FROM tracks WHERE path = ?1",
+            [deleted_path.to_string_lossy().as_ref()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let unmounted_id = deleted_id + 1;
+    let playing_id = deleted_id + 2;
+    for (id, path, missing_reason) in [
+        (unmounted_id, root.join("unmounted.flac"), Some("unmounted")),
+        (playing_id, temp.path().join("playing.flac"), None),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, added_at, missing_since, missing_reason) \
+             VALUES (?1, ?2, ?3, 'Artist', 0, \
+                     CASE WHEN ?4 IS NULL THEN NULL ELSE 1 END, ?4)",
+            rusqlite::params![
+                id,
+                path.to_string_lossy(),
+                format!("Track {id}"),
+                missing_reason
+            ],
+        )
+        .unwrap();
+    }
+
+    std::fs::remove_file(&deleted_path).unwrap();
+    let report = match crate::library::scanner::scan_folder(&mut conn, &root).unwrap() {
+        crate::library::scanner::ScanOutcome::Completed(report) => report,
+        crate::library::scanner::ScanOutcome::RootUnavailable { root } => {
+            panic!("test root unexpectedly unavailable: {}", root.display())
+        }
+    };
+    assert_eq!(report.vanished, 1);
+    let reasons: Vec<(i64, Option<String>)> = {
+        let mut statement = conn
+            .prepare("SELECT id, missing_reason FROM tracks ORDER BY id")
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert_eq!(
+        reasons,
+        vec![
+            (deleted_id, Some("deleted".into())),
+            (unmounted_id, Some("unmounted".into())),
+            (playing_id, None)
+        ]
+    );
+    let auto_cleaned =
+        crate::library::scanner::finalize_completed_scan(&mut conn, &report, 10).unwrap();
+    assert!(auto_cleaned.is_empty(), "auto-clean is disabled by default");
+    let mut queue = Queue::new();
+    queue.set_tracks(vec![playing_id, deleted_id, unmounted_id], 0);
+    let mut pending = crate::up_next::UpNextQueue::default();
+    pending.append(&[deleted_id, unmounted_id]);
+    let mut candidates = queue.ids_in_order();
+    candidates.extend_from_slice(pending.ids());
+    let mut purge = auto_cleaned;
+    purge.extend(crate::queries::query_queue_purge_track_ids(&conn, &candidates).unwrap());
+    queue.remove_ids(&purge);
+    pending.remove_ids(&purge);
+
+    assert_eq!(queue.ids_in_order(), vec![playing_id, unmounted_id]);
+    assert_eq!(pending.ids(), &[unmounted_id]);
+    assert_eq!(queue.current(), Some(playing_id));
+}
+
 // UX PLAY-5b: an unavailable mount never destroys queue order or interrupts
 // the current track; advance skips it, and clearing the missing state makes
 // the retained id playable again.

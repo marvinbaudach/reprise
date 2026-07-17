@@ -80,8 +80,8 @@ use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
     OnActivate, OnLibraryMutated, OnPlaySelected, OnQueueActivate, OnQueueRemove, OnQueueReorder,
-    OnQueueSelected, OnReload, OnSelectionChanged, OnShowMissing, OnSidebarPlaylistDrop,
-    OnSidebarQueueDrop, OnTagsMutated,
+    OnQueueSelected, OnReload, OnScanQueuePurgeIds, OnSelectionChanged, OnShowMissing,
+    OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
 };
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
@@ -291,6 +291,9 @@ pub(in crate::ui) struct Shared {
     /// notify with the exact hard-purged ids so the playback queue can purge
     /// them only once removal is committed.
     pub(in crate::ui) on_library_mutated: RefCell<Option<OnLibraryMutated>>,
+    /// Read only after a completed manual scan or watcher reconcile, so the
+    /// snapshot and DB retention state are both current at reconciliation.
+    pub(in crate::ui) on_scan_queue_purge_ids: RefCell<Option<OnScanQueuePurgeIds>>,
     /// Invoked after successful file-tag writes and DB reconciliation.
     /// Kept separate from `on_library_mutated`: editing tags must never purge
     /// otherwise valid tracks from the playback queue.
