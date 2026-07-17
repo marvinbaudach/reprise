@@ -203,7 +203,7 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks (id,path,title,artist,added_at,missing) \
+            "INSERT INTO tracks (id,path,title,artist,added_at,missing_since) \
              VALUES (7,'/x/gone.flac','Gone','',0,1)",
             [],
         )

@@ -420,10 +420,11 @@ pub fn get_waveform_peaks(conn: &Connection, track_id: i64) -> Result<Option<Vec
 /// order. SQL ownership stays in core while platform frontends only schedule
 /// extraction work.
 pub fn pending_waveform_tracks(conn: &Connection) -> Result<Vec<(i64, String)>, DbError> {
-    let mut statement = conn.prepare(
+    let mut statement = conn.prepare(&format!(
         "SELECT id, path FROM tracks \
-         WHERE waveform_peaks IS NULL AND missing = 0 ORDER BY id",
-    )?;
+         WHERE waveform_peaks IS NULL AND {} ORDER BY id",
+        crate::queries::PRESENT
+    ))?;
     let tracks = statement
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<Result<_, _>>()?;

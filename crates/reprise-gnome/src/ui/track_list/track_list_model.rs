@@ -499,11 +499,11 @@ mod tests {
     fn set_query_with_missing_source_shows_only_missing_rows() {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
-        for (t, missing) in [("Alpha", 0), ("Beta", 1)] {
+        for (t, missing_since) in [("Alpha", None), ("Beta", Some(1))] {
             conn.execute(
-                "INSERT INTO tracks (path, title, artist, added_at, missing) \
+                "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
                  VALUES (?1, ?2, '', 0, ?3)",
-                rusqlite::params![format!("/x/{t}.flac"), t, missing],
+                rusqlite::params![format!("/x/{t}.flac"), t, missing_since],
             )
             .unwrap();
         }

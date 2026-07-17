@@ -493,7 +493,8 @@ fn restored_file_at_same_path_clears_missing_flag() {
 
     let path_str = file.to_string_lossy().to_string();
     conn.execute(
-        "UPDATE tracks SET missing = 1, rating = 4, play_count = 7 WHERE path = ?1",
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown', \
+         rating = 4, play_count = 7 WHERE path = ?1",
         [&path_str],
     )
     .unwrap();
@@ -508,14 +509,17 @@ fn restored_file_at_same_path_clears_missing_flag() {
         "restoring a missing track must count as an update"
     );
 
-    let (missing, rating, play_count): (i64, i64, i64) = conn
+    let (missing_since, rating, play_count): (Option<i64>, i64, i64) = conn
         .query_row(
-            "SELECT missing, rating, play_count FROM tracks WHERE path = ?1",
+            "SELECT missing_since, rating, play_count FROM tracks WHERE path = ?1",
             [&path_str],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .unwrap();
-    assert_eq!(missing, 0, "missing flag must be cleared on restore");
+    assert!(
+        missing_since.is_none(),
+        "missing_since must be cleared on restore"
+    );
     assert_eq!(rating, 4, "rating must survive a restore");
     assert_eq!(play_count, 7, "play_count must survive a restore");
 

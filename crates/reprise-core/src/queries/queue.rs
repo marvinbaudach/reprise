@@ -66,7 +66,7 @@ pub(super) fn query_track_window_queue(
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing, file_size, device, inode \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
          FROM tracks WHERE id IN ({placeholders})"
     );
     let mut stmt = conn.prepare(&sql)?;

@@ -47,16 +47,16 @@ fn seeded_conn_with_tracks(count: i64) -> Connection {
 #[test]
 fn feature_queries_filter_and_order_tracks_for_their_consumers() {
     let conn = crate::db::open_migrated(None).unwrap();
-    for (id, path, title, missing) in [
-        (1, "/music/b.flac", "SmokeFirst", 0),
-        (2, "/music/a.flac", "SmokeSlow", 0),
-        (3, "/music/gone.flac", "SmokeFast", 1),
-        (4, "/music/c.flac", "SmokeFirst", 0),
+    for (id, path, title, missing_since) in [
+        (1, "/music/b.flac", "SmokeFirst", None),
+        (2, "/music/a.flac", "SmokeSlow", None),
+        (3, "/music/gone.flac", "SmokeFast", Some(1)),
+        (4, "/music/c.flac", "SmokeFirst", None),
     ] {
         conn.execute(
-            "INSERT INTO tracks (id,path,title,artist,added_at,missing) \
+            "INSERT INTO tracks (id,path,title,artist,added_at,missing_since) \
              VALUES (?1,?2,?3,'',0,?4)",
-            rusqlite::params![id, path, title, missing],
+            rusqlite::params![id, path, title, missing_since],
         )
         .unwrap();
     }
@@ -216,7 +216,7 @@ fn remove_missing_track_deletes_a_missing_row() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     conn.execute(
-        "INSERT INTO tracks (path, title, artist, added_at, missing) \
+        "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
          VALUES ('/x/a.flac', 'A', '', 0, 1)",
         [],
     )
@@ -243,8 +243,7 @@ fn remove_missing_track_is_a_no_op_when_the_track_is_not_missing() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     conn.execute(
-        "INSERT INTO tracks (path, title, artist, added_at, missing) \
-         VALUES ('/x/a.flac', 'A', '', 0, 0)",
+        "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/a.flac', 'A', '', 0)",
         [],
     )
     .unwrap();
@@ -277,8 +276,11 @@ fn remove_missing_tracks_compacts_playlist_positions_after_a_middle_row_delete()
     let mut conn = seeded_conn_with_tracks(5);
     let playlist_id = playlists::create(&conn, "P1").unwrap();
     playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
-    conn.execute("UPDATE tracks SET missing = 1 WHERE id = 3", [])
-        .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 3",
+        [],
+    )
+    .unwrap();
 
     let removed = remove_missing_tracks(&mut conn, &[3]).unwrap();
     assert_eq!(removed, vec![3]);
@@ -335,8 +337,11 @@ fn remove_missing_tracks_compacts_every_affected_playlist_in_one_call() {
     let p2 = playlists::create(&conn, "P2").unwrap();
     playlists::add_tracks(&mut conn, p1, &[1, 2, 3]).unwrap();
     playlists::add_tracks(&mut conn, p2, &[2, 3, 4]).unwrap();
-    conn.execute("UPDATE tracks SET missing = 1 WHERE id IN (2, 3)", [])
-        .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id IN (2, 3)",
+        [],
+    )
+    .unwrap();
 
     let mut removed = remove_missing_tracks(&mut conn, &[2, 3]).unwrap();
     removed.sort_unstable();
@@ -363,9 +368,12 @@ fn remove_missing_tracks_compacts_every_affected_playlist_in_one_call() {
 #[test]
 fn remove_missing_tracks_skips_ids_that_are_not_missing() {
     let mut conn = seeded_conn_with_tracks(3);
-    conn.execute("UPDATE tracks SET missing = 1 WHERE id = 1", [])
-        .unwrap();
-    // id 2 is left alone (still missing = 0).
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    // id 2 is left alone (still present, missing_since NULL).
 
     let removed = remove_missing_tracks(&mut conn, &[1, 2]).unwrap();
 
@@ -396,20 +404,23 @@ fn remove_all_missing_tracks_preserves_live_rows_and_compacts_playlists() {
     let mut conn = seeded_conn_with_tracks(4);
     let playlist_id = playlists::create(&conn, "Cleanup").unwrap();
     playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4]).unwrap();
-    conn.execute("UPDATE tracks SET missing = 1 WHERE id IN (2, 3)", [])
-        .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id IN (2, 3)",
+        [],
+    )
+    .unwrap();
 
     let removed = remove_all_missing_tracks(&mut conn).unwrap();
 
     assert_eq!(removed, vec![2, 3]);
-    let tracks: Vec<(i64, i64)> = conn
-        .prepare("SELECT id, missing FROM tracks ORDER BY id")
+    let tracks: Vec<(i64, Option<i64>)> = conn
+        .prepare("SELECT id, missing_since FROM tracks ORDER BY id")
         .unwrap()
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert_eq!(tracks, vec![(1, 0), (4, 0)]);
+    assert_eq!(tracks, vec![(1, None), (4, None)]);
     let playlist_rows: Vec<(i64, i64)> = conn
         .prepare(
             "SELECT track_id, position FROM playlist_tracks \
@@ -523,8 +534,11 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
 
     // 4. hard-delete the middle-ish track (id 1, currently at playlist
     // position 2) after marking it missing — the exact bug scenario.
-    conn.execute("UPDATE tracks SET missing = 1 WHERE id = 1", [])
-        .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 1",
+        [],
+    )
+    .unwrap();
     let removed = remove_missing_tracks(&mut conn, &[1]).unwrap();
     assert_eq!(removed, vec![1]);
     assert_gapless(&conn, playlist_id);
@@ -622,8 +636,11 @@ fn sync_tracks_preserve_input_order_and_deduplicate_ids() {
 #[test]
 fn sync_tracks_exclude_unknown_missing_and_unavailable_paths() {
     let (temp, conn) = seeded_sync_tracks();
-    conn.execute("UPDATE tracks SET missing = 1 WHERE id = 2", [])
-        .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 2",
+        [],
+    )
+    .unwrap();
     std::fs::remove_file(temp.path().join("three.ogg")).unwrap();
 
     let tracks = query_sync_tracks(&conn, &[999, 1, 2, 3]).unwrap();

@@ -15,11 +15,18 @@ use super::*;
 // the component-wise (not string/LIKE) prefix check and why the watcher
 // always runs this *after* an incremental `scan_folder(root)`.
 
-fn missing_flag(conn: &Connection, id: i64) -> i64 {
-    conn.query_row("SELECT missing FROM tracks WHERE id = ?1", [id], |r| {
-        r.get(0)
-    })
-    .unwrap()
+/// Reads `missing_since` and reports presence via `Track::is_missing`'s own
+/// rule (`Some(_)` means missing) — the direct-SQL equivalent of that
+/// method, for tests that only have a bare connection and id, not a `Track`.
+fn is_missing(conn: &Connection, id: i64) -> bool {
+    let missing_since: Option<i64> = conn
+        .query_row(
+            "SELECT missing_since FROM tracks WHERE id = ?1",
+            [id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    missing_since.is_some()
 }
 
 #[test]
@@ -34,7 +41,7 @@ fn mark_vanished_under_root_leaves_a_present_file_untouched() {
     let marked = mark_vanished_under_root(&conn, tmp.path()).unwrap();
 
     assert_eq!(marked, 0);
-    assert_eq!(missing_flag(&conn, id), 0);
+    assert!(!is_missing(&conn, id));
 }
 
 #[test]
@@ -50,7 +57,7 @@ fn mark_vanished_under_root_marks_a_deleted_file_missing() {
     let marked = mark_vanished_under_root(&conn, tmp.path()).unwrap();
 
     assert_eq!(marked, 1);
-    assert_eq!(missing_flag(&conn, id), 1);
+    assert!(is_missing(&conn, id));
 }
 
 /// A track whose path lives outside `root` must never be touched, even if
@@ -82,16 +89,15 @@ fn mark_vanished_under_root_ignores_a_track_outside_root_even_if_its_file_is_gon
     let marked = mark_vanished_under_root(&conn, &watched_root).unwrap();
 
     assert_eq!(marked, 1, "only the in-root track is marked");
-    assert_eq!(missing_flag(&conn, watched_id), 1);
-    assert_eq!(
-        missing_flag(&conn, other_id),
-        0,
+    assert!(is_missing(&conn, watched_id));
+    assert!(
+        !is_missing(&conn, other_id),
         "a track outside the watched root must never be touched"
     );
 }
 
-/// An already-missing track must not be recounted (and its `missing` flag,
-/// already `1`, is left as-is) — the watcher only wants to know how many
+/// An already-missing track must not be recounted (and its `missing_since`,
+/// already set, is left as-is) — the watcher only wants to know how many
 /// tracks were *newly* marked on this pass.
 #[test]
 fn mark_vanished_under_root_does_not_recount_an_already_missing_track() {
@@ -106,11 +112,11 @@ fn mark_vanished_under_root_does_not_recount_an_already_missing_track() {
     let first = mark_vanished_under_root(&conn, tmp.path()).unwrap();
     assert_eq!(first, 1);
 
-    // Second pass: the same track is already missing=1, so it must not be
-    // counted again even though its file is still gone.
+    // Second pass: the same track is already missing (missing_since set),
+    // so it must not be counted again even though its file is still gone.
     let second = mark_vanished_under_root(&conn, tmp.path()).unwrap();
     assert_eq!(second, 0);
-    assert_eq!(missing_flag(&conn, id), 1);
+    assert!(is_missing(&conn, id));
 }
 
 /// Test-only: inserts a bare, non-missing track row at `path` with no audio
@@ -120,16 +126,21 @@ fn mark_vanished_under_root_does_not_recount_an_already_missing_track() {
 /// keeps such a row from being marked is the under-root membership test.
 fn insert_raw_track(conn: &Connection, path: &std::path::Path) {
     conn.execute(
-        "INSERT INTO tracks (path, added_at, missing) VALUES (?1, 0, 0)",
+        "INSERT INTO tracks (path, added_at) VALUES (?1, 0)",
         [path.to_string_lossy().to_string()],
     )
     .unwrap();
 }
 
+/// Mirrors `queries::clauses::MISSING` (not reachable from here — that
+/// re-export is test-only and would otherwise warn as unused in the non-
+/// test build, see `queries::mod`'s doc comment on its `PRESENT` re-export).
 fn missing_count(conn: &Connection) -> i64 {
-    conn.query_row("SELECT count(*) FROM tracks WHERE missing = 1", [], |r| {
-        r.get(0)
-    })
+    conn.query_row(
+        "SELECT count(*) FROM tracks WHERE missing_since IS NOT NULL AND removed_at IS NULL",
+        [],
+        |r| r.get(0),
+    )
     .unwrap()
 }
 
@@ -209,5 +220,5 @@ fn mark_vanished_still_marks_in_root_file_when_root_has_like_metacharacter() {
     let marked = mark_vanished_under_root(&conn, &root).unwrap();
 
     assert_eq!(marked, 1, "vanished in-root file must be marked missing");
-    assert_eq!(missing_flag(&conn, id), 1);
+    assert!(is_missing(&conn, id));
 }

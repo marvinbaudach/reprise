@@ -17,8 +17,8 @@
 /// are singletons (only one of each can ever be shown at a time).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum ViewSource {
-    /// The whole non-missing library (`missing = 0`) — today's only source
-    /// before this task, and still the default.
+    /// The whole present library (`queries::clauses::PRESENT`) — today's
+    /// only source before this task, and still the default.
     #[default]
     Library,
     /// A manual playlist, ordered by `playlist_tracks.position` by default
@@ -33,9 +33,9 @@ pub enum ViewSource {
     /// order — see `queries.rs`'s `queue_ids` parameter and `queue::Queue::
     /// ids_in_order`.
     Queue,
-    /// Tracks marked `missing = 1` (Stage 2 Task 5): files that vanished
-    /// from disk since they were scanned in, resurfaced here rather than
-    /// silently dropped from the database.
+    /// Tracks matching `queries::clauses::MISSING` (Stage 2 Task 5): files
+    /// that vanished from disk since they were scanned in, resurfaced here
+    /// rather than silently dropped from the database.
     Missing,
     /// Import failures from the last scan (the existing `import_errors`
     /// table). Task 8 builds the real backing query/columns; the track list
