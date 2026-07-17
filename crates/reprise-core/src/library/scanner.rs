@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use std::path::Path;
 
+use super::import_errors::{self, ImportErrorKind};
 use super::mounts;
 use crate::models::MissingReason;
 use crate::queries::PRESENT;
@@ -11,8 +12,13 @@ pub enum ScanError {
     Db(#[from] crate::db::DbError),
     #[error("Sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
-    #[error("unreadable tags: {0}")]
-    Tags(String),
+    /// Task 1.7: replaces the old bare `Tags(String)` — classified at the
+    /// source, see `import_errors`'s module doc comment.
+    #[error("import error ({kind:?}): {detail}")]
+    Import {
+        kind: ImportErrorKind,
+        detail: String,
+    },
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -137,9 +143,22 @@ impl ScanProgressReporter<'_> {
     }
 }
 
+// Test-only: proves a dismissed-and-unchanged file's tags never get parsed.
+// `thread_local!`, not a global counter — libtest gives each test its own
+// OS thread, so this stays isolated under parallel `--test-threads`.
+#[cfg(test)]
+thread_local! {
+    pub(super) static READ_META_CALLS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 pub fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
     use lofty::prelude::*;
-    let tagged = lofty::read_from_path(path).map_err(|e| ScanError::Tags(e.to_string()))?;
+    #[cfg(test)]
+    READ_META_CALLS.with(|calls| calls.set(calls.get() + 1));
+    let tagged = lofty::read_from_path(path).map_err(|e| {
+        let (kind, detail) = import_errors::classify_lofty(&e);
+        ScanError::Import { kind, detail }
+    })?;
     let props = tagged.properties();
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
     let get = |f: &dyn Fn(&lofty::tag::Tag) -> Option<String>| tag.and_then(f).unwrap_or_default();
@@ -465,31 +484,19 @@ fn scan_folder_inner(
         let entry = match entry {
             Ok(entry) => entry,
             Err(err) => {
-                // Directory traversal errors (permission denied, broken symlinks, ...)
-                // must be recorded, not dropped, per the fault-tolerance principle.
+                // `err.path()` is the DIRECTORY walkdir failed to enter,
+                // never a file underneath it — those were never seen, so
+                // inventing rows for them would be fiction.
                 let err_path = err.path().map_or_else(
                     || root.to_string_lossy().to_string(),
                     |p| p.to_string_lossy().to_string(),
                 );
-                // Schema v10 (Task 1.1) rebuilt `import_errors` with `path`
-                // as its primary key and typed `reason_kind`/`reason_detail`
-                // columns; the DELETE-then-INSERT pair below (rather than an
-                // upsert) keeps a fresh `first_seen`/`last_seen` pair on
-                // every failing scan, matching this path's pre-v10 behavior
-                // of always refreshing `occurred_at`. `reason_kind` typing
-                // beyond this single "io" bucket is self-healing-list work
-                // for a later task.
-                tx.execute("DELETE FROM import_errors WHERE path = ?1", [&err_path])?;
-                tx.execute(
-                    "INSERT INTO import_errors \
-                     (path, reason_kind, reason_detail, first_seen, last_seen) \
-                     VALUES (?1,?2,?3,?4,?4)",
-                    rusqlite::params![
-                        err_path,
-                        "io",
-                        format!("directory traversal error: {err}"),
-                        now_unix()
-                    ],
+                import_errors::record_error(
+                    &tx,
+                    &err_path,
+                    import_errors::classify_walkdir(&err),
+                    &format!("directory traversal error: {err}"),
+                    now_unix(),
                 )?;
                 report.errors += 1;
                 continue;
@@ -537,7 +544,7 @@ fn scan_folder_inner(
                      mount_point = ?2 WHERE path = ?1",
                     rusqlite::params![path_str, mount_point],
                 )?;
-                tx.execute("DELETE FROM import_errors WHERE path = ?1", [&path_str])?;
+                import_errors::clear_error(&tx, &path_str)?;
                 report.updated += 1;
                 tracing::info!(path = %path_str, "restored missing track");
             } else {
@@ -548,21 +555,25 @@ fn scan_folder_inner(
             }
             continue;
         }
+        // `file_stat` is `None` only on a race with the file vanishing; see
+        // its own doc comment. Computed once, up front, so both the
+        // dismiss-check below and the `Ok(meta)` arm reuse it.
+        let stat = file_stat(path);
+        let (file_size, device, inode): (i64, Option<i64>, Option<i64>) = match stat {
+            Some((size, dev, ino)) => (size as i64, Some(dev as i64), Some(ino as i64)),
+            None => (0, None, None),
+        };
+        // Dismiss-skip fast path: a `stat`, not a tag parse. Must run
+        // BEFORE `read_meta` — see `check_dismissed`'s doc comment.
+        if import_errors::check_dismissed(&tx, &path_str, mtime, file_size, now_unix())? {
+            if let Some(progress) = &mut progress {
+                progress.advance(path);
+            }
+            continue;
+        }
         match read_meta(path) {
             Ok(meta) => {
                 let is_update = known_mtime.is_some();
-                // Stage 3 Task 1: `file_stat` returns `None` on a `stat`
-                // failure (e.g. the file vanished in the race window between
-                // `walkdir` listing it and here) — `file_size` still
-                // defaults to `0` (the schema's `NOT NULL DEFAULT 0`), but
-                // `device`/`inode` become `NULL` rather than a fabricated
-                // `(0, 0)` that could coincidentally fingerprint-match an
-                // unrelated row.
-                let stat = file_stat(path);
-                let (file_size, device, inode): (i64, Option<i64>, Option<i64>) = match stat {
-                    Some((size, dev, ino)) => (size as i64, Some(dev as i64), Some(ino as i64)),
-                    None => (0, None, None),
-                };
                 let title = if meta.title.is_empty() {
                     path.file_stem()
                         .and_then(|s| s.to_str())
@@ -576,7 +587,7 @@ fn scan_folder_inner(
                 let mount_point = mount_cache.resolve(path);
                 // Clear any previous failure for this path: a file that errored
                 // once and is now readable again must not stay in the error log.
-                tx.execute("DELETE FROM import_errors WHERE path = ?1", [&path_str])?;
+                import_errors::clear_error(&tx, &path_str)?;
 
                 // Move detection (Stage 2 Task 8) only ever applies to a path
                 // the DB has never seen before — a file whose path is already
@@ -651,10 +662,7 @@ fn scan_folder_inner(
                     // (e.g. the old location briefly failed to read before
                     // being moved away) — the new path was already cleared
                     // above.
-                    tx.execute(
-                        "DELETE FROM import_errors WHERE path = ?1",
-                        [&candidate.path],
-                    )?;
+                    import_errors::clear_error(&tx, &candidate.path)?;
                     report.moved += 1;
                 } else {
                     let (
@@ -704,25 +712,14 @@ fn scan_folder_inner(
                     }
                 }
             }
-            Err(e) => {
-                // `path` became `import_errors`'s primary key in schema v10
-                // (Task 1.1), so a plain re-INSERT would now violate that
-                // constraint on a second failing scan of the same file;
-                // explicitly deleting first (rather than an upsert) keeps
-                // this symmetric with the traversal-error site above and
-                // refreshes `first_seen`/`last_seen` to the most recent
-                // failing scan, matching this path's pre-v10 `occurred_at`
-                // behavior. `reason_kind` typing beyond this single "tag"
-                // bucket is self-healing-list work for a later task.
-                tx.execute("DELETE FROM import_errors WHERE path = ?1", [&path_str])?;
-                tx.execute(
-                    "INSERT INTO import_errors \
-                     (path, reason_kind, reason_detail, first_seen, last_seen) \
-                     VALUES (?1,?2,?3,?4,?4)",
-                    rusqlite::params![path_str, "tag", e.to_string(), now_unix()],
-                )?;
+            Err(ScanError::Import { kind, detail }) => {
+                // Episode upsert — see `record_error`'s doc comment.
+                import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
                 report.errors += 1;
             }
+            // `read_meta` only ever produces `Import`; propagating any other
+            // variant is safer than an `unreachable!()` panic if that changes.
+            Err(other) => return Err(other),
         }
         if let Some(progress) = &mut progress {
             progress.advance(path);
@@ -790,6 +787,12 @@ mod progress_tests;
 #[cfg(test)]
 #[path = "scanner_tests.rs"]
 mod tests;
+
+// Task 1.7: the episode/dismiss/directory-dedup test suite lives in its own
+// file, same 800-line reason as every other `_tests.rs` sibling here.
+#[cfg(test)]
+#[path = "scanner_import_errors_tests.rs"]
+mod import_errors_tests;
 
 #[cfg(test)]
 #[path = "scanner_vanished_tests.rs"]
