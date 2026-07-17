@@ -157,3 +157,11 @@ fn tag_5_save_disabled_with_tooltip_when_zero_effective() {
     assert_eq!(session.pending_track_count(), 0);
     assert_eq!(save_disabled_tooltip(true), "No effective changes");
 }
+
+#[test]
+fn browsing_without_editing_keeps_the_untouched_tooltip() {
+    let interacted = interaction_after_change(false, true);
+
+    assert!(!interacted);
+    assert_eq!(save_disabled_tooltip(interacted), "No changes yet");
+}

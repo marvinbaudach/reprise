@@ -43,6 +43,30 @@ pub(in crate::ui) type UpdateCallback = Rc<dyn Fn()>;
 
 pub(in crate::ui) struct DirtyState {
     pub(in crate::ui) update: UpdateCallback,
+    pub(in crate::ui) programmatic_changes: ProgrammaticChanges,
+}
+
+#[derive(Clone)]
+pub(in crate::ui) struct ProgrammaticChanges {
+    active: Rc<Cell<bool>>,
+}
+
+impl ProgrammaticChanges {
+    fn new() -> Self {
+        Self {
+            active: Rc::new(Cell::new(false)),
+        }
+    }
+
+    pub(in crate::ui) fn run(&self, action: impl FnOnce()) {
+        let previously_active = self.active.replace(true);
+        action();
+        self.active.set(previously_active);
+    }
+
+    fn is_active(&self) -> bool {
+        self.active.get()
+    }
 }
 
 #[derive(Clone)]
@@ -51,7 +75,7 @@ struct FieldWiring {
     session: Rc<RefCell<TagEditSession>>,
     update: UpdateCallback,
     interacted: Rc<Cell<bool>>,
-    suppress_changes: Rc<Cell<bool>>,
+    programmatic_changes: ProgrammaticChanges,
 }
 
 /// The `PendingScope` every field write in this dialog resolves to for its
@@ -135,6 +159,13 @@ pub(in crate::ui) fn save_disabled_tooltip(interacted: bool) -> &'static str {
     } else {
         strings::TAG_SAVE_NO_CHANGES_YET
     }
+}
+
+pub(in crate::ui) fn interaction_after_change(
+    was_interacted: bool,
+    programmatic_change: bool,
+) -> bool {
+    was_interacted || !programmatic_change
 }
 
 fn field_display_name(field: TagField) -> String {
@@ -228,7 +259,7 @@ pub(in crate::ui) fn wire(
     };
     let scope = session_scope(session_mode);
     let interacted = Rc::new(Cell::new(false));
-    let suppress_changes = Rc::new(Cell::new(false));
+    let programmatic_changes = ProgrammaticChanges::new();
 
     let update: UpdateCallback = {
         let save_button = form.save_btn.clone();
@@ -264,7 +295,7 @@ pub(in crate::ui) fn wire(
         session: session.clone(),
         update: update.clone(),
         interacted,
-        suppress_changes,
+        programmatic_changes: programmatic_changes.clone(),
     };
 
     wire_text_field(&form.title_row, TagField::Title, &wiring, None);
@@ -309,7 +340,10 @@ pub(in crate::ui) fn wire(
 
     update();
 
-    DirtyState { update }
+    DirtyState {
+        update,
+        programmatic_changes,
+    }
 }
 
 fn build_revert_button() -> gtk4::Button {
@@ -344,10 +378,14 @@ fn wire_text_field(
         let wiring = wiring.clone();
         let revert_btn = revert_btn.clone();
         row.connect_changed(move |entry| {
-            if wiring.suppress_changes.get() {
+            let programmatic_change = wiring.programmatic_changes.is_active();
+            wiring.interacted.set(interaction_after_change(
+                wiring.interacted.get(),
+                programmatic_change,
+            ));
+            if programmatic_change {
                 return;
             }
-            wiring.interacted.set(true);
             let text = entry.text().to_string();
             wiring
                 .session
@@ -370,10 +408,14 @@ fn wire_text_field(
                 let presentation = mixed_field_presentation(&session_mut, field);
                 (text, presentation)
             };
-            wiring.suppress_changes.set(true);
-            apply_mixed_field_presentation(&row, mixed_annotation.as_ref(), presentation.as_ref());
-            row.set_text(if presentation.is_some() { "" } else { &text });
-            wiring.suppress_changes.set(false);
+            wiring.programmatic_changes.run(|| {
+                apply_mixed_field_presentation(
+                    &row,
+                    mixed_annotation.as_ref(),
+                    presentation.as_ref(),
+                );
+                row.set_text(if presentation.is_some() { "" } else { &text });
+            });
             button.set_visible(false);
             (wiring.update)();
         });
@@ -396,10 +438,14 @@ fn wire_number_field(
         let wiring = wiring.clone();
         let revert_btn = revert_btn.clone();
         row.connect_changed(move |entry| {
-            if wiring.suppress_changes.get() {
+            let programmatic_change = wiring.programmatic_changes.is_active();
+            wiring.interacted.set(interaction_after_change(
+                wiring.interacted.get(),
+                programmatic_change,
+            ));
+            if programmatic_change {
                 return;
             }
-            wiring.interacted.set(true);
             if let Ok(value) = parse_number_field(&entry.text()) {
                 wiring.session.borrow_mut().set_pending(
                     wiring.scope,
@@ -424,10 +470,14 @@ fn wire_number_field(
                 let presentation = mixed_field_presentation(&session_mut, field);
                 (text, presentation)
             };
-            wiring.suppress_changes.set(true);
-            apply_mixed_field_presentation(&row, mixed_annotation.as_ref(), presentation.as_ref());
-            row.set_text(if presentation.is_some() { "" } else { &text });
-            wiring.suppress_changes.set(false);
+            wiring.programmatic_changes.run(|| {
+                apply_mixed_field_presentation(
+                    &row,
+                    mixed_annotation.as_ref(),
+                    presentation.as_ref(),
+                );
+                row.set_text(if presentation.is_some() { "" } else { &text });
+            });
             button.set_visible(false);
             (wiring.update)();
         });
@@ -448,10 +498,14 @@ fn wire_autocomplete_field(
         let ac_for_read = ac.clone();
         let revert_btn = revert_btn.clone();
         ac.connect_changed(move || {
-            if wiring.suppress_changes.get() {
+            let programmatic_change = wiring.programmatic_changes.is_active();
+            wiring.interacted.set(interaction_after_change(
+                wiring.interacted.get(),
+                programmatic_change,
+            ));
+            if programmatic_change {
                 return;
             }
-            wiring.interacted.set(true);
             wiring.session.borrow_mut().set_pending(
                 wiring.scope,
                 field,
@@ -474,14 +528,14 @@ fn wire_autocomplete_field(
                 let presentation = mixed_field_presentation(&session_mut, field);
                 (text, presentation)
             };
-            wiring.suppress_changes.set(true);
-            apply_mixed_field_presentation(
-                ac.row(),
-                mixed_annotation.as_ref(),
-                presentation.as_ref(),
-            );
-            ac.set_text(if presentation.is_some() { "" } else { &text });
-            wiring.suppress_changes.set(false);
+            wiring.programmatic_changes.run(|| {
+                apply_mixed_field_presentation(
+                    ac.row(),
+                    mixed_annotation.as_ref(),
+                    presentation.as_ref(),
+                );
+                ac.set_text(if presentation.is_some() { "" } else { &text });
+            });
             button.set_visible(false);
             (wiring.update)();
         });
