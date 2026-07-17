@@ -279,6 +279,31 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         }
     }
 
+    let clear_all = gtk4::gio::SimpleAction::new("clear-all-filters", None);
+    {
+        let track_list = track_list.clone();
+        let search_entry = search_entry.clone();
+        clear_all.connect_activate(move |_, _| {
+            track_list.clear_all_restrictions();
+            search_entry.set_text("");
+        });
+    }
+    window.add_action(&clear_all);
+    {
+        let inner = track_list.clone();
+        let entry = search_entry.clone();
+        track_list.set_on_search_cleared(move || {
+            inner.set_filter("");
+            entry.set_text("");
+        });
+    }
+    {
+        let window = window.clone();
+        track_list.set_on_clear_all(move || {
+            gtk4::prelude::ActionGroupExt::activate_action(&window, "clear-all-filters", None);
+        });
+    }
+
     header.pack_end(search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);

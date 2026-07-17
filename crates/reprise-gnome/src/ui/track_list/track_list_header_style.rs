@@ -85,15 +85,30 @@ mod tests {
             Some("Title"),
             None::<gtk4::ListItemFactory>,
         ));
+        let unrelated = gtk4::ColumnView::new(None::<gtk4::SelectionModel>);
+        unrelated.append_column(&gtk4::ColumnViewColumn::new(
+            Some("Other"),
+            None::<gtk4::ListItemFactory>,
+        ));
         crate::ui::style::install();
         super::mark(&view);
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&view);
+        root.append(&unrelated);
         let window = gtk4::Window::new();
-        window.set_child(Some(&view));
+        window.set_child(Some(&root));
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
 
         let title = find_label(view.upcast_ref(), "Title").expect("mapped column title label");
-        assert!((title.color().alpha() - 0.78).abs() < 0.01);
+        let other =
+            find_label(unrelated.upcast_ref(), "Other").expect("unrelated column title label");
+        assert!(
+            (title.color().alpha() / other.color().alpha() - 0.78).abs() < 0.01,
+            "resolved marked={} and unrelated={} title colors",
+            title.color(),
+            other.color()
+        );
 
         window.close();
     }

@@ -44,9 +44,25 @@ pub use scan::*;
 mod news;
 pub use news::*;
 
+#[path = "strings_filter.rs"]
+mod filter;
+pub use filter::*;
+
+#[path = "strings_autocomplete.rs"]
+mod autocomplete;
+pub use autocomplete::*;
+
+#[path = "strings_tooltips.rs"]
+mod tooltips;
+pub use tooltips::*;
+
 #[path = "strings_app_shell.rs"]
 mod app_shell;
 pub use app_shell::*;
+
+#[path = "strings_tag_edit.rs"]
+mod tag_edit;
+pub use tag_edit::*;
 
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
@@ -135,88 +151,6 @@ pub fn rhythmbox_columns_import_failed(error: &str) -> String {
     )
 }
 pub const EDIT_TAGS: &str = N_!("Edit tags…");
-pub const MULTIPLE_VALUES: &str = N_!("(multiple values)");
-pub const TAG_TITLE: &str = N_!("Title");
-pub const TAG_ARTIST: &str = N_!("Artist");
-pub const TAG_ALBUM: &str = N_!("Album");
-pub const TAG_ALBUM_ARTIST: &str = N_!("Album artist");
-pub const TAG_YEAR: &str = N_!("Year");
-pub const TAG_TRACK_NUMBER: &str = N_!("Track number");
-pub const TAG_GENRE: &str = N_!("Genre");
-pub const TAG_NUMBER_ERROR: &str = N_!("Year and track number must be positive whole numbers");
-pub const TAG_EDIT_DATABASE_UNAVAILABLE: &str =
-    N_!("Could not open the library database for tag editing");
-pub const TAG_EDIT_WORKER_FAILED: &str = N_!("Could not start the tag-edit worker");
-pub const TAG_SAME_ON_ALL: &str = N_!("same on all");
-
-// --- Tag editor dialog ---
-
-pub const TAG_EDIT_TITLE_SINGLE: &str = N_!("Edit Tags");
-pub const TAG_EDIT_TITLE_MULTI: &str = N_!("Edit {count} Tracks");
-pub const TAG_PER_TRACK: &str = N_!("per track");
-pub const TAG_WILL_APPLY: &str = N_!("will be applied to all {count}");
-pub const TAG_SAVE: &str = N_!("Save");
-pub const TAG_SAVE_COUNT: &str = N_!("Save {count}");
-pub const TAG_PENDING_CHANGES: &str = N_!("{count} change pending");
-pub const TAG_PENDING_CHANGES_PLURAL: &str = N_!("{count} changes pending");
-pub const TAG_REVERT: &str = N_!("Revert");
-pub const TAG_FETCH_MUSICBRAINZ: &str = N_!("Fetch tags from MusicBrainz");
-pub const TAG_FETCH_HINT: &str = N_!("runs per track, fills only empty fields");
-pub const TAG_FETCH_LOADING: &str = N_!("Searching MusicBrainz…");
-pub const TAG_FETCH_NO_RESULTS: &str = N_!("No matching release found");
-pub const TAG_FETCH_NETWORK_ERROR: &str = N_!("Network error — check your connection");
-pub const TAG_FETCH_FIELDS_FILLED: &str = N_!("Done — empty fields filled from MusicBrainz");
-pub const TAG_FETCH_NOTHING_TO_FILL: &str = N_!("Done — all fields already have values");
-pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
-pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
-pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
-pub const TAG_CHANGE_COVER: &str = N_!("Change cover\u{2026}");
-
-pub fn tag_edit_title_multi(count: usize) -> String {
-    let count_text = count.to_string();
-    formatted(TAG_EDIT_TITLE_MULTI, &[("count", &count_text)])
-}
-
-pub fn tag_save_count(count: usize) -> String {
-    let count_text = count.to_string();
-    formatted(TAG_SAVE_COUNT, &[("count", &count_text)])
-}
-
-pub fn tag_pending_count(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        TAG_PENDING_CHANGES,
-        TAG_PENDING_CHANGES_PLURAL,
-        count,
-        &[("count", &count_text)],
-    )
-}
-
-pub fn tag_will_apply(count: usize) -> String {
-    let count_text = count.to_string();
-    formatted(TAG_WILL_APPLY, &[("count", &count_text)])
-}
-
-pub fn tag_autocomplete_track_count(count: i64) -> String {
-    let count = usize::try_from(count).unwrap_or(usize::MAX);
-    let count_text = count.to_string();
-    plural(
-        "{count} track",
-        "{count} tracks",
-        count,
-        &[("count", &count_text)],
-    )
-}
-
-pub fn tag_cover_count(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "{count} cover",
-        "{count} covers",
-        count,
-        &[("count", &count_text)],
-    )
-}
 pub const REMOVE_FROM_LIBRARY: &str = N_!("Remove from library…");
 pub const MOVE_TO_TRASH: &str = N_!("Move to Trash…");
 pub const DELETE_TRACKS_HEADING: &str = N_!("Remove Selected Tracks?");
@@ -284,6 +218,12 @@ pub fn delete_result_toast(removed: usize, failed: usize, trashed: bool) -> Stri
     }
 }
 
+// Superseded by Task F2's FB-3 split: `tag_save_result_toast` (no
+// failures) and `tag_save_result_toast_with_failures` (paired with the
+// "Details" action button and the 10 s unverdrängbar timeout FB-1 requires
+// for an action toast) in strings_tag_edit.rs. Kept — strings.rs is
+// append-only — rather than deleted.
+#[allow(dead_code)]
 pub fn track_edit_result_toast(updated: usize, failed: usize) -> String {
     let updated_text = updated.to_string();
     let failed_text = failed.to_string();
@@ -324,10 +264,6 @@ pub const NOTHING_HERE_DESCRIPTION: &str = N_!("This view has no tracks right no
 // Scan flow (src/ui/scan_flow.rs and src/ui/scan_progress.rs).
 pub const SCAN_CARD_TITLE: &str = N_!("Scanning library");
 
-pub fn scan_card_tooltip(remaining: u64) -> String {
-    format!("Covers & lyrics: {remaining} queued")
-}
-
 pub fn scan_complete_toast(new_tracks: u32, failed: u32) -> String {
     if failed > 0 {
         format!("Scan complete · {new_tracks} new, {failed} failed")
@@ -357,32 +293,12 @@ pub fn fetch_progress(done: u64, total: u64) -> String {
     format!("{done} of {total}")
 }
 
-pub fn scan_tooltip_discovering() -> String {
-    text(N_!("Scanning\u{2026}"))
-}
-
-pub fn scan_tooltip_progress(pct: u32) -> String {
-    format!("Scanning \u{00B7} {pct}%")
-}
-
 // Status bar (src/ui/status_bar.rs).
 pub const STATUS_TRACK_SINGULAR: &str = N_!("track");
 pub const STATUS_TRACK_PLURAL: &str = N_!("tracks");
 /// Middle-dot separator between the track count and total duration, per the
 /// design mockup (e.g. "1,704 tracks · 4 days, 6 hours and 28 minutes").
 pub const STATUS_SEPARATOR: &str = N_!(" · ");
-
-/// "{filtered} of {total}" prefix shown ahead of the track word while a
-/// search filter is active (e.g. "42 of 1,704 tracks · …" instead of
-/// "1,704 tracks · …") — see `status_bar::format_status_text`. `filtered`/
-/// `total` are already formatted (en-US thousands, via `format::
-/// format_thousands`); this function owns only the "of" wording.
-pub fn status_filtered_of_total(filtered: &str, total: &str) -> String {
-    formatted(
-        N_!("{filtered} of {total}"),
-        &[("filtered", filtered), ("total", total)],
-    )
-}
 
 // Track list column headers (src/ui/track_list.rs).
 pub const COLUMN_TITLE: &str = N_!("Title");
@@ -407,7 +323,6 @@ pub const SHUFFLE: &str = N_!("Shuffle");
 pub const PREVIOUS: &str = N_!("Previous");
 pub const NEXT: &str = N_!("Next");
 pub const REPEAT: &str = N_!("Repeat");
-pub const QUEUE: &str = N_!("Queue");
 
 // Rating: used both as the track list's Rating column header
 // (src/ui/track_list.rs) and as the RatingWidget's tooltip

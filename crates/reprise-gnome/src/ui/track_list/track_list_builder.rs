@@ -62,12 +62,17 @@ pub(in crate::ui) fn build(
     retry_library_button.add_css_class("suggested-action");
     retry_library_button.set_visible(false);
     empty_page_actions.append(&retry_library_button);
-    empty_page.set_child(Some(&empty_page_actions));
+    let show_all_button = gtk4::Button::new();
+    show_all_button.add_css_class("pill");
+    show_all_button.set_halign(gtk4::Align::Center);
+    show_all_button.set_action_name(Some("win.clear-all-filters"));
     let import_errors_view = ImportErrorsView::new(conn.clone());
     let missing_files_view = MissingFilesView::new(conn.clone());
     let stack = super::track_list_layout::build_track_content_stack();
+    let list_overlay = gtk4::Overlay::new();
+    list_overlay.set_child(Some(&scrolled));
     stack.add_named(&empty_page, Some(STACK_PAGE_EMPTY));
-    stack.add_named(&scrolled, Some(STACK_PAGE_LIST));
+    stack.add_named(&list_overlay, Some(STACK_PAGE_LIST));
     stack.add_named(import_errors_view.widget(), Some(STACK_PAGE_IMPORT_ERRORS));
     stack.add_named(missing_files_view.widget(), Some(STACK_PAGE_MISSING));
     stack.set_visible_child_name(STACK_PAGE_EMPTY);
@@ -84,6 +89,7 @@ pub(in crate::ui) fn build(
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
         suppress_follow_scroll: Cell::new(None),
+        active_reorder_drag_from: Cell::new(None),
         view_state_memory: RefCell::new(std::collections::HashMap::new()),
         conn,
         cover_loader: cover_loader.clone(),
@@ -95,6 +101,8 @@ pub(in crate::ui) fn build(
         retry_library_button: retry_library_button.clone(),
         library_root_unavailable: Cell::new(false),
         unavailable_library_root: RefCell::new(None),
+        show_all_button,
+        empty_scan_widget: RefCell::new(None),
         sort: RefCell::new(SortState::default()),
         restoring_view: Cell::new(false),
         filter: RefCell::new(String::new()),
@@ -200,6 +208,7 @@ pub(in crate::ui) fn build(
     let title_column = built_columns.title;
     let artist_column = built_columns.artist;
     let column_registry = built_columns.registry;
+    super::end_of_results::install(&shared, &list_overlay, &scrolled);
     let initial_sort_column = if column_registry.is_visible(ColumnId::Artist) {
         artist_column.clone()
     } else {

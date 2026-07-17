@@ -349,17 +349,16 @@ fn watcher_now_unix() -> i64 {
         .map_or(0, |duration| duration.as_secs() as i64)
 }
 
-/// Process-wide self-write ignore list (Stage 4 prep): a future tag editor
-/// writing a tag directly to a file this watcher is watching would otherwise
-/// trigger the same "file changed" reconcile cycle as any external change.
-/// A global registry rather than state owned by one `WatcherHandle`: a
-/// future caller (the tag editor) has no natural handle to whichever watcher
-/// happens to be running to reach through, and this app only ever runs one
-/// watcher at a time. No consumer calls [`ignore_path`] yet — this task
-/// builds the API and proves it works (see the test module below); the
-/// watcher's own event loop already consults [`is_ignored`] per changed path
-/// (`event_is_relevant`), so wiring in a real caller later needs no further
-/// change here.
+/// Process-wide self-write ignore list: the tag editor writing a tag
+/// directly to a file this watcher is watching would otherwise trigger the
+/// same "file changed" reconcile cycle as any external change. A global
+/// registry rather than state owned by one `WatcherHandle`: the tag editor
+/// has no natural handle to whichever watcher happens to be running to reach
+/// through, and this app only ever runs one watcher at a time. The watcher's
+/// own event loop consults [`is_ignored`] per changed path
+/// (`event_is_relevant`); `library::tag_edit_write::write_one_track` and
+/// `library::tag_edit`'s legacy `*_ignored` batch functions are the real
+/// callers of [`ignore_path`].
 static IGNORE_LIST: OnceLock<Mutex<HashMap<PathBuf, Instant>>> = OnceLock::new();
 
 fn ignore_list() -> &'static Mutex<HashMap<PathBuf, Instant>> {
@@ -372,12 +371,11 @@ fn ignore_list() -> &'static Mutex<HashMap<PathBuf, Instant>> {
 /// match only — no symlink/canonicalization resolution, consistent with
 /// every other path comparison in this module.
 ///
-/// `#[allow(dead_code)]`: no consumer calls this outside its own tests yet
-/// (Stage 4's tag editor adds the first real one) — see this function's doc
-/// comment and the module doc's `## Failure is never fatal`-adjacent
-/// `IGNORE_LIST` section for why the mechanism is still built and tested now
-/// rather than deferred.
-#[allow(dead_code)]
+/// Called by `library::tag_edit_write::write_one_track` and
+/// `library::tag_edit`'s legacy `*_ignored` batch functions, immediately
+/// before each file's own write — never upfront for a whole batch, so an
+/// early file's window can't expire while later files are still being
+/// written.
 pub fn ignore_path(path: &Path, duration: Duration) {
     let deadline = Instant::now() + duration;
     ignore_list()

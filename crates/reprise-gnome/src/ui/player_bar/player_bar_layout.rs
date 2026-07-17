@@ -110,14 +110,14 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         .valign(gtk4::Align::Center)
         .build();
     shuffle_button.add_css_class("flat");
-    let prev_button = transport_button(ICON_PREVIOUS, strings::PREVIOUS);
+    let prev_button = transport_button(ICON_PREVIOUS, strings::TOOLTIP_PREVIOUS);
     prev_button.add_css_class("flat");
     prev_button.set_sensitive(false);
-    let play_pause_button = transport_button(ICON_PLAY, strings::PLAY);
+    let play_pause_button = transport_button(ICON_PLAY, strings::TOOLTIP_PLAY);
     // The play/pause control is the accent-glow focal point of the bar.
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
-    let next_button = transport_button(ICON_NEXT, strings::NEXT);
+    let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
     next_button.add_css_class("flat");
     next_button.set_sensitive(false);
     let repeat_button = transport_button(ICON_REPEAT_ALL, strings::REPEAT);
@@ -208,7 +208,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     volume_icon.add_css_class("flat");
 
     let queue_button = gtk4::Button::from_icon_name(ICON_QUEUE);
-    queue_button.set_tooltip_text(Some(&strings::text(strings::QUEUE)));
+    queue_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_QUEUE)));
     queue_button.set_valign(gtk4::Align::Center);
     queue_button.add_css_class("flat");
 
@@ -263,16 +263,18 @@ pub(in crate::ui) fn css() -> String {
     use super::style::tokens::TRANSITION;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
-           background-color: rgba(26, 26, 26, 0.92); \
+           background-color: rgb(26, 26, 26); \
            border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \
-           box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.40); \
+           box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.60), \
+                       0 0 26px 6px alpha(@reprise_player_accent, 0.35); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform 120ms ease-out; }}\n\
          .{PLAY_CSS_CLASS}:hover {{ \
-           box-shadow: 0 0 20px alpha(@reprise_player_accent, 0.55); }}\n\
+           box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.75), \
+                       0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
          .{PLAY_CSS_CLASS}:active {{ transform: scale(0.94); }}\n\
          .{COVER_CSS_CLASS} {{ \
            border-radius: 8px; \
@@ -380,6 +382,18 @@ mod tests {
         assert!(layout.volume_icon.is_ancestor(&layout.root));
         assert!(layout.queue_button.is_ancestor(&layout.root));
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tip_1a_player_bar_buttons_follow_tooltip_discipline() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let layout = build();
+        let violations =
+            crate::ui::tooltip_discipline::tooltip_violations(layout.root.upcast_ref());
+        assert!(violations.is_empty(), "{violations:?}");
     }
 
     #[test]

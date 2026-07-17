@@ -69,7 +69,6 @@ use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
 use crate::ui::issues::MissingFilesView;
-use crate::ui::toasts;
 use crate::ui::track_list_model::TrackListModel;
 pub(in crate::ui) use crate::ui::track_list_reload::{
     reload, set_filter_and_reload, set_source_and_reload,
@@ -83,6 +82,7 @@ pub(in crate::ui) use super::track_list_callbacks::{
     OnQueueSelected, OnReload, OnScanQueuePurgeIds, OnSelectionChanged, OnShowMissing,
     OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
 };
+pub(in crate::ui) use super::track_list_toast::show_toast;
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -129,6 +129,12 @@ pub(in crate::ui) struct Shared {
     /// A `Cell`: `Copy` payload, single-threaded UI access, same rationale
     /// as `playing_track_id`.
     pub(in crate::ui) suppress_follow_scroll: Cell<Option<i64>>,
+    /// View position an in-app single-row reorder drag started from — set at
+    /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
+    /// eligible drag is in flight; the drop-indicator eligibility check in
+    /// `track_list_dnd` reads it so markers only appear where a drop would
+    /// actually do something.
+    pub(in crate::ui) active_reorder_drag_from: Cell<Option<u32>>,
     /// NAV-5: per-source scroll/selection memory for this session. Written
     /// by `view_state_memory::remember_on_leave` when a source switch leaves
     /// a view, read by `view_state_memory::restore_on_attach` after the
@@ -155,6 +161,8 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) retry_library_button: gtk4::Button,
     pub(in crate::ui) library_root_unavailable: Cell<bool>,
     pub(in crate::ui) unavailable_library_root: RefCell<Option<PathBuf>>,
+    pub(in crate::ui) show_all_button: gtk4::Button,
+    pub(in crate::ui) empty_scan_widget: RefCell<Option<gtk4::Widget>>,
     pub(in crate::ui) sort: RefCell<SortState>,
     pub(in crate::ui) restoring_view: Cell<bool>,
     pub(in crate::ui) filter: RefCell<String>,
@@ -189,9 +197,9 @@ pub(in crate::ui) struct Shared {
     /// with the source just queried, the row count it produced, and the
     /// filter string that reload just ran against. `window.rs` uses this
     /// single hook to keep `status_bar::StatusBar` in sync: library-wide
-    /// totals (via the filter string) when `source` is `Library`, a simple
-    /// "{n} tracks" line (via the row count) otherwise — see `status_bar::
-    /// StatusBar::refresh_for_source_count`. This is the seam chosen over
+    /// totals when `source` is `Library`, hidden otherwise (the filter row
+    /// is the per-source count) — see `status_bar::
+    /// StatusBar::hide`. This is the seam chosen over
     /// exposing `TrackList::source()`/`filter()` getters: `reload` already
     /// has all three values in local variables at the one call site that
     /// invokes this hook.
@@ -532,6 +540,7 @@ impl TrackList {
         *self.shared.on_import_errors_mutated.borrow_mut() = Some(Rc::new(callback));
     }
 
+
     /// Injects the player controller — injected post-construction via
     /// `TrackList::set_player`, used by the tag-edit flow to refresh
     /// now-playing metadata after successful tag edits.
@@ -579,17 +588,4 @@ pub(in crate::ui) fn playlist_reorder_allowed(shared: &Shared) -> bool {
     matches!(*shared.source.borrow(), ViewSource::Playlist(_))
         && shared.sort.borrow().field == PLAYLIST_ORDER_SORT_FIELD
         && shared.filter.borrow().trim().is_empty()
-}
-
-/// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
-/// wired or it's gone — mirrors `player_controller.rs`'s `show_toast` (same
-/// seam, same degrade behavior), not shared code: the two owning types are
-/// otherwise unrelated and this is a two-line `WeakRef::upgrade` match.
-pub(in crate::ui) fn show_toast(shared: &Shared, text: &str) {
-    match shared.toast_overlay.upgrade() {
-        Some(overlay) => toasts::show(&overlay, text),
-        None => {
-            tracing::warn!(text, "toast overlay is gone; degrading to log-only");
-        }
-    }
 }

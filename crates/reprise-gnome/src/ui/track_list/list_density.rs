@@ -199,7 +199,7 @@ mod tests {
 
         assert_eq!(
             (standard - compact, comfortable - standard),
-            (6, 8),
+            (10, 8),
             "measured compact={compact}, standard={standard}, comfortable={comfortable}"
         );
         window.close();

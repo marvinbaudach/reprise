@@ -24,7 +24,10 @@ for pattern in \
   'smoke-quit timer fired' \
   'run-manifest.txt' \
   'run_fresh_install_scenario' \
-  'run_populated_library_scenario'
+  'run_populated_library_scenario' \
+  'REPRISE_SMOKE_TAG_EDIT=' \
+  'run_tag_1_no_jump_after_save_scenario' \
+  'run_tag_3_multi_dialog_structure_scenario'
 do
   if ! rg --quiet "$pattern" "$runner"; then
     echo "$runner must contain isolation/coverage pattern: $pattern" >&2

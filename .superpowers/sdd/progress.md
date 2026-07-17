@@ -371,3 +371,82 @@ New query_queue_purge_track_ids(conn, candidates) = candidates minus query_queue
 New rule test play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_tracks: real scan detects deletion (report.vanished==1), then purge leaves queue=[playing,unmounted] (deleted GONE, unmounted STAYS grey), up_next=[unmounted], current=playing untouched. Confirmed RED against old code ([3,1,2] retained instead of [3,2]). PLAY-5a stays [aktiv], now covered against its real scan-detection trigger, not just the pure Queue::remove_ids mechanism. PLAY-5b (unmounted stays) proven intact by the same test.
 All gates: 1291 passed/0 failed/89 ignored, clippy 0, traceability "15 active rules covered", architecture, core purity 0, audit 0.
 === FEATURE COMPLETE & MERGE-READY. Whole-branch review's one Critical is closed. ===
+
+## 2026-07-17 — FIL-Filter-Sichtbarkeit, Tasks 1–10
+
+Task FIL-1: complete (commit 6fad03d, base 8a61842, Sichtbarkeitsgesetz für die permanente Filterzeile test-first ergänzt).
+Task FIL-2: complete (commits 463b8ce, 2f39e8f, base 6fad03d, Browse-Chooser mechanisch extrahiert und Filterzeile mit Such-Chip, Clear-all und ruhigem Idle-Zustand aufgebaut).
+Task FIL-3: complete (commit 1030f4a, base 2f39e8f, gefilterte Trefferzahlen mit quellspezifischen Gesamtzahlen gepaart).
+Task FIL-4: complete (commit 3d883c9, base 1030f4a, atomarer Clear-all-Pfad für Suche und Facetten; FIL-1a aktiv).
+Task FIL-5: complete (commit 72c2144, base 3d883c9, Status-Overlay auf neutrale Bibliotheksstatistik vereinheitlicht).
+Task FIL-6: complete (commit 2904f99, base 72c2144, Suchfeld-Akzent bei nichtleerem getrimmtem Text; FIL-4 aktiv).
+Task FIL-7: complete (commit 3ae270b, base 2904f99, Suchtreffer in Titel, Künstler, Album und Genre markiert; FIL-5 aktiv).
+Task FIL-8: complete (commit 41f56cb, base 3ae270b, Ende-der-Ergebnisse-Hinweis mit Show-all-Aktion; FIL-3 aktiv).
+Task FIL-9: complete (commit 96a7c0a, base 41f56cb, Nulltreffer-Zustand mit genau einem Show-all-Schritt; FIL-6 aktiv).
+Task FIL-10: complete (commit 78d32be, base d485036, FIL-2 nach vollständiger Abdeckung auf aktiv gesetzt).
+
+Pflichtprüfungen: Workspace 652 passed / 1 ignored (Core), 515 passed / 87 ignored (GNOME), 55 passed (Linux-Plattform); 87/87 isolierte Display-Tests grün; UX-Traceability 9 aktive Regeln; Architektur- und Audit-Gates grün, einzig erlaubte Audit-Warnung RUSTSEC-2024-0436 (`paste`). Die Xvfb-Abnahme nutzte ausschließlich ein temporäres Ein-Track-Profil und bestätigte Bibliothek, Playlist und Nulltreffer-Zustand sichtbar. Commit d485036 repariert sieben durch den Rebase auf `origin/main` offengelegte, veraltete oder zeitabhängige Display-Assertions und extrahiert den Toast-Helfer für das 600-Zeilen-Architekturlimit. FIL-1b bleibt bewusst `[geplant]`.
+Merge-Readiness-Nachtrag: commit 388245e korrigiert zehn ungültige öffentliche Rustdoc-Links auf private `main`-Symbole; Rustdoc und Core-Purity-Proof sind danach grün.
+Fix Playleiste-Abgrenzung: complete (commit 7e6dcdc, base ac093bd, Player-Leiste von GtkOverlay auf strukturelle vertikale Box umgebaut — Content/rechte Spalte laufen nicht mehr hinter der Leiste; PLAY-7 als [geplant]-Entwurf ergänzt. Verifiziert via fmt + clippy --workspace -D warnings; GNOME-Testlink in dieser Umgebung nicht möglich, da System-GTK 4.14 < gefordertem 4.22 — Display-Abnahme steht aus).
+Dependabot-Merges: complete (commits b1f89e9..HEAD, lofty 0.24 / ureq 3.3 / rusqlite 0.40 / md-5 0.11 gemergt und Code migriert: lofty Timestamp-date-Accessor + PictureBuilder, ureq-3-Agent/Error/Body-API, rusqlite ohne usize-FromSql/ToSql, manuelle Hex-Signatur; drei neue clippy-1.97-Lints behoben. Gates: fmt/clippy --workspace -D warnings grün, Core 651 passed (1 umgebungsbedingter Inode-Recycling-Flake in ambiguous_duplicates_are_not_guessed, nur Cloud-Container), audit einzig RUSTSEC-2024-0436. GNOME-Link/Display-Tests weiter offen: System-GTK < 4.22).
+
+## UX-Tooltips — Sektion M (Branch feat/ux-rules-tooltips, 2026-07-17)
+
+Plan: `docs/superpowers/plans/2026-07-17-ux-tooltips-taskplan.md`. Konsistenz-
+Sektion, kein neues Feature. Codex kam bis Task 3 + Tooling-Fix, brach dann
+kapazitätsbedingt ab; Tasks 4–9 von Opus fertiggestellt (Codex' halbfertige
+Task-4-Übersetzungen waren teils falsch — korrigiert).
+
+**Aktiv (einklagbar):**
+- **TIP-1a** [gtk] (f0b7699) — Icon-only ⇒ Tooltip, gelabelt ⇒ keiner, Ellipsis
+  ⇒ Volltext. Test-Walk `tooltip_discipline.rs`, fünf `tip_1a_*`-Display-Tests.
+- **TIP-2a** [gtk] (cfed981) — disabled icon-only nennt Grund
+  (`eject_tooltip`); pure Test `tip_2a_eject_tooltip_names_reason_while_syncing`.
+- **TIP-3/4/5** [manuell] (6f328c8) — RELEASING.md-Checkliste, Gate deckt sie
+  über wörtliche ID-Referenz (Erweiterung in 836f486/eb9b7cd).
+
+**Geplant (bewusst NICHT geflippt — Flip-Kriterium in gesperrten Verzeichnissen):**
+- **TIP-1b** [manuell] — Verb+Objekt-Wortlaut. Verbalisierung Transport/Panel
+  umgesetzt (771b02c), aber „Previous/Next" im Tag-Editor und „Back" in
+  browse_bar (fremde Branches) noch Substantive.
+- **TIP-2b** [manuell] — gelabelt disabled nennt Grund sichtbar. Preferences-
+  Gründe umgesetzt (7e455d7), aber Save/„Change cover…" (tag_edit) und
+  „Add filter" (browse) fehlen noch.
+
+**Tooling:** `check-ux-traceability.sh` kennt jetzt die `[manuell]`-Ebene
+(beidseitig geprüft); `check-display-tests.sh --rule-named` + Merge-Gate-Eintrag
+machen regelbenannte Display-Tests zu Merge-Blockern; Display-Runner-Ignore gilt
+als Abdeckung auch für `[aktiv]`.
+
+**Container-Klausel-Beschluss:** Player-Bar prev/next bekommen KEINE
+Einzel-Grund-Tooltips — sie werden nur mit der ganzen (dann leeren) Leiste
+deaktiviert; die leere Leiste ist ihre eigene Aussage.
+## 2026-07-17 — Queue-DnD: Up-Next-Reorder (QUE-3-Erweiterung, Owner-Entscheid)
+
+Task Queue-Up-Next-Reorder: complete (commit 946e4d2, base d14da79, DnD-Reorder innerhalb „Up Next" erlaubt — QueueReorderOp::WithinUpNext über Queue::move_item mit Playhead-Base; Drop auf die Now-Playing-Row = „als Nächstes" (Promotion an Play-Next-Front bzw. Front-Move); Demotion und Now-Playing-Drag bleiben abgelehnt. Drop-Indikator zeigt nur noch echte Ziele: Drag-Ursprung wird in Shared::active_reorder_drag_from gestasht, connect_enter prüft dieselbe reorder_op wie der Drop-Handler. QUE-3-Text in ux-rules.md angepasst, bleibt [geplant]. Auslöser: Nutzer sah Drop-Marker in „Up Next", aber Drops wirkten nicht — die alte Regel lehnte Snapshot-interne Reorders bewusst ab, der Indikator leuchtete trotzdem überall. Gates grün (652/517/55, clippy -D warnings, audit nur RUSTSEC-2024-0436); drei isolierte Headless-Smokes: reorderqueue 2-4 moved=true, 2-0 Promotion moved=true, 0-3 rejected. Offen für manuelle Abnahme: echte Pointer-Geste + sichtbarer Indikator (headless nicht prüfbar).)
+
+## 2026-07-17 — Queue-View-Absturz + Spalten-Header-DnD
+
+Crash-Fix Sektions-Header: complete (commit 9c6dcde, base 946e4d2). Nutzer-Crash `gtklistitemmanager.c:1328 assertion (header != NULL && header->widget == NULL)` beim Wechsel in die Queue-View aus einer tief gescrollten größeren Ansicht. Root Cause: `reload` flippte die Header-Factory ZWISCHEN `set_sections` und `set_query` — GTKs `set_has_sections` ruft `ensure_items` synchron auf und sah neue (kleine) Queue-Ranges gegen den alten (großen) Zeilenbestand; für getrackte Positionen hinter dem Range-Ende lieferte `section_for` den überlappenden Fallback `(0, total)` → Assert. Deterministischer Pointer-Repro (Wheel-Scroll tief, Selektion oben = zwei Tracker-Bereiche, Sidebar-Queue-Klick): Abort auf altem Code, überlebt mit Fix. Dreiteiliger Fix: Factory-Flip strikt NACH dem Query-Swap; `section_for`-Fallback kachelt den Rest als eigene Tail-Sektion (nie überlappend); Factory-Wechsel nur noch bei echter Transition (kein Header-Rebuild pro Queue-Reload mehr). Stress-Regression: 57 Queue-Reloads, 24 Auto-Advances, 0 Criticals.
+
+Spalten-Header-DnD: complete (commit 8fa08f5, base 9c6dcde, Umsetzung Sonnet-Agent, Review+Verifikation Fable). GTKs natives Column-Reorder ist in 4.22 tot (Title-Click claimt beim Press, cancelt die Threshold-Claim-Drag-Gesture der View — Stock-GTK-Python-Repro in scripts/upstream-repros/gtk-columnview-header-drag.py, auf gtk main unverändert). Eigenes Modul column_header_dnd: Capture-GestureDrag auf der ColumnView, Claim beim Press (Resize-Zone ±6px und Button 3 bleiben GTK), Live-Adjacent-Swap via remove/insert_column (Persistenz über bestehenden wire_order_persistence-Listener), activate_sort-Reimplementierung für den Plain-Click; set_reorderable(false) gegen künftiges Double-Handling. Neuer ptr-e2e-Flow PTR_E2E_COLREORDER_ONLY=1 komplett grün (Sort-Klick field=title, Hin-Drag persistiert, DB-Order-Check, Rück-Drag stellt Ausgangsordnung her, keine Criticals).
+
+- OFFEN (Upstream): GTK-Issue einreichen — GtkColumnView reorderable=TRUE wirkungslos (Title claim-on-press vs. Threshold-Claim); Repro liegt in scripts/upstream-repros/. GNOME-GitLab-Account nötig.
+- OFFEN (Harness): ptr-e2e geometry.sh ist seit Redesign/FIL-Filterzeile verschoben (Header real ~y=140 statt 120; x=500 = Artist statt Title) — HEADER_ONLY-Flow schlägt aktuell auch auf Baseline fehl. Rekalibrierung aller Flows als eigener Task.
+- Gates beider Commits grün: fmt, clippy --workspace -D warnings, Tests 652/524/55, audit nur RUSTSEC-2024-0436.
+
+## 2026-07-17 — Spalten-DnD-Feinschliff + Header-Rechtsklick (Nutzer-Feedback live)
+
+Spalten-Drag Marker-Rework: complete (commit aeb8b9a, base 7678192, Umsetzung Sonnet-Agent, Review+Verifikation Fable). Nutzer-Feedback zum ersten Wurf: Live-Swap = Design-Chaos + laggy, dnd-Klasse färbte ganze Header dauerhaft (Klassen-Leak auf verwaiste Title-Widgets nach jedem Swap). Jetzt wie Row-DnD: Spalten stehen während des Drags, schmale Akzent-Einfügelinie (box-shadow-Idiom der Row-Indikatoren) auf exakt einem getrackten Widget (Cleanup bei End+Cancel), genau EIN remove/insert + EIN Persist beim Loslassen, Quell-Titel nur gedimmt. Slot-Mathematik pur + 14 Tests (column_header_dnd_tests.rs ausgelagert, 800er-Regel). ptr-e2e-Flow um Genau-ein-Persist-Assert erweitert, komplett grün.
+Header-Rechtsklick-Popover: complete (commit ac81316). install_header_popover existierte, verlor aber die Title-Claim-Race (Bubble- statt Capture-Phase) — Rechtsklick zeigte GTKs nacktes Sichtbarkeitsmenü statt des Editors. Fix: Capture + Claim; zusätzlich Fenster-Buttons (─ □ ×) aus der Popover-Variante der Editor-HeaderBar entfernt (Dialog/Preferences behalten sie). Headless mit echtem Rechtsklick + Screenshots verifiziert.
+- HINWEIS: ptr-e2e column-header-menu.sh (Flow 1b) testet das jetzt unerreichbare GTK-Nativmenü — bei der ohnehin anstehenden Geometrie-Rekalibrierung auf das Editor-Popover umschreiben.
+
+=== MERGE main (104 commits: queue-playlist-improvements, ux-rules-tooltips, tag-editor-rework, i18n) INTO feat/missing-import-errors. 11 conflicted files, 25 hunks, resolved preserving BOTH features' intents:
+- ledger: union. playlist.rs: doc follows code (missing stays visible, my Beschluss 11). maintenance.rs: kept my mark_track_missing_if_current TOCTOU recheck, dropped main's dead remove_missing_track (grep-confirmed 0 callers).
+- library/tag_edit.rs: kept my identity-guarded prepare_tag_reconciliation AND main's new kind:WriteErrorKind field.
+- tag_edit_flow.rs (sub-agent, 8 hunks): begin_for_path ported to main's reworked present/SessionTrack API; my "import-hint success is silent" preserved via origin:ApplyOrigin.
+- columns.rs: combined main's search-highlight (present rows) with my grey+strikethrough (missing rows) via a branch, respecting the shared Pango attribute list.
+- empty_state.rs (6 hunks): union of both functions + both test sets; combined per-arm set_child (main) with my remove_css_class. Caught a real merge bug: dropping the builder's initial set_child (for main's per-arm model) meant LibraryUnavailable had to set the retry-actions child itself, and MissingClear had to clear to NONE.
+- track_list.rs/builder.rs/reload.rs: unioned both features' struct fields + constructor init; reload combined main's new browse_filter_count signature with my availability-aware empty state.
+Post-merge compile fixes: dropped a duplicate set_empty_scan_widget (kept main's field-storing version, moved it into track_list_missing.rs as a scan seam to keep the orchestrator <600 lines); removed an unused toasts import; added two trailing semicolons in the sub-agent's finish_apply closures.
+Verified: 1417 passed / 0 failed / 96 ignored (both features' suites united), clippy 0, fmt clean, ux-traceability "34 active rules covered", architecture + qa-linters pass, core purity 0, audit 0. BOTH features' rule tests green — the merge broke neither.

@@ -290,11 +290,11 @@ pub fn build(
         Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
-            move |source, count, filter, browse| {
+            move |source, _count, _filter, _browse| {
                 if matches!(source, ViewSource::Library) {
-                    status_bar.refresh(&conn_for_status, filter, browse);
+                    status_bar.refresh(&conn_for_status);
                 } else {
-                    status_bar.refresh_for_source_count(count as i64);
+                    status_bar.hide();
                 }
             },
             queue_ids_provider,
@@ -386,7 +386,7 @@ pub fn build(
 
     let bar_position = settings::get_player_bar_position(&conn.borrow());
 
-    // The toast layer is attached after the player-bar overlay exists so
+    // The toast layer is attached after the player-bar shell exists so
     // notifications render above the complete library chrome.
     let toast_overlay = adw::ToastOverlay::new();
 
