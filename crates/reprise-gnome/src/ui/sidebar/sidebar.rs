@@ -360,6 +360,15 @@ impl Sidebar {
         rebuild(&self.shared, Some(source), reason);
     }
 
+    /// Re-baselines the row-selected dedup against the view's ACTUAL source.
+    /// Paths that change the track list without going through the sidebar
+    /// (album/artist cross-navigation, smoke hooks) leave `current_source`
+    /// stale; NAV-9's jump and NAV-2's back call this first so their
+    /// `refresh_and_select` isn't swallowed as a same-source no-op.
+    pub(in crate::ui) fn sync_current_source(&self, source: &ViewSource) {
+        *self.shared.current_source.borrow_mut() = source.clone();
+    }
+
     pub(in crate::ui) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
         crate::ui::sidebar_session::restore_source(&self.shared, requested)
     }

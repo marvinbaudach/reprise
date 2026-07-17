@@ -36,6 +36,14 @@ const NAVIGATION_SHORTCUTS: &[ShortcutSpec] = &[
         accelerator: "<Control>f",
     },
     ShortcutSpec {
+        title_message: strings::JUMP_TO_NOW_PLAYING,
+        accelerator: "<Control>l",
+    },
+    ShortcutSpec {
+        title_message: strings::NAVIGATE_BACK,
+        accelerator: "<Alt>Left",
+    },
+    ShortcutSpec {
         title_message: strings::TOGGLE_COMPACT_VIEW,
         accelerator: "<Control>m",
     },
@@ -122,6 +130,8 @@ mod tests {
                 "space",
                 "Return",
                 "<Control>f",
+                "<Control>l",
+                "<Alt>Left",
                 "<Control>m",
                 "Escape",
                 "<Shift>F10",

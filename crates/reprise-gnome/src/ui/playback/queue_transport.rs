@@ -387,9 +387,22 @@ impl PlayerController {
                 queue_len = self.up_next.borrow().len(),
                 "queue purged of hard-deleted track ids"
             );
-            if pending_changed {
-                self.notify_queue_changed();
-            }
+            // Both lists are visible now (composite Queue view + QUE-5
+            // pending counter), so a context-only purge must refresh too
+            // (adversarial review, queue+nav plan, finding 3).
+            self.notify_queue_changed();
+        }
+        // The loaded track itself was hard-deleted: skip ahead rather than
+        // keeping a dead id as the composite view's Now Playing row (its
+        // model row would silently drop, desyncing the section ranges —
+        // review finding 4). `next` drains pending first, then the already-
+        // purged context, so it lands on a live track or stops cleanly.
+        let now_playing_purged = {
+            let now_playing = self.now_playing.borrow();
+            now_playing.as_ref().is_some_and(|np| ids.contains(&np.id))
+        };
+        if now_playing_purged {
+            self.next();
         }
     }
 }
