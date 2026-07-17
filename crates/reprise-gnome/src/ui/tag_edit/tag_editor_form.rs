@@ -69,6 +69,12 @@ pub(in crate::ui) struct TagEditorForm {
     pub(in crate::ui) track_no_row: adw::EntryRow,
     pub(in crate::ui) rating_box: gtk4::Box,
     pub(in crate::ui) rating_value: Rc<Cell<i32>>,
+    pub(in crate::ui) artist_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) album_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) album_artist_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) genre_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) year_annotation: Option<gtk4::Label>,
+    pub(in crate::ui) rating_annotation: Option<gtk4::Label>,
     pub(in crate::ui) error_label: gtk4::Label,
     /// The reserved "was: …" line under each field (TAG-5, P-4) — built by
     /// `build_field_column` for every field including Rating, populated by
@@ -230,7 +236,14 @@ impl TagEditorForm {
         let year_annotation = is_multi
             .then(|| apply_mixed_annotation_number(&year_row, &year_number, track_count))
             .flatten();
-        apply_rich_annotation(&session_ref, TagField::Year, year_annotation.as_ref());
+        if year_annotation.is_some() {
+            attach_type_to_arm(&year_row, year_annotation.as_ref(), track_count);
+        }
+        apply_mixed_field_presentation(
+            &year_row,
+            year_annotation.as_ref(),
+            mixed_field_presentation(&session_ref, TagField::Year).as_ref(),
+        );
 
         let track_no_row = adw::EntryRow::builder()
             .title(strings::text(strings::TAG_TRACK_NUMBER))
@@ -261,7 +274,8 @@ impl TagEditorForm {
         grid.attach(&year_col, 0, 1, 1, 1);
         grid.attach(&track_no_col, 1, 1, 1, 1);
 
-        let rating_mixed = match session_ref.mixed_placeholder(TagField::Rating) {
+        let rating_presentation = mixed_field_presentation(&session_ref, TagField::Rating);
+        let rating_mixed = match rating_presentation {
             Some(_) => MixedValue::Mixed,
             None => {
                 let rating = session_ref
@@ -272,10 +286,26 @@ impl TagEditorForm {
             }
         };
         let (rating_box, rating_value) = build_star_rating(&rating_mixed);
-        let (rating_col, rating_old_value) = build_field_column(
-            rating_box.upcast_ref(),
-            Some(&strings::text(strings::RATING)),
-        );
+        let (rating_col, rating_old_value) = build_field_column(rating_box.upcast_ref(), None);
+        let rating_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        let rating_label = gtk4::Label::builder()
+            .label(strings::text(strings::RATING))
+            .xalign(0.0)
+            .hexpand(true)
+            .build();
+        rating_label.add_css_class("reprise-tag-field-label");
+        rating_header.append(&rating_label);
+        let rating_annotation = is_multi.then(|| {
+            let text = rating_presentation.as_ref().map_or_else(
+                || strings::text(strings::TAG_SAME_ON_ALL),
+                |presentation| presentation.annotation.clone(),
+            );
+            let label = gtk4::Label::new(Some(&text));
+            label.add_css_class("reprise-tag-field-annotation");
+            rating_header.append(&label);
+            label
+        });
+        rating_col.prepend(&rating_header);
 
         let error_label = gtk4::Label::builder()
             .label(strings::text(strings::TAG_NUMBER_ERROR))
@@ -346,17 +376,6 @@ impl TagEditorForm {
             .build();
         dialog.add_css_class("reprise-tag-editor");
 
-        // Annotations that were never read past their construction site
-        // above still need to exist so the borrow checker doesn't complain
-        // about an unused `Option<gtk4::Label>` — they're already installed
-        // as row suffixes by `init_field`/`apply_mixed_annotation_number`.
-        let _ = (
-            artist_annotation,
-            album_annotation,
-            album_artist_annotation,
-            genre_annotation,
-        );
-
         let old_value_labels = vec![
             (TagField::Title, title_old_value),
             (TagField::Artist, artist_old_value),
@@ -382,6 +401,12 @@ impl TagEditorForm {
             track_no_row,
             rating_box,
             rating_value,
+            artist_annotation,
+            album_annotation,
+            album_artist_annotation,
+            genre_annotation,
+            year_annotation,
+            rating_annotation,
             error_label,
             old_value_labels,
             review_box,
@@ -396,10 +421,8 @@ impl TagEditorForm {
 
 /// Builds a `MixedValue<String>` bridge for widgets.rs's existing
 /// `set_entry_from_mixed_string`/`init_autocomplete_from_mixed` helpers,
-/// which still take the old collapsed type — only the *annotation text*
-/// (for autocomplete fields) is overridden with the session's rich label
-/// afterward (`apply_rich_annotation`), so widgets.rs itself needs no
-/// changes.
+/// which still take the old collapsed type. The session-backed presentation
+/// applied afterward supplies the rich in-entry placeholder and counter.
 fn text_bridge(session: &TagEditSession, field: TagField, current_id: i64) -> MixedValue<String> {
     match session.mixed_placeholder(field) {
         Some(_) => MixedValue::Mixed,
@@ -429,12 +452,28 @@ fn number_bridge(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::ui) struct MixedFieldPresentation {
+    pub(in crate::ui) entry_placeholder: String,
+    pub(in crate::ui) annotation: String,
+}
+
+pub(in crate::ui) fn mixed_field_presentation(
+    session: &TagEditSession,
+    field: TagField,
+) -> Option<MixedFieldPresentation> {
+    session
+        .mixed_placeholder(field)
+        .map(|placeholder| MixedFieldPresentation {
+            entry_placeholder: placeholder.label,
+            annotation: strings::tag_distinct_value_count(placeholder.distinct_count),
+        })
+}
+
 /// Initializes an autocomplete field's text/annotation from the session:
 /// uniform values render as real text; Mixed fields stay blank (TAG-2: no
-/// prefilled value, no click-to-unlock) but get the rich placeholder label
-/// as their annotation text instead of the generic "(multiple values)"
-/// copy. Returns the annotation label (`None` outside Multi mode) so the
-/// caller can keep it alive as long as the row itself.
+/// prefilled value, no click-to-unlock), show their rich label inside the
+/// entry, and reserve the annotation for the distinct-value count.
 fn init_field(
     ac: &AutocompleteEntry,
     session: &TagEditSession,
@@ -448,39 +487,30 @@ fn init_field(
     if is_multi && matches!(bridge, MixedValue::Mixed) {
         attach_type_to_arm(ac.row(), annotation.as_ref(), track_count);
     }
-    apply_rich_annotation(session, field, annotation.as_ref());
+    apply_mixed_field_presentation(
+        ac.row(),
+        annotation.as_ref(),
+        mixed_field_presentation(session, field).as_ref(),
+    );
     annotation
 }
 
-/// Overrides an already-built mixed-field annotation's text with the rich,
-/// per-track-value label from [`mixed_placeholder_label`] (TAG-2) instead of
-/// the generic "(multiple values)" copy `tag_editor_widgets.rs` starts it
-/// with — this is the whole gap Package C left for F0 to close.
-fn apply_rich_annotation(
-    session: &TagEditSession,
-    field: TagField,
+pub(in crate::ui) fn apply_mixed_field_presentation(
+    row: &adw::EntryRow,
     annotation: Option<&gtk4::Label>,
+    presentation: Option<&MixedFieldPresentation>,
 ) {
-    let (Some(label), Some(rich_text)) = (annotation, mixed_placeholder_label(session, field))
-    else {
+    let Some(presentation) = presentation else {
+        set_entry_placeholder(row, None);
         return;
     };
-    label.set_text(&rich_text);
-}
-
-/// TAG-2's rich mixed-value label for `field`, straight from the session —
-/// exercised headlessly by `tag_2_rich_placeholder_lists_values_from_session`
-/// as the regression guard for the exact gap the Wave-2 correction found:
-/// the dialog used to only ever see the collapsed `EditableTagSummary`
-/// (`MixedValue::Mixed`, no values), never the session's per-track distinct
-/// values.
-pub(in crate::ui) fn mixed_placeholder_label(
-    session: &TagEditSession,
-    field: TagField,
-) -> Option<String> {
-    session
-        .mixed_placeholder(field)
-        .map(|placeholder| placeholder.label)
+    set_entry_placeholder(row, Some(&presentation.entry_placeholder));
+    row.remove_css_class("reprise-tag-field-armed");
+    row.add_css_class("reprise-tag-mixed");
+    if let Some(label) = annotation {
+        label.set_text(&presentation.annotation);
+        label.remove_css_class("accent");
+    }
 }
 
 #[cfg(test)]
@@ -521,6 +551,31 @@ mod tests {
     }
 
     #[test]
+    fn tag_2_mixed_placeholder_sits_in_the_entry() {
+        let session = TagEditSession::new(
+            vec![track(1, "Ambient"), track(2, "Post-Rock")],
+            SessionMode::Multi,
+        );
+
+        let presentation = mixed_field_presentation(&session, TagField::Genre).unwrap();
+
+        assert_eq!(presentation.entry_placeholder, "Mixed — Ambient, Post-Rock");
+    }
+
+    #[test]
+    fn tag_2_counter_annotation_shows_distinct_values() {
+        let session = TagEditSession::new(
+            vec![track(1, "Ambient"), track(2, "Post-Rock")],
+            SessionMode::Multi,
+        );
+
+        let presentation = mixed_field_presentation(&session, TagField::Genre).unwrap();
+
+        assert_eq!(presentation.annotation, "2 values");
+        assert_eq!(strings::tag_distinct_value_count(1), "1 value");
+    }
+
+    #[test]
     fn tag_2_rich_placeholder_lists_values_from_session() {
         let session = TagEditSession::new(
             vec![track(1, "Ambient"), track(2, "Post-Rock")],
@@ -528,8 +583,9 @@ mod tests {
         );
 
         assert_eq!(
-            mixed_placeholder_label(&session, TagField::Genre),
-            Some("Mixed — Ambient, Post-Rock".to_string())
+            mixed_field_presentation(&session, TagField::Genre)
+                .map(|presentation| presentation.entry_placeholder),
+            Some("Mixed — Ambient, Post-Rock".to_string()),
         );
     }
 
@@ -541,8 +597,9 @@ mod tests {
         );
 
         assert_eq!(
-            mixed_placeholder_label(&session, TagField::Genre),
-            Some("Mixed — 3 different values".to_string())
+            mixed_field_presentation(&session, TagField::Genre)
+                .map(|presentation| presentation.entry_placeholder),
+            Some("Mixed — 3 different values".to_string()),
         );
     }
 
@@ -553,6 +610,6 @@ mod tests {
             SessionMode::Multi,
         );
 
-        assert_eq!(mixed_placeholder_label(&session, TagField::Genre), None);
+        assert_eq!(mixed_field_presentation(&session, TagField::Genre), None);
     }
 }

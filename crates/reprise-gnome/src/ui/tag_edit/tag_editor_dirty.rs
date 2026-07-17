@@ -33,7 +33,9 @@ use reprise_core::library::tag_edit_session::{
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
-use crate::ui::tag_editor_form::{EditorMode, TagEditorForm};
+use crate::ui::tag_editor_form::{
+    apply_mixed_field_presentation, mixed_field_presentation, EditorMode, TagEditorForm,
+};
 use crate::ui::tag_editor_state::{number_patch, ParseFieldError};
 use crate::ui::tag_editor_widgets::wire_star_clicks;
 
@@ -41,6 +43,15 @@ pub(in crate::ui) type UpdateCallback = Rc<dyn Fn()>;
 
 pub(in crate::ui) struct DirtyState {
     pub(in crate::ui) update: UpdateCallback,
+}
+
+#[derive(Clone)]
+struct FieldWiring {
+    scope: PendingScope,
+    session: Rc<RefCell<TagEditSession>>,
+    update: UpdateCallback,
+    interacted: Rc<Cell<bool>>,
+    suppress_changes: Rc<Cell<bool>>,
 }
 
 /// The `PendingScope` every field write in this dialog resolves to for its
@@ -217,6 +228,7 @@ pub(in crate::ui) fn wire(
     };
     let scope = session_scope(session_mode);
     let interacted = Rc::new(Cell::new(false));
+    let suppress_changes = Rc::new(Cell::new(false));
 
     let update: UpdateCallback = {
         let save_button = form.save_btn.clone();
@@ -247,69 +259,52 @@ pub(in crate::ui) fn wire(
         })
     };
 
-    wire_text_field(
-        &form.title_row,
-        TagField::Title,
+    let wiring = FieldWiring {
         scope,
-        session,
-        &update,
-        &interacted,
-    );
+        session: session.clone(),
+        update: update.clone(),
+        interacted,
+        suppress_changes,
+    };
+
+    wire_text_field(&form.title_row, TagField::Title, &wiring, None);
     wire_number_field(
         &form.year_row,
         TagField::Year,
-        scope,
-        session,
-        &update,
-        &interacted,
+        &wiring,
+        form.year_annotation.as_ref(),
     );
-    wire_number_field(
-        &form.track_no_row,
-        TagField::TrackNo,
-        scope,
-        session,
-        &update,
-        &interacted,
-    );
+    wire_number_field(&form.track_no_row, TagField::TrackNo, &wiring, None);
     wire_autocomplete_field(
         &form.artist_ac,
         TagField::Artist,
-        scope,
-        session,
-        &update,
-        &interacted,
+        &wiring,
+        form.artist_annotation.as_ref(),
     );
     wire_autocomplete_field(
         &form.album_ac,
         TagField::Album,
-        scope,
-        session,
-        &update,
-        &interacted,
+        &wiring,
+        form.album_annotation.as_ref(),
     );
     wire_autocomplete_field(
         &form.album_artist_ac,
         TagField::AlbumArtist,
-        scope,
-        session,
-        &update,
-        &interacted,
+        &wiring,
+        form.album_artist_annotation.as_ref(),
     );
     wire_autocomplete_field(
         &form.genre_ac,
         TagField::Genre,
-        scope,
-        session,
-        &update,
-        &interacted,
+        &wiring,
+        form.genre_annotation.as_ref(),
     );
     wire_rating(
         &form.rating_value,
         &form.rating_box,
-        scope,
-        session,
-        &update,
-        &interacted,
+        &wiring,
+        form.rating_annotation.as_ref(),
+        mode.track_count(),
     );
 
     update();
@@ -334,10 +329,8 @@ fn field_is_armed(session: &TagEditSession, scope: PendingScope, field: TagField
 fn wire_text_field(
     row: &adw::EntryRow,
     field: TagField,
-    scope: PendingScope,
-    session: &Rc<RefCell<TagEditSession>>,
-    update: &UpdateCallback,
-    interacted: &Rc<Cell<bool>>,
+    wiring: &FieldWiring,
+    mixed_annotation: Option<&gtk4::Label>,
 ) {
     if !row.is_editable() {
         // TAG-3: a per-track-locked field (Title/Track-number in Multi) is
@@ -348,35 +341,41 @@ fn wire_text_field(
     row.add_suffix(&revert_btn);
 
     {
-        let session = session.clone();
-        let update = update.clone();
+        let wiring = wiring.clone();
         let revert_btn = revert_btn.clone();
-        let interacted = interacted.clone();
         row.connect_changed(move |entry| {
-            interacted.set(true);
+            if wiring.suppress_changes.get() {
+                return;
+            }
+            wiring.interacted.set(true);
             let text = entry.text().to_string();
-            session
+            wiring
+                .session
                 .borrow_mut()
-                .set_pending(scope, field, &FieldValue::Text(text));
-            let armed = field_is_armed(&session.borrow(), scope, field);
+                .set_pending(wiring.scope, field, &FieldValue::Text(text));
+            let armed = field_is_armed(&wiring.session.borrow(), wiring.scope, field);
             revert_btn.set_visible(armed);
-            update();
+            (wiring.update)();
         });
     }
     {
-        let session = session.clone();
-        let update = update.clone();
+        let wiring = wiring.clone();
         let row = row.clone();
-        let interacted = interacted.clone();
+        let mixed_annotation = mixed_annotation.cloned();
         revert_btn.connect_clicked(move |button| {
-            interacted.set(true);
-            let text = {
-                let mut session_mut = session.borrow_mut();
-                revert_field(&mut session_mut, scope, field)
+            wiring.interacted.set(true);
+            let (text, presentation) = {
+                let mut session_mut = wiring.session.borrow_mut();
+                let text = revert_field(&mut session_mut, wiring.scope, field);
+                let presentation = mixed_field_presentation(&session_mut, field);
+                (text, presentation)
             };
-            row.set_text(&text);
+            wiring.suppress_changes.set(true);
+            apply_mixed_field_presentation(&row, mixed_annotation.as_ref(), presentation.as_ref());
+            row.set_text(if presentation.is_some() { "" } else { &text });
+            wiring.suppress_changes.set(false);
             button.set_visible(false);
-            update();
+            (wiring.update)();
         });
     }
 }
@@ -384,10 +383,8 @@ fn wire_text_field(
 fn wire_number_field(
     row: &adw::EntryRow,
     field: TagField,
-    scope: PendingScope,
-    session: &Rc<RefCell<TagEditSession>>,
-    update: &UpdateCallback,
-    interacted: &Rc<Cell<bool>>,
+    wiring: &FieldWiring,
+    mixed_annotation: Option<&gtk4::Label>,
 ) {
     if !row.is_editable() {
         return;
@@ -396,36 +393,43 @@ fn wire_number_field(
     row.add_suffix(&revert_btn);
 
     {
-        let session = session.clone();
-        let update = update.clone();
+        let wiring = wiring.clone();
         let revert_btn = revert_btn.clone();
-        let interacted = interacted.clone();
         row.connect_changed(move |entry| {
-            interacted.set(true);
-            if let Ok(value) = parse_number_field(&entry.text()) {
-                session
-                    .borrow_mut()
-                    .set_pending(scope, field, &FieldValue::Number(value));
+            if wiring.suppress_changes.get() {
+                return;
             }
-            let armed = field_is_armed(&session.borrow(), scope, field);
+            wiring.interacted.set(true);
+            if let Ok(value) = parse_number_field(&entry.text()) {
+                wiring.session.borrow_mut().set_pending(
+                    wiring.scope,
+                    field,
+                    &FieldValue::Number(value),
+                );
+            }
+            let armed = field_is_armed(&wiring.session.borrow(), wiring.scope, field);
             revert_btn.set_visible(armed);
-            update();
+            (wiring.update)();
         });
     }
     {
-        let session = session.clone();
-        let update = update.clone();
+        let wiring = wiring.clone();
         let row = row.clone();
-        let interacted = interacted.clone();
+        let mixed_annotation = mixed_annotation.cloned();
         revert_btn.connect_clicked(move |button| {
-            interacted.set(true);
-            let text = {
-                let mut session_mut = session.borrow_mut();
-                revert_field(&mut session_mut, scope, field)
+            wiring.interacted.set(true);
+            let (text, presentation) = {
+                let mut session_mut = wiring.session.borrow_mut();
+                let text = revert_field(&mut session_mut, wiring.scope, field);
+                let presentation = mixed_field_presentation(&session_mut, field);
+                (text, presentation)
             };
-            row.set_text(&text);
+            wiring.suppress_changes.set(true);
+            apply_mixed_field_presentation(&row, mixed_annotation.as_ref(), presentation.as_ref());
+            row.set_text(if presentation.is_some() { "" } else { &text });
+            wiring.suppress_changes.set(false);
             button.set_visible(false);
-            update();
+            (wiring.update)();
         });
     }
 }
@@ -433,44 +437,53 @@ fn wire_number_field(
 fn wire_autocomplete_field(
     ac: &Rc<AutocompleteEntry>,
     field: TagField,
-    scope: PendingScope,
-    session: &Rc<RefCell<TagEditSession>>,
-    update: &UpdateCallback,
-    interacted: &Rc<Cell<bool>>,
+    wiring: &FieldWiring,
+    mixed_annotation: Option<&gtk4::Label>,
 ) {
     let revert_btn = build_revert_button();
     ac.row().add_suffix(&revert_btn);
 
     {
-        let session = session.clone();
-        let update = update.clone();
+        let wiring = wiring.clone();
         let ac_for_read = ac.clone();
         let revert_btn = revert_btn.clone();
-        let interacted = interacted.clone();
         ac.connect_changed(move || {
-            interacted.set(true);
-            session
-                .borrow_mut()
-                .set_pending(scope, field, &FieldValue::Text(ac_for_read.text()));
-            let armed = field_is_armed(&session.borrow(), scope, field);
+            if wiring.suppress_changes.get() {
+                return;
+            }
+            wiring.interacted.set(true);
+            wiring.session.borrow_mut().set_pending(
+                wiring.scope,
+                field,
+                &FieldValue::Text(ac_for_read.text()),
+            );
+            let armed = field_is_armed(&wiring.session.borrow(), wiring.scope, field);
             revert_btn.set_visible(armed);
-            update();
+            (wiring.update)();
         });
     }
     {
-        let session = session.clone();
-        let update = update.clone();
+        let wiring = wiring.clone();
         let ac = ac.clone();
-        let interacted = interacted.clone();
+        let mixed_annotation = mixed_annotation.cloned();
         revert_btn.connect_clicked(move |button| {
-            interacted.set(true);
-            let text = {
-                let mut session_mut = session.borrow_mut();
-                revert_field(&mut session_mut, scope, field)
+            wiring.interacted.set(true);
+            let (text, presentation) = {
+                let mut session_mut = wiring.session.borrow_mut();
+                let text = revert_field(&mut session_mut, wiring.scope, field);
+                let presentation = mixed_field_presentation(&session_mut, field);
+                (text, presentation)
             };
-            ac.set_text(&text);
+            wiring.suppress_changes.set(true);
+            apply_mixed_field_presentation(
+                ac.row(),
+                mixed_annotation.as_ref(),
+                presentation.as_ref(),
+            );
+            ac.set_text(if presentation.is_some() { "" } else { &text });
+            wiring.suppress_changes.set(false);
             button.set_visible(false);
-            update();
+            (wiring.update)();
         });
     }
 }
@@ -478,23 +491,27 @@ fn wire_autocomplete_field(
 fn wire_rating(
     rating_value: &Rc<Cell<i32>>,
     rating_box: &gtk4::Box,
-    scope: PendingScope,
-    session: &Rc<RefCell<TagEditSession>>,
-    update: &UpdateCallback,
-    interacted: &Rc<Cell<bool>>,
+    wiring: &FieldWiring,
+    annotation: Option<&gtk4::Label>,
+    track_count: usize,
 ) {
-    let session = session.clone();
+    let wiring = wiring.clone();
     let rating_value_for_read = rating_value.clone();
-    let interacted = interacted.clone();
+    let annotation = annotation.cloned();
     let on_changed: UpdateCallback = {
-        let update = update.clone();
         Rc::new(move || {
-            interacted.set(true);
+            wiring.interacted.set(true);
+            if let Some(label) = &annotation {
+                label.set_text(&strings::tag_will_apply(track_count));
+                label.add_css_class("accent");
+            }
             let value = rating_value_for_read.get();
-            session
-                .borrow_mut()
-                .set_pending(scope, TagField::Rating, &FieldValue::Rating(value));
-            update();
+            wiring.session.borrow_mut().set_pending(
+                wiring.scope,
+                TagField::Rating,
+                &FieldValue::Rating(value),
+            );
+            (wiring.update)();
         })
     };
     wire_star_clicks(rating_box, rating_value, &on_changed);

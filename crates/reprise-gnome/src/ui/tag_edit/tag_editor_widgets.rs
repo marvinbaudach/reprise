@@ -198,6 +198,19 @@ pub(in crate::ui) fn set_entry_from_mixed_number(
     }
 }
 
+/// Sets placeholder copy on the `GtkText` delegated to by `AdwEntryRow`.
+/// `GtkEditable` itself has no placeholder property, so the row's editable
+/// delegate is the type-safe route to the in-entry placeholder node.
+pub(in crate::ui) fn set_entry_placeholder(row: &adw::EntryRow, text: Option<&str>) {
+    let Some(delegate) = row.delegate() else {
+        return;
+    };
+    let Ok(text_widget) = delegate.downcast::<gtk4::Text>() else {
+        return;
+    };
+    text_widget.set_placeholder_text(text);
+}
+
 /// Initialises an `AutocompleteEntry` from a `MixedValue`, adding
 /// mixed-field annotations in multi-track mode. Returns the annotation label
 /// when the field starts Mixed (needed by [`attach_type_to_arm`]).
@@ -352,20 +365,17 @@ pub(in crate::ui) fn attach_type_to_arm(
     annotation: Option<&gtk4::Label>,
     track_count: usize,
 ) {
-    let armed = Rc::new(Cell::new(false));
     let will_apply = strings::tag_will_apply(track_count);
 
     {
         let row_c = row.clone();
         let annotation_c = annotation.cloned();
-        let armed_c = armed.clone();
         let will_apply_c = will_apply.clone();
         row.connect_changed(move |entry| {
-            if armed_c.get() {
+            if !row_c.has_css_class("reprise-tag-mixed") {
                 return;
             }
             if mixed_field_arms_on_change(&entry.text()) {
-                armed_c.set(true);
                 arm_mixed_field(&row_c, annotation_c.as_ref(), &will_apply_c);
             }
         });
@@ -377,12 +387,11 @@ pub(in crate::ui) fn attach_type_to_arm(
         let row_c = row.clone();
         let annotation_c = annotation.cloned();
         key_controller.connect_key_pressed(move |_, keyval, _, _| {
-            if armed.get() {
+            if !row_c.has_css_class("reprise-tag-mixed") {
                 return glib::Propagation::Proceed;
             }
             let text_is_empty = row_c.text().is_empty();
             if mixed_field_key_arms_as_clear(keyval, text_is_empty) {
-                armed.set(true);
                 // Force a real changed-signal round-trip (empty text alone
                 // has nothing to delete, so a plain Backspace never fires
                 // `changed`) — this also lets `tag_editor_dirty`'s own
@@ -399,6 +408,7 @@ pub(in crate::ui) fn attach_type_to_arm(
 }
 
 fn arm_mixed_field(row: &adw::EntryRow, annotation: Option<&gtk4::Label>, will_apply: &str) {
+    set_entry_placeholder(row, None);
     row.remove_css_class("reprise-tag-mixed");
     row.add_css_class("reprise-tag-field-armed");
     if let Some(label) = annotation {

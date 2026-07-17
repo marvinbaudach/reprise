@@ -64,7 +64,11 @@ fn tag_2_in_field_revert_clears_text_and_pending_together() {
 
 #[test]
 fn tag_2_in_field_revert_on_mixed_field_returns_to_placeholder_value() {
-    let mut session = TagEditSession::new(vec![track(1, "A"), track(2, "B")], SessionMode::Multi);
+    let mut ambient = track(1, "A");
+    ambient.tags.genre = "Ambient".into();
+    let mut post_rock = track(2, "B");
+    post_rock.tags.genre = "Post-Rock".into();
+    let mut session = TagEditSession::new(vec![ambient, post_rock], SessionMode::Multi);
     session.set_pending(
         PendingScope::AllTracks,
         TagField::Genre,
@@ -76,9 +80,9 @@ fn tag_2_in_field_revert_on_mixed_field_returns_to_placeholder_value() {
 
     let _ = revert_field(&mut session, PendingScope::AllTracks, TagField::Genre);
 
-    // Both tracks' genres started as "Rock" (see `track` fixture), so a
-    // revert lands back on the uniform original — no longer mixed.
-    assert!(session.mixed_placeholder(TagField::Genre).is_none());
+    let presentation = mixed_field_presentation(&session, TagField::Genre).unwrap();
+    assert_eq!(presentation.entry_placeholder, "Mixed — Ambient, Post-Rock");
+    assert_eq!(presentation.annotation, "2 values");
     assert!(session
         .old_value_line(PendingScope::AllTracks, TagField::Genre)
         .is_none());
