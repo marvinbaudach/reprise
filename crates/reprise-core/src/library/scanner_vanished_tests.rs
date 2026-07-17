@@ -132,12 +132,14 @@ fn insert_raw_track(conn: &Connection, path: &std::path::Path) {
     .unwrap();
 }
 
-/// Mirrors `queries::clauses::MISSING` (not reachable from here — that
-/// re-export is test-only and would otherwise warn as unused in the non-
-/// test build, see `queries::mod`'s doc comment on its `PRESENT` re-export).
+/// Uses `queries::MISSING` directly rather than a hand-copied literal, so
+/// this assertion can never silently drift from the predicate it mirrors.
 fn missing_count(conn: &Connection) -> i64 {
     conn.query_row(
-        "SELECT count(*) FROM tracks WHERE missing_since IS NOT NULL AND removed_at IS NULL",
+        &format!(
+            "SELECT count(*) FROM tracks WHERE {}",
+            crate::queries::MISSING
+        ),
         [],
         |r| r.get(0),
     )
