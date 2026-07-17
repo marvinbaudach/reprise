@@ -4,6 +4,7 @@ use gtk4::pango;
 use gtk4::prelude::*;
 
 use super::cover_loader::CoverLoader;
+use super::strings;
 use super::style::tokens::TRANSITION;
 use super::waveform_seek::WaveformSeek;
 
@@ -86,6 +87,7 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
 
     // — Play/pause button —
     let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
+    play_pause_button.set_tooltip_text(Some(&strings::text(strings::PLAY)));
     play_pause_button.set_valign(gtk4::Align::Center);
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(CSS_PLAY);
@@ -230,5 +232,17 @@ mod tests {
         assert!(css.contains("@reprise_player_accent"));
         assert!(css.contains("rgba(34, 34, 34, 0.92)"));
         assert!(css.contains("border-radius: 16px"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tip_1a_mini_player_buttons_follow_tooltip_discipline() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let layout = build_mini();
+        let violations =
+            crate::ui::tooltip_discipline::tooltip_violations(layout.root.upcast_ref());
+        assert!(violations.is_empty(), "{violations:?}");
     }
 }

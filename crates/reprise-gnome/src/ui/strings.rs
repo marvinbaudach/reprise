@@ -395,6 +395,8 @@ pub const COLUMN_PLAY_COUNT: &str = N_!("Plays");
 // Player bar (src/ui/player_bar.rs).
 pub const PLAY: &str = N_!("Play");
 pub const PAUSE: &str = N_!("Pause");
+/// Tooltip of the album-card hover-overlay play button (TIP-1a).
+pub const PLAY_ALBUM: &str = N_!("Play album");
 pub const PLAYBACK_POSITION: &str = N_!("Playback position");
 pub const VOLUME: &str = N_!("Volume");
 pub const SHUFFLE: &str = N_!("Shuffle");

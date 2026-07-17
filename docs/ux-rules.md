@@ -361,7 +361,7 @@ Wird ein ganzer Container deaktiviert, gilt TIP-2a/b für die
 Container-Aussage, nicht für jedes Kind einzeln (die leere Player-Leiste
 ist ihre eigene Aussage).
 
-- **TIP-1a** [geplant] [gtk] — Existenz folgt der Beschriftung:
+- **TIP-1a** [aktiv] [gtk] — Existenz folgt der Beschriftung:
   Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
   Textlabel bekommen keinen — das Label ist die Aussage, ein
   wiederholender Tooltip ist Rauschen. Ausnahme: ellipsierte/abgeschnittene

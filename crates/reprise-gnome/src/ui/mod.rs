@@ -57,6 +57,8 @@ pub mod strings;
 mod style;
 mod tag_edit;
 pub mod toasts;
+#[cfg(test)]
+pub(crate) mod tooltip_discipline;
 pub(crate) mod track_list;
 pub mod view_session;
 pub(crate) mod window;
