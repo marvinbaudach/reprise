@@ -168,7 +168,21 @@ pub(in crate::ui) fn append_column(
             return;
         };
         let track = boxed.borrow::<Track>();
-        label.set_text(&render(&track));
+        let raw = render(&track);
+        let markup = if super::match_highlight::is_searchable_column(sort_id) {
+            let needle = shared_for_bind.filter.borrow().clone();
+            super::match_highlight::highlight_markup(
+                &raw,
+                &needle,
+                super::match_highlight::accent_foreground(&label).as_deref(),
+            )
+        } else {
+            None
+        };
+        match markup {
+            Some(markup) => label.set_markup(&markup),
+            None => label.set_text(&raw),
+        }
         apply_now_playing(&label, track.id, &shared_for_bind, false);
     });
 
@@ -260,7 +274,15 @@ pub(in crate::ui) fn append_title_column(
             return;
         };
         let track = boxed.borrow::<Track>();
-        label.set_text(&track.title);
+        let needle = shared_for_bind.filter.borrow().clone();
+        match super::match_highlight::highlight_markup(
+            &track.title,
+            &needle,
+            super::match_highlight::accent_foreground(&label).as_deref(),
+        ) {
+            Some(markup) => label.set_markup(&markup),
+            None => label.set_text(&track.title),
+        }
         // One comparison drives all three now-playing affordances: the cell
         // background (via `.now-playing` on the row box), the equaliser's
         // visibility, and the bold-accent title.

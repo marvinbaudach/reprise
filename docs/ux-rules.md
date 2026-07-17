@@ -391,7 +391,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **FIL-4** [aktiv] [gtk] — Suchfeld trägt seinen Zustand: Sobald das Feld
   Text enthält, bekommt es Akzent-Border + getönten Hintergrund — auch
   unfokussiert.
-- **FIL-5** [geplant] [gtk] — Treffer-Highlighting: Der Suchbegriff wird in
+- **FIL-5** [aktiv] [gtk] — Treffer-Highlighting: Der Suchbegriff wird in
   allen durchsuchten, sichtbaren Textspalten hervorgehoben (Title, Artist,
   Album, Genre; Akzent bold, Pango-escaped). Ist die einzige matchende
   Spalte ausgeblendet, bleibt die Row unmarkiert — akzeptierte Restlücke.
