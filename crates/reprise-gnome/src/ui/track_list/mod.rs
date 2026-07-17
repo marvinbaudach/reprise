@@ -35,6 +35,7 @@ pub(in crate::ui) mod track_list_selection;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
 mod track_list_toast;
+pub(in crate::ui) mod track_menu;
 pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]
