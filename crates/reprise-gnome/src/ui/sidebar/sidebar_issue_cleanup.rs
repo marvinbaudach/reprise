@@ -13,7 +13,7 @@ use gtk4::gio::prelude::*;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::queries;
+use reprise_core::queries::{self, MissingGroupKind};
 use reprise_core::view_source::ViewSource;
 
 use crate::ui::popover_lifecycle;
@@ -170,7 +170,8 @@ fn confirm_remove_all_missing(shared: &Rc<Shared>) {
 }
 
 fn missing_ids_for_cleanup(conn: &rusqlite::Connection) -> Result<Vec<i64>, rusqlite::Error> {
-    queries::query_track_ids(conn, &ViewSource::Missing, "title", "asc", "", &[])
+    queries::query_missing_rows(conn, &MissingGroupKind::Deleted, 0, u32::MAX)
+        .map(|tracks| tracks.into_iter().map(|track| track.id).collect())
 }
 
 fn dispatch_missing_cleanup(callback: Option<OnRemoveMissing>, ids: &[i64]) -> bool {
@@ -268,6 +269,32 @@ mod tests {
         assert_eq!(removed_at, Some(100), "the row is retained for Undo");
         queries::undo_tombstone(&conn.borrow(), &ids).unwrap();
         assert_eq!(queries::count_missing(&conn.borrow()).unwrap(), 1);
+    }
+
+    #[test]
+    fn sidebar_bulk_cleanup_selects_only_proven_deleted_tracks() {
+        let conn = reprise_core::db::open_migrated(None).unwrap();
+        for (id, reason) in [(1, "deleted"), (2, "unmounted"), (3, "unknown")] {
+            conn.execute(
+                "INSERT INTO tracks \
+                 (id,path,title,artist,added_at,missing_since,missing_reason) \
+                 VALUES (?1,?2,?3,'',0,1,?4)",
+                rusqlite::params![
+                    id,
+                    format!("/x/{reason}.flac"),
+                    format!("Track {id}"),
+                    reason,
+                ],
+            )
+            .unwrap();
+        }
+
+        assert_eq!(queries::count_missing(&conn).unwrap(), 3);
+        assert_eq!(
+            missing_ids_for_cleanup(&conn).unwrap(),
+            vec![1],
+            "unmounted and unknown tracks are not deletion evidence"
+        );
     }
 
     #[test]
