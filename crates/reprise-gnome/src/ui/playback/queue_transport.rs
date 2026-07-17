@@ -180,7 +180,7 @@ impl PlayerController {
 
     /// The Queue view's three parts in display order (QUE-1): the playing
     /// track, pending manual entries, and the snapshot's play-order tail —
-    /// plus the origin label for the "Up Next · from <label>" title. Each
+    /// plus the origin label for the `Up Next · from <label>` title. Each
     /// list is cloned out in its own statement (borrow discipline).
     pub(in crate::ui) fn queue_view_sections(&self) -> QueueViewSections {
         let now_playing = self.now_playing.borrow().as_ref().map(|np| np.id);
