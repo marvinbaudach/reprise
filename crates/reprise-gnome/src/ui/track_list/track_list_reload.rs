@@ -87,7 +87,6 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
         shared.model.set_sections(Vec::new());
         Vec::new()
     };
-    super::queue_sections::apply_queue_header_factory(shared, is_queue);
 
     shared.model.set_query_browsed(
         &source,
@@ -97,6 +96,16 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
         &browse,
         &queue_ids,
     );
+
+    // Strictly AFTER the query swap: installing a header factory flips
+    // GTK's has_sections, which runs gtk_list_item_manager_ensure_items
+    // SYNCHRONOUSLY — it must only ever see a model whose row count already
+    // matches the section ranges declared above. Flipping it between
+    // `set_sections` and `set_query_browsed` (the old order here) let GTK
+    // read the new (small) Queue ranges against the old (large) row count;
+    // with the viewport scrolled past the ranges' end that aborted the app
+    // on the `header->widget == NULL` assertion in gtklistitemmanager.c.
+    super::queue_sections::apply_queue_header_factory(shared, is_queue);
 
     // Stage 3 Task 8: the ImportErrors source's rows live in `import_errors_
     // view`, not `shared.model` (which `queries.rs` always resolves to an
