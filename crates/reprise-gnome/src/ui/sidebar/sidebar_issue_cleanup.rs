@@ -1,10 +1,10 @@
 //! Context-menu cleanup for the sidebar's transient issue sources.
 //!
-//! Import errors are diagnostics and can be dismissed immediately. Missing
-//! tracks are persistent library rows, so their bulk removal is confirmed
-//! explicitly and stays database-only. A successful cleanup rebuilds the
-//! sidebar; its established vanished-source fallback selects Music when the
-//! now-empty issue row disappears.
+//! Import errors are diagnostics and are dismissed with a current file-stat
+//! fingerprint. Missing tracks are persistent library rows, so bulk removal
+//! is confirmed explicitly and routed through the shared tombstone/Undo
+//! service. The established vanished-source fallback selects Music when the
+//! now-empty Missing row disappears.
 
 use std::rc::Rc;
 
@@ -17,8 +17,9 @@ use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
 use crate::ui::popover_lifecycle;
-use crate::ui::sidebar::{rebuild, show_toast, Shared};
+use crate::ui::sidebar::{rebuild, show_toast, OnRemoveMissing, Shared};
 use crate::ui::sidebar_issue_strings as copy;
+use crate::ui::strings;
 
 const ACTION_DISMISS_ALL: &str = "dismiss-all";
 const ACTION_REMOVE_ALL: &str = "remove-all";
@@ -106,29 +107,54 @@ fn show_context_menu(
 fn dismiss_all_import_errors(shared: &Rc<Shared>) {
     let result = {
         let conn = shared.conn.borrow();
-        queries::delete_all_import_errors(&conn)
+        dismiss_import_errors_with_stat(&conn, &crate::ui::import_errors_view::file_stat)
     };
     match result {
-        Ok(cleared) => {
-            tracing::info!(cleared, "all import errors dismissed");
+        Ok(dismissed) => {
+            tracing::info!(dismissed, "all import errors dismissed");
             rebuild(shared, None, "all import errors dismissed");
-            show_toast(shared, &copy::import_errors_cleared(cleared));
+            show_toast(
+                shared,
+                &copy::import_errors_dismissed(dismissed.try_into().unwrap_or(usize::MAX)),
+            );
         }
         Err(error) => {
             tracing::error!(%error, "failed to dismiss all import errors");
-            show_toast(shared, &copy::text(copy::IMPORT_ERRORS_CLEAR_FAILED));
+            show_toast(shared, &copy::text(copy::IMPORT_ERRORS_DISMISS_FAILED));
         }
     }
 }
 
+fn dismiss_import_errors_with_stat(
+    conn: &rusqlite::Connection,
+    stat: &dyn Fn(&str) -> Option<(i64, i64)>,
+) -> Result<u32, rusqlite::Error> {
+    queries::dismiss_all_import_errors(conn, stat)
+}
+
 fn confirm_remove_all_missing(shared: &Rc<Shared>) {
+    let ids = {
+        let conn = shared.conn.borrow();
+        match missing_ids_for_cleanup(&conn) {
+            Ok(ids) => ids,
+            Err(error) => {
+                tracing::error!(%error, "failed to load missing ids for bulk removal");
+                show_toast(shared, &copy::text(copy::MISSING_ENTRIES_REMOVE_FAILED));
+                return;
+            }
+        }
+    };
+    if ids.is_empty() {
+        rebuild(shared, None, "missing cleanup found no rows");
+        return;
+    }
     let Some(window) = shared.window.upgrade() else {
         tracing::warn!("sidebar window is gone; cannot confirm missing-entry cleanup");
         return;
     };
     let dialog = adw::AlertDialog::builder()
         .heading(copy::text(copy::REMOVE_MISSING_HEADING))
-        .body(copy::text(copy::REMOVE_MISSING_BODY))
+        .body(strings::missing_remove_body(ids.len()))
         .close_response(RESPONSE_CANCEL)
         .build();
     dialog.add_response(RESPONSE_CANCEL, &copy::text(copy::CANCEL));
@@ -138,39 +164,39 @@ fn confirm_remove_all_missing(shared: &Rc<Shared>) {
     let shared = shared.clone();
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
         if response.as_str() == RESPONSE_REMOVE {
-            remove_all_missing(&shared);
+            remove_all_missing(&shared, &ids);
         }
     });
 }
 
-fn remove_all_missing(shared: &Rc<Shared>) {
-    let result = {
-        let mut conn = shared.conn.borrow_mut();
-        queries::remove_all_missing_tracks(&mut conn)
+fn missing_ids_for_cleanup(conn: &rusqlite::Connection) -> Result<Vec<i64>, rusqlite::Error> {
+    queries::query_track_ids(conn, &ViewSource::Missing, "title", "asc", "", &[])
+}
+
+fn dispatch_missing_cleanup(callback: Option<OnRemoveMissing>, ids: &[i64]) -> bool {
+    let Some(callback) = callback else {
+        return false;
     };
-    match result {
-        Ok(removed) => {
-            tracing::info!(
-                removed = removed.len(),
-                "all missing library entries removed"
-            );
-            let callback = shared.on_missing_removed.borrow().clone();
-            if let Some(callback) = callback {
-                callback(&removed);
-            }
-            rebuild(shared, None, "all missing entries removed");
-            show_toast(shared, &copy::missing_entries_removed(removed.len()));
-        }
-        Err(error) => {
-            tracing::error!(%error, "failed to remove all missing library entries");
-            show_toast(shared, &copy::text(copy::MISSING_ENTRIES_REMOVE_FAILED));
-        }
+    callback(ids);
+    true
+}
+
+fn remove_all_missing(shared: &Rc<Shared>, ids: &[i64]) {
+    let callback = shared.on_remove_missing.borrow().clone();
+    if dispatch_missing_cleanup(callback, ids) {
+        tracing::info!(
+            tombstoned = ids.len(),
+            "all missing library entries tombstoned"
+        );
+    } else {
+        tracing::error!("missing tombstone route is not wired");
+        show_toast(shared, &copy::text(copy::MISSING_ENTRIES_REMOVE_FAILED));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     use super::*;
     use crate::ui::sidebar::{find_row, Sidebar};
@@ -190,16 +216,73 @@ mod tests {
     }
 
     #[test]
+    fn bulk_cleanup_routes_keep_issue_rows_reversible() {
+        let conn = reprise_core::db::open_migrated(None).unwrap();
+        for path in ["/x/stat-ok.flac", "/x/stat-fails.flac"] {
+            conn.execute(
+                "INSERT INTO import_errors \
+                 (path,reason_kind,reason_detail,first_seen,last_seen) \
+                 VALUES (?1,'io','broken',1,1)",
+                [path],
+            )
+            .unwrap();
+        }
+        let dismissed = dismiss_import_errors_with_stat(&conn, &|path| {
+            (path == "/x/stat-ok.flac").then_some((11, 22))
+        })
+        .unwrap();
+        assert_eq!(dismissed, 1);
+        assert_eq!(queries::query_import_error_count(&conn).unwrap(), 2);
+        assert_eq!(queries::count_import_errors_active(&conn).unwrap(), 1);
+        assert_eq!(queries::count_dismissed_import_errors(&conn).unwrap(), 1);
+
+        conn.execute(
+            "INSERT INTO tracks \
+             (id,path,title,artist,added_at,missing_since,missing_reason) \
+             VALUES (7,'/x/gone.flac','Gone','',0,1,'deleted')",
+            [],
+        )
+        .unwrap();
+        let ids = missing_ids_for_cleanup(&conn).unwrap();
+        assert_eq!(ids, vec![7]);
+
+        let conn = Rc::new(RefCell::new(conn));
+        let invoked = Rc::new(Cell::new(false));
+        let route: OnRemoveMissing = {
+            let conn = conn.clone();
+            let invoked = invoked.clone();
+            Rc::new(move |ids| {
+                invoked.set(true);
+                queries::tombstone_tracks(&conn.borrow(), ids, 100).unwrap();
+            })
+        };
+        assert!(dispatch_missing_cleanup(Some(route), &ids));
+        assert!(invoked.get());
+        assert_eq!(queries::count_missing(&conn.borrow()).unwrap(), 0);
+        let removed_at: Option<i64> = conn
+            .borrow()
+            .query_row("SELECT removed_at FROM tracks WHERE id=7", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(removed_at, Some(100), "the row is retained for Undo");
+        queries::undo_tombstone(&conn.borrow(), &ids).unwrap();
+        assert_eq!(queries::count_missing(&conn.borrow()).unwrap(), 1);
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn issue_rows_install_context_gestures_and_cleanup_disappears_them() {
+    fn issue_rows_install_context_gestures_and_missing_cleanup_falls_back() {
         gtk4::init().unwrap();
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
+        let bad = tempfile::NamedTempFile::new().unwrap();
+        let bad_path = bad.path().to_string_lossy().to_string();
         conn.execute(
             "INSERT INTO import_errors \
              (path, reason_kind, reason_detail, first_seen, last_seen) \
-             VALUES ('/x/bad.flac', 'tag', 'bad tag', 0, 0)",
-            [],
+             VALUES (?1, 'io', 'bad tag', 1, 1)",
+            [&bad_path],
         )
         .unwrap();
         conn.execute(
@@ -213,8 +296,10 @@ mod tests {
         let sidebar = Sidebar::new(conn.clone(), &window, || 0);
         let removed = Rc::new(RefCell::new(Vec::new()));
         let removed_for_callback = removed.clone();
-        sidebar.set_on_missing_removed(move |ids| {
+        let conn_for_callback = conn.clone();
+        sidebar.set_on_remove_missing(move |ids| {
             removed_for_callback.borrow_mut().extend_from_slice(ids);
+            queries::tombstone_tracks(&conn_for_callback.borrow(), ids, 100).unwrap();
         });
 
         for source in [ViewSource::ImportErrors, ViewSource::Missing] {
@@ -232,12 +317,22 @@ mod tests {
         dismiss_all_import_errors(sidebar.test_shared());
         assert_eq!(
             queries::query_import_error_count(&conn.borrow()).unwrap(),
+            1
+        );
+        assert_eq!(
+            queries::count_import_errors_active(&conn.borrow()).unwrap(),
             0
         );
-        assert!(find_row(sidebar.test_shared(), &ViewSource::ImportErrors).is_none());
+        assert_eq!(
+            queries::count_dismissed_import_errors(&conn.borrow()).unwrap(),
+            1
+        );
+        assert!(find_row(sidebar.test_shared(), &ViewSource::ImportErrors).is_some());
 
         sidebar.refresh_and_select(ViewSource::Missing, "test missing cleanup");
-        remove_all_missing(sidebar.test_shared());
+        let ids = missing_ids_for_cleanup(&conn.borrow()).unwrap();
+        remove_all_missing(sidebar.test_shared(), &ids);
+        sidebar.refresh("test tombstone refresh");
         assert_eq!(*removed.borrow(), vec![7]);
         assert!(find_row(sidebar.test_shared(), &ViewSource::Missing).is_none());
         assert_eq!(

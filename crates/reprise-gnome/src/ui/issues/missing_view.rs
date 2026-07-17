@@ -208,6 +208,10 @@ impl MissingFilesView {
     pub(in crate::ui) fn set_on_purged(&self, callback: impl Fn(&[i64]) + 'static) {
         *self.shared.on_purged.borrow_mut() = Some(Rc::new(callback));
     }
+
+    pub(in crate::ui) fn remove_with_undo(&self, ids: &[i64]) {
+        tombstone_with_undo(&self.shared, ids);
+    }
 }
 
 fn refresh(shared: &Rc<Shared>) -> usize {

@@ -71,7 +71,7 @@ pub(in crate::ui) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// Callback invoked whenever the logically selected source changes — see
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
-type OnMissingRemoved = Rc<dyn Fn(&[i64])>;
+pub(in crate::ui) type OnRemoveMissing = Rc<dyn Fn(&[i64])>;
 use super::sidebar_dnd::OnQueueDrop;
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
@@ -148,10 +148,10 @@ pub(in crate::ui) struct Shared {
     /// list refresh), the mirror image of `track_list.rs`'s `on_playlist_
     /// mutated` (track list mutation -> sidebar refresh).
     pub(in crate::ui) on_tracks_added: RefCell<Option<Rc<dyn Fn()>>>,
-    /// Invoked with the exact database ids removed by the Missing-files
-    /// bulk cleanup. `window.rs` uses this to purge the shared playback
-    /// queue; cloned out before invocation to preserve reentrancy safety.
-    pub(in crate::ui) on_missing_removed: RefCell<Option<OnMissingRemoved>>,
+    /// Routes the sidebar's Missing-files bulk action into the track list's
+    /// shared tombstone/Undo service. The callback receives the exact live
+    /// missing ids and is cloned out before invocation for reentrancy safety.
+    pub(in crate::ui) on_remove_missing: RefCell<Option<OnRemoveMissing>>,
     /// Invoked with the dragged track ids when they're dropped onto the
     /// Queue nav row (the drag-and-drop analogue of the context menu's "Add
     /// to queue" — the Queue must be fillable by drag exactly like a
@@ -163,7 +163,7 @@ pub(in crate::ui) struct Shared {
     /// queue` already funnels through `PlayerController::notify_queue_
     /// changed`, whose `window.rs` wiring refreshes this sidebar's Queue
     /// count *and* reloads the Queue view if visible (trigger inventory
-    /// item 5 in `Sidebar::refresh`'s doc comment).
+    /// item 6 in `Sidebar::refresh`'s doc comment).
     pub(in crate::ui) on_queue_drop: RefCell<Option<OnQueueDrop>>,
     /// The window, for the "New playlist" dialog and `ui::sidebar_export`'s
     /// export dialog plus playlist-delete confirmation — hence `pub(in crate::ui)`,
@@ -241,7 +241,7 @@ impl Sidebar {
             on_show_content: RefCell::new(None),
             on_import_playlist: RefCell::new(None),
             on_tracks_added: RefCell::new(None),
-            on_missing_removed: RefCell::new(None),
+            on_remove_missing: RefCell::new(None),
             on_queue_drop: RefCell::new(None),
             window: window.downgrade(),
             toast_overlay: glib::WeakRef::new(),
@@ -303,9 +303,10 @@ impl Sidebar {
         *self.shared.on_tracks_added.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// Sets the queue-maintenance callback for Missing-files bulk cleanup.
-    pub fn set_on_missing_removed(&self, callback: impl Fn(&[i64]) + 'static) {
-        *self.shared.on_missing_removed.borrow_mut() = Some(Rc::new(callback));
+    /// Routes Missing-files bulk cleanup through the shared tombstone/Undo
+    /// service owned by the track list.
+    pub fn set_on_remove_missing(&self, callback: impl Fn(&[i64]) + 'static) {
+        *self.shared.on_remove_missing.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the window's toast overlay, once it exists (built after the

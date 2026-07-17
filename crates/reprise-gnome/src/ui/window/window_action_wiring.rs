@@ -99,11 +99,10 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     // Same reason again: the sidebar is built before `toast_overlay` exists.
     sidebar.set_toast_overlay(toast_overlay);
     {
-        let player = player.clone();
-        sidebar.set_on_missing_removed(move |removed_ids| {
-            if let Some(player) = &player {
-                player.purge_queue_ids(removed_ids);
-            }
+        let track_list = Rc::downgrade(track_list);
+        sidebar.set_on_remove_missing(move |ids| match track_list.upgrade() {
+            Some(track_list) => track_list.remove_missing_with_undo(ids),
+            None => tracing::warn!("track list is gone; skipping Missing-files bulk removal"),
         });
     }
     {
@@ -340,18 +339,9 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
     {
-        // Stage 3 Task 8 / Stage-3 close-out: "Remove from library" (Missing
-        // source only) deletes rows outright — the Missing badge count can
-        // only ever shrink from that, exactly like the missing-marking
-        // trigger above, so the sidebar refresh is wired the same way. The
-        // close-out fix adds a second consumer of the same callback: the
-        // exact ids `queries::remove_missing_tracks` actually deleted are
-        // also purged from the playback queue (`PlayerController::purge_
-        // queue_ids`) — a hard-deleted track must not linger as a phantom
-        // queue entry (see that method's doc comment for the full
-        // invariant). `player.clone()` is a cheap `Option<Rc<_>>` clone,
-        // same pattern as every other closure above that needs the
-        // controller.
+        // Missing-view tombstone/Undo sends an empty id slice for the
+        // immediate sidebar refresh. Only committed expiry/auto-clean sends
+        // hard-purged ids, which are then removed from the playback queue.
         let sidebar_weak = Rc::downgrade(sidebar);
         let player = player.clone();
         track_list.set_on_library_mutated(move |removed_ids| {

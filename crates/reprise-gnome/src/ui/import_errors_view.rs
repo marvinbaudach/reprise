@@ -400,7 +400,7 @@ fn populate_dismissed(shared: &Rc<Shared>, rows: &gtk4::ListBox) {
     }
 }
 
-fn file_stat(path: &str) -> Option<(i64, i64)> {
+pub(in crate::ui) fn file_stat(path: &str) -> Option<(i64, i64)> {
     let metadata = std::fs::metadata(path).ok()?;
     Some((
         metadata.mtime(),
