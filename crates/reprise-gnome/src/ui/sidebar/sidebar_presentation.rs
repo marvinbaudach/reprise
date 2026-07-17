@@ -66,6 +66,19 @@ pub(in crate::ui) fn nonzero_count(count: i64) -> Option<i64> {
     (count > 0).then_some(count)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui) struct IssueRowPresentation {
+    pub(in crate::ui) badge: Option<i64>,
+    pub(in crate::ui) attention: bool,
+}
+
+pub(in crate::ui) fn issue_row_presentation(new_count: u32, icon: NavIcon) -> IssueRowPresentation {
+    IssueRowPresentation {
+        badge: nonzero_count(i64::from(new_count)),
+        attention: new_count > 0 && matches!(icon, NavIcon::ImportErrors),
+    }
+}
+
 pub(in crate::ui) fn build_nav_row(
     title: &str,
     count: Option<i64>,
@@ -85,6 +98,37 @@ pub(in crate::ui) fn build_nav_row(
         count_label.add_css_class("dim-label");
         count_label.add_css_class("numeric");
         hbox.append(&count_label);
+    }
+
+    gtk4::ListBoxRow::builder().child(&hbox).build()
+}
+
+pub(in crate::ui) fn build_issue_nav_row(
+    title: &str,
+    presentation: IssueRowPresentation,
+    icon: NavIcon,
+) -> gtk4::ListBoxRow {
+    let hbox = row_box();
+    hbox.append(&nav_icon(icon));
+
+    if presentation.attention {
+        let dot = gtk4::Label::new(Some("●"));
+        dot.add_css_class("warning");
+        dot.set_accessible_role(gtk4::AccessibleRole::Presentation);
+        hbox.append(&dot);
+    }
+
+    let title_label = gtk4::Label::new(Some(title));
+    title_label.set_xalign(0.0);
+    title_label.set_hexpand(true);
+    title_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    hbox.append(&title_label);
+
+    if let Some(count) = presentation.badge {
+        let badge = gtk4::Label::new(Some(&format_thousands(count)));
+        badge.add_css_class("stats-badge");
+        badge.add_css_class("numeric");
+        hbox.append(&badge);
     }
 
     gtk4::ListBoxRow::builder().child(&hbox).build()
@@ -234,6 +278,31 @@ mod tests {
         assert_eq!(smart_icon("rating"), NavIcon::TopRated);
         assert_eq!(smart_icon("added_at"), NavIcon::RecentlyAdded);
         assert_eq!(smart_icon("custom_field"), NavIcon::GenericSmart);
+    }
+
+    #[test]
+    fn issue_rows_project_only_new_counts_and_import_attention() {
+        assert_eq!(
+            issue_row_presentation(4, NavIcon::ImportErrors),
+            IssueRowPresentation {
+                badge: Some(4),
+                attention: true,
+            }
+        );
+        assert_eq!(
+            issue_row_presentation(0, NavIcon::ImportErrors),
+            IssueRowPresentation {
+                badge: None,
+                attention: false,
+            }
+        );
+        assert_eq!(
+            issue_row_presentation(2, NavIcon::Missing),
+            IssueRowPresentation {
+                badge: Some(2),
+                attention: false,
+            }
+        );
     }
 
     #[test]

@@ -357,7 +357,10 @@ impl Sidebar {
     ///    each succeed — playlist track counts (and, for a new playlist, the
     ///    playlist row itself) can change from that menu exactly as they can
     ///    from this sidebar's own "New playlist" dialog.
-    /// 5. **Queue length mutation** — `queue_transport::wire_sidebar_count`
+    /// 5. **Issue view opened** — `view_session::record_issue_viewed` writes
+    ///    the relevant timestamp, then refreshes so its new-since-viewed
+    ///    badge clears immediately.
+    /// 6. **Queue length mutation** — `queue_transport::wire_sidebar_count`
     ///    refreshes after a queue is replaced, appended, restored, or purged.
     ///
     /// See the module doc's `## Reentrancy` section for why a rebuild
