@@ -343,6 +343,77 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   verbleibende Up-Next-Tracks (nicht Gesamt-Snapshot). Der Zähler ist eine
   Bestandsanzeige, kein Badge (P-1: keine „Bitte").
 
+## K. Tag-Editor
+
+- **TAG-1** [geplant] [gtk] — Save ist navigationsneutral: Speichern ändert
+  weder Scroll noch Ansicht der Library (NAV-5 gilt durch den Dialog
+  hindurch); ein „Springen zum nächsten Song" gibt es nicht. Nach dem
+  Schließen liegt der Fokus auf der Library, Selektion = die **geschriebenen**
+  Tracks (bei Teilfehlern die gelungenen; nach Cancel/Discard unverändert) —
+  Feedback über die eigene Handlung ist erlaubt, der Sprung zu unbeteiligten
+  Tracks nicht. Mechanik an der Wurzel: der Reload sichert Selektion über
+  Track-IDs und Scroll über einen Anker (Track-ID + Offset, nie Pixel) und
+  stellt beide wieder her — für alle Auslöser (Save, Watcher-Reconcile,
+  Sortierung, Rating). Gelöschte IDs fallen still heraus; ein gewollter Reset
+  ist explizit, nie Nebeneffekt.
+- **TAG-2** [geplant] [core] — Multi-Semantik: Felder mit identischem Wert
+  zeigen ihn normal; abweichende zeigen einen Mixed-Platzhalter (kursiv,
+  gestrichelte Border) — bei ≤ 2 verschiedenen Werten die Werte selbst
+  („Mixed — Ambient, Post-Rock"; leer zählt als eigener Wert), ab 3 die
+  Anzahl („Mixed — 8 different values"), daneben der Zähler („2 values").
+  Kein Wert wird vorausgefüllt und kein Feld ist gesperrt: das erste
+  getippte Zeichen macht es scharf (Akzent-Border, Revert im Feld, „will be
+  applied to all N"). Backspace/Entf im Platzhalter macht ebenso scharf — als
+  „leeren für alle N", mit voller Review-Behandlung. Nichts wird still
+  verschluckt.
+- **TAG-3** [geplant] [gtk] — Per-Track-Felder sind im Multi-Modus read-only:
+  Title und Track number zeigen „—" mit Tooltip „Per-track field — edit
+  tracks individually". Ein Massen-Titel ist immer ein Unfall.
+- **TAG-4** [geplant] [core] — Blättern verwirft nichts: Öffnet der Editor
+  mit genau einem Track, blättern ‹ › (Ctrl+Page Up/Down) durch einen
+  Snapshot der sichtbaren Liste zum Öffnungszeitpunkt — über Track-IDs, nie
+  Indizes, damit „Track 3 of 12" stabil bleibt, während darunter re-sortiert
+  wird. Pending Änderungen werden pro Track gehalten; Save schreibt alle
+  pending Tracks, Cancel verwirft alle (Bestätigung ab einer Änderung).
+- **TAG-5** [geplant] [core] — Der Diff steht am Feld, nicht in einem zweiten
+  Dialog: Jedes effektiv geänderte Feld zeigt darunter den Altwert („was: …",
+  durchgestrichen, gedimmt), Border in Akzent; der Platz dafür ist immer
+  reserviert (P-4). Darüber dem Save-Bereich eine Summary-Zeile („2 fields ·
+  30 tracks affected"), im Multi-Modus und bei feldübergreifendem Pending
+  zusätzlich ein Expander „Review changes" mit einer Zeile je Feld
+  (`Artist: Suicide → Suicide Silence · 30 tracks`). Gezählt werden **nur
+  Tracks, deren Wert sich wirklich ändert**; No-op-Writes entfallen (exakter
+  Vergleich, kein Trim/Case-Angleich). Alle Zahlen sprechen dieselbe Währung
+  — Tracks: Save-Button („Save 30"), Fortschritt („Saving… 12/30") und Toast
+  („Tags updated · 30 tracks"). Ohne effektive Änderung ist Save disabled und
+  benennt den Grund (P-2).
+- **TAG-6** [geplant] [core] — Autocomplete-Quelle für Artist, Album, Album
+  Artist und Genre: distinct-Werte der eigenen Library mit Track-Zahl,
+  case-insensitive; Präfix-Treffer vor Substring-Treffern, darin nach
+  Track-Zahl absteigend; maximal 6 Zeilen, Dropdown ab 2 Zeichen,
+  Sektionstitel „FROM YOUR LIBRARY". Letzte Zeile ist immer „Use ‚X' as new
+  artist…" — ein neuer Wert ist nie blockiert.
+- **TAG-7** [geplant] [gtk] — Inline-Ghost: Der beste Präfix-Treffer (gleiche
+  Rangfolge wie Dropdown-Zeile 1) erscheint gedimmt hinter dem Cursor, Tab
+  übernimmt ihn. Ohne sichtbaren Ghost ist Tab reiner Fokuswechsel — eine
+  stille Übernahme der ersten Dropdown-Zeile gibt es nicht; das Tab-Badge
+  rendert nur bei sichtbarem Ghost. Der Ghost ist reine Anzeige und wird nie
+  zur Änderung, solange ihn niemand übernimmt. Das Popover ankert am Entry
+  und stiehlt nie den Fokus: Tippen läuft ununterbrochen weiter.
+- **TAG-8** [geplant] [gtk] — Tastatur-Semantik. **Enter:** bei offenem
+  Dropdown übernimmt es den markierten Vorschlag (Dropdown zu, Fokus bleibt
+  im Feld); bei geschlossenem springt es ins nächste editierbare Feld; im
+  letzten Feld fokussiert es den Save-Button, sodass der nächste Enter
+  bewusst speichert. Enter speichert **nie** direkt aus einem Textfeld — zu
+  leicht ausgelöst, während man durch Vorschläge tippt. Ctrl+Enter speichert
+  von überall. **Esc-Kaskade:** erst schließt das Popover (Text bleibt), dann
+  revertet das scharfe Feld, dann greift die Dialog-Ebene (Discard-Frage ab
+  einer Änderung, sonst schließen) — jede Stufe vernichtet höchstens, was die
+  nächste wiederbringen kann. Die Discard-Frage zählt Tracks („Discard
+  changes to 3 tracks?") und hat zwei Antworten: Keep editing (Default) und
+  Discard (destruktiv). Kein Save im Prompt: Speichern ist nie der Ausweg aus
+  einer Schließen-Geste.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
