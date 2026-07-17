@@ -672,13 +672,13 @@ fn test_shuffle_visits_all_exactly_once_per_pass() {
 
 // Stage-3 close-out: `remove_ids` (hard-delete queue purge).
 
-// --- UX-Regelwerk-Tests (docs/ux-rules.md) ---------------------------------
-// Charakterisierungs-Tests für Bestandsverhalten: sie sind ab dem ersten
-// Lauf grün (das Verhalten existiert schon); der TDD-Rot-Schritt wird durch
-// den Assertion-Flip in Step 3 ersetzt, der beweist, dass sie beißen.
+// --- UX rulebook tests (docs/ux-rules.md) ----------------------------------
+// Characterization tests for existing behavior: they are green from the first
+// run (the behavior already exists); the TDD red step is replaced by the
+// assertion flip in Step 3, which proves they bite.
 
-// UX PLAY-2: Doppelklick spielt die Row und hängt den Rest der sichtbaren
-// Liste ab dieser Position in die Queue (Aktivierungs-Snapshot).
+// UX PLAY-2: double-click plays the row and appends the rest of the visible
+// list from that position onto the queue (activation snapshot).
 #[test]
 fn play_2_activation_snapshot_starts_at_clicked_row() {
     let mut q = Queue::new();
@@ -688,30 +688,30 @@ fn play_2_activation_snapshot_starts_at_clicked_row() {
     assert_eq!(
         q.advance_auto(),
         None,
-        "Tracks vor der geklickten Row folgen nicht automatisch (Repeat::Off)"
+        "tracks before the clicked row never follow automatically (Repeat::Off)"
     );
 }
 
-// UX PLAY-3: Queue ist Snapshot der gefilterten Treffer; Shuffle permutiert
-// genau die Treffer (Queue = Treffermenge, kein Track von außerhalb).
+// UX PLAY-3a: the queue is a snapshot of the filtered hits; shuffle permutes
+// exactly those hits (queue = hit set, no track from outside).
 #[test]
-fn play_3_shuffle_stays_inside_filtered_snapshot() {
+fn play_3a_shuffle_stays_inside_filtered_snapshot() {
     let mut q = Queue::new();
-    let treffer = vec![11, 22, 33, 44, 55];
-    q.set_tracks(treffer.clone(), 0);
+    let hits = vec![11, 22, 33, 44, 55];
+    q.set_tracks(hits.clone(), 0);
     q.set_shuffle(true);
     let mut queue_ids = q.ids_in_order();
     queue_ids.sort_unstable();
-    assert_eq!(queue_ids, treffer);
+    assert_eq!(queue_ids, hits);
     assert_eq!(
         q.current(),
         Some(11),
-        "aktueller Track bleibt beim Shuffle stehen"
+        "the current track stays put when shuffle is toggled"
     );
 }
 
-// UX PLAY-5a: Extern gelöschte Tracks verlassen die Queue still; der
-// spielende Track bleibt unangetastet.
+// UX PLAY-5a: externally deleted tracks leave the queue silently; the
+// playing track stays untouched.
 #[test]
 fn play_5a_deleted_tracks_leave_queue_silently() {
     let mut q = Queue::new();
@@ -721,19 +721,19 @@ fn play_5a_deleted_tracks_leave_queue_silently() {
     assert_eq!(
         q.current(),
         Some(2),
-        "Hintergrund-Removal stoppt den spielenden Track nie"
+        "background removal never stops the playing track"
     );
 }
 
-// UX QUE-1 [geplant] — Demo des Aktivierungs-Workflows: Der Queue-Branch
-// nimmt das #[ignore] weg und flippt QUE-1 auf [aktiv] im selben Commit.
+// UX QUE-1 [geplant] — demo of the activation workflow: the queue branch
+// removes the #[ignore] and flips QUE-1 to [aktiv] in the same commit.
 #[test]
-#[ignore = "UX QUE-1 [geplant] — Drei-Sektionen-Queue kommt im Queue-Branch"]
+#[ignore = "UX QUE-1 [geplant] — three-section queue lands in the queue branch"]
 fn que_1_queue_is_never_empty_while_playing() {
     let mut q = Queue::new();
     q.set_tracks(vec![7, 8, 9], 0);
     assert!(
         !q.is_empty(),
-        "solange etwas spielt, ist die Queue nie leer"
+        "while something is playing the queue is never empty"
     );
 }

@@ -1,35 +1,46 @@
 #!/usr/bin/env bash
-# Traceability-Gate: docs/ux-rules.md <-> regelbenannte Tests.
+# Traceability gate: docs/ux-rules.md <-> rule-named tests.
 #
-# Prüft drei Richtungen:
-#   1. Jede [aktiv]-Regel hat >= 1 Test, der ihre ID im Namen trägt
-#      (Rust-fn snake_case oder cua-e2e-Szenario kebab-case).
-#   2. Kein Test referenziert eine ID, die im Dokument fehlt oder
-#      [ersetzt ...] ist.
-#   3. Kein #[ignore] auf einem Test, dessen Regel [aktiv] ist.
+# Checks three directions:
+#   1. Every [aktiv] rule has >= 1 test carrying its ID in the name
+#      (Rust fn snake_case or cua-e2e scenario kebab-case).
+#   2. No test references an ID that is missing from the document or
+#      marked [ersetzt ...].
+#   3. No #[ignore] on a test whose rule is [aktiv], and every #[ignore]
+#      on a rule-named test spells out "UX <ID> [geplant] — ...".
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 doc=docs/ux-rules.md
-[[ -f $doc ]] || { echo "check-ux-traceability: $doc fehlt" >&2; exit 1; }
+[[ -f $doc ]] || { echo "check-ux-traceability: $doc is missing" >&2; exit 1; }
 
-prefixes='p|nav|play|alb|art|fx|mtp|set|fb|os|start|que'
 fail=0
 
-# --- Dokument einlesen: ID -> Status (aktiv|geplant|ersetzt) ---
+# --- Read the document: ID -> status (aktiv|geplant|ersetzt) ---
 declare -A status_of
 while read -r id st; do
   status_of[$id]=$st
 done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(aktiv|geplant|ersetzt)' "$doc" \
   | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(aktiv|geplant|ersetzt)/\1 \2/')
 
-# --- Test-Referenzen einsammeln (snake aus Rust, kebab aus cua-e2e) ---
-snake_refs=$(grep -rhoE "fn (${prefixes})_[0-9]+[a-z]?_" crates --include='*.rs' 2>/dev/null \
-  | sed -E 's/^fn //; s/_$//' | sort -u || true)
-kebab_refs=$(grep -rhoE "(${prefixes})-[0-9]+[a-z]?-[a-z0-9-]+" scripts/cua-e2e 2>/dev/null \
+# Derive the section prefixes from the document itself, so a new rulebook
+# section is gated without editing this script.
+prefixes=$(printf '%s\n' "${!status_of[@]}" | sed -E 's/-.*$//' \
+  | sort -u | tr '[:upper:]' '[:lower:]' | paste -sd'|')
+[[ -n $prefixes ]] || { echo "check-ux-traceability: no rules found in $doc" >&2; exit 1; }
+
+# --- Collect test references (snake from Rust, kebab from cua-e2e) ---
+# A fn only counts when a #[test] attribute sits within the 5 lines above
+# it, so plain helper fns cannot green the gate.
+snake_refs=$(grep -rhA5 --include='*.rs' '#\[test\]' crates 2>/dev/null \
+  | grep -oE "fn (${prefixes})_[0-9]+[a-z]?_" | sed -E 's/^fn //; s/_$//' | sort -u || true)
+# Comment lines never count as coverage.
+kebab_refs=$(grep -rhE "(${prefixes})-[0-9]+[a-z]?-[a-z0-9-]+" scripts/cua-e2e 2>/dev/null \
+  | grep -vE '^[[:space:]]*#' \
+  | grep -oE "(${prefixes})-[0-9]+[a-z]?-[a-z0-9-]+" \
   | grep -oE "^(${prefixes})-[0-9]+[a-z]?" | sort -u || true)
 
-to_id() { # play_1a bzw. play-1a -> PLAY-1a
+to_id() { # play_1a or play-1a -> PLAY-1a
   local raw=${1//-/_} prefix nr
   prefix=${raw%%_*}; nr=${raw#*_}
   printf '%s-%s' "${prefix^^}" "$nr"
@@ -39,28 +50,32 @@ declare -A tested
 for ref in $snake_refs $kebab_refs; do
   id=$(to_id "$ref")
   tested[$id]=1
-  case "${status_of[$id]:-fehlt}" in
-    fehlt)   echo "FEHLER: Test referenziert unbekannte Regel $id" >&2; fail=1 ;;
-    ersetzt) echo "FEHLER: Test referenziert ersetzte Regel $id — umhängen" >&2; fail=1 ;;
+  case "${status_of[$id]:-missing}" in
+    missing) echo "ERROR: test references unknown rule $id" >&2; fail=1 ;;
+    ersetzt) echo "ERROR: test references replaced rule $id — re-point it" >&2; fail=1 ;;
   esac
 done
 
-# --- Richtung 1: jede [aktiv]-Regel hat einen Test ---
+# --- Direction 1: every [aktiv] rule has a test ---
 for id in "${!status_of[@]}"; do
   if [[ ${status_of[$id]} == aktiv && -z ${tested[$id]:-} ]]; then
-    echo "FEHLER: [aktiv]-Regel $id hat keinen regelbenannten Test" >&2; fail=1
+    echo "ERROR: [aktiv] rule $id has no rule-named test" >&2; fail=1
   fi
 done
 
-# --- Richtung 3: kein #[ignore] auf [aktiv]-Regeln ---
+# --- Direction 3: no #[ignore] on [aktiv] rules, and every ignore on a ---
+# --- rule-named test follows the mandated "UX <ID> [geplant] — ..." form ---
 while read -r fn_name; do
   id=$(to_id "$fn_name")
   if [[ ${status_of[$id]:-} == aktiv ]]; then
-    echo "FEHLER: Test $fn_name ist ignored, aber Regel $id ist [aktiv]" >&2; fail=1
+    echo "ERROR: test $fn_name is ignored but rule $id is [aktiv]" >&2; fail=1
+  elif ! grep -rhB3 --include='*.rs' "fn ${fn_name}_" crates 2>/dev/null \
+    | grep -E '#\[ignore' | grep -qF "UX $id [geplant]"; then
+    echo "ERROR: #[ignore] on $fn_name must read \"UX $id [geplant] — ...\"" >&2; fail=1
   fi
 done < <(grep -rA3 --include='*.rs' '#\[ignore' crates 2>/dev/null \
   | grep -oE "fn (${prefixes})_[0-9]+[a-z]?_" | sed -E 's/^fn //; s/_$//' | sort -u || true)
 
 if (( fail )); then exit 1; fi
 active_count=$(grep -cE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[aktiv\]' "$doc" || true)
-echo "UX-Traceability ok: $active_count aktive Regeln abgedeckt"
+echo "UX traceability ok: $active_count active rules covered"

@@ -163,3 +163,49 @@ Started: 2026-07-16
   1 ersetzt), AGENTS.md-Bindung, Traceability-Gate, Pilot Bereich C (core +
   e2e), QUE-1-Aktivierungs-Demo. Verhaltensänderungen laufen als `[geplant]`
   in Folge-Branches (Queue-Branch parallel in Arbeit) — UX-Regelwerk Task 6.
+
+## 2026-07-17 — UX-Regelwerk: Review-Korrekturen
+
+Zwei-Achsen-Review (Standards + Spec) des Branches `feat/ux-rules-acceptance-tests`.
+Beide Achsen bestätigten das Fundament; die folgenden Findings wurden umgesetzt.
+Vom User verworfen: 800-Zeilen-Regel für `.md` (Docs sind davon ausgenommen) und
+„Deutsch in Doku" (das Regelwerk ist bewusst deutsch — Arbeitssprache).
+
+- **PLAY-3 → PLAY-3a/PLAY-3b gesplittet.** Task 4 hatte PLAY-3 komplett auf
+  `[aktiv]` geflippt, obwohl der Test nur die Treffer-Shuffle-Klausel deckt und
+  die Filter-Nachträglichkeits-Klausel keine Assertion hat — ein Verstoß gegen
+  die eigene Prozessregel „Halb umgesetzt → a/b-Split". Jetzt: PLAY-3
+  `[ersetzt durch PLAY-3a/PLAY-3b]`, PLAY-3a `[aktiv] [core]` (Test
+  `play_3a_shuffle_stays_inside_filtered_snapshot`, umbenannt), PLAY-3b
+  `[geplant] [gtk]`. Weiterhin 3 `[aktiv]`-Regeln, jetzt 2 ersetzte.
+- **Sprache korrigiert:** `queue_tests.rs`, `check-ux-traceability.sh` und der
+  cua-e2e-Kommentar sind Code und jetzt englisch (AGENTS.md „English
+  everywhere"). Regel-IDs/Status-Token bleiben als Zitate deutsch. AGENTS.md und
+  `docs/ux-rules.md` halten die Grenze jetzt explizit fest.
+- **Traceability-Gate gehärtet** — vier Löcher, jedes mit Negativprobe belegt:
+  Präfixe werden aus dem Dokument abgeleitet statt hartkodiert (neue Sektion =
+  automatisch gegated, verifiziert mit einer `ZZZ-1`-Testregel); nur echte
+  `#[test]`-fns zählen (Helper-fn allein → FEHLER); Kommentarzeilen in
+  `scripts/cua-e2e` zählen nicht mehr (Kommentar allein → FEHLER); das
+  Ignore-Format `UX <ID> [geplant] — …` wird erzwungen (`#[ignore = "later"]`
+  → FEHLER). Bestehende Proben (Ignore auf `[aktiv]`, Test auf ersetzte Regel)
+  weiterhin rot.
+- **Duplikat entfernt:** `cua_click_label`/`cua_double_click_label` teilen sich
+  `cua_pointer_action_label <verb>` (`scripts/cua-e2e/lib.sh`); der
+  Kontrakttest `scripts/tests/cua-e2e.sh` bleibt grün.
+- **AGENTS.md-Widerspruch aufgelöst:** „keine Pläne im Repo" galt wörtlich gegen
+  die bestehende Praxis (`docs/plans/android-sync.md`). Jetzt: Wegwerf-Pläne
+  bleiben in der Session, überdauernde Pläne leben in `docs/plans/`, Verträge
+  wie `docs/ux-rules.md` sind keine Pläne. 800-Zeilen-Regel gilt explizit nur
+  für Code.
+- **Falscher Sanity-Check** in Task 1 Step 2 des Plans korrigiert
+  (`grep -c '[aktiv]'` war nie `0`); Review-Nachtrag ans Plan-Doc angehängt.
+
+Verifiziert: `check-ux-traceability.sh` grün (3 aktive Regeln) + 6 Negativproben
+rot · `cargo test -p reprise-core --lib` 583 passed / 1 ignored · Assertion-Flip
+in `play_3a` beweist Biss (rot → zurück → grün) · `scripts/tests/cua-e2e.sh`
+grün · `cargo fmt --check` sauber · `check-merge-readiness.sh` grün.
+
+Offen (bewusst, kein Blocker): PLAY-2s gatender Core-Test beweist
+`set_tracks`-Semantik, nicht die Doppelklick-Verdrahtung — deren Beweis liegt im
+nicht-gatenden cua-e2e-Szenario, dessen grüner Lauf weiterhin am Host-Gate hängt.
