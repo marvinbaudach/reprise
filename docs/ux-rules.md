@@ -339,12 +339,18 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Play-Next-Einträge (FIFO), dann der Snapshot ab aktueller Position. Keine
   versteckte Priorität — was die View zeigt, ist was passiert.
 - **QUE-3** [geplant] [gtk] — Interaktion: DnD-Reorder innerhalb „Play
-  Next"; Up-Next-Rows per DnD nach „Play Next" ziehbar; Rechtsklick „Remove
+  Next" und innerhalb „Up Next" (der Snapshot wird echt umsortiert;
+  QUE-2 bleibt gewahrt: Anzeige = Abspielreihenfolge). Up-Next-Rows sind
+  nach „Play Next" ziehbar (Promotion, verlässt den Snapshot); Drop auf
+  die Now-Playing-Row reiht als Nächstes ein (Up-Next-Row → Front von
+  „Play Next", Play-Next-Row → Front-Move). Play-Next-Rows sind nicht in
+  den Snapshot ziehbar (keine Demotion). Der Drop-Indikator erscheint nur
+  auf Rows, auf denen der Drop tatsächlich wirkt. Rechtsklick „Remove
   from queue" überall (entfernt aus dem Snapshot, nicht aus der Library);
-  Doppelklick auf eine Queue-Row springt dorthin (Playhead, kein Neuaufbau —
-  Ausnahme zu NAV-4). „Clear queue"-Button räumt nur „Play Next"; der
-  Snapshot bleibt (er verschwindet erst mit Playback-Stop oder neuem
-  Kontext).
+  Doppelklick auf eine Queue-Row springt dorthin (Playhead, kein
+  Neuaufbau — Ausnahme zu NAV-4). „Clear queue"-Button räumt nur „Play
+  Next"; der Snapshot bleibt (er verschwindet erst mit Playback-Stop oder
+  neuem Kontext).
 - **QUE-4** [geplant] [gtk] — Leerzustand gibt es nur ohne Wiedergabe:
   StatusPage „Nothing queued — play something" (FB-5, ein nächster Schritt,
   kein Grid an Vorschlägen).
