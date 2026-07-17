@@ -26,6 +26,20 @@ pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
 const SMOKE_TAG_EDIT_ENV_VAR: &str = "REPRISE_SMOKE_TAG_EDIT";
 type SelectedTags = (Vec<(i64, PathBuf)>, Vec<EditableTags>, Vec<i32>);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ApplyOrigin {
+    TrackList,
+    ImportHint,
+}
+
+fn completion_toast(origin: ApplyOrigin, updated: usize, failed: usize) -> Option<String> {
+    if origin == ApplyOrigin::ImportHint && updated > 0 && failed == 0 {
+        None
+    } else {
+        Some(strings::track_edit_result_toast(updated, failed))
+    }
+}
+
 pub(in crate::ui) fn wire_refresh(
     track_list: &TrackList,
     sidebar: &Rc<Sidebar>,
@@ -97,7 +111,12 @@ fn begin(shared: &Rc<Shared>) {
         &tags,
         &ratings,
         move |patch| {
-            start_apply(&shared_for_apply, tracks_for_apply.clone(), patch);
+            start_apply(
+                &shared_for_apply,
+                tracks_for_apply.clone(),
+                patch,
+                ApplyOrigin::TrackList,
+            );
         },
         |_direction| false,
     );
@@ -152,12 +171,24 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
         &tracks,
         &[tags],
         &[rating],
-        move |patch| start_apply(&shared_for_apply, tracks_for_apply.clone(), patch),
+        move |patch| {
+            start_apply(
+                &shared_for_apply,
+                tracks_for_apply.clone(),
+                patch,
+                ApplyOrigin::ImportHint,
+            );
+        },
         |_direction| false,
     );
 }
 
-fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEditPatch) {
+fn start_apply(
+    shared: &Rc<Shared>,
+    tracks: Vec<(i64, PathBuf)>,
+    patch: TrackEditPatch,
+    origin: ApplyOrigin,
+) {
     if patch.is_empty() {
         return;
     }
@@ -196,7 +227,7 @@ fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEdi
             return;
         };
         match result {
-            Ok(report) => finish_apply(&shared, &tracks, &report, tags_changed),
+            Ok(report) => finish_apply(&shared, &tracks, &report, tags_changed, origin),
             Err(error) => {
                 tracing::warn!(%error, "tag-edit worker could not open database");
                 show_toast(
@@ -213,6 +244,7 @@ fn finish_apply(
     tracks: &[(i64, PathBuf)],
     report: &TagBatchReport,
     tags_changed: bool,
+    origin: ApplyOrigin,
 ) {
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
@@ -239,7 +271,9 @@ fn finish_apply(
         }
     }
     tracing::info!(updated, failed, "tag-edit batch completed");
-    show_toast(shared, &strings::track_edit_result_toast(updated, failed));
+    if let Some(message) = completion_toast(origin, updated, failed) {
+        show_toast(shared, &message);
+    }
 }
 
 pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
@@ -274,6 +308,25 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
                 },
                 ..TrackEditPatch::default()
             },
+            ApplyOrigin::TrackList,
         );
     });
+}
+
+#[cfg(test)]
+mod task_5_6_tests {
+    use super::*;
+
+    #[test]
+    fn healed_import_hint_refreshes_in_place_without_a_success_toast() {
+        assert_eq!(completion_toast(ApplyOrigin::ImportHint, 1, 0), None);
+        assert_eq!(
+            completion_toast(ApplyOrigin::TrackList, 1, 0).as_deref(),
+            Some("Updated 1 track")
+        );
+        assert_eq!(
+            completion_toast(ApplyOrigin::ImportHint, 0, 1).as_deref(),
+            Some("Updated 0 tracks; 1 failed")
+        );
+    }
 }
