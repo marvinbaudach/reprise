@@ -1,4 +1,12 @@
-//! The sidebar's playlist-row drag-and-drop drop target (Stage 3 Task 6) —
+//! The sidebar's drag-and-drop drop targets — one per fillable nav row:
+//! playlist rows (Stage 3 Task 6, [`wire_playlist_drop_target`]) and the
+//! Queue row ([`wire_queue_drop_target`], the drag analogue of the context
+//! menu's "Add to queue"). Both accept the identical payload `ui::track_
+//! list_dnd`'s drag source produces and share the same shape: a thin
+//! `connect_drop` closure that only parses, plus a standalone handler
+//! ([`handle_playlist_drop`]/[`handle_queue_drop`]) holding the real logic —
+//! see the `## Two entry points` section below for why. Originally the
+//! playlist-row target alone (Stage 3 Task 6) —
 //! split out of `sidebar.rs` (Stage 3 Task 6 review finding #2) purely to
 //! keep that file under the project's 800-line rule, the same way `track_
 //! list.rs` split `track_list_dnd.rs` out. Reaches into `sidebar.rs`'s
@@ -32,6 +40,11 @@ use crate::ui::sidebar::{rebuild, show_toast, Shared};
 use crate::ui::strings;
 use crate::ui::track_list_dnd;
 use reprise_core::library::playlist_membership;
+
+/// Callback for a drag-and-drop drop onto the Queue nav row — see
+/// `Shared::on_queue_drop`'s doc comment. Lives beside its drop handler
+/// (relocated from `sidebar.rs`, orchestrator size rule).
+pub(in crate::ui) type OnQueueDrop = std::rc::Rc<dyn Fn(&[i64]) -> bool>;
 
 fn drop_added_rows(inserted: u32) -> bool {
     inserted > 0
@@ -131,6 +144,60 @@ pub(in crate::ui) fn handle_playlist_drop(
             false
         }
     }
+}
+
+/// Attaches a `gtk::DropTarget` to the Queue nav row — the Queue-row
+/// analogue of [`wire_playlist_drop_target`], accepting the identical
+/// payload format (only `ids` matters here too). Same silent-no-op-on-parse-
+/// failure contract as the playlist target; everything past parsing is
+/// [`handle_queue_drop`].
+pub(in crate::ui) fn wire_queue_drop_target(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
+    let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::COPY);
+
+    let shared = shared.clone();
+    drop_target.connect_drop(move |_target, value, _x, _y| {
+        let Ok(payload_str) = value.get::<String>() else {
+            return false;
+        };
+        let Some(payload) = track_list_dnd::parse_drag_payload(&payload_str) else {
+            return false;
+        };
+        handle_queue_drop(&shared, &payload.ids)
+    });
+
+    row.add_controller(drop_target);
+}
+
+/// The actual "append dropped tracks to the queue" logic — standalone for
+/// the same two-entry-points reason as [`handle_playlist_drop`] (real drop
+/// target here, `Sidebar::handle_queue_drop` for the `REPRISE_SMOKE_DND=
+/// addqueue` smoke hook). Dispatches to `Shared::on_queue_drop` (wired by
+/// `window.rs` to `PlayerController::append_to_queue` — see that field's
+/// doc comment, including why no sidebar `rebuild` runs here) and shows the
+/// same "N tracks added to queue" toast the context-menu action shows.
+/// An empty `ids` is a no-op (`false`, callback never invoked), matching
+/// [`handle_playlist_drop`]'s contract.
+pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, ids: &[i64]) -> bool {
+    if ids.is_empty() {
+        return false;
+    }
+
+    let callback = shared.on_queue_drop.borrow().clone();
+    let Some(callback) = callback else {
+        tracing::warn!("queue drop fired but no on_queue_drop callback is wired; ignoring");
+        return false;
+    };
+    let appended = callback(ids);
+    if appended {
+        tracing::info!(
+            count = ids.len(),
+            "tracks appended to queue via drag and drop"
+        );
+        show_toast(shared, &strings::tracks_added_to_queue_toast(ids.len()));
+    } else {
+        tracing::debug!("queue drop callback reported no-op; skipping toast");
+    }
+    appended
 }
 
 #[cfg(test)]

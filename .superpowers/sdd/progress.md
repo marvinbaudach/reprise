@@ -119,6 +119,135 @@ Started: 2026-07-16
 - Logging: each scenario retains its own app log plus JSON snapshots and screenshots; a minimal manifest records only commit, build profile, CUA version, platform, display backend, and timestamp. Acceptance requires startup, database-ready, workflow, scan, and clean smoke-shutdown markers and rejects GTK/GLib criticals, panics, and RefCell failures.
 - Deferred host check: run `cargo build && scripts/cua-e2e/run.sh` outside the managed sandbox to collect the first real AT-SPI screenshots and confirm the exact `Search all fields`, fixture-title, and empty/no-results labels exposed by the installed GTK stack.
 - Residual risk: the deterministic driver contract proves orchestration and safety but cannot substitute for the deferred host CUA run; native Wayland rendering, portals, pointer feel, media keys, and audible playback remain release-manual checks.
+- Bugfix: complete (commit 8bcd060, base 3bd0eee, table no longer scroll-centers the row when playback starts from a double-click/Enter/queue activation — one-shot id-matched suppression consumed by the now-playing follow; auto-advance/skips/title-click/restore still center. Includes chore bc4b631: rustfmt 1.9 drift in window.rs.)
+- Queue+Nav-Plan (docs/superpowers/plans/2026-07-17-queue-nav-fixes.md): complete (commits 28774ff..HEAD, base 8bcd060). ux-rules.md angelegt; NAV-5 View-State-Memory (9aa2e5b); Play-Origin-Threading (6e09108); Composite-Queue-View QUE-1/2/4/5 (c5200e1); QUE-3-Interaktionen + Play-next (2a54066); NAV-9 Jump + NAV-2 Back + Ctrl+L inkl. Review-Fixes (d1ba456); Size-Gate-Extraktionen (HEAD). Abnahme headless verifiziert: Composite 1+PlayNext+UpNext·from-Origin, Play-next-Reihenfolge, Jump→select+center, Back→Queue, Stop→EmptyQueue-StatusPage, NAV-5-Restore-Log. PLAY-3-Filteranteil über geteilten Query-Pfad + bestehende Tests abgedeckt (Smoke-Hook-Reihenfolge erlaubt kein Filter-vor-Activate-E2E). Adversarial-Review: 2 blocking Findings gefixt (stale Now-Playing nach Stop; Queue-Aktivierungs-Reseed durch QUE-3-Jump ersetzt), purge-Notify + Dead-now-playing-Skip nachgezogen.
+
+## 2026-07-17 — UX-Regelwerk Task 1 (docs/ux-rules.md)
+
+- Verbindliches UX-Regelwerk eingecheckt: 60 Regelzeilen (Sektionen A–J,
+  alle `[geplant]`, PLAY-5 als Ersetzt-Wegweiser), mit Prozessregeln
+  (Status, append-only IDs, Ebenen-Tags,
+  Traceability, Änderungsprotokoll). Härtung gemäß Grilling 2026-07-17
+  (docs/plans/ux-rules-acceptance-tests.md). QUE-1–5/NAV-9 aus dem
+  Queue-Fix-Prompt wörtlich übernommen — Implementierung läuft parallel.
+
+- AGENTS.md: binding-UX-rules section added (contract, flip rule, proposal
+  protocol) — UX-Regelwerk Task 2.
+
+- Traceability-Lint eingeführt (scripts/check-ux-traceability.sh, 3 Richtungen)
+  und in check-merge-readiness verdrahtet; TESTING.md dokumentiert das Gate —
+  UX-Regelwerk Task 3. Der Aktiv-Zähler ist auf Regelzeilen verankert, damit
+  Prozessbeschreibungen mit `[aktiv]` nicht fälschlich als aktive Regeln zählen.
+
+- Bereich-C-Audit: PLAY-1 ist über `queue_ids_for_activation` und
+  `play_from_view` implementiert, aber noch nicht regelbenannt getestet;
+  PLAY-1a ist für Album-Container implementiert und anderweitig getestet,
+  für alle beschriebenen Container jedoch noch nicht als Gesamtvertrag
+  nachgewiesen; PLAY-2/3/5a sind implementiert und jetzt regelbenannt getestet
+  und deshalb im selben Commit auf `[aktiv]` gesetzt. PLAY-4a ist über
+  Missing-ausschließende Listenabfragen und den Playback-Fault-Skip teilweise
+  implementiert, aber nicht regelbenannt als stiller Gesamtvertrag getestet;
+  PLAY-4b und PLAY-5b sind nicht vollständig implementiert; PLAY-6 ist samt
+  Off→All→One-Zyklus implementiert und anderweitig getestet, aber noch nicht
+  regelbenannt. Pilot-Regeltests stehen in `queue_tests.rs`, QUE-1 bleibt als
+  `[geplant]`-Demo ignored — UX-Regelwerk Task 4.
+
+- cua-e2e: `play-2-doubleclick-row`-Szenario und
+  `cua_double_click_label`-Helper ergänzen den Verdrahtungsbeweis für PLAY-2
+  über den Marker `queue set from view`. Das Szenario läuft vor dem
+  `nomatch`-Filter, weil die Fixture-Row danach absichtlich verborgen ist.
+  Deferred host check: `cargo build && scripts/cua-e2e/run.sh` startete Xvfb
+  und Reprise isoliert, aber der private CUA/AT-SPI-Pfad listete innerhalb der
+  Smoke-Frist kein Reprise-Fenster; deshalb wurde kein grüner CUA-Lauf
+  behauptet — UX-Regelwerk Task 5.
+
+- UX-Regelwerk-Fundament komplett: Dokument (60 Regelzeilen, 3 `[aktiv]`,
+  1 ersetzt), AGENTS.md-Bindung, Traceability-Gate, Pilot Bereich C (core +
+  e2e), QUE-1-Aktivierungs-Demo. Verhaltensänderungen laufen als `[geplant]`
+  in Folge-Branches (Queue-Branch parallel in Arbeit) — UX-Regelwerk Task 6.
+
+## 2026-07-17 — UX-Regelwerk: Review-Korrekturen
+
+Zwei-Achsen-Review (Standards + Spec) des Branches `feat/ux-rules-acceptance-tests`.
+Beide Achsen bestätigten das Fundament; die folgenden Findings wurden umgesetzt.
+Vom User verworfen: 800-Zeilen-Regel für `.md` (Docs sind davon ausgenommen) und
+„Deutsch in Doku" (das Regelwerk ist bewusst deutsch — Arbeitssprache).
+
+- **PLAY-3 → PLAY-3a/PLAY-3b gesplittet.** Task 4 hatte PLAY-3 komplett auf
+  `[aktiv]` geflippt, obwohl der Test nur die Treffer-Shuffle-Klausel deckt und
+  die Filter-Nachträglichkeits-Klausel keine Assertion hat — ein Verstoß gegen
+  die eigene Prozessregel „Halb umgesetzt → a/b-Split". Jetzt: PLAY-3
+  `[ersetzt durch PLAY-3a/PLAY-3b]`, PLAY-3a `[aktiv] [core]` (Test
+  `play_3a_shuffle_stays_inside_filtered_snapshot`, umbenannt), PLAY-3b
+  `[geplant] [gtk]`. Weiterhin 3 `[aktiv]`-Regeln, jetzt 2 ersetzte.
+- **Sprache korrigiert:** `queue_tests.rs`, `check-ux-traceability.sh` und der
+  cua-e2e-Kommentar sind Code und jetzt englisch (AGENTS.md „English
+  everywhere"). Regel-IDs/Status-Token bleiben als Zitate deutsch. AGENTS.md und
+  `docs/ux-rules.md` halten die Grenze jetzt explizit fest.
+- **Traceability-Gate gehärtet** — vier Löcher, jedes mit Negativprobe belegt:
+  Präfixe werden aus dem Dokument abgeleitet statt hartkodiert (neue Sektion =
+  automatisch gegated, verifiziert mit einer `ZZZ-1`-Testregel); nur echte
+  `#[test]`-fns zählen (Helper-fn allein → FEHLER); Kommentarzeilen in
+  `scripts/cua-e2e` zählen nicht mehr (Kommentar allein → FEHLER); das
+  Ignore-Format `UX <ID> [geplant] — …` wird erzwungen (`#[ignore = "later"]`
+  → FEHLER). Bestehende Proben (Ignore auf `[aktiv]`, Test auf ersetzte Regel)
+  weiterhin rot.
+- **Duplikat entfernt:** `cua_click_label`/`cua_double_click_label` teilen sich
+  `cua_pointer_action_label <verb>` (`scripts/cua-e2e/lib.sh`); der
+  Kontrakttest `scripts/tests/cua-e2e.sh` bleibt grün.
+- **AGENTS.md-Widerspruch aufgelöst:** „keine Pläne im Repo" galt wörtlich gegen
+  die bestehende Praxis (`docs/plans/android-sync.md`). Jetzt: Wegwerf-Pläne
+  bleiben in der Session, überdauernde Pläne leben in `docs/plans/`, Verträge
+  wie `docs/ux-rules.md` sind keine Pläne. 800-Zeilen-Regel gilt explizit nur
+  für Code.
+- **Falscher Sanity-Check** in Task 1 Step 2 des Plans korrigiert
+  (`grep -c '[aktiv]'` war nie `0`); Review-Nachtrag ans Plan-Doc angehängt.
+
+Verifiziert: `check-ux-traceability.sh` grün (3 aktive Regeln) + 6 Negativproben
+rot · `cargo test -p reprise-core --lib` 583 passed / 1 ignored · Assertion-Flip
+in `play_3a` beweist Biss (rot → zurück → grün) · `scripts/tests/cua-e2e.sh`
+grün · `cargo fmt --check` sauber · `check-merge-readiness.sh` grün.
+
+Offen (bewusst, kein Blocker): PLAY-2s gatender Core-Test beweist
+`set_tracks`-Semantik, nicht die Doppelklick-Verdrahtung — deren Beweis liegt im
+nicht-gatenden cua-e2e-Szenario, dessen grüner Lauf weiterhin am Host-Gate hängt.
+
+## 2026-07-17 — UX-Regelwerk: Merge mit dem Queue+Nav-Stand aus main
+
+Der Queue+Nav-Agent hatte parallel eine eigene `docs/ux-rules.md` angelegt (69
+Zeilen, 13 Regeln, alle `[aktiv]`, ⟲-markiert als aus dem Gedächtnis
+rekonstruiert, ohne regelbenannte Tests, eigenes Format) und nach main gemergt —
+add/add-Kollision auf dem Vertragsdokument. **User-Beschluss: das Regelwerk
+dieses Branches gewinnt** (Superset: 60 Regeln, Sektionen A–J, Prozessregeln,
+Ebenen-Tags, Gate). Inhaltlich ging nichts verloren: QUE-1..5, NAV-9 und FB-5
+waren in beiden Dokumenten wortgleich; die übrigen Regeln des Queue-Docs sind in
+diesem Dokument präziser oder feiner geschnitten (PLAY-1/1a, PLAY-3a/3b, NAV-3).
+
+**Statuswahrheit nach der Vertragsregel:** implementiert ohne regelbenannten Test
+= `[geplant]` (nicht einklagbar). Das Queue-Doc führte 13 Regeln als `[aktiv]`,
+ohne dass eine davon einen regelbenannten Test hat — genau das False-Green, das
+das Gate verhindern soll. Sie stehen hier daher `[geplant]`.
+
+**ACHTUNG — implementiert, aber `[geplant]` (nicht neu bauen, nur testen!):**
+
+- **QUE-1/2/4/5** — Composite-Queue-View mit Now Playing · Play Next · Up Next ·
+  aus <Quelle>, Sidebar-Zähler, Leerzustand: implementiert in c5200e1.
+- **QUE-3** — DnD-Reorder, Remove, Playhead-Jump, Clear: implementiert in
+  2a54066 (Core-Tests vorhanden, aber nicht regelbenannt:
+  `remaining_after_current_*`, `remove_order_positions_*`,
+  `jump_to_order_position_*`).
+- **NAV-9 / NAV-2** — Jump to Now Playing + Back-Stack + Ctrl+L: implementiert in
+  d1ba456.
+- **NAV-5** — View-State-Memory: implementiert in 9aa2e5b.
+- **PLAY-1** — Kontext-Snapshot beim Wiedergabestart: implementiert
+  (Play-Origin-Threading 6e09108).
+
+Ihr Flip auf `[aktiv]` braucht je einen regelbenannten Test (`fn que_1_…`,
+`fn nav_9_…`, …) im selben Commit — das ist die naheliegende Folgearbeit und
+wäre größtenteils Umbenennen/Aufsetzen auf die schon vorhandenen Tests.
+QUE-1s ignored Core-Demo wurde ehrlich gemacht: die Drei-Sektionen-Queue
+existiert, aber der Core-Stub kann sie nicht beweisen — der Flip braucht einen
+`[gtk]`-Sektionstest.
 Task 1.3: complete (commit 19c9810, review clean) — schema v11 drops the legacy missing column; missing_since is now physically the only truth.
 Task 1.4: complete (commit 1fea712, review clean) — library/mounts.rs: lstat ancestor walk, mount_point_of, classify_missing (st_dev vs tracks.device). Pure core, no trait, testable without root.
   Minor findings (carried into 1.5): (a) the three fns carry #[allow(dead_code)] until callers land — must be removed in 1.5; (b) "capped at /" only holds for absolute paths — add a doc note/debug_assert when a caller wires in.

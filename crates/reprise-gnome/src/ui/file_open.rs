@@ -157,7 +157,11 @@ impl FileOpenHandler {
                             count = resolution.ids.len(),
                             "playing files opened through desktop association"
                         );
-                        player.play_from_view(resolution.ids, 0);
+                        player.play_from_view(
+                            resolution.ids,
+                            0,
+                            crate::ui::playback::play_origin::PlayOrigin::library(),
+                        );
                     }
                     None => toasts::show(
                         &self.toast_overlay,

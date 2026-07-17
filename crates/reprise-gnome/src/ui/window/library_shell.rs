@@ -174,6 +174,7 @@ pub(in crate::ui) fn arm_smoke_library_view(views: &LibraryViews) {
 #[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn wire_source_routing(
     sidebar: &Rc<Sidebar>,
+    nav_history: &Rc<crate::ui::nav_history::NavHistory>,
     track_list: &Rc<TrackList>,
     stats_view: StatsView,
     conn: &Rc<RefCell<Connection>>,
@@ -193,7 +194,11 @@ pub(in crate::ui) fn wire_source_routing(
     let device_view = device_view.clone();
     let conn = conn.clone();
     let show_content_on_select = show_content.clone();
+    let nav_history = nav_history.clone();
     sidebar.set_on_select(move |source, source_name| {
+        // NAV-2: every routed switch records the place it leaves. Back
+        // re-routes through here too, silenced by its suppression flag.
+        nav_history.record_route(&source);
         let is_library = matches!(source, ViewSource::Library);
         if let ViewSource::Device { serial } = &source {
             device_view.show_device(serial);

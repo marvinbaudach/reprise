@@ -26,10 +26,15 @@ successor. Three-crate Cargo workspace:
    ground truth; only committed work exists. Nothing is ever pushed — work lives on `main`
    locally.
 
-Design specs and per-stage implementation plans are no longer kept in the repo — the
+Throwaway per-stage implementation plans are not kept in the repo — the
 `.superpowers/sdd/progress.md` ledger plus `git log` are the authoritative record of what is
 done and in flight. Work new features via the brainstorm → spec → plan → TDD method below,
 holding any working spec/plan in the session rather than committing it.
+
+The exception is a plan that outlives its own execution because later work has to follow it:
+those live in `docs/plans/` and are maintained, not archived (`docs/plans/android-sync.md`,
+`docs/plans/ux-rules-acceptance-tests.md`). Binding contracts (`docs/ux-rules.md`) are never
+plans — they live at `docs/` top level and outrank the code.
 
 ## Shared workflow skills (read these)
 
@@ -38,6 +43,22 @@ holding any working spec/plan in the session rather than committing it.
 - The **superpowers** process skills (brainstorming, TDD, systematic-debugging,
   verification-before-completion) carry the iron rules: TDD, verify-before-done, hard gates,
   isolation, honesty.
+
+## UX rules are binding
+
+`docs/ux-rules.md` is the single UX source of truth (German). Before touching
+any user-facing behavior, read the sections you work in. The contract:
+
+- `[aktiv]` rules are enforceable: deviation is a bug; every `[aktiv]` rule
+  has a rule-named test (`fn play_1a_…` / cua-e2e `play-1a-…`) that gates
+  merges via `scripts/check-ux-traceability.sh`.
+- A rule flips `[geplant]` → `[aktiv]` in the same commit that implements
+  the behavior and adds its test — never retroactively.
+- Rule IDs are append-only; replaced rules stay as `[ersetzt durch <ID>]`
+  and their tests are re-pointed in the same commit.
+- If you hit a case no rule covers: do NOT decide locally. Add a
+  `[geplant]` draft with the next free ID in the affected section, marked
+  `<!-- REVIEW: Regelvorschlag -->`, and surface it for human review.
 
 ## How to resume (the method — no special tooling required)
 
@@ -73,13 +94,17 @@ states its expected new total.
 cargo tree -p reprise-core | grep -E 'gtk4|libadwaita|gstreamer|zbus'   # MUST be empty
 ```
 
-**File-size rule:** every file created or substantially edited ends **< 800 lines**. If an edit
-would breach it, extract a cohesive sibling module — do NOT trim doc comments to fit.
+**File-size rule:** every *code* file created or substantially edited ends **< 800 lines**. If
+an edit would breach it, extract a cohesive sibling module — do NOT trim doc comments to fit.
+Markdown is exempt: docs are split by subject, never by line count.
 
 ## NON-NEGOTIABLE safety rules
 
 - **English everywhere** — code, comments, log/error/UI strings, commit messages. (User-facing
-  translations come later via gettext; German first.) Internal design docs/specs are in German.
+  translations come later via gettext; German first.) Internal design docs/specs are in German
+  — deliberately, it is the project's working language. Tests and shell scripts are code, so
+  they stay English even when they enforce a German doc; rule IDs and status tokens
+  (`[aktiv]`, `[geplant]`) are quoted verbatim and stay German.
 - **Never touch the user's music files or real database unasked.** Reprise only ever *reads*
   the user's audio files; deletes are DB-only or trash-with-confirmation, never silent file ops.
   The real DB is `~/.local/share/reprise/reprise.db` (1686 real tracks; library root
@@ -115,6 +140,20 @@ plus delete/trash) · **GUI-C** (browse bar + Rhythmbox column-layout import) ·
 
 Each next stage starts with a design spec → an implementation plan (held in-session, not
 committed) → task-by-task execution as above.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
 ## Key conventions to match
 

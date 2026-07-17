@@ -42,6 +42,9 @@ git diff --check "$base_ref"...HEAD
 
 scripts/check-architecture.sh
 
+echo "== UX traceability =="
+scripts/check-ux-traceability.sh
+
 echo "== Rust formatting =="
 cargo fmt --check
 

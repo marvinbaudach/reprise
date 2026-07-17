@@ -61,6 +61,10 @@ pub(super) fn restore_runtime(
             state.queue.clone(),
             state.up_next.clone(),
             state.current_up_next,
+            crate::ui::playback::play_origin::from_session(
+                state.play_origin.clone(),
+                state.play_origin_label.clone(),
+            ),
         );
     }
     view_session::restore(
@@ -142,6 +146,11 @@ pub(super) fn wire_close(
             let (up_next, current_up_next) = player.session_up_next_snapshot();
             state.up_next = up_next;
             state.current_up_next = current_up_next;
+            let origin = player.current_play_origin();
+            let (origin_kind, origin_label) =
+                crate::ui::playback::play_origin::to_session(origin.as_ref());
+            state.play_origin = origin_kind;
+            state.play_origin_label = origin_label;
         }
 
         let result = session::save(&conn.borrow(), &state);

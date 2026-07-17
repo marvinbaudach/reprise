@@ -161,13 +161,122 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         }
     });
 
+    let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
     if let Some(player) = player {
         let sidebar_for_queue = sidebar.clone();
         player.bar.connect_queue_clicked(move || {
             sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
         });
-        let toggle = info_panel.toggle_button().clone();
-        player.connect_cover_clicked(move || toggle.set_active(!toggle.is_active()));
+
+        // NAV-9 "Jump to Now Playing": cover/title clicks and Ctrl+L
+        // navigate to the playing track's home (its play origin), then
+        // select + center its row. The sidebar routing pushes the left
+        // place onto the NAV-2 history, so Back returns here.
+        let jump_to_now_playing = {
+            let player = Rc::downgrade(player);
+            let sidebar = sidebar.clone();
+            let track_list = track_list.clone();
+            Rc::new(move || {
+                let Some(player) = player.upgrade() else {
+                    return;
+                };
+                let origin = player
+                    .current_play_origin()
+                    .map_or(ViewSource::Library, |origin| origin.source);
+                // An explicit jump supersedes NAV-5's remembered viewport
+                // for the target — centering must own the scroll position.
+                track_list.forget_view_state(&origin);
+                // Re-baseline the sidebar's dedup: cross-navigation paths
+                // (album/artist cards, smoke hooks) switch the table without
+                // it, and a stale baseline would swallow this selection.
+                crate::ui::sidebar_session::sync_current_source(
+                    &sidebar.shared,
+                    &track_list.current_source(),
+                );
+                sidebar.refresh_and_select(origin, "jump to now playing");
+                // Deferred one main-loop round: the routed reload above has
+                // scheduled idle work of its own; centering runs after the
+                // rebuilt list exists (select_current_track keeps its own
+                // no-geometry fallback).
+                let player = Rc::downgrade(&player);
+                gtk4::glib::idle_add_local_once(move || {
+                    if let Some(player) = player.upgrade() {
+                        player.notify_restored_current_track();
+                    }
+                });
+            })
+        };
+        {
+            let jump = jump_to_now_playing.clone();
+            player.connect_cover_clicked(move || jump());
+        }
+        {
+            let jump = jump_to_now_playing.clone();
+            player.set_on_title_click(move || jump());
+        }
+        let jump_action = gtk4::gio::SimpleAction::new("jump-to-now-playing", None);
+        jump_action.connect_activate(move |_, _| jump_to_now_playing());
+        window.add_action(&jump_action);
+        app.set_accels_for_action("win.jump-to-now-playing", &["<Control>l"]);
+
+        // NAV-2 Back: pop the most recent place and route there without
+        // re-recording (begin/end_back around the synchronous re-route).
+        let back_action = gtk4::gio::SimpleAction::new("nav-back", None);
+        {
+            let nav_history = nav_history.clone();
+            let sidebar = sidebar.clone();
+            let track_list = track_list.clone();
+            back_action.connect_activate(move |_, _| {
+                let Some(target) = nav_history.pop() else {
+                    tracing::debug!("nav back: history is empty");
+                    return;
+                };
+                nav_history.begin_back();
+                crate::ui::sidebar_session::sync_current_source(
+                    &sidebar.shared,
+                    &track_list.current_source(),
+                );
+                sidebar.refresh_and_select(target, "nav back");
+                nav_history.end_back();
+            });
+        }
+        window.add_action(&back_action);
+        app.set_accels_for_action("win.nav-back", &["<Alt>Left"]);
+
+        // Dev/verification hook (permanent, like `REPRISE_SMOKE_ACTIVATE`):
+        // `REPRISE_SMOKE_JUMP=1` fires the NAV-9 jump action ~2s after
+        // startup (past the other smoke hooks' idle work) and the NAV-2
+        // back action ~2s later — the exact same `gio` actions Ctrl+L and
+        // Alt+Left run. Headless E2E asserts the resulting routing +
+        // selection log lines.
+        if std::env::var("REPRISE_SMOKE_JUMP").is_ok() {
+            // Mirrors the acceptance repro: open the Queue THROUGH the
+            // sidebar (like the player bar's queue button), then jump, then
+            // back — each step two seconds apart, past startup idle work.
+            let sidebar_for_smoke = sidebar.clone();
+            gtk4::glib::timeout_add_seconds_local_once(2, move || {
+                tracing::info!("smoke: selecting queue via sidebar");
+                sidebar_for_smoke.refresh_and_select(ViewSource::Queue, "smoke jump precondition");
+            });
+            let window_for_jump = window.clone();
+            gtk4::glib::timeout_add_seconds_local_once(4, move || {
+                tracing::info!("smoke: firing jump-to-now-playing");
+                gtk4::gio::prelude::ActionGroupExt::activate_action(
+                    &window_for_jump,
+                    "jump-to-now-playing",
+                    None,
+                );
+            });
+            let window_for_back = window.clone();
+            gtk4::glib::timeout_add_seconds_local_once(6, move || {
+                tracing::info!("smoke: firing nav-back");
+                gtk4::gio::prelude::ActionGroupExt::activate_action(
+                    &window_for_back,
+                    "nav-back",
+                    None,
+                );
+            });
+        }
     }
 
     header.pack_end(search_entry);
@@ -181,6 +290,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let show_content_if_collapsed = super::window_navigation::show_content_callback(split_view);
     super::library_shell::wire_source_routing(
         sidebar,
+        &nav_history,
         track_list,
         stats_view,
         conn,
@@ -205,6 +315,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 tracing::warn!("sidebar is gone; cannot dispatch simulated playlist drop");
                 false
             }
+        }
+    });
+    let sidebar_weak = Rc::downgrade(sidebar);
+    track_list.set_on_sidebar_queue_drop(move |ids| match sidebar_weak.upgrade() {
+        Some(sidebar) => sidebar.handle_queue_drop(ids),
+        None => {
+            tracing::warn!("sidebar is gone; cannot dispatch simulated queue drop");
+            false
         }
     });
 
