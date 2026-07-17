@@ -72,13 +72,18 @@ pub(in crate::ui) struct TagEditorForm {
     pub(in crate::ui) rating_box: gtk4::Box,
     pub(in crate::ui) rating_value: Rc<Cell<i32>>,
     pub(in crate::ui) error_label: gtk4::Label,
+    /// The reserved "was: …" line under each field (TAG-5, P-4) — built by
+    /// `build_field_column` for every field including Rating, populated by
+    /// `tag_editor_dirty::wire`'s `update()` from `TagEditSession::
+    /// old_value_line`. Empty text keeps the reserved space allocated but
+    /// invisible-in-effect (never removed from the layout).
+    pub(in crate::ui) old_value_labels: Vec<(TagField, gtk4::Label)>,
     /// Review-footer mount point (F1 builds its summary/expander contents
     /// here on every `tag_editor_dirty::wire`'s `update()`, the same
     /// pattern the pre-F0 pending bar used) — always present, visibility
     /// decided by session state rather than static mode (TAG-5: the
     /// expander also applies in SingleNav once browsing accumulates pending
-    /// tracks, Package G). Unread until F1 wires the review footer.
-    #[allow(dead_code)]
+    /// tracks, Package G).
     pub(in crate::ui) review_box: gtk4::Box,
     pub(in crate::ui) mb_btn: gtk4::Button,
     pub(in crate::ui) mb_hint: gtk4::Label,
@@ -170,10 +175,9 @@ impl TagEditorForm {
             current_id,
         );
 
-        let (title_col, _title_old_value) = build_field_column(title_row.upcast_ref(), None);
-        let (artist_col, _artist_old_value) =
-            build_field_column(artist_ac.row().upcast_ref(), None);
-        let (album_col, _album_old_value) = build_field_column(album_ac.row().upcast_ref(), None);
+        let (title_col, title_old_value) = build_field_column(title_row.upcast_ref(), None);
+        let (artist_col, artist_old_value) = build_field_column(artist_ac.row().upcast_ref(), None);
+        let (album_col, album_old_value) = build_field_column(album_ac.row().upcast_ref(), None);
 
         let title_artist_album = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
         title_artist_album.set_hexpand(true);
@@ -237,11 +241,11 @@ impl TagEditorForm {
             );
         }
 
-        let (album_artist_col, _album_artist_old_value) =
+        let (album_artist_col, album_artist_old_value) =
             build_field_column(album_artist_ac.row().upcast_ref(), None);
-        let (genre_col, _genre_old_value) = build_field_column(genre_ac.row().upcast_ref(), None);
-        let (year_col, _year_old_value) = build_field_column(year_row.upcast_ref(), None);
-        let (track_no_col, _track_no_old_value) =
+        let (genre_col, genre_old_value) = build_field_column(genre_ac.row().upcast_ref(), None);
+        let (year_col, year_old_value) = build_field_column(year_row.upcast_ref(), None);
+        let (track_no_col, track_no_old_value) =
             build_field_column(track_no_row.upcast_ref(), None);
 
         let grid = gtk4::Grid::builder()
@@ -265,7 +269,7 @@ impl TagEditorForm {
             }
         };
         let (rating_box, rating_value) = build_star_rating(&rating_mixed);
-        let (rating_col, _rating_old_value) = build_field_column(
+        let (rating_col, rating_old_value) = build_field_column(
             rating_box.upcast_ref(),
             Some(&strings::text(strings::RATING)),
         );
@@ -344,6 +348,17 @@ impl TagEditorForm {
             genre_annotation,
         );
 
+        let old_value_labels = vec![
+            (TagField::Title, title_old_value),
+            (TagField::Artist, artist_old_value),
+            (TagField::Album, album_old_value),
+            (TagField::AlbumArtist, album_artist_old_value),
+            (TagField::Genre, genre_old_value),
+            (TagField::Year, year_old_value),
+            (TagField::TrackNo, track_no_old_value),
+            (TagField::Rating, rating_old_value),
+        ];
+
         Self {
             save_btn,
             cancel_btn,
@@ -359,6 +374,7 @@ impl TagEditorForm {
             rating_box,
             rating_value,
             error_label,
+            old_value_labels,
             review_box,
             mb_btn,
             mb_hint,

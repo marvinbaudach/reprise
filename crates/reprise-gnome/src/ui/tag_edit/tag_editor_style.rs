@@ -99,7 +99,9 @@ pub(in crate::ui) fn css() -> String {
          .reprise-tag-per-track > .header text {{ \
            font-style: normal; }}\n\
          \
-         /* --- Pending-change bar --- */
+         /* --- Pending-change bar (legacy; superseded by the review footer \
+            below but kept — some of its rows may return once Package E's \
+            Wave-4 keyboard work revisits index-based field identity) --- */
          .reprise-tag-pending {{ \
            background: alpha(@accent_bg_color, 0.08); \
            border-radius: 8px; \
@@ -118,6 +120,28 @@ pub(in crate::ui) fn css() -> String {
            font-size: 11px; \
            padding: 1px 8px; \
            min-height: 20px; }}\n\
+         \
+         /* --- Review footer (TAG-5, F1): summary line + \"Review changes\" \
+            expander, mounted in the same slot the pending bar used to \
+            occupy --- */
+         .reprise-tag-review {{ \
+           background: alpha(@accent_bg_color, 0.08); \
+           border-radius: 8px; \
+           padding: 8px 12px; \
+           margin-top: 4px; }}\n\
+         .reprise-tag-review-summary {{ \
+           font-size: 12px; \
+           font-weight: 600; \
+           color: @accent_color; }}\n\
+         .reprise-tag-review expander {{ \
+           font-size: 12px; \
+           margin-top: 4px; }}\n\
+         \
+         /* --- In-field ↺ revert (TAG-2): hidden until a field arms --- */
+         .reprise-tag-field-revert {{ \
+           min-width: 24px; \
+           min-height: 24px; \
+           padding: 2px; }}\n\
          \
          /* --- Rating stars --- */
          .reprise-tag-stars button {{ \
@@ -188,6 +212,8 @@ mod tests {
         assert!(css.contains(".reprise-tag-cover"));
         assert!(css.contains(".reprise-tag-mixed"));
         assert!(css.contains(".reprise-tag-pending"));
+        assert!(css.contains(".reprise-tag-review"));
+        assert!(css.contains(".reprise-tag-field-revert"));
         assert!(css.contains(".reprise-tag-stars"));
         assert!(css.contains(".reprise-tag-nav"));
         assert!(css.contains(".reprise-tag-mb"));

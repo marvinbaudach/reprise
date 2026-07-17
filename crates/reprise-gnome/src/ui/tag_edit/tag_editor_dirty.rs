@@ -1,17 +1,25 @@
-//! Session-backed field wiring (F0/TAG-2/TAG-4): every field's GTK
-//! "changed"/click signal writes straight into the shared `TagEditSession`
-//! — the single state truth. The old per-field `Cell<bool>` dirty array is
-//! gone: it duplicated exactly what the session already tracks (which
-//! fields differ from their original value) and, being private to this
-//! module, was the reason Package C could arm a Mixed field's *display* but
-//! never wire its in-field ↺ revert (a revert from outside this module
-//! could clear the visible text without clearing the flag, silently
-//! writing an empty string over genuinely different per-track values).
+//! Session-backed field wiring (F0/TAG-2/TAG-4) and the review footer
+//! (F1/TAG-5): every field's GTK "changed"/click signal writes straight
+//! into the shared `TagEditSession` — the single state truth. The old
+//! per-field `Cell<bool>` dirty array is gone: it duplicated exactly what
+//! the session already tracks (which fields differ from their original
+//! value) and, being private to this module, was the reason Package C
+//! could arm a Mixed field's *display* but never wire its in-field ↺
+//! revert (a revert from outside this module could clear the visible text
+//! without clearing the flag, silently writing an empty string over
+//! genuinely different per-track values).
 //!
 //! The `update` callback this module returns is the single place that
-//! recomputes every session-derived UI surface after any field edit; F0
-//! only recomputes Save-button sensitivity, F1 extends the same callback
-//! with the review footer.
+//! recomputes every session-derived UI surface after any field edit:
+//! Save-button sensitivity/label/tooltip, the per-field reserved "was: …"
+//! lines, and the review footer's summary line + "Review changes" expander
+//! (TAG-5). `interacted` tracks a narrower thing than the session does —
+//! not "which fields differ" (the session's job) but "has the user ever
+//! armed or reverted anything in this dialog" — the fact P-2's two disabled
+//! tooltips ("No changes yet" vs "No effective changes") need to tell
+//! apart and that no session query can answer, since a field armed and
+//! then reverted back to its original value leaves zero effective diff
+//! either way.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -79,51 +87,229 @@ pub(in crate::ui) fn parse_number_field(text: &str) -> Result<Option<u32>, Parse
     number_patch(true, text).map(|value| value.unwrap_or(None))
 }
 
+/// TAG-5: whether the "Review changes" expander should be shown. Multi
+/// mode shows it whenever anything is effectively pending; SingleNav only
+/// once pending reaches beyond the current track (`> 1` — a lone track can
+/// only ever contribute 0 or 1, so this is really "did browsing pending
+/// accumulate", Package G's territory).
+pub(in crate::ui) fn review_expander_visible(mode: SessionMode, tracks_affected: usize) -> bool {
+    match mode {
+        SessionMode::Multi => tracks_affected > 0,
+        SessionMode::SingleNav => tracks_affected > 1,
+    }
+}
+
+/// TAG-5's Save-button label from the effective diff currency (tracks):
+/// Multi always carries the count ("Save 30"); SingleNav stays plain
+/// ("Save") unless pending has scattered onto more than the current track
+/// ("Save · 2 tracks") — the same threshold as [`review_expander_visible`].
+pub(in crate::ui) fn save_label(mode: SessionMode, tracks_affected: usize) -> String {
+    match mode {
+        SessionMode::Multi if tracks_affected > 0 => strings::tag_save_count(tracks_affected),
+        SessionMode::SingleNav if tracks_affected > 1 => {
+            strings::tag_save_scattered(tracks_affected)
+        }
+        _ => strings::text(strings::TAG_SAVE),
+    }
+}
+
+/// P-2's disabled-Save-button reason: `interacted` distinguishes a
+/// never-touched session ("No changes yet") from one where something was
+/// armed or reverted but landed on zero effective diff ("No effective
+/// changes") — see this module's doc comment for why the session itself
+/// can't answer this.
+pub(in crate::ui) fn save_disabled_tooltip(interacted: bool) -> &'static str {
+    if interacted {
+        strings::TAG_REVIEW_NO_EFFECTIVE_CHANGES
+    } else {
+        strings::TAG_SAVE_NO_CHANGES_YET
+    }
+}
+
+fn field_display_name(field: TagField) -> String {
+    match field {
+        TagField::Title => strings::text(strings::TAG_TITLE),
+        TagField::Artist => strings::text(strings::TAG_ARTIST),
+        TagField::Album => strings::text(strings::TAG_ALBUM),
+        TagField::AlbumArtist => strings::text(strings::TAG_ALBUM_ARTIST),
+        TagField::Genre => strings::text(strings::TAG_GENRE),
+        TagField::Year => strings::text(strings::TAG_YEAR),
+        TagField::TrackNo => strings::text(strings::TAG_TRACK_NUMBER),
+        TagField::Rating => strings::text(strings::RATING),
+    }
+}
+
+/// Rebuilds the review footer's contents from scratch on every `update()`
+/// call — the same "clear children, re-render" approach the pre-F0 pending
+/// bar used, now driven entirely by session queries instead of dirty flags.
+fn render_review_footer(
+    review_box: &gtk4::Box,
+    session: &TagEditSession,
+    mode: SessionMode,
+    interacted: bool,
+) {
+    while let Some(child) = review_box.first_child() {
+        review_box.remove(&child);
+    }
+
+    let summary = session.summary();
+    if summary.tracks_affected == 0 {
+        if !interacted {
+            review_box.set_visible(false);
+            return;
+        }
+        let label = gtk4::Label::builder()
+            .label(strings::text(strings::TAG_REVIEW_NO_EFFECTIVE_CHANGES))
+            .xalign(0.0)
+            .build();
+        label.add_css_class("reprise-tag-review-summary");
+        review_box.append(&label);
+        review_box.set_visible(true);
+        return;
+    }
+
+    review_box.set_visible(true);
+    let summary_label = gtk4::Label::builder()
+        .label(strings::tag_review_summary(
+            summary.fields,
+            summary.tracks_affected,
+        ))
+        .xalign(0.0)
+        .build();
+    summary_label.add_css_class("reprise-tag-review-summary");
+    review_box.append(&summary_label);
+
+    if !review_expander_visible(mode, summary.tracks_affected) {
+        return;
+    }
+
+    let expander = gtk4::Expander::builder()
+        .label(strings::text(strings::TAG_REVIEW_EXPANDER))
+        .build();
+    let list = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    for line in session.review_lines() {
+        let text = strings::tag_review_line(
+            &field_display_name(line.field),
+            &line.old_display,
+            &line.new_display,
+            line.tracks_affected,
+        );
+        let label = gtk4::Label::builder()
+            .label(&text)
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        list.append(&label);
+    }
+    expander.set_child(Some(&list));
+    review_box.append(&expander);
+}
+
 pub(in crate::ui) fn wire(
     mode: EditorMode,
     form: &TagEditorForm,
     session: &Rc<RefCell<TagEditSession>>,
 ) -> DirtyState {
-    let scope = session_scope(if mode.is_multi() {
+    let session_mode = if mode.is_multi() {
         SessionMode::Multi
     } else {
         SessionMode::SingleNav
-    });
+    };
+    let scope = session_scope(session_mode);
+    let interacted = Rc::new(Cell::new(false));
 
     let update: UpdateCallback = {
         let save_button = form.save_btn.clone();
         let session = session.clone();
+        let review_box = form.review_box.clone();
+        let old_value_labels = form.old_value_labels.clone();
+        let interacted = interacted.clone();
         Rc::new(move || {
-            let pending = session.borrow().pending_track_count();
-            save_button.set_sensitive(pending > 0);
+            let session_ref = session.borrow();
+            let tracks_affected = session_ref.pending_track_count();
+
+            save_button.set_sensitive(tracks_affected > 0);
+            save_button.set_label(&save_label(session_mode, tracks_affected));
+            if tracks_affected == 0 {
+                save_button.set_tooltip_text(Some(save_disabled_tooltip(interacted.get())));
+            } else {
+                save_button.set_tooltip_text(None);
+            }
+
+            for (field, label) in &old_value_labels {
+                match session_ref.old_value_line(scope, *field) {
+                    Some(old_text) => label.set_text(&strings::tag_old_value_line(&old_text)),
+                    None => label.set_text(""),
+                }
+            }
+
+            render_review_footer(&review_box, &session_ref, session_mode, interacted.get());
         })
     };
 
-    wire_text_field(&form.title_row, TagField::Title, scope, session, &update);
-    wire_number_field(&form.year_row, TagField::Year, scope, session, &update);
+    wire_text_field(
+        &form.title_row,
+        TagField::Title,
+        scope,
+        session,
+        &update,
+        &interacted,
+    );
+    wire_number_field(
+        &form.year_row,
+        TagField::Year,
+        scope,
+        session,
+        &update,
+        &interacted,
+    );
     wire_number_field(
         &form.track_no_row,
         TagField::TrackNo,
         scope,
         session,
         &update,
+        &interacted,
     );
-    wire_autocomplete_field(&form.artist_ac, TagField::Artist, scope, session, &update);
-    wire_autocomplete_field(&form.album_ac, TagField::Album, scope, session, &update);
+    wire_autocomplete_field(
+        &form.artist_ac,
+        TagField::Artist,
+        scope,
+        session,
+        &update,
+        &interacted,
+    );
+    wire_autocomplete_field(
+        &form.album_ac,
+        TagField::Album,
+        scope,
+        session,
+        &update,
+        &interacted,
+    );
     wire_autocomplete_field(
         &form.album_artist_ac,
         TagField::AlbumArtist,
         scope,
         session,
         &update,
+        &interacted,
     );
-    wire_autocomplete_field(&form.genre_ac, TagField::Genre, scope, session, &update);
+    wire_autocomplete_field(
+        &form.genre_ac,
+        TagField::Genre,
+        scope,
+        session,
+        &update,
+        &interacted,
+    );
     wire_rating(
         &form.rating_value,
         &form.rating_box,
         scope,
         session,
         &update,
+        &interacted,
     );
 
     update();
@@ -151,6 +337,7 @@ fn wire_text_field(
     scope: PendingScope,
     session: &Rc<RefCell<TagEditSession>>,
     update: &UpdateCallback,
+    interacted: &Rc<Cell<bool>>,
 ) {
     if !row.is_editable() {
         // TAG-3: a per-track-locked field (Title/Track-number in Multi) is
@@ -164,7 +351,9 @@ fn wire_text_field(
         let session = session.clone();
         let update = update.clone();
         let revert_btn = revert_btn.clone();
+        let interacted = interacted.clone();
         row.connect_changed(move |entry| {
+            interacted.set(true);
             let text = entry.text().to_string();
             session
                 .borrow_mut()
@@ -178,7 +367,9 @@ fn wire_text_field(
         let session = session.clone();
         let update = update.clone();
         let row = row.clone();
+        let interacted = interacted.clone();
         revert_btn.connect_clicked(move |button| {
+            interacted.set(true);
             let text = {
                 let mut session_mut = session.borrow_mut();
                 revert_field(&mut session_mut, scope, field)
@@ -196,6 +387,7 @@ fn wire_number_field(
     scope: PendingScope,
     session: &Rc<RefCell<TagEditSession>>,
     update: &UpdateCallback,
+    interacted: &Rc<Cell<bool>>,
 ) {
     if !row.is_editable() {
         return;
@@ -207,7 +399,9 @@ fn wire_number_field(
         let session = session.clone();
         let update = update.clone();
         let revert_btn = revert_btn.clone();
+        let interacted = interacted.clone();
         row.connect_changed(move |entry| {
+            interacted.set(true);
             if let Ok(value) = parse_number_field(&entry.text()) {
                 session
                     .borrow_mut()
@@ -222,7 +416,9 @@ fn wire_number_field(
         let session = session.clone();
         let update = update.clone();
         let row = row.clone();
+        let interacted = interacted.clone();
         revert_btn.connect_clicked(move |button| {
+            interacted.set(true);
             let text = {
                 let mut session_mut = session.borrow_mut();
                 revert_field(&mut session_mut, scope, field)
@@ -240,6 +436,7 @@ fn wire_autocomplete_field(
     scope: PendingScope,
     session: &Rc<RefCell<TagEditSession>>,
     update: &UpdateCallback,
+    interacted: &Rc<Cell<bool>>,
 ) {
     let revert_btn = build_revert_button();
     ac.row().add_suffix(&revert_btn);
@@ -249,7 +446,9 @@ fn wire_autocomplete_field(
         let update = update.clone();
         let ac_for_read = ac.clone();
         let revert_btn = revert_btn.clone();
+        let interacted = interacted.clone();
         ac.connect_changed(move || {
+            interacted.set(true);
             session
                 .borrow_mut()
                 .set_pending(scope, field, &FieldValue::Text(ac_for_read.text()));
@@ -262,7 +461,9 @@ fn wire_autocomplete_field(
         let session = session.clone();
         let update = update.clone();
         let ac = ac.clone();
+        let interacted = interacted.clone();
         revert_btn.connect_clicked(move |button| {
+            interacted.set(true);
             let text = {
                 let mut session_mut = session.borrow_mut();
                 revert_field(&mut session_mut, scope, field)
@@ -280,12 +481,15 @@ fn wire_rating(
     scope: PendingScope,
     session: &Rc<RefCell<TagEditSession>>,
     update: &UpdateCallback,
+    interacted: &Rc<Cell<bool>>,
 ) {
     let session = session.clone();
     let rating_value_for_read = rating_value.clone();
+    let interacted = interacted.clone();
     let on_changed: UpdateCallback = {
         let update = update.clone();
         Rc::new(move || {
+            interacted.set(true);
             let value = rating_value_for_read.get();
             session
                 .borrow_mut()
@@ -297,88 +501,5 @@ fn wire_rating(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use reprise_core::library::tag_edit::EditableTags;
-    use reprise_core::library::tag_edit_session::SessionTrack;
-    use std::path::PathBuf;
-
-    fn track(id: i64, title: &str) -> SessionTrack {
-        SessionTrack {
-            id,
-            path: PathBuf::from(format!("/music/{id}.flac")),
-            tags: EditableTags {
-                title: title.into(),
-                artist: "Artist".into(),
-                album: "Album".into(),
-                album_artist: "Artist".into(),
-                year: Some(2020),
-                track_no: Some(1),
-                genre: "Rock".into(),
-            },
-            rating: 0,
-        }
-    }
-
-    #[test]
-    fn session_scope_maps_mode_one_to_one() {
-        assert_eq!(session_scope(SessionMode::Multi), PendingScope::AllTracks);
-        assert_eq!(
-            session_scope(SessionMode::SingleNav),
-            PendingScope::CurrentTrack
-        );
-    }
-
-    #[test]
-    fn parse_number_field_accepts_blank_rejects_zero_and_garbage() {
-        assert_eq!(parse_number_field(""), Ok(None));
-        assert_eq!(parse_number_field("  "), Ok(None));
-        assert_eq!(parse_number_field("42"), Ok(Some(42)));
-        assert!(parse_number_field("0").is_err());
-        assert!(parse_number_field("abc").is_err());
-    }
-
-    #[test]
-    fn tag_2_in_field_revert_clears_text_and_pending_together() {
-        let mut session = TagEditSession::new(vec![track(1, "Original")], SessionMode::SingleNav);
-        session.set_pending(
-            PendingScope::CurrentTrack,
-            TagField::Genre,
-            &FieldValue::Text("Jazz".into()),
-        );
-        assert!(session
-            .old_value_line(PendingScope::CurrentTrack, TagField::Genre)
-            .is_some());
-
-        let text = revert_field(&mut session, PendingScope::CurrentTrack, TagField::Genre);
-
-        assert_eq!(text, "Rock");
-        assert!(session
-            .old_value_line(PendingScope::CurrentTrack, TagField::Genre)
-            .is_none());
-        assert!(session.write_batch().is_empty());
-    }
-
-    #[test]
-    fn tag_2_in_field_revert_on_mixed_field_returns_to_placeholder_value() {
-        let mut session =
-            TagEditSession::new(vec![track(1, "A"), track(2, "B")], SessionMode::Multi);
-        session.set_pending(
-            PendingScope::AllTracks,
-            TagField::Genre,
-            &FieldValue::Text("Metal".into()),
-        );
-        assert!(session
-            .old_value_line(PendingScope::AllTracks, TagField::Genre)
-            .is_some());
-
-        let _ = revert_field(&mut session, PendingScope::AllTracks, TagField::Genre);
-
-        // Both tracks' genres started as "Rock" (see `track` fixture), so a
-        // revert lands back on the uniform original — no longer mixed.
-        assert!(session.mixed_placeholder(TagField::Genre).is_none());
-        assert!(session
-            .old_value_line(PendingScope::AllTracks, TagField::Genre)
-            .is_none());
-    }
-}
+#[path = "tag_editor_dirty_tests.rs"]
+mod tests;

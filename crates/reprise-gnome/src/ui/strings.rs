@@ -46,6 +46,10 @@ pub use autocomplete::*;
 mod app_shell;
 pub use app_shell::*;
 
+#[path = "strings_tag_edit.rs"]
+mod tag_edit;
+pub use tag_edit::*;
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
@@ -154,8 +158,6 @@ pub const TAG_EDIT_TITLE_MULTI: &str = N_!("Edit {count} Tracks");
 pub const TAG_PER_TRACK: &str = N_!("per track");
 pub const TAG_WILL_APPLY: &str = N_!("will be applied to all {count}");
 pub const TAG_SAVE: &str = N_!("Save");
-// Picked back up by Task F1's review-footer save label ("Save N").
-#[allow(dead_code)]
 pub const TAG_SAVE_COUNT: &str = N_!("Save {count}");
 // Pre-F1 pending-bar header copy ("N changes pending"), superseded by the
 // review footer's TAG-5 summary line ("2 fields · 30 tracks affected").
@@ -190,7 +192,6 @@ pub fn tag_edit_title_multi(count: usize) -> String {
     formatted(TAG_EDIT_TITLE_MULTI, &[("count", &count_text)])
 }
 
-#[allow(dead_code)] // Picked back up by Task F1's review-footer save label.
 pub fn tag_save_count(count: usize) -> String {
     let count_text = count.to_string();
     formatted(TAG_SAVE_COUNT, &[("count", &count_text)])
