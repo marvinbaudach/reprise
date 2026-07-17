@@ -202,7 +202,7 @@ pub fn build(
     let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
         let player = player.clone();
         move || match &player {
-            Some(controller) => controller.up_next_len(),
+            Some(controller) => controller.queue_pending_len(),
             None => 0,
         }
     }));
@@ -249,8 +249,16 @@ pub fn build(
     let queue_ids_provider = {
         let player = player.clone();
         move || match &player {
-            Some(controller) => controller.queue_ids_snapshot(),
-            None => Vec::new(),
+            Some(controller) => {
+                let parts = controller.queue_view_sections();
+                crate::ui::track_list::queue_sections::compose(
+                    parts.now_playing,
+                    &parts.play_next,
+                    &parts.up_next_rest,
+                    parts.origin_label.as_deref(),
+                )
+            }
+            None => crate::ui::track_list::queue_sections::QueueViewModel::default(),
         }
     };
 

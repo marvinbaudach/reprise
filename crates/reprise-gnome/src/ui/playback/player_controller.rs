@@ -611,6 +611,9 @@ impl PlayerController {
             Some(id) => self.play_track_id(id),
             None => self.reset_to_stopped(),
         }
+        // The Queue view and sidebar counter render the snapshot (QUE-1/
+        // QUE-5), so a reseeded context is a queue change for them.
+        self.notify_queue_changed();
     }
 
     /// Resolves `id` via `queries::query_track_summary` and starts its
@@ -726,6 +729,11 @@ impl PlayerController {
                             duration_ms: summary.duration_ms,
                         });
                         self.notify_current_track_changed(id, None, true);
+                        // The composite Queue view keys its Now Playing row
+                        // and Up Next tail off the playhead — every track
+                        // change re-partitions it (QUE-1) and shrinks the
+                        // QUE-5 counter.
+                        self.notify_queue_changed();
                         self.consecutive_skips.set(0);
                         self.failure_skip_limit.set(0);
                         // `reset_to_stopped` disables prev/next, and MPRIS

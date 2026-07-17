@@ -215,7 +215,12 @@ pub(in crate::ui) struct Shared {
     /// seam: the closure itself only holds whatever `window::build` gives
     /// it (typically a clone of `Option<Rc<PlayerController>>`), so there's
     /// no ownership cycle back to `TrackList` to worry about.
-    pub(in crate::ui) queue_ids_provider: Box<dyn Fn() -> Vec<i64>>,
+    pub(in crate::ui) queue_ids_provider: Box<dyn Fn() -> super::queue_sections::QueueViewModel>,
+    /// The Queue source's current section layout (QUE-1) — written by
+    /// `reload` from the provider's `QueueViewModel`, read by the header
+    /// factory (titles) and the QUE-3 interaction remapping. Empty for
+    /// every other source.
+    pub(in crate::ui) queue_sections: RefCell<Vec<super::queue_sections::QueueSection>>,
     /// Shared by `wire_activate` (user activation) and the smoke-activate
     /// hook so both take the identical code path.
     pub(in crate::ui) on_activate: OnActivate,
@@ -356,7 +361,7 @@ impl TrackList {
         conn: Rc<RefCell<Connection>>,
         on_activate: OnActivate,
         on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
-        queue_ids_provider: impl Fn() -> Vec<i64> + 'static,
+        queue_ids_provider: impl Fn() -> super::queue_sections::QueueViewModel + 'static,
         cover_download: CoverDownloadRuntime,
     ) -> Self {
         super::track_list_builder::build(

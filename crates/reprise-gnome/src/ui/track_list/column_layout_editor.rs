@@ -562,7 +562,7 @@ mod tests {
             Rc::new(RefCell::new(conn)),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
-            Vec::new,
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
             runtime,
         ));
 
@@ -589,7 +589,7 @@ mod tests {
             Rc::new(RefCell::new(conn)),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
-            Vec::new,
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
             runtime,
         ));
 
