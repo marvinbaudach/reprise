@@ -269,3 +269,8 @@ pub fn tag_track_position(position: usize, total: usize) -> String {
         &[("position", &position_text), ("total", &total_text)],
     )
 }
+
+// --- TAG-1/Beschluss #3: MusicBrainz lookup in Multi mode (Task G2) ---
+
+pub const TAG_FETCH_REQUIRES_UNIFORM: &str = N_!("Requires same artist & album across selection");
+pub const TAG_FETCH_HINT_MULTI: &str = N_!("fills only empty fields");

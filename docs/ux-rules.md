@@ -345,7 +345,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## K. Tag-Editor
 
-- **TAG-1** [geplant] [gtk] — Save ist navigationsneutral: Speichern ändert
+- **TAG-1** [aktiv] [gtk] — Save ist navigationsneutral: Speichern ändert
   weder Scroll noch Ansicht der Library (NAV-5 gilt durch den Dialog
   hindurch); ein „Springen zum nächsten Song" gibt es nicht. Nach dem
   Schließen liegt der Fokus auf der Library, Selektion = die **geschriebenen**

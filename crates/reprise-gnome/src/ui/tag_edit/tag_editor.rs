@@ -126,7 +126,7 @@ pub(in crate::ui) fn present(
     } = crate::ui::tag_editor_dirty::wire(mode, &form, &session);
 
     crate::ui::tag_editor_lookup::wire(
-        mode.is_multi(),
+        &session,
         crate::ui::tag_editor_lookup::LookupWidgets {
             button: &form.mb_btn,
             hint: &form.mb_hint,
