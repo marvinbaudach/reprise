@@ -133,6 +133,15 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     // post-construction seam on `track_list` is wired here too, so this
     // keeps all of them in one place.
     track_list.set_window(window);
+    track_list.set_missing_relink_db_path(db_path.to_path_buf());
+    {
+        let sidebar = Rc::downgrade(sidebar);
+        track_list.set_on_missing_relink_progress_activate(move || {
+            if let Some(sidebar) = sidebar.upgrade() {
+                sidebar.refresh_and_select(ViewSource::Missing, "relink progress card");
+            }
+        });
+    }
     // Wire player for tag-edit flow to refresh now-playing metadata
     if let Some(player) = &player {
         track_list.set_player(player);

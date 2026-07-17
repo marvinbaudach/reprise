@@ -60,6 +60,24 @@ pub const MISSING_SINCE: &str = N_!("since {date}");
 pub const MISSING_ROW_UNAVAILABLE: &str = N_!("On unavailable drive — returns when mounted");
 pub const MISSING_ROW_FILE_SINCE: &str = N_!("File missing since {date}");
 pub const MISSING_SHOW_IN_FILES: &str = N_!("Show in Missing files");
+pub const MISSING_LOCATE: &str = N_!("Locate…");
+pub const MISSING_LOCATE_FILE_TITLE: &str = N_!("Locate replacement file");
+pub const MISSING_SEARCH_FOLDER: &str = N_!("Search folder…");
+pub const MISSING_SEARCH_FOLDER_TITLE: &str = N_!("Search folder for missing tracks");
+pub const MISSING_DIFFERENT_RECORDING: &str = N_!("This looks like a different recording");
+pub const MISSING_OUTSIDE_LIBRARY_HEADING: &str = N_!("Outside library folder");
+pub const MISSING_RELINK_ANYWAY: &str = N_!("Relink anyway");
+pub const MISSING_RELINK_DURATION: &str = N_!("Duration: {old} → {new}");
+pub const MISSING_RELINK_TITLE: &str = N_!("Title: {old} → {new}");
+pub const MISSING_OUTSIDE_LIBRARY: &str =
+    N_!("This file is outside your library folder — it won't be watched or rescanned.");
+pub const MISSING_RELINK_PROGRESS_TITLE: &str = N_!("Searching for missing tracks");
+pub const MISSING_RELINK_PROGRESS_DETAIL: &str =
+    N_!("{processed} of {total} files checked · {count} tracks to relink");
+pub const MISSING_RELINK_RESULT: &str = N_!("{relinked} of {count} tracks relinked");
+pub const MISSING_RELINK_FAILED: &str = N_!("Could not relink the selected track");
+pub const MISSING_RELINK_ALREADY_RUNNING: &str = N_!("A folder search is already running");
+pub const MISSING_NO_READABLE_TITLE: &str = N_!("no readable title");
 
 pub fn missing_tracks(count: u32) -> String {
     let value = count.to_string();
@@ -110,6 +128,35 @@ pub fn missing_since(date: &str) -> String {
 
 pub fn missing_row_file_since(date: &str) -> String {
     formatted(MISSING_ROW_FILE_SINCE, &[("date", date)])
+}
+
+pub fn missing_relink_duration(old: &str, new: &str) -> String {
+    formatted(MISSING_RELINK_DURATION, &[("old", old), ("new", new)])
+}
+
+pub fn missing_relink_title(old: &str, new: &str) -> String {
+    formatted(MISSING_RELINK_TITLE, &[("old", old), ("new", new)])
+}
+
+pub fn missing_relink_progress_detail(processed: u32, total: u32, count: u32) -> String {
+    formatted(
+        MISSING_RELINK_PROGRESS_DETAIL,
+        &[
+            ("processed", &processed.to_string()),
+            ("total", &total.to_string()),
+            ("count", &count.to_string()),
+        ],
+    )
+}
+
+pub fn missing_relink_result(relinked: u32, count: u32) -> String {
+    formatted(
+        MISSING_RELINK_RESULT,
+        &[
+            ("relinked", &relinked.to_string()),
+            ("count", &count.to_string()),
+        ],
+    )
 }
 
 pub fn issue_text(message: &str) -> String {

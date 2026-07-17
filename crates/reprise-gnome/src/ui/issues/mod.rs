@@ -4,6 +4,9 @@ mod issue_card;
 #[allow(dead_code)] // The standalone constructor is consumed by Task 3.3.
 mod issue_collapse;
 mod issue_row;
+mod missing_dialogs;
+mod missing_menus;
+mod missing_progress;
 mod missing_view;
 
 pub(in crate::ui) use issue_card::IssueCard;

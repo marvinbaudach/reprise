@@ -23,6 +23,7 @@ pub(crate) mod track_list_empty_state;
 pub(in crate::ui) mod track_list_header_style;
 pub(in crate::ui) mod track_list_layout;
 pub(crate) mod track_list_menu_smoke;
+pub(in crate::ui) mod track_list_missing;
 pub(crate) mod track_list_model;
 pub(in crate::ui) mod track_list_queue_menu;
 pub(in crate::ui) mod track_list_reload;
