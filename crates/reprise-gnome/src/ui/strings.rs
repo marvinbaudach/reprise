@@ -38,6 +38,10 @@ pub use artist::*;
 mod news;
 pub use news::*;
 
+#[path = "strings_filter.rs"]
+mod filter;
+pub use filter::*;
+
 #[path = "strings_app_shell.rs"]
 mod app_shell;
 pub use app_shell::*;
