@@ -42,11 +42,11 @@ pub fn read_cover_tag(track_path: &Path) -> CoverTag {
             .first()
             .map(|picture| picture.data().to_vec()),
         album_artist: tag
-            .get_string(&lofty::tag::ItemKey::AlbumArtist)
+            .get_string(lofty::tag::ItemKey::AlbumArtist)
             .map(str::to_string),
         album: tag.album().map(|album| album.to_string()),
         release_mbid: tag
-            .get_string(&lofty::tag::ItemKey::MusicBrainzReleaseId)
+            .get_string(lofty::tag::ItemKey::MusicBrainzReleaseId)
             .map(str::to_string),
     }
 }

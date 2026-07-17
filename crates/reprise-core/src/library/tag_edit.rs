@@ -5,6 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use lofty::prelude::*;
+use lofty::tag::items::Timestamp;
 use lofty::tag::{ItemKey, Tag};
 use rusqlite::{Connection, OptionalExtension};
 
@@ -134,10 +135,12 @@ pub fn read_editable_tags(path: &Path) -> Result<EditableTags, TagEditError> {
             .unwrap_or_default()
             .to_string(),
         album_artist: tag
-            .and_then(|tag| tag.get_string(&ItemKey::AlbumArtist))
+            .and_then(|tag| tag.get_string(ItemKey::AlbumArtist))
             .unwrap_or_default()
             .to_string(),
-        year: tag.and_then(Accessor::year),
+        year: tag
+            .and_then(Accessor::date)
+            .map(|date| u32::from(date.year)),
         track_no: tag.and_then(Accessor::track),
         genre: tag
             .and_then(Accessor::genre)
@@ -185,15 +188,18 @@ pub fn apply_patch_to_file(path: &Path, patch: &TagPatch) -> Result<(), TagEditE
     }
     if let Some(value) = &patch.album_artist {
         if value.is_empty() {
-            tag.remove_key(&ItemKey::AlbumArtist);
+            tag.remove_key(ItemKey::AlbumArtist);
         } else {
             tag.insert_text(ItemKey::AlbumArtist, value.clone());
         }
     }
     if let Some(value) = patch.year {
         match value {
-            Some(year) => tag.set_year(year),
-            None => tag.remove_year(),
+            Some(year) => tag.set_date(Timestamp {
+                year: u16::try_from(year).unwrap_or(u16::MAX),
+                ..Timestamp::default()
+            }),
+            None => tag.remove_date(),
         }
     }
     if let Some(value) = patch.track_no {
@@ -472,16 +478,19 @@ mod tests {
         tag.set_artist("Keep artist".into());
         tag.set_album("Keep album".into());
         tag.insert_text(ItemKey::AlbumArtist, "Keep album artist".into());
-        tag.set_year(1999);
+        tag.set_date(lofty::tag::items::Timestamp {
+            year: 1999,
+            ..lofty::tag::items::Timestamp::default()
+        });
         tag.set_track(7);
         tag.set_genre("Keep genre".into());
         tag.insert_text(ItemKey::Comment, "Keep comment".into());
-        tag.push_picture(Picture::new_unchecked(
-            PictureType::CoverFront,
-            Some(MimeType::Png),
-            None,
-            TINY_PNG.to_vec(),
-        ));
+        tag.push_picture(
+            Picture::unchecked(TINY_PNG.to_vec())
+                .pic_type(PictureType::CoverFront)
+                .mime_type(MimeType::Png)
+                .build(),
+        );
         tag.save_to_path(path, lofty::config::WriteOptions::default())
             .unwrap();
     }
@@ -541,10 +550,10 @@ mod tests {
         assert_eq!(tag.title().as_deref(), Some("New title"));
         assert_eq!(tag.artist().as_deref(), Some("Keep artist"));
         assert_eq!(tag.album().as_deref(), Some("Keep album"));
-        assert_eq!(tag.year(), Some(1999));
+        assert_eq!(tag.date().map(|date| date.year), Some(1999));
         assert_eq!(tag.track(), Some(7));
         assert_eq!(tag.genre().as_deref(), Some("Keep genre"));
-        assert_eq!(tag.get_string(&ItemKey::Comment), Some("Keep comment"));
+        assert_eq!(tag.get_string(ItemKey::Comment), Some("Keep comment"));
         assert_eq!(tag.pictures().len(), 1);
         assert_eq!(tag.pictures()[0].data(), TINY_PNG);
     }
