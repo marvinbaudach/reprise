@@ -38,6 +38,10 @@ pub use artist::*;
 mod news;
 pub use news::*;
 
+#[path = "strings_autocomplete.rs"]
+mod autocomplete;
+pub use autocomplete::*;
+
 #[path = "strings_app_shell.rs"]
 mod app_shell;
 pub use app_shell::*;
