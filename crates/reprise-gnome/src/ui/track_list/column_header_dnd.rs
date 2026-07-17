@@ -27,13 +27,30 @@
 //! - a plain click re-sorts — [`activate_sort_click`] reimplements
 //!   `GtkColumnViewTitle`'s own `activate_sort` against the public
 //!   `ColumnView`/`ColumnViewSorter` API;
-//! - a drag past the threshold reorders columns — [`live_swap_towards`], using
-//!   the `ColumnView`'s public `remove_column`/`insert_column`, which the
-//!   app's `wire_order_persistence` listener already picks up exactly as if it
-//!   were GTK's own reorder (see `column_layout.rs`);
+//! - a drag past the threshold reorders columns, mirroring the app's own ROW
+//!   drag-and-drop idiom (`track_list_row_interaction.rs`'s drop indicator)
+//!   rather than moving anything live: `drag-update` only recomputes an
+//!   [`InsertionSlot`] from the pointer and toggles a thin accent-colored
+//!   marker on whichever title it would land next to ([`update_marker`]); the
+//!   dragged title itself just dims ([`mark_drag_source`]). Nothing in
+//!   `view.columns()` changes until release — [`perform_drop`] does the one
+//!   `remove_column`/`insert_column` call, in `drag-end`, which is also the
+//!   only point that fires `column_layout.rs`'s `wire_order_persistence`
+//!   listener (exactly once per completed drag);
 //! - a press inside the resize zone at either title edge is left unclaimed
 //!   entirely, so GTK's own resize gesture (independent of `reorderable`)
 //!   keeps working exactly as before.
+//!
+//! An earlier version of this module moved columns live: the instant the
+//! pointer crossed a neighbor's midpoint *during* the drag, it swapped the
+//! dragged title with that neighbor right then. Live user testing called this
+//! out directly — columns visibly jumping around mid-drag read as "design
+//! chaos", every crossing did a real `remove_column`/`insert_column` (a full
+//! cell rebuild for that column) plus a settings write, and painting the
+//! *whole* dragged column via GTK's own `.dnd` class was far louder than
+//! intended. This rework removes all of that: the drag is purely a marker,
+//! and the model is mutated exactly once, on release — see [`InsertionSlot`]
+//! and [`resolve_drop`] for the math.
 //!
 //! `column_layout.rs` sets `set_reorderable(false)` right where this module is
 //! wired in — not because reorder should be off, but because the native path
@@ -59,35 +76,65 @@ const DRAG_THRESHOLD_PX: f64 = 8.0;
 /// unaffected by `reorderable`) still gets it.
 const RESIZE_ZONE_PX: f64 = 6.0;
 
-/// Matches GTK's own convention (`gtkcolumnview.c`'s `header_drag_update`/
-/// `header_drag_end` add/remove this exact class on the dragged title) so any
-/// `.dnd` styling the active theme already ships still applies.
-const DND_CSS_CLASS: &str = "dnd";
+/// Marks the title the dragged column will land *before* — see [`css`].
+const INSERT_BEFORE_CLASS: &str = "reprise-col-insert-before";
+/// Marks the last visible title when the drop target is past everything
+/// (i.e. the dragged column would land at the very end) — see [`css`].
+const INSERT_AFTER_CLASS: &str = "reprise-col-insert-after";
+/// Dims the dragged title itself once the drag threshold is crossed — see
+/// [`css`]. Deliberately subtle: an earlier version reused GTK's own `.dnd`
+/// class here, which paints the *whole* column body, not just the header
+/// title, and read as far louder than intended.
+const DRAG_SOURCE_CLASS: &str = "reprise-col-drag-source";
+
+/// Column header drag-reorder visuals, installed app-wide by [`super::style`]
+/// (`style::mod::app_css`). Mirrors the row drag-and-drop idiom this whole
+/// interaction was reworked to match: `track_list_row_interaction.rs`'s
+/// `.now-playing-leading` uses the identical `inset 2px 0 0 @accent_color`
+/// vertical accent line, and `column_layout_editor.rs`'s before/after drop
+/// classes are the same before/after pairing, just oriented for a vertical
+/// row list instead of a horizontal column header row.
+pub(in crate::ui) fn css() -> String {
+    use super::style::tokens::DROP_INDICATOR_THICKNESS;
+    format!(
+        ".{INSERT_BEFORE_CLASS} {{ box-shadow: inset {DROP_INDICATOR_THICKNESS} 0 0 @accent_color; }}\n\
+         .{INSERT_AFTER_CLASS} {{ box-shadow: inset -{DROP_INDICATOR_THICKNESS} 0 0 @accent_color; }}\n\
+         .{DRAG_SOURCE_CLASS} {{ opacity: 0.55; }}"
+    )
+}
 
 /// State stashed between `drag-begin` and `drag-end`/`cancel` for a header
 /// press that landed on a draggable title (i.e. not the resize zone).
 struct DragState {
     /// The column under the press. Re-looked-up by identity (not by index)
-    /// on every subsequent event, since a live swap changes every index.
+    /// on every subsequent event — nothing is mutated during the drag, but
+    /// the header's title widgets can still be recreated out from under us
+    /// (e.g. a concurrent visibility change), so identity is the only safe
+    /// handle to keep across events.
     dragged_column: gtk4::ColumnViewColumn,
     /// Set once the horizontal drag threshold is crossed. A state that never
     /// reaches this by `drag-end` was a plain click, not a drag — see
     /// [`handle_drag_end`].
     dragging: bool,
+    /// The title widget currently carrying an insertion-marker class, paired
+    /// with which class it is — so a later change (or the final clear) only
+    /// ever removes exactly that one, and so [`update_marker`] can skip
+    /// touching CSS at all on a motion event that didn't cross into a new
+    /// slot (no per-motion churn).
+    marker: Option<(gtk4::Widget, &'static str)>,
 }
 
 /// One header title widget paired with its owning column and current
 /// scroll-aware horizontal bounds (relative to `view`), snapshotted fresh via
-/// [`header_titles`] every time geometry is needed — a live swap changes the
-/// header row's children, so nothing here is safe to cache across a mutation.
+/// [`header_titles`] every time geometry is needed.
 struct HeaderTitle {
     column: gtk4::ColumnViewColumn,
     widget: gtk4::Widget,
     left: f64,
     right: f64,
     /// A hidden column still has a title widget (see the module-level
-    /// invariant below) but it is neither hit-testable nor a valid swap
-    /// neighbor.
+    /// invariant below) but it is neither hit-testable nor a valid drop
+    /// target.
     visible: bool,
 }
 
@@ -137,28 +184,6 @@ fn title_at(titles: &[HeaderTitle], x: f64) -> Option<usize> {
         .position(|title| title.visible && x >= title.left && x < title.right)
 }
 
-/// The next visible title in `titles` in the given direction from `from`
-/// (exclusive), skipping over any hidden columns in between — the adjacent
-/// swap partner for a live drag past `from`.
-fn adjacent_visible_neighbor(titles: &[HeaderTitle], from: usize, forward: bool) -> Option<usize> {
-    if forward {
-        titles
-            .iter()
-            .enumerate()
-            .skip(from + 1)
-            .find(|(_, title)| title.visible)
-            .map(|(index, _)| index)
-    } else {
-        titles
-            .iter()
-            .enumerate()
-            .take(from)
-            .rev()
-            .find(|(_, title)| title.visible)
-            .map(|(index, _)| index)
-    }
-}
-
 fn find_title_widget(
     view: &gtk4::ColumnView,
     column: &gtk4::ColumnViewColumn,
@@ -169,15 +194,15 @@ fn find_title_widget(
         .map(|title| title.widget)
 }
 
-fn mark_dragging(view: &gtk4::ColumnView, column: &gtk4::ColumnViewColumn) {
+fn mark_drag_source(view: &gtk4::ColumnView, column: &gtk4::ColumnViewColumn) {
     if let Some(widget) = find_title_widget(view, column) {
-        widget.add_css_class(DND_CSS_CLASS);
+        widget.add_css_class(DRAG_SOURCE_CLASS);
     }
 }
 
-fn unmark_dragging(view: &gtk4::ColumnView, column: &gtk4::ColumnViewColumn) {
+fn unmark_drag_source(view: &gtk4::ColumnView, column: &gtk4::ColumnViewColumn) {
     if let Some(widget) = find_title_widget(view, column) {
-        widget.remove_css_class(DND_CSS_CLASS);
+        widget.remove_css_class(DRAG_SOURCE_CLASS);
     }
 }
 
@@ -194,47 +219,89 @@ fn is_in_resize_zone(x: f64, left: f64, right: f64) -> bool {
     (x - left) <= RESIZE_ZONE_PX || (right - x) <= RESIZE_ZONE_PX
 }
 
-/// The `ColumnView.columns()` index to pass to `insert_column` right after
-/// `remove_column(dragged)` has already run, so the dragged column lands
-/// exactly where `neighbor_index` was — both indices read from the *same*
-/// pre-removal snapshot. Removing `dragged_index` shifts every index above it
-/// down by one, so naively reusing `neighbor_index` unadjusted looks wrong at
-/// first glance; it is nonetheless correct in both directions:
-///
-/// - forward (`dragged_index < neighbor_index`): the neighbor's own index
-///   also shifts down by one post-removal, and the dragged column must land
-///   right *after* that shifted slot (`(neighbor_index - 1) + 1`) — the two
-///   shifts cancel out, so the original `neighbor_index` is already right.
-/// - backward (`dragged_index > neighbor_index`): removal never touches an
-///   index below it, so the neighbor's index is unchanged, and the dragged
-///   column must land right *before* it — again exactly `neighbor_index`.
-///
-/// See this module's tests for both directions applied to a real reordered
-/// sequence, not just the returned number.
-fn post_removal_insert_index(dragged_index: usize, neighbor_index: usize) -> usize {
-    debug_assert_ne!(
-        dragged_index, neighbor_index,
-        "a column cannot be its own swap neighbor"
-    );
-    neighbor_index
+/// Where a completed drag would insert the dragged column, expressed
+/// relative to the *other* visible titles — computed fresh from the
+/// pointer's position; naming a slot never mutates anything by itself. See
+/// [`resolve_drop`] for what a slot resolves to as an actual
+/// `ColumnView.columns()` index (or "no-op").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InsertionSlot {
+    /// Land immediately before the visible title at this model index.
+    Before(usize),
+    /// Land after every visible title (the pointer is past the last one's
+    /// midpoint).
+    End,
 }
 
-/// True once `pointer_x` has crossed the midpoint of a neighbor spanning
-/// `[neighbor_left, neighbor_right)`, in the given direction — forward means
-/// the pointer must be past (greater than) the midpoint, backward means
-/// before (less than) it.
-fn crossed_neighbor_midpoint(
-    pointer_x: f64,
-    neighbor_left: f64,
-    neighbor_right: f64,
-    forward: bool,
-) -> bool {
-    let midpoint = (neighbor_left + neighbor_right) / 2.0;
-    if forward {
-        pointer_x > midpoint
-    } else {
-        pointer_x < midpoint
+/// Pure, display-free geometry input for [`insertion_slot_for_pointer`] and
+/// [`resolve_drop`]'s tests — one entry per header title in model-index
+/// order (including hidden columns), mirroring [`HeaderTitle`] without any
+/// GTK types so the slot math is testable without a display.
+#[derive(Debug, Clone, Copy)]
+struct TitleSpan {
+    visible: bool,
+    left: f64,
+    right: f64,
+}
+
+impl From<&HeaderTitle> for TitleSpan {
+    fn from(title: &HeaderTitle) -> Self {
+        TitleSpan {
+            visible: title.visible,
+            left: title.left,
+            right: title.right,
+        }
     }
+}
+
+/// The insertion slot `pointer_x` currently names: the first VISIBLE title
+/// (in model order; hidden ones are skipped entirely, so the pointer can
+/// never target one) whose horizontal midpoint sits to the right of
+/// `pointer_x` — insert before that one. Past every visible title's
+/// midpoint, the slot is [`InsertionSlot::End`].
+fn insertion_slot_for_pointer(spans: &[TitleSpan], pointer_x: f64) -> InsertionSlot {
+    for (index, span) in spans.iter().enumerate() {
+        if !span.visible {
+            continue;
+        }
+        let midpoint = (span.left + span.right) / 2.0;
+        if midpoint > pointer_x {
+            return InsertionSlot::Before(index);
+        }
+    }
+    InsertionSlot::End
+}
+
+/// Resolves an [`InsertionSlot`] (read from a snapshot where the dragged
+/// column was still at `dragged_index`) to the actual `ColumnView.columns()`
+/// index [`perform_drop`] should pass to `insert_column` — or `None` if
+/// dropping there would not change anything (the slot names the dragged
+/// column's own current spot), in which case the caller must skip the
+/// remove/insert (and show no marker) entirely.
+///
+/// This is *not* the old adjacent-swap helper's math: "insert before T"
+/// needs a different index shift than "swap past T", because the goal is to
+/// land immediately before T, not after it:
+/// - T after the dragged column (`t > dragged_index`): removing the dragged
+///   column shifts T's own index down by one, and the dragged column must
+///   land in that now-vacant slot right before it — `t - 1`. If T was
+///   `dragged_index`'s immediate next title with nothing (not even a hidden
+///   column) between them, `t - 1 == dragged_index`: a true no-op — "release
+///   directly after where it already was" does nothing.
+/// - T at or before the dragged column (`t <= dragged_index`): removal never
+///   touches an index at or below `t`, so `t` itself is already the right
+///   landing slot. `t == dragged_index` only when the slot names the dragged
+///   column itself ("insert before itself") — also a no-op.
+/// - [`InsertionSlot::End`]: the last valid index once the dragged column is
+///   removed (`title_count - 1`); a no-op if the dragged column is already
+///   the very last title.
+fn resolve_drop(dragged_index: usize, slot: InsertionSlot, title_count: usize) -> Option<usize> {
+    let target_index = match slot {
+        InsertionSlot::Before(t) if t > dragged_index => t - 1,
+        InsertionSlot::Before(t) => t,
+        InsertionSlot::End => title_count.saturating_sub(1),
+    };
+    (target_index != dragged_index).then_some(target_index)
 }
 
 /// Matches GTK's own `GtkColumnViewTitle::activate_sort` toggle rule: a click
@@ -248,67 +315,6 @@ fn next_sort_order(is_primary_column: bool, current_order: gtk4::SortType) -> gt
     match current_order {
         gtk4::SortType::Descending => gtk4::SortType::Ascending,
         _ => gtk4::SortType::Descending,
-    }
-}
-
-/// Removes `dragged` from `view` and reinserts it in `neighbor_index`'s old
-/// slot (see [`post_removal_insert_index`]) — one adjacent step. Fires the
-/// `ColumnView.columns()` `items-changed` signal that `column_layout.rs`'s
-/// `wire_order_persistence` listener already stores under the same setting
-/// GTK's own (broken) reorder used to.
-fn swap_columns(view: &gtk4::ColumnView, dragged_index: usize, neighbor_index: usize) {
-    let columns = view.columns();
-    let Some(dragged) = columns
-        .item(dragged_index as u32)
-        .and_then(|item| item.downcast::<gtk4::ColumnViewColumn>().ok())
-    else {
-        tracing::warn!(
-            dragged_index,
-            "header drag: dragged column vanished mid-drag; skipping this swap"
-        );
-        return;
-    };
-    view.remove_column(&dragged);
-    let insert_at = post_removal_insert_index(dragged_index, neighbor_index);
-    view.insert_column(insert_at as u32, &dragged);
-}
-
-/// Live-swaps `dragged_column` one adjacent step at a time towards
-/// `pointer_x`, re-snapshotting header geometry after every swap (the header
-/// row's children order just changed), until neither neighbor's midpoint is
-/// crossed any more. Bounded by the column count so a pathological input can
-/// never spin forever — each swap moves the dragged column exactly one step,
-/// so a full traversal is always enough to settle.
-fn live_swap_towards(
-    view: &gtk4::ColumnView,
-    dragged_column: &gtk4::ColumnViewColumn,
-    pointer_x: f64,
-) {
-    let max_steps = view.columns().n_items() as usize;
-    for _ in 0..max_steps {
-        let titles = header_titles(view);
-        let Some(dragged_index) = titles
-            .iter()
-            .position(|title| title.column == *dragged_column)
-        else {
-            return;
-        };
-
-        if let Some(forward_index) = adjacent_visible_neighbor(&titles, dragged_index, true) {
-            let neighbor = &titles[forward_index];
-            if crossed_neighbor_midpoint(pointer_x, neighbor.left, neighbor.right, true) {
-                swap_columns(view, dragged_index, forward_index);
-                continue;
-            }
-        }
-        if let Some(backward_index) = adjacent_visible_neighbor(&titles, dragged_index, false) {
-            let neighbor = &titles[backward_index];
-            if crossed_neighbor_midpoint(pointer_x, neighbor.left, neighbor.right, false) {
-                swap_columns(view, dragged_index, backward_index);
-                continue;
-            }
-        }
-        return;
     }
 }
 
@@ -331,6 +337,109 @@ fn activate_sort_click(view: &gtk4::ColumnView, column: &gtk4::ColumnViewColumn)
     let is_primary = cv_sorter.primary_sort_column().as_ref() == Some(column);
     let next_order = next_sort_order(is_primary, cv_sorter.primary_sort_order());
     view.sort_by_column(Some(column), next_order);
+}
+
+/// The (widget, css-class) an insertion slot should mark, given whether it
+/// actually [`resolve_drop`]s to a real move — `None` for a resolved no-op
+/// slot, so the caller shows no marker at all for "drop right where it
+/// already is".
+fn marker_target(
+    titles: &[HeaderTitle],
+    slot: InsertionSlot,
+    resolved: Option<usize>,
+) -> Option<(gtk4::Widget, &'static str)> {
+    resolved?;
+    match slot {
+        InsertionSlot::Before(t) => titles
+            .get(t)
+            .map(|title| (title.widget.clone(), INSERT_BEFORE_CLASS)),
+        InsertionSlot::End => titles
+            .iter()
+            .rev()
+            .find(|title| title.visible)
+            .map(|title| (title.widget.clone(), INSERT_AFTER_CLASS)),
+    }
+}
+
+/// Updates `drag.marker` to `target`, touching CSS only if the (widget,
+/// class) pair actually changed since the last call — a no-op on every
+/// motion event that doesn't cross into a new slot.
+fn apply_marker(drag: &mut DragState, target: Option<(gtk4::Widget, &'static str)>) {
+    if drag.marker == target {
+        return;
+    }
+    if let Some((widget, class)) = &drag.marker {
+        widget.remove_css_class(class);
+    }
+    if let Some((widget, class)) = &target {
+        widget.add_css_class(class);
+    }
+    drag.marker = target;
+}
+
+fn clear_marker(drag: &mut DragState) {
+    apply_marker(drag, None);
+}
+
+/// Recomputes the insertion slot for `pointer_x` and updates the marker CSS
+/// to match — called on every `drag-update` past the threshold. Never
+/// touches `view.columns()`; see [`perform_drop`] for the one move that
+/// happens on release.
+fn update_marker(
+    view: &gtk4::ColumnView,
+    drag: &mut DragState,
+    dragged_column: &gtk4::ColumnViewColumn,
+    pointer_x: f64,
+) {
+    let titles = header_titles(view);
+    let Some(dragged_index) = titles
+        .iter()
+        .position(|title| title.column == *dragged_column)
+    else {
+        clear_marker(drag);
+        return;
+    };
+    let spans: Vec<TitleSpan> = titles.iter().map(TitleSpan::from).collect();
+    let slot = insertion_slot_for_pointer(&spans, pointer_x);
+    let resolved = resolve_drop(dragged_index, slot, titles.len());
+    let target = marker_target(&titles, slot, resolved);
+    apply_marker(drag, target);
+}
+
+/// The one `remove_column`/`insert_column` a completed drag ever performs —
+/// called once from `drag-end`, resolving the slot fresh from the pointer's
+/// *final* position (the same geometry/resolution logic [`update_marker`]
+/// used throughout the drag, so this always agrees with wherever the marker
+/// was last shown). A no-op resolution means no call at all: dropping
+/// exactly where the marker was pointing is the only way this ever fires,
+/// matching the row-drag idiom this mirrors — the move happens on release,
+/// not during the drag.
+fn perform_drop(view: &gtk4::ColumnView, dragged_column: &gtk4::ColumnViewColumn, pointer_x: f64) {
+    let titles = header_titles(view);
+    let Some(dragged_index) = titles
+        .iter()
+        .position(|title| title.column == *dragged_column)
+    else {
+        return;
+    };
+    let spans: Vec<TitleSpan> = titles.iter().map(TitleSpan::from).collect();
+    let slot = insertion_slot_for_pointer(&spans, pointer_x);
+    let Some(target_index) = resolve_drop(dragged_index, slot, titles.len()) else {
+        return;
+    };
+    let columns = view.columns();
+    let Some(dragged) = columns
+        .item(dragged_index as u32)
+        .and_then(|item| item.downcast::<gtk4::ColumnViewColumn>().ok())
+    else {
+        tracing::warn!(
+            dragged_index,
+            "header drag: dragged column vanished before drop; skipping the move"
+        );
+        return;
+    };
+    view.remove_column(&dragged);
+    view.insert_column(target_index as u32, &dragged);
 }
 
 fn handle_drag_begin(
@@ -361,6 +470,7 @@ fn handle_drag_begin(
     *state.borrow_mut() = Some(DragState {
         dragged_column: hit.column.clone(),
         dragging: false,
+        marker: None,
     });
     // Claim now, before the title's own bubble-phase click gesture ever sees
     // this press — see the module doc for why claiming late (GTK's own
@@ -378,50 +488,56 @@ fn handle_drag_update(
         return;
     };
 
-    let dragged_column = {
-        let mut state_ref = state.borrow_mut();
-        let Some(drag) = state_ref.as_mut() else {
-            return;
-        };
-        if !drag.dragging {
-            if offset_x.abs() <= DRAG_THRESHOLD_PX {
-                return;
-            }
-            drag.dragging = true;
-        }
-        drag.dragged_column.clone()
+    let mut state_ref = state.borrow_mut();
+    let Some(drag) = state_ref.as_mut() else {
+        return;
     };
+    if !drag.dragging {
+        if offset_x.abs() <= DRAG_THRESHOLD_PX {
+            return;
+        }
+        drag.dragging = true;
+        mark_drag_source(view, &drag.dragged_column);
+    }
 
-    // Re-applied on every update rather than once at the threshold crossing:
-    // each live swap detaches/reattaches the dragged column, which may hand
-    // it a freshly-built title widget, so the class has to be reasserted on
-    // whatever widget currently represents it. `add_css_class` is a no-op if
-    // already present, so this costs nothing extra on updates with no swap.
-    mark_dragging(view, &dragged_column);
-
+    let dragged_column = drag.dragged_column.clone();
     let pointer_x = start_x + offset_x;
-    live_swap_towards(view, &dragged_column, pointer_x);
+    update_marker(view, drag, &dragged_column, pointer_x);
 }
 
-fn handle_drag_end(view: &gtk4::ColumnView, state: &Rc<RefCell<Option<DragState>>>) {
-    let Some(drag) = state.borrow_mut().take() else {
+fn handle_drag_end(
+    gesture: &gtk4::GestureDrag,
+    view: &gtk4::ColumnView,
+    state: &Rc<RefCell<Option<DragState>>>,
+    offset_x: f64,
+) {
+    let Some(mut drag) = state.borrow_mut().take() else {
         return;
     };
-    if drag.dragging {
-        unmark_dragging(view, &drag.dragged_column);
+    if !drag.dragging {
+        // The threshold was never crossed: this press-then-release was a
+        // plain click, which our early claim in `handle_drag_begin`
+        // suppressed from ever reaching the title's own (broken-for-drags-
+        // only) click gesture.
+        activate_sort_click(view, &drag.dragged_column);
         return;
     }
-    // The threshold was never crossed: this press-then-release was a plain
-    // click, which our early claim in `handle_drag_begin` suppressed from
-    // ever reaching the title's own (broken-for-drags-only) click gesture.
-    activate_sort_click(view, &drag.dragged_column);
+    clear_marker(&mut drag);
+    unmark_drag_source(view, &drag.dragged_column);
+
+    let Some((start_x, _start_y)) = gesture.start_point() else {
+        return;
+    };
+    perform_drop(view, &drag.dragged_column, start_x + offset_x);
 }
 
 fn handle_cancel(view: &gtk4::ColumnView, state: &Rc<RefCell<Option<DragState>>>) {
-    if let Some(drag) = state.borrow_mut().take() {
-        if drag.dragging {
-            unmark_dragging(view, &drag.dragged_column);
-        }
+    let Some(mut drag) = state.borrow_mut().take() else {
+        return;
+    };
+    if drag.dragging {
+        clear_marker(&mut drag);
+        unmark_drag_source(view, &drag.dragged_column);
     }
 }
 
@@ -453,8 +569,8 @@ pub(super) fn wire_header_drag(view: &gtk4::ColumnView) {
     {
         let view = view.clone();
         let state = state.clone();
-        gesture.connect_drag_end(move |_gesture, _offset_x, _offset_y| {
-            handle_drag_end(&view, &state);
+        gesture.connect_drag_end(move |gesture, offset_x, _offset_y| {
+            handle_drag_end(gesture, &view, &state, offset_x);
         });
     }
     {
@@ -469,105 +585,5 @@ pub(super) fn wire_header_drag(view: &gtk4::ColumnView) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn header_click_hit_test_matches_only_the_header_band() {
-        assert!(is_within_header(0.0, 25.0));
-        assert!(is_within_header(25.0, 25.0));
-        assert!(!is_within_header(25.1, 25.0));
-        assert!(!is_within_header(200.0, 25.0));
-        // No measurable header (not yet realized) never counts as a hit.
-        assert!(!is_within_header(0.0, 0.0));
-    }
-
-    #[test]
-    fn resize_zone_covers_both_edges_but_not_the_middle() {
-        // A 100px-wide title spanning [200, 300).
-        assert!(is_in_resize_zone(200.0, 200.0, 300.0)); // exactly on the left edge
-        assert!(is_in_resize_zone(205.9, 200.0, 300.0)); // just inside the left band
-        assert!(is_in_resize_zone(300.0, 200.0, 300.0)); // exactly on the right edge
-        assert!(is_in_resize_zone(294.1, 200.0, 300.0)); // just inside the right band
-        assert!(!is_in_resize_zone(250.0, 200.0, 300.0)); // dead center
-        assert!(!is_in_resize_zone(207.0, 200.0, 300.0)); // just past the left band
-        assert!(!is_in_resize_zone(293.0, 200.0, 300.0)); // just before the right band
-    }
-
-    #[test]
-    fn crossed_neighbor_midpoint_respects_direction() {
-        // Neighbor spans [300, 400); midpoint is 350.
-        assert!(crossed_neighbor_midpoint(360.0, 300.0, 400.0, true));
-        assert!(!crossed_neighbor_midpoint(340.0, 300.0, 400.0, true));
-        assert!(crossed_neighbor_midpoint(340.0, 300.0, 400.0, false));
-        assert!(!crossed_neighbor_midpoint(360.0, 300.0, 400.0, false));
-    }
-
-    #[test]
-    fn next_sort_order_toggles_the_primary_column_and_resets_any_other() {
-        assert_eq!(
-            next_sort_order(true, gtk4::SortType::Ascending),
-            gtk4::SortType::Descending
-        );
-        assert_eq!(
-            next_sort_order(true, gtk4::SortType::Descending),
-            gtk4::SortType::Ascending
-        );
-        // Clicking a column that is not currently primary always resets to
-        // ascending, regardless of whatever direction the *other* primary
-        // column was last sorted in.
-        assert_eq!(
-            next_sort_order(false, gtk4::SortType::Descending),
-            gtk4::SortType::Ascending
-        );
-        assert_eq!(
-            next_sort_order(false, gtk4::SortType::Ascending),
-            gtk4::SortType::Ascending
-        );
-    }
-
-    /// Applies `post_removal_insert_index` to a real `Vec` remove+insert
-    /// pair and checks the *resulting order*, not just the returned number —
-    /// the number alone (`neighbor_index`, unadjusted) looks suspicious
-    /// without this, since the doc comment's two directions derive it two
-    /// different ways that happen to coincide.
-    fn apply_swap(mut order: Vec<char>, dragged_index: usize, neighbor_index: usize) -> Vec<char> {
-        let dragged = order.remove(dragged_index);
-        let insert_at = post_removal_insert_index(dragged_index, neighbor_index);
-        order.insert(insert_at, dragged);
-        order
-    }
-
-    #[test]
-    fn post_removal_insert_index_swaps_adjacent_columns_forward() {
-        let order = vec!['A', 'B', 'C', 'D', 'E'];
-        // Drag C (index 2) forward past its right neighbor D (index 3).
-        let result = apply_swap(order, 2, 3);
-        assert_eq!(result, vec!['A', 'B', 'D', 'C', 'E']);
-    }
-
-    #[test]
-    fn post_removal_insert_index_swaps_adjacent_columns_backward() {
-        let order = vec!['A', 'B', 'C', 'D', 'E'];
-        // Drag D (index 3) backward past its left neighbor C (index 2).
-        let result = apply_swap(order, 3, 2);
-        assert_eq!(result, vec!['A', 'B', 'D', 'C', 'E']);
-    }
-
-    #[test]
-    fn post_removal_insert_index_handles_a_gap_between_dragged_and_neighbor() {
-        // A hidden column can sit between the dragged title and the next
-        // *visible* one; the helper still has to land the dragged column
-        // immediately next to the neighbor it crossed, shifting everything
-        // between them by one — not just swap two adjacent slots.
-        let order = vec!['A', 'B', 'C', 'D', 'E'];
-        // Drag A (index 0) forward past the far visible neighbor D (index 3);
-        // B and C (in between) each shift down by one.
-        let forward = apply_swap(order.clone(), 0, 3);
-        assert_eq!(forward, vec!['B', 'C', 'D', 'A', 'E']);
-        // Drag E (index 4) backward past the far visible neighbor B (index 1);
-        // C and D (in between) each shift up by one.
-        let backward = apply_swap(order, 4, 1);
-        assert_eq!(backward, vec!['A', 'E', 'B', 'C', 'D']);
-    }
-}
+#[path = "column_header_dnd_tests.rs"]
+mod tests;
