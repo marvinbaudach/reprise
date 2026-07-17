@@ -49,6 +49,7 @@ use rusqlite::Connection;
 
 use crate::ui::strings;
 use crate::ui::tag_editor_dirty::parse_number_field;
+use crate::ui::tag_editor_dirty::ProgrammaticChanges;
 use crate::ui::tag_editor_form::{EditorMode, TagEditorForm};
 pub use crate::ui::tag_editor_state::NavigateDirection;
 use crate::ui::tag_editor_widgets::{format_track_subtitle, update_star_display};
@@ -123,6 +124,7 @@ pub(in crate::ui) fn present(
     let form = TagEditorForm::build(mode, conn, &track_paths, bitrates, &session);
     let crate::ui::tag_editor_dirty::DirtyState {
         update: update_save_state,
+        programmatic_changes,
     } = crate::ui::tag_editor_dirty::wire(mode, &form, &session);
 
     crate::ui::tag_editor_lookup::wire(
@@ -148,7 +150,7 @@ pub(in crate::ui) fn present(
     if let Some(snapshot) = &browse {
         let ids = snapshot.ids();
         if let Some(id) = opened_track_id {
-            refresh_current_track_fields(&browse_handles, &session, id);
+            refresh_current_track_fields(&browse_handles, &session, id, &programmatic_changes);
             update_save_state();
             let tail = subtitle_tail_for_track(&snapshot.tracks, &snapshot.bitrates, id);
             apply_browse_position(&browse_handles, &ids, id, tail.as_deref());
@@ -171,6 +173,7 @@ pub(in crate::ui) fn present(
         &session,
         browse.as_ref(),
         &update_save_state,
+        &programmatic_changes,
     ));
     // TAG-4's "(Ctrl+Page Up/Down)" keyboard half of ‹›-navigation: wired
     // directly on the dialog here (not through `tag_editor_save.rs`'s own
@@ -357,6 +360,7 @@ fn refresh_current_track_fields(
     handles: &BrowseFieldHandles,
     session: &Rc<RefCell<TagEditSession>>,
     track_id: i64,
+    programmatic_changes: &ProgrammaticChanges,
 ) {
     let (title, artist, album, album_artist, genre, year, track_no, rating) = {
         let session_ref = session.borrow();
@@ -374,15 +378,17 @@ fn refresh_current_track_fields(
                 .unwrap_or(0),
         )
     };
-    handles.title_row.set_text(&title);
-    handles.artist_ac.set_text(&artist);
-    handles.album_ac.set_text(&album);
-    handles.album_artist_ac.set_text(&album_artist);
-    handles.genre_ac.set_text(&genre);
-    handles.year_row.set_text(&year);
-    handles.track_no_row.set_text(&track_no);
-    handles.rating_value.set(rating);
-    update_star_display(&handles.rating_box, rating);
+    programmatic_changes.run(|| {
+        handles.title_row.set_text(&title);
+        handles.artist_ac.set_text(&artist);
+        handles.album_ac.set_text(&album);
+        handles.album_artist_ac.set_text(&album_artist);
+        handles.genre_ac.set_text(&genre);
+        handles.year_row.set_text(&year);
+        handles.track_no_row.set_text(&track_no);
+        handles.rating_value.set(rating);
+        update_star_display(&handles.rating_box, rating);
+    });
 }
 
 /// Composes the header subtitle for the current browse position: "Track 3 of
@@ -436,9 +442,11 @@ fn build_on_navigate(
     session: &Rc<RefCell<TagEditSession>>,
     browse: Option<&BrowseSnapshot>,
     update_save_state: &Rc<dyn Fn()>,
+    programmatic_changes: &ProgrammaticChanges,
 ) -> impl Fn(NavigateDirection) -> bool {
     let session = session.clone();
     let update_save_state = update_save_state.clone();
+    let programmatic_changes = programmatic_changes.clone();
     let ids = browse.map(BrowseSnapshot::ids).unwrap_or_default();
     let tracks = browse
         .map(|snapshot| snapshot.tracks.clone())
@@ -465,7 +473,7 @@ fn build_on_navigate(
         };
         handles.error_label.set_visible(false);
         session.borrow_mut().set_current_track(next_id);
-        refresh_current_track_fields(&handles, &session, next_id);
+        refresh_current_track_fields(&handles, &session, next_id, &programmatic_changes);
         update_save_state();
         let tail = subtitle_tail_for_track(&tracks, &bitrates, next_id);
         apply_browse_position(&handles, &ids, next_id, tail.as_deref());
