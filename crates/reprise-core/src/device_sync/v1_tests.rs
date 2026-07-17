@@ -481,8 +481,8 @@ fn entire_library_selection_computes_a_full_copy_delta_for_a_fresh_device() {
     }
     // A missing-flagged row and a row whose file vanished must be skipped.
     conn.execute_batch(
-        "INSERT INTO tracks (id, path, title, artist, album, added_at, missing) VALUES
-         (4, '/gone/away.flac', 'Vanished', 'Artist', 'Album', 0, 0),
+        "INSERT INTO tracks (id, path, title, artist, album, added_at, missing_since) VALUES
+         (4, '/gone/away.flac', 'Vanished', 'Artist', 'Album', 0, NULL),
          (5, '/marked/missing.flac', 'Missing', 'Artist', 'Album', 0, 1);",
     )
     .unwrap();

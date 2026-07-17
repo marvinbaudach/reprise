@@ -1,6 +1,9 @@
 use rusqlite::Connection;
 use std::path::Path;
 
+use crate::models::MissingReason;
+use crate::queries::PRESENT;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {
     #[error("database error: {0}")]
@@ -196,16 +199,17 @@ type TagParams<'a> = (
 );
 
 /// Filters raw SQL matches down to *valid* move candidates: rows whose old
-/// path is gone from disk, or which are already flagged `missing`. This
-/// filter is applied — and candidates counted — only over this valid subset,
-/// never over the raw SQL match count. That ordering matters: two DB rows
-/// can share a fingerprint (duplicate tracks) while only one of their files
-/// has actually disappeared; counting the raw matches would flag that as a
-/// false ambiguity and refuse a move that is in fact unambiguous (see the
+/// path is gone from disk, or which are already flagged missing (`missing_
+/// since` set). This filter is applied — and candidates counted — only over
+/// this valid subset, never over the raw SQL match count. That ordering
+/// matters: two DB rows can share a fingerprint (duplicate tracks) while
+/// only one of their files has actually disappeared; counting the raw
+/// matches would flag that as a false ambiguity and refuse a move that is in
+/// fact unambiguous (see the
 /// `one_deleted_one_alive_duplicate_is_still_an_unambiguous_move` test).
-fn valid_candidates(rows: Vec<(i64, String, i64)>) -> Vec<MoveCandidate> {
+fn valid_candidates(rows: Vec<(i64, String, Option<i64>)>) -> Vec<MoveCandidate> {
     rows.into_iter()
-        .filter(|(_, path, missing)| *missing != 0 || !Path::new(path).exists())
+        .filter(|(_, path, missing_since)| missing_since.is_some() || !Path::new(path).exists())
         .map(|(id, path, _)| MoveCandidate { id, path })
         .collect()
 }
@@ -221,9 +225,10 @@ fn find_move_candidate(
     tx: &rusqlite::Transaction,
     lookup: &MoveLookup,
 ) -> Result<Option<MoveCandidate>, ScanError> {
-    let rows: Vec<(i64, String, i64)> = {
-        let mut stmt =
-            tx.prepare("SELECT id, path, missing FROM tracks WHERE device = ?1 AND inode = ?2")?;
+    let rows: Vec<(i64, String, Option<i64>)> = {
+        let mut stmt = tx.prepare(
+            "SELECT id, path, missing_since FROM tracks WHERE device = ?1 AND inode = ?2",
+        )?;
         let mapped = stmt
             .query_map(rusqlite::params![lookup.device, lookup.inode], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -246,9 +251,9 @@ fn find_move_candidate(
         _ => {}
     }
 
-    let rows: Vec<(i64, String, i64)> = {
+    let rows: Vec<(i64, String, Option<i64>)> = {
         let mut stmt = tx.prepare(
-            "SELECT id, path, missing FROM tracks WHERE title = ?1 AND artist = ?2 \
+            "SELECT id, path, missing_since FROM tracks WHERE title = ?1 AND artist = ?2 \
              AND album = ?3 AND ABS(duration_ms - ?4) <= 2000 AND file_size = ?5",
         )?;
         let mapped = stmt
@@ -375,24 +380,29 @@ fn scan_folder_inner(
         }
         let path_str = path.to_string_lossy().to_string();
         let mtime = file_mtime(path);
-        let known: Option<(i64, i64)> = tx
+        let known: Option<(i64, Option<i64>)> = tx
             .query_row(
-                "SELECT file_mtime, missing FROM tracks WHERE path = ?1",
+                "SELECT file_mtime, missing_since FROM tracks WHERE path = ?1",
                 [&path_str],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .ok();
         let known_mtime = known.map(|(file_mtime, _)| file_mtime);
-        let known_missing = known.is_some_and(|(_, missing)| missing != 0);
+        let known_missing = known.is_some_and(|(_, missing_since)| missing_since.is_some());
         if known_mtime == Some(mtime) {
             if known_missing {
                 // The file reappeared at its exact recorded path with an
                 // unchanged mtime (NAS remount, restore-from-trash): the
                 // ordinary incremental fast path would otherwise skip it
-                // forever, silently ignoring `missing` — this is the one
-                // case the fast path must NOT take, since the row still
-                // needs `missing` cleared even though nothing else changed.
-                tx.execute("UPDATE tracks SET missing = 0 WHERE path = ?1", [&path_str])?;
+                // forever, silently ignoring `missing_since` — this is the
+                // one case the fast path must NOT take, since the row still
+                // needs `missing_since` cleared even though nothing else
+                // changed.
+                tx.execute(
+                    "UPDATE tracks SET missing_since = NULL, missing_reason = NULL \
+                     WHERE path = ?1",
+                    [&path_str],
+                )?;
                 tx.execute("DELETE FROM import_errors WHERE path = ?1", [&path_str])?;
                 report.updated += 1;
                 tracing::info!(path = %path_str, "restored missing track");
@@ -479,7 +489,7 @@ fn scan_folder_inner(
                         "UPDATE tracks SET path=?1, title=?2, artist=?3, album=?4,
                            album_artist=?5, year=?6, track_no=?7, genre=?8, duration_ms=?9,
                            bitrate_kbps=?10, file_mtime=?11, file_size=?12, device=?13,
-                           inode=?14, missing=0
+                           inode=?14, missing_since=NULL, missing_reason=NULL
                          WHERE id=?15",
                         rusqlite::params![
                             path_str,
@@ -523,12 +533,13 @@ fn scan_folder_inner(
                     tx.execute(
                         "INSERT INTO tracks (path, title, artist, album, album_artist, year,
                            track_no, genre, duration_ms, bitrate_kbps, added_at, file_mtime,
-                           missing, file_size, device, inode)
-                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,0,?13,?14,?15)
+                           file_size, device, inode)
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
                          ON CONFLICT(path) DO UPDATE SET
                            title=?2, artist=?3, album=?4, album_artist=?5, year=?6,
                            track_no=?7, genre=?8, duration_ms=?9, bitrate_kbps=?10,
-                           file_mtime=?12, missing=0, file_size=?13, device=?14, inode=?15",
+                           file_mtime=?12, missing_since=NULL, missing_reason=NULL,
+                           file_size=?13, device=?14, inode=?15",
                         rusqlite::params![
                             path_str,
                             title_p,
@@ -582,10 +593,14 @@ fn scan_folder_inner(
     Ok(report)
 }
 
-/// Marks `missing = 1` for every currently-not-missing track whose `path` is
-/// under `root` AND whose file no longer exists on disk. Returns the count
-/// of rows newly marked (an already-`missing` row is left alone and not
-/// recounted, even if its file is still gone).
+/// Sets `missing_since`/`missing_reason` for every currently-present track
+/// whose `path` is under `root` AND whose file no longer exists on disk.
+/// Returns the count of rows newly marked (an already-missing row is left
+/// alone and not recounted, even if its file is still gone). Like `queries::
+/// mark_track_missing`, this always writes `MissingReason::Unknown` for now
+/// — the folder watcher has no way yet to tell an unmounted drive apart from
+/// a genuinely deleted file; Task 1.5 introduces the real classifier both
+/// mark-missing sites will switch to.
 ///
 /// ## Call this AFTER `scan_folder(root)`, never before
 ///
@@ -635,9 +650,9 @@ pub fn mark_vanished_under_root(conn: &Connection, root: &Path) -> Result<u32, S
         crate::library::playlists::escape_like(root_str.trim_end_matches('/'))
     );
     let candidates: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT id, path FROM tracks WHERE missing = 0 AND path LIKE ?1 ESCAPE '\\'",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, path FROM tracks WHERE {PRESENT} AND path LIKE ?1 ESCAPE '\\'"
+        ))?;
         let rows = stmt
             .query_map(rusqlite::params![pattern], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
@@ -651,8 +666,8 @@ pub fn mark_vanished_under_root(conn: &Connection, root: &Path) -> Result<u32, S
             continue;
         }
         conn.execute(
-            "UPDATE tracks SET missing = 1 WHERE id = ?1",
-            rusqlite::params![id],
+            "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
+            rusqlite::params![id, now_unix(), MissingReason::Unknown.as_str()],
         )?;
         marked += 1;
         tracing::info!(path = %path_str, "watcher: marked vanished track missing");

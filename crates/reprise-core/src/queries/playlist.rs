@@ -6,7 +6,7 @@
 use crate::models::Track;
 
 use super::clauses::{
-    filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_playlist_track,
+    filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_playlist_track, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
 use super::MAX_WINDOW_LIMIT;
@@ -15,11 +15,11 @@ use rusqlite::Connection;
 /// Builds the parameterized SELECT for a `Playlist(id)` window — see the
 /// module doc's `Playlist(id)` section for the join shape, the `"playlist_
 /// order"` sentinel, and the duplicates-as-separate-rows behavior.
-/// `missing = 0` is applied here too: a track that later vanishes from disk
+/// [`PRESENT`] is applied here too: a track that later vanishes from disk
 /// drops out of every playlist's view and resurfaces only in the dedicated
 /// `Missing` source, exactly like the library view.
 ///
-/// The trailing `pt.position` column (index 20, read by `row_to_playlist_
+/// The trailing `pt.position` column (index 22, read by `row_to_playlist_
 /// track`) is the durable fix for the "remove from playlist deletes the
 /// wrong row" bug: it surfaces each row's *true* `playlist_tracks.position`
 /// regardless of what `ORDER BY` this query used, so `ui::track_actions::
@@ -33,10 +33,11 @@ fn build_playlist_track_query(sort_field: &str, sort_dir: &str, has_filter: bool
         "SELECT tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, \
          tracks.album_artist, tracks.year, tracks.track_no, tracks.genre, \
          tracks.duration_ms, tracks.bitrate_kbps, tracks.rating, tracks.play_count, \
-         tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing, \
-         tracks.file_size, tracks.device, tracks.inode, pt.position \
+         tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing_since, \
+         tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
+         tracks.inode, pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
-         WHERE pt.playlist_id = ?3 AND tracks.missing = 0{filter_clause} \
+         WHERE pt.playlist_id = ?3 AND {PRESENT}{filter_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
     )
 }
@@ -77,7 +78,7 @@ pub(super) fn query_track_count_playlist(
     let has_filter = !filter.trim().is_empty();
     let sql = format!(
         "SELECT count(*) FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
-         WHERE pt.playlist_id = ?1 AND tracks.missing = 0{}",
+         WHERE pt.playlist_id = ?1 AND {PRESENT}{}",
         filter_clause(has_filter, 2)
     );
     if has_filter {
@@ -100,7 +101,7 @@ pub(super) fn query_track_ids_playlist(
     let has_filter = !filter.trim().is_empty();
     let sql = format!(
         "SELECT tracks.id FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
-         WHERE pt.playlist_id = ?1 AND tracks.missing = 0{} \
+         WHERE pt.playlist_id = ?1 AND {PRESENT}{} \
          ORDER BY pt.position ASC LIMIT {QUEUE_LIMIT}",
         filter_clause(has_filter, 2)
     );
@@ -133,10 +134,11 @@ pub fn query_playlist_tracks_full(
         "SELECT tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, \
          tracks.album_artist, tracks.year, tracks.track_no, tracks.genre, \
          tracks.duration_ms, tracks.bitrate_kbps, tracks.rating, tracks.play_count, \
-         tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing, \
-         tracks.file_size, tracks.device, tracks.inode, pt.position \
+         tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing_since, \
+         tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
+         tracks.inode, pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
-         WHERE pt.playlist_id = ?1 AND tracks.missing = 0 \
+         WHERE pt.playlist_id = ?1 AND {PRESENT} \
          ORDER BY pt.position ASC LIMIT {QUEUE_LIMIT}"
     );
     let mut stmt = conn.prepare(&sql)?;

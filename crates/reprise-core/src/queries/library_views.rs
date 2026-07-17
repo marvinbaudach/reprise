@@ -4,7 +4,9 @@ use crate::models::Track;
 use rusqlite::types::Value;
 use rusqlite::Connection;
 
-use super::clauses::{filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track};
+use super::clauses::{
+    filter_clause, like_pattern, order_expr_and_dir, row_to_id, row_to_track, PRESENT,
+};
 use super::queue::QUEUE_LIMIT;
 use super::MAX_WINDOW_LIMIT;
 
@@ -48,7 +50,7 @@ pub fn query_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Er
                   MAX(added_at) AS max_added_at, \
                   SUM(play_count) AS total_play_count \
            FROM tracks \
-           WHERE missing = 0 AND TRIM(album) <> '' \
+           WHERE {PRESENT} AND TRIM(album) <> '' \
            GROUP BY album_key, artist_key \
          ) \
          SELECT TRIM(tracks.album), {EFFECTIVE_ALBUM_ARTIST}, tracks.path, \
@@ -90,7 +92,7 @@ pub fn query_artists(conn: &Connection) -> Result<Vec<ArtistSummary>, rusqlite::
                   COALESCE(SUM(play_count), 0) AS total_plays, \
                   COALESCE(MAX(last_played_at), 0) AS last_played_at \
            FROM tracks \
-           WHERE missing = 0 AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
+           WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
            GROUP BY artist_key \
          ) \
          SELECT {EFFECTIVE_ALBUM_ARTIST}, grouped.track_count, grouped.album_count, \
@@ -130,8 +132,8 @@ pub(super) fn query_album_track_window(
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing, file_size, device, inode \
-         FROM tracks WHERE missing = 0 \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?3 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?4 COLLATE NOCASE{filter_sql} \
          ORDER BY {order} {direction} LIMIT ?1 OFFSET ?2"
@@ -159,7 +161,7 @@ pub(super) fn query_album_track_count(
     let has_filter = !filter.trim().is_empty();
     let filter_sql = filter_clause(has_filter, 3);
     let sql = format!(
-        "SELECT count(*) FROM tracks WHERE missing = 0 \
+        "SELECT count(*) FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?1 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE{filter_sql}"
     );
@@ -185,7 +187,7 @@ pub fn query_album_track_ids(
     let (order, direction) = order_expr_and_dir(sort_field, sort_dir);
     let filter_sql = filter_clause(has_filter, 3);
     let sql = format!(
-        "SELECT id FROM tracks WHERE missing = 0 \
+        "SELECT id FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?1 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE{filter_sql} \
          ORDER BY {order} {direction} LIMIT {QUEUE_LIMIT}"
@@ -220,7 +222,7 @@ pub fn query_artist_detail_albums(
            SELECT LOWER(TRIM(album)) AS album_key, MIN(id) AS representative_id, \
                   COUNT(*) AS track_count, COALESCE(MAX(year), 0) AS year \
            FROM tracks \
-           WHERE missing = 0 AND TRIM(album) <> '' \
+           WHERE {PRESENT} AND TRIM(album) <> '' \
              AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
            GROUP BY album_key \
          ) \
@@ -257,8 +259,8 @@ pub(super) fn query_artist_track_window(
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing, file_size, device, inode \
-         FROM tracks WHERE missing = 0 \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE{filter_sql} \
          ORDER BY {order} {direction} LIMIT ?1 OFFSET ?2"
     );
@@ -283,7 +285,7 @@ pub(super) fn query_artist_track_count(
     let has_filter = !filter.trim().is_empty();
     let filter_sql = filter_clause(has_filter, 2);
     let sql = format!(
-        "SELECT count(*) FROM tracks WHERE missing = 0 \
+        "SELECT count(*) FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE{filter_sql}"
     );
     let mut params = vec![Value::Text(artist.trim().to_string())];
@@ -304,7 +306,7 @@ pub(super) fn query_artist_track_ids(
     let (order, direction) = order_expr_and_dir(sort_field, sort_dir);
     let filter_sql = filter_clause(has_filter, 2);
     let sql = format!(
-        "SELECT id FROM tracks WHERE missing = 0 \
+        "SELECT id FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE{filter_sql} \
          ORDER BY {order} {direction} LIMIT {QUEUE_LIMIT}"
     );
@@ -328,14 +330,14 @@ mod tests {
         crate::db::migrate(&conn).unwrap();
         conn.execute_batch(
             "INSERT INTO tracks
-               (id,path,title,artist,album,album_artist,added_at,missing) VALUES
-             (1,'/music/first-a.flac','A','Solo',' First ','',0,0),
-             (2,'/music/first-b.flac','B','Solo','first','',0,0),
-             (3,'/music/other.flac','Other','Other Artist','First','',0,0),
-             (4,'/music/mix-a.flac','Mix A','Guest A','Compilation','Various Artists',0,0),
-             (5,'/music/mix-b.flac','Mix B','Guest B','Compilation','Various Artists',0,0),
-             (6,'/music/blank.flac','Blank','Nobody','','',0,0),
-             (7,'/music/missing.flac','Missing','Solo','Lost','',0,1);",
+               (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
+             (1,'/music/first-a.flac','A','Solo',' First ','',0,NULL),
+             (2,'/music/first-b.flac','B','Solo','first','',0,NULL),
+             (3,'/music/other.flac','Other','Other Artist','First','',0,NULL),
+             (4,'/music/mix-a.flac','Mix A','Guest A','Compilation','Various Artists',0,NULL),
+             (5,'/music/mix-b.flac','Mix B','Guest B','Compilation','Various Artists',0,NULL),
+             (6,'/music/blank.flac','Blank','Nobody','','',0,NULL),
+             (7,'/music/missing.flac','Missing','Solo','Lost','',0,999999999);",
         )
         .unwrap();
         conn

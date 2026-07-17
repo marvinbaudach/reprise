@@ -1,20 +1,22 @@
 use rusqlite::Connection;
 
+use super::clauses::PRESENT;
+
 /// Returns the distinct, non-empty local albums credited either directly to
 /// `artist` or through the album-artist field. Missing tracks are ignored.
 pub fn query_artist_albums(
     conn: &Connection,
     artist: &str,
 ) -> Result<Vec<String>, rusqlite::Error> {
-    let mut statement = conn.prepare(
+    let mut statement = conn.prepare(&format!(
         "SELECT MIN(TRIM(album))
          FROM tracks
-         WHERE missing = 0
+         WHERE {PRESENT}
            AND TRIM(album) <> ''
            AND (artist = ?1 COLLATE NOCASE OR album_artist = ?1 COLLATE NOCASE)
          GROUP BY LOWER(TRIM(album))
-         ORDER BY LOWER(TRIM(album)) ASC",
-    )?;
+         ORDER BY LOWER(TRIM(album)) ASC"
+    ))?;
     let albums = statement
         .query_map([artist], |row| row.get(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -48,7 +50,8 @@ mod tests {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
         conn.execute(
-            "INSERT INTO tracks (path,title,artist,album,added_at,missing) VALUES ('/a','A','Artist','Gone',0,1)",
+            "INSERT INTO tracks (path,title,artist,album,added_at,missing_since) \
+             VALUES ('/a','A','Artist','Gone',0,1)",
             [],
         )
         .unwrap();

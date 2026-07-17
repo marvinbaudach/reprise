@@ -8,8 +8,10 @@ use std::path::PathBuf;
 
 use crate::device_sync::SyncTrack;
 use crate::library::playlists;
+use crate::models::MissingReason;
 use rusqlite::{Connection, OptionalExtension};
 
+use super::clauses::{MISSING, PRESENT};
 use super::queue::QUEUE_LIMIT;
 use super::{ImportErrorRow, TrackSummary};
 
@@ -46,7 +48,7 @@ pub fn query_track_summary(
 /// queues. A set matches the caller's membership-only use and avoids leaking
 /// query ordering into session semantics.
 pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite::Error> {
-    let mut statement = conn.prepare("SELECT id FROM tracks WHERE missing = 0")?;
+    let mut statement = conn.prepare(&format!("SELECT id FROM tracks WHERE {PRESENT}"))?;
     let ids = statement
         .query_map([], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
@@ -56,7 +58,9 @@ pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite:
 /// Returns every non-missing media path in stable path order for cover batch
 /// scheduling.
 pub fn query_live_track_paths(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {
-    let mut statement = conn.prepare("SELECT path FROM tracks WHERE missing = 0 ORDER BY path")?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT path FROM tracks WHERE {PRESENT} ORDER BY path"
+    ))?;
     let paths = statement
         .query_map([], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
@@ -122,10 +126,10 @@ pub fn query_sync_tracks(
     conn: &Connection,
     ids: &[i64],
 ) -> Result<Vec<SyncTrack>, rusqlite::Error> {
-    let mut statement = conn.prepare(
+    let mut statement = conn.prepare(&format!(
         "SELECT path,title,artist,album,album_artist,track_no,duration_ms \
-         FROM tracks WHERE id = ?1 AND missing = 0",
-    )?;
+         FROM tracks WHERE id = ?1 AND {PRESENT}"
+    ))?;
     let mut seen = HashSet::new();
     let mut tracks = Vec::with_capacity(ids.len());
     for &id in ids {
@@ -184,15 +188,23 @@ pub fn query_sync_tracks(
 /// Marks track `track_id` as missing (Stage 2 Task 5: a physically deleted
 /// file must never crash or dead-end the app — this is the DB-side half of
 /// that guarantee). Every windowed/count/id query for `ViewSource::Library`/
-/// `Playlist`/`Smart` already filters `missing = 0`, so the row disappears
+/// `Playlist`/`Smart` already filters on [`PRESENT`], so the row disappears
 /// from those views and from a freshly-seeded queue on the very next
 /// reload, without deleting the row itself — ratings/play history/etc. are
 /// preserved, and the row resurfaces in `ViewSource::Missing` (Stage 3 Task
 /// 3) instead of vanishing outright.
+///
+/// Task 1.2: this is the playback-fault call site `Track::is_missing`'s doc
+/// comment refers to. It always writes `MissingReason::Unknown` — this path
+/// (a track that failed to play) has no way yet to tell an unmounted drive
+/// apart from a genuinely deleted file; Task 1.5 introduces the real
+/// classifier that both this function and the scanner's own mark-vanished
+/// site (`library::scanner::mark_vanished_under_root`) will switch to.
 pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "UPDATE tracks SET missing = 1 WHERE id = ?1",
-        rusqlite::params![track_id],
+        "UPDATE tracks SET missing_since = strftime('%s','now'), missing_reason = ?2 \
+         WHERE id = ?1",
+        rusqlite::params![track_id, MissingReason::Unknown.as_str()],
     )?;
     Ok(())
 }
@@ -204,7 +216,7 @@ pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqli
 /// this action only exists for a track already flagged `missing` (the file
 /// is already gone from disk by definition).
 ///
-/// The `WHERE ... AND missing = 1` guard is a defensive belt-and-braces
+/// The `WHERE ... AND` [`MISSING`] guard is a defensive belt-and-braces
 /// check, not just `WHERE id = ?1`: it makes this call a no-op (`Ok(false)`)
 /// against a track that somehow isn't actually missing any more (e.g. a
 /// rescan raced ahead of a stale Missing-view selection and restored the
@@ -223,7 +235,7 @@ pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqli
 /// the explicit live-row removal API rather than calling this wrapper.
 pub fn remove_missing_track(conn: &Connection, track_id: i64) -> Result<bool, rusqlite::Error> {
     let deleted = conn.execute(
-        "DELETE FROM tracks WHERE id = ?1 AND missing = 1",
+        &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING}"),
         rusqlite::params![track_id],
     )?;
     Ok(deleted > 0)
@@ -280,7 +292,9 @@ pub fn remove_missing_tracks(
 /// tests deterministic.
 pub fn remove_all_missing_tracks(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Error> {
     let ids = {
-        let mut statement = conn.prepare("SELECT id FROM tracks WHERE missing = 1 ORDER BY id")?;
+        let mut statement = conn.prepare(&format!(
+            "SELECT id FROM tracks WHERE {MISSING} ORDER BY id"
+        ))?;
         let ids = statement
             .query_map([], |row| row.get(0))?
             .collect::<Result<Vec<i64>, _>>()?;
@@ -318,7 +332,7 @@ fn remove_tracks_impl(
 
         let deleted = if missing_only {
             tx.execute(
-                "DELETE FROM tracks WHERE id = ?1 AND missing = 1",
+                &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING}"),
                 rusqlite::params![id],
             )?
         } else {

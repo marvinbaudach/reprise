@@ -5,6 +5,7 @@
 use rusqlite::{params, Connection};
 
 use crate::queries::library_views::EFFECTIVE_ALBUM_ARTIST;
+use crate::queries::PRESENT;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtistHeader {
@@ -44,10 +45,10 @@ pub fn artist_header(
            COUNT(*), \
            COALESCE(SUM(duration_ms), 0), \
            ( SELECT COUNT(*) FROM listen_events le JOIN tracks t2 ON t2.id = le.track_id \
-             WHERE t2.missing = 0 AND {effective_album_artist_t2} = ?1 COLLATE NOCASE \
+             WHERE {PRESENT} AND {effective_album_artist_t2} = ?1 COLLATE NOCASE \
              AND le.played_at >= ?2 AND le.played_at <= ?3 ) \
          FROM tracks \
-         WHERE missing = 0 AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE"
+         WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE"
     );
     conn.query_row(&sql, params![artist.trim(), year_start, now_unix], |row| {
         Ok(ArtistHeader {
@@ -66,7 +67,7 @@ pub fn artist_top_tracks(
 ) -> Result<Vec<ArtistTopTrack>, rusqlite::Error> {
     let sql = format!(
         "SELECT id, title, album, path, play_count, duration_ms FROM tracks \
-         WHERE missing = 0 AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+         WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
          ORDER BY play_count DESC, last_played_at DESC, id ASC LIMIT ?2"
     );
     let mut statement = conn.prepare(&sql)?;

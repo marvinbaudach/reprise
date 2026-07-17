@@ -28,7 +28,7 @@ fn seeded_titled_conn() -> Connection {
 fn query_builder_whitelists_and_sorts() {
     let q = build_track_query("artist", "asc", false);
     assert!(q.contains("ORDER BY artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no ASC"));
-    assert!(q.contains("WHERE missing = 0"));
+    assert!(q.contains(&format!("WHERE {}", super::clauses::PRESENT)));
     assert!(!q.contains("?3")); // no filter placeholder without a filter
 }
 
@@ -154,7 +154,7 @@ fn count_excludes_missing_rows() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     conn.execute(
-        "INSERT INTO tracks (path, title, artist, added_at, missing) \
+        "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
          VALUES ('/x/a.flac', 'A', '', 0, 1)",
         [],
     )
@@ -162,6 +162,94 @@ fn count_excludes_missing_rows() {
     assert_eq!(
         query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
         0
+    );
+}
+
+/// The Task 1.2 predicate flip, pinned directly: a row with `missing_since`
+/// set must disappear from the library window/count even though the legacy
+/// `missing` column (still populated by pre-this-task writers, per schema
+/// v10's doc comment) says `0` — proving the window/count queries read
+/// `missing_since`, not `missing`, for presence.
+#[test]
+fn missing_since_excludes_a_row_even_when_the_legacy_missing_column_says_present() {
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, added_at, missing, missing_since) \
+         VALUES ('/x/a.flac', 'A', '', 0, 0, 1)",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        0,
+        "a set missing_since must exclude the row regardless of the stale legacy flag"
+    );
+    assert!(query_track_window(
+        &mut conn,
+        &ViewSource::Library,
+        "title",
+        "asc",
+        "",
+        0,
+        10,
+        &[],
+    )
+    .unwrap()
+    .is_empty());
+}
+
+/// `removed_at` (the tombstone column a later task starts writing for the
+/// 10-second undo window) must exclude a row from the *present* predicate
+/// even while `missing_since` is `NULL` — see `clauses::PRESENT`'s doc
+/// comment for why a removed-but-not-yet-purged row must never resurface in
+/// the library window/count.
+#[test]
+fn removed_at_excludes_a_row_from_the_library_even_while_present() {
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, added_at, removed_at) \
+         VALUES ('/x/a.flac', 'A', '', 0, 1)",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        0,
+        "a tombstoned row must not count as present"
+    );
+    assert!(query_track_window(
+        &mut conn,
+        &ViewSource::Library,
+        "title",
+        "asc",
+        "",
+        0,
+        10,
+        &[],
+    )
+    .unwrap()
+    .is_empty());
+}
+
+/// `MissingReason::parse` must never fail to load a row: an unrecognized
+/// `missing_reason` string (a value this app version never wrote — a future
+/// schema, or a hand-edited row) falls back to `Unknown` rather than
+/// panicking or erroring, matching the enum's own doc comment.
+#[test]
+fn missing_reason_parse_falls_back_to_unknown_for_an_unrecognized_value() {
+    assert_eq!(
+        crate::models::MissingReason::parse("garbage"),
+        crate::models::MissingReason::Unknown
+    );
+    assert_eq!(
+        crate::models::MissingReason::parse("unmounted"),
+        crate::models::MissingReason::Unmounted
+    );
+    assert_eq!(
+        crate::models::MissingReason::parse("deleted"),
+        crate::models::MissingReason::Deleted
     );
 }
 
@@ -205,7 +293,7 @@ fn track_ids_excludes_missing_rows() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     conn.execute(
-        "INSERT INTO tracks (path, title, artist, added_at, missing) \
+        "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
          VALUES ('/x/a.flac', 'A', '', 0, 1)",
         [],
     )
@@ -280,14 +368,18 @@ fn mark_track_missing_sets_the_flag() {
 
     mark_track_missing(&conn, id).unwrap();
 
-    let missing: i64 = conn
+    let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
         .query_row(
-            "SELECT missing FROM tracks WHERE id = ?1",
+            "SELECT missing_since, missing_reason FROM tracks WHERE id = ?1",
             rusqlite::params![id],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    assert_eq!(missing, 1);
+    assert!(missing_since.is_some());
+    // Task 1.5 swaps this in for a real classifier; for now every mark-
+    // missing site (this one and the scanner's) can only honestly say
+    // "unknown" — see `MissingReason`'s own doc comment.
+    assert_eq!(missing_reason.as_deref(), Some("unknown"));
 }
 
 #[test]
@@ -372,7 +464,7 @@ fn library_stats_missing_rows_excluded_from_both_counts() {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
     conn.execute(
-        "INSERT INTO tracks (path, title, artist, duration_ms, added_at, missing) \
+        "INSERT INTO tracks (path, title, artist, duration_ms, added_at, missing_since) \
          VALUES ('/x/a.flac', 'A', '', 1000, 0, 1)",
         [],
     )
@@ -437,11 +529,15 @@ fn window_limit_is_clamped() {
 fn seeded_conn_with_missing() -> Connection {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    for (t, a, missing) in [("Zulu", "AAA", 1), ("Alpha", "BBB", 0), ("Mid", "CCC", 1)] {
+    for (t, a, missing_since) in [
+        ("Zulu", "AAA", Some(1)),
+        ("Alpha", "BBB", None),
+        ("Mid", "CCC", Some(1)),
+    ] {
         conn.execute(
-            "INSERT INTO tracks (path, title, artist, added_at, missing) \
+            "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
              VALUES (?1, ?2, ?3, 0, ?4)",
-            rusqlite::params![format!("/x/{t}.flac"), t, a, missing],
+            rusqlite::params![format!("/x/{t}.flac"), t, a, missing_since],
         )
         .unwrap();
     }
@@ -559,7 +655,10 @@ fn missing_ids_are_sorted_like_library() {
     let ids = query_track_ids(&conn, &ViewSource::Missing, "title", "asc", "", &[]).unwrap();
     let by_title: Vec<i64> = {
         let mut stmt = conn
-            .prepare("SELECT id FROM tracks WHERE missing = 1 ORDER BY title COLLATE NOCASE ASC")
+            .prepare(&format!(
+                "SELECT id FROM tracks WHERE {} ORDER BY title COLLATE NOCASE ASC",
+                super::clauses::MISSING
+            ))
             .unwrap();
         stmt.query_map([], |r| r.get(0))
             .unwrap()

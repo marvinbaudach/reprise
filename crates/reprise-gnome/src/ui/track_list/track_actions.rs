@@ -220,7 +220,7 @@ pub fn create_playlist_and_add(
 /// viewing `ViewSource::Missing`): deletes each of `ids` via `queries::
 /// remove_missing_tracks` — the batch, TRANSACTIONAL primitive (Stage-3
 /// close-out; see that function's doc comment for the DATABASE-ONLY delete
-/// guarantee, its defensive `missing = 1` guard, and why the batch/
+/// guarantee, its defensive presence-predicate guard, and why the batch/
 /// transactional form — not a per-id loop over `remove_missing_track` — is
 /// required: it also renumbers every playlist position gap the delete's
 /// `ON DELETE CASCADE` would otherwise leave behind). Returns the ids
@@ -703,7 +703,10 @@ mod tests {
 
     fn mark_missing(conn: &Rc<RefCell<Connection>>, id: i64) {
         conn.borrow()
-            .execute("UPDATE tracks SET missing = 1 WHERE id = ?1", params![id])
+            .execute(
+                "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = ?1",
+                params![id],
+            )
             .unwrap();
     }
 
@@ -728,7 +731,7 @@ mod tests {
     fn remove_missing_selected_skips_a_track_that_is_not_missing() {
         let conn = seeded_conn_with_tracks(2);
         mark_missing(&conn, 1);
-        // id 2 is left alone (still missing = 0).
+        // id 2 is left alone (still present, missing_since NULL).
 
         let removed = remove_missing_selected(&conn, &[1, 2]).unwrap();
 

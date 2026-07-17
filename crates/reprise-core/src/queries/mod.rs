@@ -8,10 +8,12 @@
 //!
 //! ## Per-source shape
 //!
-//! - **Library**: `missing = 0` — unchanged from before this task.
-//! - **Missing**: identical shape to Library, `missing = 1` instead.
+//! - **Library**: `clauses::PRESENT` — unchanged in shape from before this
+//!   task; only the underlying predicate moved from the legacy `missing = 0`
+//!   literal to `missing_since IS NULL AND removed_at IS NULL` (Task 1.2).
+//! - **Missing**: identical shape to Library, `clauses::MISSING` instead.
 //! - **Playlist(id)**: `JOIN playlist_tracks pt ON pt.track_id = tracks.id
-//!   WHERE pt.playlist_id = id AND missing = 0`. Duplicates (the same track
+//!   WHERE pt.playlist_id = id AND` `clauses::PRESENT`. Duplicates (the same track
 //!   added to a playlist twice) surface as separate, position-keyed rows —
 //!   a natural consequence of the join, matching Task 2's manual-playlist
 //!   semantics. Default order is `pt.position` via a whitelist *sentinel*
@@ -31,7 +33,7 @@
 //!   `pt.position`; see that field's doc comment and `ui::track_actions::
 //!   remove_selected_from_playlist`.
 //! - **Smart(id)**: loads the `SmartPlaylist` row, ANDs `library::playlists::
-//!   smart_rules_to_sql`'s WHERE fragment with `missing = 0` and the live
+//!   smart_rules_to_sql`'s WHERE fragment with `clauses::PRESENT` and the live
 //!   search filter, and orders/limits by the smart playlist's *own*
 //!   `sort_field`/`sort_dir`/`limit_count` — not whatever `track_list.rs`'s
 //!   current column sort happens to be (a smart playlist's sort is part of
@@ -98,6 +100,15 @@ mod smart;
 pub use artist_context::query_artist_albums;
 pub use browse::{query_browse_values, BrowseFacet, BrowseFilter, BrowseValue};
 pub use clauses::build_track_ids_query;
+// Task 1.2: the centralized presence predicate, re-exported so modules
+// outside this one (`library::scanner`, `library::artist_detail`, `db::
+// pending_waveform_tracks`) can share the exact same "row is present" SQL
+// fragment as every query in this module tree — see `clauses::PRESENT`'s
+// doc comment for why a flag-plus-date pair is retired in favor of this one
+// predicate. `MISSING` has no non-test caller outside this module tree, so
+// it stays reachable only via `super::clauses::MISSING` from this module's
+// own children, to avoid an unused-import warning in the non-test build.
+pub(crate) use clauses::PRESENT;
 // `build_track_query`'s only current caller is this module's own test suite
 // (`tests::query_builder_whitelists_and_sorts` et al.) — re-exported `pub`
 // regardless, to keep `crate::queries::build_track_query` resolving exactly
@@ -426,7 +437,7 @@ pub fn query_library_stats_browsed(
     browse: &BrowseFilter,
 ) -> Result<LibraryStats, rusqlite::Error> {
     let (track_count, total_duration_ms) = conn.query_row(
-        "SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE missing = 0",
+        &format!("SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE {PRESENT}"),
         [],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;

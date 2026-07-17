@@ -572,14 +572,15 @@ fn open_migrated_returns_a_ready_to_use_database() {
 #[test]
 fn pending_waveform_tracks_excludes_cached_and_missing_rows() {
     let conn = open_migrated(None).unwrap();
-    for (id, path, missing) in [
-        (1, "/one.flac", 0),
-        (2, "/two.flac", 0),
-        (3, "/missing.flac", 1),
+    for (id, path, missing_since) in [
+        (1, "/one.flac", None),
+        (2, "/two.flac", None),
+        (3, "/missing.flac", Some(1)),
     ] {
         conn.execute(
-            "INSERT INTO tracks (id, path, title, added_at, missing) VALUES (?1, ?2, '', 0, ?3)",
-            rusqlite::params![id, path, missing],
+            "INSERT INTO tracks (id, path, title, added_at, missing_since) \
+             VALUES (?1, ?2, '', 0, ?3)",
+            rusqlite::params![id, path, missing_since],
         )
         .unwrap();
     }
