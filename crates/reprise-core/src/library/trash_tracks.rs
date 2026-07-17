@@ -73,8 +73,7 @@ where
     if trashed.is_empty() {
         return report;
     }
-    let ids: Vec<i64> = trashed.iter().map(|(id, _)| *id).collect();
-    match crate::queries::remove_tracks(conn, &ids) {
+    match crate::queries::remove_tracks_matching_paths(conn, &trashed) {
         Ok(removed) => {
             for (id, path) in trashed {
                 if !removed.contains(&id) {

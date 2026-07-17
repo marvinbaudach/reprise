@@ -2,21 +2,25 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-/// Deletes a playlist by id, cascades its track memberships, and closes the
-/// removed playlist's position gap atomically.
-pub fn delete(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
+/// Deletes a playlist only while its `(id, name)` identity still matches,
+/// cascades its track memberships, and closes the removed playlist's
+/// position gap atomically. A stale dialog request is a successful no-op.
+pub fn delete(conn: &Connection, id: i64, expected_name: &str) -> Result<(), rusqlite::Error> {
     let tx = conn.unchecked_transaction()?;
     let position = tx
         .query_row(
-            "SELECT position FROM playlists WHERE id = ?1",
-            params![id],
+            "SELECT position FROM playlists WHERE id = ?1 AND name = ?2",
+            params![id, expected_name],
             |row| row.get::<_, i64>(0),
         )
         .optional()?;
     let Some(position) = position else {
         return tx.commit();
     };
-    tx.execute("DELETE FROM playlists WHERE id = ?1", params![id])?;
+    tx.execute(
+        "DELETE FROM playlists WHERE id = ?1 AND name = ?2",
+        params![id, expected_name],
+    )?;
     tx.execute(
         "UPDATE playlists SET position = position - 1 WHERE position > ?1",
         params![position],
@@ -48,7 +52,7 @@ mod tests {
         )
         .unwrap();
 
-        delete(&conn, deleted).unwrap();
+        delete(&conn, deleted, "To Delete").unwrap();
 
         let mut statement = conn
             .prepare("SELECT id, position FROM playlists ORDER BY position")

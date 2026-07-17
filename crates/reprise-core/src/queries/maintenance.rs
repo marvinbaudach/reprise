@@ -300,6 +300,22 @@ pub fn remove_tracks(conn: &mut Connection, ids: &[i64]) -> Result<Vec<i64>, rus
     remove_tracks_impl(conn, ids, RemoveGuard::Any)
 }
 
+/// Deletes only rows whose current `(id, path)` identity still matches the
+/// caller's snapshot. Dialog and filesystem operations can outlive the row
+/// they started from, and track ids are reusable, so an id-only delete would
+/// be allowed to hit an unrelated replacement row. Playlist compaction and
+/// the identity check share one transaction.
+pub fn remove_tracks_matching_paths(
+    conn: &mut Connection,
+    tracks: &[(i64, PathBuf)],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    remove_track_requests_impl(
+        conn,
+        tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
+        RemoveGuard::Any,
+    )
+}
+
 /// Which rows `remove_tracks_impl`'s per-id `DELETE` is allowed to actually
 /// touch — an extra condition appended to `WHERE id = ?1`, re-checked at
 /// delete time rather than trusted from whatever snapshot the caller
@@ -332,12 +348,21 @@ pub(crate) fn remove_tracks_impl(
     ids: &[i64],
     guard: RemoveGuard,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    if ids.is_empty() {
+    remove_track_requests_impl(conn, ids.iter().map(|id| (*id, None)), guard)
+}
+
+fn remove_track_requests_impl<'a>(
+    conn: &mut Connection,
+    requests: impl IntoIterator<Item = (i64, Option<&'a Path>)>,
+    guard: RemoveGuard,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let requests = requests.into_iter().collect::<Vec<_>>();
+    if requests.is_empty() {
         return Ok(Vec::new());
     }
     let tx = conn.transaction()?;
-    let mut removed = Vec::with_capacity(ids.len());
-    for &id in ids {
+    let mut removed = Vec::with_capacity(requests.len());
+    for (id, expected_path) in requests {
         let mut stmt =
             tx.prepare("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1")?;
         let affected_playlists: Vec<i64> = stmt
@@ -345,22 +370,27 @@ pub(crate) fn remove_tracks_impl(
             .collect::<Result<_, _>>()?;
         drop(stmt);
 
-        let deleted = match guard {
-            RemoveGuard::Any => {
+        let deleted = match (guard, expected_path) {
+            (RemoveGuard::Any, Some(expected_path)) => tx.execute(
+                "DELETE FROM tracks WHERE id = ?1 AND path = ?2",
+                rusqlite::params![id, expected_path.to_string_lossy()],
+            )?,
+            (RemoveGuard::Any, None) => {
                 tx.execute("DELETE FROM tracks WHERE id = ?1", rusqlite::params![id])?
             }
-            RemoveGuard::MissingOnly => tx.execute(
+            (RemoveGuard::MissingOnly, None) => tx.execute(
                 &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING}"),
                 rusqlite::params![id],
             )?,
-            RemoveGuard::TombstonedOnly => tx.execute(
+            (RemoveGuard::TombstonedOnly, None) => tx.execute(
                 "DELETE FROM tracks WHERE id = ?1 AND removed_at IS NOT NULL",
                 rusqlite::params![id],
             )?,
-            RemoveGuard::AutoCleanEligible => tx.execute(
+            (RemoveGuard::AutoCleanEligible, None) => tx.execute(
                 &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING} AND missing_reason = ?2"),
                 rusqlite::params![id, MissingReason::Deleted.as_str()],
             )?,
+            (_, Some(_)) => unreachable!("path identity is only valid with RemoveGuard::Any"),
         };
         if deleted == 0 {
             continue;
