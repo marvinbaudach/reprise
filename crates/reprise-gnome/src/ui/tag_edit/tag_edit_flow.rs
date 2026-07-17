@@ -42,7 +42,7 @@ use crate::ui::strings;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::track_list_activation::current_queue_ids;
-use crate::ui::track_list::{reload, show_toast, Shared, TrackList};
+use crate::ui::track_list::{reload, reload_restore, show_toast, Shared, TrackList};
 use crate::ui::track_list_context_menu::current_selection_positions;
 
 pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
@@ -367,6 +367,25 @@ pub(in crate::ui) fn spawn_save(
     });
 }
 
+/// TAG-1 (G2): forces the live selection to `updated_ids`, position-mapped
+/// against the *current* (pre-reload) view, right before `reload(shared)`
+/// runs. `reload()`'s own TAG-1 restore mechanic (Task A) then captures and
+/// carries exactly this selection across the model swap, so the net effect
+/// once `reload()` returns is "selection = the tracks this save actually
+/// wrote" — never whatever was selected before the dialog opened, and never
+/// a track this save left untouched. An id no longer in the current view
+/// (deleted, filtered out) drops out silently, the same TAG-1 "no side
+/// effect" rule `reload_restore::positions_for_ids` already applies to a
+/// plain reload.
+fn select_written_tracks(shared: &Shared, updated_ids: &[i64]) {
+    let current_ids = shared.current_view_ids();
+    let positions = reload_restore::positions_for_ids(updated_ids, &current_ids);
+    shared.selection.unselect_all();
+    for position in positions {
+        shared.selection.select_item(position, false);
+    }
+}
+
 fn finish_apply(shared: &Rc<Shared>, writes: &[TrackWrite], report: &TagBatchReport) {
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
@@ -380,6 +399,7 @@ fn finish_apply(shared: &Rc<Shared>, writes: &[TrackWrite], report: &TagBatchRep
             shared.cover_loader.invalidate_paths(&tag_changed_paths);
             shared.browse_bar.refresh();
         }
+        select_written_tracks(shared, &report.updated_ids);
         reload(shared);
         if !tag_changed_paths.is_empty() {
             let tag_changed_ids: Vec<i64> = writes
@@ -490,4 +510,40 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
             Err(error) => tracing::warn!(%error, "tag-edit smoke: could not open database"),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// TAG-1 (G2): `select_written_tracks` composes entirely from
+    /// `reload_restore::positions_for_ids` (already `#[test]`-covered at
+    /// Task A's pure-logic level) plus real `gtk4::MultiSelection` widget
+    /// calls this crate's headless suite cannot construct outside the
+    /// display-test harness (`scripts/check-display-tests.sh`) — see this
+    /// package's report for why a full `Shared` fixture wasn't built for
+    /// this wave. This test instead pins the exact mapping the post-save
+    /// selection depends on: written ids win, an unrelated failed id never
+    /// widens the selection, and an id no longer in the (possibly
+    /// concurrently changed) current view drops out silently rather than
+    /// erroring — the same "no side effect from a vanished id" rule a plain
+    /// `reload()` already applies.
+    #[test]
+    fn tag_1_selection_after_save_is_written_tracks() {
+        let updated_ids = vec![7_i64, 9_i64];
+        let current_view = vec![11_i64, 7_i64, 9_i64];
+        let positions = reload_restore::positions_for_ids(&updated_ids, &current_view);
+        assert_eq!(
+            positions,
+            vec![1, 2],
+            "selection follows the written ids, not the unrelated failed track at position 0"
+        );
+
+        let narrowed_view = vec![9_i64];
+        assert_eq!(
+            reload_restore::positions_for_ids(&updated_ids, &narrowed_view),
+            vec![0],
+            "a written id no longer in the current view drops out silently"
+        );
+    }
 }
