@@ -45,6 +45,9 @@ pub(in crate::ui) type OnQueueReorder =
 /// Sidebar drag-and-drop "add to playlist" callback — see the `Shared::on_
 /// sidebar_playlist_drop` doc comment.
 pub(in crate::ui) type OnSidebarPlaylistDrop = Rc<dyn Fn(i64, &str, &[i64]) -> bool>;
+/// Sidebar drag-and-drop "add to queue" callback — see the `Shared::on_
+/// sidebar_queue_drop` doc comment.
+pub(in crate::ui) type OnSidebarQueueDrop = Rc<dyn Fn(&[i64]) -> bool>;
 /// "Remove from library" callback — see the `Shared::on_library_mutated` doc
 /// comment. Takes the ids actually deleted (Stage-3 close-out).
 pub(in crate::ui) type OnLibraryMutated = Rc<dyn Fn(&[i64])>;

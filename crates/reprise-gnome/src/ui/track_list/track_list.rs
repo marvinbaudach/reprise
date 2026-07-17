@@ -80,7 +80,8 @@ use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
     OnActivate, OnLibraryMutated, OnPlaySelected, OnQueueActivate, OnQueueRemove, OnQueueReorder,
-    OnQueueSelected, OnReload, OnSelectionChanged, OnSidebarPlaylistDrop, OnTagsMutated,
+    OnQueueSelected, OnReload, OnSelectionChanged, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
+    OnTagsMutated,
 };
 
 pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
@@ -267,6 +268,13 @@ pub(in crate::ui) struct Shared {
     /// direct calls. Takes `(playlist_id, playlist_name, ids)` and returns
     /// whether anything was actually added.
     pub(in crate::ui) on_sidebar_playlist_drop: RefCell<Option<OnSidebarPlaylistDrop>>,
+    /// Sidebar drag-and-drop "add to queue" callback — the Queue-row twin of
+    /// `on_sidebar_playlist_drop` above, existing for the identical reason
+    /// (`ui::track_list_dnd_smoke`'s `REPRISE_SMOKE_DND=addqueue` hook needs
+    /// to drive the *exact* sequence a real drop onto the Queue row runs, and
+    /// this module has no direct handle on `Sidebar`). `window.rs` wires it
+    /// to `Sidebar::handle_queue_drop`; returns whether anything was appended.
+    pub(in crate::ui) on_sidebar_queue_drop: RefCell<Option<OnSidebarQueueDrop>>,
     /// Stage 3 Task 8: the ImportErrors source's dedicated panel — see
     /// `STACK_PAGE_IMPORT_ERRORS`'s doc comment. Built once, alongside every
     /// other widget, and refreshed (not rebuilt) on every `reload()` while
@@ -485,6 +493,13 @@ impl TrackList {
         callback: impl Fn(i64, &str, &[i64]) -> bool + 'static,
     ) {
         *self.shared.on_sidebar_playlist_drop.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Injects the sidebar "add to queue" drag-and-drop callback — see the
+    /// `Shared::on_sidebar_queue_drop` doc comment. `window.rs` wires this to
+    /// `Sidebar::handle_queue_drop`.
+    pub fn set_on_sidebar_queue_drop(&self, callback: impl Fn(&[i64]) -> bool + 'static) {
+        *self.shared.on_sidebar_queue_drop.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the "Rescan library" context-menu action callback (Missing
