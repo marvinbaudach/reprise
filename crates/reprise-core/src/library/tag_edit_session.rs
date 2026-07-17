@@ -8,7 +8,7 @@
 //!
 //! ## Effective value = original, overridden by pending
 //!
-//! Every read in this module goes through [`TagEditSession::effective_value`]:
+//! Every read in this module goes through `TagEditSession::effective_value`:
 //! a track's pending patch (if any) wins field-by-field over its original
 //! snapshot value. This is the single definition of "what the user would see
 //! right now", reused by the mixed-placeholder calculation, the review

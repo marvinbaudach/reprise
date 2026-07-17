@@ -1,5 +1,5 @@
 //! Context-menu orchestration for batch tag editing: resolve the complete
-//! selection into a [`TagEditSession`], present the dialog, stream the save
+//! selection into a `TagEditSession`, present the dialog, stream the save
 //! batch's progress while the dialog stays open (F2), then reconcile GTK
 //! state and show the FB-3 failure path once the write has completed.
 //!

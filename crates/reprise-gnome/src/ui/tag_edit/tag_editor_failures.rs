@@ -1,6 +1,6 @@
 //! FB-3 failure-details dialog for the tag editor's save path (Task F2):
 //! individual failures are never toasted one by one — the caller collects
-//! them into a single "N failed [Details]" toast (`tag_edit_flow.rs`), and
+//! them into a single "N failed \[Details\]" toast (`tag_edit_flow.rs`), and
 //! this module is what "Details" opens: filename + classified reason per
 //! failure (`WriteErrorKind::user_message()`, never raw Lofty text), plus
 //! an "Edit failed tracks…" button that reopens the editor on exactly
