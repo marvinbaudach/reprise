@@ -158,3 +158,8 @@ Started: 2026-07-16
   und Reprise isoliert, aber der private CUA/AT-SPI-Pfad listete innerhalb der
   Smoke-Frist kein Reprise-Fenster; deshalb wurde kein grüner CUA-Lauf
   behauptet — UX-Regelwerk Task 5.
+
+- UX-Regelwerk-Fundament komplett: Dokument (60 Regelzeilen, 3 `[aktiv]`,
+  1 ersetzt), AGENTS.md-Bindung, Traceability-Gate, Pilot Bereich C (core +
+  e2e), QUE-1-Aktivierungs-Demo. Verhaltensänderungen laufen als `[geplant]`
+  in Folge-Branches (Queue-Branch parallel in Arbeit) — UX-Regelwerk Task 6.

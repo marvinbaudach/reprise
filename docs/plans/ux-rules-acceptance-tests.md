@@ -824,12 +824,12 @@ git commit -m "test: cua-e2e wiring scenario for PLAY-2 double-click activation"
 **Files:**
 - Modify: `.superpowers/sdd/progress.md` (append)
 
-- [ ] **Step 1: Volles Merge-Gate**
+- [x] **Step 1: Volles Merge-Gate**
 
 Run: `scripts/check-merge-readiness.sh`
 Expected: `Merge-readiness checks passed against origin/main` (inkl. `== UX traceability ==`)
 
-- [ ] **Step 2: Ledger-Abschluss**
+- [x] **Step 2: Ledger-Abschluss**
 
 ```markdown
 - UX-Regelwerk-Fundament komplett: Dokument (60 Regelzeilen, 3 [aktiv],
@@ -844,4 +844,4 @@ git add .superpowers/sdd/progress.md
 git commit -m "chore: close out UX rulebook foundation"
 ```
 
-- [ ] **Step 3: Branch-Abschluss dem User überlassen** — superpowers:finishing-a-development-branch (Merge in main vs. warten auf den parallelen Queue-Agenten im selben Branch — Koordination liegt beim User).
+- [x] **Step 3: Branch-Abschluss dem User überlassen** — superpowers:finishing-a-development-branch (Merge in main vs. warten auf den parallelen Queue-Agenten im selben Branch — Koordination liegt beim User).
