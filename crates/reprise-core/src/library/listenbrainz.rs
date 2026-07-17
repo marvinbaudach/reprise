@@ -60,10 +60,11 @@ impl LbStatsClient {
     pub fn with_api_root(base_url: &str) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
-            agent: ureq::builder()
-                .timeout(HTTP_TIMEOUT)
+            agent: ureq::Agent::config_builder()
+                .timeout_global(Some(HTTP_TIMEOUT))
                 .user_agent(USER_AGENT)
-                .build(),
+                .build()
+                .new_agent(),
         }
     }
 
@@ -148,12 +149,13 @@ impl LbStatsClient {
 
     fn get(&self, url: &str, username: &str) -> Result<String, RemoteStatsError> {
         let response = self.agent.get(url).call().map_err(|error| match &error {
-            ureq::Error::Status(404, _) => RemoteStatsError::UserNotFound(username.to_string()),
-            ureq::Error::Status(status, _) => RemoteStatsError::Network(format!("HTTP {status}")),
-            ureq::Error::Transport(transport) => RemoteStatsError::Network(transport.to_string()),
+            ureq::Error::StatusCode(404) => RemoteStatsError::UserNotFound(username.to_string()),
+            ureq::Error::StatusCode(status) => RemoteStatsError::Network(format!("HTTP {status}")),
+            other => RemoteStatsError::Network(other.to_string()),
         })?;
         let mut body = String::new();
         response
+            .into_body()
             .into_reader()
             .take(MAX_RESPONSE_BYTES)
             .read_to_string(&mut body)

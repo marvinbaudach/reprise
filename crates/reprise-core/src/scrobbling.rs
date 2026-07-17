@@ -465,10 +465,11 @@ impl ListenBrainzClient {
     pub fn with_api_root(base_url: &str) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
-            agent: ureq::builder()
-                .timeout(HTTP_TIMEOUT)
+            agent: ureq::Agent::config_builder()
+                .timeout_global(Some(HTTP_TIMEOUT))
                 .user_agent(USER_AGENT)
-                .build(),
+                .build()
+                .new_agent(),
         }
     }
 
@@ -494,8 +495,8 @@ impl ListenBrainzClient {
 
     fn classify(error: &ureq::Error) -> TransportError {
         match error {
-            ureq::Error::Status(status, _) => Self::classify_status(*status),
-            ureq::Error::Transport(_) => TransportError::Network,
+            ureq::Error::StatusCode(status) => Self::classify_status(*status),
+            _ => TransportError::Network,
         }
     }
 
@@ -503,9 +504,9 @@ impl ListenBrainzClient {
         let body = serde_json::to_string(body).map_err(|_| TransportError::InvalidResponse)?;
         self.agent
             .post(&self.submission_url())
-            .set("Authorization", &Self::authorization(token))
-            .set("Content-Type", "application/json")
-            .send_string(&body)
+            .header("Authorization", &Self::authorization(token))
+            .header("Content-Type", "application/json")
+            .send(&body)
             .map_err(|error| Self::classify(&error))?;
         Ok(())
     }
@@ -516,11 +517,11 @@ impl ScrobblerTransport for ListenBrainzClient {
         let response = self
             .agent
             .get(&self.validation_url())
-            .set("Authorization", &Self::authorization(token))
+            .header("Authorization", &Self::authorization(token))
             .call()
             .map_err(|error| Self::classify(&error))?;
         let mut body = String::new();
-        let reader = response.into_reader();
+        let reader = response.into_body().into_reader();
         let mut reader: Take<_> = reader.take(MAX_RESPONSE_BYTES + 1);
         reader
             .read_to_string(&mut body)

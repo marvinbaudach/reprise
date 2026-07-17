@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Write as _;
 use std::io::{Read, Take};
 use std::time::Duration;
 
@@ -84,10 +85,11 @@ impl LastFmClient {
             shared_secret,
             api_root: format!("{}/", api_root.trim_end_matches('/')),
             auth_root: format!("{}/", auth_root.trim_end_matches('/')),
-            agent: ureq::builder()
-                .timeout(HTTP_TIMEOUT)
+            agent: ureq::Agent::config_builder()
+                .timeout_global(Some(HTTP_TIMEOUT))
                 .user_agent(USER_AGENT)
-                .build(),
+                .build()
+                .new_agent(),
         })
     }
 
@@ -141,10 +143,10 @@ impl LastFmClient {
         let response = self
             .agent
             .post(&self.api_root)
-            .send_form(&form)
+            .send_form(form)
             .map_err(|error| classify_http_error(&error))?;
         let mut body = String::new();
-        let reader = response.into_reader();
+        let reader = response.into_body().into_reader();
         let mut reader: Take<_> = reader.take(MAX_RESPONSE_BYTES + 1);
         reader
             .read_to_string(&mut body)
@@ -191,7 +193,11 @@ pub(crate) fn method_signature(params: &BTreeMap<String, String>, shared_secret:
         material.push_str(value);
     }
     material.push_str(shared_secret);
-    format!("{:x}", Md5::digest(material.as_bytes()))
+    let mut signature = String::with_capacity(32);
+    for byte in Md5::digest(material.as_bytes()) {
+        let _ = write!(signature, "{byte:02x}");
+    }
+    signature
 }
 
 pub(crate) fn now_playing_params(
@@ -307,12 +313,12 @@ pub(crate) fn classify_api_error(code: u16) -> TransportError {
 
 fn classify_http_error(error: &ureq::Error) -> TransportError {
     match error {
-        ureq::Error::Status(status, _) => match status {
+        ureq::Error::StatusCode(status) => match status {
             408 | 429 | 500..=599 => TransportError::Retryable(*status),
             401 | 403 => TransportError::Unauthorized,
             _ => TransportError::Rejected(*status),
         },
-        ureq::Error::Transport(_) => TransportError::Network,
+        _ => TransportError::Network,
     }
 }
 

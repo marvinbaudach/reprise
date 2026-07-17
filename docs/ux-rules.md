@@ -175,6 +175,11 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   natürlich.
 - **PLAY-6** [geplant] [gtk] — Shuffle/Repeat sind globale Player-Zustände
   (Player-Leiste), keine Ansichts-Zustände. Repeat zyklisch: off → all → one.
+- **PLAY-7** [geplant] [gtk] — Die Player-Leiste ist eine strukturelle
+  Abgrenzung, kein Overlay: Sie beansprucht ihre eigene Höhe im Layout, und
+  kein Content-Element (Trackliste, Sidebar, rechte Info-Spalte) läuft je
+  unter oder hinter ihr durch. Ihr Hintergrund ist opak.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## D. Albums- & Artists-Ansicht
 

@@ -438,20 +438,22 @@ fn http_get(url: &str) -> HttpOutcome {
         let log_path = std::env::var(FIXTURE_LOG_ENV).ok().map(PathBuf::from);
         return fixture_get_at(url, Path::new(&directory), log_path.as_deref());
     }
-    let response = match ureq::builder()
-        .timeout(HTTP_TIMEOUT)
-        .user_agent(&crate::musicbrainz::user_agent())
+    let response = match ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        .user_agent(crate::musicbrainz::user_agent())
         .build()
+        .new_agent()
         .get(url)
         .call()
     {
         Ok(response) => response,
-        Err(ureq::Error::Status(404, _)) => return HttpOutcome::NotFound,
+        Err(ureq::Error::StatusCode(404)) => return HttpOutcome::NotFound,
         Err(_) => return HttpOutcome::Temporary,
     };
     let mut body = Vec::new();
     use std::io::Read;
     if response
+        .into_body()
         .into_reader()
         .take((MAX_RESPONSE_BYTES + 1) as u64)
         .read_to_end(&mut body)

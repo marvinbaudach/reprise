@@ -263,16 +263,18 @@ pub(in crate::ui) fn css() -> String {
     use super::style::tokens::TRANSITION;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
-           background-color: rgba(26, 26, 26, 0.92); \
+           background-color: rgb(26, 26, 26); \
            border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \
-           box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.40); \
+           box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.60), \
+                       0 0 26px 6px alpha(@reprise_player_accent, 0.35); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform 120ms ease-out; }}\n\
          .{PLAY_CSS_CLASS}:hover {{ \
-           box-shadow: 0 0 20px alpha(@reprise_player_accent, 0.55); }}\n\
+           box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.75), \
+                       0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
          .{PLAY_CSS_CLASS}:active {{ transform: scale(0.94); }}\n\
          .{COVER_CSS_CLASS} {{ \
            border-radius: 8px; \

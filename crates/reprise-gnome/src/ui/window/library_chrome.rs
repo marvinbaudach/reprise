@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn header_stays_above_a_player_bar_overlay() {
+    fn header_stays_above_a_player_bar_shell() {
         if gtk4::init().is_err() {
             return;
         }
@@ -248,10 +248,10 @@ mod tests {
             chrome.root.content().as_ref(),
             Some(shell.widget().upcast_ref())
         );
-        // The navigation is the overlay's main child; the bar is an overlay
-        // widget, not a positional child.
+        // Bar and navigation are structural siblings: with the Top position
+        // the bar precedes the navigation instead of floating above it.
         assert_eq!(
-            shell.widget().child().as_ref(),
+            shell.widget().last_child().as_ref(),
             Some(navigation.upcast_ref::<gtk4::Widget>())
         );
         assert!(player.is_ancestor(shell.widget()));

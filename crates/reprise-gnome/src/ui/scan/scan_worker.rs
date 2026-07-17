@@ -135,14 +135,14 @@ fn reconcile_outcome(
             tracing::error!(%error, "scan failed");
             toasts::show(
                 toast_overlay,
-                &format!("{}{error}", &strings::text(strings::SCAN_FAILED_PREFIX)),
+                &format!("{}{error}", strings::text(strings::SCAN_FAILED_PREFIX)),
             );
         }
         Err(error) => {
             tracing::error!(%error, "scan worker channel closed unexpectedly");
             toasts::show(
                 toast_overlay,
-                &format!("{}{error}", &strings::text(strings::SCAN_FAILED_PREFIX)),
+                &format!("{}{error}", strings::text(strings::SCAN_FAILED_PREFIX)),
             );
         }
     }
