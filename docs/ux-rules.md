@@ -72,7 +72,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **P-5** [geplant] [core] — Die App löscht nie Dateien. „Remove" heißt
   immer: Library-Eintrag. Dialoge benennen Kaskaden (Ratings, Hörhistorie)
   beim Namen.
-- **P-6** [geplant] [core] — Evidenz-Regel: Was beweisbar da ist, wird
+- **P-6** [aktiv] [core] — Evidenz-Regel: Was beweisbar da ist, wird
   angezeigt/geheilt (Mount-Event, Resurrect); was beweisbar weg ist, wird
   sofort ehrlich markiert (Eject). Vermutungen (unmounted) sind nie
   Lösch-Grundlage.
@@ -281,7 +281,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **FB-5b** [geplant] [gtk] — Ein nicht verfügbarer Library-Root zeigt die
   StatusPage „Library folder unavailable — Retry" mit genau diesem nächsten
   Schritt.
-- **FB-6** [geplant] [core] — Gelöschte Datei (extern, Watcher): kein Toast
+- **FB-6** [aktiv] [core] — Gelöschte Datei (extern, Watcher): kein Toast
   pro Datei (Rauschen) — Row wird grau/verschwindet gemäß Missing-Regeln,
   ISSUES-Badge zählt hoch. Ausnahme: der gerade spielende Track faultet →
   Skip + ein Toast „Track unavailable — skipped".

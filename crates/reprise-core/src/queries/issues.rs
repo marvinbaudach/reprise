@@ -200,6 +200,107 @@ pub fn query_missing_rows(
     rows.collect()
 }
 
+// -- Mount-event evidence (Task 5.4) ---------------------------------------
+
+/// Rechecks every live row currently classified `unmounted` or `unknown`
+/// against the filesystem and clears its missing state when its exact path
+/// is a file again. Returns only ids whose guarded `UPDATE` actually healed
+/// the row, ordered by id.
+///
+/// The filesystem check deliberately happens before a write-time identity
+/// and state guard. A mount event and the watcher can race: between the
+/// initial candidate `SELECT` and this update, an id can be relinked,
+/// removed, or otherwise reconciled. Requiring the same `(id, path)` and a
+/// still-live `unmounted`/`unknown` state prevents stale mount-event work
+/// from resurrecting or rewriting that newer identity.
+pub fn verify_unmounted_tracks(conn: &Connection) -> Result<Vec<i64>, rusqlite::Error> {
+    let candidates = {
+        let mut statement = conn.prepare(&format!(
+            "SELECT id,path FROM tracks WHERE {MISSING} AND missing_reason IN (?1,?2) \
+             ORDER BY id"
+        ))?;
+        let rows = statement
+            .query_map(
+                rusqlite::params![
+                    MissingReason::Unmounted.as_str(),
+                    MissingReason::Unknown.as_str()
+                ],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+
+    let mut healed = Vec::new();
+    for (id, path) in candidates {
+        if !std::path::Path::new(&path).is_file() {
+            continue;
+        }
+        let changed = conn.execute(
+            &format!(
+                "UPDATE tracks SET missing_since=NULL,missing_reason=NULL \
+                 WHERE id=?1 AND path=?2 AND {MISSING} AND missing_reason IN (?3,?4)"
+            ),
+            rusqlite::params![
+                id,
+                path,
+                MissingReason::Unmounted.as_str(),
+                MissingReason::Unknown.as_str()
+            ],
+        )?;
+        if changed == 1 {
+            healed.push(id);
+        }
+    }
+    Ok(healed)
+}
+
+/// Applies a `mount-removed` event as positive evidence: every live row whose
+/// path is under `mount_point` becomes unavailable immediately. Path
+/// containment, rather than equality against the stored `mount_point`
+/// column, is deliberate: GIO's mount root is the event's current evidence,
+/// while an older row's cached mount identity may be absent or stale.
+/// Existing missing rows and tombstones are left untouched.
+pub fn mark_mount_unavailable(
+    conn: &Connection,
+    mount_point: &str,
+    now: i64,
+) -> Result<u32, rusqlite::Error> {
+    let mount_root = std::path::Path::new(mount_point);
+    if !mount_root.is_absolute() {
+        return Ok(0);
+    }
+    let candidates = {
+        let mut statement = conn.prepare(&format!(
+            "SELECT id,path FROM tracks WHERE {} ORDER BY id",
+            super::clauses::PRESENT
+        ))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+
+    let mut marked = 0u32;
+    for (id, path) in candidates {
+        if !std::path::Path::new(&path).starts_with(mount_root) {
+            continue;
+        }
+        let changed = conn.execute(
+            &format!(
+                "UPDATE tracks SET missing_since=?1,missing_reason=?2 \
+                 WHERE id=?3 AND path=?4 AND {}",
+                super::clauses::PRESENT
+            ),
+            rusqlite::params![now, MissingReason::Unmounted.as_str(), id, path],
+        )?;
+        marked += changed as u32;
+    }
+    Ok(marked)
+}
+
 // -- Auto-clean (Task 2.3) --------------------------------------------------
 //
 // The Deleted card (this module's `MissingGroupKind::Deleted`) is a self-

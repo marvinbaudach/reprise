@@ -1,6 +1,6 @@
 //! Shared scan cancellation, progress fan-out, and trigger state.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -66,6 +66,7 @@ pub(in crate::ui) struct ScanControls {
     on_scan_state_changed: Rc<RefCell<Option<OnScanStateChanged>>>,
     empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
     sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
+    library_root_unavailable: Rc<Cell<bool>>,
     waveform_backend: Arc<dyn WaveformBackend>,
 }
 
@@ -85,6 +86,7 @@ impl ScanControls {
             on_scan_state_changed: Rc::new(RefCell::new(None)),
             empty_indicator: Rc::new(RefCell::new(None)),
             sidebar_toggle: Rc::new(RefCell::new(None)),
+            library_root_unavailable: Rc::new(Cell::new(false)),
             waveform_backend,
         }
     }
@@ -101,6 +103,14 @@ impl ScanControls {
 
     pub(in crate::ui) fn is_scanning(&self) -> bool {
         !self.button.is_sensitive()
+    }
+
+    pub(in crate::ui) fn set_library_root_unavailable(&self, unavailable: bool) {
+        self.library_root_unavailable.set(unavailable);
+    }
+
+    pub(in crate::ui) fn library_root_unavailable(&self) -> bool {
+        self.library_root_unavailable.get()
     }
 
     pub(in crate::ui) fn request_cancel(&self) {
