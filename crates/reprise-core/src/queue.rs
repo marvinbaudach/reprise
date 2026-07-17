@@ -600,3 +600,7 @@ mod tests;
 #[cfg(test)]
 #[path = "queue_remove_tests.rs"]
 mod remove_tests;
+
+#[cfg(test)]
+#[path = "queue_ux_rules_tests.rs"]
+mod ux_rules_tests;
