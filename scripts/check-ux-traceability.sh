@@ -23,6 +23,13 @@ while read -r id st; do
 done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(aktiv|geplant|ersetzt)' "$doc" \
   | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(aktiv|geplant|ersetzt)/\1 \2/')
 
+# --- Read the document: ID -> level (core|gtk|e2e|manuell) ---
+declare -A level_of
+while read -r id lvl; do
+  level_of[$id]=$lvl
+done < <(grep -oE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[(aktiv|geplant)\] \[(core|gtk|e2e|manuell)\]' "$doc" \
+  | sed -E 's/^- \*\*([A-Z]+-[0-9]+[a-z]?)\*\* \[(aktiv|geplant)\] \[([a-z0-9]+)\]/\1 \3/')
+
 # Derive the section prefixes from the document itself, so a new rulebook
 # section is gated without editing this script.
 prefixes=$(printf '%s\n' "${!status_of[@]}" | sed -E 's/-.*$//' \
@@ -40,6 +47,19 @@ kebab_refs=$(grep -rhE "(${prefixes})-[0-9]+[a-z]?-[a-z0-9-]+" scripts/cua-e2e 2
   | grep -oE "(${prefixes})-[0-9]+[a-z]?-[a-z0-9-]+" \
   | grep -oE "^(${prefixes})-[0-9]+[a-z]?" | sort -u || true)
 
+# --- Collect checklist references (RELEASING.md, word-bounded IDs) ---
+releasing=RELEASING.md
+prefixes_upper=$(printf '%s' "$prefixes" | tr '[:lower:]' '[:upper:]')
+declare -A in_releasing
+while read -r id; do
+  [[ -n $id ]] || continue
+  in_releasing[$id]=1
+  case "${status_of[$id]:-missing}" in
+    missing) echo "ERROR: RELEASING.md references unknown rule $id" >&2; fail=1 ;;
+    ersetzt) echo "ERROR: RELEASING.md references replaced rule $id — re-point it" >&2; fail=1 ;;
+  esac
+done < <(grep -hoE "\b(${prefixes_upper})-[0-9]+[a-z]?\b" "$releasing" 2>/dev/null | sort -u || true)
+
 to_id() { # play_1a or play-1a -> PLAY-1a
   local raw=${1//-/_} prefix nr
   prefix=${raw%%_*}; nr=${raw#*_}
@@ -56,9 +76,14 @@ for ref in $snake_refs $kebab_refs; do
   esac
 done
 
-# --- Direction 1: every [aktiv] rule has a test ---
+# --- Direction 1: every [aktiv] rule is covered on its level ---
 for id in "${!status_of[@]}"; do
-  if [[ ${status_of[$id]} == aktiv && -z ${tested[$id]:-} ]]; then
+  [[ ${status_of[$id]} == aktiv ]] || continue
+  if [[ ${level_of[$id]:-} == manuell ]]; then
+    if [[ -z ${in_releasing[$id]:-} ]]; then
+      echo "ERROR: [aktiv] [manuell] rule $id is not referenced in RELEASING.md" >&2; fail=1
+    fi
+  elif [[ -z ${tested[$id]:-} ]]; then
     echo "ERROR: [aktiv] rule $id has no rule-named test" >&2; fail=1
   fi
 done
