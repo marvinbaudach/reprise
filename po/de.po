@@ -2324,3 +2324,15 @@ msgstr "Cover & Songtexte: {remaining} in der Warteschlange"
 
 msgid "Scanning · {pct}%"
 msgstr "Scanne · {pct} %"
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs
+msgid "Clear all"
+msgstr "Alle löschen"
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs
+msgid "⌕ “{query}” in any field"
+msgstr "⌕ „{query}“ in allen Feldern"
+
+#: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs
+msgid "Remove search: {query}"
+msgstr "Suche entfernen: {query}"
