@@ -15,6 +15,7 @@ use rusqlite::{Connection, OptionalExtension};
 /// risking a typo'd duplicate string.
 pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
+pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
 /// an error — for a key that has never been written, matching every other
@@ -82,6 +83,14 @@ pub fn get_library_root(conn: &Connection) -> Result<Option<String>, rusqlite::E
 
 pub fn set_library_root(conn: &Connection, root: &str) -> Result<(), rusqlite::Error> {
     set_setting(conn, LIBRARY_ROOT_KEY, root)
+}
+
+pub fn get_last_scan_relinked(conn: &Connection) -> Result<Option<u32>, rusqlite::Error> {
+    Ok(get_setting(conn, LAST_SCAN_RELINKED_KEY)?.and_then(|value| value.parse::<u32>().ok()))
+}
+
+pub fn set_last_scan_relinked(conn: &Connection, count: u32) -> Result<(), rusqlite::Error> {
+    set_setting(conn, LAST_SCAN_RELINKED_KEY, &count.to_string())
 }
 
 pub fn get_onboarding_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {

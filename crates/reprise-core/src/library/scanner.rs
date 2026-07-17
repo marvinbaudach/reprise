@@ -109,6 +109,20 @@ impl ScanReport {
     }
 }
 
+/// Runs the stateful work that belongs after—and only after—a completed
+/// scan, regardless of whether the scan was explicit or watcher-triggered.
+/// Keeping this next to [`ScanOutcome`] prevents a second scan entry point
+/// from forgetting the `last_scan_relinked` update or running destructive
+/// auto-clean after `RootUnavailable`.
+pub fn finalize_completed_scan(
+    conn: &mut Connection,
+    report: &ScanReport,
+    now: i64,
+) -> Result<Vec<i64>, ScanError> {
+    super::settings::set_last_scan_relinked(conn, report.moved)?;
+    Ok(crate::queries::run_auto_clean(conn, now)?)
+}
+
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
 
 pub(crate) fn is_audio_file(path: &Path) -> bool {

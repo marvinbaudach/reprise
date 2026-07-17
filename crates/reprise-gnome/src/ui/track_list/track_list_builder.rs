@@ -55,6 +55,14 @@ pub(in crate::ui) fn build(
     scrolled.set_margin_bottom(PLAYER_BAR_HEIGHT);
 
     let empty_page = build_status_page();
+    let empty_page_actions = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    empty_page_actions.set_halign(gtk4::Align::Center);
+    let retry_library_button =
+        gtk4::Button::with_label(&crate::ui::strings::text(crate::ui::strings::RETRY));
+    retry_library_button.add_css_class("suggested-action");
+    retry_library_button.set_visible(false);
+    empty_page_actions.append(&retry_library_button);
+    empty_page.set_child(Some(&empty_page_actions));
     let import_errors_view = ImportErrorsView::new(conn.clone());
     let missing_files_view = MissingFilesView::new(conn.clone());
     let stack = super::track_list_layout::build_track_content_stack();
@@ -83,6 +91,10 @@ pub(in crate::ui) fn build(
         browse_filter: RefCell::new(BrowseFilter::default()),
         stack,
         empty_page,
+        empty_page_actions,
+        retry_library_button: retry_library_button.clone(),
+        library_root_unavailable: Cell::new(false),
+        unavailable_library_root: RefCell::new(None),
         sort: RefCell::new(SortState::default()),
         restoring_view: Cell::new(false),
         filter: RefCell::new(String::new()),
@@ -112,6 +124,19 @@ pub(in crate::ui) fn build(
         on_selection_changed: RefCell::new(None),
         player: RefCell::new(std::rc::Weak::new()),
     });
+
+    {
+        let shared_weak = Rc::downgrade(&shared);
+        retry_library_button.connect_clicked(move |_| {
+            let Some(shared) = shared_weak.upgrade() else {
+                return;
+            };
+            let callback = shared.on_rescan_library.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+    }
 
     track_list_selection::wire(&shared);
     {

@@ -363,7 +363,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         sidebar.clone(),
         watcher_state.clone(),
     );
-    start_persisted_watcher(conn, db_path, track_list, sidebar, watcher_state);
+    start_persisted_watcher(
+        conn,
+        db_path,
+        scan_controls,
+        track_list,
+        sidebar,
+        watcher_state,
+    );
     super::mounts::install(&super::mounts::MountWiring {
         conn,
         db_path,
@@ -407,6 +414,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
 fn start_persisted_watcher(
     conn: &Rc<RefCell<Connection>>,
     db_path: &Path,
+    scan_controls: &ScanControls,
     track_list: &Rc<TrackList>,
     sidebar: &Rc<Sidebar>,
     watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
@@ -420,6 +428,7 @@ fn start_persisted_watcher(
             watcher_state,
             &PathBuf::from(root),
             db_path.to_path_buf(),
+            scan_controls.clone(),
             Rc::downgrade(track_list),
             Rc::downgrade(sidebar),
         ),

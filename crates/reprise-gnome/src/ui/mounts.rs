@@ -64,7 +64,11 @@ pub(in crate::ui) fn install(args: &MountWiring<'_>) {
         watcher_state,
     } = *args;
     let initial_root = library_root(conn);
-    controls.set_library_root_unavailable(initial_root.as_ref().is_some_and(|root| !root.is_dir()));
+    let initially_unavailable = initial_root.as_ref().is_some_and(|root| !root.is_dir());
+    controls.set_library_root_unavailable(initially_unavailable);
+    if initially_unavailable {
+        track_list.set_library_root_unavailable(initial_root);
+    }
 
     let (command_tx, command_rx) = async_channel::unbounded();
     let (result_tx, result_rx) = async_channel::unbounded();
@@ -132,11 +136,18 @@ pub(in crate::ui) fn install(args: &MountWiring<'_>) {
                         marked,
                         "mount removed: marked live tracks unavailable"
                     );
-                    if library_root(&conn)
+                    let persisted_root = library_root(&conn);
+                    let affects_library = persisted_root
                         .as_ref()
-                        .is_some_and(|library| mount_contains(&root, library))
-                    {
+                        .is_some_and(|library| mount_contains(&root, library));
+                    if affects_library {
                         controls.set_library_root_unavailable(true);
+                        if let Some(library_root) = persisted_root {
+                            controls.show_root_unavailable(&library_root);
+                            if let Some(track_list) = track_list.upgrade() {
+                                track_list.set_library_root_unavailable(Some(library_root));
+                            }
+                        }
                     }
                     refresh_views(&track_list, &sidebar, "mount removed");
                 }
