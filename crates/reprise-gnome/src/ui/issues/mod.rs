@@ -37,7 +37,8 @@ pub(in crate::ui) fn css() -> String {
          .missing-info-card {{ background-color: alpha(@accent_bg_color, 0.07); \
            border: 1px solid alpha(@accent_color, 0.18); border-radius: {RADIUS_SURFACE}; \
            padding: 12px; }}
-         .missing-clear-state image {{ color: @accent_color; }}"
+         .missing-clear-state image {{ color: @accent_color; }}
+         .import-hint-row {{ background-color: alpha(@accent_bg_color, 0.07); }}"
     )
 }
 

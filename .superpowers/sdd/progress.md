@@ -293,3 +293,4 @@ Four corrections the replan records: (1) PLAY-5a (queue purge on deleted) ALREAD
   docs/superpowers/plans/2026-07-17-missing-import-errors-taskplan.md — packages 3-6, task by task, with the frozen core API, the four corrections vs. the original plan, rule-flip ownership, and file ownership.
   Claude's role from here: review only, per task. Packages 1-2 stay as delivered. ===
 Task 3.1: complete (commit dea619d, base dae75d2, added shared issue cards, GTK button hover actions, native multiple selection, and lazy two-plus-fifty row paging with localized copy; the post-review string-catalog exception was reversed by the maintainer and replaced with the thematic strings_issues.rs sibling catalog).
+Task 3.2: complete (commit 1d27cc2, base 8f3bdc8, added the grouped Missing-files view, tombstone Undo/startup purge, queue purge, safe auto-clean activation, and the FB-5a split; activated FB-7, FB-5a, and SET-4 with rule-named tests).

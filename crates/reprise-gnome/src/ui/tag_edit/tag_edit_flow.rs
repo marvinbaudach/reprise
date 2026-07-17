@@ -12,6 +12,7 @@ use gtk4::prelude::*;
 use reprise_core::library::tag_edit::{
     apply_track_edit_batch_ignored, EditableTags, TagBatchReport, TagPatch, TrackEditPatch,
 };
+use rusqlite::OptionalExtension;
 
 use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
@@ -101,6 +102,59 @@ fn begin(shared: &Rc<Shared>) {
         |_direction| false,
     );
     tracing::debug!("tag editor presented");
+}
+
+pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
+    let seed = {
+        let conn = shared.conn.borrow();
+        conn.query_row(
+            "SELECT id,title,artist,album,album_artist,year,track_no,genre,rating \
+             FROM tracks WHERE path=?1 AND removed_at IS NULL",
+            [path],
+            |row| {
+                let year = row
+                    .get::<_, Option<i32>>(5)?
+                    .and_then(|value| u32::try_from(value).ok());
+                let track_no = row
+                    .get::<_, Option<i32>>(6)?
+                    .and_then(|value| u32::try_from(value).ok());
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    EditableTags {
+                        title: row.get(1)?,
+                        artist: row.get(2)?,
+                        album: row.get(3)?,
+                        album_artist: row.get(4)?,
+                        year,
+                        track_no,
+                        genre: row.get(7)?,
+                    },
+                    row.get::<_, i32>(8)?,
+                ))
+            },
+        )
+        .optional()
+    };
+    let Ok(Some((id, tags, rating))) = seed else {
+        tracing::warn!(path, "tag editor: import hint has no live track row");
+        return;
+    };
+    let Some(window) = shared.window.upgrade() else {
+        tracing::warn!("tag editor: window is gone");
+        return;
+    };
+    let tracks = vec![(id, PathBuf::from(path))];
+    let tracks_for_apply = tracks.clone();
+    let shared_for_apply = shared.clone();
+    tag_editor::present(
+        &window,
+        &shared.conn,
+        &tracks,
+        &[tags],
+        &[rating],
+        move |patch| start_apply(&shared_for_apply, tracks_for_apply.clone(), patch),
+        |_direction| false,
+    );
 }
 
 fn start_apply(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, patch: TrackEditPatch) {
