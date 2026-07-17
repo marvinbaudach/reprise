@@ -136,9 +136,9 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     track_list.set_missing_relink_db_path(db_path.to_path_buf());
     {
         let sidebar = Rc::downgrade(sidebar);
-        track_list.set_on_missing_relink_progress_activate(move || {
+        track_list.set_on_missing_relink_progress_activate(move |target| {
             if let Some(sidebar) = sidebar.upgrade() {
-                sidebar.refresh_and_select(ViewSource::Missing, "relink progress card");
+                sidebar.refresh_and_select(target, "relink progress card");
             }
         });
     }

@@ -254,7 +254,10 @@ impl MissingFilesView {
         self.shared.relink_progress.widget()
     }
 
-    pub(in crate::ui) fn set_on_relink_progress_activate(&self, callback: impl Fn() + 'static) {
+    pub(in crate::ui) fn set_on_relink_progress_activate(
+        &self,
+        callback: impl Fn(reprise_core::view_source::ViewSource) + 'static,
+    ) {
         self.shared.relink_progress.set_on_activate(callback);
     }
 }

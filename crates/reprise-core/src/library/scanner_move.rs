@@ -13,6 +13,10 @@ use std::path::Path;
 use super::track_meta::TrackMeta;
 use super::ScanError;
 
+/// The one duration tolerance shared by automatic move matching and the
+/// user-confirmed Locate mismatch probe.
+pub(crate) const MOVE_MATCH_TOLERANCE_MS: i64 = 2_000;
+
 /// A DB row that is a *candidate* to be the pre-move identity of a file at
 /// an unknown path: `id`/`path` to perform the move `UPDATE` against.
 #[derive(Debug, PartialEq)]
@@ -109,10 +113,12 @@ fn find_move_candidate_inner(
     }
 
     let rows: Vec<(i64, String, Option<i64>)> = {
-        let mut stmt = tx.prepare(
+        let fingerprint_query = format!(
             "SELECT id, path, missing_since FROM tracks WHERE title = ?1 AND artist = ?2 \
-             AND album = ?3 AND ABS(duration_ms - ?4) <= 2000 AND file_size = ?5",
-        )?;
+             AND album = ?3 AND ABS(duration_ms - ?4) <= {MOVE_MATCH_TOLERANCE_MS} \
+             AND file_size = ?5"
+        );
+        let mut stmt = tx.prepare(&fingerprint_query)?;
         let mapped = stmt
             .query_map(
                 rusqlite::params![

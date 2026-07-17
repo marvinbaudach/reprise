@@ -38,7 +38,7 @@
 //! playlists with duration rules, total-playtime stats, the queue's
 //! remaining-time display, duration-sorted views, and especially the
 //! fingerprint half of move detection (`scanner.rs`'s `find_move_candidate`
-//! step 2), which matches on `ABS(duration_ms - ?) <= 2000` — `0` isn't
+//! step 2), which matches within `MOVE_MATCH_TOLERANCE_MS` — `0` isn't
 //! "unknown" there, it's a value that actively participates in a match, and
 //! a row showing "0:00" looks like a bug because it is one. [`read_meta_
 //! relaxed`] exists precisely to get the REAL duration and bitrate from the

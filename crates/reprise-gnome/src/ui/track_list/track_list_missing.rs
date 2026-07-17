@@ -36,7 +36,7 @@ impl TrackList {
 
     pub(in crate::ui) fn set_on_missing_relink_progress_activate(
         &self,
-        callback: impl Fn() + 'static,
+        callback: impl Fn(reprise_core::view_source::ViewSource) + 'static,
     ) {
         self.shared
             .missing_files_view
