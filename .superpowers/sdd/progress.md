@@ -131,3 +131,8 @@ Started: 2026-07-16
 
 - AGENTS.md: binding-UX-rules section added (contract, flip rule, proposal
   protocol) — UX-Regelwerk Task 2.
+
+- Traceability-Lint eingeführt (scripts/check-ux-traceability.sh, 3 Richtungen)
+  und in check-merge-readiness verdrahtet; TESTING.md dokumentiert das Gate —
+  UX-Regelwerk Task 3. Der Aktiv-Zähler ist auf Regelzeilen verankert, damit
+  Prozessbeschreibungen mit `[aktiv]` nicht fälschlich als aktive Regeln zählen.
