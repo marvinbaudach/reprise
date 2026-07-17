@@ -396,7 +396,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Album, Genre; Akzent bold, Pango-escaped). Ist die einzige matchende
   Spalte ausgeblendet, bleibt die Row unmarkiert — akzeptierte Restlücke.
   Chip-Wortlaut bleibt „in any field".
-- **FIL-6** [geplant] [gtk] — 0-Treffer-Leerzustand: StatusPage mit genau
+- **FIL-6** [aktiv] [gtk] — 0-Treffer-Leerzustand: StatusPage mit genau
   einem Button „Show all 1,664 tracks" (= Clear all) — FB-5-konform; der
   eine Schritt führt garantiert zu Inhalt, nie in einen zweiten Leerzustand.
   „Clear all ×" (Filter-Zeile), „Show all N tracks" (Ende-Zeile,

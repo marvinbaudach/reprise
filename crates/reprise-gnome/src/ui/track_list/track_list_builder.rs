@@ -54,6 +54,10 @@ pub(in crate::ui) fn build(
     scrolled.set_margin_bottom(PLAYER_BAR_HEIGHT);
 
     let empty_page = build_status_page();
+    let show_all_button = gtk4::Button::new();
+    show_all_button.add_css_class("pill");
+    show_all_button.set_halign(gtk4::Align::Center);
+    show_all_button.set_action_name(Some("win.clear-all-filters"));
     let import_errors_view = ImportErrorsView::new(conn.clone());
     let stack = super::track_list_layout::build_track_content_stack();
     let list_overlay = gtk4::Overlay::new();
@@ -82,6 +86,8 @@ pub(in crate::ui) fn build(
         browse_filter: RefCell::new(BrowseFilter::default()),
         stack,
         empty_page,
+        show_all_button,
+        empty_scan_widget: RefCell::new(None),
         sort: RefCell::new(SortState::default()),
         restoring_view: Cell::new(false),
         filter: RefCell::new(String::new()),
