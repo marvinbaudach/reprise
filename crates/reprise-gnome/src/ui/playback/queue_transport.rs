@@ -15,9 +15,11 @@
 
 use std::rc::Rc;
 
-use crate::ui::player_controller::PlayerController;
+use crate::ui::player_controller::{PlayerController, StartPlayback};
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::media_integration::MprisPlaybackStatus;
+use reprise_core::queue::Queue;
+use reprise_core::up_next::UpNextQueue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
@@ -25,6 +27,40 @@ enum ToggleAction {
     StartPending,
     TogglePipeline,
     Noop,
+}
+
+/// The track that should take over when the *currently playing* one was
+/// hard-deleted out from under the pipeline (see `purge_queue_ids`). Runs
+/// AFTER the purge has already mutated both queues, which is the one thing
+/// that keeps it from mirroring `up_next_transport.rs`'s `next_target`:
+///
+/// - Pending Up Next wins, exactly as it would on a natural end-of-track.
+/// - Otherwise the context takes over, and *how* depends on where the deleted
+///   track came from. Playing from the context: `Queue::remove_ids` has
+///   already stepped the cursor onto the next survivor, so `current()` IS the
+///   successor and advancing again would skip a track. Playing from Up Next:
+///   the cursor still sits on the context track that played *before* the
+///   interjection, so it must step forward like `next_target` does.
+///
+/// Repeat mode deliberately gets no say: `Repeat::One` cannot loop a track
+/// that no longer exists, and `advance_auto` still honours `Repeat::All` for
+/// the Up Next case.
+fn successor_after_purge(
+    context: &mut Queue,
+    pending: &mut UpNextQueue,
+    current_pending: &mut Option<i64>,
+    was_playing_from_up_next: bool,
+) -> Option<i64> {
+    if let Some(next) = pending.pop_front() {
+        *current_pending = Some(next);
+        return Some(next);
+    }
+    *current_pending = None;
+    if was_playing_from_up_next {
+        context.advance_auto()
+    } else {
+        context.current()
+    }
 }
 
 fn toggle_action(
@@ -414,10 +450,28 @@ impl PlayerController {
     /// which could include ids that turned out not to be missing any more
     /// and so were never deleted. A no-op for an empty slice (no `queue`
     /// borrow taken at all).
+    ///
+    /// Purging the models is only half the job: when the deleted id is the
+    /// track the pipeline is *currently playing*, this also hands playback to
+    /// its successor (`successor_after_purge`), or stops when nothing
+    /// survives. Nothing else would — deleting never attempts a `play()`, so
+    /// `handle_unplayable_track`'s skip path can't fire, and the audio itself
+    /// is unaffected by the file going away (trashing is a rename, and even a
+    /// real unlink leaves an open descriptor's inode playable). Without this,
+    /// a trashed track keeps playing to its end.
     pub(in crate::ui) fn purge_queue_ids(&self, ids: &[i64]) {
         if ids.is_empty() {
             return;
         }
+        // Read before the purge below clears `current_up_next`: which track
+        // the user is actually hearing, and whether it came from Up Next
+        // rather than the playback context. `now_playing` is the loaded
+        // track's identity (the same source `present_track` compares its
+        // `previous_id` against); the borrow ends inside this statement.
+        let playing = self.now_playing.borrow().as_ref().map(|track| track.id);
+        let playing_purged = playing.is_some_and(|id| ids.contains(&id));
+        let played_from_up_next = playing_purged && self.current_up_next.get() == playing;
+
         let context_changed = self.queue.borrow_mut().remove_ids(ids);
         let pending_changed = self.up_next.borrow_mut().remove_ids(ids);
         if self
@@ -438,17 +492,52 @@ impl PlayerController {
             // (adversarial review, queue+nav plan, finding 3).
             self.notify_queue_changed();
         }
-        // The loaded track itself was hard-deleted: skip ahead rather than
-        // keeping a dead id as the composite view's Now Playing row (its
-        // model row would silently drop, desyncing the section ranges —
-        // review finding 4). `next` drains pending first, then the already-
-        // purged context, so it lands on a live track or stops cleanly.
-        let now_playing_purged = {
-            let now_playing = self.now_playing.borrow();
-            now_playing.as_ref().is_some_and(|np| ids.contains(&np.id))
+        // The loaded track itself was purged: the successor logic below
+        // (merged from feat/queue-dnd) both skips playback ahead AND keeps
+        // the composite Queue view's Now Playing row from pointing at a
+        // dead id (adversarial review finding 4) — `present_track` reloads
+        // `now_playing`, the stop path clears it.
+        if !playing_purged {
+            return;
+        }
+        // The pipeline is still playing the deleted file — trashing is a
+        // rename, and an already-open descriptor keeps its inode alive — so
+        // nothing stops on its own. Take over: hand playback to the
+        // successor, or stop when nothing survives.
+        let before = self.up_next.borrow().len();
+        let mut current_pending = self.current_up_next.get();
+        let successor = {
+            let mut context = self.queue.borrow_mut();
+            let mut pending = self.up_next.borrow_mut();
+            successor_after_purge(
+                &mut context,
+                &mut pending,
+                &mut current_pending,
+                played_from_up_next,
+            )
         };
-        if now_playing_purged {
-            self.next();
+        self.current_up_next.set(current_pending);
+        if self.up_next.borrow().len() != before {
+            self.notify_queue_changed();
+        }
+        match successor {
+            Some(next) => {
+                tracing::info!(
+                    deleted = ?playing,
+                    next,
+                    "the playing track was deleted; skipping to its successor"
+                );
+                self.present_track(next, StartPlayback::Yes);
+            }
+            None => {
+                tracing::info!(
+                    deleted = ?playing,
+                    "the playing track was deleted and nothing follows it; stopping"
+                );
+                self.consecutive_skips.set(0);
+                self.failure_skip_limit.set(0);
+                self.reset_to_stopped();
+            }
         }
     }
 }
@@ -456,6 +545,91 @@ impl PlayerController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::queue::Repeat;
+
+    /// Context queue seeded with `ids`, currently playing the one at
+    /// `start_index` — the ordinary "playing from the Library view" shape.
+    fn context(ids: &[i64], start_index: usize) -> Queue {
+        let mut queue = Queue::new();
+        queue.set_tracks(ids.to_vec(), start_index);
+        queue
+    }
+
+    fn pending(ids: &[i64]) -> UpNextQueue {
+        let mut up_next = UpNextQueue::default();
+        up_next.append(ids);
+        up_next
+    }
+
+    #[test]
+    fn purging_the_playing_context_track_plays_the_next_surviving_one() {
+        let mut queue = context(&[10, 20, 30], 0);
+        let mut up_next = pending(&[]);
+        let mut current_pending = None;
+        // `purge_queue_ids` runs this first; it already steps the cursor onto
+        // the next survivor, which is why the successor must NOT advance again.
+        queue.remove_ids(&[10]);
+
+        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
+
+        assert_eq!(next, Some(20));
+        assert_eq!(current_pending, None);
+    }
+
+    #[test]
+    fn purging_the_playing_context_track_prefers_a_pending_up_next_track() {
+        let mut queue = context(&[10, 20], 0);
+        let mut up_next = pending(&[99]);
+        let mut current_pending = None;
+        queue.remove_ids(&[10]);
+
+        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
+
+        assert_eq!(next, Some(99));
+        assert_eq!(current_pending, Some(99));
+        assert!(up_next.is_empty());
+    }
+
+    #[test]
+    fn purging_the_playing_up_next_track_steps_the_context_forward() {
+        // The context cursor still sits on 10 — the track that played before
+        // the up-next interjection — so resuming it would replay it.
+        let mut queue = context(&[10, 20], 0);
+        let mut up_next = pending(&[]);
+        let mut current_pending = None;
+
+        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, true);
+
+        assert_eq!(next, Some(20));
+        assert_eq!(current_pending, None);
+    }
+
+    #[test]
+    fn purging_the_last_surviving_track_stops_playback() {
+        let mut queue = context(&[10], 0);
+        let mut up_next = pending(&[]);
+        let mut current_pending = None;
+        queue.remove_ids(&[10]);
+
+        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
+
+        assert_eq!(next, None);
+    }
+
+    #[test]
+    fn purging_the_playing_track_under_repeat_one_moves_on_instead_of_looping() {
+        // Repeat::One cannot repeat a track that no longer exists, so the
+        // deleted track's successor wins over the repeat mode.
+        let mut queue = context(&[10, 20], 0);
+        queue.set_repeat(Repeat::One);
+        let mut up_next = pending(&[]);
+        let mut current_pending = None;
+        queue.remove_ids(&[10]);
+
+        let next = successor_after_purge(&mut queue, &mut up_next, &mut current_pending, false);
+
+        assert_eq!(next, Some(20));
+    }
 
     #[test]
     fn stopped_toggle_starts_current_queue_track_without_autoplay() {
