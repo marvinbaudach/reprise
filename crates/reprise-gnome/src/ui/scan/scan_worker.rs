@@ -8,7 +8,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::library;
-use reprise_core::library::scanner::{ScanError, ScanProgress, ScanReport};
+use reprise_core::library::scanner::{ScanError, ScanOutcome, ScanProgress};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::waveform::WaveformBackend;
@@ -83,7 +83,7 @@ pub(in crate::ui) fn spawn_scan(
 
 #[allow(clippy::too_many_arguments)]
 fn reconcile_outcome(
-    outcome: Result<Result<ScanReport, ScanError>, async_channel::RecvError>,
+    outcome: Result<Result<ScanOutcome, ScanError>, async_channel::RecvError>,
     folder: &std::path::Path,
     db_path: PathBuf,
     controls: &ScanControls,
@@ -93,7 +93,7 @@ fn reconcile_outcome(
     watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
 ) {
     match outcome {
-        Ok(Ok(report)) => {
+        Ok(Ok(ScanOutcome::Completed(report))) => {
             if controls.is_cancel_requested() {
                 tracing::info!("scan cancelled by user; keeping already-imported tracks");
                 track_list.reload();
@@ -116,6 +116,20 @@ fn reconcile_outcome(
                 );
             }
             controls.notify_complete();
+        }
+        // Task 1.5: `scan_folder` couldn't see `folder` itself this pass —
+        // mapped onto the same toast display path as the error arms below
+        // (per the task's interim UI contract; the real status card is
+        // Task 5.5's job, not this one's), with the literal text the task
+        // specifies rather than a `ScanError`'s `Display` text, since this
+        // isn't an error the scan failed to run — it ran and found nothing
+        // to go on.
+        Ok(Ok(ScanOutcome::RootUnavailable { root })) => {
+            tracing::warn!(root = %root.display(), "scan: library folder unavailable");
+            toasts::show(
+                toast_overlay,
+                &format!("library folder unavailable: {}", root.display()),
+            );
         }
         Ok(Err(error)) => {
             tracing::error!(%error, "scan failed");
@@ -179,13 +193,13 @@ fn run_scan(
     folder: &std::path::Path,
     waveform_backend: &dyn WaveformBackend,
     on_progress: impl FnMut(ScanProgress),
-) -> Result<ScanReport, ScanError> {
+) -> Result<ScanOutcome, ScanError> {
     let mut worker_conn = reprise_core::db::open_migrated(Some(db_path))?;
-    let report =
+    let outcome =
         library::scanner::scan_folder_with_progress(&mut worker_conn, folder, on_progress)?;
     if let Err(error) = settings::set_library_root(&worker_conn, &folder.to_string_lossy()) {
         tracing::error!(%error, "failed to persist library root after scan");
     }
     analyze_waveforms(db_path, waveform_backend);
-    Ok(report)
+    Ok(outcome)
 }

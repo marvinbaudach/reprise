@@ -252,14 +252,29 @@ fn notify_mutated_and_refresh(shared: &Rc<Shared>) {
 /// `path`. On success `scan_folder` itself clears the `import_errors` row if
 /// the file is now readable (or refreshes `reason`/`occurred_at` if it still
 /// isn't) — this function's job is just to run the scan and then refresh.
+///
+/// `scan_folder(<file>)`'s root guard can, in principle, report
+/// `ScanOutcome::RootUnavailable` here too (the "root" passed in is `path`
+/// itself — e.g. the file's *own* directory momentarily vanished, such as an
+/// unmount racing with the click) — mapped onto the same toast display path
+/// as a hard scan error, with the task's literal "library folder
+/// unavailable" text rather than a `ScanError`'s `Display` text, since
+/// nothing actually failed to run.
 fn handle_retry(shared: &Rc<Shared>, path: &str) {
     let result = {
         let mut conn = shared.conn.borrow_mut();
         scanner::scan_folder(&mut conn, Path::new(path))
     };
     match result {
-        Ok(report) => {
+        Ok(scanner::ScanOutcome::Completed(report)) => {
             tracing::info!(path, ?report, "import errors panel: retry rescan complete");
+        }
+        Ok(scanner::ScanOutcome::RootUnavailable { root }) => {
+            tracing::warn!(path, root = %root.display(), "import errors panel: retry target unavailable");
+            show_toast(
+                shared,
+                &format!("library folder unavailable: {}", root.display()),
+            );
         }
         Err(error) => {
             tracing::error!(%error, path, "import errors panel: retry rescan failed to run");

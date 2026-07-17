@@ -1,13 +1,14 @@
 /// Why a track is currently missing (schema v10, Task 1.1's `missing_reason`
-/// column). `Unknown` is the honest default for anything the scanner can't
-/// yet tell apart — in particular every row backfilled by the v10 migration
-/// itself (see `db::SCHEMA_V10`'s doc comment) and every row this task's
-/// `queries::mark_track_missing`/scanner mark-vanished sites set today, since
-/// neither can yet distinguish "the file was deleted" from "its mount is
-/// currently absent". A later task (1.5) introduces the real classifier that
-/// tells `Unmounted` and `Deleted` apart; until then, nothing downstream may
-/// treat an `Unknown`-reason row as safely auto-removable without
-/// re-verifying the file first.
+/// column). `Unknown` is the honest default for anything that can't be told
+/// apart — in particular every row backfilled by the v10 migration itself
+/// (see `db::SCHEMA_V10`'s doc comment, which predates the `device` column
+/// this enum's classifier needs) and any row whose `device` was never
+/// recorded. Task 1.5's `library::mounts::classify_missing` is the real
+/// classifier both `queries::mark_track_missing` and the scanner's folded-in
+/// mark-vanished phase (`library::scanner::scan_folder`) call for every row
+/// that DOES have a recorded device; nothing downstream may treat an
+/// `Unknown`-reason row as safely auto-removable without re-verifying the
+/// file first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissingReason {
     /// The file's mount point is currently absent (e.g. an unplugged

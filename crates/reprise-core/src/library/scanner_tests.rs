@@ -16,6 +16,22 @@ pub(super) fn fixture_copy(dir: &std::path::Path, name: &str) -> std::path::Path
     dst
 }
 
+/// Test-only: unwraps a `ScanOutcome` down to its `ScanReport`, panicking
+/// with the unexpected root on `RootUnavailable`. Every pre-existing test in
+/// this file predates Task 1.5's `ScanOutcome` split and only ever scans a
+/// root it expects to be reachable, so this keeps those assertions reading
+/// exactly as they did against the old bare-`ScanReport` return (`scan_folder
+/// (...).unwrap()` becomes `completed(scan_folder(...).unwrap())`) instead of
+/// rewriting every one of them to match on `ScanOutcome::Completed` by hand.
+pub(super) fn completed(outcome: ScanOutcome) -> ScanReport {
+    match outcome {
+        ScanOutcome::Completed(report) => report,
+        ScanOutcome::RootUnavailable { root } => {
+            panic!("expected ScanOutcome::Completed, got RootUnavailable({root:?})")
+        }
+    }
+}
+
 /// Writes identical title/artist/album tags to a fixture file so two
 /// separate copies produce the same fingerprint (title+artist+album+
 /// duration+file_size) that move detection's step 2 matches on.
@@ -70,7 +86,7 @@ fn move_via_rename_preserves_metadata() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     conn.execute(
@@ -85,7 +101,7 @@ fn move_via_rename_preserves_metadata() {
     let new_path = new_dir.join("track.flac");
     std::fs::rename(&old_path, &new_path).unwrap();
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 1);
     assert_eq!(r2.added, 0);
     assert_eq!(row_count(&conn), 1);
@@ -111,7 +127,7 @@ fn move_via_copy_delete_preserves_metadata() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     conn.execute(
@@ -127,7 +143,7 @@ fn move_via_copy_delete_preserves_metadata() {
     std::fs::copy(&old_path, &new_path).unwrap();
     std::fs::remove_file(&old_path).unwrap();
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 1);
     assert_eq!(r2.added, 0);
     assert_eq!(row_count(&conn), 1);
@@ -155,7 +171,7 @@ fn ambiguous_duplicates_are_not_guessed() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
     assert_eq!(row_count(&conn), 2);
 
@@ -171,7 +187,7 @@ fn ambiguous_duplicates_are_not_guessed() {
     .unwrap();
     tag_file(&new_path, "Duplicate Song", "Some Artist", "Some Album");
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 0);
     assert_eq!(r2.added, 1);
     // Both stale rows remain untouched (missing-marking is a Stage 3/
@@ -197,7 +213,7 @@ fn one_deleted_one_alive_duplicate_is_still_an_unambiguous_move() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
 
     conn.execute(
@@ -220,7 +236,7 @@ fn one_deleted_one_alive_duplicate_is_still_an_unambiguous_move() {
     .unwrap();
     tag_file(&new_path, "Half Deleted Song", "Some Artist", "Some Album");
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 1);
     assert_eq!(r2.added, 0);
     assert_eq!(row_count(&conn), 2);
@@ -250,7 +266,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
 
     // Manually set both rows to identical fake device/inode and non-existent paths
@@ -311,10 +327,10 @@ fn unchanged_files_are_not_matched_as_moves() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 0);
     assert_eq!(r2.skipped_unchanged, 2);
     assert_eq!(r2.added, 0);
@@ -358,11 +374,11 @@ fn scan_adds_updates_and_reports_errors() {
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
 
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!((r1.added, r1.errors), (2, 1));
 
     // second scan: nothing changed → everything skipped
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.skipped_unchanged, 2);
     assert_eq!(r2.added, 0);
 
@@ -386,7 +402,7 @@ fn fixing_a_broken_file_clears_its_import_error() {
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
 
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.errors, 1);
 
     let path_str = path.to_string_lossy().to_string();
@@ -403,7 +419,7 @@ fn fixing_a_broken_file_clears_its_import_error() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     std::fs::copy(&src, &path).unwrap();
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.added, 1);
 
     let errs_after_fix: i64 = conn
@@ -430,7 +446,7 @@ fn rescan_preserves_rating_play_count_and_added_at_on_update() {
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
 
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     let path_str = file.to_string_lossy().to_string();
@@ -455,7 +471,7 @@ fn rescan_preserves_rating_play_count_and_added_at_on_update() {
     tag2.save_to_path(&file, lofty::config::WriteOptions::default())
         .unwrap();
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.updated, 1);
 
     let (title, rating, play_count, added_at): (String, i64, i64, i64) = conn
@@ -488,7 +504,7 @@ fn restored_file_at_same_path_clears_missing_flag() {
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
 
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     let path_str = file.to_string_lossy().to_string();
@@ -503,7 +519,7 @@ fn restored_file_at_same_path_clears_missing_flag() {
     // The file itself is untouched on disk: same path, same mtime — this
     // is exactly the "reappeared unchanged" scenario (NAS remount,
     // restore-from-trash), not a content change.
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert!(
         r2.updated >= 1,
         "restoring a missing track must count as an update"
@@ -592,7 +608,7 @@ fn traversal_error_in_unreadable_dir_is_recorded_not_dropped() {
     restore.set_mode(0o755);
     std::fs::set_permissions(&locked, restore).unwrap();
 
-    let report = scan_result.unwrap();
+    let report = completed(scan_result.unwrap());
     assert!(report.errors >= 1, "expected traversal error to be counted");
     assert_eq!(report.added, 1, "the readable file must still be scanned");
 

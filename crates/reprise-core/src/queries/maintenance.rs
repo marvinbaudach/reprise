@@ -4,7 +4,7 @@
 //! pure move, no behavior change.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::device_sync::SyncTrack;
 use crate::library::playlists;
@@ -195,16 +195,33 @@ pub fn query_sync_tracks(
 /// 3) instead of vanishing outright.
 ///
 /// Task 1.2: this is the playback-fault call site `Track::is_missing`'s doc
-/// comment refers to. It always writes `MissingReason::Unknown` — this path
-/// (a track that failed to play) has no way yet to tell an unmounted drive
-/// apart from a genuinely deleted file; Task 1.5 introduces the real
-/// classifier that both this function and the scanner's own mark-vanished
-/// site (`library::scanner::mark_vanished_under_root`) will switch to.
+/// comment refers to. Task 1.5 swapped the blanket `MissingReason::Unknown`
+/// this used to always write for a real verdict from `library::mounts::
+/// classify_missing`, the same classifier the scanner's own folded-in
+/// mark-vanished phase (`library::scanner::scan_folder`) uses — one `SELECT`
+/// of the row's `path`/`device` first, since this function's only input is
+/// `track_id`. `Ok(())` no-ops (writes `Unknown`, same as the pre-classifier
+/// behavior, then updates 0 rows) for an id that no longer exists, matching
+/// this function's pre-1.5 contract of never erroring on a stale id — the
+/// playback-fault call site races against the row being removed out from
+/// under it (e.g. a concurrent watcher reconcile) more plausibly than most
+/// callers in this codebase.
 pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqlite::Error> {
+    let row: Option<(String, Option<i64>)> = conn
+        .query_row(
+            "SELECT path, device FROM tracks WHERE id = ?1",
+            [track_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let reason = match &row {
+        Some((path, device)) => crate::library::mounts::classify_missing(*device, Path::new(path)),
+        None => MissingReason::Unknown,
+    };
     conn.execute(
         "UPDATE tracks SET missing_since = strftime('%s','now'), missing_reason = ?2 \
          WHERE id = ?1",
-        rusqlite::params![track_id, MissingReason::Unknown.as_str()],
+        rusqlite::params![track_id, reason.as_str()],
     )?;
     Ok(())
 }

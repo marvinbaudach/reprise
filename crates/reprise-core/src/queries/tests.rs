@@ -376,9 +376,12 @@ fn mark_track_missing_sets_the_flag() {
         )
         .unwrap();
     assert!(missing_since.is_some());
-    // Task 1.5 swaps this in for a real classifier; for now every mark-
-    // missing site (this one and the scanner's) can only honestly say
-    // "unknown" — see `MissingReason`'s own doc comment.
+    // The row above never went through the scanner, so it has no recorded
+    // `device` (NULL) — `classify_missing(None, _)` has nothing to compare
+    // against and honestly reports `Unknown` rather than guessing (see
+    // `MissingReason`'s own doc comment). A device-bearing row's real
+    // Deleted/Unmounted verdict is `mounts::classify_missing`'s own test
+    // suite's job, not this one's.
     assert_eq!(missing_reason.as_deref(), Some("unknown"));
 }
 

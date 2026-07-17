@@ -59,6 +59,16 @@ use crate::models::MissingReason;
 /// `/` for an absolute path — so the walk is capped at the root without any
 /// extra bookkeeping. Returns `None` only if even `/` can't be `lstat`'d,
 /// which should not happen on a working Linux system.
+///
+/// This "capped at `/`" guarantee holds only for an *absolute* `path` — for
+/// a relative path, `ancestors()` instead bottoms out at `""` (`Path::new("")`
+/// does not exist, so the walk would return `None` rather than ever reaching
+/// `/`). Every caller in this codebase passes an absolute path: library
+/// roots come from GTK's folder chooser (always absolute) and
+/// `tracks.path`/scan roots are `walkdir::WalkDir::new(root)` inputs derived
+/// from that same root, so this isn't separately enforced here — see
+/// [`classify_missing`]'s `debug_assert!`, the one real caller wired in by
+/// Task 1.5, for where that assumption is actually checked.
 fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
     use std::os::unix::fs::MetadataExt;
     path.ancestors().find_map(|ancestor| {
@@ -72,13 +82,6 @@ fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
 /// starting the search at `path` itself. `lstat` (`symlink_metadata`) only —
 /// see [`nearest_existing_ancestor`]'s doc comment for why this must never
 /// follow symlinks. `None` only if even `/` can't be `lstat`'d.
-///
-/// `#[allow(dead_code)]`: Task 1.4 builds this mechanism in isolation; a
-/// later task wires it into the scanner/watcher's missing-file handling as
-/// the real caller. Exercised directly by this module's own tests in the
-/// meantime — see the module doc comment for why that's sufficient (no
-/// mounting, no root needed).
-#[allow(dead_code)]
 pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
     nearest_existing_ancestor(path).map(|(_, dev)| dev)
 }
@@ -101,10 +104,6 @@ pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
 /// mount point when subvolumes/binds share a device id, which is accepted
 /// because the only use of the result is grouping "what disappears
 /// together".
-///
-/// `#[allow(dead_code)]`: see [`nearest_existing_ancestor_dev`]'s doc
-/// comment — not wired into a caller until a later task.
-#[allow(dead_code)]
 pub(crate) fn mount_point_of(path: &Path) -> Option<PathBuf> {
     use std::os::unix::fs::MetadataExt;
     let (mut mount_point, device) = nearest_existing_ancestor(path)?;
