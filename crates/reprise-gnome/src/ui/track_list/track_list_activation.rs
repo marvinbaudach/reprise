@@ -59,8 +59,7 @@ pub(in crate::ui) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<S
 
 pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &Track) {
     tracing::info!(path = %track.path, "activate track");
-    if let Some(notice) = missing_activation_notice(track) {
-        show_missing_activation(shared, notice);
+    if explain_missing_track(shared, track) {
         return;
     }
     // The user is starting playback from the table itself, so the row is
@@ -87,6 +86,14 @@ pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &
     let (ids, start_index) = queue_ids_for_activation(shared, position, track.id);
     let source = shared.source.borrow().clone();
     (shared.on_activate)(track, ids, start_index, source);
+}
+
+pub(in crate::ui) fn explain_missing_track(shared: &Rc<Shared>, track: &Track) -> bool {
+    let Some(notice) = missing_activation_notice(track) else {
+        return false;
+    };
+    show_missing_activation(shared, notice);
+    true
 }
 
 fn show_missing_activation(shared: &Rc<Shared>, notice: MissingActivationNotice) {

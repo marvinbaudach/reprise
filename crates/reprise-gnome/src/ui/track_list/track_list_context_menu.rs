@@ -49,7 +49,7 @@ use gtk4::glib;
 use gtk4::graphene;
 use gtk4::prelude::*;
 
-use super::track_playback_selection::{self, PlayableSelection};
+use super::track_playback_selection::{self, ContextPlayDecision, PlayableSelection};
 use crate::ui::delete_tracks;
 use crate::ui::dialogs;
 use crate::ui::popover_lifecycle;
@@ -270,8 +270,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
     {
         let shared = shared.clone();
         play_action.connect_activate(move |_, _| {
-            let ids = current_selection_ids(&shared);
-            handle_play(&shared, &ids);
+            handle_context_play(&shared);
         });
     }
     action_group.add_action(&play_action);
@@ -416,10 +415,27 @@ fn show_context_menu(
 
 /// "Play" action handler (`ACTION_PLAY`) — see `ui::track_actions::
 /// play_selected_ids`'s doc comment for the semantics.
-pub(in crate::ui) fn handle_play(shared: &Rc<Shared>, ids: &[i64]) {
-    if track_list_queue_menu::play_selected_if_queue(shared) {
-        return;
+pub(in crate::ui) fn handle_context_play(shared: &Rc<Shared>) {
+    let positions = current_selection_positions(shared);
+    match track_playback_selection::context_play_decision(&positions, &shared.model) {
+        ContextPlayDecision::Play {
+            ids,
+            first_position,
+        } => {
+            if !track_list_queue_menu::play_position_if_queue(shared, first_position) {
+                handle_play(shared, &ids);
+            }
+        }
+        ContextPlayDecision::Explain(track) => {
+            crate::ui::track_list_activation::explain_missing_track(shared, &track);
+        }
+        ContextPlayDecision::Noop => {
+            tracing::debug!("context menu: play requested with nothing selected; ignoring");
+        }
     }
+}
+
+fn handle_play(shared: &Rc<Shared>, ids: &[i64]) {
     let Some((ids, start_index)) = track_actions::play_selected_ids(ids) else {
         tracing::debug!("context menu: play requested with nothing selected; ignoring");
         return;
