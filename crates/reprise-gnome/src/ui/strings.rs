@@ -300,6 +300,12 @@ pub fn delete_result_toast(removed: usize, failed: usize, trashed: bool) -> Stri
     }
 }
 
+// Superseded by Task F2's FB-3 split: `tag_save_result_toast` (no
+// failures) and `tag_save_result_toast_with_failures` (paired with the
+// "Details" action button and the 10 s unverdrängbar timeout FB-1 requires
+// for an action toast) in strings_tag_edit.rs. Kept — strings.rs is
+// append-only — rather than deleted.
+#[allow(dead_code)]
 pub fn track_edit_result_toast(updated: usize, failed: usize) -> String {
     let updated_text = updated.to_string();
     let failed_text = failed.to_string();

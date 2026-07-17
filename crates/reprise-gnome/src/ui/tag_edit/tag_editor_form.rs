@@ -58,9 +58,7 @@ pub(in crate::ui) struct TagEditorForm {
     pub(in crate::ui) dialog: adw::Dialog,
     /// Everything except the header (cover/fields/rating/error label/review
     /// footer/MusicBrainz box/nav row) — disabled wholesale while a save is
-    /// in flight (F2) so no field can be edited mid-write. Unread until F2
-    /// wires the save-progress flow.
-    #[allow(dead_code)]
+    /// in flight (F2) so no field can be edited mid-write.
     pub(in crate::ui) content: gtk4::Box,
     pub(in crate::ui) title_row: adw::EntryRow,
     pub(in crate::ui) artist_ac: Rc<AutocompleteEntry>,

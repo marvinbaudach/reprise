@@ -5,6 +5,15 @@
 //! `TagEditorForm::build`, `tag_editor_dirty::wire`, and
 //! `tag_editor_save::wire` — no more `Vec<Rc<Cell<bool>>>` dirty array
 //! running in parallel.
+//!
+//! F2: `on_saved` used to fire the instant `tag_editor_save`'s Save click
+//! handler produced a batch, immediately followed by closing the dialog
+//! here. Now the dialog stays open for the whole write (Beschluss #4: "kein
+//! Abbruch, Batch ist aus User-Sicht atomar") — `present()` hands the batch
+//! to `tag_edit_flow::spawn_save`, which owns the worker thread and the
+//! progress channel, and only calls `on_saved` (renamed to carry the
+//! now-complete `TagBatchReport` alongside the batch) once the dialog has
+//! already been closed.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -12,7 +21,7 @@ use std::rc::Rc;
 
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::library::tag_edit::TrackWrite;
+use reprise_core::library::tag_edit::{TagBatchReport, TrackWrite};
 use reprise_core::library::tag_edit_session::{SessionMode, SessionTrack, TagEditSession};
 use rusqlite::Connection;
 
@@ -27,7 +36,7 @@ pub fn present(
     conn: &Rc<RefCell<Connection>>,
     tracks: Vec<SessionTrack>,
     bitrates: &[Option<u32>],
-    on_save: impl Fn(Vec<TrackWrite>) + Clone + 'static,
+    on_saved: impl Fn(Vec<TrackWrite>, TagBatchReport) + Clone + 'static,
     on_navigate: impl Fn(NavigateDirection) -> bool + 'static,
 ) {
     let Some(mode) = EditorMode::new(tracks.len()) else {
@@ -65,7 +74,14 @@ pub fn present(
         &update_save_state,
     );
 
-    let dialog_for_save = form.dialog.clone();
+    let conn_for_save = conn.clone();
+    let save_progress_widgets = crate::ui::tag_edit_flow::SaveProgressWidgets {
+        dialog: form.dialog.clone(),
+        save_button: form.save_btn.clone(),
+        cancel_button: form.cancel_btn.clone(),
+        content: form.content.clone(),
+        error_label: form.error_label.clone(),
+    };
     crate::ui::tag_editor_save::wire(
         crate::ui::tag_editor_save::SaveWidgets {
             dialog: &form.dialog,
@@ -79,8 +95,17 @@ pub fn present(
         },
         &session,
         move |batch| {
-            on_save(batch);
-            dialog_for_save.close();
+            if batch.is_empty() {
+                // Save-button sensitivity already guards this (F1); a
+                // defensive no-op rather than spawning an empty write.
+                return;
+            }
+            crate::ui::tag_edit_flow::spawn_save(
+                &conn_for_save,
+                save_progress_widgets.clone(),
+                batch,
+                on_saved.clone(),
+            );
         },
         on_navigate,
     );

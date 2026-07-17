@@ -102,7 +102,6 @@ pub fn tag_save_scattered(count: usize) -> String {
 
 /// "Saving… 12/30" — the save button's own label while a batch write is in
 /// flight (F2, P-2's "spinner im Button").
-#[allow(dead_code)] // Wired up by Task F2's save-progress channel.
 pub fn tag_saving_progress(done: usize, total: usize) -> String {
     let done_text = done.to_string();
     let total_text = total.to_string();
@@ -114,14 +113,11 @@ pub fn tag_saving_progress(done: usize, total: usize) -> String {
 
 // --- FB-3: failure toast + details dialog ---
 
-#[allow(dead_code)] // Wired up by Task F2's success toast.
 const TAG_SAVE_RESULT: &str = N_!("Tags updated \u{b7} {count} track");
-#[allow(dead_code)]
 const TAG_SAVE_RESULT_PLURAL: &str = N_!("Tags updated \u{b7} {count} tracks");
 
 /// The no-failures toast text (FB-1: action-less, 4 s, replaceable) — same
 /// "tracks" currency as the summary/progress/save label.
-#[allow(dead_code)] // Wired up by Task F2's success toast.
 pub fn tag_save_result_toast(updated: usize) -> String {
     let count_text = updated.to_string();
     plural(
@@ -132,17 +128,14 @@ pub fn tag_save_result_toast(updated: usize) -> String {
     )
 }
 
-#[allow(dead_code)] // Wired up by Task F2's FB-3 failure toast.
 const TAG_SAVE_RESULT_WITH_FAILURES: &str =
     N_!("Tags updated \u{b7} {updated} track \u{b7} {failed} failed");
-#[allow(dead_code)]
 const TAG_SAVE_RESULT_WITH_FAILURES_PLURAL: &str =
     N_!("Tags updated \u{b7} {updated} tracks \u{b7} {failed} failed");
 
 /// FB-3's failure toast text (paired with a "Details" action button and a
 /// 10 s unverdrängbar timeout the caller sets directly on the `adw::Toast`,
 /// since `toasts::show` only covers the plain-message 4 s case).
-#[allow(dead_code)] // Wired up by Task F2's FB-3 failure toast.
 pub fn tag_save_result_toast_with_failures(updated: usize, failed: usize) -> String {
     let updated_text = updated.to_string();
     let failed_text = failed.to_string();
@@ -154,10 +147,6 @@ pub fn tag_save_result_toast_with_failures(updated: usize, failed: usize) -> Str
     )
 }
 
-// Wired up by Task F2's failure-details dialog (`tag_editor_failures.rs`).
-#[allow(dead_code)]
 pub const TAG_SAVE_FAILURE_DETAILS: &str = N_!("Details");
-#[allow(dead_code)]
 pub const TAG_SAVE_FAILURE_DIALOG_TITLE: &str = N_!("Some tracks could not be updated");
-#[allow(dead_code)]
 pub const TAG_EDIT_FAILED_TRACKS: &str = N_!("Edit failed tracks\u{2026}");

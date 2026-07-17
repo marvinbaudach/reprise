@@ -375,7 +375,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Indizes, damit „Track 3 of 12" stabil bleibt, während darunter re-sortiert
   wird. Pending Änderungen werden pro Track gehalten; Save schreibt alle
   pending Tracks, Cancel verwirft alle (Bestätigung ab einer Änderung).
-- **TAG-5** [geplant] [core] — Der Diff steht am Feld, nicht in einem zweiten
+- **TAG-5** [aktiv] [core] — Der Diff steht am Feld, nicht in einem zweiten
   Dialog: Jedes effektiv geänderte Feld zeigt darunter den Altwert („was: …",
   durchgestrichen, gedimmt), Border in Akzent; der Platz dafür ist immer
   reserviert (P-4). Darüber dem Save-Bereich eine Summary-Zeile („2 fields ·
