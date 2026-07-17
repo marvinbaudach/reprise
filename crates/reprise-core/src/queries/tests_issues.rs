@@ -9,8 +9,19 @@
 //! either `unmounted` or `deleted`; the `Deleted` group's count never
 //! includes `unknown` rows; and `query_missing_rows` paginates via
 //! `LIMIT`/`OFFSET` in `artist, album, track_no` order.
+//!
+//! The trailing `-- Tombstone operations --` section (Task 2.2) covers
+//! `tombstone_tracks`/`undo_tombstone`/`purge_tombstones` — the 10-second-
+//! undo primitives behind the Missing source's "Remove all N from library"
+//! action. Landed here rather than in `tests_maintenance.rs` (the brief's
+//! literal file assignment) purely because that file is already close to
+//! the project's 800-line rule and these four tests, at this codebase's doc
+//! density, would have pushed it over; `maintenance.rs` itself (where the
+//! three functions actually live — see that file's own tombstone section)
+//! had plenty of headroom, so only the tests moved.
 
 use super::*;
+use crate::library::playlists;
 use crate::models::MissingReason;
 
 /// Inserts one missing track row with every column `query_missing_groups`/
@@ -407,4 +418,194 @@ fn empty_missing_groups_when_no_missing_tracks() {
 
     let groups = query_missing_groups(&conn).unwrap();
     assert!(groups.is_empty());
+}
+
+// -- Tombstone operations (Task 2.2) -------------------------------------
+
+/// Inserts one ordinary, non-missing track row — the minimal fixture the
+/// tombstone tests need (unlike `seed_missing_track`, these rows start
+/// `PRESENT`; `tombstone_tracks` is exercised on top of that starting
+/// state).
+fn seed_live_track(conn: &Connection, id: i64) {
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, album, track_no, added_at) \
+         VALUES (?1, ?2, ?3, 'Artist', 'Album', 1, 0)",
+        rusqlite::params![id, format!("/music/{id}.flac"), format!("Track {id}")],
+    )
+    .unwrap();
+}
+
+fn removed_at_of(conn: &Connection, id: i64) -> Option<i64> {
+    conn.query_row("SELECT removed_at FROM tracks WHERE id = ?1", [id], |r| {
+        r.get(0)
+    })
+    .unwrap()
+}
+
+/// Bullet 1 of the brief: `tombstone_tracks` must hide the row from every
+/// presence-based query (here, `query_live_track_ids`, [`PRESENT`]-backed)
+/// while leaving `playlist_tracks` completely untouched — no cascade fires,
+/// because nothing was deleted, only `removed_at` was set. This is the
+/// crux the module doc's tombstone-vs-snapshot rationale rests on: if this
+/// left the row deleted (even briefly), `playlist_tracks`'s `ON DELETE
+/// CASCADE` would already have destroyed the membership/position row this
+/// test asserts survives.
+#[test]
+fn tombstone_tracks_hides_rows_but_keeps_playlist_membership_and_position() {
+    let mut conn = crate::db::open_migrated(None).unwrap();
+    for id in 1..=3 {
+        seed_live_track(&conn, id);
+    }
+    let playlist_id = playlists::create(&conn, "Keep").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+
+    let changed = tombstone_tracks(&conn, &[2], 1_000).unwrap();
+    assert_eq!(changed, 1);
+
+    // Hidden from the library view immediately.
+    assert_eq!(
+        query_live_track_ids(&conn).unwrap(),
+        std::collections::HashSet::from([1, 3]),
+        "a tombstoned row must disappear from PRESENT queries at once"
+    );
+    assert_eq!(removed_at_of(&conn, 2), Some(1_000));
+
+    // Playlist membership AND position are untouched — this is the whole
+    // point of a tombstone over a hard delete-then-restore.
+    let rows: Vec<(i64, i64)> = conn
+        .prepare("SELECT track_id, position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
+        .unwrap()
+        .query_map([playlist_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![(1, 0), (2, 1), (3, 2)],
+        "tombstoning must not renumber or remove any playlist_tracks row"
+    );
+
+    // Re-tombstoning an already-tombstoned id is a no-op (the guard is
+    // `removed_at IS NULL`) — the toast's countdown must not reset itself
+    // if the user clicks "Remove" again during the undo window.
+    assert_eq!(tombstone_tracks(&conn, &[2], 2_000).unwrap(), 0);
+    assert_eq!(
+        removed_at_of(&conn, 2),
+        Some(1_000),
+        "a second tombstone call must not overwrite the original timestamp"
+    );
+}
+
+/// Bullet 2: `undo_tombstone` reverses a still-open tombstone with zero data
+/// loss — there was never anything to restore, since nothing was deleted.
+/// Also pins the no-op guard: undoing an id that was never tombstoned (or
+/// is no longer) changes nothing.
+#[test]
+fn undo_tombstone_clears_removed_at_and_restores_presence() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    seed_live_track(&conn, 1);
+    seed_live_track(&conn, 2);
+    tombstone_tracks(&conn, &[1], 500).unwrap();
+    assert_eq!(
+        query_live_track_ids(&conn).unwrap(),
+        std::collections::HashSet::from([2])
+    );
+
+    let restored = undo_tombstone(&conn, &[1]).unwrap();
+    assert_eq!(restored, 1);
+    assert_eq!(removed_at_of(&conn, 1), None);
+    assert_eq!(
+        query_live_track_ids(&conn).unwrap(),
+        std::collections::HashSet::from([1, 2]),
+        "undo must make the row visible again immediately"
+    );
+
+    // No-op guard: id 2 was never tombstoned.
+    assert_eq!(undo_tombstone(&conn, &[2]).unwrap(), 0);
+}
+
+/// Bullet 3: `purge_tombstones` is where a tombstone finally becomes
+/// irreversible — it must select every currently-tombstoned id and hand
+/// them to [`remove_tracks`] (not reimplement deletion), so a MIDDLE
+/// playlist row's removal still compacts positions gaplessly, exactly like
+/// `remove_missing_tracks`'s own middle-row regression test in
+/// `tests_maintenance.rs`. The returned ids are what the caller (toast
+/// timeout / app startup) must purge from its in-memory playback queue.
+#[test]
+fn purge_tombstones_hard_deletes_tombstoned_rows_compacts_playlist_and_returns_purged_ids() {
+    let mut conn = crate::db::open_migrated(None).unwrap();
+    for id in 1..=5 {
+        seed_live_track(&conn, id);
+    }
+    let playlist_id = playlists::create(&conn, "Purge").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
+    tombstone_tracks(&conn, &[3], 1_000).unwrap();
+
+    let purged = purge_tombstones(&mut conn).unwrap();
+    assert_eq!(purged, vec![3]);
+
+    let track_count: i64 = conn
+        .query_row("SELECT count(*) FROM tracks WHERE id = 3", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(track_count, 0, "the tombstoned row must be hard-deleted");
+
+    let rows: Vec<(i64, i64)> = conn
+        .prepare("SELECT track_id, position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
+        .unwrap()
+        .query_map([playlist_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![(1, 0), (2, 1), (4, 2), (5, 3)],
+        "positions must stay gapless after the purge's hard delete"
+    );
+
+    // Idempotent: nothing left to purge.
+    assert!(purge_tombstones(&mut conn).unwrap().is_empty());
+}
+
+/// Bullet 4, the scanner-resurrect interop test: a row tombstoned and then
+/// resurrected (the scanner's evidence rule clears `removed_at` the instant
+/// it finds the file again — `library::scanner`'s tombstone-resurrect arms,
+/// covered end-to-end in `scanner_tombstone_tests.rs`) BEFORE `purge_
+/// tombstones` runs must not be purged: a "Remove" whose object came back is
+/// moot. This test simulates the resurrection with the same direct
+/// `removed_at = NULL` update the scanner itself performs (see e.g.
+/// `scanner.rs`'s fast-path-restore branch), rather than driving a real
+/// scan, to stay a query-layer test of `purge_tombstones`'s own selection
+/// logic — the scanner's own test suite already proves it actually clears
+/// the column on resurrection.
+#[test]
+fn purge_tombstones_skips_a_row_resurrected_before_the_purge_runs() {
+    let mut conn = crate::db::open_migrated(None).unwrap();
+    seed_live_track(&conn, 1);
+    seed_live_track(&conn, 2);
+    tombstone_tracks(&conn, &[1, 2], 1_000).unwrap();
+
+    // The scanner found track 1's file again and resurrected it — exactly
+    // the SQL `library::scanner` uses on its fast-path-restore branch.
+    conn.execute("UPDATE tracks SET removed_at = NULL WHERE id = 1", [])
+        .unwrap();
+
+    let purged = purge_tombstones(&mut conn).unwrap();
+
+    assert_eq!(
+        purged,
+        vec![2],
+        "only the still-tombstoned id may be purged"
+    );
+    let track_count: i64 = conn
+        .query_row("SELECT count(*) FROM tracks WHERE id = 1", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        track_count, 1,
+        "the resurrected row must survive the purge untouched"
+    );
+    assert_eq!(
+        query_live_track_ids(&conn).unwrap(),
+        std::collections::HashSet::from([1]),
+        "the resurrected row must be visible again, not silently purged"
+    );
 }
