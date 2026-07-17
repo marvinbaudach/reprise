@@ -56,8 +56,10 @@ pub(in crate::ui) fn build(
     let empty_page = build_status_page();
     let import_errors_view = ImportErrorsView::new(conn.clone());
     let stack = super::track_list_layout::build_track_content_stack();
+    let list_overlay = gtk4::Overlay::new();
+    list_overlay.set_child(Some(&scrolled));
     stack.add_named(&empty_page, Some(STACK_PAGE_EMPTY));
-    stack.add_named(&scrolled, Some(STACK_PAGE_LIST));
+    stack.add_named(&list_overlay, Some(STACK_PAGE_LIST));
     stack.add_named(import_errors_view.widget(), Some(STACK_PAGE_IMPORT_ERRORS));
     stack.set_visible_child_name(STACK_PAGE_EMPTY);
 
@@ -135,6 +137,7 @@ pub(in crate::ui) fn build(
     let title_column = built_columns.title;
     let artist_column = built_columns.artist;
     let column_registry = built_columns.registry;
+    super::end_of_results::install(&shared, &list_overlay, &scrolled);
     let initial_sort_column = if column_registry.is_visible(ColumnId::Artist) {
         artist_column.clone()
     } else {

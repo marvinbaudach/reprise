@@ -378,7 +378,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Eingabe, P-4-konform). Das Status-Overlay unten rechts zeigt immer die
   neutrale Bibliotheks-Statistik; seine „X of Y"-Variante entfällt — die
   Filter-Zeile spricht über die Sicht, das Overlay über die Bibliothek.
-- **FIL-3** [geplant] [gtk] — Ende-der-Treffer-Zeile: Unter der letzten Row
+- **FIL-3** [aktiv] [gtk] — Ende-der-Treffer-Zeile: Unter der letzten Row
   einer eingeschränkten Liste (≥ 1 Treffer) steht zentriert „End of results —
   1,649 tracks hidden by search “falling”" + Pill „Show all 1,664 tracks"
   (= Clear all). Sie gehört visuell zum Listenende: direkt unter der letzten
