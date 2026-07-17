@@ -160,7 +160,21 @@ fn main() -> glib::ExitCode {
         );
         let mut conn = conn.borrow_mut();
         match library::scanner::scan_folder(&mut conn, std::path::Path::new(&dir)) {
-            Ok(report) => tracing::info!(?report, "dev scan complete"),
+            Ok(library::scanner::ScanOutcome::Completed(report)) => {
+                tracing::info!(?report, "dev scan complete");
+            }
+            // Mapped onto the same log-error display path as a real scan
+            // failure (Task 1.5's interim contract — see `ui::scan::
+            // scan_worker`'s `reconcile_outcome` for the GUI-toast
+            // equivalent; there is no toast to show here, this hook runs
+            // headless before any window exists).
+            Ok(library::scanner::ScanOutcome::RootUnavailable { root }) => {
+                tracing::error!(
+                    root = %root.display(),
+                    "dev scan failed: library folder unavailable: {}",
+                    root.display()
+                );
+            }
             Err(error) => tracing::error!(%error, "dev scan failed"),
         }
         // Stage 3 Task 8: persist this as the library root, exactly like a

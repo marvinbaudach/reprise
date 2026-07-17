@@ -20,15 +20,29 @@
 //! ("has it been long enough?") is `should_trigger_after`, factored out so
 //! it's unit-testable without a live filesystem/thread.
 //!
-//! ## Reconcile order: scan THEN mark-vanished, never the reverse
+//! ## Reconcile is just `scan_folder` — Task 1.5 folded mark-vanished in
 //!
-//! Each reconcile runs `scanner::scan_folder(root)` first, then `scanner::
-//! mark_vanished_under_root(root)` — see that function's doc comment for why
-//! this order matters: a file moved/renamed within `root` must be
-//! reconciled by the scan's move detection (which updates its row's `path`
-//! in place) before this watcher decides which of the *remaining*
-//! not-found paths are genuinely gone. Running mark-vanished first would
-//! transiently flag a moved-but-not-yet-rescanned file as missing.
+//! Each reconcile now runs a single `scanner::scan_folder(root)` call.
+//! Through Stage 3 this was two calls — `scan_folder` then a separate
+//! `mark_vanished_under_root` — and getting their ORDER right (scan first,
+//! always) was this module's job: a file moved/renamed within `root` had to
+//! be reconciled by the scan's own move detection (which updates its row's
+//! `path` in place) before mark-vanished decided which of the *remaining*
+//! not-found paths were genuinely gone, or a moved-but-not-yet-rescanned
+//! file would transiently get flagged missing. `scan_folder` now runs its
+//! own mark phase internally, inside the same transaction as its walk (see
+//! that function's doc comment in `library::scanner`), so there is nothing
+//! left for this module to sequence — a scan's [`scanner::ScanOutcome`]
+//! already reflects both the walk and the reconcile.
+//!
+//! `scan_folder` can also report [`scanner::ScanOutcome::RootUnavailable`]
+//! instead of completing: `root` itself couldn't be seen this pass (e.g. a
+//! removable/network mount not up yet). `reconcile` logs that case and still
+//! calls `on_event` with an all-zero [`WatchEvent`] (never a silent skip —
+//! the caller's own reload/refresh still runs), rather than pretending
+//! nothing happened, but with no track ever marked missing on that basis
+//! alone — see `scanner::scan_folder_inner`'s `## Root guard` doc section
+//! for why marking nothing beats marking every track "unmounted".
 //!
 //! ## Failure is never fatal
 //!
@@ -56,7 +70,7 @@ use std::time::{Duration, Instant};
 
 use notify::{RecursiveMode, Watcher};
 
-use crate::library::scanner::{self, ScanReport};
+use crate::library::scanner::{self, ScanOutcome, ScanReport};
 
 /// How long the watcher waits for filesystem-event quiet before running one
 /// reconciling scan — see the module doc's `## Debounce` section.
@@ -69,9 +83,12 @@ const DEBOUNCE: Duration = Duration::from_secs(2);
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Combined result of one watcher-triggered reconciliation: an incremental
-/// `scan_folder` report plus `mark_vanished_under_root`'s newly-marked
-/// count. `ui::window` uses this to log a summary and reload the track list
-/// + sidebar badges.
+/// `scan_folder` report, plus its own `vanished` count surfaced again at the
+/// top level (Task 1.5 folded the separate `mark_vanished_under_root` call
+/// into `scan_folder` itself, so `report.vanished` and this field are always
+/// equal now — kept as two fields rather than one to avoid rippling every
+/// `WatchEvent` field access elsewhere). `ui::window` uses this to log a
+/// summary and reload the track list + sidebar badges.
 #[derive(Debug)]
 pub struct WatchEvent {
     pub report: ScanReport,
@@ -248,12 +265,14 @@ fn event_is_relevant(event: &notify::Event) -> bool {
 }
 
 /// Runs one reconcile pass: opens+migrates a fresh connection over
-/// `db_path`, runs an incremental `scanner::scan_folder(root)`, then
-/// `scanner::mark_vanished_under_root(root)` (see the module doc's `##
-/// Reconcile order` section), and hands the combined result to `on_event`.
-/// Every fallible step degrades to a logged error and an early return rather
-/// than panicking — a single bad reconcile must never take down the
-/// watcher thread (it simply tries again on the next debounced batch).
+/// `db_path`, runs a single incremental `scanner::scan_folder(root)` (see
+/// the module doc's `## Reconcile is just scan_folder` section — Task 1.5
+/// folded the walk and the mark-vanished phase into one call), and hands the
+/// combined result to `on_event`. Every fallible step degrades to a logged
+/// error and an early return rather than panicking — a single bad reconcile
+/// must never take down the watcher thread (it simply tries again on the
+/// next debounced batch). The one exception is `ScanOutcome::RootUnavailable`
+/// itself, which is NOT an early return — see below.
 fn reconcile(root: &Path, db_path: &Path, on_event: &impl Fn(WatchEvent)) {
     let mut conn = match crate::db::open(Some(db_path)) {
         Ok(conn) => conn,
@@ -268,20 +287,27 @@ fn reconcile(root: &Path, db_path: &Path, on_event: &impl Fn(WatchEvent)) {
     }
 
     let report = match scanner::scan_folder(&mut conn, root) {
-        Ok(report) => report,
+        Ok(ScanOutcome::Completed(report)) => report,
+        Ok(ScanOutcome::RootUnavailable { root }) => {
+            // Deliberately not an early return: unlike a scan/DB error (the
+            // arm above), `RootUnavailable` is a normal, expected outcome
+            // (a NAS not mounted yet at startup) that `on_event` still needs
+            // to hear about, with an honest all-zero report — see the
+            // module doc's `## Reconcile is just scan_folder` section and
+            // `scanner::scan_folder_inner`'s `## Root guard` doc section.
+            tracing::warn!(
+                root = %root.display(),
+                "watcher: scan root unavailable; reporting an empty reconcile rather than \
+                 marking anything missing"
+            );
+            ScanReport::default()
+        }
         Err(error) => {
             tracing::error!(%error, "watcher: incremental scan failed; skipping reconcile");
             return;
         }
     };
-
-    let vanished = match scanner::mark_vanished_under_root(&conn, root) {
-        Ok(count) => count,
-        Err(error) => {
-            tracing::error!(%error, "watcher: mark_vanished_under_root failed");
-            0
-        }
-    };
+    let vanished = report.vanished;
 
     tracing::info!(
         added = report.added,

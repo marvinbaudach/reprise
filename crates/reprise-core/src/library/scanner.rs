@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use std::path::Path;
 
+use super::mounts;
 use crate::models::MissingReason;
 use crate::queries::PRESENT;
 
@@ -27,6 +28,34 @@ pub struct ScanReport {
     /// row whose old path is gone) rather than treated as new. A moved file
     /// counts here, not in `added`.
     pub moved: u32,
+    /// Task 1.5: count of previously-present tracks under this scan's root
+    /// newly marked missing by this same scan's folded-in reconcile pass —
+    /// see the module's `## Fold: scan IS reconcile` doc section. An
+    /// already-missing row is not recounted. Always `0` when the scan
+    /// returns [`ScanOutcome::RootUnavailable`] instead of wrapping this
+    /// report in [`ScanOutcome::Completed`], since that outcome means the
+    /// mark phase never ran at all.
+    pub vanished: u32,
+}
+
+/// What a `scan_folder`/`scan_folder_with_progress` call concluded — Task
+/// 1.5 replaced the bare `ScanReport` return with this two-variant outcome
+/// so a scan can distinguish "I walked `root` and reconciled it" from "I
+/// have no evidence about `root` at all" without silently reporting the
+/// latter as a suspiciously-empty former. See the module's `## Root guard`
+/// doc section on [`scan_folder_inner`] for exactly when [`RootUnavailable`]
+/// fires and why marking nothing beats marking every track "unmounted".
+///
+/// [`RootUnavailable`]: ScanOutcome::RootUnavailable
+#[derive(Debug)]
+pub enum ScanOutcome {
+    /// The walk ran (even if it found nothing) and, unless the root guard
+    /// tripped, the vanish-mark phase ran too, in the same transaction as
+    /// the walk's own upserts.
+    Completed(ScanReport),
+    /// Nothing was written — not even an "unmounted" mark — because the
+    /// root guard tripped: see [`scan_folder_inner`]'s doc comment.
+    RootUnavailable { root: std::path::PathBuf },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,7 +340,7 @@ fn tag_param_values<'a>(title: &'a str, meta: &'a TrackMeta) -> TagParams<'a> {
     )
 }
 
-pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanReport, ScanError> {
+pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanOutcome, ScanError> {
     scan_folder_inner(conn, root, None)
 }
 
@@ -319,7 +348,7 @@ pub fn scan_folder_with_progress(
     conn: &mut Connection,
     root: &Path,
     mut on_progress: impl FnMut(ScanProgress),
-) -> Result<ScanReport, ScanError> {
+) -> Result<ScanOutcome, ScanError> {
     on_progress(ScanProgress::Discovering);
     let total = count_audio_files(root);
     let reporter = ScanProgressReporter {
@@ -330,12 +359,91 @@ pub fn scan_folder_with_progress(
     scan_folder_inner(conn, root, Some(reporter))
 }
 
+/// Walks `root`, upserting every audio file found, then — in the SAME
+/// transaction — reconciles whatever the walk did NOT find: rows the DB
+/// still believes are present under `root` whose file has actually vanished.
+///
+/// ## Fold: scan IS reconcile, not scan-then-mark
+///
+/// Through Stage 3, this was two separate calls: `scan_folder` (which
+/// committed its own transaction), then the folder watcher separately called
+/// `mark_vanished_under_root` — and that function's own doc comment spent
+/// three paragraphs establishing a rule every caller had to remember: mark-
+/// vanished must run strictly AFTER scan_folder, never before, because a
+/// file moved/renamed within `root` is only reconciled by move detection
+/// (which updates its row's `path` in place) during the walk — running
+/// mark-vanished first would transiently and wrongly flag a moved-but-not-
+/// yet-rescanned file as missing. A convention that needs three paragraphs
+/// of documentation and that every call site must get in the right order
+/// belongs in the structure, not in a comment: Task 1.5 folds the mark phase
+/// into this function, after the walk loop, inside the walk's own `tx` —
+/// there is now nothing left to call in the wrong order, and a move and an
+/// unrelated deletion discovered in the same pass reconcile as one atomic
+/// transaction instead of leaving a window (between the old two commits)
+/// where the database briefly says a moved file is gone.
+///
+/// ## Root guard: no evidence about `root` must never look like "all gone"
+///
+/// A scan whose own `root` cannot be seen has no evidence about any
+/// individual file under it — it only knows "my root is unreachable". Before
+/// the walk even starts, `!root.exists()` short-circuits straight to
+/// [`ScanOutcome::RootUnavailable`] with no walk and no database write at
+/// all (`import_errors` included) — see Root-Guard case (a) in this
+/// function's test suite.
+///
+/// A subtler case remains even when `root` itself resolves to *some*
+/// directory: a removable/network mount that hasn't come up yet often still
+/// has an empty directory sitting at its mount point (owned by whatever
+/// filesystem is underneath, typically the root filesystem) — walking it
+/// finds zero audio files, indistinguishable at a glance from a genuinely
+/// emptied folder. Marking every track under it "unmounted" would still make
+/// the whole library look empty in the UI the moment that scan lands (see
+/// this module's `library::mounts::classify_missing`'s own doc comment for
+/// why `Unmounted` vs `Deleted` matters — this guard is about whether ANY
+/// marking should happen at all, not which reason to use once it does). So,
+/// only once the walk found zero audio files AND at least one currently-
+/// present track is recorded under `root`, this function asks one more
+/// question before marking anything: does ANY of those tracks' recorded
+/// `device` match the device `root` itself currently resolves to? A `NULL`
+/// (`None`) recorded device never counts as a match. If yes, at least one
+/// track proves `root`'s filesystem really is the one previously scanned —
+/// proceed to mark normally (Root-Guard case (c): a real, provable deletion).
+/// If no such evidence exists, mark nothing and return
+/// [`ScanOutcome::RootUnavailable`] instead (Root-Guard case (b)) — the
+/// transaction still commits whatever the (empty) walk itself produced, but
+/// the mark phase never runs.
+///
+/// This guard is deliberately root-only: it decides whether to run the mark
+/// phase over `root` at all, never which individual rows within it get
+/// marked. If `root` itself is confirmed reachable but some *subfolder*
+/// under it sits on its own, now-absent mount, that subtree's tracks still
+/// get marked — normally, each via its own `classify_missing` call — because
+/// that is an honest partial outage, not "we have no evidence".
 fn scan_folder_inner(
     conn: &mut Connection,
     root: &Path,
     mut progress: Option<ScanProgressReporter<'_>>,
-) -> Result<ScanReport, ScanError> {
+) -> Result<ScanOutcome, ScanError> {
+    debug_assert!(
+        root.is_absolute(),
+        "scan roots must be absolute paths — library roots (GTK folder chooser, \
+         persisted settings) are always absolute in this codebase, and mounts::\
+         nearest_existing_ancestor_dev's walk-to-`/` guarantee assumes it"
+    );
+    if !root.exists() {
+        // Root-Guard case (a): no walk, no database write at all — see this
+        // function's `## Root guard` doc section.
+        tracing::warn!(
+            root = %root.display(),
+            "scan: root does not exist; reporting RootUnavailable without touching the database"
+        );
+        return Ok(ScanOutcome::RootUnavailable {
+            root: root.to_path_buf(),
+        });
+    }
+
     let mut report = ScanReport::default();
+    let mut audio_files_seen: u64 = 0;
     let tx = conn.transaction()?;
     for entry in walkdir::WalkDir::new(root).follow_links(false).into_iter() {
         let entry = match entry {
@@ -378,6 +486,11 @@ fn scan_folder_inner(
         if !is_audio_file(path) {
             continue;
         }
+        // Root-Guard input: "did the walk find any audio file at all under
+        // `root`?" — counted regardless of whether this particular file
+        // goes on to be added/updated/skipped/errored below. See this
+        // function's `## Root guard` doc section.
+        audio_files_seen += 1;
         let path_str = path.to_string_lossy().to_string();
         let mtime = file_mtime(path);
         let known: Option<(i64, Option<i64>)> = tx
@@ -589,91 +702,40 @@ fn scan_folder_inner(
             progress.advance(path);
         }
     }
-    tx.commit()?;
-    Ok(report)
-}
 
-/// Sets `missing_since`/`missing_reason` for every currently-present track
-/// whose `path` is under `root` AND whose file no longer exists on disk.
-/// Returns the count of rows newly marked (an already-missing row is left
-/// alone and not recounted, even if its file is still gone). Like `queries::
-/// mark_track_missing`, this always writes `MissingReason::Unknown` for now
-/// — the folder watcher has no way yet to tell an unmounted drive apart from
-/// a genuinely deleted file; Task 1.5 introduces the real classifier both
-/// mark-missing sites will switch to.
-///
-/// ## Call this AFTER `scan_folder(root)`, never before
-///
-/// The folder watcher (`library::watcher`) runs this immediately after an
-/// incremental `scan_folder(root)` on every debounce firing, in that order,
-/// deliberately: a file that was renamed/moved within `root` is reconciled
-/// by `scan_folder`'s move detection first (the row's `path` column is
-/// updated to the new location, history intact), so by the time this
-/// function runs, a row whose recorded `path` no longer exists really was
-/// deleted, not just relocated. Running this *before* the scan would
-/// transiently — and wrongly — flag a moved-but-not-yet-rescanned file as
-/// missing.
-///
-/// ## Component-wise prefix check is authoritative; SQL `LIKE` only prefilters
-///
-/// Membership ("under `root`") is decided by `Path::starts_with`, which
-/// compares path *components*, not raw bytes: a track at `/music/foobar/
-/// x.flac` does NOT count as being under `/music/foo`, which a naive
-/// string/`LIKE 'foo%'` prefix check would incorrectly include. This is also
-/// what keeps this function from ever touching a track outside `root` — the
-/// guarantee a future multi-folder library depends on — even when that other
-/// track's file has also vanished from disk; only a scan/watch of *that*
-/// track's own root is ever responsible for marking it.
-///
-/// A SQL `LIKE '<root>/%'` prefilter (Queue-C ledger item) narrows the
-/// candidate rows the watcher streams through Rust on every reconcile,
-/// instead of full-scanning all non-missing tracks. The `/` before `%` and
-/// the escaping of LIKE metacharacters mean the pattern already excludes
-/// sibling roots (`/music` vs `/music2`), but it is deliberately only a
-/// *superset* filter: `starts_with` still decides membership on every
-/// surviving candidate, so the result is byte-identical to the pre-filter
-/// implementation regardless of `LIKE`'s ASCII case-insensitivity or any
-/// other way the pattern is wider than the component check.
-pub fn mark_vanished_under_root(conn: &Connection, root: &Path) -> Result<u32, ScanError> {
-    // Perf (Queue-C ledger item): narrow candidates in SQL instead of
-    // streaming the whole table through Rust on every watcher reconcile.
-    // The pattern is "<root>/%" with LIKE metacharacters escaped, so it can
-    // never match a *sibling* root sharing a string prefix ("/music" vs
-    // "/music2"). The component-wise starts_with() below remains the
-    // authoritative check — the LIKE only shrinks the candidate set, it
-    // never decides membership, so semantics are byte-identical to the
-    // pre-filter implementation (including exotic-UTF-8 and trailing-slash
-    // edges).
-    let root_str = root.to_string_lossy();
-    let pattern = format!(
-        "{}/%",
-        crate::library::playlists::escape_like(root_str.trim_end_matches('/'))
-    );
-    let candidates: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare(&format!(
-            "SELECT id, path FROM tracks WHERE {PRESENT} AND path LIKE ?1 ESCAPE '\\'"
-        ))?;
-        let rows = stmt
-            .query_map(rusqlite::params![pattern], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<Result<_, _>>()?;
-        rows
-    };
+    let candidates = vanish::present_candidates_under_root(&tx, root)?;
+    let root_unavailable = audio_files_seen == 0
+        && !candidates.is_empty()
+        && !vanish::any_candidate_confirms_root_device(&candidates, root);
 
-    let mut marked = 0u32;
-    for (id, path_str) in candidates {
-        let path = Path::new(&path_str);
-        if !path.starts_with(root) || path.exists() {
-            continue;
+    let outcome = if root_unavailable {
+        // Root-Guard case (b): see this function's `## Root guard` doc
+        // section. The upserts the walk itself produced (normally none,
+        // since `audio_files_seen == 0`, but a traversal error is still
+        // possible) still commit below — only the mark phase is skipped.
+        tracing::warn!(
+            root = %root.display(),
+            candidate_count = candidates.len(),
+            "scan: walk found no audio files and no known track under root confirms the \
+             root's current device; reporting RootUnavailable instead of marking tracks missing"
+        );
+        ScanOutcome::RootUnavailable {
+            root: root.to_path_buf(),
         }
-        conn.execute(
-            "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
-            rusqlite::params![id, now_unix(), MissingReason::Unknown.as_str()],
-        )?;
-        marked += 1;
-        tracing::info!(path = %path_str, "watcher: marked vanished track missing");
-    }
-    Ok(marked)
+    } else {
+        report.vanished = vanish::mark_vanished(&tx, candidates)?;
+        ScanOutcome::Completed(report)
+    };
+    tx.commit()?;
+    Ok(outcome)
 }
+
+// Task 1.5: the vanish-mark phase `scan_folder_inner` folds in above lives in
+// its own file purely to keep this one under the project's 800-line rule —
+// see `scanner_vanish.rs`'s own module doc comment. Not `#[cfg(test)]`: this
+// is production code, always compiled.
+#[path = "scanner_vanish.rs"]
+mod vanish;
 
 #[cfg(test)]
 #[path = "scanner_progress_tests.rs"]
