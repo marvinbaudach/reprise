@@ -18,8 +18,6 @@ struct RelinkProgressState {
     spinner: bool,
     progress_height_px: u32,
     cancel_label: String,
-    target: reprise_core::view_source::ViewSource,
-    slot_role: &'static str,
 }
 
 fn relink_progress_state(processed: u32, total: u32, group_size: u32) -> RelinkProgressState {
@@ -36,12 +34,26 @@ fn relink_progress_state(processed: u32, total: u32, group_size: u32) -> RelinkP
         spinner: true,
         progress_height_px: PROGRESS_HEIGHT_PX,
         cancel_label: strings::issue_text(strings::CANCEL),
-        target: reprise_core::view_source::ViewSource::Missing,
-        slot_role: "shared-sidebar-bottom",
     }
 }
 
-type OnActivate = Rc<dyn Fn()>;
+type OnActivate = Rc<dyn Fn(reprise_core::view_source::ViewSource)>;
+
+#[derive(Clone, Default)]
+struct RelinkProgressActivation(Rc<RefCell<Option<OnActivate>>>);
+
+impl RelinkProgressActivation {
+    fn set(&self, callback: impl Fn(reprise_core::view_source::ViewSource) + 'static) {
+        *self.0.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    fn primary_click(&self) {
+        let callback = self.0.borrow().clone();
+        if let Some(callback) = callback {
+            callback(reprise_core::view_source::ViewSource::Missing);
+        }
+    }
+}
 
 #[derive(Clone, Default)]
 pub(super) struct RelinkCancellation(Arc<AtomicBool>);
@@ -70,7 +82,7 @@ struct RelinkProgressWidgets {
     detail: gtk4::Label,
     cancel: gtk4::Button,
     cancellation: Rc<RefCell<Option<RelinkCancellation>>>,
-    on_activate: Rc<RefCell<Option<OnActivate>>>,
+    activation: RelinkProgressActivation,
     running: Cell<bool>,
 }
 
@@ -123,15 +135,12 @@ impl RelinkProgressView {
                 current.request();
             }
         });
-        let on_activate: Rc<RefCell<Option<OnActivate>>> = Rc::new(RefCell::new(None));
-        let activate_click = on_activate.clone();
+        let activation = RelinkProgressActivation::default();
+        let activate_click = activation.clone();
         let click = gtk4::GestureClick::new();
         click.set_button(gtk4::gdk::BUTTON_PRIMARY);
         click.connect_released(move |_, _, _, _| {
-            let callback = activate_click.borrow().clone();
-            if let Some(callback) = callback {
-                callback();
-            }
+            activate_click.primary_click();
         });
         container.add_controller(click);
 
@@ -145,7 +154,7 @@ impl RelinkProgressView {
                 detail,
                 cancel,
                 cancellation,
-                on_activate,
+                activation,
                 running: Cell::new(false),
             }),
         }
@@ -155,8 +164,11 @@ impl RelinkProgressView {
         &self.inner.revealer
     }
 
-    pub(super) fn set_on_activate(&self, callback: impl Fn() + 'static) {
-        *self.inner.on_activate.borrow_mut() = Some(Rc::new(callback));
+    pub(super) fn set_on_activate(
+        &self,
+        callback: impl Fn(reprise_core::view_source::ViewSource) + 'static,
+    ) {
+        self.inner.activation.set(callback);
     }
 
     pub(super) fn start(&self, group_size: u32, cancellation: RelinkCancellation) -> bool {
@@ -190,9 +202,15 @@ impl RelinkProgressView {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gtk4::prelude::*;
     use reprise_core::view_source::ViewSource;
 
-    use super::{relink_progress_state, RelinkCancellation};
+    use super::{
+        relink_progress_state, RelinkCancellation, RelinkProgressActivation, RelinkProgressView,
+    };
 
     // UX FB-2a: Relink uses the shared sidebar-bottom progress
     // card contract with spinner, title, percent, 3px bar, detail, view
@@ -208,12 +226,42 @@ mod tests {
         assert!(state.spinner);
         assert_eq!(state.progress_height_px, 3);
         assert_eq!(state.cancel_label, "Cancel");
-        assert_eq!(state.target, ViewSource::Missing);
-        assert_eq!(state.slot_role, "shared-sidebar-bottom");
+
+        let activated_target = Rc::new(RefCell::new(None));
+        let activated_target_for_callback = activated_target.clone();
+        let activation = RelinkProgressActivation::default();
+        activation.set(move |target| {
+            activated_target_for_callback.borrow_mut().replace(target);
+        });
+        activation.primary_click();
+        assert_eq!(*activated_target.borrow(), Some(ViewSource::Missing));
 
         let cancellation = RelinkCancellation::default();
         let worker_token = cancellation.token();
         cancellation.request();
         assert!(worker_token.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn relink_progress_primary_gesture_dispatches_missing_navigation() {
+        gtk4::init().unwrap();
+        let view = RelinkProgressView::new();
+        let activated_target = Rc::new(RefCell::new(None));
+        let activated_target_for_callback = activated_target.clone();
+        view.set_on_activate(move |target| {
+            activated_target_for_callback.borrow_mut().replace(target);
+        });
+        let container = view.widget().child().unwrap();
+        let controllers = container.observe_controllers();
+        let gesture = (0..controllers.n_items())
+            .filter_map(|index| controllers.item(index))
+            .find_map(|controller| controller.downcast::<gtk4::GestureClick>().ok())
+            .filter(|gesture| gesture.button() == gtk4::gdk::BUTTON_PRIMARY)
+            .expect("relink progress card must own one primary-click gesture");
+
+        gesture.emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
+
+        assert_eq!(*activated_target.borrow(), Some(ViewSource::Missing));
     }
 }

@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 
+use super::scanner::move_detect::MOVE_MATCH_TOLERANCE_MS;
 use super::scanner::ScanError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +54,8 @@ pub fn probe_relink(
         })?;
     let meta = super::scanner::track_meta::read_meta(new_path)?;
     let new_title = (!meta.title.is_empty()).then_some(meta.title);
-    let duration_mismatch = old_duration_ms.abs_diff(meta.duration_ms) > 2_000;
+    let duration_mismatch =
+        old_duration_ms.abs_diff(meta.duration_ms) > MOVE_MATCH_TOLERANCE_MS.unsigned_abs();
     let title_mismatch = new_title.as_deref().is_some_and(|title| title != old_title);
     if !duration_mismatch && !title_mismatch {
         return Ok(None);
@@ -368,6 +370,10 @@ mod tests {
 
     #[test]
     fn probe_accepts_duration_delta_at_matcher_tolerance() {
+        assert_eq!(
+            super::super::scanner::move_detect::MOVE_MATCH_TOLERANCE_MS,
+            2_000
+        );
         let (_temp, conn, track_id, new_path) = imported_missing_track("Same recording");
         let target = target_for(&conn, track_id);
         conn.execute(

@@ -109,7 +109,7 @@ pub(in crate::ui) fn empty_state_for_availability(
     source: &ViewSource,
     library_root_unavailable: bool,
 ) -> EmptyState {
-    if library_root_unavailable {
+    if library_root_unavailable && row_count == 0 {
         EmptyState::LibraryUnavailable
     } else {
         empty_state_for(row_count, has_filter, source)
@@ -238,12 +238,23 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
 mod empty_state_tests {
     use super::*;
 
-    // UX FB-5b: an unavailable library root overrides row/filter state with
-    // one StatusPage whose sole next step is Retry.
+    // UX FB-5b: an unavailable library root uses one Retry-only StatusPage
+    // when the current view has no rows, without blanking cached rows.
     #[test]
     fn fb_5b_unavailable_library_root_shows_status_page_with_retry_only() {
+        for source in [
+            ViewSource::Library,
+            ViewSource::Playlist(7),
+            ViewSource::Queue,
+        ] {
+            assert_eq!(
+                empty_state_for_availability(99, true, &source, true),
+                EmptyState::List,
+                "an unavailable root must not blank populated {source:?} rows"
+            );
+        }
         assert_eq!(
-            empty_state_for_availability(99, true, &ViewSource::Library, true),
+            empty_state_for_availability(0, false, &ViewSource::Library, true),
             EmptyState::LibraryUnavailable
         );
         let surface = unavailable_surface(std::path::Path::new("/media/NAS/Music"));
