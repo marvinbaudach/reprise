@@ -109,6 +109,12 @@ impl PlayerController {
             queue.set_shuffle(shuffled);
         }
         *self.play_origin.borrow_mut() = None;
+        // `now_playing` must be cleared BEFORE the queue notify below: the
+        // notify chain synchronously rebuilds a visible Queue view through
+        // `queue_view_sections`, which reads `now_playing` — clearing after
+        // would leave a stale Now Playing section until the next queue
+        // event (adversarial review, queue+nav plan, finding 1).
+        *self.now_playing.borrow_mut() = None;
         self.notify_queue_changed();
         let queue_can_resume = self.current_up_next.get().is_some()
             || self.queue.borrow().current().is_some()

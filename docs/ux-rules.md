@@ -11,7 +11,7 @@ Implementierungs-Commit der Regel. Akzeptanztests referenzieren Regel-IDs.
 
 ## Navigation (NAV)
 
-- **NAV-2 · History-Stack** `[geplant]` ⟲ — Navigationssprünge (Quellenwechsel über die
+- **NAV-2 · History-Stack** `[aktiv]` — Navigationssprünge (Quellenwechsel über die
   Sidebar, explizite Sprünge wie NAV-9) pushen den verlassenen Ort auf einen globalen
   History-Stack. „Back" (Alt+←) kehrt zum obersten Eintrag zurück; Back selbst pusht nicht.
 - **NAV-3 · Kontext-Klicks in der Player-Leiste** `[aktiv]` ⟲ — Der Artist-Klick in der
@@ -21,7 +21,7 @@ Implementierungs-Commit der Regel. Akzeptanztests referenzieren Regel-IDs.
   erhält Scroll-Position und Selektion des verlassenen Modus innerhalb der Session. Beim
   Zurückkommen findet man die Liste wie verlassen vor. Präzisierung: kein Persistieren
   über App-Neustarts — der Zustand lebt nur in der laufenden Session.
-- **NAV-9 · Jump to Now Playing** `[geplant]` — Klick auf Cover oder Titel in der
+- **NAV-9 · Jump to Now Playing** `[aktiv]` — Klick auf Cover oder Titel in der
   Player-Leiste navigiert zur Heimat des spielenden Tracks (Library-Modus Tracks bzw.
   Playlist, aus der er spielt), selektiert die Row und zentriert sie (Scroll so, dass die
   Row im mittleren Drittel liegt — kein scrollIntoView-Kantenkleben). Zusätzlich Shortcut

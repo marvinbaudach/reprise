@@ -462,6 +462,20 @@ impl TrackList {
     /// Injects the context menu's "Add to queue" action callback — see the
     /// `Shared::on_queue_selected` doc comment. `window.rs` wires this to
     /// `PlayerController::append_to_queue`.
+    /// The source the table currently shows — the dedup baseline NAV-9's
+    /// jump hands to `Sidebar::sync_current_source` before navigating.
+    pub fn current_source(&self) -> ViewSource {
+        self.shared.source.borrow().clone()
+    }
+
+    /// Drops the NAV-5 remembered scroll/selection for `source`. NAV-9's
+    /// jump calls this before navigating: an explicit "show me the playing
+    /// track" supersedes the stale remembered viewport — without this, the
+    /// deferred NAV-5 scroll restore would clobber the jump's centering.
+    pub fn forget_view_state(&self, source: &ViewSource) {
+        self.shared.view_state_memory.borrow_mut().remove(source);
+    }
+
     pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.shared.on_play_next_selected.borrow_mut() = Some(Rc::new(callback));
     }
