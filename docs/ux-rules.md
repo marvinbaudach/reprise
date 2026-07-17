@@ -349,7 +349,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## K. Filter- & Such-Sichtbarkeit
 
-- **FIL-1a** [geplant] [gtk] — Eine Wahrheit über Einschränkungen
+- **FIL-1a** [aktiv] [gtk] — Eine Wahrheit über Einschränkungen
   (Track-Listen): Alles, was die sichtbare Track-Liste einschränkt, steht als
   Chip in der Filter-Zeile direkt über der Liste — auch die Headerbar-Suche
   (Chip ⌕ „falling“ in any field, eigenes ×-Klickziel ≥ 20 px; das × entfernt

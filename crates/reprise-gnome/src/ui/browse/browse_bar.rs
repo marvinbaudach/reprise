@@ -290,12 +290,10 @@ impl BrowseBar {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    #[allow(dead_code)] // Wired to the window-level reset in Task 4.
     pub fn set_on_search_cleared(&self, callback: impl Fn() + 'static) {
         *self.on_search_cleared.borrow_mut() = Some(Rc::new(callback));
     }
 
-    #[allow(dead_code)] // Wired to the window-level reset in Task 4.
     pub fn set_on_clear_all(&self, callback: impl Fn() + 'static) {
         *self.on_clear_all.borrow_mut() = Some(Rc::new(callback));
     }
