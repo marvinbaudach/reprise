@@ -443,12 +443,14 @@ pub fn query_library_stats_browsed(
 }
 
 /// One `import_errors` row, as rendered by the ImportErrors source (Stage 3
-/// Task 8: this task builds the real backing query/columns the module doc's
-/// `ImportErrors` section describes — `path`/`reason`/`occurred_at`, the
-/// exact three columns `import_errors` has always had).
+/// Task 8). `path` is the table's primary key as of schema v10 (Task 1.1),
+/// so there is no separate surrogate id to expose. `reason` surfaces the
+/// v10 `reason_detail` column (the human-readable message; the newer typed
+/// `reason_kind` column is scan/self-healing-logic state, not display text,
+/// so it deliberately isn't projected here), and `occurred_at` surfaces
+/// `last_seen` — the most recent scan that still saw this failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportErrorRow {
-    pub id: i64,
     pub path: String,
     pub reason: String,
     pub occurred_at: i64,

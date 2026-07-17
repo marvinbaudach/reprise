@@ -344,34 +344,36 @@ pub fn query_import_error_count(conn: &Connection) -> Result<i64, rusqlite::Erro
     conn.query_row("SELECT count(*) FROM import_errors", [], |r| r.get(0))
 }
 
-/// Loads every `import_errors` row, most recent first (`occurred_at DESC`,
-/// falling back to `id DESC` for same-second ties so the ordering is
-/// deterministic) — capped at `QUEUE_LIMIT` for the same defense-in-depth
-/// reason every other unbounded list query in this module is.
+/// Loads every `import_errors` row, most recent first (`last_seen DESC`,
+/// falling back to `path DESC` for same-second ties so the ordering is
+/// deterministic — schema v10 (Task 1.1) made `path` the table's primary
+/// key, so it replaces the old surrogate `id` as the tie-break column) —
+/// capped at `QUEUE_LIMIT` for the same defense-in-depth reason every other
+/// unbounded list query in this module is.
 pub fn query_import_errors(conn: &Connection) -> Result<Vec<ImportErrorRow>, rusqlite::Error> {
     let sql = format!(
-        "SELECT id, path, reason, occurred_at FROM import_errors \
-         ORDER BY occurred_at DESC, id DESC LIMIT {QUEUE_LIMIT}"
+        "SELECT path, reason_detail, last_seen FROM import_errors \
+         ORDER BY last_seen DESC, path DESC LIMIT {QUEUE_LIMIT}"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], |r| {
         Ok(ImportErrorRow {
-            id: r.get(0)?,
-            path: r.get(1)?,
-            reason: r.get(2)?,
-            occurred_at: r.get(3)?,
+            path: r.get(0)?,
+            reason: r.get(1)?,
+            occurred_at: r.get(2)?,
         })
     })?;
     rows.collect()
 }
 
 /// "Dismiss" action (Stage 3 Task 8's ImportErrors source): deletes one
-/// `import_errors` row by id. This never touches `tracks` or any file on
-/// disk — it only clears the recorded failure itself.
-pub fn delete_import_error(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
+/// `import_errors` row by its `path` — the table's primary key since schema
+/// v10 (Task 1.1). This never touches `tracks` or any file on disk — it
+/// only clears the recorded failure itself.
+pub fn delete_import_error(conn: &Connection, path: &str) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "DELETE FROM import_errors WHERE id = ?1",
-        rusqlite::params![id],
+        "DELETE FROM import_errors WHERE path = ?1",
+        rusqlite::params![path],
     )?;
     Ok(())
 }

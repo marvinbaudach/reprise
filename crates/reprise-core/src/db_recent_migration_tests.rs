@@ -46,7 +46,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 10);
     let lastfm_exists: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",
@@ -70,7 +70,7 @@ fn migrate_v7_to_v8_adds_waveform_peaks_column() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 10);
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/test.flac', 'T', 'A', 0)",
         [],
@@ -124,7 +124,7 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 10);
 
     conn.execute(
         "INSERT INTO device_settings (device_serial, device_name) VALUES ('serial-1', 'Pixel')",
@@ -158,4 +158,124 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
         )
         .unwrap();
     assert_eq!(settings, ("[]".into(), 0, 0, 1));
+}
+
+/// Builds a v9 database (every schema step through `SCHEMA_V9`, `user_version`
+/// pinned at 9) so v10-specific tests seed rows under the *pre-migration*
+/// shape rather than the shape `migrate()` itself would already have applied.
+fn open_v9_database() -> Connection {
+    let conn = open(None).unwrap();
+    conn.execute_batch(SCHEMA_V1).unwrap();
+    conn.execute_batch(SCHEMA_V2).unwrap();
+    conn.execute_batch(SCHEMA_V3).unwrap();
+    conn.execute_batch(SCHEMA_V4).unwrap();
+    conn.execute_batch(SCHEMA_V5).unwrap();
+    conn.execute_batch(SCHEMA_V6).unwrap();
+    conn.execute_batch(SCHEMA_V7).unwrap();
+    conn.execute_batch(SCHEMA_V8).unwrap();
+    conn.execute_batch(SCHEMA_V9).unwrap();
+    conn.pragma_update(None, "user_version", 9).unwrap();
+    conn
+}
+
+/// Design decision (a) from the schema v10 doc comment: `missing_since IS
+/// NULL` becomes the single source of truth for "file is present", retiring
+/// the `missing` boolean (which stays populated for now — Task 1.3 drops it
+/// separately). A pre-v10 `missing = 1` row has no recorded start date, so
+/// the backfill cannot know whether the file is actually deleted or merely
+/// unreachable (e.g. an unmounted drive) — it must land on `missing_reason =
+/// 'unknown'`, never `'deleted'`, so nothing downstream ever treats a
+/// backfilled row as safely auto-removable without re-verification.
+#[test]
+fn migrate_v9_to_v10_backfills_missing_since_for_missing_tracks() {
+    let conn = open_v9_database();
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, added_at, missing) \
+         VALUES (1, '/x/missing.flac', 'A', 'B', 0, 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, added_at, missing) \
+         VALUES (2, '/x/present.flac', 'C', 'D', 0, 0)",
+        [],
+    )
+    .unwrap();
+
+    migrate(&conn).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 10);
+
+    let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
+        .query_row(
+            "SELECT missing_since, missing_reason FROM tracks WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(missing_since.is_some());
+    assert_eq!(missing_reason.as_deref(), Some("unknown"));
+
+    let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
+        .query_row(
+            "SELECT missing_since, missing_reason FROM tracks WHERE id = 2",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!(missing_since.is_none());
+    assert!(missing_reason.is_none());
+}
+
+/// Design decision (b) from the schema v10 doc comment: existing
+/// `import_errors` rows are discarded, not migrated, on the `DROP TABLE` +
+/// `CREATE TABLE` rebuild. Unlike `tracks` rows (user data — ratings,
+/// playlist positions — that must survive a migration), `import_errors` rows
+/// are reproducible scan state with only a free-text `reason` that cannot be
+/// safely parsed into the new typed `reason_kind`/`reason_detail` columns;
+/// the next scan recreates any row that is still actually failing, correctly
+/// typed this time.
+#[test]
+fn migrate_v9_to_v10_rebuilds_import_errors_table() {
+    let conn = open_v9_database();
+    conn.execute(
+        "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/a.flac', 'bad tag', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO import_errors (path, reason, occurred_at) VALUES ('/b.flac', 'io error', 2)",
+        [],
+    )
+    .unwrap();
+
+    migrate(&conn).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 10);
+
+    let remaining: i64 = conn
+        .query_row("SELECT COUNT(*) FROM import_errors", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(remaining, 0);
+
+    conn.execute(
+        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
+         VALUES ('/x', 'io', 'd', 1, 1)",
+        [],
+    )
+    .unwrap();
+    let seen_count: i64 = conn
+        .query_row(
+            "SELECT seen_count FROM import_errors WHERE path = '/x'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(seen_count, 1);
 }
