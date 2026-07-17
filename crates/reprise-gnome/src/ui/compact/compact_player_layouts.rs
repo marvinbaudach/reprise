@@ -117,14 +117,14 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
     let restore_button = gtk4::Button::from_icon_name("window-restore-symbolic");
     restore_button.add_css_class("circular");
     restore_button.add_css_class(CSS_ICON_BTN);
-    restore_button.set_tooltip_text(Some("Restore full window (Ctrl+M)"));
+    restore_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_RESTORE_FULL_WINDOW)));
     restore_button.set_width_request(26);
     restore_button.set_height_request(26);
 
     let close_button = gtk4::Button::from_icon_name("window-close-symbolic");
     close_button.add_css_class("circular");
     close_button.add_css_class(CSS_ICON_BTN);
-    close_button.set_tooltip_text(Some("Close mini-player"));
+    close_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_CLOSE_MINI_PLAYER)));
     close_button.set_width_request(26);
     close_button.set_height_request(26);
 

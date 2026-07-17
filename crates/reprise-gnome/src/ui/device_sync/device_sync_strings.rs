@@ -12,6 +12,18 @@ pub fn text(message: &str) -> String {
 
 pub const EJECT_DEVICE: &str = N_!("Eject device");
 pub const EJECT_BLOCKED_SYNCING: &str = N_!("Eject device — Sync in progress");
+pub const KEPT_ON_DEVICE: &str = N_!("Kept on device");
+pub const STORAGE_TOTALS_UNKNOWN: &str =
+    N_!("GVfs did not report total capacity; the bar shows known music and free space.");
+
+/// Spinner tooltip while syncing, e.g. "Syncing Pixel 8 · 42%".
+pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {
+    let percent = percent.to_string();
+    formatted(
+        N_!("Syncing {name} · {percent}%"),
+        &[("name", name), ("percent", &percent)],
+    )
+}
 
 /// TIP-2a: a disabled eject keeps its tooltip and appends the reason.
 pub fn eject_tooltip(syncing: bool) -> String {
@@ -188,6 +200,20 @@ pub fn sync_tooltip(
     parts.join(" · ")
 }
 
+/// Visible sync subtitle for the device view: current track and, when it can
+/// be estimated, the remaining time — so the ETA that also rides along in the
+/// sidebar card's hover tooltip stays reachable without hovering (TIP-3).
+pub fn syncing_subtitle(current_track: &str, bytes_done: u64, bytes_total: u64) -> String {
+    let mut parts = Vec::new();
+    if !current_track.is_empty() {
+        parts.push(current_track.to_string());
+    }
+    if let Some(eta) = remaining_hint(bytes_done, bytes_total) {
+        parts.push(eta);
+    }
+    parts.join(" · ")
+}
+
 fn remaining_hint(bytes_done: u64, bytes_total: u64) -> Option<String> {
     let remaining = bytes_total
         .checked_sub(bytes_done)
@@ -252,6 +278,17 @@ mod tests {
     fn tip_2a_eject_tooltip_names_reason_while_syncing() {
         assert_eq!(eject_tooltip(true), "Eject device — Sync in progress");
         assert_eq!(eject_tooltip(false), "Eject device");
+    }
+
+    #[test]
+    fn syncing_subtitle_surfaces_track_and_eta_without_hover() {
+        // 1 MiB of 100 MiB left → an ETA is shown alongside the track (TIP-3:
+        // the hover-only sync tooltip's ETA is now reachable in the view).
+        let subtitle = syncing_subtitle("Immortal", 1, 100 * 1_024 * 1_024);
+        assert!(subtitle.contains("Immortal"), "{subtitle}");
+        assert!(subtitle.contains("left"), "{subtitle}");
+        // No track name, no ETA computable → empty, never a dangling separator.
+        assert_eq!(syncing_subtitle("", 100, 100), "");
     }
 
     #[test]
