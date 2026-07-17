@@ -50,6 +50,26 @@ pub(in crate::ui) fn capture(selected_ids: Vec<i64>, anchor: Option<(i64, f64)>)
     }
 }
 
+/// Whether restoring this anchor could change anything. An untouched list —
+/// nothing selected, sitting at the very top — has nothing to restore: the
+/// rebuilt list is already unselected and already at the top, so the capture
+/// side records no anchor at all for it (see `track_list_reload::
+/// capture_reload_anchor`).
+///
+/// Callers use this to skip the restore path entirely, which matters because
+/// resolving positions needs the view's full id list
+/// (`Shared::current_view_ids()`) — a sorted full-table query. Watcher
+/// reconciles and scan progress fire `reload()` in bursts on lists nobody is
+/// looking at; without this guard each one would pay for that query only to
+/// restore a no-op.
+///
+/// Note this is deliberately *not* "the offset happens to be 0.0": an anchor
+/// sitting flush against row 50's top edge also has offset 0.0, and dropping
+/// its restore would snap the view back to the top.
+pub(in crate::ui) fn is_noop(anchor: &ReloadAnchor) -> bool {
+    anchor.selected_ids.is_empty() && anchor.anchor.is_none()
+}
+
 /// Maps `ids` onto their positions within `current`, in `current`'s order.
 /// Ids no longer present — deleted tracks, or ones a changed filter/playlist
 /// membership dropped — are silently omitted rather than reported as an
@@ -157,6 +177,19 @@ mod tests {
     fn positions_for_ids_empty_saved_and_empty_current_are_both_fine() {
         assert_eq!(positions_for_ids(&[], &[1, 2]), Vec::<u32>::new());
         assert_eq!(positions_for_ids(&[1], &[]), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn is_noop_only_for_an_untouched_list() {
+        // Nothing selected, no anchor recorded (capture side saw scroll 0):
+        // the rebuilt list already looks like this — skip the restore.
+        assert!(is_noop(&capture(vec![], None)));
+        // A selection always needs restoring, even at the top of the list.
+        assert!(!is_noop(&capture(vec![7], None)));
+        // An anchor flush against a row's top edge (offset 0.0) is NOT a
+        // no-op — the row it anchors can be far down the list.
+        assert!(!is_noop(&capture(vec![], Some((50, 0.0)))));
+        assert!(!is_noop(&capture(vec![], Some((50, 12.0)))));
     }
 
     #[test]
