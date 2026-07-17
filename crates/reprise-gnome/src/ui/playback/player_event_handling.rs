@@ -95,6 +95,21 @@ impl PlayerController {
         self.evaluate_play_tracking();
         self.consecutive_skips.set(0);
         self.failure_skip_limit.set(0);
+        // QUE-3: the playback snapshot lives exactly as long as playback —
+        // a stop clears it (and its origin), leaving only manual Play Next
+        // entries behind; QUE-4's empty state then shows once those are
+        // consumed too. Cleared BEFORE `queue_can_resume` below so a fresh
+        // stop also disables prev/next when nothing manual is pending.
+        {
+            let mut queue = self.queue.borrow_mut();
+            let repeat = queue.repeat();
+            let shuffled = queue.is_shuffled();
+            *queue = reprise_core::queue::Queue::new();
+            queue.set_repeat(repeat);
+            queue.set_shuffle(shuffled);
+        }
+        *self.play_origin.borrow_mut() = None;
+        self.notify_queue_changed();
         let queue_can_resume = self.current_up_next.get().is_some()
             || self.queue.borrow().current().is_some()
             || !self.up_next.borrow().is_empty();

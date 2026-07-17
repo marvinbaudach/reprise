@@ -475,6 +475,28 @@ impl Queue {
             .filter_map(|&idx| self.ids.get(idx).copied())
             .collect()
     }
+
+    /// The play-order tail after the current track — exactly what auto-
+    /// advance will play once any pending manual entries drain (QUE-2), and
+    /// exactly what the Queue view's "Up Next · from <source>" section shows
+    /// (QUE-1). Empty when nothing is current or the current track is last.
+    pub fn remaining_after_current(&self) -> Vec<i64> {
+        let Some(pos) = self.pos else {
+            return Vec::new();
+        };
+        self.order
+            .iter()
+            .skip(pos + 1)
+            .filter_map(|&idx| self.ids.get(idx).copied())
+            .collect()
+    }
+
+    /// `remaining_after_current().len()` without materializing the ids —
+    /// the Queue sidebar counter's share of the snapshot (QUE-5).
+    pub fn remaining_len(&self) -> usize {
+        self.pos
+            .map_or(0, |pos| self.order.len().saturating_sub(pos + 1))
+    }
 }
 
 impl Default for Queue {

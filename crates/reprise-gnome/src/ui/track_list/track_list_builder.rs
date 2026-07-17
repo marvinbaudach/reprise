@@ -33,7 +33,7 @@ pub(in crate::ui) fn build(
     conn: Rc<RefCell<Connection>>,
     on_activate: OnActivate,
     on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
-    queue_ids_provider: impl Fn() -> Vec<i64> + 'static,
+    queue_ids_provider: impl Fn() -> super::queue_sections::QueueViewModel + 'static,
     cover_download: CoverDownloadRuntime,
 ) -> TrackList {
     let model = TrackListModel::new(conn.clone());
@@ -85,6 +85,7 @@ pub(in crate::ui) fn build(
         filter: RefCell::new(String::new()),
         source: RefCell::new(ViewSource::default()),
         queue_ids_provider: Box::new(queue_ids_provider),
+        queue_sections: RefCell::new(Vec::new()),
         on_activate,
         on_reload: Box::new(on_reload),
         toast_overlay: gtk4::glib::WeakRef::new(),

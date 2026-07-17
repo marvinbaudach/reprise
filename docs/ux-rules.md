@@ -42,14 +42,14 @@ Implementierungs-Commit der Regel. Akzeptanztests referenzieren Regel-IDs.
 
 ## Queue (QUE)
 
-- **QUE-1 · Die Queue ist nie leer, solange etwas spielt** `[geplant]` — Sie zeigt drei
+- **QUE-1 · Die Queue ist nie leer, solange etwas spielt** `[aktiv]` — Sie zeigt drei
   Abschnitte, in dieser Reihenfolge:
   1. **Now Playing** (1 Row, Akzent + EQ, wie überall)
   2. **Play Next** — manuell eingereihte Tracks („Play next"/„Add to queue"), nur wenn
      vorhanden, mit Sektionstitel
   3. **Up Next · aus <Quelle>** — der Rest des Playback-Snapshots (z. B. „Up Next · from
      Late Night" oder „· from Neverbloom"), inklusive Shuffle-Reihenfolge, falls Shuffle an
-- **QUE-2 · Abspiellogik = Anzeigereihenfolge** `[geplant]` — Erst Play-Next-Einträge
+- **QUE-2 · Abspiellogik = Anzeigereihenfolge** `[aktiv]` — Erst Play-Next-Einträge
   (FIFO), dann der Snapshot ab aktueller Position. Keine versteckte Priorität — was die
   View zeigt, ist was passiert.
 - **QUE-3 · Interaktion** `[geplant]` — DnD-Reorder innerhalb „Play Next"; Up-Next-Rows per
@@ -57,9 +57,9 @@ Implementierungs-Commit der Regel. Akzeptanztests referenzieren Regel-IDs.
   Snapshot, nicht aus der Library); Doppelklick auf eine Queue-Row springt dorthin
   (Playhead, kein Neuaufbau). „Clear queue"-Button räumt nur „Play Next"; der Snapshot
   bleibt (er verschwindet erst mit Playback-Stop oder neuem Kontext).
-- **QUE-4 · Leerzustand nur ohne Wiedergabe** `[geplant]` — StatusPage „Nothing queued —
+- **QUE-4 · Leerzustand nur ohne Wiedergabe** `[aktiv]` — StatusPage „Nothing queued —
   play something" (FB-5: ein nächster Schritt, kein Grid an Vorschlägen).
-- **QUE-5 · Sidebar-Zähler „Queue · N"** `[geplant]` — N = Play Next + verbleibende
+- **QUE-5 · Sidebar-Zähler „Queue · N"** `[aktiv]` — N = Play Next + verbleibende
   Up-Next-Tracks (nicht Gesamt-Snapshot).
 
 ## Feedback & Leerzustände (FB)

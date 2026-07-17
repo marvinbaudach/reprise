@@ -136,6 +136,10 @@ pub(in crate::ui) enum EmptyState {
     /// The current source has rows, but the active search filter matched
     /// none.
     NoResults,
+    /// QUE-4: the Queue source with nothing playing and nothing pending.
+    /// Deliberately its own copy ("Nothing queued — play something"), one
+    /// next step per FB-5, instead of the EmptyLibrary scan prompt.
+    EmptyQueue,
     /// At least one row to show — the populated list page.
     List,
 }
@@ -162,6 +166,7 @@ pub(in crate::ui) fn empty_state_for(
             | ViewSource::ImportErrors
             | ViewSource::Album { .. }
             | ViewSource::Artist(_) => EmptyState::NothingHere,
+            ViewSource::Queue => EmptyState::EmptyQueue,
             _ => EmptyState::EmptyLibrary,
         },
         _ => EmptyState::List,
@@ -688,6 +693,16 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
                 .set_description(Some(&strings::text(strings::NO_RESULTS_DESCRIPTION)));
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
+        EmptyState::EmptyQueue => {
+            shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
+            shared
+                .empty_page
+                .set_title(&strings::text(strings::EMPTY_QUEUE_TITLE));
+            shared
+                .empty_page
+                .set_description(Some(&strings::text(strings::EMPTY_QUEUE_DESCRIPTION)));
+            shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
+        }
         EmptyState::NothingHere => {
             shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
             shared
@@ -777,12 +792,12 @@ mod empty_state_tests {
         );
     }
 
-    /// Non-Library, non-Missing/ImportErrors sources (Playlist, Smart,
-    /// Queue) still get `EmptyLibrary`'s copy for now — a dedicated "this
-    /// playlist has no tracks yet" message is left to a later stage (Task 4
-    /// builds the sidebar that would make such a distinction meaningful).
+    /// Non-Library, non-Missing/ImportErrors sources (Playlist, Smart)
+    /// still get `EmptyLibrary`'s copy for now — a dedicated "this playlist
+    /// has no tracks yet" message is left to a later stage. The Queue source
+    /// has its own QUE-4 copy since the queue+nav plan.
     #[test]
-    fn playlist_smart_and_queue_fall_back_to_empty_library_copy() {
+    fn playlist_and_smart_fall_back_to_empty_library_copy() {
         assert_eq!(
             empty_state_for(0, false, &ViewSource::Playlist(1)),
             EmptyState::EmptyLibrary
@@ -791,9 +806,13 @@ mod empty_state_tests {
             empty_state_for(0, false, &ViewSource::Smart(1)),
             EmptyState::EmptyLibrary
         );
+    }
+
+    #[test]
+    fn empty_queue_gets_its_own_que4_state() {
         assert_eq!(
             empty_state_for(0, false, &ViewSource::Queue),
-            EmptyState::EmptyLibrary
+            EmptyState::EmptyQueue
         );
     }
 }

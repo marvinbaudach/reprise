@@ -7,7 +7,6 @@ use gtk4::gio::prelude::*;
 
 use crate::ui::browse_filter_count;
 use crate::ui::track_list::Shared;
-use crate::ui::track_list_activation::current_queue_ids;
 use crate::ui::track_list_columns::{apply_empty_state, empty_state_for};
 use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
@@ -78,11 +77,20 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
     };
     let has_filter = !filter.trim().is_empty() || !browse.is_empty();
 
-    let queue_ids = if matches!(source, ViewSource::Queue) {
-        current_queue_ids(shared)
+    let is_queue = matches!(source, ViewSource::Queue);
+    let queue_ids = if is_queue {
+        let queue_model = (shared.queue_ids_provider)();
+        *shared.queue_sections.borrow_mut() = queue_model.sections.clone();
+        shared
+            .model
+            .set_sections(super::queue_sections::section_ranges(&queue_model.sections));
+        queue_model.ids
     } else {
+        shared.queue_sections.borrow_mut().clear();
+        shared.model.set_sections(Vec::new());
         Vec::new()
     };
+    super::queue_sections::apply_queue_header_factory(shared, is_queue);
 
     shared.model.set_query_browsed(
         &source,

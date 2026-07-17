@@ -42,6 +42,16 @@ fn toggle_action(
     }
 }
 
+/// The Queue view's composite parts (QUE-1), in display order. Produced by
+/// `PlayerController::queue_view_sections`, composed into the visible model
+/// by `ui::track_list::queue_sections::compose`.
+pub(crate) struct QueueViewSections {
+    pub now_playing: Option<i64>,
+    pub play_next: Vec<i64>,
+    pub up_next_rest: Vec<i64>,
+    pub origin_label: Option<String>,
+}
+
 impl PlayerController {
     pub(in crate::ui) fn set_on_queue_changed(&self, callback: impl Fn() + 'static) {
         *self.queue_changed.borrow_mut() = Some(Rc::new(callback));
@@ -122,15 +132,33 @@ impl PlayerController {
         tracing::info!(added = ids.len(), queue_len, "tracks added to queue");
     }
 
-    /// Snapshot of pending manual ids in stable visible order. The Queue view
-    /// asks for a fresh owned value on each reload, so consumption, removal,
-    /// and drag reorder cannot expose the hidden context or a stale list.
-    pub(in crate::ui) fn queue_ids_snapshot(&self) -> Vec<i64> {
-        self.up_next.borrow().ids().to_vec()
+    /// The Queue view's three parts in display order (QUE-1): the playing
+    /// track, pending manual entries, and the snapshot's play-order tail —
+    /// plus the origin label for the "Up Next · from <label>" title. Each
+    /// list is cloned out in its own statement (borrow discipline).
+    pub(in crate::ui) fn queue_view_sections(&self) -> QueueViewSections {
+        let now_playing = self.now_playing.borrow().as_ref().map(|np| np.id);
+        let play_next = self.up_next.borrow().ids().to_vec();
+        let up_next_rest = self.queue.borrow().remaining_after_current();
+        let origin_label = self
+            .play_origin
+            .borrow()
+            .as_ref()
+            .map(|origin| origin.label.clone());
+        QueueViewSections {
+            now_playing,
+            play_next,
+            up_next_rest,
+            origin_label,
+        }
     }
 
-    pub(in crate::ui) fn up_next_len(&self) -> usize {
-        self.up_next.borrow().len()
+    /// QUE-5: the sidebar's "Queue · N" — pending manual entries plus the
+    /// snapshot tracks still ahead of the playhead, NOT the total snapshot.
+    pub(in crate::ui) fn queue_pending_len(&self) -> usize {
+        let pending = self.up_next.borrow().len();
+        let remaining = self.queue.borrow().remaining_len();
+        pending + remaining
     }
 
     pub(in crate::ui) fn remove_up_next_positions(&self, positions: &[usize]) -> usize {

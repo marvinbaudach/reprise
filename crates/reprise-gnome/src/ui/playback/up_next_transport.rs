@@ -378,4 +378,35 @@ mod tests {
         assert!(pending.is_empty());
         assert_eq!(current_pending, Some(30));
     }
+
+    /// QUE-2 pin: what the composite Queue view displays (play-next FIFO,
+    /// then the snapshot's play-order tail) is exactly what `next_target`
+    /// plays, in exactly that order — no hidden priority.
+    #[test]
+    fn advance_order_equals_composite_display_order() {
+        let mut context = Queue::new();
+        context.set_tracks(vec![100, 200, 300], 0);
+        let mut pending = pending(&[10, 20]);
+        let mut current_pending = None;
+
+        // Display order while 100 plays: play_next [10, 20], then [200, 300].
+        let displayed: Vec<i64> = pending
+            .ids()
+            .iter()
+            .copied()
+            .chain(context.remaining_after_current())
+            .collect();
+
+        let mut played = Vec::new();
+        while let Some(id) = next_target(
+            &mut context,
+            &mut pending,
+            &mut current_pending,
+            AdvanceReason::Automatic,
+        ) {
+            played.push(id);
+        }
+        assert_eq!(played, displayed);
+        assert_eq!(played, vec![10, 20, 200, 300]);
+    }
 }
