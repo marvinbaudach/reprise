@@ -106,6 +106,23 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             }
         });
     }
+    {
+        // Dropping tracks onto the sidebar's Queue row appends them, exactly
+        // like the context menu's "Add to queue" action wired below — same
+        // decoupling-via-closure seam, same degraded-no-op convention (no
+        // player at all reports `false` rather than a false "appended").
+        let player = player.clone();
+        sidebar.set_on_queue_drop(move |ids| match &player {
+            Some(player) => {
+                player.append_to_queue(ids);
+                true
+            }
+            None => {
+                tracing::warn!("player unavailable; ignoring queue drop");
+                false
+            }
+        });
+    }
     super::tag_edit_flow::wire_refresh(track_list, sidebar, player);
 
     // Stage 3 Task 5: context menu action wiring. `track_list` stays

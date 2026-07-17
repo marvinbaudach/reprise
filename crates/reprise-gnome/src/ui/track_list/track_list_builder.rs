@@ -96,6 +96,7 @@ pub(in crate::ui) fn build(
         on_playlist_mutated: RefCell::new(None),
         on_queue_reorder: RefCell::new(None),
         on_sidebar_playlist_drop: RefCell::new(None),
+        on_sidebar_queue_drop: RefCell::new(None),
         import_errors_view,
         on_rescan_library: RefCell::new(None),
         on_library_mutated: RefCell::new(None),

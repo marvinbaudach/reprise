@@ -20,6 +20,14 @@
 //!   directly, which only proved the database write, not any of the
 //!   sidebar-refresh/toast wiring a real drop performs — see `Sidebar::
 //!   handle_playlist_drop`'s doc comment for the fuller history.
+//! - `addqueue`: the Queue-row twin of `addplaylist:<name>` — selects the
+//!   same leading rows, resolves their ids, and calls `shared.on_sidebar_
+//!   queue_drop`, the callback `window.rs` wires to `Sidebar::handle_queue_
+//!   drop`. That is the exact function the Queue nav row's real `gtk::
+//!   DropTarget` calls on a genuine pointer drop, so the append, its toast,
+//!   and (through `PlayerController::notify_queue_changed`) the sidebar's
+//!   Queue-count refresh plus Queue-view reload all run as they would for a
+//!   real drag. Takes no name argument: there is only one queue.
 //! - `reorderplaylist:<from>-<to>`: `from`/`to` are *view* positions — this
 //!   builds the exact `DragPayload` a real single-row drag from view
 //!   position `from` to view position `to` would produce (via `reorder_
@@ -64,6 +72,8 @@ pub(in crate::ui) fn arm_smoke_dnd(shared: &Rc<Shared>) {
     glib::idle_add_local_once(move || {
         if let Some(name) = value.strip_prefix("addplaylist:") {
             smoke_add_to_playlist(&shared, name);
+        } else if value == "addqueue" {
+            smoke_add_to_queue(&shared);
         } else if let Some(range) = value.strip_prefix("reorderplaylist:") {
             smoke_reorder_playlist(&shared, range);
         } else if let Some(range) = value.strip_prefix("reorderqueue:") {
@@ -85,14 +95,9 @@ fn parse_from_to(range: &str) -> Option<(u32, u32)> {
 /// through `shared.on_sidebar_playlist_drop` rather than calling `library::
 /// playlists::add_tracks` directly.
 fn smoke_add_to_playlist(shared: &Rc<Shared>, name: &str) {
-    let row_count = shared.model.n_items().min(SMOKE_DND_ADD_ROW_COUNT);
-    if row_count == 0 {
-        tracing::warn!("{SMOKE_DND_ENV_VAR}: track list is empty; nothing to add");
+    let Some(ids) = select_leading_rows(shared) else {
         return;
-    }
-    shared.selection.select_range(0, row_count, true);
-    let positions = track_list_context_menu::current_selection_positions(shared);
-    let ids = track_actions::selected_track_ids(&positions, &shared.model);
+    };
 
     let Some(playlist_id) = resolve_smoke_dnd_playlist_by_name(shared, name) else {
         tracing::warn!(
@@ -115,6 +120,44 @@ fn smoke_add_to_playlist(shared: &Rc<Shared>, name: &str) {
         playlist_id,
         added,
         "{SMOKE_DND_ENV_VAR}: simulated drop dispatched through the sidebar drop handler"
+    );
+}
+
+/// Selects the leading rows a drag would carry and resolves their ids —
+/// shared by the `addplaylist:<name>` and `addqueue` forms, which differ
+/// only in where the resolved ids are then dropped. `None` (caller returns,
+/// warning already logged) when the track list is empty.
+fn select_leading_rows(shared: &Rc<Shared>) -> Option<Vec<i64>> {
+    let row_count = shared.model.n_items().min(SMOKE_DND_ADD_ROW_COUNT);
+    if row_count == 0 {
+        tracing::warn!("{SMOKE_DND_ENV_VAR}: track list is empty; nothing to add");
+        return None;
+    }
+    shared.selection.select_range(0, row_count, true);
+    let positions = track_list_context_menu::current_selection_positions(shared);
+    Some(track_actions::selected_track_ids(&positions, &shared.model))
+}
+
+/// `addqueue` — see the module doc comment for why this dispatches through
+/// `shared.on_sidebar_queue_drop` rather than calling the player directly.
+fn smoke_add_to_queue(shared: &Rc<Shared>) {
+    let Some(ids) = select_leading_rows(shared) else {
+        return;
+    };
+
+    let callback = shared.on_sidebar_queue_drop.borrow().clone();
+    let Some(callback) = callback else {
+        tracing::warn!(
+            "{SMOKE_DND_ENV_VAR}: no sidebar queue-drop handler wired (window.rs not fully \
+             built yet?); ignoring"
+        );
+        return;
+    };
+    let appended = callback(&ids);
+    tracing::info!(
+        count = ids.len(),
+        appended,
+        "{SMOKE_DND_ENV_VAR}: simulated queue drop dispatched through the sidebar drop handler"
     );
 }
 
