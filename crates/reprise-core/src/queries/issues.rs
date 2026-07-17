@@ -45,6 +45,7 @@
 
 use rusqlite::Connection;
 
+use crate::library::settings::{self, AutoCleanSetting};
 use crate::models::{MissingReason, Track};
 
 use super::clauses::{row_to_track, MISSING};
@@ -197,4 +198,105 @@ pub fn query_missing_rows(
         )?,
     };
     rows.collect()
+}
+
+// -- Auto-clean (Task 2.3) --------------------------------------------------
+//
+// The Deleted card (this module's `MissingGroupKind::Deleted`) is a self-
+// healing state list, not a permanent parking lot — once a track has
+// definitely been deleted, and the user has opted into automatic cleanup,
+// there is no more evidence coming that will ever change that verdict.
+// `auto_clean_eligible`/`run_auto_clean` are the opt-in, unattended half of
+// that self-healing story: after a user-chosen grace period, a `deleted`
+// row's library history (rating, play count, playlist membership, listen
+// history — all cascade-deleted with it) stops being worth holding onto
+// against a file that is provably never coming back.
+//
+// This is the one place in the crate where a background process is allowed
+// to hard-delete `tracks` rows with nobody watching, so every fail-safe
+// below is deliberate and non-negotiable — see each function's doc comment.
+
+/// Seconds in one day — the unit `AutoCleanSetting::Days` counts in.
+const SECONDS_PER_DAY: i64 = 86_400;
+
+/// Every `MissingGroupKind::Deleted` track id whose auto-clean grace period
+/// has elapsed as of `now` (unix seconds) — the read-only half of Task 2.3's
+/// unattended cleanup. [`run_auto_clean`] is the only real caller; this
+/// function is exposed separately so a preview ("N tracks would be removed")
+/// can be shown without deleting anything.
+///
+/// Three independent fail-safes, each "return empty" rather than an error:
+/// - The setting is [`AutoCleanSetting::Off`] — its default, including for a
+///   never-written or corrupt `missing_auto_clean` value (see that type's
+///   doc comment).
+/// - Auto-clean has never been armed (`auto_clean_armed_at` unset) — a
+///   duration alone must never run; see `settings::get_auto_clean_armed_at`'s
+///   doc comment for why arming is the safety catch against an instant mass
+///   deletion the moment a user turns the setting on over an existing
+///   backlog of old missing rows.
+/// - No `deleted` row's deadline has actually passed yet.
+///
+/// A row only ever qualifies via `missing_reason = 'deleted'` (the shared
+/// [`MISSING`] predicate plus this exact reason, mirroring `query_missing_
+/// groups`'s own `Deleted` filter above) — `unmounted`/`unknown` rows are
+/// NEVER eligible, no matter how long they've sat missing: an unmounted
+/// drive's files are almost certainly fine and will return the moment the
+/// drive is remounted, and an `unknown` row (the v10 migration's backfill
+/// for pre-v2 rows, predating the `device` column) carries no evidence at
+/// all — auto-clean only ever acts on rows this crate can actually prove
+/// are gone.
+///
+/// The deadline itself is `max(missing_since, armed_at) + days*86400 <=
+/// now`: the grace period starts at whichever is LATER, the file going
+/// missing or the feature being armed — never purely `missing_since` alone,
+/// which is exactly what would let arming the setting over months-old
+/// missing rows delete them the instant it's turned on. See `settings::
+/// set_auto_clean_armed_at`'s doc comment for the "start counting from
+/// today" flow this protects.
+pub fn auto_clean_eligible(conn: &Connection, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
+    let AutoCleanSetting::Days(days) = settings::get_missing_auto_clean(conn) else {
+        return Ok(Vec::new());
+    };
+    let Some(armed_at) = settings::get_auto_clean_armed_at(conn)? else {
+        return Ok(Vec::new());
+    };
+    let grace_period_seconds = i64::from(days) * SECONDS_PER_DAY;
+    let mut statement = conn.prepare(&format!(
+        "SELECT id FROM tracks WHERE {MISSING} AND missing_reason = ?1 \
+         AND max(missing_since, ?2) + ?3 <= ?4 ORDER BY id"
+    ))?;
+    let ids = statement
+        .query_map(
+            rusqlite::params![
+                MissingReason::Deleted.as_str(),
+                armed_at,
+                grace_period_seconds,
+                now
+            ],
+            |row| row.get(0),
+        )?
+        .collect::<Result<_, _>>()?;
+    Ok(ids)
+}
+
+/// Runs Task 2.3's unattended cleanup: every id [`auto_clean_eligible`]
+/// returns is hard-deleted via `maintenance::remove_tracks` — the same
+/// transactional, playlist-position-compacting delete path every other real
+/// removal in this crate funnels through — returning the exact ids the
+/// caller must purge from its own in-memory playback queue.
+///
+/// Deliberately NOT routed through the tombstone/10-second-undo mechanism
+/// (`maintenance::tombstone_tracks`) despite deleting the same shape of row
+/// a "Remove all" flow does: that mechanism exists so a user who clicks
+/// "Remove" gets a toast they can act on immediately. Auto-clean fires
+/// unattended, at least `days` days after the fact, with nobody watching a
+/// toast — a tombstone with no observer to click "Undo" is just a second,
+/// silent grace period bolted onto the one that already elapsed, not a real
+/// safety net. The one real safety net this feature has is [`auto_clean_
+/// eligible`]'s own three fail-safes (see its doc comment): get the deadline
+/// right before deleting, because there is no undo once this function has
+/// run — the whole point of a hard delete, made deliberately.
+pub fn run_auto_clean(conn: &mut Connection, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
+    let ids = auto_clean_eligible(conn, now)?;
+    super::maintenance::remove_tracks(conn, &ids)
 }
