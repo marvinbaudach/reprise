@@ -279,6 +279,21 @@ CREATE TABLE import_errors (
 );
 "#;
 
+/// Schema v11 (Missing files rebuild, Task 1.3): drops the now-unused
+/// `missing` boolean column from the tracks table. Design decision: the
+/// boolean flag plus a timestamp are two truths for one state and can drift
+/// out of sync; `missing_since IS NULL` is now the single source of truth for
+/// "file is present", and a planned auto-clean feature deletes rows based on
+/// how long `missing_since` has been set — a row with an unclear boolean/date
+/// agreement would be unacceptable there. Schema v10 and v11 are separate
+/// migrations rather than combined into one because each task's commit must
+/// leave the test suite green, and a shipped migration must never be edited
+/// afterwards — the column-drop gets its own version rather than being
+/// retrofitted into v10.
+const SCHEMA_V11: &str = r#"
+ALTER TABLE tracks DROP COLUMN missing;
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -392,6 +407,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V10)?;
         tx.pragma_update(None, "user_version", 10)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 11 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V11)?;
+        tx.pragma_update(None, "user_version", 11)?;
         tx.commit()?;
     }
     Ok(())

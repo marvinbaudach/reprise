@@ -46,7 +46,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10);
+    assert_eq!(version, 11);
     let lastfm_exists: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",
@@ -70,7 +70,7 @@ fn migrate_v7_to_v8_adds_waveform_peaks_column() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10);
+    assert_eq!(version, 11);
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/test.flac', 'T', 'A', 0)",
         [],
@@ -124,7 +124,7 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10);
+    assert_eq!(version, 11);
 
     conn.execute(
         "INSERT INTO device_settings (device_serial, device_name) VALUES ('serial-1', 'Pixel')",
@@ -207,7 +207,7 @@ fn migrate_v9_to_v10_backfills_missing_since_for_missing_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10);
+    assert_eq!(version, 11);
 
     let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
         .query_row(
@@ -257,7 +257,7 @@ fn migrate_v9_to_v10_rebuilds_import_errors_table() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10);
+    assert_eq!(version, 11);
 
     let remaining: i64 = conn
         .query_row("SELECT COUNT(*) FROM import_errors", [], |row| row.get(0))
@@ -278,4 +278,72 @@ fn migrate_v9_to_v10_rebuilds_import_errors_table() {
         )
         .unwrap();
     assert_eq!(seen_count, 1);
+}
+
+/// Design decision from the schema v11 doc comment: each task's commit must
+/// leave the test suite green, and a shipped migration must never be edited
+/// afterwards — so the column-drop gets its own version rather than being
+/// retrofitted into v10. The boolean flag plus a timestamp are two truths for
+/// one state and can drift; `missing_since IS NULL` is now the single truth
+/// for "file is present", and an auto-clean feature (later task) deletes rows
+/// based on that date — a row with an unclear boolean/date agreement would be
+/// unacceptable there.
+#[test]
+fn migrate_v10_to_v11_drops_missing_column_and_preserves_data() {
+    let conn = open_v9_database();
+    conn.execute_batch(SCHEMA_V10).unwrap();
+    conn.pragma_update(None, "user_version", 10).unwrap();
+
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, added_at, missing) \
+         VALUES (1, '/x/missing.flac', 'A', 'B', 0, 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, added_at, missing) \
+         VALUES (2, '/x/present.flac', 'C', 'D', 0, 0)",
+        [],
+    )
+    .unwrap();
+
+    migrate(&conn).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 11);
+
+    // Verify data is intact after column drop
+    let (path, title, artist): (String, String, String) = conn
+        .query_row(
+            "SELECT path, title, artist FROM tracks WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(path, "/x/missing.flac");
+    assert_eq!(title, "A");
+    assert_eq!(artist, "B");
+
+    let (path, title, artist): (String, String, String) = conn
+        .query_row(
+            "SELECT path, title, artist FROM tracks WHERE id = 2",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(path, "/x/present.flac");
+    assert_eq!(title, "C");
+    assert_eq!(artist, "D");
+
+    // Attempt to select the missing column should fail with "no such column"
+    let missing_select_result =
+        conn.query_row("SELECT missing FROM tracks WHERE id = 1", [], |_row| Ok(()));
+    assert!(missing_select_result.is_err());
+    if let Err(rusqlite::Error::QueryReturnedNoRows) = missing_select_result {
+        // This error should not happen — if the column exists, the query would return rows
+        panic!("Unexpected: missing column would exist");
+    }
+    // The real error is a generic rusqlite::Error with "no such column" in its message
 }
