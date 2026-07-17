@@ -13,7 +13,7 @@ mod surface;
 
 #[allow(unused_imports)]
 use super::*;
+pub(in crate::ui) use sidebar_session::show_toast;
 pub(in crate::ui) use surface::{
-    find_row, rebuild, resolve_select_source, select_row_in_its_listbox, show_toast, RowEntry,
-    Shared, Sidebar,
+    find_row, rebuild, resolve_select_source, select_row_in_its_listbox, RowEntry, Shared, Sidebar,
 };

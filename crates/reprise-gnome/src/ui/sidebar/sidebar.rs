@@ -61,7 +61,6 @@ use rusqlite::Connection;
 use super::sidebar_activity_slot::SidebarActivitySlot;
 use crate::ui::sidebar_dnd;
 use crate::ui::sidebar_playlist_creation;
-use crate::ui::toasts;
 use reprise_core::view_source::ViewSource;
 
 /// One row's identity: the built widget, the `ViewSource` selecting it
@@ -73,9 +72,7 @@ pub(in crate::ui) type RowEntry = (gtk4::ListBoxRow, ViewSource, String);
 /// `Shared::on_select`'s doc comment for the full contract.
 type OnSelect = Rc<dyn Fn(ViewSource, String)>;
 type OnMissingRemoved = Rc<dyn Fn(&[i64])>;
-/// Callback for a drag-and-drop drop onto the Queue nav row — see
-/// `Shared::on_queue_drop`'s doc comment.
-type OnQueueDrop = Rc<dyn Fn(&[i64]) -> bool>;
+use super::sidebar_dnd::OnQueueDrop;
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// sidebar_dnd` — see this file's `## Playlist drop target lives in sidebar_
@@ -177,7 +174,7 @@ pub(in crate::ui) struct Shared {
     /// Injected post-construction once `window.rs` builds it (same seam
     /// shape as `TrackList::toast_overlay`) — surfaces a failed playlist
     /// creation as a toast rather than only a log line.
-    toast_overlay: glib::WeakRef<adw::ToastOverlay>,
+    pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// Counts every `rebuild` call (routine refresh or forced selection
     /// alike), logged alongside each call's `reason` — see `rebuild`'s
     /// tracing line and `Sidebar::refresh`'s doc comment for the trigger
@@ -311,24 +308,6 @@ impl Sidebar {
         *self.shared.on_missing_removed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// Sets the callback invoked when tracks are dropped onto the Queue nav
-    /// row — see `Shared::on_queue_drop`'s doc comment. `window.rs` wires
-    /// this to `PlayerController::append_to_queue`.
-    pub fn set_on_queue_drop(&self, callback: impl Fn(&[i64]) -> bool + 'static) {
-        *self.shared.on_queue_drop.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Drives the same drop-handling sequence `sidebar_dnd::wire_queue_drop_
-    /// target`'s real `connect_drop` closure runs, for callers that can't
-    /// synthesize a pointer drag — the Queue-row analogue of [`Self::handle_
-    /// playlist_drop`], reached the same way (`window.rs` wires it to
-    /// `TrackList::set_on_sidebar_queue_drop` for `ui::track_list_dnd_smoke`'s
-    /// `REPRISE_SMOKE_DND=addqueue` hook). Returns whether anything was
-    /// actually appended.
-    pub fn handle_queue_drop(&self, ids: &[i64]) -> bool {
-        sidebar_dnd::handle_queue_drop(&self.shared, ids)
-    }
-
     /// Injects the window's toast overlay, once it exists (built after the
     /// sidebar — same post-construction seam as `TrackList::set_toast_
     /// overlay`).
@@ -425,23 +404,6 @@ impl Sidebar {
             }),
         );
         self.activity_slot.set_device_section(&section);
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn test_shared(&self) -> &Rc<Shared> {
-        &self.shared
-    }
-}
-
-/// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
-/// wired or it's gone — mirrors `track_list.rs`/`player_controller.rs`'s
-/// `show_toast` (same seam, same degrade behavior).
-pub(in crate::ui) fn show_toast(shared: &Shared, text: &str) {
-    match shared.toast_overlay.upgrade() {
-        Some(overlay) => toasts::show(&overlay, text),
-        None => {
-            tracing::warn!(text, "toast overlay is gone; degrading to log-only");
-        }
     }
 }
 
