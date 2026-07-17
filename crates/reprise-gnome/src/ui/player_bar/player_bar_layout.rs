@@ -263,7 +263,7 @@ pub(in crate::ui) fn css() -> String {
     use super::style::tokens::TRANSITION;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
-           background-color: rgba(26, 26, 26, 0.92); \
+           background-color: rgb(26, 26, 26); \
            border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
