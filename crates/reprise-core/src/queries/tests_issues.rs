@@ -248,3 +248,163 @@ fn missing_rows_are_paginated_and_ordered_by_artist_album_track_no() {
         vec![2, 1]
     );
 }
+
+/// Finding 1 (Important): `query_missing_rows` for a specific mount point
+/// must return ONLY that mount's rows, never other mounts, never `unknown`
+/// rows, never `deleted` rows. The per-mount branch (the `mount_filter` SQL
+/// clause and 4th bound parameter in `query_missing_rows`) has no direct
+/// test; seeding two distinct mount points and filtering for one must
+/// return exactly one row per mount, and querying the other mount must
+/// return its own different row — proving the isolation that the 18a "one
+/// card per drive" feature depends on.
+#[test]
+fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    // Two rows on mount A
+    seed_missing_track(
+        &conn,
+        1,
+        "Alice",
+        "AlbumA",
+        Some(1),
+        MissingReason::Unmounted,
+        Some("/media/nas-a"),
+    );
+    seed_missing_track(
+        &conn,
+        2,
+        "Bob",
+        "AlbumB",
+        Some(1),
+        MissingReason::Unmounted,
+        Some("/media/nas-a"),
+    );
+    // One row on mount B (different mount point)
+    seed_missing_track(
+        &conn,
+        3,
+        "Charlie",
+        "AlbumC",
+        Some(1),
+        MissingReason::Unmounted,
+        Some("/media/nas-b"),
+    );
+    // One `unknown` row (no mount point)
+    seed_missing_track(
+        &conn,
+        4,
+        "Dave",
+        "AlbumD",
+        Some(1),
+        MissingReason::Unknown,
+        None,
+    );
+    // One `deleted` row
+    seed_missing_track(
+        &conn,
+        5,
+        "Eve",
+        "AlbumE",
+        Some(1),
+        MissingReason::Deleted,
+        None,
+    );
+
+    // Query for mount A only; must return exactly the two rows on mount A
+    let mount_a_rows = query_missing_rows(
+        &conn,
+        &MissingGroupKind::Unavailable {
+            mount_point: Some("/media/nas-a".into()),
+        },
+        0,
+        100,
+    )
+    .unwrap();
+    assert_eq!(
+        mount_a_rows.iter().map(|t| t.id).collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+
+    // Query for mount B; must return only the one row on mount B
+    let mount_b_rows = query_missing_rows(
+        &conn,
+        &MissingGroupKind::Unavailable {
+            mount_point: Some("/media/nas-b".into()),
+        },
+        0,
+        100,
+    )
+    .unwrap();
+    assert_eq!(
+        mount_b_rows.iter().map(|t| t.id).collect::<Vec<_>>(),
+        vec![3]
+    );
+}
+
+/// Finding 2 (Minor): present tracks (missing_since IS NULL, i.e., not in
+/// any missing group) must not appear in either `query_missing_groups` or
+/// `query_missing_rows`. This is a sanity check on the `MISSING` predicate
+/// constant being correct and consistently applied. The test seeds one
+/// present track alongside missing tracks, then verifies that neither query
+/// returns it.
+#[test]
+fn present_tracks_are_excluded_from_missing_queries() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    // One present track (missing_since = NULL, the default)
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, album, track_no, added_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+        rusqlite::params![
+            99,
+            "/music/present.flac",
+            "Present Track",
+            "Present",
+            "Album",
+            1
+        ],
+    )
+    .unwrap();
+    // One missing (deleted) track for comparison
+    seed_missing_track(
+        &conn,
+        1,
+        "Missing",
+        "Album",
+        Some(1),
+        MissingReason::Deleted,
+        None,
+    );
+
+    // `query_missing_groups` must include only the deleted row's group
+    let groups = query_missing_groups(&conn).unwrap();
+    assert_eq!(
+        groups,
+        vec![MissingGroup {
+            kind: MissingGroupKind::Deleted,
+            track_count: 1,
+        }]
+    );
+
+    // `query_missing_rows` for Deleted must return only the missing row
+    let rows = query_missing_rows(&conn, &MissingGroupKind::Deleted, 0, 100).unwrap();
+    assert_eq!(rows.iter().map(|t| t.id).collect::<Vec<_>>(), vec![1]);
+}
+
+/// Finding 3 (Minor): when there are no missing tracks at all,
+/// `query_missing_groups` must return an empty `Vec`. This is the state that
+/// makes the sidebar's ISSUES section disappear, so it is important to
+/// pin explicitly.
+#[test]
+fn empty_missing_groups_when_no_missing_tracks() {
+    let conn = crate::db::open_migrated(None).unwrap();
+    // Insert one present track only
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, album, track_no, added_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+        rusqlite::params![1, "/music/track.flac", "Track", "Artist", "Album", 1],
+    )
+    .unwrap();
+
+    let groups = query_missing_groups(&conn).unwrap();
+    assert!(groups.is_empty());
+}
