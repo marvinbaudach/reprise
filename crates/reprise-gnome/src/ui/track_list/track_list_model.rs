@@ -119,9 +119,17 @@ mod imp {
                 return (start, end);
             }
         }
-        // No sections declared (every non-Queue source), or a position past
-        // the declared ranges: the whole model is one section.
-        (0, total.max(position.saturating_add(1)))
+        // No sections declared (every non-Queue source): the whole model is
+        // one section. A position PAST the declared ranges (a transient
+        // sections/total mismatch, e.g. GTK re-reading sections mid-reload):
+        // tile the uncovered tail as its own section. This must NEVER answer
+        // a range overlapping a declared one — GTK matches a header widget
+        // per section start, and an overlapping answer trips the fatal
+        // `header->widget == NULL` assertion in
+        // gtk_list_item_manager_ensure_items (seen live: abort on switching
+        // to the Queue view from a deep-scrolled larger view).
+        let last_end = sections.iter().map(|&(_, end)| end).max().unwrap_or(0);
+        (last_end, total.max(position.saturating_add(1)))
     }
 
     #[cfg(not(test))]
@@ -383,8 +391,20 @@ mod tests {
         assert_eq!(super::imp::section_for(&ranges, 6, 0), (0, 1));
         assert_eq!(super::imp::section_for(&ranges, 6, 2), (1, 3));
         assert_eq!(super::imp::section_for(&ranges, 6, 5), (3, 6));
-        // Past the declared ranges (defensive) and the no-sections case.
-        assert_eq!(super::imp::section_for(&ranges, 6, 9), (0, 10));
+        // Past the declared ranges (transient sections/total mismatch): the
+        // answer must be a NON-overlapping tail section, never one starting
+        // at 0 — an answer overlapping an already-matched header is exactly
+        // what GTK's gtk_list_item_manager_ensure_items asserts on (seen
+        // live: abort on switching to the Queue view from a deep-scrolled
+        // larger view).
+        assert_eq!(super::imp::section_for(&ranges, 6, 9), (6, 10));
+        // The live crash shape: a 2-row queue's ranges against a still-500-
+        // row model, viewport tracking position 499.
+        assert_eq!(
+            super::imp::section_for(&[(0, 1), (1, 2)], 500, 499),
+            (2, 500)
+        );
+        // No sections declared: the whole model stays one section.
         assert_eq!(super::imp::section_for(&[], 42, 7), (0, 42));
     }
     use super::*;
