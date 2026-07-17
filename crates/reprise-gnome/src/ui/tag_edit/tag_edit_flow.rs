@@ -9,14 +9,14 @@
 //! needed — `TagEditSession` is the single state truth from the moment the
 //! dialog opens.
 //!
-//! F2 note: the write no longer runs as a single opaque one-shot batch
-//! (`one_shot_task`, bounded(1), fire-and-once by design — wrong shape for
-//! a progress *stream*). `spawn_save` opens its own connection on a worker
-//! thread, same as `scan_worker.rs`'s scan does, and streams `(done, total)`
-//! over a `bounded(1)` "latest wins" channel the same way
-//! `scan_worker::publish_latest_progress` does (reimplemented generically
-//! here as `publish_latest` — `ScanProgress` isn't the type flowing through
-//! this one).
+//! F2 note: the write no longer runs as a single opaque batch. `spawn_save`
+//! opens its own connection on a worker thread and streams `(done, total)`
+//! into the open dialog via `one_shot_task::spawn_with_progress` — the
+//! shared helper grew that variant for this, rather than this module
+//! hand-rolling the thread and the "latest wins" eviction a third time
+//! (`scan_worker.rs` had the second copy). `check-architecture.sh` lists
+//! this file among the modules that must route background work through that
+//! helper, which is what caught the hand-rolled version.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -34,6 +34,7 @@ use reprise_core::library::tag_edit::{
 use reprise_core::library::tag_edit_session::SessionTrack;
 use rusqlite::Connection;
 
+use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
@@ -240,20 +241,26 @@ pub(in crate::ui) fn spawn_save(
         return;
     };
 
-    let (progress_tx, progress_rx) = async_channel::bounded::<(usize, usize)>(1);
-    let (result_tx, result_rx) = async_channel::bounded(1);
     let writes_for_result = writes.clone();
-    let stale_rx = progress_rx.clone();
-    std::thread::spawn(move || {
-        let result = reprise_core::db::open_migrated(Some(&db_path)).map(|mut worker_conn| {
+    let spawned = one_shot_task::spawn_with_progress("reprise-tag-save", move |publish| {
+        reprise_core::db::open_migrated(Some(&db_path)).map(|mut worker_conn| {
             apply_track_writes(&mut worker_conn, &writes, &mut |done, done_total| {
-                publish_latest(&progress_tx, &stale_rx, (done, done_total));
+                publish((done, done_total));
             })
-        });
-        drop(progress_tx);
-        drop(stale_rx);
-        let _ = result_tx.send_blocking(result);
+        })
     });
+    let (progress_rx, result_rx) = match spawned {
+        Ok(channels) => channels,
+        Err(error) => {
+            tracing::warn!(%error, "could not start the tag-save worker");
+            save_button.set_sensitive(true);
+            cancel_button.set_sensitive(true);
+            content.set_sensitive(true);
+            error_label.set_label(&strings::text(strings::TAG_EDIT_WORKER_FAILED));
+            error_label.set_visible(true);
+            return;
+        }
+    };
 
     let progress_button = save_button.clone();
     glib::spawn_future_local(async move {
@@ -286,28 +293,6 @@ pub(in crate::ui) fn spawn_save(
             }
         }
     });
-}
-
-/// The same "latest progress wins, never blocks the writer" pattern as
-/// `scan_worker::publish_latest_progress`, generalized over the payload
-/// type instead of hardcoding `ScanProgress`.
-fn publish_latest<T: Send + 'static>(
-    sender: &async_channel::Sender<T>,
-    receiver: &async_channel::Receiver<T>,
-    value: T,
-) {
-    match sender.try_send(value) {
-        Ok(()) => {}
-        Err(async_channel::TrySendError::Full(value)) => {
-            let _ = receiver.try_recv();
-            if let Err(error) = sender.try_send(value) {
-                tracing::warn!(%error, "tag-edit save progress dropped: UI receiver is gone");
-            }
-        }
-        Err(async_channel::TrySendError::Closed(_)) => {
-            tracing::warn!("tag-edit save progress dropped: UI receiver is gone");
-        }
-    }
 }
 
 fn finish_apply(shared: &Rc<Shared>, writes: &[TrackWrite], report: &TagBatchReport) {
