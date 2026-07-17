@@ -75,12 +75,15 @@ pub(super) fn wire_search(
         if restoring.get() {
             return;
         }
+        // A same-value programmatic update (notably clear-all setting the
+        // model first and the entry second) still has to cancel a pending
+        // older debounce, or that stale text can reapply after the reset.
+        if let Some(previous) = pending.borrow_mut().take() {
+            previous.remove();
+        }
         let current_filter = track_list.shared.filter.borrow().clone();
         if current_filter == entry.text() {
             return;
-        }
-        if let Some(previous) = pending.borrow_mut().take() {
-            previous.remove();
         }
         let text = entry.text().to_string();
         let track_list = track_list.clone();
