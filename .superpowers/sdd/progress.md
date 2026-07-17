@@ -274,3 +274,34 @@ Task FIL-10: complete (commit 78d32be, base d485036, FIL-2 nach vollständiger A
 
 Pflichtprüfungen: Workspace 652 passed / 1 ignored (Core), 515 passed / 87 ignored (GNOME), 55 passed (Linux-Plattform); 87/87 isolierte Display-Tests grün; UX-Traceability 9 aktive Regeln; Architektur- und Audit-Gates grün, einzig erlaubte Audit-Warnung RUSTSEC-2024-0436 (`paste`). Die Xvfb-Abnahme nutzte ausschließlich ein temporäres Ein-Track-Profil und bestätigte Bibliothek, Playlist und Nulltreffer-Zustand sichtbar. Commit d485036 repariert sieben durch den Rebase auf `origin/main` offengelegte, veraltete oder zeitabhängige Display-Assertions und extrahiert den Toast-Helfer für das 600-Zeilen-Architekturlimit. FIL-1b bleibt bewusst `[geplant]`.
 Merge-Readiness-Nachtrag: commit 388245e korrigiert zehn ungültige öffentliche Rustdoc-Links auf private `main`-Symbole; Rustdoc und Core-Purity-Proof sind danach grün.
+## UX-Tooltips — Sektion M (Branch feat/ux-rules-tooltips, 2026-07-17)
+
+Plan: `docs/superpowers/plans/2026-07-17-ux-tooltips-taskplan.md`. Konsistenz-
+Sektion, kein neues Feature. Codex kam bis Task 3 + Tooling-Fix, brach dann
+kapazitätsbedingt ab; Tasks 4–9 von Opus fertiggestellt (Codex' halbfertige
+Task-4-Übersetzungen waren teils falsch — korrigiert).
+
+**Aktiv (einklagbar):**
+- **TIP-1a** [gtk] (f0b7699) — Icon-only ⇒ Tooltip, gelabelt ⇒ keiner, Ellipsis
+  ⇒ Volltext. Test-Walk `tooltip_discipline.rs`, fünf `tip_1a_*`-Display-Tests.
+- **TIP-2a** [gtk] (cfed981) — disabled icon-only nennt Grund
+  (`eject_tooltip`); pure Test `tip_2a_eject_tooltip_names_reason_while_syncing`.
+- **TIP-3/4/5** [manuell] (6f328c8) — RELEASING.md-Checkliste, Gate deckt sie
+  über wörtliche ID-Referenz (Erweiterung in 836f486/eb9b7cd).
+
+**Geplant (bewusst NICHT geflippt — Flip-Kriterium in gesperrten Verzeichnissen):**
+- **TIP-1b** [manuell] — Verb+Objekt-Wortlaut. Verbalisierung Transport/Panel
+  umgesetzt (771b02c), aber „Previous/Next" im Tag-Editor und „Back" in
+  browse_bar (fremde Branches) noch Substantive.
+- **TIP-2b** [manuell] — gelabelt disabled nennt Grund sichtbar. Preferences-
+  Gründe umgesetzt (7e455d7), aber Save/„Change cover…" (tag_edit) und
+  „Add filter" (browse) fehlen noch.
+
+**Tooling:** `check-ux-traceability.sh` kennt jetzt die `[manuell]`-Ebene
+(beidseitig geprüft); `check-display-tests.sh --rule-named` + Merge-Gate-Eintrag
+machen regelbenannte Display-Tests zu Merge-Blockern; Display-Runner-Ignore gilt
+als Abdeckung auch für `[aktiv]`.
+
+**Container-Klausel-Beschluss:** Player-Bar prev/next bekommen KEINE
+Einzel-Grund-Tooltips — sie werden nur mit der ganzen (dann leeren) Leiste
+deaktiviert; die leere Leiste ist ihre eigene Aussage.

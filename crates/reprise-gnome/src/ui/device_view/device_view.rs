@@ -12,6 +12,7 @@ use crate::ui::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceTrackStatus, DeviceTrackView, DeviceView,
     PlannedSyncPhase, Subscription,
 };
+use crate::ui::device_sync_strings;
 
 type SettingsCallback = Rc<dyn Fn()>;
 
@@ -159,11 +160,7 @@ impl DeviceViewPage {
         row.append(&settings);
         let eject = gtk4::Button::builder()
             .icon_name("media-eject-symbolic")
-            .tooltip_text(if syncing {
-                "Sync in progress"
-            } else {
-                "Eject device"
-            })
+            .tooltip_text(device_sync_strings::eject_tooltip(syncing))
             .sensitive(!syncing)
             .build();
         let runtime = self.runtime.clone();
@@ -193,9 +190,9 @@ impl DeviceViewPage {
         legend.set_xalign(0.0);
         legend.set_wrap(true);
         if storage.other.is_none() {
-            legend.set_tooltip_text(Some(
-                "GVfs did not report total capacity; the bar shows known music and free space.",
-            ));
+            legend.set_tooltip_text(Some(&device_sync_strings::text(
+                device_sync_strings::STORAGE_TOTALS_UNKNOWN,
+            )));
         }
         box_.append(&legend);
         box_
@@ -308,7 +305,9 @@ impl DeviceViewPage {
         row.add_prefix(&status);
         if track.pinned {
             let pin = gtk4::Image::from_icon_name("view-pin-symbolic");
-            pin.set_tooltip_text(Some("Kept on device"));
+            pin.set_tooltip_text(Some(&device_sync_strings::text(
+                device_sync_strings::KEPT_ON_DEVICE,
+            )));
             row.add_suffix(&pin);
         }
         if track.status != DeviceTrackStatus::Queued {
@@ -487,7 +486,7 @@ fn phase_copy(device: &DeviceView) -> (String, String, f64) {
             ..
         } => (
             format!("Synchronizing {done} of {total}"),
-            current_track.clone(),
+            device_sync_strings::syncing_subtitle(current_track, *bytes_done, *bytes_total),
             if *bytes_total == 0 {
                 0.0
             } else {

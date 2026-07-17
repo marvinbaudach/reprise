@@ -171,6 +171,17 @@ Do not point development hooks at the maintainer's real library.
   current track, shuffle, and repeat must restore while playback remains stopped.
 - Inspect installed launcher name/comment/keywords, both icons, AppStream data,
   and application ID consistency on the actual desktop.
+- Tooltip discipline (UX TIP-1b, TIP-2b, TIP-3, TIP-4, TIP-5): hover every
+  icon-only button in both window modes — wording is verb + object, with the
+  shortcut in parentheses where one exists (TIP-1b). Every disabled control
+  names its reason: visibly for labeled controls (Connect without a token,
+  Open Browser without credentials, a failed Rhythmbox prescan), in the
+  tooltip for icon-only ones (Eject while syncing) — TIP-2b. Information shown
+  in a tooltip must also be reachable without hovering — for the sync card
+  check count, size, and ETA in the device view (TIP-3). No menu or context
+  item shows a tooltip (TIP-4). Tooltips use stock GTK behavior: no custom
+  delays, no rich content; dynamic values (percent, time, elided full text)
+  are fine (TIP-5).
 
 Record the OS, GNOME version, runtime branches, architecture, codec packages, and
 results for the release notes. Screenshots must be captured manually from a real,
