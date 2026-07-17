@@ -1,4 +1,13 @@
 //! Tag-editor form composition and single/multi mode labels.
+//!
+//! F0 (TAG-2): fields are built directly from a [`TagEditSession`] rather
+//! than the collapsed `EditableTagSummary` Package C had to work with —
+//! `session.mixed_placeholder(field)` carries the per-track distinct values
+//! a Mixed field needs to show ("Mixed — Ambient, Post-Rock" / "Mixed — 8
+//! different values"), not just the fact that *something* differs. The
+//! session is also the target every field's live edits write into
+//! (`tag_editor_dirty::wire`), so this module only ever needs it for the
+//! dialog's *initial* render.
 
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroUsize;
@@ -7,7 +16,8 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::library::tag_edit::{EditableTagSummary, MixedValue};
+use reprise_core::library::tag_edit::MixedValue;
+use reprise_core::library::tag_edit_session::{TagEditSession, TagField};
 use reprise_core::queries::autocomplete::AutocompleteColumn;
 use rusqlite::Connection;
 
@@ -33,14 +43,6 @@ impl EditorMode {
         self.track_count.get() > 1
     }
 
-    fn save_label(self) -> String {
-        if self.is_multi() {
-            strings::tag_save_count(self.track_count())
-        } else {
-            strings::text(strings::TAG_SAVE)
-        }
-    }
-
     fn title(self) -> String {
         if self.is_multi() {
             strings::tag_edit_title_multi(self.track_count())
@@ -54,6 +56,12 @@ pub(in crate::ui) struct TagEditorForm {
     pub(in crate::ui) save_btn: gtk4::Button,
     pub(in crate::ui) cancel_btn: gtk4::Button,
     pub(in crate::ui) dialog: adw::Dialog,
+    /// Everything except the header (cover/fields/rating/error label/review
+    /// footer/MusicBrainz box/nav row) — disabled wholesale while a save is
+    /// in flight (F2) so no field can be edited mid-write. Unread until F2
+    /// wires the save-progress flow.
+    #[allow(dead_code)]
+    pub(in crate::ui) content: gtk4::Box,
     pub(in crate::ui) title_row: adw::EntryRow,
     pub(in crate::ui) artist_ac: Rc<AutocompleteEntry>,
     pub(in crate::ui) album_ac: Rc<AutocompleteEntry>,
@@ -61,15 +69,17 @@ pub(in crate::ui) struct TagEditorForm {
     pub(in crate::ui) genre_ac: Rc<AutocompleteEntry>,
     pub(in crate::ui) year_row: adw::EntryRow,
     pub(in crate::ui) track_no_row: adw::EntryRow,
-    pub(in crate::ui) artist_annotation: Option<gtk4::Label>,
-    pub(in crate::ui) album_annotation: Option<gtk4::Label>,
-    pub(in crate::ui) album_artist_annotation: Option<gtk4::Label>,
-    pub(in crate::ui) genre_annotation: Option<gtk4::Label>,
-    pub(in crate::ui) year_annotation: Option<gtk4::Label>,
     pub(in crate::ui) rating_box: gtk4::Box,
     pub(in crate::ui) rating_value: Rc<Cell<i32>>,
     pub(in crate::ui) error_label: gtk4::Label,
-    pub(in crate::ui) pending_bar: gtk4::Box,
+    /// Review-footer mount point (F1 builds its summary/expander contents
+    /// here on every `tag_editor_dirty::wire`'s `update()`, the same
+    /// pattern the pre-F0 pending bar used) — always present, visibility
+    /// decided by session state rather than static mode (TAG-5: the
+    /// expander also applies in SingleNav once browsing accumulates pending
+    /// tracks, Package G). Unread until F1 wires the review footer.
+    #[allow(dead_code)]
+    pub(in crate::ui) review_box: gtk4::Box,
     pub(in crate::ui) mb_btn: gtk4::Button,
     pub(in crate::ui) mb_hint: gtk4::Label,
     pub(in crate::ui) prev_btn: gtk4::Button,
@@ -81,22 +91,22 @@ impl TagEditorForm {
         mode: EditorMode,
         conn: &Rc<RefCell<Connection>>,
         tracks: &[(i64, PathBuf)],
-        summary: &EditableTagSummary,
-        rating: &MixedValue<i32>,
+        bitrates: &[Option<u32>],
+        session: &Rc<RefCell<TagEditSession>>,
     ) -> Self {
         let is_multi = mode.is_multi();
         let track_count = mode.track_count();
-        let save_btn = gtk4::Button::with_label(&mode.save_label());
+        let save_btn = gtk4::Button::with_label(&strings::text(strings::TAG_SAVE));
         save_btn.add_css_class("suggested-action");
         save_btn.set_sensitive(false);
         let cancel_btn = gtk4::Button::with_label(&strings::text(strings::CANCEL));
 
         // Header subtitle (Beschluss #2): Multi explains the batch-write
-        // scope; Single renders "FORMAT · bitrate" from the file extension.
-        // The "Track N of M" position prefix is Package G's job (TAG-4
-        // browse snapshot) — bitrate isn't threaded into this constructor
-        // yet either (see this module's doc comment), so only the format
-        // half renders for now; never a fabricated or stale bitrate.
+        // scope; Single renders "FORMAT · bitrate" from the file extension
+        // and `bitrate_kbps` (F0 threads both all the way from the
+        // selection). The "Track N of M" position prefix is Package G's job
+        // (TAG-4 browse snapshot) — space stays reserved by leaving it out
+        // rather than fabricating it.
         let subtitle = if is_multi {
             strings::text(strings::TAG_SUBTITLE_MULTI)
         } else {
@@ -104,7 +114,8 @@ impl TagEditorForm {
                 .first()
                 .and_then(|(_, path)| path.extension())
                 .and_then(|ext| ext.to_str());
-            format_track_subtitle(extension, None).unwrap_or_default()
+            let bitrate = bitrates.first().copied().flatten();
+            format_track_subtitle(extension, bitrate).unwrap_or_default()
         };
         let title_widget = adw::WindowTitle::new(&mode.title(), &subtitle);
         let header = adw::HeaderBar::new();
@@ -117,12 +128,18 @@ impl TagEditorForm {
         // --- Cover (left) + Title/Artist/Album (right) ---
         let cover_area = build_cover_area(tracks, is_multi);
 
+        let session_ref = session.borrow();
+        let current_id = session_ref.current_track_id();
+
         let title_row = adw::EntryRow::builder()
             .title(strings::text(strings::TAG_TITLE))
             .build();
         apply_per_track_field(&title_row, is_multi);
         if !is_multi {
-            set_entry_from_mixed_string(&title_row, &summary.title);
+            set_entry_from_mixed_string(
+                &title_row,
+                &text_bridge(&session_ref, TagField::Title, current_id),
+            );
         }
 
         let artist_ac = Rc::new(AutocompleteEntry::new(
@@ -130,22 +147,28 @@ impl TagEditorForm {
             AutocompleteColumn::Artist,
             conn.clone(),
         ));
-        let artist_annotation =
-            init_autocomplete_from_mixed(&artist_ac, &summary.artist, track_count, is_multi);
-        if is_multi && matches!(summary.artist, MixedValue::Mixed) {
-            attach_type_to_arm(artist_ac.row(), artist_annotation.as_ref(), track_count);
-        }
+        let artist_annotation = init_field(
+            &artist_ac,
+            &session_ref,
+            TagField::Artist,
+            track_count,
+            is_multi,
+            current_id,
+        );
 
         let album_ac = Rc::new(AutocompleteEntry::new(
             &strings::text(strings::TAG_ALBUM),
             AutocompleteColumn::Album,
             conn.clone(),
         ));
-        let album_annotation =
-            init_autocomplete_from_mixed(&album_ac, &summary.album, track_count, is_multi);
-        if is_multi && matches!(summary.album, MixedValue::Mixed) {
-            attach_type_to_arm(album_ac.row(), album_annotation.as_ref(), track_count);
-        }
+        let album_annotation = init_field(
+            &album_ac,
+            &session_ref,
+            TagField::Album,
+            track_count,
+            is_multi,
+            current_id,
+        );
 
         let (title_col, _title_old_value) = build_field_column(title_row.upcast_ref(), None);
         let (artist_col, _artist_old_value) =
@@ -168,42 +191,39 @@ impl TagEditorForm {
             AutocompleteColumn::AlbumArtist,
             conn.clone(),
         ));
-        let album_artist_annotation = init_autocomplete_from_mixed(
+        let album_artist_annotation = init_field(
             &album_artist_ac,
-            &summary.album_artist,
+            &session_ref,
+            TagField::AlbumArtist,
             track_count,
             is_multi,
+            current_id,
         );
-        if is_multi && matches!(summary.album_artist, MixedValue::Mixed) {
-            attach_type_to_arm(
-                album_artist_ac.row(),
-                album_artist_annotation.as_ref(),
-                track_count,
-            );
-        }
 
         let genre_ac = Rc::new(AutocompleteEntry::new(
             &strings::text(strings::TAG_GENRE),
             AutocompleteColumn::Genre,
             conn.clone(),
         ));
-        let genre_annotation =
-            init_autocomplete_from_mixed(&genre_ac, &summary.genre, track_count, is_multi);
-        if is_multi && matches!(summary.genre, MixedValue::Mixed) {
-            attach_type_to_arm(genre_ac.row(), genre_annotation.as_ref(), track_count);
-        }
+        let genre_annotation = init_field(
+            &genre_ac,
+            &session_ref,
+            TagField::Genre,
+            track_count,
+            is_multi,
+            current_id,
+        );
 
         let year_row = adw::EntryRow::builder()
             .title(strings::text(strings::TAG_YEAR))
             .input_purpose(gtk4::InputPurpose::Digits)
             .build();
-        set_entry_from_mixed_number(&year_row, &summary.year);
+        let year_number = number_bridge(&session_ref, TagField::Year, current_id);
+        set_entry_from_mixed_number(&year_row, &year_number);
         let year_annotation = is_multi
-            .then(|| apply_mixed_annotation_number(&year_row, &summary.year, track_count))
+            .then(|| apply_mixed_annotation_number(&year_row, &year_number, track_count))
             .flatten();
-        if is_multi && matches!(summary.year, MixedValue::Mixed) {
-            attach_type_to_arm(&year_row, year_annotation.as_ref(), track_count);
-        }
+        apply_rich_annotation(&session_ref, TagField::Year, year_annotation.as_ref());
 
         let track_no_row = adw::EntryRow::builder()
             .title(strings::text(strings::TAG_TRACK_NUMBER))
@@ -211,7 +231,10 @@ impl TagEditorForm {
             .build();
         apply_per_track_field(&track_no_row, is_multi);
         if !is_multi {
-            set_entry_from_mixed_number(&track_no_row, &summary.track_no);
+            set_entry_from_mixed_number(
+                &track_no_row,
+                &number_bridge(&session_ref, TagField::TrackNo, current_id),
+            );
         }
 
         let (album_artist_col, _album_artist_old_value) =
@@ -231,7 +254,17 @@ impl TagEditorForm {
         grid.attach(&year_col, 0, 1, 1, 1);
         grid.attach(&track_no_col, 1, 1, 1, 1);
 
-        let (rating_box, rating_value) = build_star_rating(rating);
+        let rating_mixed = match session_ref.mixed_placeholder(TagField::Rating) {
+            Some(_) => MixedValue::Mixed,
+            None => {
+                let rating = session_ref
+                    .effective_display(current_id, TagField::Rating)
+                    .and_then(|text| text.parse::<i32>().ok())
+                    .unwrap_or(0);
+                MixedValue::Uniform(rating)
+            }
+        };
+        let (rating_box, rating_value) = build_star_rating(&rating_mixed);
         let (rating_col, _rating_old_value) = build_field_column(
             rating_box.upcast_ref(),
             Some(&strings::text(strings::RATING)),
@@ -244,9 +277,9 @@ impl TagEditorForm {
             .wrap(true)
             .xalign(0.0)
             .build();
-        let pending_bar = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        pending_bar.add_css_class("reprise-tag-pending");
-        pending_bar.set_visible(false);
+        let review_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        review_box.add_css_class("reprise-tag-review");
+        review_box.set_visible(false);
 
         let mb_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         mb_box.add_css_class("reprise-tag-mb");
@@ -269,6 +302,8 @@ impl TagEditorForm {
         nav_box.append(&next_btn);
         nav_box.set_visible(false);
 
+        drop(session_ref);
+
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
         content.set_margin_top(12);
         content.set_margin_bottom(18);
@@ -278,9 +313,7 @@ impl TagEditorForm {
         content.append(&grid);
         content.append(&rating_col);
         content.append(&error_label);
-        if is_multi {
-            content.append(&pending_bar);
-        }
+        content.append(&review_box);
         content.append(&mb_box);
         if !is_multi {
             content.append(&nav_box);
@@ -300,10 +333,22 @@ impl TagEditorForm {
             .build();
         dialog.add_css_class("reprise-tag-editor");
 
+        // Annotations that were never read past their construction site
+        // above still need to exist so the borrow checker doesn't complain
+        // about an unused `Option<gtk4::Label>` — they're already installed
+        // as row suffixes by `init_field`/`apply_mixed_annotation_number`.
+        let _ = (
+            artist_annotation,
+            album_annotation,
+            album_artist_annotation,
+            genre_annotation,
+        );
+
         Self {
             save_btn,
             cancel_btn,
             dialog,
+            content,
             title_row,
             artist_ac,
             album_ac,
@@ -311,15 +356,10 @@ impl TagEditorForm {
             genre_ac,
             year_row,
             track_no_row,
-            artist_annotation,
-            album_annotation,
-            album_artist_annotation,
-            genre_annotation,
-            year_annotation,
             rating_box,
             rating_value,
             error_label,
-            pending_bar,
+            review_box,
             mb_btn,
             mb_hint,
             prev_btn,
@@ -328,8 +368,119 @@ impl TagEditorForm {
     }
 }
 
+/// Builds a `MixedValue<String>` bridge for widgets.rs's existing
+/// `set_entry_from_mixed_string`/`init_autocomplete_from_mixed` helpers,
+/// which still take the old collapsed type — only the *annotation text*
+/// (for autocomplete fields) is overridden with the session's rich label
+/// afterward (`apply_rich_annotation`), so widgets.rs itself needs no
+/// changes.
+fn text_bridge(session: &TagEditSession, field: TagField, current_id: i64) -> MixedValue<String> {
+    match session.mixed_placeholder(field) {
+        Some(_) => MixedValue::Mixed,
+        None => MixedValue::Uniform(
+            session
+                .effective_display(current_id, field)
+                .unwrap_or_default(),
+        ),
+    }
+}
+
+/// Same bridge as [`text_bridge`], for the two numeric fields (Year/
+/// Track-number).
+fn number_bridge(
+    session: &TagEditSession,
+    field: TagField,
+    current_id: i64,
+) -> MixedValue<Option<u32>> {
+    match session.mixed_placeholder(field) {
+        Some(_) => MixedValue::Mixed,
+        None => {
+            let value = session
+                .effective_display(current_id, field)
+                .and_then(|text| text.parse::<u32>().ok());
+            MixedValue::Uniform(value)
+        }
+    }
+}
+
+/// Initializes an autocomplete field's text/annotation from the session:
+/// uniform values render as real text; Mixed fields stay blank (TAG-2: no
+/// prefilled value, no click-to-unlock) but get the rich placeholder label
+/// as their annotation text instead of the generic "(multiple values)"
+/// copy. Returns the annotation label (`None` outside Multi mode) so the
+/// caller can keep it alive as long as the row itself.
+fn init_field(
+    ac: &AutocompleteEntry,
+    session: &TagEditSession,
+    field: TagField,
+    track_count: usize,
+    is_multi: bool,
+    current_id: i64,
+) -> Option<gtk4::Label> {
+    let bridge = text_bridge(session, field, current_id);
+    let annotation = init_autocomplete_from_mixed(ac, &bridge, track_count, is_multi);
+    if is_multi && matches!(bridge, MixedValue::Mixed) {
+        attach_type_to_arm(ac.row(), annotation.as_ref(), track_count);
+    }
+    apply_rich_annotation(session, field, annotation.as_ref());
+    annotation
+}
+
+/// Overrides an already-built mixed-field annotation's text with the rich,
+/// per-track-value label from [`mixed_placeholder_label`] (TAG-2) instead of
+/// the generic "(multiple values)" copy `tag_editor_widgets.rs` starts it
+/// with — this is the whole gap Package C left for F0 to close.
+fn apply_rich_annotation(
+    session: &TagEditSession,
+    field: TagField,
+    annotation: Option<&gtk4::Label>,
+) {
+    let (Some(label), Some(rich_text)) = (annotation, mixed_placeholder_label(session, field))
+    else {
+        return;
+    };
+    label.set_text(&rich_text);
+}
+
+/// TAG-2's rich mixed-value label for `field`, straight from the session —
+/// exercised headlessly by `tag_2_rich_placeholder_lists_values_from_session`
+/// as the regression guard for the exact gap the Wave-2 correction found:
+/// the dialog used to only ever see the collapsed `EditableTagSummary`
+/// (`MixedValue::Mixed`, no values), never the session's per-track distinct
+/// values.
+pub(in crate::ui) fn mixed_placeholder_label(
+    session: &TagEditSession,
+    field: TagField,
+) -> Option<String> {
+    session
+        .mixed_placeholder(field)
+        .map(|placeholder| placeholder.label)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use reprise_core::library::tag_edit::EditableTags;
+    use reprise_core::library::tag_edit_session::{SessionMode, SessionTrack};
+    use std::path::PathBuf;
+
+    fn track(id: i64, genre: &str) -> SessionTrack {
+        SessionTrack {
+            id,
+            path: PathBuf::from(format!("/music/{id}.flac")),
+            tags: EditableTags {
+                title: format!("Title {id}"),
+                artist: "Artist".into(),
+                album: "Album".into(),
+                album_artist: "Artist".into(),
+                year: Some(2020),
+                track_no: Some(1),
+                genre: genre.into(),
+            },
+            rating: 0,
+        }
+    }
+
     #[test]
     fn mode_rejects_empty_and_selects_single_or_multi_copy() {
         assert!(super::EditorMode::new(0).is_none());
@@ -341,5 +492,41 @@ mod tests {
         let multi = super::EditorMode::new(3).unwrap();
         assert!(multi.is_multi());
         assert_eq!(multi.track_count(), 3);
+    }
+
+    #[test]
+    fn tag_2_rich_placeholder_lists_values_from_session() {
+        let session = TagEditSession::new(
+            vec![track(1, "Ambient"), track(2, "Post-Rock")],
+            SessionMode::Multi,
+        );
+
+        assert_eq!(
+            mixed_placeholder_label(&session, TagField::Genre),
+            Some("Mixed — Ambient, Post-Rock".to_string())
+        );
+    }
+
+    #[test]
+    fn tag_2_rich_placeholder_counts_three_or_more_values() {
+        let session = TagEditSession::new(
+            vec![track(1, "Ambient"), track(2, "Post-Rock"), track(3, "Jazz")],
+            SessionMode::Multi,
+        );
+
+        assert_eq!(
+            mixed_placeholder_label(&session, TagField::Genre),
+            Some("Mixed — 3 different values".to_string())
+        );
+    }
+
+    #[test]
+    fn uniform_field_has_no_rich_placeholder() {
+        let session = TagEditSession::new(
+            vec![track(1, "Ambient"), track(2, "Ambient")],
+            SessionMode::Multi,
+        );
+
+        assert_eq!(mixed_placeholder_label(&session, TagField::Genre), None);
     }
 }

@@ -1,4 +1,10 @@
 //! Tag editor dialog orchestration.
+//!
+//! F0: the single wiring point (`present()`) builds the [`TagEditSession`]
+//! that is now the dialog's only state truth and threads it through
+//! `TagEditorForm::build`, `tag_editor_dirty::wire`, and
+//! `tag_editor_save::wire` — no more `Vec<Rc<Cell<bool>>>` dirty array
+//! running in parallel.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -6,7 +12,8 @@ use std::rc::Rc;
 
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::library::tag_edit::{summarize, summarize_values, EditableTags, TrackEditPatch};
+use reprise_core::library::tag_edit::TrackWrite;
+use reprise_core::library::tag_edit_session::{SessionMode, SessionTrack, TagEditSession};
 use rusqlite::Connection;
 
 use crate::ui::tag_editor_form::{EditorMode, TagEditorForm};
@@ -18,10 +25,9 @@ pub(in crate::ui) const STAR_OUTLINE: &str = "\u{2606}";
 pub fn present(
     parent: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
-    tracks: &[(i64, PathBuf)],
-    tags: &[EditableTags],
-    ratings: &[i32],
-    on_apply: impl Fn(TrackEditPatch) + Clone + 'static,
+    tracks: Vec<SessionTrack>,
+    bitrates: &[Option<u32>],
+    on_save: impl Fn(Vec<TrackWrite>) + Clone + 'static,
     on_navigate: impl Fn(NavigateDirection) -> bool + 'static,
 ) {
     let Some(mode) = EditorMode::new(tracks.len()) else {
@@ -29,13 +35,21 @@ pub fn present(
         return;
     };
     let track_count = mode.track_count();
-    let summary = summarize(tags).unwrap();
-    let rating_summary = summarize_values(ratings).unwrap();
-    let form = TagEditorForm::build(mode, conn, tracks, &summary, &rating_summary);
+    let track_paths: Vec<(i64, PathBuf)> = tracks
+        .iter()
+        .map(|track| (track.id, track.path.clone()))
+        .collect();
+    let session_mode = if mode.is_multi() {
+        SessionMode::Multi
+    } else {
+        SessionMode::SingleNav
+    };
+    let session = Rc::new(RefCell::new(TagEditSession::new(tracks, session_mode)));
+
+    let form = TagEditorForm::build(mode, conn, &track_paths, bitrates, &session);
     let crate::ui::tag_editor_dirty::DirtyState {
-        flags: dirty,
         update: update_save_state,
-    } = crate::ui::tag_editor_dirty::wire(mode, &form, &summary, &rating_summary);
+    } = crate::ui::tag_editor_dirty::wire(mode, &form, &session);
 
     crate::ui::tag_editor_lookup::wire(
         mode.is_multi(),
@@ -50,6 +64,8 @@ pub fn present(
         },
         &update_save_state,
     );
+
+    let dialog_for_save = form.dialog.clone();
     crate::ui::tag_editor_save::wire(
         crate::ui::tag_editor_save::SaveWidgets {
             dialog: &form.dialog,
@@ -57,18 +73,15 @@ pub fn present(
             cancel_button: &form.cancel_btn,
             previous_button: &form.prev_btn,
             next_button: &form.next_btn,
-            title: &form.title_row,
-            artist: &form.artist_ac,
-            album: &form.album_ac,
-            album_artist: &form.album_artist_ac,
-            genre: &form.genre_ac,
             year: &form.year_row,
             track_number: &form.track_no_row,
-            rating: &form.rating_value,
             error_label: &form.error_label,
         },
-        &dirty,
-        on_apply,
+        &session,
+        move |batch| {
+            on_save(batch);
+            dialog_for_save.close();
+        },
         on_navigate,
     );
 
