@@ -5,6 +5,7 @@ macro_rules! N_ {
 }
 
 use super::plural;
+use super::{formatted, text};
 
 pub const ISSUE_SHOW_ONE_MORE: &str = N_!("Show 1 more");
 pub const ISSUE_SHOW_MORE: &str = N_!("Show {count} more");
@@ -18,4 +19,92 @@ pub fn issue_show_more(count: u32) -> String {
         count,
         &[("count", &count_text)],
     )
+}
+
+pub const MISSING_CLEAR_TITLE: &str = N_!("No missing files ✓");
+pub const MISSING_CLEAR_DESCRIPTION: &str = N_!("Your library has no missing file entries.");
+pub const MISSING_UNAVAILABLE_ICON: &str = N_!("⏏");
+pub const MISSING_UNAVAILABLE_TITLE: &str = N_!("On unavailable drive");
+pub const MISSING_UNKNOWN_LOCATION: &str = N_!("unknown location");
+pub const MISSING_NOT_MOUNTED: &str = N_!("not mounted");
+pub const MISSING_RETURNS_WHEN_MOUNTED: &str =
+    N_!("return automatically when the drive is mounted");
+pub const MISSING_VERIFY_NEXT_SCAN: &str = N_!("will be verified on next scan");
+pub const MISSING_DELETED_ICON: &str = N_!("🗑");
+pub const MISSING_DELETED_TITLE: &str = N_!("Deleted from disk");
+pub const MISSING_DELETED_META: &str = N_!("folder still exists");
+pub const MISSING_REMOVE: &str = N_!("Remove");
+pub const MISSING_REMOVE_ALL: &str = N_!("Remove all {count} from library");
+pub const MISSING_REMOVE_HEADING: &str = N_!("Remove from library?");
+pub const MISSING_REMOVE_BODY: &str = N_!("This removes {count} tracks from the library — their ratings and listening history go with them. Files are never touched.");
+pub const MISSING_REMOVED_ONE: &str = N_!("1 removed");
+pub const MISSING_REMOVED: &str = N_!("{count} removed");
+pub const MISSING_UNDO: &str = N_!("Undo");
+pub const MISSING_AUTO_CLEAN_OFF: &str = N_!("Auto-clean: off ▾");
+pub const MISSING_AUTO_CLEAN_DAYS: &str = N_!("Auto-clean: {days} days ▾");
+pub const MISSING_AUTO_CLEAN_OPTION_OFF: &str = N_!("Off");
+pub const MISSING_AUTO_CLEAN_OPTION_30: &str = N_!("30 days");
+pub const MISSING_AUTO_CLEAN_OPTION_90: &str = N_!("90 days");
+pub const MISSING_AUTO_CLEAN_HEADING: &str = N_!("Enable auto-clean?");
+pub const MISSING_AUTO_CLEAN_BODY: &str = N_!("This will remove {count} tracks now (deleted more than {days} days ago) — their ratings and listening history go with them.");
+pub const MISSING_AUTO_CLEAN_REMOVE_NOW: &str = N_!("Remove now");
+pub const MISSING_AUTO_CLEAN_START_TODAY: &str = N_!("Start counting from today");
+pub const MISSING_RELINK_INFO: &str =
+    N_!("Reprise automatically reconnects moved tracks when it can identify them.");
+pub const MISSING_LAST_RELINKED: &str = N_!("Last scan relinked {count} tracks");
+pub const MISSING_AUTO_CLEAN_HINT: &str = N_!("Tracks deleted from disk stay listed until you remove them — enable auto-clean to do this automatically.");
+pub const MISSING_FOOTNOTE: &str = N_!("Remove only removes library entries — never files.");
+pub const MISSING_TRACKS_ONE: &str = N_!("1 track");
+pub const MISSING_TRACKS: &str = N_!("{count} tracks");
+pub const MISSING_SINCE: &str = N_!("since {date}");
+
+pub fn missing_tracks(count: u32) -> String {
+    let value = count.to_string();
+    plural(
+        MISSING_TRACKS_ONE,
+        MISSING_TRACKS,
+        count as usize,
+        &[("count", &value)],
+    )
+}
+
+pub fn missing_remove_all(count: usize) -> String {
+    formatted(MISSING_REMOVE_ALL, &[("count", &count.to_string())])
+}
+
+pub fn missing_remove_body(count: usize) -> String {
+    formatted(MISSING_REMOVE_BODY, &[("count", &count.to_string())])
+}
+
+pub fn missing_removed(count: usize) -> String {
+    let value = count.to_string();
+    plural(
+        MISSING_REMOVED_ONE,
+        MISSING_REMOVED,
+        count,
+        &[("count", &value)],
+    )
+}
+
+pub fn missing_auto_clean_label(days: u32) -> String {
+    formatted(MISSING_AUTO_CLEAN_DAYS, &[("days", &days.to_string())])
+}
+
+pub fn missing_auto_clean_body(count: usize, days: u32) -> String {
+    formatted(
+        MISSING_AUTO_CLEAN_BODY,
+        &[("count", &count.to_string()), ("days", &days.to_string())],
+    )
+}
+
+pub fn missing_last_relinked(count: &str) -> String {
+    formatted(MISSING_LAST_RELINKED, &[("count", count)])
+}
+
+pub fn missing_since(date: &str) -> String {
+    formatted(MISSING_SINCE, &[("date", date)])
+}
+
+pub fn issue_text(message: &str) -> String {
+    text(message)
 }

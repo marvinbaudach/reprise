@@ -229,7 +229,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   nie zwei gleichzeitig). Ebene 2 = genau ein Dialog darüber (FileChooser,
   Bestätigung). Ein Dialog öffnet nie einen weiteren Dialog. Esc schließt
   immer die oberste Ebene.
-- **SET-4** [geplant] [gtk] — Settings wirken sofort (kein Apply/OK).
+- **SET-4** [aktiv] [gtk] — Settings wirken sofort (kein Apply/OK).
   Destruktiver Umschalter konkret: Wird Auto-clean aktiviert, während die
   Deleted-Gruppe bereits Zeilen jenseits der gewählten Frist enthält,
   erscheint einmalig ein Dialog: „This will remove N tracks now (deleted
@@ -265,14 +265,20 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   User um etwas bittet. Reaktivierung einer dismissed-Zeile (Datei geändert)
   startet eine neue Episode: `first_seen = now`, `seen_count = 1` — sie badgt
   also wieder. View öffnen = Badge weg, die Gesamtzahl steht in der View.
-- **FB-5** [geplant] [gtk] — StatusPages für leere Zustände mit genau einem
-  nächsten Schritt („No missing files ✓", „Library folder unavailable —
-  Retry").
+- **FB-5** [ersetzt durch FB-5a/FB-5b] — Ursprüngliche StatusPage-
+  Sammelregel; bei der Implementierung in den lieferbaren Missing-Leerzustand
+  (5a) und den erst mit dem Root-Guard-UI lieferbaren unavailable-Zustand
+  (5b) gesplittet.
+- **FB-5a** [aktiv] [gtk] — Die leere Missing-files-Ansicht zeigt die
+  StatusPage „No missing files ✓" ohne konkurrierende nächste Aktion.
+- **FB-5b** [geplant] [gtk] — Ein nicht verfügbarer Library-Root zeigt die
+  StatusPage „Library folder unavailable — Retry" mit genau diesem nächsten
+  Schritt.
 - **FB-6** [geplant] [core] — Gelöschte Datei (extern, Watcher): kein Toast
   pro Datei (Rauschen) — Row wird grau/verschwindet gemäß Missing-Regeln,
   ISSUES-Badge zählt hoch. Ausnahme: der gerade spielende Track faultet →
   Skip + ein Toast „Track unavailable — skipped".
-- **FB-7** [geplant] [core] — „Remove from library" löscht nicht, sondern
+- **FB-7** [aktiv] [core] — „Remove from library" löscht nicht, sondern
   setzt `removed_at` (Tombstone); die Zeile mit Ratings, Play-Counts und
   Playlist-Positionen bleibt 10 s vollständig erhalten, Undo setzt nur
   `removed_at = NULL` zurück — deshalb ist die Wiederherstellung exakt

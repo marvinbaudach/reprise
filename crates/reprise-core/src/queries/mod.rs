@@ -539,3 +539,5 @@ mod tests_playlist;
 mod tests_queue;
 #[cfg(test)]
 mod tests_smart;
+#[cfg(test)]
+mod tests_ux_feedback;

@@ -38,5 +38,7 @@ use super::*;
 pub(in crate::ui) use surface::{
     notify_import_errors_mutated_and_reload, playlist_reorder_allowed, reload,
     set_filter_and_reload, set_source_and_reload, show_toast, OnActivate, Shared, TrackList,
-    STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
+};
+pub(in crate::ui) use track_list_layout::{
+    STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,
 };

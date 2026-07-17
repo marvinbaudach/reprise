@@ -6,10 +6,13 @@
 
 use std::rc::Rc;
 
+use gtk4::prelude::*;
 use libadwaita as adw;
 
 use crate::ui::strings;
-use crate::ui::track_list::{Shared, STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST};
+use crate::ui::track_list::{
+    Shared, STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,
+};
 use reprise_core::view_source::ViewSource;
 
 /// Icon shown on the empty-library placeholder (nothing has been scanned
@@ -46,6 +49,8 @@ pub(in crate::ui) enum EmptyState {
     /// Deliberately its own copy ("Nothing queued — play something"), one
     /// next step per FB-5, instead of the EmptyLibrary scan prompt.
     EmptyQueue,
+    /// FB-5a: the Missing source is clean — a positive state, not a prompt.
+    MissingClear,
     /// At least one row to show — the populated list page.
     List,
 }
@@ -68,10 +73,10 @@ pub(in crate::ui) fn empty_state_for(
     match (row_count, has_filter) {
         (0, true) => EmptyState::NoResults,
         (0, false) => match source {
-            ViewSource::Missing
-            | ViewSource::ImportErrors
-            | ViewSource::Album { .. }
-            | ViewSource::Artist(_) => EmptyState::NothingHere,
+            ViewSource::Missing => EmptyState::MissingClear,
+            ViewSource::ImportErrors | ViewSource::Album { .. } | ViewSource::Artist(_) => {
+                EmptyState::NothingHere
+            }
             ViewSource::Queue => EmptyState::EmptyQueue,
             _ => EmptyState::EmptyLibrary,
         },
@@ -106,14 +111,16 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             // Stage 3 Task 8: the ImportErrors source's populated page is the
             // dedicated panel, not the shared `ColumnView` page — every other
             // source keeps using `STACK_PAGE_LIST` exactly as before.
-            let page = if matches!(*shared.source.borrow(), ViewSource::ImportErrors) {
-                STACK_PAGE_IMPORT_ERRORS
-            } else {
-                STACK_PAGE_LIST
+            let page = match *shared.source.borrow() {
+                ViewSource::ImportErrors => STACK_PAGE_IMPORT_ERRORS,
+                ViewSource::Missing => STACK_PAGE_MISSING,
+                _ => STACK_PAGE_LIST,
             };
+            shared.empty_page.remove_css_class("missing-clear-state");
             shared.stack.set_visible_child_name(page);
         }
         EmptyState::EmptyLibrary => {
+            shared.empty_page.remove_css_class("missing-clear-state");
             shared.empty_page.set_icon_name(Some(ICON_EMPTY_LIBRARY));
             shared
                 .empty_page
@@ -124,6 +131,7 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
         EmptyState::NoResults => {
+            shared.empty_page.remove_css_class("missing-clear-state");
             shared.empty_page.set_icon_name(Some(ICON_NO_RESULTS));
             shared
                 .empty_page
@@ -134,6 +142,7 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
         EmptyState::EmptyQueue => {
+            shared.empty_page.remove_css_class("missing-clear-state");
             shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
             shared
                 .empty_page
@@ -144,6 +153,7 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
         EmptyState::NothingHere => {
+            shared.empty_page.remove_css_class("missing-clear-state");
             shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
             shared
                 .empty_page
@@ -151,6 +161,17 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             shared
                 .empty_page
                 .set_description(Some(&strings::text(strings::NOTHING_HERE_DESCRIPTION)));
+            shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
+        }
+        EmptyState::MissingClear => {
+            shared.empty_page.add_css_class("missing-clear-state");
+            shared.empty_page.set_icon_name(Some("emblem-ok-symbolic"));
+            shared
+                .empty_page
+                .set_title(&strings::text(strings::MISSING_CLEAR_TITLE));
+            shared
+                .empty_page
+                .set_description(Some(&strings::text(strings::MISSING_CLEAR_DESCRIPTION)));
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
     }
@@ -164,6 +185,20 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
 #[cfg(test)]
 mod empty_state_tests {
     use super::*;
+
+    // UX FB-5a: an empty Missing-files source has its dedicated success
+    // StatusPage rather than a generic empty-library prompt.
+    #[test]
+    fn fb_5a_empty_missing_source_shows_no_missing_files_status() {
+        assert_eq!(
+            empty_state_for(0, false, &ViewSource::Missing),
+            EmptyState::MissingClear
+        );
+        assert_eq!(
+            strings::text(strings::MISSING_CLEAR_TITLE),
+            "No missing files ✓"
+        );
+    }
 
     #[test]
     fn empty_library_when_no_rows_and_no_filter_for_library_source() {
@@ -207,10 +242,6 @@ mod empty_state_tests {
     /// missing").
     #[test]
     fn nothing_here_for_transient_or_issue_sources_with_no_rows_and_no_filter() {
-        assert_eq!(
-            empty_state_for(0, false, &ViewSource::Missing),
-            EmptyState::NothingHere
-        );
         assert_eq!(
             empty_state_for(0, false, &ViewSource::ImportErrors),
             EmptyState::NothingHere
