@@ -343,6 +343,58 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   verbleibende Up-Next-Tracks (nicht Gesamt-Snapshot). Der Zähler ist eine
   Bestandsanzeige, kein Badge (P-1: keine „Bitte").
 
+## L. Tooltips
+
+<!-- Sektionsbuchstabe K ist bewusst übersprungen: feat/global-search-rework
+     („K. Filter- & Such-Sichtbarkeit") und feat/tag-editor-rework
+     („K. Tag-Editor") beanspruchen K parallel; die Kollision wird bei deren
+     Merge aufgelöst. -->
+
+Tooltips sind Beschriftung, kein Feedback-Mechanismus — sie tragen nie die
+einzige Aussage (TIP-3) und fallen daher nicht unter P-1s Rollenmodell.
+Wird ein ganzer Container deaktiviert, gilt TIP-2a/b für die
+Container-Aussage, nicht für jedes Kind einzeln (die leere Player-Leiste
+ist ihre eigene Aussage).
+
+- **TIP-1a** [geplant] [gtk] — Existenz folgt der Beschriftung:
+  Icon-only-Buttons haben immer einen Tooltip; Buttons mit sichtbarem
+  Textlabel bekommen keinen — das Label ist die Aussage, ein
+  wiederholender Tooltip ist Rauschen. Ausnahme: ellipsierte/abgeschnittene
+  Labels zeigen im Tooltip den vollen Text.
+- **TIP-1b** [geplant] [manuell] — Form: Verb + Objekt („Eject Pixel 8",
+  „Toggle sidebar"); das Objekt darf entfallen, wenn der Button es selbst
+  eindeutig macht („Play", „Shuffle"). Existiert ein Shortcut, steht er in
+  Klammern dahinter („Play (Space)").
+  <!-- Flip-Kriterium TIP-1b: „Previous"/„Next" im Tag-Editor
+       (tag_editor_form.rs, Ownership feat/tag-editor-rework) und „Back" in
+       browse_bar (Ownership feat/global-search-rework) sind noch
+       Substantive. [aktiv] erst, wenn beide nachgezogen sind. -->
+- **TIP-2a** [geplant] [gtk] — Disabled erklärt sich (icon-only): ein
+  deaktiviertes Icon-only-Control behält seinen Tooltip und ergänzt den
+  Grund („Eject device — Sync in progress"). Nie ein toter Button ohne
+  benannten Grund (Konkretisierung von P-2).
+- **TIP-2b** [geplant] [manuell] — Disabled erklärt sich (gelabelt): ein
+  deaktiviertes gelabeltes Control nennt seinen Grund sichtbar per Label,
+  Subtitle oder Hint-Zeile („Requires same artist & album across
+  selection", „Everything in sync") — nie nur per Tooltip (TIP-3: der
+  Grund wäre sonst exklusive Hover-Information).
+  <!-- Flip-Kriterium TIP-2b: Save/„Change cover…" im Tag-Editor
+       (feat/tag-editor-rework) und der deaktivierte „Add filter"-Zustand
+       in browse_bar (feat/global-search-rework) sind noch unbegründet
+       tot. [aktiv] erst, wenn beide nachgezogen sind. -->
+- **TIP-3** [geplant] [manuell] — Tooltips sind redundant, nie exklusiv:
+  jede Information in einem Tooltip muss auch ohne Hover erreichbar sein
+  (View, Dialog, sichtbares Label). Hover-Details (Sync-Karte:
+  „28 of 82 · ~2 min left") sind Komfort-Duplikate einer erreichbaren
+  Ansicht — Touch-Bedienung sieht Tooltips nie.
+- **TIP-4** [geplant] [manuell] — Menüeinträge bekommen keine Tooltips.
+  In Popover-/Kontextmenüs trägt das Label allein; eine feste
+  Subtitle-Zeile („M3U · PLS · XSPF") ist erlaubt. Braucht ein Menüpunkt
+  einen Tooltip, ist er falsch benannt oder gehört in einen Dialog.
+- **TIP-5** [geplant] [manuell] — GTK-Standardverhalten: keine
+  Custom-Delays, keine interaktiven/Rich-Tooltips; dynamische Werte
+  (Prozent, Zeit, ellipsierter Volltext) sind erlaubt.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
