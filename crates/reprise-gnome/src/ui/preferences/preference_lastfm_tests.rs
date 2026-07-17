@@ -41,7 +41,8 @@ fn expander_row_has_enable_switch_credentials_and_action_buttons() {
     // Disconnect button's parent row is hidden when not connected
     assert!(surface.disconnect.parent().is_some_and(|p| !p.is_visible()));
 
-    // Credentials gate Open Browser
+    // Enabling the module exposes the body; credentials then gate Open Browser.
+    surface.expander.set_enable_expansion(true);
     surface.api_key.set_text("key");
     assert!(!surface.open_browser.is_sensitive());
     surface.shared_secret.set_text("secret");

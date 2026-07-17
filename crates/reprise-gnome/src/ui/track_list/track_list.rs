@@ -69,7 +69,6 @@ use crate::ui::column_layout::ColumnRegistry;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
-use crate::ui::toasts;
 use crate::ui::track_list_model::TrackListModel;
 pub(in crate::ui) use crate::ui::track_list_reload::{
     reload, set_filter_and_reload, set_source_and_reload,
@@ -83,6 +82,7 @@ pub(in crate::ui) use super::track_list_callbacks::{
     OnQueueSelected, OnReload, OnSelectionChanged, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
     OnTagsMutated,
 };
+pub(in crate::ui) use super::track_list_toast::show_toast;
 
 pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
 pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
@@ -587,17 +587,4 @@ pub(in crate::ui) fn playlist_reorder_allowed(shared: &Shared) -> bool {
     matches!(*shared.source.borrow(), ViewSource::Playlist(_))
         && shared.sort.borrow().field == PLAYLIST_ORDER_SORT_FIELD
         && shared.filter.borrow().trim().is_empty()
-}
-
-/// Shows `text` as an `adw::Toast`, degrading to a warn log if no overlay is
-/// wired or it's gone — mirrors `player_controller.rs`'s `show_toast` (same
-/// seam, same degrade behavior), not shared code: the two owning types are
-/// otherwise unrelated and this is a two-line `WeakRef::upgrade` match.
-pub(in crate::ui) fn show_toast(shared: &Shared, text: &str) {
-    match shared.toast_overlay.upgrade() {
-        Some(overlay) => toasts::show(&overlay, text),
-        None => {
-            tracing::warn!(text, "toast overlay is gone; degrading to log-only");
-        }
-    }
 }

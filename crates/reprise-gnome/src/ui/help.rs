@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(sections[0].title().as_deref(), Some("Playback"));
         assert_eq!(sections[0].n_items(), 2);
         assert_eq!(sections[1].title().as_deref(), Some("Navigation"));
-        assert_eq!(sections[1].n_items(), 6);
+        assert_eq!(sections[1].n_items(), 8);
 
         let items = sections
             .iter()
@@ -172,6 +172,8 @@ mod tests {
                 ("Play or Pause".to_string(), "space".to_string()),
                 ("Play Selected Track".to_string(), "Return".to_string()),
                 ("Search Library".to_string(), "<Control>f".to_string()),
+                ("Jump to now playing".to_string(), "<Control>l".to_string(),),
+                ("Back to previous view".to_string(), "<Alt>Left".to_string()),
                 ("Toggle Compact View".to_string(), "<Control>m".to_string(),),
                 (
                     "Clear Search or Return to Track List".to_string(),
