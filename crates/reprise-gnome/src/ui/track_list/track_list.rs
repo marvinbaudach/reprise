@@ -109,15 +109,15 @@ type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize, ViewSource)>;
 /// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
 /// selected` doc comment.
 type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
-type OnQueueActivate = Rc<dyn Fn(usize)>;
-type OnQueueRemove = Rc<dyn Fn(&[usize]) -> usize>;
+type OnQueueActivate = Rc<dyn Fn(super::queue_row_mapping::QueueRow)>;
+type OnQueueRemove = Rc<dyn Fn(&[super::queue_row_mapping::QueueRow]) -> usize>;
 /// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
 /// comment. Returns whether the move actually happened (`false` for a
 /// degraded no-op, e.g. no player wired — see `Shared::on_queue_reorder`'s
 /// doc comment), which `ui::track_list_dnd`'s drop handler propagates as its
 /// own result rather than reporting success just because a callback was
 /// present (Stage 3 Task 6 review finding #3).
-type OnQueueReorder = Rc<dyn Fn(usize, usize) -> bool>;
+type OnQueueReorder = Rc<dyn Fn(super::queue_row_mapping::QueueReorderOp) -> bool>;
 /// Sidebar drag-and-drop "add to playlist" callback — see the `Shared::on_
 /// sidebar_playlist_drop` doc comment.
 type OnSidebarPlaylistDrop = Rc<dyn Fn(i64, &str, &[i64]) -> bool>;
@@ -264,6 +264,9 @@ pub(in crate::ui) struct Shared {
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`. Same seam shape as `on_play_selected`.
     pub(in crate::ui) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
+    /// but the ids jump the manual line instead of appending to it.
+    pub(in crate::ui) on_play_next_selected: RefCell<Option<OnQueueSelected>>,
     pub(in crate::ui) on_queue_activate: RefCell<Option<OnQueueActivate>>,
     pub(in crate::ui) on_queue_remove: RefCell<Option<OnQueueRemove>>,
     /// Invoked after any context-menu action that mutates a playlist's
@@ -459,15 +462,25 @@ impl TrackList {
     /// Injects the context menu's "Add to queue" action callback — see the
     /// `Shared::on_queue_selected` doc comment. `window.rs` wires this to
     /// `PlayerController::append_to_queue`.
+    pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
+        *self.shared.on_play_next_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub fn set_on_queue_activate(&self, callback: impl Fn(usize) + 'static) {
+    pub fn set_on_queue_activate(
+        &self,
+        callback: impl Fn(super::queue_row_mapping::QueueRow) + 'static,
+    ) {
         *self.shared.on_queue_activate.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub fn set_on_queue_remove(&self, callback: impl Fn(&[usize]) -> usize + 'static) {
+    pub fn set_on_queue_remove(
+        &self,
+        callback: impl Fn(&[super::queue_row_mapping::QueueRow]) -> usize + 'static,
+    ) {
         *self.shared.on_queue_remove.borrow_mut() = Some(Rc::new(callback));
     }
 
@@ -481,7 +494,10 @@ impl TrackList {
     /// Injects the queue drag-reorder callback (Stage 3 Task 6) — see the
     /// `Shared::on_queue_reorder` doc comment. `window.rs` wires this to
     /// `PlayerController::move_queue_item`.
-    pub fn set_on_queue_reorder(&self, callback: impl Fn(usize, usize) -> bool + 'static) {
+    pub fn set_on_queue_reorder(
+        &self,
+        callback: impl Fn(super::queue_row_mapping::QueueReorderOp) -> bool + 'static,
+    ) {
         *self.shared.on_queue_reorder.borrow_mut() = Some(Rc::new(callback));
     }
 

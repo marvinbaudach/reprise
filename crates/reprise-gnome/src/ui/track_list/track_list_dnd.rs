@@ -483,7 +483,19 @@ pub(in crate::ui) fn handle_queue_reorder_drop(
     let Some(reorder) = resolve_reorder_target(payload, i64::from(target_view_position)) else {
         return false;
     };
-    let (Ok(from), Ok(to)) = (usize::try_from(reorder.from), usize::try_from(reorder.to)) else {
+    let (Ok(from), Ok(to)) = (u32::try_from(reorder.from), u32::try_from(reorder.to)) else {
+        return false;
+    };
+    // QUE-3: composite-view coordinates → section-local operation (reorder
+    // within Play Next, or promote an Up Next row into Play Next). Drags the
+    // rules reject (snapshot-internal reorder, dragging Now Playing) resolve
+    // to `None` and report failure.
+    let op = {
+        let sections = shared.queue_sections.borrow();
+        crate::ui::track_list::queue_row_mapping::reorder_op(from, to, &sections)
+    };
+    let Some(op) = op else {
+        tracing::debug!(from, to, "queue drag outside QUE-3 rules; rejected");
         return false;
     };
 
@@ -496,7 +508,7 @@ pub(in crate::ui) fn handle_queue_reorder_drop(
             // exactly like `Queue::move_item`'s own no-op cases) — a
             // degraded no-op must report failure, not success, just because
             // a callback happened to be wired.
-            let moved = callback(from, to);
+            let moved = callback(op);
             if moved {
                 tracing::info!(from, to, "queue reordered via drag and drop");
                 reload(shared);
