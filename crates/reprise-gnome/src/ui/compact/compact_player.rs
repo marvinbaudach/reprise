@@ -512,6 +512,11 @@ mod tests {
         settings.set_gtk_enable_animations(true);
 
         let player = CompactPlayer::new();
+        let window = gtk4::Window::new();
+        window.set_child(Some(player.handle()));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
         player.0.widgets.title_label.set_text("Before");
         player.set_track("First", "First artist");
         player.set_track("Second", "Second artist");
@@ -519,12 +524,15 @@ mod tests {
         assert_eq!(player.0.widgets.title_label.text(), "First");
         assert_eq!(player.0.widgets.artist_label.text(), "First artist");
         assert_eq!(player.0.widgets.title_label.opacity(), 1.0);
-        let animation = player.0.current_track_animation.borrow();
-        let animation = animation.as_ref().unwrap();
-        assert_eq!(animation.duration(), motion::half(motion::STANDARD));
-        assert_eq!(animation.easing(), motion::STANDARD_EASING);
-        assert!(animation.follows_enable_animations_setting());
+        {
+            let animation = player.0.current_track_animation.borrow();
+            let animation = animation.as_ref().unwrap();
+            assert_eq!(animation.duration(), motion::half(motion::STANDARD));
+            assert_eq!(animation.easing(), motion::STANDARD_EASING);
+            assert!(animation.follows_enable_animations_setting());
+        }
 
         settings.set_gtk_enable_animations(previous);
+        window.close();
     }
 }
