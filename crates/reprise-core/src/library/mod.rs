@@ -3,6 +3,7 @@ pub mod audio_effect_settings;
 pub mod lastfm_stats;
 pub mod listenbrainz;
 pub mod m3u;
+mod mounts;
 mod playlist_delete;
 pub mod playlist_membership;
 pub mod playlists;
