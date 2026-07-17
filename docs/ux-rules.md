@@ -374,10 +374,15 @@ ist ihre eigene Aussage).
        (tag_editor_form.rs, Ownership feat/tag-editor-rework) und „Back" in
        browse_bar (Ownership feat/global-search-rework) sind noch
        Substantive. [aktiv] erst, wenn beide nachgezogen sind. -->
-- **TIP-2a** [geplant] [gtk] — Disabled erklärt sich (icon-only): ein
+- **TIP-2a** [aktiv] [gtk] — Disabled erklärt sich (icon-only): ein
   deaktiviertes Icon-only-Control behält seinen Tooltip und ergänzt den
   Grund („Eject device — Sync in progress"). Nie ein toter Button ohne
   benannten Grund (Konkretisierung von P-2).
+  <!-- Player-Leiste prev/next: KEINE Einzel-Tooltips. Sie werden nur
+       deaktiviert, wenn die Queue leer ist — und dann ist auch die ganze
+       Leiste deaktiviert (bar_should_be_sensitive), sodass die
+       Container-Klausel oben greift: die leere Leiste ist ihre eigene
+       Aussage. -->
 - **TIP-2b** [geplant] [manuell] — Disabled erklärt sich (gelabelt): ein
   deaktiviertes gelabeltes Control nennt seinen Grund sichtbar per Label,
   Subtitle oder Hint-Zeile („Requires same artist & album across
