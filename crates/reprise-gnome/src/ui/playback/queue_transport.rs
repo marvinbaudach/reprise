@@ -297,7 +297,6 @@ impl PlayerController {
     /// Moves selected composite Queue rows to the start of Play Next in
     /// selection order. Snapshot rows are promoted out of their context;
     /// Now Playing is intentionally skipped.
-    #[allow(dead_code)] // Wired to the track-list callback in Task 8.
     pub(in crate::ui) fn move_queue_rows_to_top(
         &self,
         rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],

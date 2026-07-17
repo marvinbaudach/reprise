@@ -26,7 +26,6 @@ pub(in crate::ui) enum MenuContext {
 }
 
 impl MenuContext {
-    #[allow(dead_code)] // Used by the live adapter in Task 7.
     pub(in crate::ui) fn from_source(source: &ViewSource) -> Self {
         match source {
             ViewSource::Album { .. } => Self::AlbumDetail,
@@ -43,7 +42,6 @@ impl MenuContext {
     }
 }
 
-#[allow(dead_code)] // Used by the live adapter in Task 7.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct SelectionSummary {
     pub count: usize,
@@ -54,7 +52,6 @@ pub(in crate::ui) struct SelectionSummary {
     pub same_folder: bool,
 }
 
-#[allow(dead_code)] // Used by the live adapter in Task 7.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct PlaylistEntry {
     pub id: i64,
@@ -62,7 +59,6 @@ pub(in crate::ui) struct PlaylistEntry {
     pub is_current: bool,
 }
 
-#[allow(dead_code)] // Used by the live adapter in Task 7.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct ActionStates {
     pub enqueue: bool,
@@ -73,7 +69,6 @@ pub(in crate::ui) struct ActionStates {
     pub edit_tags: bool,
 }
 
-#[allow(dead_code)] // Used by the live adapter in Task 7.
 pub(in crate::ui) struct MenuInputs<'a> {
     pub context: MenuContext,
     pub selection: &'a SelectionSummary,
@@ -81,7 +76,6 @@ pub(in crate::ui) struct MenuInputs<'a> {
     pub is_missing_view: bool,
 }
 
-#[allow(dead_code)] // Used by the live adapter in Task 7.
 pub(in crate::ui) fn summarize_selection(tracks: &[Track]) -> SelectionSummary {
     let Some(first) = tracks.first() else {
         return SelectionSummary {
@@ -115,7 +109,6 @@ pub(in crate::ui) fn summarize_selection(tracks: &[Track]) -> SelectionSummary {
     }
 }
 
-#[allow(dead_code)] // Used by the live adapter in Task 7.
 pub(in crate::ui) fn action_states(
     _context: MenuContext,
     selection: &SelectionSummary,
@@ -130,7 +123,6 @@ pub(in crate::ui) fn action_states(
     }
 }
 
-#[allow(dead_code)] // Used by the live adapter in Task 7.
 pub(in crate::ui) fn build_track_menu(inputs: &MenuInputs<'_>) -> gio::Menu {
     const GROUP: &str = "tracklist";
     let menu = gio::Menu::new();
@@ -224,7 +216,6 @@ pub(in crate::ui) fn build_track_menu(inputs: &MenuInputs<'_>) -> gio::Menu {
     menu
 }
 
-#[allow(dead_code)] // Called by the live builder in Task 7.
 fn append_action(menu: &gio::Menu, label: &str, action: &str) {
     menu.append(
         Some(&strings::text(label)),
@@ -471,6 +462,30 @@ mod tests {
             is_missing_view: false,
         }));
         assert_eq!(library.first().map(String::as_str), Some("Play next"));
+    }
+
+    #[test]
+    fn ctx_2_no_global_entries() {
+        let selection = selection(1);
+        let playlists = [];
+        for context in [
+            MenuContext::LibraryTracks,
+            MenuContext::AlbumDetail,
+            MenuContext::ArtistDetail,
+            MenuContext::Playlist,
+            MenuContext::Queue,
+        ] {
+            let labels = menu_labels(&build_track_menu(&MenuInputs {
+                context,
+                selection: &selection,
+                playlists: &playlists,
+                is_missing_view: false,
+            }));
+            assert!(
+                !labels.iter().any(|label| label == "Rescan library"),
+                "{context:?} must carry no global entry"
+            );
+        }
     }
 
     #[test]

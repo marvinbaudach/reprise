@@ -12,7 +12,6 @@ use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::glib::variant::ToVariant;
 
-#[allow(dead_code)] // Wired to the live context-menu action in Task 7.
 pub(in crate::ui) fn show_in_files(paths: &[PathBuf]) {
     if paths.is_empty() {
         return;
