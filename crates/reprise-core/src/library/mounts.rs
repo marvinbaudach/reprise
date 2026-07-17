@@ -141,10 +141,6 @@ pub(crate) fn mount_point_of(path: &Path) -> Option<PathBuf> {
 /// `Track::device` and `scanner::file_stat`'s `dev as i64` storage cast) and
 /// is cast back to `u64` for the comparison — round-tripping the same bit
 /// pattern `file_stat` cast away from `u64` on the way in.
-///
-/// `#[allow(dead_code)]`: see [`nearest_existing_ancestor_dev`]'s doc
-/// comment — not wired into a caller until a later task.
-#[allow(dead_code)]
 pub(crate) fn classify_missing(stored_device: Option<i64>, path: &Path) -> MissingReason {
     let Some(stored_device) = stored_device else {
         return MissingReason::Unknown;

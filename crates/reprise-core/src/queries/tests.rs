@@ -385,6 +385,85 @@ fn mark_track_missing_sets_the_flag() {
     assert_eq!(missing_reason.as_deref(), Some("unknown"));
 }
 
+/// The classifier's `Deleted` branch, driven end-to-end through
+/// `mark_track_missing` itself rather than `mounts::classify_missing`
+/// directly: a row whose recorded `device` matches its directory's real,
+/// current `st_dev` (i.e. the mount is genuinely still there) and whose file
+/// has actually been deleted must land on `missing_reason == "deleted"`, not
+/// the `unknown` the sibling test above pins for a `NULL`-device row. The
+/// device is read from the real temp directory via `lstat`, matching
+/// `mounts.rs`'s own test convention — no root or real mounting needed.
+#[test]
+fn mark_track_missing_classifies_deleted_when_device_matches() {
+    use std::os::unix::fs::MetadataExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let real_dev = std::fs::symlink_metadata(dir.path()).unwrap().dev() as i64;
+    let path = dir.path().join("gone.flac");
+
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, added_at, device) VALUES (?1, 'A', '', 0, ?2)",
+        rusqlite::params![path.to_string_lossy(), real_dev],
+    )
+    .unwrap();
+    let id: i64 = conn
+        .query_row("SELECT id FROM tracks", [], |r| r.get(0))
+        .unwrap();
+    // The row is deliberately never written to disk, so `classify_missing`
+    // sees a matching device and an absent file — the honest "deleted, not
+    // unmounted" verdict.
+
+    mark_track_missing(&conn, id).unwrap();
+
+    let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
+        .query_row(
+            "SELECT missing_since, missing_reason FROM tracks WHERE id = ?1",
+            rusqlite::params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(missing_since.is_some());
+    assert_eq!(missing_reason.as_deref(), Some("deleted"));
+}
+
+/// The classifier's `Unmounted` branch, same shape as the `Deleted` test
+/// above but with a fabricated non-matching device (`real_dev + 99_999`,
+/// mirroring `mounts.rs`'s own test convention for a guaranteed
+/// non-collision) — pure arithmetic, no loopback device or real unmount
+/// needed to prove the branch.
+#[test]
+fn mark_track_missing_classifies_unmounted_when_device_differs() {
+    use std::os::unix::fs::MetadataExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let real_dev = std::fs::symlink_metadata(dir.path()).unwrap().dev() as i64;
+    let path = dir.path().join("gone.flac");
+
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, added_at, device) VALUES (?1, 'A', '', 0, ?2)",
+        rusqlite::params![path.to_string_lossy(), real_dev + 99_999],
+    )
+    .unwrap();
+    let id: i64 = conn
+        .query_row("SELECT id FROM tracks", [], |r| r.get(0))
+        .unwrap();
+
+    mark_track_missing(&conn, id).unwrap();
+
+    let missing_reason: Option<String> = conn
+        .query_row(
+            "SELECT missing_reason FROM tracks WHERE id = ?1",
+            rusqlite::params![id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(missing_reason.as_deref(), Some("unmounted"));
+}
+
 #[test]
 fn mark_track_missing_excludes_from_count_and_ids() {
     let conn = crate::db::open(None).unwrap();

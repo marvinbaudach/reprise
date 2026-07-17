@@ -389,6 +389,44 @@ fn scan_folder_root_guard_b_empty_root_with_mismatched_device_reports_root_unava
     );
 }
 
+/// Fix-pass regression (widened root-guard evidence): the guard must still
+/// trip when EVERY candidate row under `root` is already flagged missing
+/// (`missing_since` set) and none of their recorded devices match the root's
+/// real, current device. Before the fix, the guard reused the `PRESENT`-only
+/// mark-phase candidate list for its own evidence check — a `missing_since
+/// IS NOT NULL` row is excluded from `PRESENT`, so an all-already-missing
+/// root produced an empty candidate list, `!candidates.is_empty()` was
+/// false, and the guard silently never tripped: a scan of a root whose mount
+/// point now has a *different* filesystem swapped underneath it reported
+/// `Completed`/`vanished == 0` instead of `RootUnavailable`, hiding the
+/// "your library folder is unreachable" signal the guard exists to surface.
+#[test]
+fn scan_folder_root_guard_widened_evidence_trips_when_only_already_missing_rows_remain() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let real_dev = dev_of(&root);
+    let phantom = root.join("phantom.flac");
+    insert_raw_track_with_device(&conn, &phantom, real_dev + 99_999);
+    let (id, ..) = row_by_path(&conn, &phantom);
+    // Already flagged missing by some earlier reconcile — excluded from the
+    // `PRESENT`-filtered mark-phase candidate list, but must still count as
+    // root-guard evidence: an already-missing, not-yet-tombstoned row is
+    // real proof this root once had tracks, and its mismatching device is
+    // real proof the mount underneath it has since changed.
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = ?1",
+        [id],
+    )
+    .unwrap();
+
+    let outcome = scan_folder(&mut conn, &root).unwrap();
+
+    assert_eq!(root_unavailable(outcome), root);
+}
+
 /// Brief case 5 (Root-Guard c): the root directory exists but is empty, and
 /// the present track the DB expects under it has a recorded `device` that
 /// DOES match the root's real, current device — proof the root's own
