@@ -1,8 +1,10 @@
 //! A small CSS-drawn three-bar equaliser motif, shared by two surfaces:
 //!
 //! - **Animated** — shown before the now-playing track's title in the track
-//!   table (`track_list_columns.rs`). Its bars pulse in the player accent
-//!   (`@reprise_player_accent`) and freeze when playback is paused, driven
+//!   table (`track_list_columns.rs`). This is the MOT-5 named exception for
+//!   EQ indicators, so the loop runs only during active playback. Its bars
+//!   pulse in the player accent (`@reprise_player_accent`) and freeze when
+//!   playback is paused, driven
 //!   entirely by CSS `@keyframes` plus an ancestor `.playback-paused` class
 //!   toggled on the `ColumnView` (see `TrackList::set_playback_paused`).
 //! - **Static** — the "My Stats" sidebar icon (`sidebar_presentation.rs`),

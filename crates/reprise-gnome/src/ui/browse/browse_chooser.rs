@@ -26,6 +26,7 @@ pub(super) fn build_chooser() -> (
 ) {
     let stack = gtk4::Stack::new();
     stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
+    stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
 
     let facet_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
     facet_page.set_margin_top(8);
@@ -168,4 +169,19 @@ pub(super) fn load_values(
         tracing::warn!(%error, ?facet, "could not load browse facet values");
         Vec::new()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_1_browse_chooser_uses_the_standard_motion_token() {
+        gtk4::init().unwrap();
+
+        let (stack, ..) = build_chooser();
+
+        assert_eq!(stack.transition_duration(), crate::ui::motion::STANDARD_MS);
+    }
 }

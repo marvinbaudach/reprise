@@ -146,6 +146,7 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
     let lyrics = LyricsView::new();
     let stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(crate::ui::motion::STANDARD_MS)
         .vexpand(true)
         .build();
     stack.add_titled(
