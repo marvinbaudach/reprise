@@ -1,6 +1,7 @@
 //! Missing-files integration seams kept out of the main list orchestrator.
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use gtk4::prelude::*;
 
@@ -13,10 +14,32 @@ impl TrackList {
         self.shared.empty_page_actions.append(widget);
     }
 
+    pub(in crate::ui) fn set_on_scan_queue_purge_ids(
+        &self,
+        callback: impl Fn() -> Vec<i64> + 'static,
+    ) {
+        *self.shared.on_scan_queue_purge_ids.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn notify_library_purged(&self, ids: &[i64]) {
         let callback = self.shared.on_library_mutated.borrow().clone();
         if let Some(callback) = callback {
             callback(ids);
+        }
+    }
+
+    /// Combines auto-clean removals with freshly non-retained queue ids and
+    /// sends one silent notification through the existing hard-purge seam.
+    pub(in crate::ui) fn notify_scan_postprocessed(&self, auto_cleaned_ids: &[i64]) {
+        let provider = self.shared.on_scan_queue_purge_ids.borrow().clone();
+        let mut purge_ids = auto_cleaned_ids.to_vec();
+        if let Some(provider) = provider {
+            purge_ids.extend(provider());
+        }
+        purge_ids.sort_unstable();
+        purge_ids.dedup();
+        if !purge_ids.is_empty() {
+            self.notify_library_purged(&purge_ids);
         }
     }
 

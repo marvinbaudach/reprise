@@ -119,6 +119,7 @@ pub(in crate::ui) fn build(
         missing_files_view,
         on_rescan_library: RefCell::new(None),
         on_library_mutated: RefCell::new(None),
+        on_scan_queue_purge_ids: RefCell::new(None),
         on_tags_mutated: RefCell::new(None),
         on_import_errors_mutated: RefCell::new(None),
         on_selection_changed: RefCell::new(None),

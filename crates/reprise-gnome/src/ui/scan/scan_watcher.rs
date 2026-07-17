@@ -61,9 +61,7 @@ pub(in crate::ui) fn start_or_restart_watcher(
                     } else {
                         track_list.reload();
                     }
-                    if !event.auto_cleaned_ids.is_empty() {
-                        track_list.notify_library_purged(&event.auto_cleaned_ids);
-                    }
+                    track_list.notify_scan_postprocessed(&event.auto_cleaned_ids);
                 }
                 (None, _) => {
                     tracing::warn!("watcher: track list reload skipped: track list is gone");

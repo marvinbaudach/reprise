@@ -93,6 +93,28 @@ impl PlayerController {
         *self.queue_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    /// Returns every live playback-model id rejected by the core retention
+    /// predicate after a scan. The caller feeds these ids into the same
+    /// purge path as hard deletes and auto-clean.
+    pub(in crate::ui) fn scan_queue_purge_ids(&self) -> Vec<i64> {
+        let mut candidates = self.queue.borrow().ids_in_order();
+        candidates.extend_from_slice(self.up_next.borrow().ids());
+        if let Some(id) = self.current_up_next.get() {
+            candidates.push(id);
+        }
+        let result = {
+            let conn = self.conn.borrow();
+            reprise_core::queries::query_queue_purge_track_ids(&conn, &candidates)
+        };
+        match result {
+            Ok(ids) => ids,
+            Err(error) => {
+                tracing::warn!(%error, "could not reconcile scan-detected queue removals");
+                Vec::new()
+            }
+        }
+    }
+
     pub(in crate::ui) fn notify_queue_changed(&self) {
         tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
         let callback = self.queue_changed.borrow().clone();
