@@ -19,6 +19,8 @@ use std::path::PathBuf;
 
 use rusqlite::Connection;
 
+use crate::models::ImportErrorKind;
+
 use super::scanner::ScanOutcome;
 use super::tag_edit::{
     apply_patch_to_file, read_editable_tags, validate_registered_track, EditableTags,
@@ -37,13 +39,34 @@ pub struct TrackWrite {
 /// Classified reason a single track's write failed, replacing raw Lofty
 /// error text in user-facing surfaces (FB-3: "klassifizierter Grund", not
 /// Lofty prose).
+///
+/// ## Why this is not [`ImportErrorKind`]
+///
+/// The two vocabularies deliberately stay separate types even though they
+/// overlap: `ImportErrorKind` is a *storage* format — its `as_str`/`parse`
+/// pair is the on-disk vocabulary of `import_errors.reason_kind` — whereas a
+/// write failure is transient and never persisted. Folding writes into it
+/// would mean teaching a stored vocabulary a `NotFound` reason the import
+/// path can never produce.
+///
+/// What the two must NOT do is disagree about what a given Lofty error
+/// *means*, so the Lofty half of the classification is not duplicated here:
+/// [`classify_write_error`] delegates it to `import_errors::classify_lofty`,
+/// the single place that enumerates Lofty's error kinds, and maps its result
+/// into this write-facing view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteErrorKind {
     PermissionDenied,
+    /// The file vanished between the edit and the write (deleted, unmounted,
+    /// or moved). Has no `ImportErrorKind` counterpart: a scan simply never
+    /// imports a file that isn't there, while a write races the deletion.
     NotFound,
     UnsupportedFormat,
+    /// The file's container/tag data could not be parsed, so there is nothing
+    /// to write into — mirrors `ImportErrorKind::UnreadableTags`.
+    UnreadableTags,
     /// Catch-all: DB reconciliation failures, stale-row validation, and any
-    /// Lofty error kind not covered by the three specific variants above.
+    /// Lofty error kind without a more specific bucket above.
     Io,
 }
 
@@ -54,28 +77,65 @@ impl WriteErrorKind {
             Self::PermissionDenied => "No write permission",
             Self::NotFound => "File not found",
             Self::UnsupportedFormat => "Unsupported audio format",
+            Self::UnreadableTags => "File's tags could not be read",
             Self::Io => "Could not write tags",
+        }
+    }
+
+    /// Projects the shared import vocabulary onto the write-facing one. The
+    /// import side's `Unknown` (a Lofty kind its classifier has no bucket
+    /// for) collapses into `Io` here: for the failure-details dialog, "could
+    /// not write tags" is the honest thing to say about an unclassified
+    /// failure — there is no separate remediation story to offer.
+    fn from_import_kind(kind: ImportErrorKind) -> Self {
+        match kind {
+            ImportErrorKind::PermissionDenied => Self::PermissionDenied,
+            ImportErrorKind::UnsupportedFormat => Self::UnsupportedFormat,
+            ImportErrorKind::UnreadableTags => Self::UnreadableTags,
+            ImportErrorKind::Io | ImportErrorKind::Unknown => Self::Io,
         }
     }
 }
 
 /// Classifies a [`TagEditError`] from a failed tag write into a
-/// [`WriteErrorKind`]. Unknown/unmapped Lofty error kinds fall back to
-/// `Io` — `lofty::error::ErrorKind` is `#[non_exhaustive]`, so a future
-/// Lofty release adding a new kind must not fail to compile here.
+/// [`WriteErrorKind`].
+///
+/// The long tail of Lofty's parse failures is delegated to
+/// `import_errors::classify_lofty` — the single place that enumerates Lofty's
+/// error kinds — so the scanner and the tag editor cannot drift on what a
+/// malformed container means (see [`WriteErrorKind`]'s doc comment).
+///
+/// Three kinds are decided here instead, because that classifier reads Lofty
+/// errors as a *reader* would, and their meaning genuinely differs when
+/// writing:
+///
+/// * `NoWritableTag` — tag-edit-only, never seen by a scan.
+/// * `Io(NotFound)` — folded into the generic `Io` bucket over there, which
+///   is right for a scan (a file that isn't there was never imported) and
+///   wrong here, where it is the common "deleted while the dialog was open"
+///   race and earns its own message.
+/// * `UnsupportedTag` / `TooMuchData` — read as container-parse damage over
+///   there (`UnreadableTags`). Writing, they mean the target format cannot
+///   hold this tag type, and that a value exceeds what the format allows:
+///   "the file's tags could not be read" would be an outright false
+///   statement about a file whose tags read back fine.
 pub fn classify_write_error(error: &TagEditError) -> WriteErrorKind {
+    use lofty::error::ErrorKind as LK;
+    // Matched exhaustively rather than with a catch-all: a future
+    // `TagEditError` variant must fail to compile here and be classified
+    // deliberately, not silently inherit some neighbour's bucket.
     match error {
         TagEditError::NoWritableTag => WriteErrorKind::UnsupportedFormat,
         TagEditError::Lofty(lofty_error) => match lofty_error.kind() {
-            lofty::error::ErrorKind::Io(io_error) => match io_error.kind() {
-                std::io::ErrorKind::PermissionDenied => WriteErrorKind::PermissionDenied,
-                std::io::ErrorKind::NotFound => WriteErrorKind::NotFound,
-                _ => WriteErrorKind::Io,
-            },
-            lofty::error::ErrorKind::UnknownFormat | lofty::error::ErrorKind::UnsupportedTag => {
-                WriteErrorKind::UnsupportedFormat
+            LK::Io(io_error) if io_error.kind() == std::io::ErrorKind::NotFound => {
+                WriteErrorKind::NotFound
             }
-            _ => WriteErrorKind::Io,
+            LK::UnsupportedTag => WriteErrorKind::UnsupportedFormat,
+            LK::TooMuchData => WriteErrorKind::Io,
+            _ => {
+                let (kind, _detail) = crate::library::import_errors::classify_lofty(lofty_error);
+                WriteErrorKind::from_import_kind(kind)
+            }
         },
     }
 }
@@ -428,6 +488,10 @@ mod tests {
             classify_write_error(&TagEditError::NoWritableTag),
             WriteErrorKind::UnsupportedFormat
         );
+        // Write-specific override of the shared classifier, which reads this
+        // as container damage (`UnreadableTags`): writing, it means the
+        // target format cannot hold this tag type. Deliberate divergence —
+        // see `classify_write_error`'s doc comment before "fixing" it.
         let error = TagEditError::Lofty(lofty::error::LoftyError::new(
             lofty::error::ErrorKind::UnsupportedTag,
         ));
@@ -439,10 +503,23 @@ mod tests {
 
     #[test]
     fn write_error_classification_defaults_to_io() {
+        // Same story as UnsupportedTag above: too much data for the format is
+        // a write-size failure, not tags that cannot be read back.
         let error = TagEditError::Lofty(lofty::error::LoftyError::new(
             lofty::error::ErrorKind::TooMuchData,
         ));
         assert_eq!(classify_write_error(&error), WriteErrorKind::Io);
+    }
+
+    #[test]
+    fn write_error_classification_shares_the_scanner_view_of_damaged_tags() {
+        // The long tail of Lofty parse failures is NOT re-enumerated here —
+        // it comes from `import_errors::classify_lofty`, so a damaged
+        // container tells the same story in the scanner and the tag editor.
+        let error = TagEditError::Lofty(lofty::error::LoftyError::new(
+            lofty::error::ErrorKind::NotAPicture,
+        ));
+        assert_eq!(classify_write_error(&error), WriteErrorKind::UnreadableTags);
     }
 
     #[test]
