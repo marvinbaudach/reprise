@@ -29,12 +29,31 @@ const ICON_NO_RESULTS: &str = "system-search-symbolic";
 /// matched nothing", just "this particular view has no members right now".
 const ICON_NOTHING_HERE: &str = "dialog-information-symbolic";
 
+#[derive(Debug, PartialEq, Eq)]
+struct UnavailableSurface {
+    title: String,
+    description: String,
+    actions: [String; 1],
+}
+
+fn unavailable_surface(root: &std::path::Path) -> UnavailableSurface {
+    UnavailableSurface {
+        title: strings::unavailable_title(),
+        description: strings::library_folder_not_mounted(&root.to_string_lossy()),
+        actions: [strings::text(strings::RETRY)],
+    }
+}
+
 /// Which page of the track-list `Stack` should be visible, and (for the
 /// empty variants) which copy the shared `StatusPage` should carry. A plain
 /// enum decided by a pure function (`empty_state_for`) so the selection
 /// logic is unit-testable without a running GTK application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::ui) enum EmptyState {
+    /// FB-5b: the persisted root is unavailable. This overrides every list
+    /// source/count because showing stale rows would imply the library is
+    /// currently usable.
+    LibraryUnavailable,
     /// The library itself has no tracks yet (no filter active either).
     EmptyLibrary,
     /// A neutral "nothing here" state (Stage 3 Task 3): the `Missing`/
@@ -84,6 +103,19 @@ pub(in crate::ui) fn empty_state_for(
     }
 }
 
+pub(in crate::ui) fn empty_state_for_availability(
+    row_count: usize,
+    has_filter: bool,
+    source: &ViewSource,
+    library_root_unavailable: bool,
+) -> EmptyState {
+    if library_root_unavailable {
+        EmptyState::LibraryUnavailable
+    } else {
+        empty_state_for(row_count, has_filter, source)
+    }
+}
+
 /// Builds the shared empty-state placeholder, initially carrying the
 /// empty-library copy (the state `TrackList::new`'s first `reload()` will
 /// normally confirm, since there's no library yet on first launch).
@@ -106,7 +138,27 @@ pub(in crate::ui) fn build_status_page() -> adw::StatusPage {
 /// copy does, so swapping three properties on one widget is simpler than
 /// building and switching between two near-identical `StatusPage`s.
 pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
+    shared.retry_library_button.set_visible(false);
     match state {
+        EmptyState::LibraryUnavailable => {
+            let root = shared
+                .unavailable_library_root
+                .borrow()
+                .clone()
+                .unwrap_or_default();
+            let surface = unavailable_surface(&root);
+            shared.empty_page.remove_css_class("missing-clear-state");
+            shared
+                .empty_page
+                .set_icon_name(Some("drive-harddisk-symbolic"));
+            shared.empty_page.set_title(&surface.title);
+            shared
+                .empty_page
+                .set_description(Some(&surface.description));
+            shared.retry_library_button.set_label(&surface.actions[0]);
+            shared.retry_library_button.set_visible(true);
+            shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
+        }
         EmptyState::List => {
             // Stage 3 Task 8: the ImportErrors source's populated page is the
             // dedicated panel, not the shared `ColumnView` page — every other
@@ -185,6 +237,20 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
 #[cfg(test)]
 mod empty_state_tests {
     use super::*;
+
+    // UX FB-5b: an unavailable library root overrides row/filter state with
+    // one StatusPage whose sole next step is Retry.
+    #[test]
+    fn fb_5b_unavailable_library_root_shows_status_page_with_retry_only() {
+        assert_eq!(
+            empty_state_for_availability(99, true, &ViewSource::Library, true),
+            EmptyState::LibraryUnavailable
+        );
+        let surface = unavailable_surface(std::path::Path::new("/media/NAS/Music"));
+        assert_eq!(surface.title, "Library folder unavailable");
+        assert_eq!(surface.description, "/media/NAS/Music not mounted");
+        assert_eq!(surface.actions, ["Retry"]);
+    }
 
     // UX FB-5a: an empty Missing-files source has its dedicated success
     // StatusPage rather than a generic empty-library prompt.

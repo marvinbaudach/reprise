@@ -216,6 +216,21 @@ impl ScanControls {
         }
     }
 
+    pub(in crate::ui) fn show_root_unavailable(&self, root: &std::path::Path) {
+        for view in self.live_progress_views() {
+            view.show_unavailable(root);
+        }
+        let indicator = cloned_slot(&self.empty_indicator)
+            .as_ref()
+            .and_then(WeakEmptyScanIndicator::upgrade);
+        if let Some(indicator) = indicator {
+            indicator.finish();
+        }
+        if let Some(button) = self.sidebar_toggle() {
+            button.set_tooltip_text(Some(&strings::unavailable_title()));
+        }
+    }
+
     pub(in crate::ui) fn show_cover_progress(&self, title: &str, detail: &str, fraction: f64) {
         for view in self.live_progress_views() {
             view.show_batch(title, detail, fraction);

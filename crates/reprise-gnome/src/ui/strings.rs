@@ -37,6 +37,9 @@ pub use artist::*;
 #[path = "strings_issues.rs"]
 mod issues;
 pub use issues::*;
+#[path = "strings_scan.rs"]
+mod scan;
+pub use scan::*;
 #[path = "strings_news.rs"]
 mod news;
 pub use news::*;

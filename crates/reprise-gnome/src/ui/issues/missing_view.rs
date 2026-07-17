@@ -25,7 +25,6 @@ const RESPONSE_REMOVE: &str = "remove";
 const RESPONSE_REMOVE_NOW: &str = "remove-now";
 const RESPONSE_START_TODAY: &str = "start-today";
 const TRACK_ROW_PREFIX: &str = "missing-track-";
-const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GroupCopy {
@@ -729,11 +728,11 @@ fn build_info_card(shared: &Shared) -> gtk4::Widget {
     explanation.set_xalign(0.0);
     explanation.set_wrap(true);
     card.append(&explanation);
-    let last_relinked = settings::get_setting(&shared.conn.borrow(), LAST_SCAN_RELINKED_KEY)
+    let last_relinked = settings::get_last_scan_relinked(&shared.conn.borrow())
         .ok()
         .flatten();
     if let Some(count) = last_relinked {
-        let label = gtk4::Label::new(Some(&strings::missing_last_relinked(&count)));
+        let label = gtk4::Label::new(Some(&strings::missing_last_relinked(&count.to_string())));
         label.set_xalign(0.0);
         card.append(&label);
     }

@@ -278,7 +278,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   (5b) gesplittet.
 - **FB-5a** [aktiv] [gtk] — Die leere Missing-files-Ansicht zeigt die
   StatusPage „No missing files ✓" ohne konkurrierende nächste Aktion.
-- **FB-5b** [geplant] [gtk] — Ein nicht verfügbarer Library-Root zeigt die
+- **FB-5b** [aktiv] [gtk] — Ein nicht verfügbarer Library-Root zeigt die
   StatusPage „Library folder unavailable — Retry" mit genau diesem nächsten
   Schritt.
 - **FB-6** [aktiv] [core] — Gelöschte Datei (extern, Watcher): kein Toast

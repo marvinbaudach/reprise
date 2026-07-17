@@ -6,7 +6,9 @@ use std::rc::Rc;
 use gtk4::gio::prelude::*;
 
 use crate::ui::browse_filter_count;
-use crate::ui::track_list::track_list_empty_state::{apply_empty_state, empty_state_for};
+use crate::ui::track_list::track_list_empty_state::{
+    apply_empty_state, empty_state_for_availability,
+};
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
@@ -111,7 +113,15 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
         _ => shared.model.n_items() as usize,
     };
     browse_filter_count::update(&shared.browse_bar, &shared.conn, &source, count, has_filter);
-    apply_empty_state(shared, empty_state_for(count, has_filter, &source));
+    apply_empty_state(
+        shared,
+        empty_state_for_availability(
+            count,
+            has_filter,
+            &source,
+            shared.library_root_unavailable.get(),
+        ),
+    );
 
     tracing::info!(
         count,

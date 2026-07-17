@@ -58,7 +58,6 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -152,6 +151,10 @@ pub(in crate::ui) struct Shared {
     /// are mutated in place by `apply_empty_state` rather than swapping in a
     /// third stack page — see that function's doc comment.
     pub(in crate::ui) empty_page: adw::StatusPage,
+    pub(in crate::ui) empty_page_actions: gtk4::Box,
+    pub(in crate::ui) retry_library_button: gtk4::Button,
+    pub(in crate::ui) library_root_unavailable: Cell<bool>,
+    pub(in crate::ui) unavailable_library_root: RefCell<Option<PathBuf>>,
     pub(in crate::ui) sort: RefCell<SortState>,
     pub(in crate::ui) restoring_view: Cell<bool>,
     pub(in crate::ui) filter: RefCell<String>,
@@ -524,14 +527,6 @@ impl TrackList {
     /// this to `Sidebar::refresh`.
     pub fn set_on_import_errors_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_import_errors_mutated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Sets a widget as the child of the empty-library status page, so it
-    /// appears below the icon/title/description during a first scan.
-    /// Called from `window.rs` after the `EmptyScanIndicator` is created,
-    /// to embed its container widget in the status page.
-    pub fn set_empty_scan_widget(&self, widget: &impl IsA<gtk4::Widget>) {
-        self.shared.empty_page.set_child(Some(widget));
     }
 
     /// Injects the player controller — injected post-construction via
