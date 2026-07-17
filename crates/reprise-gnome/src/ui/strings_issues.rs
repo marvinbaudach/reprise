@@ -234,3 +234,6 @@ pub fn import_issue_failed(count: u32) -> String {
         &[("count", &value)],
     )
 }
+
+/// FB-6's single exception to silent background missing-file feedback.
+pub const TRACK_UNAVAILABLE_SKIPPED: &str = N_!("Track unavailable — skipped");

@@ -136,6 +136,7 @@ pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, Missing
 // missing` split. `pub use` for the same cross-crate reachability reason as
 // `query_missing_groups` above.
 pub use issues::{count_missing, count_new_missing};
+pub use issues::{mark_mount_unavailable, verify_unmounted_tracks};
 // Task 2.3: the auto-clean read/act split — `auto_clean_eligible` for a
 // preview, `run_auto_clean` for the real unattended deletion. `pub use` for
 // the same cross-crate reachability reason as `query_missing_groups` above:
@@ -161,7 +162,7 @@ pub use library_views::{
     ArtistAlbum, ArtistSummary,
 };
 pub use maintenance::{
-    delete_all_import_errors, delete_import_error, mark_track_missing, purge_tombstones,
+    delete_all_import_errors, delete_import_error, mark_track_missing_if_current, purge_tombstones,
     query_import_error_count, query_import_errors, query_live_track_ids, query_live_track_paths,
     query_queue_retained_track_ids, query_sync_tracks, query_track_album_artist,
     query_track_ids_by_title_desc, query_track_ids_by_titles, query_track_summary,
@@ -557,6 +558,8 @@ mod tests_issues;
 mod tests_issues_badges;
 #[cfg(test)]
 mod tests_maintenance;
+#[cfg(test)]
+mod tests_mount_events;
 #[cfg(test)]
 mod tests_playlist;
 #[cfg(test)]

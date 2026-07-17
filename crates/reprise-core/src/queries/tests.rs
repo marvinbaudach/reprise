@@ -10,6 +10,7 @@
 
 use super::clauses::like_pattern;
 use super::*;
+use std::path::Path;
 
 fn seeded_titled_conn() -> Connection {
     let conn = crate::db::open(None).unwrap();
@@ -366,7 +367,7 @@ fn mark_track_missing_sets_the_flag() {
         .query_row("SELECT id FROM tracks", [], |r| r.get(0))
         .unwrap();
 
-    mark_track_missing(&conn, id).unwrap();
+    assert!(mark_track_missing_if_current(&conn, id, Path::new("/x/a.flac")).unwrap());
 
     let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
         .query_row(
@@ -386,7 +387,7 @@ fn mark_track_missing_sets_the_flag() {
 }
 
 /// The classifier's `Deleted` branch, driven end-to-end through
-/// `mark_track_missing` itself rather than `mounts::classify_missing`
+/// `mark_track_missing_if_current` itself rather than `mounts::classify_missing`
 /// directly: a row whose recorded `device` matches its directory's real,
 /// current `st_dev` (i.e. the mount is genuinely still there) and whose file
 /// has actually been deleted must land on `missing_reason == "deleted"`, not
@@ -415,7 +416,7 @@ fn mark_track_missing_classifies_deleted_when_device_matches() {
     // sees a matching device and an absent file — the honest "deleted, not
     // unmounted" verdict.
 
-    mark_track_missing(&conn, id).unwrap();
+    assert!(mark_track_missing_if_current(&conn, id, &path).unwrap());
 
     let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
         .query_row(
@@ -452,7 +453,7 @@ fn mark_track_missing_classifies_unmounted_when_device_differs() {
         .query_row("SELECT id FROM tracks", [], |r| r.get(0))
         .unwrap();
 
-    mark_track_missing(&conn, id).unwrap();
+    assert!(mark_track_missing_if_current(&conn, id, &path).unwrap());
 
     let missing_reason: Option<String> = conn
         .query_row(
@@ -486,7 +487,7 @@ fn mark_track_missing_excludes_from_count_and_ids() {
         vec![id]
     );
 
-    mark_track_missing(&conn, id).unwrap();
+    assert!(mark_track_missing_if_current(&conn, id, Path::new("/x/a.flac")).unwrap());
 
     assert_eq!(
         query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),

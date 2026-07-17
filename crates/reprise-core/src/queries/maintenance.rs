@@ -201,7 +201,8 @@ pub fn query_sync_tracks(
     Ok(tracks)
 }
 
-/// Marks track `track_id` as missing (Stage 2 Task 5: a physically deleted
+/// Marks `track_id` missing only while it is still the live row at
+/// `expected_path` (Stage 2 Task 5: a physically deleted
 /// file must never crash or dead-end the app — this is the DB-side half of
 /// that guarantee). Every windowed/count/id query for `ViewSource::Library`/
 /// `Playlist`/`Smart` already filters on [`PRESENT`], so the row disappears
@@ -215,31 +216,40 @@ pub fn query_sync_tracks(
 /// this used to always write for a real verdict from `library::mounts::
 /// classify_missing`, the same classifier the scanner's own folded-in
 /// mark-vanished phase (`library::scanner::scan_folder`) uses — one `SELECT`
-/// of the row's `path`/`device` first, since this function's only input is
-/// `track_id`. `Ok(())` no-ops (writes `Unknown`, same as the pre-classifier
-/// behavior, then updates 0 rows) for an id that no longer exists, matching
-/// this function's pre-1.5 contract of never erroring on a stale id — the
-/// playback-fault call site races against the row being removed out from
-/// under it (e.g. a concurrent watcher reconcile) more plausibly than most
-/// callers in this codebase.
-pub fn mark_track_missing(conn: &Connection, track_id: i64) -> Result<(), rusqlite::Error> {
+/// of the row's `path`/`device` first. The expected path is the identity
+/// snapshot taken before the asynchronous backend fault arrived. Both the
+/// read and write require that same path plus [`PRESENT`], and the file is
+/// rechecked immediately before writing. A watcher/Locate reconcile that
+/// wins the race therefore survives instead of having its new live identity
+/// marked missing by stale fault work. Returns whether one row changed.
+pub fn mark_track_missing_if_current(
+    conn: &Connection,
+    track_id: i64,
+    expected_path: &Path,
+) -> Result<bool, rusqlite::Error> {
+    let expected_path = expected_path.to_string_lossy();
     let row: Option<(String, Option<i64>)> = conn
         .query_row(
-            "SELECT path, device FROM tracks WHERE id = ?1",
-            [track_id],
+            &format!("SELECT path,device FROM tracks WHERE id=?1 AND path=?2 AND {PRESENT}"),
+            rusqlite::params![track_id, expected_path.as_ref()],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    let reason = match &row {
-        Some((path, device)) => crate::library::mounts::classify_missing(*device, Path::new(path)),
-        None => MissingReason::Unknown,
+    let Some((path, device)) = row else {
+        return Ok(false);
     };
-    conn.execute(
-        "UPDATE tracks SET missing_since = strftime('%s','now'), missing_reason = ?2 \
-         WHERE id = ?1",
-        rusqlite::params![track_id, reason.as_str()],
+    if Path::new(&path).is_file() {
+        return Ok(false);
+    }
+    let reason = crate::library::mounts::classify_missing(device, Path::new(&path));
+    let changed = conn.execute(
+        &format!(
+            "UPDATE tracks SET missing_since=strftime('%s','now'),missing_reason=?3 \
+             WHERE id=?1 AND path=?2 AND {PRESENT}"
+        ),
+        rusqlite::params![track_id, path, reason.as_str()],
     )?;
-    Ok(())
+    Ok(changed == 1)
 }
 
 /// "Remove from library" (Stage 3 Task 8's Missing-source action): deletes
