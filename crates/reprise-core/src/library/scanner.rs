@@ -459,6 +459,7 @@ fn scan_folder_inner(
 
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
+    let mut mount_cache = mount::MountPointCache::new();
     let tx = conn.transaction()?;
     for entry in walkdir::WalkDir::new(root).follow_links(false).into_iter() {
         let entry = match entry {
@@ -525,11 +526,16 @@ fn scan_folder_inner(
                 // forever, silently ignoring `missing_since` — this is the
                 // one case the fast path must NOT take, since the row still
                 // needs `missing_since` cleared even though nothing else
-                // changed.
+                // changed. This is also the ONLY chance a row whose
+                // `mount_point` is NULL (a pre-schema-v10 row, or any row
+                // that was never re-scanned since) has to acquire one
+                // without its file actually changing — see
+                // `scanner_mount.rs`'s module doc comment.
+                let mount_point = mount_cache.resolve(path);
                 tx.execute(
-                    "UPDATE tracks SET missing_since = NULL, missing_reason = NULL \
-                     WHERE path = ?1",
-                    [&path_str],
+                    "UPDATE tracks SET missing_since = NULL, missing_reason = NULL, \
+                     mount_point = ?2 WHERE path = ?1",
+                    rusqlite::params![path_str, mount_point],
                 )?;
                 tx.execute("DELETE FROM import_errors WHERE path = ?1", [&path_str])?;
                 report.updated += 1;
@@ -565,6 +571,9 @@ fn scan_folder_inner(
                 } else {
                     meta.title.clone()
                 };
+                // Task 1.6: recorded now, while still reachable, and
+                // memoized per parent dir — see `scanner_mount.rs`.
+                let mount_point = mount_cache.resolve(path);
                 // Clear any previous failure for this path: a file that errored
                 // once and is now readable again must not stay in the error log.
                 tx.execute("DELETE FROM import_errors WHERE path = ?1", [&path_str])?;
@@ -617,8 +626,8 @@ fn scan_folder_inner(
                         "UPDATE tracks SET path=?1, title=?2, artist=?3, album=?4,
                            album_artist=?5, year=?6, track_no=?7, genre=?8, duration_ms=?9,
                            bitrate_kbps=?10, file_mtime=?11, file_size=?12, device=?13,
-                           inode=?14, missing_since=NULL, missing_reason=NULL
-                         WHERE id=?15",
+                           inode=?14, mount_point=?15, missing_since=NULL, missing_reason=NULL
+                         WHERE id=?16",
                         rusqlite::params![
                             path_str,
                             title_p,
@@ -634,6 +643,7 @@ fn scan_folder_inner(
                             file_size,
                             device,
                             inode,
+                            mount_point,
                             candidate.id,
                         ],
                     )?;
@@ -661,13 +671,13 @@ fn scan_folder_inner(
                     tx.execute(
                         "INSERT INTO tracks (path, title, artist, album, album_artist, year,
                            track_no, genre, duration_ms, bitrate_kbps, added_at, file_mtime,
-                           file_size, device, inode)
-                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+                           file_size, device, inode, mount_point)
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
                          ON CONFLICT(path) DO UPDATE SET
                            title=?2, artist=?3, album=?4, album_artist=?5, year=?6,
                            track_no=?7, genre=?8, duration_ms=?9, bitrate_kbps=?10,
                            file_mtime=?12, missing_since=NULL, missing_reason=NULL,
-                           file_size=?13, device=?14, inode=?15",
+                           file_size=?13, device=?14, inode=?15, mount_point=?16",
                         rusqlite::params![
                             path_str,
                             title_p,
@@ -684,6 +694,7 @@ fn scan_folder_inner(
                             file_size,
                             device,
                             inode,
+                            mount_point,
                         ],
                     )?;
                     if is_update {
@@ -763,6 +774,11 @@ fn scan_folder_inner(
 // is production code, always compiled.
 #[path = "scanner_vanish.rs"]
 mod vanish;
+
+// Task 1.6: the mount_point memoization used above lives in its own file for
+// the same 800-line reason — see `scanner_mount.rs`'s own doc comment.
+#[path = "scanner_mount.rs"]
+mod mount;
 
 #[cfg(test)]
 #[path = "scanner_progress_tests.rs"]

@@ -59,6 +59,25 @@ fn row_count(conn: &Connection) -> i64 {
         .unwrap()
 }
 
+/// Test-only: `st_dev` of `path`, for asserting `mount_point`'s
+/// prefix-and-device invariant (see `mounts::mount_point_of`'s own doc
+/// comment) rather than a hardcoded path — the same technique
+/// `mounts.rs`'s own tests use, so this passes regardless of the machine's
+/// filesystem layout, including a tmpdir that is itself a mount.
+fn dev_of(path: &std::path::Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path).unwrap().dev()
+}
+
+fn mount_point_of(conn: &Connection, path: &std::path::Path) -> Option<String> {
+    conn.query_row(
+        "SELECT mount_point FROM tracks WHERE path = ?1",
+        [path.to_string_lossy().to_string()],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
 /// `file_stat` must degrade to `None` (not panic, and not fabricate
 /// placeholder zeros) when the path doesn't exist — Stage 3 Task 1's
 /// `Option` return type exists specifically so `scan_folder` can skip
@@ -496,6 +515,14 @@ fn rescan_preserves_rating_play_count_and_added_at_on_update() {
 /// a restored file stayed invisible/flagged forever even though it was
 /// right back where the scanner expected it. rating/play_count must
 /// survive untouched, exactly like the ordinary update path does.
+///
+/// Task 1.6: this fast-path-restore branch is also the ONLY chance a
+/// pre-v10 row (or any row whose `mount_point` is NULL for some other
+/// reason) has to acquire a `mount_point` without its file actually
+/// changing — an unchanged, still-missing-free row never reaches any other
+/// arm of the scanner. `mount_point` is explicitly nulled out below before
+/// the restore-rescan to prove this branch is the one that (re)populates it,
+/// rather than it merely surviving from the initial insert.
 #[test]
 fn restored_file_at_same_path_clears_missing_flag() {
     let tmp = tempfile::tempdir().unwrap();
@@ -510,7 +537,7 @@ fn restored_file_at_same_path_clears_missing_flag() {
     let path_str = file.to_string_lossy().to_string();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown', \
-         rating = 4, play_count = 7 WHERE path = ?1",
+         rating = 4, play_count = 7, mount_point = NULL WHERE path = ?1",
         [&path_str],
     )
     .unwrap();
@@ -539,6 +566,14 @@ fn restored_file_at_same_path_clears_missing_flag() {
     assert_eq!(rating, 4, "rating must survive a restore");
     assert_eq!(play_count, 7, "play_count must survive a restore");
 
+    let mount_point = mount_point_of(&conn, &file)
+        .expect("the fast-path restore branch must (re)populate mount_point");
+    let mount_path = std::path::PathBuf::from(&mount_point);
+    assert!(
+        file.starts_with(&mount_path),
+        "{mount_path:?} must be a prefix of {file:?}"
+    );
+
     let errs: i64 = conn
         .query_row(
             "SELECT count(*) FROM import_errors WHERE path = ?1",
@@ -564,6 +599,82 @@ fn tx_insert_import_error(conn: &Connection, path: &str) {
         [path],
     )
     .unwrap();
+}
+
+/// Task 1.6: every row a scan newly inserts must come out with a non-NULL
+/// `mount_point` that satisfies `mounts::mount_point_of`'s own invariant —
+/// asserted structurally (prefix + device-boundary), not against a
+/// hardcoded path, so this passes on any machine's filesystem layout. The
+/// mount point can only ever be recorded while the file is reachable (see
+/// `scanner_mount.rs`'s module doc comment for why it can't be derived
+/// later, once a drive is gone); this test pins that the insert/upsert arm
+/// actually does that recording rather than leaving the column NULL.
+#[test]
+fn newly_scanned_track_gets_mount_point_satisfying_invariant() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = fixture_copy(tmp.path(), "track.flac");
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(r1.added, 1);
+
+    let mount_point =
+        mount_point_of(&conn, &file).expect("newly scanned row must have mount_point recorded");
+    let mount_path = std::path::PathBuf::from(&mount_point);
+
+    assert!(
+        file.starts_with(&mount_path),
+        "{mount_path:?} must be a prefix of {file:?}"
+    );
+    assert_eq!(dev_of(&mount_path), dev_of(&file));
+}
+
+/// Task 1.6 / Beschluss 3: a track moved from one location to another must
+/// have its `mount_point` refreshed to the NEW location on the rescan that
+/// detects the move, not left holding the value recorded at the old path.
+/// The row's `mount_point` is deliberately poisoned with a value
+/// `mount_point_of` could never produce for either location before the
+/// move-rescan runs: if the move arm forgot to recompute it, this stale
+/// sentinel would still be sitting there and the test would catch it, even
+/// though old and new path happen to share the same real mount point on a
+/// single-filesystem test machine.
+#[test]
+fn move_detection_refreshes_mount_point_to_new_location() {
+    let tmp = tempfile::tempdir().unwrap();
+    let old_path = fixture_copy(tmp.path(), "track.flac");
+    tag_file(&old_path, "Moved Song", "Some Artist", "Some Album");
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(r1.added, 1);
+
+    conn.execute(
+        "UPDATE tracks SET mount_point = '/definitely-not-a-real-mount' WHERE path = ?1",
+        [old_path.to_string_lossy().to_string()],
+    )
+    .unwrap();
+
+    let new_dir = tmp.path().join("new_subdir");
+    std::fs::create_dir(&new_dir).unwrap();
+    let new_path = new_dir.join("track.flac");
+    std::fs::rename(&old_path, &new_path).unwrap();
+
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(r2.moved, 1);
+
+    let mount_point = mount_point_of(&conn, &new_path)
+        .expect("moved row must have mount_point recorded after the move rescan");
+    assert_ne!(
+        mount_point, "/definitely-not-a-real-mount",
+        "move arm must refresh mount_point, not leave the stale value from the old location"
+    );
+
+    let expected = crate::library::mounts::mount_point_of(&new_path)
+        .map(|p| p.to_string_lossy().into_owned())
+        .expect("mount_point_of must resolve for a path that exists");
+    assert_eq!(mount_point, expected);
 }
 
 /// walkdir traversal errors (e.g. a permission-denied subdirectory) must be
