@@ -1,5 +1,6 @@
 pub mod artist_detail;
 pub mod audio_effect_settings;
+pub(crate) mod import_errors;
 pub mod lastfm_stats;
 pub mod listenbrainz;
 pub mod m3u;
