@@ -43,6 +43,19 @@ fn visible_position_for_track_in_source(
         .and_then(|position| u32::try_from(position).ok())
 }
 
+/// Consumes the one-shot "don't scroll on the next follow" marker
+/// `activate_track` arms when the user starts playback from the table
+/// itself (double-click/Enter/queue activation): the activated row is
+/// already on screen under the pointer, so centering it would visibly
+/// yank the viewport. Returns `true` (suppress centering) only when the
+/// armed id matches the track the follow is about to select. Always
+/// `take`s — a stale id from an activation that never reached playback
+/// (unplayable file, empty queue) is discarded on the next change instead
+/// of suppressing some later, unrelated auto-advance scroll.
+fn take_scroll_suppression(suppressed: &std::cell::Cell<Option<i64>>, track_id: i64) -> bool {
+    suppressed.take() == Some(track_id)
+}
+
 /// Adjustment value that vertically centers row `position` in the viewport.
 /// Assumes uniform row heights (true for the track table), so a row's offset
 /// is derived from the adjustment's total content height. Returns `None`
@@ -253,6 +266,10 @@ impl TrackList {
         queue_position: Option<usize>,
         playback_started: bool,
     ) {
+        // Consumed unconditionally, before any early return, so the one-shot
+        // marker never outlives the track change it was armed for.
+        let suppress_scroll =
+            take_scroll_suppression(&self.shared.suppress_follow_scroll, track_id);
         let ids = self.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
@@ -289,10 +306,24 @@ impl TrackList {
         // it with the selection (auto-follow, kept by design).
         self.shared.model.invalidate_window_at(position);
         self.shared.selection.select_item(position, true);
+        // A table-originated activation (double-click/Enter — see
+        // `take_scroll_suppression` above) selects without centering: the
+        // clicked row is already visible, and yanking the viewport to
+        // mid-center it read as a glitch. Every other origin (auto-advance,
+        // transport skips, player-bar title click, session restore) still
+        // centers below.
+        if suppress_scroll {
+            tracing::info!(
+                track_id,
+                position,
+                "table selection followed current track (centering skipped: table activation)"
+            );
+            return;
+        }
         // Centering happens DIRECTLY through the vadjustment and — when the
-        // list already has usable geometry (the live path: a double-clicked
-        // or auto-advanced row) — SYNCHRONOUSLY, in the same main-loop
-        // iteration as the invalidate/select above. Both halves matter:
+        // list already has usable geometry (the live path: an auto-advanced
+        // row) — SYNCHRONOUSLY, in the same main-loop iteration as the
+        // invalidate/select above. Both halves matter:
         //
         // - Direct adjustment write: `scroll_to` only edge-snaps, so an
         //   earlier two-phase version (snap, then center) read as two jumps.
@@ -376,6 +407,26 @@ impl TrackList {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn table_activation_suppresses_centering_for_the_activated_track_once() {
+        let armed = std::cell::Cell::new(Some(7));
+        // The follow for the activated track consumes the marker: no scroll.
+        assert!(take_scroll_suppression(&armed, 7));
+        // The next change (auto-advance) centers again — the marker is gone.
+        assert!(!take_scroll_suppression(&armed, 7));
+    }
+
+    #[test]
+    fn stale_suppression_from_a_dead_activation_never_hits_a_later_track() {
+        let armed = std::cell::Cell::new(Some(7));
+        // A different track change (the activation never reached playback,
+        // e.g. unplayable file → auto-skip elsewhere) still centers …
+        assert!(!take_scroll_suppression(&armed, 9));
+        // … and clears the stale marker, so the armed track centers later too.
+        assert_eq!(armed.get(), None);
+        assert!(!take_scroll_suppression(&armed, 7));
+    }
 
     #[test]
     fn centered_scroll_value_centers_a_mid_list_row() {
