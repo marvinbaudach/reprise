@@ -165,6 +165,11 @@ fn pass2_rescues_broken_tags_and_keeps_the_hint_row() {
     let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(report.added, 1, "the untagged import still counts as added");
     assert_eq!(report.errors, 0, "a rescued import is not a scan error");
+    assert_eq!(
+        report.healed, 0,
+        "Task 1.9: a pass-2 hint row is refreshed via record_error, never \
+         cleared via clear_error, so it must never count as healed"
+    );
 
     let (title, album, duration_ms, untagged) =
         track_row(&conn, &path).expect("pass 2 must still insert a track row");
@@ -240,7 +245,7 @@ fn real_tags_on_a_later_scan_heal_the_hint_and_clear_untagged() {
     .unwrap();
     heal_tags(&path, "Repariert");
 
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     let (title, _, _, untagged_after) = track_row(&conn, &path).unwrap();
     assert_eq!(
         title, "Repariert",
@@ -250,5 +255,11 @@ fn real_tags_on_a_later_scan_heal_the_hint_and_clear_untagged() {
     assert!(
         error_kind(&conn, &path).is_none(),
         "a real pass-1 success must clear the hint row, not just refresh it"
+    );
+    assert_eq!(
+        report.healed, 1,
+        "Task 1.9: a pass-1 success clearing a HINT row (not just an \
+         ordinary failure row) must still count as healed — clear_error \
+         doesn't distinguish, and neither should this counter"
     );
 }

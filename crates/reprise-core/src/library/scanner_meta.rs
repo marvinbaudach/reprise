@@ -55,8 +55,16 @@ use crate::library::import_errors::{self, ImportErrorKind};
 /// left at its `Default` (empty string / `None`) when the corresponding
 /// source data wasn't available — [`read_meta`] because a tag simply had no
 /// value for it, [`read_meta_relaxed`] because it never reads tags at all.
+///
+/// Task 1.9: the struct itself (not its fields, which stay `pub(super)` —
+/// this crate's other scanner-internal helpers still only ever read/write
+/// them from within `scanner`'s own subtree) is `pub(crate)`, not `pub
+/// (super)`, purely so it can appear in `scanner_move::apply_file_identity`'s
+/// signature without tripping the `private_interfaces` lint: that function
+/// is `pub(crate)` ahead of Task 5.1 ("Locate…"), which will call it from
+/// outside `scanner` — see `apply_file_identity`'s own doc comment.
 #[derive(Debug, Default)]
-pub(super) struct TrackMeta {
+pub(crate) struct TrackMeta {
     pub(super) title: String,
     pub(super) artist: String,
     pub(super) album: String,

@@ -34,8 +34,11 @@ pub(super) fn completed(outcome: ScanOutcome) -> ScanReport {
 
 /// Writes identical title/artist/album tags to a fixture file so two
 /// separate copies produce the same fingerprint (title+artist+album+
-/// duration+file_size) that move detection's step 2 matches on.
-fn tag_file(path: &std::path::Path, title: &str, artist: &str, album: &str) {
+/// duration+file_size) that move detection's step 2 matches on. `pub(super)`
+/// (like `fixture_copy`/`completed`/`row_by_path` above) so `scanner_
+/// tombstone_tests.rs` can reuse it for its own move-arm test rather than
+/// duplicating this helper.
+pub(super) fn tag_file(path: &std::path::Path, title: &str, artist: &str, album: &str) {
     let mut tag = Tag::new(TagType::VorbisComments);
     tag.set_title(title.into());
     tag.set_artist(artist.into());
@@ -54,7 +57,8 @@ pub(super) fn row_by_path(conn: &Connection, path: &std::path::Path) -> (i64, i6
     .unwrap()
 }
 
-fn row_count(conn: &Connection) -> i64 {
+/// `pub(super)`, same reuse reasoning as `tag_file` above.
+pub(super) fn row_count(conn: &Connection) -> i64 {
     conn.query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
         .unwrap()
 }
@@ -676,6 +680,11 @@ fn move_detection_refreshes_mount_point_to_new_location() {
         .expect("mount_point_of must resolve for a path that exists");
     assert_eq!(mount_point, expected);
 }
+
+// Task 1.9: the tombstone-resurrect + `healed`-counter test suite lives in
+// its own sibling file — see `scanner_tombstone_tests.rs`'s own module doc
+// comment — purely to keep this file under the project's 800-line rule,
+// same reasoning as every other `_tests.rs` split in this module.
 
 /// walkdir traversal errors (e.g. a permission-denied subdirectory) must be
 /// recorded in `import_errors` and counted, never silently dropped. This test
