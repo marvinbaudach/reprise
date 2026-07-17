@@ -1,6 +1,7 @@
 //! Grouped Missing-files view with tombstone Undo and auto-clean arming.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -420,18 +421,54 @@ fn confirm_remove(shared: &Rc<Shared>, ids: Vec<i64>) {
     });
 }
 
+/// Revalidates a potentially stale dialog selection at the UI boundary.
+/// `queries::tombstone_tracks` deliberately remains generic because FB-7
+/// also removes present tracks outside this Missing-only surface. Here the
+/// selection must still be proven `Deleted`; keeping the read and tombstone
+/// in one transaction prevents a scanner resurrection from slipping between
+/// them (a conflicting writer makes the transaction fail safely instead).
+fn tombstone_still_deleted(
+    conn: &mut Connection,
+    requested_ids: &[i64],
+    now: i64,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    if requested_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tx = conn.transaction()?;
+    let currently_deleted: HashSet<i64> =
+        queries::query_missing_rows(&tx, &MissingGroupKind::Deleted, 0, u32::MAX)?
+            .into_iter()
+            .map(|track| track.id)
+            .collect();
+    let mut seen = HashSet::new();
+    let tombstoned: Vec<i64> = requested_ids
+        .iter()
+        .copied()
+        .filter(|id| currently_deleted.contains(id) && seen.insert(*id))
+        .collect();
+    let changed = queries::tombstone_tracks(&tx, &tombstoned, now)?;
+    debug_assert_eq!(changed, tombstoned.len());
+    tx.commit()?;
+    Ok(tombstoned)
+}
+
 fn tombstone_with_undo(shared: &Rc<Shared>, ids: &[i64]) {
-    let changed = {
-        let conn = shared.conn.borrow();
-        queries::tombstone_tracks(&conn, ids, now_unix())
+    let result = {
+        let mut conn = shared.conn.borrow_mut();
+        tombstone_still_deleted(&mut conn, ids, now_unix())
     };
-    let Ok(changed) = changed else {
-        tracing::error!(error = %changed.unwrap_err(), "missing view: tombstone failed");
-        return;
+    let tombstoned = match result {
+        Ok(ids) => ids,
+        Err(error) => {
+            tracing::error!(%error, "missing view: tombstone failed");
+            return;
+        }
     };
-    if changed == 0 {
+    if tombstoned.is_empty() {
         return;
     }
+    let changed = tombstoned.len();
     notify_mutated(shared);
     let Some(overlay) = shared.toast_overlay.upgrade() else {
         purge_if_no_undo_left(shared);
@@ -446,7 +483,7 @@ fn tombstone_with_undo(shared: &Rc<Shared>, ids: &[i64]) {
     toast.set_priority(adw::ToastPriority::High);
     {
         let shared = shared.clone();
-        let ids = ids.to_owned();
+        let ids = tombstoned;
         toast.connect_button_clicked(move |_| {
             let result = {
                 let conn = shared.conn.borrow();
@@ -663,96 +700,5 @@ pub(in crate::ui) fn purge_startup_tombstones(
 }
 
 #[cfg(test)]
-mod tests {
-    use reprise_core::library::settings::{self, AutoCleanSetting};
-    use reprise_core::models::MissingReason;
-    use reprise_core::queries::MissingGroupKind;
-
-    use super::*;
-
-    #[test]
-    fn missing_group_copy_keeps_unknown_actionless_and_honest() {
-        let copy = group_copy(&MissingGroupKind::Unavailable { mount_point: None }, 3);
-        assert_eq!(copy.title, "On unavailable drive");
-        assert_eq!(copy.meta, "unknown location — 3 tracks");
-        assert_eq!(copy.note, "will be verified on next scan");
-        assert!(!copy.actionable);
-    }
-
-    // UX SET-4: enabling destructive auto-clean applies immediately but an
-    // existing overdue backlog requires the named cascade choice.
-    #[test]
-    fn set_4_auto_clean_activation_names_cascade_and_can_start_today() {
-        let mut conn = reprise_core::db::open_migrated(None).unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id,path,title,artist,added_at,missing_since,missing_reason) \
-             VALUES (1,'/gone.flac','Gone','',0,1,'deleted')",
-            [],
-        )
-        .unwrap();
-        let now = 40 * 86_400;
-
-        let plan = activate_auto_clean(&conn, AutoCleanSetting::Days(30), now).unwrap();
-        assert_eq!(
-            plan,
-            AutoCleanActivation::ConfirmBacklog {
-                days: 30,
-                eligible: 1
-            }
-        );
-        assert_eq!(
-            settings::get_missing_auto_clean(&conn),
-            AutoCleanSetting::Days(30),
-            "the setting itself takes effect immediately"
-        );
-        let body = auto_clean_confirmation_body(1, 30);
-        assert!(body.contains("ratings and listening history go with them"));
-
-        start_auto_clean_counting_today(&conn, now).unwrap();
-        assert_eq!(settings::get_auto_clean_armed_at(&conn).unwrap(), Some(now));
-
-        assert_eq!(
-            remove_auto_clean_backlog_now(&mut conn, now).unwrap(),
-            vec![1]
-        );
-        assert_eq!(settings::get_auto_clean_armed_at(&conn).unwrap(), Some(now));
-    }
-
-    #[test]
-    fn deleted_card_is_the_only_actionable_missing_group() {
-        let deleted = group_copy(&MissingGroupKind::Deleted, 2);
-        assert!(deleted.actionable);
-        assert!(remove_confirmation_body(2).contains("ratings and listening history go with them"));
-        let unavailable = group_copy(
-            &MissingGroupKind::Unavailable {
-                mount_point: Some("/media/NAS".into()),
-            },
-            2,
-        );
-        assert!(!unavailable.actionable);
-    }
-
-    #[test]
-    fn missing_since_copy_uses_a_short_calendar_date() {
-        assert_eq!(missing_since_label(1_752_278_400), "since Jul 12");
-        assert_eq!(MissingReason::Deleted.as_str(), "deleted");
-    }
-
-    #[test]
-    fn startup_purge_commits_a_tombstone_left_by_a_closed_window() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id,path,title,artist,added_at,removed_at) \
-             VALUES (1,'/removed.flac','Removed','',0,100)",
-            [],
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        assert_eq!(purge_startup_tombstones(&conn).unwrap(), vec![1]);
-        let count: i64 = conn
-            .borrow()
-            .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(count, 0);
-    }
-}
+#[path = "missing_view_tests.rs"]
+mod tests;
