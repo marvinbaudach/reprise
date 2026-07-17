@@ -39,7 +39,7 @@ ureq = "3"
 # Last.fm signs authenticated desktop/scrobble requests with MD5 as required
 # by its public API contract. `url` builds the browser authorization URI with
 # correct form encoding. Both remain platform-neutral and GUI-free.
-md-5 = "0.10"
+md-5 = "0.11"
 url = "2"
 # Streaming, pure-Rust reader for the user-triggered, read-only Rhythmbox
 # `rhythmdb.xml` statistics import.
