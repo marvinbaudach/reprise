@@ -328,6 +328,7 @@ pub fn build(
         move || scan_controls.request_cancel()
     });
     sidebar.append_scan_card(scan_progress.widget());
+    sidebar.append_relink_card(track_list.missing_relink_progress_widget());
     let toolbar_view = adw::ToolbarView::new();
     // No add_top_bar for scan progress — it lives in the sidebar now.
     let track_content = track_content::build(track_list.widget(), status_bar.widget());

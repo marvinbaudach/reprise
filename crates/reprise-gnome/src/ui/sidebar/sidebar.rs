@@ -189,7 +189,7 @@ pub(in crate::ui) struct Shared {
 pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
-    activity_slot: SidebarActivitySlot,
+    pub(super) activity_slot: SidebarActivitySlot,
 }
 
 impl Sidebar {
@@ -380,12 +380,6 @@ impl Sidebar {
 
     pub(in crate::ui) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
         crate::ui::sidebar_session::restore_source(&self.shared, requested)
-    }
-
-    /// Places the scan-progress card in the shared bottom activity slot.
-    /// Called once at window build time (after sidebar and scan controls exist).
-    pub fn append_scan_card(&self, widget: &impl IsA<gtk4::Widget>) {
-        self.activity_slot.set_scan_card(widget);
     }
 
     /// Shows connected devices below the navigation rows and routes card

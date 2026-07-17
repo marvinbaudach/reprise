@@ -2,17 +2,21 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::library::relink::RelinkTarget;
 use reprise_core::library::settings::{self, AutoCleanSetting};
 use reprise_core::models::Track;
 use reprise_core::queries::{self, MissingGroup, MissingGroupKind};
 use rusqlite::Connection;
 
+use super::missing_dialogs::LocateContext;
+use super::missing_progress::RelinkProgressView;
 use super::{CollapsedList, IssueCard, IssuePill, IssueRow, RowSpec};
 use crate::ui::strings;
 
@@ -30,6 +34,31 @@ struct GroupCopy {
     meta: String,
     note: String,
     actionable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LocateActions {
+    row: bool,
+    folder: bool,
+}
+
+fn locate_actions(kind: &MissingGroupKind) -> LocateActions {
+    match kind {
+        MissingGroupKind::Deleted => LocateActions {
+            row: true,
+            folder: true,
+        },
+        MissingGroupKind::Unavailable { mount_point: None } => LocateActions {
+            row: true,
+            folder: false,
+        },
+        MissingGroupKind::Unavailable {
+            mount_point: Some(_),
+        } => LocateActions {
+            row: false,
+            folder: false,
+        },
+    }
 }
 
 fn group_copy(kind: &MissingGroupKind, count: u32) -> GroupCopy {
@@ -133,7 +162,7 @@ fn missing_since_label(timestamp: i64) -> String {
 
 type OnPurged = Rc<dyn Fn(&[i64])>;
 
-struct Shared {
+pub(super) struct Shared {
     conn: Rc<RefCell<Connection>>,
     groups: gtk4::Box,
     auto_clean_button: gtk4::MenuButton,
@@ -142,6 +171,8 @@ struct Shared {
     on_mutated: RefCell<Option<Rc<dyn Fn()>>>,
     on_purged: RefCell<Option<OnPurged>>,
     pending_undo_toasts: Cell<u32>,
+    db_path: RefCell<Option<PathBuf>>,
+    relink_progress: RelinkProgressView,
 }
 
 pub(in crate::ui) struct MissingFilesView {
@@ -181,6 +212,8 @@ impl MissingFilesView {
             on_mutated: RefCell::new(None),
             on_purged: RefCell::new(None),
             pending_undo_toasts: Cell::new(0),
+            db_path: RefCell::new(None),
+            relink_progress: RelinkProgressView::new(),
         });
         install_auto_clean_menu(&shared);
         Self { shared, root }
@@ -213,6 +246,18 @@ impl MissingFilesView {
     pub(in crate::ui) fn remove_with_undo(&self, ids: &[i64]) {
         tombstone_with_undo(&self.shared, ids);
     }
+
+    pub(in crate::ui) fn set_db_path(&self, db_path: PathBuf) {
+        self.shared.db_path.borrow_mut().replace(db_path);
+    }
+
+    pub(in crate::ui) fn relink_progress_widget(&self) -> &gtk4::Revealer {
+        self.shared.relink_progress.widget()
+    }
+
+    pub(in crate::ui) fn set_on_relink_progress_activate(&self, callback: impl Fn() + 'static) {
+        self.shared.relink_progress.set_on_activate(callback);
+    }
 }
 
 fn refresh(shared: &Rc<Shared>) -> usize {
@@ -243,6 +288,7 @@ fn refresh(shared: &Rc<Shared>) -> usize {
 
 fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
     let copy = group_copy(&group.kind, group.track_count);
+    let locate = locate_actions(&group.kind);
     let action = if copy.actionable {
         let button =
             gtk4::Button::with_label(&strings::missing_remove_all(group.track_count as usize));
@@ -263,6 +309,9 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
         Some(note.upcast::<gtk4::Widget>())
     };
     let card = IssueCard::new(&copy.icon, &copy.title, &copy.meta, action);
+    if locate.folder {
+        super::missing_menus::install_card_context_menu(shared, card.header_widget());
+    }
     let kind = group.kind.clone();
     let row_shared = shared.clone();
     let listbox = card.body_listbox().clone();
@@ -284,6 +333,7 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
                         &listbox,
                         track,
                         matches!(kind, MissingGroupKind::Deleted),
+                        locate_actions(&kind).row,
                     )
                 },
             )
@@ -296,20 +346,32 @@ fn build_track_row(
     shared: &Rc<Shared>,
     listbox: &gtk4::ListBox,
     track: Track,
-    actionable: bool,
+    removable: bool,
+    locatable: bool,
 ) -> gtk4::Widget {
     let id = track.id;
-    let pills = if actionable {
+    let target = RelinkTarget {
+        track_id: id,
+        old_path: PathBuf::from(&track.path),
+    };
+    let mut pills = Vec::new();
+    if removable {
         let shared = shared.clone();
-        vec![
+        pills.push(
             IssuePill::new(strings::issue_text(strings::MISSING_REMOVE), move || {
                 confirm_remove(&shared, vec![id]);
             })
             .with_css_class("issue-remove-pill"),
-        ]
-    } else {
-        Vec::new()
-    };
+        );
+    }
+    if locatable {
+        let shared = shared.clone();
+        let target = target.clone();
+        pills.push(IssuePill::new(
+            strings::issue_text(strings::MISSING_LOCATE),
+            move || super::missing_dialogs::locate_file(locate_context(&shared), target.clone()),
+        ));
+    }
     let title = if track.title.trim().is_empty() {
         std::path::Path::new(&track.path).file_name().map_or_else(
             || track.path.clone(),
@@ -328,49 +390,52 @@ fn build_track_row(
     });
     row.widget()
         .set_widget_name(&format!("{TRACK_ROW_PREFIX}{id}"));
-    if !actionable {
+    if !removable {
         row.widget().set_opacity(0.65);
-    } else {
-        install_row_context_menu(shared, listbox, row.widget());
+    }
+    if removable || locatable {
+        super::missing_menus::install_row_context_menu(
+            shared,
+            listbox,
+            row.widget(),
+            target,
+            removable,
+            locatable,
+        );
     }
     row.widget().clone().upcast()
 }
 
-fn install_row_context_menu(shared: &Rc<Shared>, listbox: &gtk4::ListBox, row: &gtk4::ListBoxRow) {
-    let gesture = gtk4::GestureClick::new();
-    gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
-    let shared = shared.clone();
-    let listbox = listbox.clone();
-    let row_for_menu = row.clone();
-    gesture.connect_pressed(move |gesture, _, x, y| {
-        gesture.set_state(gtk4::EventSequenceState::Claimed);
-        if !row_for_menu.is_selected() {
-            listbox.unselect_all();
-            listbox.select_row(Some(&row_for_menu));
-        }
-        let action_group = gio::SimpleActionGroup::new();
-        let action = gio::SimpleAction::new("remove", None);
-        let shared = shared.clone();
-        let listbox = listbox.clone();
-        action.connect_activate(move |_, _| confirm_remove(&shared, selected_ids(&listbox)));
-        action_group.add_action(&action);
-        row_for_menu.insert_action_group("missingrow", Some(&action_group));
-        let menu = gio::Menu::new();
-        menu.append(
-            Some(&strings::issue_text(strings::MISSING_REMOVE)),
-            Some("missingrow.remove"),
-        );
-        let popover = gtk4::PopoverMenu::from_model(Some(&menu));
-        popover.set_parent(&row_for_menu);
-        popover.set_has_arrow(false);
-        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-        crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
-        popover.popup();
-    });
-    row.add_controller(gesture);
+pub(super) fn collect_group_targets(shared: &Shared, kind: &MissingGroupKind) -> Vec<RelinkTarget> {
+    let conn = shared.conn.borrow();
+    queries::query_missing_rows(&conn, kind, 0, u32::MAX).map_or_else(
+        |error| {
+            tracing::error!(%error, "missing view: failed to load relink targets");
+            Vec::new()
+        },
+        |rows| {
+            rows.into_iter()
+                .map(|track| RelinkTarget {
+                    track_id: track.id,
+                    old_path: track.path.into(),
+                })
+                .collect()
+        },
+    )
 }
 
-fn selected_ids(listbox: &gtk4::ListBox) -> Vec<i64> {
+pub(super) fn locate_context(shared: &Shared) -> LocateContext {
+    LocateContext {
+        conn: shared.conn.clone(),
+        db_path: shared.db_path.borrow().clone(),
+        window: shared.window.clone(),
+        toast_overlay: shared.toast_overlay.clone(),
+        progress: shared.relink_progress.clone(),
+        on_relinked: shared.on_mutated.borrow().clone(),
+    }
+}
+
+pub(super) fn selected_ids(listbox: &gtk4::ListBox) -> Vec<i64> {
     listbox
         .selected_rows()
         .into_iter()
@@ -394,7 +459,7 @@ fn collect_group_ids(shared: &Shared, kind: &MissingGroupKind) -> Vec<i64> {
     )
 }
 
-fn confirm_remove(shared: &Rc<Shared>, ids: Vec<i64>) {
+pub(super) fn confirm_remove(shared: &Rc<Shared>, ids: Vec<i64>) {
     if ids.is_empty() {
         return;
     }

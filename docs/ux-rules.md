@@ -248,11 +248,18 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   maximal einer wartet, der neueste gewinnt, kein Backlog-Rauschen. Toasts
   MIT Aktion (Undo) sind unverdrängbar und laufen ihre vollen 10 s;
   Ereignis-Toasts warten solange.
-- **FB-2** [geplant] [gtk] — Fortschrittskarte (Sidebar-Bottom-Slot,
-  stapelbar Scan über Sync): Spinner + Titel + % rechts (tabular) +
-  3-px-Balken + ellipsierte Detailzeile. Für alles > ~1 s: Scan, Sync,
-  Relink-Suchlauf, Playlist-Import. Klick auf Karte → zugehörige Ansicht;
-  Cancel auf Karte bricht ab.
+- **FB-2** [ersetzt durch FB-2a/FB-2b] — Ursprüngliche gemeinsame
+  Fortschrittskarten-Regel; beim Relink-Ausbau in den voll gelieferten
+  Relink-Vertrag (2a) und die noch nicht einheitlich gelieferte Karte der
+  übrigen Langläufer (2b) gesplittet.
+- **FB-2a** [aktiv] [gtk] — Der Relink-Suchlauf läuft off-thread in der
+  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte im Sidebar-
+  Bottom-Slot: Spinner + Titel + % rechts (tabular) + 3-px-Balken +
+  ellipsierte Detailzeile. Klick auf die Karte → Missing files; der sichtbare
+  Cancel-Button prüft den Abbruch vor jeder Audiodatei.
+- **FB-2b** [geplant] [gtk] — Scan, Sync und Playlist-Import verwenden für
+  jeden Lauf > ~1 s denselben vollständigen Kartenvertrag aus FB-2a,
+  einschließlich sichtbarem Cancel und Navigation zur zugehörigen Ansicht.
 - **FB-3** [aktiv] [core] — Fehler: Einzelfehler im Lauf werden gesammelt,
   nie einzeln getoastet. Am Ende EIN Toast mit „N failed · Details" →
   Details öffnet die zuständige View/Dialog. Persistente Probleme leben als

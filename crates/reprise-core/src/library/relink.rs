@@ -32,6 +32,11 @@ pub fn probe_relink(
     target: &RelinkTarget,
     new_path: &Path,
 ) -> Result<Option<RelinkMismatch>, ScanError> {
+    if target.old_path.exists() {
+        return Err(ScanError::RelinkTargetChanged {
+            track_id: target.track_id,
+        });
+    }
     let (old_duration_ms, old_title): (i64, String) = conn
         .query_row(
             &format!(
@@ -66,6 +71,11 @@ pub fn relink_track(
     target: &RelinkTarget,
     new_path: &Path,
 ) -> Result<(), ScanError> {
+    if target.old_path.exists() {
+        return Err(ScanError::RelinkTargetChanged {
+            track_id: target.track_id,
+        });
+    }
     let meta = super::scanner::track_meta::read_meta(new_path)?;
     let title = if meta.title.is_empty() {
         new_path
@@ -141,7 +151,12 @@ pub fn relink_from_folder(
         });
     }
 
-    let total = u32::try_from(super::scanner::count_audio_files(folder)).unwrap_or(u32::MAX);
+    let Some(total) = count_folder_audio_files(folder, cancel)? else {
+        return Ok(FolderRelinkReport {
+            relinked: 0,
+            group_size,
+        });
+    };
     let mut processed = 0_u32;
     let mut relinked = 0_u32;
     for entry in walkdir::WalkDir::new(folder)
@@ -197,17 +212,18 @@ pub fn relink_from_folder(
             let expected_path = expected_paths
                 .get(&candidate.id)
                 .expect("move candidates are restricted to remaining target ids");
-            let still_missing = tx
-                .query_row(
-                    &format!(
-                        "SELECT 1 FROM tracks WHERE id = ?1 AND path = ?2 AND {}",
-                        crate::queries::MISSING
-                    ),
-                    rusqlite::params![candidate.id, expected_path.to_string_lossy()],
-                    |_| Ok(()),
-                )
-                .optional()?
-                .is_some();
+            let still_missing = !expected_path.exists()
+                && tx
+                    .query_row(
+                        &format!(
+                            "SELECT 1 FROM tracks WHERE id = ?1 AND path = ?2 AND {}",
+                            crate::queries::MISSING
+                        ),
+                        rusqlite::params![candidate.id, expected_path.to_string_lossy()],
+                        |_| Ok(()),
+                    )
+                    .optional()?
+                    .is_some();
             if still_missing {
                 super::scanner::move_detect::apply_file_identity(
                     &tx,
@@ -239,6 +255,20 @@ pub fn relink_from_folder(
         relinked,
         group_size,
     })
+}
+
+fn count_folder_audio_files(folder: &Path, cancel: &AtomicBool) -> Result<Option<u32>, ScanError> {
+    let mut total = 0_u32;
+    for entry in walkdir::WalkDir::new(folder).follow_links(false) {
+        if cancel.load(Ordering::Acquire) {
+            return Ok(None);
+        }
+        let entry = entry.map_err(|error| std::io::Error::other(error.to_string()))?;
+        if entry.file_type().is_file() && super::scanner::is_audio_file(entry.path()) {
+            total = total.saturating_add(1);
+        }
+    }
+    Ok(Some(total))
 }
 
 #[cfg(test)]
@@ -491,6 +521,24 @@ mod tests {
             relink_track(&mut conn, &target, &new_path),
             Err(ScanError::RelinkTargetChanged { track_id: changed }) if changed == track_id
         ));
+    }
+
+    #[test]
+    fn stale_relink_does_not_replace_an_old_path_that_returned_during_the_dialog() {
+        let (_temp, mut conn, track_id, new_path) = imported_missing_track("Returned track");
+        let target = target_for(&conn, track_id);
+        std::fs::copy(&new_path, &target.old_path).unwrap();
+
+        assert!(matches!(
+            relink_track(&mut conn, &target, &new_path),
+            Err(ScanError::RelinkTargetChanged { track_id: changed }) if changed == track_id
+        ));
+        let path: String = conn
+            .query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(path, target.old_path.to_string_lossy());
     }
 
     #[test]

@@ -67,6 +67,33 @@ fn deleted_card_is_the_only_actionable_missing_group() {
 }
 
 #[test]
+fn locate_actions_cover_deleted_and_unknown_but_never_unmounted_tracks() {
+    assert_eq!(
+        locate_actions(&MissingGroupKind::Deleted),
+        LocateActions {
+            row: true,
+            folder: true,
+        }
+    );
+    assert_eq!(
+        locate_actions(&MissingGroupKind::Unavailable { mount_point: None }),
+        LocateActions {
+            row: true,
+            folder: false,
+        }
+    );
+    assert_eq!(
+        locate_actions(&MissingGroupKind::Unavailable {
+            mount_point: Some("/media/NAS".into()),
+        }),
+        LocateActions {
+            row: false,
+            folder: false,
+        }
+    );
+}
+
+#[test]
 fn missing_since_copy_uses_a_short_calendar_date() {
     assert_eq!(missing_since_label(1_752_278_400), "since Jul 12");
     assert_eq!(MissingReason::Deleted.as_str(), "deleted");

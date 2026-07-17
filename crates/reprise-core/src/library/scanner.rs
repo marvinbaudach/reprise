@@ -118,7 +118,7 @@ pub(crate) fn is_audio_file(path: &Path) -> bool {
         .is_some_and(|extension| AUDIO_EXTENSIONS.contains(&extension.as_str()))
 }
 
-pub(crate) fn count_audio_files(root: &Path) -> u64 {
+fn count_audio_files(root: &Path) -> u64 {
     walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()

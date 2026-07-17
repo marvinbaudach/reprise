@@ -5,6 +5,7 @@ use gtk4::prelude::*;
 /// A grouped issue surface with a fixed header and selectable row body.
 pub(in crate::ui) struct IssueCard {
     root: gtk4::Box,
+    header: gtk4::Box,
     body: gtk4::ListBox,
 }
 
@@ -53,7 +54,7 @@ impl IssueCard {
         body.add_css_class("issue-card-list");
         root.append(&body);
 
-        Self { root, body }
+        Self { root, header, body }
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
@@ -62,5 +63,9 @@ impl IssueCard {
 
     pub(in crate::ui) fn body_listbox(&self) -> &gtk4::ListBox {
         &self.body
+    }
+
+    pub(in crate::ui) fn header_widget(&self) -> &gtk4::Box {
+        &self.header
     }
 }
