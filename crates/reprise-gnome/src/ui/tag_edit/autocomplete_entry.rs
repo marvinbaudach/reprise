@@ -325,6 +325,19 @@ impl AutocompleteEntry {
                     *current_rows.borrow_mut() = rows;
                     // TAG-6: the first row is always pre-marked.
                     listbox.select_row(listbox.row_at_index(0).as_ref());
+                    // Match the dropdown to the field's width. Without this
+                    // the popover sizes to its content's natural width, and
+                    // the value labels (hexpand + ellipsize) collapse to a few
+                    // pixels — the dropdown rendered as a tiny box showing just
+                    // "…". `parent()` is the anchor row, `child()` the content.
+                    if let Some(anchor) = popover.parent() {
+                        let width = anchor.width();
+                        if width > 0 {
+                            if let Some(content) = popover.child() {
+                                content.set_size_request(width, -1);
+                            }
+                        }
+                    }
                     popover.popup();
                 } else {
                     popover.popdown();
