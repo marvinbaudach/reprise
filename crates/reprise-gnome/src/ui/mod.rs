@@ -36,6 +36,7 @@ pub mod import_errors_view;
 pub(crate) mod info_panel;
 mod library_views;
 mod lyrics;
+pub(crate) mod motion;
 pub mod mpris_mirror;
 pub(crate) mod nav_history;
 mod notifications;
