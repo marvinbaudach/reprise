@@ -48,6 +48,23 @@ use crate::ui::track_list_context_menu::current_selection_positions;
 pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
 const SMOKE_TAG_EDIT_ENV_VAR: &str = "REPRISE_SMOKE_TAG_EDIT";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SmokeTagEditMode {
+    SaveTitle(String),
+    Open(usize),
+}
+
+fn parse_smoke_tag_edit_mode(value: &str) -> Option<SmokeTagEditMode> {
+    if let Some(title) = value.strip_prefix("title:") {
+        return Some(SmokeTagEditMode::SaveTitle(title.to_string()));
+    }
+    value
+        .strip_prefix("open:")
+        .and_then(|count| count.parse::<usize>().ok())
+        .filter(|count| *count > 0)
+        .map(SmokeTagEditMode::Open)
+}
+
 /// FB-1: a failure toast carries an action ("Details") and is therefore
 /// unverdrängbar for its full run, unlike the plain 4 s success toast
 /// `toasts::show` covers.
@@ -463,8 +480,11 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
     let Ok(value) = std::env::var(SMOKE_TAG_EDIT_ENV_VAR) else {
         return;
     };
-    let Some(title) = value.strip_prefix("title:").map(str::to_string) else {
-        tracing::warn!(%value, "{SMOKE_TAG_EDIT_ENV_VAR} ignored; expected title:<value>");
+    let Some(mode) = parse_smoke_tag_edit_mode(&value) else {
+        tracing::warn!(
+            %value,
+            "{SMOKE_TAG_EDIT_ENV_VAR} ignored; expected title:<value> or open:<positive count>"
+        );
         return;
     };
     let shared_weak = Rc::downgrade(shared);
@@ -472,13 +492,22 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
         let Some(shared) = shared_weak.upgrade() else {
             return;
         };
-        let count = shared.model.n_items().min(2);
+        let requested_count = match &mode {
+            SmokeTagEditMode::SaveTitle(_) => 2,
+            SmokeTagEditMode::Open(count) => *count,
+        };
+        let requested_count = u32::try_from(requested_count).unwrap_or(u32::MAX);
+        let count = shared.model.n_items().min(requested_count);
         if count == 0 {
             tracing::warn!("tag-edit smoke: list is empty");
             return;
         }
         shared.selection.select_range(0, count, true);
-        let Some((tracks, _bitrates)) = tracks_and_bitrates_from_selection(&shared) else {
+        let Some((tracks, bitrates)) = tracks_and_bitrates_from_selection(&shared) else {
+            return;
+        };
+        let SmokeTagEditMode::SaveTitle(title) = mode else {
+            open_editor(&shared, tracks, &bitrates);
             return;
         };
         let writes: Vec<TrackWrite> = tracks
@@ -515,6 +544,20 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn smoke_tag_edit_mode_parses_open_count_and_preserves_title_save() {
+        assert_eq!(
+            parse_smoke_tag_edit_mode("open:2"),
+            Some(SmokeTagEditMode::Open(2))
+        );
+        assert_eq!(parse_smoke_tag_edit_mode("open:0"), None);
+        assert_eq!(parse_smoke_tag_edit_mode("open:many"), None);
+        assert_eq!(
+            parse_smoke_tag_edit_mode("title:Acceptance title"),
+            Some(SmokeTagEditMode::SaveTitle("Acceptance title".into()))
+        );
+    }
 
     /// TAG-1 (G2): `select_written_tracks` composes entirely from
     /// `reload_restore::positions_for_ids` (already `#[test]`-covered at
