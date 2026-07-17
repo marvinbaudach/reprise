@@ -365,7 +365,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   wirkt dort bereits (Grid-Filterung); dieselbe Chip-Zeile inkl. Zählung und
   „Clear all" folgt dort nach dem Muster von FIL-1a/FIL-2. Bis dahin ist die
   Lücke hier benannt statt still gebrochen.
-- **FIL-2** [geplant] [gtk] — Zählung ist Zustand: Die Filter-Zeile ist
+- **FIL-2** [aktiv] [gtk] — Zählung ist Zustand: Die Filter-Zeile ist
   permanenter Listen-Header jeder Track-Quelle — sie erscheint und
   verschwindet nie (kein Layout-Shift by design, P-4). Idle maximal leise:
   nur die neutrale Gesamtzahl rechts (dim, caption), in der Library
