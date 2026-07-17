@@ -41,6 +41,11 @@ use crate::ui::strings;
 use crate::ui::track_list_dnd;
 use reprise_core::library::playlist_membership;
 
+/// Callback for a drag-and-drop drop onto the Queue nav row — see
+/// `Shared::on_queue_drop`'s doc comment. Lives beside its drop handler
+/// (relocated from `sidebar.rs`, orchestrator size rule).
+pub(in crate::ui) type OnQueueDrop = std::rc::Rc<dyn Fn(&[i64]) -> bool>;
+
 fn drop_added_rows(inserted: u32) -> bool {
     inserted > 0
 }
