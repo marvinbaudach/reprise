@@ -32,6 +32,7 @@ use reprise_core::library::tag_edit::{
     apply_track_writes, EditableTags, TagBatchReport, TagWriteFailure, TrackWrite,
 };
 use reprise_core::library::tag_edit_session::SessionTrack;
+use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use crate::ui::one_shot_task;
@@ -40,6 +41,7 @@ use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
+use crate::ui::track_list::track_list_activation::current_queue_ids;
 use crate::ui::track_list::{reload, show_toast, Shared, TrackList};
 use crate::ui::track_list_context_menu::current_selection_positions;
 
@@ -172,6 +174,75 @@ fn begin_for_ids(shared: &Rc<Shared>, ids: &[i64]) {
     open_editor(shared, tracks, &bitrates);
 }
 
+/// G1 (TAG-4): the browse snapshot for a single-track open — the visible
+/// list's ids (`Shared::current_view_ids()`, the same source `reload()`'s
+/// TAG-1 restore uses) plus one bulk tag-data query for them, never through
+/// `TrackListModel::track_at`. That call windows/caches rows for the
+/// *visible* table itself; walking it for every snapshot track here would
+/// load or evict cache windows nobody asked to see just because a tag-edit
+/// dialog opened — exactly the kind of "the dialog touches the library"
+/// TAG-1 rules out. `tag_editor::present` decides for itself whether the
+/// result is even usable (single-track mode, more than one id, the opened
+/// track actually present in it); `None` here already covers the cheap
+/// "nothing to browse" case (0 or 1 visible tracks) without paying for the
+/// tag-data query at all.
+fn browsable_snapshot(shared: &Rc<Shared>) -> Option<tag_editor::BrowseSnapshot> {
+    let ids = shared.current_view_ids();
+    if ids.len() <= 1 {
+        return None;
+    }
+    let sort = shared.sort.borrow().clone();
+    let filter = shared.filter.borrow().clone();
+    let source = shared.source.borrow().clone();
+    let browse_filter = shared.browse_filter.borrow().clone();
+    let queue_ids = if matches!(source, ViewSource::Queue) {
+        current_queue_ids(shared)
+    } else {
+        Vec::new()
+    };
+    let total = match i64::try_from(ids.len()) {
+        Ok(total) => total,
+        Err(error) => {
+            tracing::warn!(%error, "tag editor: browse snapshot too large to query");
+            return None;
+        }
+    };
+    let rows = {
+        let mut conn = shared.conn.borrow_mut();
+        reprise_core::queries::query_track_window_browsed(
+            &mut conn,
+            &source,
+            &sort.field,
+            &sort.dir,
+            &filter,
+            &browse_filter,
+            0,
+            total,
+            &queue_ids,
+        )
+    };
+    let by_id: std::collections::HashMap<i64, reprise_core::models::Track> = match rows {
+        Ok(tracks) => tracks.into_iter().map(|track| (track.id, track)).collect(),
+        Err(error) => {
+            tracing::warn!(%error, "tag editor: failed to load the browse snapshot's tag data");
+            return None;
+        }
+    };
+    let mut tracks = Vec::with_capacity(ids.len());
+    let mut bitrates = Vec::with_capacity(ids.len());
+    for id in &ids {
+        if let Some(track) = by_id.get(id) {
+            let (session_track, bitrate) = session_track_from_model(track);
+            tracks.push(session_track);
+            bitrates.push(bitrate);
+        }
+    }
+    if tracks.len() <= 1 {
+        return None;
+    }
+    Some(tag_editor::BrowseSnapshot { tracks, bitrates })
+}
+
 fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Option<u32>]) {
     let Some(window) = shared.window.upgrade() else {
         tracing::warn!("tag editor: window is gone");
@@ -179,13 +250,14 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
     };
     let conn = shared.conn.clone();
     let shared_for_saved = shared.clone();
+    let browse = browsable_snapshot(shared);
     tag_editor::present(
         &window,
         &conn,
         tracks,
         bitrates,
+        browse,
         move |writes, report| finish_apply(&shared_for_saved, &writes, &report),
-        |_direction| false,
     );
     tracing::debug!("tag editor presented");
 }

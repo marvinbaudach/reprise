@@ -253,3 +253,19 @@ pub fn tag_cover_count(count: usize) -> String {
         &[("count", &count_text)],
     )
 }
+
+// --- TAG-4: browse-snapshot header subtitle position (Task G1) ---
+
+const TAG_TRACK_POSITION: &str = N_!("Track {position} of {total}");
+
+/// The "Track 3 of 12" prefix `tag_editor.rs` prepends to the single-track
+/// header subtitle once a browse snapshot exists — position/total come from
+/// the frozen snapshot (`snapshot_position`), never a live re-sorted view.
+pub fn tag_track_position(position: usize, total: usize) -> String {
+    let position_text = position.to_string();
+    let total_text = total.to_string();
+    formatted(
+        TAG_TRACK_POSITION,
+        &[("position", &position_text), ("total", &total_text)],
+    )
+}
