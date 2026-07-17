@@ -57,6 +57,8 @@ pub const MISSING_FOOTNOTE: &str = N_!("Remove only removes library entries — 
 pub const MISSING_TRACKS_ONE: &str = N_!("1 track");
 pub const MISSING_TRACKS: &str = N_!("{count} tracks");
 pub const MISSING_SINCE: &str = N_!("since {date}");
+pub const MISSING_ROW_UNAVAILABLE: &str = N_!("On unavailable drive — returns when mounted");
+pub const MISSING_ROW_FILE_SINCE: &str = N_!("File missing since {date}");
 
 pub fn missing_tracks(count: u32) -> String {
     let value = count.to_string();
@@ -103,6 +105,10 @@ pub fn missing_last_relinked(count: &str) -> String {
 
 pub fn missing_since(date: &str) -> String {
     formatted(MISSING_SINCE, &[("date", date)])
+}
+
+pub fn missing_row_file_since(date: &str) -> String {
+    formatted(MISSING_ROW_FILE_SINCE, &[("date", date)])
 }
 
 pub fn issue_text(message: &str) -> String {
