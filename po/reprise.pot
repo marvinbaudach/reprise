@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-17 20:38+0200\n"
+"POT-Creation-Date: 2026-07-17 20:46+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -453,7 +453,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:223
 #: crates/reprise-gnome/src/ui/strings.rs:506
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:29
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:32
 #: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:30
 msgid "Cancel"
 msgstr ""
@@ -1420,114 +1420,118 @@ msgstr ""
 msgid "Import"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:18
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:20
+msgid "Could not read the Rhythmbox library — import stays disabled"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:21
 msgid "Rhythmbox library found"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:20
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:23
 msgid ""
 "Choose what to copy into Reprise. Rhythmbox and your audio files remain "
 "unchanged — you can undo the whole operation."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:22
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:25
 msgid "Import complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:23
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:26
 msgid "Importing from Rhythmbox…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:24
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:27
 msgid "Undo import"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:25
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:28
 msgid "Files outside your library folder"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:26
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:29
 msgid "Files no longer on disk"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:27
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
 msgid "Podcasts & radio streams"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:28
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:31
 msgid "Done"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:35
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:38
 #, rust-format
 msgid "{matched} of {total} Rhythmbox entries matched your library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:42
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:45
 #, rust-format
 msgid "{count} entries skipped"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:51
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:54
 #, rust-format
 msgid "{entries} entries · last used {days} days ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:55
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:58
 #, rust-format
 msgid "{entries} entries"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:62
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:65
 #, rust-format
 msgid "{matched} match your library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:69
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:72
 #, rust-format
 msgid "{count} rated tracks found"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:74
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:77
 #, rust-format
 msgid "{count} tracks with history"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:78
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:81
 msgid "Original “added to library” timeline"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:85
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:88
 #, rust-format
 msgid "{playlists} playlists · {tracks} tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:94
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:97
 #, rust-format
 msgid "{done} of {total} tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:101
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:104
 #, rust-format
 msgid "{count} imported"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:106
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:109
 #, rust-format
 msgid "{count} raised"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:113
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:116
 #, rust-format
 msgid "{dates} · {last_played} restored"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:120
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:123
 #, rust-format
 msgid "{count} created"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:126
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:129
 #, rust-format
 msgid ""
 "{count} Rhythmbox entries point to files outside your library folder — they "
@@ -1584,116 +1588,124 @@ msgstr ""
 msgid "Connect"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:27
-msgid "Disconnect"
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:28
+msgid "Requires your ListenBrainz user token"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:29
-msgid "Could not access the system keyring. The token was not stored."
+msgid "Disconnect"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:31
-msgid "Could not validate the ListenBrainz token. Try again later."
+msgid "Could not access the system keyring. The token was not stored."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:33
-msgid "Could not remove the ListenBrainz token from the system keyring."
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:34
-msgid "Last.fm"
+msgid "Could not validate the ListenBrainz token. Try again later."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:35
-msgid "Last.fm Account"
+msgid "Could not remove the ListenBrainz token from the system keyring."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:36
+msgid "Last.fm"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:37
+msgid "Last.fm Account"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:39
 msgid ""
 "Enter credentials for a Last.fm desktop API application. They and the "
 "resulting session are stored only in the system keyring."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:39
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:41
 msgid "API key"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:40
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:42
 msgid "Shared secret"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:41
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:43
 msgid "Authorize Reprise in Your Browser"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:43
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:45
 msgid "After approving access on Last.fm, return here and continue."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:44
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:46
 msgid "Continue"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:45
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:47
 msgid "Credentials or authorization rejected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:47
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:49
 msgid ""
 "Could not access the system keyring. Last.fm credentials were not stored."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:48
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:50
 msgid "Could not connect to Last.fm. Try again later."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:50
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:52
 msgid "Could not remove Last.fm credentials from the system keyring."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:51
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:53
 msgid "Open Browser"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:52
-msgid "Sign in with Last.fm"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:53
-msgid "Sign in with your Last.fm account. No API key needed."
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:54
-msgid "Use your own API key"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:55
-msgid "Test connection"
+msgid "Requires API key and shared secret"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:56
-msgid "Test failed — try again later."
+msgid "Sign in with Last.fm"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:57
+msgid "Sign in with your Last.fm account. No API key needed."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:58
+msgid "Use your own API key"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:59
+msgid "Test connection"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:60
+msgid "Test failed — try again later."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:64
 #, rust-format
 msgid "Connected as {user_name} ✓"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:66
 #: crates/reprise-gnome/src/ui/strings_scrobbling.rs:70
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:74
 #, rust-format
 msgid "Connected as {user_name}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:79
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:83
 #, rust-format
 msgid "{n} submitted"
 msgid_plural "{n} submitted"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:89
+#: crates/reprise-gnome/src/ui/strings_scrobbling.rs:93
 #, rust-format
 msgid "{n} queued"
 msgid_plural "{n} queued"

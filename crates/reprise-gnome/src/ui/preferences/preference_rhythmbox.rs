@@ -141,6 +141,8 @@ pub(in crate::ui) fn add_rhythmbox_import_row(
 struct ImportDialogWidgets {
     dialog: adw::Dialog,
     stack: gtk4::Stack,
+    // Prescan failure banner (TIP-2b: names why import stays disabled)
+    error_banner: adw::Banner,
     // Selection state
     info_subtitle: gtk4::Label,
     match_label: gtk4::Label,
@@ -339,8 +341,12 @@ fn build_import_dialog() -> ImportDialogWidgets {
         "",
     )));
 
+    let error_banner = adw::Banner::new("");
+    error_banner.set_revealed(false);
+
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
+    toolbar.add_top_bar(&error_banner);
     toolbar.set_content(Some(&stack));
     let dialog = adw::Dialog::builder()
         .child(&toolbar)
@@ -357,6 +363,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
     ImportDialogWidgets {
         dialog,
         stack,
+        error_banner,
         info_subtitle,
         match_label,
         warning_row,
@@ -407,6 +414,7 @@ impl PreferencesContext {
         let match_label = widgets.match_label.clone();
         let warning_row = widgets.warning_row.clone();
         let import_button = widgets.import_button.clone();
+        let error_banner = widgets.error_banner.clone();
         let rows = widgets.rows.clone();
         let prescan_result: Rc<RefCell<Option<RhythmboxPrescanResult>>> =
             Rc::new(RefCell::new(None));
@@ -440,11 +448,15 @@ impl PreferencesContext {
                     Ok(Err(e)) => {
                         tracing::warn!(error = %e, "prescan failed");
                         import_button.set_sensitive(false);
+                        error_banner.set_title(&strings::text(strings::RHYTHMBOX_PRESCAN_FAILED));
+                        error_banner.set_revealed(true);
                         return;
                     }
                     Err(_) => {
                         tracing::warn!("prescan worker panicked");
                         import_button.set_sensitive(false);
+                        error_banner.set_title(&strings::text(strings::RHYTHMBOX_PRESCAN_FAILED));
+                        error_banner.set_revealed(true);
                         return;
                     }
                 };

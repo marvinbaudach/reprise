@@ -2294,3 +2294,12 @@ msgstr "Gerät auswerfen"
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
 msgid "Eject device — Sync in progress"
 msgstr "Gerät auswerfen — Synchronisierung läuft"
+
+msgid "Requires your ListenBrainz user token"
+msgstr "Erfordert den ListenBrainz-Benutzertoken"
+
+msgid "Requires API key and shared secret"
+msgstr "Erfordert API-Schlüssel und Shared Secret"
+
+msgid "Could not read the Rhythmbox library — import stays disabled"
+msgstr "Rhythmbox-Bibliothek konnte nicht gelesen werden — der Import bleibt deaktiviert"
