@@ -401,17 +401,32 @@ pub fn scan_folder_with_progress(
 /// this module's `library::mounts::classify_missing`'s own doc comment for
 /// why `Unmounted` vs `Deleted` matters — this guard is about whether ANY
 /// marking should happen at all, not which reason to use once it does). So,
-/// only once the walk found zero audio files AND at least one currently-
-/// present track is recorded under `root`, this function asks one more
-/// question before marking anything: does ANY of those tracks' recorded
-/// `device` match the device `root` itself currently resolves to? A `NULL`
-/// (`None`) recorded device never counts as a match. If yes, at least one
-/// track proves `root`'s filesystem really is the one previously scanned —
-/// proceed to mark normally (Root-Guard case (c): a real, provable deletion).
-/// If no such evidence exists, mark nothing and return
-/// [`ScanOutcome::RootUnavailable`] instead (Root-Guard case (b)) — the
-/// transaction still commits whatever the (empty) walk itself produced, but
-/// the mark phase never runs.
+/// only once the walk found zero audio files AND at least one NOT-YET-
+/// TOMBSTONED track (`removed_at IS NULL` — present or already-missing
+/// alike, via `scanner_vanish::guard_evidence_under_root`) is recorded under
+/// `root`, this function asks one more question before marking anything:
+/// does ANY of those tracks' recorded `device` match the device `root`
+/// itself currently resolves to? A `NULL` (`None`) recorded device never
+/// counts as a match. If yes, at least one track proves `root`'s filesystem
+/// really is the one previously scanned — proceed to mark normally
+/// (Root-Guard case (c): a real, provable deletion). If no such evidence
+/// exists, mark nothing and return [`ScanOutcome::RootUnavailable`] instead
+/// (Root-Guard case (b)) — the transaction still commits whatever the
+/// (empty) walk itself produced, but the mark phase never runs.
+///
+/// This evidence set is deliberately wider than the mark phase's own
+/// `PRESENT`-only candidate list (`scanner_vanish::present_candidates_under_
+/// root`): a row an earlier reconcile already flagged missing still carries
+/// a recorded `device` that means exactly as much as a present row's does.
+/// If the guard's evidence were narrowed to `PRESENT`, a root whose tracks
+/// are ALL already flagged missing — and whose mount point then gets a
+/// different filesystem swapped underneath it — would look like it has no
+/// evidence at all (empty candidate list) and would never trip the guard,
+/// silently reporting `Completed`/`vanished == 0` instead of surfacing
+/// `RootUnavailable` — exactly the "empty library" lie this guard exists to
+/// prevent. A tombstoned row (`removed_at` set) is still excluded even from
+/// this wider set: it's been explicitly removed from the library and no
+/// longer carries evidence about anything.
 ///
 /// This guard is deliberately root-only: it decides whether to run the mark
 /// phase over `root` at all, never which individual rows within it get
@@ -703,10 +718,22 @@ fn scan_folder_inner(
         }
     }
 
+    // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
+    // outcome. The guard's own evidence, `guard_evidence` (the wider
+    // `removed_at IS NULL` list — see `scanner_vanish::guard_evidence_under_
+    // root`'s doc comment for why it must NOT be `candidates`), is only
+    // queried when the walk found nothing, the same short-circuit
+    // `root_unavailable` used before this was split into two lists — so a
+    // scan that actually found audio files never pays for the extra query.
     let candidates = vanish::present_candidates_under_root(&tx, root)?;
-    let root_unavailable = audio_files_seen == 0
-        && !candidates.is_empty()
-        && !vanish::any_candidate_confirms_root_device(&candidates, root);
+    let guard_evidence = if audio_files_seen == 0 {
+        Some(vanish::guard_evidence_under_root(&tx, root)?)
+    } else {
+        None
+    };
+    let root_unavailable = guard_evidence.as_ref().is_some_and(|evidence| {
+        !evidence.is_empty() && !vanish::any_candidate_confirms_root_device(evidence, root)
+    });
 
     let outcome = if root_unavailable {
         // Root-Guard case (b): see this function's `## Root guard` doc
@@ -715,7 +742,7 @@ fn scan_folder_inner(
         // possible) still commit below — only the mark phase is skipped.
         tracing::warn!(
             root = %root.display(),
-            candidate_count = candidates.len(),
+            candidate_count = guard_evidence.map_or(0, |e| e.len()),
             "scan: walk found no audio files and no known track under root confirms the \
              root's current device; reporting RootUnavailable instead of marking tracks missing"
         );

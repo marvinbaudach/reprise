@@ -9,16 +9,16 @@
 
 use super::*;
 
-/// Candidate rows the mark phase (or the root guard) must consider: every
-/// currently-present (`PRESENT`) track whose recorded `path` is under
-/// `root`, paired with its recorded `device` (`classify_missing`'s second
-/// input, and the root guard's own evidence check). Membership is decided in
-/// two stages, same as the pre-fold `mark_vanished_under_root` this replaces:
+/// Shared row-fetch behind both [`present_candidates_under_root`] (the mark
+/// phase) and [`guard_evidence_under_root`] (the root guard's evidence
+/// check): every row under `root` matching `presence_clause`, paired with
+/// its recorded `device`. Membership is decided in two stages, same as the
+/// pre-fold `mark_vanished_under_root` this replaces:
 ///
 /// A SQL `LIKE '<root>/%'` (metacharacters escaped) prefilter narrows the
 /// candidate rows read out of the database, instead of streaming every
-/// present track through Rust on every scan. Its `/` before `%` means it can
-/// never match a *sibling* root sharing a string prefix (`/music` vs
+/// matching track through Rust on every scan. Its `/` before `%` means it
+/// can never match a *sibling* root sharing a string prefix (`/music` vs
 /// `/music2`).
 ///
 /// `Path::starts_with` then remains the sole AUTHORITATIVE membership check,
@@ -34,9 +34,10 @@ use super::*;
 /// is byte-identical to a hypothetical full-table-scan implementation
 /// regardless of LIKE's ASCII case-insensitivity or any other way the
 /// pattern is wider than the component check.
-pub(super) fn present_candidates_under_root(
+fn candidates_under_root(
     tx: &rusqlite::Transaction,
     root: &Path,
+    presence_clause: &str,
 ) -> Result<Vec<(i64, String, Option<i64>)>, ScanError> {
     let root_str = root.to_string_lossy();
     let pattern = format!(
@@ -45,7 +46,7 @@ pub(super) fn present_candidates_under_root(
     );
     let rows: Vec<(i64, String, Option<i64>)> = {
         let mut stmt = tx.prepare(&format!(
-            "SELECT id, path, device FROM tracks WHERE {PRESENT} AND path LIKE ?1 ESCAPE '\\'"
+            "SELECT id, path, device FROM tracks WHERE {presence_clause} AND path LIKE ?1 ESCAPE '\\'"
         ))?;
         let mapped = stmt
             .query_map(rusqlite::params![pattern], |r| {
@@ -60,14 +61,59 @@ pub(super) fn present_candidates_under_root(
         .collect())
 }
 
-/// The root guard's evidence check: does ANY present-under-root candidate's
+/// Candidate rows the mark phase must consider: every currently-present
+/// (`PRESENT`) track whose recorded `path` is under `root`, paired with its
+/// recorded `device` (`classify_missing`'s second input). `PRESENT` is the
+/// correct — and only correct — filter here: the mark phase only ever wants
+/// to *newly* flag a row that isn't already flagged, exactly like the
+/// pre-fold `mark_vanished_under_root` this replaces. See
+/// [`guard_evidence_under_root`]'s doc comment for why the root guard's own
+/// evidence query deliberately does NOT reuse this narrower list.
+pub(super) fn present_candidates_under_root(
+    tx: &rusqlite::Transaction,
+    root: &Path,
+) -> Result<Vec<(i64, String, Option<i64>)>, ScanError> {
+    candidates_under_root(tx, root, PRESENT)
+}
+
+/// The root guard's own candidate list: every NOT-YET-TOMBSTONED (`removed_at
+/// IS NULL`) track under `root`, present or already-missing alike — the
+/// union of [`PRESENT`] and `queries::MISSING`, deliberately wider than
+/// [`present_candidates_under_root`]'s `PRESENT`-only list.
+///
+/// This must stay wider than the mark phase's own candidate list: the guard
+/// asks "does the database have evidence `root`'s filesystem is the one it
+/// remembers?", and a row already flagged missing by an earlier reconcile is
+/// still exactly that evidence — its recorded `device` doesn't stop meaning
+/// anything just because `missing_since` got set. Reusing the `PRESENT`-only
+/// list here would silently drop that evidence: a root whose tracks are ALL
+/// already flagged missing, and whose mount point then gets a *different*
+/// filesystem swapped underneath it, would see an empty candidate list, the
+/// guard's `!candidates.is_empty()` check would be false, and the guard
+/// would never trip — `scan_folder` would report `Completed` with
+/// `vanished == 0` instead of the `RootUnavailable` the situation actually
+/// calls for, silently telling the watcher/GUI "your library is just empty"
+/// when the truth is "your library folder isn't reachable". A tombstoned row
+/// (`removed_at` set) is excluded even from this wider list — it's been
+/// explicitly removed from the library and carries no evidence about
+/// anything anymore.
+pub(super) fn guard_evidence_under_root(
+    tx: &rusqlite::Transaction,
+    root: &Path,
+) -> Result<Vec<(i64, String, Option<i64>)>, ScanError> {
+    candidates_under_root(tx, root, "removed_at IS NULL")
+}
+
+/// The root guard's evidence check: does ANY guard-evidence candidate's
 /// recorded `device` match the device `root` itself currently resolves to?
-/// See `scan_folder_inner`'s `## Root guard` doc section for why a single
-/// match is enough to treat `root` as provably reachable. A `NULL` (`None`)
-/// recorded device never counts as a match, even in the (should-not-happen,
-/// since the caller already confirmed `root.exists()`) case where `root`'s
-/// own device can't be resolved either — two unknowns are never evidence of
-/// each other.
+/// Always called with [`guard_evidence_under_root`]'s wider list, never
+/// [`present_candidates_under_root`]'s — see that function's doc comment for
+/// why. See `scan_folder_inner`'s `## Root guard` doc section for why a
+/// single match is enough to treat `root` as provably reachable. A `NULL`
+/// (`None`) recorded device never counts as a match, even in the
+/// (should-not-happen, since the caller already confirmed `root.exists()`)
+/// case where `root`'s own device can't be resolved either — two unknowns
+/// are never evidence of each other.
 pub(super) fn any_candidate_confirms_root_device(
     candidates: &[(i64, String, Option<i64>)],
     root: &Path,

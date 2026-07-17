@@ -536,4 +536,40 @@ mod tests {
         );
         drop(handle);
     }
+
+    /// Fix-pass regression: `reconcile`'s `ScanOutcome::RootUnavailable` arm
+    /// (see this module's `## Reconcile is just scan_folder` doc section)
+    /// must still invoke `on_event` with an honest all-zero `WatchEvent`
+    /// rather than silently skipping — the caller's own reload/refresh has
+    /// to run either way. Calls the private `reconcile` directly (Root-Guard
+    /// case (a): a root that doesn't exist at all) rather than going through
+    /// `start`/a live filesystem watch, since the guard itself is exercised
+    /// end-to-end by `scanner_vanished_tests.rs`; this test only needs to pin
+    /// that this module's own mapping from `RootUnavailable` to a delivered,
+    /// zeroed `WatchEvent` actually happens.
+    #[test]
+    fn reconcile_reports_root_unavailable_as_a_zeroed_event_rather_than_skipping() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("does-not-exist");
+        let db_path = temp.path().join("reprise.db");
+        {
+            let conn = crate::db::open(Some(&db_path)).unwrap();
+            crate::db::migrate(&conn).unwrap();
+        }
+
+        let (sender, receiver) = std_mpsc::sync_channel(1);
+        reconcile(&root, &db_path, &move |event| {
+            let _ = sender.send(event);
+        });
+
+        let event = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("RootUnavailable must still call on_event, never a silent skip");
+        assert_eq!(event.report.added, 0);
+        assert_eq!(event.report.errors, 0);
+        assert_eq!(
+            event.vanished, 0,
+            "RootUnavailable must never mark anything missing"
+        );
+    }
 }
