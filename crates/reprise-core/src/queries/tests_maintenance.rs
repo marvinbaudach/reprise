@@ -654,6 +654,19 @@ fn sync_tracks_exclude_unknown_missing_and_unavailable_paths() {
 }
 
 #[test]
+fn sync_tracks_exclude_tombstoned_rows_even_when_the_file_still_exists() {
+    let (_temp, conn) = seeded_sync_tracks();
+    conn.execute("UPDATE tracks SET removed_at = 1 WHERE id = 2", [])
+        .unwrap();
+
+    let tracks = query_sync_tracks(&conn, &[1, 2, 3]).unwrap();
+    assert_eq!(
+        tracks.iter().map(|track| track.id).collect::<Vec<_>>(),
+        [1, 3]
+    );
+}
+
+#[test]
 fn sync_tracks_include_copy_metadata_and_actual_file_size() {
     let (temp, conn) = seeded_sync_tracks();
     let tracks = query_sync_tracks(&conn, &[2]).unwrap();
