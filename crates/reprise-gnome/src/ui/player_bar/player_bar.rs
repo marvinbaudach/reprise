@@ -352,9 +352,9 @@ impl PlayerBar {
         let is_playing = state == PlaybackState::Playing;
         let new_icon = if is_playing { ICON_PAUSE } else { ICON_PLAY };
         let tooltip = if is_playing {
-            strings::text(strings::PAUSE)
+            strings::text(strings::TOOLTIP_PAUSE)
         } else {
-            strings::text(strings::PLAY)
+            strings::text(strings::TOOLTIP_PLAY)
         };
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
         self.playback_state.set(state);

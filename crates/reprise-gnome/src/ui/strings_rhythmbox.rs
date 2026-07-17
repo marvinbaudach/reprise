@@ -15,6 +15,9 @@ pub const RHYTHMBOX_IMPORT_DATE_ADDED: &str = N_!("Date added");
 pub const RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED: &str = N_!("Play counts & last played");
 pub const RHYTHMBOX_IMPORT_PLAYLISTS: &str = N_!("Playlists");
 pub const RHYTHMBOX_IMPORT_START: &str = N_!("Import");
+/// TIP-2b: prescan failure keeps the import button disabled — say why.
+pub const RHYTHMBOX_PRESCAN_FAILED: &str =
+    N_!("Could not read the Rhythmbox library — import stays disabled");
 pub const RHYTHMBOX_LIBRARY_FOUND: &str = N_!("Rhythmbox library found");
 pub const RHYTHMBOX_IMPORT_BODY_RICH: &str = N_!(
     "Choose what to copy into Reprise. Rhythmbox and your audio files remain unchanged \u{2014} you can undo the whole operation."

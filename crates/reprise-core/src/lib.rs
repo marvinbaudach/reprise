@@ -27,7 +27,6 @@ pub mod musicbrainz;
 pub mod playback;
 pub mod queries;
 pub mod queue;
-pub mod release_lookup;
 pub mod scrobbling;
 pub mod up_next;
 pub mod view_source;

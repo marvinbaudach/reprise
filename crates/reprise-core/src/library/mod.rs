@@ -16,5 +16,7 @@ pub mod settings;
 pub mod stats;
 pub mod stats_screen;
 pub mod tag_edit;
+pub mod tag_edit_session;
+mod tag_edit_write;
 pub mod trash_tracks;
 pub mod watcher;
