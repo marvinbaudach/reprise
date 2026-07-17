@@ -7,10 +7,34 @@
 //! action sensitivity.
 
 use crate::ui::track_list_model::TrackListModel;
+use reprise_core::models::Track;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::ui) struct PlayableSelection {
     ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::ui) enum ContextPlayDecision {
+    Play { ids: Vec<i64>, first_position: u32 },
+    Explain(Box<Track>),
+    Noop,
+}
+
+fn selected_tracks(positions: &[u32], model: &TrackListModel) -> Vec<(u32, Track)> {
+    positions
+        .iter()
+        .filter_map(|&position| {
+            let track = model.track_at(position);
+            if track.is_none() {
+                tracing::warn!(
+                    position,
+                    "context menu: no track at selected position; skipping"
+                );
+            }
+            track.map(|track| (position, track))
+        })
+        .collect()
 }
 
 impl PlayableSelection {
@@ -27,22 +51,37 @@ pub(in crate::ui) fn selected_playable_tracks(
     positions: &[u32],
     model: &TrackListModel,
 ) -> PlayableSelection {
-    let ids = positions
-        .iter()
-        .filter_map(|&position| {
-            let track = model.track_at(position);
-            if track.is_none() {
-                tracing::warn!(
-                    position,
-                    "context menu: no track at selected position; skipping"
-                );
-            }
-            track
-        })
-        .filter(|track| !track.is_missing())
-        .map(|track| track.id)
+    let ids = selected_tracks(positions, model)
+        .into_iter()
+        .filter(|(_, track)| !track.is_missing())
+        .map(|(_, track)| track.id)
         .collect();
     PlayableSelection { ids }
+}
+
+pub(in crate::ui) fn context_play_decision(
+    positions: &[u32],
+    model: &TrackListModel,
+) -> ContextPlayDecision {
+    let tracks = selected_tracks(positions, model);
+    let playable: Vec<_> = tracks
+        .iter()
+        .filter(|(_, track)| !track.is_missing())
+        .map(|(position, track)| (*position, track.id))
+        .collect();
+    if let Some((first_position, _)) = playable.first() {
+        return ContextPlayDecision::Play {
+            ids: playable.iter().map(|(_, id)| *id).collect(),
+            first_position: *first_position,
+        };
+    }
+    tracks
+        .into_iter()
+        .map(|(_, track)| track)
+        .find(Track::is_missing)
+        .map_or(ContextPlayDecision::Noop, |track| {
+            ContextPlayDecision::Explain(Box::new(track))
+        })
 }
 
 #[cfg(test)]
@@ -90,6 +129,8 @@ mod tests {
         model
     }
 
+    // UX PLAY-4b: concrete missing activation explains the problem, while
+    // every context playback action filters mixed selections to playable ids.
     #[test]
     fn play_4b_missing_rows_explain_and_enqueue_only_playable_tracks() {
         let model = seeded_playlist_model_with_unmounted_track();
@@ -113,6 +154,21 @@ mod tests {
         assert!(
             missing_activation_notice(&model.track_at(0).unwrap()).is_none(),
             "a playable row must continue to normal playback"
+        );
+
+        match context_play_decision(&[1], &model) {
+            ContextPlayDecision::Explain(track) => {
+                assert!(missing_activation_notice(&track).is_some());
+            }
+            decision => panic!("missing-only context Play must explain, got {decision:?}"),
+        }
+        assert_eq!(
+            context_play_decision(&[1, 0, 2], &model),
+            ContextPlayDecision::Play {
+                ids: vec![1, 3],
+                first_position: 0,
+            },
+            "mixed context Play must send only playable ids"
         );
     }
 }

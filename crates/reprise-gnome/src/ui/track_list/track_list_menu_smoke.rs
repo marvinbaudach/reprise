@@ -8,10 +8,11 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 
+use super::track_playback_selection;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_context_menu::{
-    current_selection_ids, current_selection_positions, handle_add_to_playlist, handle_play,
-    handle_remove_from_library, handle_remove_from_playlist, ACTION_PLAY_NEXT,
+    current_selection_ids, current_selection_positions, handle_add_to_playlist,
+    handle_context_play, handle_remove_from_library, handle_remove_from_playlist, ACTION_PLAY_NEXT,
     ACTION_REMOVE_FROM_LIBRARY, ACTION_REMOVE_FROM_PLAYLIST,
 };
 use crate::ui::track_list_queue_menu;
@@ -135,15 +136,17 @@ fn dispatch_smoke_menu_action(shared: &Rc<Shared>, action: &str) {
         return;
     }
 
-    let ids = current_selection_ids(shared);
-
     if action == "play" {
-        handle_play(shared, &ids);
+        handle_context_play(shared);
         return;
     }
 
+    let positions = current_selection_positions(shared);
+    let playable = track_playback_selection::selected_playable_tracks(&positions, &shared.model);
+    let ids = current_selection_ids(shared);
+
     if action == "queue" {
-        track_list_queue_menu::add_selected(shared, &ids);
+        track_list_queue_menu::add_selected(shared, playable.ids());
         return;
     }
 
@@ -151,7 +154,7 @@ fn dispatch_smoke_menu_action(shared: &Rc<Shared>, action: &str) {
         // QUE-3 acceptance: drives the real "Play next" handler so a
         // headless run can prove the Play Next section appears between Now
         // Playing and the snapshot tail, and plays first.
-        track_list_queue_menu::play_next_selected(shared, &ids);
+        track_list_queue_menu::play_next_selected(shared, playable.ids());
         return;
     }
 

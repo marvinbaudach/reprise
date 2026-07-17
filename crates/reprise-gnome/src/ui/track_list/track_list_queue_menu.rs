@@ -86,13 +86,10 @@ pub(in crate::ui) fn play_next_selected(shared: &Rc<Shared>, ids: &[i64]) {
     }
 }
 
-pub(in crate::ui) fn play_selected_if_queue(shared: &Rc<Shared>) -> bool {
+pub(in crate::ui) fn play_position_if_queue(shared: &Rc<Shared>, position: u32) -> bool {
     if !matches!(*shared.source.borrow(), ViewSource::Queue) {
         return false;
     }
-    let Some(position) = current_selection_positions(shared).first().copied() else {
-        return true;
-    };
     let row = {
         let sections = shared.queue_sections.borrow();
         crate::ui::track_list::queue_row_mapping::classify(position, &sections)
