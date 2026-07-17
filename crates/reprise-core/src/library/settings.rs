@@ -577,6 +577,16 @@ impl AutoCleanSetting {
     /// value this version of the app has never written — falls back to
     /// `Off`, never erroring: see this type's own doc comment for why a
     /// destructive setting's fallback must always be the inert one.
+    ///
+    /// `Days(0)` is accepted as-is and is a REAL, IMMEDIATE-DELETION value:
+    /// `queries::auto_clean_eligible`'s deadline is `max(missing_since,
+    /// armed_at) + days*86400 <= now`, so `days == 0` collapses that to
+    /// `max(missing_since, armed_at) <= now` — every currently-armed
+    /// `deleted` row qualifies the instant `run_auto_clean` next runs, no
+    /// grace period at all. This is deliberately not rejected here (YAGNI:
+    /// the GUI is the only writer today and only ever offers off/30/90), but
+    /// a future writer that passes an untrusted/hand-edited duration through
+    /// unchecked would be handing this parser an immediate-delete switch.
     pub fn parse(s: &str) -> Self {
         match s {
             "off" => Self::Off,
