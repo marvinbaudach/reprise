@@ -356,7 +356,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   stellt beide wieder her — für alle Auslöser (Save, Watcher-Reconcile,
   Sortierung, Rating). Gelöschte IDs fallen still heraus; ein gewollter Reset
   ist explizit, nie Nebeneffekt.
-- **TAG-2** [geplant] [core] — Multi-Semantik: Felder mit identischem Wert
+- **TAG-2** [aktiv] [gtk] — Multi-Semantik: Felder mit identischem Wert
   zeigen ihn normal; abweichende zeigen einen Mixed-Platzhalter (kursiv,
   gestrichelte Border) — bei ≤ 2 verschiedenen Werten die Werte selbst
   („Mixed — Ambient, Post-Rock"; leer zählt als eigener Wert), ab 3 die

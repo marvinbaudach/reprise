@@ -86,8 +86,9 @@ pub(in crate::ui) fn css() -> String {
             arms it --- */
          .reprise-tag-mixed > .header {{ \
            border-style: dashed; }}\n\
-         .reprise-tag-mixed > .header text {{ \
-           font-style: italic; }}\n\
+         .reprise-tag-mixed > .header text > placeholder {{ \
+           font-style: italic; \
+           color: alpha(@window_fg_color, 0.45); }}\n\
          .reprise-tag-field-armed > .header {{ \
            border-color: @accent_color; \
            border-width: 1.5px; }}\n\
@@ -211,6 +212,8 @@ mod tests {
         assert!(css.contains(".reprise-tag-hint"));
         assert!(css.contains(".reprise-tag-cover"));
         assert!(css.contains(".reprise-tag-mixed"));
+        assert!(css.contains("text > placeholder"));
+        assert!(css.contains("alpha(@window_fg_color, 0.45)"));
         assert!(css.contains(".reprise-tag-pending"));
         assert!(css.contains(".reprise-tag-review"));
         assert!(css.contains(".reprise-tag-field-revert"));

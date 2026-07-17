@@ -308,3 +308,19 @@ pub fn tag_track_position(position: usize, total: usize) -> String {
 
 pub const TAG_FETCH_REQUIRES_UNIFORM: &str = N_!("Requires same artist & album across selection");
 pub const TAG_FETCH_HINT_MULTI: &str = N_!("fills only empty fields");
+
+// --- TAG-2: mixed-field distinct-value annotation ---
+
+const TAG_DISTINCT_VALUE_COUNT: &str = N_!("{count} value");
+const TAG_DISTINCT_VALUE_COUNT_PLURAL: &str = N_!("{count} values");
+
+/// The annotation beside a still-unarmed mixed field, e.g. "2 values".
+pub fn tag_distinct_value_count(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        TAG_DISTINCT_VALUE_COUNT,
+        TAG_DISTINCT_VALUE_COUNT_PLURAL,
+        count,
+        &[("count", &count_text)],
+    )
+}
