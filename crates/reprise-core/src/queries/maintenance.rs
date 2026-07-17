@@ -298,7 +298,7 @@ pub fn remove_missing_tracks(
     conn: &mut Connection,
     ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_tracks_impl(conn, ids, true)
+    remove_tracks_impl(conn, ids, RemoveGuard::MissingOnly)
 }
 
 /// Removes every row currently marked missing from the library database.
@@ -326,13 +326,35 @@ pub fn remove_all_missing_tracks(conn: &mut Connection) -> Result<Vec<i64>, rusq
 /// unique ids actually removed in first-input order. The UI must separately
 /// purge these exact ids from its playback queue.
 pub fn remove_tracks(conn: &mut Connection, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_tracks_impl(conn, ids, false)
+    remove_tracks_impl(conn, ids, RemoveGuard::Any)
 }
 
-fn remove_tracks_impl(
+/// Which rows `remove_tracks_impl`'s per-id `DELETE` is allowed to actually
+/// touch — an extra condition appended to `WHERE id = ?1`, re-checked at
+/// delete time rather than trusted from whatever snapshot the caller
+/// selected `ids` from. `Any` is the explicit live-or-missing removal API
+/// (`remove_tracks`, no extra guard). `MissingOnly` is `remove_missing_
+/// track[s]`'s belt-and-braces check against a row that raced back to
+/// present since the caller's selection (see `remove_missing_track`'s doc
+/// comment). `TombstonedOnly` is `purge_tombstones`'s guard against the
+/// mirror race on the other side of the same problem: the scanner's
+/// resurrect-on-evidence write (`library::watcher`, its own OS thread and
+/// `rusqlite::Connection`, racing the purge's connection under WAL) can
+/// clear a row's `removed_at` between `purge_tombstones`'s own `SELECT` and
+/// this loop reaching that id — without this guard the `DELETE` would still
+/// fire on a row that is, as of the moment it matters, no longer
+/// tombstoned, hard-deleting a live track's playlist history irrecoverably.
+#[derive(Clone, Copy)]
+pub(crate) enum RemoveGuard {
+    Any,
+    MissingOnly,
+    TombstonedOnly,
+}
+
+pub(crate) fn remove_tracks_impl(
     conn: &mut Connection,
     ids: &[i64],
-    missing_only: bool,
+    guard: RemoveGuard,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -347,13 +369,18 @@ fn remove_tracks_impl(
             .collect::<Result<_, _>>()?;
         drop(stmt);
 
-        let deleted = if missing_only {
-            tx.execute(
+        let deleted = match guard {
+            RemoveGuard::Any => {
+                tx.execute("DELETE FROM tracks WHERE id = ?1", rusqlite::params![id])?
+            }
+            RemoveGuard::MissingOnly => tx.execute(
                 &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING}"),
                 rusqlite::params![id],
-            )?
-        } else {
-            tx.execute("DELETE FROM tracks WHERE id = ?1", rusqlite::params![id])?
+            )?,
+            RemoveGuard::TombstonedOnly => tx.execute(
+                "DELETE FROM tracks WHERE id = ?1 AND removed_at IS NOT NULL",
+                rusqlite::params![id],
+            )?,
         };
         if deleted == 0 {
             continue;
@@ -396,6 +423,12 @@ fn remove_tracks_impl(
 // ever lost. `purge_tombstones` is the one place a tombstone finally
 // becomes the real, `remove_tracks`-powered delete, once the window has
 // closed without an undo.
+//
+// Tests for this section live in `tests_issues.rs`, not the `tests_
+// maintenance.rs` this file's other functions are covered by — see that
+// file's own module doc comment for why (`tests_maintenance.rs` was already
+// close to the project's 800-line rule; the functions themselves stayed
+// here, only the tests moved).
 
 /// "Remove from library" for the tombstone/10-second-undo flow: marks every
 /// id in `ids` as removed by setting `removed_at = now`, without touching
@@ -420,6 +453,15 @@ fn remove_tracks_impl(
 /// Returns the number of rows actually tombstoned — a subset of `ids.len()`
 /// when some ids were already tombstoned or don't exist. `Ok(0)` for an
 /// empty `ids` slice, no query issued.
+///
+/// Builds one `WHERE id IN (?2,?3,…)` placeholder per id rather than looping
+/// per id like every other bulk-id function in this file — a deliberate,
+/// narrow exception. A "Remove all N" click is the one caller here that can
+/// plausibly pass a large `ids` batch in one call, and SQLite's bound-
+/// parameter ceiling (`SQLITE_MAX_VARIABLE_NUMBER`, 32766 by default) is far
+/// beyond any realistic library removal batch, so the single-statement form
+/// is safe in practice; [`undo_tombstone`] below mirrors the same shape for
+/// the same reason.
 pub fn tombstone_tracks(
     conn: &Connection,
     ids: &[i64],
@@ -475,22 +517,35 @@ pub fn undo_tombstone(conn: &Connection, ids: &[i64]) -> Result<usize, rusqlite:
 /// is wired by a later task). Both funnel through this one function so
 /// there is exactly one place a tombstone turns into a real delete.
 ///
-/// Deliberately reuses [`remove_tracks`] rather than re-implementing
-/// deletion: that function already gets the hard part right inside one
+/// Deliberately reuses the same shared deletion path as [`remove_tracks`]
+/// (both funnel through `remove_tracks_impl`) rather than re-implementing
+/// deletion: that path already gets the hard part right inside one
 /// transaction — every affected playlist's positions compacted, the FK
 /// cascades (`playlist_tracks`, `listen_events`, `device_files`) fired, and
 /// the exact ids the caller must purge from its own in-memory playback
 /// queue returned. Selecting the tombstoned ids and handing them to
-/// `remove_tracks` keeps there being exactly one deletion path — no risk of
-/// this one drifting from that one over time.
+/// `remove_tracks_impl` keeps there being exactly one deletion path — no
+/// risk of this one drifting from that one over time.
 ///
 /// Interop with the scanner's resurrect-on-evidence behavior (`library::
-/// scanner`): a row the scanner finds is still there gets its `removed_at`
-/// cleared back to `NULL` the moment that's discovered — a "Remove" whose
-/// object came back is moot. Such a row is simply not selected by this
-/// function's `WHERE removed_at IS NOT NULL`, so it survives a purge that
-/// runs after the resurrection untouched, with no special-casing needed
-/// here at all.
+/// scanner`/`library::watcher`, which runs on its own OS thread with its
+/// own `rusqlite::Connection` — a genuine concurrent writer under this
+/// database's WAL mode, not a hypothetical): a row the scanner finds is
+/// still there gets its `removed_at` cleared back to `NULL` the moment
+/// that's discovered — a "Remove" whose object came back is moot. This
+/// function's own `SELECT` above and its `DELETE` below are NOT one atomic
+/// transaction, so a resurrection can land in the gap between them — after
+/// an id is captured in `ids` here, but before `remove_tracks_impl`'s loop
+/// reaches that id's `DELETE`. `remove_tracks_impl` is therefore called
+/// with [`RemoveGuard::TombstonedOnly`], which re-checks `removed_at IS NOT
+/// NULL` at delete time rather than trusting this snapshot — a row
+/// resurrected mid-purge is simply not deleted by that guarded statement,
+/// surviving with its playlist membership and listen history intact. See
+/// `tests_issues.rs`'s `purge_tombstones_survives_a_resurrection_racing_
+/// the_delete_itself` for the regression test this guards against (as
+/// opposed to the pre-existing `purge_tombstones_skips_a_row_resurrected_
+/// before_the_purge_runs`, which only covers a resurrection that lands
+/// *before* this function is even called — the easy case).
 pub fn purge_tombstones(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Error> {
     let ids = {
         let mut statement =
@@ -500,7 +555,7 @@ pub fn purge_tombstones(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Err
             .collect::<Result<Vec<i64>, _>>()?;
         ids
     };
-    remove_tracks(conn, &ids)
+    remove_tracks_impl(conn, &ids, RemoveGuard::TombstonedOnly)
 }
 
 /// Bare count of rows in `import_errors` (the last scan's import failures) —

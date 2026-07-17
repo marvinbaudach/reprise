@@ -146,6 +146,15 @@ pub use maintenance::{
 // as `build_track_query` above.
 #[allow(unused_imports)]
 pub use maintenance::remove_missing_track;
+// `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
+// `remove_tracks`/`remove_missing_tracks`/`purge_tombstones` all funnel
+// through; not part of the crate's public API, but `tests_issues.rs`'s
+// mid-purge-resurrection regression test (Finding 1) needs to call the
+// `TombstonedOnly`-guarded delete directly — a real thread race can't be
+// scheduled deterministically, so the test proves the guard by driving this
+// same statement with a stale id snapshot instead.
+#[cfg(test)]
+pub(crate) use maintenance::{remove_tracks_impl, RemoveGuard};
 pub use playlist::query_playlist_tracks_full;
 pub use queue::{is_queue_capped, QUEUE_LIMIT};
 

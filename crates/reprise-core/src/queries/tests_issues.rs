@@ -609,3 +609,104 @@ fn purge_tombstones_skips_a_row_resurrected_before_the_purge_runs() {
         "the resurrected row must be visible again, not silently purged"
     );
 }
+
+/// Finding 1 (Important, review pass): proves `purge_tombstones`'s guard
+/// against a resurrection that lands mid-purge, not just before it. The
+/// test above (`purge_tombstones_skips_a_row_resurrected_before_the_purge_
+/// runs`) only covers the easy case — the resurrection happens, THEN
+/// `purge_tombstones` is called, so its own `SELECT id FROM tracks WHERE
+/// removed_at IS NOT NULL` never even sees the resurrected id. That test
+/// would still pass against the unguarded `DELETE FROM tracks WHERE id =
+/// ?1` this fix replaced, because the id was never in the snapshot to begin
+/// with.
+///
+/// The real bug is a TOCTOU race: `purge_tombstones`'s `SELECT` and its
+/// per-id `DELETE` are not one transaction, so the watcher thread (its own
+/// `rusqlite::Connection`, concurrent under WAL) can commit a resurrection
+/// AFTER an id is captured in the snapshot but BEFORE that id's `DELETE`
+/// runs. A real thread race can't be scheduled deterministically in a unit
+/// test, so this proves the guard directly instead: it calls the private
+/// `remove_tracks_impl` with `RemoveGuard::TombstonedOnly` — the exact
+/// statement `purge_tombstones` now runs per id — against a *stale* id list
+/// that still contains an id whose `removed_at` was already cleared by
+/// direct SQL, standing in for "what the watcher would have committed in
+/// the race window." A stale-list call is the right proof shape because it
+/// isolates the one thing that changed: whether the `DELETE` re-checks
+/// `removed_at` at execution time instead of trusting the caller's
+/// snapshot. Before this fix (`missing_only: bool` with no tombstone-aware
+/// branch — `remove_tracks_impl` only ever ran a bare `DELETE FROM tracks
+/// WHERE id = ?1` for a non-`missing_only` caller), this exact call would
+/// have hard-deleted the resurrected row and cascaded away its playlist
+/// membership and listen history right along with it; this test fails
+/// against that code and passes against the `TombstonedOnly` guard.
+#[test]
+fn purge_tombstones_survives_a_resurrection_racing_the_delete_itself() {
+    let mut conn = crate::db::open_migrated(None).unwrap();
+    for id in 1..=3 {
+        seed_live_track(&conn, id);
+    }
+    let playlist_id = playlists::create(&conn, "Race").unwrap();
+    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    conn.execute(
+        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (2, 1000, 5000)",
+        [],
+    )
+    .unwrap();
+
+    tombstone_tracks(&conn, &[1, 2, 3], 1_000).unwrap();
+
+    // Simulate the watcher committing a resurrection of id 2 in the window
+    // between `purge_tombstones`'s SELECT and its DELETE reaching that id —
+    // the stale snapshot below (`[1, 2, 3]`) is what that SELECT would have
+    // already captured before this write landed.
+    conn.execute("UPDATE tracks SET removed_at = NULL WHERE id = 2", [])
+        .unwrap();
+    let stale_snapshot = vec![1, 2, 3];
+
+    let deleted =
+        remove_tracks_impl(&mut conn, &stale_snapshot, RemoveGuard::TombstonedOnly).unwrap();
+
+    assert_eq!(
+        deleted,
+        vec![1, 3],
+        "only the ids still tombstoned at DELETE time may be removed"
+    );
+
+    let track_count: i64 = conn
+        .query_row("SELECT count(*) FROM tracks WHERE id = 2", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        track_count, 1,
+        "the mid-purge-resurrected row must survive, not be hard-deleted"
+    );
+    assert_eq!(
+        removed_at_of(&conn, 2),
+        None,
+        "the survivor's resurrected (non-tombstoned) state must be untouched"
+    );
+
+    let playlist_rows: Vec<i64> = conn
+        .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
+        .unwrap()
+        .query_map([playlist_id], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        playlist_rows,
+        vec![2],
+        "the survivor's playlist membership must not be cascaded away"
+    );
+
+    let listen_event_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM listen_events WHERE track_id = 2",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        listen_event_count, 1,
+        "the survivor's listening history must not be cascaded away"
+    );
+}
