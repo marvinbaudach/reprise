@@ -309,7 +309,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
     // initially selected by the SQL query, then filtered to validity (both paths
     // gone). With 2 valid candidates, the function must warn and return Ok(None).
     let tx = conn.transaction().unwrap();
-    let lookup = MoveLookup {
+    let lookup = move_detect::MoveLookup {
         device: 7777,
         inode: 8888,
         title: "Dev Inode Ambiguity",
@@ -318,7 +318,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
         duration_ms: 1000,
         file_size: file_size as i64,
     };
-    let result = find_move_candidate(&tx, &lookup).unwrap();
+    let result = move_detect::find_move_candidate(&tx, &lookup).unwrap();
     assert_eq!(
         result, None,
         "must return None when device/inode candidates are ambiguous"
@@ -371,7 +371,7 @@ fn read_meta_roundtrip() {
     tag.save_to_path(&file, lofty::config::WriteOptions::default())
         .unwrap();
 
-    let meta = read_meta(&file).unwrap();
+    let meta = track_meta::read_meta(&file).unwrap();
     assert_eq!(meta.title, "Beast of Darkness");
     assert_eq!(meta.artist, "Brand of Sacrifice");
     assert_eq!(meta.album, "God Hand");

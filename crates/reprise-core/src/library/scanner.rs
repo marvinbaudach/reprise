@@ -94,19 +94,6 @@ impl ScanReport {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct TrackMeta {
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub album_artist: String,
-    pub year: Option<i32>,
-    pub track_no: Option<i32>,
-    pub genre: String,
-    pub duration_ms: i64,
-    pub bitrate_kbps: Option<i32>,
-}
-
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
 
 fn is_audio_file(path: &Path) -> bool {
@@ -143,44 +130,6 @@ impl ScanProgressReporter<'_> {
     }
 }
 
-// Test-only: proves a dismissed-and-unchanged file's tags never get parsed.
-// `thread_local!`, not a global counter — libtest gives each test its own
-// OS thread, so this stays isolated under parallel `--test-threads`.
-#[cfg(test)]
-thread_local! {
-    pub(super) static READ_META_CALLS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-}
-
-pub fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
-    use lofty::prelude::*;
-    #[cfg(test)]
-    READ_META_CALLS.with(|calls| calls.set(calls.get() + 1));
-    let tagged = lofty::read_from_path(path).map_err(|e| {
-        let (kind, detail) = import_errors::classify_lofty(&e);
-        ScanError::Import { kind, detail }
-    })?;
-    let props = tagged.properties();
-    let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
-    let get = |f: &dyn Fn(&lofty::tag::Tag) -> Option<String>| tag.and_then(f).unwrap_or_default();
-    Ok(TrackMeta {
-        title: get(&|t| t.title().map(|s| s.to_string())),
-        artist: get(&|t| t.artist().map(|s| s.to_string())),
-        album: get(&|t| t.album().map(|s| s.to_string())),
-        album_artist: get(&|t| {
-            t.get_string(&lofty::tag::ItemKey::AlbumArtist)
-                .map(std::string::ToString::to_string)
-        }),
-        year: tag
-            .and_then(Accessor::year)
-            .or_else(|| tagged.tags().iter().find_map(Accessor::year))
-            .map(|y| y as i32),
-        track_no: tag.and_then(Accessor::track).map(|n| n as i32),
-        genre: get(&|t| t.genre().map(|s| s.to_string())),
-        duration_ms: props.duration().as_millis() as i64,
-        bitrate_kbps: props.audio_bitrate().map(|b| b as i32),
-    })
-}
-
 fn file_mtime(path: &Path) -> i64 {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
@@ -210,30 +159,8 @@ fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
         .map(|m| (m.size(), m.dev(), m.ino()))
 }
 
-/// A DB row that is a *candidate* to be the pre-move identity of a file at
-/// an unknown path: `id`/`path` to perform the move `UPDATE` against.
-#[derive(Debug, PartialEq)]
-struct MoveCandidate {
-    id: i64,
-    path: String,
-}
-
-/// Everything `find_move_candidate` needs to know about the file it's
-/// looking for a pre-move identity of. Bundled into one struct (rather than
-/// seven positional arguments) purely to stay under clippy's
-/// `too_many_arguments` lint.
-struct MoveLookup<'a> {
-    device: i64,
-    inode: i64,
-    title: &'a str,
-    artist: &'a str,
-    album: &'a str,
-    duration_ms: i64,
-    file_size: i64,
-}
-
 /// Return type for tag_param_values: (title, artist, album, album_artist,
-/// year, track_no, genre, duration_ms, bitrate_kbps).
+/// year, track_no, genre, duration_ms, bitrate_kbps, untagged).
 type TagParams<'a> = (
     &'a str,
     &'a str,
@@ -244,96 +171,8 @@ type TagParams<'a> = (
     &'a str,
     i64,
     Option<i32>,
+    i64,
 );
-
-/// Filters raw SQL matches down to *valid* move candidates: rows whose old
-/// path is gone from disk, or which are already flagged missing (`missing_
-/// since` set). This filter is applied — and candidates counted — only over
-/// this valid subset, never over the raw SQL match count. That ordering
-/// matters: two DB rows can share a fingerprint (duplicate tracks) while
-/// only one of their files has actually disappeared; counting the raw
-/// matches would flag that as a false ambiguity and refuse a move that is in
-/// fact unambiguous (see the
-/// `one_deleted_one_alive_duplicate_is_still_an_unambiguous_move` test).
-fn valid_candidates(rows: Vec<(i64, String, Option<i64>)>) -> Vec<MoveCandidate> {
-    rows.into_iter()
-        .filter(|(_, path, missing_since)| missing_since.is_some() || !Path::new(path).exists())
-        .map(|(id, path, _)| MoveCandidate { id, path })
-        .collect()
-}
-
-/// Resolves a moved-file candidate for a file at an as-yet-unknown path,
-/// trying (1) exact `(device, inode)` — a same-filesystem `rename` — then
-/// (2) a tag+duration+size fingerprint — a cross-filesystem copy+delete,
-/// where the inode changes but the content and tags don't. Returns `Ok(None)`
-/// both when nothing matches and when multiple rows match ambiguously (the
-/// latter logs a `tracing::warn!` so the caller can fall back to a normal
-/// insert without ever guessing which row to attach history to).
-fn find_move_candidate(
-    tx: &rusqlite::Transaction,
-    lookup: &MoveLookup,
-) -> Result<Option<MoveCandidate>, ScanError> {
-    let rows: Vec<(i64, String, Option<i64>)> = {
-        let mut stmt = tx.prepare(
-            "SELECT id, path, missing_since FROM tracks WHERE device = ?1 AND inode = ?2",
-        )?;
-        let mapped = stmt
-            .query_map(rusqlite::params![lookup.device, lookup.inode], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })?
-            .collect::<Result<_, _>>()?;
-        mapped
-    };
-    let mut candidates = valid_candidates(rows);
-    match candidates.len() {
-        1 => return Ok(Some(candidates.remove(0))),
-        n if n > 1 => {
-            tracing::warn!(
-                device = lookup.device,
-                inode = lookup.inode,
-                candidate_count = n,
-                "ambiguous device/inode move candidates; not guessing"
-            );
-            return Ok(None);
-        }
-        _ => {}
-    }
-
-    let rows: Vec<(i64, String, Option<i64>)> = {
-        let mut stmt = tx.prepare(
-            "SELECT id, path, missing_since FROM tracks WHERE title = ?1 AND artist = ?2 \
-             AND album = ?3 AND ABS(duration_ms - ?4) <= 2000 AND file_size = ?5",
-        )?;
-        let mapped = stmt
-            .query_map(
-                rusqlite::params![
-                    lookup.title,
-                    lookup.artist,
-                    lookup.album,
-                    lookup.duration_ms,
-                    lookup.file_size
-                ],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )?
-            .collect::<Result<_, _>>()?;
-        mapped
-    };
-    let mut candidates = valid_candidates(rows);
-    match candidates.len() {
-        1 => Ok(Some(candidates.remove(0))),
-        n if n > 1 => {
-            tracing::warn!(
-                title = lookup.title,
-                artist = lookup.artist,
-                album = lookup.album,
-                candidate_count = n,
-                "ambiguous fingerprint move candidates; not guessing"
-            );
-            Ok(None)
-        }
-        _ => Ok(None),
-    }
-}
 
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
@@ -343,9 +182,16 @@ fn now_unix() -> i64 {
 
 /// Extracts tag-derived column values in the canonical order used by both
 /// move-UPDATE and INSERT/upsert statements: title, artist, album, album_artist,
-/// year, track_no, genre, duration_ms, bitrate_kbps. Having a single source
-/// for this ordering ensures that adding/removing columns is a one-place change.
-fn tag_param_values<'a>(title: &'a str, meta: &'a TrackMeta) -> TagParams<'a> {
+/// year, track_no, genre, duration_ms, bitrate_kbps, untagged. Having a single
+/// source for this ordering ensures that adding/removing columns is a
+/// one-place change. `untagged` (Task 1.8) is threaded through here rather
+/// than left for each call site to append separately, same reasoning as
+/// every other column in this tuple.
+fn tag_param_values<'a>(
+    title: &'a str,
+    meta: &'a track_meta::TrackMeta,
+    untagged: bool,
+) -> TagParams<'a> {
     (
         title,
         &meta.artist,
@@ -356,6 +202,7 @@ fn tag_param_values<'a>(title: &'a str, meta: &'a TrackMeta) -> TagParams<'a> {
         &meta.genre,
         meta.duration_ms,
         meta.bitrate_kbps,
+        i64::from(untagged),
     )
 }
 
@@ -453,6 +300,27 @@ pub fn scan_folder_with_progress(
 /// under it sits on its own, now-absent mount, that subtree's tracks still
 /// get marked — normally, each via its own `classify_missing` call — because
 /// that is an honest partial outage, not "we have no evidence".
+///
+/// ## Hint coexistence: a `tracks` row and an `import_errors` row can now
+/// both exist for the same path
+///
+/// Before Task 1.8, a `tracks` row and an `import_errors` row for the same
+/// `path` were mutually exclusive — any successful import cleared the error
+/// row. `track_meta::read_meta_with_fallback`'s pass-2 rescue breaks that: a
+/// file with unreadable tags but an intact container now gets BOTH a
+/// `tracks` row (`untagged = 1`, so the collection has no hole for it) AND
+/// an `import_errors` row, which becomes a HINT ("imported without
+/// metadata") rather than a failure — see `import_errors.rs`'s module doc
+/// comment for the exact hint contract a later query layer/sidebar badge
+/// must use.
+///
+/// Concretely, in the walk loop below: a pass-1 success still calls
+/// `import_errors::clear_error` (unchanged — the self-healing rule
+/// sharpens, it doesn't change, for that case); a pass-2 (untagged) success
+/// calls `import_errors::record_error` with pass 1's own `(kind, detail)`
+/// instead — refreshing the hint's `last_seen`/`seen_count` rather than
+/// deleting it. Only a later scan that achieves a real pass-1 success (the
+/// file got re-tagged) clears it.
 fn scan_folder_inner(
     conn: &mut Connection,
     root: &Path,
@@ -571,8 +439,18 @@ fn scan_folder_inner(
             }
             continue;
         }
-        match read_meta(path) {
-            Ok(meta) => {
+        match track_meta::read_meta_with_fallback(path) {
+            Ok(outcome) => {
+                // Task 1.8: `hint` is `Some((kind, detail))` only when pass 1
+                // failed but pass 2 rescued the container — see this
+                // function's `## Hint coexistence` doc section just below.
+                let (meta, hint) = match outcome {
+                    track_meta::MetaOutcome::Tagged(meta) => (meta, None),
+                    track_meta::MetaOutcome::Untagged { meta, kind, detail } => {
+                        (meta, Some((kind, detail)))
+                    }
+                };
+                let untagged = hint.is_some();
                 let is_update = known_mtime.is_some();
                 let title = if meta.title.is_empty() {
                     path.file_stem()
@@ -585,9 +463,17 @@ fn scan_folder_inner(
                 // Task 1.6: recorded now, while still reachable, and
                 // memoized per parent dir — see `scanner_mount.rs`.
                 let mount_point = mount_cache.resolve(path);
-                // Clear any previous failure for this path: a file that errored
-                // once and is now readable again must not stay in the error log.
-                import_errors::clear_error(&tx, &path_str)?;
+                // A pass-1 success clears any previous failure for this path
+                // (a file that errored once and is now readable again must
+                // not stay in the error log). A pass-2 (untagged) success
+                // must NOT clear it — instead it refreshes the row with
+                // pass 1's diagnosis, keeping it alive as a HINT. See this
+                // function's `## Hint coexistence` doc section.
+                if let Some((kind, detail)) = hint {
+                    import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
+                } else {
+                    import_errors::clear_error(&tx, &path_str)?;
+                }
 
                 // Move detection (Stage 2 Task 8) only ever applies to a path
                 // the DB has never seen before — a file whose path is already
@@ -601,9 +487,9 @@ fn scan_folder_inner(
                     None
                 } else {
                     match (device, inode) {
-                        (Some(device), Some(inode)) => find_move_candidate(
+                        (Some(device), Some(inode)) => move_detect::find_move_candidate(
                             &tx,
-                            &MoveLookup {
+                            &move_detect::MoveLookup {
                                 device,
                                 inode,
                                 title: &title,
@@ -632,13 +518,15 @@ fn scan_folder_inner(
                         genre_p,
                         duration_ms_p,
                         bitrate_kbps_p,
-                    ) = tag_param_values(&title, &meta);
+                        untagged_p,
+                    ) = tag_param_values(&title, &meta, untagged);
                     tx.execute(
                         "UPDATE tracks SET path=?1, title=?2, artist=?3, album=?4,
                            album_artist=?5, year=?6, track_no=?7, genre=?8, duration_ms=?9,
                            bitrate_kbps=?10, file_mtime=?11, file_size=?12, device=?13,
-                           inode=?14, mount_point=?15, missing_since=NULL, missing_reason=NULL
-                         WHERE id=?16",
+                           inode=?14, mount_point=?15, untagged=?16, missing_since=NULL,
+                           missing_reason=NULL
+                         WHERE id=?17",
                         rusqlite::params![
                             path_str,
                             title_p,
@@ -655,13 +543,16 @@ fn scan_folder_inner(
                             device,
                             inode,
                             mount_point,
+                            untagged_p,
                             candidate.id,
                         ],
                     )?;
                     // Clear a stale import_errors row under the old path too
                     // (e.g. the old location briefly failed to read before
                     // being moved away) — the new path was already cleared
-                    // above.
+                    // above. Unconditional even for an untagged import: this
+                    // is the OLD path's row, a different path string from
+                    // the hint (if any) recorded above for the CURRENT path.
                     import_errors::clear_error(&tx, &candidate.path)?;
                     report.moved += 1;
                 } else {
@@ -675,17 +566,18 @@ fn scan_folder_inner(
                         genre_p,
                         duration_ms_p,
                         bitrate_kbps_p,
-                    ) = tag_param_values(&title, &meta);
+                        untagged_p,
+                    ) = tag_param_values(&title, &meta, untagged);
                     tx.execute(
                         "INSERT INTO tracks (path, title, artist, album, album_artist, year,
                            track_no, genre, duration_ms, bitrate_kbps, added_at, file_mtime,
-                           file_size, device, inode, mount_point)
-                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
+                           file_size, device, inode, mount_point, untagged)
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
                          ON CONFLICT(path) DO UPDATE SET
                            title=?2, artist=?3, album=?4, album_artist=?5, year=?6,
                            track_no=?7, genre=?8, duration_ms=?9, bitrate_kbps=?10,
                            file_mtime=?12, missing_since=NULL, missing_reason=NULL,
-                           file_size=?13, device=?14, inode=?15, mount_point=?16",
+                           file_size=?13, device=?14, inode=?15, mount_point=?16, untagged=?17",
                         rusqlite::params![
                             path_str,
                             title_p,
@@ -703,6 +595,7 @@ fn scan_folder_inner(
                             device,
                             inode,
                             mount_point,
+                            untagged_p,
                         ],
                     )?;
                     if is_update {
@@ -713,12 +606,16 @@ fn scan_folder_inner(
                 }
             }
             Err(ScanError::Import { kind, detail }) => {
-                // Episode upsert — see `record_error`'s doc comment.
+                // Both passes failed: `kind`/`detail` are pass 2's
+                // classification (see `read_meta_with_fallback`'s doc
+                // comment). Episode upsert — see `record_error`'s doc
+                // comment.
                 import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
                 report.errors += 1;
             }
-            // `read_meta` only ever produces `Import`; propagating any other
-            // variant is safer than an `unreachable!()` panic if that changes.
+            // `read_meta_with_fallback` only ever produces `Import`;
+            // propagating any other variant is safer than an
+            // `unreachable!()` panic if that changes.
             Err(other) => return Err(other),
         }
         if let Some(progress) = &mut progress {
@@ -777,6 +674,17 @@ mod vanish;
 #[path = "scanner_mount.rs"]
 mod mount;
 
+// Task 1.8: `TrackMeta`, the pass-1/pass-2 lofty reads, and their
+// orchestration live in their own file for the same 800-line reason — see
+// `scanner_meta.rs`'s own module doc comment.
+#[path = "scanner_meta.rs"]
+mod track_meta;
+
+// Task 1.8: move detection also moved out to make room for the above — see
+// `scanner_move.rs`'s own module doc comment.
+#[path = "scanner_move.rs"]
+mod move_detect;
+
 #[cfg(test)]
 #[path = "scanner_progress_tests.rs"]
 mod progress_tests;
@@ -797,3 +705,9 @@ mod import_errors_tests;
 #[cfg(test)]
 #[path = "scanner_vanished_tests.rs"]
 mod vanished_tests;
+
+// Task 1.8: the tag-free relaxed second-pass test suite lives in its own
+// file, same 800-line reason as every other `_tests.rs` sibling here.
+#[cfg(test)]
+#[path = "scanner_untagged_tests.rs"]
+mod untagged_tests;

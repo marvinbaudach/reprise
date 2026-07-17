@@ -11,21 +11,56 @@
 //!
 //! ## Classify at the source, never parse error text
 //!
-//! `scanner::read_meta`'s only fallible line is `lofty::read_from_path`.
-//! Before this task, its `Err` was immediately collapsed to `e.to_string()`
-//! — from that point on every import failure was an indistinguishable
-//! string, and the only way to group them (as the UI needs to) would have
-//! been matching on lofty's `Display` text: a formatting change in any
-//! future patch release of a third-party crate would silently reclassify
-//! everything into `Unknown`, and no test would go red, because no test
-//! knows the foreign string constant. Worse, "permission denied" is not
-//! reliably obtainable that way at all — lofty surfaces `EACCES` as
-//! `ErrorKind::Io(io::Error)`, whose `Display` text varies by platform/libc,
-//! not as a distinct variant. [`classify_lofty`] instead matches on lofty's
-//! *typed* [`lofty::error::ErrorKind`], breaking `Io(e)` down further by
-//! `e.kind()`, and keeps the original message only as `reason_detail` — a
-//! display payload this module never inspects again. [`classify_walkdir`]
-//! applies the same principle to directory-traversal failures.
+//! `scanner::track_meta::read_meta`'s only fallible line is `lofty::read_
+//! from_path`. Before this task, its `Err` was immediately collapsed to
+//! `e.to_string()` — from that point on every import failure was an
+//! indistinguishable string, and the only way to group them (as the UI
+//! needs to) would have been matching on lofty's `Display` text: a
+//! formatting change in any future patch release of a third-party crate
+//! would silently reclassify everything into `Unknown`, and no test would
+//! go red, because no test knows the foreign string constant. Worse,
+//! "permission denied" is not reliably obtainable that way at all — lofty
+//! surfaces `EACCES` as `ErrorKind::Io(io::Error)`, whose `Display` text
+//! varies by platform/libc, not as a distinct variant. [`classify_lofty`]
+//! instead matches on lofty's *typed* [`lofty::error::ErrorKind`], breaking
+//! `Io(e)` down further by `e.kind()`, and keeps the original message only
+//! as `reason_detail` — a display payload this module never inspects again.
+//! [`classify_walkdir`] applies the same principle to directory-traversal
+//! failures.
+//!
+//! ## Hint rows (Task 1.8): a query-layer contract, not a stored flag
+//!
+//! Task 1.8 lets a file with unreadable tags but an intact container import
+//! anyway (`tracks.untagged = 1`, real `duration_ms` from the container's
+//! properties — see `scanner_meta.rs`'s module doc comment for the full
+//! two-pass rationale) instead of being refused. Its `import_errors` row is
+//! kept alive rather than cleared — see `scanner.rs`'s `## Hint coexistence`
+//! doc section on `scan_folder_inner` for exactly when it's cleared versus
+//! refreshed — and becomes a HINT: "imported without metadata", not a
+//! failure needing attention.
+//!
+//! There is deliberately NO separate `is_hint` column on `import_errors`: a
+//! second column recording a fact already fully determined by `tracks`
+//! would be a second truth that can drift out of sync with it (e.g. if a
+//! later migration or manual fix touches one table but not the other).
+//! Instead, hint-ness is derivable — a query-layer/UI contract every
+//! consumer of this table must use identically:
+//!
+//! ```sql
+//! -- `import_errors.path` row is a HINT iff:
+//! EXISTS(
+//!   SELECT 1 FROM tracks
+//!   WHERE tracks.path = import_errors.path
+//!     AND tracks.untagged = 1
+//!     AND tracks.missing_since IS NULL   -- `queries::PRESENT`
+//!     AND tracks.removed_at IS NULL      -- `queries::PRESENT`
+//! )
+//! ```
+//!
+//! A hint must never count toward the sidebar badge a later task adds: the
+//! app is asking the user for tags there, not for help — a file that
+//! already imported successfully, just without metadata, is not the kind of
+//! problem that badge exists to surface.
 
 use rusqlite::{OptionalExtension, Transaction};
 

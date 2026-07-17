@@ -81,7 +81,7 @@ fn repeated_scans_of_same_broken_file_produce_one_episode_row() {
 }
 
 /// Brief case 3: a dismissed row whose file is UNCHANGED must be skipped
-/// before `read_meta` ever runs — proven with `READ_META_CALLS`, not just an
+/// before `read_meta` ever runs — proven with `track_meta::READ_META_CALLS`, not just an
 /// assertion on the row (which would also pass if the parse ran and simply
 /// didn't change anything). `seen_count` must not bump either: a skip is not
 /// a failed attempt.
@@ -110,10 +110,10 @@ fn dismissed_unchanged_file_is_skipped_without_reading_tags() {
     .unwrap();
     let (_, _, seen_count_before, _, _) = import_error_row(&conn, &path_str).unwrap();
 
-    READ_META_CALLS.with(|calls| calls.set(0));
+    track_meta::READ_META_CALLS.with(|calls| calls.set(0));
     completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(
-        READ_META_CALLS.with(std::cell::Cell::get),
+        track_meta::READ_META_CALLS.with(std::cell::Cell::get),
         0,
         "a dismissed, unchanged file must never reach read_meta"
     );
