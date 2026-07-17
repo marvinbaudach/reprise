@@ -281,14 +281,10 @@ pub(in crate::ui) struct Shared {
     /// decoupling-via-closure seam as `on_play_selected`/`on_queue_
     /// selected`).
     pub(in crate::ui) on_rescan_library: RefCell<Option<Rc<dyn Fn()>>>,
-    /// "Remove from library" (Missing-source context menu item, Stage 3 Task
-    /// 8): injected via `TrackList::set_on_library_mutated` — `window.rs`
-    /// wires this to `Sidebar::refresh` (the Missing badge count can only
-    /// ever shrink from this action) AND `PlayerController::purge_queue_ids`
-    /// (Stage-3 close-out: a hard-deleted track must also be purged from the
-    /// playback queue). Takes the ids `queries::remove_missing_tracks`
-    /// actually deleted — not just a bare notification — so the queue purge
-    /// knows exactly which ids to remove.
+    /// Missing-view mutation callback. Tombstone and Undo notify with an
+    /// empty id slice so the sidebar reloads immediately; expiry/auto-clean
+    /// notify with the exact hard-purged ids so the playback queue can purge
+    /// them only once removal is committed.
     pub(in crate::ui) on_library_mutated: RefCell<Option<OnLibraryMutated>>,
     /// Invoked after successful file-tag writes and DB reconciliation.
     /// Kept separate from `on_library_mutated`: editing tags must never purge
@@ -506,11 +502,14 @@ impl TrackList {
         *self.shared.on_rescan_library.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// Injects the callback invoked after "Remove from library" deletes rows
-    /// (Missing source, Stage 3 Task 8) — see the `Shared::on_library_
-    /// mutated` doc comment. `window.rs` wires this to `Sidebar::refresh`.
+    /// Injects the Missing-view mutation callback — see `Shared::on_library_
+    /// mutated` for the empty-vs-purged id contract.
     pub fn set_on_library_mutated(&self, callback: impl Fn(&[i64]) + 'static) {
         *self.shared.on_library_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub fn remove_missing_with_undo(&self, ids: &[i64]) {
+        self.shared.missing_files_view.remove_with_undo(ids);
     }
 
     pub fn set_on_tags_mutated(&self, callback: impl Fn(&[PathBuf]) + 'static) {
