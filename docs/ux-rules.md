@@ -388,7 +388,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   — die Virtualisierung des ColumnView bleibt unangetastet; Input-durchlässig
   außer der Pill; Position wird bei Scroll-, Model-/Filter- und
   Resize-Änderungen neu berechnet.
-- **FIL-4** [geplant] [gtk] — Suchfeld trägt seinen Zustand: Sobald das Feld
+- **FIL-4** [aktiv] [gtk] — Suchfeld trägt seinen Zustand: Sobald das Feld
   Text enthält, bekommt es Akzent-Border + getönten Hintergrund — auch
   unfokussiert.
 - **FIL-5** [geplant] [gtk] — Treffer-Highlighting: Der Suchbegriff wird in

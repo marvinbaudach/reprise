@@ -44,12 +44,23 @@ pub(super) fn css() -> String {
          floating-sheet > sheet headerbar {{ \
            background-color: alpha(white, {DIALOG_HEADER_TINT_ALPHA}); }}\n\
          floating-sheet > sheet .boxed-list {{ \
-           background-color: alpha(white, {DIALOG_CARD_ALPHA}); }}"
+           background-color: alpha(white, {DIALOG_CARD_ALPHA}); }}
+         .reprise-search-active {{ \
+           border: 1px solid alpha(@accent_color, 0.5); \
+           background-color: alpha(@accent_bg_color, 0.16); }}"
     )
 }
 
 #[cfg(test)]
 mod tests {
+    // UX FIL-4: the accent styling for a non-empty search field is part of the
+    // installed app stylesheet.
+    #[test]
+    fn fil_4_css_defines_the_active_search_class() {
+        assert!(super::css().contains(".reprise-search-active"));
+        assert!(super::css().contains("@accent_color"));
+    }
+
     #[test]
     fn css_defines_focus_glow_hover_and_surface() {
         let css = super::css();
