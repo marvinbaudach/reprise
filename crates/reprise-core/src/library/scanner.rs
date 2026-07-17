@@ -1,9 +1,9 @@
 use rusqlite::Connection;
 use std::path::Path;
 
-use super::import_errors::{self, ImportErrorKind};
+use super::import_errors;
 use super::mounts;
-use crate::models::MissingReason;
+use crate::models::{ImportErrorKind, MissingReason};
 use crate::queries::PRESENT;
 
 #[derive(Debug, thiserror::Error)]
