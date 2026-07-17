@@ -149,3 +149,12 @@ Started: 2026-07-16
   Off→All→One-Zyklus implementiert und anderweitig getestet, aber noch nicht
   regelbenannt. Pilot-Regeltests stehen in `queue_tests.rs`, QUE-1 bleibt als
   `[geplant]`-Demo ignored — UX-Regelwerk Task 4.
+
+- cua-e2e: `play-2-doubleclick-row`-Szenario und
+  `cua_double_click_label`-Helper ergänzen den Verdrahtungsbeweis für PLAY-2
+  über den Marker `queue set from view`. Das Szenario läuft vor dem
+  `nomatch`-Filter, weil die Fixture-Row danach absichtlich verborgen ist.
+  Deferred host check: `cargo build && scripts/cua-e2e/run.sh` startete Xvfb
+  und Reprise isoliert, aber der private CUA/AT-SPI-Pfad listete innerhalb der
+  Smoke-Frist kein Reprise-Fenster; deshalb wurde kein grüner CUA-Lauf
+  behauptet — UX-Regelwerk Task 5.
