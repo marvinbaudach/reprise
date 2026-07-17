@@ -128,7 +128,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     // Stage 3 Task 5: context menu action wiring. `track_list` stays
     // decoupled from `PlayerController`/`Sidebar` themselves (same
     // decoupling-via-closure seam as `on_activate`/`queue_ids_provider`
-    // above) — these three closures are the only place that bridges them.
+    // above) — these closures are the only place that bridges them.
     // `window` already exists (built at the top of this function), so `set_
     // window` could technically be a constructor parameter, but every other
     // post-construction seam on `track_list` is wired here too, so this
@@ -137,20 +137,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     // Wire player for tag-edit flow to refresh now-playing metadata
     if let Some(player) = &player {
         track_list.set_player(player);
-    }
-    {
-        let player = player.clone();
-        let conn_for_play = conn.clone();
-        track_list.set_on_play_selected(move |ids, start_index, source| match &player {
-            Some(player) => {
-                let origin = {
-                    let conn = conn_for_play.borrow();
-                    play_origin::resolve(&conn, &source)
-                };
-                player.play_from_view(ids, start_index, origin);
-            }
-            None => tracing::warn!("player unavailable; ignoring context menu play action"),
-        });
     }
     {
         let player = player.clone();
@@ -225,9 +211,80 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
     {
+        let player = player.clone();
+        track_list.set_on_queue_move_to_top(move |rows| {
+            player
+                .as_ref()
+                .map_or(0, |player| player.move_queue_rows_to_top(rows))
+        });
+    }
+    {
+        let track_list_weak = Rc::downgrade(track_list);
+        let sidebar_weak = Rc::downgrade(sidebar);
+        let content_stack = content_stack.downgrade();
+        let library_stack = library_stack.downgrade();
+        track_list.set_on_go_to_album(move |album, album_artist| {
+            let Some(track_list) = track_list_weak.upgrade() else {
+                return;
+            };
+            let source = ViewSource::Album {
+                album,
+                album_artist,
+            };
+            if let Some(sidebar) = sidebar_weak.upgrade() {
+                crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
+            }
+            track_list.set_source(source);
+            if let Some(content_stack) = content_stack.upgrade() {
+                content_stack.set_visible_child_name("library");
+            }
+            if let Some(library_stack) = library_stack.upgrade() {
+                library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_TRACKS);
+            }
+        });
+    }
+    {
+        let track_list_weak = Rc::downgrade(track_list);
+        let sidebar_weak = Rc::downgrade(sidebar);
+        let content_stack = content_stack.downgrade();
+        let library_stack = library_stack.downgrade();
+        track_list.set_on_go_to_artist(move |artist| {
+            let Some(track_list) = track_list_weak.upgrade() else {
+                return;
+            };
+            let source = ViewSource::Artist(artist);
+            if let Some(sidebar) = sidebar_weak.upgrade() {
+                crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
+            }
+            track_list.set_source(source);
+            if let Some(content_stack) = content_stack.upgrade() {
+                content_stack.set_visible_child_name("library");
+            }
+            if let Some(library_stack) = library_stack.upgrade() {
+                library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_TRACKS);
+            }
+        });
+    }
+    {
+        let track_list_weak = Rc::downgrade(track_list);
+        let sidebar_weak = Rc::downgrade(sidebar);
+        track_list.set_on_show_missing_files(move || {
+            let Some(sidebar) = sidebar_weak.upgrade() else {
+                return;
+            };
+            if let Some(track_list) = track_list_weak.upgrade() {
+                crate::ui::sidebar_session::sync_current_source(
+                    &sidebar.shared,
+                    &track_list.current_source(),
+                );
+            }
+            sidebar.refresh_and_select(ViewSource::Missing, "track context menu");
+        });
+    }
+    {
         // Stage 3 Task 6: queue drag-reorder — see `ui::track_list_dnd`'s
-        // doc comment. Same decoupling-via-closure seam as `on_play_
-        // selected`/`on_queue_selected` just above.
+        // doc comment. Same decoupling-via-closure seam as `on_queue_
+        // selected` just above.
         let player = player.clone();
         track_list.set_on_queue_reorder(move |op| match &player {
             Some(player) => player.reorder_queue_rows(op),
@@ -385,8 +442,8 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         // re-runs the persisted library root through the exact same scan
         // flow "Scan folder…" uses — see `trigger_rescan_of_library_root`.
         // `track_list` stays decoupled from the scan machinery/settings
-        // table itself, same decoupling-via-closure seam as `on_play_
-        // selected`/`on_queue_selected` above.
+        // table itself, same decoupling-via-closure seam as the queue
+        // callbacks above.
         let conn = conn.clone();
         let scan_controls = scan_controls.clone();
         let toast_overlay = toast_overlay.clone();

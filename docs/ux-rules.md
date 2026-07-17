@@ -417,7 +417,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   context, selection)` (GMenu-Sections), nie aus fünf handkopierten Menüs.
   Kontexte: `LibraryTracks | AlbumDetail | ArtistDetail | Playlist | Queue`.
   Missing-View und Smart-Playlists rendern als `LibraryTracks`.
-- **CTX-2** [geplant] [gtk] — Nur Selektions-Aktionen. Kein globaler Eintrag im
+- **CTX-2** [aktiv] [gtk] — Nur Selektions-Aktionen. Kein globaler Eintrag im
   Track-Menü (kein „Rescan library" — das lebt im Hamburger-Menü). Rechtsklick
   auf eine unselektierte Row selektiert sie zuerst; das Menü gilt immer der
   sichtbaren Selektion. Shift+F10 / Menü-Taste öffnen auf der

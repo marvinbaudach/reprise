@@ -62,6 +62,9 @@ fn selected_tags(shared: &Rc<Shared>) -> Option<SelectedTags> {
     let mut ratings = Vec::with_capacity(positions.len());
     for position in positions {
         let track = shared.model.track_at(position)?;
+        if track.is_missing() {
+            continue;
+        }
         tracks.push((track.id, PathBuf::from(&track.path)));
         ratings.push(track.rating);
         tags.push(EditableTags {
@@ -74,7 +77,7 @@ fn selected_tags(shared: &Rc<Shared>) -> Option<SelectedTags> {
             genre: track.genre,
         });
     }
-    Some((tracks, tags, ratings))
+    (!tracks.is_empty()).then_some((tracks, tags, ratings))
 }
 
 fn begin(shared: &Rc<Shared>) {

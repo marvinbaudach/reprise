@@ -530,24 +530,6 @@ pub fn scan_already_running_toast() -> String {
     text(N_!("A scan is already running"))
 }
 
-/// Toast for the "Remove from library" context-menu action — plural-correct,
-/// same convention as the playlist-mutation toasts above.
-pub fn tracks_removed_from_library_toast(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "{count} track removed from library",
-        "{count} tracks removed from library",
-        count,
-        &[("count", &count_text)],
-    )
-}
-
-/// Toast shown when `queries::remove_missing_track` fails while handling
-/// the context menu's "Remove from library" action.
-pub fn tracks_removed_from_library_failed_toast() -> String {
-    text(N_!("Could not remove tracks from library"))
-}
-
 // Import-errors panel (src/ui/import_errors_view.rs, Stage 3 Task 8): a
 // dedicated three-column (path/reason/time) view for the `import_errors`
 // table, since its rows aren't `Track`s and don't fit the shared
