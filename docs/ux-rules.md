@@ -34,12 +34,17 @@ später automatisierbar, wechselt nur ihr Tag, nie ihre ID.
 nebenbei weitere Regeln ab, zählt das nicht — die Zweitregel braucht ihren
 eigenen Test. `#[ignore = "UX <ID> [geplant] — …"]` ist nur auf
 `[geplant]`-Regeln erlaubt. `scripts/check-ux-traceability.sh` (Teil des
-Merge-Gates) erzwingt: jede `[aktiv]`-Regel hat ≥ 1 Test · kein Test
-referenziert eine unbekannte oder ersetzte ID · kein Ignore auf `[aktiv]` ·
-jedes Ignore auf einem regelbenannten Test hält das Format oben ein. Als
-Abdeckung zählen nur echte `#[test]`-Funktionen bzw. ausgeführte
-cua-e2e-Zeilen — eine gleichnamige Helper-fn oder ein Kommentar greent das
-Gate nicht.
+Merge-Gates) erzwingt: jede `[aktiv]`-Regel hat ≥ 1 Test — bei `[manuell]`
+stattdessen eine wörtliche ID-Referenz in `RELEASING.md` · weder Test noch
+Checkliste referenzieren eine unbekannte oder ersetzte ID · kein
+Deaktivierungs-Ignore auf `[aktiv]` · jedes Deaktivierungs-Ignore auf einem
+regelbenannten Test hält das Format oben ein. Als Abdeckung zählen nur
+echte `#[test]`-Funktionen bzw. ausgeführte cua-e2e-Zeilen — eine
+gleichnamige Helper-fn oder ein Kommentar greent das Gate nicht. Der
+Display-Runner-Marker `#[ignore = "requires a display; run via xvfb-run"]`
+ist kein Deaktivierungs-Ignore: solche Tests laufen als Merge-Blocker über
+`scripts/check-display-tests.sh --rule-named` und zählen als Abdeckung auch
+für `[aktiv]`-Regeln.
 
 **Sprache.** Dieses Dokument und die Design-Docs sind Deutsch — die
 Arbeitssprache des Projekts. Tests und Skripte sind Code und damit Englisch

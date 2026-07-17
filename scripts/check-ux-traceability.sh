@@ -6,8 +6,9 @@
 #      (Rust fn snake_case or cua-e2e scenario kebab-case).
 #   2. No test references an ID that is missing from the document or
 #      marked [ersetzt ...].
-#   3. No #[ignore] on a test whose rule is [aktiv], and every #[ignore]
-#      on a rule-named test spells out "UX <ID> [geplant] — ...".
+#   3. The display-runner marker is allowed on every rule status. Every other
+#      #[ignore] is limited to [geplant] rules and must spell out
+#      "UX <ID> [geplant] — ...".
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -88,18 +89,24 @@ for id in "${!status_of[@]}"; do
   fi
 done
 
-# --- Direction 3: no #[ignore] on [aktiv] rules, and every ignore on a ---
-# --- rule-named test follows the mandated "UX <ID> [geplant] — ..." form ---
+# --- Direction 3: display-runner markers are coverage, other ignores are ---
+# --- limited to [geplant] rules and the "UX <ID> [geplant] — ..." form ---
 while read -r fn_name; do
-  id=$(to_id "$fn_name")
+  ref=$(printf '%s' "$fn_name" | grep -oE "^(${prefixes})_[0-9]+[a-z]?")
+  id=$(to_id "$ref")
+  ignore_lines=$(grep -rhB3 --include='*.rs' "fn ${fn_name}(" crates 2>/dev/null \
+    | grep -E '^[[:space:]]*#\[ignore' || true)
+  if printf '%s\n' "$ignore_lines" \
+    | grep -qE '^[[:space:]]*#\[ignore = "requires a display; run via xvfb-run"\][[:space:]]*$'; then
+    continue
+  fi
   if [[ ${status_of[$id]:-} == aktiv ]]; then
-    echo "ERROR: test $fn_name is ignored but rule $id is [aktiv]" >&2; fail=1
-  elif ! grep -rhB3 --include='*.rs' "fn ${fn_name}_" crates 2>/dev/null \
-    | grep -E '#\[ignore' | grep -qF "UX $id [geplant]"; then
-    echo "ERROR: #[ignore] on $fn_name must read \"UX $id [geplant] — ...\"" >&2; fail=1
+    echo "ERROR: test $ref is ignored but rule $id is [aktiv]" >&2; fail=1
+  elif ! printf '%s\n' "$ignore_lines" | grep -qF "UX $id [geplant]"; then
+    echo "ERROR: #[ignore] on $ref must read \"UX $id [geplant] — ...\"" >&2; fail=1
   fi
 done < <(grep -rA3 --include='*.rs' '#\[ignore' crates 2>/dev/null \
-  | grep -oE "fn (${prefixes})_[0-9]+[a-z]?_" | sed -E 's/^fn //; s/_$//' | sort -u || true)
+  | grep -oE "fn (${prefixes})_[0-9]+[a-z]?_[a-z0-9_]+" | sed -E 's/^fn //' | sort -u || true)
 
 if (( fail )); then exit 1; fi
 active_count=$(grep -cE '^- \*\*[A-Z]+-[0-9]+[a-z]?\*\* \[aktiv\]' "$doc" || true)
