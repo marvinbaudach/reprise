@@ -146,15 +146,16 @@ fn mb_get(url: &str) -> Option<String> {
 /// A plain GET returning validated image bytes, a clean miss, or a retryable failure.
 fn http_get_bytes(url: &str) -> CaaFetchResult {
     let user_agent = musicbrainz::user_agent();
-    let response = match ureq::builder()
-        .timeout(HTTP_TIMEOUT)
+    let response = match ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
         .user_agent(&user_agent)
         .build()
+        .new_agent()
         .get(url)
         .call()
     {
         Ok(response) => response,
-        Err(ureq::Error::Status(status, _)) if is_clean_caa_miss(status) => {
+        Err(ureq::Error::StatusCode(status)) if is_clean_caa_miss(status) => {
             return CaaFetchResult::NotFound;
         }
         Err(_) => return CaaFetchResult::TransientFailure,
@@ -162,6 +163,7 @@ fn http_get_bytes(url: &str) -> CaaFetchResult {
     let mut bytes = Vec::new();
     use std::io::Read;
     if response
+        .into_body()
         .into_reader()
         .take(MAX_IMAGE_BYTES + 1)
         .read_to_end(&mut bytes)
