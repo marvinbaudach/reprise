@@ -391,7 +391,7 @@ impl Queue {
 
     /// Purges every occurrence of each id in `remove` from the queue (Stage-3
     /// close-out: "Remove from library" hard-deletes `tracks` rows —
-    /// `queries::remove_missing_track`/`remove_missing_tracks` — and a
+    /// `queries::remove_missing_tracks` — and a
     /// queued id that no longer resolves to a row desyncs `len()`/`ids_in_
     /// order()` from what `ViewSource::Queue`'s window query can actually
     /// render; see `queries.rs`'s module doc, `Queue` section). Every

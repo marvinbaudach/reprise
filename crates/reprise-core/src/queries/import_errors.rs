@@ -1,8 +1,8 @@
 //! Grouped import-error read/write queries (Task 2.4): the read/write half
 //! the ImportErrors triage UI (`ui::import_errors_view`, a later task) is
-//! built directly against, replacing the flat `query_import_errors`/
-//! `ImportErrorRow`/`delete_import_error` trio one call at a time as that
-//! UI is rebuilt. Split into its own sibling of `issues.rs`/`maintenance.rs`
+//! built directly against. It replaced the former flat import-error row and
+//! delete API when that UI was rebuilt. Split into its own sibling of
+//! `issues.rs`/`maintenance.rs`
 //! rather than folded into either: `issues.rs` is already a cohesive unit
 //! for the *missing-file* taxonomy (`MissingGroupKind`), and `maintenance.rs`
 //! is close to the project's 800-line rule with its own already-large test
@@ -217,7 +217,7 @@ pub fn count_dismissed_import_errors(conn: &Connection) -> Result<u32, rusqlite:
 /// restore semantics" section for why this is a stat snapshot, not a
 /// delete. A path with no matching row is a silent no-op (`Ok(())`, zero
 /// rows updated), matching this codebase's convention for a stale/unknown
-/// path (e.g. `delete_import_error`, `track_id_for_path`'s callers) — the
+/// path (as with `track_id_for_path`'s callers) — the
 /// caller races against the scanner clearing the row out from under a
 /// dismiss click more plausibly than most callers in this crate.
 pub fn dismiss_import_error(

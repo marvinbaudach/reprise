@@ -221,8 +221,7 @@ pub fn create_playlist_and_add(
 /// remove_missing_tracks` — the batch, TRANSACTIONAL primitive (Stage-3
 /// close-out; see that function's doc comment for the DATABASE-ONLY delete
 /// guarantee, its defensive presence-predicate guard, and why the batch/
-/// transactional form — not a per-id loop over `remove_missing_track` — is
-/// required: it also renumbers every playlist position gap the delete's
+/// transactional form is required: it also renumbers every playlist position gap the delete's
 /// `ON DELETE CASCADE` would otherwise leave behind). Returns the ids
 /// actually deleted (a subset of `ids`, in input order) — the caller
 /// (`ui::track_list_context_menu::handle_remove_from_library`) needs the
