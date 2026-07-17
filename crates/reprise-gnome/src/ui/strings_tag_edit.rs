@@ -194,9 +194,43 @@ pub const TAG_FETCH_NO_RESULTS: &str = N_!("No matching release found");
 pub const TAG_FETCH_NETWORK_ERROR: &str = N_!("Network error — check your connection");
 pub const TAG_FETCH_FIELDS_FILLED: &str = N_!("Done — empty fields filled from MusicBrainz");
 pub const TAG_FETCH_NOTHING_TO_FILL: &str = N_!("Done — all fields already have values");
+// Superseded by TAG-8's two-answer discard prompt (`tag_discard_prompt_title`
+// + `TAG_KEEP_EDITING`, below): a discard prompt with a "Save" way out
+// defeats its own purpose ("Speichern ist nie der Ausweg aus einer
+// Schließen-Geste" — Beschluss TAG-8). Kept — `strings_tag_edit.rs` is
+// append-only — rather than deleted.
+#[allow(dead_code)]
 pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
+#[allow(dead_code)]
 pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
 pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
+
+const TAG_DISCARD_PROMPT_TITLE: &str = N_!("Discard changes to {count} track?");
+const TAG_DISCARD_PROMPT_TITLE_PLURAL: &str = N_!("Discard changes to {count} tracks?");
+
+/// TAG-8's Esc-cascade stage-3 heading, e.g. "Discard changes to 30
+/// tracks?" — same "tracks = real writes" currency as the review footer,
+/// save label, progress spinner, and toast.
+pub fn tag_discard_prompt_title(pending_track_count: usize) -> String {
+    let count_text = pending_track_count.to_string();
+    plural(
+        TAG_DISCARD_PROMPT_TITLE,
+        TAG_DISCARD_PROMPT_TITLE_PLURAL,
+        pending_track_count,
+        &[("count", &count_text)],
+    )
+}
+
+/// TAG-8's default (non-destructive) discard-prompt response.
+pub const TAG_KEEP_EDITING: &str = N_!("Keep editing");
+
+// Prepared for the Shortcuts-Overlay entry (`ui/help.rs`'s
+// `NAVIGATION_SHORTCUTS`/a new "Tag Editor" section) that documents TAG-8's
+// Ctrl+Enter save shortcut — `help.rs` is outside this package's ownership
+// this wave (see the E1/E2 report), so the copy is staged here, unused,
+// rather than left undone.
+#[allow(dead_code)]
+pub const TAG_SAVE_SHORTCUT: &str = N_!("Save Tags");
 // Retained for a future cover-write feature: v1 (3a layout, Beschluss #1)
 // dropped the "Change cover…" affordance from the tag editor entirely.
 #[allow(dead_code)]

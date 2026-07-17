@@ -345,7 +345,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## K. Tag-Editor
 
-- **TAG-1** [aktiv] [gtk] — Save ist navigationsneutral: Speichern ändert
+- **TAG-1** [geplant] [gtk] — Save ist navigationsneutral: Speichern ändert
   weder Scroll noch Ansicht der Library (NAV-5 gilt durch den Dialog
   hindurch); ein „Springen zum nächsten Song" gibt es nicht. Nach dem
   Schließen liegt der Fokus auf der Library, Selektion = die **geschriebenen**
@@ -416,19 +416,21 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Sichtprüfung auf einem echten Display es bestätigt — „kein halb kaputtes
   Ghost im Release". Das Zielbild ist beschlossen, nur die Auslieferung wartet
   auf die Abnahme; Umschalten kostet dann eine Konstante, keinen Code.
-- **TAG-8** [geplant] [gtk] — Tastatur-Semantik. **Enter:** bei offenem
+- **TAG-8** [aktiv] [gtk] — Tastatur-Semantik. **Enter:** bei offenem
   Dropdown übernimmt es den markierten Vorschlag (Dropdown zu, Fokus bleibt
   im Feld); bei geschlossenem springt es ins nächste editierbare Feld; im
   letzten Feld fokussiert es den Save-Button, sodass der nächste Enter
   bewusst speichert. Enter speichert **nie** direkt aus einem Textfeld — zu
   leicht ausgelöst, während man durch Vorschläge tippt. Ctrl+Enter speichert
-  von überall. **Esc-Kaskade:** erst schließt das Popover (Text bleibt), dann
+  von überall (Ctrl+S ist derselbe, nur unbeworbene Alias — eine Action für
+  beide). **Esc-Kaskade:** erst schließt das Popover (Text bleibt), dann
   revertet das scharfe Feld, dann greift die Dialog-Ebene (Discard-Frage ab
   einer Änderung, sonst schließen) — jede Stufe vernichtet höchstens, was die
-  nächste wiederbringen kann. Die Discard-Frage zählt Tracks („Discard
-  changes to 3 tracks?") und hat zwei Antworten: Keep editing (Default) und
-  Discard (destruktiv). Kein Save im Prompt: Speichern ist nie der Ausweg aus
-  einer Schließen-Geste.
+  nächste wiederbringen kann; läuft gerade ein Save, ignoriert die
+  Dialog-Ebene Esc vollständig (der Batch ist atomar, kein Abbruch). Die
+  Discard-Frage zählt Tracks („Discard changes to 3 tracks?") und hat zwei
+  Antworten: Keep editing (Default) und Discard (destruktiv). Kein Save im
+  Prompt: Speichern ist nie der Ausweg aus einer Schließen-Geste.
 
 ---
 
