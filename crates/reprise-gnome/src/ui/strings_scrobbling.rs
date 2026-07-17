@@ -24,6 +24,8 @@ pub const LISTENBRAINZ_DIALOG_BODY: &str = N_!(
 );
 pub const LISTENBRAINZ_TOKEN: &str = N_!("User token");
 pub const LISTENBRAINZ_CONNECT: &str = N_!("Connect");
+/// TIP-2b: reason shown while the ListenBrainz connect button is disabled.
+pub const CONNECT_REQUIRES_TOKEN: &str = N_!("Requires your ListenBrainz user token");
 pub const LISTENBRAINZ_DISCONNECT: &str = N_!("Disconnect");
 pub const LISTENBRAINZ_KEYRING_ERROR: &str =
     N_!("Could not access the system keyring. The token was not stored.");
@@ -49,6 +51,8 @@ pub const LASTFM_CONNECTION_ERROR: &str = N_!("Could not connect to Last.fm. Try
 pub const LASTFM_DISCONNECT_ERROR: &str =
     N_!("Could not remove Last.fm credentials from the system keyring.");
 pub const OPEN_BROWSER: &str = N_!("Open Browser");
+/// TIP-2b: reason shown while the Last.fm browser button is disabled.
+pub const BROWSER_REQUIRES_CREDENTIALS: &str = N_!("Requires API key and shared secret");
 pub const LASTFM_SIGN_IN: &str = N_!("Sign in with Last.fm");
 pub const LASTFM_BUNDLED_HINT: &str = N_!("Sign in with your Last.fm account. No API key needed.");
 pub const LASTFM_BYO_KEY: &str = N_!("Use your own API key");
