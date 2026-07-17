@@ -124,7 +124,19 @@ impl PlayerController {
         match toggle_action(status, current, has_pending) {
             ToggleAction::StartCurrent => {
                 if let Some(id) = current {
-                    self.play_track_id(id);
+                    let playable = {
+                        let conn = self.conn.borrow();
+                        reprise_core::queries::query_live_track_ids(&conn)
+                            .map(|ids| ids.contains(&id))
+                    };
+                    match playable {
+                        Ok(true) => self.play_track_id(id),
+                        Ok(false) => self.advance_playback(AdvanceReason::Manual),
+                        Err(error) => {
+                            tracing::error!(%error, id, "could not validate restored current track; trying it directly");
+                            self.play_track_id(id);
+                        }
+                    }
                 }
             }
             ToggleAction::StartPending => self.advance_playback(AdvanceReason::Manual),

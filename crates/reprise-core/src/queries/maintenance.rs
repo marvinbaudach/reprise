@@ -55,6 +55,22 @@ pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite:
     Ok(ids)
 }
 
+/// IDs safe to retain across queue/session restoration. Present rows and
+/// unmounted/unknown missing rows stay because their files can return;
+/// proven-deleted and tombstoned rows do not. This is intentionally broader
+/// than [`query_live_track_ids`], which remains the playback predicate.
+pub fn query_queue_retained_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT id FROM tracks \
+         WHERE removed_at IS NULL \
+           AND (missing_since IS NULL OR coalesce(missing_reason, 'unknown') != 'deleted')",
+    )?;
+    let ids = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(ids)
+}
+
 /// Returns every non-missing media path in stable path order for cover batch
 /// scheduling.
 pub fn query_live_track_paths(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {

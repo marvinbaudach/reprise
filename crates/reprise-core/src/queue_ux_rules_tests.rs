@@ -127,6 +127,72 @@ fn play_5a_deleted_tracks_leave_queue_silently() {
     );
 }
 
+// UX PLAY-5b: an unavailable mount never destroys queue order or interrupts
+// the current track; advance skips it, and clearing the missing state makes
+// the retained id playable again.
+#[test]
+fn play_5b_unmounted_tracks_stay_skip_heal_and_never_stop_current() {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    for (id, reason, removed_at) in [
+        (1_i64, None, None),
+        (2, Some("unmounted"), None),
+        (3, Some("deleted"), None),
+        (4, Some("unknown"), None),
+        (5, Some("unmounted"), Some(9_i64)),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, added_at, missing_since, missing_reason, removed_at) \
+             VALUES (?1, ?2, ?3, 'Artist', 0, \
+                     CASE WHEN ?4 IS NULL THEN NULL ELSE 1 END, ?4, ?5)",
+            rusqlite::params![
+                id,
+                format!("/x/{id}.flac"),
+                format!("Track {id}"),
+                reason,
+                removed_at
+            ],
+        )
+        .unwrap();
+    }
+
+    let retained = crate::queries::query_queue_retained_track_ids(&conn).unwrap();
+    assert_eq!(retained, std::collections::HashSet::from([1, 2, 4]));
+
+    let mut queue = Queue::new();
+    queue.set_tracks(vec![1, 2, 3], 0);
+    let purge: Vec<_> = queue
+        .ids_in_order()
+        .into_iter()
+        .filter(|id| !retained.contains(id))
+        .collect();
+    queue.remove_ids(&purge);
+    assert_eq!(queue.ids_in_order(), vec![1, 2]);
+    assert_eq!(
+        queue.current(),
+        Some(1),
+        "background availability changes never stop the playing track"
+    );
+
+    let live = crate::queries::query_live_track_ids(&conn).unwrap();
+    assert_eq!(queue.advance_auto_matching(|id| live.contains(&id)), None);
+    assert_eq!(queue.ids_in_order(), vec![1, 2]);
+
+    conn.execute(
+        "UPDATE tracks SET missing_since = NULL, missing_reason = NULL WHERE id = 2",
+        [],
+    )
+    .unwrap();
+    let healed = crate::queries::query_live_track_ids(&conn).unwrap();
+    let mut healed_queue = Queue::new();
+    healed_queue.set_tracks(queue.ids_in_order(), 0);
+    assert_eq!(
+        healed_queue.advance_auto_matching(|id| healed.contains(&id)),
+        Some(2)
+    );
+}
+
 // UX QUE-1 [geplant] — demo of the activation workflow. The three-section
 // queue itself shipped on main (c5200e1), but this core stub cannot prove
 // the sections; the flip needs a [gtk] test that can. Whoever writes it
