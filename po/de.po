@@ -2303,3 +2303,24 @@ msgstr "Erfordert API-Schlüssel und Shared Secret"
 
 msgid "Could not read the Rhythmbox library — import stays disabled"
 msgstr "Rhythmbox-Bibliothek konnte nicht gelesen werden — der Import bleibt deaktiviert"
+
+msgid "Syncing {name} · {percent}%"
+msgstr "Synchronisiere {name} · {percent} %"
+
+msgid "Kept on device"
+msgstr "Auf dem Gerät behalten"
+
+msgid "GVfs did not report total capacity; the bar shows known music and free space."
+msgstr "GVfs hat keine Gesamtkapazität gemeldet; der Balken zeigt bekannte Musik und freien Speicher."
+
+msgid "Restore full window (Ctrl+M)"
+msgstr "Vollständiges Fenster wiederherstellen (Strg+M)"
+
+msgid "Close mini-player"
+msgstr "Mini-Player schließen"
+
+msgid "Covers & lyrics: {remaining} queued"
+msgstr "Cover & Songtexte: {remaining} in der Warteschlange"
+
+msgid "Scanning · {pct}%"
+msgstr "Scanne · {pct} %"
