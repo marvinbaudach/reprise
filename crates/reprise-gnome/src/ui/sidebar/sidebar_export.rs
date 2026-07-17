@@ -166,7 +166,7 @@ fn confirm_delete(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
 fn delete_playlist(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
     let result = {
         let conn = shared.conn.borrow();
-        playlists::delete(&conn, playlist_id)
+        playlists::delete(&conn, playlist_id, playlist_name)
     };
     match result {
         Ok(()) => {
@@ -261,5 +261,29 @@ mod tests {
         assert_eq!(specs[0].action, ACTION_EXPORT);
         assert_eq!(specs[1].action, ACTION_DELETE);
         assert_eq!(specs[1].label, strings::text(strings::DELETE_PLAYLIST));
+    }
+
+    #[test]
+    fn stale_playlist_dialog_identity_does_not_delete_a_reused_id() {
+        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let stale_id = playlists::create(&conn, "Old playlist").unwrap();
+        playlists::delete(&conn, stale_id, "Old playlist").unwrap();
+        conn.execute(
+            "INSERT INTO playlists (id,name,position) VALUES (?1,'Replacement playlist',0)",
+            [stale_id],
+        )
+        .unwrap();
+
+        playlists::delete(&conn, stale_id, "Old playlist").unwrap();
+
+        assert_eq!(
+            conn.query_row(
+                "SELECT name FROM playlists WHERE id=?1",
+                [stale_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "Replacement playlist"
+        );
     }
 }

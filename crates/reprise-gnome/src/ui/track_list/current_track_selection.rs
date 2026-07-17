@@ -227,7 +227,7 @@ impl super::Shared {
         };
         let result = {
             let conn = self.conn.borrow();
-            queries::query_track_ids_browsed(
+            queries::query_visible_track_ids_browsed(
                 &conn,
                 &source,
                 &sort.field,

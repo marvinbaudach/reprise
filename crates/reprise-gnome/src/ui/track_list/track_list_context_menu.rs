@@ -53,6 +53,7 @@ use super::track_menu::{
     action_states, build_track_menu, playlist_entries, summarize_selection, MenuContext,
     MenuInputs, SelectionSummary,
 };
+use super::track_playback_selection::{self, ContextPlayDecision, PlayableSelection};
 use crate::ui::delete_tracks;
 use crate::ui::dialogs;
 use crate::ui::popover_lifecycle;
@@ -68,6 +69,7 @@ use reprise_core::view_source::ViewSource;
 /// Bare `gio::SimpleAction` names in the `"tracklist"` action group —
 /// internal identifiers, not user-facing text (see `strings.rs` for the
 /// menu item labels themselves).
+const ACTION_PLAY: &str = "play";
 const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
 pub(in crate::ui) const ACTION_PLAY_NEXT: &str = "play-next";
 const ACTION_MOVE_TO_TOP: &str = "move-to-top";
@@ -78,6 +80,13 @@ const ACTION_GO_TO_ARTIST: &str = "go-to-artist";
 const ACTION_SHOW_IN_FILES: &str = "show-in-files";
 const ACTION_SHOW_IN_MISSING_FILES: &str = "show-in-missing-files";
 pub(in crate::ui) const ACTION_REMOVE_FROM_PLAYLIST: &str = "remove-from-playlist";
+/// Missing-source-only action: see `handle_remove_from_library`'s doc
+/// comment. Distinct from `delete_tracks::ACTION_REMOVE`
+/// (`"remove-selected-from-library"`, the CTX-unified menu's generic
+/// path-matching delete offered elsewhere) — this one goes through
+/// `track_actions::remove_missing_selected`'s batch/transactional delete
+/// instead.
+pub(in crate::ui) const ACTION_REMOVE_FROM_LIBRARY: &str = "remove-from-library";
 /// The action group name every `"tracklist.*"` detailed-action string below
 /// refers to — inserted once on `column_view` by `wire_context_menu_actions`.
 const ACTION_GROUP_NAME: &str = "tracklist";
@@ -142,6 +151,14 @@ pub(in crate::ui) fn current_selection_ids(shared: &Rc<Shared>) -> Vec<i64> {
     track_actions::selected_track_ids(&positions, &shared.model)
 }
 
+/// PLAY-4b: the current selection with missing rows already filtered out —
+/// the exact ids "Play"/"Play next"/"Add to queue" are allowed to act on.
+/// See `track_playback_selection`'s module doc.
+fn current_playable_selection(shared: &Rc<Shared>) -> PlayableSelection {
+    let positions = current_selection_positions(shared);
+    track_playback_selection::selected_playable_tracks(&positions, &shared.model)
+}
+
 fn current_selection_tracks(shared: &Rc<Shared>) -> Vec<reprise_core::models::Track> {
     current_selection_positions(shared)
         .into_iter()
@@ -187,9 +204,15 @@ fn update_menu_action_states(
     summary: &SelectionSummary,
 ) {
     let states = action_states(context, summary);
+    // PLAY-4b: "Play next"/"Add to queue" use the missing-aware "at least
+    // one playable track survives" rule (`PlayableSelection::
+    // enqueue_enabled`), not `states.enqueue`'s coarser "no missing tracks
+    // at all" rule — a mixed selection still enqueues just the playable ids
+    // instead of being greyed out entirely.
+    let enqueue_enabled = current_playable_selection(shared).enqueue_enabled();
     for (name, enabled) in [
-        (ACTION_PLAY_NEXT, states.enqueue),
-        (ACTION_ADD_TO_QUEUE, states.enqueue),
+        (ACTION_PLAY_NEXT, enqueue_enabled),
+        (ACTION_ADD_TO_QUEUE, enqueue_enabled),
         (ACTION_MOVE_TO_TOP, states.enqueue),
         (ACTION_GO_TO_ALBUM, states.go_to_album),
         (ACTION_GO_TO_ARTIST, states.go_to_artist),
@@ -222,12 +245,21 @@ pub(in crate::ui) fn wire_context_menu_actions(
 ) {
     let action_group = shared.menu_actions.clone();
 
+    let play_action = gio::SimpleAction::new(ACTION_PLAY, None);
+    {
+        let shared = shared.clone();
+        play_action.connect_activate(move |_, _| {
+            handle_context_play(&shared);
+        });
+    }
+    action_group.add_action(&play_action);
+
     let play_next_action = gio::SimpleAction::new(ACTION_PLAY_NEXT, None);
     {
         let shared = shared.clone();
         play_next_action.connect_activate(move |_, _| {
-            let ids = current_selection_ids(&shared);
-            track_list_queue_menu::play_next_selected(&shared, &ids);
+            let selection = current_playable_selection(&shared);
+            track_list_queue_menu::play_next_selected(&shared, selection.ids());
         });
     }
     action_group.add_action(&play_next_action);
@@ -236,8 +268,8 @@ pub(in crate::ui) fn wire_context_menu_actions(
     {
         let shared = shared.clone();
         queue_action.connect_activate(move |_, _| {
-            let ids = current_selection_ids(&shared);
-            track_list_queue_menu::add_selected(&shared, &ids);
+            let selection = current_playable_selection(&shared);
+            track_list_queue_menu::add_selected(&shared, selection.ids());
         });
     }
     action_group.add_action(&queue_action);
@@ -351,6 +383,16 @@ pub(in crate::ui) fn wire_context_menu_actions(
     }
     action_group.add_action(&remove_action);
 
+    let remove_from_library_action = gio::SimpleAction::new(ACTION_REMOVE_FROM_LIBRARY, None);
+    {
+        let shared = shared.clone();
+        remove_from_library_action.connect_activate(move |_, _| {
+            let ids = current_selection_ids(&shared);
+            handle_remove_from_library(&shared, &ids);
+        });
+    }
+    action_group.add_action(&remove_from_library_action);
+
     column_view.insert_action_group(ACTION_GROUP_NAME, Some(&action_group));
     super::track_list_context_keys::wire(column_view, shared);
 }
@@ -389,6 +431,53 @@ fn show_context_menu(
     popover_lifecycle::unparent_after_actions(popover.upcast_ref());
 
     popover.popup();
+}
+
+/// "Play" action handler (`ACTION_PLAY`) — see `ui::track_playback_
+/// selection::context_play_decision`'s doc comment for the PLAY-4b
+/// missing-aware semantics: an all-missing selection explains instead of
+/// playing, a mixed selection plays only the playable ids.
+pub(in crate::ui) fn handle_context_play(shared: &Rc<Shared>) {
+    let positions = current_selection_positions(shared);
+    match track_playback_selection::context_play_decision(&positions, &shared.model) {
+        ContextPlayDecision::Play {
+            ids,
+            first_position,
+        } => {
+            if !track_list_queue_menu::play_position_if_queue(shared, first_position) {
+                handle_play(shared, first_position, &ids);
+            }
+        }
+        ContextPlayDecision::Explain(track) => {
+            crate::ui::track_list_activation::explain_missing_track(shared, &track);
+        }
+        ContextPlayDecision::Noop => {
+            tracing::debug!("context menu: play requested with nothing selected; ignoring");
+        }
+    }
+}
+
+/// Starts playback for a non-Queue source via the same `on_activate` seam
+/// row activation uses (`ui::track_list_activation::activate_track`) — the
+/// CTX unification folded the dedicated `on_play_selected` callback into
+/// this single playback entry point. `first_position` resolves the
+/// representative `Track` `on_activate` expects; `ids` (already filtered to
+/// playable tracks by `context_play_decision`) with start index `0` are
+/// exactly `PlayerController::play_from_view`'s parameters — Rhythmbox's
+/// context-menu-play semantics: start at the first selected row, with every
+/// other selected row queued right after it.
+fn handle_play(shared: &Rc<Shared>, first_position: u32, ids: &[i64]) {
+    let Some(track) = shared.model.track_at(first_position) else {
+        tracing::warn!(
+            first_position,
+            "context menu: play action fired but no track at the first selected position"
+        );
+        return;
+    };
+    let count = ids.len();
+    tracing::info!(count, "context menu: play action starting playback");
+    let source = shared.source.borrow().clone();
+    (shared.on_activate)(&track, ids.to_vec(), 0, source);
 }
 
 /// Looks up `playlist_id`'s display name for a toast, falling back to a
@@ -500,6 +589,63 @@ pub(in crate::ui) fn handle_remove_from_playlist(shared: &Rc<Shared>, positions:
             );
             show_toast(shared, &strings::playlist_remove_tracks_failed_toast());
         }
+    }
+}
+
+/// "Remove from library" action handler (`ACTION_REMOVE_FROM_LIBRARY`,
+/// Missing source only) — see `ui::track_actions::remove_missing_selected`'s
+/// doc comment for the DB-only delete guarantee. Guarded on `ViewSource::
+/// Missing` the same way `handle_remove_from_playlist` guards on
+/// `ViewSource::Playlist`: the CTX-unified menu has no dedicated entry
+/// pointing at this action (its generic `delete_tracks`-owned "Remove from
+/// library…" covers every other source instead), so this stays reachable
+/// only via the `REPRISE_SMOKE_MENU_ACTION=remove-from-library` hook, always
+/// combined with a Missing-source selection. A no-op for an empty selection.
+pub(in crate::ui) fn handle_remove_from_library(shared: &Rc<Shared>, ids: &[i64]) {
+    if !matches!(*shared.source.borrow(), ViewSource::Missing) {
+        tracing::warn!(
+            "context menu: remove-from-library fired outside the Missing source; ignoring"
+        );
+        return;
+    }
+    if ids.is_empty() {
+        tracing::debug!(
+            "context menu: remove-from-library requested with nothing selected; ignoring"
+        );
+        return;
+    }
+    match track_actions::remove_missing_selected(&shared.conn, ids) {
+        Ok(removed) => {
+            tracing::info!(
+                removed = removed.len(),
+                "context menu: tracks removed from library"
+            );
+            notify_library_mutated(shared, &removed);
+            show_toast(
+                shared,
+                &strings::tracks_removed_from_library_toast(removed.len()),
+            );
+            reload(shared);
+        }
+        Err(error) => {
+            tracing::error!(%error, "context menu: failed to remove tracks from library");
+            show_toast(shared, &strings::tracks_removed_from_library_failed_toast());
+        }
+    }
+}
+
+/// Clone-out-then-call `on_library_mutated` — see the `Shared::on_library_
+/// mutated` doc comment in `track_list.rs`. `removed_ids` is the exact set
+/// `queries::remove_missing_tracks` actually deleted, passed through so
+/// `window.rs`'s wiring can purge those same ids from the playback queue
+/// (`PlayerController::purge_queue_ids`).
+fn notify_library_mutated(shared: &Rc<Shared>, removed_ids: &[i64]) {
+    let callback = shared.on_library_mutated.borrow().clone();
+    match callback {
+        Some(callback) => callback(removed_ids),
+        None => tracing::warn!(
+            "context menu: library mutated but no on_library_mutated callback is wired"
+        ),
     }
 }
 

@@ -8,6 +8,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::library::session::{SessionSource, SessionState};
+use reprise_core::library::settings;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
@@ -52,6 +53,15 @@ pub(super) fn restore(
     );
     let (source, title) = sidebar.restore_source(to_view_source(&state.source));
     window_title.set_title(&title);
+    let viewed = {
+        let conn = track_list.shared.conn.borrow();
+        record_issue_viewed(&conn, &source, now_unix())
+    };
+    match viewed {
+        Ok(true) => sidebar.refresh("restored issue view opened"),
+        Ok(false) => {}
+        Err(error) => tracing::error!(%error, "failed to record restored issue view as viewed"),
+    }
     finish_track_source(track_list, &source);
     search_guard.set(false);
 }
@@ -230,4 +240,47 @@ fn parse_smoke_state(value: &str) -> Option<SessionState> {
 
 fn parse_optional(value: &str) -> Option<String> {
     (value != "~").then(|| value.to_string())
+}
+
+pub(in crate::ui) fn record_issue_viewed(
+    conn: &rusqlite::Connection,
+    source: &ViewSource,
+    now: i64,
+) -> Result<bool, rusqlite::Error> {
+    match source {
+        ViewSource::Missing => settings::set_last_viewed_missing(conn, now)?,
+        ViewSource::ImportErrors => settings::set_last_viewed_import_errors(conn, now)?,
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+#[cfg(test)]
+mod issue_view_tests {
+    use super::*;
+    use reprise_core::library::settings;
+
+    #[test]
+    fn opening_each_issue_view_records_only_its_last_viewed_clock() {
+        let conn = reprise_core::db::open_migrated(None).unwrap();
+
+        assert!(record_issue_viewed(&conn, &ViewSource::Missing, 111).unwrap());
+        assert_eq!(settings::get_last_viewed_missing(&conn).unwrap(), 111);
+        assert_eq!(settings::get_last_viewed_import_errors(&conn).unwrap(), 0);
+
+        assert!(record_issue_viewed(&conn, &ViewSource::ImportErrors, 222).unwrap());
+        assert_eq!(settings::get_last_viewed_missing(&conn).unwrap(), 111);
+        assert_eq!(settings::get_last_viewed_import_errors(&conn).unwrap(), 222);
+
+        assert!(!record_issue_viewed(&conn, &ViewSource::Library, 333).unwrap());
+        assert_eq!(settings::get_last_viewed_missing(&conn).unwrap(), 111);
+        assert_eq!(settings::get_last_viewed_import_errors(&conn).unwrap(), 222);
+    }
 }

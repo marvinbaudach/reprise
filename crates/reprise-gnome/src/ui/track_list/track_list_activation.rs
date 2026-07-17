@@ -8,10 +8,39 @@
 
 use std::rc::Rc;
 
+use libadwaita as adw;
+
+use crate::ui::strings;
 use crate::ui::track_list::Shared;
+use crate::ui::track_list_columns::missing_track_explanation;
 use reprise_core::models::Track;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::ui) struct MissingActivationNotice {
+    pub(in crate::ui) message: String,
+    pub(in crate::ui) button_label: String,
+    pub(in crate::ui) target: ViewSource,
+}
+
+/// Pure PLAY-4b decision consumed by the activation handler and its
+/// rule-named test. A present row returns `None` and follows normal playback;
+/// a missing row produces the reason-specific explanation and navigation
+/// action instead.
+pub(in crate::ui) fn missing_activation_notice(track: &Track) -> Option<MissingActivationNotice> {
+    Some(MissingActivationNotice {
+        message: missing_track_explanation(track.missing_since, track.missing_reason)?,
+        button_label: strings::issue_text(strings::MISSING_SHOW_IN_FILES),
+        target: ViewSource::Missing,
+    })
+}
+
+impl super::TrackList {
+    pub fn set_on_show_missing(&self, callback: impl Fn(ViewSource) + 'static) {
+        *self.shared.on_show_missing.borrow_mut() = Some(Rc::new(callback));
+    }
+}
 
 /// Row activation (double-click or Enter on a focused row): resolve the
 /// row's `Track` via `TrackListModel::track_at`, build its queue via
@@ -30,6 +59,9 @@ pub(in crate::ui) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<S
 
 pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &Track) {
     tracing::info!(path = %track.path, "activate track");
+    if explain_missing_track(shared, track) {
+        return;
+    }
     // The user is starting playback from the table itself, so the row is
     // already on screen — arm the one-shot marker that makes the follow-up
     // now-playing selection skip the viewport centering (see the
@@ -54,6 +86,30 @@ pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &
     let (ids, start_index) = queue_ids_for_activation(shared, position, track.id);
     let source = shared.source.borrow().clone();
     (shared.on_activate)(track, ids, start_index, source);
+}
+
+pub(in crate::ui) fn explain_missing_track(shared: &Rc<Shared>, track: &Track) -> bool {
+    let Some(notice) = missing_activation_notice(track) else {
+        return false;
+    };
+    show_missing_activation(shared, notice);
+    true
+}
+
+fn show_missing_activation(shared: &Rc<Shared>, notice: MissingActivationNotice) {
+    let Some(overlay) = shared.toast_overlay.upgrade() else {
+        tracing::warn!(message = %notice.message, "toast overlay is gone; degrading to log-only");
+        return;
+    };
+    let toast = adw::Toast::new(&notice.message);
+    toast.set_button_label(Some(&notice.button_label));
+    let callback = shared.on_show_missing.borrow().clone();
+    let target = notice.target;
+    toast.connect_button_clicked(move |_| match &callback {
+        Some(callback) => callback(target.clone()),
+        None => tracing::warn!("missing-row navigation callback is not wired"),
+    });
+    overlay.add_toast(toast);
 }
 
 /// Builds the `(ids, start_index)` pair `OnActivate` carries: every track id

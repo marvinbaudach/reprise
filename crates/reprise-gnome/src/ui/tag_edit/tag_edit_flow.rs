@@ -33,7 +33,7 @@ use reprise_core::library::tag_edit::{
 };
 use reprise_core::library::tag_edit_session::SessionTrack;
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
@@ -69,6 +69,26 @@ fn parse_smoke_tag_edit_mode(value: &str) -> Option<SmokeTagEditMode> {
 /// unverdrängbar for its full run, unlike the plain 4 s success toast
 /// `toasts::show` covers.
 const FAILURE_TOAST_TIMEOUT_S: u32 = 10;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ApplyOrigin {
+    TrackList,
+    ImportHint,
+}
+
+// Superseded by Task F2's FB-3 toast split in `finish_apply` below
+// (`tag_save_result_toast` / `show_failure_toast`), same as the
+// `strings::track_edit_result_toast` it wraps — kept for its
+// `ApplyOrigin::ImportHint` suppression rule, which `finish_apply` still
+// applies inline, and pinned by its own unit test.
+#[allow(dead_code)]
+fn completion_toast(origin: ApplyOrigin, updated: usize, failed: usize) -> Option<String> {
+    if origin == ApplyOrigin::ImportHint && updated > 0 && failed == 0 {
+        None
+    } else {
+        Some(strings::track_edit_result_toast(updated, failed))
+    }
+}
 
 pub(in crate::ui) fn wire_refresh(
     track_list: &TrackList,
@@ -281,9 +301,81 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
         tracks,
         bitrates,
         browse,
-        move |writes, report| finish_apply(&shared_for_saved, &writes, &report),
+        move |writes, report| {
+            finish_apply(&shared_for_saved, &writes, &report, ApplyOrigin::TrackList);
+        },
     );
     tracing::debug!("tag editor presented");
+}
+
+/// G1-adjacent (import-hint fix): a single-track open by path, used by the
+/// "Open in Tag Editor" action on an import-error HINT row. There is no
+/// browse context for a hint edit — it did not come from the visible track
+/// list — so `browse` is always `None`, and completion routes through
+/// `finish_apply` tagged `ApplyOrigin::ImportHint` so a clean save can elide
+/// the usual success toast (the row just disappearing from the failed-import
+/// list is feedback enough).
+pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
+    let seed = {
+        let conn = shared.conn.borrow();
+        conn.query_row(
+            "SELECT id,title,artist,album,album_artist,year,track_no,genre,rating,bitrate_kbps \
+             FROM tracks WHERE path=?1 AND removed_at IS NULL",
+            [path],
+            |row| {
+                let year = row
+                    .get::<_, Option<i32>>(5)?
+                    .and_then(|value| u32::try_from(value).ok());
+                let track_no = row
+                    .get::<_, Option<i32>>(6)?
+                    .and_then(|value| u32::try_from(value).ok());
+                let bitrate = row
+                    .get::<_, Option<i64>>(9)?
+                    .and_then(|value| u32::try_from(value).ok());
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    EditableTags {
+                        title: row.get(1)?,
+                        artist: row.get(2)?,
+                        album: row.get(3)?,
+                        album_artist: row.get(4)?,
+                        year,
+                        track_no,
+                        genre: row.get(7)?,
+                    },
+                    row.get::<_, i32>(8)?,
+                    bitrate,
+                ))
+            },
+        )
+        .optional()
+    };
+    let Ok(Some((id, tags, rating, bitrate))) = seed else {
+        tracing::warn!(path, "tag editor: import hint has no live track row");
+        return;
+    };
+    let Some(window) = shared.window.upgrade() else {
+        tracing::warn!("tag editor: window is gone");
+        return;
+    };
+    let conn = shared.conn.clone();
+    let shared_for_saved = shared.clone();
+    let session_track = SessionTrack {
+        id,
+        path: PathBuf::from(path),
+        tags,
+        rating,
+    };
+    tag_editor::present(
+        &window,
+        &conn,
+        vec![session_track],
+        &[bitrate],
+        None,
+        move |writes, report| {
+            finish_apply(&shared_for_saved, &writes, &report, ApplyOrigin::ImportHint);
+        },
+    );
 }
 
 /// Widget handles [`spawn_save`] disables for the write's duration and
@@ -410,7 +502,12 @@ fn select_written_tracks(shared: &Shared, updated_ids: &[i64]) {
     }
 }
 
-fn finish_apply(shared: &Rc<Shared>, writes: &[TrackWrite], report: &TagBatchReport) {
+fn finish_apply(
+    shared: &Rc<Shared>,
+    writes: &[TrackWrite],
+    report: &TagBatchReport,
+    origin: ApplyOrigin,
+) {
     let updated = report.updated_ids.len();
     let failed = report.failures.len();
     if updated > 0 {
@@ -445,7 +542,15 @@ fn finish_apply(shared: &Rc<Shared>, writes: &[TrackWrite], report: &TagBatchRep
     tracing::info!(updated, failed, "tag-edit batch completed");
 
     if report.failures.is_empty() {
-        show_toast(shared, &strings::tag_save_result_toast(updated));
+        // ImportHint (the "Open in Tag Editor" fix for an import HINT row)
+        // elides the success toast: the row just disappearing from the
+        // failed-import list is feedback enough. TrackList saves still get
+        // the normal confirmation. Mirrors `completion_toast`'s tested
+        // suppression rule above, adapted to FB-3's toast text.
+        let hint_edit_succeeded = origin == ApplyOrigin::ImportHint && updated > 0;
+        if !hint_edit_succeeded {
+            show_toast(shared, &strings::tag_save_result_toast(updated));
+        }
     } else {
         show_failure_toast(shared, updated, report.failures.clone());
     }
@@ -542,10 +647,28 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
         let report = reprise_core::db::open_migrated(Some(&db_path))
             .map(|mut worker_conn| apply_track_writes(&mut worker_conn, &writes, &mut |_, _| {}));
         match report {
-            Ok(report) => finish_apply(&shared, &writes, &report),
+            Ok(report) => finish_apply(&shared, &writes, &report, ApplyOrigin::TrackList),
             Err(error) => tracing::warn!(%error, "tag-edit smoke: could not open database"),
         }
     });
+}
+
+#[cfg(test)]
+mod task_5_6_tests {
+    use super::*;
+
+    #[test]
+    fn healed_import_hint_refreshes_in_place_without_a_success_toast() {
+        assert_eq!(completion_toast(ApplyOrigin::ImportHint, 1, 0), None);
+        assert_eq!(
+            completion_toast(ApplyOrigin::TrackList, 1, 0).as_deref(),
+            Some("Updated 1 track")
+        );
+        assert_eq!(
+            completion_toast(ApplyOrigin::ImportHint, 0, 1).as_deref(),
+            Some("Updated 0 tracks; 1 failed")
+        );
+    }
 }
 
 #[cfg(test)]

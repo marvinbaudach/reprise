@@ -8,6 +8,7 @@ pub(crate) mod mounts;
 mod playlist_delete;
 pub mod playlist_membership;
 pub mod playlists;
+pub mod relink;
 pub mod remote_stats;
 pub mod rhythmbox_import;
 pub mod scanner;

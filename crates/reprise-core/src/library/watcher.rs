@@ -93,6 +93,8 @@ const POLL_INTERVAL: Duration = Duration::from_millis(200);
 pub struct WatchEvent {
     pub report: ScanReport,
     pub vanished: u32,
+    pub root_unavailable: Option<PathBuf>,
+    pub auto_cleaned_ids: Vec<i64>,
 }
 
 /// Handle to a running watcher. Dropping it stops the background thread on
@@ -286,8 +288,18 @@ fn reconcile(root: &Path, db_path: &Path, on_event: &impl Fn(WatchEvent)) {
         return;
     }
 
-    let report = match scanner::scan_folder(&mut conn, root) {
-        Ok(ScanOutcome::Completed(report)) => report,
+    let (report, root_unavailable, auto_cleaned_ids) = match scanner::scan_folder(&mut conn, root) {
+        Ok(ScanOutcome::Completed(report)) => {
+            let auto_cleaned_ids =
+                match scanner::finalize_completed_scan(&mut conn, &report, watcher_now_unix()) {
+                    Ok(ids) => ids,
+                    Err(error) => {
+                        tracing::error!(%error, "watcher: scan postprocessing failed");
+                        Vec::new()
+                    }
+                };
+            (report, None, auto_cleaned_ids)
+        }
         Ok(ScanOutcome::RootUnavailable { root }) => {
             // Deliberately not an early return: unlike a scan/DB error (the
             // arm above), `RootUnavailable` is a normal, expected outcome
@@ -300,7 +312,7 @@ fn reconcile(root: &Path, db_path: &Path, on_event: &impl Fn(WatchEvent)) {
                 "watcher: scan root unavailable; reporting an empty reconcile rather than \
                  marking anything missing"
             );
-            ScanReport::default()
+            (ScanReport::default(), Some(root), Vec::new())
         }
         Err(error) => {
             tracing::error!(%error, "watcher: incremental scan failed; skipping reconcile");
@@ -323,7 +335,18 @@ fn reconcile(root: &Path, db_path: &Path, on_event: &impl Fn(WatchEvent)) {
         vanished,
     );
 
-    on_event(WatchEvent { report, vanished });
+    on_event(WatchEvent {
+        report,
+        vanished,
+        root_unavailable,
+        auto_cleaned_ids,
+    });
+}
+
+fn watcher_now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs() as i64)
 }
 
 /// Process-wide self-write ignore list: the tag editor writing a tag
@@ -477,6 +500,7 @@ mod tests {
         assert_eq!(startup.report.added, 0);
         assert_eq!(startup.report.errors, 0);
         assert_eq!(startup.vanished, 0);
+        assert!(startup.root_unavailable.is_none());
 
         let added = root.join("added-after-start.flac");
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
@@ -488,6 +512,7 @@ mod tests {
         assert_eq!(event.report.added, 1);
         assert_eq!(event.report.errors, 0);
         assert_eq!(event.vanished, 0);
+        assert!(event.root_unavailable.is_none());
 
         let conn = crate::db::open(Some(&db_path)).unwrap();
         let stored = crate::queries::track_id_for_path(&conn, &added.to_string_lossy()).unwrap();
@@ -525,6 +550,7 @@ mod tests {
         assert_eq!(event.report.added, 1);
         assert_eq!(event.report.errors, 0);
         assert_eq!(event.vanished, 0);
+        assert!(event.root_unavailable.is_none());
 
         let conn = crate::db::open(Some(&db_path)).unwrap();
         let stored = crate::queries::track_id_for_path(&conn, &added.to_string_lossy()).unwrap();
@@ -568,6 +594,48 @@ mod tests {
         assert_eq!(
             event.vanished, 0,
             "RootUnavailable must never mark anything missing"
+        );
+        assert_eq!(event.root_unavailable, Some(root));
+        assert!(event.auto_cleaned_ids.is_empty());
+    }
+
+    #[test]
+    fn completed_watcher_reconcile_runs_scan_postprocessing_and_reports_purged_ids() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("music");
+        std::fs::create_dir(&root).unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        std::fs::copy(fixture, root.join("present.flac")).unwrap();
+        let db_path = temp.path().join("reprise.db");
+        {
+            let conn = crate::db::open_migrated(Some(&db_path)).unwrap();
+            conn.execute(
+                "INSERT INTO tracks \
+                 (id,path,title,artist,added_at,missing_since,missing_reason) \
+                 VALUES (99,'/gone.flac','Gone','Artist',0,0,'deleted')",
+                [],
+            )
+            .unwrap();
+            crate::library::settings::set_missing_auto_clean(
+                &conn,
+                crate::library::settings::AutoCleanSetting::Days(0),
+            )
+            .unwrap();
+            crate::library::settings::set_auto_clean_armed_at(&conn, 0).unwrap();
+        }
+
+        let (sender, receiver) = std_mpsc::sync_channel(1);
+        reconcile(&root, &db_path, &move |event| {
+            let _ = sender.send(event);
+        });
+
+        let event = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(event.auto_cleaned_ids, vec![99]);
+        assert!(event.root_unavailable.is_none());
+        let conn = crate::db::open_migrated(Some(&db_path)).unwrap();
+        assert_eq!(
+            crate::library::settings::get_last_scan_relinked(&conn).unwrap(),
+            Some(event.report.moved)
         );
     }
 }

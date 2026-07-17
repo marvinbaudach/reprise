@@ -58,21 +58,48 @@ pub(in crate::ui) fn play_next_selected(shared: &Rc<Shared>, ids: &[i64]) {
     }
 }
 
+/// Context-menu "Play" (PLAY-4b) when the current source is the Queue view:
+/// rather than restarting playback from a synthesized `(ids, start_index)`
+/// list, jump the existing queue directly to the clicked row via
+/// `on_queue_activate` — the same handler `track_list_activation::
+/// activate_track` uses for a Queue-view double-click. Returns `false`
+/// (caller falls back to `handle_play`) for every other source.
+pub(in crate::ui) fn play_position_if_queue(shared: &Rc<Shared>, position: u32) -> bool {
+    if !matches!(*shared.source.borrow(), ViewSource::Queue) {
+        return false;
+    }
+    let row = {
+        let sections = shared.queue_sections.borrow();
+        crate::ui::track_list::queue_row_mapping::classify(position, &sections)
+    };
+    let Some(row) = row else {
+        tracing::warn!(
+            position,
+            "queue play action outside every section; ignoring"
+        );
+        return true;
+    };
+    let callback = shared.on_queue_activate.borrow().clone();
+    match callback {
+        Some(callback) => callback(row),
+        None => tracing::warn!("queue play action fired without an activation callback"),
+    }
+    true
+}
+
 pub(in crate::ui) fn selected_rows(
     shared: &Rc<Shared>,
 ) -> Vec<crate::ui::track_list::queue_row_mapping::QueueRow> {
     if !matches!(*shared.source.borrow(), ViewSource::Queue) {
         return Vec::new();
     }
-    {
-        let sections = shared.queue_sections.borrow();
-        current_selection_positions(shared)
-            .into_iter()
-            .filter_map(|position| {
-                crate::ui::track_list::queue_row_mapping::classify(position, &sections)
-            })
-            .collect()
-    }
+    let sections = shared.queue_sections.borrow();
+    current_selection_positions(shared)
+        .into_iter()
+        .filter_map(|position| {
+            crate::ui::track_list::queue_row_mapping::classify(position, &sections)
+        })
+        .collect()
 }
 
 pub(in crate::ui) fn remove_selected(shared: &Rc<Shared>) {

@@ -8,10 +8,12 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 
+use super::track_playback_selection;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_context_menu::{
     current_selection_ids, current_selection_positions, handle_add_to_playlist,
-    handle_remove_from_playlist, ACTION_PLAY_NEXT, ACTION_REMOVE_FROM_PLAYLIST,
+    handle_context_play, handle_remove_from_library, handle_remove_from_playlist, ACTION_PLAY_NEXT,
+    ACTION_REMOVE_FROM_LIBRARY, ACTION_REMOVE_FROM_PLAYLIST,
 };
 use crate::ui::track_list_queue_menu;
 use reprise_core::library::playlists;
@@ -22,8 +24,12 @@ use reprise_core::library::playlists;
 /// context menu's `gio::SimpleAction` handlers call — never the popover
 /// itself, which needs a real pointer and is a manual-check item (see the
 /// Task 5 report) — once the initial load has run and the main loop is
-/// idle. Two accepted forms:
+/// idle. Accepted forms:
 ///
+/// - `play`: calls `handle_context_play` — the exact same handler
+///   `ACTION_PLAY`'s `gio::SimpleAction` invokes — which starts playback via
+///   `on_activate` (PLAY-4b: explains instead of playing an all-missing
+///   selection, plays only the playable ids of a mixed one).
 /// - `queue`: calls `track_actions::queue_selected_ids` then
 ///   `PlayerController::append_to_queue` (via `on_queue_selected`), logging
 ///   "N tracks added to queue".
@@ -41,6 +47,14 @@ use reprise_core::library::playlists;
 ///   hooks to drive a sorted-or-filtered playlist view headlessly, then
 ///   inspect `playlist_tracks` directly (e.g. via `sqlite3`) to confirm the
 ///   *visible* row was removed, not whatever sits at `pt.position 0`.
+/// - `remove-from-library` (Stage-3 close-out): calls `handle_remove_from_
+///   library` — the exact handler `ACTION_REMOVE_FROM_LIBRARY`'s `gio::
+///   SimpleAction` invokes — with the current selection's ids. Combine with
+///   `track_list.rs`'s `REPRISE_SMOKE_SOURCE=missing` so the selection lands
+///   on the Missing source's rows, then inspect `tracks`/`playlist_tracks`
+///   directly to confirm: the row is gone, every playlist it belonged to
+///   renumbered gaplessly, and (via the player's queue) any queued copy of
+///   it purged — the property this task's fix restores.
 ///
 /// Usage: `REPRISE_SCAN_DIR=… REPRISE_SMOKE_MENU_ACTION=queue
 ///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
@@ -99,10 +113,17 @@ fn dispatch_smoke_menu_action(shared: &Rc<Shared>, action: &str) {
         return;
     }
 
+    if action == "play" {
+        handle_context_play(shared);
+        return;
+    }
+
+    let positions = current_selection_positions(shared);
+    let playable = track_playback_selection::selected_playable_tracks(&positions, &shared.model);
     let ids = current_selection_ids(shared);
 
     if action == "queue" {
-        track_list_queue_menu::add_selected(shared, &ids);
+        track_list_queue_menu::add_selected(shared, playable.ids());
         return;
     }
 
@@ -110,7 +131,21 @@ fn dispatch_smoke_menu_action(shared: &Rc<Shared>, action: &str) {
         // QUE-3 acceptance: drives the real "Play next" handler so a
         // headless run can prove the Play Next section appears between Now
         // Playing and the snapshot tail, and plays first.
-        track_list_queue_menu::play_next_selected(shared, &ids);
+        track_list_queue_menu::play_next_selected(shared, playable.ids());
+        return;
+    }
+
+    if action == ACTION_REMOVE_FROM_LIBRARY {
+        // Stage-3 close-out: drives `handle_remove_from_library` (the exact
+        // function the real "Remove from library" menu item calls)
+        // headlessly, so an E2E run can prove the hard-delete's fallout —
+        // playlist-position compaction, queue purge — without a human
+        // right-clicking a Missing-source row. Selects the first `SMOKE_
+        // MENU_ACTION_ROW_COUNT` rows of the CURRENT view like every other
+        // action here; a run that first switches to `ViewSource::Missing`
+        // (via `REPRISE_SMOKE_SOURCE`) with exactly one missing track
+        // selects exactly that one row.
+        handle_remove_from_library(shared, &ids);
         return;
     }
 

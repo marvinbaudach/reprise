@@ -1,6 +1,15 @@
 use super::column_layout::{self, ColumnId, ColumnLayout};
 use super::TrackList;
 
+pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
+pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
+/// Stage 3 Task 8: the ImportErrors source's dedicated path/reason/time panel
+/// (`ui::import_errors_view::ImportErrorsView`) — a third `gtk::Stack` page,
+/// shown instead of `STACK_PAGE_LIST` only while `ViewSource::ImportErrors`
+/// is selected and has rows (see `apply_empty_state`'s `List` arm).
+pub(in crate::ui) const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
+pub(in crate::ui) const STACK_PAGE_MISSING: &str = "missing";
+
 /// Keeps the track-content viewport filling the window from its first layout.
 /// The initially selected empty page and the later list page have different
 /// natural heights, so relying on child-derived expansion can leave the stack

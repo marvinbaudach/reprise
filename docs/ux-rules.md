@@ -81,7 +81,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **P-5** [geplant] [core] — Die App löscht nie Dateien. „Remove" heißt
   immer: Library-Eintrag. Dialoge benennen Kaskaden (Ratings, Hörhistorie)
   beim Namen.
-- **P-6** [geplant] [core] — Evidenz-Regel: Was beweisbar da ist, wird
+- **P-6** [aktiv] [core] — Evidenz-Regel: Was beweisbar da ist, wird
   angezeigt/geheilt (Mount-Event, Resurrect); was beweisbar weg ist, wird
   sofort ehrlich markiert (Eject). Vermutungen (unmounted) sind nie
   Lösch-Grundlage.
@@ -156,9 +156,9 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   tracks"); die Queue ist genau die Treffermenge, kein Track von außerhalb.
 - **PLAY-3b** [geplant] [gtk] — Filter nachträglich ändern fasst eine bereits
   gebaute Queue nicht an (Queue ist ein Snapshot; sichtbar in „Queue").
-- **PLAY-4a** [geplant] [core] — Missing in Listen: Listen-Playback und
+- **PLAY-4a** [aktiv] [core] — Missing in Listen: Listen-Playback und
   Queue-Advance überspringen Missing still.
-- **PLAY-4b** [geplant] [gtk] — Doppelklick auf konkrete Missing-Row: Toast
+- **PLAY-4b** [aktiv] [gtk] — Doppelklick auf konkrete Missing-Row: Toast
   „File missing since …" + Button „Show in Missing files". Einreihen (Play
   next/Add to queue) ist für Missing disabled.
 - **PLAY-5** [ersetzt durch PLAY-5a/PLAY-5b] — Ursprüngliche
@@ -167,7 +167,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **PLAY-5a** [aktiv] [core] — Deleted-Hygiene: Extern gelöschte Tracks
   verlassen die Queue still; der spielende Track wird dadurch nie gestoppt
   (faultet der spielende Track selbst, gilt FB-6: Skip + ein Toast).
-- **PLAY-5b** [geplant] [core] — Unmounted-Hygiene: Unmountete Tracks bleiben
+- **PLAY-5b** [aktiv] [core] — Unmounted-Hygiene: Unmountete Tracks bleiben
   grau in der Queue, werden beim Advance übersprungen und heilen beim
   Mount-Event (P-6). Kein Hintergrundereignis (deleted, unmounted,
   Sync-Removal, Watcher) stoppt den spielenden Track — explizite
@@ -243,7 +243,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   nie zwei gleichzeitig). Ebene 2 = genau ein Dialog darüber (FileChooser,
   Bestätigung). Ein Dialog öffnet nie einen weiteren Dialog. Esc schließt
   immer die oberste Ebene.
-- **SET-4** [geplant] [gtk] — Settings wirken sofort (kein Apply/OK).
+- **SET-4** [aktiv] [gtk] — Settings wirken sofort (kein Apply/OK).
   Destruktiver Umschalter konkret: Wird Auto-clean aktiviert, während die
   Deleted-Gruppe bereits Zeilen jenseits der gewählten Frist enthält,
   erscheint einmalig ein Dialog: „This will remove N tracks now (deleted
@@ -262,16 +262,23 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   maximal einer wartet, der neueste gewinnt, kein Backlog-Rauschen. Toasts
   MIT Aktion (Undo) sind unverdrängbar und laufen ihre vollen 10 s;
   Ereignis-Toasts warten solange.
-- **FB-2** [geplant] [gtk] — Fortschrittskarte (Sidebar-Bottom-Slot,
-  stapelbar Scan über Sync): Spinner + Titel + % rechts (tabular) +
-  3-px-Balken + ellipsierte Detailzeile. Für alles > ~1 s: Scan, Sync,
-  Relink-Suchlauf, Playlist-Import. Klick auf Karte → zugehörige Ansicht;
-  Cancel auf Karte bricht ab.
-- **FB-3** [geplant] [core] — Fehler: Einzelfehler im Lauf werden gesammelt,
+- **FB-2** [ersetzt durch FB-2a/FB-2b] — Ursprüngliche gemeinsame
+  Fortschrittskarten-Regel; beim Relink-Ausbau in den voll gelieferten
+  Relink-Vertrag (2a) und die noch nicht einheitlich gelieferte Karte der
+  übrigen Langläufer (2b) gesplittet.
+- **FB-2a** [aktiv] [gtk] — Der Relink-Suchlauf läuft off-thread in der
+  bestehenden, mit Scan/Sync stapelbaren Fortschrittskarte im Sidebar-
+  Bottom-Slot: Spinner + Titel + % rechts (tabular) + 3-px-Balken +
+  ellipsierte Detailzeile. Klick auf die Karte → Missing files; der sichtbare
+  Cancel-Button prüft den Abbruch vor jeder Audiodatei.
+- **FB-2b** [geplant] [gtk] — Scan, Sync und Playlist-Import verwenden für
+  jeden Lauf > ~1 s denselben vollständigen Kartenvertrag aus FB-2a,
+  einschließlich sichtbarem Cancel und Navigation zur zugehörigen Ansicht.
+- **FB-3** [aktiv] [core] — Fehler: Einzelfehler im Lauf werden gesammelt,
   nie einzeln getoastet. Am Ende EIN Toast mit „N failed · Details" →
   Details öffnet die zuständige View/Dialog. Persistente Probleme leben als
   Badge + ISSUES-Eintrag, nicht als wiederkehrende Toasts.
-- **FB-4** [geplant] [core] — Badges zählen nur Einträge, die neuer sind als
+- **FB-4** [aktiv] [core] — Badges zählen nur Einträge, die neuer sind als
   das letzte Öffnen der jeweiligen View (`last_viewed`-Timestamp je View im
   Settings-Store): Missing zählt `missing_since > last_viewed`, Import-Errors
   zählt `first_seen > last_viewed` — ohne dismissed-Zeilen und ohne
@@ -279,14 +286,20 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   User um etwas bittet. Reaktivierung einer dismissed-Zeile (Datei geändert)
   startet eine neue Episode: `first_seen = now`, `seen_count = 1` — sie badgt
   also wieder. View öffnen = Badge weg, die Gesamtzahl steht in der View.
-- **FB-5** [geplant] [gtk] — StatusPages für leere Zustände mit genau einem
-  nächsten Schritt („No missing files ✓", „Library folder unavailable —
-  Retry").
-- **FB-6** [geplant] [core] — Gelöschte Datei (extern, Watcher): kein Toast
+- **FB-5** [ersetzt durch FB-5a/FB-5b] — Ursprüngliche StatusPage-
+  Sammelregel; bei der Implementierung in den lieferbaren Missing-Leerzustand
+  (5a) und den erst mit dem Root-Guard-UI lieferbaren unavailable-Zustand
+  (5b) gesplittet.
+- **FB-5a** [aktiv] [gtk] — Die leere Missing-files-Ansicht zeigt die
+  StatusPage „No missing files ✓" ohne konkurrierende nächste Aktion.
+- **FB-5b** [aktiv] [gtk] — Ein nicht verfügbarer Library-Root zeigt die
+  StatusPage „Library folder unavailable — Retry" mit genau diesem nächsten
+  Schritt.
+- **FB-6** [aktiv] [core] — Gelöschte Datei (extern, Watcher): kein Toast
   pro Datei (Rauschen) — Row wird grau/verschwindet gemäß Missing-Regeln,
   ISSUES-Badge zählt hoch. Ausnahme: der gerade spielende Track faultet →
   Skip + ein Toast „Track unavailable — skipped".
-- **FB-7** [geplant] [core] — „Remove from library" löscht nicht, sondern
+- **FB-7** [aktiv] [core] — „Remove from library" löscht nicht, sondern
   setzt `removed_at` (Tombstone); die Zeile mit Ratings, Play-Counts und
   Playlist-Positionen bleibt 10 s vollständig erhalten, Undo setzt nur
   `removed_at = NULL` zurück — deshalb ist die Wiederherstellung exakt

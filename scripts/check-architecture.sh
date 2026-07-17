@@ -162,6 +162,7 @@ done
 for file in \
   crates/reprise-gnome/src/ui/strings_app_shell.rs \
   crates/reprise-gnome/src/ui/strings_artist.rs \
+  crates/reprise-gnome/src/ui/strings_issues.rs \
   crates/reprise-gnome/src/ui/strings_news.rs; do
   if ! rg --fixed-strings --quiet "$file" po/POTFILES.in; then
     echo "$file must be listed in po/POTFILES.in" >&2

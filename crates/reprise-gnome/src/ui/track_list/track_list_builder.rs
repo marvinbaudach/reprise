@@ -13,6 +13,7 @@ use super::column_layout::{self, ColumnId};
 use super::cover_download_worker::CoverDownloadRuntime;
 use super::cover_loader::CoverLoader;
 use super::import_errors_view::ImportErrorsView;
+use super::issues::MissingFilesView;
 use super::track_list_activation::wire_activate;
 use super::track_list_context_menu;
 use super::track_list_dnd_smoke;
@@ -26,7 +27,7 @@ use super::track_list_smoke::{
 use super::track_list_sort::{wire_sort_clicks, SortState};
 use super::{
     notify_import_errors_mutated_and_reload, OnActivate, Shared, TrackList, STACK_PAGE_EMPTY,
-    STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
+    STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,
 };
 
 pub(in crate::ui) fn build(
@@ -54,17 +55,26 @@ pub(in crate::ui) fn build(
     scrolled.set_margin_bottom(PLAYER_BAR_HEIGHT);
 
     let empty_page = build_status_page();
+    let empty_page_actions = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    empty_page_actions.set_halign(gtk4::Align::Center);
+    let retry_library_button =
+        gtk4::Button::with_label(&crate::ui::strings::text(crate::ui::strings::RETRY));
+    retry_library_button.add_css_class("suggested-action");
+    retry_library_button.set_visible(false);
+    empty_page_actions.append(&retry_library_button);
     let show_all_button = gtk4::Button::new();
     show_all_button.add_css_class("pill");
     show_all_button.set_halign(gtk4::Align::Center);
     show_all_button.set_action_name(Some("win.clear-all-filters"));
     let import_errors_view = ImportErrorsView::new(conn.clone());
+    let missing_files_view = MissingFilesView::new(conn.clone());
     let stack = super::track_list_layout::build_track_content_stack();
     let list_overlay = gtk4::Overlay::new();
     list_overlay.set_child(Some(&scrolled));
     stack.add_named(&empty_page, Some(STACK_PAGE_EMPTY));
     stack.add_named(&list_overlay, Some(STACK_PAGE_LIST));
     stack.add_named(import_errors_view.widget(), Some(STACK_PAGE_IMPORT_ERRORS));
+    stack.add_named(missing_files_view.widget(), Some(STACK_PAGE_MISSING));
     stack.set_visible_child_name(STACK_PAGE_EMPTY);
 
     let browse_bar = BrowseBar::new(conn.clone());
@@ -87,6 +97,10 @@ pub(in crate::ui) fn build(
         browse_filter: RefCell::new(BrowseFilter::default()),
         stack,
         empty_page,
+        empty_page_actions,
+        retry_library_button: retry_library_button.clone(),
+        library_root_unavailable: Cell::new(false),
+        unavailable_library_root: RefCell::new(None),
         show_all_button,
         empty_scan_widget: RefCell::new(None),
         sort: RefCell::new(SortState::default()),
@@ -102,6 +116,7 @@ pub(in crate::ui) fn build(
         menu_actions: gtk4::gio::SimpleActionGroup::new(),
         on_queue_selected: RefCell::new(None),
         on_play_next_selected: RefCell::new(None),
+        on_show_missing: RefCell::new(None),
         on_queue_activate: RefCell::new(None),
         on_queue_remove: RefCell::new(None),
         on_queue_move_to_top: RefCell::new(None),
@@ -113,13 +128,28 @@ pub(in crate::ui) fn build(
         on_sidebar_playlist_drop: RefCell::new(None),
         on_sidebar_queue_drop: RefCell::new(None),
         import_errors_view,
+        missing_files_view,
         on_rescan_library: RefCell::new(None),
         on_library_mutated: RefCell::new(None),
+        on_scan_queue_purge_ids: RefCell::new(None),
         on_tags_mutated: RefCell::new(None),
         on_import_errors_mutated: RefCell::new(None),
         on_selection_changed: RefCell::new(None),
         player: RefCell::new(std::rc::Weak::new()),
     });
+
+    {
+        let shared_weak = Rc::downgrade(&shared);
+        retry_library_button.connect_clicked(move |_| {
+            let Some(shared) = shared_weak.upgrade() else {
+                return;
+            };
+            let callback = shared.on_rescan_library.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+    }
 
     track_list_selection::wire(&shared);
     {
@@ -142,6 +172,40 @@ pub(in crate::ui) fn build(
                     "import errors panel: mutated callback fired after track list was dropped"
                 ),
             });
+    }
+    {
+        let shared_weak = Rc::downgrade(&shared);
+        shared.import_errors_view.set_on_edit_hint(move |path| {
+            let Some(shared) = shared_weak.upgrade() else {
+                return;
+            };
+            crate::ui::tag_edit_flow::begin_for_path(&shared, path);
+        });
+    }
+    {
+        let shared_weak = Rc::downgrade(&shared);
+        shared.missing_files_view.set_on_mutated(move || {
+            let Some(shared) = shared_weak.upgrade() else {
+                return;
+            };
+            reload(&shared);
+            let callback = shared.on_library_mutated.borrow().clone();
+            if let Some(callback) = callback {
+                callback(&[]);
+            }
+        });
+    }
+    {
+        let shared_weak = Rc::downgrade(&shared);
+        shared.missing_files_view.set_on_purged(move |ids| {
+            let Some(shared) = shared_weak.upgrade() else {
+                return;
+            };
+            let callback = shared.on_library_mutated.borrow().clone();
+            if let Some(callback) = callback {
+                callback(ids);
+            }
+        });
     }
 
     let built_columns = column_layout::build_columns(&column_view, &shared, &cover_loader);

@@ -98,31 +98,21 @@ impl Queue {
     /// If Repeat::All, wrap to the first track at the end.
     /// If Repeat::Off, return None at the end and clear position.
     pub fn advance_auto(&mut self) -> Option<i64> {
-        match self.pos {
-            None => None,
-            Some(idx) => {
-                if self.repeat == Repeat::One {
-                    // Stay on the current track.
-                    self.current()
-                } else {
-                    // Move to the next track in order.
-                    let next_idx = idx + 1;
-                    if next_idx < self.order.len() {
-                        self.pos = Some(next_idx);
-                        self.current()
-                    } else {
-                        // At the end.
-                        if self.repeat == Repeat::All {
-                            self.pos = Some(0);
-                            self.current()
-                        } else {
-                            self.pos = None;
-                            None
-                        }
-                    }
-                }
-            }
-        }
+        self.advance_auto_matching(|_| true)
+    }
+
+    /// Automatic advance with a late availability predicate. Rejected ids
+    /// remain in the queue but the playhead walks past them, which lets a
+    /// temporarily unavailable entry heal in place later. The scan is
+    /// bounded to one pass even under Repeat::All, so an entirely unavailable
+    /// queue exhausts instead of looping forever.
+    pub fn advance_auto_matching(
+        &mut self,
+        mut is_available: impl FnMut(i64) -> bool,
+    ) -> Option<i64> {
+        let target = self.forward_matching_position(true, &mut is_available);
+        self.pos = target;
+        self.current()
     }
 
     /// Non-mutating preview of what `advance_auto` would return next, without
@@ -131,47 +121,66 @@ impl Queue {
     /// `advance_auto` on the real transition. Must mirror `advance_auto`'s
     /// branching exactly.
     pub fn peek_auto(&self) -> Option<i64> {
-        let idx = self.pos?;
-        if self.repeat == Repeat::One {
-            return self.current();
-        }
-        let next_idx = idx + 1;
-        if next_idx < self.order.len() {
-            self.order
-                .get(next_idx)
-                .and_then(|&track_idx| self.ids.get(track_idx).copied())
-        } else if self.repeat == Repeat::All {
-            self.order
-                .first()
-                .and_then(|&track_idx| self.ids.get(track_idx).copied())
-        } else {
-            None
-        }
+        self.peek_auto_matching(|_| true)
+    }
+
+    /// Availability-aware counterpart to [`Self::peek_auto`]. It shares the
+    /// same bounded target calculation as [`Self::advance_auto_matching`]
+    /// without mutating the playhead, keeping gapless pre-feed and the later
+    /// model advance on the same candidate.
+    pub fn peek_auto_matching(&self, mut is_available: impl FnMut(i64) -> bool) -> Option<i64> {
+        self.forward_matching_position(true, &mut is_available)
+            .and_then(|position| self.id_at_order_position(position))
     }
 
     /// Move to the next track (user pressed next button).
     /// Ignores Repeat::One, always moves forward (or wraps if Repeat::All).
     /// Returns None if at the end and Repeat::Off.
     pub fn next_manual(&mut self) -> Option<i64> {
-        match self.pos {
-            None => None,
-            Some(idx) => {
-                let next_idx = idx + 1;
-                if next_idx < self.order.len() {
-                    self.pos = Some(next_idx);
-                    self.current()
-                } else {
-                    // At the end.
-                    if self.repeat == Repeat::All {
-                        self.pos = Some(0);
-                        self.current()
-                    } else {
-                        self.pos = None;
-                        None
-                    }
-                }
+        self.next_manual_matching(|_| true)
+    }
+
+    /// Manual-next counterpart to [`Self::advance_auto_matching`]. Missing
+    /// candidates are skipped without removing them; Repeat::One is ignored
+    /// exactly as it is by [`Self::next_manual`].
+    pub fn next_manual_matching(
+        &mut self,
+        mut is_available: impl FnMut(i64) -> bool,
+    ) -> Option<i64> {
+        let target = self.forward_matching_position(false, &mut is_available);
+        self.pos = target;
+        self.current()
+    }
+
+    fn forward_matching_position(
+        &self,
+        automatic: bool,
+        is_available: &mut impl FnMut(i64) -> bool,
+    ) -> Option<usize> {
+        let current = self.pos?;
+        if automatic && self.repeat == Repeat::One {
+            let id = self.id_at_order_position(current)?;
+            if is_available(id) {
+                return Some(current);
             }
         }
+
+        let mut candidate = current + 1;
+        for _ in 0..self.order.len() {
+            if candidate >= self.order.len() {
+                if self.repeat == Repeat::All {
+                    candidate = 0;
+                } else {
+                    return None;
+                }
+            }
+            let id = self.id_at_order_position(candidate)?;
+            if is_available(id) {
+                return Some(candidate);
+            }
+            candidate += 1;
+        }
+        None
     }
 
     /// Move to the previous track (user pressed previous button).
@@ -382,7 +391,7 @@ impl Queue {
 
     /// Purges every occurrence of each id in `remove` from the queue (Stage-3
     /// close-out: "Remove from library" hard-deletes `tracks` rows —
-    /// `queries::remove_missing_track`/`remove_missing_tracks` — and a
+    /// `queries::remove_missing_tracks` — and a
     /// queued id that no longer resolves to a row desyncs `len()`/`ids_in_
     /// order()` from what `ViewSource::Queue`'s window query can actually
     /// render; see `queries.rs`'s module doc, `Queue` section). Every

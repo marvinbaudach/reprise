@@ -21,6 +21,8 @@ pub enum ScanError {
     },
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
+    #[error("relink target {track_id} is no longer an active missing track")]
+    RelinkTargetChanged { track_id: i64 },
 }
 
 #[derive(Debug, Default)]
@@ -107,9 +109,23 @@ impl ScanReport {
     }
 }
 
+/// Runs the stateful work that belongs after—and only after—a completed
+/// scan, regardless of whether the scan was explicit or watcher-triggered.
+/// Keeping this next to [`ScanOutcome`] prevents a second scan entry point
+/// from forgetting the `last_scan_relinked` update or running destructive
+/// auto-clean after `RootUnavailable`.
+pub fn finalize_completed_scan(
+    conn: &mut Connection,
+    report: &ScanReport,
+    now: i64,
+) -> Result<Vec<i64>, ScanError> {
+    super::settings::set_last_scan_relinked(conn, report.moved)?;
+    Ok(crate::queries::run_auto_clean(conn, now)?)
+}
+
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
 
-fn is_audio_file(path: &Path) -> bool {
+pub(crate) fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
@@ -143,7 +159,7 @@ impl ScanProgressReporter<'_> {
     }
 }
 
-fn file_mtime(path: &Path) -> i64 {
+pub(crate) fn file_mtime(path: &Path) -> i64 {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
@@ -165,7 +181,7 @@ fn file_mtime(path: &Path) -> i64 {
 /// inode it is `NOT NULL DEFAULT 0` in the schema, matching every other
 /// tag-derived column's non-null convention, so `0` (rather than `NULL`) is
 /// the only representable "unknown" value for it anyway.
-fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
+pub(crate) fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
     use std::os::unix::fs::MetadataExt;
     std::fs::metadata(path)
         .ok()

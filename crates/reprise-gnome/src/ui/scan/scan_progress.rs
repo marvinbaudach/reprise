@@ -37,6 +37,19 @@ struct ScanProgressState {
     mode: ProgressMode,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ScanUnavailableState {
+    title: String,
+    detail: String,
+}
+
+fn unavailable_state(root: &Path) -> ScanUnavailableState {
+    ScanUnavailableState {
+        title: strings::unavailable_title(),
+        detail: strings::library_folder_not_mounted(&root.to_string_lossy()),
+    }
+}
+
 fn display_name(path: &Path) -> Option<String> {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -220,6 +233,7 @@ impl ScanProgressView {
             .set_label(&strings::text(strings::SCAN_CARD_TITLE));
         self.inner.spinner.set_spinning(true);
         self.inner.revealer.set_reveal_child(true);
+        self.inner.progress.set_visible(true);
 
         match state.mode {
             ProgressMode::Indeterminate => {
@@ -273,6 +287,7 @@ impl ScanProgressView {
         self.inner.title.set_label(title);
         self.inner.spinner.set_spinning(true);
         self.inner.revealer.set_reveal_child(true);
+        self.inner.progress.set_visible(true);
         self.inner.progress.set_fraction(fraction.clamp(0.0, 1.0));
         let pct = format!("{}%", (fraction * 100.0).round() as u32);
         self.inner.percent.set_label(&pct);
@@ -285,6 +300,21 @@ impl ScanProgressView {
         }
         self.inner.phase.set(DisplayPhase::Scanning);
         self.inner.container.set_tooltip_text(None);
+    }
+
+    pub(in crate::ui) fn show_unavailable(&self, root: &Path) {
+        let state = unavailable_state(root);
+        self.cancel_pulsing();
+        self.inner.phase.set(DisplayPhase::Hidden);
+        self.inner.spinner.set_spinning(false);
+        self.inner.title.set_label(&state.title);
+        self.inner.percent.set_label("");
+        self.inner.progress.set_fraction(0.0);
+        self.inner.progress.set_visible(false);
+        self.inner.detail.set_label(&state.detail);
+        self.inner.detail.set_visible(true);
+        self.inner.container.set_tooltip_text(None);
+        self.inner.revealer.set_reveal_child(true);
     }
 
     pub(in crate::ui) fn finish(&self) {
@@ -413,7 +443,14 @@ mod tests {
 
     use reprise_core::library::scanner::ScanProgress;
 
-    use super::{view_state, ProgressMode, ScanProgressView};
+    use super::{unavailable_state, view_state, ProgressMode, ScanProgressView};
+
+    #[test]
+    fn unavailable_root_replaces_progress_with_an_honest_mount_status() {
+        let state = unavailable_state(std::path::Path::new("/media/NAS/Music"));
+        assert_eq!(state.title, "Library folder unavailable");
+        assert_eq!(state.detail, "/media/NAS/Music not mounted");
+    }
 
     #[test]
     fn discovery_uses_an_indeterminate_progress_state() {

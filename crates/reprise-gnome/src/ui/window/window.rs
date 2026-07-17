@@ -191,6 +191,16 @@ pub fn build(
             None
         }
     };
+    let startup_purged = match super::issues::purge_startup_tombstones(conn) {
+        Ok(ids) => ids,
+        Err(error) => {
+            tracing::error!(%error, "startup tombstone purge failed");
+            Vec::new()
+        }
+    };
+    if let Some(player) = &player {
+        player.purge_queue_ids(&startup_purged);
+    }
 
     // Built right after `player` (needed for the Queue row's counter) and
     // before `TrackList` and `spawn_scan`/`player.set_track_list_reload`
@@ -318,6 +328,7 @@ pub fn build(
         move || scan_controls.request_cancel()
     });
     sidebar.append_scan_card(scan_progress.widget());
+    sidebar.append_relink_card(track_list.missing_relink_progress_widget());
     let toolbar_view = adw::ToolbarView::new();
     // No add_top_bar for scan progress — it lives in the sidebar now.
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
