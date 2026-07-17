@@ -1,7 +1,7 @@
 //! Tag-editor redesign chrome: surface treatment, multi-edit badges,
-//! cover art, mixed-field states, pending-change bar, rating stars,
-//! navigation, and MusicBrainz button. Installed app-wide by
-//! [`super::style`]; palette colors come from the theme provider.
+//! cover art, mixed-field states, pending-change bar, rating stars, and
+//! navigation. Installed app-wide by [`super::style`]; palette colors come
+//! from the theme provider.
 
 pub(in crate::ui) fn css() -> String {
     use crate::ui::style::tokens::{
@@ -202,21 +202,6 @@ pub(in crate::ui) fn css() -> String {
          .reprise-tag-nav button:hover {{ \
            background: alpha(@accent_bg_color, 0.12); }}\n\
          \
-         /* --- MusicBrainz button --- */
-         .reprise-tag-mb {{ \
-           margin-top: 4px; }}\n\
-         .reprise-tag-mb button {{ \
-           padding: 8px 16px; \
-           border-radius: 8px; \
-           border: 1px solid alpha(@window_fg_color, 0.12); \
-           transition: background {TRANSITION}; }}\n\
-         .reprise-tag-mb button:hover {{ \
-           background: alpha(@accent_bg_color, 0.10); }}\n\
-         .reprise-tag-mb-hint {{ \
-           font-size: 11px; \
-           color: @reprise_dim_fg_color; \
-           margin-top: 2px; }}\n\
-         \
          /* --- Error label --- */
          .reprise-tag-error {{ \
            color: @error_color; \
@@ -253,7 +238,6 @@ mod tests {
         assert!(css.contains(".reprise-tag-field-revert"));
         assert!(css.contains(".reprise-tag-stars"));
         assert!(css.contains(".reprise-tag-nav"));
-        assert!(css.contains(".reprise-tag-mb"));
         assert!(css.contains("@accent_color"));
         assert!(css.contains("@reprise_dim_fg_color"));
     }

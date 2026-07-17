@@ -2,9 +2,9 @@
 //! edited plus per-track pending changes that survive navigation between
 //! tracks (TAG-4). All GUI-facing computation the editor needs — mixed-value
 //! placeholders (TAG-2), the review summary and per-field diff lines
-//! (TAG-5), the MusicBrainz uniform-artist/album check, and the final
-//! effective write batch — lives here as pure Rust so the GTK layer only
-//! ever binds to already-computed data (Beschluss #7: "GUI bindet nur").
+//! (TAG-5), and the final effective write batch — lives here as pure Rust so
+//! the GTK layer only ever binds to already-computed data (Beschluss #7:
+//! "GUI bindet nur").
 //!
 //! ## Effective value = original, overridden by pending
 //!
@@ -12,9 +12,8 @@
 //! a track's pending patch (if any) wins field-by-field over its original
 //! snapshot value. This is the single definition of "what the user would see
 //! right now", reused by the mixed-placeholder calculation, the review
-//! lines, the MusicBrainz uniformity check, and the final write batch — so
-//! all of them agree with each other by construction rather than by
-//! parallel maintenance.
+//! lines, and the final write batch — so all of them agree with each other
+//! by construction rather than by parallel maintenance.
 //!
 //! ## Effective diff = exact comparison, no trim/case-folding (TAG-5)
 //!
@@ -446,35 +445,6 @@ impl TagEditSession {
             .iter()
             .filter(|track| self.track_has_effective_change(track))
             .count()
-    }
-
-    /// The Beschluss-#3 MusicBrainz gate: `Some((artist, album))` only when
-    /// every track's *effective* (original + pending) artist and album are
-    /// both non-empty and identical across the whole session.
-    pub fn mb_uniform_artist_album(&self) -> Option<(String, String)> {
-        let mut uniform: Option<(String, String)> = None;
-        for track in &self.tracks {
-            let artist = match self.effective_value(track, TagField::Artist) {
-                FieldValue::Text(value) => value,
-                _ => unreachable!("Artist is always FieldValue::Text"),
-            };
-            let album = match self.effective_value(track, TagField::Album) {
-                FieldValue::Text(value) => value,
-                _ => unreachable!("Album is always FieldValue::Text"),
-            };
-            if artist.is_empty() || album.is_empty() {
-                return None;
-            }
-            match &uniform {
-                None => uniform = Some((artist, album)),
-                Some((existing_artist, existing_album)) => {
-                    if *existing_artist != artist || *existing_album != album {
-                        return None;
-                    }
-                }
-            }
-        }
-        uniform
     }
 }
 

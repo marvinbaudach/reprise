@@ -89,8 +89,6 @@ pub(in crate::ui) struct TagEditorForm {
     /// expander also applies in SingleNav once browsing accumulates pending
     /// tracks, Package G).
     pub(in crate::ui) review_box: gtk4::Box,
-    pub(in crate::ui) mb_btn: gtk4::Button,
-    pub(in crate::ui) mb_hint: gtk4::Label,
     pub(in crate::ui) prev_btn: gtk4::Button,
     pub(in crate::ui) next_btn: gtk4::Button,
     /// G1 (TAG-4): exposed so `tag_editor.rs` can prepend the browse
@@ -318,16 +316,6 @@ impl TagEditorForm {
         review_box.add_css_class("reprise-tag-review");
         review_box.set_visible(false);
 
-        let mb_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        mb_box.add_css_class("reprise-tag-mb");
-        let mb_btn = gtk4::Button::with_label(&strings::text(strings::TAG_FETCH_MUSICBRAINZ));
-        mb_btn.set_sensitive(false);
-        mb_box.append(&mb_btn);
-        let mb_hint = gtk4::Label::new(Some(&strings::text(strings::TAG_FETCH_HINT)));
-        mb_hint.add_css_class("reprise-tag-mb-hint");
-        mb_hint.set_xalign(0.0);
-        mb_box.append(&mb_hint);
-
         let nav_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         nav_box.add_css_class("reprise-tag-nav");
         nav_box.set_halign(gtk4::Align::Center);
@@ -357,7 +345,6 @@ impl TagEditorForm {
         content.append(&rating_col);
         content.append(&error_label);
         content.append(&review_box);
-        content.append(&mb_box);
         if !is_multi {
             content.append(&nav_box);
         }
@@ -410,8 +397,6 @@ impl TagEditorForm {
             error_label,
             old_value_labels,
             review_box,
-            mb_btn,
-            mb_hint,
             prev_btn,
             next_btn,
             title_widget,

@@ -187,13 +187,6 @@ pub const TAG_PENDING_CHANGES: &str = N_!("{count} change pending");
 #[allow(dead_code)]
 pub const TAG_PENDING_CHANGES_PLURAL: &str = N_!("{count} changes pending");
 pub const TAG_REVERT: &str = N_!("Revert");
-pub const TAG_FETCH_MUSICBRAINZ: &str = N_!("Fetch tags from MusicBrainz");
-pub const TAG_FETCH_HINT: &str = N_!("runs per track, fills only empty fields");
-pub const TAG_FETCH_LOADING: &str = N_!("Searching MusicBrainz…");
-pub const TAG_FETCH_NO_RESULTS: &str = N_!("No matching release found");
-pub const TAG_FETCH_NETWORK_ERROR: &str = N_!("Network error — check your connection");
-pub const TAG_FETCH_FIELDS_FILLED: &str = N_!("Done — empty fields filled from MusicBrainz");
-pub const TAG_FETCH_NOTHING_TO_FILL: &str = N_!("Done — all fields already have values");
 // Superseded by TAG-8's two-answer discard prompt (`tag_discard_prompt_title`
 // + `TAG_KEEP_EDITING`, below): a discard prompt with a "Save" way out
 // defeats its own purpose ("Speichern ist nie der Ausweg aus einer
@@ -303,11 +296,6 @@ pub fn tag_track_position(position: usize, total: usize) -> String {
         &[("position", &position_text), ("total", &total_text)],
     )
 }
-
-// --- TAG-1/Beschluss #3: MusicBrainz lookup in Multi mode (Task G2) ---
-
-pub const TAG_FETCH_REQUIRES_UNIFORM: &str = N_!("Requires same artist & album across selection");
-pub const TAG_FETCH_HINT_MULTI: &str = N_!("fills only empty fields");
 
 // --- TAG-2: mixed-field distinct-value annotation ---
 
