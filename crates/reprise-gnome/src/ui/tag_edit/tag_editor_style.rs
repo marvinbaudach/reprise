@@ -29,17 +29,36 @@ pub(in crate::ui) fn css() -> String {
            color: @accent_color; \
            font-size: 12px; }}\n\
          \
-         /* --- Autocomplete popover --- */
+         /* --- Autocomplete popover. Use the elevated popover surface color, \
+            not @window_bg_color — the latter is the darkest base (near-black \
+            in dark themes) and rendered the dropdown as a black slab. Both \
+            the popover node and its contents node are colored so whichever \
+            one paints the visible surface is right. --- */
          .reprise-autocomplete-popover {{ \
-           background: @window_bg_color; \
+           background: @popover_bg_color; \
            border: 1px solid alpha(@window_fg_color, {SURFACE_BORDER_ALPHA}); \
            border-radius: 8px; \
            box-shadow: {SURFACE_SHADOW}; \
            padding: 4px 0; }}\n\
+         .reprise-autocomplete-popover > contents {{ \
+           background: @popover_bg_color; \
+           border-radius: 8px; }}\n\
          .reprise-autocomplete-list row {{ \
            padding: 6px 12px; }}\n\
          .reprise-autocomplete-list row:selected {{ \
            background: alpha(@accent_bg_color, 0.15); }}\n\
+         /* Design 4a: section label — small, dimmed, letter-spaced caps. */
+         .reprise-autocomplete-section-header {{ \
+           font-size: 10px; \
+           font-weight: 700; \
+           letter-spacing: 0.08em; \
+           color: alpha(@window_fg_color, 0.45); \
+           padding: 8px 12px 4px 12px; }}\n\
+         /* Design 4a: the always-present use-as-new row reads as a create \
+            action, dimmed and set off by a hairline from the matches above. */
+         .reprise-autocomplete-use-as-new {{ \
+           color: alpha(@window_fg_color, 0.55); \
+           border-top: 1px solid alpha(@window_fg_color, 0.08); }}\n\
          \
          /* --- Cover art --- */
          .reprise-tag-cover {{ \
@@ -94,13 +113,13 @@ pub(in crate::ui) fn css() -> String {
            border-width: 1.5px; }}\n\
          \
          /* --- Hide AdwEntryRow's built-in edit pencil (Beschluss #1: the \
-            3a design wants plain entry fields, no pencil chrome). The fields \
-            stay AdwEntryRow-based because dirty/save are pinned to that type, \
-            so the icon is suppressed via CSS. Matches libadwaita's own node \
-            path (row.entry > box.header > .editable-area > .edit-icon) with \
-            the dialog-class prefix, so it outweighs the theme rule that gives \
-            the icon its 24px min-size. --- */
-         .reprise-tag-editor row.entry box.header .editable-area .edit-icon {{ \
+            3a design wants plain entry fields, no pencil chrome). Anchored on \
+            .reprise-tag-field (the field's column box, a real ancestor in the \
+            widget tree — the dialog class is NOT, adw::Dialog reparents its \
+            content into a host overlay, which is why two earlier dialog-scoped \
+            attempts silently missed). Spells out libadwaita's full node path \
+            so it outweighs the theme rule that gives the icon its 24px size. --- */
+         .reprise-tag-field row.entry box.header .editable-area .edit-icon {{ \
            opacity: 0; \
            min-width: 0; \
            min-height: 0; \
