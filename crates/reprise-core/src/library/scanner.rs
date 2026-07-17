@@ -21,6 +21,8 @@ pub enum ScanError {
     },
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
+    #[error("relink target {track_id} is no longer an active missing track")]
+    RelinkTargetChanged { track_id: i64 },
 }
 
 #[derive(Debug, Default)]
@@ -143,7 +145,7 @@ impl ScanProgressReporter<'_> {
     }
 }
 
-fn file_mtime(path: &Path) -> i64 {
+pub(crate) fn file_mtime(path: &Path) -> i64 {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
@@ -165,7 +167,7 @@ fn file_mtime(path: &Path) -> i64 {
 /// inode it is `NOT NULL DEFAULT 0` in the schema, matching every other
 /// tag-derived column's non-null convention, so `0` (rather than `NULL`) is
 /// the only representable "unknown" value for it anyway.
-fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
+pub(crate) fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
     use std::os::unix::fs::MetadataExt;
     std::fs::metadata(path)
         .ok()
