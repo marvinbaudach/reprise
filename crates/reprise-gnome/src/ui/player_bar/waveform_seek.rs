@@ -16,6 +16,7 @@ use gtk4::prelude::*;
 #[cfg(test)]
 use super::waveform_shape::{aggregate_rms, smooth_neighbors};
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
+use crate::ui::motion;
 use reprise_core::format::format_duration;
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
@@ -44,8 +45,8 @@ const HOVER_PREVIEW_ALPHA: f64 = 0.30;
 const PLAYHEAD_ALPHA: f64 = 0.70;
 /// Alpha for bars in the drag ghost region.
 const GHOST_ALPHA: f64 = 0.40;
-/// Build-up animation duration in seconds.
-const BUILD_DURATION_S: f64 = 0.3;
+/// Ambient build-up animation duration in seconds.
+const BUILD_DURATION_S: f64 = motion::AMBIENT_MS as f64 / 1_000.0;
 /// Per-bar stagger increment in seconds.
 const BAR_STAGGER_S: f64 = 0.002;
 
@@ -306,12 +307,12 @@ impl WaveformSeek {
         &self.area
     }
 
-    /// Set peaks (as raw `u8` values, 0-255) and trigger a 300 ms build-up
+    /// Set peaks (as raw `u8` values, 0-255) and trigger an Ambient build-up
     /// animation (gated on `gtk-enable-animations`). Use this whenever the
     /// track changes.
     pub(in crate::ui) fn set_peaks(&self, peaks: Vec<u8>) {
         let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
-        let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
+        let animate = motion::animations_enabled();
         let mut s = self.state.borrow_mut();
         s.raw_peaks = peaks;
         s.display_peaks.clear();
@@ -324,7 +325,9 @@ impl WaveformSeek {
         }
         drop(s);
         self.area.queue_draw();
-        self.ensure_tick_callback();
+        if animate {
+            self.ensure_tick_callback();
+        }
     }
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
@@ -349,6 +352,14 @@ impl WaveformSeek {
     /// a stale pre-seek position tick arrives before the post-seek position.
     pub(in crate::ui) fn set_fraction_smooth(&self, fraction: f64) {
         let fraction = fraction.clamp(0.0, 1.0);
+        if !motion::animations_enabled() {
+            let existing_tick = self.tick_id.borrow_mut().take();
+            if let Some(existing_tick) = existing_tick {
+                existing_tick.remove();
+            }
+            self.set_fraction(fraction);
+            return;
+        }
         let mut s = self.state.borrow_mut();
         // Real monotonic time, NOT `frame_clock().frame_time()`: the frame
         // clock only advances while frames are being produced, so two
@@ -399,16 +410,23 @@ impl WaveformSeek {
             let now = clock.frame_time();
             let mut s = state.borrow_mut();
 
-            // Advance the smooth-position interpolation (never past the
-            // target — see `interpolation_step`).
-            let dt = (now - s.last_tick_us).max(0) as f64;
-            s.fraction = interpolation_step(s.fraction, s.fraction_velocity, dt, s.target_fraction);
-            s.last_tick_us = now;
+            if motion::animations_enabled() {
+                // Advance the smooth-position interpolation (never past the
+                // target — see `interpolation_step`).
+                let dt = (now - s.last_tick_us).max(0) as f64;
+                s.fraction =
+                    interpolation_step(s.fraction, s.fraction_velocity, dt, s.target_fraction);
+                s.last_tick_us = now;
 
-            // Advance the build-up animation.
-            if s.build_progress < 1.0 && s.build_start_us > 0 {
-                let elapsed = (now - s.build_start_us) as f64 / 1_000_000.0;
-                s.build_progress = (elapsed / BUILD_DURATION_S).clamp(0.0, 1.0);
+                // Advance the build-up animation.
+                if s.build_progress < 1.0 && s.build_start_us > 0 {
+                    let elapsed = (now - s.build_start_us) as f64 / 1_000_000.0;
+                    s.build_progress = (elapsed / BUILD_DURATION_S).clamp(0.0, 1.0);
+                }
+            } else {
+                s.fraction = s.target_fraction;
+                s.fraction_velocity = 0.0;
+                s.build_progress = 1.0;
             }
 
             let settled = (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
@@ -459,7 +477,7 @@ fn draw(
 
     for (index, &bar) in state.display_peaks.iter().enumerate() {
         // Staggered build-up: each bar has a small time offset so they rise
-        // one after another from left to right over the 300 ms window.
+        // one after another from left to right over the Ambient window.
         let stagger = if state.build_progress < 1.0 {
             let bar_delay = index as f64 * BAR_STAGGER_S;
             let bar_delay_normalized = bar_delay / BUILD_DURATION_S;

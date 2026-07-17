@@ -271,7 +271,7 @@ pub(in crate::ui) fn css() -> String {
            box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.60), \
                        0 0 26px 6px alpha(@reprise_player_accent, 0.35); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
-                       transform 120ms ease-out; }}\n\
+                       transform {TRANSITION}; }}\n\
          .{PLAY_CSS_CLASS}:hover {{ \
            box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.75), \
                        0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
