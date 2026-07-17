@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Write as _;
 use std::io::{Read, Take};
 use std::time::Duration;
 
@@ -192,7 +193,11 @@ pub(crate) fn method_signature(params: &BTreeMap<String, String>, shared_secret:
         material.push_str(value);
     }
     material.push_str(shared_secret);
-    format!("{:x}", Md5::digest(material.as_bytes()))
+    let mut signature = String::with_capacity(32);
+    for byte in Md5::digest(material.as_bytes()) {
+        let _ = write!(signature, "{byte:02x}");
+    }
+    signature
 }
 
 pub(crate) fn now_playing_params(
