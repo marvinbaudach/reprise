@@ -425,7 +425,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **CTX-3** [geplant] [gtk] — Kein „Play"-Eintrag. Primäraktion ist
   Doppelklick/Enter (PLAY-2). Erster Menü-Eintrag ist „Play next" (in der
   Queue: „Move to top").
-- **CTX-4** [geplant] [gtk] — Navigation nur mit eindeutigem Ziel. „Go to
+- **CTX-4** [aktiv] [gtk] — Navigation nur mit eindeutigem Ziel. „Go to
   album"/„Go to artist" entfallen, wenn der Kontext das Ziel IST (Album-Detail
   zeigt kein „Go to album", Artist-Detail kein „Go to artist"). Bei
   Mehrfachselektion aktiv nur, wenn alle Tracks dasselbe Album bzw. denselben
@@ -462,7 +462,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **CTX-9** [geplant] [gtk] — „Add to playlist ▸". Das Submenu listet Playlists
   alphabetisch, „New playlist…" am Ende. Die aktuell offene Playlist ist
   ausgegraut (kein Duplikat-Einfügen in sich selbst per Menü; DnD bleibt frei).
-- **CTX-10** [geplant] [gtk] — „Show in Files" ist aktiv, wenn alle selektierten
+- **CTX-10** [aktiv] [gtk] — „Show in Files" ist aktiv, wenn alle selektierten
   Dateien vorhanden sind und im selben Ordner liegen (eine
   Nautilus-Mehrfachmarkierung in einem Fenster), sonst ausgegraut.
 
