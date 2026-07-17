@@ -426,11 +426,13 @@ impl TagEditorForm {
 fn text_bridge(session: &TagEditSession, field: TagField, current_id: i64) -> MixedValue<String> {
     match session.mixed_placeholder(field) {
         Some(_) => MixedValue::Mixed,
-        None => MixedValue::Uniform(
-            session
-                .effective_display(current_id, field)
-                .unwrap_or_default(),
-        ),
+        // A uniform field shows its own value. `effective_display` renders an
+        // empty value as the "empty" sentinel (mixed-placeholder vocabulary),
+        // so strip it back to a real blank — otherwise a track with no genre
+        // shows the literal word "empty" in the field.
+        None => MixedValue::Uniform(crate::ui::tag_editor::display_or_blank(
+            session.effective_display(current_id, field),
+        )),
     }
 }
 
@@ -548,6 +550,21 @@ mod tests {
         let multi = super::EditorMode::new(3).unwrap();
         assert!(multi.is_multi());
         assert_eq!(multi.track_count(), 3);
+    }
+
+    #[test]
+    fn tag_2_uniform_empty_field_shows_a_real_blank_not_the_empty_sentinel() {
+        // Both tracks lack a genre: a uniform (not mixed) empty value. The
+        // entry must carry a real blank — never the literal "empty" sentinel,
+        // which belongs only to the mixed-placeholder vocabulary ("Mixed —
+        // Ambient, empty"). The browse-refresh path already strips it; the
+        // initial build must too.
+        let session = TagEditSession::new(vec![track(1, ""), track(2, "")], SessionMode::Multi);
+
+        assert_eq!(
+            text_bridge(&session, TagField::Genre, 1),
+            MixedValue::Uniform(String::new()),
+        );
     }
 
     #[test]
