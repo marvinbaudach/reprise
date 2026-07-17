@@ -90,6 +90,7 @@ mod artist_context;
 pub mod autocomplete;
 mod browse;
 mod clauses;
+mod issues;
 mod library;
 pub(crate) mod library_views;
 mod maintenance;
@@ -122,6 +123,13 @@ pub(crate) use clauses::MISSING;
 // where the re-export would otherwise look unused.
 #[allow(unused_imports)]
 pub use clauses::build_track_query;
+// Task 2.1: the missing-file group queries the 18a "self-healing" card list
+// is built directly against — see `issues`'s module doc for the full
+// `MissingGroupKind` taxonomy and why `unknown` never joins `Deleted`.
+// `pub use` (not `pub(crate)`) so `reprise-gnome` can name these types
+// directly, the same reachability fix Task 1's `ImportErrorKind` move to
+// `models` made for the same reason (see that commit's message).
+pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, MissingGroupKind};
 pub use library_views::{
     query_album_track_ids, query_albums, query_artist_detail_albums, query_artists, AlbumSummary,
     ArtistAlbum, ArtistSummary,
@@ -480,6 +488,8 @@ pub struct ImportErrorRow {
 // `tests.rs`'s own doc comment.
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_issues;
 #[cfg(test)]
 mod tests_maintenance;
 #[cfg(test)]
