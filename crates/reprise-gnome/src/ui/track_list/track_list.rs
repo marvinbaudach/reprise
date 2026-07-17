@@ -137,6 +137,12 @@ pub(in crate::ui) struct Shared {
     /// A `Cell`: `Copy` payload, single-threaded UI access, same rationale
     /// as `playing_track_id`.
     pub(in crate::ui) suppress_follow_scroll: Cell<Option<i64>>,
+    /// View position an in-app single-row reorder drag started from — set at
+    /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
+    /// eligible drag is in flight; the drop-indicator eligibility check in
+    /// `track_list_dnd` reads it so markers only appear where a drop would
+    /// actually do something.
+    pub(in crate::ui) active_reorder_drag_from: Cell<Option<u32>>,
     /// NAV-5: per-source scroll/selection memory for this session. Written
     /// by `view_state_memory::remember_on_leave` when a source switch leaves
     /// a view, read by `view_state_memory::restore_on_attach` after the
