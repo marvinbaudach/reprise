@@ -81,11 +81,16 @@ pub(in crate::ui) fn css() -> String {
            color: alpha(@window_fg_color, 0.40); \
            min-height: 14px; }}\n\
          \
-         /* --- Mixed-field state --- */
+         /* --- Mixed-field state (TAG-2): editable from the start, dashed/ \
+            italic until the user's first keystroke or Backspace/Delete \
+            arms it --- */
          .reprise-tag-mixed > .header {{ \
            border-style: dashed; }}\n\
          .reprise-tag-mixed > .header text {{ \
            font-style: italic; }}\n\
+         .reprise-tag-field-armed > .header {{ \
+           border-color: @accent_color; \
+           border-width: 1.5px; }}\n\
          \
          /* --- Per-track field lock (TAG-3): Title/Track-number read-only \
             in Multi mode --- */
