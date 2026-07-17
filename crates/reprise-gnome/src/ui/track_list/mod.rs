@@ -6,6 +6,7 @@ pub(in crate::ui) mod list_density;
 pub(crate) mod queue_row_mapping;
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
+pub(in crate::ui) mod reload_restore;
 #[path = "track_list.rs"]
 mod surface;
 pub(crate) mod track_actions;
