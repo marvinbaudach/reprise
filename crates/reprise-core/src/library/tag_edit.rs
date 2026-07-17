@@ -134,7 +134,9 @@ pub fn read_editable_tags(path: &Path) -> Result<EditableTags, TagEditError> {
             .and_then(|tag| tag.get_string(ItemKey::AlbumArtist))
             .unwrap_or_default()
             .to_string(),
-        year: tag.and_then(Accessor::date).map(|date| u32::from(date.year)),
+        year: tag
+            .and_then(Accessor::date)
+            .map(|date| u32::from(date.year)),
         track_no: tag.and_then(Accessor::track),
         genre: tag
             .and_then(Accessor::genre)

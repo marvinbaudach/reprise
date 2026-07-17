@@ -84,10 +84,11 @@ impl LastFmClient {
             shared_secret,
             api_root: format!("{}/", api_root.trim_end_matches('/')),
             auth_root: format!("{}/", auth_root.trim_end_matches('/')),
-            agent: ureq::builder()
-                .timeout(HTTP_TIMEOUT)
+            agent: ureq::Agent::config_builder()
+                .timeout_global(Some(HTTP_TIMEOUT))
                 .user_agent(USER_AGENT)
-                .build(),
+                .build()
+                .new_agent(),
         })
     }
 
@@ -141,10 +142,10 @@ impl LastFmClient {
         let response = self
             .agent
             .post(&self.api_root)
-            .send_form(&form)
+            .send_form(form)
             .map_err(|error| classify_http_error(&error))?;
         let mut body = String::new();
-        let reader = response.into_reader();
+        let reader = response.into_body().into_reader();
         let mut reader: Take<_> = reader.take(MAX_RESPONSE_BYTES + 1);
         reader
             .read_to_string(&mut body)
@@ -307,12 +308,12 @@ pub(crate) fn classify_api_error(code: u16) -> TransportError {
 
 fn classify_http_error(error: &ureq::Error) -> TransportError {
     match error {
-        ureq::Error::Status(status, _) => match status {
+        ureq::Error::StatusCode(status) => match status {
             408 | 429 | 500..=599 => TransportError::Retryable(*status),
             401 | 403 => TransportError::Unauthorized,
             _ => TransportError::Rejected(*status),
         },
-        ureq::Error::Transport(_) => TransportError::Network,
+        _ => TransportError::Network,
     }
 }
 
