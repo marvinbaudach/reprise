@@ -639,9 +639,13 @@ mod tests {
         card.update(&syncing);
 
         assert!(card.progress.fraction() < 0.5);
-        gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
-            std::time::Duration::from_millis(250),
-        ));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while (card.progress.fraction() - 0.5).abs() >= 1e-6 && std::time::Instant::now() < deadline
+        {
+            gtk4::glib::MainContext::default().block_on(gtk4::glib::timeout_future(
+                std::time::Duration::from_millis(20),
+            ));
+        }
         assert!((card.progress.fraction() - 0.5).abs() < 1e-6);
         window.close();
         settings.set_gtk_enable_animations(previous);
