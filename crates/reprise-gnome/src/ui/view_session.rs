@@ -134,10 +134,7 @@ fn visible_restored_sort(registry: &ColumnRegistry, field: &str, dir: &str) -> S
 
 fn finish_track_source(track_list: &TrackList, source: &ViewSource) {
     *track_list.shared.source.borrow_mut() = source.clone();
-    track_list
-        .shared
-        .browse_bar
-        .set_library_visible(matches!(source, ViewSource::Library));
+    track_list.shared.browse_bar.set_source_context(source);
     reload(&track_list.shared);
 }
 

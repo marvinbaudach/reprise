@@ -52,9 +52,6 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSour
     *shared.sort.borrow_mut() = new_sort;
     *shared.source.borrow_mut() = source;
     let source = source_snapshot(&shared.source);
-    shared
-        .browse_bar
-        .set_library_visible(matches!(source, ViewSource::Library));
     reload(shared);
     if old_source != source {
         let current_ids = shared.current_view_ids();
@@ -110,7 +107,15 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
     } else {
         shared.model.n_items() as usize
     };
-    browse_filter_count::update(&shared.browse_bar, &shared.conn, &source, count, has_filter);
+    browse_filter_count::update(
+        &shared.browse_bar,
+        &shared.conn,
+        &source,
+        count,
+        &filter,
+        &browse,
+        &queue_ids,
+    );
     apply_empty_state(shared, empty_state_for(count, has_filter, &source));
 
     tracing::info!(
