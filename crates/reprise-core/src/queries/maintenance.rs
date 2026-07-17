@@ -259,10 +259,11 @@ pub fn remove_missing_track(conn: &Connection, track_id: i64) -> Result<bool, ru
 }
 
 /// Batch, TRANSACTIONAL "Remove from library" (Stage-3 close-out fix): the
-/// version every real caller (`ui::track_actions::remove_missing_selected`)
-/// uses instead of looping over [`remove_missing_track`] directly — the
-/// difference matters. A bare per-id `remove_missing_track` loop deletes
-/// each `tracks` row but leaves two cross-task invariants broken behind it
+/// version the bulk `remove_all_missing_tracks` path (the sidebar's "remove
+/// all missing" cleanup) uses instead of looping over
+/// [`remove_missing_track`] directly — the difference matters. A bare per-id
+/// `remove_missing_track` loop deletes each `tracks` row but leaves two
+/// cross-task invariants broken behind it
 /// (this is the bug this function's introduction fixes; Task 3's own
 /// `playlist_tracks`-related comments in this module documented reliance on
 /// "nothing hard-deletes a `tracks` row" — see the two `invariant:` comments
