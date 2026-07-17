@@ -90,6 +90,7 @@ mod artist_context;
 pub mod autocomplete;
 mod browse;
 mod clauses;
+mod import_errors;
 mod issues;
 mod library;
 pub(crate) mod library_views;
@@ -136,6 +137,15 @@ pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, Missing
 // the GUI (a later task) needs to name both directly as `reprise_core::
 // queries::{auto_clean_eligible, run_auto_clean}`.
 pub use issues::{auto_clean_eligible, run_auto_clean};
+// Task 2.4: the grouped import-error read/write queries the ImportErrors
+// triage UI is built against — see `import_errors`'s module doc for the
+// hint contract and the dismiss/restore semantics. `pub use` for the same
+// cross-crate reachability reason as `query_missing_groups` above.
+pub use import_errors::{
+    count_dismissed_import_errors, dismiss_all_import_errors, dismiss_import_error,
+    query_dismissed_import_errors, query_import_errors_grouped, restore_import_error,
+    ImportErrorEntry,
+};
 pub use library_views::{
     query_album_track_ids, query_albums, query_artist_detail_albums, query_artists, AlbumSummary,
     ArtistAlbum, ArtistSummary,
@@ -505,6 +515,8 @@ pub struct ImportErrorRow {
 mod tests;
 #[cfg(test)]
 mod tests_auto_clean;
+#[cfg(test)]
+mod tests_import_errors;
 #[cfg(test)]
 mod tests_issues;
 #[cfg(test)]
