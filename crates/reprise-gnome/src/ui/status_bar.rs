@@ -1,7 +1,10 @@
 //! The compact, right-aligned status information overlaid in the track
 //! content's bottom-right corner: `"{n} tracks · {total duration}"`, e.g.
 //! `"1,704 tracks · 4 days, 6 hours and 28 minutes"`. The status line always
-//! describes the whole library; the filter row owns restriction state.
+//! describes the whole library; the filter row owns restriction state. It
+//! therefore only appears while the Library source is shown — in every
+//! other source the filter row is the one count on screen (FIL-2's
+//! role split: row = current view, overlay = library).
 //! Storage size (e.g.
 //! "43.4 GB") is out of scope: the schema has no file-size column yet (a
 //! later stage).
@@ -103,27 +106,12 @@ impl StatusBar {
         }
     }
 
-    /// Shows a simple "{n} tracks" line for a non-`Library` `ViewSource`
-    /// (Stage 3 Task 3): no total-duration/"N of M" library context, since
-    /// those describe the *whole* library (see `query_library_stats`'s doc
-    /// comment), not e.g. one playlist or the missing-files view — full
-    /// per-source stats (duration, etc.) are left to a later stage; this is
-    /// the "simplest coherent behavior" the task calls for. `count <= 0`
-    /// hides the label, matching `refresh`'s empty-library behavior: the
-    /// empty-state placeholder already communicates "nothing here" for that
-    /// case, so a zeroed status line would be redundant.
-    pub fn refresh_for_source_count(&self, count: i64) {
-        if !self.enabled.get() {
-            return;
-        }
-        if count <= 0 {
-            self.label.set_visible(false);
-            return;
-        }
-        let text = format_source_status_text(count);
-        tracing::debug!(text = %text, "status line updated (source count)");
-        self.label.set_text(&text);
-        self.label.set_visible(true);
+    /// Hides the status line. Called for every non-`Library` source: since
+    /// the filter row became the permanent per-source count (FIL-2), a
+    /// second "{n} tracks" overlay there was pure duplication — the library
+    /// stats this widget exists for have no meaning outside the Library.
+    pub fn hide(&self) {
+        self.label.set_visible(false);
     }
 }
 
@@ -152,18 +140,6 @@ fn format_status_text(track_count: i64, total_duration_ms: i64) -> String {
     )
 }
 
-/// Pure text-formatting core of `refresh_for_source_count` — same
-/// unit-testable-without-a-widget pattern as `format_status_text`, just
-/// without the duration/"N of M" pieces that only make sense library-wide.
-fn format_source_status_text(count: i64) -> String {
-    let track_word = if count == 1 {
-        &strings::text(strings::STATUS_TRACK_SINGULAR)
-    } else {
-        &strings::text(strings::STATUS_TRACK_PLURAL)
-    };
-    format!("{} {track_word}", format_thousands(count))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,18 +163,5 @@ mod tests {
     fn formats_singular_track_count() {
         let text = format_status_text(1, 90 * 60 * 1000);
         assert_eq!(text, "1 track · 1 hour and 30 minutes");
-    }
-
-    /// Stage 3 Task 3: the non-Library "{n} tracks" status line has none of
-    /// the duration/"N of M" pieces `format_status_text` produces.
-    #[test]
-    fn source_status_text_formats_plural_and_singular() {
-        assert_eq!(format_source_status_text(42), "42 tracks");
-        assert_eq!(format_source_status_text(1), "1 track");
-    }
-
-    #[test]
-    fn source_status_text_comma_formats_over_a_thousand() {
-        assert_eq!(format_source_status_text(1_234), "1,234 tracks");
     }
 }
