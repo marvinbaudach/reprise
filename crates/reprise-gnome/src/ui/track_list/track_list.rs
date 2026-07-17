@@ -414,6 +414,7 @@ impl TrackList {
     /// it's used for (the context menu's "New playlist…" dialog parent).
     pub fn set_window(&self, window: &adw::ApplicationWindow) {
         self.shared.window.set(Some(window));
+        self.shared.import_errors_view.set_window(window);
         self.shared.missing_files_view.set_window(window);
     }
 

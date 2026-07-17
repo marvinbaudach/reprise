@@ -108,3 +108,75 @@ pub fn missing_since(date: &str) -> String {
 pub fn issue_text(message: &str) -> String {
     text(message)
 }
+
+pub const IMPORT_ISSUE_TAGS_ICON: &str = N_!("✎");
+pub const IMPORT_ISSUE_TAGS_TITLE: &str = N_!("Unreadable tags");
+pub const IMPORT_ISSUE_TAGS_ROW: &str =
+    N_!("Tags unreadable — the file itself can usually still be played");
+pub const IMPORT_ISSUE_PERMISSION_ICON: &str = N_!("🔒");
+pub const IMPORT_ISSUE_PERMISSION_TITLE: &str = N_!("Permission denied");
+pub const IMPORT_ISSUE_PERMISSION_ROW: &str = N_!("Reprise cannot read this file");
+pub const IMPORT_ISSUE_FORMAT_ICON: &str = N_!("◇");
+pub const IMPORT_ISSUE_FORMAT_TITLE: &str = N_!("Unsupported format");
+pub const IMPORT_ISSUE_FORMAT_ROW: &str = N_!("This audio format is not supported");
+pub const IMPORT_ISSUE_IO_ICON: &str = N_!("⚠");
+pub const IMPORT_ISSUE_IO_TITLE: &str = N_!("Read error");
+pub const IMPORT_ISSUE_IO_ROW: &str = N_!("The file could not be read");
+pub const IMPORT_ISSUE_UNKNOWN_ICON: &str = N_!("?");
+pub const IMPORT_ISSUE_UNKNOWN_TITLE: &str = N_!("Unclassified");
+pub const IMPORT_ISSUE_UNKNOWN_ROW: &str = N_!("The error could not be classified");
+pub const IMPORT_ISSUE_FILE_ONE: &str = N_!("1 file");
+pub const IMPORT_ISSUE_FILES: &str = N_!("{count} files");
+pub const IMPORT_ISSUE_SEEN_ONE: &str = N_!("seen in 1 scan");
+pub const IMPORT_ISSUE_SEEN: &str = N_!("seen in {count} scans");
+pub const IMPORT_ISSUE_HINT_PREFIX: &str = N_!("Imported without metadata");
+pub const IMPORT_ISSUE_EDIT_TAGS: &str = N_!("Open in Tag Editor");
+pub const IMPORT_ISSUE_SHOW_FILES: &str = N_!("Show in Files");
+pub const IMPORT_ISSUE_RETRY_ALL: &str = N_!("Retry all");
+pub const IMPORT_ISSUE_DISMISS_ALL: &str = N_!("Dismiss all");
+pub const IMPORT_ISSUE_EXPORT: &str = N_!("Export list…");
+pub const IMPORT_ISSUE_EXPORT_TITLE: &str = N_!("Export import errors");
+pub const IMPORT_ISSUE_RESTORE: &str = N_!("Restore");
+pub const IMPORT_ISSUE_DISMISSED: &str = N_!("{count} dismissed · Show");
+pub const IMPORT_ISSUE_HIDE_DISMISSED: &str = N_!("Hide dismissed");
+pub const IMPORT_ISSUE_DISMISS_FAILED: &str = N_!("Could not dismiss — the file is unavailable");
+pub const IMPORT_ISSUE_RETRY_ALL_FAILED: &str = N_!("Could not retry all import errors");
+pub const IMPORT_ISSUE_EXPORT_FAILED: &str = N_!("Could not export the import-error list");
+pub const IMPORT_ISSUE_FAILED_ONE: &str = N_!("1 failed");
+pub const IMPORT_ISSUE_FAILED: &str = N_!("{count} failed");
+pub const IMPORT_ISSUE_DETAILS: &str = N_!("Details");
+
+pub fn import_issue_file_count(count: usize) -> String {
+    let value = count.to_string();
+    plural(
+        IMPORT_ISSUE_FILE_ONE,
+        IMPORT_ISSUE_FILES,
+        count,
+        &[("count", &value)],
+    )
+}
+
+pub fn import_issue_seen(count: i64) -> String {
+    let count = usize::try_from(count.max(0)).unwrap_or(usize::MAX);
+    let value = count.to_string();
+    plural(
+        IMPORT_ISSUE_SEEN_ONE,
+        IMPORT_ISSUE_SEEN,
+        count,
+        &[("count", &value)],
+    )
+}
+
+pub fn import_issue_dismissed(count: u32) -> String {
+    formatted(IMPORT_ISSUE_DISMISSED, &[("count", &count.to_string())])
+}
+
+pub fn import_issue_failed(count: u32) -> String {
+    let value = count.to_string();
+    plural(
+        IMPORT_ISSUE_FAILED_ONE,
+        IMPORT_ISSUE_FAILED,
+        count as usize,
+        &[("count", &value)],
+    )
+}

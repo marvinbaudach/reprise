@@ -21,6 +21,24 @@ use super::strings;
 use super::toasts;
 use super::track_list::TrackList;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ScanFailureNotice {
+    title: String,
+    action: String,
+    target: reprise_core::view_source::ViewSource,
+}
+
+fn scan_failure_notices(failed: u32) -> Vec<ScanFailureNotice> {
+    (failed > 0)
+        .then(|| ScanFailureNotice {
+            title: strings::import_issue_failed(failed),
+            action: strings::issue_text(strings::IMPORT_ISSUE_DETAILS),
+            target: reprise_core::view_source::ViewSource::ImportErrors,
+        })
+        .into_iter()
+        .collect()
+}
+
 pub(in crate::ui) fn spawn_scan(
     folder: PathBuf,
     db_path: PathBuf,
@@ -101,12 +119,23 @@ fn reconcile_outcome(
             } else {
                 tracing::info!(?report, "scan complete");
                 let result = report.to_scan_result();
-                toasts::show(
-                    toast_overlay,
-                    &strings::scan_complete_toast(result.new_tracks, result.failed),
-                );
                 track_list.reload();
                 sidebar.refresh("scan completed");
+                if let Some(notice) = scan_failure_notices(result.failed).into_iter().next() {
+                    let toast = adw::Toast::new(&notice.title);
+                    toast.set_button_label(Some(&notice.action));
+                    let target = notice.target;
+                    let sidebar = sidebar.clone();
+                    toast.connect_button_clicked(move |_| {
+                        sidebar.refresh_and_select(target.clone(), "scan error details");
+                    });
+                    toast_overlay.add_toast(toast);
+                } else {
+                    toasts::show(
+                        toast_overlay,
+                        &strings::scan_complete_toast(result.new_tracks, 0),
+                    );
+                }
                 start_or_restart_watcher(
                     watcher_state,
                     folder,
@@ -202,4 +231,27 @@ fn run_scan(
     }
     analyze_waveforms(db_path, waveform_backend);
     Ok(outcome)
+}
+
+#[cfg(test)]
+mod task_3_3_tests {
+    use super::*;
+
+    // UX FB-3: one scan may collect many file failures, but completion
+    // projects them into one persistent, actionable notice rather than one
+    // toast per file.
+    #[test]
+    fn fb_3_scan_failures_produce_one_actionable_completion_notice() {
+        let notices = scan_failure_notices(3);
+
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].title, "3 failed");
+        assert_eq!(notices[0].action, "Details");
+        assert_eq!(
+            notices[0].target,
+            reprise_core::view_source::ViewSource::ImportErrors
+        );
+        assert_eq!(scan_failure_notices(1)[0].title, "1 failed");
+        assert!(scan_failure_notices(0).is_empty());
+    }
 }

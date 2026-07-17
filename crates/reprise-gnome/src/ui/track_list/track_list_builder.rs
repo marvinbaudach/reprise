@@ -136,6 +136,15 @@ pub(in crate::ui) fn build(
     }
     {
         let shared_weak = Rc::downgrade(&shared);
+        shared.import_errors_view.set_on_edit_hint(move |path| {
+            let Some(shared) = shared_weak.upgrade() else {
+                return;
+            };
+            crate::ui::tag_edit_flow::begin_for_path(&shared, path);
+        });
+    }
+    {
+        let shared_weak = Rc::downgrade(&shared);
         shared.missing_files_view.set_on_mutated(move || {
             let Some(shared) = shared_weak.upgrade() else {
                 return;

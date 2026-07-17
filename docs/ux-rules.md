@@ -253,7 +253,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   3-px-Balken + ellipsierte Detailzeile. Für alles > ~1 s: Scan, Sync,
   Relink-Suchlauf, Playlist-Import. Klick auf Karte → zugehörige Ansicht;
   Cancel auf Karte bricht ab.
-- **FB-3** [geplant] [core] — Fehler: Einzelfehler im Lauf werden gesammelt,
+- **FB-3** [aktiv] [core] — Fehler: Einzelfehler im Lauf werden gesammelt,
   nie einzeln getoastet. Am Ende EIN Toast mit „N failed · Details" →
   Details öffnet die zuständige View/Dialog. Persistente Probleme leben als
   Badge + ISSUES-Eintrag, nicht als wiederkehrende Toasts.

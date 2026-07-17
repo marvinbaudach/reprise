@@ -576,9 +576,6 @@ pub fn tracks_removed_from_library_failed_toast() -> String {
 // table, since its rows aren't `Track`s and don't fit the shared
 // title/artist/… `ColumnView`.
 
-pub const IMPORT_ERROR_COLUMN_PATH: &str = N_!("Path");
-pub const IMPORT_ERROR_COLUMN_REASON: &str = N_!("Reason");
-pub const IMPORT_ERROR_COLUMN_TIME: &str = N_!("Time");
 /// "Retry" re-scans just that one path (`library::scanner::scan_folder`
 /// against the single file); success clears the row, failure refreshes its
 /// `reason`/`occurred_at`.
