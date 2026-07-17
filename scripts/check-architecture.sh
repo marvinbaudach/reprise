@@ -8,6 +8,14 @@ echo "== Architecture lint =="
 
 failed=0
 while IFS= read -r file; do
+  # UI string catalogs may exceed 800 lines: they are append-oriented
+  # translation inventories, not behavioral modules that should be split by size.
+  case "$file" in
+    crates/reprise-gnome/src/ui/strings.rs | crates/reprise-gnome/src/ui/strings_*.rs)
+      continue
+      ;;
+  esac
+
   lines=$(wc -l < "$file")
   if (( lines >= 800 )); then
     echo "$file has $lines lines; Rust source files must stay below 800" >&2

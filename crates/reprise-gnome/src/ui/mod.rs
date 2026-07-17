@@ -34,6 +34,7 @@ pub mod first_run;
 mod help;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
+mod issues;
 mod library_views;
 mod lyrics;
 pub mod mpris_mirror;

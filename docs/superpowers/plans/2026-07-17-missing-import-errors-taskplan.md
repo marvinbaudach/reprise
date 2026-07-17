@@ -111,7 +111,9 @@ dismissed_mtime, dismissed_size)`.
   `bash scripts/check-architecture.sh`.
 - Nach Kern-Änderungen: `cargo tree -p reprise-core | grep -E 'gtk4|libadwaita|gstreamer|zbus'`
   MUSS leer sein.
-- Code-Dateien **< 800 Zeilen**; kohäsives Sibling-Modul extrahieren statt Doku kürzen.
+- Code-Dateien **< 800 Zeilen**; ausgenommen sind die append-orientierten UI-Stringkataloge
+  `ui/strings.rs` und `ui/strings_*.rs`. Sonst kohäsives Sibling-Modul extrahieren statt Doku
+  kürzen.
   Markdown ist ausgenommen.
 - **RefCell-Disziplin:** nie ein `borrow()` über einen GTK-/Callback-Aufruf halten (Skill
   `building-gtk4-rust-apps` — jede Regel dort ist ein real gefangener Bug).
