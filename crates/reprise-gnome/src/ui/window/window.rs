@@ -191,6 +191,16 @@ pub fn build(
             None
         }
     };
+    let startup_purged = match super::issues::purge_startup_tombstones(conn) {
+        Ok(ids) => ids,
+        Err(error) => {
+            tracing::error!(%error, "startup tombstone purge failed");
+            Vec::new()
+        }
+    };
+    if let Some(player) = &player {
+        player.purge_queue_ids(&startup_purged);
+    }
 
     // Built right after `player` (needed for the Queue row's counter) and
     // before `TrackList` and `spawn_scan`/`player.set_track_list_reload`

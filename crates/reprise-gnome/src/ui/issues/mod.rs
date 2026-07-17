@@ -1,18 +1,15 @@
 //! Shared card, row, and lazy-collapse building blocks for issue views.
 
-#[allow(dead_code)] // Consumed by the issue views beginning in Task 3.2.
 mod issue_card;
-#[allow(dead_code)] // Consumed by the issue views beginning in Task 3.2.
+#[allow(dead_code)] // The standalone constructor is consumed by Task 3.3.
 mod issue_collapse;
-#[allow(dead_code)] // Consumed by the issue views beginning in Task 3.2.
 mod issue_row;
+mod missing_view;
 
-#[allow(unused_imports)]
 pub(in crate::ui) use issue_card::IssueCard;
-#[allow(unused_imports)]
 pub(in crate::ui) use issue_collapse::CollapsedList;
-#[allow(unused_imports)]
 pub(in crate::ui) use issue_row::{IssuePill, IssueRow, RowSpec};
+pub(in crate::ui) use missing_view::{purge_startup_tombstones, MissingFilesView};
 
 /// Structural styles shared by every issue-card consumer.
 pub(in crate::ui) fn css() -> String {
@@ -35,6 +32,22 @@ pub(in crate::ui) fn css() -> String {
            color: alpha(@window_fg_color, 0.58); }}\n\
          .issue-row-idle {{ font-size: 11.5px; color: alpha(@window_fg_color, 0.40); }}\n\
          .issue-row-pill {{ padding: 3px 10px; min-height: 24px; }}\n\
-         .issue-collapse-footer {{ padding: 5px 12px 8px; background: transparent; }}"
+         .issue-collapse-footer {{ padding: 5px 12px 8px; background: transparent; }}
+         .issue-remove-pill {{ color: #f38ba8; background-color: alpha(#f38ba8, 0.10); }}
+         .missing-info-card {{ background-color: alpha(@accent_bg_color, 0.07); \
+           border: 1px solid alpha(@accent_color, 0.18); border-radius: {RADIUS_SURFACE}; \
+           padding: 12px; }}
+         .missing-clear-state image {{ color: @accent_color; }}"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn issue_css_parses_without_errors() {
+        gtk4::init().unwrap();
+        let errors = crate::ui::style::css_parse_errors(&super::css());
+        assert!(errors.is_empty(), "CSS parse errors: {errors:?}");
+    }
 }

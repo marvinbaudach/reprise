@@ -69,6 +69,7 @@ use crate::ui::column_layout::ColumnRegistry;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::import_errors_view::ImportErrorsView;
+use crate::ui::issues::MissingFilesView;
 use crate::ui::toasts;
 use crate::ui::track_list_model::TrackListModel;
 pub(in crate::ui) use crate::ui::track_list_reload::{
@@ -83,14 +84,6 @@ pub(in crate::ui) use super::track_list_callbacks::{
     OnQueueSelected, OnReload, OnSelectionChanged, OnSidebarPlaylistDrop, OnSidebarQueueDrop,
     OnTagsMutated,
 };
-
-pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
-pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
-/// Stage 3 Task 8: the ImportErrors source's dedicated path/reason/time panel
-/// (`ui::import_errors_view::ImportErrorsView`) — a third `gtk::Stack` page,
-/// shown instead of `STACK_PAGE_LIST` only while `ViewSource::ImportErrors`
-/// is selected and has rows (see `apply_empty_state`'s `List` arm).
-pub(in crate::ui) const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -280,6 +273,7 @@ pub(in crate::ui) struct Shared {
     /// other widget, and refreshed (not rebuilt) on every `reload()` while
     /// this source is selected.
     pub(in crate::ui) import_errors_view: ImportErrorsView,
+    pub(in crate::ui) missing_files_view: MissingFilesView,
     /// "Rescan library" (Missing-source context menu item, Stage 3 Task 8):
     /// injected via `TrackList::set_on_rescan_library` — wraps `ui::window`'s
     /// scan flow against the persisted library root without this module
@@ -412,6 +406,7 @@ impl TrackList {
         // separately, since `window.rs` already calls this one method at the
         // right point in construction.
         self.shared.import_errors_view.set_toast_overlay(overlay);
+        self.shared.missing_files_view.set_toast_overlay(overlay);
     }
 
     /// Injects the main window, once it exists — see the `Shared::window`
@@ -419,6 +414,7 @@ impl TrackList {
     /// it's used for (the context menu's "New playlist…" dialog parent).
     pub fn set_window(&self, window: &adw::ApplicationWindow) {
         self.shared.window.set(Some(window));
+        self.shared.missing_files_view.set_window(window);
     }
 
     /// Injects the context menu's "Play" action callback (Stage 3 Task 5) —

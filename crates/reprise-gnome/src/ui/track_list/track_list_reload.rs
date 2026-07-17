@@ -105,10 +105,10 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
     // view`, not `shared.model` (which `queries.rs` always resolves to an
     // empty window/count for this source — see its module doc's `ImportErrors`
     // section) — so its row count comes from refreshing that panel instead.
-    let count = if matches!(source, ViewSource::ImportErrors) {
-        shared.import_errors_view.refresh()
-    } else {
-        shared.model.n_items() as usize
+    let count = match source {
+        ViewSource::ImportErrors => shared.import_errors_view.refresh(),
+        ViewSource::Missing => shared.missing_files_view.refresh(),
+        _ => shared.model.n_items() as usize,
     };
     browse_filter_count::update(&shared.browse_bar, &shared.conn, &source, count, has_filter);
     apply_empty_state(shared, empty_state_for(count, has_filter, &source));
