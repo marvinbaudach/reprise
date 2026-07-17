@@ -15,7 +15,7 @@ use rusqlite::Connection;
 /// Builds the parameterized SELECT for a `Playlist(id)` window — see the
 /// module doc's `Playlist(id)` section for the join shape, the `"playlist_
 /// order"` sentinel, and the duplicates-as-separate-rows behavior.
-/// [`PRESENT`] is applied here too: a track that later vanishes from disk
+/// `PRESENT` is applied here too: a track that later vanishes from disk
 /// drops out of every playlist's view and resurfaces only in the dedicated
 /// `Missing` source, exactly like the library view.
 ///

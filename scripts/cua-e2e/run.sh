@@ -85,6 +85,21 @@ wait_for_label() {
   return 1
 }
 
+wait_for_label_absent() {
+  local pid=$1 window_id=$2 label=$3 stem=$4 snapshot_path
+
+  for attempt in $(seq 1 24); do
+    snapshot_path=$(cua_snapshot "$pid" "$window_id" "$stem-$attempt")
+    if assert_snapshot_absent "$snapshot_path" "$label" 2>/dev/null; then
+      printf '%s\n' "$snapshot_path"
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "window still exposes unexpected accessible label '$label'" >&2
+  return 1
+}
+
 APP_PID=""
 APP_LOG=""
 WINDOW_ID=""
@@ -97,16 +112,19 @@ stop_app_on_failure() {
 }
 
 start_scenario_app() {
-  local scenario=$1 scan_dir=${2:-}
+  local scenario=$1 scan_dir=${2:-} tag_edit_smoke=${3:-}
   local profile_root="$CUA_E2E_SCRATCH_ROOT/$scenario"
-  local -a scan_env=(-u REPRISE_SCAN_DIR)
+  local -a scenario_env=(-u REPRISE_SCAN_DIR -u REPRISE_SMOKE_TAG_EDIT)
 
   mkdir -p "$profile_root/data" "$profile_root/cache" "$profile_root/config"
   if [[ -n "$scan_dir" ]]; then
-    scan_env=(REPRISE_SCAN_DIR="$scan_dir")
+    scenario_env+=(REPRISE_SCAN_DIR="$scan_dir")
+  fi
+  if [[ -n "$tag_edit_smoke" ]]; then
+    scenario_env+=(REPRISE_SMOKE_TAG_EDIT="$tag_edit_smoke")
   fi
   APP_LOG="$CUA_E2E_OUT_DIR/$scenario-app.log"
-  env "${scan_env[@]}" \
+  env "${scenario_env[@]}" \
     XDG_DATA_HOME="$profile_root/data" \
     XDG_CACHE_HOME="$profile_root/cache" \
     XDG_CONFIG_HOME="$profile_root/config" \
@@ -193,6 +211,62 @@ run_populated_library_scenario() {
     "first-run decision"
 }
 
+run_tag_1_no_jump_after_save_scenario() {
+  local fixture_dir="$CUA_E2E_SCRATCH_ROOT/tag-1-fixture-music"
+  local saved_path
+
+  echo "[cua-e2e] tag-1-no-jump-after-save: save preserves library position"
+  mkdir -p "$fixture_dir"
+  cp "$repo_root/crates/reprise-core/tests/fixtures/sine.flac" "$fixture_dir/sine_01.flac"
+  cp "$repo_root/crates/reprise-core/tests/fixtures/sine.flac" "$fixture_dir/sine_02.flac"
+  start_scenario_app \
+    tag-1-no-jump-after-save "$fixture_dir" "title:CUA selection preserved"
+  saved_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "CUA selection preserved" tag-1-saved)
+  assert_snapshot_contains "$saved_path" "Tracks"
+  assert_snapshot_contains "$saved_path" "Search all fields"
+  finish_scenario tag-1-no-jump-after-save \
+    "dev scan complete" \
+    "tag-edit batch completed" \
+    "query matched 2 tracks" \
+    "(track tags edited)"
+}
+
+run_tag_3_multi_dialog_structure_scenario() {
+  local fixture_dir="$CUA_E2E_SCRATCH_ROOT/tag-3-fixture-music"
+  local dialog_path closed_path
+
+  echo "[cua-e2e] tag-3-multi-dialog-structure: accessible multi-editor structure"
+  mkdir -p "$fixture_dir"
+  cp "$repo_root/crates/reprise-core/tests/fixtures/sine.flac" "$fixture_dir/sine_01.flac"
+  cp "$repo_root/crates/reprise-core/tests/fixtures/sine.flac" "$fixture_dir/sine_02.flac"
+  start_scenario_app tag-3-multi-dialog-structure "$fixture_dir" "open:2"
+  dialog_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Edit 2 Tracks" tag-3-dialog)
+  assert_snapshot_contains \
+    "$dialog_path" "Only changed fields will be written to all selected tracks"
+  assert_snapshot_contains "$dialog_path" "Save"
+  assert_snapshot_contains "$dialog_path" "Cancel"
+  assert_snapshot_contains "$dialog_path" "Title"
+  assert_snapshot_contains "$dialog_path" "Artist"
+  assert_snapshot_contains "$dialog_path" "Album"
+  assert_snapshot_contains "$dialog_path" "Album artist"
+  assert_snapshot_contains "$dialog_path" "Genre"
+  assert_snapshot_contains "$dialog_path" "Year"
+  assert_snapshot_contains "$dialog_path" "Track number"
+  assert_snapshot_contains "$dialog_path" "Rating"
+  assert_snapshot_contains "$dialog_path" "per track"
+  assert_snapshot_contains "$dialog_path" "—"
+
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Cancel" tag-3-cancel
+  closed_path=$(wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "Edit 2 Tracks" tag-3-closed)
+  assert_snapshot_contains "$closed_path" "Search all fields"
+  finish_scenario tag-3-multi-dialog-structure \
+    "dev scan complete" \
+    "tag editor presented"
+}
+
 private_session_cleanup() {
   local exit_code=$?
   stop_app_on_failure
@@ -240,6 +314,8 @@ run_private_session() {
 
   run_fresh_install_scenario
   run_populated_library_scenario
+  run_tag_1_no_jump_after_save_scenario
+  run_tag_3_multi_dialog_structure_scenario
   echo "[cua-e2e] all acceptance scenarios passed"
 }
 

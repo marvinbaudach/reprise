@@ -65,13 +65,44 @@ pub(in crate::ui) fn css() -> String {
          .reprise-tag-field-annotation.accent {{ \
            color: @accent_color; }}\n\
          \
-         /* --- Mixed-field state --- */
+         /* --- 3a layout: cover-left header row + entry grid (TAG-2/TAG-3) --- */
+         .reprise-tag-field {{ \
+           margin-bottom: 2px; }}\n\
+         .reprise-tag-field-label {{ \
+           font-size: 12px; \
+           font-weight: 600; \
+           color: @reprise_dim_fg_color; \
+           padding: 0 2px; }}\n\
+         /* Reserved \"was: …\" line (TAG-5, P-4): space is always allocated, \
+            even while its text is empty, so the first real edit never \
+            reflows the grid around it. */
+         .reprise-tag-old-value {{ \
+           font-size: 11px; \
+           color: alpha(@window_fg_color, 0.40); \
+           min-height: 14px; }}\n\
+         \
+         /* --- Mixed-field state (TAG-2): editable from the start, dashed/ \
+            italic until the user's first keystroke or Backspace/Delete \
+            arms it --- */
          .reprise-tag-mixed > .header {{ \
            border-style: dashed; }}\n\
-         .reprise-tag-mixed > .header text {{ \
-           font-style: italic; }}\n\
+         .reprise-tag-mixed > .header text > placeholder {{ \
+           font-style: italic; \
+           color: alpha(@window_fg_color, 0.45); }}\n\
+         .reprise-tag-field-armed > .header {{ \
+           border-color: @accent_color; \
+           border-width: 1.5px; }}\n\
          \
-         /* --- Pending-change bar --- */
+         /* --- Per-track field lock (TAG-3): Title/Track-number read-only \
+            in Multi mode --- */
+         .reprise-tag-per-track {{ \
+           opacity: 0.6; }}\n\
+         .reprise-tag-per-track > .header text {{ \
+           font-style: normal; }}\n\
+         \
+         /* --- Pending-change bar (legacy; superseded by the review footer \
+            below but kept — some of its rows may return once Package E's \
+            Wave-4 keyboard work revisits index-based field identity) --- */
          .reprise-tag-pending {{ \
            background: alpha(@accent_bg_color, 0.08); \
            border-radius: 8px; \
@@ -90,6 +121,28 @@ pub(in crate::ui) fn css() -> String {
            font-size: 11px; \
            padding: 1px 8px; \
            min-height: 20px; }}\n\
+         \
+         /* --- Review footer (TAG-5, F1): summary line + \"Review changes\" \
+            expander, mounted in the same slot the pending bar used to \
+            occupy --- */
+         .reprise-tag-review {{ \
+           background: alpha(@accent_bg_color, 0.08); \
+           border-radius: 8px; \
+           padding: 8px 12px; \
+           margin-top: 4px; }}\n\
+         .reprise-tag-review-summary {{ \
+           font-size: 12px; \
+           font-weight: 600; \
+           color: @accent_color; }}\n\
+         .reprise-tag-review expander {{ \
+           font-size: 12px; \
+           margin-top: 4px; }}\n\
+         \
+         /* --- In-field ↺ revert (TAG-2): hidden until a field arms --- */
+         .reprise-tag-field-revert {{ \
+           min-width: 24px; \
+           min-height: 24px; \
+           padding: 2px; }}\n\
          \
          /* --- Rating stars --- */
          .reprise-tag-stars button {{ \
@@ -136,23 +189,16 @@ pub(in crate::ui) fn css() -> String {
            color: @error_color; \
            font-size: 12px; }}\n\
          \
-         /* --- Change-cover link --- */
-         .reprise-tag-cover-link {{ \
-           font-size: 12px; \
-           color: @reprise_dim_fg_color; \
-           padding: 4px 0; }}\n\
-         .reprise-tag-cover-link:disabled {{ \
-           opacity: 0.5; }}\n\
-         \
          /* --- Focus glow on entry rows inside the editor --- */
          .reprise-tag-editor row:focus-within {{ \
            box-shadow: 0 0 {FOCUS_GLOW_BLUR} alpha(@accent_color, {FOCUS_GLOW_ALPHA}); \
            border-radius: 8px; }}\n\
          \
-         /* --- Preferences group inside dialog gets card tint --- */
-         .reprise-tag-editor preferencesgroup {{ \
+         /* --- Field columns get a subtle card tint, replacing the old \
+            boxed-list/PreferencesGroup look the 3a layout retired --- */
+         .reprise-tag-editor .reprise-tag-field .header {{ \
            background: alpha(@window_fg_color, {DIALOG_CARD_ALPHA}); \
-           border-radius: 12px; }}"
+           border-radius: 8px; }}"
     )
 }
 
@@ -166,7 +212,11 @@ mod tests {
         assert!(css.contains(".reprise-tag-hint"));
         assert!(css.contains(".reprise-tag-cover"));
         assert!(css.contains(".reprise-tag-mixed"));
+        assert!(css.contains("text > placeholder"));
+        assert!(css.contains("alpha(@window_fg_color, 0.45)"));
         assert!(css.contains(".reprise-tag-pending"));
+        assert!(css.contains(".reprise-tag-review"));
+        assert!(css.contains(".reprise-tag-field-revert"));
         assert!(css.contains(".reprise-tag-stars"));
         assert!(css.contains(".reprise-tag-nav"));
         assert!(css.contains(".reprise-tag-mb"));
