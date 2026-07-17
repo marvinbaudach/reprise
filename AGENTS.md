@@ -39,6 +39,22 @@ holding any working spec/plan in the session rather than committing it.
   verification-before-completion) carry the iron rules: TDD, verify-before-done, hard gates,
   isolation, honesty.
 
+## UX rules are binding
+
+`docs/ux-rules.md` is the single UX source of truth (German). Before touching
+any user-facing behavior, read the sections you work in. The contract:
+
+- `[aktiv]` rules are enforceable: deviation is a bug; every `[aktiv]` rule
+  has a rule-named test (`fn play_1a_…` / cua-e2e `play-1a-…`) that gates
+  merges via `scripts/check-ux-traceability.sh`.
+- A rule flips `[geplant]` → `[aktiv]` in the same commit that implements
+  the behavior and adds its test — never retroactively.
+- Rule IDs are append-only; replaced rules stay as `[ersetzt durch <ID>]`
+  and their tests are re-pointed in the same commit.
+- If you hit a case no rule covers: do NOT decide locally. Add a
+  `[geplant]` draft with the next free ID in the affected section, marked
+  `<!-- REVIEW: Regelvorschlag -->`, and surface it for human review.
+
 ## How to resume (the method — no special tooling required)
 
 The project is built **plan-by-plan, task-by-task, test-first**. To continue:

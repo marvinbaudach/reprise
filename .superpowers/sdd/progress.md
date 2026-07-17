@@ -128,3 +128,6 @@ Started: 2026-07-16
   Traceability, Änderungsprotokoll). Härtung gemäß Grilling 2026-07-17
   (docs/plans/ux-rules-acceptance-tests.md). QUE-1–5/NAV-9 aus dem
   Queue-Fix-Prompt wörtlich übernommen — Implementierung läuft parallel.
+
+- AGENTS.md: binding-UX-rules section added (contract, flip rule, proposal
+  protocol) — UX-Regelwerk Task 2.

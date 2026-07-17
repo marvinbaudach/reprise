@@ -441,7 +441,7 @@ git commit -m "docs: add binding UX rulebook (all rules [geplant])"
 - Consumes: `docs/ux-rules.md` aus Task 1.
 - Produces: Verbindlichkeits-Absatz, auf den sich künftige Agenten-Sessions stützen.
 
-- [ ] **Step 1: Sektion einfügen** — direkt nach dem „Shared workflow skills"-Block:
+- [x] **Step 1: Sektion einfügen** — direkt nach dem „Shared workflow skills"-Block:
 
 ```markdown
 ## UX rules are binding
@@ -461,14 +461,14 @@ any user-facing behavior, read the sections you work in. The contract:
   `<!-- REVIEW: Regelvorschlag -->`, and surface it for human review.
 ```
 
-- [ ] **Step 2: Ledger ergänzen** — an `.superpowers/sdd/progress.md` anhängen:
+- [x] **Step 2: Ledger ergänzen** — an `.superpowers/sdd/progress.md` anhängen:
 
 ```markdown
 - AGENTS.md: binding-UX-rules section added (contract, flip rule, proposal
   protocol) — UX-Regelwerk Task 2.
 ```
 
-- [ ] **Step 3: Committen**
+- [x] **Step 3: Committen**
 
 ```bash
 git add AGENTS.md .superpowers/sdd/progress.md
