@@ -152,8 +152,7 @@ for one_shot_consumer in \
   crates/reprise-gnome/src/ui/preferences/preference_dependencies.rs \
   crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs \
   crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs \
-  crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs \
-  crates/reprise-gnome/src/ui/tag_edit/tag_editor_lookup.rs; do
+  crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs; do
   if rg --quiet 'std::thread::Builder::new|async_channel::bounded' "$one_shot_consumer"; then
     echo "$one_shot_consumer must use the shared one-shot task helper" >&2
     exit 1

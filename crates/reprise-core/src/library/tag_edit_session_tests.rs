@@ -222,38 +222,6 @@ fn tag_5_all_pending_but_zero_effective_yields_empty_batch() {
 }
 
 #[test]
-fn mb_uniformity_uses_effective_values() {
-    let mut session = TagEditSession::new(
-        vec![
-            track(1, "Suicide", "The Same Album", "Rock"),
-            track(2, "Suicide Silence", "The Same Album", "Rock"),
-        ],
-        SessionMode::Multi,
-    );
-    assert_eq!(
-        session.mb_uniform_artist_album(),
-        None,
-        "original artists differ"
-    );
-
-    session.set_pending(
-        PendingScope::AllTracks,
-        TagField::Artist,
-        &FieldValue::Text("Suicide Silence".into()),
-    );
-    assert_eq!(
-        session.mb_uniform_artist_album(),
-        Some(("Suicide Silence".into(), "The Same Album".into()))
-    );
-}
-
-#[test]
-fn mb_uniformity_is_none_when_album_is_empty() {
-    let session = TagEditSession::new(vec![track(1, "Artist", "", "Rock")], SessionMode::SingleNav);
-    assert!(session.mb_uniform_artist_album().is_none());
-}
-
-#[test]
 fn old_value_line_is_none_when_nothing_changed() {
     let session = TagEditSession::new(
         vec![track(1, "Artist", "Album", "Rock")],

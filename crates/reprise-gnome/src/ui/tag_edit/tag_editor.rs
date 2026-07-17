@@ -127,20 +127,6 @@ pub(in crate::ui) fn present(
         programmatic_changes,
     } = crate::ui::tag_editor_dirty::wire(mode, &form, &session);
 
-    crate::ui::tag_editor_lookup::wire(
-        &session,
-        crate::ui::tag_editor_lookup::LookupWidgets {
-            button: &form.mb_btn,
-            hint: &form.mb_hint,
-            year: &form.year_row,
-            artist: &form.artist_ac,
-            album: &form.album_ac,
-            album_artist: &form.album_artist_ac,
-            genre: &form.genre_ac,
-        },
-        &update_save_state,
-    );
-
     let browse_handles = clone_browse_field_handles(&form);
 
     // G1: reconcile the just-built widgets + header subtitle against the

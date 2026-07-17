@@ -140,8 +140,8 @@ use stats::{hourly_chart, stats_chart, stats_chart_math};
 pub(crate) use stats::{stats_css, stats_view};
 #[allow(unused_imports)]
 use tag_edit::{
-    autocomplete_entry, tag_editor_dirty, tag_editor_failures, tag_editor_form, tag_editor_lookup,
-    tag_editor_save, tag_editor_state, tag_editor_style, tag_editor_widgets,
+    autocomplete_entry, tag_editor_dirty, tag_editor_failures, tag_editor_form, tag_editor_save,
+    tag_editor_state, tag_editor_style, tag_editor_widgets,
 };
 #[allow(unused_imports)]
 pub(crate) use tag_edit::{tag_edit_flow, tag_editor};
