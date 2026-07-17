@@ -3,6 +3,7 @@ pub(in crate::ui) mod column_layout_editor;
 pub(in crate::ui) mod column_widths;
 pub(in crate::ui) mod current_track_selection;
 pub(in crate::ui) mod list_density;
+pub(in crate::ui) mod match_highlight;
 pub(crate) mod queue_row_mapping;
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
