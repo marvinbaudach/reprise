@@ -130,6 +130,12 @@ pub use clauses::build_track_query;
 // directly, the same reachability fix Task 1's `ImportErrorKind` move to
 // `models` made for the same reason (see that commit's message).
 pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, MissingGroupKind};
+// Task 2.3: the auto-clean read/act split — `auto_clean_eligible` for a
+// preview, `run_auto_clean` for the real unattended deletion. `pub use` for
+// the same cross-crate reachability reason as `query_missing_groups` above:
+// the GUI (a later task) needs to name both directly as `reprise_core::
+// queries::{auto_clean_eligible, run_auto_clean}`.
+pub use issues::{auto_clean_eligible, run_auto_clean};
 pub use library_views::{
     query_album_track_ids, query_albums, query_artist_detail_albums, query_artists, AlbumSummary,
     ArtistAlbum, ArtistSummary,
@@ -497,6 +503,8 @@ pub struct ImportErrorRow {
 // `tests.rs`'s own doc comment.
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_auto_clean;
 #[cfg(test)]
 mod tests_issues;
 #[cfg(test)]
