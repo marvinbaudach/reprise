@@ -8,6 +8,7 @@ use std::time::Duration;
 use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
+use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use super::browse_chooser::{
@@ -21,6 +22,7 @@ const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
 const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
+type OnVoid = Rc<dyn Fn()>;
 const FACETS: [BrowseFacet; 3] = [BrowseFacet::Genre, BrowseFacet::Artist, BrowseFacet::Album];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +112,16 @@ fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
         .collect()
 }
 
+#[cfg(test)]
+fn chip_labels(search: &str, filter: &BrowseFilter) -> Vec<String> {
+    let mut labels = Vec::new();
+    if !search.trim().is_empty() {
+        labels.push(filter_strings::search_chip_label(search.trim()));
+    }
+    labels.extend(filter_chips(filter).into_iter().map(|chip| chip.label));
+    labels
+}
+
 fn available_facets(filter: &BrowseFilter) -> Vec<BrowseFacet> {
     FACETS
         .into_iter()
@@ -129,14 +141,13 @@ fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
     filter.clone()
 }
 
-fn browse_bar_visible(library_visible: bool, preference_visible: bool) -> bool {
-    library_visible && preference_visible
-}
-
 pub struct BrowseBar {
     root: gtk4::Box,
-    library_visible: Cell<bool>,
+    search: RefCell<String>,
+    track_source: Cell<bool>,
+    is_library: Cell<bool>,
     preference_visible: Cell<bool>,
+    section_label: gtk4::Label,
     chips: gtk4::FlowBox,
     pub(super) add_filter: gtk4::MenuButton,
     chooser_stack: gtk4::Stack,
@@ -145,6 +156,7 @@ pub struct BrowseBar {
     pub(super) value_search: gtk4::SearchEntry,
     pub(super) value_list: gtk4::ListBox,
     result_label: gtk4::Label,
+    clear_all: gtk4::Button,
     pub(super) chooser_facets: RefCell<Vec<BrowseFacet>>,
     pub(super) chooser_facet: Cell<Option<BrowseFacet>>,
     chooser_values: RefCell<Vec<BrowseValue>>,
@@ -153,6 +165,8 @@ pub struct BrowseBar {
     result_count: Cell<Option<(usize, usize)>>,
     conn: Rc<RefCell<Connection>>,
     on_changed: RefCell<Option<OnChanged>>,
+    on_search_cleared: RefCell<Option<OnVoid>>,
+    on_clear_all: RefCell<Option<OnVoid>>,
 }
 
 impl BrowseBar {
@@ -200,14 +214,26 @@ impl BrowseBar {
         result_label.add_css_class("caption");
         result_label.set_visible(false);
 
+        let clear_all = gtk4::Button::with_label(&format!(
+            "{} ×",
+            filter_strings::text(filter_strings::CLEAR_ALL)
+        ));
+        clear_all.add_css_class("flat");
+        clear_all.add_css_class(CHIP_CSS_CLASS);
+        clear_all.set_visible(false);
+
         root.append(&section_label);
         root.append(&chips);
         root.append(&result_label);
+        root.append(&clear_all);
 
         let bar = Rc::new(Self {
             root,
-            library_visible: Cell::new(true),
+            search: RefCell::new(String::new()),
+            track_source: Cell::new(true),
+            is_library: Cell::new(true),
             preference_visible: Cell::new(true),
+            section_label,
             chips,
             add_filter,
             chooser_stack,
@@ -216,6 +242,7 @@ impl BrowseBar {
             value_search,
             value_list,
             result_label,
+            clear_all,
             chooser_facets: RefCell::new(Vec::new()),
             chooser_facet: Cell::new(None),
             chooser_values: RefCell::new(Vec::new()),
@@ -224,7 +251,21 @@ impl BrowseBar {
             result_count: Cell::new(None),
             conn,
             on_changed: RefCell::new(None),
+            on_search_cleared: RefCell::new(None),
+            on_clear_all: RefCell::new(None),
         });
+        {
+            let weak = Rc::downgrade(&bar);
+            bar.clear_all.connect_clicked(move |_| {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                let callback = bar.on_clear_all.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            });
+        }
         wire_chooser(&bar);
         bar.sync_visibility();
         bar.refresh();
@@ -249,8 +290,34 @@ impl BrowseBar {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    #[allow(dead_code)] // Wired to the window-level reset in Task 4.
+    pub fn set_on_search_cleared(&self, callback: impl Fn() + 'static) {
+        *self.on_search_cleared.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    #[allow(dead_code)] // Wired to the window-level reset in Task 4.
+    pub fn set_on_clear_all(&self, callback: impl Fn() + 'static) {
+        *self.on_clear_all.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    #[allow(dead_code)] // Reload and session restoration adopt this API in Task 3.
+    pub fn set_source_context(&self, source: &ViewSource) {
+        self.track_source
+            .set(super::filter_restriction::is_track_source(source));
+        self.is_library.set(matches!(source, ViewSource::Library));
+        self.sync_visibility();
+    }
+
     pub fn set_library_visible(&self, visible: bool) {
-        self.library_visible.set(visible);
+        self.track_source.set(visible);
+        self.is_library.set(visible);
+        self.sync_visibility();
+    }
+
+    #[allow(dead_code)] // Reload adopts this API in Task 3.
+    pub fn set_search(self: &Rc<Self>, text: &str) {
+        *self.search.borrow_mut() = text.to_string();
+        self.refresh();
         self.sync_visibility();
     }
 
@@ -260,16 +327,33 @@ impl BrowseBar {
     }
 
     fn sync_visibility(&self) {
-        let visible = browse_bar_visible(self.library_visible.get(), self.preference_visible.get());
+        let restricted =
+            super::filter_restriction::is_restricted(&self.search.borrow(), &self.filter.borrow());
+        let visible = super::filter_restriction::row_visible(
+            self.track_source.get(),
+            restricted,
+            self.preference_visible.get(),
+        );
         self.root.set_visible(visible);
-        tracing::info!(visible, "browse bar visibility updated");
+        self.section_label.set_visible(restricted);
+        self.clear_all.set_visible(restricted);
+        tracing::info!(visible, restricted, "filter row visibility updated");
     }
 
     pub fn set_result_count(&self, filtered: usize, total: usize) {
         self.result_count.set(Some((filtered, total)));
-        self.result_label
-            .set_text(&filter_strings::result_count(filtered, total));
+        let (markup, accented) = filter_strings::result_count_markup(filtered, total);
+        self.result_label.set_markup(&markup);
+        if accented {
+            self.result_label.add_css_class("accent");
+        } else {
+            self.result_label.remove_css_class("accent");
+        }
         self.result_label.set_visible(true);
+    }
+
+    pub(in crate::ui) fn result_count(&self) -> Option<(usize, usize)> {
+        self.result_count.get()
     }
 
     pub fn hide_result_count(&self) {
@@ -296,6 +380,7 @@ impl BrowseBar {
                 return;
             };
             bar.refresh();
+            bar.sync_visibility();
             let callback = bar.on_changed.borrow().clone();
             if let Some(callback) = callback {
                 callback(next);
@@ -305,6 +390,29 @@ impl BrowseBar {
 
     fn rebuild_chips(self: &Rc<Self>, filter: &BrowseFilter) {
         self.chips.remove_all();
+        let query = self.search.borrow().trim().to_string();
+        if !query.is_empty() {
+            let button = gtk4::Button::with_label(&format!(
+                "{}  ×",
+                filter_strings::search_chip_label(&query)
+            ));
+            button.add_css_class("flat");
+            button.add_css_class(CHIP_CSS_CLASS);
+            button.update_property(&[gtk4::accessible::Property::Label(
+                &filter_strings::remove_search_label(&query),
+            )]);
+            let weak = Rc::downgrade(self);
+            button.connect_clicked(move |_| {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                let callback = bar.on_search_cleared.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            });
+            self.chips.append(&button);
+        }
         for chip in filter_chips(filter) {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip.label));
             button.add_css_class("flat");
@@ -322,7 +430,9 @@ impl BrowseBar {
             });
             self.chips.append(&button);
         }
-        self.chips.append(&self.add_filter);
+        if self.is_library.get() {
+            self.chips.append(&self.add_filter);
+        }
         self.add_filter
             .set_sensitive(!available_facets(filter).is_empty());
     }
@@ -455,7 +565,7 @@ fn schedule_smoke_step(
             .into_iter()
             .map(|chip| chip.label)
             .collect();
-        let result_count = shared.browse_bar.result_count.get();
+        let result_count = shared.browse_bar.result_count();
         tracing::info!(
             ?browse,
             ?chips,
@@ -470,12 +580,23 @@ fn schedule_smoke_step(
 mod tests {
     use super::*;
 
+    // UX FIL-1a: chip order is search first, then the facet cascade.
     #[test]
-    fn visibility_requires_library_source_and_user_preference() {
-        assert!(browse_bar_visible(true, true));
-        assert!(!browse_bar_visible(true, false));
-        assert!(!browse_bar_visible(false, true));
-        assert!(!browse_bar_visible(false, false));
+    fn fil_1a_search_appears_as_chip_before_facet_chips() {
+        let browse = BrowseFilter {
+            genre: Some("Rock".into()),
+            artist: None,
+            album: None,
+        };
+        let labels = chip_labels("falling", &browse);
+        assert_eq!(
+            labels,
+            vec![
+                "⌕ “falling” in any field".to_string(),
+                "Genre: Rock".to_string()
+            ]
+        );
+        assert!(chip_labels("  ", &BrowseFilter::default()).is_empty());
     }
 
     fn full_filter() -> BrowseFilter {
@@ -606,11 +727,8 @@ mod tests {
 
         bar.restore_filter(&full_filter());
         assert_eq!(bar.chips.observe_children().n_items(), 4);
-        assert_eq!(bar.root.observe_children().n_items(), 3);
-        assert_eq!(
-            bar.root.last_child(),
-            Some(bar.result_label.clone().upcast())
-        );
+        assert_eq!(bar.root.observe_children().n_items(), 4);
+        assert_eq!(bar.root.last_child(), Some(bar.clear_all.clone().upcast()));
 
         let genre_chip = bar.chips.child_at_index(0).unwrap().child().unwrap();
         genre_chip
