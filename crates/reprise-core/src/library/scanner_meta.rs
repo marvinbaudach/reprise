@@ -61,20 +61,21 @@ use crate::models::ImportErrorKind;
 /// this crate's other scanner-internal helpers still only ever read/write
 /// them from within `scanner`'s own subtree) is `pub(crate)`, not `pub
 /// (super)`, purely so it can appear in `scanner_move::apply_file_identity`'s
-/// signature without tripping the `private_interfaces` lint: that function
-/// is `pub(crate)` ahead of Task 5.1 ("Locate…"), which will call it from
-/// outside `scanner` — see `apply_file_identity`'s own doc comment.
+/// signature without tripping the `private_interfaces` lint. Its fields and
+/// `read_meta` are crate-visible because the sibling `library::relink`
+/// module feeds the same metadata into `apply_file_identity`; keeping that
+/// shared path avoids a second tag model or row-update implementation.
 #[derive(Debug, Default)]
 pub(crate) struct TrackMeta {
-    pub(super) title: String,
-    pub(super) artist: String,
-    pub(super) album: String,
-    pub(super) album_artist: String,
-    pub(super) year: Option<i32>,
-    pub(super) track_no: Option<i32>,
-    pub(super) genre: String,
-    pub(super) duration_ms: i64,
-    pub(super) bitrate_kbps: Option<i32>,
+    pub(crate) title: String,
+    pub(crate) artist: String,
+    pub(crate) album: String,
+    pub(crate) album_artist: String,
+    pub(crate) year: Option<i32>,
+    pub(crate) track_no: Option<i32>,
+    pub(crate) genre: String,
+    pub(crate) duration_ms: i64,
+    pub(crate) bitrate_kbps: Option<i32>,
 }
 
 // Test-only: proves a dismissed-and-unchanged file's tags never get parsed.
@@ -89,7 +90,7 @@ thread_local! {
 /// `ParseOptions` (`BestAttempt`, tags included). Unchanged from before Task
 /// 1.8 — the only thing that changed is that a failure here no longer
 /// necessarily ends the import; see [`read_meta_with_fallback`].
-pub(super) fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
+pub(crate) fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
     use lofty::prelude::*;
     #[cfg(test)]
     READ_META_CALLS.with(|calls| calls.set(calls.get() + 1));
