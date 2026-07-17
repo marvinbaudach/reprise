@@ -58,7 +58,21 @@ pub(in crate::ui) const FOCUS_GLOW_BLUR: &str = "10px";
 pub(in crate::ui) const FOCUS_GLOW_ALPHA: &str = "0.28";
 
 /// Shared interaction transition (duration + easing) for hover/focus feedback.
-pub(in crate::ui) const TRANSITION: &str = "150ms cubic-bezier(0.16, 1, 0.3, 1)";
+#[derive(Clone, Copy, Debug)]
+pub(in crate::ui) struct Transition;
+
+impl std::fmt::Display for Transition {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{}ms {}",
+            crate::ui::motion::MICRO_MS,
+            crate::ui::motion::MICRO_CSS_EASING
+        )
+    }
+}
+
+pub(in crate::ui) const TRANSITION: Transition = Transition;
 
 /// Soft elevation shadow giving layered surfaces depth.
 pub(in crate::ui) const SURFACE_SHADOW: &str = "0 2px 12px rgba(0, 0, 0, 0.28)";
@@ -101,3 +115,13 @@ pub(in crate::ui) const SUBTLE_FILL_HOVER_ALPHA: &str = "0.14";
 /// Initials color for the gradient avatars — near-white so it reads on any
 /// per-artist gradient (list row and hero both).
 pub(in crate::ui) const AVATAR_INITIALS_COLOR: &str = "rgba(255, 255, 255, 0.95)";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transition_css_uses_the_micro_motion_token() {
+        assert_eq!(format!("{TRANSITION}"), "150ms ease-out");
+    }
+}
