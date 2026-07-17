@@ -568,7 +568,7 @@ pub fn tracks_removed_from_library_toast(count: usize) -> String {
     )
 }
 
-/// Toast shown when `queries::remove_missing_track` fails while handling
+/// Toast shown when `queries::remove_missing_tracks` fails while handling
 /// the context menu's "Remove from library" action.
 pub fn tracks_removed_from_library_failed_toast() -> String {
     text(N_!("Could not remove tracks from library"))

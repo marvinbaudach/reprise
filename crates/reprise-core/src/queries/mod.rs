@@ -162,18 +162,12 @@ pub use library_views::{
     ArtistAlbum, ArtistSummary,
 };
 pub use maintenance::{
-    delete_all_import_errors, delete_import_error, mark_track_missing_if_current, purge_tombstones,
-    query_import_error_count, query_import_errors, query_live_track_ids, query_live_track_paths,
-    query_queue_retained_track_ids, query_sync_tracks, query_track_album_artist,
-    query_track_ids_by_title_desc, query_track_ids_by_titles, query_track_summary,
-    remove_all_missing_tracks, remove_missing_tracks, remove_tracks, tombstone_tracks,
-    track_id_for_path, undo_tombstone,
+    mark_track_missing_if_current, purge_tombstones, query_import_error_count,
+    query_live_track_ids, query_live_track_paths, query_queue_retained_track_ids,
+    query_sync_tracks, query_track_album_artist, query_track_ids_by_title_desc,
+    query_track_ids_by_titles, query_track_summary, remove_missing_tracks, remove_tracks,
+    tombstone_tracks, track_id_for_path, undo_tombstone,
 };
-// `remove_missing_track`'s only external caller (beyond `remove_missing_
-// tracks`'s own internal use) is this module's test suite — same reasoning
-// as `build_track_query` above.
-#[allow(unused_imports)]
-pub use maintenance::remove_missing_track;
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_tracks`/`remove_missing_tracks`/`purge_tombstones` all funnel
 // through; not part of the crate's public API, but `tests_issues.rs`'s
@@ -317,8 +311,8 @@ pub fn query_track_count_browsed(
         ViewSource::Smart(id) => smart::query_track_count_smart(conn, *id, filter),
         // Stage-3 close-out fix: this used to trust `queue_ids.len()`
         // verbatim, on the documented assumption that nothing hard-deletes a
-        // `tracks` row. That assumption no longer holds (`remove_missing_
-        // track`/`remove_missing_tracks` do exactly that) — the queue itself
+        // `tracks` row. That assumption no longer holds (`remove_missing_tracks`
+        // does exactly that) — the queue itself
         // is purged in lockstep by `ui::player_controller::PlayerController::
         // purge_queue_ids` whenever a hard-delete happens through the app's
         // own UI, but counting matched rows here (rather than trusting the
@@ -525,20 +519,6 @@ pub fn query_library_stats_browsed(
         total_duration_ms,
         filtered_count,
     })
-}
-
-/// One `import_errors` row, as rendered by the ImportErrors source (Stage 3
-/// Task 8). `path` is the table's primary key as of schema v10 (Task 1.1),
-/// so there is no separate surrogate id to expose. `reason` surfaces the
-/// v10 `reason_detail` column (the human-readable message; the newer typed
-/// `reason_kind` column is scan/self-healing-logic state, not display text,
-/// so it deliberately isn't projected here), and `occurred_at` surfaces
-/// `last_seen` — the most recent scan that still saw this failure.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ImportErrorRow {
-    pub path: String,
-    pub reason: String,
-    pub occurred_at: i64,
 }
 
 // `tests.rs` holds the core suite (query-builder/whitelist/LIKE-escaping,
