@@ -2,6 +2,8 @@
 
 use rusqlite::Connection;
 
+use super::clauses::PRESENT;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BrowseFilter {
     pub genre: Option<String>,
@@ -55,7 +57,7 @@ pub fn query_browse_values(
     let (clause, values) = browse_clause(&effective_filter, 1);
     let sql = format!(
         "SELECT {column}, count(*) FROM tracks \
-         WHERE missing = 0{clause} \
+         WHERE {PRESENT}{clause} \
          GROUP BY {column} ORDER BY {column} COLLATE NOCASE ASC"
     );
     let mut stmt = conn.prepare(&sql)?;

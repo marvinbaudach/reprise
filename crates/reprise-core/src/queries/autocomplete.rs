@@ -3,6 +3,8 @@
 
 use rusqlite::Connection;
 
+use super::clauses::PRESENT;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutocompleteColumn {
     Artist,
@@ -41,7 +43,7 @@ pub fn query_autocomplete_suggestions(
     let sql = format!(
         "SELECT {col}, COUNT(*) AS cnt \
          FROM tracks \
-         WHERE missing = 0 AND {col} != '' AND {col} LIKE ?1 ESCAPE '\\' \
+         WHERE {PRESENT} AND {col} != '' AND {col} LIKE ?1 ESCAPE '\\' \
          GROUP BY {col} \
          ORDER BY cnt DESC, {col} COLLATE NOCASE ASC \
          LIMIT ?2"
@@ -158,8 +160,11 @@ mod tests {
     #[test]
     fn missing_tracks_are_excluded() {
         let conn = seeded_db();
-        conn.execute("UPDATE tracks SET missing = 1 WHERE id = 1", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 1",
+            [],
+        )
+        .unwrap();
         let results =
             query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "Cog", 8).unwrap();
         let cog = results.iter().find(|s| s.value == "Cogitations").unwrap();

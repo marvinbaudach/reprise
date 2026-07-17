@@ -16,10 +16,29 @@ pub(super) fn fixture_copy(dir: &std::path::Path, name: &str) -> std::path::Path
     dst
 }
 
+/// Test-only: unwraps a `ScanOutcome` down to its `ScanReport`, panicking
+/// with the unexpected root on `RootUnavailable`. Every pre-existing test in
+/// this file predates Task 1.5's `ScanOutcome` split and only ever scans a
+/// root it expects to be reachable, so this keeps those assertions reading
+/// exactly as they did against the old bare-`ScanReport` return (`scan_folder
+/// (...).unwrap()` becomes `completed(scan_folder(...).unwrap())`) instead of
+/// rewriting every one of them to match on `ScanOutcome::Completed` by hand.
+pub(super) fn completed(outcome: ScanOutcome) -> ScanReport {
+    match outcome {
+        ScanOutcome::Completed(report) => report,
+        ScanOutcome::RootUnavailable { root } => {
+            panic!("expected ScanOutcome::Completed, got RootUnavailable({root:?})")
+        }
+    }
+}
+
 /// Writes identical title/artist/album tags to a fixture file so two
 /// separate copies produce the same fingerprint (title+artist+album+
-/// duration+file_size) that move detection's step 2 matches on.
-fn tag_file(path: &std::path::Path, title: &str, artist: &str, album: &str) {
+/// duration+file_size) that move detection's step 2 matches on. `pub(super)`
+/// (like `fixture_copy`/`completed`/`row_by_path` above) so `scanner_
+/// tombstone_tests.rs` can reuse it for its own move-arm test rather than
+/// duplicating this helper.
+pub(super) fn tag_file(path: &std::path::Path, title: &str, artist: &str, album: &str) {
     let mut tag = Tag::new(TagType::VorbisComments);
     tag.set_title(title.into());
     tag.set_artist(artist.into());
@@ -38,9 +57,29 @@ pub(super) fn row_by_path(conn: &Connection, path: &std::path::Path) -> (i64, i6
     .unwrap()
 }
 
-fn row_count(conn: &Connection) -> i64 {
+/// `pub(super)`, same reuse reasoning as `tag_file` above.
+pub(super) fn row_count(conn: &Connection) -> i64 {
     conn.query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
         .unwrap()
+}
+
+/// Test-only: `st_dev` of `path`, for asserting `mount_point`'s
+/// prefix-and-device invariant (see `mounts::mount_point_of`'s own doc
+/// comment) rather than a hardcoded path — the same technique
+/// `mounts.rs`'s own tests use, so this passes regardless of the machine's
+/// filesystem layout, including a tmpdir that is itself a mount.
+fn dev_of(path: &std::path::Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path).unwrap().dev()
+}
+
+fn mount_point_of(conn: &Connection, path: &std::path::Path) -> Option<String> {
+    conn.query_row(
+        "SELECT mount_point FROM tracks WHERE path = ?1",
+        [path.to_string_lossy().to_string()],
+        |r| r.get(0),
+    )
+    .unwrap()
 }
 
 /// `file_stat` must degrade to `None` (not panic, and not fabricate
@@ -70,7 +109,7 @@ fn move_via_rename_preserves_metadata() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     conn.execute(
@@ -85,7 +124,7 @@ fn move_via_rename_preserves_metadata() {
     let new_path = new_dir.join("track.flac");
     std::fs::rename(&old_path, &new_path).unwrap();
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 1);
     assert_eq!(r2.added, 0);
     assert_eq!(row_count(&conn), 1);
@@ -111,7 +150,7 @@ fn move_via_copy_delete_preserves_metadata() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     conn.execute(
@@ -127,7 +166,7 @@ fn move_via_copy_delete_preserves_metadata() {
     std::fs::copy(&old_path, &new_path).unwrap();
     std::fs::remove_file(&old_path).unwrap();
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 1);
     assert_eq!(r2.added, 0);
     assert_eq!(row_count(&conn), 1);
@@ -155,7 +194,7 @@ fn ambiguous_duplicates_are_not_guessed() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
     assert_eq!(row_count(&conn), 2);
 
@@ -171,7 +210,7 @@ fn ambiguous_duplicates_are_not_guessed() {
     .unwrap();
     tag_file(&new_path, "Duplicate Song", "Some Artist", "Some Album");
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 0);
     assert_eq!(r2.added, 1);
     // Both stale rows remain untouched (missing-marking is a Stage 3/
@@ -197,7 +236,7 @@ fn one_deleted_one_alive_duplicate_is_still_an_unambiguous_move() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
 
     conn.execute(
@@ -220,7 +259,7 @@ fn one_deleted_one_alive_duplicate_is_still_an_unambiguous_move() {
     .unwrap();
     tag_file(&new_path, "Half Deleted Song", "Some Artist", "Some Album");
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 1);
     assert_eq!(r2.added, 0);
     assert_eq!(row_count(&conn), 2);
@@ -250,7 +289,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
 
     // Manually set both rows to identical fake device/inode and non-existent paths
@@ -274,7 +313,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
     // initially selected by the SQL query, then filtered to validity (both paths
     // gone). With 2 valid candidates, the function must warn and return Ok(None).
     let tx = conn.transaction().unwrap();
-    let lookup = MoveLookup {
+    let lookup = move_detect::MoveLookup {
         device: 7777,
         inode: 8888,
         title: "Dev Inode Ambiguity",
@@ -283,7 +322,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
         duration_ms: 1000,
         file_size: file_size as i64,
     };
-    let result = find_move_candidate(&tx, &lookup).unwrap();
+    let result = move_detect::find_move_candidate(&tx, &lookup).unwrap();
     assert_eq!(
         result, None,
         "must return None when device/inode candidates are ambiguous"
@@ -311,10 +350,10 @@ fn unchanged_files_are_not_matched_as_moves() {
 
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 0);
     assert_eq!(r2.skipped_unchanged, 2);
     assert_eq!(r2.added, 0);
@@ -336,7 +375,7 @@ fn read_meta_roundtrip() {
     tag.save_to_path(&file, lofty::config::WriteOptions::default())
         .unwrap();
 
-    let meta = read_meta(&file).unwrap();
+    let meta = track_meta::read_meta(&file).unwrap();
     assert_eq!(meta.title, "Beast of Darkness");
     assert_eq!(meta.artist, "Brand of Sacrifice");
     assert_eq!(meta.album, "God Hand");
@@ -358,11 +397,11 @@ fn scan_adds_updates_and_reports_errors() {
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
 
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!((r1.added, r1.errors), (2, 1));
 
     // second scan: nothing changed → everything skipped
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.skipped_unchanged, 2);
     assert_eq!(r2.added, 0);
 
@@ -386,7 +425,7 @@ fn fixing_a_broken_file_clears_its_import_error() {
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
 
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.errors, 1);
 
     let path_str = path.to_string_lossy().to_string();
@@ -403,7 +442,7 @@ fn fixing_a_broken_file_clears_its_import_error() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     std::fs::copy(&src, &path).unwrap();
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.added, 1);
 
     let errs_after_fix: i64 = conn
@@ -430,7 +469,7 @@ fn rescan_preserves_rating_play_count_and_added_at_on_update() {
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
 
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     let path_str = file.to_string_lossy().to_string();
@@ -455,7 +494,7 @@ fn rescan_preserves_rating_play_count_and_added_at_on_update() {
     tag2.save_to_path(&file, lofty::config::WriteOptions::default())
         .unwrap();
 
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r2.updated, 1);
 
     let (title, rating, play_count, added_at): (String, i64, i64, i64) = conn
@@ -480,6 +519,14 @@ fn rescan_preserves_rating_play_count_and_added_at_on_update() {
 /// a restored file stayed invisible/flagged forever even though it was
 /// right back where the scanner expected it. rating/play_count must
 /// survive untouched, exactly like the ordinary update path does.
+///
+/// Task 1.6: this fast-path-restore branch is also the ONLY chance a
+/// pre-v10 row (or any row whose `mount_point` is NULL for some other
+/// reason) has to acquire a `mount_point` without its file actually
+/// changing — an unchanged, still-missing-free row never reaches any other
+/// arm of the scanner. `mount_point` is explicitly nulled out below before
+/// the restore-rescan to prove this branch is the one that (re)populates it,
+/// rather than it merely surviving from the initial insert.
 #[test]
 fn restored_file_at_same_path_clears_missing_flag() {
     let tmp = tempfile::tempdir().unwrap();
@@ -488,12 +535,13 @@ fn restored_file_at_same_path_clears_missing_flag() {
     let mut conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
 
-    let r1 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     let path_str = file.to_string_lossy().to_string();
     conn.execute(
-        "UPDATE tracks SET missing = 1, rating = 4, play_count = 7 WHERE path = ?1",
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown', \
+         rating = 4, play_count = 7, mount_point = NULL WHERE path = ?1",
         [&path_str],
     )
     .unwrap();
@@ -502,22 +550,33 @@ fn restored_file_at_same_path_clears_missing_flag() {
     // The file itself is untouched on disk: same path, same mtime — this
     // is exactly the "reappeared unchanged" scenario (NAS remount,
     // restore-from-trash), not a content change.
-    let r2 = scan_folder(&mut conn, tmp.path()).unwrap();
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
     assert!(
         r2.updated >= 1,
         "restoring a missing track must count as an update"
     );
 
-    let (missing, rating, play_count): (i64, i64, i64) = conn
+    let (missing_since, rating, play_count): (Option<i64>, i64, i64) = conn
         .query_row(
-            "SELECT missing, rating, play_count FROM tracks WHERE path = ?1",
+            "SELECT missing_since, rating, play_count FROM tracks WHERE path = ?1",
             [&path_str],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .unwrap();
-    assert_eq!(missing, 0, "missing flag must be cleared on restore");
+    assert!(
+        missing_since.is_none(),
+        "missing_since must be cleared on restore"
+    );
     assert_eq!(rating, 4, "rating must survive a restore");
     assert_eq!(play_count, 7, "play_count must survive a restore");
+
+    let mount_point = mount_point_of(&conn, &file)
+        .expect("the fast-path restore branch must (re)populate mount_point");
+    let mount_path = std::path::PathBuf::from(&mount_point);
+    assert!(
+        file.starts_with(&mount_path),
+        "{mount_path:?} must be a prefix of {file:?}"
+    );
 
     let errs: i64 = conn
         .query_row(
@@ -539,11 +598,93 @@ fn restored_file_at_same_path_clears_missing_flag() {
 /// restored).
 fn tx_insert_import_error(conn: &Connection, path: &str) {
     conn.execute(
-        "INSERT INTO import_errors (path, reason, occurred_at) VALUES (?1, 'stale', 0)",
+        "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
+         VALUES (?1, 'tag', 'stale', 0, 0)",
         [path],
     )
     .unwrap();
 }
+
+/// Task 1.6: every row a scan newly inserts must come out with a non-NULL
+/// `mount_point` that satisfies `mounts::mount_point_of`'s own invariant —
+/// asserted structurally (prefix + device-boundary), not against a
+/// hardcoded path, so this passes on any machine's filesystem layout. The
+/// mount point can only ever be recorded while the file is reachable (see
+/// `scanner_mount.rs`'s module doc comment for why it can't be derived
+/// later, once a drive is gone); this test pins that the insert/upsert arm
+/// actually does that recording rather than leaving the column NULL.
+#[test]
+fn newly_scanned_track_gets_mount_point_satisfying_invariant() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = fixture_copy(tmp.path(), "track.flac");
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(r1.added, 1);
+
+    let mount_point =
+        mount_point_of(&conn, &file).expect("newly scanned row must have mount_point recorded");
+    let mount_path = std::path::PathBuf::from(&mount_point);
+
+    assert!(
+        file.starts_with(&mount_path),
+        "{mount_path:?} must be a prefix of {file:?}"
+    );
+    assert_eq!(dev_of(&mount_path), dev_of(&file));
+}
+
+/// Task 1.6 / Beschluss 3: a track moved from one location to another must
+/// have its `mount_point` refreshed to the NEW location on the rescan that
+/// detects the move, not left holding the value recorded at the old path.
+/// The row's `mount_point` is deliberately poisoned with a value
+/// `mount_point_of` could never produce for either location before the
+/// move-rescan runs: if the move arm forgot to recompute it, this stale
+/// sentinel would still be sitting there and the test would catch it, even
+/// though old and new path happen to share the same real mount point on a
+/// single-filesystem test machine.
+#[test]
+fn move_detection_refreshes_mount_point_to_new_location() {
+    let tmp = tempfile::tempdir().unwrap();
+    let old_path = fixture_copy(tmp.path(), "track.flac");
+    tag_file(&old_path, "Moved Song", "Some Artist", "Some Album");
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(r1.added, 1);
+
+    conn.execute(
+        "UPDATE tracks SET mount_point = '/definitely-not-a-real-mount' WHERE path = ?1",
+        [old_path.to_string_lossy().to_string()],
+    )
+    .unwrap();
+
+    let new_dir = tmp.path().join("new_subdir");
+    std::fs::create_dir(&new_dir).unwrap();
+    let new_path = new_dir.join("track.flac");
+    std::fs::rename(&old_path, &new_path).unwrap();
+
+    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(r2.moved, 1);
+
+    let mount_point = mount_point_of(&conn, &new_path)
+        .expect("moved row must have mount_point recorded after the move rescan");
+    assert_ne!(
+        mount_point, "/definitely-not-a-real-mount",
+        "move arm must refresh mount_point, not leave the stale value from the old location"
+    );
+
+    let expected = crate::library::mounts::mount_point_of(&new_path)
+        .map(|p| p.to_string_lossy().into_owned())
+        .expect("mount_point_of must resolve for a path that exists");
+    assert_eq!(mount_point, expected);
+}
+
+// Task 1.9: the tombstone-resurrect + `healed`-counter test suite lives in
+// its own sibling file — see `scanner_tombstone_tests.rs`'s own module doc
+// comment — purely to keep this file under the project's 800-line rule,
+// same reasoning as every other `_tests.rs` split in this module.
 
 /// walkdir traversal errors (e.g. a permission-denied subdirectory) must be
 /// recorded in `import_errors` and counted, never silently dropped. This test
@@ -587,7 +728,7 @@ fn traversal_error_in_unreadable_dir_is_recorded_not_dropped() {
     restore.set_mode(0o755);
     std::fs::set_permissions(&locked, restore).unwrap();
 
-    let report = scan_result.unwrap();
+    let report = completed(scan_result.unwrap());
     assert!(report.errors >= 1, "expected traversal error to be counted");
     assert_eq!(report.added, 1, "the readable file must still be scanned");
 

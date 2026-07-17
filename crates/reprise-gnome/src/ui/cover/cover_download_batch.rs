@@ -285,19 +285,19 @@ mod tests {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         conn.execute(
-            "INSERT INTO tracks (path, title, added_at, missing) \
-             VALUES ('/music/b.mp3', 'B', 1, 0)",
+            "INSERT INTO tracks (path, title, added_at) \
+             VALUES ('/music/b.mp3', 'B', 1)",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks (path, title, added_at, missing) \
-             VALUES ('/music/a.mp3', 'A', 1, 0)",
+            "INSERT INTO tracks (path, title, added_at) \
+             VALUES ('/music/a.mp3', 'A', 1)",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks (path, title, added_at, missing) \
+            "INSERT INTO tracks (path, title, added_at, missing_since) \
              VALUES ('/music/gone.mp3', 'Gone', 1, 1)",
             [],
         )

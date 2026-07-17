@@ -5,10 +5,29 @@
 //! (Refactoring & Extensibility Task 1) — a pure move, no behavior change.
 
 use crate::library::playlists;
-use crate::models::Track;
+use crate::models::{MissingReason, Track};
 
 use super::queue::QUEUE_LIMIT;
 use super::{browse::browse_clause, BrowseFilter};
+
+/// The one truth for "row is visible": file present (`missing_since IS
+/// NULL`), not tombstoned (`removed_at IS NULL`) — Task 1.2's centralized
+/// replacement for the legacy `missing = 0` literal that used to be
+/// scattered across every window/count/id query in this module tree. A
+/// boolean flag plus a date can drift out of sync (whoever updates one can
+/// forget the other), and a planned auto-clean feature deletes rows based on
+/// how long `missing_since` has been set — a row with an unclear start date
+/// can never be safely auto-removable — so `missing_since` alone, not
+/// `missing`, decides presence from this task onward (see `db::SCHEMA_V10`'s
+/// doc comment for the full migration rationale). `removed_at` is folded in
+/// here too, ahead of the tombstone feature (a later task) actually writing
+/// it: every view becomes tombstone-aware today, so no query here needs
+/// revisiting once removals start setting it for the 10-second undo window.
+pub(crate) const PRESENT: &str = "missing_since IS NULL AND removed_at IS NULL";
+/// The complement of [`PRESENT`]: awaiting relink or removal — file gone,
+/// not (yet) tombstoned. Powers `ViewSource::Missing` and every hard-delete
+/// guard that must only ever touch an already-missing row.
+pub(crate) const MISSING: &str = "missing_since IS NOT NULL AND removed_at IS NULL";
 
 /// `"playlist_order"` is a *sentinel* entry, not a real column: it only
 /// resolves to valid SQL (`pt.position`) inside a query that actually joins
@@ -82,13 +101,27 @@ pub(super) fn order_expr_and_dir(sort_field: &str, sort_dir: &str) -> (&'static 
     (order_expr, dir)
 }
 
+/// Resolves a `missing_flag` (`0` for the library view, `1` for the
+/// missing-files view — a Rust-side literal, never caller input) to the
+/// matching presence predicate. The one place `build_track_query_base`/
+/// `build_track_ids_query_base` decide which half of `tracks` a `0`/`1`
+/// flag means, so [`PRESENT`]/[`MISSING`] stay the single source of truth
+/// for both.
+fn presence_clause(missing_flag: u8) -> &'static str {
+    if missing_flag == 0 {
+        PRESENT
+    } else {
+        MISSING
+    }
+}
+
 /// Builds the parameterized library/missing SELECT for a track window;
 /// `missing_flag` is `0` for the library view, `1` for the missing-files
-/// view — a Rust-side literal (`0`/`1`), never caller input, so it's safe to
-/// interpolate directly. `sort_field` is only ever used to look up an entry
-/// in `SORT_WHITELIST` — it is never interpolated into the SQL string
-/// directly, so caller input cannot inject arbitrary SQL. Unknown sort
-/// fields silently fall back to sorting by title.
+/// view — a Rust-side literal (`0`/`1`), never caller input, resolved to
+/// [`PRESENT`]/[`MISSING`] via `presence_clause`. `sort_field` is only ever
+/// used to look up an entry in `SORT_WHITELIST` — it is never interpolated
+/// into the SQL string directly, so caller input cannot inject arbitrary
+/// SQL. Unknown sort fields silently fall back to sorting by title.
 pub(super) fn build_track_query_base(
     missing_flag: u8,
     sort_field: &str,
@@ -115,16 +148,17 @@ pub(super) fn build_track_query_base_browsed(
     let filter_clause = filter_clause(has_filter, 3);
     let browse_first_param = if has_filter { 4 } else { 3 };
     let (browse_clause, _) = browse_clause(browse, browse_first_param);
+    let presence = presence_clause(missing_flag);
     format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing, file_size, device, inode \
-         FROM tracks WHERE missing = {missing_flag}{filter_clause}{browse_clause} \
+         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
+         FROM tracks WHERE {presence}{filter_clause}{browse_clause} \
          ORDER BY {order_expr} {dir} LIMIT ?1 OFFSET ?2"
     )
 }
 
-/// Builds the parameterized SELECT for a library window (`missing = 0`).
+/// Builds the parameterized SELECT for a library window ([`PRESENT`]).
 /// See `build_track_query_base`'s doc comment for the whitelist guarantee.
 pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     build_track_query_base(0, sort_field, sort_dir, has_filter)
@@ -154,14 +188,15 @@ pub(super) fn build_track_ids_query_base(
 ) -> String {
     let (order_expr, dir) = order_expr_and_dir(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 1);
+    let presence = presence_clause(missing_flag);
     format!(
-        "SELECT id FROM tracks WHERE missing = {missing_flag}{filter_clause} \
+        "SELECT id FROM tracks WHERE {presence}{filter_clause} \
          ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}"
     )
 }
 
 /// Builds the parameterized `SELECT id` for the library queue seam
-/// (`missing = 0`). See `build_track_ids_query_base`'s doc comment.
+/// ([`PRESENT`]). See `build_track_ids_query_base`'s doc comment.
 pub fn build_track_ids_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     build_track_ids_query_base(0, sort_field, sort_dir, has_filter)
 }
@@ -177,7 +212,7 @@ pub(super) fn build_track_ids_query_browsed(
     let browse_first_param = if has_filter { 2 } else { 1 };
     let (browse_clause, _) = browse_clause(browse, browse_first_param);
     format!(
-        "SELECT id FROM tracks WHERE missing = 0{filter_clause}{browse_clause} \
+        "SELECT id FROM tracks WHERE {PRESENT}{filter_clause}{browse_clause} \
          ORDER BY {order_expr} {dir} LIMIT {QUEUE_LIMIT}"
     )
 }
@@ -200,22 +235,31 @@ pub(super) fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         last_played_at: r.get(13)?,
         added_at: r.get(14)?,
         file_mtime: r.get(15)?,
-        missing: r.get::<_, i64>(16)? != 0,
-        file_size: r.get(17)?,
-        device: r.get(18)?,
-        inode: r.get(19)?,
+        missing_since: r.get(16)?,
+        // `MissingReason::parse` never fails — an unrecognized/`NULL` value
+        // just falls back within the `Option`'s `Some` arm (`NULL` itself
+        // short-circuits to `None` via `Option::as_deref`'s `?`-propagated
+        // `Option<String>`), matching the enum's own doc comment.
+        missing_reason: r
+            .get::<_, Option<String>>(17)?
+            .as_deref()
+            .map(MissingReason::parse),
+        untagged: r.get::<_, i64>(18)? != 0,
+        file_size: r.get(19)?,
+        device: r.get(20)?,
+        inode: r.get(21)?,
         playlist_position: None,
     })
 }
 
-/// Same 20-column shape as `row_to_track`, plus a trailing `pt.position`
-/// column (index 20) — used only by `query_track_window_playlist`, the one
+/// Same 22-column shape as `row_to_track`, plus a trailing `pt.position`
+/// column (index 22) — used only by `query_track_window_playlist`, the one
 /// query that actually joins `playlist_tracks AS pt`. See `Track::
 /// playlist_position`'s doc comment for why this is the sole populating
 /// call site.
 pub(super) fn row_to_playlist_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
     let mut track = row_to_track(r)?;
-    track.playlist_position = Some(r.get(20)?);
+    track.playlist_position = Some(r.get(22)?);
     Ok(track)
 }
 

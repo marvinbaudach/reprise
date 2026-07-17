@@ -12,10 +12,12 @@ fn scan_reports_discovery_then_monotone_audio_file_progress() {
     crate::db::migrate(&conn).unwrap();
     let mut progress = Vec::new();
 
-    let report = scan_folder_with_progress(&mut conn, dir.path(), |event| {
-        progress.push(event);
-    })
-    .unwrap();
+    let report = super::tests::completed(
+        scan_folder_with_progress(&mut conn, dir.path(), |event| {
+            progress.push(event);
+        })
+        .unwrap(),
+    );
 
     assert_eq!(progress.first(), Some(&ScanProgress::Discovering));
     let scanning: Vec<_> = progress

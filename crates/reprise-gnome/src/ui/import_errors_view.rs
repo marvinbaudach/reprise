@@ -223,8 +223,8 @@ fn build_row(shared: &Rc<Shared>, row: &ImportErrorRow) -> gtk4::ListBoxRow {
     let dismiss_button = gtk4::Button::with_label(&strings::text(strings::IMPORT_ERROR_DISMISS));
     {
         let shared = shared.clone();
-        let id = row.id;
-        dismiss_button.connect_clicked(move |_| handle_dismiss(&shared, id));
+        let path = row.path.clone();
+        dismiss_button.connect_clicked(move |_| handle_dismiss(&shared, &path));
     }
     hbox.append(&dismiss_button);
 
@@ -252,14 +252,29 @@ fn notify_mutated_and_refresh(shared: &Rc<Shared>) {
 /// `path`. On success `scan_folder` itself clears the `import_errors` row if
 /// the file is now readable (or refreshes `reason`/`occurred_at` if it still
 /// isn't) — this function's job is just to run the scan and then refresh.
+///
+/// `scan_folder(<file>)`'s root guard can, in principle, report
+/// `ScanOutcome::RootUnavailable` here too (the "root" passed in is `path`
+/// itself — e.g. the file's *own* directory momentarily vanished, such as an
+/// unmount racing with the click) — mapped onto the same toast display path
+/// as a hard scan error, with the task's literal "library folder
+/// unavailable" text rather than a `ScanError`'s `Display` text, since
+/// nothing actually failed to run.
 fn handle_retry(shared: &Rc<Shared>, path: &str) {
     let result = {
         let mut conn = shared.conn.borrow_mut();
         scanner::scan_folder(&mut conn, Path::new(path))
     };
     match result {
-        Ok(report) => {
+        Ok(scanner::ScanOutcome::Completed(report)) => {
             tracing::info!(path, ?report, "import errors panel: retry rescan complete");
+        }
+        Ok(scanner::ScanOutcome::RootUnavailable { root }) => {
+            tracing::warn!(path, root = %root.display(), "import errors panel: retry target unavailable");
+            show_toast(
+                shared,
+                &format!("library folder unavailable: {}", root.display()),
+            );
         }
         Err(error) => {
             tracing::error!(%error, path, "import errors panel: retry rescan failed to run");
@@ -270,14 +285,16 @@ fn handle_retry(shared: &Rc<Shared>, path: &str) {
 }
 
 /// "Dismiss": deletes the `import_errors` row itself — never a file, never
-/// any `tracks` row (there isn't one for an import failure).
-fn handle_dismiss(shared: &Rc<Shared>, id: i64) {
+/// any `tracks` row (there isn't one for an import failure). Keyed by `path`
+/// (the table's primary key since schema v10, Task 1.1) rather than a
+/// surrogate id.
+fn handle_dismiss(shared: &Rc<Shared>, path: &str) {
     let result = {
         let conn = shared.conn.borrow();
-        queries::delete_import_error(&conn, id)
+        queries::delete_import_error(&conn, path)
     };
     if let Err(error) = result {
-        tracing::error!(%error, id, "import errors panel: dismiss failed");
+        tracing::error!(%error, path, "import errors panel: dismiss failed");
     }
     notify_mutated_and_refresh(shared);
 }
