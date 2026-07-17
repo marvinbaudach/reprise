@@ -105,7 +105,7 @@ pub(super) fn order_expr_and_dir(sort_field: &str, sort_dir: &str) -> (&'static 
 /// missing-files view — a Rust-side literal, never caller input) to the
 /// matching presence predicate. The one place `build_track_query_base`/
 /// `build_track_ids_query_base` decide which half of `tracks` a `0`/`1`
-/// flag means, so [`PRESENT`]/[`MISSING`] stay the single source of truth
+/// flag means, so `PRESENT`/`MISSING` stay the single source of truth
 /// for both.
 fn presence_clause(missing_flag: u8) -> &'static str {
     if missing_flag == 0 {
@@ -118,7 +118,7 @@ fn presence_clause(missing_flag: u8) -> &'static str {
 /// Builds the parameterized library/missing SELECT for a track window;
 /// `missing_flag` is `0` for the library view, `1` for the missing-files
 /// view — a Rust-side literal (`0`/`1`), never caller input, resolved to
-/// [`PRESENT`]/[`MISSING`] via `presence_clause`. `sort_field` is only ever
+/// `PRESENT`/`MISSING` via `presence_clause`. `sort_field` is only ever
 /// used to look up an entry in `SORT_WHITELIST` — it is never interpolated
 /// into the SQL string directly, so caller input cannot inject arbitrary
 /// SQL. Unknown sort fields silently fall back to sorting by title.

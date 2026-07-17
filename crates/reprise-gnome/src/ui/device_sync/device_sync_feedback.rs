@@ -136,10 +136,9 @@ fn is_syncing(device: &DeviceView) -> bool {
 }
 
 fn sync_tooltip(device: &DeviceView) -> String {
-    format!(
-        "Syncing {} · {}%",
-        device.name,
-        phase_percent(&device.sync_phase)
+    super::device_sync_strings::syncing_spinner_tooltip(
+        &device.name,
+        phase_percent(&device.sync_phase),
     )
 }
 

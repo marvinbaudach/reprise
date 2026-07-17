@@ -78,7 +78,7 @@ pub(super) fn present_candidates_under_root(
 
 /// The root guard's own candidate list: every NOT-YET-TOMBSTONED (`removed_at
 /// IS NULL`) track under `root`, present or already-missing alike — the
-/// union of [`PRESENT`] and `queries::MISSING`, deliberately wider than
+/// union of `PRESENT` and `queries::MISSING`, deliberately wider than
 /// [`present_candidates_under_root`]'s `PRESENT`-only list.
 ///
 /// This must stay wider than the mark phase's own candidate list: the guard

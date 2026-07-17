@@ -277,8 +277,46 @@ Merge-Readiness-Nachtrag: commit 388245e korrigiert zehn ungültige öffentliche
 Fix Playleiste-Abgrenzung: complete (commit 7e6dcdc, base ac093bd, Player-Leiste von GtkOverlay auf strukturelle vertikale Box umgebaut — Content/rechte Spalte laufen nicht mehr hinter der Leiste; PLAY-7 als [geplant]-Entwurf ergänzt. Verifiziert via fmt + clippy --workspace -D warnings; GNOME-Testlink in dieser Umgebung nicht möglich, da System-GTK 4.14 < gefordertem 4.22 — Display-Abnahme steht aus).
 Dependabot-Merges: complete (commits b1f89e9..HEAD, lofty 0.24 / ureq 3.3 / rusqlite 0.40 / md-5 0.11 gemergt und Code migriert: lofty Timestamp-date-Accessor + PictureBuilder, ureq-3-Agent/Error/Body-API, rusqlite ohne usize-FromSql/ToSql, manuelle Hex-Signatur; drei neue clippy-1.97-Lints behoben. Gates: fmt/clippy --workspace -D warnings grün, Core 651 passed (1 umgebungsbedingter Inode-Recycling-Flake in ambiguous_duplicates_are_not_guessed, nur Cloud-Container), audit einzig RUSTSEC-2024-0436. GNOME-Link/Display-Tests weiter offen: System-GTK < 4.22).
 
-## 2026-07-17 — CTX-Track-Kontextmenü
+## UX-Tooltips — Sektion M (Branch feat/ux-rules-tooltips, 2026-07-17)
 
-Tasks CTX-1–5: complete (commits 442880f..2093751, base d14da79, Sektion M, reiner Menü-Kern, FileManager1 und Queue-Move-to-top test-first umgesetzt).
-Tasks CTX-6–8: implemented and verified, commit pending — der Shared-Adapter und die Window-Seams sind fertig; fmt, clippy, Workspace-Tests, Rustdoc, UX-Traceability, Architektur, Core-Reinheit und Audit sind grün. Der Commit ist ausschließlich blockiert, weil der gemeinsame Git-Worktree-Metadatenpfad in dieser Session schreibgeschützt ist (`index.lock: Read-only file system`).
-Task CTX-9: in progress — Ledger bleibt absichtlich ohne Complete-Markierung, bis die zwei ausstehenden fokussierten Commits tatsächlich im Branch existieren; Merge-Readiness scheitert derzeit beim gleichen schreibgeschützten `FETCH_HEAD`-Pfad vor seinen inhaltlichen Prüfungen.
+Plan: `docs/superpowers/plans/2026-07-17-ux-tooltips-taskplan.md`. Konsistenz-
+Sektion, kein neues Feature. Codex kam bis Task 3 + Tooling-Fix, brach dann
+kapazitätsbedingt ab; Tasks 4–9 von Opus fertiggestellt (Codex' halbfertige
+Task-4-Übersetzungen waren teils falsch — korrigiert).
+
+**Aktiv (einklagbar):**
+- **TIP-1a** [gtk] (f0b7699) — Icon-only ⇒ Tooltip, gelabelt ⇒ keiner, Ellipsis
+  ⇒ Volltext. Test-Walk `tooltip_discipline.rs`, fünf `tip_1a_*`-Display-Tests.
+- **TIP-2a** [gtk] (cfed981) — disabled icon-only nennt Grund
+  (`eject_tooltip`); pure Test `tip_2a_eject_tooltip_names_reason_while_syncing`.
+- **TIP-3/4/5** [manuell] (6f328c8) — RELEASING.md-Checkliste, Gate deckt sie
+  über wörtliche ID-Referenz (Erweiterung in 836f486/eb9b7cd).
+
+**Geplant (bewusst NICHT geflippt — Flip-Kriterium in gesperrten Verzeichnissen):**
+- **TIP-1b** [manuell] — Verb+Objekt-Wortlaut. Verbalisierung Transport/Panel
+  umgesetzt (771b02c), aber „Previous/Next" im Tag-Editor und „Back" in
+  browse_bar (fremde Branches) noch Substantive.
+- **TIP-2b** [manuell] — gelabelt disabled nennt Grund sichtbar. Preferences-
+  Gründe umgesetzt (7e455d7), aber Save/„Change cover…" (tag_edit) und
+  „Add filter" (browse) fehlen noch.
+
+**Tooling:** `check-ux-traceability.sh` kennt jetzt die `[manuell]`-Ebene
+(beidseitig geprüft); `check-display-tests.sh --rule-named` + Merge-Gate-Eintrag
+machen regelbenannte Display-Tests zu Merge-Blockern; Display-Runner-Ignore gilt
+als Abdeckung auch für `[aktiv]`.
+
+**Container-Klausel-Beschluss:** Player-Bar prev/next bekommen KEINE
+Einzel-Grund-Tooltips — sie werden nur mit der ganzen (dann leeren) Leiste
+deaktiviert; die leere Leiste ist ihre eigene Aussage.
+
+## 2026-07-17 — Track-Kontextmenü-Vereinheitlichung (Sektion N)
+
+Plan: `docs/superpowers/plans/2026-07-17-context-menu-unification.md`. Vereinheitlichter Track-Row-Kontextmenü-Builder für alle fünf Kontexte via reiner, headless-testbarer Funktion. Pipeline: Fable-Plan (2 Design-Forks gegrillt), Codex-Code, 4 Opus-Reviewer, Opus-Refactor.
+
+Tasks CTX-1–10: complete (commits 442880f..0af763a, base d14da79). Reiner Menü-Kern `track_menu.rs` (`build_track_menu` + `action_states` + `summarize_selection` + `MenuContext::from_source`, alle `ctx_*`-Tests display-frei); Adapter `build_context_menu_model` delegiert und graut Actions pro Öffnung auf beiden Pfaden (Maus + Shift+F10/Menü-Taste); „Play" und „Rescan library" (globaler Eintrag) aus dem Menü entfernt (Rescan lebt im Hamburger-Menü weiter); neue Aktionen Go-to-album/artist, Show in Files (FileManager1.ShowItems, 2 s-Timeout, Ordner-Fallback), Move to top, Show in Missing files mit Shared-Seams + Window-Wiring; Tag-Editor filtert Missing-Dateien (CTX-8). Zähl-Währung nur destruktiv (CTX-6).
+
+Regelwerk: Sektion **N** (nach main-Merge, der L=Tag-Editor + M=Tooltips brachte). CTX-1/2/3/4/5a/6/8/9/10 `[aktiv]`, CTX-5b (sofort+Undo, hängt an FB-7) und CTX-7 (Hover/Popover-Fit, manuell) `[geplant]`. CTX-4 referenziert TIP-4 (jetzt aktiv nach Merge).
+
+Review-Runde (4 Opus-Reviewer parallel): Korrektheit + GTK/RefCell + Spec voll sauber; 6 Test-/Kleinlücken gefunden und via Opus-Refactor (0af763a) geschlossen (CTX-4-Modell-Asserts, `from_source`-Tabellentest, Queue-Move-Edge-Tests, purer `playlist_entries`-Helper, D-Bus-Timeout, staler Doc-Kommentar). Bewusst offen: roter Remove-Dialog-Button (CTX-5a betrifft Menü-Einträge; CTX-5b räumt ihn ohnehin ab).
+
+Gates (mehrfach nachgefahren, zuletzt nach main-Merge): fmt · clippy `--all-targets --workspace -D warnings` · `cargo test --workspace` · UX-Traceability grün. Offen: manuelle Abnahme (Hover-Farbe, Popover-Fit, Nautilus-Mehrfachmarkierung — headless nicht prüfbar, System-GTK-abhängig).

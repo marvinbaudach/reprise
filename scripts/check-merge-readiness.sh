@@ -61,6 +61,9 @@ echo "== Workspace tests =="
 env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
   cargo test --locked --workspace
 
+echo "== Rule-named display tests =="
+scripts/check-display-tests.sh --rule-named
+
 echo "== Dependency audit =="
 cargo audit
 

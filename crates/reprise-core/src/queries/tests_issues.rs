@@ -443,7 +443,7 @@ fn removed_at_of(conn: &Connection, id: i64) -> Option<i64> {
 }
 
 /// Bullet 1 of the brief: `tombstone_tracks` must hide the row from every
-/// presence-based query (here, `query_live_track_ids`, [`PRESENT`]-backed)
+/// presence-based query (here, `query_live_track_ids`, `PRESENT`-backed)
 /// while leaving `playlist_tracks` completely untouched — no cascade fires,
 /// because nothing was deleted, only `removed_at` was set. This is the
 /// crux the module doc's tombstone-vs-snapshot rationale rests on: if this

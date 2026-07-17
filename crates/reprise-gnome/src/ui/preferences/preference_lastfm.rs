@@ -114,6 +114,7 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     open_browser.set_sensitive(false);
     let browser_row = adw::ActionRow::builder()
         .title(strings::text(strings::OPEN_BROWSER))
+        .subtitle(strings::text(strings::BROWSER_REQUIRES_CREDENTIALS))
         .activatable_widget(&open_browser)
         .build();
     browser_row.add_suffix(&open_browser);
@@ -191,12 +192,20 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     for entry in [&api_key, &shared_secret] {
         entry.connect_changed({
             let open_browser = open_browser.clone();
+            let browser_row = browser_row.clone();
             let api_key = api_key.clone();
             let shared_secret = shared_secret.clone();
             move |_| {
-                open_browser.set_sensitive(
-                    !api_key.text().trim().is_empty() && !shared_secret.text().trim().is_empty(),
-                );
+                let has_credentials =
+                    !api_key.text().trim().is_empty() && !shared_secret.text().trim().is_empty();
+                open_browser.set_sensitive(has_credentials);
+                // TIP-2b: name why the button is disabled, visibly.
+                let reason = if has_credentials {
+                    String::new()
+                } else {
+                    strings::text(strings::BROWSER_REQUIRES_CREDENTIALS)
+                };
+                browser_row.set_subtitle(&reason);
             }
         });
     }
