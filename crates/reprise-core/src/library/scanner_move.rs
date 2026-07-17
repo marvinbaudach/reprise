@@ -9,6 +9,7 @@
 
 use std::path::Path;
 
+use super::track_meta::TrackMeta;
 use super::ScanError;
 
 /// A DB row that is a *candidate* to be the pre-move identity of a file at
@@ -120,4 +121,96 @@ pub(super) fn find_move_candidate(
         }
         _ => Ok(None),
     }
+}
+
+/// The filesystem-identity fields `apply_file_identity` writes, bundled
+/// purely to stay under clippy's `too_many_arguments` lint (same reasoning
+/// as [`MoveLookup`]). This is deliberately exactly what a caller already
+/// has in hand from `file_stat`/`file_mtime`/`mount::MountPointCache::
+/// resolve` — no field here that isn't already computed by every call site
+/// before it ever reaches this function.
+pub(crate) struct FileIdentity {
+    pub(crate) file_mtime: i64,
+    pub(crate) file_size: i64,
+    pub(crate) device: Option<i64>,
+    pub(crate) inode: Option<i64>,
+    pub(crate) mount_point: Option<String>,
+}
+
+/// Task 1.9: the ONE row-refresh used by move detection (below, in `scanner.
+/// rs`) and, later, the "Locate…" feature (Task 5.1) when a user hand-picks
+/// a replacement file for a row the scanner itself couldn't relink —
+/// extracted from move detection's own `UPDATE` (previously inlined there)
+/// so a second copy of this SQL never has the chance to drift from the
+/// first. Sets `path` and every tag-derived column (via `tag_param_values`,
+/// the same helper the INSERT/upsert arm uses, so the column order can only
+/// ever be changed in one place) plus the filesystem-identity columns
+/// carried in `fs`, on the existing row identified by `track_id`.
+///
+/// `rating`/`play_count`/`added_at`/`last_played_at` are deliberately absent
+/// from the `SET` clause — untouched is the whole point of relinking a
+/// track to its (possibly relocated) file, not re-importing it as if it
+/// were new; see this codebase's `move_via_rename_preserves_metadata` and
+/// `move_via_copy_delete_preserves_metadata` tests for the user-visible
+/// promise ("your ratings are still there") this guarantees.
+///
+/// Also clears `missing_since`/`missing_reason`/`removed_at`: the caller
+/// just proved — by successfully reading `path`'s tags/properties — that
+/// the file really is there, and evidence on disk outranks whatever the row
+/// believed beforehand, whether that was merely "missing" or fully
+/// tombstoned via "Remove from library" (the evidence rule, Beschluss
+/// 7/12). For move detection specifically this resurrect is usually
+/// theoretical today (nothing sets `removed_at` yet — see this crate's
+/// `removed_at` column doc comment in `db.rs`), but a hand-picked Locate
+/// match against a tombstoned row is exactly the real case this was built
+/// ahead of.
+pub(crate) fn apply_file_identity(
+    tx: &rusqlite::Transaction,
+    track_id: i64,
+    path: &Path,
+    title: &str,
+    meta: &TrackMeta,
+    untagged: bool,
+    fs: &FileIdentity,
+) -> Result<(), ScanError> {
+    let (
+        title_p,
+        artist_p,
+        album_p,
+        album_artist_p,
+        year_p,
+        track_no_p,
+        genre_p,
+        duration_ms_p,
+        bitrate_kbps_p,
+        untagged_p,
+    ) = super::tag_param_values(title, meta, untagged);
+    tx.execute(
+        "UPDATE tracks SET path=?1, title=?2, artist=?3, album=?4,
+           album_artist=?5, year=?6, track_no=?7, genre=?8, duration_ms=?9,
+           bitrate_kbps=?10, file_mtime=?11, file_size=?12, device=?13,
+           inode=?14, mount_point=?15, untagged=?16, missing_since=NULL,
+           missing_reason=NULL, removed_at=NULL
+         WHERE id=?17",
+        rusqlite::params![
+            path.to_string_lossy(),
+            title_p,
+            artist_p,
+            album_p,
+            album_artist_p,
+            year_p,
+            track_no_p,
+            genre_p,
+            duration_ms_p,
+            bitrate_kbps_p,
+            fs.file_mtime,
+            fs.file_size,
+            fs.device,
+            fs.inode,
+            fs.mount_point,
+            untagged_p,
+            track_id,
+        ],
+    )?;
+    Ok(())
 }

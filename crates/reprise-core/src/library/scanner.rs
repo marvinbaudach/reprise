@@ -42,6 +42,19 @@ pub struct ScanReport {
     /// report in [`ScanOutcome::Completed`], since that outcome means the
     /// mark phase never ran at all.
     pub vanished: u32,
+    /// Task 1.9: count of `import_errors` rows deleted by a pass-1 import
+    /// success this same scan — i.e. `import_errors::clear_error` returned
+    /// `true` for a path whose read actually produced real tags. This is
+    /// the end-of-scan toast's "N import errors fixed themselves" number.
+    /// Deliberately narrower than every `clear_error` call this module
+    /// makes: a pass-2 (untagged) rescue calls `record_error`, not `clear_
+    /// error`, on purpose (see `scan_folder_inner`'s `## Hint coexistence`
+    /// doc section) — that row survives as a hint, so nothing healed, and
+    /// it never reaches this counter. `moved` (above) is a related but
+    /// distinct signal — a track can move without ever having had an error,
+    /// and a healed error's file need not have moved — so the two counters
+    /// are incremented independently and may both apply to the same file.
+    pub healed: u32,
 }
 
 /// What a `scan_folder`/`scan_folder_with_progress` call concluded — Task
@@ -384,37 +397,52 @@ fn scan_folder_inner(
         audio_files_seen += 1;
         let path_str = path.to_string_lossy().to_string();
         let mtime = file_mtime(path);
-        let known: Option<(i64, Option<i64>)> = tx
+        let known: Option<(i64, Option<i64>, Option<i64>)> = tx
             .query_row(
-                "SELECT file_mtime, missing_since FROM tracks WHERE path = ?1",
+                "SELECT file_mtime, missing_since, removed_at FROM tracks WHERE path = ?1",
                 [&path_str],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .ok();
-        let known_mtime = known.map(|(file_mtime, _)| file_mtime);
-        let known_missing = known.is_some_and(|(_, missing_since)| missing_since.is_some());
+        let known_mtime = known.map(|(file_mtime, _, _)| file_mtime);
+        let known_missing = known.is_some_and(|(_, missing_since, _)| missing_since.is_some());
+        // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
+        // "Remove from library") independently of ever having been marked
+        // missing — evidence that the file is still sitting at its exact
+        // recorded path outranks that removal (evidence rule, Beschluss
+        // 7/12), so this reappearance check must fire for a tombstoned row
+        // too, not only a missing one.
+        let known_removed = known.is_some_and(|(_, _, removed_at)| removed_at.is_some());
         if known_mtime == Some(mtime) {
-            if known_missing {
+            if known_missing || known_removed {
                 // The file reappeared at its exact recorded path with an
-                // unchanged mtime (NAS remount, restore-from-trash): the
-                // ordinary incremental fast path would otherwise skip it
-                // forever, silently ignoring `missing_since` — this is the
-                // one case the fast path must NOT take, since the row still
-                // needs `missing_since` cleared even though nothing else
-                // changed. This is also the ONLY chance a row whose
-                // `mount_point` is NULL (a pre-schema-v10 row, or any row
-                // that was never re-scanned since) has to acquire one
-                // without its file actually changing — see
+                // unchanged mtime (NAS remount, restore-from-trash, or a
+                // tombstoned row whose object turned out to still be
+                // there): the ordinary incremental fast path would
+                // otherwise skip it forever, silently ignoring `missing_
+                // since`/`removed_at` — this is the one case the fast path
+                // must NOT take, since the row still needs both cleared
+                // even though nothing else changed. This is also the ONLY
+                // chance a row whose `mount_point` is NULL (a pre-schema-v10
+                // row, or any row that was never re-scanned since) has to
+                // acquire one without its file actually changing — see
                 // `scanner_mount.rs`'s module doc comment.
                 let mount_point = mount_cache.resolve(path);
                 tx.execute(
                     "UPDATE tracks SET missing_since = NULL, missing_reason = NULL, \
-                     mount_point = ?2 WHERE path = ?1",
+                     removed_at = NULL, mount_point = ?2 WHERE path = ?1",
                     rusqlite::params![path_str, mount_point],
                 )?;
-                import_errors::clear_error(&tx, &path_str)?;
+                if import_errors::clear_error(&tx, &path_str)? {
+                    report.healed += 1;
+                }
                 report.updated += 1;
-                tracing::info!(path = %path_str, "restored missing track");
+                tracing::info!(
+                    path = %path_str,
+                    was_missing = known_missing,
+                    was_removed = known_removed,
+                    "restored track from evidence (unchanged mtime)"
+                );
             } else {
                 report.skipped_unchanged += 1;
             }
@@ -471,8 +499,12 @@ fn scan_folder_inner(
                 // function's `## Hint coexistence` doc section.
                 if let Some((kind, detail)) = hint {
                     import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
-                } else {
-                    import_errors::clear_error(&tx, &path_str)?;
+                } else if import_errors::clear_error(&tx, &path_str)? {
+                    // Task 1.9: a real pass-1 success (never the pass-2
+                    // hint-refresh branch above) that actually deleted a
+                    // prior error row — see `ScanReport::healed`'s doc
+                    // comment for why the hint case must never land here.
+                    report.healed += 1;
                 }
 
                 // Move detection (Stage 2 Task 8) only ever applies to a path
@@ -505,47 +537,23 @@ fn scan_folder_inner(
 
                 if let Some(candidate) = move_candidate {
                     // A move: refresh path/tags/filesystem-identity on the
-                    // existing row by id. rating/play_count/added_at/
-                    // last_played_at are deliberately absent from this SET
-                    // clause — that's the whole point of move detection.
-                    let (
-                        title_p,
-                        artist_p,
-                        album_p,
-                        album_artist_p,
-                        year_p,
-                        track_no_p,
-                        genre_p,
-                        duration_ms_p,
-                        bitrate_kbps_p,
-                        untagged_p,
-                    ) = tag_param_values(&title, &meta, untagged);
-                    tx.execute(
-                        "UPDATE tracks SET path=?1, title=?2, artist=?3, album=?4,
-                           album_artist=?5, year=?6, track_no=?7, genre=?8, duration_ms=?9,
-                           bitrate_kbps=?10, file_mtime=?11, file_size=?12, device=?13,
-                           inode=?14, mount_point=?15, untagged=?16, missing_since=NULL,
-                           missing_reason=NULL
-                         WHERE id=?17",
-                        rusqlite::params![
-                            path_str,
-                            title_p,
-                            artist_p,
-                            album_p,
-                            album_artist_p,
-                            year_p,
-                            track_no_p,
-                            genre_p,
-                            duration_ms_p,
-                            bitrate_kbps_p,
-                            mtime,
+                    // existing row by id via the shared `apply_file_identity`
+                    // — see its own doc comment for exactly what it touches
+                    // (and, deliberately, doesn't).
+                    move_detect::apply_file_identity(
+                        &tx,
+                        candidate.id,
+                        path,
+                        &title,
+                        &meta,
+                        untagged,
+                        &move_detect::FileIdentity {
+                            file_mtime: mtime,
                             file_size,
                             device,
                             inode,
-                            mount_point,
-                            untagged_p,
-                            candidate.id,
-                        ],
+                            mount_point: mount_point.clone(),
+                        },
                     )?;
                     // Clear a stale import_errors row under the old path too
                     // (e.g. the old location briefly failed to read before
@@ -553,9 +561,18 @@ fn scan_folder_inner(
                     // above. Unconditional even for an untagged import: this
                     // is the OLD path's row, a different path string from
                     // the hint (if any) recorded above for the CURRENT path.
-                    import_errors::clear_error(&tx, &candidate.path)?;
+                    if import_errors::clear_error(&tx, &candidate.path)? {
+                        report.healed += 1;
+                    }
                     report.moved += 1;
                 } else {
+                    // `ON CONFLICT(path)` fires whenever this path already
+                    // has a row — including one still carrying `removed_at`
+                    // from a prior tombstone: the walk just proved the file
+                    // is there, so `removed_at=NULL` in the `DO UPDATE SET`
+                    // below resurrects it here too (evidence rule, Beschluss
+                    // 7/12), same as the fast-path-restore branch and
+                    // `apply_file_identity`'s move arm above.
                     let (
                         title_p,
                         artist_p,
@@ -577,7 +594,8 @@ fn scan_folder_inner(
                            title=?2, artist=?3, album=?4, album_artist=?5, year=?6,
                            track_no=?7, genre=?8, duration_ms=?9, bitrate_kbps=?10,
                            file_mtime=?12, missing_since=NULL, missing_reason=NULL,
-                           file_size=?13, device=?14, inode=?15, mount_point=?16, untagged=?17",
+                           removed_at=NULL, file_size=?13, device=?14, inode=?15,
+                           mount_point=?16, untagged=?17",
                         rusqlite::params![
                             path_str,
                             title_p,
@@ -678,12 +696,12 @@ mod mount;
 // orchestration live in their own file for the same 800-line reason — see
 // `scanner_meta.rs`'s own module doc comment.
 #[path = "scanner_meta.rs"]
-mod track_meta;
+pub(crate) mod track_meta;
 
 // Task 1.8: move detection also moved out to make room for the above — see
 // `scanner_move.rs`'s own module doc comment.
 #[path = "scanner_move.rs"]
-mod move_detect;
+pub(crate) mod move_detect;
 
 #[cfg(test)]
 #[path = "scanner_progress_tests.rs"]
@@ -711,3 +729,10 @@ mod vanished_tests;
 #[cfg(test)]
 #[path = "scanner_untagged_tests.rs"]
 mod untagged_tests;
+
+// Task 1.9: the tombstone-resurrect + `healed`-counter test suite lives in
+// its own file, same 800-line reason as every other `_tests.rs` sibling
+// here.
+#[cfg(test)]
+#[path = "scanner_tombstone_tests.rs"]
+mod tombstone_tests;
