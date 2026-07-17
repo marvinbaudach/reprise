@@ -8,6 +8,7 @@
 //! separate product decision; this module preserves today's library-like
 //! treatment until that decision is made.
 
+use reprise_core::library::playlists::PlaylistSummary;
 use reprise_core::models::Track;
 use reprise_core::view_source::ViewSource;
 
@@ -57,6 +58,27 @@ pub(in crate::ui) struct PlaylistEntry {
     pub id: i64,
     pub name: String,
     pub is_current: bool,
+}
+
+/// Maps the raw `playlists::list` rows onto the menu's [`PlaylistEntry`]
+/// view: sorted case-insensitively by name, with the row matching the open
+/// `ViewSource::Playlist` marked current (rendered grey and unactionable —
+/// a playlist can't add to itself). Pure so the adapter only has to fetch
+/// the rows; the order/current decisions are testable without a display.
+pub(in crate::ui) fn playlist_entries(
+    playlists: &[PlaylistSummary],
+    source: &ViewSource,
+) -> Vec<PlaylistEntry> {
+    let mut entries: Vec<PlaylistEntry> = playlists
+        .iter()
+        .map(|playlist| PlaylistEntry {
+            id: playlist.id,
+            is_current: matches!(source, ViewSource::Playlist(id) if *id == playlist.id),
+            name: playlist.name.clone(),
+        })
+        .collect();
+    entries.sort_by_key(|entry| entry.name.to_lowercase());
+    entries
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -345,6 +367,73 @@ mod tests {
         let empty = SelectionSummary { count: 0, ..same };
         let c = action_states(MenuContext::LibraryTracks, &empty);
         assert!(!c.go_to_album && !c.enqueue && !c.edit_tags);
+
+        // CTX-4 clause (a), model-level: the open context omits its own nav
+        // entry (grey-out is sensitivity, above; this is presence). A detail
+        // view drops the destination it already shows; the flat views keep
+        // both.
+        let playlists = [];
+        let nav_labels = |context| {
+            menu_labels(&build_track_menu(&MenuInputs {
+                context,
+                selection: &same,
+                playlists: &playlists,
+                is_missing_view: false,
+            }))
+        };
+        let album = nav_labels(MenuContext::AlbumDetail);
+        assert!(album.iter().any(|label| label == "Go to artist"));
+        assert!(!album.iter().any(|label| label == "Go to album"));
+        let artist = nav_labels(MenuContext::ArtistDetail);
+        assert!(artist.iter().any(|label| label == "Go to album"));
+        assert!(!artist.iter().any(|label| label == "Go to artist"));
+        for context in [
+            MenuContext::LibraryTracks,
+            MenuContext::Playlist,
+            MenuContext::Queue,
+        ] {
+            let labels = nav_labels(context);
+            assert!(
+                labels.iter().any(|label| label == "Go to album"),
+                "{context:?} keeps Go to album"
+            );
+            assert!(
+                labels.iter().any(|label| label == "Go to artist"),
+                "{context:?} keeps Go to artist"
+            );
+        }
+    }
+
+    #[test]
+    fn from_source_maps_every_view_source() {
+        use reprise_core::view_source::ViewSource;
+
+        let cases = [
+            (
+                ViewSource::Album {
+                    album: "Blue".into(),
+                    album_artist: "Joni".into(),
+                },
+                MenuContext::AlbumDetail,
+            ),
+            (ViewSource::Artist("Joni".into()), MenuContext::ArtistDetail),
+            (ViewSource::Playlist(7), MenuContext::Playlist),
+            (ViewSource::Queue, MenuContext::Queue),
+            (ViewSource::Library, MenuContext::LibraryTracks),
+            (ViewSource::Smart(3), MenuContext::LibraryTracks),
+            (ViewSource::Missing, MenuContext::LibraryTracks),
+            (ViewSource::ImportErrors, MenuContext::LibraryTracks),
+            (ViewSource::MyStats, MenuContext::LibraryTracks),
+            (
+                ViewSource::Device {
+                    serial: "pixel-8".into(),
+                },
+                MenuContext::LibraryTracks,
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(MenuContext::from_source(&source), expected, "{source:?}");
+        }
     }
 
     #[test]
@@ -455,6 +544,9 @@ mod tests {
             is_missing_view: false,
         }));
         assert_eq!(queue.first().map(String::as_str), Some("Move to top"));
+        // Queue trades the transport pair for Move to top; it offers neither.
+        assert!(!queue.iter().any(|label| label == "Play next"));
+        assert!(!queue.iter().any(|label| label == "Add to queue"));
         let library = menu_labels(&build_track_menu(&MenuInputs {
             context: MenuContext::LibraryTracks,
             selection: &selection,
@@ -462,6 +554,15 @@ mod tests {
             is_missing_view: false,
         }));
         assert_eq!(library.first().map(String::as_str), Some("Play next"));
+        // Move to top is Queue-only — the flat views never carry it.
+        assert!(!library.iter().any(|label| label == "Move to top"));
+        let playlist = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::Playlist,
+            selection: &selection,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert!(!playlist.iter().any(|label| label == "Move to top"));
     }
 
     #[test]
@@ -551,6 +652,36 @@ mod tests {
         assert!(playlist
             .iter()
             .any(|label| label == "Remove 3 from playlist"));
+
+        // A single selection drops the digit entirely — no "Move 1 to
+        // Trash…"; the destructive labels revert to their bare singular.
+        let one = self::selection(1);
+        let library_one = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::LibraryTracks,
+            selection: &one,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert!(library_one
+            .iter()
+            .any(|label| label == "Remove from library…"));
+        assert!(library_one.iter().any(|label| label == "Move to Trash…"));
+        let playlist_one = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::Playlist,
+            selection: &one,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert!(playlist_one
+            .iter()
+            .any(|label| label == "Remove from playlist"));
+        let queue_one = menu_labels(&build_track_menu(&MenuInputs {
+            context: MenuContext::Queue,
+            selection: &one,
+            playlists: &playlists,
+            is_missing_view: false,
+        }));
+        assert!(queue_one.iter().any(|label| label == "Remove from queue"));
     }
 
     #[test]
@@ -626,5 +757,34 @@ mod tests {
             "current playlist item is not actionable"
         );
         assert!(menu_item_action(&submenu, 0).is_some());
+    }
+
+    #[test]
+    fn playlist_entries_sort_case_insensitively_and_mark_current() {
+        let summary = |id: i64, name: &str| PlaylistSummary {
+            id,
+            name: name.into(),
+            track_count: 0,
+        };
+        // Out of order and mixed-case on purpose, so the assertion pins the
+        // case-insensitive sort key rather than the input order.
+        let rows = [summary(3, "Zulu"), summary(1, "alpha"), summary(2, "Beta")];
+
+        let in_playlist = playlist_entries(&rows, &ViewSource::Playlist(2));
+        let names: Vec<_> = in_playlist.iter().map(|entry| entry.name.clone()).collect();
+        assert_eq!(names, ["alpha", "Beta", "Zulu"]);
+        assert_eq!(
+            in_playlist
+                .iter()
+                .filter(|entry| entry.is_current)
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            [2],
+            "only the open playlist's row is current"
+        );
+
+        // Any non-playlist source leaves every row actionable.
+        let in_library = playlist_entries(&rows, &ViewSource::Library);
+        assert!(in_library.iter().all(|entry| !entry.is_current));
     }
 }

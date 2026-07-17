@@ -731,4 +731,44 @@ mod tests {
         assert_eq!(moved, 1);
         assert_eq!(pending.ids(), &[103, 101, 102]);
     }
+
+    #[test]
+    fn move_to_top_preserves_multi_row_selection_order() {
+        use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+        let mut context = context(&[10, 20, 30, 40], 0);
+        let mut pending = pending(&[101, 102]);
+        // UpNext(1) resolves to snapshot id 30; PlayNext(0) is pending id 101.
+        let moved = move_rows_to_front(
+            &mut context,
+            &mut pending,
+            &[QueueRow::UpNext(1), QueueRow::PlayNext(0)],
+        );
+
+        assert_eq!(moved, 2);
+        // The two moved ids lead in selection order, then the survivor (102).
+        assert_eq!(pending.ids(), &[30, 101, 102]);
+        // The promoted snapshot row (30) left the context so it can't play
+        // twice; the untouched snapshot rows keep their order.
+        assert_eq!(context.remaining_after_current(), [20, 40]);
+    }
+
+    #[test]
+    fn move_to_top_without_current_track_is_a_noop() {
+        use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+        // No current track -> `current_order_position` is None, so an Up Next
+        // row can't resolve to a snapshot position.
+        let mut context = Queue::new();
+        let mut pending = pending(&[101, 102]);
+        let moved = move_rows_to_front(&mut context, &mut pending, &[QueueRow::UpNext(0)]);
+
+        assert_eq!(moved, 0);
+        assert_eq!(pending.ids(), &[101, 102]);
+        assert!(context.remaining_after_current().is_empty());
+
+        // An empty selection is a no-op regardless of state.
+        assert_eq!(move_rows_to_front(&mut context, &mut pending, &[]), 0);
+        assert_eq!(pending.ids(), &[101, 102]);
+    }
 }

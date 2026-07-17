@@ -50,7 +50,8 @@ use gtk4::graphene;
 use gtk4::prelude::*;
 
 use super::track_menu::{
-    action_states, build_track_menu, summarize_selection, MenuContext, MenuInputs, PlaylistEntry,
+    action_states, build_track_menu, playlist_entries, summarize_selection, MenuContext,
+    MenuInputs, SelectionSummary,
 };
 use crate::ui::delete_tracks;
 use crate::ui::dialogs;
@@ -156,28 +157,19 @@ fn current_selection_tracks(shared: &Rc<Shared>) -> Vec<reprise_core::models::Tr
 /// caching would only add invalidation complexity for no real benefit at
 /// this scale.
 pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu {
-    update_menu_action_states(shared);
     let source = shared.source.borrow().clone();
     let context = MenuContext::from_source(&source);
     let is_missing_view = matches!(&source, ViewSource::Missing);
-    let tracks = current_selection_tracks(shared);
-    let summary = summarize_selection(&tracks);
-    let mut entries: Vec<_> = {
+    let summary = summarize_selection(&current_selection_tracks(shared));
+    update_menu_action_states(shared, context, &summary);
+    let entries = {
         let conn = shared.conn.borrow();
-        playlists::list(&conn)
-            .unwrap_or_else(|error| {
-                tracing::error!(%error, "context menu: failed to list playlists");
-                Vec::new()
-            })
-            .into_iter()
-            .map(|playlist| PlaylistEntry {
-                id: playlist.id,
-                is_current: matches!(&source, ViewSource::Playlist(id) if *id == playlist.id),
-                name: playlist.name,
-            })
-            .collect()
+        let rows = playlists::list(&conn).unwrap_or_else(|error| {
+            tracing::error!(%error, "context menu: failed to list playlists");
+            Vec::new()
+        });
+        playlist_entries(&rows, &source)
     };
-    entries.sort_by_key(|entry| entry.name.to_lowercase());
     build_track_menu(&MenuInputs {
         context,
         selection: &summary,
@@ -186,11 +178,15 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
     })
 }
 
-fn update_menu_action_states(shared: &Rc<Shared>) {
-    let source = shared.source.borrow().clone();
-    let context = MenuContext::from_source(&source);
-    let tracks = current_selection_tracks(shared);
-    let states = action_states(context, &summarize_selection(&tracks));
+/// Greys out the menu actions the current selection cannot support. Takes the
+/// `context`/`summary` already computed by `build_context_menu_model` so the
+/// source and selection are each read exactly once per menu open.
+fn update_menu_action_states(
+    shared: &Rc<Shared>,
+    context: MenuContext,
+    summary: &SelectionSummary,
+) {
+    let states = action_states(context, summary);
     for (name, enabled) in [
         (ACTION_PLAY_NEXT, states.enqueue),
         (ACTION_ADD_TO_QUEUE, states.enqueue),

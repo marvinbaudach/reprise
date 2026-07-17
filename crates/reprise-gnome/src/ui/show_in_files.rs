@@ -12,6 +12,11 @@ use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::glib::variant::ToVariant;
 
+/// Bounds the synchronous `ShowItems` call so a hung or unresponsive
+/// FileManager1 can only stall the UI thread this long — not the D-Bus
+/// default of 25 s — before we give up and take the folder-open fallback.
+const SHOW_ITEMS_TIMEOUT_MS: i32 = 2000;
+
 pub(in crate::ui) fn show_in_files(paths: &[PathBuf]) {
     if paths.is_empty() {
         return;
@@ -44,7 +49,7 @@ fn show_items(uris: &[String]) -> Result<(), glib::Error> {
         "ShowItems",
         Some(&(uris.to_vec(), String::new()).to_variant()),
         gio::DBusCallFlags::NONE,
-        -1,
+        SHOW_ITEMS_TIMEOUT_MS,
         gio::Cancellable::NONE,
     )?;
     Ok(())
