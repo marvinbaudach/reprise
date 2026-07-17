@@ -115,8 +115,22 @@ pub(crate) fn header_title(sections: &[QueueSection], start: u32) -> String {
 /// Installs (or removes) the Queue view's section header factory. Only the
 /// Queue source renders sections — every other source gets its factory
 /// cleared again, mirroring how `artist_master.rs` toggles its alphabet
-/// headers. Called from `reload` on every source switch.
+/// headers. Called from `reload` AFTER the query swap (never between
+/// `set_sections` and `set_query` — see `reload`'s comment at the call
+/// site: the factory flip makes GTK re-match section headers synchronously
+/// and must only see a consistent sections/row-count pair).
+///
+/// A no-op when the view is already in the requested state: queue reloads
+/// happen on every queue mutation (auto-advance, reorder, remove), and
+/// re-setting a fresh factory each time would tear down and rebuild every
+/// visible section header for no benefit. The bind closure reads the
+/// CURRENT `shared.queue_sections` at bind time, so a reused factory always
+/// titles the sections the latest reload declared.
 pub(in crate::ui) fn apply_queue_header_factory(shared: &Rc<Shared>, is_queue: bool) {
+    let has_factory = shared.column_view.header_factory().is_some();
+    if is_queue == has_factory {
+        return;
+    }
     if !is_queue {
         shared
             .column_view

@@ -528,11 +528,13 @@ fn wire_width_persistence(
     }
 }
 
-/// Persists a header drag-reorder. GTK's built-in column drag (the view is
-/// `reorderable`) mutates the view's columns model directly — without ever
-/// going through `TrackList::apply_column_layout` — so this listens on that
-/// model and stores the resulting order under the same setting the popover/
-/// preferences editor writes. `syncing_order` mutes the events fired by
+/// Persists a header drag-reorder. `column_header_dnd`'s custom header-drag
+/// gesture (GTK's own native column drag is broken in 4.22 — see that
+/// module's doc comment) mutates the view's columns model directly via
+/// `remove_column`/`insert_column`, without ever going through
+/// `TrackList::apply_column_layout` — so this listens on that model and
+/// stores the resulting order under the same setting the popover/preferences
+/// editor writes. `syncing_order` mutes the events fired by
 /// `ColumnRegistry::apply`'s own remove/re-append rebuild; a mid-mutation
 /// snapshot (fewer columns than registered) is skipped, so only the final
 /// post-drop order is ever persisted.
@@ -679,9 +681,14 @@ pub(super) fn build_columns(
     }
     restore_stored_widths(&columns, &shared.conn.borrow());
     wire_width_persistence(shared, &columns);
-    // GTK's native header drag-reorder (on by default; made explicit here) —
-    // the listener below keeps the persisted layout in sync with it.
-    view.set_reorderable(true);
+    // GTK's native header drag-reorder is broken in 4.22 (the title widget's
+    // own click gesture claims the press before the view's own drag gesture
+    // ever gets a threshold-based claim — see `column_header_dnd`'s module
+    // doc). Reprise implements its own header drag instead; `reorderable`
+    // MUST stay false so a future GTK fix doesn't start double-handling
+    // every drag alongside `wire_header_drag` below.
+    view.set_reorderable(false);
+    super::column_header_dnd::wire_header_drag(view);
     let syncing_order = Rc::new(Cell::new(false));
     wire_order_persistence(shared, view, &columns, &syncing_order);
     let registry = ColumnRegistry {
