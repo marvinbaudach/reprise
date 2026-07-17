@@ -129,9 +129,9 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Playlist: Positionsreihenfolge; Artist „Play all": Alben nach Jahr, darin
   Tracknummer). Der sichtbare Grid-Filter bestimmt nur, welche Container
   erreichbar sind, nie den Queue-Inhalt.
-- **PLAY-2** [geplant] [core] — Doppelklick spielt die Row und hängt den Rest
+- **PLAY-2** [aktiv] [core] — Doppelklick spielt die Row und hängt den Rest
   der sichtbaren Liste ab dieser Position in die Queue.
-- **PLAY-3** [geplant] [core] — Filter schränkt Shuffle ein — absichtlich.
+- **PLAY-3** [aktiv] [core] — Filter schränkt Shuffle ein — absichtlich.
   Gefilterte Playlist + Shuffle = Shuffle über die Treffer („shuffle my 90s
   tracks"). Filter nachträglich ändern fasst eine bereits gebaute Queue nicht
   an (Queue ist ein Snapshot; sichtbar in „Queue").
@@ -143,7 +143,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **PLAY-5** [ersetzt durch PLAY-5a/PLAY-5b] — Ursprüngliche
   Queue-Hygiene-Sammelregel; beim Härten in die Teilregeln deleted (5a) und
   unmounted (5b) gesplittet.
-- **PLAY-5a** [geplant] [core] — Deleted-Hygiene: Extern gelöschte Tracks
+- **PLAY-5a** [aktiv] [core] — Deleted-Hygiene: Extern gelöschte Tracks
   verlassen die Queue still; der spielende Track wird dadurch nie gestoppt
   (faultet der spielende Track selbst, gilt FB-6: Skip + ein Toast).
 - **PLAY-5b** [geplant] [core] — Unmounted-Hygiene: Unmountete Tracks bleiben

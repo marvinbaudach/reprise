@@ -671,3 +671,69 @@ fn test_shuffle_visits_all_exactly_once_per_pass() {
 }
 
 // Stage-3 close-out: `remove_ids` (hard-delete queue purge).
+
+// --- UX-Regelwerk-Tests (docs/ux-rules.md) ---------------------------------
+// Charakterisierungs-Tests für Bestandsverhalten: sie sind ab dem ersten
+// Lauf grün (das Verhalten existiert schon); der TDD-Rot-Schritt wird durch
+// den Assertion-Flip in Step 3 ersetzt, der beweist, dass sie beißen.
+
+// UX PLAY-2: Doppelklick spielt die Row und hängt den Rest der sichtbaren
+// Liste ab dieser Position in die Queue (Aktivierungs-Snapshot).
+#[test]
+fn play_2_activation_snapshot_starts_at_clicked_row() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 30, 40], 2);
+    assert_eq!(q.current(), Some(30));
+    assert_eq!(q.advance_auto(), Some(40));
+    assert_eq!(
+        q.advance_auto(),
+        None,
+        "Tracks vor der geklickten Row folgen nicht automatisch (Repeat::Off)"
+    );
+}
+
+// UX PLAY-3: Queue ist Snapshot der gefilterten Treffer; Shuffle permutiert
+// genau die Treffer (Queue = Treffermenge, kein Track von außerhalb).
+#[test]
+fn play_3_shuffle_stays_inside_filtered_snapshot() {
+    let mut q = Queue::new();
+    let treffer = vec![11, 22, 33, 44, 55];
+    q.set_tracks(treffer.clone(), 0);
+    q.set_shuffle(true);
+    let mut queue_ids = q.ids_in_order();
+    queue_ids.sort_unstable();
+    assert_eq!(queue_ids, treffer);
+    assert_eq!(
+        q.current(),
+        Some(11),
+        "aktueller Track bleibt beim Shuffle stehen"
+    );
+}
+
+// UX PLAY-5a: Extern gelöschte Tracks verlassen die Queue still; der
+// spielende Track bleibt unangetastet.
+#[test]
+fn play_5a_deleted_tracks_leave_queue_silently() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![1, 2, 3, 4], 1);
+    assert!(q.remove_ids(&[3]));
+    assert_eq!(q.ids_in_order(), vec![1, 2, 4]);
+    assert_eq!(
+        q.current(),
+        Some(2),
+        "Hintergrund-Removal stoppt den spielenden Track nie"
+    );
+}
+
+// UX QUE-1 [geplant] — Demo des Aktivierungs-Workflows: Der Queue-Branch
+// nimmt das #[ignore] weg und flippt QUE-1 auf [aktiv] im selben Commit.
+#[test]
+#[ignore = "UX QUE-1 [geplant] — Drei-Sektionen-Queue kommt im Queue-Branch"]
+fn que_1_queue_is_never_empty_while_playing() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![7, 8, 9], 0);
+    assert!(
+        !q.is_empty(),
+        "solange etwas spielt, ist die Queue nie leer"
+    );
+}

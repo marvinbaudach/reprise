@@ -618,7 +618,7 @@ git commit -m "test: add UX rulebook traceability gate"
 - Consumes: `Queue`-API aus `crates/reprise-core/src/queue.rs`: `new()`, `set_tracks(Vec<i64>, usize)`, `current() -> Option<i64>`, `advance_auto() -> Option<i64>`, `set_shuffle(bool)`, `ids_in_order() -> Vec<i64>`, `remove_ids(&[i64]) -> bool`, `is_empty() -> bool`. Lint aus Task 3.
 - Produces: regelbenannte Tests `play_2_*`, `play_3_*`, `play_5a_*`, `que_1_*` (ignored) in der Workspace-Suite.
 
-- [ ] **Step 1: Audit Bereich C durchführen und Befunde notieren** (Kommandos + erwartete Anker):
+- [x] **Step 1: Audit Bereich C durchführen und Befunde notieren** (Kommandos + erwartete Anker):
 
 ```bash
 # PLAY-1/PLAY-2-Verdrahtung (sichtbare Liste -> Queue):
@@ -638,7 +638,7 @@ grep -rn "Repeat::" crates/reprise-gnome/src --include='*.rs' | grep -v test | h
 
 Audit-Verdikt je Regel in die Ledger-Notiz schreiben (implementiert+getestet / implementiert+ungetestet / nicht implementiert). **Geflippt wird in diesem Task nur, was in Step 2 einen regelbenannten Test bekommt: PLAY-2, PLAY-3, PLAY-5a.** PLAY-1, PLAY-4a/b, PLAY-5b, PLAY-6, PLAY-1a bleiben `[geplant]` (= noch nicht einklagbar), auch wenn Teile implementiert sind — ihre Flips kommen mit ihren Tests in Folgearbeit. Falls das PLAY-4a-Grep zeigt, dass Listen-Skip komplett fehlt: nur Ledger-Notiz, kein Doc-Edit nötig (steht ja schon `[geplant]`).
 
-- [ ] **Step 2: Regeltests schreiben** — ans Ende von `crates/reprise-core/src/queue_tests.rs` anhängen:
+- [x] **Step 2: Regeltests schreiben** — ans Ende von `crates/reprise-core/src/queue_tests.rs` anhängen:
 
 ```rust
 // --- UX-Regelwerk-Tests (docs/ux-rules.md) ---------------------------------
@@ -697,7 +697,7 @@ fn que_1_queue_is_never_empty_while_playing() {
 }
 ```
 
-- [ ] **Step 3: Beweisen, dass die Tests beißen (Ersatz für den Rot-Schritt)**
+- [x] **Step 3: Beweisen, dass die Tests beißen (Ersatz für den Rot-Schritt)**
 
 ```bash
 cargo test -p reprise-core play_2_ play_3_ play_5a_    # Erwartet: 3 passed
@@ -707,7 +707,7 @@ cargo test -p reprise-core play_5a_                    # Erwartet: 1 FAILED
 cargo test -p reprise-core play_5a_                    # Erwartet: 1 passed
 ```
 
-- [ ] **Step 4: Status-Flips im Dokument** — in `docs/ux-rules.md`:
+- [x] **Step 4: Status-Flips im Dokument** — in `docs/ux-rules.md`:
 
 ```text
 - **PLAY-2** [geplant]  ->  - **PLAY-2** [aktiv]
@@ -715,7 +715,7 @@ cargo test -p reprise-core play_5a_                    # Erwartet: 1 passed
 - **PLAY-5a** [geplant] ->  - **PLAY-5a** [aktiv]
 ```
 
-- [ ] **Step 5: Lint + Suite laufen lassen**
+- [x] **Step 5: Lint + Suite laufen lassen**
 
 Run: `scripts/check-ux-traceability.sh`
 Expected: `UX-Traceability ok: 3 aktive Regeln abgedeckt`
@@ -723,7 +723,7 @@ Expected: `UX-Traceability ok: 3 aktive Regeln abgedeckt`
 Run: `cargo test -p reprise-core`
 Expected: alle Tests grün, `que_1_…` als ignored gelistet
 
-- [ ] **Step 6: Ledger + EIN Commit (Tests + Flips zusammen — Same-Commit-Regel)**
+- [x] **Step 6: Ledger + EIN Commit (Tests + Flips zusammen — Same-Commit-Regel)**
 
 ```markdown
 - Bereich-C-Audit (Verdikte: PLAY-1 implementiert/ungetestet via
