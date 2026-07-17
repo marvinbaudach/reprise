@@ -52,7 +52,7 @@ Implementierungs-Commit der Regel. Akzeptanztests referenzieren Regel-IDs.
 - **QUE-2 · Abspiellogik = Anzeigereihenfolge** `[aktiv]` — Erst Play-Next-Einträge
   (FIFO), dann der Snapshot ab aktueller Position. Keine versteckte Priorität — was die
   View zeigt, ist was passiert.
-- **QUE-3 · Interaktion** `[geplant]` — DnD-Reorder innerhalb „Play Next"; Up-Next-Rows per
+- **QUE-3 · Interaktion** `[aktiv]` — DnD-Reorder innerhalb „Play Next"; Up-Next-Rows per
   DnD nach „Play Next" ziehbar; Rechtsklick „Remove from queue" überall (entfernt aus dem
   Snapshot, nicht aus der Library); Doppelklick auf eine Queue-Row springt dorthin
   (Playhead, kein Neuaufbau). „Clear queue"-Button räumt nur „Play Next"; der Snapshot

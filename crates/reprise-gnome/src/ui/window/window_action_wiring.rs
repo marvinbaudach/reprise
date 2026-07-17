@@ -137,6 +137,15 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         let player = player.clone();
+        track_list.set_on_play_next_selected(move |ids| match &player {
+            Some(player) => player.play_next(&ids),
+            None => {
+                tracing::warn!("player unavailable; ignoring play-next action");
+            }
+        });
+    }
+    {
+        let player = player.clone();
         track_list.set_on_queue_selected(move |ids| match &player {
             Some(player) => player.append_to_queue(&ids),
             None => {
@@ -184,18 +193,18 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         let player = player.clone();
-        track_list.set_on_queue_activate(move |position| {
+        track_list.set_on_queue_activate(move |row| {
             if let Some(player) = &player {
-                player.play_up_next_at(position);
+                player.jump_to_queue_row(row);
             }
         });
     }
     {
         let player = player.clone();
-        track_list.set_on_queue_remove(move |positions| {
+        track_list.set_on_queue_remove(move |rows| {
             player
                 .as_ref()
-                .map_or(0, |player| player.remove_up_next_positions(positions))
+                .map_or(0, |player| player.remove_queue_rows(rows))
         });
     }
     {
@@ -203,8 +212,8 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         // doc comment. Same decoupling-via-closure seam as `on_play_
         // selected`/`on_queue_selected` just above.
         let player = player.clone();
-        track_list.set_on_queue_reorder(move |from, to| match &player {
-            Some(player) => player.move_queue_item(from, to),
+        track_list.set_on_queue_reorder(move |op| match &player {
+            Some(player) => player.reorder_queue_rows(op),
             None => {
                 tracing::warn!("player unavailable; ignoring queue drag-reorder");
                 false

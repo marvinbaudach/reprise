@@ -133,16 +133,43 @@ pub(in crate::ui) fn apply_queue_header_factory(shared: &Rc<Shared>, is_queue: b
             let Some(shared) = shared.upgrade() else {
                 return;
             };
-            let title = {
+            let (title, is_play_next) = {
                 let sections = shared.queue_sections.borrow();
-                header_title(&sections, header.start())
+                let is_play_next = sections.iter().any(|section| {
+                    section.start == header.start() && section.kind == QueueSectionKind::PlayNext
+                });
+                (header_title(&sections, header.start()), is_play_next)
             };
             let label = gtk4::Label::builder()
                 .label(&title)
                 .xalign(0.0)
+                .hexpand(true)
                 .css_classes(["queue-section-header", "heading"])
                 .build();
-            header.set_child(Some(&label));
+            if !is_play_next {
+                header.set_child(Some(&label));
+                return;
+            }
+            // QUE-3: the Play Next header carries the "Clear" button — it
+            // empties exactly the section it titles, nothing else. A real
+            // `gtk::Button` (flat), never a click gesture on a Box (see the
+            // gtk4 skill's cell-input rule; headers recycle like cells).
+            let clear = gtk4::Button::builder()
+                .label(strings::text(strings::QUEUE_CLEAR_PLAY_NEXT))
+                .has_frame(false)
+                .css_classes(["flat", "queue-clear-play-next"])
+                .build();
+            {
+                let player = shared.player.borrow().clone();
+                clear.connect_clicked(move |_| match player.upgrade() {
+                    Some(player) => player.clear_play_next(),
+                    None => tracing::warn!("clear play-next clicked without a player"),
+                });
+            }
+            let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+            row.append(&label);
+            row.append(&clear);
+            header.set_child(Some(&row));
         });
     }
     factory.connect_unbind(|_, header| {

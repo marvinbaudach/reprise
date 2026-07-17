@@ -123,6 +123,7 @@ const SMOKE_MENU_ACTION_ROW_COUNT: u32 = 2;
 /// menu item labels themselves).
 const ACTION_PLAY: &str = "play";
 const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
+const ACTION_PLAY_NEXT: &str = "play-next";
 const ACTION_ADD_TO_PLAYLIST: &str = "add-to-playlist";
 const ACTION_NEW_PLAYLIST: &str = "new-playlist";
 const ACTION_REMOVE_FROM_PLAYLIST: &str = "remove-from-playlist";
@@ -209,6 +210,15 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
         Some(&strings::text(strings::CONTEXT_MENU_PLAY)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_PLAY}")),
     );
+    // QUE-3: "Play next" jumps the manual line; offered wherever tracks can
+    // be queued from (every source except the Queue view itself, whose
+    // primary swap below covers its own actions).
+    if !matches!(*shared.source.borrow(), ViewSource::Queue) {
+        primary.append(
+            Some(&strings::text(strings::CONTEXT_MENU_PLAY_NEXT)),
+            Some(&format!("{ACTION_GROUP_NAME}.{ACTION_PLAY_NEXT}")),
+        );
+    }
     track_list_queue_menu::append_queue_primary_action(
         &primary,
         shared,
@@ -305,6 +315,16 @@ pub(in crate::ui) fn wire_context_menu_actions(
         });
     }
     action_group.add_action(&play_action);
+
+    let play_next_action = gio::SimpleAction::new(ACTION_PLAY_NEXT, None);
+    {
+        let shared = shared.clone();
+        play_next_action.connect_activate(move |_, _| {
+            let ids = current_selection_ids(&shared);
+            track_list_queue_menu::play_next_selected(&shared, &ids);
+        });
+    }
+    action_group.add_action(&play_next_action);
 
     let queue_action = gio::SimpleAction::new(ACTION_ADD_TO_QUEUE, None);
     {

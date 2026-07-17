@@ -36,9 +36,17 @@ pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &
     // `Shared::suppress_follow_scroll` doc comment).
     shared.suppress_follow_scroll.set(Some(track.id));
     if matches!(*shared.source.borrow(), ViewSource::Queue) {
+        let row = {
+            let sections = shared.queue_sections.borrow();
+            crate::ui::track_list::queue_row_mapping::classify(position, &sections)
+        };
+        let Some(row) = row else {
+            tracing::warn!(position, "queue activation outside every section; ignoring");
+            return;
+        };
         let callback = shared.on_queue_activate.borrow().clone();
         match callback {
-            Some(callback) => callback(position as usize),
+            Some(callback) => callback(row),
             None => tracing::warn!("queue activation callback is not wired"),
         }
         return;
