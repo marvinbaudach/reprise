@@ -369,7 +369,10 @@ fn read_meta_roundtrip() {
     tag.set_title("Beast of Darkness".into());
     tag.set_artist("Brand of Sacrifice".into());
     tag.set_album("God Hand".into());
-    tag.set_year(2019);
+    tag.set_date(lofty::tag::items::Timestamp {
+        year: 2019,
+        ..lofty::tag::items::Timestamp::default()
+    });
     tag.set_track(9);
     tag.set_genre("Deathcore".into());
     tag.save_to_path(&file, lofty::config::WriteOptions::default())
