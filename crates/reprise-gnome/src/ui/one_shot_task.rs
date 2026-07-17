@@ -128,13 +128,25 @@ mod tests {
         })
         .unwrap();
 
-        // Latest-wins: the worker outran the reader, so only the newest value
-        // survived — never a stale 1 after a 2 was published.
-        assert_eq!(progress.recv_blocking().unwrap(), 2);
-        assert_eq!(result.recv_blocking().unwrap(), "done");
-        // The worker's return closed the stream rather than leaving the
-        // consumer's `while let` loop hanging.
+        // Drain everything the reader actually observed. Latest-wins does NOT
+        // promise the reader outruns the writer and only ever sees the final
+        // value — reading between the two publishes legitimately yields 1
+        // first. What it DOES promise is that a stale value never appears
+        // after a newer one, and that the last value before the stream closes
+        // is the final published one. Asserting a single recv == 2 was racy
+        // and flaked ~half the time; assert the real contract instead.
+        let mut seen = Vec::new();
+        while let Ok(value) = progress.recv_blocking() {
+            seen.push(value);
+        }
+        assert_eq!(seen.last().copied(), Some(2), "final value must be 2");
+        assert!(
+            seen.windows(2).all(|pair| pair[0] <= pair[1]),
+            "values must never go backwards: {seen:?}"
+        );
+        // The stream closed on the worker's return rather than hanging.
         assert!(progress.recv_blocking().is_err());
+        assert_eq!(result.recv_blocking().unwrap(), "done");
     }
 
     #[test]
