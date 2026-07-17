@@ -257,7 +257,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   nie einzeln getoastet. Am Ende EIN Toast mit „N failed · Details" →
   Details öffnet die zuständige View/Dialog. Persistente Probleme leben als
   Badge + ISSUES-Eintrag, nicht als wiederkehrende Toasts.
-- **FB-4** [geplant] [core] — Badges zählen nur Einträge, die neuer sind als
+- **FB-4** [aktiv] [core] — Badges zählen nur Einträge, die neuer sind als
   das letzte Öffnen der jeweiligen View (`last_viewed`-Timestamp je View im
   Settings-Store): Missing zählt `missing_since > last_viewed`, Import-Errors
   zählt `first_seen > last_viewed` — ohne dismissed-Zeilen und ohne
