@@ -78,11 +78,20 @@ pub(in crate::ui) fn result_count_markup(filtered: usize, total: usize) -> (Stri
     }
     let filtered_text =
         reprise_core::format::format_thousands(i64::try_from(filtered).unwrap_or(i64::MAX));
-    let plain = result_count(filtered, total);
-    (
-        plain.replacen(&filtered_text, &format!("<b>{filtered_text}</b>"), 1),
-        true,
-    )
+    let total_text =
+        reprise_core::format::format_thousands(i64::try_from(total).unwrap_or(i64::MAX));
+    let plural_count = u32::try_from(total).unwrap_or(u32::MAX);
+    let template = crate::i18n::ngettext(
+        "{filtered} of {total} track",
+        "{filtered} of {total} tracks",
+        plural_count,
+    );
+    let bold_filtered = format!("<b>{filtered_text}</b>");
+    let markup = crate::i18n::format_message(
+        &template,
+        &[("filtered", &bold_filtered), ("total", &total_text)],
+    );
+    (markup, true)
 }
 
 fn formatted(message: &str, values: &[(&str, &str)]) -> String {
