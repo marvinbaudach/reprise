@@ -59,6 +59,7 @@ fn app_css() -> String {
         super::toasts::css(),
         super::tag_editor_style::css(),
         info_panel_clip_css(),
+        super::issues::css(),
         super::compact_player_layouts::mini_css(),
         super::scan_card_css::css(),
     ]
@@ -199,6 +200,7 @@ mod tests {
             ".stats-chart",
             ".reprise-tag-editor",
             "floating-sheet > sheet",
+            ".issue-card",
             ".mini-player-card",
             ".scan-card",
             ".device-storage-music progress",
