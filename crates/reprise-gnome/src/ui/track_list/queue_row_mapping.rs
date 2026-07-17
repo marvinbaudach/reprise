@@ -4,6 +4,14 @@
 //! operations are section-scoped (`up_next` indices vs. snapshot order
 //! positions), so every interaction (activate, remove, drag) remaps here
 //! first. Pure functions; the wiring lives in `window_action_wiring.rs`.
+//!
+//! Drag-reorder ([`reorder_op`]) supports three moves: a plain reorder
+//! within Play Next, a plain reorder within the Up Next snapshot tail, and
+//! promoting an Up Next row into Play Next (which leaves the snapshot for
+//! good). Dropping onto the Now Playing row is target shorthand for "make
+//! it next": a Play Next row moves to the front of Play Next, an Up Next
+//! row promotes to the front of Play Next. Demoting a Play Next row into
+//! the snapshot stays deliberately unsupported.
 
 use super::queue_sections::{QueueSection, QueueSectionKind};
 
@@ -20,9 +28,13 @@ pub(crate) enum QueueRow {
 }
 
 /// A drag-reorder over the composite view, resolved to what it means.
+// All three variants end in "Next" for a real reason (Play Next / Up Next
+// are the section names QUE-3 defines), not an accidental naming pattern —
+// clippy's postfix heuristic doesn't know that, so it's silenced here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum QueueReorderOp {
-    /// Reorder within the Play Next section (QUE-3's only free reorder).
+    /// Reorder within the Play Next section.
     WithinPlayNext { from: usize, to: usize },
     /// Drag an Up Next snapshot row into the Play Next section: remove it
     /// from the snapshot, insert it as a manual entry at `insert_at`.
@@ -30,6 +42,9 @@ pub(crate) enum QueueReorderOp {
         up_next_offset: usize,
         insert_at: usize,
     },
+    /// Reorder within the Up Next snapshot tail: section-local offsets; the
+    /// controller adds the playhead base and calls `Queue::move_item`.
+    WithinUpNext { from: usize, to: usize },
 }
 
 /// Resolves a view position to its section-local row. `None` for positions
@@ -50,59 +65,54 @@ pub(crate) fn classify(view_position: u32, sections: &[QueueSection]) -> Option<
     None
 }
 
-/// Resolves a composite-view drag from `from` to `to`. Rules (QUE-3):
-/// - within Play Next → plain reorder;
-/// - Up Next row dropped into (or at the boundary of) Play Next → promote;
-/// - everything else (reordering the snapshot, dragging onto Now Playing,
-///   dragging Play Next into the snapshot) → `None` (rejected).
+/// Resolves a composite-view drag from `from` to `to` by classifying BOTH
+/// positions and matching on the pair. Rules (QUE-3):
+/// - Now Playing is never a drag source → `None`.
+/// - within Play Next → plain reorder (no-op on the same slot → `None`).
+/// - Play Next dropped onto Now Playing → move to the front of Play Next
+///   (no-op if already there); dropped into Up Next → rejected (no
+///   demotion into the snapshot).
+/// - Up Next dropped onto Play Next (or Now Playing, which promotes to the
+///   front of Play Next) → promote out of the snapshot.
+/// - within Up Next → plain reorder of the snapshot tail (no-op on the same
+///   slot → `None`).
+/// - anything that fails to classify on either side → `None`.
 pub(crate) fn reorder_op(from: u32, to: u32, sections: &[QueueSection]) -> Option<QueueReorderOp> {
     let from_row = classify(from, sections)?;
-    // A drop at the very end of the Play Next section arrives as the first
-    // Up Next position (or one past the model for a trailing drop) — treat
-    // "to" leniently: resolve against Play Next bounds below instead of
-    // requiring it to classify.
-    let play_next = sections
-        .iter()
-        .find(|section| section.kind == QueueSectionKind::PlayNext);
+    let to_row = classify(to, sections)?;
 
-    match from_row {
-        QueueRow::PlayNext(from_offset) => {
-            let section = play_next?;
-            let end = section.start.saturating_add(section.len);
-            if to < section.start || to > end {
-                return None;
+    match (from_row, to_row) {
+        (QueueRow::NowPlaying, _) => None,
+        (QueueRow::PlayNext(f), QueueRow::PlayNext(t)) => {
+            if f == t {
+                None
+            } else {
+                Some(QueueReorderOp::WithinPlayNext { from: f, to: t })
             }
-            let to_offset = ((to - section.start) as usize).min(section.len as usize - 1);
-            if to_offset == from_offset {
-                return None;
-            }
-            Some(QueueReorderOp::WithinPlayNext {
-                from: from_offset,
-                to: to_offset,
-            })
         }
-        QueueRow::UpNext(up_next_offset) => {
-            // Promotion target: anywhere in Play Next, or the slot directly
-            // after Now Playing when no Play Next section exists yet.
-            let (start, end) = match play_next {
-                Some(section) => (section.start, section.start.saturating_add(section.len)),
-                None => {
-                    let after_now = sections
-                        .iter()
-                        .find(|section| section.kind == QueueSectionKind::NowPlaying)
-                        .map_or(0, |section| section.start.saturating_add(section.len));
-                    (after_now, after_now)
-                }
-            };
-            if to < start || to > end {
-                return None;
+        (QueueRow::PlayNext(f), QueueRow::NowPlaying) => {
+            if f == 0 {
+                None
+            } else {
+                Some(QueueReorderOp::WithinPlayNext { from: f, to: 0 })
             }
-            Some(QueueReorderOp::PromoteUpNext {
-                up_next_offset,
-                insert_at: (to - start) as usize,
-            })
         }
-        QueueRow::NowPlaying => None,
+        (QueueRow::PlayNext(_), QueueRow::UpNext(_)) => None,
+        (QueueRow::UpNext(f), QueueRow::PlayNext(t)) => Some(QueueReorderOp::PromoteUpNext {
+            up_next_offset: f,
+            insert_at: t,
+        }),
+        (QueueRow::UpNext(f), QueueRow::NowPlaying) => Some(QueueReorderOp::PromoteUpNext {
+            up_next_offset: f,
+            insert_at: 0,
+        }),
+        (QueueRow::UpNext(f), QueueRow::UpNext(t)) => {
+            if f == t {
+                None
+            } else {
+                Some(QueueReorderOp::WithinUpNext { from: f, to: t })
+            }
+        }
     }
 }
 
@@ -155,36 +165,81 @@ mod tests {
                 insert_at: 0
             })
         );
-        // Dropped at the Play Next end boundary (view 3 = first up-next
-        // slot doubles as "after the last play-next entry").
+        // Dropped onto the last Play Next row (view 2) still promotes.
         assert_eq!(
-            reorder_op(4, 3, &s),
+            reorder_op(4, 2, &s),
             Some(QueueReorderOp::PromoteUpNext {
                 up_next_offset: 1,
-                insert_at: 2
+                insert_at: 1
             })
         );
     }
 
     #[test]
-    fn up_next_promotes_after_now_playing_when_no_play_next_exists() {
+    fn up_next_internal_reorder_maps_to_local_offsets() {
+        let s = sections();
+        assert_eq!(
+            reorder_op(3, 5, &s),
+            Some(QueueReorderOp::WithinUpNext { from: 0, to: 2 })
+        );
+        assert_eq!(
+            reorder_op(5, 3, &s),
+            Some(QueueReorderOp::WithinUpNext { from: 2, to: 0 })
+        );
+        // Same slot → no-op.
+        assert_eq!(reorder_op(4, 4, &s), None);
+    }
+
+    #[test]
+    fn up_next_row_dropped_on_now_playing_promotes_to_front() {
+        let s = sections();
+        assert_eq!(
+            reorder_op(3, 0, &s),
+            Some(QueueReorderOp::PromoteUpNext {
+                up_next_offset: 0,
+                insert_at: 0
+            })
+        );
+    }
+
+    #[test]
+    fn play_next_row_dropped_on_now_playing_moves_to_front() {
+        let s = sections();
+        assert_eq!(
+            reorder_op(2, 0, &s),
+            Some(QueueReorderOp::WithinPlayNext { from: 1, to: 0 })
+        );
+        // Already at the front → no-op.
+        assert_eq!(reorder_op(1, 0, &s), None);
+    }
+
+    #[test]
+    fn without_play_next_up_next_reorders_and_promotes_via_now_playing() {
         // View: [1] now playing | [4,5] up next — no Play Next section.
         let s = compose(Some(1), &[], &[4, 5], Some("Music")).sections;
+        // Internal Up Next reorder now works without a Play Next section.
         assert_eq!(
             reorder_op(2, 1, &s),
+            Some(QueueReorderOp::WithinUpNext { from: 1, to: 0 })
+        );
+        assert_eq!(
+            reorder_op(1, 2, &s),
+            Some(QueueReorderOp::WithinUpNext { from: 0, to: 1 })
+        );
+        // Dropping onto Now Playing still promotes to the (empty) front of
+        // Play Next.
+        assert_eq!(
+            reorder_op(2, 0, &s),
             Some(QueueReorderOp::PromoteUpNext {
                 up_next_offset: 1,
                 insert_at: 0
             })
         );
-        // Dropping it back into the snapshot region is rejected.
-        assert_eq!(reorder_op(1, 2, &s), None);
     }
 
     #[test]
-    fn snapshot_internal_reorder_and_now_playing_drags_are_rejected() {
+    fn now_playing_cannot_be_dragged() {
         let s = sections();
-        assert_eq!(reorder_op(3, 5, &s), None);
         assert_eq!(reorder_op(0, 2, &s), None);
     }
 }

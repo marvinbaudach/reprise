@@ -407,8 +407,10 @@ impl PlayerController {
     }
 
     /// QUE-3 drag semantics over the composite view: reorder within Play
-    /// Next, or promote an Up Next snapshot row into Play Next (removed
-    /// from the snapshot so it can't play twice).
+    /// Next, reorder within the Up Next snapshot tail (both positions stay
+    /// strictly after the playhead, so `Queue::move_item` can't move the
+    /// currently playing track), or promote an Up Next snapshot row into
+    /// Play Next (removed from the snapshot so it can't play twice).
     pub(in crate::ui) fn reorder_queue_rows(
         &self,
         op: crate::ui::track_list::queue_row_mapping::QueueReorderOp,
@@ -444,6 +446,13 @@ impl PlayerController {
                         self.up_next.borrow_mut().insert(insert_at, id);
                         true
                     }
+                    None => false,
+                }
+            }
+            QueueReorderOp::WithinUpNext { from, to } => {
+                let mut queue = self.queue.borrow_mut();
+                match queue.current_order_position() {
+                    Some(base) => queue.move_item(base + 1 + from, base + 1 + to),
                     None => false,
                 }
             }

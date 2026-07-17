@@ -149,17 +149,17 @@ use tag_edit::{
 #[allow(unused_imports)]
 pub(crate) use tag_edit::{tag_edit_flow, tag_editor};
 #[allow(unused_imports)]
+use track_list::{
+    column_header_dnd, column_layout_editor, column_widths, current_track_selection, list_density,
+    track_content, track_cover, track_list_builder, track_list_context_keys,
+    track_list_header_style, track_list_layout, track_list_queue_menu, track_list_reload,
+    track_list_rescan, track_list_row_interaction, track_list_selection,
+};
+#[allow(unused_imports)]
 pub(crate) use track_list::{
     column_layout, rating, track_actions, track_list_activation, track_list_columns,
     track_list_context_menu, track_list_dnd, track_list_dnd_smoke, track_list_model,
     track_list_smoke, track_list_sort,
-};
-#[allow(unused_imports)]
-use track_list::{
-    column_layout_editor, column_widths, current_track_selection, list_density, track_content,
-    track_cover, track_list_builder, track_list_context_keys, track_list_header_style,
-    track_list_layout, track_list_queue_menu, track_list_reload, track_list_rescan,
-    track_list_row_interaction, track_list_selection,
 };
 #[allow(unused_imports)]
 use window::{
