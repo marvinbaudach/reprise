@@ -1,12 +1,13 @@
 //! App-authored motion tokens and the central reduced-motion contract.
 //!
-//! CSS T-V probe (2026-07-17): a mapped-widget spike was prepared to establish
-//! an enabled-animation baseline, then check that CSS transitions hard-switch
-//! and CSS keyframes stop under `gtk-enable-animations=false`. The managed
-//! implementation sandbox could not execute it because its private D-Bus
-//! socket failed to bind with `Operation not permitted`, both with and without
-//! a private `XDG_RUNTIME_DIR`. T-V therefore remains a deferred isolated Xvfb
-//! host check; no CSS behavior finding is claimed from the blocked attempts.
+//! CSS T-V probe result (2026-07-18, executed headless via dbus + Xvfb; see
+//! `css_probe_transitions_and_keyframes_under_disabled_animations` in
+//! `ui/style/mod.rs` — the style module owns CSS provider construction): GTK's CSS
+//! machinery fully honours `gtk-enable-animations=false` — `transition:`
+//! properties hard-switch to their end value and `@keyframes` animations do
+//! not run at all. CSS therefore needs no additional gating for MOT-7; the
+//! central contract here covers Adw animations (follow property), hand-built
+//! tick callbacks, and pulse timers.
 
 #![allow(dead_code)] // Token consumers land in the following Phase 1 tasks.
 
