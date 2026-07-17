@@ -119,6 +119,8 @@ Started: 2026-07-16
 - Logging: each scenario retains its own app log plus JSON snapshots and screenshots; a minimal manifest records only commit, build profile, CUA version, platform, display backend, and timestamp. Acceptance requires startup, database-ready, workflow, scan, and clean smoke-shutdown markers and rejects GTK/GLib criticals, panics, and RefCell failures.
 - Deferred host check: run `cargo build && scripts/cua-e2e/run.sh` outside the managed sandbox to collect the first real AT-SPI screenshots and confirm the exact `Search all fields`, fixture-title, and empty/no-results labels exposed by the installed GTK stack.
 - Residual risk: the deterministic driver contract proves orchestration and safety but cannot substitute for the deferred host CUA run; native Wayland rendering, portals, pointer feel, media keys, and audible playback remain release-manual checks.
+- Bugfix: complete (commit 8bcd060, base 3bd0eee, table no longer scroll-centers the row when playback starts from a double-click/Enter/queue activation — one-shot id-matched suppression consumed by the now-playing follow; auto-advance/skips/title-click/restore still center. Includes chore bc4b631: rustfmt 1.9 drift in window.rs.)
+- Queue+Nav-Plan (docs/superpowers/plans/2026-07-17-queue-nav-fixes.md): complete (commits 28774ff..HEAD, base 8bcd060). ux-rules.md angelegt; NAV-5 View-State-Memory (9aa2e5b); Play-Origin-Threading (6e09108); Composite-Queue-View QUE-1/2/4/5 (c5200e1); QUE-3-Interaktionen + Play-next (2a54066); NAV-9 Jump + NAV-2 Back + Ctrl+L inkl. Review-Fixes (d1ba456); Size-Gate-Extraktionen (HEAD). Abnahme headless verifiziert: Composite 1+PlayNext+UpNext·from-Origin, Play-next-Reihenfolge, Jump→select+center, Back→Queue, Stop→EmptyQueue-StatusPage, NAV-5-Restore-Log. PLAY-3-Filteranteil über geteilten Query-Pfad + bestehende Tests abgedeckt (Smoke-Hook-Reihenfolge erlaubt kein Filter-vor-Activate-E2E). Adversarial-Review: 2 blocking Findings gefixt (stale Now-Playing nach Stop; Queue-Aktivierungs-Reseed durch QUE-3-Jump ersetzt), purge-Notify + Dead-now-playing-Skip nachgezogen.
 
 ## 2026-07-17 — UX-Regelwerk Task 1 (docs/ux-rules.md)
 
@@ -209,3 +211,40 @@ grün · `cargo fmt --check` sauber · `check-merge-readiness.sh` grün.
 Offen (bewusst, kein Blocker): PLAY-2s gatender Core-Test beweist
 `set_tracks`-Semantik, nicht die Doppelklick-Verdrahtung — deren Beweis liegt im
 nicht-gatenden cua-e2e-Szenario, dessen grüner Lauf weiterhin am Host-Gate hängt.
+
+## 2026-07-17 — UX-Regelwerk: Merge mit dem Queue+Nav-Stand aus main
+
+Der Queue+Nav-Agent hatte parallel eine eigene `docs/ux-rules.md` angelegt (69
+Zeilen, 13 Regeln, alle `[aktiv]`, ⟲-markiert als aus dem Gedächtnis
+rekonstruiert, ohne regelbenannte Tests, eigenes Format) und nach main gemergt —
+add/add-Kollision auf dem Vertragsdokument. **User-Beschluss: das Regelwerk
+dieses Branches gewinnt** (Superset: 60 Regeln, Sektionen A–J, Prozessregeln,
+Ebenen-Tags, Gate). Inhaltlich ging nichts verloren: QUE-1..5, NAV-9 und FB-5
+waren in beiden Dokumenten wortgleich; die übrigen Regeln des Queue-Docs sind in
+diesem Dokument präziser oder feiner geschnitten (PLAY-1/1a, PLAY-3a/3b, NAV-3).
+
+**Statuswahrheit nach der Vertragsregel:** implementiert ohne regelbenannten Test
+= `[geplant]` (nicht einklagbar). Das Queue-Doc führte 13 Regeln als `[aktiv]`,
+ohne dass eine davon einen regelbenannten Test hat — genau das False-Green, das
+das Gate verhindern soll. Sie stehen hier daher `[geplant]`.
+
+**ACHTUNG — implementiert, aber `[geplant]` (nicht neu bauen, nur testen!):**
+
+- **QUE-1/2/4/5** — Composite-Queue-View mit Now Playing · Play Next · Up Next ·
+  aus <Quelle>, Sidebar-Zähler, Leerzustand: implementiert in c5200e1.
+- **QUE-3** — DnD-Reorder, Remove, Playhead-Jump, Clear: implementiert in
+  2a54066 (Core-Tests vorhanden, aber nicht regelbenannt:
+  `remaining_after_current_*`, `remove_order_positions_*`,
+  `jump_to_order_position_*`).
+- **NAV-9 / NAV-2** — Jump to Now Playing + Back-Stack + Ctrl+L: implementiert in
+  d1ba456.
+- **NAV-5** — View-State-Memory: implementiert in 9aa2e5b.
+- **PLAY-1** — Kontext-Snapshot beim Wiedergabestart: implementiert
+  (Play-Origin-Threading 6e09108).
+
+Ihr Flip auf `[aktiv]` braucht je einen regelbenannten Test (`fn que_1_…`,
+`fn nav_9_…`, …) im selben Commit — das ist die naheliegende Folgearbeit und
+wäre größtenteils Umbenennen/Aufsetzen auf die schon vorhandenen Tests.
+QUE-1s ignored Core-Demo wurde ehrlich gemacht: die Drei-Sektionen-Queue
+existiert, aber der Core-Stub kann sie nicht beweisen — der Flip braucht einen
+`[gtk]`-Sektionstest.

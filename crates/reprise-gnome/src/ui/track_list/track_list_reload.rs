@@ -6,9 +6,8 @@ use std::rc::Rc;
 use gtk4::gio::prelude::*;
 
 use crate::ui::browse_filter_count;
+use crate::ui::track_list::track_list_empty_state::{apply_empty_state, empty_state_for};
 use crate::ui::track_list::Shared;
-use crate::ui::track_list_activation::current_queue_ids;
-use crate::ui::track_list_columns::{apply_empty_state, empty_state_for};
 use crate::ui::track_list_sort::resolve_sort_on_switch;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
@@ -42,6 +41,12 @@ pub(in crate::ui) fn set_filter_and_reload(shared: &Rc<Shared>, text: &str) {
 /// A column-header click (`on_sorter_changed`) still overrides this
 /// temporarily, exactly as before.
 pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSource) {
+    // NAV-5: capture the leaving source's scroll/selection BEFORE the model
+    // is replaced below; restore the entering source's remembered state
+    // after `reload` rebuilt it. Same-source calls are plain reloads and
+    // deliberately skip both halves.
+    let old_source = source_snapshot(&shared.source);
+    super::view_state_memory::remember_on_leave(shared, &old_source, &source);
     // Hoisted so the `sort` borrow ends before the `borrow_mut` below.
     let new_sort = resolve_sort_on_switch(&shared.sort.borrow(), &source);
     *shared.sort.borrow_mut() = new_sort;
@@ -51,6 +56,10 @@ pub(in crate::ui) fn set_source_and_reload(shared: &Rc<Shared>, source: ViewSour
         .browse_bar
         .set_library_visible(matches!(source, ViewSource::Library));
     reload(shared);
+    if old_source != source {
+        let current_ids = shared.current_view_ids();
+        super::view_state_memory::restore_on_attach(shared, &source, &current_ids);
+    }
 }
 
 /// Re-runs the query against the current source/sort/filter state via
@@ -68,11 +77,20 @@ pub(in crate::ui) fn reload(shared: &Rc<Shared>) {
     };
     let has_filter = !filter.trim().is_empty() || !browse.is_empty();
 
-    let queue_ids = if matches!(source, ViewSource::Queue) {
-        current_queue_ids(shared)
+    let is_queue = matches!(source, ViewSource::Queue);
+    let queue_ids = if is_queue {
+        let queue_model = (shared.queue_ids_provider)();
+        *shared.queue_sections.borrow_mut() = queue_model.sections.clone();
+        shared
+            .model
+            .set_sections(super::queue_sections::section_ranges(&queue_model.sections));
+        queue_model.ids
     } else {
+        shared.queue_sections.borrow_mut().clear();
+        shared.model.set_sections(Vec::new());
         Vec::new()
     };
+    super::queue_sections::apply_queue_header_factory(shared, is_queue);
 
     shared.model.set_query_browsed(
         &source,

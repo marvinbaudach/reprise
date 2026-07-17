@@ -1,5 +1,6 @@
 pub(in crate::ui) mod audio_effects;
 pub(crate) mod now_playing_wiring;
+pub(crate) mod play_origin;
 pub(in crate::ui) mod play_tracking;
 pub(crate) mod playback_faults;
 pub(crate) mod player_controller;

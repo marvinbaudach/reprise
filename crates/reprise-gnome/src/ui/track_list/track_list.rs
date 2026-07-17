@@ -75,9 +75,13 @@ pub(in crate::ui) use crate::ui::track_list_reload::{
     reload, set_filter_and_reload, set_source_and_reload,
 };
 use crate::ui::track_list_sort::{SortState, PLAYLIST_ORDER_SORT_FIELD};
-use reprise_core::models::Track;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
+
+pub(in crate::ui) use super::track_list_callbacks::{
+    OnActivate, OnLibraryMutated, OnPlaySelected, OnQueueActivate, OnQueueRemove, OnQueueReorder,
+    OnQueueSelected, OnReload, OnSelectionChanged, OnSidebarPlaylistDrop, OnTagsMutated,
+};
 
 pub(in crate::ui) const STACK_PAGE_EMPTY: &str = "empty";
 pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
@@ -86,48 +90,6 @@ pub(in crate::ui) const STACK_PAGE_LIST: &str = "list";
 /// shown instead of `STACK_PAGE_LIST` only while `ViewSource::ImportErrors`
 /// is selected and has rows (see `apply_empty_state`'s `List` arm).
 pub(in crate::ui) const STACK_PAGE_IMPORT_ERRORS: &str = "import_errors";
-
-/// Callback invoked on row activation (double-click/Enter on a row, or the
-/// `REPRISE_SMOKE_ACTIVATE` hook). Provided by `window::build`, which routes
-/// it to the player — the track list itself stays free of any playback
-/// knowledge. Alongside the activated row's `Track` (for logging/fallback,
-/// see the `None` player branch in `window::build`), it also carries the
-/// full queue this activation should start: `ids` is every track id in the
-/// activated row's current sort/filter view (via `queue_ids_for_activation`)
-/// and `start_index` is the activated row's position within that list —
-/// together, exactly `PlayerController::play_from_view`'s parameters.
-pub type OnActivate = Box<dyn Fn(&Track, Vec<i64>, usize)>;
-
-/// Callback invoked at the end of every `reload()` — see the `Shared::
-/// on_reload` doc comment for what each parameter carries and why
-/// `window.rs` needs all four.
-type OnReload = Box<dyn Fn(&ViewSource, usize, &str, &BrowseFilter)>;
-
-/// Context-menu "Play" action callback — see the `Shared::on_play_selected`
-/// doc comment.
-type OnPlaySelected = Rc<dyn Fn(Vec<i64>, usize)>;
-/// Context-menu "Add to queue" action callback — see the `Shared::on_queue_
-/// selected` doc comment.
-type OnQueueSelected = Rc<dyn Fn(Vec<i64>)>;
-type OnQueueActivate = Rc<dyn Fn(usize)>;
-type OnQueueRemove = Rc<dyn Fn(&[usize]) -> usize>;
-/// Queue drag-reorder callback — see the `Shared::on_queue_reorder` doc
-/// comment. Returns whether the move actually happened (`false` for a
-/// degraded no-op, e.g. no player wired — see `Shared::on_queue_reorder`'s
-/// doc comment), which `ui::track_list_dnd`'s drop handler propagates as its
-/// own result rather than reporting success just because a callback was
-/// present (Stage 3 Task 6 review finding #3).
-type OnQueueReorder = Rc<dyn Fn(usize, usize) -> bool>;
-/// Sidebar drag-and-drop "add to playlist" callback — see the `Shared::on_
-/// sidebar_playlist_drop` doc comment.
-type OnSidebarPlaylistDrop = Rc<dyn Fn(i64, &str, &[i64]) -> bool>;
-/// "Remove from library" callback — see the `Shared::on_library_mutated` doc
-/// comment. Takes the ids actually deleted (Stage-3 close-out).
-type OnLibraryMutated = Rc<dyn Fn(&[i64])>;
-/// Successful tag-edit callback. Paths let the player invalidate only the
-/// currently displayed cover while the window refreshes sidebar metadata.
-type OnTagsMutated = Rc<dyn Fn(&[PathBuf])>;
-type OnSelectionChanged = Rc<dyn Fn(crate::ui::info_panel_state::PanelContext)>;
 
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
@@ -163,6 +125,24 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
+    /// One-shot marker armed by `activate_track` with the id the user just
+    /// started from the table (double-click/Enter/queue activation), telling
+    /// the next now-playing follow (`current_track_selection::
+    /// select_current_track`) to select the row but skip the viewport
+    /// centering — the row is already on screen under the pointer, so a
+    /// center would visibly yank the table. Consumed (`take`) on every
+    /// follow regardless of id so a stale marker from an activation that
+    /// never reached playback can't suppress a later auto-advance scroll.
+    /// A `Cell`: `Copy` payload, single-threaded UI access, same rationale
+    /// as `playing_track_id`.
+    pub(in crate::ui) suppress_follow_scroll: Cell<Option<i64>>,
+    /// NAV-5: per-source scroll/selection memory for this session. Written
+    /// by `view_state_memory::remember_on_leave` when a source switch leaves
+    /// a view, read by `view_state_memory::restore_on_attach` after the
+    /// switched-to source reloaded. Never persisted (NAV-5 precision: view
+    /// state must not survive an app restart).
+    pub(in crate::ui) view_state_memory:
+        RefCell<std::collections::HashMap<ViewSource, super::view_state_memory::SavedViewState>>,
     /// The same UI-owned connection `TrackList::new` was given, kept here
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
@@ -197,7 +177,12 @@ pub(in crate::ui) struct Shared {
     /// seam: the closure itself only holds whatever `window::build` gives
     /// it (typically a clone of `Option<Rc<PlayerController>>`), so there's
     /// no ownership cycle back to `TrackList` to worry about.
-    pub(in crate::ui) queue_ids_provider: Box<dyn Fn() -> Vec<i64>>,
+    pub(in crate::ui) queue_ids_provider: Box<dyn Fn() -> super::queue_sections::QueueViewModel>,
+    /// The Queue source's current section layout (QUE-1) — written by
+    /// `reload` from the provider's `QueueViewModel`, read by the header
+    /// factory (titles) and the QUE-3 interaction remapping. Empty for
+    /// every other source.
+    pub(in crate::ui) queue_sections: RefCell<Vec<super::queue_sections::QueueSection>>,
     /// Shared by `wire_activate` (user activation) and the smoke-activate
     /// hook so both take the identical code path.
     pub(in crate::ui) on_activate: OnActivate,
@@ -241,6 +226,9 @@ pub(in crate::ui) struct Shared {
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`. Same seam shape as `on_play_selected`.
     pub(in crate::ui) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
+    /// but the ids jump the manual line instead of appending to it.
+    pub(in crate::ui) on_play_next_selected: RefCell<Option<OnQueueSelected>>,
     pub(in crate::ui) on_queue_activate: RefCell<Option<OnQueueActivate>>,
     pub(in crate::ui) on_queue_remove: RefCell<Option<OnQueueRemove>>,
     /// Invoked after any context-menu action that mutates a playlist's
@@ -338,7 +326,7 @@ impl TrackList {
         conn: Rc<RefCell<Connection>>,
         on_activate: OnActivate,
         on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
-        queue_ids_provider: impl Fn() -> Vec<i64> + 'static,
+        queue_ids_provider: impl Fn() -> super::queue_sections::QueueViewModel + 'static,
         cover_download: CoverDownloadRuntime,
     ) -> Self {
         super::track_list_builder::build(
@@ -429,22 +417,46 @@ impl TrackList {
     /// see the `Shared::on_play_selected` doc comment. `window.rs` wires
     /// this to `PlayerController::play_from_view` once the controller
     /// exists.
-    pub fn set_on_play_selected(&self, callback: impl Fn(Vec<i64>, usize) + 'static) {
+    pub fn set_on_play_selected(&self, callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static) {
         *self.shared.on_play_selected.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Injects the context menu's "Add to queue" action callback — see the
     /// `Shared::on_queue_selected` doc comment. `window.rs` wires this to
     /// `PlayerController::append_to_queue`.
+    /// The source the table currently shows — the dedup baseline NAV-9's
+    /// jump hands to `Sidebar::sync_current_source` before navigating.
+    pub fn current_source(&self) -> ViewSource {
+        self.shared.source.borrow().clone()
+    }
+
+    /// Drops the NAV-5 remembered scroll/selection for `source`. NAV-9's
+    /// jump calls this before navigating: an explicit "show me the playing
+    /// track" supersedes the stale remembered viewport — without this, the
+    /// deferred NAV-5 scroll restore would clobber the jump's centering.
+    pub fn forget_view_state(&self, source: &ViewSource) {
+        self.shared.view_state_memory.borrow_mut().remove(source);
+    }
+
+    pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
+        *self.shared.on_play_next_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub fn set_on_queue_activate(&self, callback: impl Fn(usize) + 'static) {
+    pub fn set_on_queue_activate(
+        &self,
+        callback: impl Fn(super::queue_row_mapping::QueueRow) + 'static,
+    ) {
         *self.shared.on_queue_activate.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub fn set_on_queue_remove(&self, callback: impl Fn(&[usize]) -> usize + 'static) {
+    pub fn set_on_queue_remove(
+        &self,
+        callback: impl Fn(&[super::queue_row_mapping::QueueRow]) -> usize + 'static,
+    ) {
         *self.shared.on_queue_remove.borrow_mut() = Some(Rc::new(callback));
     }
 
@@ -458,7 +470,10 @@ impl TrackList {
     /// Injects the queue drag-reorder callback (Stage 3 Task 6) — see the
     /// `Shared::on_queue_reorder` doc comment. `window.rs` wires this to
     /// `PlayerController::move_queue_item`.
-    pub fn set_on_queue_reorder(&self, callback: impl Fn(usize, usize) -> bool + 'static) {
+    pub fn set_on_queue_reorder(
+        &self,
+        callback: impl Fn(super::queue_row_mapping::QueueReorderOp) -> bool + 'static,
+    ) {
         *self.shared.on_queue_reorder.borrow_mut() = Some(Rc::new(callback));
     }
 

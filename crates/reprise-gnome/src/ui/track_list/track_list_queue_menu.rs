@@ -68,6 +68,24 @@ pub(in crate::ui) fn add_selected(shared: &Rc<Shared>, ids: &[i64]) {
     }
 }
 
+/// Context-menu "Play next" (QUE-3): prepends the selection to the manual
+/// line via `on_play_next_selected`. Same toast as "Add to queue" — both
+/// land in the queue, only the position differs.
+pub(in crate::ui) fn play_next_selected(shared: &Rc<Shared>, ids: &[i64]) {
+    let Some(ids) = track_actions::queue_selected_ids(ids) else {
+        return;
+    };
+    let count = ids.len();
+    let callback = shared.on_play_next_selected.borrow().clone();
+    match callback {
+        Some(callback) => {
+            callback(ids);
+            show_toast(shared, &strings::tracks_added_to_queue_toast(count));
+        }
+        None => tracing::warn!("play-next fired without a callback"),
+    }
+}
+
 pub(in crate::ui) fn play_selected_if_queue(shared: &Rc<Shared>) -> bool {
     if !matches!(*shared.source.borrow(), ViewSource::Queue) {
         return false;
@@ -75,9 +93,20 @@ pub(in crate::ui) fn play_selected_if_queue(shared: &Rc<Shared>) -> bool {
     let Some(position) = current_selection_positions(shared).first().copied() else {
         return true;
     };
+    let row = {
+        let sections = shared.queue_sections.borrow();
+        crate::ui::track_list::queue_row_mapping::classify(position, &sections)
+    };
+    let Some(row) = row else {
+        tracing::warn!(
+            position,
+            "queue play action outside every section; ignoring"
+        );
+        return true;
+    };
     let callback = shared.on_queue_activate.borrow().clone();
     match callback {
-        Some(callback) => callback(position as usize),
+        Some(callback) => callback(row),
         None => tracing::warn!("queue play action fired without an activation callback"),
     }
     true
@@ -88,12 +117,17 @@ pub(in crate::ui) fn remove_selected(shared: &Rc<Shared>) {
         tracing::warn!("remove-from-queue fired outside the Queue source");
         return;
     }
-    let positions: Vec<_> = current_selection_positions(shared)
-        .into_iter()
-        .map(|position| position as usize)
-        .collect();
+    let rows: Vec<_> = {
+        let sections = shared.queue_sections.borrow();
+        current_selection_positions(shared)
+            .into_iter()
+            .filter_map(|position| {
+                crate::ui::track_list::queue_row_mapping::classify(position, &sections)
+            })
+            .collect()
+    };
     let callback = shared.on_queue_remove.borrow().clone();
-    let removed = callback.map_or(0, |callback| callback(&positions));
+    let removed = callback.map_or(0, |callback| callback(&rows));
     if removed == 0 {
         return;
     }

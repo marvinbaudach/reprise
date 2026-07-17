@@ -478,6 +478,17 @@ pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
+pub const QUEUE_SECTION_NOW_PLAYING: &str = N_!("Now Playing");
+pub const JUMP_TO_NOW_PLAYING: &str = N_!("Jump to now playing");
+pub const NAVIGATE_BACK: &str = N_!("Back to previous view");
+pub const CONTEXT_MENU_PLAY_NEXT: &str = N_!("Play next");
+pub const QUEUE_CLEAR_PLAY_NEXT: &str = N_!("Clear");
+pub const QUEUE_SECTION_PLAY_NEXT: &str = N_!("Play Next");
+/// `{}` is the playback origin's display label (playlist/album/artist name
+/// or the localized "Music").
+pub const QUEUE_SECTION_UP_NEXT_FROM: &str = N_!("Up Next · from {}");
+pub const EMPTY_QUEUE_TITLE: &str = N_!("Nothing queued");
+pub const EMPTY_QUEUE_DESCRIPTION: &str = N_!("Play something");
 pub const SIDEBAR_NEW_PLAYLIST: &str = N_!("New playlist");
 pub const SIDEBAR_IMPORT_ERRORS: &str = N_!("Import errors");
 pub const SIDEBAR_MISSING_FILES: &str = N_!("Missing files");

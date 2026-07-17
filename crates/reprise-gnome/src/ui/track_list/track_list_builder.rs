@@ -14,9 +14,9 @@ use super::cover_download_worker::CoverDownloadRuntime;
 use super::cover_loader::CoverLoader;
 use super::import_errors_view::ImportErrorsView;
 use super::track_list_activation::wire_activate;
-use super::track_list_columns::build_status_page;
 use super::track_list_context_menu;
 use super::track_list_dnd_smoke;
+use super::track_list_empty_state::build_status_page;
 use super::track_list_model::TrackListModel;
 use super::track_list_reload::reload;
 use super::track_list_selection;
@@ -33,7 +33,7 @@ pub(in crate::ui) fn build(
     conn: Rc<RefCell<Connection>>,
     on_activate: OnActivate,
     on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
-    queue_ids_provider: impl Fn() -> Vec<i64> + 'static,
+    queue_ids_provider: impl Fn() -> super::queue_sections::QueueViewModel + 'static,
     cover_download: CoverDownloadRuntime,
 ) -> TrackList {
     let model = TrackListModel::new(conn.clone());
@@ -72,6 +72,8 @@ pub(in crate::ui) fn build(
         selection: selection.clone(),
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
+        suppress_follow_scroll: Cell::new(None),
+        view_state_memory: RefCell::new(std::collections::HashMap::new()),
         conn,
         cover_loader: cover_loader.clone(),
         browse_bar: browse_bar.clone(),
@@ -83,12 +85,14 @@ pub(in crate::ui) fn build(
         filter: RefCell::new(String::new()),
         source: RefCell::new(ViewSource::default()),
         queue_ids_provider: Box::new(queue_ids_provider),
+        queue_sections: RefCell::new(Vec::new()),
         on_activate,
         on_reload: Box::new(on_reload),
         toast_overlay: gtk4::glib::WeakRef::new(),
         window: gtk4::glib::WeakRef::new(),
         on_play_selected: RefCell::new(None),
         on_queue_selected: RefCell::new(None),
+        on_play_next_selected: RefCell::new(None),
         on_queue_activate: RefCell::new(None),
         on_queue_remove: RefCell::new(None),
         on_playlist_mutated: RefCell::new(None),
@@ -150,7 +154,7 @@ pub(in crate::ui) fn build(
     arm_smoke_filter(&shared);
     arm_smoke_source(&shared);
     arm_smoke_sort_column(&column_view, &title_column, &artist_column);
-    track_list_context_menu::arm_smoke_menu_action(&shared);
+    super::track_list_menu_smoke::arm_smoke_menu_action(&shared);
     super::tag_edit_flow::arm_smoke(&shared);
     super::delete_tracks::arm_smoke(&shared);
     super::browse_bar::arm_smoke(&shared);

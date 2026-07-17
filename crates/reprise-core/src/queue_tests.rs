@@ -672,6 +672,78 @@ fn test_shuffle_visits_all_exactly_once_per_pass() {
 
 // Stage-3 close-out: `remove_ids` (hard-delete queue purge).
 
+// QUE-1: the Queue view's "Up Next" section — everything after the current
+// track in play order.
+
+#[test]
+fn remaining_after_current_returns_the_play_order_tail() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 30, 40], 1);
+    assert_eq!(q.remaining_after_current(), vec![30, 40]);
+    assert_eq!(q.remaining_len(), 2);
+}
+
+#[test]
+fn remaining_after_current_matches_shuffled_order() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![1, 2, 3, 4, 5, 6, 7, 8], 0);
+    q.set_shuffle(true);
+    let in_order = q.ids_in_order();
+    // Current stays in place on shuffle; the rest must equal the shuffled
+    // play order after it — exactly what auto-advance will play (QUE-2).
+    assert_eq!(q.remaining_after_current(), in_order[1..].to_vec());
+}
+
+#[test]
+fn remaining_after_current_is_empty_at_end_or_unseeded() {
+    let mut q = Queue::new();
+    assert_eq!(q.remaining_after_current(), Vec::<i64>::new());
+    assert_eq!(q.remaining_len(), 0);
+    q.set_tracks(vec![7, 8], 1);
+    assert_eq!(q.remaining_after_current(), Vec::<i64>::new());
+    assert_eq!(q.remaining_len(), 0);
+}
+
+// QUE-3: single-occurrence removal by order position + playhead jumps.
+
+#[test]
+fn remove_order_positions_removes_single_occurrences_in_play_order() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 10, 30], 0);
+    // Remove the SECOND occurrence of 10 (order position 2) only.
+    assert!(q.remove_order_positions(&[2]));
+    assert_eq!(q.ids_in_order(), vec![10, 20, 30]);
+    assert_eq!(q.current(), Some(10));
+}
+
+#[test]
+fn remove_order_positions_on_current_advances_forward() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 30], 1);
+    assert!(q.remove_order_positions(&[1]));
+    assert_eq!(q.current(), Some(30));
+    assert_eq!(q.ids_in_order(), vec![10, 30]);
+}
+
+#[test]
+fn remove_order_positions_ignores_out_of_range_and_reports_no_change() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10], 0);
+    assert!(!q.remove_order_positions(&[5]));
+    assert_eq!(q.ids_in_order(), vec![10]);
+}
+
+#[test]
+fn jump_to_order_position_moves_the_playhead_without_rebuilding() {
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 30, 40], 0);
+    assert_eq!(q.jump_to_order_position(2), Some(30));
+    assert_eq!(q.current(), Some(30));
+    // The context is untouched — advancing continues from the new spot.
+    assert_eq!(q.advance_auto(), Some(40));
+    assert_eq!(q.jump_to_order_position(9), None);
+}
+
 // --- UX rulebook tests (docs/ux-rules.md) ----------------------------------
 // Characterization tests for existing behavior: they are green from the first
 // run (the behavior already exists); the TDD red step is replaced by the
@@ -725,10 +797,12 @@ fn play_5a_deleted_tracks_leave_queue_silently() {
     );
 }
 
-// UX QUE-1 [geplant] — demo of the activation workflow: the queue branch
+// UX QUE-1 [geplant] — demo of the activation workflow. The three-section
+// queue itself shipped on main (c5200e1), but this core stub cannot prove
+// the sections; the flip needs a [gtk] test that can. Whoever writes it
 // removes the #[ignore] and flips QUE-1 to [aktiv] in the same commit.
 #[test]
-#[ignore = "UX QUE-1 [geplant] — three-section queue lands in the queue branch"]
+#[ignore = "UX QUE-1 [geplant] — needs a [gtk] section test; this core stub cannot prove the three sections"]
 fn que_1_queue_is_never_empty_while_playing() {
     let mut q = Queue::new();
     q.set_tracks(vec![7, 8, 9], 0);

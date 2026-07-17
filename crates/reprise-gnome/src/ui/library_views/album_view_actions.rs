@@ -7,6 +7,16 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::queries::AlbumSummary;
+use reprise_core::view_source::ViewSource;
+
+/// The `ViewSource` a container-play from this album card/menu belongs to —
+/// the playback origin (QUE-1 section label, NAV-9 jump target).
+fn album_source(album: &AlbumSummary) -> ViewSource {
+    ViewSource::Album {
+        album: album.album.clone(),
+        album_artist: album.album_artist.clone(),
+    }
+}
 use rusqlite::Connection;
 
 use crate::ui::album_card::{AlbumAction, AlbumCardShared};
@@ -34,7 +44,10 @@ impl AlbumViewActions {
         }
     }
 
-    pub(in crate::ui) fn set_on_play(&self, callback: impl Fn(Vec<i64>, usize) + 'static) {
+    pub(in crate::ui) fn set_on_play(
+        &self,
+        callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static,
+    ) {
         let conn = self.conn.clone();
         let callback = Rc::new(callback);
         let action: AlbumAction = Rc::new(move |album: &AlbumSummary| {
@@ -43,7 +56,7 @@ impl AlbumViewActions {
                 album_card_actions::album_track_ids(&conn, album)
             };
             if !ids.is_empty() {
-                callback(ids, 0);
+                callback(ids, 0, album_source(album));
             }
         });
         *self.card_shared.on_play.borrow_mut() = Some(action.clone());
@@ -66,7 +79,10 @@ impl AlbumViewActions {
         *self.menu_shared.on_queue.borrow_mut() = Some(action);
     }
 
-    pub(in crate::ui) fn set_on_shuffle(&self, callback: impl Fn(Vec<i64>, usize) + 'static) {
+    pub(in crate::ui) fn set_on_shuffle(
+        &self,
+        callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static,
+    ) {
         let conn = self.conn.clone();
         let callback = Rc::new(callback);
         let action: AlbumAction = Rc::new(move |album: &AlbumSummary| {
@@ -76,7 +92,7 @@ impl AlbumViewActions {
             };
             if !ids.is_empty() {
                 album_card_actions::shuffle_ids(&mut ids);
-                callback(ids, 0);
+                callback(ids, 0, album_source(album));
             }
         });
         *self.menu_shared.on_shuffle.borrow_mut() = Some(action);

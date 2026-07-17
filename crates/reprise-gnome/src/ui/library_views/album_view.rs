@@ -9,6 +9,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::queries::AlbumSummary;
+use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use crate::ui::album_card::{self, AlbumActivateSlot, AlbumCardShared, ArtistActivateSlot};
@@ -162,7 +163,10 @@ impl AlbumView {
     }
 
     /// Wires the play-album callback (queue replace + play).
-    pub(in crate::ui) fn set_on_play(&self, callback: impl Fn(Vec<i64>, usize) + 'static) {
+    pub(in crate::ui) fn set_on_play(
+        &self,
+        callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static,
+    ) {
         self.actions.set_on_play(callback);
     }
 
@@ -180,7 +184,10 @@ impl AlbumView {
     }
 
     /// Wires the shuffle-album callback (queue replace + shuffled play).
-    pub(in crate::ui) fn set_on_shuffle(&self, callback: impl Fn(Vec<i64>, usize) + 'static) {
+    pub(in crate::ui) fn set_on_shuffle(
+        &self,
+        callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static,
+    ) {
         self.actions.set_on_shuffle(callback);
     }
 

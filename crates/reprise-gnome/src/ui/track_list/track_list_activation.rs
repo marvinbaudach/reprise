@@ -30,16 +30,30 @@ pub(in crate::ui) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<S
 
 pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &Track) {
     tracing::info!(path = %track.path, "activate track");
+    // The user is starting playback from the table itself, so the row is
+    // already on screen — arm the one-shot marker that makes the follow-up
+    // now-playing selection skip the viewport centering (see the
+    // `Shared::suppress_follow_scroll` doc comment).
+    shared.suppress_follow_scroll.set(Some(track.id));
     if matches!(*shared.source.borrow(), ViewSource::Queue) {
+        let row = {
+            let sections = shared.queue_sections.borrow();
+            crate::ui::track_list::queue_row_mapping::classify(position, &sections)
+        };
+        let Some(row) = row else {
+            tracing::warn!(position, "queue activation outside every section; ignoring");
+            return;
+        };
         let callback = shared.on_queue_activate.borrow().clone();
         match callback {
-            Some(callback) => callback(position as usize),
+            Some(callback) => callback(row),
             None => tracing::warn!("queue activation callback is not wired"),
         }
         return;
     }
     let (ids, start_index) = queue_ids_for_activation(shared, position, track.id);
-    (shared.on_activate)(track, ids, start_index);
+    let source = shared.source.borrow().clone();
+    (shared.on_activate)(track, ids, start_index, source);
 }
 
 /// Builds the `(ids, start_index)` pair `OnActivate` carries: every track id
@@ -121,6 +135,6 @@ pub(in crate::ui) fn queue_ids_for_activation(
 /// `queries` layer when `source` is `ViewSource::Queue`. Every call site
 /// already checks `source` first, so this is only ever invoked when a fresh
 /// snapshot is actually needed.
-pub(in crate::ui) fn current_queue_ids(shared: &Rc<Shared>) -> Vec<i64> {
-    (shared.queue_ids_provider)()
+pub(in crate::ui) fn current_queue_ids(shared: &Shared) -> Vec<i64> {
+    (shared.queue_ids_provider)().ids
 }
