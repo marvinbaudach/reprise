@@ -38,6 +38,10 @@ pub use artist::*;
 mod news;
 pub use news::*;
 
+#[path = "strings_filter.rs"]
+mod filter;
+pub use filter::*;
+
 #[path = "strings_app_shell.rs"]
 mod app_shell;
 pub use app_shell::*;
@@ -365,18 +369,6 @@ pub const STATUS_TRACK_PLURAL: &str = N_!("tracks");
 /// Middle-dot separator between the track count and total duration, per the
 /// design mockup (e.g. "1,704 tracks · 4 days, 6 hours and 28 minutes").
 pub const STATUS_SEPARATOR: &str = N_!(" · ");
-
-/// "{filtered} of {total}" prefix shown ahead of the track word while a
-/// search filter is active (e.g. "42 of 1,704 tracks · …" instead of
-/// "1,704 tracks · …") — see `status_bar::format_status_text`. `filtered`/
-/// `total` are already formatted (en-US thousands, via `format::
-/// format_thousands`); this function owns only the "of" wording.
-pub fn status_filtered_of_total(filtered: &str, total: &str) -> String {
-    formatted(
-        N_!("{filtered} of {total}"),
-        &[("filtered", filtered), ("total", total)],
-    )
-}
 
 // Track list column headers (src/ui/track_list.rs).
 pub const COLUMN_TITLE: &str = N_!("Title");

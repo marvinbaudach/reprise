@@ -67,8 +67,12 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   +3 % Fläche), Klick handelt. Kein Hover-to-open.
 - **P-4** [geplant] [manuell] — Nichts verschiebt sich ungefragt:
   Layout-Shifts nur als direkte Folge einer Nutzeraktion oder eines von ihm
-  gestarteten Prozesses (Sync-Removals kollabieren). Einblendungen
-  (Gerätekarte, ISSUES) faden ohne Reflow benachbarter Inhalte.
+  gestarteten Prozesses (Sync-Removals kollabieren, Force-show der
+  Filter-Zeile bei eigener Sucheingabe, FIL-2). Einblendungen (Gerätekarte,
+  ISSUES, Chip-Inhalte der Filter-Zeile) faden ohne Reflow benachbarter
+  Inhalte; für dynamisch erscheinende Elemente (Altwert-Zeile im Tag-Editor)
+  ist Platz reserviert. Hintergrundereignisse (Scan, Watcher, Mount)
+  verschieben nie sichtbare Inhalte unter dem Cursor.
 - **P-5** [geplant] [core] — Die App löscht nie Dateien. „Remove" heißt
   immer: Library-Eintrag. Dialoge benennen Kaskaden (Ratings, Hörhistorie)
   beim Namen.
@@ -342,6 +346,64 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **QUE-5** [geplant] [core] — Sidebar-Zähler „Queue · N": N = Play Next +
   verbleibende Up-Next-Tracks (nicht Gesamt-Snapshot). Der Zähler ist eine
   Bestandsanzeige, kein Badge (P-1: keine „Bitte").
+
+## K. Filter- & Such-Sichtbarkeit
+
+- **FIL-1a** [aktiv] [gtk] — Eine Wahrheit über Einschränkungen
+  (Track-Listen): Alles, was die sichtbare Track-Liste einschränkt, steht als
+  Chip in der Filter-Zeile direkt über der Liste — auch die Headerbar-Suche
+  (Chip ⌕ „falling“ in any field, eigenes ×-Klickziel ≥ 20 px; das × entfernt
+  nur die Suche, Esc gemäß NAV-6). Gilt in jeder Track-Quelle (Library,
+  Playlist, Smart, Queue, Missing). Die Suche ist global über Track-Quellen
+  und reist beim Ortswechsel mit; ihr Chip erscheint überall dort, wo sie
+  tatsächlich einschränkt — in Quellen ohne Suchwirkung (Import-Errors:
+  eigene Panel-Rows) erscheint kein Chip. Facetten-Chips und „+ Add filter"
+  bleiben Library-only. Ein unsichtbarer aktiver Filter ist ein Bug.
+  Per-Ort-Scoping der Suche wäre eine eigene künftige Regel, nicht Teil
+  dieser.
+- **FIL-1b** [geplant] [gtk] — Albums-/Artists-Modus: Die globale Suche
+  wirkt dort bereits (Grid-Filterung); dieselbe Chip-Zeile inkl. Zählung und
+  „Clear all" folgt dort nach dem Muster von FIL-1a/FIL-2. Bis dahin ist die
+  Lücke hier benannt statt still gebrochen.
+- **FIL-2** [aktiv] [gtk] — Zählung ist Zustand: Die Filter-Zeile ist
+  permanenter Listen-Header jeder Track-Quelle — sie erscheint und
+  verschwindet nie (kein Layout-Shift by design, P-4). Idle maximal leise:
+  nur die neutrale Gesamtzahl rechts (dim, caption), in der Library
+  zusätzlich das „+ Add filter"-Pill; kein „FILTER"-Label. Bei aktiver
+  Einschränkung: „FILTER"-Label + Chips + akzentuierte Trefferzahl
+  („15 of 1,664 tracks", Trefferzahl Akzentfarbe bold) + „Clear all ×"
+  (räumt Suche und alle Filter in einem Klick). Die Ausblende-Preference der
+  Leiste regelt nur den Idle-Zustand — bei aktiver Einschränkung erscheint
+  die Zeile immer (Force-show; der Shift ist direkte Folge der eigenen
+  Eingabe, P-4-konform). Das Status-Overlay unten rechts zeigt immer die
+  neutrale Bibliotheks-Statistik; seine „X of Y"-Variante entfällt — die
+  Filter-Zeile spricht über die Sicht, das Overlay über die Bibliothek.
+  Präzisierung: Außerhalb der Library erscheint das Overlay gar nicht — die
+  Filter-Zeile ist dort die einzige Zählung (beschlossen 2026-07-17).
+- **FIL-3** [aktiv] [gtk] — Ende-der-Treffer-Zeile: Unter der letzten Row
+  einer eingeschränkten Liste (≥ 1 Treffer) steht zentriert „End of results —
+  1,649 tracks hidden by search “falling”" + Pill „Show all 1,664 tracks"
+  (= Clear all). Sie gehört visuell zum Listenende: direkt unter der letzten
+  Row, wenn die Liste kürzer als der Viewport ist; bei längeren Listen
+  erscheint sie erst, wenn das Listenende in den Viewport scrollt; sie
+  schwebt nie über Rows (nicht sticky). Umsetzung als positioniertes Overlay
+  — die Virtualisierung des ColumnView bleibt unangetastet; Input-durchlässig
+  außer der Pill; Position wird bei Scroll-, Model-/Filter- und
+  Resize-Änderungen neu berechnet.
+- **FIL-4** [aktiv] [gtk] — Suchfeld trägt seinen Zustand: Sobald das Feld
+  Text enthält, bekommt es Akzent-Border + getönten Hintergrund — auch
+  unfokussiert.
+- **FIL-5** [aktiv] [gtk] — Treffer-Highlighting: Der Suchbegriff wird in
+  allen durchsuchten, sichtbaren Textspalten hervorgehoben (Title, Artist,
+  Album, Genre; Akzent bold, Pango-escaped). Ist die einzige matchende
+  Spalte ausgeblendet, bleibt die Row unmarkiert — akzeptierte Restlücke.
+  Chip-Wortlaut bleibt „in any field".
+- **FIL-6** [aktiv] [gtk] — 0-Treffer-Leerzustand: StatusPage mit genau
+  einem Button „Show all 1,664 tracks" (= Clear all) — FB-5-konform; der
+  eine Schritt führt garantiert zu Inhalt, nie in einen zweiten Leerzustand.
+  „Clear all ×" (Filter-Zeile), „Show all N tracks" (Ende-Zeile,
+  Leerzustand) feuern dieselbe Action — zwei kontextgerechte Namen, ein
+  Verhalten.
 
 ---
 

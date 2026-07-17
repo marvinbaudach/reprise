@@ -158,7 +158,7 @@ pub(super) fn build_track_query_base_browsed(
     )
 }
 
-/// Builds the parameterized SELECT for a library window ([`PRESENT`]).
+/// Builds the parameterized SELECT for a library window (`PRESENT`).
 /// See `build_track_query_base`'s doc comment for the whitelist guarantee.
 pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     build_track_query_base(0, sort_field, sort_dir, has_filter)
@@ -196,7 +196,7 @@ pub(super) fn build_track_ids_query_base(
 }
 
 /// Builds the parameterized `SELECT id` for the library queue seam
-/// ([`PRESENT`]). See `build_track_ids_query_base`'s doc comment.
+/// (`PRESENT`). See `build_track_ids_query_base`'s doc comment.
 pub fn build_track_ids_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     build_track_ids_query_base(0, sort_field, sort_dir, has_filter)
 }

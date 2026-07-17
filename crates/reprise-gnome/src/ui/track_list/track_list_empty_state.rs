@@ -6,6 +6,7 @@
 
 use std::rc::Rc;
 
+use gtk4::prelude::*;
 use libadwaita as adw;
 
 use crate::ui::strings;
@@ -79,6 +80,15 @@ pub(in crate::ui) fn empty_state_for(
     }
 }
 
+/// FIL-6: label for the single next step, or `None` when no count is known.
+pub(in crate::ui) fn show_all_action_label(counts: Option<(usize, usize)>) -> Option<String> {
+    counts.and_then(|(_, total)| {
+        (total > 0).then(|| {
+            strings::show_all_tracks_label(&reprise_core::format::format_thousands(total as i64))
+        })
+    })
+}
+
 /// Builds the shared empty-state placeholder, initially carrying the
 /// empty-library copy (the state `TrackList::new`'s first `reload()` will
 /// normally confirm, since there's no library yet on first launch).
@@ -114,6 +124,8 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             shared.stack.set_visible_child_name(page);
         }
         EmptyState::EmptyLibrary => {
+            let scan_widget = shared.empty_scan_widget.borrow().clone();
+            shared.empty_page.set_child(scan_widget.as_ref());
             shared.empty_page.set_icon_name(Some(ICON_EMPTY_LIBRARY));
             shared
                 .empty_page
@@ -124,6 +136,13 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
         EmptyState::NoResults => {
+            match show_all_action_label(shared.browse_bar.result_count()) {
+                Some(label) => {
+                    shared.show_all_button.set_label(&label);
+                    shared.empty_page.set_child(Some(&shared.show_all_button));
+                }
+                None => shared.empty_page.set_child(gtk4::Widget::NONE),
+            }
             shared.empty_page.set_icon_name(Some(ICON_NO_RESULTS));
             shared
                 .empty_page
@@ -134,6 +153,7 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
         EmptyState::EmptyQueue => {
+            shared.empty_page.set_child(gtk4::Widget::NONE);
             shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
             shared
                 .empty_page
@@ -144,6 +164,7 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
             shared.stack.set_visible_child_name(STACK_PAGE_EMPTY);
         }
         EmptyState::NothingHere => {
+            shared.empty_page.set_child(gtk4::Widget::NONE);
             shared.empty_page.set_icon_name(Some(ICON_NOTHING_HERE));
             shared
                 .empty_page
@@ -164,6 +185,35 @@ pub(in crate::ui) fn apply_empty_state(shared: &Rc<Shared>, state: EmptyState) {
 #[cfg(test)]
 mod empty_state_tests {
     use super::*;
+
+    // UX FIL-6: zero hits under restriction is the NoResults state in every
+    // source — the state that carries the single "Show all" action.
+    #[test]
+    fn fil_6_zero_hits_with_restriction_selects_no_results_state() {
+        assert_eq!(
+            empty_state_for(0, true, &ViewSource::Library),
+            EmptyState::NoResults
+        );
+        assert_eq!(
+            empty_state_for(0, true, &ViewSource::Playlist(7)),
+            EmptyState::NoResults
+        );
+        assert_eq!(
+            empty_state_for(0, true, &ViewSource::Queue),
+            EmptyState::NoResults
+        );
+    }
+
+    // UX FIL-6: the action names the outcome with the full count.
+    #[test]
+    fn fil_6_show_all_action_names_the_full_count() {
+        assert_eq!(
+            show_all_action_label(Some((0, 1664))),
+            Some("Show all 1,664 tracks".to_string())
+        );
+        assert_eq!(show_all_action_label(Some((0, 0))), None);
+        assert_eq!(show_all_action_label(None), None);
+    }
 
     #[test]
     fn empty_library_when_no_rows_and_no_filter_for_library_source() {

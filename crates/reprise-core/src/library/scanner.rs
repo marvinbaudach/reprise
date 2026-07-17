@@ -62,7 +62,7 @@ pub struct ScanReport {
 /// so a scan can distinguish "I walked `root` and reconciled it" from "I
 /// have no evidence about `root` at all" without silently reporting the
 /// latter as a suspiciously-empty former. See the module's `## Root guard`
-/// doc section on [`scan_folder_inner`] for exactly when [`RootUnavailable`]
+/// doc section on `scan_folder_inner` for exactly when [`RootUnavailable`]
 /// fires and why marking nothing beats marking every track "unmounted".
 ///
 /// [`RootUnavailable`]: ScanOutcome::RootUnavailable
@@ -73,7 +73,7 @@ pub enum ScanOutcome {
     /// the walk's own upserts.
     Completed(ScanReport),
     /// Nothing was written — not even an "unmounted" mark — because the
-    /// root guard tripped: see [`scan_folder_inner`]'s doc comment.
+    /// root guard tripped: see `scan_folder_inner`'s doc comment.
     RootUnavailable { root: std::path::PathBuf },
 }
 

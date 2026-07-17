@@ -258,3 +258,19 @@ Task 1.6: complete (commit 0772f48, review clean) — mount_point recorded on sc
   Minor findings (final-review triage): restore-branch test asserts only the prefix half of the mount_point invariant, not dev equality; cache-hit behavior untested (design-verified only).
   WARNING for 1.7/1.8/1.9: scanner.rs is at 796/800 lines — the next task touching it MUST extract a cohesive sibling module first (precedent: scanner_vanish.rs, scanner_mount.rs).
 Task 1.7: complete (TDD, 7 new tests, gates green) — new library/import_errors.rs: ImportErrorKind taxonomy classified at the source (lofty::error::ErrorKind, walkdir::Error::io_error/kind — never Display text), episode upsert (record_error/clear_error), and the dismiss-skip fast path (check_dismissed, stat-only, reactivates a changed file into a fresh episode). ScanError::Tags(String) → ScanError::Import{kind,detail}. scanner.rs's directory-traversal and per-file error branches now call into import_errors instead of inline DELETE+INSERT SQL. Split scanner.rs's own test growth into scanner_import_errors_tests.rs (precedent followed) to stay under 800 lines (799 final). Full report: task-1.7-report.md.
+
+## 2026-07-17 — FIL-Filter-Sichtbarkeit, Tasks 1–10
+
+Task FIL-1: complete (commit 6fad03d, base 8a61842, Sichtbarkeitsgesetz für die permanente Filterzeile test-first ergänzt).
+Task FIL-2: complete (commits 463b8ce, 2f39e8f, base 6fad03d, Browse-Chooser mechanisch extrahiert und Filterzeile mit Such-Chip, Clear-all und ruhigem Idle-Zustand aufgebaut).
+Task FIL-3: complete (commit 1030f4a, base 2f39e8f, gefilterte Trefferzahlen mit quellspezifischen Gesamtzahlen gepaart).
+Task FIL-4: complete (commit 3d883c9, base 1030f4a, atomarer Clear-all-Pfad für Suche und Facetten; FIL-1a aktiv).
+Task FIL-5: complete (commit 72c2144, base 3d883c9, Status-Overlay auf neutrale Bibliotheksstatistik vereinheitlicht).
+Task FIL-6: complete (commit 2904f99, base 72c2144, Suchfeld-Akzent bei nichtleerem getrimmtem Text; FIL-4 aktiv).
+Task FIL-7: complete (commit 3ae270b, base 2904f99, Suchtreffer in Titel, Künstler, Album und Genre markiert; FIL-5 aktiv).
+Task FIL-8: complete (commit 41f56cb, base 3ae270b, Ende-der-Ergebnisse-Hinweis mit Show-all-Aktion; FIL-3 aktiv).
+Task FIL-9: complete (commit 96a7c0a, base 41f56cb, Nulltreffer-Zustand mit genau einem Show-all-Schritt; FIL-6 aktiv).
+Task FIL-10: complete (commit 78d32be, base d485036, FIL-2 nach vollständiger Abdeckung auf aktiv gesetzt).
+
+Pflichtprüfungen: Workspace 652 passed / 1 ignored (Core), 515 passed / 87 ignored (GNOME), 55 passed (Linux-Plattform); 87/87 isolierte Display-Tests grün; UX-Traceability 9 aktive Regeln; Architektur- und Audit-Gates grün, einzig erlaubte Audit-Warnung RUSTSEC-2024-0436 (`paste`). Die Xvfb-Abnahme nutzte ausschließlich ein temporäres Ein-Track-Profil und bestätigte Bibliothek, Playlist und Nulltreffer-Zustand sichtbar. Commit d485036 repariert sieben durch den Rebase auf `origin/main` offengelegte, veraltete oder zeitabhängige Display-Assertions und extrahiert den Toast-Helfer für das 600-Zeilen-Architekturlimit. FIL-1b bleibt bewusst `[geplant]`.
+Merge-Readiness-Nachtrag: commit 388245e korrigiert zehn ungültige öffentliche Rustdoc-Links auf private `main`-Symbole; Rustdoc und Core-Purity-Proof sind danach grün.

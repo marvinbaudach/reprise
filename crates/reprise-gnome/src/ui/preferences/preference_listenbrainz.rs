@@ -676,7 +676,8 @@ mod tests {
         // Disconnect button's parent row is hidden when not connected
         assert!(surface.disconnect.parent().is_some_and(|p| !p.is_visible()));
 
-        // Token gates Connect
+        // Enabling the module exposes the body; the token then gates Connect.
+        surface.expander.set_enable_expansion(true);
         surface.token.set_text("token");
         assert!(surface.connect.is_sensitive());
         surface.token.set_text("  ");
