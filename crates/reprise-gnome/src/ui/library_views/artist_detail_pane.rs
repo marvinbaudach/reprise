@@ -18,6 +18,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use rusqlite::Connection;
 
+use reprise_core::artist_portrait::PortraitOutcome;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::artist_detail::{artist_header, artist_top_tracks};
 use reprise_core::queries::{query_artist_detail_albums, ArtistAlbum};
@@ -26,6 +27,7 @@ use crate::ui::artist_detail_hero::{self, Hero};
 use crate::ui::artist_detail_row::{
     build_album_card, build_albums_section, build_top_section, build_top_track_row, TopTrackRow,
 };
+use crate::ui::artist_portrait_worker::{ArtistPortraitRequest, ArtistPortraitRuntime};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 use crate::ui::style::cover_accent::Rgb;
@@ -62,6 +64,7 @@ pub(in crate::ui) struct HeroCallbacks {
 struct Inner {
     conn: Rc<RefCell<Connection>>,
     cover_loader: Rc<CoverLoader>,
+    portraits: Rc<ArtistPortraitRuntime>,
     generation: Rc<Cell<u64>>,
     current_artist: Rc<RefCell<String>>,
     on_play_all: ArtistCallback,
@@ -88,7 +91,11 @@ pub(in crate::ui) struct ArtistDetailPane {
 }
 
 impl ArtistDetailPane {
-    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>, cover_loader: Rc<CoverLoader>) -> Self {
+    pub(in crate::ui) fn new(
+        conn: Rc<RefCell<Connection>>,
+        cover_loader: Rc<CoverLoader>,
+        portraits: Rc<ArtistPortraitRuntime>,
+    ) -> Self {
         let current_artist = Rc::new(RefCell::new(String::new()));
         let on_play_all: ArtistCallback = Rc::new(RefCell::new(None));
         let on_shuffle: ArtistCallback = Rc::new(RefCell::new(None));
@@ -125,6 +132,7 @@ impl ArtistDetailPane {
         let inner = Rc::new(Inner {
             conn,
             cover_loader,
+            portraits,
             generation: Rc::new(Cell::new(0)),
             current_artist,
             on_play_all,
@@ -147,6 +155,7 @@ impl ArtistDetailPane {
 
         wire_albums_show_all(&inner);
         wire_top_show_all(&inner);
+        subscribe_portrait_enabled(&inner.portraits, &inner);
 
         Self { root, inner }
     }
@@ -206,6 +215,7 @@ impl ArtistDetailPane {
         };
 
         self.inner.hero.update(artist, &header);
+        request_portrait(&self.inner, artist.to_string());
         rebuild_albums(&self.inner, artist, albums, token);
         rebuild_top_tracks(&self.inner, &top_tracks, header.track_count, token);
     }
@@ -227,6 +237,53 @@ impl ArtistDetailPane {
     fn top_track_row_count(&self) -> usize {
         self.inner.top_rows.borrow().len()
     }
+}
+
+fn request_portrait(inner: &Rc<Inner>, artist: String) {
+    if !inner.portraits.enabled.get() || artist.trim().is_empty() {
+        return;
+    }
+    let generation = inner.generation.get();
+    let (sender, receiver) = async_channel::bounded(1);
+    inner.portraits.request(ArtistPortraitRequest {
+        generation,
+        artist,
+        force: false,
+        response: sender,
+    });
+    let inner = inner.clone();
+    glib::spawn_future_local(async move {
+        let Ok(response) = receiver.recv().await else {
+            return;
+        };
+        if response.generation != inner.generation.get() || !inner.portraits.enabled.get() {
+            return;
+        }
+        if let Ok(PortraitOutcome::Found(path)) = response.result {
+            if let Ok(texture) = gtk4::gdk::Texture::from_filename(&path) {
+                inner.hero.set_portrait(&texture);
+            }
+        }
+    });
+}
+
+fn subscribe_portrait_enabled(portraits: &Rc<ArtistPortraitRuntime>, inner: &Rc<Inner>) {
+    let alive = Rc::downgrade(inner);
+    let target = alive.clone();
+    portraits.subscribe_enabled(
+        move || alive.upgrade().is_some(),
+        move |enabled| {
+            let Some(inner) = target.upgrade() else {
+                return;
+            };
+            if !enabled {
+                inner.hero.clear_portrait();
+                return;
+            }
+            let artist = inner.current_artist.borrow().clone();
+            request_portrait(&inner, artist);
+        },
+    );
 }
 
 /// Repopulates the albums FlowBox. Empty albums clear the glow and show the
@@ -428,7 +485,9 @@ mod tests {
         // 2026-07-15T00:00:00Z — a fixed reference "now" so the year window is
         // clock-independent.
         const NOW: i64 = 1_784_073_600;
-        let pane = ArtistDetailPane::new(conn, loader);
+        let portraits =
+            crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+        let pane = ArtistDetailPane::new(conn, loader, portraits);
         pane.show_artist("Solo", NOW);
 
         assert_eq!(pane.hero_name(), "Solo");

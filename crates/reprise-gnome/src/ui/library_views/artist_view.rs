@@ -16,6 +16,7 @@ use rusqlite::Connection;
 
 use crate::ui::artist_detail_pane::ArtistDetailPane;
 use crate::ui::artist_master::ArtistMaster;
+use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
@@ -36,9 +37,13 @@ pub(in crate::ui) struct ArtistView {
 }
 
 impl ArtistView {
-    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>, cover_loader: Rc<CoverLoader>) -> Self {
-        let master = ArtistMaster::new(conn.clone());
-        let detail = Rc::new(ArtistDetailPane::new(conn, cover_loader));
+    pub(in crate::ui) fn new(
+        conn: Rc<RefCell<Connection>>,
+        cover_loader: Rc<CoverLoader>,
+        portraits: Rc<ArtistPortraitRuntime>,
+    ) -> Self {
+        let master = ArtistMaster::new(conn.clone(), &portraits);
+        let detail = Rc::new(ArtistDetailPane::new(conn, cover_loader, portraits));
 
         // Master selection drives the detail pane. The GTK caller supplies the
         // reference "now" (core stays clock-free); a main-thread wall clock is
@@ -205,7 +210,9 @@ mod tests {
         let loader =
             crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
 
-        let view = ArtistView::new(conn, loader);
+        let portraits =
+            crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+        let view = ArtistView::new(conn, loader, portraits);
         assert_eq!(view.master_count(), 2);
 
         view.select_index_for_test(0);
@@ -230,7 +237,9 @@ mod tests {
         let loader =
             crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
 
-        let view = Rc::new(ArtistView::new(conn.clone(), loader));
+        let portraits =
+            crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+        let view = Rc::new(ArtistView::new(conn.clone(), loader, portraits));
         assert_eq!(view.master_count(), 0);
 
         // Grab the callback, then simulate a post-scan library change.

@@ -168,6 +168,8 @@ pub fn build(
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
+    let artist_portrait =
+        super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
@@ -340,6 +342,7 @@ pub fn build(
     let artist_view = Rc::new(super::artist_view::ArtistView::new(
         conn.clone(),
         track_list.shared_cover_loader(),
+        artist_portrait.clone(),
     ));
     let library_views = super::library_shell::build_views(
         &track_content,
@@ -414,6 +417,7 @@ pub fn build(
         &track_list,
         player.as_ref(),
         &artist_news,
+        &artist_portrait,
     );
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;
@@ -488,6 +492,7 @@ pub fn build(
         &listenbrainz,
         &lastfm,
         &artist_news,
+        &artist_portrait,
         &decorations,
         &device_sync,
     );

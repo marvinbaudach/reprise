@@ -9,9 +9,11 @@ use reprise_core::cover::ThumbnailSize;
 use rusqlite::Connection;
 
 use super::artist_news_worker::{ArtistNewsRequest, ArtistNewsResponse, ArtistNewsRuntime};
+use super::artist_portrait_worker::ArtistPortraitRuntime;
 use super::cover_loader::CoverLoader;
 use super::info_panel_empty_state;
 use super::info_panel_feedback::request_feedback;
+use super::info_panel_portrait::InfoPanelPortrait;
 use super::info_panel_state::{PanelContext, PanelState, RequestIntent};
 use super::information_column::InformationColumn;
 #[cfg(test)]
@@ -83,6 +85,7 @@ struct PanelWidgets {
     lyrics: Rc<LyricsView>,
     body: gtk4::Box,
     local: gtk4::Box,
+    portrait: gtk4::Picture,
     cover: gtk4::Image,
     title: gtk4::Label,
     artist: gtk4::Label,
@@ -125,6 +128,14 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
     local.set_margin_bottom(6);
     local.append(&cover);
     local.append(&metadata);
+    let portrait = gtk4::Picture::new();
+    portrait.set_content_fit(gtk4::ContentFit::Cover);
+    portrait.set_size_request(96, 96);
+    portrait.set_halign(gtk4::Align::Center);
+    portrait.set_overflow(gtk4::Overflow::Hidden);
+    portrait.add_css_class("artist-portrait-image");
+    portrait.set_visible(false);
+    body.append(&portrait);
     body.append(&local);
 
     let scrolled = gtk4::ScrolledWindow::builder()
@@ -187,6 +198,7 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
         lyrics,
         body,
         local,
+        portrait,
         cover,
         title,
         artist,
@@ -213,6 +225,7 @@ pub(in crate::ui) struct InfoPanel {
     toggle: gtk4::ToggleButton,
     conn: Rc<RefCell<Connection>>,
     runtime: Rc<ArtistNewsRuntime>,
+    portrait: Rc<InfoPanelPortrait>,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     state: RefCell<PanelState>,
@@ -228,10 +241,12 @@ impl InfoPanel {
         window: &adw::ApplicationWindow,
         conn: Rc<RefCell<Connection>>,
         runtime: Rc<ArtistNewsRuntime>,
+        portraits: &Rc<ArtistPortraitRuntime>,
         cover_loader: Rc<CoverLoader>,
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let widgets = build_widgets(content, visible);
+        let portrait = InfoPanelPortrait::new(widgets.portrait.clone(), portraits);
         // Restore the last selected tab before `wire` attaches the
         // persistence handler, so the restore itself is never echoed back
         // into the settings table.
@@ -249,6 +264,7 @@ impl InfoPanel {
             conn,
             state: RefCell::new(PanelState::new(runtime.enabled.get())),
             runtime,
+            portrait,
             cover_loader,
             cover_generation: Rc::new(Cell::new(0)),
             syncing_visibility: Cell::new(false),
@@ -545,9 +561,11 @@ impl InfoPanel {
         CoverLoader::set_placeholder(&self.widgets.cover);
         match context {
             PanelContext::Empty => {
+                self.portrait.clear();
                 self.widgets.local.set_visible(false);
             }
             PanelContext::Multiple(count) => {
+                self.portrait.clear();
                 self.widgets.local.set_visible(false);
                 self.widgets.cover.set_visible(false);
                 self.widgets
@@ -557,6 +575,7 @@ impl InfoPanel {
                 self.widgets.album.set_text("");
             }
             PanelContext::Track(track) => {
+                self.portrait.set_artist(&track.artist);
                 self.widgets.local.set_visible(true);
                 self.widgets.cover.set_visible(true);
                 self.widgets.title.set_text(&track.title);

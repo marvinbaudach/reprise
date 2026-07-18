@@ -91,8 +91,8 @@ use device_sync::{
 };
 #[allow(unused_imports)]
 use info_panel::{
-    artist_news_worker, info_panel_empty_state, info_panel_feedback, info_panel_state,
-    information_column,
+    artist_news_worker, artist_portrait_worker, info_panel_empty_state, info_panel_feedback,
+    info_panel_state, information_column,
 };
 #[allow(unused_imports)]
 use library_views::{
