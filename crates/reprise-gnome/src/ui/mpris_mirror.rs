@@ -274,6 +274,7 @@ impl PlayerController {
             Ok(()) => {
                 self.update_mpris_position(position_ms);
                 self.notify_mpris_seek(position_ms);
+                self.lyrics.external_seek(position_ms);
             }
             Err(error) => {
                 tracing::error!(%error, position_ms, "seek failed");

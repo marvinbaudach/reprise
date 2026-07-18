@@ -177,7 +177,7 @@ use crate::ui::style::cover_accent::Rgb as AccentRgb;
 use reprise_core::media_integration::{
     MediaIntegrationHandles, MprisPlaybackStatus, SharedMprisState, DEFAULT_VOLUME,
 };
-use reprise_core::playback::{PlaybackBackend, PlayerEvent};
+use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::UpNextQueue;
@@ -267,7 +267,9 @@ pub struct PlayerController {
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
-    pub(in crate::ui) queue_changed: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Queue-change fan-out for the sidebar/Queue view and the Now Playing
+    /// panel. Callbacks are cloned out before invocation for reentrancy.
+    pub(in crate::ui) queue_changed: RefCell<Vec<Rc<dyn Fn()>>>,
     pub(in crate::ui) current_track_changed:
         RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
     /// Fans coarse playback-state changes to the track list's now-playing
@@ -287,6 +289,14 @@ pub struct PlayerController {
     /// so the track-list and album-view consumers stay independent.
     pub(in crate::ui) playback_state_changed_album:
         RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
+    /// Independent loaded-track feed for the right Now Playing panel. This
+    /// follows the player's cache, never the library selection.
+    pub(in crate::ui) now_playing_panel_track_changed:
+        RefCell<Option<OnNowPlayingPanelTrackChanged>>,
+    /// Playback-state feed for the right panel. Pausing never clears the
+    /// separately delivered loaded-track snapshot.
+    pub(in crate::ui) now_playing_panel_state_changed:
+        RefCell<Option<OnNowPlayingPanelStateChanged>>,
     /// Supplies the current view's ids when an exhausted queue needs refill.
     pub(in crate::ui) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
@@ -334,8 +344,8 @@ pub struct PlayerController {
     /// clobber a newer one.
     pub(in crate::ui) bar_cover_generation: Rc<Cell<u64>>,
     pub(in crate::ui) compact_cover_generation: Rc<Cell<u64>>,
-    /// Shared off-main lyrics runtime and weak target for the Information
-    /// panel's Lyrics page. Playback position is fanned into this same owner;
+    /// Shared off-main lyrics runtime and weak target for the Now Playing
+    /// panel's Lyrics view. Playback position is fanned into this same owner;
     /// it never starts a second timer.
     pub(in crate::ui) lyrics: Rc<PlayerLyrics>,
     /// Generation token for the seek waveform's off-main peak load, so a
@@ -377,14 +387,13 @@ pub(in crate::ui) struct NowPlaying {
     /// changes keep MPRIS metadata complete.
     pub(in crate::ui) art_url: Option<String>,
     pub(in crate::ui) duration_ms: i64,
-    /// On-disk path of the currently-loaded track. Not read yet (`play_
-    /// track_id` feeds `now_playing_wiring.rs`'s `sync_cover` from
-    /// `summary.path` directly) — kept for parity with the other display
-    /// fields above, and as the natural home for a future caller (e.g. a
-    /// re-applied MPRIS mirror) that only has this cache to work from.
-    #[allow(dead_code)]
+    /// On-disk path of the currently-loaded track. The Now Playing panel uses
+    /// this player-owned snapshot to load the same cover as the transport bar.
     pub(in crate::ui) path: String,
 }
+
+type OnNowPlayingPanelTrackChanged = Rc<dyn Fn(Option<NowPlaying>)>;
+type OnNowPlayingPanelStateChanged = Rc<dyn Fn(PlaybackState)>;
 
 impl PlayerController {
     /// Builds the controller and the event bridge around injected platform
@@ -441,11 +450,13 @@ impl PlayerController {
             play_origin: RefCell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
-            queue_changed: RefCell::new(None),
+            queue_changed: RefCell::new(Vec::new()),
             current_track_changed: RefCell::new(None),
             playback_state_changed: RefCell::new(None),
             now_playing_album_changed: RefCell::new(None),
             playback_state_changed_album: RefCell::new(None),
+            now_playing_panel_track_changed: RefCell::new(None),
+            now_playing_panel_state_changed: RefCell::new(None),
             view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
