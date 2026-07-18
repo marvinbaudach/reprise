@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk4::gio::prelude::*;
@@ -121,6 +122,8 @@ pub(in crate::ui) struct PreferencesContext {
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
+    pub(in crate::ui) plugin_rows: RefCell<HashMap<&'static str, glib::WeakRef<adw::SwitchRow>>>,
+    pub(in crate::ui) pending_plugin_targets: RefCell<Vec<&'static str>>,
 }
 
 impl PreferencesContext {
@@ -178,6 +181,8 @@ impl PreferencesContext {
             preferences_dialog: RefCell::new(glib::WeakRef::new()),
             preferences_navigation: RefCell::new(glib::WeakRef::new()),
             preferences_stack: RefCell::new(glib::WeakRef::new()),
+            plugin_rows: RefCell::new(HashMap::new()),
+            pending_plugin_targets: RefCell::new(Vec::new()),
         });
         let weak = Rc::downgrade(&context);
         context.scan_button.connect_sensitive_notify(move |button| {
@@ -233,6 +238,7 @@ impl PreferencesContext {
         self.equalizer_controls.borrow_mut().clear();
         self.equalizer_surfaces.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
+        self.plugin_rows.borrow_mut().clear();
         use super::preferences_window::{PageId, PAGE_ORDER};
         let pages = PAGE_ORDER.map(|id| {
             let page = match id {
@@ -306,6 +312,15 @@ impl PreferencesContext {
                 });
             });
         }
+        let context = Rc::downgrade(self);
+        shell.dialog.connect_map(move |_| {
+            let context = context.clone();
+            glib::idle_add_local_once(move || {
+                if let Some(context) = context.upgrade() {
+                    context.highlight_pending_plugin_rows();
+                }
+            });
+        });
         shell.dialog.present(Some(&self.window));
         tracing::debug!("preferences dialog presented");
         if smoke.is_some() {
@@ -350,6 +365,11 @@ impl PreferencesContext {
     /// Opens (or raises) the preferences window and navigates to `page_name`.
     pub(in crate::ui) fn present_page(self: &Rc<Self>, page_name: &str) {
         self.open(Some(page_name));
+    }
+
+    pub(in crate::ui) fn present_plugins(self: &Rc<Self>, targets: &'static [&'static str]) {
+        *self.pending_plugin_targets.borrow_mut() = targets.to_vec();
+        self.open(Some("plugins"));
     }
 
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {

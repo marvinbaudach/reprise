@@ -9,6 +9,35 @@ use reprise_core::modules::ModuleDescriptor;
 
 use super::{strings, PreferencesContext};
 
+const TARGET_CLASS: &str = "reprise-plugin-target";
+pub(in crate::ui) const ONLINE_LYRICS_TARGETS: &[&str] = &["online_lyrics"];
+
+pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 4] {
+    [
+        &reprise_core::modules::NEW_RELEASES_MODULE,
+        &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+        &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
+        &reprise_core::modules::ONLINE_LYRICS_MODULE,
+    ]
+}
+
+pub(in crate::ui) fn highlight_duration() -> std::time::Duration {
+    std::time::Duration::from_millis(u64::from(crate::ui::motion::AMBIENT_MS))
+}
+
+pub(in crate::ui) fn css() -> String {
+    format!(
+        ".{TARGET_CLASS} {{ \
+           background-color: alpha(@accent_bg_color, 0.22); \
+           box-shadow: inset 3px 0 @accent_color; \
+           transition: background-color {}ms {}, box-shadow {}ms {}; }}",
+        crate::ui::motion::MICRO_MS,
+        crate::ui::motion::MICRO_CSS_EASING,
+        crate::ui::motion::MICRO_MS,
+        crate::ui::motion::MICRO_CSS_EASING,
+    )
+}
+
 pub(in crate::ui) fn plugin_applies_live(descriptor: &ModuleDescriptor) -> bool {
     descriptor.applies_live
 }
@@ -75,6 +104,14 @@ impl PreferencesContext {
                 .use_markup(false)
                 .active(active)
                 .build();
+            if network_descriptors()
+                .iter()
+                .any(|network| network.id == descriptor.id)
+            {
+                let row_ref = glib::WeakRef::new();
+                row_ref.set(Some(&row));
+                self.plugin_rows.borrow_mut().insert(descriptor.id, row_ref);
+            }
             let scope_row = (descriptor.id == "new_releases")
                 .then(|| super::preference_new_releases::scope_row(&self.conn, active));
             let syncing = Rc::new(Cell::new(false));
@@ -156,6 +193,31 @@ impl PreferencesContext {
         page.add(&group);
         page
     }
+
+    pub(in crate::ui) fn highlight_pending_plugin_rows(&self) {
+        let targets = std::mem::take(&mut *self.pending_plugin_targets.borrow_mut());
+        let rows = targets
+            .iter()
+            .filter_map(|target| {
+                self.plugin_rows
+                    .borrow()
+                    .get(target)
+                    .and_then(glib::WeakRef::upgrade)
+            })
+            .collect::<Vec<_>>();
+        if let Some(first) = rows.first() {
+            first.grab_focus();
+        }
+        for row in rows {
+            row.add_css_class(TARGET_CLASS);
+            let row = row.downgrade();
+            glib::timeout_add_local_once(highlight_duration(), move || {
+                if let Some(row) = row.upgrade() {
+                    row.remove_css_class(TARGET_CLASS);
+                }
+            });
+        }
+    }
 }
 
 #[cfg(test)]
@@ -169,5 +231,30 @@ mod tests {
         assert_eq!(plugin_title(descriptor), "New Releases");
         assert!(plugin_description(descriptor).contains("contacts MusicBrainz"));
         assert!(plugin_applies_live(descriptor));
+    }
+
+    #[test]
+    fn network_plugin_deep_link_highlight_is_transient() {
+        assert_eq!(
+            highlight_duration(),
+            std::time::Duration::from_millis(u64::from(crate::ui::motion::AMBIENT_MS))
+        );
+        let css = css();
+        assert!(css.contains(".reprise-plugin-target"));
+        assert!(css.contains(&format!(
+            "{}ms {}",
+            crate::ui::motion::MICRO_MS,
+            crate::ui::motion::MICRO_CSS_EASING
+        )));
+    }
+
+    #[test]
+    fn all_network_plugin_rows_expose_privacy_copy() {
+        let descriptors = network_descriptors();
+        assert_eq!(descriptors.len(), 4);
+        for descriptor in descriptors {
+            assert!(plugin_applies_live(descriptor));
+            assert!(plugin_description(descriptor).contains("contacts"));
+        }
     }
 }
