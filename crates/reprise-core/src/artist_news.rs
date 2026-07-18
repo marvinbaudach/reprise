@@ -2,6 +2,7 @@
 //! layer. Network work is blocking and must be called from a worker thread.
 
 use std::cmp::Ordering;
+use std::path::PathBuf;
 
 use chrono::NaiveDate;
 use rusqlite::Connection;
@@ -176,12 +177,16 @@ pub fn parse_release_groups(
     items.into_iter().map(|(item, _)| item).collect()
 }
 
-pub fn refresh(
+pub fn refresh<A>(
     conn: &Connection,
     today: NaiveDate,
     scope: FetchScope,
     force: bool,
-) -> Result<RefreshReport, NewsError> {
+    mut fallback_accent: A,
+) -> Result<RefreshReport, NewsError>
+where
+    A: FnMut(&Connection, &str) -> Option<String>,
+{
     refresh_with(
         conn,
         today,
@@ -189,19 +194,22 @@ pub fn refresh(
         scope,
         force,
         &mut musicbrainz::get,
+        &mut fallback_accent,
     )
 }
 
-pub(crate) fn refresh_with<F>(
+pub(crate) fn refresh_with<F, A>(
     conn: &Connection,
     today: NaiveDate,
     now: i64,
     scope: FetchScope,
     force: bool,
     fetch: &mut F,
+    fallback_accent: &mut A,
 ) -> Result<RefreshReport, NewsError>
 where
     F: FnMut(&str) -> Result<String, FetchError>,
+    A: FnMut(&Connection, &str) -> Option<String>,
 {
     let candidates = artists_for_fetch(conn, scope).map_err(database_error)?;
     let mut report = RefreshReport {
@@ -225,7 +233,9 @@ where
         };
         let local_albums = local_albums(conn, &candidate.name).map_err(database_error)?;
         let items = parse_release_groups(&body, &local_albums, today);
-        upsert_releases(conn, &candidate.name, &mbid, now, &items).map_err(database_error)?;
+        let accent = normalize_fallback_accent(fallback_accent(conn, &candidate.name));
+        upsert_releases(conn, &candidate.name, &mbid, now, &accent, &items)
+            .map_err(database_error)?;
         report.artists_fetched += 1;
         report.releases_upserted += items.len();
     }
@@ -351,6 +361,7 @@ fn upsert_releases(
     artist: &str,
     artist_mbid: &str,
     fetched_at: i64,
+    fallback_accent: &str,
     items: &[AlbumNews],
 ) -> Result<(), rusqlite::Error> {
     let transaction = conn.unchecked_transaction()?;
@@ -375,11 +386,24 @@ fn upsert_releases(
                 item.primary_type,
                 item.first_release_date,
                 fetched_at,
-                DEFAULT_FALLBACK_ACCENT,
+                fallback_accent,
             ],
         )?;
     }
     transaction.commit()
+}
+
+fn normalize_fallback_accent(accent: Option<String>) -> String {
+    accent
+        .filter(|value| {
+            value.len() == 7
+                && value.starts_with('#')
+                && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+        .map_or_else(
+            || DEFAULT_FALLBACK_ACCENT.to_string(),
+            |value| value.to_ascii_uppercase(),
+        )
 }
 
 pub fn query_releases(
@@ -486,6 +510,26 @@ pub fn query_artist_news_by_name(
     };
     let artist_mbid = row.get::<_, String>(0)?;
     query_artist_news(conn, &artist_mbid, today)
+}
+
+pub fn most_played_album_track_path(
+    conn: &Connection,
+    artist: &str,
+) -> Result<Option<PathBuf>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT MIN(path), SUM(play_count) AS album_plays
+         FROM tracks
+         WHERE lower(trim(artist)) = lower(trim(?1))
+           AND removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''
+         GROUP BY lower(trim(album))
+         ORDER BY album_plays DESC, lower(trim(album)) ASC
+         LIMIT 1",
+    )?;
+    let mut rows = statement.query([artist])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    Ok(Some(PathBuf::from(row.get::<_, String>(0)?)))
 }
 
 fn database_error(error: rusqlite::Error) -> NewsError {
