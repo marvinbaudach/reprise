@@ -479,3 +479,36 @@ mod tests {
             .build()
     }
 }
+
+#[cfg(test)]
+mod style_guard {
+    /// UX STYLE-1: every chrome surface that should read as its own plane
+    /// declares a background AND a bottom edge — explicitly.
+    ///
+    /// This is the cheap half of the rule (the CSS half). It exists because
+    /// `ToolbarStyle::Flat` suppresses top-bar backgrounds, so a bar that
+    /// merely *sits* in the chrome renders on the window colour and looks
+    /// like it floats over the content. Both surfaces below were shipped
+    /// that way once. A new bar that forgets its background fails here
+    /// instead of in a screenshot three weeks later.
+    #[test]
+    fn style_1_chrome_surfaces_declare_background_and_edge() {
+        let css = super::css();
+
+        for class in [".reprise-library-header", ".reprise-search-strip"] {
+            let block = css
+                .split(class)
+                .nth(1)
+                .unwrap_or_else(|| panic!("{class} has no rule in the chrome CSS"));
+            let block = block.split('}').next().unwrap_or_default();
+            assert!(
+                block.contains("background-color:"),
+                "{class} inherits its background — Flat will swallow it (STYLE-1)"
+            );
+            assert!(
+                block.contains("border-bottom:"),
+                "{class} has no bottom edge against the content (STYLE-1)"
+            );
+        }
+    }
+}

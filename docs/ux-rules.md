@@ -840,6 +840,37 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   weder Fetch noch ✦; Cover-, Portrait- und Lyrics-Module gehören nicht zu
   dieser Regel und werden im Folge-Branch `feat/network-opt-in` geregelt.
 
+## S. Flächen & Geometrie
+
+<!-- Sektionsbuchstabe: R (New Releases) ist die letzte vergebene; S schließt
+     an. Anlass sind vier Fälle an einem Tag (2026-07-18), die alle mit
+     grünem Test durchkamen und erst im Screenshot auffielen — Ledger:
+     docs/superpowers/plans/2026-07-18-style-explicit-rule.md. -->
+
+Was sichtbar wirken soll, muss explizit gesetzt sein. Geerbte oder
+Framework-Defaults zählen nicht als gesetzt: Sie sind der häufigste Grund,
+warum eine Property gesetzt ist und trotzdem nichts passiert.
+
+- **STYLE-1** [aktiv] [gtk] — **Wirkung explizit, nicht geerbt.** Jede Fläche,
+  die sich vom Inhalt absetzen soll (Headerbar, eingeblendete Leisten,
+  Sidebar-Kanten, Panels), trägt Hintergrund **und** Trennlinie ausdrücklich;
+  jede verbindliche Geometrie (feste Breiten, Mindesthöhen) wird gegen ihre
+  tatsächliche Allokation geprüft. `flat` bleibt genau dort, wo bewusst
+  **keine** Abgrenzung gewollt ist. Bekannte Fallen, die diese Regel
+  adressiert: `AdwToolbarView` mit `ToolbarStyle::Flat` unterdrückt
+  Bar-Hintergründe (auch `@headerbar_bg_color`); eine `AdwHeaderBar` ohne
+  Titel-Widget rendert ersatzweise den Fenstertitel (`show-title` muss
+  zusätzlich aus); ein `GtkLabel` ohne `ellipsize` meldet seinen vollen Text
+  als **Mindest**breite und hebelt jedes `max-width` des Containers aus;
+  `AdwOverlaySplitView` rechnet ohne `sidebar-width-unit = Px` in `sp`.
+  **Testregel:** Absicht darf geprüft werden, aber bei Flächen und Geometrie
+  muss das **Ergebnis** belegt sein — nicht „Property X ist gesetzt", sondern
+  „die Fläche hat sichtbaren Hintergrund" bzw. „die Spalte bleibt bei schmalem
+  Fenster auf ihrer Breite". Was das Framework garantiert, wird auf Existenz
+  getestet; was ausbleiben kann, auf Wirkung (wie TIP-1a/2a und SEARCH-2).
+  Ist eine Schnittstelle im Test-Build ausgeblendet (z. B. `SectionModel` per
+  `cfg`), zählt nur der E2E-Beleg — „grün" ist dort strukturell bedeutungslos.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen

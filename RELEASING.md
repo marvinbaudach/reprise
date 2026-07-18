@@ -186,6 +186,11 @@ Do not point development hooks at the maintainer's real library.
   views. Individual rows must never stagger, fade in, or move during reloads;
   only the whole surface may crossfade when switching views. Queue drop and
   single-remove motion is an allowed exception, not a release requirement.
+- STYLE-1 "floating" check: reveal every collapsible bar (search bar, banners,
+  the scan card) once. If it lays flat over the content without its own surface
+  and edge, the background is missing — `ToolbarStyle::Flat` swallowed it.
+  Repeat in all three dark themes: the window colour sits differently against
+  each, so a wrong surface is obvious in one and subtle in another.
 
 Record the OS, GNOME version, runtime branches, architecture, codec packages, and
 results for the release notes. Screenshots must be captured manually from a real,
