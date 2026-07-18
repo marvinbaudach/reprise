@@ -28,6 +28,7 @@ use rusqlite::Connection;
 use crate::ui::artist_master_row::{self, Registry};
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::discovery_hint::ArtistDiscovery;
 use crate::ui::scroll_center;
 use crate::ui::strings;
 use reprise_core::queries::{self, ArtistSummary};
@@ -83,6 +84,7 @@ struct Inner {
 pub(in crate::ui) struct ArtistMaster {
     root: gtk4::Box,
     inner: Rc<Inner>,
+    discovery: ArtistDiscovery,
 }
 
 impl ArtistMaster {
@@ -90,6 +92,7 @@ impl ArtistMaster {
         conn: Rc<RefCell<Connection>>,
         portraits: &Rc<ArtistPortraitRuntime>,
         cover_loader: &Rc<CoverLoader>,
+        new_releases_enabled: bool,
     ) -> Self {
         let rows: Rc<RefCell<Vec<ArtistSummary>>> = Rc::new(RefCell::new(Vec::new()));
         let mode = Rc::new(Cell::new(SortMode::Alphabetical));
@@ -109,8 +112,14 @@ impl ArtistMaster {
             .build();
         wire_selection(&selection, &on_select);
 
-        let factory =
-            artist_master_row::build_row_factory(&registry, &now_playing, portraits, cover_loader);
+        let discovery = ArtistDiscovery::new(&conn, portraits.enabled.get(), new_releases_enabled);
+        let factory = artist_master_row::build_row_factory(
+            &registry,
+            &now_playing,
+            portraits,
+            cover_loader,
+            &discovery.portrait_evidence(),
+        );
         let list_view = gtk4::ListView::new(Some(selection.clone()), Some(factory));
         list_view.add_css_class("artist-list");
         let header_factory = build_header_factory();
@@ -138,6 +147,7 @@ impl ArtistMaster {
         root.add_css_class("artist-master");
         root.set_width_request(PANE_MIN_WIDTH);
         root.append(&header);
+        root.append(discovery.widget());
         root.append(&stack);
 
         let inner = Rc::new(Inner {
@@ -160,7 +170,11 @@ impl ArtistMaster {
 
         wire_dropdown(&dropdown, &inner);
 
-        let master = Self { root, inner };
+        let master = Self {
+            root,
+            inner,
+            discovery,
+        };
         master.reload();
         master
     }
@@ -171,6 +185,13 @@ impl ArtistMaster {
 
     pub(in crate::ui) fn set_on_select(&self, callback: impl Fn(String) + 'static) {
         *self.inner.on_select.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_hint_settings(
+        &self,
+        callback: impl Fn(&'static [&'static str]) + 'static,
+    ) {
+        self.discovery.set_on_open_plugins(callback);
     }
 
     /// Re-runs the query, replaces the cached rows, and re-applies the current
@@ -537,7 +558,7 @@ mod tests {
         let cover_loader = crate::ui::cover_loader::CoverLoader::new(
             crate::ui::cover_download_worker::setup_for_test(),
         );
-        let master = ArtistMaster::new(conn, &portraits, &cover_loader);
+        let master = ArtistMaster::new(conn, &portraits, &cover_loader, true);
         master.set_on_select({
             let selected = selected.clone();
             move |artist| *selected.borrow_mut() = Some(artist)

@@ -21,6 +21,7 @@ use gtk4::prelude::*;
 use crate::ui::artist_avatar;
 use crate::ui::artist_portrait_worker::{ArtistPortraitRequest, ArtistPortraitRuntime};
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::discovery_hint::{EvidenceTracker, VisibleEvidence};
 use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::strings;
 use reprise_core::artist_portrait::PortraitOutcome;
@@ -51,6 +52,8 @@ pub(in crate::ui) struct RowHandles {
     /// to decide whether to light the EQ.
     artist: Rc<RefCell<String>>,
     portrait_generation: Rc<Cell<u64>>,
+    fallback_evidence: VisibleEvidence,
+    fallback_confirmed: Rc<Cell<bool>>,
 }
 
 impl RowHandles {
@@ -81,20 +84,34 @@ pub(in crate::ui) fn build_row_factory(
     now_playing: &Rc<RefCell<Option<String>>>,
     portraits: &Rc<ArtistPortraitRuntime>,
     cover_loader: &Rc<CoverLoader>,
+    fallback_evidence: &EvidenceTracker,
 ) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
 
     {
         let registry = registry.clone();
+        let fallback_evidence = fallback_evidence.clone();
         factory.connect_setup(move |_, obj| {
             let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
                 return;
             };
-            let handles = build_row();
+            let handles = build_row(fallback_evidence.visible_item());
             item.set_child(Some(&handles.root));
             registry
                 .borrow_mut()
                 .insert(item.as_ptr() as usize, handles);
+        });
+    }
+
+    {
+        let registry = registry.clone();
+        factory.connect_unbind(move |_, obj| {
+            let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
+                return;
+            };
+            if let Some(handles) = registry.borrow().get(&(item.as_ptr() as usize)) {
+                handles.fallback_evidence.set_fallback(false);
+            }
         });
     }
 
@@ -144,7 +161,7 @@ pub(in crate::ui) fn build_row_factory(
 /// Builds one row's widgets: gradient avatar (initials) + name/meta stack +
 /// trailing mini-EQ. The avatar identity is represented by one class from the
 /// centrally registered palette.
-fn build_row() -> Rc<RowHandles> {
+fn build_row(fallback_evidence: VisibleEvidence) -> Rc<RowHandles> {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     root.add_css_class("artist-list-row");
     root.set_height_request(ROW_HEIGHT);
@@ -166,6 +183,11 @@ fn build_row() -> Rc<RowHandles> {
     portrait.set_overflow(gtk4::Overflow::Hidden);
     portrait.add_css_class("artist-portrait-image");
     portrait.set_visible(false);
+
+    let mapped_evidence = fallback_evidence.clone();
+    root.connect_map(move |_| mapped_evidence.set_mapped(true));
+    let unmapped_evidence = fallback_evidence.clone();
+    root.connect_unmap(move |_| unmapped_evidence.set_mapped(false));
 
     let avatar_overlay = gtk4::Overlay::new();
     avatar_overlay.set_child(Some(&avatar));
@@ -205,6 +227,8 @@ fn build_row() -> Rc<RowHandles> {
         eq,
         artist: Rc::new(RefCell::new(String::new())),
         portrait_generation: Rc::new(Cell::new(0)),
+        fallback_evidence,
+        fallback_confirmed: Rc::new(Cell::new(false)),
     })
 }
 
@@ -230,9 +254,14 @@ fn bind_row(
         .set_visible(is_now_playing(now_playing, &summary.artist));
 
     if handles.artist.borrow().as_str() == summary.artist {
+        handles
+            .fallback_evidence
+            .set_fallback(handles.fallback_confirmed.get());
         return;
     }
     *handles.artist.borrow_mut() = summary.artist.clone();
+    handles.fallback_confirmed.set(false);
+    handles.fallback_evidence.set_fallback(false);
     handles
         .portrait_generation
         .set(handles.portrait_generation.get().wrapping_add(1));
@@ -259,6 +288,8 @@ fn request_portrait(
     let handles_artist = handles.artist.clone();
     let portrait = handles.portrait.clone();
     let portrait_generation = handles.portrait_generation.clone();
+    let handles_fallback = handles.fallback_evidence.clone();
+    let fallback_confirmed = handles.fallback_confirmed.clone();
     let cover_loader = cover_loader.clone();
     glib::spawn_future_local(async move {
         let Ok(response) = receiver.recv().await else {
@@ -269,14 +300,22 @@ fn request_portrait(
         {
             return;
         }
-        if let Ok(PortraitOutcome::Found(path)) = response.result {
-            cover_loader.load_file_into_picture(
-                &portrait,
-                &path,
-                ThumbnailSize::Bar,
-                response.generation,
-                &portrait_generation,
-            );
+        match response.result {
+            Ok(PortraitOutcome::Found(path)) => {
+                fallback_confirmed.set(false);
+                handles_fallback.set_fallback(false);
+                cover_loader.load_file_into_picture(
+                    &portrait,
+                    &path,
+                    ThumbnailSize::Bar,
+                    response.generation,
+                    &portrait_generation,
+                );
+            }
+            Ok(PortraitOutcome::NotFound) | Err(_) => {
+                fallback_confirmed.set(true);
+                handles_fallback.set_fallback(true);
+            }
         }
     });
 }

@@ -1629,6 +1629,22 @@ msgstr "Online-Songtexte"
 msgid "Load missing lyrics · contacts LRCLIB"
 msgstr "Fehlende Songtexte laden · kontaktiert LRCLIB"
 
+#: crates/reprise-gnome/src/ui/strings_news.rs
+msgid "Enable album cover downloads →"
+msgstr "Albumcover-Downloads aktivieren →"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs
+msgid "Enable artist images →"
+msgstr "Interpretenbilder aktivieren →"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs
+msgid "Enable new releases →"
+msgstr "Neue Veröffentlichungen aktivieren →"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs
+msgid "Enable network features for artists (images & new releases) →"
+msgstr "Netz-Features für Interpreten aktivieren (Bilder & neue Veröffentlichungen) →"
+
 #: crates/reprise-gnome/src/ui/strings_news.rs:47
 msgid "Top artists only"
 msgstr "Nur meistgehörte Interpreten"
