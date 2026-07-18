@@ -115,6 +115,14 @@ pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         // Stage 3 Task 10: keeps the MPRIS mirror current immediately — see
         // `update_mpris_shuffle`'s doc comment.
         controller.update_mpris_shuffle(is_shuffled);
+        // Shuffling permutes the queue's play ORDER, so everything that
+        // renders "what comes next" is now stale — the Now-Playing panel's
+        // Up Next tab reads `ids_in_order()` and only re-reads it on this
+        // signal. Without the notify the list kept showing the pre-shuffle
+        // order until some unrelated queue edit happened to refresh it.
+        // (Repeat deliberately does not notify: it changes what happens at
+        // the END of the queue, not the order of the upcoming entries.)
+        controller.notify_queue_changed();
         tracing::debug!(is_shuffled, "shuffle toggled");
     });
 

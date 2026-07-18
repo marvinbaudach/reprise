@@ -15,7 +15,6 @@ use crate::ui::track_list::TrackList;
 pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-columns";
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
-pub(super) const ACTION_MY_STATS: &str = "my-stats";
 pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
 pub(super) const ACTION_SYNC_DEVICE: &str = "sync-device";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
@@ -27,7 +26,6 @@ const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
 
 pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
-    pub(super) on_my_stats: Rc<dyn Fn()>,
     pub(super) on_rescan_library: Rc<dyn Fn()>,
     pub(super) on_cancel_scan: Rc<dyn Fn()>,
     pub(super) on_sync_device: Rc<dyn Fn()>,
@@ -36,13 +34,10 @@ pub(super) struct Callbacks {
 
 /// View section: mode switches and personal views.
 fn view_section_entries() -> Vec<(String, &'static str)> {
-    vec![
-        (
-            strings::text(strings::COMPACT_MODE),
-            "win.toggle-minimal-view",
-        ),
-        (strings::text(strings::MY_STATS), "win.my-stats"),
-    ]
+    vec![(
+        strings::text(strings::COMPACT_MODE),
+        "win.toggle-minimal-view",
+    )]
 }
 
 /// Rebuilds the library section of the primary menu with the correct label
@@ -140,13 +135,6 @@ pub(super) fn install(
     }
     window.add_action(&minimal);
     arm_smoke_minimal_view(&minimal);
-
-    let my_stats = gio::SimpleAction::new(ACTION_MY_STATS, None);
-    {
-        let cb = callbacks.on_my_stats.clone();
-        my_stats.connect_activate(move |_, _| cb());
-    }
-    window.add_action(&my_stats);
 
     let rescan = gio::SimpleAction::new(ACTION_RESCAN_LIBRARY, None);
     {
