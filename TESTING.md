@@ -42,6 +42,41 @@ compiled sources exactly, refuses an existing output directory, and the core
 probe refuses an existing database, so neither can overwrite a user profile.
 All rows are generated metadata with synthetic paths; no audio file is opened.
 
+For the installed-runtime extension, use a second new output directory:
+
+```sh
+scripts/performance-runtime-baseline.sh /tmp/reprise-runtime-results
+```
+
+This runner builds a release Meson installation in a private `DESTDIR`, seeds
+isolated 10,000- and 100,000-track profiles, and launches that installed binary
+five times per size. It records process-spawn-to-accessible-window timings,
+realized GTK row/cell and provider/model counts, five fresh-process queue RSS
+samples, and CUA page-scroll-to-changed-snapshot timings with before/after
+screenshots. Deterministic limits reject more than eight cached SQL windows,
+1,600 cached tracks, 128 realized rows, 2,048 realized cells, or queue RSS
+growth above the documented fixed-plus-linear budget. `--quick` uses 10,000
+tracks only.
+
+The CUA portion requires a host that permits a private D-Bus, AT-SPI, and Xvfb
+socket. A managed sandbox that rejects those sockets is an environment
+blocker, not a passing or failing app result; the runner fails fast and retains
+bounded diagnostics. It never falls back to the live desktop or normal XDG
+profile.
+
+Compare two complete runs after changing code:
+
+```sh
+scripts/performance-compare.sh /tmp/before /tmp/after > /tmp/comparison.json
+```
+
+The comparison requires identical track-count manifests and reports exact and
+percentage deltas for installed startup, the final sorted SQL window, queue
+RSS, observable scroll response, realized GTK rows/cells, and cached tracks.
+Negative timing and memory deltas are improvements. Compare the same build and
+host conditions; these values are diagnostic evidence, not portable CI timing
+thresholds.
+
 ## Required merge gates
 
 Every branch intended for `main` must pass `scripts/check-merge-readiness.sh`.
@@ -106,10 +141,9 @@ as a release-green signal. Do not weaken `msgcmp` to hide the mismatch.
 - Add database upgrade fixtures for every supported schema version plus a
   failed migration step. Verify rollback, data preservation, indexes, foreign
   keys, and an idempotent second open.
-- Extend the generated-metadata scalability baseline beyond its completed
-  query/TrackListModel coverage: measure full installed-app startup, bound live
-  row-widget/provider counts, and bound queue memory growth at 10,000 and
-  100,000 tracks.
+- Run the installed-runtime scalability benchmark on representative native
+  GNOME/Wayland release hardware in addition to its reproducible private-X11
+  path, and retain paired before/after artifacts for each accepted optimization.
 - Add accessibility assertions for names, roles, keyboard reachability, focus
   order, high-contrast behavior, and reduced-motion behavior on the principal
   library, player, preferences, and tag-editor flows.

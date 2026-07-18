@@ -500,10 +500,10 @@ Base: 217407e (merged local main at 1ce9405 before implementation)
 Lock: claimed by Codex in this worktree on 2026-07-18
 Stage: installed-app startup, live GTK row/provider counts, queue memory, and isolated visible scroll response at 10,000/100,000 generated tracks
 
-- PERF-4: in progress — installed-app startup measurement.
-- PERF-5: pending — live GTK row/provider measurement and bounds.
-- PERF-6: pending — queue memory-growth measurement and bounds.
-- PERF-7: pending — isolated CUA scroll response, orchestration, documentation, gates, and stage review.
+- PERF-4: complete (commit 10894c7, base 217407e, added fail-closed installed-DESTDIR startup measurement with generated app-ready profiles and five CUA-observed starts per size; host execution remains explicitly deferred where the managed sandbox blocks private display sockets).
+- PERF-5: complete (commit 1405eff, base 10894c7, added real-process GTK widget/type, row/cell, provider/model, and SQL-cache reporting with deterministic runtime bounds).
+- PERF-6: complete (commit be8dfdf, base 1405eff, added fresh-process queue RSS and deterministic logical-payload measurement; local release medians were 159,744 bytes at 10,000 tracks and 1,609,728 bytes at 100,000 tracks).
+- PERF-7: in progress — isolated CUA scroll response, orchestration, documentation, gates, and stage review.
 
 ## 2026-07-18 — Theme-Flächenhierarchie + Theme-Akzent-Fallback
 
