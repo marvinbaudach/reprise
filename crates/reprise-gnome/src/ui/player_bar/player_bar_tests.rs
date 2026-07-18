@@ -11,6 +11,13 @@ fn run_main_loop_for(milliseconds: u32) {
     main_loop.run();
 }
 
+fn run_until_idle() {
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::idle_add_local_once(move || quit.quit());
+    main_loop.run();
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_play_pause_pulses_on_state_change() {
@@ -29,13 +36,41 @@ fn mot_5_play_pause_pulses_on_state_change() {
     while gtk4::glib::MainContext::default().iteration(false) {}
     assert!(!bar.play_pause_button.has_css_class("pulsing"));
 
+    let first_generation = bar.play_pulse_generation.get();
     bar.set_state(PlaybackState::Playing);
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_eq!(
+        bar.play_pulse_generation.get(),
+        first_generation.wrapping_add(1)
+    );
+    // A pulse which is not replacing an active pulse starts immediately.
     assert!(bar.play_pause_button.has_css_class("pulsing"));
 
     run_main_loop_for(motion::half(motion::MICRO));
+    let retrigger_generation = bar.play_pulse_generation.get();
     bar.set_state(PlaybackState::Paused);
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert_eq!(
+        bar.play_pulse_generation.get(),
+        retrigger_generation.wrapping_add(1)
+    );
+    assert!(!bar.play_pause_button.has_css_class("pulsing"));
+
+    // An idle callback still belongs to the current frame. The class must
+    // remain absent until a later frame, otherwise GTK collapses remove+add
+    // into one style recomputation and the running animation does not restart.
+    run_until_idle();
+    assert!(!bar.play_pause_button.has_css_class("pulsing"));
+
+    let pending_generation = bar.play_pulse_generation.get();
+    bar.set_state(PlaybackState::Playing);
+    assert_eq!(
+        bar.play_pulse_generation.get(),
+        pending_generation.wrapping_add(1)
+    );
+    assert!(!bar.play_pause_button.has_css_class("pulsing"));
+    run_until_idle();
+    assert!(!bar.play_pause_button.has_css_class("pulsing"));
+
+    run_main_loop_for(30);
     assert!(bar.play_pause_button.has_css_class("pulsing"));
 
     run_main_loop_for(motion::half(motion::MICRO) + 20);

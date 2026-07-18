@@ -52,6 +52,19 @@ pub(in crate::ui) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 const MINI_EQ_PLAYING_CLASS: &str = "playing";
 const PLAY_PULSE_CSS_CLASS: &str = "pulsing";
 
+fn schedule_play_pulse_removal(
+    button: &gtk4::Button,
+    pulse_generation: Rc<Cell<u64>>,
+    generation: u64,
+) {
+    let button = button.clone();
+    gtk4::glib::timeout_add_local_once(Duration::from_millis(motion::MICRO_MS.into()), move || {
+        if pulse_generation.get() == generation {
+            button.remove_css_class(PLAY_PULSE_CSS_CLASS);
+        }
+    });
+}
+
 /// Title-click callback storage — factored out to satisfy clippy's
 /// `type_complexity` lint.
 type TitleClickCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
@@ -118,6 +131,7 @@ pub struct PlayerBar {
     /// each state change. Kept alive to prevent GC between ticks.
     current_icon_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
     play_pulse_generation: Rc<Cell<u64>>,
+    play_pulse_readd_pending: Rc<Cell<bool>>,
     icon_animation_generation: Rc<Cell<u64>>,
 }
 
@@ -237,6 +251,7 @@ impl PlayerBar {
             track_animation_generation: Rc::new(Cell::new(0)),
             current_icon_animation: Rc::new(RefCell::new(None)),
             play_pulse_generation: Rc::new(Cell::new(0)),
+            play_pulse_readd_pending: Rc::new(Cell::new(false)),
             icon_animation_generation: Rc::new(Cell::new(0)),
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
@@ -400,27 +415,32 @@ impl PlayerBar {
     fn animate_play_pulse(&self) {
         let generation = self.play_pulse_generation.get().wrapping_add(1);
         self.play_pulse_generation.set(generation);
+        let pulse_is_running = self.play_pause_button.has_css_class(PLAY_PULSE_CSS_CLASS)
+            || self.play_pulse_readd_pending.get();
+        if !pulse_is_running {
+            self.play_pause_button.add_css_class(PLAY_PULSE_CSS_CLASS);
+            schedule_play_pulse_removal(
+                &self.play_pause_button,
+                self.play_pulse_generation.clone(),
+                generation,
+            );
+            return;
+        }
+
         self.play_pause_button
             .remove_css_class(PLAY_PULSE_CSS_CLASS);
-
+        self.play_pulse_readd_pending.set(true);
         let button = self.play_pause_button.clone();
         let pulse_generation = self.play_pulse_generation.clone();
-        gtk4::glib::idle_add_local_once(move || {
+        let pulse_readd_pending = self.play_pulse_readd_pending.clone();
+        button.add_tick_callback(move |button, _| {
             if pulse_generation.get() != generation {
-                return;
+                return gtk4::glib::ControlFlow::Break;
             }
             button.add_css_class(PLAY_PULSE_CSS_CLASS);
-
-            let button = button.clone();
-            let pulse_generation = pulse_generation.clone();
-            gtk4::glib::timeout_add_local_once(
-                Duration::from_millis(motion::MICRO_MS.into()),
-                move || {
-                    if pulse_generation.get() == generation {
-                        button.remove_css_class(PLAY_PULSE_CSS_CLASS);
-                    }
-                },
-            );
+            pulse_readd_pending.set(false);
+            schedule_play_pulse_removal(button, pulse_generation.clone(), generation);
+            gtk4::glib::ControlFlow::Break
         });
     }
 

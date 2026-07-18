@@ -74,6 +74,9 @@ scripts/check-display-tests.sh --rule-named
 echo "== Motion display tests =="
 scripts/check-display-tests.sh --motion
 
+echo "== CSS parse display tests =="
+scripts/check-display-tests.sh --css
+
 echo "== Dependency audit =="
 cargo audit
 
