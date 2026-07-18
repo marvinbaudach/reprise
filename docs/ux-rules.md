@@ -778,10 +778,10 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 
 ## Q. Suche
 
-- **SEARCH-1** [geplant] [gtk] — Im Ruhezustand belegt die Suche in der
+- **SEARCH-1** [aktiv] [gtk] — Im Ruhezustand belegt die Suche in der
   Headerbar nur eine Lupe. Das Suchfeld lebt in einer zweiten, standardmäßig
   eingeklappten Top-Bar und wird nie als permanentes breites Feld dargestellt.
-- **SEARCH-2** [geplant] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+- **SEARCH-2** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
   Tippen öffnet die Suchleiste und fokussiert das Feld. Die Leiste fährt mit
   dem zentralen Standard-Motion-Token ein und aus (MOT-1/3).
 - **SEARCH-3** [geplant] [gtk] — Eine nicht-leere Query bleibt auch bei

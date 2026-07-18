@@ -206,17 +206,37 @@ jeweiligen Regel.
 - Flip: **NR-4 → [aktiv]** (Teilregel „Remind me" bleibt `[geplant]`).
 - Commit: `feat(new-releases): digest view with hidden entries (NR-4)`
 
-### B7 · Module und Preferences (NR-7, Beschluss 6 + 8)
+### B7 · Nur das New-Releases-Modul (NR-7, Beschluss 6)
 
-- Red: Modul-Defaults (`new_releases`, `cover_download`, `artist_portraits`
-  alle `default_enabled: false`); ✦ erscheint nicht, solange das Modul aus ist.
+> **PLANÄNDERUNG 2026-07-18, nach Beginn des Laufs — bindend.** Dieser Task
+> war ursprünglich breiter (drei Module) und hatte einen Nachfolger B8
+> (Entdeckungszeile). Beides ist **hierher nicht mehr zuständig**: Die
+> allgemeine Opt-in-Regel für Netz-Features, die Module `cover_download`,
+> `artist_portraits` und `online_lyrics`, die Lyrics-Zustände und das
+> **gesamte** Entdeckungssystem (Evidenz-Trigger, Kombinationsregel) gehören
+> in den Folge-Branch `feat/network-opt-in`. Hier entsteht **nur** das
+> Modul, das NR-7 selbst braucht. **B8 ist gestrichen — nicht bauen.**
+
+- Red: `new_releases` hat `default_enabled: false`; ✦ erscheint nicht,
+  solange das Modul aus ist.
 - Green: `artist_news` → `new_releases` umwidmen (Plugins-Seite,
-  Privacy-Untertitel), ComboRow „nur Top-Artists / alle";
-  `cover_download` und `artist_portraits` als Module registrieren und ihre
-  Aufrufer gaten (heute ungated!). Die String-ID-Sonderlocke für den
-  Live-Toggle (`preferences.rs:684`) mitziehen.
+  Privacy-Untertitel „contacts MusicBrainz"), ComboRow „nur Top-Artists /
+  alle". Die String-ID-Sonderlocke für den Live-Toggle
+  (`preferences.rs:684`) mitziehen. **`cover_download` und
+  `artist_portraits` hier NICHT anfassen** — sie bleiben vorerst ungated und
+  werden im Folge-Branch gegated.
+- Der Bestandsschutz-Teil der Migration aus B2 entfällt damit ebenfalls: B2
+  schreibt **keine** `module.*.enabled`-Werte mehr, das macht der
+  Folge-Branch mit seinen Evidenzkriterien.
 - Flip: **NR-7 → [aktiv]**.
-- Commit: `feat(preferences): gate network integrations behind opt-in modules (NR-7)`
+- Commit: `feat(preferences): opt-in module for new releases (NR-7)`
+
+### B8 · GESTRICHEN
+
+Die Entdeckungszeile wandert vollständig in `feat/network-opt-in`, wo sie mit
+Evidenz-Triggern und der Kombinationsregel zusammen entsteht. Würde sie hier
+in einfacher Form gebaut, müsste der Folge-Branch sie sofort umschreiben.
+**Diesen Task überspringen; DISCOVER-1 nicht in Sektion R aufnehmen.**
 
 ### B8 · Entdeckungszeile (DISCOVER-1, Beschluss 9)
 
