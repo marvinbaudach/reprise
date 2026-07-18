@@ -4,8 +4,14 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use libadwaita as adw;
+use libadwaita::prelude::AnimationExt;
 use reprise_core::lyrics::{LyricsBody, LyricsError};
 
+pub(in crate::ui) use super::lyrics_scroll::centered_scroll_value;
+use super::lyrics_scroll::{
+    GlibScrollTimer, LyricsScrollState, PauseHandle, ScrollTimer, ScrollTimerHandle, USER_PAUSE_MS,
+};
 use super::lyrics_strings;
 
 pub(in crate::ui) const ACTIVE_LINE_CLASS: &str = "lyrics-line-active";
@@ -24,13 +30,13 @@ const STATUS_PAGE: &str = "status";
 type RetryCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type StatusCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type FooterCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
 
 #[derive(Clone)]
 struct LyricsLine {
     root: gtk4::Box,
     label: gtk4::Label,
-    underline: gtk4::Box,
-    timed: bool,
+    timestamp_ms: Option<i64>,
 }
 
 pub(in crate::ui) struct LyricsView {
@@ -49,10 +55,20 @@ pub(in crate::ui) struct LyricsView {
     on_retry: RetryCallback,
     on_status_changed: StatusCallback,
     on_footer_changed: FooterCallback,
+    on_seek: SeekCallback,
+    scroll_state: RefCell<LyricsScrollState>,
+    scroll_timer: Rc<dyn ScrollTimer>,
+    pause_timer: RefCell<Option<Box<dyn ScrollTimerHandle>>>,
+    scroll_animation: RefCell<Option<adw::TimedAnimation>>,
+    scroll_animation_generation: Cell<u64>,
 }
 
 impl LyricsView {
     pub(in crate::ui) fn new() -> Rc<Self> {
+        Self::with_timer(Rc::new(GlibScrollTimer))
+    }
+
+    fn with_timer(scroll_timer: Rc<dyn ScrollTimer>) -> Rc<Self> {
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 13);
         content.set_margin_top(18);
         content.set_margin_bottom(18);
@@ -132,9 +148,21 @@ impl LyricsView {
             on_retry,
             on_status_changed: Rc::new(RefCell::new(None)),
             on_footer_changed: Rc::new(RefCell::new(None)),
+            on_seek: Rc::new(RefCell::new(None)),
+            scroll_state: RefCell::new(LyricsScrollState::default()),
+            scroll_timer,
+            pause_timer: RefCell::new(None),
+            scroll_animation: RefCell::new(None),
+            scroll_animation_generation: Cell::new(0),
         });
+        view.wire_scroll_input();
         view.show_empty();
         view
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn new_with_timer(scroll_timer: Rc<dyn ScrollTimer>) -> Rc<Self> {
+        Self::with_timer(scroll_timer)
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::Widget {
@@ -158,19 +186,19 @@ impl LyricsView {
         self.set_feedback(true, false);
     }
 
-    pub(in crate::ui) fn show_result(&self, body: &LyricsBody) {
+    pub(in crate::ui) fn show_result(self: &Rc<Self>, body: &LyricsBody) {
         self.clear_lines();
         self.set_footer(&lyrics_strings::text(lyrics_footer(body)));
         match body {
             LyricsBody::Synced(lines) => {
                 for line in lines {
-                    self.append_line(&line.text, true);
+                    self.append_line(&line.text, Some(line.start_ms));
                 }
                 self.root.set_visible_child_name(CONTENT_PAGE);
                 self.set_feedback(false, false);
             }
             LyricsBody::Plain(text) => {
-                self.append_line(text, false);
+                self.append_line(text, None);
                 self.root.set_visible_child_name(CONTENT_PAGE);
                 self.set_feedback(false, false);
             }
@@ -194,12 +222,12 @@ impl LyricsView {
     }
 
     #[cfg(test)]
-    pub(in crate::ui) fn set_active_line(&self, index: Option<usize>) {
+    pub(in crate::ui) fn set_active_line(self: &Rc<Self>, index: Option<usize>) {
         self.set_active_line_at(index, None, 0);
     }
 
     pub(in crate::ui) fn set_active_line_at(
-        &self,
+        self: &Rc<Self>,
         index: Option<usize>,
         timestamp_ms: Option<i64>,
         position_ms: i64,
@@ -208,7 +236,7 @@ impl LyricsView {
             self.lines
                 .borrow()
                 .get(*index)
-                .is_some_and(|line| line.timed)
+                .is_some_and(|line| line.timestamp_ms.is_some())
         });
         let alpha = match (index, timestamp_ms) {
             (Some(_), Some(timestamp)) => active_line_alpha(timestamp, position_ms),
@@ -231,7 +259,7 @@ impl LyricsView {
                 .map(|line| line.label.clone())
         });
         if let Some(label) = label {
-            self.scroll_to_label(&label);
+            self.scroll_to_label(&label, true);
         }
     }
 
@@ -254,6 +282,19 @@ impl LyricsView {
 
     pub(in crate::ui) fn set_on_footer_changed(&self, callback: impl Fn() + 'static) {
         *self.on_footer_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_seek(&self, callback: impl Fn(i64) + 'static) {
+        *self.on_seek.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn external_seek(self: &Rc<Self>) {
+        self.cancel_pause_timer();
+        self.cancel_scroll_animation();
+        self.scroll_state.borrow_mut().external_seek();
+        if let Some(label) = self.active_label() {
+            self.scroll_to_label(&label, true);
+        }
     }
 
     pub(in crate::ui) fn footer_text(&self) -> String {
@@ -285,7 +326,7 @@ impl LyricsView {
         (lines.len(), self.active_line.get(), latest)
     }
 
-    fn append_line(&self, text: &str, timed: bool) {
+    fn append_line(self: &Rc<Self>, text: &str, timestamp_ms: Option<i64>) {
         let label = gtk4::Label::builder()
             .label(text)
             .xalign(0.5)
@@ -297,27 +338,41 @@ impl LyricsView {
         let underline = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         underline.add_css_class(LINE_UNDERLINE_CLASS);
         underline.set_halign(gtk4::Align::Center);
-        underline.set_visible(false);
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
         root.add_css_class(LINE_CLASS);
         root.set_halign(gtk4::Align::Fill);
         root.append(&label);
         root.append(&underline);
-        if timed {
+        if timestamp_ms.is_some() {
             root.add_css_class(LINE_DISTANT_CLASS);
+            root.set_cursor_from_name(Some("pointer"));
         } else {
             root.add_css_class(UNSYNCED_CLASS);
+        }
+        let index = self.lines.borrow().len();
+        if timestamp_ms.is_some() {
+            let click = gtk4::GestureClick::new();
+            click.set_button(1);
+            let view = Rc::downgrade(self);
+            click.connect_released(move |_, _, _, _| {
+                if let Some(view) = view.upgrade() {
+                    view.activate_line(index);
+                }
+            });
+            root.add_controller(click);
         }
         self.content.append(&root);
         self.lines.borrow_mut().push(LyricsLine {
             root,
             label,
-            underline,
-            timed,
+            timestamp_ms,
         });
     }
 
     fn clear_lines(&self) {
+        self.cancel_pause_timer();
+        self.cancel_scroll_animation();
+        self.scroll_state.borrow_mut().external_seek();
         self.active_line.set(None);
         self.active_alpha.set(100);
         self.lines.borrow_mut().clear();
@@ -361,7 +416,7 @@ impl LyricsView {
         let active = self.active_line.get();
         let active_alpha = self.active_alpha.get();
         for (index, line) in self.lines.borrow().iter().enumerate() {
-            if !line.timed {
+            if line.timestamp_ms.is_none() {
                 continue;
             }
             for class in [
@@ -385,30 +440,193 @@ impl LyricsView {
             if is_active {
                 line.label.add_css_class(ACTIVE_LINE_CLASS);
             }
-            line.underline.set_visible(is_active);
             if is_active && active_alpha == 60 {
                 line.root.add_css_class(LINE_GAP_CLASS);
             }
         }
     }
 
-    fn scroll_to_label(&self, label: &gtk4::Label) {
+    fn wire_scroll_input(self: &Rc<Self>) {
+        let scroll = gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::VERTICAL);
+        scroll.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let view = Rc::downgrade(self);
+        scroll.connect_scroll(move |_, _, _| {
+            if let Some(view) = view.upgrade() {
+                view.handle_user_scroll();
+            }
+            gtk4::glib::Propagation::Proceed
+        });
+        self.scrolled.add_controller(scroll);
+
+        let drag = gtk4::GestureDrag::new();
+        drag.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let view = Rc::downgrade(self);
+        drag.connect_drag_begin(move |_, _, _| {
+            if let Some(view) = view.upgrade() {
+                view.handle_user_scroll();
+            }
+        });
+        let view = Rc::downgrade(self);
+        drag.connect_drag_update(move |_, _, _| {
+            if let Some(view) = view.upgrade() {
+                view.handle_user_scroll();
+            }
+        });
+        self.scrolled.add_controller(drag);
+    }
+
+    fn handle_user_scroll(self: &Rc<Self>) {
+        self.cancel_pause_timer();
+        self.cancel_scroll_animation();
+        let handle = self
+            .scroll_state
+            .borrow_mut()
+            .user_scroll(self.scroll_timer.now_ms());
+        self.schedule_pause(handle, USER_PAUSE_MS);
+    }
+
+    fn schedule_pause(self: &Rc<Self>, handle: PauseHandle, delay_ms: u64) {
+        let view = Rc::downgrade(self);
+        let timer = self.scroll_timer.schedule(
+            delay_ms,
+            Box::new(move || {
+                if let Some(view) = view.upgrade() {
+                    view.pause_timer_elapsed(handle);
+                }
+            }),
+        );
+        *self.pause_timer.borrow_mut() = Some(timer);
+    }
+
+    fn pause_timer_elapsed(self: &Rc<Self>, handle: PauseHandle) {
+        self.pause_timer.borrow_mut().take();
+        let now_ms = self.scroll_timer.now_ms();
+        if !self.scroll_state.borrow_mut().timer_elapsed(handle, now_ms) {
+            let remaining = self.scroll_state.borrow().remaining_pause_ms(now_ms);
+            if remaining > 0 {
+                self.schedule_pause(handle, remaining);
+            }
+            return;
+        }
+        if let Some(label) = self.active_label() {
+            self.scroll_to_label(&label, true);
+        } else {
+            self.scroll_state.borrow_mut().return_finished();
+        }
+    }
+
+    fn cancel_pause_timer(&self) {
+        if let Some(timer) = self.pause_timer.borrow_mut().take() {
+            timer.cancel();
+        }
+    }
+
+    fn activate_line(self: &Rc<Self>, index: usize) {
+        let line = self.lines.borrow().get(index).cloned();
+        let Some(line) = line else {
+            return;
+        };
+        let Some(timestamp_ms) = line.timestamp_ms else {
+            return;
+        };
+        self.cancel_pause_timer();
+        self.cancel_scroll_animation();
+        self.scroll_state.borrow_mut().external_seek();
+        self.scroll_to_label(&line.label, true);
+        let callback = self.on_seek.borrow().clone();
+        if let Some(callback) = callback {
+            callback(timestamp_ms);
+        }
+    }
+
+    fn active_label(&self) -> Option<gtk4::Label> {
+        self.active_line.get().and_then(|index| {
+            self.lines
+                .borrow()
+                .get(index)
+                .map(|line| line.label.clone())
+        })
+    }
+
+    fn scroll_to_label(self: &Rc<Self>, label: &gtk4::Label, animated: bool) {
+        if !self.scroll_state.borrow().should_follow_active_line() {
+            return;
+        }
         let label = label.clone();
-        let content = self.content.clone();
-        let adjustment = self.scrolled.vadjustment();
+        let view = Rc::downgrade(self);
         gtk4::glib::idle_add_local_once(move || {
-            let Some(point) = label.compute_point(&content, &gtk4::graphene::Point::new(0.0, 0.0))
+            let Some(view) = view.upgrade() else {
+                return;
+            };
+            if !view.scroll_state.borrow().should_follow_active_line() {
+                return;
+            }
+            view.begin_center_scroll(&label, animated);
+        });
+    }
+
+    fn begin_center_scroll(self: &Rc<Self>, label: &gtk4::Label, animated: bool) {
+        let adjustment = self.scrolled.vadjustment();
+        let target = {
+            let Some(point) =
+                label.compute_point(&self.content, &gtk4::graphene::Point::new(0.0, 0.0))
             else {
                 return;
             };
-            let value = centered_scroll_value(
+            centered_scroll_value(
                 f64::from(point.y()),
                 f64::from(label.height()),
                 adjustment.page_size(),
                 adjustment.upper(),
-            );
-            adjustment.set_value(value);
+            )
+        };
+        if !animated || !crate::ui::motion::animations_enabled() {
+            self.cancel_scroll_animation();
+            adjustment.set_value(target);
+            self.scroll_state.borrow_mut().return_finished();
+            return;
+        }
+        if (adjustment.value() - target).abs() < f64::EPSILON {
+            self.scroll_state.borrow_mut().return_finished();
+            return;
+        }
+
+        self.cancel_scroll_animation();
+        let generation = self.scroll_animation_generation.get().wrapping_add(1);
+        self.scroll_animation_generation.set(generation);
+        let animation_target = adw::CallbackAnimationTarget::new({
+            let adjustment = adjustment.clone();
+            move |value| adjustment.set_value(value)
         });
+        let animation = crate::ui::motion::timed(
+            &self.scrolled,
+            adjustment.value(),
+            target,
+            crate::ui::motion::STANDARD,
+            animation_target,
+        );
+        let view = Rc::downgrade(self);
+        animation.connect_done(move |_| {
+            let Some(view) = view.upgrade() else {
+                return;
+            };
+            if view.scroll_animation_generation.get() != generation {
+                return;
+            }
+            view.scroll_animation.borrow_mut().take();
+            view.scroll_state.borrow_mut().return_finished();
+        });
+        *self.scroll_animation.borrow_mut() = Some(animation.clone());
+        animation.play();
+    }
+
+    fn cancel_scroll_animation(&self) {
+        self.scroll_animation_generation
+            .set(self.scroll_animation_generation.get().wrapping_add(1));
+        let animation = self.scroll_animation.borrow_mut().take();
+        if let Some(animation) = animation {
+            animation.pause();
+        }
     }
 
     #[cfg(test)]
@@ -438,6 +656,38 @@ impl LyricsView {
     #[cfg(test)]
     pub(in crate::ui) fn retry_has_css_class(&self, class: &str) -> bool {
         self.retry.has_css_class(class)
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn simulate_user_scroll(self: &Rc<Self>) {
+        self.handle_user_scroll();
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn simulate_programmatic_scroll(self: &Rc<Self>) {
+        if let Some(label) = self.active_label() {
+            self.scroll_to_label(&label, true);
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn simulate_line_click(self: &Rc<Self>, index: usize) {
+        self.activate_line(index);
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn simulate_external_seek(self: &Rc<Self>) {
+        self.external_seek();
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn scroll_mode(&self) -> super::lyrics_scroll::ScrollMode {
+        self.scroll_state.borrow().mode()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn has_scroll_animation(&self) -> bool {
+        self.scroll_animation.borrow().is_some()
     }
 
     #[cfg(test)]
@@ -478,34 +728,26 @@ pub(in crate::ui) fn lyrics_footer(body: &LyricsBody) -> &'static str {
     }
 }
 
-pub(in crate::ui) fn centered_scroll_value(
-    row_y: f64,
-    row_height: f64,
-    page_size: f64,
-    upper: f64,
-) -> f64 {
-    if !row_y.is_finite() || !row_height.is_finite() || !page_size.is_finite() || !upper.is_finite()
-    {
-        return 0.0;
-    }
-    let maximum = (upper - page_size).max(0.0);
-    (row_y + row_height / 2.0 - page_size / 2.0).clamp(0.0, maximum)
-}
-
 /// Active synchronized-line emphasis; installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
     format!(
-        ".{LINE_CLASS} {{ font-size: 13px; color: #ffffff; }}\n\
+        ".{LINE_CLASS} {{ font-size: 13px; color: #ffffff; \
+           transition: opacity {micro_ms}ms {micro_easing}; }}\n\
          .{LINE_DISTANT_CLASS} {{ opacity: 0.28; }}\n\
          .{LINE_NEAR_CLASS} {{ opacity: 0.32; }}\n\
          .{LINE_NEIGHBOR_CLASS} {{ opacity: 0.45; }}\n\
          .{ACTIVE_LINE_CLASS} {{ opacity: 1; }}\n\
+         .{LINE_CLASS}:hover {{ opacity: 0.65; }}\n\
          .{ACTIVE_LINE_CLASS} label {{ font-size: 15px; font-weight: 700; color: #ffffff; }}\n\
          .{LINE_GAP_CLASS} {{ opacity: 0.60; }}\n\
          .{LINE_UNDERLINE_CLASS} {{ min-width: 26px; min-height: 2.5px; \
-           background-color: @reprise_player_accent; }}\n\
+           background-color: @reprise_player_accent; opacity: 0; \
+           transition: opacity {micro_ms}ms {micro_easing}; }}\n\
+         .{ACTIVE_LINE_CLASS} .{LINE_UNDERLINE_CLASS} {{ opacity: 1; }}\n\
          .{UNSYNCED_CLASS} {{ font-size: 13px; color: alpha(#ffffff, 0.65); }}\n\
-         .{INLINE_RETRY_CLASS} {{ padding: 4px 10px; min-height: 0; }}"
+         .{INLINE_RETRY_CLASS} {{ padding: 4px 10px; min-height: 0; }}",
+        micro_ms = crate::ui::motion::MICRO_MS,
+        micro_easing = crate::ui::motion::MICRO_CSS_EASING,
     )
 }
 
