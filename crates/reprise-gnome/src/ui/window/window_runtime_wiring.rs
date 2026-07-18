@@ -525,14 +525,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         window_title,
         &search_restore_guard,
     );
-    super::shortcuts::wire(
-        app,
-        window,
-        search_bar,
-        search_entry,
-        track_list,
-        player.clone(),
-    );
+    super::shortcuts::wire(app, window, search_bar, search_entry, player.clone());
 
     super::scan_flow::wire_scan_button(
         scan_controls,
