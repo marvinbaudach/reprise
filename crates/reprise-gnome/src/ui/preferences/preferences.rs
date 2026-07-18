@@ -652,7 +652,7 @@ impl PreferencesContext {
             }
 
             let description = plugin_description(descriptor);
-            let subtitle = if plugin_applies_live(descriptor.id) {
+            let subtitle = if plugin_applies_live(descriptor) {
                 description
             } else {
                 format!(
@@ -762,17 +762,10 @@ mod tests {
 
     #[test]
     fn only_runtime_safe_plugins_apply_without_restart() {
-        assert!(!plugin_applies_live("cover_download"));
-        assert!(plugin_applies_live("listenbrainz"));
-        assert!(plugin_applies_live("lastfm"));
-        assert!(plugin_applies_live("new_releases"));
-        assert!(!plugin_applies_live("artist_news"));
-        assert!(!plugin_applies_live("artist_portrait"));
-        assert!(plugin_applies_live("lastfm"));
-        assert!(!plugin_applies_live("equalizer"));
-        assert!(!plugin_applies_live("replaygain"));
-        assert!(!plugin_applies_live("mpris"));
-        assert!(!plugin_applies_live("foreign"));
+        for descriptor in reprise_core::modules::ALL_MODULES {
+            assert!(plugin_applies_live(descriptor), "{}", descriptor.id);
+        }
+        assert!(!plugin_applies_live(&reprise_core::modules::MPRIS_MODULE));
     }
 
     #[test]
