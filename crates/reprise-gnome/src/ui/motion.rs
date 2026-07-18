@@ -9,8 +9,6 @@
 //! central contract here covers Adw animations (follow property), hand-built
 //! tick callbacks, and pulse timers.
 
-#![allow(dead_code)] // Token consumers land in the following Phase 1 tasks.
-
 use std::cell::RefCell;
 
 use gtk4::prelude::*;
@@ -26,7 +24,11 @@ pub(in crate::ui) const STANDARD_EASING: adw::Easing = adw::Easing::EaseOutCubic
 pub(in crate::ui) const AMBIENT_EASING: adw::Easing = adw::Easing::EaseOutCubic;
 
 pub(in crate::ui) const MICRO_CSS_EASING: &str = "ease-out";
+// Kept for a complete CSS-easing token set and pinned by the motion-token
+// tests; no CSS rule consumes the standard/ambient curve yet.
+#[allow(dead_code)]
 pub(in crate::ui) const STANDARD_CSS_EASING: &str = "cubic-bezier(0.16, 1, 0.3, 1)";
+#[allow(dead_code)]
 pub(in crate::ui) const AMBIENT_CSS_EASING: &str = STANDARD_CSS_EASING;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,12 +67,10 @@ pub(in crate::ui) fn timed(
     animation
 }
 
-#[allow(dead_code)] // First consumer lands in the following Phase 1 task.
 pub(in crate::ui) fn animations_enabled() -> bool {
     gtk4::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations())
 }
 
-#[allow(dead_code)] // First consumers land in the following Phase 1 task.
 pub(in crate::ui) fn replace_animation(
     slot: &RefCell<Option<adw::TimedAnimation>>,
     animation: adw::TimedAnimation,

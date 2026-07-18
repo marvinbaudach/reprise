@@ -124,7 +124,7 @@ impl DeviceCard {
         spinner.set_valign(gtk4::Align::Center);
         let indicator = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
-            .transition_duration(150)
+            .transition_duration(crate::ui::motion::STANDARD_MS)
             .build();
         indicator.add_named(&icon, Some("device"));
         indicator.add_named(&spinner, Some("syncing"));
@@ -140,7 +140,7 @@ impl DeviceCard {
         name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         let detail_stack = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
-            .transition_duration(150)
+            .transition_duration(crate::ui::motion::STANDARD_MS)
             .build();
         let delta_detail = detail_label();
         let progress_detail = detail_label();
@@ -161,7 +161,7 @@ impl DeviceCard {
         percent.set_xalign(1.0);
         let percent_revealer = gtk4::Revealer::builder()
             .transition_type(gtk4::RevealerTransitionType::Crossfade)
-            .transition_duration(150)
+            .transition_duration(crate::ui::motion::STANDARD_MS)
             .child(&percent)
             .reveal_child(false)
             .build();
@@ -184,7 +184,7 @@ impl DeviceCard {
         progress.set_margin_bottom(8);
         let progress_revealer = gtk4::Revealer::builder()
             .transition_type(gtk4::RevealerTransitionType::Crossfade)
-            .transition_duration(150)
+            .transition_duration(crate::ui::motion::STANDARD_MS)
             .child(&progress)
             .reveal_child(false)
             .build();
@@ -243,23 +243,12 @@ impl DeviceCard {
             device.sync_phase,
             PlannedSyncPhase::Syncing { .. } | PlannedSyncPhase::Finishing
         );
-        // Without animations a spinner is a static blob; keep the device icon
-        // instead so the state still switches, just without motion.
-        let animate = self.root.settings().is_gtk_enable_animations();
-        let transition_ms = if animate { 150 } else { 0 };
-        self.indicator.set_transition_duration(transition_ms);
-        self.detail_stack.set_transition_duration(transition_ms);
-        self.percent_revealer.set_transition_duration(transition_ms);
-        self.progress_revealer
-            .set_transition_duration(transition_ms);
-        self.spinner.set_spinning(syncing && animate);
+        // GtkSpinner follows the toolkit's system animation behavior; only
+        // Reprise's custom progress tick needs the explicit MOT-7 gate.
+        self.spinner.set_spinning(syncing);
         self.icon.set_from_gicon(&device.icon);
         self.indicator
-            .set_visible_child_name(if syncing && animate {
-                "syncing"
-            } else {
-                "device"
-            });
+            .set_visible_child_name(if syncing { "syncing" } else { "device" });
 
         let has_selection = matches!(
             &device.settings.selection,
@@ -316,7 +305,7 @@ impl DeviceCard {
                     *bytes_total,
                 ));
                 self.progress_revealer.set_reveal_child(true);
-                self.animate_progress(sync_fraction(*bytes_done, *bytes_total), animate);
+                self.animate_progress(sync_fraction(*bytes_done, *bytes_total));
                 self.root
                     .set_tooltip_text(Some(&device_sync_strings::sync_tooltip(
                         *done,
@@ -336,10 +325,10 @@ impl DeviceCard {
         }
     }
 
-    fn animate_progress(&self, target: f64, animate: bool) {
+    fn animate_progress(&self, target: f64) {
         let generation = self.progress_generation.get().saturating_add(1);
         self.progress_generation.set(generation);
-        if !animate {
+        if !crate::ui::motion::animations_enabled() {
             self.progress.set_fraction(target);
             return;
         }
@@ -354,13 +343,18 @@ impl DeviceCard {
             if current_generation.get() != generation {
                 return gtk4::glib::ControlFlow::Break;
             }
+            if !crate::ui::motion::animations_enabled() {
+                progress.set_fraction(target);
+                return gtk4::glib::ControlFlow::Break;
+            }
             let start_time = started_at.get().unwrap_or_else(|| {
                 let start_time = frame_clock.frame_time();
                 started_at.set(Some(start_time));
                 start_time
             });
             let elapsed = frame_clock.frame_time().saturating_sub(start_time) as f64;
-            let linear = (elapsed / 150_000.0).clamp(0.0, 1.0);
+            let duration_us = f64::from(crate::ui::motion::MICRO_MS) * 1_000.0;
+            let linear = (elapsed / duration_us).clamp(0.0, 1.0);
             let eased = 1.0 - (1.0 - linear).powi(3);
             progress.set_fraction(start + (target - start) * eased);
             if linear >= 1.0 {
@@ -578,7 +572,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn disabled_animations_apply_progress_and_state_changes_immediately() {
+    fn mot_7_disabled_animations_apply_progress_and_state_changes_immediately() {
         if gtk4::init().is_err() {
             return;
         }
@@ -599,11 +593,19 @@ mod tests {
         card.update(&device);
 
         assert_eq!(card.progress.fraction(), 0.5);
-        assert_eq!(card.detail_stack.transition_duration(), 0);
+        assert_eq!(
+            card.detail_stack.transition_duration(),
+            crate::ui::motion::STANDARD_MS
+        );
         assert_eq!(
             card.detail_stack.visible_child_name().as_deref(),
             Some("progress")
         );
+        assert_eq!(
+            card.indicator.visible_child_name().as_deref(),
+            Some("syncing")
+        );
+        assert!(card.spinner.is_spinning());
         assert!(card.progress_revealer.reveals_child());
         settings.set_gtk_enable_animations(previous);
     }
@@ -649,6 +651,32 @@ mod tests {
         assert!((card.progress.fraction() - 0.5).abs() < 1e-6);
         window.close();
         settings.set_gtk_enable_animations(previous);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_2_device_background_surfaces_only_crossfade_in_place() {
+        gtk4::init().unwrap();
+        let device = view(PlannedSyncPhase::Idle);
+        let on_open: OpenCallback = Rc::new(|_, _| {});
+        let card = DeviceCard::new(&device, &on_open);
+
+        assert_eq!(
+            card.indicator.transition_type(),
+            gtk4::StackTransitionType::Crossfade
+        );
+        assert_eq!(
+            card.detail_stack.transition_type(),
+            gtk4::StackTransitionType::Crossfade
+        );
+        assert_eq!(
+            card.percent_revealer.transition_type(),
+            gtk4::RevealerTransitionType::Crossfade
+        );
+        assert_eq!(
+            card.progress_revealer.transition_type(),
+            gtk4::RevealerTransitionType::Crossfade
+        );
     }
 }
 

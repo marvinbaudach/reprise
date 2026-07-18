@@ -100,6 +100,9 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(still_there, 1, "the live playlist survives the stale request");
+        assert_eq!(
+            still_there, 1,
+            "the live playlist survives the stale request"
+        );
     }
 }

@@ -15,7 +15,11 @@ pub(in crate::ui) const STACK_PAGE_MISSING: &str = "missing";
 /// natural heights, so relying on child-derived expansion can leave the stack
 /// at a single-row height until a source switch queues another allocation.
 pub(in crate::ui) fn build_track_content_stack() -> gtk4::Stack {
-    gtk4::Stack::builder().vexpand(true).build()
+    gtk4::Stack::builder()
+        .vexpand(true)
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(crate::ui::motion::STANDARD_MS)
+        .build()
 }
 
 impl TrackList {
@@ -78,6 +82,11 @@ mod tests {
             return;
         }
         let stack = super::build_track_content_stack();
+        assert_eq!(
+            stack.transition_type(),
+            gtk4::StackTransitionType::Crossfade
+        );
+        assert_eq!(stack.transition_duration(), crate::ui::motion::STANDARD_MS);
         stack.add_named(&gtk4::Label::new(Some("first track")), Some("list"));
         stack.set_visible_child_name("list");
 
