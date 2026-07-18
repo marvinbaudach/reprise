@@ -321,6 +321,17 @@ impl AlbumView {
         })
     }
 
+    pub(in crate::ui) fn restore_focus_callback(
+        &self,
+    ) -> crate::ui::window::album_grid_reveal::AlbumRevealCallback {
+        let state = self.state.clone();
+        let grid = self.grid_view.downgrade();
+        Rc::new(move |album, artist| {
+            grid.upgrade()
+                .is_some_and(|grid| state.restore_album_focus(&grid, album, artist))
+        })
+    }
+
     pub(in crate::ui) fn refresh_callback(&self) -> Rc<dyn Fn()> {
         self.state.refresh_callback()
     }
@@ -494,5 +505,54 @@ mod tests {
 
         window.close();
         settings.set_gtk_enable_animations(animations_before);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn grid_6_restore_focus_targets_departed_album_without_reveal_pulse() {
+        gtk4::init().unwrap();
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
+             ('/one.flac','One','Artist A','First',0),
+             ('/two.flac','Two','Artist B','Return Here',0),
+             ('/three.flac','Three','Artist C','Last',0);",
+        )
+        .unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+        let loader =
+            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let view = AlbumView::new(&conn, loader);
+        let window = gtk4::Window::builder()
+            .default_width(500)
+            .default_height(600)
+            .child(view.widget())
+            .build();
+        window.present();
+        wait_for_layout(50);
+
+        assert!(view.restore_focus_callback()("Return Here", "Artist B"));
+        wait_for_layout(50);
+
+        let focused = view
+            .grid_widget()
+            .focus_child()
+            .expect("GtkGridView focused the restored album");
+        let title = descendants_with_class(&focused, crate::ui::album_card_css::TITLE_CLASS)
+            .into_iter()
+            .next()
+            .and_downcast::<gtk4::Label>()
+            .expect("restored title");
+        assert_eq!(title.text(), "Return Here");
+        let reveal_frame =
+            descendants_with_class(&focused, crate::ui::album_card_css::REVEAL_FRAME_CLASS)
+                .into_iter()
+                .next()
+                .expect("cover-only reveal frame");
+        assert!(!reveal_frame.has_css_class(crate::ui::album_card_css::REVEAL_PULSE_CLASS));
+        assert!(!reveal_frame.has_css_class(crate::ui::album_card_css::REVEAL_PULSE_STATIC_CLASS));
+
+        window.close();
     }
 }

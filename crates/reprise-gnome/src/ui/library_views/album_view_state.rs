@@ -163,15 +163,7 @@ impl AlbumViewState {
         artist: &str,
     ) -> bool {
         self.apply_filter("");
-        let albums = (0..self.filter_model.n_items())
-            .filter_map(|index| {
-                let object = self.filter_model.item(index)?;
-                let boxed = object.downcast_ref::<glib::BoxedAnyObject>()?;
-                let album = boxed.borrow::<AlbumSummary>().clone();
-                Some(album)
-            })
-            .collect::<Vec<_>>();
-        let Some(index) = album_index(&albums, title, artist) else {
+        let Some(index) = self.filtered_album_index(title, artist) else {
             return false;
         };
 
@@ -184,10 +176,35 @@ impl AlbumViewState {
         });
         rebind_in_store(&self.store, title, artist);
 
-        let scroll = gtk4::ScrollInfo::new();
-        scroll.set_enable_vertical(true);
-        grid.scroll_to(index, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        focus_album_at(grid, index);
         true
+    }
+
+    /// Restores keyboard focus after Back without clearing the user's search
+    /// or replaying GRID-5's one-second reveal highlight.
+    pub(in crate::ui) fn restore_album_focus(
+        &self,
+        grid: &gtk4::GridView,
+        title: &str,
+        artist: &str,
+    ) -> bool {
+        let Some(index) = self.filtered_album_index(title, artist) else {
+            return false;
+        };
+        focus_album_at(grid, index);
+        true
+    }
+
+    fn filtered_album_index(&self, title: &str, artist: &str) -> Option<u32> {
+        let albums = (0..self.filter_model.n_items())
+            .filter_map(|index| {
+                let object = self.filter_model.item(index)?;
+                let boxed = object.downcast_ref::<glib::BoxedAnyObject>()?;
+                let album = boxed.borrow::<AlbumSummary>().clone();
+                Some(album)
+            })
+            .collect::<Vec<_>>();
+        album_index(&albums, title, artist)
     }
 
     #[cfg(test)]
@@ -234,6 +251,12 @@ impl AlbumViewState {
             album_header::update_count(&label, count);
         }
     }
+}
+
+fn focus_album_at(grid: &gtk4::GridView, index: u32) {
+    let scroll = gtk4::ScrollInfo::new();
+    scroll.set_enable_vertical(true);
+    grid.scroll_to(index, gtk4::ListScrollFlags::FOCUS, Some(scroll));
 }
 
 pub(in crate::ui) fn matches_filter(album: &AlbumSummary, raw_filter: &str) -> bool {
