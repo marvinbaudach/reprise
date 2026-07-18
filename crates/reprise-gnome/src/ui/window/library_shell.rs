@@ -238,6 +238,24 @@ pub(in crate::ui) fn wire_source_routing(
     sidebar.set_on_show_content(move || show_content());
 }
 
+/// Builds the library split view in its collapsed default. It starts with the
+/// sidebar hidden rather than expanded: the wide breakpoint (and its
+/// `collapsed`-notify wiring) reveals the sidebar column once the window is at
+/// least [`SIDEBAR_BREAKPOINT_WIDTH`] wide, so a narrow restored width simply
+/// leaves the sidebar closed instead of overlaying the content underneath it.
+fn build_split_view(
+    sidebar_page: &adw::NavigationPage,
+    content_nav: &adw::NavigationView,
+) -> adw::OverlaySplitView {
+    adw::OverlaySplitView::builder()
+        .sidebar(sidebar_page)
+        .content(content_nav)
+        .sidebar_position(gtk4::PackType::Start)
+        .show_sidebar(false)
+        .collapsed(true)
+        .build()
+}
+
 pub(in crate::ui) fn build(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
@@ -265,13 +283,7 @@ pub(in crate::ui) fn build(
         info_panel.widget(),
         &strings::text(strings::APP_NAME),
     );
-    let split_view = adw::OverlaySplitView::builder()
-        .sidebar(&sidebar_page)
-        .content(&content_nav)
-        .sidebar_position(gtk4::PackType::Start)
-        .show_sidebar(true)
-        .collapsed(true)
-        .build();
+    let split_view = build_split_view(&sidebar_page, &content_nav);
     super::sidebar_presentation::style_overlay_split_view(&split_view);
     let condition = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MinWidth,
@@ -305,6 +317,27 @@ mod tests {
         );
         assert_eq!(smoke_library_view_name("Albums"), None);
         assert_eq!(smoke_library_view_name("unknown"), None);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn sidebar_split_view_starts_closed_so_narrow_restores_never_overlay_content() {
+        gtk4::init().unwrap();
+        let sidebar_page = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let content = adw::NavigationView::new();
+
+        let split = build_split_view(&sidebar_page, &content);
+
+        assert!(split.is_collapsed());
+        assert_eq!(split.sidebar_position(), gtk4::PackType::Start);
+        assert!(
+            !split.shows_sidebar(),
+            "a narrow (sub-breakpoint) restored window must not start with the \
+             sidebar overlaid on top of the content"
+        );
     }
 
     #[test]
