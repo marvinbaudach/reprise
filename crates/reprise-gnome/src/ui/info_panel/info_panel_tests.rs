@@ -157,6 +157,7 @@ fn lyrics_context_is_independent_and_survives_panel_close() {
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
+    let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
     let cover_runtime = crate::ui::cover_download_worker::setup();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
@@ -165,7 +166,7 @@ fn lyrics_context_is_independent_and_survives_panel_close() {
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = InfoPanel::new(&content, &window, conn, runtime, cover_loader);
+    let panel = InfoPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
 
     panel.set_context(PanelContext::Multiple(2));
     let information_title = panel.widgets.title.text();
@@ -207,6 +208,7 @@ fn multiple_selection_uses_a_finished_empty_state_without_refresh() {
     )
     .unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
+    let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
     let cover_runtime = crate::ui::cover_download_worker::setup();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
@@ -215,7 +217,7 @@ fn multiple_selection_uses_a_finished_empty_state_without_refresh() {
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = InfoPanel::new(&content, &window, conn, runtime, cover_loader);
+    let panel = InfoPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
 
     panel.set_context(PanelContext::Multiple(4));
 
@@ -248,6 +250,7 @@ fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
+    let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
     let cover_runtime = crate::ui::cover_download_worker::setup();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
@@ -256,7 +259,7 @@ fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = InfoPanel::new(&content, &window, conn, runtime, cover_loader);
+    let panel = InfoPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
     panel.retain_for_window(&window);
     let weak = Rc::downgrade(&panel);
     let toggle = panel.toggle_button();

@@ -51,6 +51,7 @@ pub(in crate::ui) fn css() -> String {
            background-color: alpha(@accent_bg_color, {ROW_SELECTED_BG_ALPHA}); }}\n\
          .artist-list row:selected .artist-list-name {{ font-weight: 700; }}\n\
          .artist-list-avatar {{ border-radius: 999px; }}\n\
+         .artist-portrait-image {{ border-radius: 9999px; background-color: transparent; }}\n\
          .artist-list-avatar label {{ \
            color: {AVATAR_INITIALS_COLOR}; font-weight: 700; font-size: 13px; }}\n\
          .artist-list-name {{ font-size: 13.5px; }}\n\
@@ -156,6 +157,7 @@ mod tests {
             ".artist-list-row",
             ".artist-list-row:hover",
             ".artist-list-avatar",
+            ".artist-portrait-image",
             ".artist-list-name",
             ".artist-list-meta",
             ".artist-list-section",

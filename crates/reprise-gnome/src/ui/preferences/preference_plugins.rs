@@ -3,7 +3,10 @@ use reprise_core::modules::ModuleDescriptor;
 use super::strings;
 
 pub(in crate::ui) fn plugin_applies_live(id: &str) -> bool {
-    matches!(id, "artist_news" | "listenbrainz" | "lastfm")
+    matches!(
+        id,
+        "artist_news" | "artist_portrait" | "listenbrainz" | "lastfm"
+    )
 }
 
 pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {

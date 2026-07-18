@@ -10,6 +10,7 @@ use rusqlite::Connection;
 
 use super::album_view::AlbumView;
 use super::artist_news_worker::ArtistNewsRuntime;
+use super::artist_portrait_worker::ArtistPortraitRuntime;
 use super::artist_view::ArtistView;
 use super::device_view::DeviceViewPage;
 use super::info_panel::InfoPanel;
@@ -235,6 +236,7 @@ pub(in crate::ui) fn wire_source_routing(
     sidebar.set_on_show_content(move || show_content());
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn build(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
@@ -243,6 +245,7 @@ pub(in crate::ui) fn build(
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     runtime: &Rc<ArtistNewsRuntime>,
+    portraits: &Rc<ArtistPortraitRuntime>,
 ) -> LibraryShell {
     let sidebar_page = adw::NavigationPage::builder()
         .title(strings::text(strings::APP_NAME))
@@ -253,6 +256,7 @@ pub(in crate::ui) fn build(
         window,
         conn.clone(),
         runtime.clone(),
+        portraits,
         track_list.shared_cover_loader(),
     );
     if let Some(player) = player {

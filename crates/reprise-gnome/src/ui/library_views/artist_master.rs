@@ -26,6 +26,7 @@ use libadwaita as adw;
 use rusqlite::Connection;
 
 use crate::ui::artist_master_row::{self, Registry};
+use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::strings;
 use reprise_core::queries::{self, ArtistSummary};
 
@@ -81,7 +82,10 @@ pub(in crate::ui) struct ArtistMaster {
 }
 
 impl ArtistMaster {
-    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>) -> Self {
+    pub(in crate::ui) fn new(
+        conn: Rc<RefCell<Connection>>,
+        portraits: &Rc<ArtistPortraitRuntime>,
+    ) -> Self {
         let rows: Rc<RefCell<Vec<ArtistSummary>>> = Rc::new(RefCell::new(Vec::new()));
         let mode = Rc::new(Cell::new(SortMode::Alphabetical));
         let registry: Registry = Rc::new(RefCell::new(HashMap::new()));
@@ -100,7 +104,7 @@ impl ArtistMaster {
             .build();
         wire_selection(&selection, &on_select);
 
-        let factory = artist_master_row::build_row_factory(&registry, &now_playing);
+        let factory = artist_master_row::build_row_factory(&registry, &now_playing, portraits);
         let list_view = gtk4::ListView::new(Some(selection.clone()), Some(factory));
         list_view.add_css_class("artist-list");
         let header_factory = build_header_factory();
@@ -148,6 +152,7 @@ impl ArtistMaster {
             on_select,
         });
 
+        subscribe_portrait_enabled(portraits, &inner.registry);
         wire_dropdown(&dropdown, &inner);
 
         let master = Self { root, inner };
@@ -216,6 +221,21 @@ impl ArtistMaster {
     pub(in crate::ui) fn select_index_for_test(&self, index: u32) {
         self.inner.selection.set_selected(index);
     }
+}
+
+fn subscribe_portrait_enabled(portraits: &Rc<ArtistPortraitRuntime>, registry: &Registry) {
+    let alive = Rc::downgrade(registry);
+    let target = alive.clone();
+    let runtime = Rc::downgrade(portraits);
+    portraits.subscribe_enabled(
+        move || alive.upgrade().is_some(),
+        move |enabled| {
+            let (Some(registry), Some(runtime)) = (target.upgrade(), runtime.upgrade()) else {
+                return;
+            };
+            artist_master_row::apply_portrait_enabled(&registry, &runtime, enabled);
+        },
+    );
 }
 
 /// The alphabet section key for a name: its uppercased first letter, or `#`
@@ -476,7 +496,9 @@ mod tests {
         .unwrap();
         let conn = std::rc::Rc::new(std::cell::RefCell::new(conn));
         let selected = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let master = ArtistMaster::new(conn);
+        let portraits =
+            crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+        let master = ArtistMaster::new(conn, &portraits);
         master.set_on_select({
             let selected = selected.clone();
             move |artist| *selected.borrow_mut() = Some(artist)

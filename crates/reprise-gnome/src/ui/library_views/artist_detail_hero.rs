@@ -28,6 +28,7 @@ pub(in crate::ui) struct Hero {
     meta: gtk4::Label,
     initials: gtk4::Label,
     avatar: gtk4::Box,
+    portrait: gtk4::Picture,
     glow: gtk4::DrawingArea,
     glow_accent: Rc<Cell<Option<Rgb>>>,
 }
@@ -55,6 +56,17 @@ impl Hero {
         ));
         self.initials.set_text(&artist_avatar::initials(artist));
         set_avatar_gradient(&self.avatar, artist);
+        self.clear_portrait();
+    }
+
+    pub(in crate::ui) fn set_portrait(&self, texture: &gtk4::gdk::Texture) {
+        self.portrait.set_paintable(Some(texture));
+        self.portrait.set_visible(true);
+    }
+
+    pub(in crate::ui) fn clear_portrait(&self) {
+        self.portrait.set_paintable(gtk4::gdk::Paintable::NONE);
+        self.portrait.set_visible(false);
     }
 
     /// Sets the glow surface to a static color fill derived from `accent`
@@ -79,8 +91,8 @@ pub(in crate::ui) fn build_hero(callbacks: &HeroCallbacks) -> Hero {
     let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 20);
     content.add_css_class("artist-hero");
 
-    let (avatar, initials) = build_avatar();
-    content.append(&avatar);
+    let (avatar_container, avatar, initials, portrait) = build_avatar();
+    content.append(&avatar_container);
 
     let column = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     column.set_valign(gtk4::Align::Center);
@@ -121,13 +133,14 @@ pub(in crate::ui) fn build_hero(callbacks: &HeroCallbacks) -> Hero {
         meta,
         initials,
         avatar,
+        portrait,
         glow,
         glow_accent,
     }
 }
 
-/// Builds the round gradient avatar box with its centered initials label.
-fn build_avatar() -> (gtk4::Box, gtk4::Label) {
+/// Round gradient avatar with initials, plus a portrait overlaid when loaded.
+fn build_avatar() -> (gtk4::Widget, gtk4::Box, gtk4::Label, gtk4::Picture) {
     let avatar = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     avatar.add_css_class("artist-hero-avatar");
     avatar.set_size_request(AVATAR_SIZE, AVATAR_SIZE);
@@ -138,7 +151,23 @@ fn build_avatar() -> (gtk4::Box, gtk4::Label) {
     initials.set_valign(gtk4::Align::Center);
     initials.add_css_class("artist-hero-initials");
     avatar.append(&initials);
-    (avatar, initials)
+
+    let portrait = gtk4::Picture::new();
+    portrait.set_content_fit(gtk4::ContentFit::Cover);
+    portrait.set_size_request(AVATAR_SIZE, AVATAR_SIZE);
+    portrait.set_halign(gtk4::Align::Center);
+    portrait.set_valign(gtk4::Align::Center);
+    portrait.set_overflow(gtk4::Overflow::Hidden);
+    portrait.add_css_class("artist-portrait-image");
+    portrait.set_visible(false);
+
+    let overlay = gtk4::Overlay::new();
+    overlay.set_child(Some(&avatar));
+    overlay.add_overlay(&portrait);
+    overlay.set_halign(gtk4::Align::Center);
+    overlay.set_valign(gtk4::Align::Center);
+
+    (overlay.upcast(), avatar, initials, portrait)
 }
 
 /// Builds the Play all (accent pill) / Shuffle / ⋮ menu action row.
