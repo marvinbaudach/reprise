@@ -59,9 +59,8 @@ impl Hero {
         self.clear_portrait();
     }
 
-    pub(in crate::ui) fn set_portrait(&self, texture: &gtk4::gdk::Texture) {
-        self.portrait.set_paintable(Some(texture));
-        self.portrait.set_visible(true);
+    pub(in crate::ui) fn portrait(&self) -> &gtk4::Picture {
+        &self.portrait
     }
 
     pub(in crate::ui) fn clear_portrait(&self) {

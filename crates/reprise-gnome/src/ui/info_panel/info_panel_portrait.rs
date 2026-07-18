@@ -12,11 +12,13 @@ use gtk4::prelude::*;
 use reprise_core::artist_portrait::PortraitOutcome;
 
 use super::artist_portrait_worker::{ArtistPortraitRequest, ArtistPortraitRuntime};
+use super::cover_loader::CoverLoader;
 
 pub(in crate::ui) struct InfoPanelPortrait {
     picture: gtk4::Picture,
     runtime: Rc<ArtistPortraitRuntime>,
-    generation: Cell<u64>,
+    cover_loader: Rc<CoverLoader>,
+    generation: Rc<Cell<u64>>,
     artist: RefCell<String>,
 }
 
@@ -24,11 +26,13 @@ impl InfoPanelPortrait {
     pub(in crate::ui) fn new(
         picture: gtk4::Picture,
         runtime: &Rc<ArtistPortraitRuntime>,
+        cover_loader: &Rc<CoverLoader>,
     ) -> Rc<Self> {
         Rc::new(Self {
             picture,
             runtime: runtime.clone(),
-            generation: Cell::new(0),
+            cover_loader: cover_loader.clone(),
+            generation: Rc::new(Cell::new(0)),
             artist: RefCell::new(String::new()),
         })
     }
@@ -56,7 +60,6 @@ impl InfoPanelPortrait {
         self.runtime.request(ArtistPortraitRequest {
             generation,
             artist,
-            force: false,
             response: sender,
         });
         let weak = Rc::downgrade(self);
@@ -73,10 +76,13 @@ impl InfoPanelPortrait {
                 return;
             }
             if let Ok(PortraitOutcome::Found(path)) = response.result {
-                if let Ok(texture) = gtk4::gdk::Texture::from_filename(&path) {
-                    portrait.picture.set_paintable(Some(&texture));
-                    portrait.picture.set_visible(true);
-                }
+                portrait.cover_loader.load_file_into_picture(
+                    &portrait.picture,
+                    &path,
+                    reprise_core::cover::ThumbnailSize::Portrait,
+                    response.generation,
+                    &portrait.generation,
+                );
             }
         });
     }

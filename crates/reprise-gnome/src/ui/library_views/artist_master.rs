@@ -27,6 +27,7 @@ use rusqlite::Connection;
 
 use crate::ui::artist_master_row::{self, Registry};
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
+use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 use reprise_core::queries::{self, ArtistSummary};
 
@@ -85,6 +86,7 @@ impl ArtistMaster {
     pub(in crate::ui) fn new(
         conn: Rc<RefCell<Connection>>,
         portraits: &Rc<ArtistPortraitRuntime>,
+        cover_loader: &Rc<CoverLoader>,
     ) -> Self {
         let rows: Rc<RefCell<Vec<ArtistSummary>>> = Rc::new(RefCell::new(Vec::new()));
         let mode = Rc::new(Cell::new(SortMode::Alphabetical));
@@ -104,7 +106,8 @@ impl ArtistMaster {
             .build();
         wire_selection(&selection, &on_select);
 
-        let factory = artist_master_row::build_row_factory(&registry, &now_playing, portraits);
+        let factory =
+            artist_master_row::build_row_factory(&registry, &now_playing, portraits, cover_loader);
         let list_view = gtk4::ListView::new(Some(selection.clone()), Some(factory));
         list_view.add_css_class("artist-list");
         let header_factory = build_header_factory();
@@ -481,7 +484,9 @@ mod tests {
         let conn = std::rc::Rc::new(std::cell::RefCell::new(conn));
         let selected = std::rc::Rc::new(std::cell::RefCell::new(None));
         let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
-        let master = ArtistMaster::new(conn, &portraits);
+        let cover_loader =
+            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let master = ArtistMaster::new(conn, &portraits, &cover_loader);
         master.set_on_select({
             let selected = selected.clone();
             move |artist| *selected.borrow_mut() = Some(artist)

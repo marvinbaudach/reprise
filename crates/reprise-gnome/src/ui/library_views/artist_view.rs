@@ -42,7 +42,7 @@ impl ArtistView {
         cover_loader: Rc<CoverLoader>,
         portraits: Rc<ArtistPortraitRuntime>,
     ) -> Self {
-        let master = ArtistMaster::new(conn.clone(), &portraits);
+        let master = ArtistMaster::new(conn.clone(), &portraits, &cover_loader);
         let detail = Rc::new(ArtistDetailPane::new(conn, cover_loader, portraits));
 
         // Master selection drives the detail pane. The GTK caller supplies the

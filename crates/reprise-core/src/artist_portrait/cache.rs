@@ -20,7 +20,7 @@ pub(crate) fn cache_dir() -> PathBuf {
 }
 
 pub(crate) fn key_for(name: &str) -> String {
-    crate::cover::hash_hex(normalize(name).as_bytes())
+    crate::cover::hash_hex(super::normalize(name).as_bytes())
 }
 
 pub(crate) fn portrait_path_in(dir: &Path, name: &str) -> Option<PathBuf> {
@@ -95,14 +95,6 @@ pub(crate) fn write_negative(dir: &Path, name: &str) {
         return;
     }
     let _ = std::fs::remove_file(temporary);
-}
-
-fn normalize(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
 }
 
 #[cfg(test)]
