@@ -113,9 +113,43 @@ struct BaselineReport {
     first_window: TimingSummary,
     middle_window: TimingSummary,
     final_window: TimingSummary,
+    title_window_query_plan: QueryPlanSummary,
     filtered_count: TimingSummary,
     library_stats: TimingSummary,
     playback_ids: TimingSummary,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct QueryPlanSummary {
+    details: Vec<String>,
+    uses_temp_sort: bool,
+    index_name: Option<String>,
+}
+
+fn summarize_query_plan(details: Vec<String>) -> QueryPlanSummary {
+    let uses_temp_sort = details
+        .iter()
+        .any(|detail| detail.contains("USE TEMP B-TREE FOR ORDER BY"));
+    let index_name = details.iter().find_map(|detail| {
+        detail
+            .split_once(" INDEX ")
+            .and_then(|(_, suffix)| suffix.split_whitespace().next())
+            .map(str::to_owned)
+    });
+    QueryPlanSummary {
+        details,
+        uses_temp_sort,
+        index_name,
+    }
+}
+
+fn explain_title_window(conn: &Connection) -> rusqlite::Result<QueryPlanSummary> {
+    let query = queries::build_track_query("title", "asc", false);
+    let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {query}"))?;
+    let details = statement
+        .query_map(rusqlite::params![WINDOW_ROWS, 0], |row| row.get(3))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    Ok(summarize_query_plan(details))
 }
 
 fn seed_generated_metadata(conn: &mut Connection, track_count: usize) -> rusqlite::Result<()> {
@@ -222,6 +256,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
     let final_offset =
         i64::try_from(config.track_count.saturating_sub(WINDOW_ROWS as usize)).unwrap_or(i64::MAX);
     let final_window = measure_window(&mut conn, config.iterations, final_offset)?;
+    let title_window_query_plan = explain_title_window(&conn)?;
 
     let filtered_count = measure(config.iterations, || {
         let count = queries::query_track_count(&conn, &ViewSource::Library, "needle", &[])?;
@@ -237,7 +272,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
     })?;
 
     Ok(BaselineReport {
-        schema_version: 1,
+        schema_version: 2,
         generated_tracks: config.track_count,
         database_bytes: std::fs::metadata(&config.db_path)?.len(),
         iterations: config.iterations,
@@ -246,6 +281,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         first_window,
         middle_window,
         final_window,
+        title_window_query_plan,
         filtered_count,
         library_stats,
         playback_ids,
@@ -361,7 +397,7 @@ mod tests {
     #[test]
     fn report_serializes_the_stable_json_contract() {
         let report = BaselineReport {
-            schema_version: 1,
+            schema_version: 2,
             generated_tracks: 10_000,
             database_bytes: 42,
             iterations: 3,
@@ -370,6 +406,14 @@ mod tests {
             first_window: TimingSummary::from_samples(vec![9, 7, 8], 200),
             middle_window: TimingSummary::from_samples(vec![12, 10, 11], 200),
             final_window: TimingSummary::from_samples(vec![15, 13, 14], 200),
+            title_window_query_plan: QueryPlanSummary {
+                details: vec![
+                    "SCAN tracks".to_string(),
+                    "USE TEMP B-TREE FOR ORDER BY".to_string(),
+                ],
+                uses_temp_sort: true,
+                index_name: None,
+            },
             filtered_count: TimingSummary::from_samples(vec![18, 16, 17], 11),
             library_stats: TimingSummary::from_samples(vec![21, 19, 20], 10_000),
             playback_ids: TimingSummary::from_samples(vec![24, 22, 23], 10_000),
@@ -378,7 +422,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(report).unwrap(),
             serde_json::json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "generated_tracks": 10000,
                 "database_bytes": 42,
                 "iterations": 3,
@@ -387,10 +431,43 @@ mod tests {
                 "first_window": {"min_us": 7, "median_us": 8, "max_us": 9, "result_rows": 200},
                 "middle_window": {"min_us": 10, "median_us": 11, "max_us": 12, "result_rows": 200},
                 "final_window": {"min_us": 13, "median_us": 14, "max_us": 15, "result_rows": 200},
+                "title_window_query_plan": {
+                    "details": ["SCAN tracks", "USE TEMP B-TREE FOR ORDER BY"],
+                    "uses_temp_sort": true,
+                    "index_name": null
+                },
                 "filtered_count": {"min_us": 16, "median_us": 17, "max_us": 18, "result_rows": 11},
                 "library_stats": {"min_us": 19, "median_us": 20, "max_us": 21, "result_rows": 10000},
                 "playback_ids": {"min_us": 22, "median_us": 23, "max_us": 24, "result_rows": 10000}
             })
+        );
+    }
+
+    #[test]
+    fn query_plan_summary_reports_temp_sort_and_named_index() {
+        assert_eq!(
+            summarize_query_plan(vec![
+                "SCAN tracks".to_string(),
+                "USE TEMP B-TREE FOR ORDER BY".to_string(),
+            ]),
+            QueryPlanSummary {
+                details: vec![
+                    "SCAN tracks".to_string(),
+                    "USE TEMP B-TREE FOR ORDER BY".to_string(),
+                ],
+                uses_temp_sort: true,
+                index_name: None,
+            }
+        );
+        assert_eq!(
+            summarize_query_plan(vec![
+                "SCAN tracks USING INDEX idx_tracks_title_nocase".to_string()
+            ]),
+            QueryPlanSummary {
+                details: vec!["SCAN tracks USING INDEX idx_tracks_title_nocase".to_string()],
+                uses_temp_sort: false,
+                index_name: Some("idx_tracks_title_nocase".to_string()),
+            }
         );
     }
 
