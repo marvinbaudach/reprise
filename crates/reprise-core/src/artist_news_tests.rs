@@ -1,10 +1,10 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    artist_search_url, artists_for_fetch, hidden_release_count, mark_releases_seen,
-    most_played_album_track_path, parse_artist_mbid, parse_release_groups, query_releases,
-    refresh_with, release_groups_url, set_release_hidden, show_hidden_releases,
-    unseen_release_count, ArtistMatch, FetchScope, NewsKind,
+    artist_search_url, artists_for_fetch, configured_fetch_scope, hidden_release_count,
+    mark_releases_seen, most_played_album_track_path, parse_artist_mbid, parse_release_groups,
+    query_releases, refresh_with, release_groups_url, set_fetch_all_artists, set_release_hidden,
+    show_hidden_releases, unseen_release_count, ArtistMatch, FetchScope, NewsKind,
 };
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -485,6 +485,22 @@ fn nr_4_hide_sets_hidden_and_show_restores_hidden_releases() {
 
     assert_eq!(hidden_release_count(&conn).unwrap(), 0);
     assert_eq!(query_releases(&conn, false, date()).unwrap().len(), 2);
+}
+
+#[test]
+fn nr_7_fetch_scope_defaults_to_top_and_round_trips_all_artists() {
+    let conn = migrated_conn();
+    assert_eq!(
+        configured_fetch_scope(&conn, date()).unwrap(),
+        FetchScope::TopArtists
+    );
+
+    set_fetch_all_artists(&conn, true).unwrap();
+
+    assert!(matches!(
+        configured_fetch_scope(&conn, date()).unwrap(),
+        FetchScope::AllArtists { .. }
+    ));
 }
 
 fn insert_release(conn: &rusqlite::Connection, mbid: &str, seen_at: Option<i64>) {

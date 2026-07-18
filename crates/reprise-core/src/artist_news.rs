@@ -4,7 +4,7 @@
 use std::cmp::Ordering;
 use std::path::PathBuf;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use rusqlite::Connection;
 
 use crate::musicbrainz::{self, FetchError};
@@ -16,6 +16,7 @@ const MAX_ITEMS: usize = 5;
 const TOP_ARTIST_COUNT: usize = 20;
 const DAILY_REST_COUNT: usize = 5;
 const DEFAULT_FALLBACK_ACCENT: &str = "#3584E4";
+const FETCH_ALL_ARTISTS_KEY: &str = "module.new_releases.all_artists";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewsKind {
@@ -59,6 +60,23 @@ pub struct StoredRelease {
 pub enum FetchScope {
     TopArtists,
     AllArtists { day_index: u64 },
+}
+
+pub fn configured_fetch_scope(
+    conn: &Connection,
+    today: NaiveDate,
+) -> Result<FetchScope, rusqlite::Error> {
+    if crate::library::settings::get_bool(conn, FETCH_ALL_ARTISTS_KEY, false)? {
+        Ok(FetchScope::AllArtists {
+            day_index: u64::try_from(today.num_days_from_ce()).unwrap_or_default(),
+        })
+    } else {
+        Ok(FetchScope::TopArtists)
+    }
+}
+
+pub fn set_fetch_all_artists(conn: &Connection, all_artists: bool) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_bool(conn, FETCH_ALL_ARTISTS_KEY, all_artists)
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

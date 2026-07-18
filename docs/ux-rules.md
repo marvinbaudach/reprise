@@ -825,7 +825,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Refresh-Icon durch einen Spinner und zeigt sonst das Alter der letzten
   Aktualisierung. Offline oder Fehler zeigen weiter den letzten Cache samt
   Alter und nur einen dezenten Inline-Hinweis im Fuß — nie ein Fehlerbanner.
-- **NR-7** [geplant] [gtk] — New Releases ist ein Plugin auf der Plugins-Seite,
+- **NR-7** [aktiv] [gtk] — New Releases ist ein Plugin auf der Plugins-Seite,
   standardmäßig aus und mit Privacy-Untertitel „contacts MusicBrainz" sowie
   Auswahl „Top artists only / all artists". Bei ausgeschaltetem Modul gibt es
   weder Fetch noch ✦; Cover-, Portrait- und Lyrics-Module gehören nicht zu

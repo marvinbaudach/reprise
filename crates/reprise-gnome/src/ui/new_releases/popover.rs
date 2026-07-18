@@ -7,6 +7,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 
+use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::{one_shot_task, popover_lifecycle, strings};
 
 use super::release_cover::{fallback_accent_for_artist, LazyReleaseCover};
@@ -50,6 +51,19 @@ fn footer_presentation(latest: Option<i64>, now: i64, failed: bool) -> FooterPre
 
 fn see_all_visible(total: usize, visible: usize, hidden: usize) -> bool {
     total > visible || hidden > 0
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ModuleEffect {
+    button_visible: bool,
+    fetch_allowed: bool,
+}
+
+fn module_effect(enabled: bool, has_releases: bool) -> ModuleEffect {
+    ModuleEffect {
+        button_visible: enabled && has_releases,
+        fetch_allowed: enabled,
+    }
 }
 
 struct NewReleasesPopover {
@@ -150,6 +164,15 @@ impl NewReleasesPopover {
     }
 
     fn render(&self, mark_seen: bool, failed: bool) {
+        let enabled = reprise_core::modules::is_enabled(
+            &self.conn.borrow(),
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+        )
+        .unwrap_or(false);
+        if !enabled {
+            self.button.set_visible(false);
+            return;
+        }
         let today = chrono::Local::now().date_naive();
         let all_releases =
             match reprise_core::artist_news::query_releases(&self.conn.borrow(), true, today) {
@@ -166,7 +189,8 @@ impl NewReleasesPopover {
             .cloned()
             .collect::<Vec<_>>();
         let hidden = all_releases.iter().filter(|release| release.hidden).count();
-        self.button.set_visible(!all_releases.is_empty());
+        let effect = module_effect(enabled, !all_releases.is_empty());
+        self.button.set_visible(effect.button_visible);
         clear_box(&self.rows);
         for (index, release) in releases.iter().take(POPOVER_LIMIT).enumerate() {
             self.rows.append(&build_release_row(release, index == 0));
@@ -198,6 +222,14 @@ impl NewReleasesPopover {
     }
 
     fn fetch_now(self: &Rc<Self>) {
+        let enabled = reprise_core::modules::is_enabled(
+            &self.conn.borrow(),
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+        )
+        .unwrap_or(false);
+        if !module_effect(enabled, true).fetch_allowed {
+            return;
+        }
         if self.fetching.replace(true) {
             return;
         }
@@ -248,9 +280,20 @@ pub(in crate::ui) fn install(
     conn: &Rc<RefCell<rusqlite::Connection>>,
     database_path: &Path,
     on_see_all: Rc<dyn Fn()>,
+    runtime: &Rc<ArtistNewsRuntime>,
 ) {
     let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf(), on_see_all);
     header.pack_end(&state.button);
+    let alive = Rc::downgrade(&state);
+    let target = Rc::downgrade(&state);
+    runtime.subscribe_enabled(
+        move || alive.upgrade().is_some(),
+        move |_| {
+            if let Some(state) = target.upgrade() {
+                state.render(false, false);
+            }
+        },
+    );
     state.retain_for_window(window);
 }
 
@@ -259,13 +302,15 @@ fn fetch_from_database(
 ) -> Result<reprise_core::artist_news::RefreshReport, reprise_core::artist_news::NewsError> {
     let conn = reprise_core::db::open_migrated(Some(database_path))
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
-    reprise_core::artist_news::refresh(
-        &conn,
-        chrono::Local::now().date_naive(),
-        reprise_core::artist_news::FetchScope::TopArtists,
-        true,
-        fallback_accent_for_artist,
-    )
+    if !reprise_core::modules::is_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE)
+        .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?
+    {
+        return Ok(reprise_core::artist_news::RefreshReport::default());
+    }
+    let today = chrono::Local::now().date_naive();
+    let scope = reprise_core::artist_news::configured_fetch_scope(&conn, today)
+        .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
+    reprise_core::artist_news::refresh(&conn, today, scope, true, fallback_accent_for_artist)
 }
 
 fn build_button() -> (gtk4::MenuButton, gtk4::Label) {
@@ -408,6 +453,53 @@ mod tests {
     }
 
     #[test]
+    fn nr_7_disabled_module_hides_the_button_and_blocks_fetch() {
+        assert_eq!(
+            module_effect(false, true),
+            ModuleEffect {
+                button_visible: false,
+                fetch_allowed: false,
+            }
+        );
+        assert_eq!(
+            module_effect(true, false),
+            ModuleEffect {
+                button_visible: false,
+                fetch_allowed: true,
+            }
+        );
+        assert_eq!(
+            module_effect(true, true),
+            ModuleEffect {
+                button_visible: true,
+                fetch_allowed: true,
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
+        gtk4::init().unwrap();
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, fallback_accent
+             ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
+                       '2026-08-01', 1, '#123456')",
+            [],
+        )
+        .unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+
+        let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), Rc::new(|| {}));
+
+        assert!(!state.button.is_visible());
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn nr_3_header_button_is_visible_only_when_releases_exist() {
         gtk4::init().unwrap();
@@ -428,6 +520,12 @@ mod tests {
                 [],
             )
             .unwrap();
+        reprise_core::modules::set_enabled(
+            &conn.borrow(),
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+            true,
+        )
+        .unwrap();
         state.render(false, false);
 
         assert!(state.button.is_visible());

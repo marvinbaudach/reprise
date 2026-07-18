@@ -669,10 +669,13 @@ impl PreferencesContext {
                 .use_markup(false)
                 .active(active)
                 .build();
+            let scope_row = (descriptor.id == "new_releases")
+                .then(|| super::preference_new_releases::scope_row(&self.conn, active));
             let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
             let syncing_notify = syncing.clone();
+            let scope_notify = scope_row.clone();
             row.connect_active_notify(move |row| {
                 let Some(context) = weak.upgrade() else {
                     return;
@@ -681,7 +684,10 @@ impl PreferencesContext {
                     return;
                 }
                 let active = row.is_active();
-                let result = if descriptor.id == "artist_news" {
+                if let Some(scope) = &scope_notify {
+                    scope.set_sensitive(active);
+                }
+                let result = if descriptor.id == "new_releases" {
                     context
                         .artist_news
                         .set_enabled(&context.conn.borrow(), active)
@@ -695,10 +701,15 @@ impl PreferencesContext {
                     syncing_notify.set(false);
                 }
             });
-            if descriptor.id == "artist_news" {
+            if descriptor.id == "new_releases" {
                 let alive = glib::WeakRef::new();
                 alive.set(Some(&row));
                 let target = alive.clone();
+                let scope_target = scope_row.as_ref().map(|scope| {
+                    let target = glib::WeakRef::new();
+                    target.set(Some(scope));
+                    target
+                });
                 let syncing = syncing.clone();
                 self.artist_news.subscribe_enabled(
                     move || alive.upgrade().is_some(),
@@ -707,10 +718,17 @@ impl PreferencesContext {
                         syncing.set(true);
                         row.set_active(enabled);
                         syncing.set(false);
+                        if let Some(scope) = scope_target.as_ref().and_then(glib::WeakRef::upgrade)
+                        {
+                            scope.set_sensitive(enabled);
+                        }
                     },
                 );
             }
             group.add(&row);
+            if let Some(scope) = scope_row {
+                group.add(&scope);
+            }
         }
         page.add(&group);
         page
@@ -747,7 +765,8 @@ mod tests {
         assert!(!plugin_applies_live("cover_download"));
         assert!(plugin_applies_live("listenbrainz"));
         assert!(plugin_applies_live("lastfm"));
-        assert!(plugin_applies_live("artist_news"));
+        assert!(plugin_applies_live("new_releases"));
+        assert!(!plugin_applies_live("artist_news"));
         assert!(!plugin_applies_live("artist_portrait"));
         assert!(plugin_applies_live("lastfm"));
         assert!(!plugin_applies_live("equalizer"));
