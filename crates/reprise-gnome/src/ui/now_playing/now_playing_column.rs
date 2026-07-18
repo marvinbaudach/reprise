@@ -44,14 +44,6 @@ impl NowPlayingColumn {
     }
 
     #[cfg(test)]
-    pub(in crate::ui) fn sidebar_widget(&self) -> adw::ToolbarView {
-        self.split
-            .sidebar()
-            .and_downcast::<adw::ToolbarView>()
-            .expect("sidebar is a ToolbarView")
-    }
-
-    #[cfg(test)]
     pub(in crate::ui) fn is_visible(&self) -> bool {
         self.split.shows_sidebar()
     }

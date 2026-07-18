@@ -80,9 +80,8 @@ use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) use super::track_list_callbacks::{
     OnActivate, OnGoToAlbum, OnGoToArtist, OnLibraryMutated, OnQueueActivate, OnQueueMoveToTop,
-    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds,
-    OnSelectionChanged, OnShowMissing, OnShowMissingFiles, OnSidebarPlaylistDrop,
-    OnSidebarQueueDrop, OnTagsMutated,
+    OnQueueRemove, OnQueueReorder, OnQueueSelected, OnReload, OnScanQueuePurgeIds, OnShowMissing,
+    OnShowMissingFiles, OnSidebarPlaylistDrop, OnSidebarQueueDrop, OnTagsMutated,
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 
@@ -310,7 +309,6 @@ pub(in crate::ui) struct Shared {
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the
     /// Import-errors badge count just changed).
     pub(in crate::ui) on_import_errors_mutated: RefCell<Option<Rc<dyn Fn()>>>,
-    pub(in crate::ui) on_selection_changed: RefCell<Option<OnSelectionChanged>>,
     /// The player controller, injected post-construction via `TrackList::set_
     /// player` — used by tag-edit flow to refresh now-playing metadata after
     /// successful tag edits. `Weak`, not a strong reference, to avoid
@@ -355,6 +353,10 @@ impl TrackList {
     /// between the empty placeholder and the populated list.
     pub fn widget(&self) -> &gtk4::Box {
         &self.root
+    }
+
+    pub(in crate::ui) fn shared_cover_loader(&self) -> Rc<CoverLoader> {
+        self.shared.cover_loader.clone()
     }
 
     /// Moves keyboard focus onto the track list's `ColumnView` (Stage 3 Task

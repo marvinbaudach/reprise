@@ -194,6 +194,7 @@ impl LyricsView {
         *self.on_retry.borrow_mut() = Some(Rc::new(callback));
     }
 
+    #[allow(dead_code)]
     pub(in crate::ui) fn retry(&self) {
         let callback = self.on_retry.borrow().clone();
         if let Some(callback) = callback {
@@ -201,14 +202,17 @@ impl LyricsView {
         }
     }
 
+    #[allow(dead_code)]
     pub(in crate::ui) fn set_on_status_changed(&self, callback: impl Fn() + 'static) {
         *self.on_status_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    #[allow(dead_code)]
     pub(in crate::ui) fn is_loading(&self) -> bool {
         self.loading.get()
     }
 
+    #[allow(dead_code)]
     pub(in crate::ui) fn can_retry(&self) -> bool {
         self.can_retry.get()
     }

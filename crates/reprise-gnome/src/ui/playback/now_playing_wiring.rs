@@ -124,14 +124,14 @@ impl PlayerController {
         let artist = summary.artist;
         let album = summary.album;
         let year = summary.year;
-        // Update bar + compact player
-        self.sync_track(&title, &artist, &album, year);
-        // Update MPRIS now_playing cache
+        // Update the player-owned cache before `sync_track` fans the snapshot
+        // out to the bar, compact player, and right Now Playing panel.
         if let Some(np) = self.now_playing.borrow_mut().as_mut() {
             np.title = title.clone();
             np.artist = artist.clone();
             np.album = album.clone();
         }
+        self.sync_track(&title, &artist, &album, year);
         // Update MPRIS mirror state (will trigger PropertiesChanged via poll diff)
         {
             let mut state = self
@@ -154,15 +154,40 @@ impl PlayerController {
     ) {
         self.bar.set_track(title, artist);
         self.compact_player.set_track(title, artist);
+        self.notify_now_playing_panel_track_changed();
     }
 
-    /// Clears Bar, Compact, and Lyrics together — the `Stopped`/failure-path
-    /// counterpart to `sync_track`.
+    /// Clears Bar, Compact, Lyrics, and the Now Playing panel together — the
+    /// `Stopped`/failure-path counterpart to `sync_track`.
     pub(in crate::ui) fn sync_clear_track(&self) {
         self.bar.clear_track();
         self.compact_player.clear_track();
         self.sync_lyrics_track(None);
         self.reset_cover_accent();
+        self.notify_now_playing_panel_track_changed();
+    }
+
+    pub(in crate::ui) fn set_on_now_playing_panel_track_changed(
+        &self,
+        callback: impl Fn(Option<super::player_controller::NowPlaying>) + 'static,
+    ) {
+        *self.now_playing_panel_track_changed.borrow_mut() = Some(Rc::new(callback));
+        self.notify_now_playing_panel_track_changed();
+    }
+
+    fn notify_now_playing_panel_track_changed(&self) {
+        let track = self.now_playing.borrow().clone();
+        let callback = self.now_playing_panel_track_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(track);
+        }
+    }
+
+    pub(in crate::ui) fn set_on_now_playing_panel_state_changed(
+        &self,
+        callback: impl Fn(PlaybackState) + 'static,
+    ) {
+        *self.now_playing_panel_state_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Reverts the cover-derived accent to the theme fallback AND bumps the

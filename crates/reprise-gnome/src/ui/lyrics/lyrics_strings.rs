@@ -6,6 +6,7 @@ macro_rules! N_ {
     };
 }
 
+#[allow(dead_code)]
 pub(in crate::ui) const LYRICS: &str = N_!("Lyrics");
 pub(in crate::ui) const PLAY_TO_SEE_LYRICS: &str = N_!("Play a track to see its lyrics");
 pub(in crate::ui) const LOADING_LYRICS: &str = N_!("Loading lyrics…");
