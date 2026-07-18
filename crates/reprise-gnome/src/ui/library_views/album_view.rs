@@ -53,7 +53,6 @@ impl AlbumView {
             cover_loader,
             generation: Rc::new(Cell::new(0)),
             now_playing_album: Rc::new(RefCell::new(None)),
-            on_activate: on_activate.clone(),
             on_play: Rc::new(RefCell::new(None)),
             on_queue: Rc::new(RefCell::new(None)),
             on_artist_activate: on_artist_activate.clone(),
@@ -68,12 +67,18 @@ impl AlbumView {
             .factory(&factory)
             .min_columns(1)
             .max_columns(200)
+            // One click opens an album: the CELL machinery emits `activate`
+            // (routed below), which is reliable where a `GestureClick` on
+            // the plain card `Box` was not — the cell claims press
+            // sequences before a card gesture's `released` can fire.
+            .single_click_activate(true)
             .build();
         grid_view.add_css_class("library-grid");
 
-        // Keyboard path: Enter on the focused card fires GridView's built-in
-        // `activate` (GtkListBase binds Return/KP_Enter), mirroring the
-        // pointer path (`GestureClick` on the card Box in `album_card`).
+        // The single activation path for pointer AND keyboard: a single
+        // click (via `single_click_activate` above) and Enter on the
+        // focused card (GtkListBase binds Return/KP_Enter) both emit
+        // `activate`, routed here to `on_activate`.
         {
             let on_activate = on_activate.clone();
             let filter_model = filter_model.clone();
