@@ -4,8 +4,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 /// Deletes a playlist only while its `(id, name)` identity still matches,
 /// cascades its track memberships, and closes the removed playlist's
-/// position gap atomically. A stale dialog request is a successful no-op.
-pub fn delete(conn: &Connection, id: i64, expected_name: &str) -> Result<(), rusqlite::Error> {
+/// position gap atomically. Returns whether a row was actually deleted:
+/// `Ok(false)` means the `(id, name)` no longer matched — a stale dialog
+/// request whose target was concurrently renamed or removed. That is a
+/// successful no-op, but the caller must not report it as a deletion (the
+/// UI would otherwise claim "Playlist deleted" when nothing was).
+pub fn delete(conn: &Connection, id: i64, expected_name: &str) -> Result<bool, rusqlite::Error> {
     let tx = conn.unchecked_transaction()?;
     let position = tx
         .query_row(
@@ -15,7 +19,8 @@ pub fn delete(conn: &Connection, id: i64, expected_name: &str) -> Result<(), rus
         )
         .optional()?;
     let Some(position) = position else {
-        return tx.commit();
+        tx.commit()?;
+        return Ok(false);
     };
     tx.execute(
         "DELETE FROM playlists WHERE id = ?1 AND name = ?2",
@@ -25,7 +30,8 @@ pub fn delete(conn: &Connection, id: i64, expected_name: &str) -> Result<(), rus
         "UPDATE playlists SET position = position - 1 WHERE position > ?1",
         params![position],
     )?;
-    tx.commit()
+    tx.commit()?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -52,7 +58,10 @@ mod tests {
         )
         .unwrap();
 
-        delete(&conn, deleted, "To Delete").unwrap();
+        assert!(
+            delete(&conn, deleted, "To Delete").unwrap(),
+            "a real delete reports true"
+        );
 
         let mut statement = conn
             .prepare("SELECT id, position FROM playlists ORDER BY position")
@@ -71,5 +80,26 @@ mod tests {
             .unwrap();
         assert_eq!(track_count, 1);
         assert_eq!(membership_count, 0);
+    }
+
+    #[test]
+    fn stale_identity_is_a_no_op_and_reports_false() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        let id = playlists::create(&conn, "Renamed").unwrap();
+
+        // The dialog captured the old name; a concurrent rename changed it.
+        assert!(
+            !delete(&conn, id, "Old name").unwrap(),
+            "a stale (id, name) request deletes nothing and reports false"
+        );
+        let still_there: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM playlists WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(still_there, 1, "the live playlist survives the stale request");
     }
 }

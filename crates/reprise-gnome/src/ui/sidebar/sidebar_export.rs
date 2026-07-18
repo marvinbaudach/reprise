@@ -169,10 +169,21 @@ fn delete_playlist(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
         playlists::delete(&conn, playlist_id, playlist_name)
     };
     match result {
-        Ok(()) => {
+        Ok(true) => {
             tracing::info!(playlist_id, playlist_name, "playlist deleted");
             rebuild(shared, None, "playlist deleted");
             show_toast(shared, &strings::playlist_deleted_toast(playlist_name));
+        }
+        Ok(false) => {
+            // Stale (id, name): the dialog's target was concurrently renamed
+            // or removed, so nothing was deleted. Don't claim it was — just
+            // resync the sidebar to current reality without a success toast.
+            tracing::info!(
+                playlist_id,
+                playlist_name,
+                "playlist delete was a stale no-op"
+            );
+            rebuild(shared, None, "playlist delete no-op");
         }
         Err(error) => {
             tracing::error!(%error, playlist_id, playlist_name, "playlist deletion failed");
@@ -274,7 +285,10 @@ mod tests {
         )
         .unwrap();
 
-        playlists::delete(&conn, stale_id, "Old playlist").unwrap();
+        assert!(
+            !playlists::delete(&conn, stale_id, "Old playlist").unwrap(),
+            "the stale (id, name) request deletes nothing and reports false"
+        );
 
         assert_eq!(
             conn.query_row(
