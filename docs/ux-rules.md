@@ -682,7 +682,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   Einzel-Remove animieren.
   <!-- Die Queue-Ausnahme ist erlaubend, nicht fordernd; ihre Umsetzung
        liegt im Folge-Branch und blockiert den MOT-4-Flip nicht. -->
-- **MOT-5** [geplant] [gtk] — Player-Leiste lebt, aber leise: Play→Pause =
+- **MOT-5** [aktiv] [gtk] — Player-Leiste lebt, aber leise: Play→Pause =
   Icon-Crossfade (zwei Micro-Hälften) + Scale-Puls (1.0→0.92→1.0, Micro);
   Track-Wechsel = Cover/Titel-Crossfade; die Waveform crossfadet zum neuen
   Track statt auf 0 zu fahren; Pause entsättigt den Waveform-Fill leicht
@@ -690,10 +690,6 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   bleibt unberührt. Die EQ-Indikatoren (Trackliste, Mini-Player) laufen
   nur während aktiver Wiedergabe; die Idle-Leiste ist statisch — kein
   Dauerloop ohne Wiedergabe.
-  <!-- Flip-Kriterium MOT-5 (Folge-Branch, Muster TIP-1b/2b): Scale-Puls,
-       Waveform-Crossfade und Pause-Entsättigung sind implementiert und
-       per [gtk]-Test gedeckt. Icon- und Track-Crossfade existieren
-       bereits tokenisiert; sie allein flippen die Regel nicht. -->
 - **MOT-6** [aktiv] [gtk] — Nichts blockiert: das Modell ändert sich am
   Frame 0, die Animation illustriert nur. Eine zweite Aktion während einer
   laufenden Animation springt per `AdwAnimation::skip()` zum Endzustand und
