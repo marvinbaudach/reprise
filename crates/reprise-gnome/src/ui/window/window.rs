@@ -326,6 +326,7 @@ pub fn build(
         conn.clone(),
         track_list.shared_cover_loader(),
         artist_portrait.clone(),
+        artist_news.enabled.get(),
     ));
     let library_views = super::library_shell::build_views(
         &track_content,
@@ -512,6 +513,22 @@ pub fn build(
     {
         let preferences = Rc::downgrade(&preferences);
         info_panel.lyrics_view().set_on_settings(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_page("plugins");
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        album_view.set_on_hint_settings(move |_targets| {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_page("plugins");
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        artist_view.set_on_hint_settings(move |_targets| {
             if let Some(preferences) = preferences.upgrade() {
                 preferences.present_page("plugins");
             }

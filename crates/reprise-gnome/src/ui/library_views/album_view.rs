@@ -18,6 +18,7 @@ use crate::ui::album_header::{self, AlbumSortKey};
 use crate::ui::album_view_actions::{self, AlbumViewActions};
 use crate::ui::album_view_state::{AlbumViewState, AlbumViewStateParts, NowPlayingAlbumCallback};
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::discovery_hint::AlbumDiscovery;
 use crate::ui::strings;
 
 pub(in crate::ui) struct AlbumView {
@@ -27,6 +28,7 @@ pub(in crate::ui) struct AlbumView {
     actions: AlbumViewActions,
     on_activate: AlbumActivateSlot,
     on_artist_activate: ArtistActivateSlot,
+    discovery: AlbumDiscovery,
 }
 
 impl AlbumView {
@@ -49,8 +51,15 @@ impl AlbumView {
         let on_activate: AlbumActivateSlot = Rc::new(RefCell::new(None));
         let on_artist_activate: ArtistActivateSlot = Rc::new(RefCell::new(None));
 
+        let cover_download_enabled = reprise_core::modules::is_enabled(
+            &conn.borrow(),
+            &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+        )
+        .unwrap_or(false);
+        let discovery = AlbumDiscovery::new(conn, cover_download_enabled);
         let card_shared = Rc::new(AlbumCardShared {
             cover_loader,
+            fallback_evidence: discovery.evidence(),
             generation: Rc::new(Cell::new(0)),
             now_playing_album: Rc::new(RefCell::new(None)),
             on_play: Rc::new(RefCell::new(None)),
@@ -178,6 +187,7 @@ impl AlbumView {
         // ── Root layout ────────────────────────────────────────────────
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.append(&header);
+        root.append(discovery.widget());
         root.append(&stack);
 
         let state = AlbumViewState::new(
@@ -201,6 +211,7 @@ impl AlbumView {
             actions,
             on_activate,
             on_artist_activate,
+            discovery,
         };
         view.refresh();
         view
@@ -223,6 +234,13 @@ impl AlbumView {
 
     pub(in crate::ui) fn set_on_artist_activate(&self, callback: impl Fn(String) + 'static) {
         *self.on_artist_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_hint_settings(
+        &self,
+        callback: impl Fn(&'static [&'static str]) + 'static,
+    ) {
+        self.discovery.set_on_open_plugins(callback);
     }
 
     /// Wires the play-album callback (queue replace + play).

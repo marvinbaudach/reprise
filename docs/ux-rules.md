@@ -899,14 +899,14 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   hervorgehobenen Plugins-Zeile. Solange LYR-1 geplant ist, verspricht dieser
   Zustand keine lokalen eingebetteten Songtexte. Ein eingeschaltetes Modul
   ohne Treffer zeigt stattdessen „No lyrics found".
-- **DISCOVER-1** [geplant] [gtk] — Netz-Features ohne dauerhaft sichtbare
+- **DISCOVER-1** [aktiv] [gtk] — Netz-Features ohne dauerhaft sichtbare
   eigene Fläche erhalten genau einen dezenten, schließbaren Inline-Hinweis am
   Ort der sichtbaren Lücke: Cover ab drei gleichzeitig sichtbaren Fallback-
   Kacheln, Portraits ab drei gleichzeitig sichtbaren Initialen-Avataren und
   New Releases am Kopf der Artists-Ansicht. Sichtbare Evidenz rastet den
   Hinweis ein; einmal gezeigt oder geschlossen kehrt er dauerhaft nicht
   zurück. Der Hinweis ist kein Badge und kein Toast.
-- **DISCOVER-2** [geplant] [gtk] — Pro Ansicht ist höchstens eine
+- **DISCOVER-2** [aktiv] [gtk] — Pro Ansicht ist höchstens eine
   Aktivierungszeile sichtbar. Treffen Portrait- und New-Releases-Hinweis in
   der Artists-Ansicht zusammen, werden sie zu einer Zeile „Enable network
   features for artists (images & new releases) →" mit Deep-Link auf die
