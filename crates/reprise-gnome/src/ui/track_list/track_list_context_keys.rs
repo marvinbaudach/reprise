@@ -9,10 +9,7 @@ use super::Shared;
 
 /// Shared with the album grid's keyboard context menu
 /// (`album_view_actions`): Menu key or Shift+F10, per GNOME convention.
-pub(in crate::ui) fn is_context_menu_shortcut(
-    key: gdk::Key,
-    modifiers: gdk::ModifierType,
-) -> bool {
+pub(in crate::ui) fn is_context_menu_shortcut(key: gdk::Key, modifiers: gdk::ModifierType) -> bool {
     key == gdk::Key::Menu
         || (key == gdk::Key::F10 && modifiers.contains(gdk::ModifierType::SHIFT_MASK))
 }

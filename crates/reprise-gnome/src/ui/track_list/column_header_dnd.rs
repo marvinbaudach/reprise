@@ -423,7 +423,10 @@ fn update_marker(
     };
     let spans: Vec<TitleSpan> = titles.iter().map(TitleSpan::from).collect();
     let first_is_pinned = titles.first().is_some_and(|t| is_pinned_leading(&t.column));
-    let slot = clamp_slot_after_pinned(insertion_slot_for_pointer(&spans, pointer_x), first_is_pinned);
+    let slot = clamp_slot_after_pinned(
+        insertion_slot_for_pointer(&spans, pointer_x),
+        first_is_pinned,
+    );
     let resolved = resolve_drop(dragged_index, slot, titles.len());
     let target = marker_target(&titles, slot, resolved);
     apply_marker(drag, target);
@@ -447,7 +450,10 @@ fn perform_drop(view: &gtk4::ColumnView, dragged_column: &gtk4::ColumnViewColumn
     };
     let spans: Vec<TitleSpan> = titles.iter().map(TitleSpan::from).collect();
     let first_is_pinned = titles.first().is_some_and(|t| is_pinned_leading(&t.column));
-    let slot = clamp_slot_after_pinned(insertion_slot_for_pointer(&spans, pointer_x), first_is_pinned);
+    let slot = clamp_slot_after_pinned(
+        insertion_slot_for_pointer(&spans, pointer_x),
+        first_is_pinned,
+    );
     let Some(target_index) = resolve_drop(dragged_index, slot, titles.len()) else {
         return;
     };

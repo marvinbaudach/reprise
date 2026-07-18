@@ -143,8 +143,10 @@ pub(in crate::ui) fn install_context_menu(
         let grid_weak = grid_view.downgrade();
         let filter_model = filter_model.clone();
         key_controller.connect_key_pressed(move |_, key, _, modifiers| {
-            let is_shortcut = crate::ui::track_list::track_list_context_keys::
-                is_context_menu_shortcut(key, modifiers);
+            let is_shortcut =
+                crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut(
+                    key, modifiers,
+                );
             if !is_shortcut {
                 return gtk4::glib::Propagation::Proceed;
             }

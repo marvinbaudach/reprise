@@ -179,10 +179,7 @@ mod tests {
                 ("Search Library".to_string(), "<Control>f".to_string()),
                 ("Jump to now playing".to_string(), "<Control>l".to_string(),),
                 ("Back to previous view".to_string(), "<Alt>Left".to_string()),
-                (
-                    "Forward to next view".to_string(),
-                    "<Alt>Right".to_string()
-                ),
+                ("Forward to next view".to_string(), "<Alt>Right".to_string()),
                 ("Toggle Compact View".to_string(), "<Control>m".to_string(),),
                 (
                     "Clear Search or Return to Track List".to_string(),

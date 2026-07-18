@@ -378,7 +378,9 @@ pub(in crate::ui) fn route_to_place(
             // The album GRID, not the page's first focusable (that would be
             // the sort dropdown): focus returns to the focused card so
             // arrows / Enter / Menu key keep working immediately.
-            album_grid_focus.upgrade().is_some_and(|grid| grid.grab_focus())
+            album_grid_focus
+                .upgrade()
+                .is_some_and(|grid| grid.grab_focus())
         } else {
             // Artists page: focus its first focusable child (the artist
             // master list).
