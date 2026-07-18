@@ -52,6 +52,31 @@ fn npp_6_line_changes_use_the_micro_fade_token() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn lyr_3_disabled_state_offers_activation() {
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+    let activated = Rc::new(Cell::new(false));
+    let activated_for_callback = activated.clone();
+    view.set_on_settings(move || activated_for_callback.set(true));
+
+    view.show_disabled();
+
+    assert_eq!(view.visible_state_name().as_deref(), Some("disabled"));
+    assert_eq!(
+        view.disabled_snapshot(),
+        (
+            Some("network-offline-symbolic".into()),
+            "Online lyrics are disabled".into(),
+            "Enable them to load missing lyrics automatically".into(),
+            "Enable in Settings".into(),
+        )
+    );
+    view.activate_settings_for_test();
+    assert!(activated.get());
+}
+
+#[test]
 fn npp_9_fallbacks_keep_source_and_instrumental_gap_semantics() {
     let synced = LyricsBody::Synced(vec![TimedLine::new(1_000, "synthetic line")]);
     let plain = LyricsBody::Plain("synthetic plain text".into());

@@ -888,11 +888,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Sidecars werden unabhängig vom Online-Lyrics-Modul angezeigt. Reprise liest
   diese lokalen Formate heute noch nicht; die Regel bleibt bis zu dieser
   eigenen Formatfunktion geplant.
-- **LYR-2** [geplant] [gtk] — LRCLIB wird ausschließlich bei offenem Lyrics-
+- **LYR-2** [aktiv] [gtk] — LRCLIB wird ausschließlich bei offenem Lyrics-
   Tab, fehlendem lokalen Text und eingeschaltetem Online-Lyrics-Modul
   kontaktiert. Es gibt weder Prefetch noch Batch-Abruf für kommende Queue-
   Einträge.
-- **LYR-3** [geplant] [gtk] — Bei offenem Lyrics-Tab, fehlendem Text und
+- **LYR-3** [aktiv] [gtk] — Bei offenem Lyrics-Tab, fehlendem Text und
   ausgeschaltetem Modul zeigt eine zentrierte StatusPage Icon, Titel
   „Online lyrics are disabled", Untertitel „Enable them to load missing
   lyrics automatically" und „Enable in Settings" als Deep-Link zur kurz

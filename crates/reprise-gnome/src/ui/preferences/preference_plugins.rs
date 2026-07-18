@@ -103,6 +103,14 @@ impl PreferencesContext {
                     "artist_portraits" => context
                         .artist_portrait
                         .set_enabled(&context.conn.borrow(), active),
+                    "online_lyrics" => match &context.player {
+                        Some(player) => player.set_online_lyrics_enabled(active),
+                        None => reprise_core::modules::set_enabled(
+                            &context.conn.borrow(),
+                            descriptor,
+                            active,
+                        ),
+                    },
                     _ => reprise_core::modules::set_enabled(
                         &context.conn.borrow(),
                         descriptor,
