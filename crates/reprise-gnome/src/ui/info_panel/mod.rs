@@ -1,13 +1,7 @@
-pub(in crate::ui) mod artist_news_worker;
-pub(in crate::ui) mod artist_portrait_worker;
-pub(in crate::ui) mod info_panel_empty_state;
-pub(in crate::ui) mod info_panel_feedback;
-pub(in crate::ui) mod info_panel_portrait;
-pub(in crate::ui) mod info_panel_state;
-pub(in crate::ui) mod information_column;
-#[path = "info_panel.rs"]
-mod surface;
+//! Temporary compatibility for the parallel layout lane.
+//!
+//! The sibling-owned `library_shell.rs` still names the former module and
+//! type. Remove this shim once both lanes are merged and that owner can update
+//! its call site.
 
-#[allow(unused_imports)]
-use super::*;
-pub(in crate::ui) use surface::InfoPanel;
+pub(in crate::ui) use super::now_playing::NowPlayingPanel as InfoPanel;

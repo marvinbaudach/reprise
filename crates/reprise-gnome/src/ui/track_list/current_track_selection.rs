@@ -171,6 +171,10 @@ impl PlayerController {
         if let Some(callback) = album_cb {
             callback(state);
         }
+        let panel_callback = self.now_playing_panel_state_changed.borrow().clone();
+        if let Some(callback) = panel_callback {
+            callback(state);
+        }
     }
 
     pub(in crate::ui) fn notify_restored_current_track(&self) {

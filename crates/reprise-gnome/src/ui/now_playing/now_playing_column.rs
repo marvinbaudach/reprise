@@ -1,14 +1,14 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-pub(in crate::ui) const PANEL_WIDTH: i32 = 340;
+pub(in crate::ui) const PANEL_WIDTH: i32 = 300;
 
 #[derive(Clone)]
-pub(in crate::ui) struct InformationColumn {
+pub(in crate::ui) struct NowPlayingColumn {
     split: adw::OverlaySplitView,
 }
 
-impl InformationColumn {
+impl NowPlayingColumn {
     #[allow(clippy::needless_pass_by_value)]
     pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
@@ -41,14 +41,6 @@ impl InformationColumn {
 
     pub(in crate::ui) fn widget(&self) -> &adw::OverlaySplitView {
         &self.split
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn sidebar_widget(&self) -> adw::ToolbarView {
-        self.split
-            .sidebar()
-            .and_downcast::<adw::ToolbarView>()
-            .expect("sidebar is a ToolbarView")
     }
 
     #[cfg(test)]

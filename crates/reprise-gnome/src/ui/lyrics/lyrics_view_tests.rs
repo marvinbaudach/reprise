@@ -1,7 +1,61 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gtk4::prelude::*;
 use reprise_core::lyrics::{LyricsBody, LyricsError, TimedLine};
 
-use super::lyrics_view::{centered_scroll_value, LyricsView, ACTIVE_LINE_CLASS};
+use super::lyrics_scroll::{ManualScrollTimer, ScrollMode};
+use super::lyrics_view::{
+    active_line_alpha, centered_scroll_value, css, line_alpha, lyrics_footer, LyricsView,
+    ACTIVE_LINE_CLASS, INLINE_RETRY_CLASS,
+};
+
+#[test]
+fn npp_5_line_hierarchy_uses_the_decided_alpha_steps() {
+    assert_eq!(line_alpha(Some(3), 3), 100);
+    assert_eq!(line_alpha(Some(3), 2), 45);
+    assert_eq!(line_alpha(Some(3), 4), 45);
+    assert_eq!(line_alpha(Some(3), 1), 32);
+    assert_eq!(line_alpha(Some(3), 5), 32);
+    assert_eq!(line_alpha(Some(3), 0), 28);
+    assert_eq!(line_alpha(None, 3), 28);
+
+    let css = css();
+    for declaration in [
+        "font-size: 13px",
+        "font-size: 15px",
+        "font-weight: 700",
+        "min-width: 26px",
+        "min-height: 2.5px",
+        "background-color: @reprise_player_accent",
+    ] {
+        assert!(css.contains(declaration), "missing {declaration}");
+    }
+}
+
+#[test]
+fn npp_6_line_changes_use_the_micro_fade_token() {
+    let css = css();
+    assert!(css.contains(&format!(
+        "transition: opacity {}ms {}",
+        crate::ui::motion::MICRO_MS,
+        crate::ui::motion::MICRO_CSS_EASING
+    )));
+    assert!(css.contains(".lyrics-line:hover { opacity: 0.65; }"));
+}
+
+#[test]
+fn npp_9_fallbacks_keep_source_and_instrumental_gap_semantics() {
+    let synced = LyricsBody::Synced(vec![TimedLine::new(1_000, "synthetic line")]);
+    let plain = LyricsBody::Plain("synthetic plain text".into());
+
+    assert_eq!(lyrics_footer(&synced), "synced · LRCLIB");
+    assert_eq!(lyrics_footer(&plain), "lyrics · tags");
+    assert_eq!(lyrics_footer(&LyricsBody::Instrumental), "");
+    assert_eq!(active_line_alpha(1_000, 11_000), 100);
+    assert_eq!(active_line_alpha(1_000, 11_001), 60);
+    assert!(css().contains("color: alpha(#ffffff, 0.65)"));
+}
 
 #[test]
 fn centered_scroll_clamps_at_start_middle_and_end() {
@@ -13,7 +67,7 @@ fn centered_scroll_clamps_at_start_middle_and_end() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn lyrics_bodies_are_selectable_and_only_one_timed_line_is_active() {
+fn lyrics_bodies_are_not_selectable_and_only_one_timed_line_is_active() {
     gtk4::init().unwrap();
     let view = LyricsView::new();
     view.show_result(&LyricsBody::Synced(vec![
@@ -23,7 +77,7 @@ fn lyrics_bodies_are_selectable_and_only_one_timed_line_is_active() {
     ]));
     let labels = view.line_labels();
     assert_eq!(labels.len(), 3);
-    assert!(labels.iter().all(gtk4::Label::is_selectable));
+    assert!(labels.iter().all(|label| !label.is_selectable()));
     assert!(labels.iter().all(gtk4::Label::wraps));
 
     view.set_active_line(Some(1));
@@ -48,7 +102,7 @@ fn lyrics_bodies_are_selectable_and_only_one_timed_line_is_active() {
     view.show_result(&LyricsBody::Plain("synthetic plain text".into()));
     let plain = view.line_labels();
     assert_eq!(plain.len(), 1);
-    assert!(plain[0].is_selectable());
+    assert!(!plain[0].is_selectable());
     assert!(plain[0].wraps());
 
     view.show_result(&LyricsBody::Instrumental);
@@ -69,6 +123,80 @@ fn temporary_error_exposes_retry_but_not_found_does_not() {
     assert!(view.retry_is_visible());
     view.show_error(&LyricsError::NotFound);
     assert!(!view.retry_is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_9_errors_offer_only_inline_retry() {
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+
+    view.show_error(&LyricsError::Temporary);
+    assert!(view.retry_is_visible());
+    assert!(view.retry_has_css_class(INLINE_RETRY_CLASS));
+    view.show_error(&LyricsError::NotFound);
+    assert!(!view.retry_is_visible());
+    assert_eq!(view.status_text(), "No lyrics found");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_7_user_scroll_pauses_autoscroll() {
+    gtk4::init().unwrap();
+    let timer = ManualScrollTimer::new();
+    let view = LyricsView::new_with_timer(timer.clone());
+    view.show_result(&LyricsBody::Synced(vec![TimedLine::new(
+        1_000,
+        "synthetic line",
+    )]));
+    view.set_active_line(Some(0));
+
+    view.simulate_user_scroll();
+    assert_eq!(view.scroll_mode(), ScrollMode::UserPause);
+    assert_eq!(timer.active_timer_count(), 1);
+    timer.advance(2_000);
+    view.simulate_user_scroll();
+    assert_eq!(
+        timer.active_timer_count(),
+        1,
+        "a new event resets the timer"
+    );
+    view.simulate_programmatic_scroll();
+    assert_eq!(timer.active_timer_count(), 1);
+    timer.advance(3_999);
+    assert_eq!(view.scroll_mode(), ScrollMode::UserPause);
+    timer.advance(1);
+    assert_eq!(view.scroll_mode(), ScrollMode::Returning);
+
+    view.simulate_user_scroll();
+    assert_eq!(view.scroll_mode(), ScrollMode::UserPause);
+    assert!(!view.has_scroll_animation());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_8_line_click_seeks() {
+    gtk4::init().unwrap();
+    let timer = ManualScrollTimer::new();
+    let view = LyricsView::new_with_timer(timer.clone());
+    view.show_result(&LyricsBody::Synced(vec![
+        TimedLine::new(1_000, "first synthetic line"),
+        TimedLine::new(2_500, "second synthetic line"),
+    ]));
+    let sought = Rc::new(Cell::new(None));
+    let sought_for_callback = sought.clone();
+    view.set_on_seek(move |position_ms| sought_for_callback.set(Some(position_ms)));
+
+    view.simulate_user_scroll();
+    view.simulate_line_click(1);
+    assert_eq!(sought.get(), Some(2_500));
+    assert_eq!(view.scroll_mode(), ScrollMode::Auto);
+    assert_eq!(timer.active_timer_count(), 0);
+
+    view.simulate_user_scroll();
+    view.simulate_external_seek();
+    assert_eq!(view.scroll_mode(), ScrollMode::Auto);
+    assert_eq!(timer.active_timer_count(), 0);
 }
 
 #[test]
@@ -106,5 +234,26 @@ fn active_lines_center_and_clamp_in_a_mapped_panel() {
     while gtk4::glib::MainContext::default().iteration(false) {}
     let (end, maximum) = view.scroll_values();
     assert!((end - maximum).abs() < 1.0);
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_10_new_lyrics_start_with_line_zero_centered() {
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+    let lines = (0..20)
+        .map(|index| TimedLine::new(i64::from(index) * 1_000, format!("line {index}")))
+        .collect();
+    view.show_result(&LyricsBody::Synced(lines));
+    let window = gtk4::Window::builder()
+        .default_width(300)
+        .default_height(240)
+        .child(view.widget())
+        .build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(view.line_center_offset(0).abs() < 2.0);
     window.close();
 }

@@ -300,7 +300,7 @@ pub fn build(
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let track_list_weak = Rc::downgrade(&track_list);
-        player.set_on_queue_changed(move || {
+        player.add_on_queue_changed(move || {
             if let Some(sidebar) = sidebar.upgrade() {
                 sidebar.refresh("up next changed");
             }
@@ -425,6 +425,40 @@ pub fn build(
     let info_panel = library_shell.info_panel;
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
+    if let Some(player) = &player {
+        let panel = Rc::downgrade(&info_panel);
+        player.set_on_now_playing_panel_track_changed(move |track| {
+            if let Some(panel) = panel.upgrade() {
+                panel.set_loaded_track(track);
+            }
+        });
+        let panel = Rc::downgrade(&info_panel);
+        player.set_on_now_playing_panel_state_changed(move |state| {
+            if let Some(panel) = panel.upgrade() {
+                panel.set_playback_state(state);
+            }
+        });
+
+        let player_weak = Rc::downgrade(player);
+        let panel_weak = Rc::downgrade(&info_panel);
+        let refresh_up_next: Rc<dyn Fn()> = Rc::new(move || {
+            let (Some(player), Some(panel)) = (player_weak.upgrade(), panel_weak.upgrade()) else {
+                return;
+            };
+            let entries = player.now_playing_panel_up_next_entries();
+            panel.set_up_next_entries(&entries);
+        });
+        let refresh_on_queue_change = refresh_up_next.clone();
+        player.add_on_queue_changed(move || refresh_on_queue_change());
+        refresh_up_next();
+
+        let player = Rc::downgrade(player);
+        info_panel.set_on_up_next_jump(move |row| {
+            if let Some(player) = player.upgrade() {
+                player.jump_to_queue_row(row);
+            }
+        });
+    }
     let player_bar_widget = player
         .as_ref()
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
@@ -436,15 +470,6 @@ pub fn build(
     );
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome = super::library_chrome::build(&header, &toast_overlay);
-    {
-        let info_panel = Rc::downgrade(&info_panel);
-        track_list.set_on_selection_changed(move |context| {
-            if let Some(info_panel) = info_panel.upgrade() {
-                info_panel.set_context(context);
-            }
-        });
-    }
-    info_panel.arm_smoke(&track_list);
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());

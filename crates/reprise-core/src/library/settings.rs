@@ -148,7 +148,6 @@ pub const SIDEBAR_COLLAPSED_KEY: &str = "ui.sidebar_collapsed";
 pub const BROWSE_VISIBLE_KEY: &str = "ui.browse_visible";
 pub const STATUS_VISIBLE_KEY: &str = "ui.status_visible";
 pub const INFO_PANEL_VISIBLE_KEY: &str = "ui.info_panel_visible";
-pub const INFO_PANEL_TAB_KEY: &str = "ui.info_panel_tab";
 pub const WINDOW_VIEW_MODE_KEY: &str = "ui.window_view_mode";
 pub const COMPACT_LAYOUT_KEY: &str = "ui.compact_layout";
 pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
@@ -386,48 +385,6 @@ pub fn get_info_panel_visible(conn: &Connection) -> bool {
 
 pub fn set_info_panel_visible(conn: &Connection, visible: bool) -> Result<(), rusqlite::Error> {
     set_bool(conn, INFO_PANEL_VISIBLE_KEY, visible)
-}
-
-/// The information panel's selected tab. The variant names double as the
-/// GTK stack page names the frontend uses, so a persisted value can be fed
-/// straight into `set_visible_child_name`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum InfoPanelTab {
-    #[default]
-    Information,
-    Lyrics,
-}
-
-impl InfoPanelTab {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Information => "information",
-            Self::Lyrics => "lyrics",
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "information" => Some(Self::Information),
-            "lyrics" => Some(Self::Lyrics),
-            _ => None,
-        }
-    }
-}
-
-pub fn get_info_panel_tab(conn: &Connection) -> InfoPanelTab {
-    let stored = get_setting(conn, INFO_PANEL_TAB_KEY).unwrap_or_else(|error| {
-        tracing::warn!(%error, "could not read information panel tab; using default");
-        None
-    });
-    stored
-        .as_deref()
-        .and_then(InfoPanelTab::from_name)
-        .unwrap_or_default()
-}
-
-pub fn set_info_panel_tab(conn: &Connection, tab: InfoPanelTab) -> Result<(), rusqlite::Error> {
-    set_setting(conn, INFO_PANEL_TAB_KEY, tab.name())
 }
 
 pub fn get_equalizer_enabled(conn: &Connection) -> bool {

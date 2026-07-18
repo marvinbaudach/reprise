@@ -74,6 +74,15 @@ impl LyricsState {
     pub(in crate::ui) fn active_line(&self) -> Option<usize> {
         self.active_line
     }
+
+    pub(in crate::ui) fn active_line_timestamp_ms(&self) -> Option<i64> {
+        let LyricsBody::Synced(lines) = self.body.as_ref()? else {
+            return None;
+        };
+        self.active_line
+            .and_then(|index| lines.get(index))
+            .map(|line| line.start_ms)
+    }
 }
 
 #[cfg(test)]

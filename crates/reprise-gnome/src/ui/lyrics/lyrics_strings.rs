@@ -13,6 +13,8 @@ pub(in crate::ui) const INSTRUMENTAL: &str = N_!("Instrumental");
 pub(in crate::ui) const NO_LYRICS_FOUND: &str = N_!("No lyrics found");
 pub(in crate::ui) const LYRICS_UNAVAILABLE: &str = N_!("Could not load lyrics");
 pub(in crate::ui) const RETRY: &str = N_!("Retry");
+pub(in crate::ui) const SYNCED_LRCLIB: &str = N_!("synced · LRCLIB");
+pub(in crate::ui) const LYRICS_TAGS: &str = N_!("lyrics · tags");
 
 pub(in crate::ui) fn text(message: &str) -> String {
     crate::i18n::gettext(message)

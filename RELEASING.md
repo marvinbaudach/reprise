@@ -124,16 +124,15 @@ Do not point development hooks at the maintainer's real library.
   window geometry. Exercise every Preferences page and restart to verify persisted
   theme, density, sidebar/status, player-bar position, columns, library root and
   module states.
-- Inspect the Information panel at wide and narrow sizes. Artist & Album News must
-  explain its default-off privacy boundary, show clear Upcoming/New and offline/cache
-  copy, and open MusicBrainz in the system browser only after the user clicks the
-  external-link button.
-- Switch the Information panel between Information and Lyrics while copied music is
-  playing. Synchronized text must highlight and center the current line after play and
-  seek, Pause must preserve it, Stop must clear it, rapid track changes must never show
-  stale text, and plain/instrumental/offline states must remain readable and retryable.
-  Confirm the cached result remains available offline. Use only disposable metadata
-  when validating the real LRCLIB service.
+- NPP-1: Toggle the Now Playing panel repeatedly at wide and narrow sizes; its 300 px
+  column must slide in and out like the 240 px left sidebar without covering content.
+- NPP-3: In both light and dark appearance, confirm the cover-derived glow stays in
+  the upper third, fades into the neutral-dark stage, and disappears in the idle state.
+- NPP-5/NPP-6: Play copied music with synchronized lyrics and inspect the 100/45/32/28
+  line hierarchy, centered accent underline, 150 ms line fades, and calm centered glide.
+- NPP-10: Change tracks with animations enabled and disabled; cover, title, glow, and
+  tab content must use one shared crossfade or one immediate hard switch respectively,
+  and new synchronized lyrics must start with line zero centered.
 - With disposable tagged audio and real speakers, adjust all equalizer bands and
   presets while playing, then compare ReplayGain Off, Per Track, and Per Album on
   files containing valid ReplayGain tags. Equalizer and ReplayGain belong only to
