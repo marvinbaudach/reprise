@@ -938,7 +938,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
   Hinweise und deaktivierte Sekundärtexte. Passende Adwaita-Named-Colors
   haben Vorrang vor eigenen Alphas; pro Element wird nicht nachgetönt.
-- **CONTRAST-2** [geplant] [gtk] — Jede „N tracks · Dauer"-Statuszeile ist
+- **CONTRAST-2** [aktiv] [gtk] — Jede „N tracks · Dauer"-Statuszeile ist
   eine echte untere Leiste mit definierter Fläche und oberer Hairline. Sie
   reserviert eigenen Platz und überdeckt nie eine Trackzeile; erst gegen
   diese feste Fläche wird ihr Sekundärtext-Kontrast bestimmt.
