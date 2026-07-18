@@ -25,8 +25,38 @@ phase_two_allowlist=(
   crates/reprise-gnome/src/ui/window/window.rs
 )
 
-timed_literal='TimedAnimation::new\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*(?:0x[[:xdigit:]_]+|[0-9][0-9_]*)(?:_?u32)?\s*,'
-transition_literal='(?:set_transition_duration|\.transition_duration)\(\s*(?:0x[[:xdigit:]_]+|[0-9][0-9_]*)(?:_?u32)?\s*\)'
+# --- Literal-duration detection (heuristic; see the limits below) ---
+#
+# The lint fails when an app-authored animation duration is written as a bare
+# integer literal outside the token module. Three idiomatic spellings are
+# covered:
+#   1. `TimedAnimation::new(w, from, to, <LIT>, target)` — 4th positional arg.
+#   2. `set_transition_duration(<LIT>)` / `.transition_duration(<LIT>)`.
+#   3. `.set_duration(<LIT>)` (the native Adw duration setter) and the builder
+#      form `.duration(<LIT>)`.
+# The *literal* is the signal: token expressions such as
+# `set_duration(motion::half(motion::STANDARD))` are never literals and never
+# match, so the migrated (token-based) call sites stay green.
+#
+# Known, deliberate limits — this is a heuristic, not an airtight parser
+# (G6 permits catching the idiomatic literal spellings and leaving the rest to
+# review):
+#   * Variable indirection (`let d = 250; anim.set_duration(d);`) is NOT
+#     caught — that path is a review responsibility, not a lint one.
+#   * A cast literal (`250 as u32`) is not caught.
+#   * `TimedAnimation::new` matching tolerates one level of nested parens in the
+#     value_from / value_to / target arguments (so `f(a, b)` no longer shifts
+#     the positional count); deeper nesting is out of scope.
+#   * `.duration(<LIT>)` / `.set_duration(<LIT>)` are assumed to be Adw
+#     animation durations. No non-animation `.duration(<literal>)` exists in
+#     ui/ today (getters take no args, the waveform track duration takes a
+#     variable); a future literal on a non-animation type would be a false
+#     positive to allowlist.
+lit='(?:0x[[:xdigit:]_]+|[0-9][0-9_]*)(?:_?u32)?'
+arg='[^,()]*(?:\([^()]*\)[^,()]*)*'
+timed_literal="TimedAnimation::new\(\s*${arg},\s*${arg},\s*${arg},\s*${lit}\s*,"
+transition_literal="(?:set_transition_duration|\.transition_duration)\(\s*${lit}\s*(?:,\s*)?\)"
+duration_literal="\.(?:set_duration|duration)\(\s*${lit}\s*(?:,\s*)?\)"
 
 is_allowlisted() {
   local candidate=$1 allowed
@@ -43,9 +73,9 @@ while IFS= read -r file; do
   if is_allowlisted "$file"; then
     continue
   fi
-  if rg --quiet --pcre2 --multiline "$timed_literal|$transition_literal" "$file"; then
+  if rg --quiet --pcre2 --multiline "$timed_literal|$transition_literal|$duration_literal" "$file"; then
     echo "ERROR: literal animation duration outside ui/motion.rs or ui/style/tokens.rs: $file" >&2
-    rg --line-number --pcre2 --multiline "$timed_literal|$transition_literal" "$file" >&2 || true
+    rg --line-number --pcre2 --multiline "$timed_literal|$transition_literal|$duration_literal" "$file" >&2 || true
     failed=1
   fi
 done < <(find "$ui_root" -type f -name '*.rs' | sort)
