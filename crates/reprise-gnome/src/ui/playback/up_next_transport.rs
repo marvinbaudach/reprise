@@ -88,7 +88,7 @@ fn play_pending_at(
     current_pending: &mut Option<i64>,
     position: usize,
 ) -> Option<i64> {
-    let selected = pending.take_through(position)?;
+    let selected = pending.take_at(position)?;
     *current_pending = Some(selected);
     Some(selected)
 }
@@ -442,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_only_playback_and_direct_activation_are_supported() {
+    fn pending_only_playback_and_direct_activation_preserve_earlier_entries() {
         let mut context = Queue::new();
         let mut pending = pending(&[10, 20, 30]);
         let mut current_pending = None;
@@ -459,7 +459,7 @@ mod tests {
             play_pending_at(&mut pending, &mut current_pending, 1),
             Some(30)
         );
-        assert!(pending.is_empty());
+        assert_eq!(pending.ids(), &[20]);
         assert_eq!(current_pending, Some(30));
     }
 

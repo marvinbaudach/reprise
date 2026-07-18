@@ -375,7 +375,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **QUE-4** [geplant] [gtk] — Leerzustand gibt es nur ohne Wiedergabe:
   StatusPage „Nothing queued — play something" (FB-5, ein nächster Schritt,
   kein Grid an Vorschlägen).
-- **QUE-5** [geplant] [core] — Ein Sprung zu einem Queue-Eintrag setzt die
+- **QUE-5** [aktiv] [core] — Ein Sprung zu einem Queue-Eintrag setzt die
   Abspielposition und konsumiert ausschließlich den geklickten Eintrag.
   Davorliegende manuelle Einträge bleiben in „Next in Queue" und spielen
   danach; es gibt weder stilles Verwerfen noch Dialog oder Queue-Historie.
