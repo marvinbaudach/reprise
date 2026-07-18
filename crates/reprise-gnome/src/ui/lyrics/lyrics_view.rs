@@ -567,6 +567,17 @@ pub(in crate::ui) fn lyrics_footer(body: &LyricsBody) -> &'static str {
 }
 
 /// Active synchronized-line emphasis; installed app-wide by [`super::style`].
+///
+/// The hover rule is deliberately narrow (NPP-8: hover is the affordance for
+/// click-to-seek, so it belongs only where clicking does something). Two bugs
+/// came out of applying it to every line:
+///
+/// * **Unsynced lines** are not clickable, yet they reacted. Worse, `opacity`
+///   makes the whole box translucent rather than recolouring the text — so the
+///   accent glow behind the panel bled through and the text took on the
+///   cover's colour. On a warm cover that reads as muddy brown, not "dimmed".
+/// * The **active line** sits at opacity 1, so hovering *dimmed* the very line
+///   the user is reading — the opposite of what a hover highlight should do.
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{LINE_CLASS} {{ font-size: 13px; color: #ffffff; \
@@ -575,7 +586,8 @@ pub(in crate::ui) fn css() -> String {
          .{LINE_NEAR_CLASS} {{ opacity: 0.32; }}\n\
          .{LINE_NEIGHBOR_CLASS} {{ opacity: 0.45; }}\n\
          .{ACTIVE_LINE_CLASS} {{ opacity: 1; }}\n\
-         .{LINE_CLASS}:hover {{ opacity: 0.65; }}\n\
+         .{LINE_CLASS}:not(.{UNSYNCED_CLASS}):not(.{ACTIVE_LINE_CLASS}):hover \
+           {{ opacity: 0.65; }}\n\
          .{ACTIVE_LINE_CLASS} label {{ font-size: 15px; font-weight: 700; color: #ffffff; }}\n\
          .{LINE_GAP_CLASS} {{ opacity: 0.60; }}\n\
          .{LINE_UNDERLINE_CLASS} {{ min-width: 26px; min-height: 2.5px; \
