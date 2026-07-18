@@ -3,7 +3,7 @@
 //! `musicbrainz::get`, which applies MusicBrainz's one-request-per-second limit.
 
 use std::io::Read;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::musicbrainz::{self, FetchError};
@@ -11,11 +11,12 @@ use crate::musicbrainz::{self, FetchError};
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(300);
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_SEARCH_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 
 static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
+static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
 
 pub(crate) struct DeezerArtist {
-    pub name: String,
     pub picture_url: Option<String>,
 }
 
@@ -30,24 +31,22 @@ pub(crate) fn search_url(name: &str) -> String {
 pub(crate) fn parse_best_artist(json: &str, name: &str) -> Option<DeezerArtist> {
     let value: serde_json::Value = serde_json::from_str(json).ok()?;
     let data = value.get("data")?.as_array()?;
-    let wanted = normalize(name);
+    let wanted = super::normalize(name);
     for candidate in data {
         let Some(candidate_name) = candidate.get("name").and_then(serde_json::Value::as_str) else {
             continue;
         };
-        if normalize(candidate_name) != wanted {
+        if super::normalize(candidate_name) != wanted {
             continue;
         }
-        let picture_url = candidate
-            .get("picture_xl")
-            .or_else(|| candidate.get("picture_big"))
-            .and_then(serde_json::Value::as_str)
-            .filter(|url| !url.is_empty() && !is_placeholder_url(url))
-            .map(str::to_owned);
-        return Some(DeezerArtist {
-            name: candidate_name.to_owned(),
-            picture_url,
+        let picture_url = ["picture_xl", "picture_big"].into_iter().find_map(|field| {
+            candidate
+                .get(field)
+                .and_then(serde_json::Value::as_str)
+                .filter(|url| !url.is_empty() && !is_placeholder_url(url))
+                .map(str::to_owned)
         });
+        return Some(DeezerArtist { picture_url });
     }
     None
 }
@@ -60,13 +59,23 @@ fn is_placeholder_url(url: &str) -> bool {
 pub(crate) fn search(url: &str) -> Result<String, FetchError> {
     respect_rate_limit();
     let response = agent().get(url).call().map_err(map_ureq_error)?;
+    let mut body = Vec::new();
     response
         .into_body()
-        .read_to_string()
-        .map_err(|_| FetchError::Body)
+        .into_reader()
+        .take(MAX_SEARCH_RESPONSE_BYTES + 1)
+        .read_to_end(&mut body)
+        .map_err(|_| FetchError::Body)?;
+    if body.len() as u64 > MAX_SEARCH_RESPONSE_BYTES {
+        return Err(FetchError::Body);
+    }
+    String::from_utf8(body).map_err(|_| FetchError::Body)
 }
 
 pub(crate) fn download_image(url: &str) -> Result<Vec<u8>, FetchError> {
+    if !is_deezer_image_url(url) {
+        return Err(FetchError::Transport);
+    }
     respect_rate_limit();
     let response = agent().get(url).call().map_err(map_ureq_error)?;
     let mut bytes = Vec::new();
@@ -82,12 +91,25 @@ pub(crate) fn download_image(url: &str) -> Result<Vec<u8>, FetchError> {
     Ok(bytes)
 }
 
-fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(musicbrainz::user_agent())
-        .build()
-        .new_agent()
+fn is_deezer_image_url(url: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    url.scheme() == "https"
+        && url
+            .host_str()
+            .is_some_and(|host| host.ends_with(".dzcdn.net"))
+}
+
+fn agent() -> &'static ureq::Agent {
+    AGENT.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .timeout_global(Some(HTTP_TIMEOUT))
+            .https_only(true)
+            .user_agent(musicbrainz::user_agent())
+            .build()
+            .new_agent()
+    })
 }
 
 fn map_ureq_error(error: ureq::Error) -> FetchError {
@@ -106,24 +128,19 @@ fn map_ureq_error(error: ureq::Error) -> FetchError {
 }
 
 fn respect_rate_limit() {
-    let mut guard = LAST_REQUEST
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(last) = *guard {
-        let elapsed = last.elapsed();
-        if elapsed < MIN_REQUEST_INTERVAL {
-            std::thread::sleep(MIN_REQUEST_INTERVAL - elapsed);
-        }
+    let now = Instant::now();
+    let next = {
+        let mut guard = LAST_REQUEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let next = guard.map_or(now, |last| (last + MIN_REQUEST_INTERVAL).max(now));
+        *guard = Some(next);
+        next
+    };
+    let delay = next.saturating_duration_since(Instant::now());
+    if !delay.is_zero() {
+        std::thread::sleep(delay);
     }
-    *guard = Some(Instant::now());
-}
-
-fn normalize(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
 }
 
 #[cfg(test)]
@@ -153,7 +170,6 @@ mod tests {
     #[test]
     fn parse_accepts_exact_normalized_match_with_picture() {
         let artist = parse_best_artist(HIT, "  blessthefall ").unwrap();
-        assert_eq!(artist.name, "Blessthefall");
         assert_eq!(
             artist.picture_url.as_deref(),
             Some(
@@ -166,6 +182,22 @@ mod tests {
     fn parse_treats_deezer_placeholder_as_no_picture() {
         let artist = parse_best_artist(PLACEHOLDER, "Before I Turn").unwrap();
         assert!(artist.picture_url.is_none());
+    }
+
+    #[test]
+    fn parse_falls_back_to_real_big_when_xl_is_a_placeholder() {
+        let json = r#"{"data":[{
+          "name":"Band",
+          "picture_xl":"https://e-cdns-images.dzcdn.net/images/artist//1000x1000.jpg",
+          "picture_big":"https://e-cdns-images.dzcdn.net/images/artist/real/500x500.jpg"
+        }]}"#;
+
+        let artist = parse_best_artist(json, "Band").unwrap();
+
+        assert_eq!(
+            artist.picture_url.as_deref(),
+            Some("https://e-cdns-images.dzcdn.net/images/artist/real/500x500.jpg")
+        );
     }
 
     #[test]
@@ -187,5 +219,26 @@ mod tests {
         assert!(!is_placeholder_url(
             "https://e-cdns-images.dzcdn.net/images/artist/abc/1000x1000-000000-80-0-0.jpg"
         ));
+    }
+
+    #[test]
+    fn image_url_requires_https_deezer_cdn() {
+        assert!(is_deezer_image_url(
+            "https://e-cdns-images.dzcdn.net/images/artist/abc/1000x1000.jpg"
+        ));
+        assert!(!is_deezer_image_url(
+            "https://example.com/images/artist/abc/1000x1000.jpg"
+        ));
+        assert!(!is_deezer_image_url(
+            "http://e-cdns-images.dzcdn.net/images/artist/abc/1000x1000.jpg"
+        ));
+        assert_eq!(
+            download_image("https://example.com/image.jpg"),
+            Err(FetchError::Transport)
+        );
+        assert_eq!(
+            download_image("http://e-cdns-images.dzcdn.net/image.jpg"),
+            Err(FetchError::Transport)
+        );
     }
 }

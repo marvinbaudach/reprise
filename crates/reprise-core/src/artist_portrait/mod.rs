@@ -1,4 +1,5 @@
-//! Cached artist portraits from Deezer. Blocking; call from a worker thread.
+//! Artist portraits are always fetched from Deezer, which receives each viewed artist name.
+//! Blocking; call from a worker thread.
 
 pub(crate) mod cache;
 pub(crate) mod deezer;
@@ -21,12 +22,11 @@ pub enum PortraitError {
     InvalidResponse,
 }
 
-pub fn load_or_fetch(name: &str, force: bool) -> Result<PortraitOutcome, PortraitError> {
+pub fn load_or_fetch(name: &str) -> Result<PortraitOutcome, PortraitError> {
     let now = chrono::Utc::now().timestamp();
     let dir = cache::cache_dir();
     load_or_fetch_with(
         name,
-        force,
         now,
         &dir,
         &mut deezer::search,
@@ -36,7 +36,6 @@ pub fn load_or_fetch(name: &str, force: bool) -> Result<PortraitOutcome, Portrai
 
 pub(crate) fn load_or_fetch_with<S, D>(
     name: &str,
-    force: bool,
     now: i64,
     dir: &Path,
     search: &mut S,
@@ -51,36 +50,58 @@ where
         return Ok(PortraitOutcome::NotFound);
     }
 
-    if !force {
-        if let Some(path) = cache::portrait_path_in(dir, name) {
-            if cache::is_fresh(cache::file_epoch_secs(&path), now, true) {
-                return Ok(PortraitOutcome::Found(path));
-            }
-        }
-        let marker = cache::negative_marker_path(dir, name);
-        if marker.exists() && cache::is_fresh(cache::file_epoch_secs(&marker), now, false) {
-            return Ok(PortraitOutcome::NotFound);
+    let cached_path = cache::portrait_path_in(dir, name);
+    if let Some(path) = cached_path.as_ref() {
+        if cache::is_fresh(cache::file_epoch_secs(path), now, true) {
+            return Ok(PortraitOutcome::Found(path.clone()));
         }
     }
+    let marker = cache::negative_marker_path(dir, name);
+    if marker.exists() && cache::is_fresh(cache::file_epoch_secs(&marker), now, false) {
+        return Ok(PortraitOutcome::NotFound);
+    }
 
-    let body = search(&deezer::search_url(name))?;
+    let body = match search(&deezer::search_url(name)) {
+        Ok(body) => body,
+        Err(error) => return stale_or(cached_path, error.into()),
+    };
     let Some(artist) = deezer::parse_best_artist(&body, name) else {
         cache::write_negative(dir, name);
         return Ok(PortraitOutcome::NotFound);
     };
-    debug_assert_eq!(cache::key_for(&artist.name), cache::key_for(name));
     let Some(url) = artist.picture_url else {
         cache::write_negative(dir, name);
         return Ok(PortraitOutcome::NotFound);
     };
-    let bytes = download(&url)?;
+    let bytes = match download(&url) {
+        Ok(bytes) => bytes,
+        Err(error) => return stale_or(cached_path, error.into()),
+    };
     let Some(extension) = crate::cover_download::validated_image_extension(&bytes) else {
         cache::write_negative(dir, name);
         return Ok(PortraitOutcome::NotFound);
     };
     cache::store_image(dir, name, &bytes, extension)
         .map(PortraitOutcome::Found)
-        .ok_or(PortraitError::InvalidResponse)
+        .map_or_else(|| stale_or(cached_path, PortraitError::InvalidResponse), Ok)
+}
+
+pub(crate) fn normalize(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn stale_or(
+    cached_path: Option<PathBuf>,
+    error: PortraitError,
+) -> Result<PortraitOutcome, PortraitError> {
+    cached_path
+        .filter(|path| path.exists())
+        .map(PortraitOutcome::Found)
+        .ok_or(error)
 }
 
 #[cfg(test)]
@@ -108,8 +129,7 @@ mod tests {
         let dir = tmp();
         let mut search = |_: &str| Ok(HIT.to_string());
         let mut download = |_: &str| Ok(png_bytes());
-        let outcome =
-            load_or_fetch_with("Band", false, 1_000, &dir, &mut search, &mut download).unwrap();
+        let outcome = load_or_fetch_with("Band", 1_000, &dir, &mut search, &mut download).unwrap();
         match outcome {
             PortraitOutcome::Found(path) => assert!(path.exists()),
             PortraitOutcome::NotFound => panic!("expected Found"),
@@ -122,8 +142,7 @@ mod tests {
         let dir = tmp();
         let mut search = |_: &str| Ok(PLACEHOLDER.to_string());
         let mut download = |_: &str| -> Result<Vec<u8>, FetchError> { panic!("must not download") };
-        let outcome =
-            load_or_fetch_with("Band", false, 1_000, &dir, &mut search, &mut download).unwrap();
+        let outcome = load_or_fetch_with("Band", 1_000, &dir, &mut search, &mut download).unwrap();
         assert!(matches!(outcome, PortraitOutcome::NotFound));
         assert!(cache::negative_marker_path(&dir, "Band").exists());
         std::fs::remove_dir_all(&dir).ok();
@@ -136,8 +155,7 @@ mod tests {
         let now = cache::file_epoch_secs(&cache::portrait_path_in(&dir, "Band").unwrap());
         let mut search = |_: &str| -> Result<String, FetchError> { panic!("must not search") };
         let mut download = |_: &str| -> Result<Vec<u8>, FetchError> { panic!("must not download") };
-        let outcome =
-            load_or_fetch_with("Band", false, now, &dir, &mut search, &mut download).unwrap();
+        let outcome = load_or_fetch_with("Band", now, &dir, &mut search, &mut download).unwrap();
         assert!(matches!(outcome, PortraitOutcome::Found(_)));
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -149,9 +167,26 @@ mod tests {
         let now = cache::file_epoch_secs(&cache::negative_marker_path(&dir, "Band"));
         let mut search = |_: &str| -> Result<String, FetchError> { panic!("must not search") };
         let mut download = |_: &str| -> Result<Vec<u8>, FetchError> { panic!("must not download") };
-        let outcome =
-            load_or_fetch_with("Band", false, now, &dir, &mut search, &mut download).unwrap();
+        let outcome = load_or_fetch_with("Band", now, &dir, &mut search, &mut download).unwrap();
         assert!(matches!(outcome, PortraitOutcome::NotFound));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn stale_cached_image_survives_refresh_failure() {
+        let dir = tmp();
+        let cached = cache::store_image(&dir, "Band", b"old", "jpg").unwrap();
+        let stale_now = cache::file_epoch_secs(&cached) + 31 * 24 * 60 * 60;
+        let mut search = |_: &str| Err(FetchError::Transport);
+        let mut download = |_: &str| -> Result<Vec<u8>, FetchError> { panic!("must not download") };
+
+        let outcome =
+            load_or_fetch_with("Band", stale_now, &dir, &mut search, &mut download).unwrap();
+
+        match outcome {
+            PortraitOutcome::Found(path) => assert_eq!(path, cached),
+            PortraitOutcome::NotFound => panic!("expected stale cached portrait"),
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 }

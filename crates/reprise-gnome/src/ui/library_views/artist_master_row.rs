@@ -11,7 +11,7 @@
 //! The master walks that table to light the now-playing row's EQ rather than
 //! forcing a full model rebind.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -20,9 +20,11 @@ use gtk4::prelude::*;
 
 use crate::ui::artist_avatar;
 use crate::ui::artist_portrait_worker::{ArtistPortraitRequest, ArtistPortraitRuntime};
+use crate::ui::cover_loader::CoverLoader;
 use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::strings;
 use reprise_core::artist_portrait::PortraitOutcome;
+use reprise_core::cover::ThumbnailSize;
 use reprise_core::queries::ArtistSummary;
 
 /// Row height target from the design; the avatar is 38px within it.
@@ -48,6 +50,7 @@ pub(in crate::ui) struct RowHandles {
     /// The artist currently bound to this row — read by [`Self::set_now_playing`]
     /// to decide whether to light the EQ.
     artist: Rc<RefCell<String>>,
+    portrait_generation: Rc<Cell<u64>>,
 }
 
 impl RowHandles {
@@ -77,6 +80,7 @@ pub(in crate::ui) fn build_row_factory(
     registry: &Registry,
     now_playing: &Rc<RefCell<Option<String>>>,
     portraits: &Rc<ArtistPortraitRuntime>,
+    cover_loader: &Rc<CoverLoader>,
 ) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
 
@@ -98,6 +102,7 @@ pub(in crate::ui) fn build_row_factory(
         let registry = registry.clone();
         let now_playing = now_playing.clone();
         let portraits = portraits.clone();
+        let cover_loader = cover_loader.clone();
         factory.connect_bind(move |_, obj| {
             let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
                 return;
@@ -119,6 +124,7 @@ pub(in crate::ui) fn build_row_factory(
                 &summary,
                 now_playing.borrow().as_deref(),
                 &portraits,
+                &cover_loader,
             );
         });
     }
@@ -198,6 +204,7 @@ fn build_row() -> Rc<RowHandles> {
         meta,
         eq,
         artist: Rc::new(RefCell::new(String::new())),
+        portrait_generation: Rc::new(Cell::new(0)),
     })
 }
 
@@ -207,6 +214,7 @@ fn bind_row(
     summary: &ArtistSummary,
     now_playing: Option<&str>,
     portraits: &Rc<ArtistPortraitRuntime>,
+    cover_loader: &Rc<CoverLoader>,
 ) {
     handles
         .initials
@@ -217,41 +225,58 @@ fn bind_row(
         summary.album_count,
         summary.track_count,
     ));
-    *handles.artist.borrow_mut() = summary.artist.clone();
     handles
         .eq
         .set_visible(is_now_playing(now_playing, &summary.artist));
 
+    if handles.artist.borrow().as_str() == summary.artist {
+        return;
+    }
+    *handles.artist.borrow_mut() = summary.artist.clone();
+    handles
+        .portrait_generation
+        .set(handles.portrait_generation.get().wrapping_add(1));
     handles.clear_portrait();
-    request_portrait(handles, portraits);
+    request_portrait(handles, portraits, cover_loader);
 }
 
-fn request_portrait(handles: &RowHandles, portraits: &Rc<ArtistPortraitRuntime>) {
+fn request_portrait(
+    handles: &RowHandles,
+    portraits: &Rc<ArtistPortraitRuntime>,
+    cover_loader: &Rc<CoverLoader>,
+) {
     let artist = handles.artist.borrow().clone();
     if artist.is_empty() {
         return;
     }
     let (sender, receiver) = async_channel::bounded(1);
+    let generation = handles.portrait_generation.get();
     portraits.request(ArtistPortraitRequest {
-        generation: 0,
+        generation,
         artist,
-        force: false,
         response: sender,
     });
     let handles_artist = handles.artist.clone();
     let portrait = handles.portrait.clone();
+    let portrait_generation = handles.portrait_generation.clone();
+    let cover_loader = cover_loader.clone();
     glib::spawn_future_local(async move {
         let Ok(response) = receiver.recv().await else {
             return;
         };
-        if handles_artist.borrow().as_str() != response.artist.as_str() {
+        if response.generation != portrait_generation.get()
+            || handles_artist.borrow().as_str() != response.artist.as_str()
+        {
             return;
         }
         if let Ok(PortraitOutcome::Found(path)) = response.result {
-            if let Ok(texture) = gtk4::gdk::Texture::from_filename(&path) {
-                portrait.set_paintable(Some(&texture));
-                portrait.set_visible(true);
-            }
+            cover_loader.load_file_into_picture(
+                &portrait,
+                &path,
+                ThumbnailSize::Bar,
+                response.generation,
+                &portrait_generation,
+            );
         }
     });
 }

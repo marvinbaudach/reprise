@@ -247,7 +247,6 @@ fn request_portrait(inner: &Rc<Inner>, artist: String) {
     inner.portraits.request(ArtistPortraitRequest {
         generation,
         artist,
-        force: false,
         response: sender,
     });
     let inner = inner.clone();
@@ -259,9 +258,13 @@ fn request_portrait(inner: &Rc<Inner>, artist: String) {
             return;
         }
         if let Ok(PortraitOutcome::Found(path)) = response.result {
-            if let Ok(texture) = gtk4::gdk::Texture::from_filename(&path) {
-                inner.hero.set_portrait(&texture);
-            }
+            inner.cover_loader.load_file_into_picture(
+                inner.hero.portrait(),
+                &path,
+                ThumbnailSize::Grid,
+                response.generation,
+                &inner.generation,
+            );
         }
     });
 }

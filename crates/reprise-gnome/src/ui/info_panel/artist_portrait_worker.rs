@@ -5,7 +5,6 @@ use reprise_core::artist_portrait::{PortraitError, PortraitOutcome};
 pub(in crate::ui) struct ArtistPortraitRequest {
     pub generation: u64,
     pub artist: String,
-    pub force: bool,
     pub response: async_channel::Sender<ArtistPortraitResponse>,
 }
 
@@ -41,8 +40,7 @@ fn spawn() -> async_channel::Sender<ArtistPortraitRequest> {
         .name("reprise-artist-portrait".into())
         .spawn(move || {
             while let Ok(request) = receiver.recv_blocking() {
-                let result =
-                    reprise_core::artist_portrait::load_or_fetch(&request.artist, request.force);
+                let result = reprise_core::artist_portrait::load_or_fetch(&request.artist);
                 let _ = request.response.try_send(ArtistPortraitResponse {
                     generation: request.generation,
                     artist: request.artist,

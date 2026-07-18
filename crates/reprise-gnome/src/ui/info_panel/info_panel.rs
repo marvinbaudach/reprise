@@ -246,7 +246,7 @@ impl InfoPanel {
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let widgets = build_widgets(content, visible);
-        let portrait = InfoPanelPortrait::new(widgets.portrait.clone(), portraits);
+        let portrait = InfoPanelPortrait::new(widgets.portrait.clone(), portraits, &cover_loader);
         // Restore the last selected tab before `wire` attaches the
         // persistence handler, so the restore itself is never echoed back
         // into the settings table.

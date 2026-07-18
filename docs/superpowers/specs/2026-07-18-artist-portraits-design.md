@@ -4,6 +4,12 @@
 **Status:** Approved (brainstorming), ready for implementation plan
 **Author:** Marvin + Claude
 
+> **Privacy note (implemented behavior):** Artist portraits are always fetched
+> from Deezer, so every viewed artist name is sent to that third party with no
+> opt-out. This is intentional and mirrors the always-on `cover_download`
+> requests to MusicBrainz and the Cover Art Archive; it supersedes the earlier
+> opt-in/toggle passages retained below in this historical design.
+
 ## Problem
 
 Artists render only as a deterministic initials-in-a-gradient-circle placeholder
