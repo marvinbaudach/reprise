@@ -42,6 +42,16 @@ cat > "$fake_codex" <<'EOF'
 set -euo pipefail
 printf '%s\n' "$@" > "$FAKE_CODEX_ARGS"
 
+seen_exec=false
+for argument in "$@"; do
+  if [[ $argument == exec ]]; then
+    seen_exec=true
+  elif [[ $argument == --ask-for-approval && $seen_exec == true ]]; then
+    echo "error: unexpected argument '--ask-for-approval' found" >&2
+    exit 2
+  fi
+done
+
 reprise_worktree=
 bewerbung_worktree=
 while (($#)); do
@@ -76,6 +86,9 @@ printf 'Update {{REPRISE_WORKTREE}} and {{BEWERBUNG_WORKTREE}}.\n' > "$prompt"
 
 before_reprise=$(git -C "$reprise_repo" rev-parse HEAD)
 before_bewerbung=$(git -C "$bewerbung_repo" rev-parse HEAD)
+stale_branch="automation/reprise-portfolio-2099-W01"
+git -C "$reprise_repo" branch "$stale_branch" main
+git -C "$bewerbung_repo" branch "$stale_branch" main
 
 env \
   REPRISE_REPO="$reprise_repo" \

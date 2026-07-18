@@ -50,6 +50,18 @@ reprise_exists=false
 bewerbung_exists=false
 git -C "$reprise_repo" show-ref --verify --quiet "refs/heads/$branch" && reprise_exists=true
 git -C "$bewerbung_repo" show-ref --verify --quiet "refs/heads/$branch" && bewerbung_exists=true
+
+if [[ $reprise_exists == true ]] &&
+  [[ $(git -C "$reprise_repo" rev-list --count "main..$branch") -eq 0 ]]; then
+  git -C "$reprise_repo" branch -d "$branch" >/dev/null
+  reprise_exists=false
+fi
+if [[ $bewerbung_exists == true ]] &&
+  [[ $(git -C "$bewerbung_repo" rev-list --count "main..$branch") -eq 0 ]]; then
+  git -C "$bewerbung_repo" branch -d "$branch" >/dev/null
+  bewerbung_exists=false
+fi
+
 if [[ $reprise_exists == true || $bewerbung_exists == true ]]; then
   if [[ $reprise_exists == true && $bewerbung_exists == true ]]; then
     {
@@ -101,10 +113,9 @@ prompt=${prompt//\{\{REPRISE_WORKTREE\}\}/$reprise_worktree}
 prompt=${prompt//\{\{BEWERBUNG_WORKTREE\}\}/$bewerbung_worktree}
 
 set +e
-"$codex_bin" exec \
+"$codex_bin" --ask-for-approval never exec \
   --ephemeral \
   --sandbox workspace-write \
-  --ask-for-approval never \
   -C "$reprise_worktree" \
   --add-dir "$bewerbung_worktree" \
   -o "$codex_output" \
