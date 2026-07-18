@@ -645,7 +645,7 @@ eine Zustandsänderung, die auch ohne sie vollständig sichtbar wäre —
 direkten Nutzeraktionen; Hintergrundprozesse schalten hart oder faden an
 Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
 
-- **MOT-1** [geplant] [gtk] — Vier Tokens, keine freien Zahlen: jede von
+- **MOT-1** [aktiv] [gtk] — Vier Tokens, keine freien Zahlen: jede von
   Reprise selbst konfigurierte Animation nutzt eines von vier Tokens aus
   `ui/motion.rs`: **Micro** 150 ms ease-out für Control-Zustand
   (Icon-Wechsel Play⇄Pause, Hover-Pills, Chips, Rating, Press-Scale;
@@ -675,7 +675,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   innere Tracks/Albums/Artists-Wechsel und die StatusPage⇄Liste-Stacks
   crossfaden mit dem Standard-Token wie der äußere
   Library/Stats/Device-Stack.
-- **MOT-4** [geplant] [manuell] — Listen bewegen sich nicht: kein
+- **MOT-4** [aktiv] [manuell] — Listen bewegen sich nicht: kein
   Stagger/Fade-in pro Row (windowed Model, 200er-Fenster, Bibliotheken
   jenseits 1 600 Rows). Erlaubt: ein Crossfade der gesamten Fläche beim
   View-Wechsel; benannte Ausnahme: die Queue darf DnD-Drop und
@@ -694,7 +694,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
        Waveform-Crossfade und Pause-Entsättigung sind implementiert und
        per [gtk]-Test gedeckt. Icon- und Track-Crossfade existieren
        bereits tokenisiert; sie allein flippen die Regel nicht. -->
-- **MOT-6** [geplant] [gtk] — Nichts blockiert: das Modell ändert sich am
+- **MOT-6** [aktiv] [gtk] — Nichts blockiert: das Modell ändert sich am
   Frame 0, die Animation illustriert nur. Eine zweite Aktion während einer
   laufenden Animation springt per `AdwAnimation::skip()` zum Endzustand und
   startet dann die neue; Animations-Slots (Track-Crossfade, Icon-Crossfade,
