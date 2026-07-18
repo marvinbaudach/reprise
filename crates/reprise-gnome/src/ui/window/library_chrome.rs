@@ -57,11 +57,7 @@ pub(in crate::ui) fn build(
     search_bar.set_child(Some(search_entry));
     search_bar.connect_entry(search_entry);
     search_bar.set_key_capture_widget(Some(key_capture_widget));
-    search_toggle
-        .bind_property("active", &search_bar, "search-mode-enabled")
-        .bidirectional()
-        .sync_create()
-        .build();
+    wire_search_toggle(&search_toggle, &search_bar, search_entry);
 
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
@@ -74,6 +70,44 @@ pub(in crate::ui) fn build(
         #[cfg(test)]
         search_toggle,
     }
+}
+
+pub(in crate::ui) fn search_toggle_active(search_mode: bool, query: &str) -> bool {
+    search_mode || !query.trim().is_empty()
+}
+
+fn wire_search_toggle(
+    toggle: &gtk4::ToggleButton,
+    search_bar: &gtk4::SearchBar,
+    search_entry: &gtk4::SearchEntry,
+) {
+    let bar = search_bar.downgrade();
+    let entry = search_entry.downgrade();
+    toggle.connect_clicked(move |toggle| {
+        let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
+            return;
+        };
+        bar.set_search_mode(!bar.is_search_mode());
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+    });
+
+    let toggle_weak = toggle.downgrade();
+    let entry = search_entry.downgrade();
+    search_bar.connect_search_mode_enabled_notify(move |bar| {
+        let (Some(toggle), Some(entry)) = (toggle_weak.upgrade(), entry.upgrade()) else {
+            return;
+        };
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+    });
+
+    let toggle_weak = toggle.downgrade();
+    let bar = search_bar.downgrade();
+    search_entry.connect_search_changed(move |entry| {
+        let (Some(toggle), Some(bar)) = (toggle_weak.upgrade(), bar.upgrade()) else {
+            return;
+        };
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+    });
 }
 
 pub(in crate::ui) fn style_header(header: &adw::HeaderBar) {
@@ -173,6 +207,55 @@ mod tests {
         );
         assert!(!chrome.search_bar.is_search_mode());
         assert_eq!(chrome.search_bar.child().as_ref(), Some(entry.upcast_ref()));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_3_active_query_shows_chip_when_collapsed() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let content = gtk4::Label::new(Some("Library"));
+        let entry = gtk4::SearchEntry::new();
+        let chrome = build(&header, &content, &entry, &window);
+
+        entry.set_text("falling");
+        chrome.search_bar.set_search_mode(false);
+
+        assert!(search_toggle_active(
+            chrome.search_bar.is_search_mode(),
+            &entry.text()
+        ));
+        assert!(chrome.search_toggle.is_active());
+        assert_eq!(
+            crate::ui::browse::browse_bar::chip_labels(
+                "falling",
+                &reprise_core::queries::BrowseFilter::default(),
+                true,
+            ),
+            vec!["⌕ “falling” in any field"]
+        );
+    }
+
+    #[test]
+    fn search_toggle_projects_open_mode_or_non_empty_query() {
+        assert!(!search_toggle_active(false, ""));
+        assert!(search_toggle_active(true, ""));
+        assert!(search_toggle_active(false, "falling"));
+        assert!(!search_toggle_active(false, "   "));
+    }
+
+    #[test]
+    fn search_5_collapsing_keeps_query_and_chip() {
+        let query = "falling";
+        let chips = crate::ui::browse::browse_bar::chip_labels(
+            query,
+            &reprise_core::queries::BrowseFilter::default(),
+            true,
+        );
+
+        assert!(search_toggle_active(false, query));
+        assert_eq!(chips, vec!["⌕ “falling” in any field"]);
     }
 
     #[test]

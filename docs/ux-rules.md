@@ -784,7 +784,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 - **SEARCH-2** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
   Tippen öffnet die Suchleiste und fokussiert das Feld. Die Leiste fährt mit
   dem zentralen Standard-Motion-Token ein und aus (MOT-1/3).
-- **SEARCH-3** [geplant] [gtk] — Eine nicht-leere Query bleibt auch bei
+- **SEARCH-3** [aktiv] [gtk] — Eine nicht-leere Query bleibt auch bei
   eingeklappter Suchleiste sichtbar: Ihr Such-Chip bleibt bestehen und die
   Lupe trägt den aktiven Toggle-Zustand. Die Lupe bekommt keinen Badge-Punkt;
   Punkte bleiben ausschließlich der Bitte-Rolle vorbehalten (FB-4, P-1).
@@ -792,7 +792,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Suchleiste: Mit Text leert das erste Esc die Query, lässt die Leiste offen
   und das Feld fokussiert; bei leerem Feld klappt Esc die Leiste ein. Eine
   Query wird nie durch Einklappen unsichtbar, ohne dass ihr Chip sie trägt.
-- **SEARCH-5** [geplant] [gtk] — Einklappen beendet nur die Eingabe, nicht den
+- **SEARCH-5** [aktiv] [gtk] — Einklappen beendet nur die Eingabe, nicht den
   Filter. Query, Treffer und Such-Chip bleiben erhalten, bis der Nutzer sie
   explizit über Esc, Chip oder „Clear all" entfernt.
 
