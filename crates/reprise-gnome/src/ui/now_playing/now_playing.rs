@@ -22,6 +22,31 @@ use crate::ui::style::tokens;
 const UP_NEXT_PAGE: &str = "up-next";
 const LYRICS_PAGE: &str = "lyrics";
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum PanelTab {
+    #[default]
+    UpNext,
+    Lyrics,
+}
+
+impl PanelTab {
+    fn page_name(self) -> &'static str {
+        match self {
+            Self::UpNext => UP_NEXT_PAGE,
+            Self::Lyrics => LYRICS_PAGE,
+        }
+    }
+}
+
+#[derive(Default)]
+struct TabSession {
+    selected: Cell<PanelTab>,
+}
+
+thread_local! {
+    static TAB_SESSION: Rc<TabSession> = Rc::new(TabSession::default());
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PanelPresentation {
     title: String,
@@ -60,6 +85,10 @@ struct PanelWidgets {
     cover: gtk4::Image,
     title: gtk4::Label,
     subtitle: gtk4::Label,
+    // Retained for T9's shared track-content crossfade; the T5 acceptance
+    // test also inspects the selected page directly.
+    #[allow(dead_code)]
+    tab_stack: gtk4::Stack,
     tab_buttons: [gtk4::ToggleButton; 2],
     // The visual slot lands in T4; T6/T7 supply its per-tab text.
     #[allow(dead_code)]
@@ -67,6 +96,14 @@ struct PanelWidgets {
 }
 
 fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
+    TAB_SESSION.with(|session| build_widgets_for_session(content, visible, session))
+}
+
+fn build_widgets_for_session(
+    content: &impl IsA<gtk4::Widget>,
+    visible: bool,
+    session: &Rc<TabSession>,
+) -> PanelWidgets {
     let cover = gtk4::Image::builder()
         .pixel_size(tokens::NOW_PLAYING_COVER_SIZE)
         .width_request(tokens::NOW_PLAYING_COVER_SIZE)
@@ -118,7 +155,7 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
         .build();
     tab_stack.add_named(&up_next, Some(UP_NEXT_PAGE));
     tab_stack.add_named(lyrics.widget(), Some(LYRICS_PAGE));
-    tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+    tab_stack.set_visible_child_name(session.selected.get().page_name());
 
     let up_next_button = gtk4::ToggleButton::with_label(&strings::text(strings::UP_NEXT));
     let lyrics_button =
@@ -127,7 +164,10 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
     for button in [&up_next_button, &lyrics_button] {
         button.add_css_class("reprise-now-playing-tab");
     }
-    up_next_button.set_active(true);
+    match session.selected.get() {
+        PanelTab::UpNext => up_next_button.set_active(true),
+        PanelTab::Lyrics => lyrics_button.set_active(true),
+    }
     let tabs = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     tabs.set_homogeneous(true);
     tabs.set_halign(gtk4::Align::Center);
@@ -137,16 +177,20 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
 
     {
         let stack = tab_stack.clone();
+        let session = session.clone();
         up_next_button.connect_toggled(move |button| {
             if button.is_active() {
+                session.selected.set(PanelTab::UpNext);
                 stack.set_visible_child_name(UP_NEXT_PAGE);
             }
         });
     }
     {
         let stack = tab_stack.clone();
+        let session = session.clone();
         lyrics_button.connect_toggled(move |button| {
             if button.is_active() {
+                session.selected.set(PanelTab::Lyrics);
                 stack.set_visible_child_name(LYRICS_PAGE);
             }
         });
@@ -174,6 +218,7 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
         cover,
         title,
         subtitle,
+        tab_stack,
         tab_buttons: [up_next_button, lyrics_button],
         footer,
     }

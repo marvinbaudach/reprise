@@ -35,7 +35,7 @@ Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs i
   unten auf neutrales Panel-Dunkel aus. Basis-Hintergrund bleibt neutral,
   damit der Lyrics-Kontrast konstant ist. Fallback Petrol (= Theme-Akzent,
   Beschluss 8). Als Verlauf/Textur einmal gerendert, kein Live-Blur.
-- **NPP-4 · Tab-Gedächtnis** `[geplant]` — Gewählter Tab bleibt innerhalb der
+- **NPP-4 · Tab-Gedächtnis** `[aktiv]` — Gewählter Tab bleibt innerhalb der
   Session erhalten (NAV-5), Neustart = Up Next. Die bisherige Persistenz des
   Panel-Tabs über Neustarts (`info_panel_tab`-Setting) entfällt **bewusst**;
   die Persistenz der Panel-*Sichtbarkeit* bleibt.
