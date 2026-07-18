@@ -95,14 +95,15 @@ Befunde haben die Vorgabe verändert:
    das war keine Zeichenfreiheit im Mock, sondern die konsequente Folge aus
    Lupe-statt-Feld. `CenteringPolicy::Loose` und seine Notlösungs-Begründung
    entfallen mit.
-8. **Cover-Download und Portraits werden ebenfalls Plugins, default AUS —
-   aber mit Bestandsschutz.** Beide kontaktieren externe Dienste und waren
-   bisher ungated; das war eine Inkonsistenz. Neue Module `cover_download`
-   (coverartarchive.org + MusicBrainz) und `artist_portraits` (Deezer).
-   **Die Migration schreibt für bestehende Datenbanken explizit
-   `enabled = true`** — wer die Funktion heute nutzt, verliert sie nicht
-   stillschweigend. Frische Installationen starten aus und holen nichts ohne
-   Zustimmung.
+8. **Cover-Download, Portraits und Online-Lyrics werden ebenfalls Plugins —
+   aber im Folge-Branch.** Alle drei kontaktieren externe Dienste und sind
+   bisher ungated (Audit-Befund 4; Lyrics ruft LRCLIB ohne jeden Modul-Check);
+   das ist dieselbe Inkonsistenz. Sie werden **nicht hier** gegated, sondern
+   zusammen mit der allgemeinen Opt-in-Regel (NET-1), dem evidenzbasierten
+   Bestandsschutz (NET-2) und den Lyrics-Zuständen (LYR-1..3) in
+   `feat/network-opt-in`. **Dieser Branch fasst weder `cover_download` noch
+   `artist_portraits` noch die Lyrics an** — und seine Migration schreibt
+   **keine** `module.*.enabled`-Werte, weil die Evidenzkriterien dort leben.
 9. **Entdeckbarkeit wandert in den Folge-Branch.** Beschluss 6 macht das
    Modul opt-in — damit erscheint ✦ nie und das Feature wäre unsichtbar.
    Die Gegenmaßnahme (kontextueller Einmal-Hinweis) wird **nicht hier**
