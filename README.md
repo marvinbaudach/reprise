@@ -35,6 +35,15 @@ Flathub.
 Reprise scans `mp3`, `flac`, `ogg`, `opus`, `m4a`, `aac`, and `wav`; actual
 decoding depends on the installed GStreamer codec plugins.
 
+## Architecture
+
+Reprise keeps its reusable music engine separate from native UI and
+Linux-specific integration. The frontend consumes narrow contracts, the
+platform crate implements them, and an automated architecture gate keeps
+`reprise-core` free of GTK, libadwaita, GStreamer, and zbus dependencies.
+
+![Reprise architecture: the native GNOME frontend and future frontends reuse a portable core, while a separate Linux adapter provides GStreamer, MPRIS, MTP, and host integration.](docs/assets/reprise-architecture.svg)
+
 ## Privacy and file safety
 
 The library database and settings stay on the local machine; Reprise contains
