@@ -44,6 +44,18 @@ compiled sources exactly, refuses an existing output directory, and the core
 probe refuses an existing database, so neither can overwrite a user profile.
 All rows are generated metadata with synthetic paths; no audio file is opened.
 
+Compare two generated-metadata runs after changing query or database code:
+
+```sh
+scripts/performance-query-compare.sh /tmp/before /tmp/after \
+  > /tmp/query-comparison.json
+```
+
+The report includes database size and open-time costs, first/middle/final
+window and playback-id timing deltas, and the before/after SQLite query plans.
+This makes an index tradeoff visible even when private display sockets are not
+available for the installed-runtime benchmark.
+
 For the installed-runtime extension, use a second new output directory:
 
 ```sh
