@@ -233,6 +233,7 @@ pub(in crate::ui) struct NowPlayingPanel {
     on_up_next_refresh: RefCell<Option<OnVoid>>,
     track_animation: RefCell<Option<adw::TimedAnimation>>,
     track_animation_generation: Cell<u64>,
+    on_album_reveal: crate::ui::link_activation::ActivationSlot,
 }
 
 impl NowPlayingPanel {
@@ -263,7 +264,10 @@ impl NowPlayingPanel {
             on_up_next_refresh: RefCell::new(None),
             track_animation: RefCell::new(None),
             track_animation_generation: Cell::new(0),
+            on_album_reveal: Rc::new(RefCell::new(None)),
         });
+        crate::ui::link_activation::arm_slot(&panel.widgets.cover, &panel.on_album_reveal);
+        crate::ui::link_activation::arm_slot(&panel.widgets.title, &panel.on_album_reveal);
         panel.wire();
         panel.render_track();
         panel
@@ -368,6 +372,10 @@ impl NowPlayingPanel {
             self.widgets.column.is_visible(),
             self.widgets.session.selected.get(),
         )
+    }
+
+    pub(in crate::ui) fn set_on_album_reveal(&self, callback: impl Fn() + 'static) {
+        *self.on_album_reveal.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Keeps the callback owner alive for exactly as long as the window.

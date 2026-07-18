@@ -133,6 +133,15 @@ Do not point development hooks at the maintainer's real library.
 - NPP-10: Change tracks with animations enabled and disabled; cover, title, glow, and
   tab content must use one shared crossfade or one immediate hard switch respectively,
   and new synchronized lyrics must start with line zero centered.
+- GRID-1/GRID-3/GRID-4: With a populated album grid, combine playing, paused,
+  pointer hover, and keyboard focus. Confirm the persistent EQ and inner playing ring,
+  cover-only outer focus ring, unobstructed cover center, bottom gradient metadata,
+  and accent play/pause button remain visually distinct with animations on and off.
+- GRID-5: From another view and from an already-visible album grid, activate the
+  player-bar and Now Playing cover/title links by pointer and Enter. Confirm Albums
+  opens without duplicate Back history, visible search text clears, the loaded card
+  is focused, centered, and highlighted for about one second, reduced motion uses a
+  static highlight, and a missing album silently falls back to NAV-9a's track origin.
 - With disposable tagged audio and real speakers, adjust all equalizer bands and
   presets while playing, then compare ReplayGain Off, Per Track, and Per Album on
   files containing valid ReplayGain tags. Equalizer and ReplayGain belong only to

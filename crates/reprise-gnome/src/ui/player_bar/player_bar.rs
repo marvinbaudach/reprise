@@ -69,10 +69,6 @@ fn schedule_play_pulse_removal(
     });
 }
 
-/// Title-click callback storage — factored out to satisfy clippy's
-/// `type_complexity` lint.
-type TitleClickCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
-
 pub struct PlayerBar {
     root: gtk4::Box,
     /// The currently-playing track's album cover thumbnail, packed at the
@@ -118,15 +114,15 @@ pub struct PlayerBar {
     /// Volume level before muting, so unmuting restores it.
     #[allow(dead_code)]
     pre_mute_volume: Cell<f64>,
-    /// Callback fired when the user clicks the title label — wired to
-    /// scroll the library track list to the currently playing track.
-    on_title_click: TitleClickCallback,
-    /// Callback fired when the user clicks the album cover — toggles the
-    /// Now-Playing info panel (spec 1.5).
-    on_cover_click: TitleClickCallback,
+    /// Callback fired when the user activates the title link — wired to
+    /// reveal the loaded album in the Library grid (GRID-5).
+    on_title_click: crate::ui::link_activation::ActivationSlot,
+    /// Callback fired when the user activates the cover link — wired to
+    /// reveal the loaded album in the Library grid (GRID-5).
+    on_cover_click: crate::ui::link_activation::ActivationSlot,
     /// Callback fired when the user clicks the artist label — navigates to
     /// the artist view (spec 1.5).
-    on_artist_click: TitleClickCallback,
+    on_artist_click: crate::ui::link_activation::ActivationSlot,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
     current_track_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
@@ -162,31 +158,11 @@ impl PlayerBar {
             ..
         } = player_bar_layout::build();
 
-        let on_title_click: TitleClickCallback = Rc::new(RefCell::new(None));
-        let title_click = gtk4::GestureClick::new();
-        let title_click_cb = on_title_click.clone();
-        title_click.connect_released(move |_, _, _, _| {
-            let callback = title_click_cb.borrow().clone();
-            if let Some(callback) = callback {
-                callback();
-            }
-        });
-        title_label.add_controller(title_click);
-        // Title is clickable (→ jump to the playing track), so signal it with a
-        // link cursor, matching the artist label below.
-        title_label.set_cursor_from_name(Some("pointer"));
+        let on_title_click = Rc::new(RefCell::new(None));
+        crate::ui::link_activation::arm_slot(&title_label, &on_title_click);
 
-        // Cover: click → Now-Playing-Panel toggle (spec 1.5).
-        let on_cover_click: TitleClickCallback = Rc::new(RefCell::new(None));
-        let cover_gesture = gtk4::GestureClick::new();
-        let cover_click_cb = on_cover_click.clone();
-        cover_gesture.connect_released(move |_, _, _, _| {
-            let cb = cover_click_cb.borrow().clone();
-            if let Some(cb) = cb {
-                cb();
-            }
-        });
-        cover.add_controller(cover_gesture);
+        let on_cover_click = Rc::new(RefCell::new(None));
+        crate::ui::link_activation::arm_slot(&cover, &on_cover_click);
 
         // Cover: CSS brightness effect on hover (spec 1.5).
         let cover_motion = gtk4::EventControllerMotion::new();
@@ -201,7 +177,8 @@ impl PlayerBar {
         cover.add_controller(cover_motion);
 
         // Artist label: hover colour + click → artist view (spec 1.5).
-        let on_artist_click: TitleClickCallback = Rc::new(RefCell::new(None));
+        let on_artist_click: crate::ui::link_activation::ActivationSlot =
+            Rc::new(RefCell::new(None));
         let artist_gesture = gtk4::GestureClick::new();
         let artist_click_cb = on_artist_click.clone();
         artist_gesture.connect_released(move |_, _, _, _| {
@@ -284,8 +261,7 @@ impl PlayerBar {
         *self.on_title_click.borrow_mut() = Some(Rc::new(f));
     }
 
-    /// Registers a callback invoked when the user clicks the album cover —
-    /// should toggle the Now-Playing info panel (spec 1.5).
+    /// Registers the GRID-5 callback for cover link activation.
     pub fn connect_cover_clicked<F: Fn() + 'static>(&self, f: F) {
         *self.on_cover_click.borrow_mut() = Some(Rc::new(f));
     }

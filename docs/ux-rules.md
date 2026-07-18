@@ -105,7 +105,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   auf Artist-Namen → Artist-Detail; Klick auf Album-Namen/Cover →
   Album-Detail; beide pushen den globalen Stack (NAV-2). Hover zeigt
   Unterstreichung als Affordance. Gilt auch in der Player-Leiste (dort:
-  Artist-/Album-Klick gemäß dieser Regel, Cover/Titel gemäß NAV-9).
+  Artist-/Album-Klick gemäß dieser Regel, Cover/Titel gemäß GRID-5).
 - **NAV-4** [geplant] [gtk] — Doppelklick auf Row = abspielen im Kontext der
   sichtbaren Liste (siehe PLAY-2). Einfachklick = selektieren. Enter = wie
   Doppelklick. Ausnahme Queue-View: Doppelklick springt gemäß QUE-3 zum Track
@@ -125,14 +125,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **NAV-8** [geplant] [gtk] — My Stats ist ein Sidebar-Ort wie jeder andere:
   volle Content-Fläche, Headerbar mit Suche bleibt stehen (Suche dort
   disabled/ausgeblendet ist erlaubt, aber die Leiste bleibt).
-- **NAV-9** [geplant] [gtk] — „Jump to Now Playing": Klick auf Cover oder
-  Titel in der Player-Leiste navigiert zur Heimat des spielenden Tracks
-  (Library-Modus Tracks bzw. Playlist, aus der er spielt), selektiert die Row
-  und zentriert sie (Scroll so, dass die Row im mittleren Drittel liegt —
-  kein scrollIntoView-Kantenkleben). Zusätzlich Shortcut Ctrl+L. Das ist die
-  explizite „wo bin ich gerade"-Geste; sie pusht auf den History-Stack
-  (NAV-2 global, Back kehrt zurück). Artist-/Album-Klick in der Leiste
-  behalten ihre NAV-3-Ziele — nur Cover/Titel springen zum Track.
+- **NAV-9** [ersetzt durch NAV-9a/GRID-5] — Ursprünglich teilten Cover/Titel
+  der Player-Leiste und Ctrl+L denselben Sprung zur Heimat des spielenden
+  Tracks. Aufgeteilt in Track-Ursprung per Ctrl+L (NAV-9a) und Album-Grid-
+  Reveal per Player-Oberflächen (GRID-5).
+- **NAV-9a** [aktiv] [gtk] — Ctrl+L navigiert zur Herkunftsansicht des
+  geladenen Tracks, selektiert dessen Zeile und zentriert sie ohne
+  scrollIntoView-Kantenkleben. Der Sprung pusht auf den globalen
+  History-Stack; Back kehrt zum vorherigen Ort zurück.
 
 ## C. Abspielen, Queue, Shuffle, Filter
 
@@ -183,14 +183,47 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## D. Albums- & Artists-Ansicht
 
-- **ALB-1** [geplant] [gtk] — Album-Grid: Hover = Abdunkel-Gradient +
-  Play-Button unten rechts (fade 150 ms). Klick Cover/Titel → Album-Detail
-  (push). Klick Play → spielt das Album sofort gemäß PLAY-1a, ohne zu
-  navigieren. Kontextmenü: Play next / Add to queue / Edit tags / Show files.
+- **ALB-1** [ersetzt durch GRID-2/GRID-4] — Ursprüngliche gemeinsame
+  Album-Grid-Regel für Hover-Overlay, Aktivierung, Container-Play und
+  Kontextmenü; in Bedienung/Aktionen (GRID-2) und Overlay-Optik (GRID-4)
+  aufgeteilt.
 - **ALB-2** [geplant] [gtk] — Album-Detail: Hero mit Cover + dominanter
   Farbfläche (Akzent-Pipeline), Play all/Shuffle-Pills (PLAY-1a), Trackliste
   nach Disc/Tracknummer. Spielender Track: Akzent-Row + EQ-Icon + bold —
   identisch in jeder Liste der App (eine Markierungssprache).
+- **GRID-1** [aktiv] [gtk] — Persistenter Playing-Zustand: Das geladene
+  Album zeigt unabhängig von Hover und Fokus oben links auf dem Cover das
+  gemeinsame EQ-Badge und einen 1.5-px-Innenring um das Cover. Beides nutzt
+  `@reprise_player_accent`. Bei Pause bleibt der Ring und die EQ-Bewegung
+  friert ein; bei `gtk-enable-animations=false` ist die Glyphe statisch.
+- **GRID-2** [aktiv] [gtk] — Bedienung und Aktionen: Das native
+  GtkGridView bewegt den Fokus mit Pfeiltasten zweidimensional. Enter öffnet
+  die Album-Detailquelle als History-Push, Ctrl+Enter ersetzt die Queue durch
+  das Album in kanonischer Disc-/Track-Reihenfolge und startet bei Track 1.
+  Space bleibt global Play/Pause. Menütaste und Shift+F10 öffnen an der
+  fokussierten Kachel dasselbe Menü wie Rechtsklick, exakt mit Play, Play
+  next, Add to queue, Go to artist und Edit tags….
+- **GRID-3** [aktiv] [gtk] — Sichtbarer Fokus und Zustandskomposition:
+  Tastaturfokus zeichnet einen 2-px-Außenring in `@accent_color` nur um das
+  Cover und zeigt dieselbe Play-Affordance wie Hover. Playing, Fokus und
+  Hover bleiben getrennte Zustandslayer: Playing innen, Fokus außen,
+  Interaktions-Overlay darüber; kombinierte Zustände verdecken einander
+  nicht.
+- **GRID-4** [aktiv] [gtk] — Bottom-Gradient-Overlay: Hover oder Fokus
+  blendet statt einer schwebenden Tooltip-Box einen unten verankerten
+  Abdunkel-Gradienten ein. Darin stehen eine dünne Metazeile („13 tracks ·
+  47 min") und unten rechts ein Play/Pause-Button in
+  `@reprise_player_accent`; Album und Artist bleiben unter dem Cover. Die
+  Covermitte bleibt frei. Der Kartencontainer hat keinen Metadaten-Tooltip;
+  nur tatsächlich ellipsierte Titel-/Artist-Labels zeigen ihren Volltext.
+- **GRID-5** [aktiv] [gtk] — Spielendes Album aufdecken: Aktivierung von
+  Cover oder Titel in Playerleiste oder Now-Playing-Panel wechselt bei Bedarf
+  in die Album-Ansicht, leert ein sichtbares Suchfeld samt Albumfilter,
+  scrollt per GtkGridView/Adjustment zur geladenen Albumkachel, fokussiert sie
+  und hebt sie rund 1 s hervor. Der Ortswechsel ist ein History-Push; bereits
+  im Album-Grid entsteht kein Duplikat. Fehlt die Albumkachel, greift NAV-9a
+  ohne Fehlerdialog. `gtk-enable-animations=false` zeigt für dieselbe Dauer
+  ein statisches Highlight.
 - **ART-1** [geplant] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.
