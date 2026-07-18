@@ -52,6 +52,7 @@ mod playlists;
 mod popover_lifecycle;
 pub(crate) mod preferences;
 pub mod primary_menu;
+mod runtime_performance;
 mod scan;
 mod scrobbling;
 mod scroll_center;
