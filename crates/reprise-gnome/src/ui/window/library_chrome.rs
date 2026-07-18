@@ -172,6 +172,8 @@ pub(in crate::ui) fn css() -> String {
      .reprise-search-strip { \
        background-color: @headerbar_bg_color; \
        border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
+     .reprise-library-sidebar .caption-heading { \
+       color: @reprise_secondary_fg_color; }\n\
      .reprise-view-switcher { \
        background-color: alpha(@window_fg_color, 0.06); \
        border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\

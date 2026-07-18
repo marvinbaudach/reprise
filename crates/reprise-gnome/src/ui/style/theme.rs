@@ -178,6 +178,8 @@ impl Theme {
 /// libadwaita named colors, plus two `reprise_*` colors the app's own CSS
 /// reads. Installed at application priority so it wins over Adwaita's defaults.
 pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
+    use super::tokens::{HINT_TEXT_ALPHA, PRIMARY_TEXT_ALPHA, SECONDARY_TEXT_ALPHA};
+
     let p = if is_dark {
         theme.palette()
     } else {
@@ -201,6 +203,9 @@ pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
          @define-color accent_bg_color {acc};\n\
          @define-color accent_fg_color {accfg};\n\
          @define-color accent_color {acc};\n\
+         @define-color reprise_primary_fg_color alpha({fg}, {primary_alpha});\n\
+         @define-color reprise_secondary_fg_color alpha({fg}, {secondary_alpha});\n\
+         @define-color reprise_hint_fg_color alpha({fg}, {hint_alpha});\n\
          @define-color reprise_dim_fg_color {dim};\n\
          @define-color reprise_player_accent {play};\n",
         win = p.window_bg,
@@ -213,6 +218,9 @@ pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
         dlg = p.dialog_bg,
         acc = p.accent,
         accfg = p.accent_fg,
+        primary_alpha = PRIMARY_TEXT_ALPHA,
+        secondary_alpha = SECONDARY_TEXT_ALPHA,
+        hint_alpha = HINT_TEXT_ALPHA,
         dim = p.dim_fg,
         play = p.player_accent,
     )
@@ -319,6 +327,94 @@ mod tests {
                     "{theme:?} player fallback must use the theme accent"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn contrast_1_secondary_text_meets_ratio() {
+        fn rgb(hex: &str) -> [f64; 3] {
+            let hex = hex.strip_prefix('#').expect("palette color starts with #");
+            [0, 2, 4].map(|offset| {
+                f64::from(u8::from_str_radix(&hex[offset..offset + 2], 16).unwrap()) / 255.0
+            })
+        }
+
+        fn linear(channel: f64) -> f64 {
+            if channel <= 0.04045 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            }
+        }
+
+        fn luminance(color: [f64; 3]) -> f64 {
+            0.2126 * linear(color[0]) + 0.7152 * linear(color[1]) + 0.0722 * linear(color[2])
+        }
+
+        fn contrast(foreground: &str, background: &str, alpha: f64) -> f64 {
+            let foreground = rgb(foreground);
+            let background = rgb(background);
+            let composed = [0, 1, 2]
+                .map(|index| foreground[index] * alpha + background[index] * (1.0 - alpha));
+            let (lighter, darker) = {
+                let foreground = luminance(composed);
+                let background = luminance(background);
+                if foreground > background {
+                    (foreground, background)
+                } else {
+                    (background, foreground)
+                }
+            };
+            (lighter + 0.05) / (darker + 0.05)
+        }
+
+        const SECONDARY_ALPHA: f64 = 0.70;
+        const MINIMUM_RATIO: f64 = 4.5;
+        for theme in Theme::all() {
+            for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
+                let css = theme_css(theme, is_dark);
+                assert!(css.contains(&format!(
+                    "@define-color reprise_primary_fg_color alpha({}, 0.95);",
+                    palette.fg
+                )));
+                assert!(css.contains(&format!(
+                    "@define-color reprise_secondary_fg_color alpha({}, 0.7);",
+                    palette.fg
+                )));
+                assert!(css.contains(&format!(
+                    "@define-color reprise_hint_fg_color alpha({}, 0.5);",
+                    palette.fg
+                )));
+                for (role, surface) in [
+                    ("status line", palette.sidebar_bg),
+                    ("column headers", palette.view_bg),
+                    ("sidebar sections", palette.sidebar_bg),
+                    ("card metadata", palette.card_bg),
+                ] {
+                    let ratio = contrast(palette.fg, surface, SECONDARY_ALPHA);
+                    assert!(
+                        ratio >= MINIMUM_RATIO,
+                        "{theme:?} {role} contrast {ratio:.2}:1 is below {MINIMUM_RATIO}:1"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn contrast_3_secondary_surfaces_use_verified_level() {
+        for (role, css) in [
+            ("status line", crate::ui::track_content::css()),
+            ("column headers", crate::ui::track_list_header_style::css()),
+            ("sidebar sections", crate::ui::library_chrome::css()),
+            ("album metadata", crate::ui::album_card_css::css()),
+            ("artist metadata", crate::ui::artist_view_css::css()),
+            ("library-card metadata", crate::ui::library_view_css::css()),
+        ] {
+            assert!(
+                css.contains("@reprise_secondary_fg_color"),
+                "{role} did not consume the verified secondary level"
+            );
         }
     }
 }

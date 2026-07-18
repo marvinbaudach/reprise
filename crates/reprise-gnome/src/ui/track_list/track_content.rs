@@ -31,6 +31,7 @@ pub(in crate::ui) fn build(
 pub(in crate::ui) fn css() -> String {
     ".reprise-list-status-bar { \
        background-color: @sidebar_bg_color; \
+       color: @reprise_secondary_fg_color; \
        border-top: 1px solid rgba(255, 255, 255, 0.06); }"
         .into()
 }
