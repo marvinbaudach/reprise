@@ -907,6 +907,69 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Ist eine Schnittstelle im Test-Build ausgeblendet (z. B. `SectionModel` per
   `cfg`), zählt nur der E2E-Beleg — „grün" ist dort strukturell bedeutungslos.
 
+## U. UI-Politur, Kontrast & ansichtsübergreifender Kontext
+
+<!-- Sektionsbuchstabe: T ist dem parallelen Branch feat/network-opt-in
+     vorbehalten; U wird deshalb append-only nach dem aktuellen Dateiende
+     ergänzt. Die Entscheidungen und die Abgrenzung zu Batch B stehen in
+     docs/superpowers/plans/2026-07-18-ui-polish-beschluesse.md. -->
+
+- **SEARCH-6** [geplant] [gtk] — Lupe und Ctrl+F toggeln die Suchleiste
+  beidseitig (zeigen ↔ verstecken). Das Verstecken löscht die Query nie: bei
+  nicht leerer Query bleibt ihr Chip sichtbar und die Lupe im
+  `:checked`-Akzentstil (FIL-1, SEARCH-3/5).
+- **LYR-4** [geplant] [gtk] — Die Zentrierung der aktiven Lyrics-Zeile wird
+  am Songanfang nach oben geklemmt. Solange nicht genug Kontextzeilen über
+  der aktiven Zeile liegen, sitzt der Textblock oben; erst mit genügend
+  Vorlauf wandert die aktive Zeile in die Mitte.
+- **STYLE-2** [geplant] [gtk] — Content und Tracktabelle verwenden die
+  `.view`-Stufe; linke Sidebar und rechtes Now-Playing-Panel verwenden
+  gemeinsam die eine Stufe höhere `sidebar_bg`-Fläche des aktiven Themes.
+  Beide Flanken tragen an ihrer Innenkante eine 1-px-Hairline. Es gibt keine
+  pane-spezifische Nachtönung und keine hartkodierte Pane-Fläche.
+- **STYLE-3** [geplant] [gtk] — Zwei Akzentrollen bleiben getrennt: der feste
+  App-Akzent (`@accent_color`) bezeichnet dauerhafte UI-Bedeutung wie
+  Selektion, Ratings, aktive Toggles, Links, Chips und Fokus; der dynamische
+  Playback-Akzent (`@reprise_player_accent`) bezeichnet ausschließlich den
+  laufenden Track wie Play/Pause, Waveform, Playing-Row, EQ, Glow und
+  GRID-1-Innenring. Ein Element mischt die Rollen nie.
+- **CONTRAST-1** [geplant] [gtk] — Es gibt drei zentrale Textstufen: Primär
+  ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
+  Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
+  Hinweise und deaktivierte Sekundärtexte. Passende Adwaita-Named-Colors
+  haben Vorrang vor eigenen Alphas; pro Element wird nicht nachgetönt.
+- **CONTRAST-2** [geplant] [gtk] — Jede „N tracks · Dauer"-Statuszeile ist
+  eine echte untere Leiste mit definierter Fläche und oberer Hairline. Sie
+  reserviert eigenen Platz und überdeckt nie eine Trackzeile; erst gegen
+  diese feste Fläche wird ihr Sekundärtext-Kontrast bestimmt.
+- **CONTRAST-3** [geplant] [gtk] — Statuszeilen, Spaltenköpfe,
+  Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
+  Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
+  Kleinschrift und benötigt dieselbe Prüfung wie Hint bei Normalgröße.
+- **NAV-10** [geplant] [gtk] — Der laufende Kontext bleibt in allen Ansichten
+  mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim ersten
+  Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel stellen
+  NAV-5s gemerkten ID-plus-Offset-Anker wieder her. Explizites „Go to
+  album/artist" springt immer deterministisch; Selektion folgt der Wiedergabe
+  nie. Umsetzung erst in Batch B nach NAV-5 und der gemeinsamen
+  Playing-Badge-Extraktion; siehe Beschlussdokument.
+- **QUE-7** [geplant] [gtk] — Up Next besteht aus der manuellen Queue plus
+  einem virtuellen, benannten Kontext-Tail mit Count. Der Tail wird nicht als
+  Einzelzeilen materialisiert, sondern nur im sichtbaren Fenster gerendert;
+  die Sidebar-Zeile „Queue" zählt ausschließlich die manuelle Queue und zeigt
+  bei null keinen Zähler. Umsetzung in Batch B; siehe Beschlussdokument.
+- **QUE-8** [geplant] [gtk] — Drag-Reorder existiert ausschließlich in „Next
+  in Queue". Die manuelle Sektion ist umsortierbar; ein Drag aus „Continuing"
+  nach oben materialisiert genau diesen Eintrag in der manuellen Sektion.
+  Multi-Select, Clear, Save-as-Playlist und das vollständige Kontextmenü
+  bleiben in der Queue-ColumnView. Umsetzung in Batch B; siehe
+  Beschlussdokument.
+- **NPP-11** [geplant] [gtk] — Die Panel-Ansichten verwenden einen
+  zentrierten `AdwViewSwitcher` als Title-Widget und degradieren bei schmalem
+  Fenster adaptiv zu einer unteren `AdwViewSwitcherBar` oder einem
+  icons-only `AdwInlineViewSwitcher` per `AdwBreakpoint`. Umsetzung in Batch
+  B; siehe Beschlussdokument.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
