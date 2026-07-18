@@ -914,7 +914,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
      ergänzt. Die Entscheidungen und die Abgrenzung zu Batch B stehen in
      docs/superpowers/plans/2026-07-18-ui-polish-beschluesse.md. -->
 
-- **SEARCH-6** [geplant] [gtk] — Lupe und Ctrl+F toggeln die Suchleiste
+- **SEARCH-6** [aktiv] [gtk] — Lupe und Ctrl+F toggeln die Suchleiste
   beidseitig (zeigen ↔ verstecken). Das Verstecken löscht die Query nie: bei
   nicht leerer Query bleibt ihr Chip sichtbar und die Lupe im
   `:checked`-Akzentstil (FIL-1, SEARCH-3/5).
