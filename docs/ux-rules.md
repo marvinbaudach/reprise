@@ -798,7 +798,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 
 ## R. New Releases
 
-- **NR-1** [geplant] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
+- **NR-1** [aktiv] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
   die einzige Wahrheit für neue Releases und spätere Artist-News-Ansichten.
   Artist-MBIDs kommen zuerst aus Tags, sonst aus einer persistierten
   Namensauflösung inklusive negativer Ergebnisse; Artists werden nach
