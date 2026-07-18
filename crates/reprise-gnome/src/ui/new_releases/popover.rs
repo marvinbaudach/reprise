@@ -163,7 +163,7 @@ impl NewReleasesPopover {
         });
     }
 
-    fn render(&self, mark_seen: bool, failed: bool) {
+    fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
         let enabled = reprise_core::modules::is_enabled(
             &self.conn.borrow(),
             &reprise_core::modules::NEW_RELEASES_MODULE,
@@ -192,8 +192,22 @@ impl NewReleasesPopover {
         let effect = module_effect(enabled, !all_releases.is_empty());
         self.button.set_visible(effect.button_visible);
         clear_box(&self.rows);
+        let on_hide: Rc<dyn Fn(&str)> = {
+            let weak = Rc::downgrade(self);
+            Rc::new(move |mbid: &str| {
+                let Some(state) = weak.upgrade() else { return };
+                if let Err(error) =
+                    reprise_core::artist_news::set_release_hidden(&state.conn.borrow(), mbid, true)
+                {
+                    tracing::warn!(%error, release_group_mbid = mbid, "could not hide New Release");
+                    return;
+                }
+                state.render(false, false);
+            })
+        };
         for (index, release) in releases.iter().take(POPOVER_LIMIT).enumerate() {
-            self.rows.append(&build_release_row(release, index == 0));
+            self.rows
+                .append(&build_release_row(release, index == 0, &on_hide));
         }
         let visible = releases.len().min(POPOVER_LIMIT);
         self.see_all
@@ -265,7 +279,7 @@ impl NewReleasesPopover {
         });
     }
 
-    fn finish_fetch(&self, failed: bool) {
+    fn finish_fetch(self: &Rc<Self>, failed: bool) {
         self.fetching.set(false);
         self.spinner.stop();
         self.fetch_stack.set_visible_child_name("icon");
@@ -374,7 +388,17 @@ fn build_footer() -> (
     (footer, fetch_button, stack, spinner, updated, failure)
 }
 
-fn build_release_row(release: &reprise_core::artist_news::StoredRelease, hero: bool) -> gtk4::Box {
+/// One popover entry. `on_hide` is what keeps NR-4 reachable: hiding used to
+/// live only in the digest view, which is itself only reachable through
+/// "See all" — and that button appears only when the list overflows or
+/// something is already hidden. A user with a short list could therefore
+/// never hide anything, and the digest's "N hidden · Show" footer could never
+/// appear for them. The action belongs where the entries are.
+fn build_release_row(
+    release: &reprise_core::artist_news::StoredRelease,
+    hero: bool,
+    on_hide: &Rc<dyn Fn(&str)>,
+) -> gtk4::Box {
     let cover = LazyReleaseCover::new(
         &release.release_group_mbid,
         &release.artist_name,
@@ -398,9 +422,18 @@ fn build_release_row(release: &reprise_core::artist_news::StoredRelease, hero: b
     text.set_hexpand(true);
     text.append(&title);
     text.append(&meta);
+    let hide = gtk4::Button::with_label(&strings::text(strings::HIDE_RELEASE));
+    hide.add_css_class("flat");
+    hide.add_css_class("pill");
+    hide.set_valign(gtk4::Align::Center);
+    let on_hide = on_hide.clone();
+    let mbid = release.release_group_mbid.clone();
+    hide.connect_clicked(move |_| on_hide(&mbid));
+
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     row.append(cover.widget());
     row.append(&text);
+    row.append(&hide);
     row
 }
 
@@ -450,6 +483,45 @@ mod tests {
         assert!(!see_all_visible(5, 5, 0));
         assert!(see_all_visible(6, 5, 0));
         assert!(see_all_visible(5, 5, 1));
+    }
+
+    /// UX NR-4: hiding has to be reachable from the popover itself.
+    ///
+    /// The short-list case above (`!see_all_visible(5, 5, 0)`) is exactly the
+    /// state in which the digest view is unreachable — so if "Hide" lived
+    /// only there, a user with few releases could never hide one, and the
+    /// digest's "N hidden · Show" footer could never appear for them. The row
+    /// carries the action, which closes that loop.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nr_4_popover_rows_offer_hide_without_the_digest_view() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let hidden: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let sink = hidden.clone();
+        let on_hide: Rc<dyn Fn(&str)> = Rc::new(move |mbid: &str| {
+            sink.borrow_mut().push(mbid.to_string());
+        });
+
+        let row = build_release_row(&release("rg-sample"), false, &on_hide);
+
+        let button = last_button(row.upcast_ref::<gtk4::Widget>())
+            .expect("a popover row exposes a Hide button");
+        button.emit_clicked();
+        assert_eq!(hidden.borrow().as_slice(), ["rg-sample"]);
+    }
+
+    fn last_button(widget: &gtk4::Widget) -> Option<gtk4::Button> {
+        let mut found = None;
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            if let Ok(button) = current.clone().downcast::<gtk4::Button>() {
+                found = Some(button);
+            }
+            child = current.next_sibling();
+        }
+        found
     }
 
     #[test]
