@@ -391,6 +391,24 @@ mkdir -p -- "$output_dir"
 runtime_scratch_root=$(mktemp -d /tmp/reprise-runtime-performance.XXXXXX)
 trap 'rm -r -- "$runtime_scratch_root"' EXIT
 
+preflight_display=$((100 + ($$ + 1) % 50000))
+Xvfb ":$preflight_display" -screen 0 320x240x24 -nolisten tcp \
+  >"$output_dir/xvfb-preflight.log" 2>&1 &
+preflight_pid=$!
+for _ in $(seq 1 20); do
+  kill -0 "$preflight_pid" 2>/dev/null || break
+  [[ -S "/tmp/.X11-unix/X$preflight_display" ]] && break
+  sleep 0.05
+done
+if ! kill -0 "$preflight_pid" 2>/dev/null \
+  || [[ ! -S "/tmp/.X11-unix/X$preflight_display" ]]; then
+  echo "private Xvfb sockets are unavailable; runtime CUA benchmark cannot run" >&2
+  head -n 20 "$output_dir/xvfb-preflight.log" >&2 || true
+  exit 1
+fi
+kill -TERM "$preflight_pid" 2>/dev/null || true
+wait "$preflight_pid" 2>/dev/null || true
+
 echo "== Build and install release app =="
 meson setup "$runtime_scratch_root/build" . --prefix=/usr -Dprofile=release
 DESTDIR="$runtime_scratch_root/install" meson install -C "$runtime_scratch_root/build"
