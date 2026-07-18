@@ -2,12 +2,17 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-rule_named=0
+mode=all
 case "${1:-}" in
   "") ;;
-  --rule-named) rule_named=1 ;;
+  --rule-named) mode=rule-named ;;
+  # --motion runs the motion tokens' display tests (mot_* names) unconditionally,
+  # i.e. without deriving prefixes from docs/ux-rules.md. Phase 1 needs this
+  # because the MOT section is not committed yet, so --rule-named would filter
+  # every motion test out and #[ignore] would then skip it entirely.
+  --motion) mode=motion ;;
   *)
-    echo "Usage: $0 [--rule-named]" >&2
+    echo "Usage: $0 [--rule-named | --motion]" >&2
     exit 2
     ;;
 esac
@@ -17,7 +22,18 @@ mapfile -t tests < <(
     | sed -n 's/: test$//p'
 )
 
-if (( rule_named != 0 )); then
+if [[ $mode == motion ]]; then
+  motion_tests=()
+  for test in "${tests[@]}"; do
+    test_name=${test##*::}
+    if [[ $test_name =~ ^mot_[0-9]+[a-z]?_ ]]; then
+      motion_tests+=("$test")
+    fi
+  done
+  tests=("${motion_tests[@]}")
+fi
+
+if [[ $mode == rule-named ]]; then
   doc=docs/ux-rules.md
   [[ -f $doc ]] || { echo "check-display-tests: $doc is missing" >&2; exit 1; }
   declare -A status_of
