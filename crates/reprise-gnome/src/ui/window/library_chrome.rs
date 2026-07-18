@@ -129,7 +129,13 @@ pub(in crate::ui) fn build_library_title(
     source_title: &adw::WindowTitle,
     views: &gtk4::Stack,
 ) -> LibraryTitle {
+    // Clearing the title widget is NOT enough: an `AdwHeaderBar` without one
+    // falls back to rendering the window's own title, so "Reprise" kept
+    // sitting in the centre next to the left-packed switcher (measured on a
+    // headless run — `title_widget().is_none()` was already green). The
+    // switcher carries the place identity now, so the centre stays empty.
     header.set_title_widget(gtk4::Widget::NONE);
+    header.set_show_title(false);
     let switcher = gtk4::StackSwitcher::builder().stack(views).build();
     switcher.add_css_class("reprise-view-switcher");
     let root = gtk4::Stack::new();
@@ -355,6 +361,10 @@ mod tests {
         assert_eq!(title.parent(), Some(library_title.root.clone().upcast()));
         assert!(library_title.root.is_ancestor(&header));
         assert!(header.title_widget().is_none());
+        // Not redundant: with no title widget Adwaita falls back to the
+        // window title, which put "Reprise" in the centre beside the
+        // left-packed switcher. Only `show-title = false` empties the centre.
+        assert!(!header.shows_title());
         assert_eq!(
             library_title.root.visible_child_name().as_deref(),
             Some(LIBRARY_TITLE_SWITCHER)
