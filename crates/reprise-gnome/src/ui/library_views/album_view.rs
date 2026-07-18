@@ -109,6 +109,41 @@ impl AlbumView {
             .hexpand(true)
             .build();
 
+        // Pointer → keyboard handoff: a primary click on EMPTY grid space
+        // hands the grid keyboard focus, so arrows / Enter / Menu key work
+        // right away. `pressed` in the CAPTURE phase on the scrolled window:
+        // `GtkListBase`'s internal gesture claims the sequence even on empty
+        // space (retroactively denying other gestures), so a bubble or
+        // capture `released` never fires here. Card hits are explicitly
+        // skipped — grabbing focus mid-press scrolls the grid to its focused
+        // cell, which cancels the card's own click gesture (a real caught
+        // regression: cards stopped opening).
+        {
+            let empty_click = gtk4::GestureClick::new();
+            empty_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            let grid = grid_view.downgrade();
+            empty_click.connect_pressed(move |gesture, _n, x, y| {
+                let Some(scrolled) = gesture.widget() else { return };
+                let mut hit = scrolled.pick(x, y, gtk4::PickFlags::DEFAULT);
+                while let Some(widget) = hit {
+                    if widget.has_css_class(crate::ui::album_card_css::CARD_CLASS) {
+                        return;
+                    }
+                    if widget == scrolled {
+                        break;
+                    }
+                    hit = widget.parent();
+                }
+                let Some(grid) = grid.upgrade() else { return };
+                if grid.grab_focus() {
+                    tracing::debug!("album grid: empty-space click focused the grid");
+                } else {
+                    tracing::debug!("album grid: empty-space click focus refused");
+                }
+            });
+            scrolled.add_controller(empty_click);
+        }
+
         // ── Empty states ───────────────────────────────────────────────
         let empty = adw::StatusPage::builder()
             .icon_name("folder-music-symbolic")
