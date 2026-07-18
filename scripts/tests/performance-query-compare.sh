@@ -30,6 +30,8 @@ printf '%s\n' '{
   "middle_window": {"median_us": 100},
   "final_window": {"median_us": 200},
   "album_final_window": {"median_us": 500},
+  "filtered_count": {"median_us": 120},
+  "library_stats": {"median_us": 60},
   "playback_ids": {"median_us": 300},
   "title_window_query_plan": {
     "details": ["SCAN tracks", "USE TEMP B-TREE FOR ORDER BY"],
@@ -50,6 +52,8 @@ printf '%s\n' '{
   "middle_window": {"median_us": 10},
   "final_window": {"median_us": 20},
   "album_final_window": {"median_us": 20},
+  "filtered_count": {"median_us": 126},
+  "library_stats": {"median_us": 63},
   "playback_ids": {"median_us": 30},
   "title_window_query_plan": {
     "details": ["SCAN tracks USING INDEX idx_tracks_present_title_nocase"],
@@ -66,7 +70,7 @@ printf '%s\n' '{
 comparison=$(scripts/performance-query-compare.sh \
   "$fixture_root/baseline" "$fixture_root/candidate")
 jq -e '
-  .schema_version == 2
+  .schema_version == 3
   and .baseline_commit == "before"
   and .candidate_commit == "after"
   and .tracks[0].generated_tracks == 100000
@@ -76,6 +80,8 @@ jq -e '
   and .tracks[0].middle_window.delta_percent == -90
   and .tracks[0].final_window.delta_percent == -90
   and .tracks[0].album_final_window.delta_percent == -96
+  and .tracks[0].filtered_count.delta_percent == 5
+  and .tracks[0].library_stats.delta_percent == 5
   and .tracks[0].playback_ids.delta_percent == -90
   and .tracks[0].query_plan.before.uses_temp_sort
   and (.tracks[0].query_plan.after.uses_temp_sort | not)

@@ -55,6 +55,8 @@ for track_count in $(jq -r '.track_counts[]' "$baseline_dir/manifest.json"); do
       and (.middle_window.median_us | type == "number")
       and (.final_window.median_us | type == "number")
       and (.album_final_window.median_us | type == "number")
+      and (.filtered_count.median_us | type == "number")
+      and (.library_stats.median_us | type == "number")
       and (.playback_ids.median_us | type == "number")
       and (.title_window_query_plan.details | type == "array")
       and (.title_window_query_plan.uses_temp_sort | type == "boolean")
@@ -88,6 +90,10 @@ for track_count in $(jq -r '.track_counts[]' "$baseline_dir/manifest.json"); do
          $candidate[0].final_window.median_us),
        album_final_window: delta($baseline[0].album_final_window.median_us;
          $candidate[0].album_final_window.median_us),
+       filtered_count: delta($baseline[0].filtered_count.median_us;
+         $candidate[0].filtered_count.median_us),
+       library_stats: delta($baseline[0].library_stats.median_us;
+         $candidate[0].library_stats.median_us),
        playback_ids: delta($baseline[0].playback_ids.median_us;
          $candidate[0].playback_ids.median_us),
        query_plan: {
@@ -104,6 +110,6 @@ done
 jq -s \
   --arg baseline_commit "$(jq -r '.commit' "$baseline_dir/manifest.json")" \
   --arg candidate_commit "$(jq -r '.commit' "$candidate_dir/manifest.json")" \
-  '{schema_version: 2, baseline_commit: $baseline_commit,
+  '{schema_version: 3, baseline_commit: $baseline_commit,
     candidate_commit: $candidate_commit, tracks: .}' \
   "$comparison_rows"
