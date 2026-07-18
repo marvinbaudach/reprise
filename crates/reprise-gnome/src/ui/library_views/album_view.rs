@@ -128,7 +128,9 @@ impl AlbumView {
             empty_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
             let grid = grid_view.downgrade();
             empty_click.connect_pressed(move |gesture, _n, x, y| {
-                let Some(scrolled) = gesture.widget() else { return };
+                let Some(scrolled) = gesture.widget() else {
+                    return;
+                };
                 let mut hit = scrolled.pick(x, y, gtk4::PickFlags::DEFAULT);
                 while let Some(widget) = hit {
                     if widget.has_css_class(crate::ui::album_card_css::CARD_CLASS) {

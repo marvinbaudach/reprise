@@ -387,8 +387,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let library_stack = library_views.stack.clone();
             let grid = album_view.grid_widget().downgrade();
             gtk4::glib::timeout_add_seconds_local_once(2, move || {
-                library_stack
-                    .set_visible_child_name(super::library_shell::LIBRARY_VIEW_ALBUMS);
+                library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_ALBUMS);
                 let Some(grid) = grid.upgrade() else { return };
                 let granted = grid.grab_focus();
                 tracing::info!(granted, "smoke: focused album grid");
@@ -406,8 +405,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let library_stack = library_views.stack.clone();
             gtk4::glib::timeout_add_seconds_local_once(4, move || {
                 tracing::info!("smoke: opening albums tab");
-                library_stack
-                    .set_visible_child_name(super::library_shell::LIBRARY_VIEW_ALBUMS);
+                library_stack.set_visible_child_name(super::library_shell::LIBRARY_VIEW_ALBUMS);
             });
             let grid = album_view.grid_widget().downgrade();
             gtk4::glib::timeout_add_seconds_local_once(6, move || {
