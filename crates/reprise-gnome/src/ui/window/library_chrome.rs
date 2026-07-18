@@ -5,13 +5,14 @@ use libadwaita::prelude::*;
 
 use super::strings;
 
-const SEARCH_WIDTH: i32 = 300;
-pub(in crate::ui) const SEARCH_ACTIVE_CLASS: &str = "reprise-search-active";
 const LIBRARY_TITLE_SOURCE: &str = "source";
 const LIBRARY_TITLE_SWITCHER: &str = "library-switcher";
 
 pub(in crate::ui) struct LibraryChrome {
     pub(in crate::ui) root: adw::ToolbarView,
+    pub(in crate::ui) search_bar: gtk4::SearchBar,
+    #[cfg(test)]
+    pub(in crate::ui) search_toggle: gtk4::ToggleButton,
 }
 
 pub(in crate::ui) struct LibraryMaintenanceActions {
@@ -38,35 +39,80 @@ impl LibraryTitle {
 pub(in crate::ui) fn build(
     header: &adw::HeaderBar,
     content: &impl IsA<gtk4::Widget>,
+    search_entry: &gtk4::SearchEntry,
+    key_capture_widget: &impl IsA<gtk4::Widget>,
 ) -> LibraryChrome {
     header.add_css_class("reprise-library-header");
+    let search_toggle = gtk4::ToggleButton::builder()
+        .icon_name("system-search-symbolic")
+        .tooltip_text(strings::text(strings::SEARCH_PLACEHOLDER))
+        .css_classes(["flat", "reprise-panel-toggle"])
+        .build();
+    search_toggle.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::SEARCH_PLACEHOLDER,
+    ))]);
+    header.pack_end(&search_toggle);
+
+    let search_clamp = adw::Clamp::builder()
+        .maximum_size(450)
+        .child(search_entry)
+        .build();
+    let search_bar = gtk4::SearchBar::new();
+    search_bar.set_hexpand(true);
+    search_bar.add_css_class("reprise-search-strip");
+    search_bar.set_child(Some(&search_clamp));
+    search_bar.connect_entry(search_entry);
+    search_bar.set_key_capture_widget(Some(key_capture_widget));
+    wire_search_toggle(&search_toggle, &search_bar, search_entry);
+
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
     root.add_top_bar(header);
+    root.add_top_bar(&search_bar);
     root.set_content(Some(content));
-    LibraryChrome { root }
+    LibraryChrome {
+        root,
+        search_bar,
+        #[cfg(test)]
+        search_toggle,
+    }
 }
 
-pub(in crate::ui) fn search_accent_active(text: &str) -> bool {
-    !text.trim().is_empty()
+pub(in crate::ui) fn search_toggle_active(search_mode: bool, query: &str) -> bool {
+    search_mode || !query.trim().is_empty()
 }
 
-pub(in crate::ui) fn style_header(header: &adw::HeaderBar, search: &gtk4::SearchEntry) {
-    // Loose (not Strict) centering: at comfortable widths the view switcher is
-    // still centered, but Strict reserves 2×max(start, end) around the centre —
-    // the 300px search entry alone forces a ~1404px header minimum, which cuts
-    // off the header's right controls (and squeezes the content past the info
-    // panel) on a maximised HiDPI screen. Loose keeps everything visible and
-    // only lets the switcher drift off-centre when space is genuinely tight.
-    header.set_centering_policy(adw::CenteringPolicy::Loose);
-    search.set_width_request(SEARCH_WIDTH);
-    search.set_hexpand(false);
-    search.connect_search_changed(|entry| {
-        if search_accent_active(&entry.text()) {
-            entry.add_css_class(SEARCH_ACTIVE_CLASS);
-        } else {
-            entry.remove_css_class(SEARCH_ACTIVE_CLASS);
-        }
+fn wire_search_toggle(
+    toggle: &gtk4::ToggleButton,
+    search_bar: &gtk4::SearchBar,
+    search_entry: &gtk4::SearchEntry,
+) {
+    let bar = search_bar.downgrade();
+    let entry = search_entry.downgrade();
+    toggle.connect_clicked(move |toggle| {
+        let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
+            return;
+        };
+        bar.set_search_mode(!bar.is_search_mode());
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+    });
+
+    let toggle_weak = toggle.downgrade();
+    let entry = search_entry.downgrade();
+    search_bar.connect_search_mode_enabled_notify(move |bar| {
+        let (Some(toggle), Some(entry)) = (toggle_weak.upgrade(), entry.upgrade()) else {
+            return;
+        };
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
+    });
+
+    let toggle_weak = toggle.downgrade();
+    let bar = search_bar.downgrade();
+    search_entry.connect_search_changed(move |entry| {
+        let (Some(toggle), Some(bar)) = (toggle_weak.upgrade(), bar.upgrade()) else {
+            return;
+        };
+        toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
     });
 }
 
@@ -89,14 +135,20 @@ pub(in crate::ui) fn build_library_title(
     source_title: &adw::WindowTitle,
     views: &gtk4::Stack,
 ) -> LibraryTitle {
+    // Clearing the title widget is NOT enough: an `AdwHeaderBar` without one
+    // falls back to rendering the window's own title, so "Reprise" kept
+    // sitting in the centre next to the left-packed switcher (measured on a
+    // headless run — `title_widget().is_none()` was already green). The
+    // switcher carries the place identity now, so the centre stays empty.
     header.set_title_widget(gtk4::Widget::NONE);
+    header.set_show_title(false);
     let switcher = gtk4::StackSwitcher::builder().stack(views).build();
     switcher.add_css_class("reprise-view-switcher");
     let root = gtk4::Stack::new();
     root.add_named(source_title, Some(LIBRARY_TITLE_SOURCE));
     root.add_named(&switcher, Some(LIBRARY_TITLE_SWITCHER));
     root.set_visible_child_name(LIBRARY_TITLE_SWITCHER);
-    header.set_title_widget(Some(&root));
+    header.pack_start(&root);
     LibraryTitle {
         root,
         #[cfg(test)]
@@ -114,6 +166,9 @@ pub(in crate::ui) fn css() -> String {
     ".reprise-library-split .reprise-library-sidebar { \
        border-right: 1px solid rgba(255, 255, 255, 0.06); }\n\
      .reprise-library-header { \
+       background-color: @headerbar_bg_color; \
+       border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
+     .reprise-search-strip { \
        background-color: @headerbar_bg_color; \
        border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
      .reprise-view-switcher { \
@@ -138,13 +193,120 @@ mod tests {
 
     use super::*;
 
-    // UX FIL-4: the field is marked as soon as it carries real text — also
-    // unfocused; whitespace-only never claims state (mirrors is_restricted).
     #[test]
-    fn fil_4_search_accent_tracks_trimmed_text() {
-        assert!(search_accent_active("falling"));
-        assert!(!search_accent_active(""));
-        assert!(!search_accent_active("   "));
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_1_idle_is_icon_not_field() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let content = gtk4::Label::new(Some("Library"));
+        let entry = gtk4::SearchEntry::new();
+
+        let chrome = build(&header, &content, &entry, &window);
+
+        assert!(!entry.is_ancestor(&header));
+        assert!(chrome.search_toggle.is_ancestor(&header));
+        assert_eq!(
+            chrome.search_toggle.icon_name().as_deref(),
+            Some("system-search-symbolic")
+        );
+        assert!(!chrome.search_bar.is_search_mode());
+        let clamp = chrome
+            .search_bar
+            .child()
+            .and_downcast::<adw::Clamp>()
+            .expect("search entry must be wrapped by a clamp");
+        assert!(entry.is_ancestor(&clamp));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_2_bar_reveals_flush_under_headerbar() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let content = gtk4::Label::new(Some("Library"));
+        let entry = gtk4::SearchEntry::new();
+
+        let chrome = build(&header, &content, &entry, &window);
+        let clamp = chrome
+            .search_bar
+            .child()
+            .and_downcast::<adw::Clamp>()
+            .expect("search strip child must be the width clamp");
+
+        assert!(header.is_ancestor(&chrome.root));
+        assert!(chrome.search_bar.is_ancestor(&chrome.root));
+        assert_eq!(chrome.root.content().as_ref(), Some(content.upcast_ref()));
+        assert!(entry.is_ancestor(&clamp));
+        assert_eq!(clamp.maximum_size(), 450);
+        assert!(chrome.search_bar.hexpands());
+        assert!(chrome.search_bar.has_css_class("reprise-search-strip"));
+        chrome.search_bar.set_search_mode(true);
+        assert!(chrome.search_bar.is_search_mode());
+
+        let css = css();
+        let strip_css = css
+            .split(".reprise-search-strip")
+            .nth(1)
+            .and_then(|rule| rule.split('}').next())
+            .expect("search strip CSS rule");
+        assert!(strip_css.contains("background-color: @headerbar_bg_color"));
+        assert!(strip_css.contains("border-bottom: 1px solid"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_3_lens_checked_when_active() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let content = gtk4::Label::new(Some("Library"));
+        let entry = gtk4::SearchEntry::new();
+        let chrome = build(&header, &content, &entry, &window);
+
+        assert!(!chrome.search_toggle.is_active());
+        chrome.search_bar.set_search_mode(true);
+        assert!(chrome.search_toggle.is_active());
+
+        chrome.search_bar.set_search_mode(false);
+        assert!(!chrome.search_toggle.is_active());
+        entry.set_text("falling");
+
+        assert!(search_toggle_active(
+            chrome.search_bar.is_search_mode(),
+            &entry.text()
+        ));
+        assert!(chrome.search_toggle.is_active());
+        assert_eq!(
+            crate::ui::browse::browse_bar::chip_labels(
+                "falling",
+                &reprise_core::queries::BrowseFilter::default(),
+                true,
+            ),
+            vec!["⌕ “falling” in any field"]
+        );
+    }
+
+    #[test]
+    fn search_toggle_projects_open_mode_or_non_empty_query() {
+        assert!(!search_toggle_active(false, ""));
+        assert!(search_toggle_active(true, ""));
+        assert!(search_toggle_active(false, "falling"));
+        assert!(!search_toggle_active(false, "   "));
+    }
+
+    #[test]
+    fn search_5_collapsing_keeps_query_and_chip() {
+        let query = "falling";
+        let chips = crate::ui::browse::browse_bar::chip_labels(
+            query,
+            &reprise_core::queries::BrowseFilter::default(),
+            true,
+        );
+
+        assert!(search_toggle_active(false, query));
+        assert_eq!(chips, vec!["⌕ “falling” in any field"]);
     }
 
     #[test]
@@ -176,7 +338,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn header_spans_the_navigation_with_loose_centering() {
+    fn header_keeps_navigation_left_without_a_center_title() {
         if gtk4::init().is_err() {
             return;
         }
@@ -184,15 +346,10 @@ mod tests {
         let title = adw::WindowTitle::new("Music", "");
         let search = gtk4::SearchEntry::new();
         header.set_title_widget(Some(&title));
-        style_header(&header, &search);
         let navigation = test_navigation();
-        let chrome = build(&header, &navigation);
+        let window = adw::ApplicationWindow::builder().build();
+        let chrome = build(&header, &navigation, &search, &window);
 
-        // Loose, not Strict: Strict reserves 2×max(start,end) and forces a
-        // ~1404px header minimum that cuts the right controls on a maximised
-        // HiDPI screen (QA #3/#4).
-        assert_eq!(header.centering_policy(), adw::CenteringPolicy::Loose);
-        assert_eq!(search.width_request(), 300);
         assert_eq!(chrome.root.top_bar_style(), adw::ToolbarStyle::Flat);
         assert!(header.has_css_class("reprise-library-header"));
         assert_eq!(
@@ -258,6 +415,11 @@ mod tests {
         assert_eq!(library_title.switcher.stack(), Some(views.clone()));
         assert_eq!(title.parent(), Some(library_title.root.clone().upcast()));
         assert!(library_title.root.is_ancestor(&header));
+        assert!(header.title_widget().is_none());
+        // Not redundant: with no title widget Adwaita falls back to the
+        // window title, which put "Reprise" in the centre beside the
+        // left-packed switcher. Only `show-title = false` empties the centre.
+        assert!(!header.shows_title());
         assert_eq!(
             library_title.root.visible_child_name().as_deref(),
             Some(LIBRARY_TITLE_SWITCHER)
@@ -284,7 +446,9 @@ mod tests {
             reprise_core::library::settings::PlayerBarPosition::Top,
         );
 
-        let chrome = build(&header, shell.widget());
+        let window = adw::ApplicationWindow::builder().build();
+        let search = gtk4::SearchEntry::new();
+        let chrome = build(&header, shell.widget(), &search, &window);
 
         assert!(header.is_ancestor(&chrome.root));
         assert_eq!(
@@ -313,5 +477,38 @@ mod tests {
             .sidebar(&sidebar)
             .content(&content)
             .build()
+    }
+}
+
+#[cfg(test)]
+mod style_guard {
+    /// UX STYLE-1: every chrome surface that should read as its own plane
+    /// declares a background AND a bottom edge — explicitly.
+    ///
+    /// This is the cheap half of the rule (the CSS half). It exists because
+    /// `ToolbarStyle::Flat` suppresses top-bar backgrounds, so a bar that
+    /// merely *sits* in the chrome renders on the window colour and looks
+    /// like it floats over the content. Both surfaces below were shipped
+    /// that way once. A new bar that forgets its background fails here
+    /// instead of in a screenshot three weeks later.
+    #[test]
+    fn style_1_chrome_surfaces_declare_background_and_edge() {
+        let css = super::css();
+
+        for class in [".reprise-library-header", ".reprise-search-strip"] {
+            let block = css
+                .split(class)
+                .nth(1)
+                .unwrap_or_else(|| panic!("{class} has no rule in the chrome CSS"));
+            let block = block.split('}').next().unwrap_or_default();
+            assert!(
+                block.contains("background-color:"),
+                "{class} inherits its background — Flat will swallow it (STYLE-1)"
+            );
+            assert!(
+                block.contains("border-bottom:"),
+                "{class} has no bottom edge against the content (STYLE-1)"
+            );
+        }
     }
 }

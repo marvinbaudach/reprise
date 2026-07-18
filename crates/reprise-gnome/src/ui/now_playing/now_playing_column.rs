@@ -43,7 +43,6 @@ impl NowPlayingColumn {
         &self.split
     }
 
-    #[cfg(test)]
     pub(in crate::ui) fn is_visible(&self) -> bool {
         self.split.shows_sidebar()
     }

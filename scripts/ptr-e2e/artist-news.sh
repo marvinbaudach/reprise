@@ -109,7 +109,7 @@ run_artist_news_flow() {
   fi
 
   wait_for_log_pattern "Artist News smoke: plugin enabled" "explicit Artist News opt-in"
-  assert_db_value "module.artist_news.enabled" "1" "Artist News opt-in persisted"
+  assert_db_value "module.new_releases.enabled" "1" "New Releases opt-in persisted"
   wait_for_log_pattern "Artist News smoke: latest cards ready" "latest Artist Beta cards"
   screenshot "00-artist-news-beta"
   assert_screenshot_not_blank "$PTR_E2E_OUT_DIR/00-artist-news-beta.png"
@@ -132,7 +132,7 @@ run_artist_news_flow() {
 
   wait_for_log_pattern "Artist News smoke: plugin disabled" "Artist News disable and reselection"
   sleep 0.3
-  assert_db_value "module.artist_news.enabled" "0" "Artist News disable persisted"
+  assert_db_value "module.new_releases.enabled" "0" "New Releases disable persisted"
   if [ "$(fixture_request_count)" -ne "$requests_before_reopen" ]; then
     log_fail "disabled Artist News made a provider request after selection changed"
   else

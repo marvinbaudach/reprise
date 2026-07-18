@@ -196,6 +196,27 @@ impl TrackListModel {
         self.imp().state.borrow_mut().sections = sections;
     }
 
+    /// Installs an already-composed queue snapshot without a count query.
+    /// The shared queue model is the authoritative row count; metadata stays
+    /// lazy and is fetched only when `item()` asks for a visible window.
+    pub(crate) fn set_queue_snapshot(&self, queue_ids: &[i64], sections: Vec<(u32, u32)>) {
+        let old_total = self.imp().state.borrow().total;
+        let new_total = u32::try_from(queue_ids.len()).unwrap_or(u32::MAX);
+        {
+            let mut state = self.imp().state.borrow_mut();
+            state.source = ViewSource::Queue;
+            state.sort_field.clear();
+            state.sort_dir.clear();
+            state.filter.clear();
+            state.browse = BrowseFilter::default();
+            state.queue_ids = queue_ids.to_vec();
+            state.sections = sections;
+            state.total = new_total;
+            state.cache.clear();
+        }
+        self.items_changed(0, old_total, new_total);
+    }
+
     pub fn set_query(
         &self,
         source: &ViewSource,
@@ -456,6 +477,19 @@ mod tests {
         assert_eq!(model.n_items(), 0);
         model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         assert_eq!(model.n_items(), 3);
+    }
+
+    #[test]
+    fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
+        let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
+
+        model.set_queue_snapshot(&[3, 1], vec![(0, 2)]);
+
+        assert_eq!(model.n_items(), 2);
+        assert!(model.cached_windows().is_empty());
+        assert_eq!(model.track_at(0).unwrap().id, 3);
+        assert_eq!(model.track_at(1).unwrap().id, 1);
+        assert_eq!(model.cached_windows(), vec![0]);
     }
 
     #[test]

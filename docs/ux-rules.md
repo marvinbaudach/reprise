@@ -115,7 +115,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. START-1
   restauriert über Neustarts ausschließlich die zuletzt aktive Ansicht samt
   Scroll-Position; alle anderen Modi starten oben, unselektiert.
-- **NAV-6** [geplant] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
+- **NAV-6** [aktiv] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
   live; Esc leert und schließt. Suche navigiert nie selbst.
 - **NAV-7** [geplant] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,
   bleibt in der Ansicht (Karte erscheint). „Preferences" →
@@ -346,35 +346,38 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## J. Queue-Ansicht
 
-- **QUE-1** [geplant] [gtk] — Die Queue ist nie leer, solange etwas spielt.
-  Sie zeigt drei Abschnitte, in dieser Reihenfolge: **Now Playing** (1 Row,
-  Akzent + EQ, wie überall) · **Play Next** — manuell eingereihte Tracks
-  („Play next"/„Add to queue"), nur wenn vorhanden, mit Sektionstitel ·
-  **Up Next · aus <Quelle>** — der Rest des Playback-Snapshots (z. B. „Up
-  Next · from Late Night" oder „· from Neverbloom"), inklusive
-  Shuffle-Reihenfolge, falls Shuffle an.
-- **QUE-2** [geplant] [core] — Abspiellogik = Anzeigereihenfolge: erst
-  Play-Next-Einträge (FIFO), dann der Snapshot ab aktueller Position. Keine
-  versteckte Priorität — was die View zeigt, ist was passiert.
-- **QUE-3** [geplant] [gtk] — Interaktion: DnD-Reorder innerhalb „Play
-  Next" und innerhalb „Up Next" (der Snapshot wird echt umsortiert;
-  QUE-2 bleibt gewahrt: Anzeige = Abspielreihenfolge). Up-Next-Rows sind
-  nach „Play Next" ziehbar (Promotion, verlässt den Snapshot); Drop auf
-  die Now-Playing-Row reiht als Nächstes ein (Up-Next-Row → Front von
-  „Play Next", Play-Next-Row → Front-Move). Play-Next-Rows sind nicht in
-  den Snapshot ziehbar (keine Demotion). Der Drop-Indikator erscheint nur
-  auf Rows, auf denen der Drop tatsächlich wirkt. Rechtsklick „Remove
-  from queue" überall (entfernt aus dem Snapshot, nicht aus der Library);
-  Doppelklick auf eine Queue-Row springt dorthin (Playhead, kein
-  Neuaufbau — Ausnahme zu NAV-4). „Clear queue"-Button räumt nur „Play
-  Next"; der Snapshot bleibt (er verschwindet erst mit Playback-Stop oder
-  neuem Kontext).
-- **QUE-4** [geplant] [gtk] — Leerzustand gibt es nur ohne Wiedergabe:
-  StatusPage „Nothing queued — play something" (FB-5, ein nächster Schritt,
-  kein Grid an Vorschlägen).
-- **QUE-5** [geplant] [core] — Sidebar-Zähler „Queue · N": N = Play Next +
-  verbleibende Up-Next-Tracks (nicht Gesamt-Snapshot). Der Zähler ist eine
-  Bestandsanzeige, kein Badge (P-1: keine „Bitte").
+- **QUE-1** [aktiv] [gtk] — Ein gemeinsames Queue-Modell speist zwei
+  Flächen mit unterschiedlicher Tiefe: Die Sidebar-Zeile „Queue" öffnet die
+  ColumnView als Verwaltungsfläche mit Sektionen, DnD-Reorder, Rechtsklick,
+  Clear und StatusPage. Das Playerleisten-Icon öffnet dagegen das Panel auf
+  „Up Next" als Sichtfläche derselben Queue mit Sektionen, Sprung und Remove,
+  aber ohne Reorder oder DnD. Keine Fläche führt eine eigene zweite Liste.
+- **QUE-2** [aktiv] [gtk] — Das Panel gliedert die Zukunft in genau zwei
+  bedingte Sektionen: **Next in Queue** für manuell eingereihte Tracks und
+  **Continuing from „<Album/Playlist>"** für den automatischen Kontext aus
+  `play_origin`. Ein Header erscheint nur, wenn seine Sektion Einträge hat;
+  eine leere manuelle Sektion lässt ausschließlich „Continuing …" stehen.
+  Ihre sichtbare Reihenfolge ist zugleich die Abspielreihenfolge; solange
+  etwas spielt, zeigt die Queue nie zwei leere Sektionen.
+- **QUE-3** [aktiv] [core] — Abgespielte manuelle Einträge verschwinden beim
+  Trackwechsel still aus „Next in Queue": kein Durchstreichen und kein
+  Verharren. Die Sektion enthält ausschließlich die noch ausstehende Zukunft.
+  „Remove" im Panel entfernt genau den Eintrag aus der Queue, nie aus der
+  Library.
+- **QUE-4** [aktiv] [core] — Die Queue-Fußzeile formatiert Trackzahlen mit
+  derselben gemeinsamen Tausendertrenner-Funktion wie die Library; es gibt
+  keinen zweiten Formatierungspfad.
+- **QUE-5** [aktiv] [core] — Ein Sprung zu einem Queue-Eintrag setzt die
+  Abspielposition und konsumiert ausschließlich den geklickten Eintrag.
+  Davorliegende manuelle Einträge bleiben in „Next in Queue" und spielen
+  danach; es gibt weder stilles Verwerfen noch Dialog oder Queue-Historie.
+  „Remove" entfernt aus der Queue, nie aus der Library.
+- **QUE-6** [aktiv] [core] — Beide Flächen lesen ein gemeinsames
+  Queue-Modell. Metadaten kommen in einer Sammelabfrage über die Queue-IDs,
+  nie in einer Abfrage pro Zeile; Row-Recycling und Laden des sichtbaren
+  Fensters begrenzen Widgets und Arbeit unabhängig von der Queue-Länge. Bei
+  geschlossenem Panel oder einem anderen aktiven Tab aktualisieren
+  Trackwechsel und Reorder nur das Modell und rendern keine Panel-Zeilen.
 
 ## K. Filter- & Such-Sichtbarkeit
 
@@ -419,7 +422,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   — die Virtualisierung des ColumnView bleibt unangetastet; Input-durchlässig
   außer der Pill; Position wird bei Scroll-, Model-/Filter- und
   Resize-Änderungen neu berechnet.
-- **FIL-4** [aktiv] [gtk] — Suchfeld trägt seinen Zustand: Sobald das Feld
+- **FIL-4** [ersetzt durch SEARCH-3] [gtk] — Suchfeld trägt seinen Zustand: Sobald das Feld
   Text enthält, bekommt es Akzent-Border + getönten Hintergrund — auch
   unfokussiert.
 - **FIL-5** [aktiv] [gtk] — Treffer-Highlighting: Der Suchbegriff wird in
@@ -775,6 +778,98 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Übergang (Standard-Token, MOT-5), niemals als Slide; die Lyrics starten
   danach auf Zeile 0 zentriert. `gtk-enable-animations=false` schaltet auch
   hier hart (MOT-7).
+
+## Q. Suche
+
+- **SEARCH-1** [aktiv] [gtk] — Im Ruhezustand belegt die Suche in der
+  Headerbar nur eine Lupe. Das Suchfeld lebt in einer zweiten, standardmäßig
+  eingeklappten Top-Bar und wird nie als permanentes breites Feld dargestellt.
+- **SEARCH-2** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+  Tippen öffnet die Suchleiste und fokussiert das Feld. Sie ist ein
+  vollbreiter Streifen bündig unter der Headerbar, hat eine eigene Fläche mit
+  unterer Trennlinie und schiebt beim Reveal den Inhalt nach unten; das
+  Suchfeld ist darin per Clamp auf ungefähr 450 px zentriert. Die Leiste
+  slidet mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern
+  gilt deren Default, sofern er dem Standard-Token entspricht.
+- **SEARCH-3** [aktiv] [gtk] — Die Lupe ist ein ToggleButton und trägt bei
+  offener Suchleiste **oder** aktiver nicht-leerer Query den
+  `:checked`-Akzentstil. Eine Query bleibt auch bei eingeklappter Suchleiste
+  sichtbar: Ihr Such-Chip bleibt bestehen. Die Lupe bekommt keinen
+  Badge-Punkt; Punkte bleiben ausschließlich der Bitte-Rolle vorbehalten
+  (FB-4, P-1).
+- **SEARCH-4** [aktiv] [gtk] — Esc ist zweistufig und gilt für die ganze
+  Suchleiste: Mit Text leert das erste Esc die Query, lässt die Leiste offen
+  und das Feld fokussiert; bei leerem Feld klappt Esc die Leiste ein. Eine
+  Query wird nie durch Einklappen unsichtbar, ohne dass ihr Chip sie trägt.
+- **SEARCH-5** [aktiv] [gtk] — Einklappen beendet nur die Eingabe, nicht den
+  Filter. Query, Treffer und Such-Chip bleiben erhalten, bis der Nutzer sie
+  explizit über Esc, Chip oder „Clear all" entfernt.
+
+## R. New Releases
+
+- **NR-1** [aktiv] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
+  die einzige Wahrheit für neue Releases und spätere Artist-News-Ansichten.
+  Artist-MBIDs kommen zuerst aus Tags, sonst aus einer persistierten
+  Namensauflösung inklusive negativer Ergebnisse; Artists werden nach
+  Play-Count priorisiert. Pro Artist bleiben höchstens fünf reguläre Alben
+  oder EPs der letzten 90 Tage sowie ausschließlich zukünftige Singles;
+  unvollständige Daten gelten nie als zukünftig, Sekundärtypen bleiben draußen.
+- **NR-2** [aktiv] [gtk] — Release-Cover laden lazy über Cover Art Archive
+  (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
+  und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
+  Akzentfarbe plus Initialen — niemals ein Loch oder einen Dauer-Spinner.
+- **NR-3** [aktiv] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
+  Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
+  Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
+  erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
+- **NR-4** [aktiv] [gtk] — „See all" öffnet einen echten Digest-Ort mit
+  Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases lassen sich dort
+  verbergen; vorhandene Hidden-Einträge halten „See all" erreichbar und die
+  Fußzeile „N hidden · Show" macht sie rückholbar. Ein künftiges „Remind me"
+  bleibt bis zu einem eigenen Scheduler ausdrücklich außerhalb dieser Regel.
+- **NR-5** [aktiv] [gtk] — Das Popover ist transient und verändert den
+  Navigations-Stack nie. Erst „See all" navigiert regulär in den Digest-Ort;
+  Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht zurück.
+- **NR-6** [aktiv] [gtk] — „Fetch now" ersetzt während des Abrufs sein
+  Refresh-Icon durch einen Spinner und zeigt sonst das Alter der letzten
+  Aktualisierung. Offline oder Fehler zeigen weiter den letzten Cache samt
+  Alter und nur einen dezenten Inline-Hinweis im Fuß — nie ein Fehlerbanner.
+- **NR-7** [aktiv] [gtk] — New Releases ist ein Plugin auf der Plugins-Seite,
+  standardmäßig aus und mit Privacy-Untertitel „contacts MusicBrainz" sowie
+  Auswahl „Top artists only / all artists". Bei ausgeschaltetem Modul gibt es
+  weder Fetch noch ✦; Cover-, Portrait- und Lyrics-Module gehören nicht zu
+  dieser Regel und werden im Folge-Branch `feat/network-opt-in` geregelt.
+
+## S. Flächen & Geometrie
+
+<!-- Sektionsbuchstabe: R (New Releases) ist die letzte vergebene; S schließt
+     an. Anlass sind vier Fälle an einem Tag (2026-07-18), die alle mit
+     grünem Test durchkamen und erst im Screenshot auffielen — Ledger:
+     docs/superpowers/plans/2026-07-18-style-explicit-rule.md. -->
+
+Was sichtbar wirken soll, muss explizit gesetzt sein. Geerbte oder
+Framework-Defaults zählen nicht als gesetzt: Sie sind der häufigste Grund,
+warum eine Property gesetzt ist und trotzdem nichts passiert.
+
+- **STYLE-1** [aktiv] [gtk] — **Wirkung explizit, nicht geerbt.** Jede Fläche,
+  die sich vom Inhalt absetzen soll (Headerbar, eingeblendete Leisten,
+  Sidebar-Kanten, Panels), trägt Hintergrund **und** Trennlinie ausdrücklich;
+  jede verbindliche Geometrie (feste Breiten, Mindesthöhen) wird gegen ihre
+  tatsächliche Allokation geprüft. `flat` bleibt genau dort, wo bewusst
+  **keine** Abgrenzung gewollt ist. Bekannte Fallen, die diese Regel
+  adressiert: `AdwToolbarView` mit `ToolbarStyle::Flat` unterdrückt
+  Bar-Hintergründe (auch `@headerbar_bg_color`); eine `AdwHeaderBar` ohne
+  Titel-Widget rendert ersatzweise den Fenstertitel (`show-title` muss
+  zusätzlich aus); ein `GtkLabel` ohne `ellipsize` meldet seinen vollen Text
+  als **Mindest**breite und hebelt jedes `max-width` des Containers aus;
+  `AdwOverlaySplitView` rechnet ohne `sidebar-width-unit = Px` in `sp`.
+  **Testregel:** Absicht darf geprüft werden, aber bei Flächen und Geometrie
+  muss das **Ergebnis** belegt sein — nicht „Property X ist gesetzt", sondern
+  „die Fläche hat sichtbaren Hintergrund" bzw. „die Spalte bleibt bei schmalem
+  Fenster auf ihrer Breite". Was das Framework garantiert, wird auf Existenz
+  getestet; was ausbleiben kann, auf Wirkung (wie TIP-1a/2a und SEARCH-2).
+  Ist eine Schnittstelle im Test-Build ausgeblendet (z. B. `SectionModel` per
+  `cfg`), zählt nur der E2E-Beleg — „grün" ist dort strukturell bedeutungslos.
 
 ---
 

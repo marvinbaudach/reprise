@@ -21,10 +21,10 @@ PLAYLIST_DELETE_CONFIRM_X=800
 PLAYLIST_DELETE_CONFIRM_Y=475
 SIDEBAR_QUEUE_X=80
 SIDEBAR_QUEUE_Y=150
-INFO_TOGGLE_FROM_RIGHT=222
-COMPACT_BUTTON_FROM_RIGHT=262
-# Redesigned header: the primary "open-menu" button (⋮) sits just left of the
-# panel toggle and the three window controls, ~186px in from the right edge of
-# the maximized 1600-wide window (measured from a 17-main-menu capture). The
-# former value (302) predated the redesign and landed inside the search entry.
+# Search is now a compact header toggle instead of a 300px entry. The end
+# controls stay right-anchored; record every slot explicitly so future pointer
+# recalibration cannot accidentally target the revealed second top bar.
 PRIMARY_MENU_FROM_RIGHT=186
+INFO_TOGGLE_FROM_RIGHT=222
+SEARCH_TOGGLE_FROM_RIGHT=262
+COMPACT_BUTTON_FROM_RIGHT=302

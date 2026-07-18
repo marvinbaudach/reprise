@@ -294,6 +294,34 @@ const SCHEMA_V11: &str = r#"
 ALTER TABLE tracks DROP COLUMN missing;
 "#;
 
+/// Schema v12: durable artist identity and the single New Releases store.
+/// `artist_mbid_negative = 1` distinguishes a completed not-found/ambiguous
+/// lookup from a track that has not been resolved yet, so background fetches
+/// do not retry the same artist forever. Release rows carry both lifecycle
+/// clocks: `fetched_at` records cache age while nullable `seen_at` is the
+/// episode-style badge truth. The fallback accent is computed before insert,
+/// keeping rendering free of cover I/O.
+const SCHEMA_V12: &str = r#"
+ALTER TABLE tracks ADD COLUMN artist_mbid TEXT;
+ALTER TABLE tracks ADD COLUMN artist_mbid_negative INTEGER NOT NULL DEFAULT 0
+  CHECK (artist_mbid_negative IN (0, 1));
+CREATE INDEX idx_tracks_artist_mbid ON tracks(artist_mbid);
+CREATE TABLE new_releases (
+  release_group_mbid TEXT PRIMARY KEY,
+  artist_name        TEXT NOT NULL,
+  artist_mbid        TEXT NOT NULL,
+  title              TEXT NOT NULL,
+  release_type       TEXT NOT NULL,
+  first_release_date TEXT NOT NULL,
+  fetched_at         INTEGER NOT NULL,
+  seen_at            INTEGER,
+  hidden             INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
+  fallback_accent    TEXT NOT NULL
+);
+CREATE INDEX idx_new_releases_artist ON new_releases(artist_mbid);
+CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS NULL;
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -414,6 +442,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V11)?;
         tx.pragma_update(None, "user_version", 11)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 12 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V12)?;
+        tx.pragma_update(None, "user_version", 12)?;
         tx.commit()?;
     }
     Ok(())

@@ -143,7 +143,11 @@ fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
 }
 
 #[cfg(test)]
-fn chip_labels(search: &str, filter: &BrowseFilter, is_library: bool) -> Vec<String> {
+pub(in crate::ui) fn chip_labels(
+    search: &str,
+    filter: &BrowseFilter,
+    is_library: bool,
+) -> Vec<String> {
     let mut labels = Vec::new();
     if !search.trim().is_empty() {
         labels.push(filter_strings::search_chip_label(search.trim()));

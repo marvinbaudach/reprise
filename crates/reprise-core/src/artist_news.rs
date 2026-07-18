@@ -1,28 +1,30 @@
-//! Conservative, cached MusicBrainz album news for an explicitly selected
-//! artist. This module is blocking and must be called from a worker thread.
+//! The single MusicBrainz-backed New Releases pipeline and its database query
+//! layer. Network work is blocking and must be called from a worker thread.
 
 use std::cmp::Ordering;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use chrono::{Datelike, NaiveDate};
+use rusqlite::Connection;
 
 use crate::musicbrainz::{self, FetchError};
 
-const CACHE_VERSION: u8 = 1;
-const POSITIVE_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
-const NEGATIVE_TTL_SECONDS: i64 = 24 * 60 * 60;
+const FETCH_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
 const MIN_ARTIST_SCORE: i64 = 95;
-const NEWS_WINDOW_DAYS: i64 = 365;
+const NEWS_WINDOW_DAYS: i64 = 90;
 const MAX_ITEMS: usize = 5;
+const TOP_ARTIST_COUNT: usize = 20;
+const DAILY_REST_COUNT: usize = 5;
+const DEFAULT_FALLBACK_ACCENT: &str = "#3584E4";
+const FETCH_ALL_ARTISTS_KEY: &str = "module.new_releases.all_artists";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewsKind {
     Upcoming,
     New,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlbumNews {
     pub release_group_mbid: String,
     pub title: String,
@@ -31,13 +33,65 @@ pub struct AlbumNews {
     pub kind: NewsKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtistNews {
     pub artist: String,
     pub artist_mbid: String,
     pub fetched_at: i64,
     pub items: Vec<AlbumNews>,
     pub stale: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredRelease {
+    pub release_group_mbid: String,
+    pub artist_name: String,
+    pub artist_mbid: String,
+    pub title: String,
+    pub release_type: String,
+    pub first_release_date: String,
+    pub fetched_at: i64,
+    pub seen_at: Option<i64>,
+    pub hidden: bool,
+    pub fallback_accent: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FetchScope {
+    TopArtists,
+    AllArtists { day_index: u64 },
+}
+
+pub fn configured_fetch_scope(
+    conn: &Connection,
+    today: NaiveDate,
+) -> Result<FetchScope, rusqlite::Error> {
+    if crate::library::settings::get_bool(conn, FETCH_ALL_ARTISTS_KEY, false)? {
+        Ok(FetchScope::AllArtists {
+            day_index: u64::try_from(today.num_days_from_ce()).unwrap_or_default(),
+        })
+    } else {
+        Ok(FetchScope::TopArtists)
+    }
+}
+
+pub fn set_fetch_all_artists(conn: &Connection, all_artists: bool) -> Result<(), rusqlite::Error> {
+    crate::library::settings::set_bool(conn, FETCH_ALL_ARTISTS_KEY, all_artists)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RefreshReport {
+    pub artists_queued: usize,
+    pub artists_fetched: usize,
+    pub releases_upserted: usize,
+    pub unmatched: usize,
+    pub failed: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ArtistCandidate {
+    pub(crate) name: String,
+    mbid: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,23 +111,8 @@ pub enum NewsError {
     InvalidResponse,
     #[error(transparent)]
     Fetch(#[from] FetchError),
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-enum CachedMatch {
-    Found,
-    Unmatched,
-    Ambiguous,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct CacheRecord {
-    version: u8,
-    artist: String,
-    artist_mbid: Option<String>,
-    fetched_at: i64,
-    items: Vec<AlbumNews>,
-    matched: CachedMatch,
+    #[error("New Releases database operation failed: {0}")]
+    Database(String),
 }
 
 pub fn artist_search_url(artist: &str) -> String {
@@ -87,7 +126,7 @@ pub fn artist_search_url(artist: &str) -> String {
 
 pub fn release_groups_url(mbid: &str) -> String {
     format!(
-        "https://musicbrainz.org/ws/2/release-group?artist={}&type=album%7Cep&release-group-status=website-default&limit=100&fmt=json",
+        "https://musicbrainz.org/ws/2/release-group?artist={}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&fmt=json",
         musicbrainz::urlencode(mbid)
     )
 }
@@ -156,94 +195,440 @@ pub fn parse_release_groups(
     items.into_iter().map(|(item, _)| item).collect()
 }
 
-pub fn load_or_refresh(
-    artist: &str,
-    local_albums: &[String],
+pub fn refresh<A>(
+    conn: &Connection,
     today: NaiveDate,
+    scope: FetchScope,
     force: bool,
-) -> Result<ArtistNews, NewsError> {
-    let now = chrono::Utc::now().timestamp();
-    let cache_dir = cache_dir();
-    load_or_refresh_with(
-        artist,
-        local_albums,
+    mut fallback_accent: A,
+) -> Result<RefreshReport, NewsError>
+where
+    A: FnMut(&Connection, &str) -> Option<String>,
+{
+    refresh_with(
+        conn,
         today,
+        chrono::Utc::now().timestamp(),
+        scope,
         force,
-        now,
-        &cache_dir,
         &mut musicbrainz::get,
+        &mut fallback_accent,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn load_or_refresh_with<F>(
-    artist: &str,
-    local_albums: &[String],
+pub(crate) fn refresh_with<F, A>(
+    conn: &Connection,
     today: NaiveDate,
-    force: bool,
     now: i64,
-    cache_dir: &Path,
+    scope: FetchScope,
+    force: bool,
     fetch: &mut F,
-) -> Result<ArtistNews, NewsError>
+    fallback_accent: &mut A,
+) -> Result<RefreshReport, NewsError>
+where
+    F: FnMut(&str) -> Result<String, FetchError>,
+    A: FnMut(&Connection, &str) -> Option<String>,
+{
+    let candidates = artists_for_fetch(conn, scope).map_err(database_error)?;
+    let mut report = RefreshReport {
+        artists_queued: candidates.len(),
+        ..RefreshReport::default()
+    };
+    for candidate in candidates {
+        let mbid = match resolve_artist_mbid(conn, &candidate, fetch, &mut report)? {
+            Some(mbid) => mbid,
+            None => continue,
+        };
+        if !force && artist_cache_is_fresh(conn, &mbid, now).map_err(database_error)? {
+            continue;
+        }
+        let body = match fetch(&release_groups_url(&mbid)) {
+            Ok(body) if release_payload_valid(&body) => body,
+            Ok(_) | Err(_) => {
+                report.failed += 1;
+                continue;
+            }
+        };
+        let local_albums = local_albums(conn, &candidate.name).map_err(database_error)?;
+        let items = parse_release_groups(&body, &local_albums, today);
+        let accent = normalize_fallback_accent(fallback_accent(conn, &candidate.name));
+        upsert_releases(conn, &candidate.name, &mbid, now, &accent, &items)
+            .map_err(database_error)?;
+        report.artists_fetched += 1;
+        report.releases_upserted += items.len();
+    }
+    Ok(report)
+}
+
+pub(crate) fn artists_for_fetch(
+    conn: &Connection,
+    scope: FetchScope,
+) -> Result<Vec<ArtistCandidate>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT MIN(trim(artist)), MAX(artist_mbid), SUM(play_count) AS plays
+         FROM tracks
+         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(artist) <> ''
+         GROUP BY lower(trim(artist))
+         HAVING MAX(artist_mbid) IS NOT NULL OR MAX(artist_mbid_negative) = 0
+         ORDER BY plays DESC, lower(MIN(trim(artist))) ASC",
+    )?;
+    let mut candidates = statement
+        .query_map([], |row| {
+            Ok(ArtistCandidate {
+                name: row.get(0)?,
+                mbid: row.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    if candidates.len() <= TOP_ARTIST_COUNT {
+        return Ok(candidates);
+    }
+    match scope {
+        FetchScope::TopArtists => {
+            candidates.truncate(TOP_ARTIST_COUNT);
+            Ok(candidates)
+        }
+        FetchScope::AllArtists { day_index } => {
+            let rest_len = candidates.len() - TOP_ARTIST_COUNT;
+            let start = ((day_index as usize).saturating_mul(DAILY_REST_COUNT) % rest_len)
+                + TOP_ARTIST_COUNT;
+            let end = (start + DAILY_REST_COUNT).min(candidates.len());
+            let daily = candidates[start..end].to_vec();
+            candidates.truncate(TOP_ARTIST_COUNT);
+            candidates.extend(daily);
+            Ok(candidates)
+        }
+    }
+}
+
+fn resolve_artist_mbid<F>(
+    conn: &Connection,
+    candidate: &ArtistCandidate,
+    fetch: &mut F,
+    report: &mut RefreshReport,
+) -> Result<Option<String>, NewsError>
 where
     F: FnMut(&str) -> Result<String, FetchError>,
 {
-    let artist = artist.trim();
-    if artist.is_empty() {
-        return Err(NewsError::Unmatched);
+    if let Some(mbid) = candidate.mbid.clone() {
+        return Ok(Some(mbid));
     }
-    let cached = read_cache(cache_dir, artist);
-    if !force {
-        if let Some(record) = cached.as_ref().filter(|record| is_fresh(record, now)) {
-            return cached_result(record, local_albums);
+    let body = match fetch(&artist_search_url(&candidate.name)) {
+        Ok(body) if artist_payload_valid(&body) => body,
+        Ok(_) | Err(_) => {
+            report.failed += 1;
+            return Ok(None);
+        }
+    };
+    match parse_artist_mbid(&body, &candidate.name) {
+        ArtistMatch::Found(mbid) => {
+            persist_artist_match(conn, &candidate.name, Some(&mbid), false)
+                .map_err(database_error)?;
+            Ok(Some(mbid))
+        }
+        ArtistMatch::Ambiguous | ArtistMatch::NotFound => {
+            persist_artist_match(conn, &candidate.name, None, true).map_err(database_error)?;
+            report.unmatched += 1;
+            Ok(None)
         }
     }
+}
 
-    let mbid = match cached
-        .as_ref()
-        .filter(|record| matches!(record.matched, CachedMatch::Found))
-        .and_then(|record| record.artist_mbid.clone())
-    {
-        Some(mbid) => mbid,
-        None => match fetch(&artist_search_url(artist)) {
-            Ok(body) if artist_payload_valid(&body) => match parse_artist_mbid(&body, artist) {
-                ArtistMatch::Found(mbid) => mbid,
-                ArtistMatch::Ambiguous => {
-                    write_negative(cache_dir, artist, now, CachedMatch::Ambiguous);
-                    return Err(NewsError::Ambiguous);
-                }
-                ArtistMatch::NotFound => {
-                    write_negative(cache_dir, artist, now, CachedMatch::Unmatched);
-                    return Err(NewsError::Unmatched);
-                }
-            },
-            Ok(_) => return stale_or(cached.as_ref(), local_albums, NewsError::InvalidResponse),
-            Err(error) => return stale_or(cached.as_ref(), local_albums, error.into()),
-        },
-    };
+fn persist_artist_match(
+    conn: &Connection,
+    artist: &str,
+    mbid: Option<&str>,
+    negative: bool,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE tracks
+         SET artist_mbid = ?1, artist_mbid_negative = ?2
+         WHERE lower(trim(artist)) = lower(trim(?3))",
+        rusqlite::params![mbid, i64::from(negative), artist],
+    )?;
+    Ok(())
+}
 
-    let body = match fetch(&release_groups_url(&mbid)) {
-        Ok(body) if release_payload_valid(&body) => body,
-        Ok(_) => return stale_or(cached.as_ref(), local_albums, NewsError::InvalidResponse),
-        Err(error) => return stale_or(cached.as_ref(), local_albums, error.into()),
+fn artist_cache_is_fresh(
+    conn: &Connection,
+    artist_mbid: &str,
+    now: i64,
+) -> Result<bool, rusqlite::Error> {
+    let fetched_at = conn.query_row(
+        "SELECT MAX(fetched_at) FROM new_releases WHERE artist_mbid = ?1",
+        [artist_mbid],
+        |row| row.get::<_, Option<i64>>(0),
+    )?;
+    Ok(fetched_at
+        .is_some_and(|fetched_at| now.saturating_sub(fetched_at).max(0) <= FETCH_TTL_SECONDS))
+}
+
+fn local_albums(conn: &Connection, artist: &str) -> Result<Vec<String>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT DISTINCT album FROM tracks
+         WHERE lower(trim(artist)) = lower(trim(?1)) AND trim(album) <> ''",
+    )?;
+    let albums = statement
+        .query_map([artist], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(albums)
+}
+
+fn upsert_releases(
+    conn: &Connection,
+    artist: &str,
+    artist_mbid: &str,
+    fetched_at: i64,
+    fallback_accent: &str,
+    items: &[AlbumNews],
+) -> Result<(), rusqlite::Error> {
+    let transaction = conn.unchecked_transaction()?;
+    for item in items {
+        transaction.execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, fallback_accent
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(release_group_mbid) DO UPDATE SET
+               artist_name = excluded.artist_name,
+               artist_mbid = excluded.artist_mbid,
+               title = excluded.title,
+               release_type = excluded.release_type,
+               first_release_date = excluded.first_release_date,
+               fetched_at = excluded.fetched_at",
+            rusqlite::params![
+                item.release_group_mbid,
+                artist,
+                artist_mbid,
+                item.title,
+                item.primary_type,
+                item.first_release_date,
+                fetched_at,
+                fallback_accent,
+            ],
+        )?;
+    }
+    transaction.commit()
+}
+
+fn normalize_fallback_accent(accent: Option<String>) -> String {
+    accent
+        .filter(|value| {
+            value.len() == 7
+                && value.starts_with('#')
+                && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+        .map_or_else(
+            || DEFAULT_FALLBACK_ACCENT.to_string(),
+            |value| value.to_ascii_uppercase(),
+        )
+}
+
+pub fn query_releases(
+    conn: &Connection,
+    include_hidden: bool,
+    today: NaiveDate,
+) -> Result<Vec<StoredRelease>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT release_group_mbid, artist_name, artist_mbid, title, release_type,
+                first_release_date, fetched_at, seen_at, hidden, fallback_accent
+         FROM new_releases
+         WHERE ?1 OR hidden = 0",
+    )?;
+    let mut releases = statement
+        .query_map([i64::from(include_hidden)], |row| {
+            Ok(StoredRelease {
+                release_group_mbid: row.get(0)?,
+                artist_name: row.get(1)?,
+                artist_mbid: row.get(2)?,
+                title: row.get(3)?,
+                release_type: row.get(4)?,
+                first_release_date: row.get(5)?,
+                fetched_at: row.get(6)?,
+                seen_at: row.get(7)?,
+                hidden: row.get::<_, i64>(8)? != 0,
+                fallback_accent: row.get(9)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut local_statement = conn.prepare(
+        "SELECT artist, album FROM tracks
+         WHERE removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''",
+    )?;
+    let local_albums = local_statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .map(|row| row.map(|(artist, album)| (normalize(&artist), normalize(&album))))
+        .collect::<Result<std::collections::HashSet<_>, _>>()?;
+    releases.retain(|release| {
+        !local_albums.contains(&(normalize(&release.artist_name), normalize(&release.title)))
+    });
+    releases.sort_by(|left, right| compare_stored_releases(left, right, today));
+    Ok(releases)
+}
+
+pub fn unseen_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM new_releases WHERE seen_at IS NULL",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn hidden_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM new_releases WHERE hidden = 1",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn set_release_hidden(
+    conn: &Connection,
+    release_group_mbid: &str,
+    hidden: bool,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE new_releases SET hidden = ?1 WHERE release_group_mbid = ?2",
+        rusqlite::params![i64::from(hidden), release_group_mbid],
+    )?;
+    Ok(())
+}
+
+pub fn show_hidden_releases(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute("UPDATE new_releases SET hidden = 0 WHERE hidden = 1", [])?;
+    Ok(())
+}
+
+pub fn mark_releases_seen(
+    conn: &Connection,
+    release_group_mbids: &[String],
+    seen_at: i64,
+) -> Result<(), rusqlite::Error> {
+    let transaction = conn.unchecked_transaction()?;
+    for mbid in release_group_mbids {
+        transaction.execute(
+            "UPDATE new_releases SET seen_at = ?1
+             WHERE release_group_mbid = ?2 AND seen_at IS NULL",
+            rusqlite::params![seen_at, mbid],
+        )?;
+    }
+    transaction.commit()
+}
+
+pub fn query_artist_news(
+    conn: &Connection,
+    artist_mbid: &str,
+    today: NaiveDate,
+) -> Result<Option<ArtistNews>, rusqlite::Error> {
+    let releases = query_releases(conn, false, today)?
+        .into_iter()
+        .filter(|release| release.artist_mbid == artist_mbid)
+        .collect::<Vec<_>>();
+    let Some(first) = releases.first() else {
+        return Ok(None);
     };
-    let items = parse_release_groups(&body, local_albums, today);
-    let record = CacheRecord {
-        version: CACHE_VERSION,
-        artist: artist.to_string(),
-        artist_mbid: Some(mbid.clone()),
-        fetched_at: now,
-        items: items.clone(),
-        matched: CachedMatch::Found,
-    };
-    write_cache(cache_dir, artist, &record);
-    Ok(ArtistNews {
-        artist: artist.to_string(),
-        artist_mbid: mbid,
-        fetched_at: now,
+    let artist = first.artist_name.clone();
+    let fetched_at = releases
+        .iter()
+        .map(|release| release.fetched_at)
+        .max()
+        .unwrap_or_default();
+    let items = releases
+        .into_iter()
+        .map(|release| AlbumNews {
+            release_group_mbid: release.release_group_mbid,
+            title: release.title,
+            kind: parse_partial_date(&release.first_release_date).map_or(NewsKind::New, |date| {
+                if date >= today {
+                    NewsKind::Upcoming
+                } else {
+                    NewsKind::New
+                }
+            }),
+            first_release_date: release.first_release_date,
+            primary_type: release.release_type,
+        })
+        .collect();
+    Ok(Some(ArtistNews {
+        artist,
+        artist_mbid: artist_mbid.to_string(),
+        fetched_at,
         items,
         stale: false,
-    })
+    }))
+}
+
+pub fn query_artist_news_by_name(
+    conn: &Connection,
+    artist: &str,
+    today: NaiveDate,
+) -> Result<Option<ArtistNews>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT artist_mbid FROM tracks
+         WHERE lower(trim(artist)) = lower(trim(?1)) AND artist_mbid IS NOT NULL
+         ORDER BY play_count DESC, id ASC
+         LIMIT 1",
+    )?;
+    let mut rows = statement.query([artist])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    let artist_mbid = row.get::<_, String>(0)?;
+    query_artist_news(conn, &artist_mbid, today)
+}
+
+pub fn most_played_album_track_path(
+    conn: &Connection,
+    artist: &str,
+) -> Result<Option<PathBuf>, rusqlite::Error> {
+    let mut statement = conn.prepare(
+        "SELECT MIN(path), SUM(play_count) AS album_plays
+         FROM tracks
+         WHERE lower(trim(artist)) = lower(trim(?1))
+           AND removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''
+         GROUP BY lower(trim(album))
+         ORDER BY album_plays DESC, lower(trim(album)) ASC
+         LIMIT 1",
+    )?;
+    let mut rows = statement.query([artist])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    Ok(Some(PathBuf::from(row.get::<_, String>(0)?)))
+}
+
+fn database_error(error: rusqlite::Error) -> NewsError {
+    let message = error.to_string();
+    drop(error);
+    NewsError::Database(message)
+}
+
+fn compare_stored_releases(
+    left: &StoredRelease,
+    right: &StoredRelease,
+    today: NaiveDate,
+) -> Ordering {
+    let left_date = parse_partial_date(&left.first_release_date).unwrap_or(today);
+    let right_date = parse_partial_date(&right.first_release_date).unwrap_or(today);
+    let left_kind = if left_date >= today {
+        NewsKind::Upcoming
+    } else {
+        NewsKind::New
+    };
+    let right_kind = if right_date >= today {
+        NewsKind::Upcoming
+    } else {
+        NewsKind::New
+    };
+    match (left_kind, right_kind) {
+        (NewsKind::Upcoming, NewsKind::New) => Ordering::Less,
+        (NewsKind::New, NewsKind::Upcoming) => Ordering::Greater,
+        (NewsKind::Upcoming, NewsKind::Upcoming) => left_date.cmp(&right_date),
+        (NewsKind::New, NewsKind::New) => right_date.cmp(&left_date),
+    }
+    .then_with(|| left.title.cmp(&right.title))
 }
 
 fn parse_release_group(
@@ -256,7 +641,8 @@ fn parse_release_group(
     let date_text = group.get("first-release-date")?.as_str()?.to_string();
     let release_date = parse_partial_date(&date_text)?;
     let primary_type = group.get("primary-type")?.as_str()?.to_string();
-    if !matches!(primary_type.to_ascii_lowercase().as_str(), "album" | "ep")
+    let primary_type_normalized = primary_type.to_ascii_lowercase();
+    if !matches!(primary_type_normalized.as_str(), "album" | "ep" | "single")
         || title.is_empty()
         || local.contains(&normalize(&title))
         || has_excluded_secondary_type(group)
@@ -264,12 +650,12 @@ fn parse_release_group(
         return None;
     }
     let delta = release_date.signed_duration_since(today).num_days();
-    let kind = if (0..=NEWS_WINDOW_DAYS).contains(&delta) {
-        NewsKind::Upcoming
-    } else if (-NEWS_WINDOW_DAYS..=-1).contains(&delta) {
-        NewsKind::New
-    } else {
-        return None;
+    let kind = match primary_type_normalized.as_str() {
+        "single" if date_text.len() == 10 && delta > 0 => NewsKind::Upcoming,
+        "single" => return None,
+        _ if delta >= 0 => NewsKind::Upcoming,
+        _ if delta >= -NEWS_WINDOW_DAYS => NewsKind::New,
+        _ => return None,
     };
     Some((
         AlbumNews {
@@ -336,71 +722,6 @@ fn normalize(value: &str) -> String {
         .to_lowercase()
 }
 
-fn cache_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("reprise/artist-news")
-}
-
-pub(crate) fn cache_file(cache_dir: &Path, artist: &str) -> PathBuf {
-    let key = crate::cover::hash_hex(normalize(artist).as_bytes());
-    cache_dir.join(format!("{key}.json"))
-}
-
-fn read_cache(cache_dir: &Path, artist: &str) -> Option<CacheRecord> {
-    let body = std::fs::read(cache_file(cache_dir, artist)).ok()?;
-    let record = serde_json::from_slice::<CacheRecord>(&body).ok()?;
-    (record.version == CACHE_VERSION && normalize(&record.artist) == normalize(artist))
-        .then_some(record)
-}
-
-fn is_fresh(record: &CacheRecord, now: i64) -> bool {
-    let age = now.saturating_sub(record.fetched_at).max(0);
-    let ttl = match record.matched {
-        CachedMatch::Found => POSITIVE_TTL_SECONDS,
-        CachedMatch::Unmatched | CachedMatch::Ambiguous => NEGATIVE_TTL_SECONDS,
-    };
-    age <= ttl
-}
-
-fn cached_result(record: &CacheRecord, local_albums: &[String]) -> Result<ArtistNews, NewsError> {
-    match record.matched {
-        CachedMatch::Unmatched => Err(NewsError::Unmatched),
-        CachedMatch::Ambiguous => Err(NewsError::Ambiguous),
-        CachedMatch::Found => {
-            let local = local_albums
-                .iter()
-                .map(|album| normalize(album))
-                .collect::<std::collections::HashSet<_>>();
-            Ok(ArtistNews {
-                artist: record.artist.clone(),
-                artist_mbid: record.artist_mbid.clone().unwrap_or_default(),
-                fetched_at: record.fetched_at,
-                items: record
-                    .items
-                    .iter()
-                    .filter(|item| !local.contains(&normalize(&item.title)))
-                    .cloned()
-                    .collect(),
-                stale: false,
-            })
-        }
-    }
-}
-
-fn stale_or(
-    cached: Option<&CacheRecord>,
-    local_albums: &[String],
-    error: NewsError,
-) -> Result<ArtistNews, NewsError> {
-    let Some(record) = cached.filter(|record| matches!(record.matched, CachedMatch::Found)) else {
-        return Err(error);
-    };
-    let mut news = cached_result(record, local_albums)?;
-    news.stale = true;
-    Ok(news)
-}
-
 fn artist_payload_valid(body: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()
@@ -413,37 +734,4 @@ fn release_payload_valid(body: &str) -> bool {
         .ok()
         .and_then(|value| value.get("release-groups").cloned())
         .is_some_and(|groups| groups.is_array())
-}
-
-fn write_negative(cache_dir: &Path, artist: &str, now: i64, matched: CachedMatch) {
-    write_cache(
-        cache_dir,
-        artist,
-        &CacheRecord {
-            version: CACHE_VERSION,
-            artist: artist.to_string(),
-            artist_mbid: None,
-            fetched_at: now,
-            items: Vec::new(),
-            matched,
-        },
-    );
-}
-
-fn write_cache(cache_dir: &Path, artist: &str, record: &CacheRecord) {
-    let Ok(body) = serde_json::to_vec(record) else {
-        return;
-    };
-    if std::fs::create_dir_all(cache_dir).is_err() {
-        tracing::warn!("could not create Artist News cache directory");
-        return;
-    }
-    let destination = cache_file(cache_dir, artist);
-    let temporary = cache_dir.join(format!(".artist-news-{}.tmp", fastrand::u64(..)));
-    if std::fs::write(&temporary, body).is_err()
-        || std::fs::rename(&temporary, destination).is_err()
-    {
-        let _ = std::fs::remove_file(temporary);
-        tracing::warn!("could not publish Artist News cache entry");
-    }
 }

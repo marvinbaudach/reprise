@@ -42,6 +42,7 @@ pub(crate) mod motion;
 mod mounts;
 pub mod mpris_mirror;
 pub(crate) mod nav_history;
+mod new_releases;
 mod notifications;
 pub(crate) mod now_playing;
 mod one_shot_task;
