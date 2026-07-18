@@ -554,6 +554,22 @@ impl PlayerController {
         (!trimmed.is_empty()).then(|| trimmed.to_string())
     }
 
+    /// Clone-out album identity for album-card toggle/reveal decisions.
+    pub fn current_album_identity(&self) -> Option<(String, String)> {
+        let album = self.now_playing.borrow().as_ref()?.album.clone();
+        let album_artist = self.current_track_album_artist()?;
+        Some((album, album_artist))
+    }
+
+    /// Current coarse playback state without exposing controller internals.
+    pub fn playback_state(&self) -> PlaybackState {
+        match self.session_playback_status() {
+            MprisPlaybackStatus::Playing => PlaybackState::Playing,
+            MprisPlaybackStatus::Paused => PlaybackState::Paused,
+            MprisPlaybackStatus::Stopped => PlaybackState::Stopped,
+        }
+    }
+
     /// Wires the cover-image click gesture — see `PlayerBar::connect_cover_clicked`.
     pub fn connect_cover_clicked(&self, f: impl Fn() + 'static) {
         self.bar.connect_cover_clicked(f);

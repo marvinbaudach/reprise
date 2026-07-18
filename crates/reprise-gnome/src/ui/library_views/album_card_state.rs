@@ -2,11 +2,13 @@
 
 use std::collections::HashMap;
 
+use reprise_core::playback::PlaybackState;
 use reprise_core::queries::AlbumSummary;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum AlbumCardPlayback {
     Normal,
+    LoadedStopped,
     Playing,
     Paused,
 }
@@ -20,6 +22,10 @@ pub(in crate::ui) struct AlbumCardPresentation {
 pub(in crate::ui) fn presentation(playback: AlbumCardPlayback) -> AlbumCardPresentation {
     match playback {
         AlbumCardPlayback::Normal => AlbumCardPresentation::default(),
+        AlbumCardPlayback::LoadedStopped => AlbumCardPresentation {
+            show_playing_layer: true,
+            playback_paused: false,
+        },
         AlbumCardPlayback::Playing => AlbumCardPresentation {
             show_playing_layer: true,
             playback_paused: false,
@@ -28,6 +34,27 @@ pub(in crate::ui) fn presentation(playback: AlbumCardPlayback) -> AlbumCardPrese
             show_playing_layer: true,
             playback_paused: true,
         },
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) enum PrimaryAlbumAction {
+    RebuildQueue,
+    Pause,
+    Resume,
+}
+
+pub(in crate::ui) fn primary_album_action(
+    is_current_album: bool,
+    playback: PlaybackState,
+) -> PrimaryAlbumAction {
+    if !is_current_album {
+        return PrimaryAlbumAction::RebuildQueue;
+    }
+    match playback {
+        PlaybackState::Playing => PrimaryAlbumAction::Pause,
+        PlaybackState::Paused => PrimaryAlbumAction::Resume,
+        PlaybackState::Stopped => PrimaryAlbumAction::RebuildQueue,
     }
 }
 
@@ -106,6 +133,13 @@ mod tests {
                 playback_paused: true,
             }
         );
+        assert_eq!(
+            presentation(AlbumCardPlayback::LoadedStopped),
+            AlbumCardPresentation {
+                show_playing_layer: true,
+                playback_paused: false,
+            }
+        );
     }
 
     #[test]
@@ -119,5 +153,25 @@ mod tests {
 
         registry.unbind(7, 2);
         assert!(registry.resolve(7).is_none());
+    }
+
+    #[test]
+    fn primary_button_rebuilds_other_or_stopped_and_toggles_the_loaded_album() {
+        assert_eq!(
+            primary_album_action(false, PlaybackState::Playing),
+            PrimaryAlbumAction::RebuildQueue
+        );
+        assert_eq!(
+            primary_album_action(true, PlaybackState::Stopped),
+            PrimaryAlbumAction::RebuildQueue
+        );
+        assert_eq!(
+            primary_album_action(true, PlaybackState::Playing),
+            PrimaryAlbumAction::Pause
+        );
+        assert_eq!(
+            primary_album_action(true, PlaybackState::Paused),
+            PrimaryAlbumAction::Resume
+        );
     }
 }

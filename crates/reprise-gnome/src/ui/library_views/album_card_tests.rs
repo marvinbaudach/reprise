@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use gtk4::glib;
 use gtk4::prelude::*;
+use reprise_core::playback::PlaybackState;
 use reprise_core::queries::AlbumSummary;
 
 use super::album_card::*;
@@ -46,11 +47,12 @@ fn shared(now_playing: Option<(&str, &str)>) -> Rc<AlbumCardShared> {
         generation: Rc::new(Cell::new(0)),
         identity_generation: Rc::new(Cell::new(0)),
         identities: Rc::new(RefCell::new(AlbumCardIdentityRegistry::default())),
+        playback_state: Rc::new(Cell::new(PlaybackState::Paused)),
         now_playing_album: Rc::new(RefCell::new(
             now_playing.map(|(album, artist)| (album.into(), artist.into())),
         )),
         on_play: Rc::new(RefCell::new(None)),
-        on_queue: Rc::new(RefCell::new(None)),
+        on_primary: Rc::new(RefCell::new(None)),
         on_artist_activate: Rc::new(RefCell::new(None)),
     })
 }
@@ -185,5 +187,15 @@ fn tip_1a_album_card_play_overlay_has_tooltip() {
 
     let violations = crate::ui::tooltip_discipline::tooltip_violations(grid.upcast_ref());
     assert!(violations.is_empty(), "{violations:?}");
+    let play_button = descendants_with_class(grid.upcast_ref(), css::PLAY_BUTTON_CLASS)
+        .into_iter()
+        .next()
+        .and_downcast::<gtk4::Button>()
+        .unwrap();
+    assert!(!play_button.is_focusable());
+    assert_eq!(
+        play_button.tooltip_text().as_deref(),
+        Some("Play album (Ctrl+Enter)")
+    );
     window.close();
 }
