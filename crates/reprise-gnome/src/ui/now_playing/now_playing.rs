@@ -9,6 +9,7 @@ use rusqlite::Connection;
 
 use super::artist_portrait_worker::ArtistPortraitRuntime;
 use super::cover_loader::CoverLoader;
+use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
 #[cfg(test)]
 use super::now_playing_column::PANEL_WIDTH;
@@ -16,6 +17,10 @@ use super::strings;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::player_controller::NowPlaying;
+use crate::ui::style::tokens;
+
+const UP_NEXT_PAGE: &str = "up-next";
+const LYRICS_PAGE: &str = "lyrics";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PanelPresentation {
@@ -50,61 +55,127 @@ fn panel_presentation(
 
 struct PanelWidgets {
     column: NowPlayingColumn,
+    stage: gtk4::Box,
     lyrics: Rc<LyricsView>,
     cover: gtk4::Image,
     title: gtk4::Label,
     subtitle: gtk4::Label,
+    tab_buttons: [gtk4::ToggleButton; 2],
+    // The visual slot lands in T4; T6/T7 supply its per-tab text.
+    #[allow(dead_code)]
+    footer: gtk4::Label,
 }
 
 fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let cover = gtk4::Image::builder()
-        .pixel_size(96)
-        .width_request(96)
-        .height_request(96)
+        .pixel_size(tokens::NOW_PLAYING_COVER_SIZE)
+        .width_request(tokens::NOW_PLAYING_COVER_SIZE)
+        .height_request(tokens::NOW_PLAYING_COVER_SIZE)
         .build();
+    cover.add_css_class("reprise-now-playing-cover");
     CoverLoader::set_placeholder(&cover);
 
     let title = gtk4::Label::builder()
-        .xalign(0.0)
+        .xalign(0.5)
+        .justify(gtk4::Justification::Center)
         .wrap(true)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
-    title.add_css_class("title-4");
+    title.add_css_class("reprise-now-playing-title");
     let subtitle = gtk4::Label::builder()
-        .xalign(0.0)
+        .xalign(0.5)
+        .justify(gtk4::Justification::Center)
         .wrap(true)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
-    subtitle.add_css_class("dim-label");
+    subtitle.add_css_class("reprise-now-playing-subtitle");
 
-    let metadata = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-    metadata.set_hexpand(true);
+    let metadata = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    metadata.set_halign(gtk4::Align::Fill);
     metadata.append(&title);
     metadata.append(&subtitle);
-    let head = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    head.add_css_class("card");
-    head.set_margin_top(12);
-    head.set_margin_bottom(6);
-    head.set_margin_start(12);
-    head.set_margin_end(12);
+    let head = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    head.add_css_class("reprise-now-playing-head");
+    head.set_halign(gtk4::Align::Center);
+    head.set_valign(gtk4::Align::Center);
     head.append(&cover);
     head.append(&metadata);
 
+    let glow = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    glow.add_css_class("reprise-now-playing-glow");
+    glow.set_can_target(false);
+    let head_overlay = gtk4::Overlay::new();
+    head_overlay.set_child(Some(&glow));
+    head_overlay.add_overlay(&head);
+
     let lyrics = LyricsView::new();
-    let body = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    body.set_vexpand(true);
-    body.append(&head);
-    body.append(lyrics.widget());
+    let up_next = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    up_next.set_vexpand(true);
+    let tab_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(crate::ui::motion::STANDARD_MS)
+        .vexpand(true)
+        .build();
+    tab_stack.add_named(&up_next, Some(UP_NEXT_PAGE));
+    tab_stack.add_named(lyrics.widget(), Some(LYRICS_PAGE));
+    tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+
+    let up_next_button = gtk4::ToggleButton::with_label(&strings::text(strings::UP_NEXT));
+    let lyrics_button =
+        gtk4::ToggleButton::with_label(&lyrics_strings::text(lyrics_strings::LYRICS));
+    lyrics_button.set_group(Some(&up_next_button));
+    for button in [&up_next_button, &lyrics_button] {
+        button.add_css_class("reprise-now-playing-tab");
+    }
+    up_next_button.set_active(true);
+    let tabs = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    tabs.set_homogeneous(true);
+    tabs.set_halign(gtk4::Align::Center);
+    tabs.add_css_class("reprise-now-playing-tabs");
+    tabs.append(&up_next_button);
+    tabs.append(&lyrics_button);
+
+    {
+        let stack = tab_stack.clone();
+        up_next_button.connect_toggled(move |button| {
+            if button.is_active() {
+                stack.set_visible_child_name(UP_NEXT_PAGE);
+            }
+        });
+    }
+    {
+        let stack = tab_stack.clone();
+        lyrics_button.connect_toggled(move |button| {
+            if button.is_active() {
+                stack.set_visible_child_name(LYRICS_PAGE);
+            }
+        });
+    }
+
+    let footer = gtk4::Label::new(None);
+    footer.add_css_class("reprise-now-playing-footer");
+
+    let stage = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    stage.add_css_class("reprise-now-playing-stage");
+    stage.add_css_class("reprise-now-playing-idle");
+    stage.set_vexpand(true);
+    stage.append(&head_overlay);
+    stage.append(&tabs);
+    stage.append(&tab_stack);
+    stage.append(&footer);
 
     let toolbar = adw::ToolbarView::new();
-    toolbar.set_content(Some(&body));
+    toolbar.set_content(Some(&stage));
     let column = NowPlayingColumn::new(content, &toolbar, visible);
     PanelWidgets {
         column,
+        stage,
         lyrics,
         cover,
         title,
         subtitle,
+        tab_buttons: [up_next_button, lyrics_button],
+        footer,
     }
 }
 
@@ -163,6 +234,7 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn show_lyrics(&self) {
+        self.widgets.tab_buttons[1].set_active(true);
         self.widgets.column.set_visible(true);
     }
 
@@ -230,7 +302,13 @@ impl NowPlayingPanel {
         self.widgets.title.set_label(&presentation.title);
         self.widgets.subtitle.set_label(&presentation.subtitle);
         self.widgets.subtitle.set_visible(!presentation.idle);
-
+        if presentation.idle {
+            self.widgets.stage.add_css_class("reprise-now-playing-idle");
+        } else {
+            self.widgets
+                .stage
+                .remove_css_class("reprise-now-playing-idle");
+        }
         let generation = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(generation);
         CoverLoader::set_placeholder(&self.widgets.cover);
@@ -238,12 +316,59 @@ impl NowPlayingPanel {
             self.cover_loader.load_into(
                 &self.widgets.cover,
                 &track.path,
-                ThumbnailSize::Bar,
+                ThumbnailSize::Full,
                 generation,
                 &self.cover_generation,
             );
         }
     }
+}
+
+pub(in crate::ui) fn css() -> String {
+    use tokens::{
+        NOW_PLAYING_FOOTER_ALPHA, NOW_PLAYING_FOOTER_SIZE, NOW_PLAYING_GLOW_ALPHA,
+        NOW_PLAYING_PILL_ACTIVE_ALPHA, NOW_PLAYING_PILL_BG_ALPHA, NOW_PLAYING_PILL_RADIUS,
+        NOW_PLAYING_STAGE_BG, NOW_PLAYING_SUBTITLE_ALPHA, NOW_PLAYING_SUBTITLE_SIZE,
+        NOW_PLAYING_TITLE_SIZE, RADIUS_SURFACE,
+    };
+
+    format!(
+        ".reprise-now-playing-stage {{ \
+       background-color: {NOW_PLAYING_STAGE_BG}; color: #ffffff; min-width: 300px; }}\n\
+     .reprise-now-playing-glow {{ \
+       min-height: 300px; \
+       background-image: radial-gradient(ellipse at center, \
+         alpha(@reprise_player_accent, {NOW_PLAYING_GLOW_ALPHA}) 0%, \
+         alpha({NOW_PLAYING_STAGE_BG}, 0) 70%); }}\n\
+     .reprise-now-playing-idle .reprise-now-playing-glow {{ \
+       background-image: none; }}\n\
+     .reprise-now-playing-head {{ padding: 22px 18px 16px; }}\n\
+     .reprise-now-playing-cover {{ \
+       border-radius: {RADIUS_SURFACE}; \
+       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), \
+                   inset 0 0 0 1px alpha(#ffffff, 0.12); }}\n\
+     .reprise-now-playing-title {{ \
+       color: #ffffff; font-size: {NOW_PLAYING_TITLE_SIZE}; font-weight: 700; }}\n\
+     .reprise-now-playing-subtitle {{ \
+       color: alpha(#ffffff, {NOW_PLAYING_SUBTITLE_ALPHA}); \
+       font-size: {NOW_PLAYING_SUBTITLE_SIZE}; }}\n\
+     .reprise-now-playing-tabs {{ \
+       background-color: alpha(#ffffff, {NOW_PLAYING_PILL_BG_ALPHA}); \
+       border-radius: {NOW_PLAYING_PILL_RADIUS}; \
+       padding: 2px; margin: 0 18px 12px; }}\n\
+     .reprise-now-playing-tabs > .reprise-now-playing-tab {{ \
+       background-color: transparent; background-image: none; \
+       border: none; border-radius: {NOW_PLAYING_PILL_RADIUS}; box-shadow: none; \
+       color: alpha(#ffffff, {NOW_PLAYING_SUBTITLE_ALPHA}); min-height: 0; \
+       padding: 5px 18px; }}\n\
+     .reprise-now-playing-tabs > .reprise-now-playing-tab:checked {{ \
+       background-color: alpha(#ffffff, {NOW_PLAYING_PILL_ACTIVE_ALPHA}); \
+       color: #ffffff; font-weight: 700; }}\n\
+     .reprise-now-playing-footer {{ \
+       color: alpha(#ffffff, {NOW_PLAYING_FOOTER_ALPHA}); \
+       font-size: {NOW_PLAYING_FOOTER_SIZE}; \
+       min-height: 14px; margin: 8px 12px 12px; }}"
+    )
 }
 
 #[cfg(test)]

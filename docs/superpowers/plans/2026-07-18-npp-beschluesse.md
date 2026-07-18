@@ -23,13 +23,13 @@ Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs i
   fix **240 px** — bewusst ungleich), einklappbar mit derselben
   Slide-Transition wie die linke Sidebar (MOT-3, Standard-Token 250 ms
   ease-out-cubic; die bestehende `OverlaySplitView`-Transition liefert sie).
-- **NPP-2 · Aufbau vertikal** `[geplant]` — Cover **168 px** (Radius 12,
+- **NPP-2 · Aufbau vertikal** `[aktiv]` — Cover **168 px** (Radius 12,
   Schatten + 1 px Inset-Hairline) → Titel 15 px bold / „Artist · Album" 12 px
   weiß 55 % → **Pill-Toggle** Up Next | Lyrics | Visual (Segmente, kein
   Tab-Bar-Widget) → Tab-Inhalt füllt den Rest → Fußzeile 10.5 px weiß 35 %
   (Inhalt pro Tab, siehe Beschlüsse 3/9). **Kein Volume-Regler im Panel** —
   Lautstärke lebt ausschließlich in der Playerleiste (P-1).
-- **NPP-3 · Glow statt Volltint** `[geplant]` — Radialer Verlauf aus der
+- **NPP-3 · Glow statt Volltint** `[aktiv]` — Radialer Verlauf aus der
   Cover-Akzentfarbe (bestehende Extraktions-Pipeline) hinter dem Cover — nur
   oberes Drittel (~300 px Ellipse, weich auslaufend, Opacity ~0.4), läuft nach
   unten auf neutrales Panel-Dunkel aus. Basis-Hintergrund bleibt neutral,
