@@ -31,9 +31,18 @@ struct RowCapabilities {
     draggable: bool,
 }
 
+/// Whether `id` gets a row in the column editor at all. Cover is a fixed
+/// leading column — always first and always visible (see `column_layout`'s
+/// `normalize`) — so it is deliberately absent from the editor; it cannot be
+/// reordered or hidden. Every other column is listed.
+fn editor_lists_column(id: ColumnId) -> bool {
+    id != ColumnId::Cover
+}
+
 fn row_capabilities(_id: ColumnId) -> RowCapabilities {
-    // Every column — including Cover and Title — is an ordinary, equal row:
-    // toggleable and draggable, with no pinned "always visible" entries.
+    // Every listed column — Title included — is an ordinary, equal row:
+    // toggleable and draggable. (Cover is not listed at all, see
+    // `editor_lists_column`.)
     RowCapabilities {
         toggleable: true,
         draggable: true,
@@ -181,7 +190,12 @@ impl EditorState {
             self.list.remove(&child);
         }
         let layout = self.layout.borrow().clone();
-        for id in layout.order.iter().copied() {
+        for id in layout
+            .order
+            .iter()
+            .copied()
+            .filter(|id| editor_lists_column(*id))
+        {
             self.list.append(&build_row(self, &layout, id));
         }
     }
@@ -471,8 +485,18 @@ mod tests {
     }
 
     #[test]
-    fn every_column_including_cover_and_title_is_draggable_and_toggleable() {
-        for id in [ColumnId::Cover, ColumnId::Title, ColumnId::Artist] {
+    fn cover_is_excluded_from_the_editor_but_other_columns_are_listed() {
+        // Cover is a fixed leading column — never listed, so it can't be
+        // reordered or hidden from the editor.
+        assert!(!editor_lists_column(ColumnId::Cover));
+        for id in [ColumnId::Title, ColumnId::Artist] {
+            assert!(editor_lists_column(id), "{id:?} should be listed");
+        }
+    }
+
+    #[test]
+    fn every_listed_column_is_draggable_and_toggleable() {
+        for id in [ColumnId::Title, ColumnId::Artist] {
             let caps = row_capabilities(id);
             assert!(caps.toggleable, "{id:?} should be toggleable");
             assert!(caps.draggable, "{id:?} should be draggable");

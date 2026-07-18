@@ -219,7 +219,7 @@ pub(in crate::ui) fn append_problem_header(listbox: &gtk4::ListBox) -> gtk4::Lis
     append_header(listbox, &strings::text(strings::SIDEBAR_SECTION_ISSUES))
 }
 
-pub(in crate::ui) fn style_split_view(split: &adw::NavigationSplitView) {
+pub(in crate::ui) fn style_overlay_split_view(split: &adw::OverlaySplitView) {
     split.set_min_sidebar_width(SIDEBAR_MIN_WIDTH);
     split.set_max_sidebar_width(SIDEBAR_MAX_WIDTH);
     split.set_sidebar_width_fraction(SIDEBAR_WIDTH_FRACTION);
@@ -369,23 +369,20 @@ mod tests {
         assert_eq!(count.text(), "1,674");
         assert!(count.has_css_class("numeric"));
 
-        let split = test_navigation();
-        style_split_view(&split);
+        let split = test_split_view();
+        style_overlay_split_view(&split);
         assert_eq!(split.min_sidebar_width(), 220.0);
         assert_eq!(split.max_sidebar_width(), 280.0);
         assert_eq!(split.sidebar_width_fraction(), 0.22);
     }
 
-    fn test_navigation() -> adw::NavigationSplitView {
+    fn test_split_view() -> adw::OverlaySplitView {
         let sidebar = adw::NavigationPage::builder()
             .title("Sidebar")
             .child(&gtk4::Label::new(Some("Sidebar")))
             .build();
-        let content = adw::NavigationPage::builder()
-            .title("Library")
-            .child(&gtk4::Label::new(Some("Library")))
-            .build();
-        adw::NavigationSplitView::builder()
+        let content = gtk4::Label::new(Some("Library"));
+        adw::OverlaySplitView::builder()
             .sidebar(&sidebar)
             .content(&content)
             .build()

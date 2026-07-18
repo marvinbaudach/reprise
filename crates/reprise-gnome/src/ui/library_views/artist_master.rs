@@ -1,4 +1,4 @@
-//! Artists master list: the left 300px pane of the Artists master/detail view.
+//! Artists master list: the resizable left pane of the Artists master/detail view.
 //!
 //! A `GtkListView` (row recycling) over a `gio::ListStore` of
 //! `BoxedAnyObject<ArtistSummary>`, wrapped in a `SortListModel` so alphabet
@@ -28,11 +28,14 @@ use rusqlite::Connection;
 use crate::ui::artist_master_row::{self, Registry};
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::scroll_center;
 use crate::ui::strings;
 use reprise_core::queries::{self, ArtistSummary};
 
-/// Fixed width of the master pane (the detail pane fills the rest).
-const PANE_WIDTH: i32 = 300;
+/// Minimum width of the master pane — the floor the `Paned` drag can shrink it
+/// to (see `artist_view::INITIAL_MASTER_WIDTH` for its starting width). Below
+/// this, artist names and the sort header would clip.
+const PANE_MIN_WIDTH: i32 = 200;
 
 type OnSelect = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
@@ -133,7 +136,7 @@ impl ArtistMaster {
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("artist-master");
-        root.set_width_request(PANE_WIDTH);
+        root.set_width_request(PANE_MIN_WIDTH);
         root.append(&header);
         root.append(&stack);
 
@@ -186,22 +189,32 @@ impl ArtistMaster {
     }
 
     /// Selects the row whose artist matches `artist` (Unicode case-folded, used
-    /// by the detail-pane deep link). No-op if none match.
+    /// by the detail-pane deep link) and scrolls it into the centre of the
+    /// viewport. No-op if none match.
     pub(in crate::ui) fn select_artist(&self, artist: &str) {
-        select_artist_by_name(&self.inner.selection, artist);
+        if let Some(position) = select_artist_by_name(&self.inner.selection, artist) {
+            reveal_centered(&self.inner.list_view, position);
+        }
     }
 
     /// A self-contained `select_artist` callable for the player-bar artist
-    /// deep-link (Task 9b). Captures a clone of the `SingleSelection` GObject
-    /// only — never `self.inner` — so the returned closure holds no strong
-    /// reference back to `PlayerController`/the widget tree and can be stored
-    /// on the player bar without forming a reference cycle. The selection
-    /// GObject is created once (in `new`) and stays live via the `ListView`
-    /// in the tree, and `reload` splices in place rather than replacing it, so
-    /// the captured handle stays valid across refreshes.
+    /// deep-link (Task 9b): selects the artist *and* scrolls its row to the
+    /// centre of the viewport (so the click lands centred on every press, not
+    /// just the first realize). Captures clones of the `SingleSelection` and
+    /// `ListView` GObjects only — never `self.inner` — so the returned closure
+    /// holds no strong reference back to `PlayerController`/the widget tree and
+    /// can be stored on the player bar without forming a reference cycle. Both
+    /// GObjects are created once (in `new`), stay live via the widget tree, and
+    /// `reload` splices the model in place rather than replacing them, so the
+    /// captured handles stay valid across refreshes.
     pub(in crate::ui) fn select_callback(&self) -> Rc<dyn Fn(&str)> {
         let selection = self.inner.selection.clone();
-        Rc::new(move |artist: &str| select_artist_by_name(&selection, artist))
+        let list_view = self.inner.list_view.clone();
+        Rc::new(move |artist: &str| {
+            if let Some(position) = select_artist_by_name(&selection, artist) {
+                reveal_centered(&list_view, position);
+            }
+        })
     }
 
     /// Lights the mini-EQ on whichever realized row matches `artist`
@@ -282,9 +295,11 @@ fn current_selected_artist_name(selection: &gtk4::SingleSelection) -> Option<Str
         .map(|boxed| boxed.borrow::<ArtistSummary>().artist.clone())
 }
 
-/// Selects the row whose artist matches `artist` (Unicode case-folded).
-/// No-op if none match.
-fn select_artist_by_name(selection: &gtk4::SingleSelection, artist: &str) {
+/// Selects the row whose artist matches `artist` (Unicode case-folded) and
+/// returns its position, or `None` if none match. The position lets a deep-link
+/// caller reveal the row (see [`reveal_centered`]); the plain selection restore
+/// after a re-sort ignores it, keeping the viewport put.
+fn select_artist_by_name(selection: &gtk4::SingleSelection, artist: &str) -> Option<u32> {
     let target = artist.to_lowercase();
     let count = selection.n_items();
     for index in 0..count {
@@ -294,7 +309,42 @@ fn select_artist_by_name(selection: &gtk4::SingleSelection, artist: &str) {
             .is_some_and(|boxed| boxed.borrow::<ArtistSummary>().artist.to_lowercase() == target);
         if matches {
             selection.set_selected(index);
-            return;
+            return Some(index);
+        }
+    }
+    None
+}
+
+/// Row count of the master list's current model — the divisor for
+/// [`scroll_center::centered_scroll_target`]'s uniform-height row math. The A–Z
+/// section headers are not counted here, only the artist rows.
+fn master_row_count(list_view: &gtk4::ListView) -> u32 {
+    list_view.model().map_or(0, |model| model.n_items())
+}
+
+/// Scrolls the master list so row `position` sits vertically centered in the
+/// viewport. Mirrors the track table's centering (see
+/// `current_track_selection`, both built on [`scroll_center`]): a direct
+/// vadjustment write when the list already has geometry, falling back to an idle
+/// re-try (then a plain `scroll_to`) when it does not — e.g. the first time the
+/// Artists view is shown, before its `ListView` has been allocated. This is what
+/// makes a player-bar artist deep-link land centered on *every* click, not just
+/// the first realize.
+fn reveal_centered(list_view: &gtk4::ListView, position: u32) {
+    let n_rows = master_row_count(list_view);
+    match scroll_center::centered_scroll_target(list_view, n_rows, position) {
+        Some((adjustment, value)) => adjustment.set_value(value),
+        None => {
+            let list_view = list_view.clone();
+            gtk4::glib::idle_add_local_once(move || {
+                let n_rows = master_row_count(&list_view);
+                match scroll_center::centered_scroll_target(&list_view, n_rows, position) {
+                    Some((adjustment, value)) => adjustment.set_value(value),
+                    // Still no geometry (or the list fits the viewport): just
+                    // make the row visible; there is nothing to center against.
+                    None => list_view.scroll_to(position, gtk4::ListScrollFlags::NONE, None),
+                }
+            });
         }
     }
 }

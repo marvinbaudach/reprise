@@ -182,6 +182,11 @@ Do not point development hooks at the maintainer's real library.
   item shows a tooltip (TIP-4). Tooltips use stock GTK behavior: no custom
   delays, no rich content; dynamic values (percent, time, elided full text)
   are fine (TIP-5).
+- Motion discipline (UX MOT-4): with a copied library of at least 10,000
+  tracks, reload, scroll, filter, and drag rows in Library, Playlist, and Queue
+  views. Individual rows must never stagger, fade in, or move during reloads;
+  only the whole surface may crossfade when switching views. Queue drop and
+  single-remove motion is an allowed exception, not a release requirement.
 
 Record the OS, GNOME version, runtime branches, architecture, codec packages, and
 results for the release notes. Screenshots must be captured manually from a real,

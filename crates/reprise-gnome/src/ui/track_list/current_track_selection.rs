@@ -13,6 +13,7 @@ use super::player_controller::PlayerController;
 use super::track_list::TrackList;
 use super::track_list_activation::current_queue_ids;
 use crate::ui::artist_view::ArtistView;
+use crate::ui::scroll_center;
 
 /// `(track_id, queue_position, playback_started)` — `playback_started` is
 /// `true` only when an actual playback start fired the change. Session
@@ -56,32 +57,10 @@ fn take_scroll_suppression(suppressed: &std::cell::Cell<Option<i64>>, track_id: 
     suppressed.take() == Some(track_id)
 }
 
-/// Adjustment value that vertically centers row `position` in the viewport.
-/// Assumes uniform row heights (true for the track table), so a row's offset
-/// is derived from the adjustment's total content height. Returns `None`
-/// when the list is not yet allocated (`upper`/`page_size` unset) or fits
-/// entirely in the viewport — in both cases there is nothing to center.
-fn centered_scroll_value(position: u32, n_rows: u32, upper: f64, page_size: f64) -> Option<f64> {
-    if n_rows == 0 || upper <= 0.0 || page_size <= 0.0 || upper <= page_size {
-        return None;
-    }
-    let row_height = upper / f64::from(n_rows);
-    let target = (f64::from(position) + 0.5) * row_height - page_size / 2.0;
-    Some(target.clamp(0.0, upper - page_size))
-}
-
-/// Resolves the adjustment + value that would center row `position`, or
-/// `None` when the list has no usable geometry (not yet allocated, or it
-/// fits the viewport entirely).
-fn centered_scroll_target(
-    column_view: &gtk4::ColumnView,
-    position: u32,
-) -> Option<(gtk4::Adjustment, f64)> {
-    let n_rows = column_view.model().map_or(0, |model| model.n_items());
-    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(column_view)?;
-    let value =
-        centered_scroll_value(position, n_rows, adjustment.upper(), adjustment.page_size())?;
-    Some((adjustment, value))
+/// Row count of the track table's current model — the divisor for
+/// [`scroll_center::centered_scroll_target`]'s uniform-height row math.
+fn track_table_row_count(column_view: &gtk4::ColumnView) -> u32 {
+    column_view.model().map_or(0, |model| model.n_items())
 }
 
 pub(in crate::ui) fn wire(
@@ -336,11 +315,13 @@ impl TrackList {
         // scroll issued inline used to corrupt the row layout, and nothing is
         // on screen anyway, so the two-phase motion is invisible).
         let column_view = self.shared.column_view.clone();
-        match centered_scroll_target(&column_view, position) {
+        let n_rows = track_table_row_count(&column_view);
+        match scroll_center::centered_scroll_target(&column_view, n_rows, position) {
             Some((adjustment, value)) => adjustment.set_value(value),
             None => {
                 gtk4::glib::idle_add_local_once(move || {
-                    match centered_scroll_target(&column_view, position) {
+                    let n_rows = track_table_row_count(&column_view);
+                    match scroll_center::centered_scroll_target(&column_view, n_rows, position) {
                         Some((adjustment, value)) => adjustment.set_value(value),
                         // Still no usable geometry (or the list fits the
                         // viewport): make the row visible; nothing to center.
@@ -423,29 +404,6 @@ mod tests {
         // … and clears the stale marker, so the armed track centers later too.
         assert_eq!(armed.get(), None);
         assert!(!take_scroll_suppression(&armed, 7));
-    }
-
-    #[test]
-    fn centered_scroll_value_centers_a_mid_list_row() {
-        // 100 rows x 10px = 1000px content, 200px viewport. Row 50's middle
-        // sits at 505px; centering puts the viewport at 505 - 100 = 405.
-        assert_eq!(centered_scroll_value(50, 100, 1000.0, 200.0), Some(405.0));
-    }
-
-    #[test]
-    fn centered_scroll_value_clamps_at_both_list_edges() {
-        assert_eq!(centered_scroll_value(0, 100, 1000.0, 200.0), Some(0.0));
-        assert_eq!(centered_scroll_value(99, 100, 1000.0, 200.0), Some(800.0));
-    }
-
-    #[test]
-    fn centered_scroll_value_skips_unallocated_or_short_lists() {
-        // Not yet allocated: no geometry to work with.
-        assert_eq!(centered_scroll_value(5, 100, 0.0, 0.0), None);
-        // Whole list fits in the viewport: nothing to scroll.
-        assert_eq!(centered_scroll_value(5, 10, 100.0, 200.0), None);
-        // Empty model.
-        assert_eq!(centered_scroll_value(0, 0, 1000.0, 200.0), None);
     }
 
     #[test]

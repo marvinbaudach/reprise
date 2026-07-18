@@ -48,6 +48,10 @@ const PETROL: Rgb = Rgb {
 pub(in crate::ui) type ArtistCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 /// A shared, settable callback taking an activated album and its artist.
 pub(in crate::ui) type AlbumCallback = Rc<RefCell<Option<Rc<dyn Fn(ArtistAlbum, String)>>>>;
+/// A shared, settable callback taking a double-clicked top-track's id and its
+/// artist — the pane fires it so playback can start that track in the artist's
+/// context.
+pub(in crate::ui) type TrackCallback = Rc<RefCell<Option<Rc<dyn Fn(i64, String)>>>>;
 
 /// The Play all / Shuffle / ⋮-menu / current-artist plumbing the hero's buttons
 /// and menu items capture.
@@ -73,12 +77,12 @@ struct Inner {
     on_go_to_folder: ArtistCallback,
     on_show_all_tracks: ArtistCallback,
     on_album_activate: AlbumCallback,
+    on_track_activate: TrackCallback,
     hero: Hero,
     albums_flow: gtk4::FlowBox,
     albums_hint: gtk4::Label,
     albums_show_all: gtk4::Button,
     albums_expanded: Rc<Cell<bool>>,
-    album_count: Rc<Cell<u32>>,
     top_tracks_box: gtk4::Box,
     top_show_all: gtk4::Button,
     top_rows: RefCell<Vec<TopTrackRow>>,
@@ -103,6 +107,7 @@ impl ArtistDetailPane {
         let on_go_to_folder: ArtistCallback = Rc::new(RefCell::new(None));
         let on_show_all_tracks: ArtistCallback = Rc::new(RefCell::new(None));
         let on_album_activate: AlbumCallback = Rc::new(RefCell::new(None));
+        let on_track_activate: TrackCallback = Rc::new(RefCell::new(None));
 
         let hero = artist_detail_hero::build_hero(&HeroCallbacks {
             on_play_all: on_play_all.clone(),
@@ -141,12 +146,12 @@ impl ArtistDetailPane {
             on_go_to_folder,
             on_show_all_tracks,
             on_album_activate,
+            on_track_activate,
             hero,
             albums_flow,
             albums_hint,
             albums_show_all,
             albums_expanded: Rc::new(Cell::new(false)),
-            album_count: Rc::new(Cell::new(0)),
             top_tracks_box,
             top_show_all,
             top_rows: RefCell::new(Vec::new()),
@@ -190,6 +195,10 @@ impl ArtistDetailPane {
         *self.inner.on_album_activate.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_track_activate(&self, callback: impl Fn(i64, String) + 'static) {
+        *self.inner.on_track_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
     /// Rebuilds the pane for `artist`. Bumps the generation to cancel any
     /// still-pending cover/accent callbacks from the previous artist.
     pub(in crate::ui) fn show_artist(&self, artist: &str, now_unix: i64) {
@@ -216,7 +225,7 @@ impl ArtistDetailPane {
         self.inner.hero.update(artist, &header);
         request_portrait(&self.inner, artist.to_string());
         rebuild_albums(&self.inner, artist, albums, token);
-        rebuild_top_tracks(&self.inner, &top_tracks, header.track_count, token);
+        rebuild_top_tracks(&self.inner, artist, &top_tracks, header.track_count, token);
     }
 
     /// Lights the matching top-track row's `EqBars`, clearing every other row.
@@ -275,7 +284,6 @@ fn request_portrait(inner: &Rc<Inner>, artist: String) {
 fn rebuild_albums(inner: &Rc<Inner>, artist: &str, albums: Vec<ArtistAlbum>, token: u64) {
     clear_children(inner.albums_flow.upcast_ref());
     inner.albums_expanded.set(false);
-    inner.album_count.set(albums.len() as u32);
 
     if albums.is_empty() {
         inner.albums_flow.set_visible(false);
@@ -306,11 +314,7 @@ fn rebuild_albums(inner: &Rc<Inner>, artist: &str, albums: Vec<ArtistAlbum>, tok
         );
         inner.albums_flow.append(&card);
     }
-    apply_albums_layout(
-        &inner.albums_flow,
-        inner.albums_expanded.get(),
-        inner.album_count.get(),
-    );
+    apply_albums_layout(&inner.albums_flow, inner.albums_expanded.get());
 
     // Immediate Petrol fallback; upgraded when the cover accent resolves.
     inner.hero.set_glow_accent(PETROL);
@@ -320,6 +324,7 @@ fn rebuild_albums(inner: &Rc<Inner>, artist: &str, albums: Vec<ArtistAlbum>, tok
 /// Repopulates the top-tracks list and its Show-all button.
 fn rebuild_top_tracks(
     inner: &Rc<Inner>,
+    artist: &str,
     tracks: &[reprise_core::library::artist_detail::ArtistTopTrack],
     total_tracks: i64,
     token: u64,
@@ -333,6 +338,8 @@ fn rebuild_top_tracks(
             token,
             index + 1,
             track,
+            inner.on_track_activate.clone(),
+            artist.to_string(),
         );
         inner.top_tracks_box.append(&row);
         handles.push(handle);
@@ -354,19 +361,29 @@ fn rebuild_top_tracks(
     }
 }
 
-/// Applies the collapsed (single-row) vs. expanded (grid) FlowBox layout.
-fn apply_albums_layout(flow: &gtk4::FlowBox, expanded: bool, count: u32) {
-    let count = count.max(1);
+/// Applies the collapsed (one-row preview) vs. expanded (full grid) FlowBox
+/// layout. Both states reflow between 1 and `ALBUMS_PER_ROW` per line, so the
+/// FlowBox's minimum width stays a single card — the pane (whose ScrolledWindow
+/// uses `hscrollbar_policy(Never)`) therefore never forces the whole content,
+/// and the full-width player bar below it, wider than the window when the info
+/// panel is open. Collapsing hides the overflow cards via per-child visibility
+/// rather than a forced single wide line: a hidden FlowBox child takes no space
+/// and does not count toward the minimum width.
+fn apply_albums_layout(flow: &gtk4::FlowBox, expanded: bool) {
+    flow.set_min_children_per_line(1);
+    flow.set_max_children_per_line(ALBUMS_PER_ROW);
     if expanded {
-        flow.set_min_children_per_line(1);
-        flow.set_max_children_per_line(ALBUMS_PER_ROW);
         flow.remove_css_class("collapsed");
     } else {
-        // Force a single line; the pane's `hscrollbar_policy(Never)` clips the
-        // overflow, so only the first row is visible until "Show all".
-        flow.set_min_children_per_line(count);
-        flow.set_max_children_per_line(count);
         flow.add_css_class("collapsed");
+    }
+    let mut index = 0u32;
+    let mut child = flow.first_child();
+    while let Some(widget) = child {
+        let next = widget.next_sibling();
+        widget.set_visible(expanded || index < ALBUMS_PER_ROW);
+        index += 1;
+        child = next;
     }
 }
 
@@ -376,11 +393,10 @@ fn apply_albums_layout(flow: &gtk4::FlowBox, expanded: bool, count: u32) {
 fn wire_albums_show_all(inner: &Rc<Inner>) {
     let flow = inner.albums_flow.clone();
     let expanded = inner.albums_expanded.clone();
-    let album_count = inner.album_count.clone();
     inner.albums_show_all.connect_clicked(move |button| {
         let now = !expanded.get();
         expanded.set(now);
-        apply_albums_layout(&flow, now, album_count.get());
+        apply_albums_layout(&flow, now);
         let label = if now {
             strings::text(strings::ARTIST_DETAIL_SHOW_LESS)
         } else {

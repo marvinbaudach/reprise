@@ -352,6 +352,27 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         // Weak `player` capture — see the `set_on_play_all` comment above.
+        // Double-clicking a top-track starts it within the artist's full track
+        // list (same origin as Play all), just seeked to the clicked track.
+        let player = player.as_ref().map(Rc::downgrade);
+        let conn = conn.clone();
+        artist_view.set_on_track_activate(move |track_id, artist| {
+            let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
+                return;
+            };
+            let origin = play_origin::from_artist(&artist);
+            match artist_track_ids(&conn, artist) {
+                Ok(ids) if !ids.is_empty() => {
+                    let start_index = ids.iter().position(|id| *id == track_id).unwrap_or(0);
+                    player.play_from_view(ids, start_index, origin);
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "artist top-track play query failed"),
+            }
+        });
+    }
+    {
+        // Weak `player` capture — see the `set_on_play_all` comment above.
         let player = player.as_ref().map(Rc::downgrade);
         let conn = conn.clone();
         artist_view.set_on_add_to_queue(move |artist| {

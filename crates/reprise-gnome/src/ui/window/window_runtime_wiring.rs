@@ -45,7 +45,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) search_entry: &'a gtk4::SearchEntry,
     pub(in crate::ui) sidebar_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_page: &'a adw::NavigationPage,
-    pub(in crate::ui) split_view: &'a adw::NavigationSplitView,
+    pub(in crate::ui) split_view: &'a adw::OverlaySplitView,
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
     pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,

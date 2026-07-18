@@ -177,6 +177,28 @@ fn header_titles(view: &gtk4::ColumnView) -> Vec<HeaderTitle> {
     result
 }
 
+/// The Cover column is pinned as the leading column (see
+/// `column_layout::normalize`): it is the only column that never sets an `id`
+/// (every data column carries its sort-field id), which makes `id().is_none()`
+/// a position-independent way to recognise it. It must not be draggable, and
+/// nothing may be dropped before it.
+fn is_pinned_leading(column: &gtk4::ColumnViewColumn) -> bool {
+    column.id().is_none()
+}
+
+/// Nothing may land before the pinned leading Cover column. A slot naming
+/// "before the first title" is bumped to "before the second" when that first
+/// title is the pinned column, so a drop can only ever reach index 1 at the
+/// earliest — Cover keeps index 0. (`Before(0)` only ever arises when Cover is
+/// visible and leftmost; a hidden Cover is skipped by
+/// [`insertion_slot_for_pointer`] and never named.)
+fn clamp_slot_after_pinned(slot: InsertionSlot, first_is_pinned: bool) -> InsertionSlot {
+    match slot {
+        InsertionSlot::Before(0) if first_is_pinned => InsertionSlot::Before(1),
+        other => other,
+    }
+}
+
 /// The visible title whose horizontal span contains `x`, if any.
 fn title_at(titles: &[HeaderTitle], x: f64) -> Option<usize> {
     titles
@@ -400,7 +422,8 @@ fn update_marker(
         return;
     };
     let spans: Vec<TitleSpan> = titles.iter().map(TitleSpan::from).collect();
-    let slot = insertion_slot_for_pointer(&spans, pointer_x);
+    let first_is_pinned = titles.first().is_some_and(|t| is_pinned_leading(&t.column));
+    let slot = clamp_slot_after_pinned(insertion_slot_for_pointer(&spans, pointer_x), first_is_pinned);
     let resolved = resolve_drop(dragged_index, slot, titles.len());
     let target = marker_target(&titles, slot, resolved);
     apply_marker(drag, target);
@@ -423,7 +446,8 @@ fn perform_drop(view: &gtk4::ColumnView, dragged_column: &gtk4::ColumnViewColumn
         return;
     };
     let spans: Vec<TitleSpan> = titles.iter().map(TitleSpan::from).collect();
-    let slot = insertion_slot_for_pointer(&spans, pointer_x);
+    let first_is_pinned = titles.first().is_some_and(|t| is_pinned_leading(&t.column));
+    let slot = clamp_slot_after_pinned(insertion_slot_for_pointer(&spans, pointer_x), first_is_pinned);
     let Some(target_index) = resolve_drop(dragged_index, slot, titles.len()) else {
         return;
     };
@@ -463,7 +487,16 @@ fn handle_drag_begin(
         return;
     };
     let hit = &titles[hit_index];
-    if is_in_resize_zone(x, hit.left, hit.right) {
+    // The Cover column is pinned leading — never start a reorder drag on it.
+    // (Leaving the press unclaimed lets GTK's own title gesture have it, which
+    // does nothing: Cover has an empty title and no sorter.)
+    if is_pinned_leading(&hit.column) {
+        return;
+    }
+    // Only a resizable column has GTK's own edge resize gesture to yield to;
+    // for a non-resizable one (e.g. the 40px Cover column) the edge bands are
+    // pure lost grab area, so its whole width stays draggable.
+    if hit.column.is_resizable() && is_in_resize_zone(x, hit.left, hit.right) {
         return;
     }
 

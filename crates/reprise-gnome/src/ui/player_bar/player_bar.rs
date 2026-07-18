@@ -151,6 +151,9 @@ impl PlayerBar {
             }
         });
         title_label.add_controller(title_click);
+        // Title is clickable (→ jump to the playing track), so signal it with a
+        // link cursor, matching the artist label below.
+        title_label.set_cursor_from_name(Some("pointer"));
 
         // Cover: click → Now-Playing-Panel toggle (spec 1.5).
         let on_cover_click: TitleClickCallback = Rc::new(RefCell::new(None));
