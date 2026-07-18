@@ -152,7 +152,6 @@ impl ArtistMaster {
             on_select,
         });
 
-        subscribe_portrait_enabled(portraits, &inner.registry);
         wire_dropdown(&dropdown, &inner);
 
         let master = Self { root, inner };
@@ -221,21 +220,6 @@ impl ArtistMaster {
     pub(in crate::ui) fn select_index_for_test(&self, index: u32) {
         self.inner.selection.set_selected(index);
     }
-}
-
-fn subscribe_portrait_enabled(portraits: &Rc<ArtistPortraitRuntime>, registry: &Registry) {
-    let alive = Rc::downgrade(registry);
-    let target = alive.clone();
-    let runtime = Rc::downgrade(portraits);
-    portraits.subscribe_enabled(
-        move || alive.upgrade().is_some(),
-        move |enabled| {
-            let (Some(registry), Some(runtime)) = (target.upgrade(), runtime.upgrade()) else {
-                return;
-            };
-            artist_master_row::apply_portrait_enabled(&registry, &runtime, enabled);
-        },
-    );
 }
 
 /// The alphabet section key for a name: its uppercased first letter, or `#`
@@ -496,8 +480,7 @@ mod tests {
         .unwrap();
         let conn = std::rc::Rc::new(std::cell::RefCell::new(conn));
         let selected = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let portraits =
-            crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
         let master = ArtistMaster::new(conn, &portraits);
         master.set_on_select({
             let selected = selected.clone();

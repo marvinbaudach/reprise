@@ -168,8 +168,7 @@ pub fn build(
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
-    let artist_portrait =
-        super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+    let artist_portrait = super::artist_portrait_worker::ArtistPortraitRuntime::setup();
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
@@ -492,7 +491,6 @@ pub fn build(
         &listenbrainz,
         &lastfm,
         &artist_news,
-        &artist_portrait,
         &decorations,
         &device_sync,
     );

@@ -1,8 +1,8 @@
 //! Artist portrait state for the information panel.
 //!
-//! This stays independent from Artist News so portraits can remain enabled
-//! when the news module is disabled. Every context change advances a local
-//! generation, preventing a response for an older selection from painting.
+//! This stays independent from Artist News. Every context change advances a
+//! local generation, preventing a response for an older selection from
+//! painting.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -25,28 +25,12 @@ impl InfoPanelPortrait {
         picture: gtk4::Picture,
         runtime: &Rc<ArtistPortraitRuntime>,
     ) -> Rc<Self> {
-        let portrait = Rc::new(Self {
+        Rc::new(Self {
             picture,
             runtime: runtime.clone(),
             generation: Cell::new(0),
             artist: RefCell::new(String::new()),
-        });
-        let alive = Rc::downgrade(&portrait);
-        let target = alive.clone();
-        runtime.subscribe_enabled(
-            move || alive.upgrade().is_some(),
-            move |enabled| {
-                let Some(portrait) = target.upgrade() else {
-                    return;
-                };
-                if enabled {
-                    portrait.request_current();
-                } else {
-                    portrait.clear_picture();
-                }
-            },
-        );
-        portrait
+        })
     }
 
     pub(in crate::ui) fn set_artist(self: &Rc<Self>, artist: &str) {
@@ -64,7 +48,7 @@ impl InfoPanelPortrait {
 
     fn request_current(self: &Rc<Self>) {
         let artist = self.artist.borrow().clone();
-        if !self.runtime.enabled.get() || artist.is_empty() {
+        if artist.is_empty() {
             return;
         }
         let generation = self.generation.get();
@@ -85,7 +69,6 @@ impl InfoPanelPortrait {
             };
             if response.generation != portrait.generation.get()
                 || response.artist.as_str() != portrait.artist.borrow().as_str()
-                || !portrait.runtime.enabled.get()
             {
                 return;
             }

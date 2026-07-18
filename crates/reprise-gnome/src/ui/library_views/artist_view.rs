@@ -210,8 +210,7 @@ mod tests {
         let loader =
             crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
 
-        let portraits =
-            crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
         let view = ArtistView::new(conn, loader, portraits);
         assert_eq!(view.master_count(), 2);
 
@@ -237,8 +236,7 @@ mod tests {
         let loader =
             crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
 
-        let portraits =
-            crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
         let view = Rc::new(ArtistView::new(conn.clone(), loader, portraits));
         assert_eq!(view.master_count(), 0);
 

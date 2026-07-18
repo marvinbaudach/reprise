@@ -10,7 +10,6 @@ use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, Repl
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::info_panel::InfoPanel;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
@@ -114,7 +113,6 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) syncing_lastfm: Cell<bool>,
     pub(in crate::ui) lastfm_activation_pending: Cell<bool>,
     pub(in crate::ui) artist_news: Rc<ArtistNewsRuntime>,
-    pub(in crate::ui) artist_portrait: Rc<ArtistPortraitRuntime>,
     pub(in crate::ui) decorations: Rc<WindowDecorations>,
     pub(in crate::ui) device_sync: Rc<DeviceSyncRuntime>,
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
@@ -140,7 +138,6 @@ impl PreferencesContext {
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
-        artist_portrait: &Rc<ArtistPortraitRuntime>,
         decorations: &Rc<WindowDecorations>,
         device_sync: &Rc<DeviceSyncRuntime>,
     ) -> Rc<Self> {
@@ -169,7 +166,6 @@ impl PreferencesContext {
             syncing_lastfm: Cell::new(false),
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
-            artist_portrait: artist_portrait.clone(),
             decorations: decorations.clone(),
             device_sync: device_sync.clone(),
             preferences_dialog: RefCell::new(glib::WeakRef::new()),
@@ -689,10 +685,6 @@ impl PreferencesContext {
                     context
                         .artist_news
                         .set_enabled(&context.conn.borrow(), active)
-                } else if descriptor.id == "artist_portrait" {
-                    context
-                        .artist_portrait
-                        .set_enabled(&context.conn.borrow(), active)
                 } else {
                     reprise_core::modules::set_enabled(&context.conn.borrow(), descriptor, active)
                 };
@@ -712,22 +704,6 @@ impl PreferencesContext {
                     move || alive.upgrade().is_some(),
                     move |enabled| {
                         let Some(row) = target.upgrade() else { return };
-                        syncing.set(true);
-                        row.set_active(enabled);
-                        syncing.set(false);
-                    },
-                );
-            } else if descriptor.id == "artist_portrait" {
-                let alive = glib::WeakRef::new();
-                alive.set(Some(&row));
-                let target = alive.clone();
-                let syncing = syncing.clone();
-                self.artist_portrait.subscribe_enabled(
-                    move || alive.upgrade().is_some(),
-                    move |enabled| {
-                        let Some(row) = target.upgrade() else {
-                            return;
-                        };
                         syncing.set(true);
                         row.set_active(enabled);
                         syncing.set(false);
@@ -772,7 +748,7 @@ mod tests {
         assert!(plugin_applies_live("listenbrainz"));
         assert!(plugin_applies_live("lastfm"));
         assert!(plugin_applies_live("artist_news"));
-        assert!(plugin_applies_live("artist_portrait"));
+        assert!(!plugin_applies_live("artist_portrait"));
         assert!(plugin_applies_live("lastfm"));
         assert!(!plugin_applies_live("equalizer"));
         assert!(!plugin_applies_live("replaygain"));
