@@ -23,7 +23,19 @@ const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
 type OnVoid = Rc<dyn Fn()>;
-const FACETS: [BrowseFacet; 3] = [BrowseFacet::Genre, BrowseFacet::Artist, BrowseFacet::Album];
+const FACETS: [BrowseFacet; 5] = [
+    BrowseFacet::Genre,
+    BrowseFacet::Artist,
+    BrowseFacet::Album,
+    BrowseFacet::Year,
+    BrowseFacet::Rating,
+];
+
+/// Minimum content height (px) of the filter bar. Both the empty state (the
+/// tall "+ Add filter" pill) and the active state (compact chips) are pinned
+/// to this so toggling a filter never changes the bar's height and shifts the
+/// track table (QA #8). Sized to the taller of the two — the pill.
+const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FilterChip {
@@ -50,20 +62,32 @@ pub(super) fn apply_selection(
     value: Option<String>,
 ) -> BrowseFilter {
     match facet {
+        // Genre → Artist → Album cascade: setting a shallower facet clears the
+        // deeper ones, but the standalone Year/Rating constraints survive.
         BrowseFacet::Genre => BrowseFilter {
             genre: value,
             artist: None,
             album: None,
+            ..current.clone()
         },
         BrowseFacet::Artist => BrowseFilter {
-            genre: current.genre.clone(),
             artist: value,
             album: None,
+            ..current.clone()
         },
         BrowseFacet::Album => BrowseFilter {
-            genre: current.genre.clone(),
-            artist: current.artist.clone(),
             album: value,
+            ..current.clone()
+        },
+        // Year and Rating are additive: selecting one leaves every other
+        // facet untouched.
+        BrowseFacet::Year => BrowseFilter {
+            year: value,
+            ..current.clone()
+        },
+        BrowseFacet::Rating => BrowseFilter {
+            rating: value,
+            ..current.clone()
         },
     }
 }
@@ -73,6 +97,8 @@ fn filter_value(filter: &BrowseFilter, facet: BrowseFacet) -> Option<&str> {
         BrowseFacet::Genre => filter.genre.as_deref(),
         BrowseFacet::Artist => filter.artist.as_deref(),
         BrowseFacet::Album => filter.album.as_deref(),
+        BrowseFacet::Year => filter.year.as_deref(),
+        BrowseFacet::Rating => filter.rating.as_deref(),
     }
 }
 
@@ -81,6 +107,8 @@ fn facet_label(facet: BrowseFacet) -> String {
         BrowseFacet::Genre => filter_strings::BROWSE_GENRE,
         BrowseFacet::Artist => filter_strings::BROWSE_ARTIST,
         BrowseFacet::Album => filter_strings::BROWSE_ALBUM,
+        BrowseFacet::Year => filter_strings::BROWSE_YEAR,
+        BrowseFacet::Rating => filter_strings::BROWSE_RATING,
     };
     filter_strings::text(message)
 }
@@ -93,6 +121,8 @@ fn displayed_value(facet: BrowseFacet, value: &str) -> String {
         BrowseFacet::Genre => filter_strings::UNKNOWN_GENRE,
         BrowseFacet::Artist => filter_strings::UNKNOWN_ARTIST,
         BrowseFacet::Album => filter_strings::UNKNOWN_ALBUM,
+        BrowseFacet::Year => filter_strings::UNKNOWN_YEAR,
+        BrowseFacet::Rating => filter_strings::UNKNOWN_RATING,
     };
     filter_strings::text(message)
 }
@@ -179,6 +209,10 @@ impl BrowseBar {
         root.set_margin_start(12);
         root.set_margin_end(12);
         root.add_css_class("toolbar");
+        // Pin the bar to a constant height so switching between the empty
+        // "+ Add filter" pill and the active chip row never shifts the track
+        // table below it (QA #8). Sized to the taller state (the pill).
+        root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
 
         let section_label = gtk4::Label::new(Some(&filter_strings::text(filter_strings::FILTERS)));
         section_label.add_css_class("dim-label");
@@ -524,6 +558,8 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
                 "genre" => BrowseFacet::Genre,
                 "artist" => BrowseFacet::Artist,
                 "album" => BrowseFacet::Album,
+                "year" => BrowseFacet::Year,
+                "rating" => BrowseFacet::Rating,
                 _ => return None,
             };
             Some((facet, value.to_string()))
@@ -590,8 +626,7 @@ mod tests {
     fn fil_1a_search_appears_as_chip_before_facet_chips() {
         let browse = BrowseFilter {
             genre: Some("Rock".into()),
-            artist: None,
-            album: None,
+            ..BrowseFilter::default()
         };
         let labels = chip_labels("falling", &browse, true);
         assert_eq!(
@@ -611,8 +646,7 @@ mod tests {
     fn fil_1a_facet_chips_are_library_only() {
         let browse = BrowseFilter {
             genre: Some("Rock".into()),
-            artist: None,
-            album: None,
+            ..BrowseFilter::default()
         };
         assert_eq!(
             chip_labels("falling", &browse, false),
@@ -626,6 +660,7 @@ mod tests {
             genre: Some("Rock".into()),
             artist: Some("A".into()),
             album: Some("Stage".into()),
+            ..BrowseFilter::default()
         }
     }
 
@@ -635,8 +670,7 @@ mod tests {
             apply_selection(&full_filter(), BrowseFacet::Genre, Some("Jazz".into())),
             BrowseFilter {
                 genre: Some("Jazz".into()),
-                artist: None,
-                album: None,
+                ..BrowseFilter::default()
             }
         );
     }
@@ -648,7 +682,7 @@ mod tests {
             BrowseFilter {
                 genre: Some("Rock".into()),
                 artist: Some("B".into()),
-                album: None,
+                ..BrowseFilter::default()
             }
         );
     }
@@ -659,6 +693,7 @@ mod tests {
             genre: Some(String::new()),
             artist: Some(String::new()),
             album: Some(String::new()),
+            ..BrowseFilter::default()
         };
         assert_eq!(restored_filter(&filter), filter);
     }
@@ -674,6 +709,7 @@ mod tests {
             genre: Some(String::new()),
             artist: Some("Brand of Sacrifice".into()),
             album: Some(String::new()),
+            ..BrowseFilter::default()
         };
 
         let chips = filter_chips(&filter);
@@ -699,11 +735,16 @@ mod tests {
     fn available_facets_omit_filters_that_are_already_active() {
         let filter = BrowseFilter {
             genre: Some("Metal".into()),
-            artist: None,
             album: Some("Lifeblood".into()),
+            ..BrowseFilter::default()
         };
 
-        assert_eq!(available_facets(&filter), vec![BrowseFacet::Artist]);
+        // Artist is the only open cascade facet; Year and Rating are always
+        // available until set because they are standalone constraints.
+        assert_eq!(
+            available_facets(&filter),
+            vec![BrowseFacet::Artist, BrowseFacet::Year, BrowseFacet::Rating]
+        );
     }
 
     #[test]
@@ -716,8 +757,7 @@ mod tests {
             remove_filter(&full_filter(), BrowseFacet::Artist),
             BrowseFilter {
                 genre: Some("Rock".into()),
-                artist: None,
-                album: None,
+                ..BrowseFilter::default()
             }
         );
         assert_eq!(
@@ -725,7 +765,64 @@ mod tests {
             BrowseFilter {
                 genre: Some("Rock".into()),
                 artist: Some("A".into()),
-                album: None,
+                ..BrowseFilter::default()
+            }
+        );
+    }
+
+    #[test]
+    fn year_and_rating_are_standalone_and_leave_the_cascade_untouched() {
+        let base = full_filter();
+        let with_year = apply_selection(&base, BrowseFacet::Year, Some("2001".into()));
+        assert_eq!(
+            with_year,
+            BrowseFilter {
+                year: Some("2001".into()),
+                ..full_filter()
+            }
+        );
+        let with_rating = apply_selection(&with_year, BrowseFacet::Rating, Some("5".into()));
+        assert_eq!(
+            with_rating,
+            BrowseFilter {
+                year: Some("2001".into()),
+                rating: Some("5".into()),
+                ..full_filter()
+            }
+        );
+    }
+
+    #[test]
+    fn cascade_selection_preserves_active_year_and_rating() {
+        let filter = BrowseFilter {
+            year: Some("2001".into()),
+            rating: Some("5".into()),
+            ..full_filter()
+        };
+        // Re-selecting Genre resets Artist/Album but keeps Year/Rating.
+        assert_eq!(
+            apply_selection(&filter, BrowseFacet::Genre, Some("Jazz".into())),
+            BrowseFilter {
+                genre: Some("Jazz".into()),
+                year: Some("2001".into()),
+                rating: Some("5".into()),
+                ..BrowseFilter::default()
+            }
+        );
+    }
+
+    #[test]
+    fn removing_year_or_rating_leaves_every_other_facet_intact() {
+        let filter = BrowseFilter {
+            year: Some("2001".into()),
+            rating: Some("5".into()),
+            ..full_filter()
+        };
+        assert_eq!(
+            remove_filter(&filter, BrowseFacet::Year),
+            BrowseFilter {
+                rating: Some("5".into()),
+                ..full_filter()
             }
         );
     }
@@ -747,7 +844,10 @@ mod tests {
         reprise_core::db::migrate(&conn).unwrap();
         let bar = BrowseBar::new(Rc::new(RefCell::new(conn)));
 
+        // QA #8: the bar keeps a constant height across empty/active states.
+        assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
         bar.restore_filter(&full_filter());
+        assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
         assert_eq!(bar.chips.observe_children().n_items(), 4);
         assert_eq!(bar.root.observe_children().n_items(), 4);
         assert_eq!(bar.root.last_child(), Some(bar.clear_all.clone().upcast()));

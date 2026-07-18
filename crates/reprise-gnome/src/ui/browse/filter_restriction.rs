@@ -66,8 +66,7 @@ mod tests {
         assert!(is_restricted("falling", &BrowseFilter::default()));
         let browse = BrowseFilter {
             genre: Some("Metal".into()),
-            artist: None,
-            album: None,
+            ..BrowseFilter::default()
         };
         assert!(is_restricted("", &browse));
     }
