@@ -7,7 +7,8 @@ usage: scripts/performance-query-compare.sh BASELINE_DIR CANDIDATE_DIR
 
 Compares two generated-metadata query benchmark directories and writes stable
 JSON. Negative timing deltas are improvements; positive database-byte deltas
-are storage costs. Both manifests must contain identical track counts.
+are storage costs. Query and committed-write deltas use identical track and
+write-batch counts in both reports.
 EOF
 }
 
@@ -58,6 +59,11 @@ for track_count in $(jq -r '.track_counts[]' "$baseline_dir/manifest.json"); do
       and (.filtered_count.median_us | type == "number")
       and (.library_stats.median_us | type == "number")
       and (.playback_ids.median_us | type == "number")
+      and (.write_batch_rows | type == "number")
+      and (.insert_batch.median_us | type == "number")
+      and (.metadata_update_batch.median_us | type == "number")
+      and (.hide_batch.median_us | type == "number")
+      and (.restore_batch.median_us | type == "number")
       and (.title_window_query_plan.details | type == "array")
       and (.title_window_query_plan.uses_temp_sort | type == "boolean")
       and (.album_window_query_plan.details | type == "array")
@@ -67,6 +73,12 @@ for track_count in $(jq -r '.track_counts[]' "$baseline_dir/manifest.json"); do
       exit 2
     fi
   done
+  baseline_write_batch=$(jq -r '.write_batch_rows' "$baseline_query")
+  candidate_write_batch=$(jq -r '.write_batch_rows' "$candidate_query")
+  if [[ $baseline_write_batch != "$candidate_write_batch" ]]; then
+    echo "query benchmark reports use different write batch sizes for $track_count tracks" >&2
+    exit 2
+  fi
 
   jq -n \
     --argjson generated_tracks "$track_count" \
@@ -78,6 +90,7 @@ for track_count in $(jq -r '.track_counts[]' "$baseline_dir/manifest.json"); do
          delta_percent: (if $before == 0 then null
            else (((($after - $before) * 10000 / $before) | round) / 100) end)};
       {generated_tracks: $generated_tracks,
+       write_batch_rows: $baseline[0].write_batch_rows,
        database_bytes: delta($baseline[0].database_bytes;
          $candidate[0].database_bytes),
        database_open: delta($baseline[0].startup.median_us;
@@ -96,6 +109,14 @@ for track_count in $(jq -r '.track_counts[]' "$baseline_dir/manifest.json"); do
          $candidate[0].library_stats.median_us),
        playback_ids: delta($baseline[0].playback_ids.median_us;
          $candidate[0].playback_ids.median_us),
+       insert_batch: delta($baseline[0].insert_batch.median_us;
+         $candidate[0].insert_batch.median_us),
+       metadata_update_batch: delta($baseline[0].metadata_update_batch.median_us;
+         $candidate[0].metadata_update_batch.median_us),
+       hide_batch: delta($baseline[0].hide_batch.median_us;
+         $candidate[0].hide_batch.median_us),
+       restore_batch: delta($baseline[0].restore_batch.median_us;
+         $candidate[0].restore_batch.median_us),
        query_plan: {
          before: $baseline[0].title_window_query_plan,
          after: $candidate[0].title_window_query_plan
@@ -110,6 +131,6 @@ done
 jq -s \
   --arg baseline_commit "$(jq -r '.commit' "$baseline_dir/manifest.json")" \
   --arg candidate_commit "$(jq -r '.commit' "$candidate_dir/manifest.json")" \
-  '{schema_version: 3, baseline_commit: $baseline_commit,
+  '{schema_version: 4, baseline_commit: $baseline_commit,
     candidate_commit: $candidate_commit, tracks: .}' \
   "$comparison_rows"

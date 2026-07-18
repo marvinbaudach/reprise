@@ -60,9 +60,11 @@ scripts/performance-query-compare.sh /tmp/before /tmp/after \
 ```
 
 The report includes database size and open-time costs, first/middle/final
-window and playback-id timing deltas, and the before/after SQLite query plans.
-This makes an index tradeoff visible even when private display sockets are not
-available for the installed-runtime benchmark.
+window and playback-id timing deltas, committed insert/metadata-update/hide/
+restore batch deltas, and the before/after SQLite query plans. It rejects
+different write-batch sizes rather than comparing unlike workloads. This makes
+an index tradeoff visible even when private display sockets are not available
+for the installed-runtime benchmark.
 
 For the installed-runtime extension, use a second new output directory:
 
