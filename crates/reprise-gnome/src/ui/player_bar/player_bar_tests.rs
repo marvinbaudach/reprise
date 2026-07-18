@@ -45,7 +45,13 @@ fn mot_5_play_pause_pulses_on_state_change() {
     // A pulse which is not replacing an active pulse starts immediately.
     assert!(bar.play_pause_button.has_css_class("pulsing"));
 
-    run_main_loop_for(motion::half(motion::MICRO));
+    // Interrupt the pulse immediately instead of waiting out half its duration.
+    // Pumping the main loop is not wall-clock faithful: a 75 ms request took
+    // ~400 ms under X11/Xvfb, so the pulse had already expired and the next
+    // state change became a *fresh* pulse — the retrigger path was never
+    // exercised and the assertion below failed for the wrong reason. The pulse
+    // is running as of the assertion above, so interrupting it here hits the
+    // retrigger path deterministically on every backend.
     let retrigger_generation = bar.play_pulse_generation.get();
     bar.set_state(PlaybackState::Paused);
     assert_eq!(
@@ -54,9 +60,10 @@ fn mot_5_play_pause_pulses_on_state_change() {
     );
     assert!(!bar.play_pause_button.has_css_class("pulsing"));
 
-    // An idle callback still belongs to the current frame. The class must
-    // remain absent until a later frame, otherwise GTK collapses remove+add
-    // into one style recomputation and the running animation does not restart.
+    // An idle callback still belongs to the current frame. The retrigger delay
+    // must keep the class absent beyond that frame, otherwise GTK can collapse
+    // remove+add into one style recomputation and leave @keyframes running from
+    // their old timeline instead of restarting them.
     run_until_idle();
     assert!(!bar.play_pause_button.has_css_class("pulsing"));
 
@@ -70,6 +77,8 @@ fn mot_5_play_pause_pulses_on_state_change() {
     run_until_idle();
     assert!(!bar.play_pause_button.has_css_class("pulsing"));
 
+    // The backend-independent delay has elapsed, so only the latest generation
+    // may re-add the class and start a fresh keyframe timeline.
     run_main_loop_for(30);
     assert!(bar.play_pause_button.has_css_class("pulsing"));
 
