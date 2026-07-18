@@ -47,7 +47,6 @@ pub const OPEN_CONTEXT_MENU: &str = N_!("Open Context Menu");
 pub const OPEN_HELP: &str = N_!("Open Help");
 
 // Primary menu items.
-pub const MY_STATS: &str = N_!("My Stats");
 pub const RESCAN_LIBRARY: &str = N_!("Rescan Library");
 pub const CANCEL_SCAN: &str = N_!("Cancel Scan");
 pub const SYNC_DEVICE: &str = N_!("Sync Device…");
