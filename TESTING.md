@@ -6,15 +6,18 @@ manual GNOME checklist remain in [RELEASING.md](RELEASING.md).
 
 ## Current automated baseline
 
-At refactoring commit `ec95d7e`, the isolated workspace suite contains 1,013
-passing tests: 550 in `reprise-core`, 423 in `reprise-gnome`, and 40 in
-`reprise-platform-linux`. A further 75 GTK tests are intentionally ignored by
-the normal suite because they require a display and process-level GTK
-isolation.
+At performance close-out commit `a41c53f`, the isolated workspace suite
+contains 1,482 passing tests: 758 in `reprise-core`, 669 in `reprise-gnome`,
+and 55 in `reprise-platform-linux`. Another 139 tests are deliberately
+separated from the default run: one ignored core probe and 138 GNOME tests
+whose display or host contracts require controlled execution.
 
 The repository also has focused pointer-driven smoke tests, a synchronized-
 lyrics smoke, release/package validation, an architecture/frontend linter, and
-a merge-readiness linter. Headless success proves behavior and widget state;
+a merge-readiness linter. The QA policy also executes
+`scripts/tests/readme-showcase.sh`, which keeps the English and German showroom
+documents aligned on their date, evidence, architecture, and roadmap status.
+Headless success proves behavior and widget state;
 it does not prove native Wayland rendering, pointer feel, audible output,
 desktop media integration, portals, or real hardware.
 

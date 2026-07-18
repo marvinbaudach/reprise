@@ -36,6 +36,7 @@ require_executable scripts/tests/performance-baseline.sh
 require_executable scripts/tests/performance-compare.sh
 require_executable scripts/tests/performance-query-compare.sh
 require_executable scripts/tests/performance-runtime-baseline.sh
+require_executable scripts/tests/readme-showcase.sh
 require_executable .githooks/pre-push
 
 require_pattern 'merge-base --is-ancestor' scripts/check-merge-readiness.sh
@@ -77,6 +78,7 @@ scripts/tests/performance-baseline.sh
 scripts/tests/performance-compare.sh
 scripts/tests/performance-query-compare.sh
 scripts/tests/performance-runtime-baseline.sh
+scripts/tests/readme-showcase.sh
 scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"
