@@ -43,10 +43,16 @@ pub(in crate::ui) fn install(
     player.add_on_queue_changed(move || refresh_on_queue_change());
     panel.set_on_up_next_refresh(move || refresh());
 
-    let player = Rc::downgrade(player);
+    let player_for_jump = Rc::downgrade(player);
     panel.set_on_up_next_jump(move |row| {
-        if let Some(player) = player.upgrade() {
+        if let Some(player) = player_for_jump.upgrade() {
             player.jump_to_queue_row(row);
+        }
+    });
+    let player_for_remove = Rc::downgrade(player);
+    panel.set_on_up_next_remove(move |row| {
+        if let Some(player) = player_for_remove.upgrade() {
+            player.remove_queue_rows(&[row]);
         }
     });
 }

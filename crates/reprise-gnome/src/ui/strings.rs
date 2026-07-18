@@ -700,4 +700,9 @@ mod tests {
             "Scan complete · 38 new, 3 failed"
         );
     }
+
+    #[test]
+    fn que_4_footer_uses_the_shared_thousands_format() {
+        assert_eq!(up_next_footer(1_652, "4 days"), "1,652 tracks · 4 days");
+    }
 }
