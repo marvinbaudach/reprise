@@ -107,6 +107,7 @@ pub fn build(
         .width_request(MIN_WIDTH)
         .height_request(MIN_HEIGHT)
         .build();
+    super::focus_evidence::install(&window);
     super::session_restore::apply_initial_geometry(&window, &session_state);
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
     // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and

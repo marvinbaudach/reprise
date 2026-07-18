@@ -8,12 +8,17 @@
 //! with the active theme.
 
 use std::cell::RefCell;
-use std::f64::consts::{FRAC_PI_2, PI};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
+#[cfg(test)]
+use super::waveform_primitives::BAR_GAP;
+use super::waveform_primitives::{
+    bar_played, compute_bar_count, fraction_at, interpolation_step, keyboard_seek_target,
+    rounded_bar, update_accessible_value, BAR_RADIUS, BAR_WIDTH,
+};
 #[cfg(test)]
 use super::waveform_shape::{aggregate_rms, smooth_neighbors};
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
@@ -27,13 +32,6 @@ type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>;
 
 pub(in crate::ui) const WAVEFORM_CSS_CLASS: &str = "waveform-seek";
 const CONTENT_HEIGHT: i32 = 28;
-/// Fixed bar width; the count varies with the widget width instead.
-const BAR_WIDTH: f64 = 3.0;
-/// Rounded caps: radius = half the bar width.
-const BAR_RADIUS: f64 = BAR_WIDTH / 2.0;
-const BAR_GAP: f64 = 2.0;
-/// Hard cap on displayed bars — beyond this the waveform reads as noise.
-const MAX_BAR_COUNT: usize = 160;
 /// Audible bars span 15%..100% of the max bar height.
 const MIN_BAR_HEIGHT: f64 = MAX_BAR_HEIGHT * 0.15;
 const MAX_BAR_HEIGHT: f64 = 26.0;
@@ -60,47 +58,6 @@ const MINI_CONTENT_HEIGHT: i32 = 16;
 const MINI_MAX_BAR_HEIGHT: f64 = 13.0;
 const MINI_MIN_BAR_HEIGHT: f64 = 2.0;
 const MINI_FALLBACK_BAR_HEIGHT: f64 = 3.0;
-
-/// Advances the smooth-fill interpolation by one frame: `fraction` moves by
-/// `velocity * dt_us` but never past `target` — the interpolation chases the
-/// most recent position tick, so overshooting it is always wrong. This bound
-/// is what makes a mis-measured `dt` (and thus an exploded velocity)
-/// harmless: the worst case degrades to snapping straight to the target
-/// instead of pinning the fill at 100% for the rest of the song. A fraction
-/// that is already past the target (a stale stuck state) snaps back to it
-/// for the same reason. Result stays in 0..1.
-fn interpolation_step(fraction: f64, velocity: f64, dt_us: f64, target: f64) -> f64 {
-    let advanced = velocity.mul_add(dt_us, fraction);
-    let bounded = if velocity >= 0.0 {
-        advanced.min(target)
-    } else {
-        advanced.max(target)
-    };
-    bounded.clamp(0.0, 1.0)
-}
-
-/// Maps a pointer `x` within `width` to a 0..1 seek fraction.
-fn fraction_at(x: f64, width: f64) -> f64 {
-    if width <= 0.0 {
-        return 0.0;
-    }
-    (x / width).clamp(0.0, 1.0)
-}
-
-/// Whether bar `index` of `count` falls within the played `fraction` (using the
-/// bar's centre so the split lands mid-bar rather than on an edge).
-fn bar_played(index: usize, count: usize, fraction: f64) -> bool {
-    if count == 0 {
-        return false;
-    }
-    ((index as f64 + 0.5) / count as f64) <= fraction
-}
-
-/// Number of display bars for `width` pixels: fixed 3 px bars + 2 px gaps,
-/// hard-capped at [`MAX_BAR_COUNT`] (when capped, the slots widen instead).
-fn compute_bar_count(width: i32) -> usize {
-    ((f64::from(width) / (BAR_WIDTH + BAR_GAP)).floor() as usize).clamp(1, MAX_BAR_COUNT)
-}
 
 /// Ensure `state.display_peaks` is up to date for the given `width`.
 /// Re-aggregates from the cached `raw_peaks` (never re-decodes) when the
@@ -155,6 +112,29 @@ struct State {
     duration_ms: i64,
 }
 
+fn commit_seek(
+    area: &gtk4::DrawingArea,
+    state: &Rc<RefCell<State>>,
+    on_seek: &SeekCallback,
+    fraction: f64,
+) {
+    let fraction = fraction.clamp(0.0, 1.0);
+    let duration_ms = {
+        let mut state = state.borrow_mut();
+        state.drag_fraction = None;
+        state.fraction = fraction;
+        state.target_fraction = fraction;
+        state.fraction_velocity = 0.0;
+        state.duration_ms
+    };
+    update_accessible_value(area, fraction, duration_ms);
+    area.queue_draw();
+    let callback = on_seek.borrow().clone();
+    if let Some(callback) = callback {
+        callback(fraction);
+    }
+}
+
 #[derive(Clone)]
 pub(in crate::ui) struct WaveformSeek {
     area: gtk4::DrawingArea,
@@ -196,6 +176,18 @@ impl WaveformSeek {
         area.set_hexpand(true);
         area.set_content_height(content_height);
         area.set_valign(gtk4::Align::Center);
+        // a11y-semantics: role=slider name=playback-position state=value action=range-keys
+        area.set_focusable(true);
+        area.set_accessible_role(gtk4::AccessibleRole::Slider);
+        area.update_property(&[
+            gtk4::accessible::Property::Label(&crate::ui::strings::text(
+                crate::ui::strings::PLAYBACK_POSITION,
+            )),
+            gtk4::accessible::Property::KeyShortcuts(
+                "ArrowLeft ArrowRight ArrowUp ArrowDown PageUp PageDown Home End",
+            ),
+        ]);
+        update_accessible_value(&area, 0.0, 0);
 
         let state = Rc::new(RefCell::new(State {
             raw_peaks: Vec::new(),
@@ -259,6 +251,7 @@ impl WaveformSeek {
         // Drag-to-seek: begin/update show a ghost fill; end commits the seek.
         // A single click with no movement still triggers drag_begin + drag_end
         // with a zero offset, so click-to-seek is handled for free.
+        // input-parity: ACC-8 keyboard=range-keys
         let drag = gtk4::GestureDrag::new();
         drag.connect_drag_begin({
             let state = state.clone();
@@ -286,23 +279,29 @@ impl WaveformSeek {
             move |gesture, offset_x, _| {
                 let (start_x, _) = gesture.start_point().unwrap_or((0.0, 0.0));
                 let frac = fraction_at(start_x + offset_x, f64::from(area.width()));
-                {
-                    let mut s = state.borrow_mut();
-                    s.drag_fraction = None;
-                    s.fraction = frac;
-                    s.target_fraction = frac;
-                    s.fraction_velocity = 0.0;
-                }
-                area.queue_draw();
-                // Clone callback out before invoking; handler may re-enter via a
-                // position tick and would otherwise deadlock on the RefCell.
-                let callback = on_seek.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(frac);
-                }
+                commit_seek(&area, &state, &on_seek, frac);
             }
         });
         area.add_controller(drag);
+
+        let keys = gtk4::EventControllerKey::new();
+        {
+            let state = state.clone();
+            let on_seek = on_seek.clone();
+            let area = area.clone();
+            keys.connect_key_pressed(move |_, key, _, _| {
+                let (current, duration_ms) = {
+                    let state = state.borrow();
+                    (state.target_fraction, state.duration_ms)
+                };
+                let Some(target) = keyboard_seek_target(key, current, duration_ms) else {
+                    return gtk4::glib::Propagation::Proceed;
+                };
+                commit_seek(&area, &state, &on_seek, target);
+                gtk4::glib::Propagation::Stop
+            });
+        }
+        area.add_controller(keys);
 
         // Tooltip: show the formatted time at the hovered position.
         area.set_has_tooltip(true);
@@ -441,6 +440,7 @@ impl WaveformSeek {
         s.target_fraction = fraction;
         s.fraction_velocity = 0.0;
         drop(s);
+        update_accessible_value(&self.area, fraction, self.state.borrow().duration_ms);
         self.area.queue_draw();
     }
 
@@ -496,13 +496,19 @@ impl WaveformSeek {
             s.last_tick_us = now;
         }
         drop(s);
+        update_accessible_value(&self.area, fraction, self.state.borrow().duration_ms);
         self.ensure_tick_callback();
     }
 
     /// Set the track duration so the hover tooltip can show formatted time
     /// instead of a raw percentage.
     pub(in crate::ui) fn set_duration(&self, duration_ms: i64) {
-        self.state.borrow_mut().duration_ms = duration_ms.max(0);
+        let (duration_ms, fraction) = {
+            let mut state = self.state.borrow_mut();
+            state.duration_ms = duration_ms.max(0);
+            (state.duration_ms, state.target_fraction)
+        };
+        update_accessible_value(&self.area, fraction, duration_ms);
     }
 
     pub(in crate::ui) fn connect_seek(&self, callback: impl Fn(f64) + 'static) {
@@ -780,16 +786,6 @@ fn draw_fallback(
         rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
         let _ = cr.fill();
     }
-}
-
-fn rounded_bar(cr: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
-    let r = r.min(w / 2.0).min(h / 2.0);
-    cr.new_sub_path();
-    cr.arc(x + w - r, y + r, r, -FRAC_PI_2, 0.0);
-    cr.arc(x + w - r, y + h - r, r, 0.0, FRAC_PI_2);
-    cr.arc(x + r, y + h - r, r, FRAC_PI_2, PI);
-    cr.arc(x + r, y + r, r, PI, 3.0 * FRAC_PI_2);
-    cr.close_path();
 }
 
 #[cfg(test)]

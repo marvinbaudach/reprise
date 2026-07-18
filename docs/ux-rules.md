@@ -906,6 +906,76 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   getestet; was ausbleiben kann, auf Wirkung (wie TIP-1a/2a und SEARCH-2).
   Ist eine Schnittstelle im Test-Build ausgeblendet (z. B. `SectionModel` per
   `cfg`), zählt nur der E2E-Beleg — „grün" ist dort strukturell bedeutungslos.
+## T. Accessibility & Tastatur
+
+<!-- Sektionsbuchstabe: S ist die letzte auf main vergebene Sektion;
+     T schließt lückenlos an. Die automatisierbaren Regeln
+     sind durch isolierte GTK-/CUA-Läufe aktiviert; ACC-7 benötigt zusätzlich
+     die reale Sichtprüfung. -->
+
+- **ACC-1** [aktiv] [e2e] — Vollständige Eingabeparität: Jede Aktion, die
+  per Maus oder Touch erreichbar ist, ist im selben Kontext auch allein mit
+  der Tastatur ausführbar und endet im selben Action-/Callback-Pfad. Eine
+  Geste auf `Label`, `Image`, `Box`, `DrawingArea` oder einer Drag-Fläche ohne
+  gleichwertigen Tastaturweg ist ein Bug. Ein Kontextmenü oder globaler
+  Shortcut zählt nur, wenn er am fokussierten Ziel verfügbar und über Help,
+  Beschriftung oder zugänglichen Hilfetext auffindbar ist.
+- **ACC-2** [aktiv] [gtk] — Semantik ist Teil der Bedienung: Jedes
+  interaktive Element exponiert einen kurzen übersetzten Namen, die passende
+  Rolle, seinen aktuellen Zustand (`selected`, `checked`, `expanded`,
+  `disabled`, `busy`) und — wo nötig — Beziehungen, Shortcut und Hilfetext.
+  Dekoration trägt `Presentation`. Native GTK/libadwaita-Controls sind der
+  Standard; eine eigene Rolle ist ein Versprechen, die zugehörige native
+  Tastatursemantik vollständig zu liefern.
+- **ACC-3** [aktiv] [e2e] — Fokusordnung folgt der sichtbaren Bedeutung:
+  Tab vorwärts und Shift+Tab rückwärts durchlaufen die Oberfläche logisch,
+  ohne Sprünge in versteckte/inaktive Controls und ohne doppelte Stops für
+  denselben Befehl. Sidebar, Liste und Grid sind je **ein** Tab-Stop; Pfeile
+  bewegen darin den aktiven Eintrag. Reines Fokussieren/Selektieren löst
+  keine Navigation, Wiedergabe oder andere Aktion aus — erst Aktivierung.
+- **ACC-4** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
+  Pfeile navigieren räumlich bzw. zeilenweise, Home/End springen in langen
+  Collections an Anfang/Ende, Page Up/Down bewegen seitenweise, Enter
+  aktiviert den fokussierten Eintrag, Space schaltet den fokussierten
+  Button/Toggle bzw. die Selektion, Menü-Taste/Shift+F10 öffnet dessen
+  Kontextmenü, F10 das Primärmenü und Esc schließt den obersten transienten
+  Container. Ein globaler Shortcut darf nie Texteingabe oder die lokale
+  Semantik des fokussierten Controls stehlen.
+- **ACC-5** [aktiv] [e2e] — Fokus hat einen nachvollziehbaren Lebenszyklus:
+  Start und Navigation setzen ihn in die aktive Zielansicht; Ctrl+F setzt ihn
+  ins Suchfeld, dessen Esc-Kaskade gibt ihn an die **aktuelle** Content-View
+  zurück. Dialoge/Popover starten auf ihrem ersten sinnvollen Control, halten
+  den Fokus innerhalb der obersten Ebene, Esc schließt genau diese Ebene und
+  gibt den Fokus an den Auslöser zurück. Back/Forward restauriert den letzten
+  sinnvollen Fokus der Zielansicht statt Header oder unsichtbare Kinder zu
+  fokussieren.
+- **ACC-6** [aktiv] [gtk] — Dynamische Updates stehlen oder verlieren den
+  Fokus nie: Bleibt das logische Element erhalten, bleibt auch sein Fokus;
+  wird es entfernt, fällt der Fokus auf den nächsten, sonst vorherigen
+  bedienbaren Eintrag und zuletzt auf den stabilen Container. Filter,
+  Re-Sortierung, View-Rebuild, Trackwechsel, Scan/Sync/Mount und asynchrone
+  Karten-Updates setzen den Fokus niemals ungefragt auf ein anderes Ziel.
+- **ACC-7** [geplant] [manuell] — Fokus ist immer sichtbar und eindeutig:
+  jedes per Tastatur erreichbare Element zeigt im Normal- und
+  High-Contrast-Theme einen dauerhaften Fokusindikator, der nicht mit Hover,
+  Selektion oder „spielt gerade" verwechselt werden kann. `outline: none` ist
+  nur mit einem mindestens gleich deutlichen `:focus-visible`-Ersatz erlaubt.
+  Hover-eingeblendete Aktionen erscheinen ebenso bei Tastaturfokus oder sind
+  über das Kontextmenü des fokussierten Containers erreichbar.
+  <!-- REVIEW: Regelvorschlag -->
+- **ACC-8** [aktiv] [e2e] — Direkte Manipulation hat eine Alternative:
+  jedes Drag-and-drop/Reorder-Ziel bietet denselben zulässigen Move auch per
+  Button, Menü oder dokumentierter Tastaturaktion; dieselben Guards und
+  Persistenzpfade gelten. Eigene Werte-Controls (z. B. Waveform-Seek) sind
+  fokussierbare Ranges: Pfeile ändern fein, Page Up/Down grob, Home/End setzen
+  Minimum/Maximum; Name, aktueller Wert und Grenzen sind zugänglich.
+- **ACC-9** [aktiv] [gtk] — Shortcuts und Zugriffstasten folgen GNOME:
+  vorhandene Standardaktionen verwenden die Standardbelegung (u. a. Ctrl+F,
+  Ctrl+W, Ctrl+Q, Ctrl+,, Ctrl+?, F1, F10, Alt+←/→); häufige beschriftete
+  Aktionen und primäre Dialogaktionen erhalten kollisionsfreie Mnemonics,
+  soweit Übersetzungen dies zulassen. Die Shortcuts-Ansicht listet nur
+  tatsächlich verdrahtete Aktionen und bleibt mit ihnen im selben Commit
+  synchron.
 
 ---
 

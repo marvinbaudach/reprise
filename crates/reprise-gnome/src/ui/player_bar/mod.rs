@@ -4,6 +4,7 @@ pub(in crate::ui) mod player_bar_seek;
 pub(in crate::ui) mod player_bar_state;
 #[path = "player_bar.rs"]
 mod surface;
+mod waveform_primitives;
 pub(in crate::ui) mod waveform_seek;
 pub(in crate::ui) mod waveform_shape;
 

@@ -168,9 +168,12 @@ as a release-green signal. Do not weaken `msgcmp` to hide the mismatch.
 - Run the installed-runtime scalability benchmark on representative native
   GNOME/Wayland release hardware in addition to its reproducible private-X11
   path, and retain paired before/after artifacts for each accepted optimization.
-- Add accessibility assertions for names, roles, keyboard reachability, focus
-  order, high-contrast behavior, and reduced-motion behavior on the principal
-  library, player, preferences, and tag-editor flows.
+- Add scalability budgets using generated metadata only: startup/query/scroll
+  behavior at 10,000 and 100,000 tracks, bounded row-widget/provider counts,
+  and bounded queue/cache memory growth.
+- Extend the accessibility sweep with real High Contrast, Large Text, Orca,
+  on-screen-keyboard, and reduced-motion evidence; these remain host-manual
+  because a headless semantic tree cannot prove visible focus or speech output.
 
 ### P2 — useful regression depth
 

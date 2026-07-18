@@ -23,13 +23,16 @@ pub(in crate::ui) fn route_key(
 
 pub(in crate::ui) fn arm(widget: &impl IsA<gtk4::Widget>, activate: Rc<dyn Fn()>) {
     let widget = widget.upcast_ref::<gtk4::Widget>();
+    // a11y-semantics: role=link name=reveal-playing-album state=enabled action=activate
     widget.set_focusable(true);
+    // input-parity: ACC-8 keyboard=link-enter-controller
     widget.set_cursor_from_name(Some("pointer"));
     widget.set_accessible_role(gtk4::AccessibleRole::Link);
     widget.add_css_class(LINK_CLASS);
     let label = crate::ui::strings::text(crate::ui::strings::REVEAL_PLAYING_ALBUM);
     widget.update_property(&[gtk4::accessible::Property::Label(&label)]);
 
+    // input-parity: ACC-8 keyboard=link-enter-controller
     let click = gtk4::GestureClick::new();
     let click_activate = activate.clone();
     click.connect_released(move |_, _, _, _| click_activate());

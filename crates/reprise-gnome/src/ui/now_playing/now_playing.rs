@@ -110,6 +110,12 @@ fn build_widgets_for_session(
         .build();
     tab_stack.add_named(up_next.widget(), Some(UP_NEXT_PAGE));
     tab_stack.add_named(lyrics.widget(), Some(LYRICS_PAGE));
+    up_next
+        .widget()
+        .set_accessible_role(gtk4::AccessibleRole::TabPanel);
+    lyrics
+        .widget()
+        .set_accessible_role(gtk4::AccessibleRole::TabPanel);
     tab_stack.set_visible_child_name(session.selected.get().page_name());
 
     let up_next_button = gtk4::ToggleButton::with_label(&strings::text(strings::UP_NEXT));
@@ -118,7 +124,17 @@ fn build_widgets_for_session(
     lyrics_button.set_group(Some(&up_next_button));
     for button in [&up_next_button, &lyrics_button] {
         button.add_css_class("reprise-now-playing-tab");
+        button.set_accessible_role(gtk4::AccessibleRole::Tab);
+        button.connect_toggled(|button| {
+            button.update_state(&[gtk4::accessible::State::Selected(Some(button.is_active()))]);
+        });
     }
+    up_next_button.update_relation(&[gtk4::accessible::Relation::Controls(&[up_next
+        .widget()
+        .upcast_ref()])]);
+    lyrics_button.update_relation(&[gtk4::accessible::Relation::Controls(&[lyrics
+        .widget()
+        .upcast_ref()])]);
     match session.selected.get() {
         PanelTab::UpNext => up_next_button.set_active(true),
         PanelTab::Lyrics => lyrics_button.set_active(true),
@@ -127,6 +143,7 @@ fn build_widgets_for_session(
     tabs.set_homogeneous(true);
     tabs.set_halign(gtk4::Align::Center);
     tabs.add_css_class("reprise-now-playing-tabs");
+    tabs.set_accessible_role(gtk4::AccessibleRole::TabList);
     tabs.append(&up_next_button);
     tabs.append(&lyrics_button);
 

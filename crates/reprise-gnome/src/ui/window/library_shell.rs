@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -40,6 +41,120 @@ pub(in crate::ui) struct LibraryShell {
 
 pub(in crate::ui) struct LibraryViews {
     pub(in crate::ui) stack: gtk4::Stack,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ui) enum ActiveContentTarget {
+    Tracks,
+    Albums,
+    Artists,
+    Stats,
+    Device,
+}
+
+fn active_content_target(
+    content_name: Option<&str>,
+    library_name: Option<&str>,
+) -> Option<ActiveContentTarget> {
+    match content_name {
+        Some("stats") => Some(ActiveContentTarget::Stats),
+        Some("device") => Some(ActiveContentTarget::Device),
+        Some("library") => match library_name {
+            Some(LIBRARY_VIEW_TRACKS) => Some(ActiveContentTarget::Tracks),
+            Some(LIBRARY_VIEW_ALBUMS) => Some(ActiveContentTarget::Albums),
+            Some(LIBRARY_VIEW_ARTISTS) => Some(ActiveContentTarget::Artists),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[derive(Clone)]
+pub(in crate::ui) struct ActiveContentFocus {
+    content_stack: glib::WeakRef<gtk4::Stack>,
+    library_stack: glib::WeakRef<gtk4::Stack>,
+    focus_tracks: Rc<dyn Fn() -> bool>,
+    focus_albums: Rc<dyn Fn() -> bool>,
+}
+
+impl ActiveContentFocus {
+    pub(in crate::ui) fn new(
+        content_stack: &gtk4::Stack,
+        library_stack: &gtk4::Stack,
+        track_list: &Rc<TrackList>,
+        album_grid: &gtk4::GridView,
+    ) -> Self {
+        let track_list = Rc::downgrade(track_list);
+        let focus_tracks = Rc::new(move || {
+            track_list
+                .upgrade()
+                .is_some_and(|track_list| track_list.focus_track_list())
+        });
+        let album_grid = album_grid.downgrade();
+        let focus_albums =
+            Rc::new(move || album_grid.upgrade().is_some_and(|grid| grid.grab_focus()));
+        Self::from_focus_actions(content_stack, library_stack, focus_tracks, focus_albums)
+    }
+
+    fn from_focus_actions(
+        content_stack: &gtk4::Stack,
+        library_stack: &gtk4::Stack,
+        focus_tracks: Rc<dyn Fn() -> bool>,
+        focus_albums: Rc<dyn Fn() -> bool>,
+    ) -> Self {
+        Self {
+            content_stack: content_stack.downgrade(),
+            library_stack: library_stack.downgrade(),
+            focus_tracks,
+            focus_albums,
+        }
+    }
+
+    pub(in crate::ui) fn focus(&self) -> bool {
+        let (Some(content_stack), Some(library_stack)) =
+            (self.content_stack.upgrade(), self.library_stack.upgrade())
+        else {
+            return false;
+        };
+        let content_name = content_stack.visible_child_name();
+        let library_name = library_stack.visible_child_name();
+        match active_content_target(content_name.as_deref(), library_name.as_deref()) {
+            Some(ActiveContentTarget::Tracks) => (self.focus_tracks)(),
+            Some(ActiveContentTarget::Albums) => (self.focus_albums)(),
+            Some(ActiveContentTarget::Artists) => library_stack
+                .visible_child()
+                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward)),
+            Some(ActiveContentTarget::Stats | ActiveContentTarget::Device) => content_stack
+                .visible_child()
+                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward)),
+            None => false,
+        }
+    }
+
+    pub(in crate::ui) fn focus_later(&self) {
+        let focus = self.clone();
+        glib::idle_add_local_once(move || {
+            if !focus.focus() {
+                tracing::debug!("active content did not take focus");
+            }
+        });
+    }
+
+    pub(in crate::ui) fn focus_later_if_unset(&self, window: &adw::ApplicationWindow) {
+        let focus = self.clone();
+        let window = window.downgrade();
+        glib::idle_add_local_once(move || {
+            let Some(window) = window.upgrade() else {
+                return;
+            };
+            if window.is_active()
+                && gtk4::prelude::GtkWindowExt::focus(&window).is_none()
+                && !focus.focus()
+            {
+                tracing::debug!("startup content did not take focus");
+            }
+        });
+    }
 }
 
 pub(in crate::ui) fn build_views(
@@ -238,6 +353,7 @@ pub(in crate::ui) fn wire_source_routing(
     title: &Rc<LibraryTitle>,
     source_title: &adw::WindowTitle,
     show_content: Rc<dyn Fn()>,
+    active_content_focus: &ActiveContentFocus,
 ) {
     let track_list = track_list.clone();
     let content_stack = content_stack.clone();
@@ -250,6 +366,7 @@ pub(in crate::ui) fn wire_source_routing(
     let sidebar_for_select = sidebar.clone();
     let show_content_on_select = show_content.clone();
     let nav_history = nav_history.clone();
+    let active_content_focus = active_content_focus.clone();
     // NAV-2: the Tracks/Albums/Artists switcher is a mode switch, not a
     // history entry — but the CURRENT place's tab must stay fresh so the
     // next push remembers the tab the user actually left (e.g. the album
@@ -303,6 +420,7 @@ pub(in crate::ui) fn wire_source_routing(
         title.set_library_navigation_visible(is_library);
         source_title.set_title(&source_name);
         show_content_on_select();
+        active_content_focus.focus_later();
     });
     sidebar.set_on_show_content(move || show_content());
 }
@@ -341,7 +459,7 @@ pub(in crate::ui) fn route_to_place(
     track_list: &Rc<TrackList>,
     content_stack: &gtk4::Stack,
     library_stack: &gtk4::Stack,
-    album_grid: &gtk4::GridView,
+    active_content_focus: &ActiveContentFocus,
     reason: &str,
 ) {
     tracing::debug!(
@@ -374,6 +492,7 @@ pub(in crate::ui) fn route_to_place(
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &place.source);
         }
         _ => {
+            crate::ui::sidebar_session::prepare_history_reroute(&sidebar.shared, &place.source);
             sidebar.refresh_and_select(place.source.clone(), reason);
             if let Some(tab) = &place.library_tab {
                 library_stack.set_visible_child_name(tab);
@@ -385,37 +504,7 @@ pub(in crate::ui) fn route_to_place(
     // keep working without a Tab detour. Best-effort in an idle (the stack
     // switch must map the page first); a `false` is logged like every other
     // focus move in this codebase.
-    let restored_tab = place
-        .library_tab
-        .clone()
-        .unwrap_or_else(|| LIBRARY_VIEW_TRACKS.to_owned());
-    let track_list_focus = Rc::downgrade(track_list);
-    let album_grid_focus = album_grid.downgrade();
-    let library_stack_focus = library_stack.downgrade();
-    gtk4::glib::idle_add_local_once(move || {
-        let granted = if restored_tab == LIBRARY_VIEW_TRACKS {
-            track_list_focus
-                .upgrade()
-                .is_some_and(|track_list| track_list.focus_track_list())
-        } else if restored_tab == LIBRARY_VIEW_ALBUMS {
-            // The album GRID, not the page's first focusable (that would be
-            // the sort dropdown): focus returns to the focused card so
-            // arrows / Enter / Menu key keep working immediately.
-            album_grid_focus
-                .upgrade()
-                .is_some_and(|grid| grid.grab_focus())
-        } else {
-            // Artists page: focus its first focusable child (the artist
-            // master list).
-            library_stack_focus
-                .upgrade()
-                .and_then(|stack| stack.visible_child())
-                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward))
-        };
-        if !granted {
-            tracing::debug!("history nav: restored view did not take focus");
-        }
-    });
+    active_content_focus.focus_later();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -482,6 +571,88 @@ mod tests {
         );
         assert_eq!(smoke_library_view_name("Albums"), None);
         assert_eq!(smoke_library_view_name("unknown"), None);
+    }
+
+    #[test]
+    fn active_content_focus_resolves_every_shell_view() {
+        assert_eq!(
+            active_content_target(Some("library"), Some("tracks")),
+            Some(ActiveContentTarget::Tracks)
+        );
+        assert_eq!(
+            active_content_target(Some("library"), Some("albums")),
+            Some(ActiveContentTarget::Albums)
+        );
+        assert_eq!(
+            active_content_target(Some("library"), Some("artists")),
+            Some(ActiveContentTarget::Artists)
+        );
+        assert_eq!(
+            active_content_target(Some("stats"), Some("tracks")),
+            Some(ActiveContentTarget::Stats)
+        );
+        assert_eq!(
+            active_content_target(Some("device"), Some("tracks")),
+            Some(ActiveContentTarget::Device)
+        );
+        assert_eq!(active_content_target(Some("unknown"), Some("tracks")), None);
+        assert_eq!(
+            active_content_target(Some("library"), Some("unknown")),
+            None
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_escape_focuses_the_current_shell_view() {
+        gtk4::init().unwrap();
+        let tracks = gtk4::Button::with_label("Tracks focus");
+        let albums = gtk4::Button::with_label("Albums focus");
+        let artists = gtk4::Button::with_label("Artists focus");
+        let stats = gtk4::Button::with_label("Stats focus");
+        let device = gtk4::Button::with_label("Device focus");
+        let views = build_views(&tracks, &albums, &artists);
+        let content = gtk4::Stack::new();
+        content.add_named(&views.stack, Some("library"));
+        content.add_named(&stats, Some("stats"));
+        content.add_named(&device, Some("device"));
+        content.set_visible_child_name("library");
+        let window = gtk4::Window::builder().child(&content).build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let tracks_focus = {
+            let tracks = tracks.downgrade();
+            Rc::new(move || tracks.upgrade().is_some_and(|widget| widget.grab_focus()))
+        };
+        let albums_focus = {
+            let albums = albums.downgrade();
+            Rc::new(move || albums.upgrade().is_some_and(|widget| widget.grab_focus()))
+        };
+        let focus = ActiveContentFocus::from_focus_actions(
+            &content,
+            &views.stack,
+            tracks_focus,
+            albums_focus,
+        );
+
+        for (content_name, library_name, expected) in [
+            ("library", "tracks", tracks.upcast_ref::<gtk4::Widget>()),
+            ("library", "albums", albums.upcast_ref()),
+            ("library", "artists", artists.upcast_ref()),
+            ("stats", "tracks", stats.upcast_ref()),
+            ("device", "tracks", device.upcast_ref()),
+        ] {
+            content.set_visible_child_name(content_name);
+            views.stack.set_visible_child_name(library_name);
+            assert!(focus.focus());
+            assert_eq!(
+                gtk4::prelude::GtkWindowExt::focus(&window).as_ref(),
+                Some(expected)
+            );
+        }
+
+        window.close();
     }
 
     #[test]

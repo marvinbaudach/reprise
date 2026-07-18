@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::prelude::*;
 use reprise_core::lyrics::{LyricsBody, LyricsError, TimedLine};
@@ -9,6 +10,13 @@ use super::lyrics_view::{
     active_line_alpha, centered_scroll_value, css, line_alpha, lyrics_footer, LyricsView,
     ACTIVE_LINE_CLASS, INLINE_RETRY_CLASS,
 };
+
+fn wait_for_layout() {
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(Duration::from_millis(50), move || quit.quit());
+    main_loop.run();
+}
 
 #[test]
 fn npp_5_line_hierarchy_uses_the_decided_alpha_steps() {
@@ -208,6 +216,22 @@ fn npp_8_line_click_seeks() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn synced_lyrics_are_roving_rows_and_plain_lyrics_are_not_actions() {
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+    view.show_result(&LyricsBody::Synced(vec![TimedLine::new(1_000, "synced")]));
+    let synced = view.line_rows_for_test();
+    assert_eq!(synced.len(), 1);
+    assert!(synced[0].is_activatable());
+
+    view.show_result(&LyricsBody::Plain("plain".into()));
+    let plain = view.line_rows_for_test();
+    assert_eq!(plain.len(), 1);
+    assert!(!plain[0].is_activatable());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn active_lines_center_and_clamp_in_a_mapped_panel() {
     gtk4::init().unwrap();
     let view = LyricsView::new();
@@ -261,6 +285,8 @@ fn npp_10_new_lyrics_start_with_line_zero_centered() {
     window.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    assert!(view.line_center_offset(0).abs() < 2.0);
+    wait_for_layout();
+    let offset = view.line_center_offset(0);
+    assert!(offset.abs() < 2.0, "center offset after layout: {offset}");
     window.close();
 }

@@ -76,8 +76,11 @@ pub struct PlayerBar {
     /// struct only owns/exposes the widget, never resolves or decodes covers
     /// itself (see `cover_loader.rs`).
     cover: gtk4::Image,
+    cover_button: gtk4::Button,
     title_label: gtk4::Label,
+    title_button: gtk4::Button,
     artist_label: gtk4::Label,
+    artist_button: gtk4::Button,
     /// Three-bar animated equalizer indicator — `playing` CSS class toggled by
     /// `set_mini_eq_playing`.
     mini_eq: gtk4::Box,
@@ -114,10 +117,10 @@ pub struct PlayerBar {
     /// Volume level before muting, so unmuting restores it.
     #[allow(dead_code)]
     pre_mute_volume: Cell<f64>,
-    /// Callback fired when the user activates the title link — wired to
+    /// Callback fired when the user activates the title button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
     on_title_click: crate::ui::link_activation::ActivationSlot,
-    /// Callback fired when the user activates the cover link — wired to
+    /// Callback fired when the user activates the cover button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
     on_cover_click: crate::ui::link_activation::ActivationSlot,
     /// Callback fired when the user clicks the artist label — navigates to
@@ -141,8 +144,11 @@ impl PlayerBar {
             root,
             info_box: _,
             cover,
+            cover_button,
             title_label,
+            title_button,
             artist_label,
+            artist_button,
             mini_eq,
             shuffle_button,
             prev_button,
@@ -158,11 +164,26 @@ impl PlayerBar {
             ..
         } = player_bar_layout::build();
 
-        let on_title_click = Rc::new(RefCell::new(None));
-        crate::ui::link_activation::arm_slot(&title_label, &on_title_click);
+        let on_title_click: crate::ui::link_activation::ActivationSlot =
+            Rc::new(RefCell::new(None));
+        let title_click_cb = on_title_click.clone();
+        title_button.connect_clicked(move |_| {
+            let callback = title_click_cb.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
 
-        let on_cover_click = Rc::new(RefCell::new(None));
-        crate::ui::link_activation::arm_slot(&cover, &on_cover_click);
+        // Cover: click → Now-Playing-Panel toggle (spec 1.5).
+        let on_cover_click: crate::ui::link_activation::ActivationSlot =
+            Rc::new(RefCell::new(None));
+        let cover_click_cb = on_cover_click.clone();
+        cover_button.connect_clicked(move |_| {
+            let cb = cover_click_cb.borrow().clone();
+            if let Some(cb) = cb {
+                cb();
+            }
+        });
 
         // Cover: CSS brightness effect on hover (spec 1.5).
         let cover_motion = gtk4::EventControllerMotion::new();
@@ -179,16 +200,13 @@ impl PlayerBar {
         // Artist label: hover colour + click → artist view (spec 1.5).
         let on_artist_click: crate::ui::link_activation::ActivationSlot =
             Rc::new(RefCell::new(None));
-        let artist_gesture = gtk4::GestureClick::new();
         let artist_click_cb = on_artist_click.clone();
-        artist_gesture.connect_released(move |_, _, _, _| {
+        artist_button.connect_clicked(move |_| {
             let cb = artist_click_cb.borrow().clone();
             if let Some(cb) = cb {
                 cb();
             }
         });
-        artist_label.add_controller(artist_gesture);
-        artist_label.set_cursor_from_name(Some("pointer"));
 
         let artist_motion = gtk4::EventControllerMotion::new();
         artist_motion.connect_enter({
@@ -204,8 +222,11 @@ impl PlayerBar {
         let bar = Self {
             root,
             cover,
+            cover_button,
             title_label,
+            title_button,
             artist_label,
+            artist_button,
             mini_eq,
             shuffle_button,
             prev_button,
@@ -279,6 +300,15 @@ impl PlayerBar {
     /// Cross-fades the labels over 250 ms (125 ms fade-out, 125 ms fade-in)
     /// and follows GTK's system animation setting through [`motion::timed`].
     pub fn set_track(&self, title: &str, artist: &str) {
+        self.title_button
+            .update_property(&[gtk4::accessible::Property::Label(title)]);
+        self.artist_button
+            .update_property(&[gtk4::accessible::Property::Label(artist)]);
+        self.artist_button.set_sensitive(!artist.trim().is_empty());
+        self.cover_button
+            .update_property(&[gtk4::accessible::Property::Label(&strings::text(
+                strings::REVEAL_PLAYING_ALBUM,
+            ))]);
         self.animate_track_change(title, artist);
     }
 
@@ -364,6 +394,7 @@ impl PlayerBar {
         }
         self.title_label.set_text("");
         self.artist_label.set_text("");
+        self.artist_button.set_sensitive(false);
         self.clear_cover();
     }
 
@@ -507,6 +538,7 @@ impl PlayerBar {
     /// and calls `f` on each middle-click release. Wired by Task 7 in
     /// `player_controller_wiring.rs`.
     pub fn connect_middle_click_stop<F: Fn() + 'static>(&self, f: F) {
+        // input-parity: ACC-8 keyboard=main-menu-stop
         let gesture = gtk4::GestureClick::new();
         gesture.set_button(2);
         gesture.connect_released(move |_, _, _, _| f());

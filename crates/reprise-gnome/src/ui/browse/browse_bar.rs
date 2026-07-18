@@ -247,7 +247,7 @@ impl BrowseBar {
         add_filter.update_property(&[gtk4::accessible::Property::Label(&filter_strings::text(
             filter_strings::ADD_FILTER,
         ))]);
-        chips.append(&add_filter);
+        append_chip(&chips, &add_filter);
 
         let result_label = gtk4::Label::new(None);
         result_label.add_css_class("dim-label");
@@ -432,6 +432,13 @@ impl BrowseBar {
     }
 
     fn rebuild_chips(self: &Rc<Self>, filter: &BrowseFilter) {
+        if let Some(wrapper) = self
+            .add_filter
+            .parent()
+            .and_downcast::<gtk4::FlowBoxChild>()
+        {
+            wrapper.set_child(gtk4::Widget::NONE);
+        }
         self.chips.remove_all();
         let query = self.search.borrow().trim().to_string();
         if !query.is_empty() {
@@ -454,7 +461,7 @@ impl BrowseBar {
                     callback();
                 }
             });
-            self.chips.append(&button);
+            append_chip(&self.chips, &button);
         }
         for chip in filter_chips(filter) {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip.label));
@@ -471,10 +478,10 @@ impl BrowseBar {
                 let next = remove_filter(&bar.filter(), chip.facet);
                 bar.apply_filter(next);
             });
-            self.chips.append(&button);
+            append_chip(&self.chips, &button);
         }
         if self.is_library.get() {
-            self.chips.append(&self.add_filter);
+            append_chip(&self.chips, &self.add_filter);
         }
         self.add_filter
             .set_sensitive(!available_facets(filter).is_empty());
@@ -547,6 +554,17 @@ impl BrowseBar {
         }
         self.apply_filter(apply_selection(&filter, facet, Some(value.to_string())));
         true
+    }
+}
+
+fn append_chip(chips: &gtk4::FlowBox, widget: &impl IsA<gtk4::Widget>) {
+    chips.append(widget);
+    if let Some(wrapper) = widget
+        .as_ref()
+        .parent()
+        .and_downcast::<gtk4::FlowBoxChild>()
+    {
+        wrapper.set_focusable(false);
     }
 }
 

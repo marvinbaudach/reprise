@@ -77,9 +77,19 @@ fi
 for test in "${tests[@]}"; do
   data_home=$(mktemp -d)
   cache_home=$(mktemp -d)
+  marker_dir=$(mktemp -d)
+  display_test_passed="$marker_dir/passed"
   echo "== display test: $test =="
   dbus-run-session -- xvfb-run -a env \
     XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
     GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
-    cargo test -p reprise-gnome "$test" -- --ignored --exact
+    DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
+    bash -c '
+      cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
+        && : >"$DISPLAY_TEST_PASSED"
+    '
+  if [[ ! -f $display_test_passed ]]; then
+    echo "Display test did not complete successfully: $test" >&2
+    exit 1
+  fi
 done
