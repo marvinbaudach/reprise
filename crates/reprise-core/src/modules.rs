@@ -40,17 +40,16 @@ pub const LASTFM_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: false,
 };
 
-pub const ARTIST_NEWS_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "artist_news",
-    name: "Artist & Album News",
-    description:
-        "Show upcoming and newly released albums from MusicBrainz (network; off by default)",
+pub const NEW_RELEASES_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "new_releases",
+    name: "New Releases",
+    description: "Show upcoming and newly released albums; contacts MusicBrainz",
     default_enabled: false,
 };
 
 /// Every optional integration the app currently exposes, in Plugins-page order.
 pub const ALL_MODULES: &[&ModuleDescriptor] =
-    &[&ARTIST_NEWS_MODULE, &LISTENBRAINZ_MODULE, &LASTFM_MODULE];
+    &[&NEW_RELEASES_MODULE, &LISTENBRAINZ_MODULE, &LASTFM_MODULE];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -145,21 +144,23 @@ mod tests {
     }
 
     #[test]
-    fn artist_news_is_listed_and_defaults_to_disabled() {
+    fn nr_7_new_releases_is_listed_and_defaults_to_disabled() {
         let conn = migrated_conn();
         assert!(ALL_MODULES
             .iter()
-            .any(|module| module.id == ARTIST_NEWS_MODULE.id));
-        assert!(!is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
+            .any(|module| module.id == NEW_RELEASES_MODULE.id));
+        assert_eq!(NEW_RELEASES_MODULE.id, "new_releases");
+        assert_eq!(NEW_RELEASES_MODULE.name, "New Releases");
+        assert!(!is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
     }
 
     #[test]
-    fn artist_news_round_trips() {
+    fn new_releases_round_trips() {
         let conn = migrated_conn();
-        set_enabled(&conn, &ARTIST_NEWS_MODULE, true).unwrap();
-        assert!(is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
-        set_enabled(&conn, &ARTIST_NEWS_MODULE, false).unwrap();
-        assert!(!is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
+        set_enabled(&conn, &NEW_RELEASES_MODULE, true).unwrap();
+        assert!(is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
+        set_enabled(&conn, &NEW_RELEASES_MODULE, false).unwrap();
+        assert!(!is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
     }
 
     #[test]

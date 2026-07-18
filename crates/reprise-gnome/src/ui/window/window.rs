@@ -485,7 +485,14 @@ pub fn build(
             content_stack.set_visible_child_name("new-releases");
         })
     };
-    crate::ui::new_releases::popover::install(&header, &window, conn, db_path, open_new_releases);
+    crate::ui::new_releases::popover::install(
+        &header,
+        &window,
+        conn,
+        db_path,
+        open_new_releases,
+        &artist_news,
+    );
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());

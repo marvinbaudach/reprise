@@ -33,6 +33,11 @@ pub const NEWS_NEW: &str = N_!("New");
 pub const NEWS_REFRESH: &str = N_!("Refresh Artist News");
 pub const NEWS_OPEN_MUSICBRAINZ: &str = N_!("Open in MusicBrainz");
 pub const NEW_RELEASES: &str = N_!("New Releases");
+pub const NEW_RELEASES_DESCRIPTION: &str =
+    N_!("Show upcoming and newly released albums · contacts MusicBrainz");
+pub const NEW_RELEASES_ARTISTS: &str = N_!("Artists");
+pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
+pub const ALL_ARTISTS: &str = N_!("All artists");
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");

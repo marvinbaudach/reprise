@@ -103,7 +103,7 @@ impl ArtistNewsRuntime {
     pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
         let enabled = reprise_core::modules::is_enabled(
             conn,
-            &reprise_core::modules::ARTIST_NEWS_MODULE,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or_else(|error| {
             tracing::warn!(%error, "could not read Artist News module state; defaulting to off");
@@ -123,7 +123,7 @@ impl ArtistNewsRuntime {
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(
             conn,
-            &reprise_core::modules::ARTIST_NEWS_MODULE,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
             enabled,
         )?;
         if self.enabled.replace(enabled) != enabled {
@@ -180,22 +180,28 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequ
             while let Ok(request) = receiver.recv_blocking() {
                 let today = chrono::Local::now().date_naive();
                 let result = match connection.as_ref() {
-                    Some(Ok(conn)) => reprise_core::artist_news::refresh(
-                        conn,
-                        today,
-                        reprise_core::artist_news::FetchScope::TopArtists,
-                        request.force,
-                        crate::ui::new_releases::release_cover::fallback_accent_for_artist,
-                    )
-                    .and_then(|_| {
-                        reprise_core::artist_news::query_artist_news_by_name(
-                            conn,
-                            &request.artist,
-                            today,
-                        )
-                        .map_err(|error| NewsError::Database(error.to_string()))?
-                        .ok_or(NewsError::Unmatched)
-                    }),
+                    Some(Ok(conn)) => {
+                        reprise_core::artist_news::configured_fetch_scope(conn, today)
+                            .map_err(|error| NewsError::Database(error.to_string()))
+                            .and_then(|scope| {
+                                reprise_core::artist_news::refresh(
+                                conn,
+                                today,
+                                scope,
+                                request.force,
+                                crate::ui::new_releases::release_cover::fallback_accent_for_artist,
+                            )
+                            })
+                            .and_then(|_| {
+                                reprise_core::artist_news::query_artist_news_by_name(
+                                    conn,
+                                    &request.artist,
+                                    today,
+                                )
+                                .map_err(|error| NewsError::Database(error.to_string()))?
+                                .ok_or(NewsError::Unmatched)
+                            })
+                    }
                     Some(Err(error)) => Err(NewsError::Database(error.to_string())),
                     None => Err(NewsError::Database(
                         "the active database has no persistent path".into(),
@@ -240,7 +246,7 @@ mod tests {
         assert!(runtime.enabled.get());
         assert!(reprise_core::modules::is_enabled(
             &conn,
-            &reprise_core::modules::ARTIST_NEWS_MODULE
+            &reprise_core::modules::NEW_RELEASES_MODULE
         )
         .unwrap());
     }
