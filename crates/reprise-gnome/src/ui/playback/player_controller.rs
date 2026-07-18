@@ -267,7 +267,9 @@ pub struct PlayerController {
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
     reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
-    pub(in crate::ui) queue_changed: RefCell<Option<Rc<dyn Fn()>>>,
+    /// Queue-change fan-out for the sidebar/Queue view and the Now Playing
+    /// panel. Callbacks are cloned out before invocation for reentrancy.
+    pub(in crate::ui) queue_changed: RefCell<Vec<Rc<dyn Fn()>>>,
     pub(in crate::ui) current_track_changed:
         RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
     /// Fans coarse playback-state changes to the track list's now-playing
@@ -448,7 +450,7 @@ impl PlayerController {
             play_origin: RefCell::new(None),
             toast_overlay: glib::WeakRef::new(),
             reload_track_list: RefCell::new(None),
-            queue_changed: RefCell::new(None),
+            queue_changed: RefCell::new(Vec::new()),
             current_track_changed: RefCell::new(None),
             playback_state_changed: RefCell::new(None),
             now_playing_album_changed: RefCell::new(None),

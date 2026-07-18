@@ -127,8 +127,8 @@ pub(crate) struct QueueViewSections {
 }
 
 impl PlayerController {
-    pub(in crate::ui) fn set_on_queue_changed(&self, callback: impl Fn() + 'static) {
-        *self.queue_changed.borrow_mut() = Some(Rc::new(callback));
+    pub(in crate::ui) fn add_on_queue_changed(&self, callback: impl Fn() + 'static) {
+        self.queue_changed.borrow_mut().push(Rc::new(callback));
     }
 
     /// Returns every live playback-model id rejected by the core retention
@@ -155,8 +155,8 @@ impl PlayerController {
 
     pub(in crate::ui) fn notify_queue_changed(&self) {
         tracing::info!(up_next_len = self.up_next.borrow().len(), "up next changed");
-        let callback = self.queue_changed.borrow().clone();
-        if let Some(callback) = callback {
+        let callbacks = self.queue_changed.borrow().clone();
+        for callback in callbacks {
             callback();
         }
         // The up-next front / queue order may have changed, so the upcoming

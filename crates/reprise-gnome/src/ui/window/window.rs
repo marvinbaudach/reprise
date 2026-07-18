@@ -300,7 +300,7 @@ pub fn build(
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let track_list_weak = Rc::downgrade(&track_list);
-        player.set_on_queue_changed(move || {
+        player.add_on_queue_changed(move || {
             if let Some(sidebar) = sidebar.upgrade() {
                 sidebar.refresh("up next changed");
             }
@@ -436,6 +436,26 @@ pub fn build(
         player.set_on_now_playing_panel_state_changed(move |state| {
             if let Some(panel) = panel.upgrade() {
                 panel.set_playback_state(state);
+            }
+        });
+
+        let player_weak = Rc::downgrade(player);
+        let panel_weak = Rc::downgrade(&info_panel);
+        let refresh_up_next: Rc<dyn Fn()> = Rc::new(move || {
+            let (Some(player), Some(panel)) = (player_weak.upgrade(), panel_weak.upgrade()) else {
+                return;
+            };
+            let entries = player.now_playing_panel_up_next_entries();
+            panel.set_up_next_entries(&entries);
+        });
+        let refresh_on_queue_change = refresh_up_next.clone();
+        player.add_on_queue_changed(move || refresh_on_queue_change());
+        refresh_up_next();
+
+        let player = Rc::downgrade(player);
+        info_panel.set_on_up_next_jump(move |row| {
+            if let Some(player) = player.upgrade() {
+                player.jump_to_queue_row(row);
             }
         });
     }

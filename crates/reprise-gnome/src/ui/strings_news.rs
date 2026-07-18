@@ -12,6 +12,7 @@ pub const INFORMATION: &str = N_!("Information");
 pub const INFO_PANEL_TOGGLE: &str = N_!("Toggle Now Playing panel");
 pub const NOW_PLAYING_NOTHING: &str = N_!("Nothing playing");
 pub const UP_NEXT: &str = N_!("Up Next");
+pub const QUEUE_EMPTY: &str = N_!("Queue is empty");
 pub const ARTIST_NEWS: &str = N_!("Artist & Album News");
 pub const ARTIST_NEWS_DESCRIPTION: &str =
     N_!("Show upcoming and newly released albums from MusicBrainz (network; off by default)");
@@ -39,6 +40,16 @@ pub fn tracks_selected(count: usize) -> String {
         "{count} tracks selected",
         count,
         &[("count", &count_text)],
+    )
+}
+
+pub fn up_next_footer(count: usize, duration: &str) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} track · {duration}",
+        "{count} tracks · {duration}",
+        count,
+        &[("count", &count_text), ("duration", duration)],
     )
 }
 
