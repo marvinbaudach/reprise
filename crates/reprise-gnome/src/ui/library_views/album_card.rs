@@ -35,8 +35,6 @@ pub(in crate::ui) struct AlbumCardShared {
     pub generation: Rc<Cell<u64>>,
     /// `(album_key, artist_key)` of the currently playing album, if any.
     pub now_playing_album: Rc<RefCell<Option<(String, String)>>>,
-    /// Card click → navigate to Tracks tab with album filter.
-    pub on_activate: AlbumActivateSlot,
     /// Play button click → replace queue + play.
     pub on_play: AlbumActionSlot,
     /// Shift+play button → append to queue.
@@ -203,25 +201,15 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 });
             }
 
-            // Card click → activate.
-            let card_click = gtk4::GestureClick::new();
-            {
-                let on_activate = shared.on_activate.clone();
-                let list_item_weak = list_item.downgrade();
-                card_click.connect_released(move |gesture, _n, _x, _y| {
-                    gesture.set_state(gtk4::EventSequenceState::Claimed);
-                    let Some(li) = list_item_weak.upgrade() else {
-                        return;
-                    };
-                    let Some(obj) = li.item() else { return };
-                    let boxed = obj.downcast_ref::<glib::BoxedAnyObject>().unwrap();
-                    let album: std::cell::Ref<AlbumSummary> = boxed.borrow();
-                    if let Some(cb) = on_activate.borrow().clone() {
-                        cb(album.clone());
-                    }
-                });
-            }
-            card.add_controller(card_click);
+            // Card click → activate: handled by the GridView itself via
+            // `single_click_activate` (see `album_view`) — the cell
+            // machinery emits `activate`, which `album_view` routes to
+            // `on_activate`. A per-card `GestureClick` on this plain `Box`
+            // was unreliable (the cell machinery claims the press sequence
+            // — the "GestureClick on a plain Box inside a cell" trap), so
+            // the card deliberately has NO click gesture of its own. The
+            // hover play button and the artist subtitle keep their own
+            // gestures; their claims stop the cell activation.
 
             list_item.set_child(Some(&card));
         });
@@ -546,7 +534,6 @@ mod tests {
             cover_loader,
             generation: Rc::new(Cell::new(0)),
             now_playing_album: Rc::new(RefCell::new(None)),
-            on_activate: Rc::new(RefCell::new(None)),
             on_play: Rc::new(RefCell::new(None)),
             on_queue: Rc::new(RefCell::new(None)),
             on_artist_activate: Rc::new(RefCell::new(None)),
