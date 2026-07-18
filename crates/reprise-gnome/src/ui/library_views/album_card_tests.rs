@@ -9,7 +9,7 @@ use reprise_core::queries::AlbumSummary;
 
 use super::album_card::*;
 use super::album_card_css as css;
-use super::album_card_state::AlbumCardIdentityRegistry;
+use super::album_card_state::{AlbumCardIdentityRegistry, RevealBindingRegistry};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::eq_bars;
 
@@ -48,6 +48,9 @@ fn shared(now_playing: Option<(&str, &str)>) -> Rc<AlbumCardShared> {
         identity_generation: Rc::new(Cell::new(0)),
         identities: Rc::new(RefCell::new(AlbumCardIdentityRegistry::default())),
         playback_state: Rc::new(Cell::new(PlaybackState::Paused)),
+        reveal_generation: Rc::new(Cell::new(0)),
+        pending_reveal: Rc::new(RefCell::new(None)),
+        reveal_bindings: Rc::new(RefCell::new(RevealBindingRegistry::default())),
         now_playing_album: Rc::new(RefCell::new(
             now_playing.map(|(album, artist)| (album.into(), artist.into())),
         )),

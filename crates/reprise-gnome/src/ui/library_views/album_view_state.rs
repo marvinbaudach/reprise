@@ -11,6 +11,7 @@ use reprise_core::queries::{self, AlbumSummary};
 use rusqlite::Connection;
 
 use crate::ui::album_card::AlbumCardShared;
+use crate::ui::album_card_state::{album_index, PendingAlbumReveal};
 use crate::ui::album_header;
 use crate::ui::strings;
 
@@ -153,6 +154,40 @@ impl AlbumViewState {
                 state.refresh();
             }
         })
+    }
+
+    pub(in crate::ui) fn reveal_album(
+        &self,
+        grid: &gtk4::GridView,
+        title: &str,
+        artist: &str,
+    ) -> bool {
+        self.apply_filter("");
+        let albums = (0..self.filter_model.n_items())
+            .filter_map(|index| {
+                let object = self.filter_model.item(index)?;
+                let boxed = object.downcast_ref::<glib::BoxedAnyObject>()?;
+                let album = boxed.borrow::<AlbumSummary>().clone();
+                Some(album)
+            })
+            .collect::<Vec<_>>();
+        let Some(index) = album_index(&albums, title, artist) else {
+            return false;
+        };
+
+        let generation = self.card_shared.reveal_generation.get().wrapping_add(1);
+        self.card_shared.reveal_generation.set(generation);
+        *self.card_shared.pending_reveal.borrow_mut() = Some(PendingAlbumReveal {
+            album: title.to_owned(),
+            artist: artist.to_owned(),
+            generation,
+        });
+        rebind_in_store(&self.store, title, artist);
+
+        let scroll = gtk4::ScrollInfo::new();
+        scroll.set_enable_vertical(true);
+        grid.scroll_to(index, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        true
     }
 
     #[cfg(test)]

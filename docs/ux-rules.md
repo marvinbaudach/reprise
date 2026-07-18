@@ -129,7 +129,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   der Player-Leiste und Ctrl+L denselben Sprung zur Heimat des spielenden
   Tracks. Aufgeteilt in Track-Ursprung per Ctrl+L (NAV-9a) und Album-Grid-
   Reveal per Player-Oberflächen (GRID-5).
-- **NAV-9a** [geplant] [gtk] — Ctrl+L navigiert zur Herkunftsansicht des
+- **NAV-9a** [aktiv] [gtk] — Ctrl+L navigiert zur Herkunftsansicht des
   geladenen Tracks, selektiert dessen Zeile und zentriert sie ohne
   scrollIntoView-Kantenkleben. Der Sprung pusht auf den globalen
   History-Stack; Back kehrt zum vorherigen Ort zurück.
@@ -216,7 +216,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   `@reprise_player_accent`; Album und Artist bleiben unter dem Cover. Die
   Covermitte bleibt frei. Der Kartencontainer hat keinen Metadaten-Tooltip;
   nur tatsächlich ellipsierte Titel-/Artist-Labels zeigen ihren Volltext.
-- **GRID-5** [geplant] [gtk] — Spielendes Album aufdecken: Aktivierung von
+- **GRID-5** [aktiv] [gtk] — Spielendes Album aufdecken: Aktivierung von
   Cover oder Titel in Playerleiste oder Now-Playing-Panel wechselt bei Bedarf
   in die Album-Ansicht, leert ein sichtbares Suchfeld samt Albumfilter,
   scrollt per GtkGridView/Adjustment zur geladenen Albumkachel, fokussiert sie
