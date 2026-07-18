@@ -11,8 +11,8 @@ const ICON_WIDTH: i32 = 16;
 const ROW_HORIZONTAL_MARGIN: i32 = 12;
 const ROW_VERTICAL_MARGIN: i32 = 5;
 const ROW_SPACING: i32 = 10;
-const SIDEBAR_MIN_WIDTH: f64 = 220.0;
-const SIDEBAR_MAX_WIDTH: f64 = 280.0;
+const SIDEBAR_MIN_WIDTH: f64 = 240.0;
+const SIDEBAR_MAX_WIDTH: f64 = 240.0;
 const SIDEBAR_WIDTH_FRACTION: f64 = 0.22;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,6 +255,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sidebar_has_the_fixed_npp_width() {
+        assert_eq!(SIDEBAR_MIN_WIDTH, 240.0);
+        assert_eq!(SIDEBAR_MAX_WIDTH, 240.0);
+    }
+
+    #[test]
     fn icons_match_each_mockup_navigation_kind() {
         assert_eq!(NavIcon::Library.icon_name(), "folder-music-symbolic");
         assert_eq!(NavIcon::Queue.icon_name(), "view-list-symbolic");
@@ -371,8 +377,8 @@ mod tests {
 
         let split = test_split_view();
         style_overlay_split_view(&split);
-        assert_eq!(split.min_sidebar_width(), 220.0);
-        assert_eq!(split.max_sidebar_width(), 280.0);
+        assert_eq!(split.min_sidebar_width(), 240.0);
+        assert_eq!(split.max_sidebar_width(), 240.0);
         assert_eq!(split.sidebar_width_fraction(), 0.22);
     }
 

@@ -19,10 +19,10 @@ Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs i
 
 ### Struktur
 
-- **NPP-1 · Geometrie** `[geplant]` — Panel fix **300 px** (die linke Sidebar
+- **NPP-1 · Geometrie** `[aktiv]` — Panel fix **300 px** (die linke Sidebar
   fix **240 px** — bewusst ungleich), einklappbar mit derselben
   Slide-Transition wie die linke Sidebar (MOT-3, Standard-Token 250 ms
-  ease-out-cubic).
+  ease-out-cubic; die bestehende `OverlaySplitView`-Transition liefert sie).
 - **NPP-2 · Aufbau vertikal** `[geplant]` — Cover **168 px** (Radius 12,
   Schatten + 1 px Inset-Hairline) → Titel 15 px bold / „Artist · Album" 12 px
   weiß 55 % → **Pill-Toggle** Up Next | Lyrics | Visual (Segmente, kein

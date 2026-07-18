@@ -25,6 +25,11 @@ fn information_panel_visibility_round_trips_through_settings() {
 }
 
 #[test]
+fn information_panel_has_the_fixed_npp_width() {
+    assert_eq!(PANEL_WIDTH, 300);
+}
+
+#[test]
 fn disabled_plugin_always_renders_privacy_card() {
     assert_eq!(render_kind(false, false, None), RenderKind::Disabled);
 }
