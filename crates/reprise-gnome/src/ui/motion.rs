@@ -1,7 +1,7 @@
 //! App-authored motion tokens and the central reduced-motion contract.
 //!
 //! CSS T-V probe result (2026-07-18, executed headless via dbus + Xvfb; see
-//! `css_probe_transitions_and_keyframes_under_disabled_animations` in
+//! `mot_7_css_honours_enable_animations_setting` in
 //! `ui/style/mod.rs` — the style module owns CSS provider construction): GTK's CSS
 //! machinery fully honours `gtk-enable-animations=false` — `transition:`
 //! properties hard-switch to their end value and `@keyframes` animations do
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn timed_enables_the_system_animation_setting_contract() {
+    fn mot_1_timed_pins_duration_easing_and_follow() {
         gtk4::init().unwrap();
         let label = gtk4::Label::new(None);
 

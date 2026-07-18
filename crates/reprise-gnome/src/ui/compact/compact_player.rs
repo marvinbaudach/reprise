@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn compact_track_change_replaces_the_running_animation_slot() {
+    fn mot_6_compact_track_change_replaces_the_running_animation_slot() {
         gtk4::init().unwrap();
         let settings = gtk4::Settings::default().unwrap();
         let previous = settings.is_gtk_enable_animations();

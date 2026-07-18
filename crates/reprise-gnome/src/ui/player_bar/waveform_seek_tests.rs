@@ -297,7 +297,7 @@ fn mini_waveform_has_16px_height() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn waveform_position_hard_switches_when_system_animations_are_disabled() {
+fn mot_7_waveform_position_hard_switches_when_system_animations_are_disabled() {
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
     let previous = settings.is_gtk_enable_animations();

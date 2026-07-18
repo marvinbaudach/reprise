@@ -249,7 +249,7 @@ mod tests {
     /// `ui/motion.rs` module docs (MOT-7 contract).
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn css_probe_transitions_and_keyframes_under_disabled_animations() {
+    fn mot_7_css_honours_enable_animations_setting() {
         use gtk4::prelude::*;
 
         gtk4::init().unwrap();
