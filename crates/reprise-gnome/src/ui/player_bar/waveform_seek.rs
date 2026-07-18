@@ -357,6 +357,11 @@ impl WaveformSeek {
             if let Some(existing_tick) = existing_tick {
                 existing_tick.remove();
             }
+            // Complete any in-progress build-up: the tick that would have
+            // advanced it was just removed, so without this the waveform would
+            // freeze half-built if animations are disabled mid-build. Mirrors
+            // the disabled branch of `set_peaks`.
+            self.state.borrow_mut().build_progress = 1.0;
             self.set_fraction(fraction);
             return;
         }
