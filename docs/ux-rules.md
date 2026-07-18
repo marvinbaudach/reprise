@@ -796,6 +796,41 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Filter. Query, Treffer und Such-Chip bleiben erhalten, bis der Nutzer sie
   explizit über Esc, Chip oder „Clear all" entfernt.
 
+## R. New Releases
+
+- **NR-1** [geplant] [core] — Eine bibliotheksweite MusicBrainz-Pipeline ist
+  die einzige Wahrheit für neue Releases und spätere Artist-News-Ansichten.
+  Artist-MBIDs kommen zuerst aus Tags, sonst aus einer persistierten
+  Namensauflösung inklusive negativer Ergebnisse; Artists werden nach
+  Play-Count priorisiert. Pro Artist bleiben höchstens fünf reguläre Alben
+  oder EPs der letzten 90 Tage sowie ausschließlich zukünftige Singles;
+  unvollständige Daten gelten nie als zukünftig, Sekundärtypen bleiben draußen.
+- **NR-2** [geplant] [gtk] — Release-Cover laden lazy über Cover Art Archive
+  (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
+  und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
+  Akzentfarbe plus Initialen — niemals ein Loch oder einen Dauer-Spinner.
+- **NR-3** [geplant] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
+  Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
+  Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
+  erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
+- **NR-4** [geplant] [gtk] — „See all" öffnet einen echten Digest-Ort mit
+  Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases lassen sich dort
+  verbergen; vorhandene Hidden-Einträge halten „See all" erreichbar und die
+  Fußzeile „N hidden · Show" macht sie rückholbar. Ein künftiges „Remind me"
+  bleibt bis zu einem eigenen Scheduler ausdrücklich außerhalb dieser Regel.
+- **NR-5** [geplant] [gtk] — Das Popover ist transient und verändert den
+  Navigations-Stack nie. Erst „See all" navigiert regulär in den Digest-Ort;
+  Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht zurück.
+- **NR-6** [geplant] [gtk] — „Fetch now" ersetzt während des Abrufs sein
+  Refresh-Icon durch einen Spinner und zeigt sonst das Alter der letzten
+  Aktualisierung. Offline oder Fehler zeigen weiter den letzten Cache samt
+  Alter und nur einen dezenten Inline-Hinweis im Fuß — nie ein Fehlerbanner.
+- **NR-7** [geplant] [gtk] — New Releases ist ein Plugin auf der Plugins-Seite,
+  standardmäßig aus und mit Privacy-Untertitel „contacts MusicBrainz" sowie
+  Auswahl „Top artists only / all artists". Bei ausgeschaltetem Modul gibt es
+  weder Fetch noch ✦; Cover-, Portrait- und Lyrics-Module gehören nicht zu
+  dieser Regel und werden im Folge-Branch `feat/network-opt-in` geregelt.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
