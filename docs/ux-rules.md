@@ -115,7 +115,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. START-1
   restauriert über Neustarts ausschließlich die zuletzt aktive Ansicht samt
   Scroll-Position; alle anderen Modi starten oben, unselektiert.
-- **NAV-6** [geplant] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
+- **NAV-6** [aktiv] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
   live; Esc leert und schließt. Suche navigiert nie selbst.
 - **NAV-7** [geplant] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,
   bleibt in der Ansicht (Karte erscheint). „Preferences" →
@@ -788,7 +788,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   eingeklappter Suchleiste sichtbar: Ihr Such-Chip bleibt bestehen und die
   Lupe trägt den aktiven Toggle-Zustand. Die Lupe bekommt keinen Badge-Punkt;
   Punkte bleiben ausschließlich der Bitte-Rolle vorbehalten (FB-4, P-1).
-- **SEARCH-4** [geplant] [gtk] — Esc ist zweistufig und gilt für die ganze
+- **SEARCH-4** [aktiv] [gtk] — Esc ist zweistufig und gilt für die ganze
   Suchleiste: Mit Text leert das erste Esc die Query, lässt die Leiste offen
   und das Feld fokussiert; bei leerem Feld klappt Esc die Leiste ein. Eine
   Query wird nie durch Einklappen unsichtbar, ohne dass ihr Chip sie trägt.
