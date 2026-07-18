@@ -478,6 +478,58 @@ Verified: 1417 passed / 0 failed / 96 ignored (both features' suites united), cl
 - queue_transport.rs hit 817 lines (my PLAY-5a purge + main's DnD/move-to-top united) → extracted the test module to queue_transport_tests.rs (repo's #[path] sibling pattern), back to 646.
 Verified: 1431 passed / 0 failed / 96 ignored, clippy 0, fmt clean, ux-traceability "43 active rules covered", architecture + qa-linters pass, purity 0, audit 0. BOTH features' full rule sets green.
 
+## 2026-07-18 — Generated-metadata scalability baseline
+
+Branch: feat/performance-optimizations
+Base: e0493d0
+Lock: claimed by Codex in this worktree on 2026-07-18
+Stage: isolated 10,000/100,000-track query and scroll/cache measurement baseline
+
+- PERF-1: complete (commit f9d3ac4, base e0493d0, added a fail-closed synthetic query baseline with stable JSON timing output and a verified 10,000-track run).
+- PERF-2: complete (commit 679f15a, base f9d3ac4, added 10,000/100,000-track scroll probes with independent hard budgets of eight cached windows and 1,600 retained rows).
+- PERF-3: complete (commit 4ec74b9, base 679f15a, added the clean-worktree release orchestrator, reproducibility manifest, retained artifacts, CLI policy tests, and operator documentation).
+
+Stage review: complete. A clean-commit release run at `4ec74b9` passed for both 10,000 and 100,000 generated tracks; TrackListModel retained exactly eight SQL windows / 1,600 rows at both sizes (about 21 ms and 251 ms respectively on this host). Final gates passed: fmt, clippy `--all-targets --workspace -D warnings`, workspace tests (core 758 passed / 1 ignored; GNOME 668 passed / 138 ignored; platform 55 passed), architecture, UX traceability (60 active rules), core purity, QA linter policy, and audit with only the accepted RUSTSEC-2024-0436 warning. Assumption: elapsed times are same-host comparison evidence, not portable pass/fail thresholds; only the cache bounds are hard budgets. Deferred by scope and recorded in `TESTING.md`: installed-app startup, live GTK row-widget/provider counts, queue-memory growth, and manual rendered scroll feel. Residual risk / next-stage candidate: deep title-sorted SQL `OFFSET` windows grow roughly linearly with position at 100,000 tracks; keyset or anchored paging needs a separate design stage rather than an unmeasured optimization here. No product behavior, real database, music file, or live desktop was touched.
+
+Lock: released by Codex in this worktree on 2026-07-18
+
+## 2026-07-18 — Installed-runtime scalability measurements
+
+Branch: feat/performance-optimizations
+Base: 217407e (merged local main at 1ce9405 before implementation)
+Lock: claimed by Codex in this worktree on 2026-07-18
+Stage: installed-app startup, live GTK row/provider counts, queue memory, and isolated visible scroll response at 10,000/100,000 generated tracks
+
+- PERF-4: complete (commit 10894c7, base 217407e, added fail-closed installed-DESTDIR startup measurement with generated app-ready profiles and five CUA-observed starts per size; host execution remains explicitly deferred where the managed sandbox blocks private display sockets).
+- PERF-5: complete (commit 1405eff, base 10894c7, added real-process GTK widget/type, row/cell, provider/model, and SQL-cache reporting with deterministic runtime bounds).
+- PERF-6: complete (commit be8dfdf, base 1405eff, added fresh-process queue RSS and deterministic logical-payload measurement; local release medians were 159,744 bytes at 10,000 tracks and 1,609,728 bytes at 100,000 tracks).
+- PERF-7: complete (commit bbd3255, base be8dfdf, added the snapshot-action-snapshot scroll benchmark, installed-runtime orchestration, deterministic bounds, retained evidence, operator documentation, and paired commit comparison; follow-up 40b568b makes blocked private-Xvfb hosts fail before the expensive build with bounded diagnostics).
+
+Stage review: complete. The benchmark implementation and deterministic portions pass all required gates: fmt, strict workspace clippy, workspace tests (core 758 passed / 1 ignored; GNOME 669 passed / 138 ignored; platform 55 passed), both example suites, runtime/compare shell contracts, architecture, UX traceability (60 active rules), QA policy, core purity, and audit with only accepted RUSTSEC-2024-0436. Five fresh release processes measured Queue RSS medians of 159,744 bytes for 10,000 tracks and 1,609,728 bytes for 100,000 tracks (15.97 and 16.10 bytes/track; deterministic logical payloads 160,000 and 1,600,000 bytes). Installed startup, realized GTK rows/cells, and CUA scroll values are host-deferred: this managed sandbox rejects private Xvfb sockets before app launch; the clean-commit preflight now exits in under one second with a 588-byte diagnostic and never falls back to the real desktop/profile. Assumptions: timing comparisons use the same host/build conditions, database page cache is host-controlled and warm after profile seeding, and X11 snapshot response is an observable responsiveness proxy rather than native Wayland pointer feel. Residual risk: the host-deferred axes still need one complete `scripts/performance-runtime-baseline.sh` run before performance claims about installed GTK behavior; `scripts/performance-compare.sh` then provides exact before/after deltas.
+
+Lock: released by Codex in this worktree on 2026-07-18
+
+## 2026-07-18 — Benchmark-driven deep-window optimization
+
+Branch: feat/performance-optimizations
+Base: c336590
+Lock: claimed by Codex in this worktree on 2026-07-18
+Stage: identify, test-drive, and compare the highest-value reproducible 100,000-track query bottleneck
+
+- PERF-OPT-1: complete (commit ddaa3f3, base c336590, captured the title-window SQLite plan in the stable benchmark contract; the 100,000-track before run measured 6,496/27,348/48,874 us medians for first/middle/final windows and confirmed a full scan plus temporary ORDER BY B-tree).
+- PERF-OPT-2: complete (shadow commit bf8394d, base ddaa3f3, schema v12 adds a partial NOCASE title index for present tracks; migration, plan selection, data preservation, and visible ordering are regression-tested. The primary worktree Git metadata became read-only before this commit, so the preserved shadow commit is bundled at stage close-out).
+- PERF-OPT-3: complete (shadow commit b3644cc, base bf8394d, added a fail-closed generated-query comparison report covering storage, open time, first/middle/final windows, playback IDs, and before/after SQLite plans).
+
+Stage review: complete. A clean release pair compared committed baseline `ddaa3f3` with shadow candidate `b3644cc` at 10,000 and 100,000 generated tracks. At 100,000 tracks the first/middle/final title windows changed from 7,649/31,263/53,605 us to 157/635/1,333 us (-97.95/-97.97/-97.51%), and playback-id projection changed from 8,125 to 298 us (-96.33%). At 10,000 tracks the final window changed from 5,981 to 216 us (-96.39%). SQLite changed from a full scan plus temporary ORDER BY B-tree to `SCAN tracks USING INDEX idx_tracks_present_title_nocase`; the index adds 2,379,776 bytes at 100,000 tracks (+9.85%). Seven direct copies of the synthetic v11 database measured the one-time v12 index build at 36,634 us median (26,547–37,247 us). Repeated database-open timing did not regress in this pair (443 to 359 us at 100,000 tracks), but remains same-host noise rather than a performance claim.
+
+Final gates passed: fmt, strict workspace clippy, workspace tests (core 758 passed / 1 ignored; GNOME 669 passed / 138 ignored; platform 55 passed), architecture, UX traceability (60 active rules), QA policy including both comparison contracts, core purity, and audit with only accepted RUSTSEC-2024-0436. One unrelated `one_shot_task` async test observed an intermediate progress value in the first full run; it passed five focused repetitions and the complete rerun. Adversarial benchmark review caught and rejected two candidate reports contaminated by an older baseline binary in the local Cargo target; a full target rebuild produced the accepted index-selecting comparison.
+
+Assumptions: same-host release medians are comparison evidence, the partial index deliberately optimizes the default present-library title order only, and row ordering among equal NOCASE titles remains SQLite row-id order as before. Residual costs/risks: each visible-track insert/update maintains the additional index; its scan-write overhead is not yet measured, other sort fields and filtered searches still need separate plan evidence, and the installed GTK/startup/CUA axes remain host-deferred because this sandbox blocks private Xvfb sockets. No real database, music file, live desktop, or user profile was touched.
+
+Git handoff: the primary worktree Git metadata became read-only after `ddaa3f3`; commits `bf8394d` and `b3644cc` plus this close-out are preserved on the local shadow branch and in `.superpowers/sdd/performance-optimization-stage.bundle`. The primary branch itself was not advanced or pushed.
+
+Lock: released by Codex in this worktree on 2026-07-18
+
 ## 2026-07-18 — Theme-Flächenhierarchie + Theme-Akzent-Fallback
 
 Tasks S1–S3: complete (commits `0bfe79e`, `38d1f02`, `34e27a9`; Dark-Paletten auf die 14a-Hierarchie gebracht, linke Library-Sidebar und Headerbar mit gescopten 1-px-Hairlines getrennt, statischen Player-Fallback je Dark-/Light-Palette mit dem Theme-Akzent vereinheitlicht und Cover-Override am Fallback-Endpunkt freigegeben). Verifikation: fmt, clippy locked `--all-targets --workspace -D warnings`, Workspace-Tests 760 Core + 659 GNOME + 55 Platform grün (0 fehlgeschlagen, 116 GNOME-Display-Tests ignoriert), UX-Traceability 49 aktive Regeln, Architektur und Audit grün (nur akzeptiertes RUSTSEC-2024-0436); alle berührten Code-Dateien <800 Zeilen, kein Orange-Fallback-Literal mehr im GNOME-Quelltext. Pending display verification: `chrome_separator_css_parses`, `library_split_is_scoped_for_chrome_separators`, `mot_6_replacing_an_accent_fade_skips_the_previous_animation` sowie Screenshots aller drei Dark-Themes für Hairlines, Flächenhierarchie und Player-Fallback — isolierter `dbus-run-session`/Xvfb-Versuch scheiterte im Sandbox mit `Operation not permitted`. Annahme: das bestehende `#1CA98F` in `artist_detail_pane.rs` ist ein separater Artist-Hero-Glow außerhalb dieser Lane und blieb unverändert.
@@ -513,3 +565,56 @@ Abschluss-Gates: `cargo fmt --check`, Workspace-Clippy mit `-D warnings`, Worksp
 Integration: complete (merge commit `9bf482b1`, base `c2569e8a`, feature tip `fdd733c8`). Die Konfliktauflösung bewahrt New Releases als Schema v12 und ergänzt Disc-Persistenz als v13; Queue-/NPP-Routing und GRID-5/NAV-9a bleiben gemeinsam erhalten. Der Merge-Readiness-Lauf ist bis zu den sandbox-blockierten Display-Tests grün: fmt, locked clippy, Rustdoc, 778 Core + 698 GNOME + 55 Plattform bestanden (153 GNOME display-gated ignoriert), 85 aktive UX-Regeln, Motion-Lint, Architektur/File-Size, Core-Purity und Audit mit ausschließlich der erlaubten Ausnahme. Weil das gemeinsame Live-`.git` keine Ref-Schreibrechte erlaubt, bleibt `main` dort unverändert; die vollständige geprüfte History ist als Git-Bundle gesichert.
 
 Follow-up GRID-6: complete (commit `70e678ef`, base `e3e9d1bc`). Back aus einem Album-Detail stellt den Fokus auf der verlassenen, im aktuellen Filter sichtbaren Albumkachel wieder her, scrollt sie bei Bedarf sichtbar und löst weder Suchfeld-Clear noch GRID-5-Reveal-Puls aus. Der regelbenannte Headless-Test ist grün; der GTK-Fokustest bleibt display-gated. Alle Integrations-Gates sind grün: fmt, locked clippy, Rustdoc, Workspace-Tests (778 Core + 699 GNOME + 55 Plattform; 154 GNOME display-gated ignoriert), 86 aktive UX-Regeln, Motion-Lint, Architektur/File-Size, Core-Purity und Audit mit ausschließlich der erlaubten Ausnahme. Die manuelle Reduced-Motion-Anweisung verwendet jetzt GNOMEs System-Animationsschalter, weil XSettings eine isolierte GTK-`settings.ini` übersteuern kann.
+
+## 2026-07-18 — Bilingual GitHub engineering showcase
+
+Branch: feat/performance-optimizations
+Base: a41c53f
+Lock: claimed by Codex in this worktree on 2026-07-18
+Stage: update the private source README and public reprise-showcase for application use
+
+- SHOWCASE-1: complete (commit 5ac13860, base a41c53f, repaired six public Rustdoc comments that linked to private query helpers; the warning-denied documentation gate was red before the fix and green after it).
+- SHOWCASE-2: complete (commit 787f9c6e, base 5ac13860, rewrote the source README as a bilingual evidence-led engineering case study, added the German README and a gated drift contract, updated the automated test baseline, and documented the measured performance/architecture/UX/AI roadmap without presenting planned work as shipped).
+- Public showcase: complete (`marvinbaudach/reprise-showcase` main commits 54cb700b, a3218ab, and 3cfa7104; refreshed the English landing page, added the German translation, then corrected its locale-specific number formatting). Both files were fetched back from GitHub and checked for the project date, analyzer totals, benchmark results, test/UX counts, and roadmap status.
+
+Stage review: complete. The Bewerbung analyzer measured committed source HEAD a41c53f at 88,789 Rust code lines (58,053 product and 30,736 test; CV display 58,100 + 30,700 = 88,800). Final verification passed: bilingual README contract, QA-linter policy, architecture, UX traceability (60 active rules), motion tokens, fmt, strict all-target workspace clippy, warning-denied workspace Rustdoc, core purity, workspace tests (758 core passed / 1 ignored; 669 GNOME passed / 138 ignored; 55 platform passed), diff checks, and audit with only accepted RUSTSEC-2024-0436. Assumption: same-host release medians are presented as comparison evidence, while cache/memory limits are the portable hard budgets. Manual remainder: replace the clearly labelled design-system previews in the public showcase with real running-app screenshots after the native GNOME visual pass; no fabricated screenshot was added. Residual GitHub metadata item: the connector verified the showcase is public but does not expose repository description/topic mutation, and shell GitHub access was network-blocked, so description/topics were not changed.
+
+Lock: released by Codex in this worktree on 2026-07-18
+
+## 2026-07-18 — Benchmark-driven album-window optimization
+
+Branch: isolated `perf-album-integration` shadow branch
+Base: `b5299a96` (album schema v12 integrated with the completed title-index performance stage)
+Coordination: the repository-wide Album-grid T1–T7 lock remained owned by its active agent, so this stage touched neither live refs nor another worktree.
+Stage: eliminate the measured album-sorted deep-window bottleneck and report its read, storage, and adjacent-query effects.
+
+- PERF-ALBUM-1: complete (commit `b59af729`, extended the stable generated-query report with album-final-window timing and SQLite plan evidence).
+- PERF-ALBUM-2: complete (commit `d45f8d59`, schema v14 adds the present-track album/track-number partial index with migration, ordering, data-preservation, and plan tests).
+- PERF-ALBUM-3: complete (commit `8c0ea815`, comparison schema v2 reports album timing and before/after query plans fail-closed).
+- PERF-ALBUM-4: complete (commit `b1c02c54`, adversarial measurement caught aggregate queries selecting the cache-hostile album index; a red planner regression test drove the atomic title-index recreation that restores the established aggregate scan locality).
+- PERF-ALBUM-5: complete (commit `30f546a2`, comparison schema v3 now reports and validates filtered-count and library-stat deltas, closing the benchmark gap that exposed PERF-ALBUM-4 only during manual inspection).
+
+Stage review: complete in the isolated shadow branch. A sequential release pair compared committed baseline `b59af729` with candidate `30f546a2` using 10,000 and 100,000 generated metadata rows. At 100,000 tracks the final album-sorted window changed from 177,583 to 1,850 us (-98.96%); SQLite changed from the title index plus a temporary ORDER BY B-tree to `SCAN tracks USING INDEX idx_tracks_present_album_order`. The index adds 2,392,064 bytes (+8.97%). The existing title-index path remained unchanged and its first/middle/final windows changed by -1.04%/+0.61%/-0.63%; database open changed by +5 us (+1.05%), playback-ID projection by +11 us (+3.06%), filtered count by +918 us (+6.13%), and library stats by +311 us (+4.97%). At 10,000 tracks the album-final window changed from 5,529 to 393 us (-92.89%) for 241,664 additional bytes (+8.98%). TrackListModel retained exactly eight SQL windows / 1,600 rows at both sizes; its 100,000-row synthetic traversal changed from 14,686 to 12,995 us, but the host was under elevated concurrent load, so that elapsed value is recorded as context rather than an improvement claim.
+
+Final gates passed: fmt, strict workspace clippy, workspace tests (core 762 passed / 1 ignored; GNOME 669 passed / 138 ignored; platform 55 passed), architecture, UX traceability (60 active rules), QA policy including all performance comparison contracts, core purity, and audit with only the accepted RUSTSEC-2024-0436 warning. Assumptions: the index intentionally matches the established flat track-table album order (`album COLLATE NOCASE, track_no`) and does not change descending-sort semantics or adopt Album-grid disc ordering; same-host microsecond deltas are comparison evidence, while the deterministic plan and cache-bound assertions are the hard regression contracts. Residual costs/risks: visible-track writes maintain one additional index and still need a committed write-throughput benchmark; the small aggregate-query increases and storage cost are retained rather than hidden; installed-app startup, realized GTK widget/provider counts, queue RSS, and rendered scroll feel remain the previously documented host-deferred runtime axes. No real database, music file, live desktop, user profile, or remote was touched.
+
+Git handoff: the shadow tip is preserved as `/tmp/reprise-performance-album-optimization.bundle`; the primary `feat/performance-optimizations` branch remains at `a41c53f4` until the active Album-grid lock is released and the current live `main` can be integrated without disturbing concurrent work.
+
+## 2026-07-18 — Committed write-throughput benchmark
+
+Branch: isolated `perf-write-candidate` shadow branch
+Baseline: `86d6e8e6` (the generated write contract on the index-free album-query baseline)
+Candidate: `2e67020c` (album-index history plus the fail-closed write comparison)
+Coordination: live Album/showroom and network-opt-in locks remained owned by other active agents; this stage touched no live worktree or shared ref.
+Stage: quantify the read/storage/write trade-off of the present-track album-order index and reject a lower-cost alternative if it compromises deep scrolling.
+
+- PERF-WRITE-1: complete (commit `86d6e8e6`, schema-v4 query JSON measures committed insert, metadata-update, hide, and restore batches on disposable database copies; every iteration starts from identical generated state and leaves the read profile unchanged).
+- PERF-WRITE-2: complete (commit `2e67020c`, comparison schema v4 reports all four write deltas and rejects unequal write-batch sizes instead of comparing unlike workloads).
+
+Stage review: complete in the isolated shadow branch. A clean release pair compared baseline `86d6e8e6` with candidate `2e67020c` at 10,000 and 100,000 generated tracks. Because other agents still produced host I/O, the accepted write figures come from four additional counterbalanced 100,000-track AB/BA rounds using separately hashed release binaries; each report itself contains seven committed samples. For a 10,000-row batch, medians changed as follows: insert 35,088.5 to 42,399.5 us (+7,311 us / +20.84%), index-relevant metadata update 23,496.5 to 34,851 us (+11,354.5 us / +48.32%), hide 5,858.5 to 10,124.5 us (+4,266 us / +72.82%), and restore 6,228 to 10,490 us (+4,262 us / +68.43%). The dominant read result remained stable: the final album-sorted window changed from 134,406 to 1,418 us (-98.94%), while database size remains +2,392,064 bytes (+8.97%). Existing title-window, filtered-count, library-stat, and playback-ID medians varied between -0.49% and -5.70% in the counterbalanced control; their SQL plan stayed on `idx_tracks_present_title_nocase`, so these small negative deltas are treated as host/cache noise rather than improvement claims.
+
+Adversarial alternative review: an album-only partial index reduced the 100,000-row database to 27,238,400 bytes (only +573,440 bytes / about +2.15% over baseline), but SQLite required `USE TEMP B-TREE FOR LAST TERM OF ORDER BY`. One hundred focused final-window ID queries took 2,196,113 us instead of 143,183 us with the composite index, about 15.3 times slower. The narrower index was therefore rejected: it saves writes/storage at the exact cost of the deep-scroll latency this stage exists to remove. The committed composite index remains the smallest index that satisfies the established `album COLLATE NOCASE, track_no` order directly.
+
+Verification: both implementation commits passed fmt, strict workspace clippy, workspace tests (core 762 passed / 1 ignored; GNOME 669 passed / 138 ignored; platform 55 passed), architecture, UX traceability (60 active rules), QA policy including the schema-v4 comparison contract, core purity, and audit with only accepted RUSTSEC-2024-0436. All substantially edited code files remain below 800 lines. Assumptions: write timings include transaction begin, index maintenance, and commit for a 10,000-row batch; database copy/open/setup are deliberately outside the timer. The synthetic metadata update changes title, album, and track number, representing the worst index-relevant batch rather than a no-op field update. Residual risk: elapsed values are same-host evidence and real scanner/tag-writer throughput also includes filesystem/tag parsing; installed GTK/startup/CUA axes remain host-deferred. No real database, music file, live desktop, user profile, remote, or live branch was touched.
+
+Git handoff: baseline and candidate refs are preserved in `/tmp/reprise-performance-write-benchmark.bundle`; live `feat/performance-optimizations` and `main` remain unchanged until the other active lanes finish.

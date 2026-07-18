@@ -322,10 +322,44 @@ CREATE INDEX idx_new_releases_artist ON new_releases(artist_mbid);
 CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS NULL;
 "#;
 
-/// Schema v13: stores the optional disc number used to build album queues in
-/// canonical multi-disc order. Existing rows stay `NULL`, which album order
-/// deliberately interprets as disc 1 for backwards compatibility.
+/// Schema v13: gives the default title-sorted library window the ordering
+/// SQLite needs to stream rows instead of sorting the whole library into a
+/// temporary B-tree for every 200-row window. The partial predicate exactly
+/// matches the shared `queries::PRESENT` contract, so missing and tombstoned
+/// rows do not enlarge this library-only index. `COLLATE NOCASE` must be part
+/// of the index expression because the visible title order uses that collation
+/// and SQLite cannot satisfy it from a binary-collated title index.
 const SCHEMA_V13: &str = r#"
+CREATE INDEX idx_tracks_present_title_nocase
+ON tracks(title COLLATE NOCASE)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+"#;
+
+/// Schema v14: streams album-sorted visible-library windows from a partial
+/// index instead of re-sorting the full library for every 200-row page. The
+/// expression and collation exactly match the shared album sort contract;
+/// `track_no` preserves the established within-album order. Recreating the
+/// title index last is intentional: before SQLite has collected statistics,
+/// otherwise it uses the newest equally eligible partial index for aggregate
+/// scans. Album order scatters table lookups for counts and duration sums,
+/// while title order retains the established, cache-friendly query plan.
+const SCHEMA_V14: &str = r#"
+CREATE INDEX idx_tracks_present_album_order
+ON tracks(album COLLATE NOCASE, track_no)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+
+DROP INDEX idx_tracks_present_title_nocase;
+CREATE INDEX idx_tracks_present_title_nocase
+ON tracks(title COLLATE NOCASE)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+"#;
+
+/// Schema v15: stores the optional disc number used to build album queues in
+/// canonical multi-disc order. Existing rows stay `NULL`, which album order
+/// deliberately interprets as disc 1 for backwards compatibility. This stays
+/// after the already-integrated performance migrations so a database created
+/// by schema v14 is upgraded instead of incorrectly skipping the new column.
+const SCHEMA_V15: &str = r#"
 ALTER TABLE tracks ADD COLUMN disc_no INTEGER;
 "#;
 
@@ -463,6 +497,20 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V13)?;
         tx.pragma_update(None, "user_version", 13)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 14 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V14)?;
+        tx.pragma_update(None, "user_version", 14)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 15 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V15)?;
+        tx.pragma_update(None, "user_version", 15)?;
         tx.commit()?;
     }
     Ok(())
