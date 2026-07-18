@@ -39,11 +39,18 @@ fn mot_6_second_track_and_state_changes_finish_the_previous_visual_state() {
         Some(ICON_PAUSE)
     );
     assert_eq!(bar.play_pause_button.opacity(), 1.0);
-    let icon_animation = bar.current_icon_animation.borrow();
-    let icon_animation = icon_animation.as_ref().unwrap();
-    assert_eq!(icon_animation.duration(), motion::half(motion::MICRO));
-    assert_eq!(icon_animation.easing(), motion::MICRO_EASING);
-    assert!(icon_animation.follows_enable_animations_setting());
+    {
+        // Scope the borrow: window.close() below unmaps the bar, whose teardown
+        // calls replace_animation() (a slot.borrow_mut()). Holding this .borrow()
+        // across the close would re-enter the slot and abort (BorrowMutError
+        // inside a C signal callback) — same discipline as the track_animation
+        // borrow above.
+        let icon_animation = bar.current_icon_animation.borrow();
+        let icon_animation = icon_animation.as_ref().unwrap();
+        assert_eq!(icon_animation.duration(), motion::half(motion::MICRO));
+        assert_eq!(icon_animation.easing(), motion::MICRO_EASING);
+        assert!(icon_animation.follows_enable_animations_setting());
+    }
 
     settings.set_gtk_enable_animations(previous);
     window.close();
