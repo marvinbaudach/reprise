@@ -159,6 +159,7 @@ impl CompactPlayer {
             .widgets
             .play_pause_button
             .set_icon_name(if is_playing { ICON_PAUSE } else { ICON_PLAY });
+        self.0.widgets.waveform.set_paused(!is_playing);
         self.0
             .widgets
             .play_pause_button
@@ -534,5 +535,33 @@ mod tests {
 
         settings.set_gtk_enable_animations(previous);
         window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_5_compact_player_state_propagates_pause_to_waveform() {
+        gtk4::init().unwrap();
+        let player = CompactPlayer::new();
+
+        player.set_state(PlaybackState::Playing);
+        assert_eq!(
+            player.0.widgets.waveform.desaturation_target_for_test(),
+            0.0
+        );
+        player.set_state(PlaybackState::Paused);
+        assert_eq!(
+            player.0.widgets.waveform.desaturation_target_for_test(),
+            1.0
+        );
+        player.set_state(PlaybackState::Playing);
+        assert_eq!(
+            player.0.widgets.waveform.desaturation_target_for_test(),
+            0.0
+        );
+        player.set_state(PlaybackState::Stopped);
+        assert_eq!(
+            player.0.widgets.waveform.desaturation_target_for_test(),
+            1.0
+        );
     }
 }
