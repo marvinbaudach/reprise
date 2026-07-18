@@ -14,7 +14,7 @@ use reprise_core::artist_portrait::PortraitOutcome;
 use super::artist_portrait_worker::{ArtistPortraitRequest, ArtistPortraitRuntime};
 use super::cover_loader::CoverLoader;
 
-pub(in crate::ui) struct InfoPanelPortrait {
+pub(in crate::ui) struct NowPlayingPanelPortrait {
     picture: gtk4::Picture,
     runtime: Rc<ArtistPortraitRuntime>,
     cover_loader: Rc<CoverLoader>,
@@ -22,7 +22,7 @@ pub(in crate::ui) struct InfoPanelPortrait {
     artist: RefCell<String>,
 }
 
-impl InfoPanelPortrait {
+impl NowPlayingPanelPortrait {
     pub(in crate::ui) fn new(
         picture: gtk4::Picture,
         runtime: &Rc<ArtistPortraitRuntime>,

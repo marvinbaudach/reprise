@@ -1,4 +1,4 @@
-use super::info_panel_state::PanelContext;
+use super::now_playing_state::PanelContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::ui) struct RequestFeedback {
@@ -24,7 +24,7 @@ pub(in crate::ui) fn request_feedback(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::info_panel_state::PanelContext;
+    use crate::ui::now_playing_state::PanelContext;
     use reprise_core::models::Track;
 
     fn track(artist: &str) -> Track {

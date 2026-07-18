@@ -21,6 +21,7 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
+mod artist_news;
 mod browse;
 mod compact;
 mod cover;
@@ -42,6 +43,7 @@ mod mounts;
 pub mod mpris_mirror;
 pub(crate) mod nav_history;
 mod notifications;
+pub(crate) mod now_playing;
 mod one_shot_task;
 mod playback;
 pub(crate) mod player_bar;
@@ -73,6 +75,8 @@ pub(crate) mod window;
 // imports keep call sites stable while preventing ui/mod.rs from becoming a
 // second, flattened module tree again.
 #[allow(unused_imports)]
+use artist_news::artist_news_worker;
+#[allow(unused_imports)]
 pub(crate) use browse::browse_bar;
 #[allow(unused_imports)]
 use browse::{browse_filter_count, browse_filter_strings};
@@ -91,11 +95,6 @@ use device_sync::{
     device_sync_smoke, device_sync_strings,
 };
 #[allow(unused_imports)]
-use info_panel::{
-    artist_news_worker, artist_portrait_worker, info_panel_empty_state, info_panel_feedback,
-    info_panel_state, information_column,
-};
-#[allow(unused_imports)]
 use library_views::{
     album_card, album_card_actions, album_card_css, album_context_menu, album_header, album_view,
     album_view_actions, album_view_state, artist_avatar, artist_detail_hero, artist_detail_pane,
@@ -105,6 +104,11 @@ use library_views::{
 #[allow(unused_imports)]
 use lyrics::{
     lyrics_smoke, lyrics_state, lyrics_strings, lyrics_view, lyrics_worker, player_lyrics,
+};
+#[allow(unused_imports)]
+use now_playing::{
+    artist_portrait_worker, now_playing_column, now_playing_empty_state, now_playing_feedback,
+    now_playing_state,
 };
 #[allow(unused_imports)]
 use playback::{audio_effects, play_tracking, player_event_handling, up_next_transport};

@@ -20,11 +20,11 @@ use super::album_view::AlbumView;
 use super::cover_download_batch::CoverDownloadBatch;
 use super::device_view::DeviceViewPage;
 use super::first_run::FirstRunDecision;
-use super::info_panel::InfoPanel;
 use super::library_chrome::LibraryTitle;
 use super::library_player_bar::LibraryPlayerBarShell;
 use super::library_shell::LibraryViews;
 use super::minimal_view::MinimalView;
+use super::now_playing::NowPlayingPanel;
 use super::player_controller::PlayerController;
 use super::preferences::PreferencesContext;
 use super::scan_flow::ScanControls;
@@ -60,7 +60,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
     pub(in crate::ui) library_player_bar: &'a LibraryPlayerBarShell,
-    pub(in crate::ui) info_panel: &'a Rc<InfoPanel>,
+    pub(in crate::ui) info_panel: &'a Rc<NowPlayingPanel>,
     pub(in crate::ui) session_state: &'a SessionState,
     pub(in crate::ui) geometry_guard: &'a Rc<Cell<bool>>,
     pub(in crate::ui) scan_button: &'a gtk4::Button,

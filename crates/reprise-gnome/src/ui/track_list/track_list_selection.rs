@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::models::Track;
 
-use super::info_panel_state::PanelContext;
+use super::now_playing_state::PanelContext;
 use super::{Shared, TrackList};
 
 #[cfg_attr(not(test), allow(dead_code))]
