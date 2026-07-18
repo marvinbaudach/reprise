@@ -652,6 +652,32 @@ mod tests {
         window.close();
         settings.set_gtk_enable_animations(previous);
     }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_2_device_background_surfaces_only_crossfade_in_place() {
+        gtk4::init().unwrap();
+        let device = view(PlannedSyncPhase::Idle);
+        let on_open: OpenCallback = Rc::new(|_, _| {});
+        let card = DeviceCard::new(&device, &on_open);
+
+        assert_eq!(
+            card.indicator.transition_type(),
+            gtk4::StackTransitionType::Crossfade
+        );
+        assert_eq!(
+            card.detail_stack.transition_type(),
+            gtk4::StackTransitionType::Crossfade
+        );
+        assert_eq!(
+            card.percent_revealer.transition_type(),
+            gtk4::RevealerTransitionType::Crossfade
+        );
+        assert_eq!(
+            card.progress_revealer.transition_type(),
+            gtk4::RevealerTransitionType::Crossfade
+        );
+    }
 }
 
 #[cfg(test)]

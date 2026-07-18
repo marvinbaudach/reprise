@@ -251,6 +251,10 @@ mod tests {
             view.widget().transition_duration(),
             crate::ui::motion::STANDARD_MS
         );
+        assert_eq!(
+            view.widget().transition_type(),
+            gtk4::RevealerTransitionType::Crossfade
+        );
         let activated_target = Rc::new(RefCell::new(None));
         let activated_target_for_callback = activated_target.clone();
         view.set_on_activate(move |target| {

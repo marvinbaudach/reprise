@@ -664,7 +664,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   <!-- Flip-Kriterium MOT-1: alle Call-Sites aus dem Audit-Inventar des
        Motion-Plans konsumieren Tokens; scripts/check-motion-tokens.sh ist
        scharf und ohne Restlisten-Allowlist. -->
-- **MOT-2** [geplant] [gtk] — Nutzeraktion animiert, Hintergrund nie:
+- **MOT-2** [aktiv] [gtk] — Nutzeraktion animiert, Hintergrund nie:
   Transitions folgen direkten Nutzeraktionen. Scan/Watcher/Mount/Sync
   schalten hart bzw. faden ohne Verschiebung (P-4 in Motion-Sprache).
   Ausnahme: die vom Nutzer gestartete Prozess-Karte darf füllen/pulsieren.
