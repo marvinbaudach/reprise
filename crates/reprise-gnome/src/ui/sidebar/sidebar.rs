@@ -209,8 +209,7 @@ impl Sidebar {
         listbox.set_selection_mode(gtk4::SelectionMode::Single);
 
         let issues_listbox = gtk4::ListBox::new();
-        issues_listbox.add_css_class("navigation-sidebar");
-        issues_listbox.set_selection_mode(gtk4::SelectionMode::Single);
+        configure_issues_listbox(&issues_listbox);
         // Natural height, anchored at the bottom, hidden until `rebuild` finds
         // issues to show.
         issues_listbox.set_visible(false);
@@ -247,6 +246,7 @@ impl Sidebar {
         wire_row_selected(&shared);
         wire_row_activated(&shared);
         wire_focus_leave_resync(&shared);
+        wire_collection_boundary_navigation(&shared);
 
         rebuild(&shared, Some(ViewSource::default()), "initial build");
 
@@ -400,6 +400,92 @@ impl Sidebar {
         );
         self.activity_slot.set_device_section(&section);
     }
+}
+
+fn configure_issues_listbox(listbox: &gtk4::ListBox) {
+    listbox.add_css_class("navigation-sidebar");
+    listbox.set_selection_mode(gtk4::SelectionMode::Single);
+    // Selection remains exclusive with the main navigation list, so this
+    // collection often has no selected row for GTK to use as its tab entry.
+    // Keep the container itself in the focus chain; arrow navigation then
+    // moves to its first selectable issue row.
+    // a11y-semantics: role=list name=issues state=focusable action=arrow-navigation
+    listbox.set_focusable(true);
+}
+
+pub(in crate::ui) fn remember_issue_focus_entry(listbox: &gtk4::ListBox, row: &gtk4::ListBoxRow) {
+    if listbox.focus_child().is_none() {
+        listbox.set_focus_child(Some(row));
+    }
+}
+
+fn first_issue_row(shared: &Shared) -> Option<gtk4::ListBoxRow> {
+    shared
+        .rows
+        .borrow()
+        .iter()
+        .find(|(row, _, _)| row.parent().as_ref() == Some(shared.issues_listbox.upcast_ref()))
+        .map(|(row, _, _)| row.clone())
+}
+
+fn last_main_row(shared: &Shared) -> Option<gtk4::ListBoxRow> {
+    shared
+        .rows
+        .borrow()
+        .iter()
+        .rev()
+        .find(|(row, _, _)| row.parent().as_ref() == Some(shared.listbox.upcast_ref()))
+        .map(|(row, _, _)| row.clone())
+}
+
+fn wire_collection_boundary_navigation(shared: &Rc<Shared>) {
+    let down = gtk4::EventControllerKey::new();
+    down.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    let shared_down = shared.clone();
+    down.connect_key_pressed(move |_, key, _, modifiers| {
+        if key != gtk4::gdk::Key::Down || !modifiers.is_empty() {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        let Some(current) = last_main_row(&shared_down) else {
+            return gtk4::glib::Propagation::Proceed;
+        };
+        if !current.has_focus() {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        let Some(target) = first_issue_row(&shared_down) else {
+            return gtk4::glib::Propagation::Proceed;
+        };
+        if target.grab_focus() {
+            gtk4::glib::Propagation::Stop
+        } else {
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+    shared.listbox.add_controller(down);
+
+    let up = gtk4::EventControllerKey::new();
+    up.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    let shared_up = shared.clone();
+    up.connect_key_pressed(move |_, key, _, modifiers| {
+        if key != gtk4::gdk::Key::Up || !modifiers.is_empty() {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        let Some(current) = first_issue_row(&shared_up) else {
+            return gtk4::glib::Propagation::Proceed;
+        };
+        if !current.has_focus() {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        let Some(target) = last_main_row(&shared_up) else {
+            return gtk4::glib::Propagation::Proceed;
+        };
+        if target.grab_focus() {
+            gtk4::glib::Propagation::Stop
+        } else {
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+    shared.issues_listbox.add_controller(up);
 }
 
 /// Assembles the sidebar's vertical root. The scrolling navigation list

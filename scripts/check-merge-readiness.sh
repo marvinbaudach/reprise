@@ -42,6 +42,10 @@ git diff --check "$base_ref"...HEAD
 
 scripts/check-architecture.sh
 
+echo "== Accessibility semantics and input parity =="
+scripts/check-accessibility-semantics.sh
+scripts/check-input-parity.sh
+
 echo "== UX traceability =="
 scripts/check-ux-traceability.sh
 

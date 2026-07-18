@@ -312,7 +312,7 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
     };
     let card = IssueCard::new(&copy.icon, &copy.title, &copy.meta, action);
     if locate.folder {
-        super::missing_menus::install_card_context_menu(shared, card.header_widget());
+        super::missing_menus::install_card_context_menu(shared, card.header_widget(), &copy.title);
     }
     let kind = group.kind.clone();
     let row_shared = shared.clone();
@@ -480,8 +480,10 @@ pub(super) fn confirm_remove(shared: &Rc<Shared>, ids: Vec<i64>) {
         &strings::issue_text(strings::MISSING_REMOVE),
     );
     dialog.set_response_appearance(RESPONSE_REMOVE, adw::ResponseAppearance::Destructive);
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&window);
     let shared = shared.clone();
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
+        focus_guard.restore();
         if response.as_str() == RESPONSE_REMOVE {
             tombstone_with_undo(&shared, &ids);
         }
@@ -671,8 +673,10 @@ fn show_auto_clean_confirmation(shared: &Rc<Shared>, days: u32, eligible: usize,
         &strings::issue_text(strings::MISSING_AUTO_CLEAN_REMOVE_NOW),
     );
     dialog.set_response_appearance(RESPONSE_REMOVE_NOW, adw::ResponseAppearance::Destructive);
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&window);
     let shared = shared.clone();
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
+        focus_guard.restore();
         if response.as_str() == RESPONSE_REMOVE_NOW {
             run_auto_clean_now(&shared, now);
         } else {

@@ -80,6 +80,7 @@ struct RelinkProgressWidgets {
     percent: gtk4::Label,
     progress: gtk4::ProgressBar,
     detail: gtk4::Label,
+    open: gtk4::Button,
     cancel: gtk4::Button,
     cancellation: Rc<RefCell<Option<RelinkCancellation>>>,
     activation: RelinkProgressActivation,
@@ -100,13 +101,19 @@ impl RelinkProgressView {
         let cancel = gtk4::Button::with_label(&strings::issue_text(strings::CANCEL));
         cancel.add_css_class("flat");
         cancel.add_css_class("scan-card-cancel");
+        let open = gtk4::Button::with_label(&strings::text(strings::SIDEBAR_MISSING_FILES));
+        open.add_css_class("flat");
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         header.append(&spinner);
         header.append(&title);
         header.append(&percent);
+        header.append(&open);
         header.append(&cancel);
 
         let progress = gtk4::ProgressBar::new();
+        progress.update_property(&[gtk4::accessible::Property::Label(&strings::issue_text(
+            strings::MISSING_RELINK_PROGRESS_TITLE,
+        ))]);
         progress.set_hexpand(true);
         progress.set_height_request(PROGRESS_HEIGHT_PX as i32);
         let detail = gtk4::Label::builder()
@@ -137,12 +144,9 @@ impl RelinkProgressView {
         });
         let activation = RelinkProgressActivation::default();
         let activate_click = activation.clone();
-        let click = gtk4::GestureClick::new();
-        click.set_button(gtk4::gdk::BUTTON_PRIMARY);
-        click.connect_released(move |_, _, _, _| {
+        open.connect_clicked(move |_| {
             activate_click.primary_click();
         });
-        container.add_controller(click);
 
         Self {
             inner: Rc::new(RelinkProgressWidgets {
@@ -152,6 +156,7 @@ impl RelinkProgressView {
                 percent,
                 progress,
                 detail,
+                open,
                 cancel,
                 cancellation,
                 activation,
@@ -176,6 +181,7 @@ impl RelinkProgressView {
             return false;
         }
         *self.inner.cancellation.borrow_mut() = Some(cancellation);
+        self.inner.open.set_sensitive(true);
         self.show(0, 0, group_size);
         self.inner.revealer.set_reveal_child(true);
         true
@@ -194,6 +200,7 @@ impl RelinkProgressView {
     pub(super) fn finish(&self) {
         self.inner.cancellation.borrow_mut().take();
         self.inner.running.set(false);
+        self.inner.open.set_sensitive(false);
         self.inner.spinner.set_spinning(false);
         self.inner.progress.set_fraction(0.0);
         self.inner.revealer.set_reveal_child(false);
@@ -260,15 +267,7 @@ mod tests {
         view.set_on_activate(move |target| {
             activated_target_for_callback.borrow_mut().replace(target);
         });
-        let container = view.widget().child().unwrap();
-        let controllers = container.observe_controllers();
-        let gesture = (0..controllers.n_items())
-            .filter_map(|index| controllers.item(index))
-            .find_map(|controller| controller.downcast::<gtk4::GestureClick>().ok())
-            .filter(|gesture| gesture.button() == gtk4::gdk::BUTTON_PRIMARY)
-            .expect("relink progress card must own one primary-click gesture");
-
-        gesture.emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
+        view.inner.open.emit_clicked();
 
         assert_eq!(*activated_target.borrow(), Some(ViewSource::Missing));
     }

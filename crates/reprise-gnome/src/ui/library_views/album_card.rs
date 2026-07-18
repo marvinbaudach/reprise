@@ -195,6 +195,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             crate::ui::ellipsis_tooltip::arm(&subtitle_label);
 
             // Artist deep-link: GestureClick on subtitle.
+            // input-parity: ACC-8 keyboard=album-context-menu
             let artist_click = gtk4::GestureClick::new();
             artist_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
             {
@@ -212,6 +213,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 });
             }
             subtitle_label.add_controller(artist_click);
+            // input-parity: ACC-8 keyboard=album-context-menu
             subtitle_label.set_cursor_from_name(Some("pointer"));
 
             // Root card box.

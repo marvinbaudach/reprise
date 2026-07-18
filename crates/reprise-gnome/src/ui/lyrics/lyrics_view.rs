@@ -33,14 +33,14 @@ type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
 
 #[derive(Clone)]
 struct LyricsLine {
-    root: gtk4::Box,
+    root: gtk4::ListBoxRow,
     label: gtk4::Label,
     timestamp_ms: Option<i64>,
 }
 
 pub(in crate::ui) struct LyricsView {
     root: gtk4::Stack,
-    content: gtk4::Box,
+    content: gtk4::ListBox,
     scrolled: gtk4::ScrolledWindow,
     loading_track: gtk4::Label,
     status: gtk4::Label,
@@ -68,7 +68,10 @@ impl LyricsView {
     }
 
     fn with_timer(scroll_timer: Rc<dyn ScrollTimer>) -> Rc<Self> {
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 13);
+        let content = gtk4::ListBox::new();
+        content.set_selection_mode(gtk4::SelectionMode::Single);
+        content.set_activate_on_single_click(true);
+        content.add_css_class("lyrics-list");
         content.set_margin_top(18);
         content.set_margin_bottom(18);
         content.set_margin_start(18);
@@ -340,28 +343,29 @@ impl LyricsView {
         let underline = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         underline.add_css_class(LINE_UNDERLINE_CLASS);
         underline.set_halign(gtk4::Align::Center);
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        let line_content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        line_content.append(&label);
+        line_content.append(&underline);
+        let root = gtk4::ListBoxRow::new();
         root.add_css_class(LINE_CLASS);
-        root.set_halign(gtk4::Align::Fill);
-        root.append(&label);
-        root.append(&underline);
+        root.set_child(Some(&line_content));
+        root.set_selectable(true);
+        root.set_activatable(timestamp_ms.is_some());
         if timestamp_ms.is_some() {
             root.add_css_class(LINE_DISTANT_CLASS);
+            // input-parity: ACC-8 keyboard=enter-row
             root.set_cursor_from_name(Some("pointer"));
         } else {
             root.add_css_class(UNSYNCED_CLASS);
         }
         let index = self.lines.borrow().len();
         if timestamp_ms.is_some() {
-            let click = gtk4::GestureClick::new();
-            click.set_button(1);
             let view = Rc::downgrade(self);
-            click.connect_released(move |_, _, _, _| {
+            root.connect_activate(move |_| {
                 if let Some(view) = view.upgrade() {
                     view.activate_line(index);
                 }
             });
-            root.add_controller(click);
         }
         self.content.append(&root);
         self.lines.borrow_mut().push(LyricsLine {
@@ -458,6 +462,15 @@ impl LyricsView {
     }
 
     #[cfg(test)]
+    pub(in crate::ui) fn line_rows_for_test(&self) -> Vec<gtk4::ListBoxRow> {
+        self.lines
+            .borrow()
+            .iter()
+            .map(|line| line.root.clone())
+            .collect()
+    }
+
+    #[cfg(test)]
     pub(in crate::ui) fn visible_state_name(&self) -> Option<gtk4::glib::GString> {
         self.root.visible_child_name()
     }
@@ -519,12 +532,12 @@ impl LyricsView {
         else {
             return f64::INFINITY;
         };
-        let Some(point) = label.compute_point(&self.content, &gtk4::graphene::Point::new(0.0, 0.0))
+        let Some(point) =
+            label.compute_point(&self.scrolled, &gtk4::graphene::Point::new(0.0, 0.0))
         else {
             return f64::INFINITY;
         };
         f64::from(point.y()) + f64::from(label.height()) / 2.0
-            - self.scrolled.vadjustment().value()
             - self.scrolled.vadjustment().page_size() / 2.0
     }
 

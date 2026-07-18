@@ -73,6 +73,8 @@ const ACTION_PLAY: &str = "play";
 const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
 pub(in crate::ui) const ACTION_PLAY_NEXT: &str = "play-next";
 const ACTION_MOVE_TO_TOP: &str = "move-to-top";
+const ACTION_MOVE_UP: &str = "move-up";
+const ACTION_MOVE_DOWN: &str = "move-down";
 const ACTION_ADD_TO_PLAYLIST: &str = "add-to-playlist";
 const ACTION_NEW_PLAYLIST: &str = "new-playlist";
 const ACTION_GO_TO_ALBUM: &str = "go-to-album";
@@ -103,6 +105,7 @@ pub(in crate::ui) fn wire_context_menu_gesture(
     shared: &Rc<Shared>,
     column_view: &gtk4::ColumnView,
 ) {
+    // input-parity: ACC-8 keyboard=menu-shift-f10
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
 
@@ -187,12 +190,32 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
         });
         playlist_entries(&rows, &source)
     };
-    build_track_menu(&MenuInputs {
+    let menu = build_track_menu(&MenuInputs {
         context,
         selection: &summary,
         playlists: &entries,
         is_missing_view,
-    })
+    });
+    if matches!(context, MenuContext::Playlist | MenuContext::Queue) {
+        let reorder = gio::Menu::new();
+        for (label, action) in [
+            (strings::CONTEXT_MENU_MOVE_UP, ACTION_MOVE_UP),
+            (strings::CONTEXT_MENU_MOVE_DOWN, ACTION_MOVE_DOWN),
+        ] {
+            reorder.append(
+                Some(&strings::text(label)),
+                Some(&format!("tracklist.{action}")),
+            );
+        }
+        if context == MenuContext::Playlist {
+            reorder.append(
+                Some(&strings::text(strings::CONTEXT_MENU_MOVE_TO_TOP)),
+                Some("tracklist.move-to-top"),
+            );
+        }
+        menu.append_section(None, &reorder);
+    }
+    menu
 }
 
 /// Greys out the menu actions the current selection cannot support. Takes the
@@ -210,10 +233,25 @@ fn update_menu_action_states(
     // at all" rule — a mixed selection still enqueues just the playable ids
     // instead of being greyed out entirely.
     let enqueue_enabled = current_playable_selection(shared).enqueue_enabled();
+    let move_up = super::track_list_keyboard_reorder::is_available(
+        shared,
+        super::track_list_keyboard_reorder::ReorderDirection::Up,
+    );
+    let move_down = super::track_list_keyboard_reorder::is_available(
+        shared,
+        super::track_list_keyboard_reorder::ReorderDirection::Down,
+    );
+    let move_to_top = super::track_list_keyboard_reorder::is_available(
+        shared,
+        super::track_list_keyboard_reorder::ReorderDirection::Top,
+    ) || (context == MenuContext::Queue
+        && track_list_queue_menu::selected_rows(shared).len() > 1);
     for (name, enabled) in [
         (ACTION_PLAY_NEXT, enqueue_enabled),
         (ACTION_ADD_TO_QUEUE, enqueue_enabled),
-        (ACTION_MOVE_TO_TOP, states.enqueue),
+        (ACTION_MOVE_UP, move_up),
+        (ACTION_MOVE_DOWN, move_down),
+        (ACTION_MOVE_TO_TOP, move_to_top),
         (ACTION_GO_TO_ALBUM, states.go_to_album),
         (ACTION_GO_TO_ARTIST, states.go_to_artist),
         (ACTION_SHOW_IN_FILES, states.show_in_files),
@@ -274,10 +312,34 @@ pub(in crate::ui) fn wire_context_menu_actions(
     }
     action_group.add_action(&queue_action);
 
+    for (name, direction) in [
+        (
+            ACTION_MOVE_UP,
+            super::track_list_keyboard_reorder::ReorderDirection::Up,
+        ),
+        (
+            ACTION_MOVE_DOWN,
+            super::track_list_keyboard_reorder::ReorderDirection::Down,
+        ),
+    ] {
+        let action = gio::SimpleAction::new(name, None);
+        let shared = shared.clone();
+        action.connect_activate(move |_, _| {
+            super::track_list_keyboard_reorder::perform(&shared, direction);
+        });
+        action_group.add_action(&action);
+    }
+
     let move_to_top_action = gio::SimpleAction::new(ACTION_MOVE_TO_TOP, None);
     {
         let shared = shared.clone();
         move_to_top_action.connect_activate(move |_, _| {
+            if super::track_list_keyboard_reorder::perform(
+                &shared,
+                super::track_list_keyboard_reorder::ReorderDirection::Top,
+            ) {
+                return;
+            }
             let rows = track_list_queue_menu::selected_rows(&shared);
             let callback = shared.on_queue_move_to_top.borrow().clone();
             let moved = callback.map_or(0, |callback| callback(&rows));
@@ -395,6 +457,7 @@ pub(in crate::ui) fn wire_context_menu_actions(
 
     column_view.insert_action_group(ACTION_GROUP_NAME, Some(&action_group));
     super::track_list_context_keys::wire(column_view, shared);
+    super::track_list_keyboard_reorder::wire(column_view, shared);
 }
 
 /// Opens the row context menu for a secondary click at widget-local `(x,
@@ -429,6 +492,8 @@ fn show_context_menu(
     // closed so repeated right-clicks don't accumulate stale popovers as
     // children of the view.
     popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(column_view);
+    focus_guard.restore_on_popover_close(popover.upcast_ref());
 
     popover.popup();
 }
@@ -500,6 +565,11 @@ pub(in crate::ui) fn handle_add_to_playlist(shared: &Rc<Shared>, playlist_id: i6
         return;
     }
     let playlist_name = playlist_name_for_toast(shared, playlist_id);
+    let drop_callback = shared.on_sidebar_playlist_drop.borrow().clone();
+    if let Some(drop_callback) = drop_callback {
+        drop_callback(playlist_id, &playlist_name, ids);
+        return;
+    }
     match track_actions::add_selected_to_playlist(&shared.conn, playlist_id, ids) {
         Ok(inserted) => {
             tracing::info!(

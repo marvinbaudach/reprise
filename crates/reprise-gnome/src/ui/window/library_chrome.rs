@@ -181,6 +181,8 @@ pub(in crate::ui) fn css() -> String {
        color: alpha(@window_fg_color, 0.60); font-weight: 400; }\n\
      .reprise-view-switcher > button:hover:not(:checked) { \
        background-color: alpha(@window_fg_color, 0.08); }\n\
+     .reprise-view-switcher > button:focus-visible { \
+       outline: 2px solid @accent_color; outline-offset: 1px; }\n\
      .reprise-view-switcher > button:checked { \
        background-color: alpha(@window_fg_color, 0.14); \
        color: @window_fg_color; font-weight: 700; }"
@@ -325,6 +327,8 @@ mod tests {
         // background explicitly is what puts the step on screen; a palette
         // value alone never reaches it.
         assert!(css.contains("background-color: @headerbar_bg_color"));
+        assert!(css.contains(".reprise-view-switcher > button:focus-visible"));
+        assert!(css.contains("outline: 2px solid @accent_color"));
     }
 
     #[test]

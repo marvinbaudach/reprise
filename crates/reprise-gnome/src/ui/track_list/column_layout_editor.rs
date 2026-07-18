@@ -83,6 +83,7 @@ fn wire_row_drag_and_drop(
     id: ColumnId,
     on_drop: impl Fn(ColumnId, bool) + 'static,
 ) {
+    // input-parity: ACC-8 keyboard=alt-arrows
     let source = gtk4::DragSource::new();
     source.set_actions(gdk::DragAction::MOVE);
     // Observe pointer movement before ActionRow or one of its controls claims it.
@@ -102,6 +103,7 @@ fn wire_row_drag_and_drop(
     }
     widget.add_controller(source);
 
+    // input-parity: ACC-8 keyboard=alt-arrows
     let target = gtk4::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
     {
         let widget = widget.upcast_ref::<gtk4::Widget>().clone();
@@ -370,7 +372,7 @@ fn is_header_click(y: f64, header_height: i32) -> bool {
 /// Builds the header popover: the same editor surface (toggle + drag list with a
 /// Reset action) that the dialog uses, so a right-click on a column header edits
 /// the layout inline instead of showing a plain visibility menu.
-fn build_header_popover(track_list: &Rc<TrackList>) -> gtk4::Popover {
+fn build_header_popover(track_list: &Rc<TrackList>) -> (gtk4::Popover, gtk4::ListBox) {
     let title = strings::text(strings::EDIT_COLUMN_LAYOUT);
     let surface = build_surface(track_list, &title, false);
     let content = gtk4::Frame::builder()
@@ -385,7 +387,7 @@ fn build_header_popover(track_list: &Rc<TrackList>) -> gtk4::Popover {
         .build();
     popover.add_css_class("menu");
     popover.add_css_class("reprise-column-header-popover");
-    popover
+    (popover, surface.state.list.clone())
 }
 
 /// Installs the right-click-on-header gesture that opens the editor popover.
@@ -393,6 +395,7 @@ fn build_header_popover(track_list: &Rc<TrackList>) -> gtk4::Popover {
 /// the per-cell context-menu gesture and never reach this controller.
 pub(in crate::ui) fn install_header_popover(track_list: &Rc<TrackList>) {
     let column_view = track_list.column_view_widget().clone();
+    // input-parity: ACC-8 keyboard=column-editor
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
     // Capture phase, claiming on press: GtkColumnViewTitle's own click
@@ -414,10 +417,12 @@ pub(in crate::ui) fn install_header_popover(track_list: &Rc<TrackList>) {
             return;
         };
         gesture.set_state(gtk4::EventSequenceState::Claimed);
-        let popover = build_header_popover(&track_list);
+        let (popover, initial_focus) = build_header_popover(&track_list);
         popover.set_parent(&view);
         popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-        popover.connect_closed(gtk4::Popover::unparent);
+        let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&view);
+        focus_guard.bind_popover(&popover, &initial_focus);
+        crate::ui::popover_lifecycle::unparent_after_actions(&popover);
         popover.popup();
         tracing::debug!("column header popover opened");
     });
@@ -427,6 +432,8 @@ pub(in crate::ui) fn install_header_popover(track_list: &Rc<TrackList>) {
 pub(in crate::ui) fn present(window: &adw::ApplicationWindow, track_list: &Rc<TrackList>) {
     let surface = build_dialog(track_list);
     let dialog = surface.dialog;
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(window);
+    focus_guard.bind_closable_dialog(&dialog, &surface.state.list);
     dialog.present(Some(window));
     let serialized = column_layout::serialize_layout(&surface.state.layout.borrow());
     tracing::info!(

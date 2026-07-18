@@ -100,7 +100,7 @@ pub(in crate::ui) fn build_nav_row(
         hbox.append(&count_label);
     }
 
-    gtk4::ListBoxRow::builder().child(&hbox).build()
+    navigation_row(&hbox, title)
 }
 
 pub(in crate::ui) fn build_issue_nav_row(
@@ -131,7 +131,7 @@ pub(in crate::ui) fn build_issue_nav_row(
         hbox.append(&badge);
     }
 
-    gtk4::ListBoxRow::builder().child(&hbox).build()
+    navigation_row(&hbox, title)
 }
 
 /// Builds a navigation row with a trailing badge label instead of a count
@@ -155,7 +155,7 @@ pub(in crate::ui) fn build_nav_row_with_badge(
     badge.add_css_class("stats-badge");
     hbox.append(&badge);
 
-    gtk4::ListBoxRow::builder().child(&hbox).build()
+    navigation_row(&hbox, title)
 }
 
 pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBoxRow {
@@ -172,6 +172,7 @@ pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4:
         .child(&label)
         .selectable(false)
         .activatable(false)
+        .focusable(false)
         .build();
     listbox.append(&row);
     row
@@ -195,13 +196,14 @@ pub(in crate::ui) fn append_playlist_action_rows(listbox: &gtk4::ListBox) -> Pla
 
 fn append_playlist_action_row(
     listbox: &gtk4::ListBox,
-    label: &str,
+    label_id: &str,
     icon: NavIcon,
 ) -> gtk4::ListBoxRow {
     let hbox = row_box();
     hbox.append(&nav_icon(icon));
 
-    let label = gtk4::Label::new(Some(&strings::text(label)));
+    let label_text = strings::text(label_id);
+    let label = gtk4::Label::new(Some(&label_text));
     label.set_xalign(0.0);
     label.add_css_class("dim-label");
     hbox.append(&label);
@@ -211,6 +213,7 @@ fn append_playlist_action_row(
         .selectable(false)
         .activatable(true)
         .build();
+    row.update_property(&[gtk4::accessible::Property::Label(&label_text)]);
     listbox.append(&row);
     row
 }
@@ -241,6 +244,12 @@ fn row_box() -> gtk4::Box {
     hbox.set_margin_top(ROW_VERTICAL_MARGIN);
     hbox.set_margin_bottom(ROW_VERTICAL_MARGIN);
     hbox
+}
+
+fn navigation_row(child: &gtk4::Box, label: &str) -> gtk4::ListBoxRow {
+    let row = gtk4::ListBoxRow::builder().child(child).build();
+    row.update_property(&[gtk4::accessible::Property::Label(label)]);
+    row
 }
 
 fn nav_icon(icon: NavIcon) -> gtk4::Widget {
@@ -351,10 +360,27 @@ mod tests {
 
         assert!(!row.is_selectable());
         assert!(!row.is_activatable());
+        assert!(!row.is_focusable());
         let label = row.child().unwrap().downcast::<gtk4::Label>().unwrap();
         assert_eq!(label.text(), "ISSUES");
         assert!(label.has_css_class("caption-heading"));
         assert!(label.has_css_class("dim-label"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn acc_2_sidebar_navigation_rows_expose_their_own_accessible_name() {
+        gtk4::init().unwrap();
+        let row = build_nav_row("Music", Some(12), NavIcon::Library);
+
+        assert!(gtk4::test_accessible_has_role(
+            &row,
+            gtk4::AccessibleRole::ListItem
+        ));
+        assert!(gtk4::test_accessible_has_property(
+            &row,
+            gtk4::AccessibleProperty::Label
+        ));
     }
 
     #[test]

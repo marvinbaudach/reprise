@@ -70,8 +70,13 @@ impl AlbumView {
         let factory = album_card::build_factory(&card_shared);
 
         // ── GridView ───────────────────────────────────────────────────
+        let album_selection = gtk4::SingleSelection::builder()
+            .model(&filter_model)
+            .autoselect(false)
+            .can_unselect(true)
+            .build();
         let grid_view = gtk4::GridView::builder()
-            .model(&gtk4::NoSelection::new(Some(filter_model.clone())))
+            .model(&album_selection)
             .factory(&factory)
             .min_columns(1)
             .max_columns(200)
@@ -159,6 +164,7 @@ impl AlbumView {
         // cell, which cancels the card's own click gesture (a real caught
         // regression: cards stopped opening).
         {
+            // input-parity: ACC-8 keyboard=native-grid-focus
             let empty_click = gtk4::GestureClick::new();
             empty_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
             let grid = grid_view.downgrade();
@@ -388,6 +394,10 @@ mod tests {
         let loader =
             crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
         let view = AlbumView::new(&conn, loader);
+        assert!(view
+            .grid_widget()
+            .model()
+            .is_some_and(|model| model.is::<gtk4::SingleSelection>()));
 
         let activated: Rc<RefCell<Option<AlbumSummary>>> = Rc::new(RefCell::new(None));
         {

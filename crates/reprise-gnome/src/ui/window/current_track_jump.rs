@@ -26,7 +26,7 @@ pub(in crate::ui) struct JumpContext {
     pub nav_history: Rc<NavHistory>,
     pub content_stack: gtk4::Stack,
     pub library_stack: gtk4::Stack,
-    pub album_grid: gtk4::GridView,
+    pub active_content_focus: library_shell::ActiveContentFocus,
 }
 
 pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback {
@@ -40,7 +40,7 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
     let nav_history_for_route = context.nav_history.clone();
     let content_stack_for_route = context.content_stack.clone();
     let library_stack_for_route = context.library_stack.clone();
-    let album_grid_for_route = context.album_grid.clone();
+    let active_content_focus_for_route = context.active_content_focus.clone();
 
     coordinator(JumpSteps {
         current_origin: Rc::new(move || {
@@ -70,7 +70,7 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
                 &track_list_for_route,
                 &content_stack_for_route,
                 &library_stack_for_route,
-                &album_grid_for_route,
+                &active_content_focus_for_route,
                 "jump to current track origin",
             );
         }),

@@ -21,6 +21,8 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
+#[cfg(test)]
+mod accessibility_semantics;
 mod artist_news;
 mod browse;
 mod compact;
@@ -71,6 +73,7 @@ pub mod toasts;
 #[cfg(test)]
 pub(crate) mod tooltip_discipline;
 pub(crate) mod track_list;
+mod transient_focus;
 pub mod view_session;
 pub(crate) mod window;
 

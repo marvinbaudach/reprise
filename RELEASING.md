@@ -111,6 +111,14 @@ release check.
 Use disposable test music and a disposable XDG data directory where practical.
 Do not point development hooks at the maintainer's real library.
 
+- ACC-7 visible-focus acceptance: complete the whole application with only
+  the keyboard in default and High Contrast themes, then repeat with Large
+  Text. Every focus stop must remain visible and distinct from hover,
+  selection, and now-playing state. Verify names, roles, states, values, and
+  actions with Orca and a switched-off monitor; cover the on-screen keyboard,
+  real GNOME/Wayland dialogs and portals, and reduced animation. Record the
+  result before changing ACC-7 from `[geplant]` to `[aktiv]`.
+
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
   disable switch. A detected Rhythmbox installation must show a clearly

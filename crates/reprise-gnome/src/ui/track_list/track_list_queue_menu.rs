@@ -29,6 +29,11 @@ pub(in crate::ui) fn add_selected(shared: &Rc<Shared>, ids: &[i64]) {
     let Some(ids) = track_actions::queue_selected_ids(ids) else {
         return;
     };
+    let drop_callback = shared.on_sidebar_queue_drop.borrow().clone();
+    if let Some(drop_callback) = drop_callback {
+        drop_callback(&ids);
+        return;
+    }
     let count = ids.len();
     let callback = shared.on_queue_selected.borrow().clone();
     match callback {

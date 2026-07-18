@@ -40,6 +40,24 @@ pub(in crate::ui) fn sync_current_source(
     *shared.current_source.borrow_mut() = source.clone();
 }
 
+fn reroute_baseline(target: &ViewSource) -> ViewSource {
+    if matches!(target, ViewSource::MyStats) {
+        ViewSource::Library
+    } else {
+        ViewSource::MyStats
+    }
+}
+
+/// Forces the next rebuilt row selection through the routing callback.
+///
+/// A detail surface such as My Stats can leave the track list's source at
+/// Library. Re-baselining from that stale source would deduplicate a history
+/// return to Library and leave the detail page visible. A deliberately
+/// different sentinel makes the rebuilt target row authoritative again.
+pub(in crate::ui) fn prepare_history_reroute(shared: &Shared, target: &ViewSource) {
+    sync_current_source(shared, &reroute_baseline(target));
+}
+
 // Queue-nav-row drop seams, relocated from `sidebar.rs` (orchestrator size
 // rule) — same overflow home as `sync_current_source` above.
 impl crate::ui::sidebar::Sidebar {
@@ -78,5 +96,22 @@ impl crate::ui::sidebar::Sidebar {
     #[cfg(test)]
     pub(in crate::ui) fn test_shared(&self) -> &std::rc::Rc<super::sidebar::Shared> {
         &self.shared
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acc_5_history_reroute_cannot_be_deduplicated_as_the_target_source() {
+        for target in [
+            ViewSource::Library,
+            ViewSource::Queue,
+            ViewSource::Missing,
+            ViewSource::MyStats,
+        ] {
+            assert_ne!(reroute_baseline(&target), target);
+        }
     }
 }

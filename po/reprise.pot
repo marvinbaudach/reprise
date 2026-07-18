@@ -799,6 +799,14 @@ msgstr ""
 msgid "Add to playlist"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings.rs:514
+msgid "Move up"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings.rs:515
+msgid "Move down"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings.rs:516
 msgid "New playlist…"
 msgstr ""
@@ -1051,6 +1059,18 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:41
 msgid "Play or Pause"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs
+msgid "Stop Playback"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs
+msgid "Increase Volume"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs
+msgid "Decrease Volume"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
@@ -1796,6 +1816,10 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:57
 msgid "Phone Playlists"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Add Selected Tracks"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:58

@@ -1,8 +1,7 @@
-//! Keyboard shortcuts (Stage 3 Task 9): Space (play/pause), Ctrl+F (reveal +
-//! focus + select the search entry), and Escape (two-stage: clear the search
-//! text first, then collapse the search bar). Enter/double-click row
-//! activation already works natively (`ui::track_list`'s `wire_activate`) —
-//! nothing to add here for that.
+//! Application and window keyboard shortcuts. Space toggles playback only
+//! when the focused widget does not own Space itself. Escape clears search
+//! first, then collapses the search bar and returns focus to the active content
+//! surface.
 //!
 //! ## Three shortcuts, three different wiring mechanisms — on purpose
 //!
@@ -19,28 +18,12 @@
 //!   focus-sensitivity to get right — the whole point of a global
 //!   accelerator.
 //!
-//! - **Space** is the one case the brief calls out by name as needing care
-//!   ("Key-Handling-Priorität beachten"), and the skill's input-delivery
-//!   caution applies directly: *do not assume* how GTK will route a key
-//!   event without checking. `gtk::Application::set_accels_for_action`
-//!   accelerators are activated through a `GtkShortcutController`, and per
-//!   GTK4's own docs a focused widget's own key handling (e.g. `GtkText`
-//!   inserting a typed character) is checked *before* an ancestor's
-//!   accelerator controller ever sees the event, for the ordinary case where
-//!   that controller sits above the focused widget in the bubble-phase
-//!   propagation chain — so accelerating Space this way would, in the common
-//!   case, simply never fire while the search entry has focus and the user
-//!   is typing an actual space. That is not a robust *contract*, though —
-//!   it's an emergent property of controller ordering that this code does
-//!   not want to depend on silently. So the action's own `activate` handler
-//!   re-checks explicitly, via the currently focused widget
-//!   (`window.focus()`) and the pure, unit-tested `space_should_toggle`
-//!   predicate: if focus is on anything implementing `gtk::Editable` (a text
-//!   entry), the handler no-ops instead of toggling playback, and logs why.
-//!   Belt AND braces: GTK's own routing keeps a focused entry from ever
-//!   losing the keystroke in the first place, and this guard keeps the
-//!   *action's* behavior correct and testable regardless of exactly how that
-//!   routing happens to work in a given GTK4 point release.
+//! - **Space** uses a capture-phase `EventControllerKey`, not an application
+//!   accelerator. The controller inspects the actual focused widget before
+//!   dispatch: local controls continue through GTK's native key path, while
+//!   passive content activates `win.toggle-play-pause`. A global accelerator
+//!   cannot provide that contract because it consumes the key before a
+//!   no-op action handler can return it to the focused control.
 //!
 //! - **Escape** is handled by a capture-phase key controller on the search
 //!   bar. This intercepts the entry's built-in `stop-search` default before
@@ -49,8 +32,8 @@
 //!
 //! ## What's verified headlessly vs. manually
 //!
-//! The three predicates below (`space_should_toggle`, `focused_widget_is_
-//! text_entry`'s boolean-in shape, `escape_action_for`) are pure functions,
+//! The predicates below (`space_should_toggle`, `focused_widget_owns_space`'s
+//! boolean-in shape, `escape_action_for`) are pure functions,
 //! unit-tested with no display. The action *callbacks* that wrap them are
 //! exercised by calling them directly in tests too (see this module's
 //! `#[cfg(test)]`). Real key events (does pressing the physical Space bar
@@ -84,8 +67,20 @@ pub fn space_should_toggle(focus_is_text_entry: bool) -> bool {
 /// implements `gtk::Editable` — the interface every text-entry-shaped widget
 /// in this app (`gtk::SearchEntry`, and any plain `gtk::Text`/`gtk::Entry`)
 /// implements. `None` (nothing focused) is not a text entry.
-fn focused_widget_is_text_entry(focus: Option<&gtk4::Widget>) -> bool {
-    focus.is_some_and(libadwaita::prelude::ObjectExt::is::<gtk4::Editable>)
+fn focused_widget_owns_space(focus: Option<&gtk4::Widget>) -> bool {
+    focus.is_some_and(|widget| {
+        widget.is::<gtk4::Editable>()
+            || widget.is::<gtk4::Button>()
+            || widget.is::<gtk4::CheckButton>()
+            || widget.is::<gtk4::Switch>()
+            || widget.is::<gtk4::Range>()
+            || widget.is::<gtk4::DropDown>()
+            || widget.is::<gtk4::ListBox>()
+            || widget.is::<gtk4::FlowBox>()
+            || widget.is::<gtk4::ListView>()
+            || widget.is::<gtk4::GridView>()
+            || widget.is::<gtk4::ColumnView>()
+    })
 }
 
 /// What Escape should do, given whether the search entry currently has any
@@ -94,8 +89,9 @@ fn focused_widget_is_text_entry(focus: Option<&gtk4::Widget>) -> bool {
 pub enum EscapeAction {
     /// First press (search has text): clear it, keep focus in the entry.
     ClearSearchText,
-    /// Second press (search is already empty): collapse the search bar.
-    CollapseSearchBar,
+    /// Second press (search is already empty): collapse the bar and hand focus
+    /// back to the active content view.
+    CollapseSearchBarAndFocusActiveContent,
 }
 
 /// Pure decision for Escape's two-stage behavior.
@@ -103,7 +99,7 @@ pub fn escape_action_for(search_has_text: bool) -> EscapeAction {
     if search_has_text {
         EscapeAction::ClearSearchText
     } else {
-        EscapeAction::CollapseSearchBar
+        EscapeAction::CollapseSearchBarAndFocusActiveContent
     }
 }
 
@@ -118,16 +114,17 @@ pub fn wire(
     window: &adw::ApplicationWindow,
     search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
+    focus_active_content: Rc<dyn Fn() -> bool>,
     player: Option<Rc<PlayerController>>,
 ) {
     wire_toggle_play_pause(app, window, player);
+    wire_window_lifecycle(app, window);
     wire_focus_search(app, window, search_bar, search_entry);
-    wire_escape(search_bar, search_entry);
+    wire_escape(search_bar, search_entry, focus_active_content);
 }
 
-/// Space: `win.toggle-play-pause`, accelerated to `"space"`. See the module
-/// doc's `## Space` bullet for why the focus check lives inside the
-/// activate handler rather than being trusted to GTK's routing alone.
+/// Space: `win.toggle-play-pause`, dispatched by a focus-sensitive capture
+/// controller. See the module doc's `## Space` bullet.
 /// `window` is captured weakly in the closure (not strongly): the action is
 /// itself owned by `window` (via `add_action`), so a strong capture back
 /// into the closure would form an `Rc`-style reference cycle through GTK's
@@ -140,28 +137,43 @@ fn wire_toggle_play_pause(
     player: Option<Rc<PlayerController>>,
 ) {
     let action = gio::SimpleAction::new(ACTION_TOGGLE_PLAY_PAUSE, None);
-    let window_weak = window.downgrade();
-    action.connect_activate(move |_, _| {
-        let Some(window) = window_weak.upgrade() else {
-            tracing::warn!("toggle-play-pause: window is gone; ignoring");
-            return;
-        };
-        let focus = gtk4::prelude::GtkWindowExt::focus(&window);
-        let focus_is_text_entry = focused_widget_is_text_entry(focus.as_ref());
-        if !space_should_toggle(focus_is_text_entry) {
-            tracing::debug!(
-                "space: focused widget is a text entry; letting the keystroke through instead \
-                 of toggling playback"
-            );
-            return;
-        }
-        match &player {
-            Some(player) => player.toggle_pause(),
-            None => tracing::warn!("space: player unavailable; ignoring play/pause toggle"),
-        }
+    action.connect_activate(move |_, _| match &player {
+        Some(player) => player.toggle_pause(),
+        None => tracing::warn!("space: player unavailable; ignoring play/pause toggle"),
     });
     window.add_action(&action);
-    app.set_accels_for_action(&format!("win.{ACTION_TOGGLE_PLAY_PAUSE}"), &["space"]);
+    app.set_accels_for_action(&format!("win.{ACTION_TOGGLE_PLAY_PAUSE}"), &[]);
+
+    let key_controller = gtk4::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    let window_weak = window.downgrade();
+    key_controller.connect_key_pressed(move |_, key, _, modifiers| {
+        let shortcut_modifiers = gtk4::gdk::ModifierType::CONTROL_MASK
+            | gtk4::gdk::ModifierType::ALT_MASK
+            | gtk4::gdk::ModifierType::SHIFT_MASK
+            | gtk4::gdk::ModifierType::SUPER_MASK
+            | gtk4::gdk::ModifierType::META_MASK;
+        if key != gtk4::gdk::Key::space || modifiers.intersects(shortcut_modifiers) {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        let Some(window) = window_weak.upgrade() else {
+            return gtk4::glib::Propagation::Proceed;
+        };
+        let focus = gtk4::prelude::GtkWindowExt::focus(&window);
+        if !space_should_toggle(focused_widget_owns_space(focus.as_ref())) {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        if let Err(error) = gtk4::prelude::WidgetExt::activate_action(
+            &window,
+            &format!("win.{ACTION_TOGGLE_PLAY_PAUSE}"),
+            None,
+        ) {
+            tracing::warn!(%error, "space: could not activate play/pause action");
+            return gtk4::glib::Propagation::Proceed;
+        }
+        gtk4::glib::Propagation::Stop
+    });
+    window.add_controller(key_controller);
 }
 
 /// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — reveals the
@@ -197,18 +209,31 @@ fn wire_focus_search(
     app.set_accels_for_action(&format!("win.{ACTION_FOCUS_SEARCH}"), &["<Control>f"]);
 }
 
-fn apply_search_escape(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) {
+fn apply_search_escape(
+    search_bar: &gtk4::SearchBar,
+    search_entry: &gtk4::SearchEntry,
+    focus_active_content: &dyn Fn() -> bool,
+) {
     match escape_action_for(!search_entry.text().is_empty()) {
         EscapeAction::ClearSearchText => {
             search_entry.set_text("");
             search_bar.set_search_mode(true);
             search_entry.grab_focus();
         }
-        EscapeAction::CollapseSearchBar => search_bar.set_search_mode(false),
+        EscapeAction::CollapseSearchBarAndFocusActiveContent => {
+            search_bar.set_search_mode(false);
+            if !focus_active_content() {
+                tracing::warn!("escape: could not move focus to the active content view");
+            }
+        }
     }
 }
 
-fn wire_escape(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) {
+fn wire_escape(
+    search_bar: &gtk4::SearchBar,
+    search_entry: &gtk4::SearchEntry,
+    focus_active_content: Rc<dyn Fn() -> bool>,
+) {
     let controller = gtk4::EventControllerKey::new();
     controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
     let bar = search_bar.downgrade();
@@ -220,10 +245,32 @@ fn wire_escape(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) {
         if key != gtk4::gdk::Key::Escape || !bar.is_search_mode() {
             return gtk4::glib::Propagation::Proceed;
         }
-        apply_search_escape(&bar, &entry);
+        apply_search_escape(&bar, &entry, focus_active_content.as_ref());
         gtk4::glib::Propagation::Stop
     });
     search_bar.add_controller(controller);
+}
+
+fn wire_window_lifecycle(app: &adw::Application, window: &adw::ApplicationWindow) {
+    let close = gio::SimpleAction::new("close", None);
+    let window_weak = window.downgrade();
+    close.connect_activate(move |_, _| {
+        if let Some(window) = window_weak.upgrade() {
+            window.close();
+        }
+    });
+    window.add_action(&close);
+    app.set_accels_for_action("win.close", &["<Control>w"]);
+
+    let quit = gio::SimpleAction::new("quit", None);
+    let app_weak = app.downgrade();
+    quit.connect_activate(move |_, _| {
+        if let Some(app) = app_weak.upgrade() {
+            app.quit();
+        }
+    });
+    app.add_action(&quit);
+    app.set_accels_for_action("app.quit", &["<Control>q"]);
 }
 
 #[cfg(test)]
@@ -266,18 +313,29 @@ mod tests {
         search_bar.set_search_mode(true);
         entry.set_text("falling");
 
-        apply_search_escape(&search_bar, &entry);
+        let focus_calls = std::cell::Cell::new(0);
+        let focus_active_content = || {
+            focus_calls.set(focus_calls.get() + 1);
+            true
+        };
+
+        apply_search_escape(&search_bar, &entry, &focus_active_content);
         assert_eq!(entry.text(), "");
         assert!(search_bar.is_search_mode());
+        assert_eq!(focus_calls.get(), 0);
 
-        apply_search_escape(&search_bar, &entry);
+        apply_search_escape(&search_bar, &entry, &focus_active_content);
         assert!(!search_bar.is_search_mode());
+        assert_eq!(focus_calls.get(), 1);
     }
 
     #[test]
     fn nav_6_escape_changes_search_state_without_navigation() {
         assert_eq!(escape_action_for(true), EscapeAction::ClearSearchText);
-        assert_eq!(escape_action_for(false), EscapeAction::CollapseSearchBar);
+        assert_eq!(
+            escape_action_for(false),
+            EscapeAction::CollapseSearchBarAndFocusActiveContent
+        );
     }
 
     #[test]
@@ -291,12 +349,69 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn local_controls_keep_space_instead_of_toggling_playback() {
+        gtk4::init().unwrap();
+        let local_controls: Vec<gtk4::Widget> = vec![
+            gtk4::SearchEntry::new().upcast(),
+            gtk4::Button::new().upcast(),
+            gtk4::CheckButton::new().upcast(),
+            gtk4::Switch::new().upcast(),
+            gtk4::Scale::with_range(gtk4::Orientation::Horizontal, 0.0, 1.0, 0.1).upcast(),
+            gtk4::ListBox::new().upcast(),
+            gtk4::GridView::new(None::<gtk4::SelectionModel>, None::<gtk4::ListItemFactory>)
+                .upcast(),
+            gtk4::ColumnView::new(None::<gtk4::SelectionModel>).upcast(),
+        ];
+        for control in local_controls {
+            assert!(
+                focused_widget_owns_space(Some(&control)),
+                "{} must keep its native Space behavior",
+                control.type_().name()
+            );
+        }
+        let passive = gtk4::Label::new(Some("Passive")).upcast::<gtk4::Widget>();
+        assert!(!focused_widget_owns_space(Some(&passive)));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn acc_4_space_uses_capture_controller_so_local_controls_keep_the_key() {
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.ShortcutTest")
+            .build();
+        let window = adw::ApplicationWindow::new(&app);
+
+        wire_toggle_play_pause(&app, &window, None);
+
+        assert!(
+            app.accels_for_action(&format!("win.{ACTION_TOGGLE_PLAY_PAUSE}"))
+                .is_empty(),
+            "a global accelerator consumes Space before the focused control"
+        );
+        let controllers = window.observe_controllers();
+        let has_capture_key_controller = (0..controllers.n_items()).any(|index| {
+            controllers
+                .item(index)
+                .and_then(|item| item.downcast::<gtk4::EventControllerKey>().ok())
+                .is_some_and(|controller| {
+                    controller.propagation_phase() == gtk4::PropagationPhase::Capture
+                })
+        });
+        assert!(has_capture_key_controller);
+    }
+
+    #[test]
     fn escape_clears_text_when_search_has_text() {
         assert_eq!(escape_action_for(true), EscapeAction::ClearSearchText);
     }
 
     #[test]
-    fn escape_collapses_search_bar_when_search_is_empty() {
-        assert_eq!(escape_action_for(false), EscapeAction::CollapseSearchBar);
+    fn escape_collapses_search_bar_and_focuses_active_content_when_empty() {
+        assert_eq!(
+            escape_action_for(false),
+            EscapeAction::CollapseSearchBarAndFocusActiveContent
+        );
     }
 }

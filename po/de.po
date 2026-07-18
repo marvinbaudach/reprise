@@ -669,7 +669,32 @@ msgstr "Erstellen"
 msgid "Could not create playlist “{name}”"
 msgstr "Die Wiedergabeliste „{name}“ konnte nicht erstellt werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:446
+#: crates/reprise-gnome/src/ui/strings.rs:521
+#: crates/reprise-gnome/src/ui/strings_artist.rs:58
+msgid "Add to queue"
+msgstr "Zur Warteschlange hinzufügen"
+
+#: crates/reprise-gnome/src/ui/strings.rs:522
+msgid "Add to playlist"
+msgstr "Zur Wiedergabeliste hinzufügen"
+
+#: crates/reprise-gnome/src/ui/strings.rs:514
+msgid "Move up"
+msgstr "Nach oben verschieben"
+
+#: crates/reprise-gnome/src/ui/strings.rs:515
+msgid "Move down"
+msgstr "Nach unten verschieben"
+
+#: crates/reprise-gnome/src/ui/strings.rs:528
+msgid "New playlist…"
+msgstr "Neue Wiedergabeliste…"
+
+#: crates/reprise-gnome/src/ui/strings.rs:529
+msgid "Remove from playlist"
+msgstr "Aus der Wiedergabeliste entfernen"
+
+#: crates/reprise-gnome/src/ui/strings.rs:539
 msgid "Rescan library"
 msgstr "Musiksammlung erneut einlesen"
 
@@ -925,6 +950,18 @@ msgstr "Navigation"
 msgid "Play or Pause"
 msgstr "Wiedergabe oder Pause"
 
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs
+msgid "Stop Playback"
+msgstr "Wiedergabe stoppen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs
+msgid "Increase Volume"
+msgstr "Lautstärke erhöhen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs
+msgid "Decrease Volume"
+msgstr "Lautstärke verringern"
+
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
 msgid "Search Library"
 msgstr "Bibliothek durchsuchen"
@@ -1069,10 +1106,6 @@ msgstr "Alle wiedergeben"
 #: crates/reprise-gnome/src/ui/strings_artist.rs:56
 msgid "More artist actions"
 msgstr "Weitere Interpretenaktionen"
-
-#: crates/reprise-gnome/src/ui/strings_artist.rs:58
-msgid "Add to queue"
-msgstr "Zur Warteschlange hinzufügen"
 
 #: crates/reprise-gnome/src/ui/strings_artist.rs:60
 msgid "Edit tags for all"
@@ -2176,7 +2209,11 @@ msgstr "Musik auf dem Gerät"
 msgid "Phone Playlists"
 msgstr "Handy-Wiedergabelisten"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:58
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
+msgid "Add Selected Tracks"
+msgstr "Ausgewählte Titel hinzufügen"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:34
 msgid "No music was found in the device Music folder."
 msgstr "Im Musikordner des Geräts wurde keine Musik gefunden."
 
@@ -2600,15 +2637,6 @@ msgstr "Separate Titelleiste"
 #, rust-format
 #~ msgid "{filtered} of {total}"
 #~ msgstr "{filtered} von {total}"
-
-#~ msgid "Add to playlist"
-#~ msgstr "Zur Wiedergabeliste hinzufügen"
-
-#~ msgid "New playlist…"
-#~ msgstr "Neue Wiedergabeliste…"
-
-#~ msgid "Remove from playlist"
-#~ msgstr "Aus der Wiedergabeliste entfernen"
 
 #~ msgid "Path"
 #~ msgstr "Pfad"

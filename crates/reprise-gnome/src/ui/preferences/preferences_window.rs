@@ -181,11 +181,6 @@ pub(in crate::ui) fn build(
         .content_height(680)
         .build();
 
-    let focus_target = sidebar_list.clone();
-    dialog.connect_map(move |_| {
-        focus_target.grab_focus();
-    });
-
     PreferencesShell {
         dialog,
         navigation,

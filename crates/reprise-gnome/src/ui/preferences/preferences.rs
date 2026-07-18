@@ -233,7 +233,9 @@ impl PreferencesContext {
                 PageId::Appearance => self.appearance_page(),
                 PageId::Layout => self.layout_page(),
                 PageId::Library => self.library_page(),
-                PageId::Synchronization => super::preference_sync::build_page(&self.device_sync),
+                PageId::Synchronization => {
+                    super::preference_sync::build_page(&self.device_sync, &self.track_list)
+                }
                 PageId::Plugins => self.plugins_page(),
             };
             (id, page)
@@ -245,6 +247,8 @@ impl PreferencesContext {
             pages,
             Some(foreground_scan_progress.widget().upcast_ref()),
         );
+        let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&self.window);
+        focus_guard.bind_closable_dialog(&shell.dialog, &shell.sidebar);
         shell.dialog.connect_closed(move |_| {
             let _keep_progress_alive_until_closed = &foreground_scan_progress;
         });

@@ -47,6 +47,24 @@ The helper contract has a deterministic fake-driver test:
 scripts/tests/cua-e2e.sh
 ```
 
+Keyboard-only acceptance uses a separate inventory and dispatcher:
+
+```sh
+scripts/cua-e2e/keyboard.sh --check-manifest
+scripts/cua-e2e/keyboard.sh --run PID WINDOW_ID
+```
+
+`keyboard-surfaces.tsv` is the fail-closed inventory of every released GUI
+surface. A missing/duplicate surface, an unknown scenario, a missing focused
+state, degraded snapshot, suspected no-op, or escalation recommendation makes
+the contract fail. Every listed surface has a keyboard-only flow; the populated
+profile in `run.sh` executes the complete manifest and retains before/after
+snapshots for every action.
+
+For an iterative keyboard-only retry, run
+`CUA_E2E_ONLY=populated-library scripts/cua-e2e/run.sh`; the default remains
+the complete fresh-install, populated-library, and tag-editor matrix.
+
 This headless X11 run proves accessibility exposure, input delivery, widget
 state transitions, screenshots, and clean logs. Native Wayland rendering,
 pointer feel, portals, media keys, audible playback, and compositor-specific

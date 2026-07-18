@@ -109,6 +109,13 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         nav_history,
     } = args;
 
+    let active_content_focus = super::library_shell::ActiveContentFocus::new(
+        content_stack,
+        &library_views.stack,
+        track_list,
+        album_view.grid_widget(),
+    );
+
     let minimal_toggle = minimal_view.clone();
     let compact_preferences = preferences.clone();
     super::compact_mode_controls::install(
@@ -129,6 +136,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let sync_preferences = preferences.clone();
     let menu_preferences = preferences.clone();
     let cancel_scan_controls = scan_controls.clone();
+    let stop_player = player.as_ref().map(|player| {
+        let player = Rc::downgrade(player);
+        Rc::new(move || {
+            if let Some(player) = player.upgrade() {
+                player.reset_to_stopped();
+            }
+        }) as Rc<dyn Fn()>
+    });
     let library_menu = super::primary_menu::install(
         header,
         window,
@@ -150,10 +165,12 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             on_sync_device: Rc::new(move || {
                 sync_preferences.present_page("synchronization");
             }),
+            on_stop_playback: stop_player,
             on_preferences: Rc::new(move || menu_preferences.present()),
         },
         scan_controls,
     );
+    app.set_accels_for_action("win.open-primary-menu", &["F10"]);
     scan_controls.set_on_scan_state_changed({
         let library_menu = library_menu.clone();
         move |is_scanning| {
@@ -177,7 +194,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 nav_history: nav_history.clone(),
                 content_stack: content_stack.clone(),
                 library_stack: library_views.stack.clone(),
-                album_grid: album_view.grid_widget().clone(),
+                active_content_focus: active_content_focus.clone(),
             },
         );
 
@@ -200,7 +217,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     let track_list = track_list.clone();
                     let content_stack = content_stack.clone();
                     let library_stack = library_views.stack.clone();
-                    let album_grid = album_view.grid_widget().clone();
+                    let active_content_focus = active_content_focus.clone();
                     Rc::new(move || {
                         let place = crate::ui::nav_history::NavPlace::source(
                             ViewSource::Library,
@@ -213,7 +230,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                                 &track_list,
                                 &content_stack,
                                 &library_stack,
-                                &album_grid,
+                                &active_content_focus,
                                 "reveal playing album",
                             );
                         });
@@ -252,7 +269,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
             let library_stack = library_views.stack.clone();
-            let album_grid = album_view.grid_widget().clone();
+            let active_content_focus = active_content_focus.clone();
             let restore_album_focus = album_view.restore_focus_callback();
             back_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_back() else {
@@ -279,7 +296,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                             &track_list,
                             &content_stack,
                             &library_stack,
-                            &album_grid,
+                            &active_content_focus,
                             "nav back",
                         );
                         nav_history.end_back();
@@ -300,7 +317,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let track_list = track_list.clone();
             let content_stack = content_stack.clone();
             let library_stack = library_views.stack.clone();
-            let album_grid = album_view.grid_widget().clone();
+            let active_content_focus = active_content_focus.clone();
             forward_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_forward() else {
                     tracing::debug!("nav forward: nothing ahead");
@@ -318,7 +335,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &track_list,
                     &content_stack,
                     &library_stack,
-                    &album_grid,
+                    &active_content_focus,
                     "nav forward",
                 );
                 nav_history.end_back();
@@ -332,6 +349,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         // listening to all buttons, claiming ONLY 8/9 so every other button
         // passes through untouched; capture phase on the toplevel so it
         // works over every view.
+        // input-parity: ACC-8 keyboard=alt-left-right
         let mouse_nav = gtk4::GestureClick::builder()
             .button(0)
             .propagation_phase(gtk4::PropagationPhase::Capture)
@@ -488,6 +506,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         library_title,
         window_title,
         show_content_if_collapsed,
+        &active_content_focus,
     );
 
     let track_list_weak = Rc::downgrade(track_list);
@@ -532,7 +551,18 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         window_title,
         &search_restore_guard,
     );
-    super::shortcuts::wire(app, window, search_bar, search_entry, player.clone());
+    let focus_active_content: Rc<dyn Fn() -> bool> = {
+        let active_content_focus = active_content_focus.clone();
+        Rc::new(move || active_content_focus.focus())
+    };
+    super::shortcuts::wire(
+        app,
+        window,
+        search_bar,
+        search_entry,
+        focus_active_content,
+        player.clone(),
+    );
 
     super::scan_flow::wire_scan_button(
         scan_controls,
@@ -603,6 +633,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     );
     super::session_restore::arm_seed_close(window);
     super::first_run::run(window, scan_button, conn, first_run_decision);
+    active_content_focus.focus_later_if_unset(window);
     minimal_view.apply_initial();
     arm_smoke_quit(window);
 }
