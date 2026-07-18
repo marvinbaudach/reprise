@@ -119,6 +119,57 @@ fn issues_list_is_the_bottom_most_root_child_below_the_activity_slot() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn focus_driven_selection_browses_without_routing_but_activation_routes() {
+    gtk4::init().unwrap();
+    let shared = test_shared();
+    wire_row_selected(&shared);
+    wire_row_activated(&shared);
+    rebuild(&shared, None, "test build");
+    let routed: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    {
+        let routed = routed.clone();
+        *shared.on_select.borrow_mut() = Some(Rc::new(move |source: ViewSource, _title| {
+            routed.borrow_mut().push(source.label());
+        }));
+    }
+    // Rows must be realized/mapped for focus to be grantable.
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.append(&shared.listbox);
+    root.append(&shared.issues_listbox);
+    let window = gtk4::Window::builder().child(&root).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    // Keyboard focus lands on the Queue row (Tab / arrow browsing) and
+    // GTK's ListBox auto-selects it — that must NOT route (the optics run
+    // caught tabbing THROUGH the sidebar yanking the app to the Queue).
+    let queue_row = find_row(&shared, &ViewSource::Queue).unwrap();
+    assert!(queue_row.grab_focus());
+    shared.listbox.select_row(Some(&queue_row));
+    assert!(
+        routed.borrow().is_empty(),
+        "focus-driven selection must not route"
+    );
+
+    // Committing (click / Enter / Space all emit `row-activated`) routes
+    // exactly once — the single-click navigation contract.
+    queue_row.emit_by_name::<()>("activate", &[]);
+    assert_eq!(*routed.borrow(), vec![ViewSource::Queue.label()]);
+
+    // Programmatic selection (refresh_and_select's path — no focus on the
+    // row) still routes.
+    gtk4::prelude::GtkWindowExt::set_focus(&window, gtk4::Widget::NONE);
+    let library_row = find_row(&shared, &ViewSource::Library).unwrap();
+    shared.listbox.select_row(Some(&library_row));
+    assert_eq!(
+        *routed.borrow(),
+        vec![ViewSource::Queue.label(), ViewSource::Library.label()]
+    );
+    window.close();
+}
+
+#[test]
 fn keeps_requested_source_when_its_row_still_exists() {
     let (source, fell_back) = resolve_select_source(ViewSource::Playlist(3), true);
     assert_eq!(source, ViewSource::Playlist(3));
