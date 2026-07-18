@@ -493,6 +493,18 @@ Stage review: complete. A clean-commit release run at `4ec74b9` passed for both 
 
 Lock: released by Codex in this worktree on 2026-07-18
 
+## 2026-07-18 — Installed-runtime scalability measurements
+
+Branch: feat/performance-optimizations
+Base: 217407e (merged local main at 1ce9405 before implementation)
+Lock: claimed by Codex in this worktree on 2026-07-18
+Stage: installed-app startup, live GTK row/provider counts, queue memory, and isolated visible scroll response at 10,000/100,000 generated tracks
+
+- PERF-4: in progress — installed-app startup measurement.
+- PERF-5: pending — live GTK row/provider measurement and bounds.
+- PERF-6: pending — queue memory-growth measurement and bounds.
+- PERF-7: pending — isolated CUA scroll response, orchestration, documentation, gates, and stage review.
+
 ## 2026-07-18 — Theme-Flächenhierarchie + Theme-Akzent-Fallback
 
 Tasks S1–S3: complete (commits `0bfe79e`, `38d1f02`, `34e27a9`; Dark-Paletten auf die 14a-Hierarchie gebracht, linke Library-Sidebar und Headerbar mit gescopten 1-px-Hairlines getrennt, statischen Player-Fallback je Dark-/Light-Palette mit dem Theme-Akzent vereinheitlicht und Cover-Override am Fallback-Endpunkt freigegeben). Verifikation: fmt, clippy locked `--all-targets --workspace -D warnings`, Workspace-Tests 760 Core + 659 GNOME + 55 Platform grün (0 fehlgeschlagen, 116 GNOME-Display-Tests ignoriert), UX-Traceability 49 aktive Regeln, Architektur und Audit grün (nur akzeptiertes RUSTSEC-2024-0436); alle berührten Code-Dateien <800 Zeilen, kein Orange-Fallback-Literal mehr im GNOME-Quelltext. Pending display verification: `chrome_separator_css_parses`, `library_split_is_scoped_for_chrome_separators`, `mot_6_replacing_an_accent_fade_skips_the_previous_animation` sowie Screenshots aller drei Dark-Themes für Hairlines, Flächenhierarchie und Player-Fallback — isolierter `dbus-run-session`/Xvfb-Versuch scheiterte im Sandbox mit `Operation not permitted`. Annahme: das bestehende `#1CA98F` in `artist_detail_pane.rs` ist ein separater Artist-Hero-Glow außerhalb dieser Lane und blieb unverändert.

@@ -192,6 +192,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
 
     let mut conn = reprise_core::db::open_migrated(Some(&config.db_path))?;
     seed_generated_metadata(&mut conn, config.track_count)?;
+    reprise_core::library::settings::set_onboarding_completed(&conn, true)?;
     conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
     drop(conn);
 
@@ -282,6 +283,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unique_database_path(stem: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "reprise-{stem}-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
 
     #[test]
     fn cli_requires_an_explicit_database_and_track_count() {
@@ -380,5 +392,23 @@ mod tests {
                 "playback_ids": {"min_us": 22, "median_us": 23, "max_us": 24, "result_rows": 10000}
             })
         );
+    }
+
+    #[test]
+    fn generated_database_is_ready_for_installed_app_startup() {
+        let db_path = unique_database_path("installed-startup-profile");
+        let report = run(&Config {
+            db_path: db_path.clone(),
+            track_count: 2,
+            iterations: 1,
+        })
+        .unwrap();
+
+        assert_eq!(report.generated_tracks, 2);
+        let conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
+        assert!(reprise_core::library::settings::get_onboarding_completed(&conn).unwrap());
+
+        drop(conn);
+        std::fs::remove_file(db_path).unwrap();
     }
 }
