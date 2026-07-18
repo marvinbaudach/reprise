@@ -122,7 +122,7 @@ impl RelinkProgressView {
         container.append(&detail);
         let revealer = gtk4::Revealer::builder()
             .transition_type(gtk4::RevealerTransitionType::Crossfade)
-            .transition_duration(150)
+            .transition_duration(crate::ui::motion::STANDARD_MS)
             .child(&container)
             .reveal_child(false)
             .build();
@@ -247,6 +247,10 @@ mod tests {
     fn relink_progress_primary_gesture_dispatches_missing_navigation() {
         gtk4::init().unwrap();
         let view = RelinkProgressView::new();
+        assert_eq!(
+            view.widget().transition_duration(),
+            crate::ui::motion::STANDARD_MS
+        );
         let activated_target = Rc::new(RefCell::new(None));
         let activated_target_for_callback = activated_target.clone();
         view.set_on_activate(move |target| {
