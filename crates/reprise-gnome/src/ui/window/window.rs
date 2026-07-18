@@ -133,7 +133,6 @@ pub fn build(
         .build();
 
     let header = adw::HeaderBar::new();
-    super::library_chrome::style_header(&header);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
     let maintenance_actions = super::library_chrome::build_maintenance_actions();

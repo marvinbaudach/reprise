@@ -129,6 +129,13 @@ mod tests {
 
         assert_eq!(sections.len(), 2);
         assert_eq!(
+            sections[1].shortcuts[5],
+            ShortcutSpec {
+                title_message: strings::CLEAR_SEARCH_OR_RETURN_TO_TRACK_LIST,
+                accelerator: "Escape",
+            }
+        );
+        assert_eq!(
             accelerators,
             [
                 "space",
