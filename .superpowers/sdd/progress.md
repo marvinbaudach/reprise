@@ -478,6 +478,17 @@ Verified: 1417 passed / 0 failed / 96 ignored (both features' suites united), cl
 - queue_transport.rs hit 817 lines (my PLAY-5a purge + main's DnD/move-to-top united) → extracted the test module to queue_transport_tests.rs (repo's #[path] sibling pattern), back to 646.
 Verified: 1431 passed / 0 failed / 96 ignored, clippy 0, fmt clean, ux-traceability "43 active rules covered", architecture + qa-linters pass, purity 0, audit 0. BOTH features' full rule sets green.
 
+## 2026-07-18 — Generated-metadata scalability baseline
+
+Branch: feat/performance-optimizations
+Base: e0493d0
+Lock: claimed by Codex in this worktree on 2026-07-18
+Stage: isolated 10,000/100,000-track query and scroll/cache measurement baseline
+
+- PERF-1: in progress — synthetic core query baseline CLI with stable JSON output.
+- PERF-2: pending — large-library TrackListModel scroll/cache probe.
+- PERF-3: pending — orchestration, documentation, full gates, and stage review.
+
 ## 2026-07-18 — Theme-Flächenhierarchie + Theme-Akzent-Fallback
 
 Tasks S1–S3: complete (commits `0bfe79e`, `38d1f02`, `34e27a9`; Dark-Paletten auf die 14a-Hierarchie gebracht, linke Library-Sidebar und Headerbar mit gescopten 1-px-Hairlines getrennt, statischen Player-Fallback je Dark-/Light-Palette mit dem Theme-Akzent vereinheitlicht und Cover-Override am Fallback-Endpunkt freigegeben). Verifikation: fmt, clippy locked `--all-targets --workspace -D warnings`, Workspace-Tests 760 Core + 659 GNOME + 55 Platform grün (0 fehlgeschlagen, 116 GNOME-Display-Tests ignoriert), UX-Traceability 49 aktive Regeln, Architektur und Audit grün (nur akzeptiertes RUSTSEC-2024-0436); alle berührten Code-Dateien <800 Zeilen, kein Orange-Fallback-Literal mehr im GNOME-Quelltext. Pending display verification: `chrome_separator_css_parses`, `library_split_is_scoped_for_chrome_separators`, `mot_6_replacing_an_accent_fade_skips_the_previous_animation` sowie Screenshots aller drei Dark-Themes für Hairlines, Flächenhierarchie und Player-Fallback — isolierter `dbus-run-session`/Xvfb-Versuch scheiterte im Sandbox mit `Operation not permitted`. Annahme: das bestehende `#1CA98F` in `artist_detail_pane.rs` ist ein separater Artist-Hero-Glow außerhalb dieser Lane und blieb unverändert.
