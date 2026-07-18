@@ -450,6 +450,30 @@ pub fn query_releases(
     Ok(releases)
 }
 
+pub fn unseen_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM new_releases WHERE seen_at IS NULL",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn mark_releases_seen(
+    conn: &Connection,
+    release_group_mbids: &[String],
+    seen_at: i64,
+) -> Result<(), rusqlite::Error> {
+    let transaction = conn.unchecked_transaction()?;
+    for mbid in release_group_mbids {
+        transaction.execute(
+            "UPDATE new_releases SET seen_at = ?1
+             WHERE release_group_mbid = ?2 AND seen_at IS NULL",
+            rusqlite::params![seen_at, mbid],
+        )?;
+    }
+    transaction.commit()
+}
+
 pub fn query_artist_news(
     conn: &Connection,
     artist_mbid: &str,
