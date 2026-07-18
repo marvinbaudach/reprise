@@ -375,6 +375,10 @@ fn read_meta_roundtrip() {
     });
     tag.set_track(9);
     tag.set_genre("Deathcore".into());
+    tag.insert_text(
+        lofty::tag::ItemKey::MusicBrainzArtistId,
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into(),
+    );
     tag.save_to_path(&file, lofty::config::WriteOptions::default())
         .unwrap();
 
@@ -384,7 +388,42 @@ fn read_meta_roundtrip() {
     assert_eq!(meta.album, "God Hand");
     assert_eq!(meta.year, Some(2019));
     assert_eq!(meta.track_no, Some(9));
+    assert_eq!(
+        meta.artist_mbid.as_deref(),
+        Some("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    );
     assert!(meta.duration_ms > 0);
+}
+
+#[test]
+fn scan_persists_musicbrainz_artist_id() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = fixture_copy(tmp.path(), "tagged.flac");
+    let mut tag = Tag::new(TagType::VorbisComments);
+    tag.set_artist("Tagged Artist".into());
+    tag.insert_text(
+        lofty::tag::ItemKey::MusicBrainzArtistId,
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into(),
+    );
+    tag.save_to_path(&file, lofty::config::WriteOptions::default())
+        .unwrap();
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(report.added, 1);
+
+    let stored: (Option<String>, i64) = conn
+        .query_row(
+            "SELECT artist_mbid, artist_mbid_negative FROM tracks WHERE path = ?1",
+            [file.to_string_lossy().to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        stored,
+        (Some("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into()), 0)
+    );
 }
 
 #[test]
