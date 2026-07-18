@@ -3,9 +3,10 @@
 //! Queue — both with a track-count label), PLAYLISTS (`library::playlists::
 //! list`, each with its track count, plus grouped create/import actions), and
 //! SMART (`library::playlists::list_smart`, no counts — the mockup doesn't
-//! show any), followed by the "problem sources" — Import errors / Missing
-//! files — each shown only while its count is non-zero — and a shared,
-//! bottom-pinned activity slot for connected-device sync and library scans.
+//! show any), then a shared activity slot for connected-device sync and
+//! library scans, and finally the "problem sources" — Import errors /
+//! Missing files, each shown only while its count is non-zero — pinned last
+//! so they stay flush with the sidebar's bottom edge (QA #6).
 //!
 //! ## Row identity: a plain `Vec`, not GObject data
 //!
@@ -83,11 +84,11 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) conn: Rc<RefCell<Connection>>,
     pub(in crate::ui) listbox: gtk4::ListBox,
     /// The non-scrolling "Issues" list (Import errors / Missing files),
-    /// directly above the shared bottom activity slot (design mockup 14a).
-    /// A single `ListBox` can't bottom-pin a subset of its rows, so this is
-    /// its own list, with selection mirrored against `listbox`
-    /// (`wire_row_selected` clears the sibling on select). Hidden entirely
-    /// when there are no issues.
+    /// pinned at the very bottom of the sidebar, below the shared activity
+    /// slot (design mockup 14a; QA #6). A single `ListBox` can't bottom-pin
+    /// a subset of its rows, so this is its own list, with selection mirrored
+    /// against `listbox` (`wire_row_selected` clears the sibling on select).
+    /// Hidden entirely when there are no issues.
     pub(in crate::ui) issues_listbox: gtk4::ListBox,
     /// Supplies the current queue's length for the "Queue" row's counter.
     /// Wired once at construction (mirrors `TrackList`'s `queue_ids_
@@ -184,8 +185,8 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) refresh_count: Cell<u64>,
 }
 
-/// Handle to the built sidebar widget: scrolling navigation followed by
-/// non-scrolling issues and the shared bottom activity slot.
+/// Handle to the built sidebar widget: scrolling navigation, then the shared
+/// activity slot, then the bottom-pinned non-scrolling issues list.
 pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
@@ -220,13 +221,8 @@ impl Sidebar {
             .hscrollbar_policy(gtk4::PolicyType::Never)
             .build();
 
-        // The scrolling nav list expands to fill; the issues list is pinned
-        // below it at the sidebar's bottom-left.
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        root.append(&scrolled);
-        root.append(&issues_listbox);
         let activity_slot = SidebarActivitySlot::new();
-        root.append(activity_slot.widget());
+        let root = build_root(&scrolled, activity_slot.widget(), &issues_listbox);
 
         let shared = Rc::new(Shared {
             conn,
@@ -403,6 +399,26 @@ impl Sidebar {
         );
         self.activity_slot.set_device_section(&section);
     }
+}
+
+/// Assembles the sidebar's vertical root. The scrolling navigation list
+/// expands to fill the top; the shared activity slot (device sync / scan /
+/// relink cards) sits below it and claims height only while something is
+/// active; and the issues list (Import errors / Missing files) is appended
+/// last so it stays flush with the sidebar's bottom edge in every state
+/// (QA #6). Because the issues list is the bottom-most child, an active
+/// activity card grows *upward* into the navigation region rather than
+/// pushing the issues rows off the bottom.
+fn build_root(
+    scrolled: &gtk4::ScrolledWindow,
+    activity_slot: &gtk4::Box,
+    issues_listbox: &gtk4::ListBox,
+) -> gtk4::Box {
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.append(scrolled);
+    root.append(activity_slot);
+    root.append(issues_listbox);
+    root
 }
 
 /// Re-runs the count/list queries and rebuilds every row. `force_select`
