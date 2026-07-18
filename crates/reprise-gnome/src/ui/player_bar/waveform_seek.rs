@@ -12,11 +12,13 @@ use std::f64::consts::{FRAC_PI_2, PI};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use libadwaita::prelude::AnimationExt;
 
 #[cfg(test)]
 use super::waveform_shape::{aggregate_rms, smooth_neighbors};
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use crate::ui::motion;
+use crate::ui::style::cover_accent::scale_chroma;
 use reprise_core::format::format_duration;
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
@@ -143,6 +145,10 @@ struct State {
     previous_bars: Vec<DisplayBar>,
     crossfade_progress: f64, // 1.0 means no crossfade is running
     crossfade_start_us: i64,
+    // Pause desaturation animation.
+    desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
+    #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
+    desaturation_target: f64,
     min_bar_height: f64,
     max_bar_height: f64,
     // Duration of the current track (ms), for formatted tooltip display.
@@ -159,6 +165,10 @@ pub(in crate::ui) struct WaveformSeek {
     /// an extra flag.  `TickCallbackId` is not `Clone`, so we take it out to
     /// call `.remove()` rather than copying it.
     tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>>,
+    /// Active pause-desaturation animation. Replacements skip the previous
+    /// visual state before starting from its settled endpoint.
+    #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
+    desaturation_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
 }
 
 impl WaveformSeek {
@@ -202,12 +212,15 @@ impl WaveformSeek {
             previous_bars: Vec::new(),
             crossfade_progress: 1.0,
             crossfade_start_us: 0,
+            desaturation_progress: 0.0,
+            desaturation_target: 0.0,
             min_bar_height: min_h,
             max_bar_height: max_h,
             duration_ms: 0,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
         let tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>> = Rc::new(RefCell::new(None));
+        let desaturation_animation = Rc::new(RefCell::new(None));
 
         area.set_draw_func({
             let state = state.clone();
@@ -317,6 +330,7 @@ impl WaveformSeek {
             state,
             on_seek,
             tick_id,
+            desaturation_animation,
         }
     }
 
@@ -369,6 +383,47 @@ impl WaveformSeek {
         if should_tick {
             self.ensure_tick_callback();
         }
+    }
+
+    /// Animates the local waveform fill toward the paused or playing chroma.
+    /// This never mutates the application-wide cover-accent provider.
+    #[allow(dead_code)] // Wired from PlayerBar and Compact only after the Phase-B gate opens.
+    pub(in crate::ui) fn set_paused(&self, paused: bool) {
+        let target = if paused { 1.0 } else { 0.0 };
+        if self.state.borrow().desaturation_target == target {
+            return;
+        }
+
+        if !motion::animations_enabled() {
+            let previous = self.desaturation_animation.borrow_mut().take();
+            if let Some(previous) = previous {
+                previous.skip();
+            }
+            let mut state = self.state.borrow_mut();
+            state.desaturation_progress = target;
+            state.desaturation_target = target;
+            drop(state);
+            self.area.queue_draw();
+            return;
+        }
+
+        let state = self.state.borrow();
+        let from = if self.desaturation_animation.borrow().is_some() {
+            state.desaturation_target
+        } else {
+            state.desaturation_progress
+        };
+        drop(state);
+        self.state.borrow_mut().desaturation_target = target;
+        let state = self.state.clone();
+        let area = self.area.clone();
+        let animation_target = libadwaita::CallbackAnimationTarget::new(move |value| {
+            state.borrow_mut().desaturation_progress = value;
+            area.queue_draw();
+        });
+        let animation = motion::timed(&self.area, from, target, motion::STANDARD, animation_target);
+        motion::replace_animation(&self.desaturation_animation, animation.clone());
+        animation.play();
     }
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
@@ -531,11 +586,13 @@ fn draw(
     }
 
     let color = area.color();
-    let (r, g, b) = (
+    let color = (
         f64::from(color.red()),
         f64::from(color.green()),
         f64::from(color.blue()),
     );
+    let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
+    let (r, g, b) = scale_chroma(color.0, color.1, color.2, chroma_factor);
 
     if state.crossfade_progress < 1.0 && !state.previous_bars.is_empty() {
         draw_bars(
@@ -581,7 +638,7 @@ fn draw(
     // replaces the old partially-filled boundary bar (the played/unplayed
     // switch is a hard per-bucket cut instead).
     let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
-    cr.set_source_rgba(1.0, 1.0, 1.0, PLAYHEAD_ALPHA);
+    cr.set_source_rgba(r, g, b, PLAYHEAD_ALPHA);
     cr.rectangle(
         playhead_x - 0.5,
         (h - state.max_bar_height) / 2.0,
@@ -693,11 +750,13 @@ fn draw_fallback(
     let bar_w = BAR_WIDTH.min(slot.max(1.0));
 
     let color = area.color();
-    let (r, g, b) = (
+    let color = (
         f64::from(color.red()),
         f64::from(color.green()),
         f64::from(color.blue()),
     );
+    let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
+    let (r, g, b) = scale_chroma(color.0, color.1, color.2, chroma_factor);
 
     for index in 0..count {
         // Deterministic pseudo-random height using a simple hash.

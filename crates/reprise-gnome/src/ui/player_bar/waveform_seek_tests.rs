@@ -1,4 +1,5 @@
 use super::*;
+use libadwaita::prelude::AnimationExt;
 
 #[test]
 fn interpolation_step_never_overshoots_its_target() {
@@ -252,6 +253,8 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         previous_bars: Vec::new(),
         crossfade_progress: 1.0,
         crossfade_start_us: 0,
+        desaturation_progress: 0.0,
+        desaturation_target: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         duration_ms: 0,
@@ -277,6 +280,8 @@ fn ensure_resampled_populates_on_width_change() {
         previous_bars: Vec::new(),
         crossfade_progress: 1.0,
         crossfade_start_us: 0,
+        desaturation_progress: 0.0,
+        desaturation_target: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         duration_ms: 0,
@@ -441,6 +446,70 @@ fn mot_7_waveform_crossfade_hard_switches_when_animations_are_disabled() {
     assert_eq!(state.crossfade_progress, 1.0);
     assert_eq!(state.build_progress, 1.0);
     drop(state);
+    assert!(waveform.tick_id.borrow().is_none());
+
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_pause_desaturates_the_waveform_fill_and_play_restores_it() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let waveform = WaveformSeek::new();
+    waveform.set_paused(true);
+    let pause_animation = waveform
+        .desaturation_animation
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .clone();
+    assert_eq!(pause_animation.duration(), motion::STANDARD_MS);
+    assert_eq!(pause_animation.easing(), motion::STANDARD_EASING);
+    assert!(pause_animation.follows_enable_animations_setting());
+    assert_eq!(waveform.state.borrow().desaturation_target, 1.0);
+
+    waveform.set_paused(false);
+    assert_eq!(
+        pause_animation.state(),
+        libadwaita::AnimationState::Finished
+    );
+    let play_animation = waveform
+        .desaturation_animation
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .clone();
+    assert_eq!(play_animation.duration(), motion::STANDARD_MS);
+    assert_eq!(play_animation.easing(), motion::STANDARD_EASING);
+    assert!(play_animation.follows_enable_animations_setting());
+    assert_eq!(waveform.state.borrow().desaturation_target, 0.0);
+    play_animation.skip();
+    assert_eq!(waveform.state.borrow().desaturation_progress, 0.0);
+
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_7_waveform_desaturation_hard_switches_when_animations_are_disabled() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
+
+    let waveform = WaveformSeek::new();
+    waveform.set_paused(true);
+    assert_eq!(waveform.state.borrow().desaturation_progress, 1.0);
+    assert!(waveform.desaturation_animation.borrow().is_none());
+    assert!(waveform.tick_id.borrow().is_none());
+
+    waveform.set_paused(false);
+    assert_eq!(waveform.state.borrow().desaturation_progress, 0.0);
+    assert!(waveform.desaturation_animation.borrow().is_none());
     assert!(waveform.tick_id.borrow().is_none());
 
     settings.set_gtk_enable_animations(previous);
