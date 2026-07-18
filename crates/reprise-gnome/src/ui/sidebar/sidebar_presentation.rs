@@ -263,8 +263,11 @@ fn nav_icon(icon: NavIcon) -> gtk4::Widget {
 mod tests {
     use super::*;
 
+    /// UX NPP-1: the sidebar half of the fixed 240/300 geometry — pinned to a
+    /// single value, not a range, so the asymmetry against the 300 px panel is
+    /// deliberate rather than a function of window width.
     #[test]
-    fn sidebar_has_the_fixed_npp_width() {
+    fn npp_1_sidebar_uses_the_fixed_pixel_width() {
         assert_eq!(SIDEBAR_MIN_WIDTH, 240.0);
         assert_eq!(SIDEBAR_MAX_WIDTH, 240.0);
     }

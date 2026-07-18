@@ -308,3 +308,31 @@ fn widget_tree(root: &gtk4::Widget) -> Vec<gtk4::Widget> {
     }
     widgets
 }
+
+/// UX NPP-1: the two side columns are a PIXEL contract, and deliberately
+/// unequal (240 left, 300 right). Both numbers and the panel's own pixel
+/// pin are asserted here; the sidebar half lives in `sidebar_presentation`.
+#[test]
+fn npp_1_panel_uses_the_fixed_pixel_width() {
+    assert_eq!(super::super::now_playing_column::PANEL_WIDTH, 300);
+}
+
+/// UX NPP-3: the glow is a cover-accent radial gradient confined to the
+/// upper third, fading into the neutral stage — never a full tint, so the
+/// lyric contrast below it stays constant. Asserted on the CSS because the
+/// gradient is what carries the rule; a rendered check is a manual item.
+#[test]
+fn npp_3_glow_is_a_cover_accent_gradient_over_a_neutral_stage() {
+    let css = super::css();
+
+    assert!(css.contains(".reprise-now-playing-glow"));
+    assert!(css.contains("radial-gradient(ellipse at center"));
+    // The accent comes from the cover pipeline's named color, not a literal.
+    assert!(css.contains("alpha(@reprise_player_accent"));
+    // It has to fade out, otherwise it is a tint and not a glow.
+    assert!(css.contains("0) 70%"));
+    // The stage underneath stays neutral so lyric contrast is constant.
+    assert!(css.contains(".reprise-now-playing-stage"));
+    // Idle drops the glow entirely (Beschluss 4).
+    assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
+}
