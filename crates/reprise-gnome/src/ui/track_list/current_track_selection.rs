@@ -250,6 +250,17 @@ impl TrackList {
         // marker never outlives the track change it was armed for.
         let suppress_scroll =
             take_scroll_suppression(&self.shared.suppress_follow_scroll, track_id);
+        // GTK may restore focus by scrolling after `items_changed` recreates
+        // the activated row. Capture the real viewport before either marker
+        // row is invalidated so the table-originated path can put it back in
+        // this same frame.
+        let preserved_viewport = suppress_scroll
+            .then(|| self.shared.column_view.vadjustment())
+            .flatten()
+            .map(|adjustment| {
+                let value = adjustment.value();
+                (adjustment, value)
+            });
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
@@ -287,12 +298,15 @@ impl TrackList {
         self.shared.model.invalidate_window_at(position);
         self.shared.selection.select_item(position, true);
         // A table-originated activation (double-click/Enter — see
-        // `take_scroll_suppression` above) selects without centering: the
-        // clicked row is already visible, and yanking the viewport to
-        // mid-center it read as a glitch. Every other origin (auto-advance,
-        // transport skips, player-bar title click, session restore) still
-        // centers below.
+        // `take_scroll_suppression` above) restores the captured viewport
+        // after invalidation: the clicked row is already visible, and both
+        // explicit centering and GTK's focus restoration would visibly yank
+        // the table. Every other origin (auto-advance, transport skips,
+        // player-bar title click, session restore) still centers below.
         if suppress_scroll {
+            if let Some((adjustment, value)) = preserved_viewport {
+                adjustment.set_value(value);
+            }
             tracing::info!(
                 track_id,
                 position,
@@ -388,7 +402,72 @@ impl TrackList {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
+    use rusqlite::Connection;
+
     use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn track_activation_keeps_the_viewport() {
+        gtk4::init().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let tx = conn.transaction().unwrap();
+        for id in 1..=100 {
+            tx.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) \
+                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+                (
+                    id,
+                    format!("/synthetic/{id:03}.flac"),
+                    format!("Track {id:03}"),
+                ),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+        let track_list = TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup(),
+        );
+        let window = gtk4::Window::builder()
+            .default_width(900)
+            .default_height(320)
+            .child(track_list.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let position = 60;
+        let track_id = track_list.shared.model.track_at(position).unwrap().id;
+        track_list
+            .shared
+            .column_view
+            .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+        let before = adjustment.value();
+        assert!(before > 0.0);
+
+        track_list
+            .shared
+            .column_view
+            .emit_by_name::<()>("activate", &[&position]);
+        assert_eq!(
+            track_list.shared.suppress_follow_scroll.get(),
+            Some(track_id)
+        );
+        track_list.select_current_track(track_id, None, true);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!((adjustment.value() - before).abs() < 0.5);
+        window.close();
+    }
 
     #[test]
     fn table_activation_suppresses_centering_for_the_activated_track_once() {
