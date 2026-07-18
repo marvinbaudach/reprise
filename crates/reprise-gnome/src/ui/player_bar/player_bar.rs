@@ -12,6 +12,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
@@ -49,6 +50,24 @@ pub(in crate::ui) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
 const MINI_EQ_PLAYING_CLASS: &str = "playing";
+const PLAY_PULSE_CSS_CLASS: &str = "pulsing";
+/// Keeps a retriggered keyframe class absent across at least one compositor
+/// frame before it is re-added. Frame-clock tick callbacks can run
+/// synchronously on X11, so they cannot provide this separation reliably.
+const PLAY_PULSE_RETRIGGER_DELAY_MS: u64 = 30;
+
+fn schedule_play_pulse_removal(
+    button: &gtk4::Button,
+    pulse_generation: Rc<Cell<u64>>,
+    generation: u64,
+) {
+    let button = button.clone();
+    gtk4::glib::timeout_add_local_once(Duration::from_millis(motion::MICRO_MS.into()), move || {
+        if pulse_generation.get() == generation {
+            button.remove_css_class(PLAY_PULSE_CSS_CLASS);
+        }
+    });
+}
 
 /// Title-click callback storage — factored out to satisfy clippy's
 /// `type_complexity` lint.
@@ -115,6 +134,8 @@ pub struct PlayerBar {
     /// Held for the 150 ms play↔pause icon cross-fade; replaced on
     /// each state change. Kept alive to prevent GC between ticks.
     current_icon_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
+    play_pulse_generation: Rc<Cell<u64>>,
+    play_pulse_readd_pending: Rc<Cell<bool>>,
     icon_animation_generation: Rc<Cell<u64>>,
 }
 
@@ -233,6 +254,8 @@ impl PlayerBar {
             current_track_animation: Rc::new(RefCell::new(None)),
             track_animation_generation: Rc::new(Cell::new(0)),
             current_icon_animation: Rc::new(RefCell::new(None)),
+            play_pulse_generation: Rc::new(Cell::new(0)),
+            play_pulse_readd_pending: Rc::new(Cell::new(false)),
             icon_animation_generation: Rc::new(Cell::new(0)),
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
@@ -371,6 +394,7 @@ impl PlayerBar {
     /// Applies a `PlaybackState`: cross-fades the play/pause icon in two 75 ms
     /// halves, toggles the mini-EQ animation, and refreshes sensitivity.
     pub fn set_state(&self, state: PlaybackState) {
+        let was_playing = self.playback_state.get() == PlaybackState::Playing;
         let is_playing = state == PlaybackState::Playing;
         let new_icon = if is_playing { ICON_PAUSE } else { ICON_PLAY };
         let tooltip = if is_playing {
@@ -381,11 +405,49 @@ impl PlayerBar {
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
         self.playback_state.set(state);
         self.set_mini_eq_playing(is_playing);
+        self.waveform.set_paused(!is_playing);
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
             self.set_position(0, 0);
         }
+        if was_playing != is_playing {
+            self.animate_play_pulse();
+        }
         self.animate_play_icon_change(new_icon);
+    }
+
+    fn animate_play_pulse(&self) {
+        let generation = self.play_pulse_generation.get().wrapping_add(1);
+        self.play_pulse_generation.set(generation);
+        let pulse_is_running = self.play_pause_button.has_css_class(PLAY_PULSE_CSS_CLASS)
+            || self.play_pulse_readd_pending.get();
+        if !pulse_is_running {
+            self.play_pause_button.add_css_class(PLAY_PULSE_CSS_CLASS);
+            schedule_play_pulse_removal(
+                &self.play_pause_button,
+                self.play_pulse_generation.clone(),
+                generation,
+            );
+            return;
+        }
+
+        self.play_pause_button
+            .remove_css_class(PLAY_PULSE_CSS_CLASS);
+        self.play_pulse_readd_pending.set(true);
+        let button = self.play_pause_button.clone();
+        let pulse_generation = self.play_pulse_generation.clone();
+        let pulse_readd_pending = self.play_pulse_readd_pending.clone();
+        gtk4::glib::timeout_add_local_once(
+            Duration::from_millis(PLAY_PULSE_RETRIGGER_DELAY_MS),
+            move || {
+                if pulse_generation.get() != generation {
+                    return;
+                }
+                button.add_css_class(PLAY_PULSE_CSS_CLASS);
+                pulse_readd_pending.set(false);
+                schedule_play_pulse_removal(&button, pulse_generation.clone(), generation);
+            },
+        );
     }
 
     /// 150 ms opacity cross-fade for the play↔pause icon swap.

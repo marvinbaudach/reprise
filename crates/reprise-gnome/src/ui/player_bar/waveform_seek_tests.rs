@@ -1,6 +1,12 @@
 use super::*;
 use libadwaita::prelude::AnimationExt;
 
+impl WaveformSeek {
+    pub(in crate::ui) fn desaturation_target_for_test(&self) -> f64 {
+        self.state.borrow().desaturation_target
+    }
+}
+
 #[test]
 fn interpolation_step_never_overshoots_its_target() {
     // Ordinary frame: advances proportionally, still below target.
