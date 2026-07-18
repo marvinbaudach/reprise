@@ -8,6 +8,7 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::playback::PlaybackState;
 use reprise_core::queries::AlbumSummary;
 use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
@@ -55,9 +56,10 @@ impl AlbumView {
             generation: Rc::new(Cell::new(0)),
             identity_generation: Rc::new(Cell::new(0)),
             identities: Rc::new(RefCell::new(AlbumCardIdentityRegistry::default())),
+            playback_state: Rc::new(Cell::new(PlaybackState::Stopped)),
             now_playing_album: Rc::new(RefCell::new(None)),
             on_play: Rc::new(RefCell::new(None)),
-            on_queue: Rc::new(RefCell::new(None)),
+            on_primary: Rc::new(RefCell::new(None)),
             on_artist_activate: on_artist_activate.clone(),
         });
 
@@ -101,14 +103,41 @@ impl AlbumView {
         }
 
         let menu_shared = Rc::new(AlbumMenuShared {
-            conn: conn.clone(),
             target_album: RefCell::new(None),
             on_play: card_shared.on_play.clone(),
-            on_queue: card_shared.on_queue.clone(),
-            on_shuffle: Rc::new(RefCell::new(None)),
-            on_toast: Rc::new(RefCell::new(None)),
+            on_play_next: Rc::new(RefCell::new(None)),
+            on_queue: Rc::new(RefCell::new(None)),
+            on_artist: on_artist_activate.clone(),
+            on_edit_tags: Rc::new(RefCell::new(None)),
         });
         album_view_actions::install_context_menu(&grid_view, &card_shared.identities, &menu_shared);
+
+        // Ctrl+Enter is the only album-specific key binding. Plain Enter and
+        // arrows remain native GridView behavior; Space propagates to the
+        // window's global play/pause shortcut.
+        let album_keys = gtk4::EventControllerKey::new();
+        {
+            let grid = grid_view.downgrade();
+            let identities = card_shared.identities.clone();
+            let on_play = card_shared.on_play.clone();
+            album_keys.connect_key_pressed(move |_, key, _, modifiers| {
+                album_view_actions::route_album_key(key, modifiers, || {
+                    let Some(grid) = grid.upgrade() else {
+                        return false;
+                    };
+                    let Some(album) = album_view_actions::focused_album(&grid, &identities) else {
+                        return false;
+                    };
+                    let callback = on_play.borrow().clone();
+                    let Some(callback) = callback else {
+                        return false;
+                    };
+                    callback(&album);
+                    true
+                })
+            });
+        }
+        grid_view.add_controller(album_keys);
 
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&grid_view)
@@ -236,25 +265,24 @@ impl AlbumView {
         self.actions.set_on_play(callback);
     }
 
+    pub(in crate::ui) fn set_on_primary(
+        &self,
+        callback: impl Fn(Vec<i64>, usize, ViewSource, AlbumSummary) + 'static,
+    ) {
+        self.actions.set_on_primary(callback);
+    }
+
+    pub(in crate::ui) fn set_on_play_next(&self, callback: impl Fn(Vec<i64>) + 'static) {
+        self.actions.set_on_play_next(callback);
+    }
+
     /// Wires the queue-album callback (append to queue).
     pub(in crate::ui) fn set_on_queue(&self, callback: impl Fn(Vec<i64>) + 'static) {
         self.actions.set_on_queue(callback);
     }
 
-    /// Wires the toast overlay so the album context menu can surface
-    /// "Added N tracks to Playlist" toasts. Must be called after the window's
-    /// `adw::ToastOverlay` exists — same post-construction injection pattern
-    /// as `PlayerController::set_toast_overlay`.
-    pub(in crate::ui) fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
-        self.actions.set_toast_overlay(overlay);
-    }
-
-    /// Wires the shuffle-album callback (queue replace + shuffled play).
-    pub(in crate::ui) fn set_on_shuffle(
-        &self,
-        callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static,
-    ) {
-        self.actions.set_on_shuffle(callback);
+    pub(in crate::ui) fn set_on_edit_tags(&self, callback: impl Fn(Vec<i64>) + 'static) {
+        self.actions.set_on_edit_tags(callback);
     }
 
     pub(in crate::ui) fn refresh(&self) {
@@ -273,6 +301,10 @@ impl AlbumView {
     /// needing an `Rc<AlbumView>`.
     pub(in crate::ui) fn now_playing_callback(&self) -> NowPlayingAlbumCallback {
         self.state.now_playing_callback()
+    }
+
+    pub(in crate::ui) fn playback_state_callback(&self) -> Rc<dyn Fn(PlaybackState)> {
+        self.state.playback_state_callback()
     }
 
     pub(in crate::ui) fn refresh_callback(&self) -> Rc<dyn Fn()> {

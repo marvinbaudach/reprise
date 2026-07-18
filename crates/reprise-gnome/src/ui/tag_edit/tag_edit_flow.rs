@@ -205,7 +205,7 @@ fn begin(shared: &Rc<Shared>) {
     open_editor(shared, tracks, &bitrates);
 }
 
-fn begin_for_ids(shared: &Rc<Shared>, ids: &[i64]) {
+pub(in crate::ui) fn begin_for_ids(shared: &Rc<Shared>, ids: &[i64]) {
     let entries = {
         let conn = shared.conn.borrow();
         tracks_and_bitrates_for_ids(&conn, ids)

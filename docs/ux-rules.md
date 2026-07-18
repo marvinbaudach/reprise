@@ -196,7 +196,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   gemeinsame EQ-Badge und einen 1.5-px-Innenring um das Cover. Beides nutzt
   `@reprise_player_accent`. Bei Pause bleibt der Ring und die EQ-Bewegung
   friert ein; bei `gtk-enable-animations=false` ist die Glyphe statisch.
-- **GRID-2** [geplant] [gtk] — Bedienung und Aktionen: Das native
+- **GRID-2** [aktiv] [gtk] — Bedienung und Aktionen: Das native
   GtkGridView bewegt den Fokus mit Pfeiltasten zweidimensional. Enter öffnet
   die Album-Detailquelle als History-Push, Ctrl+Enter ersetzt die Queue durch
   das Album in kanonischer Disc-/Track-Reihenfolge und startet bei Track 1.

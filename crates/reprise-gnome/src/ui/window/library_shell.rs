@@ -78,6 +78,7 @@ pub(in crate::ui) fn build_views(
 pub(in crate::ui) fn wire_album_view(
     views: &LibraryViews,
     album_view: &AlbumView,
+    artist_view: &ArtistView,
     track_list: &Rc<TrackList>,
     nav_history: &Rc<NavHistory>,
 ) {
@@ -117,11 +118,16 @@ pub(in crate::ui) fn wire_album_view(
     // Artist label click → switch to Artists tab.
     let stack = views.stack.downgrade();
     let nav_history_artist = nav_history.clone();
-    album_view.set_on_artist_activate(move |_artist| {
+    let select_artist = artist_view.select_artist_callback();
+    album_view.set_on_artist_activate(move |artist| {
+        if artist.trim().is_empty() {
+            return;
+        }
         // A tab-only navigation: same source, Albums → Artists tab.
         nav_history_artist.record_tab_route(LIBRARY_VIEW_ARTISTS);
         if let Some(stack) = stack.upgrade() {
             stack.set_visible_child_name(LIBRARY_VIEW_ARTISTS);
+            select_artist(&artist);
         }
     });
 

@@ -9,6 +9,7 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
+use reprise_core::playback::PlaybackState;
 use reprise_core::queries::AlbumSummary;
 
 use crate::ui::album_card_css as css;
@@ -36,12 +37,13 @@ pub(in crate::ui) struct AlbumCardShared {
     pub generation: Rc<Cell<u64>>,
     pub identity_generation: Rc<Cell<u64>>,
     pub identities: Rc<RefCell<AlbumCardIdentityRegistry>>,
+    pub playback_state: Rc<Cell<PlaybackState>>,
     /// `(album_key, artist_key)` of the currently playing album, if any.
     pub now_playing_album: Rc<RefCell<Option<(String, String)>>>,
     /// Play button click → replace queue + play.
     pub on_play: AlbumActionSlot,
-    /// Shift+play button → append to queue.
-    pub on_queue: AlbumActionSlot,
+    /// Pointer-only primary button → toggle current album or rebuild.
+    pub on_primary: AlbumActionSlot,
     /// Artist label click → navigate to Artists tab.
     pub on_artist_activate: ArtistActivateSlot,
 }
@@ -109,8 +111,11 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .halign(gtk4::Align::End)
                 .valign(gtk4::Align::End)
                 .has_frame(false)
+                .focusable(false)
                 .build();
-            play_button.set_tooltip_text(Some(&strings::text(strings::PLAY_ALBUM)));
+            let play_label = strings::text(strings::PLAY_ALBUM);
+            play_button.set_tooltip_text(Some(&play_label));
+            play_button.update_property(&[gtk4::accessible::Property::Label(&play_label)]);
             bottom_row.append(&play_button);
             hover_overlay.append(&bottom_row);
 
@@ -183,12 +188,12 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             card.append(&title_label);
             card.append(&subtitle_label);
 
-            // Play button click: Shift = enqueue, plain = play.
+            // Pointer-only primary action. Explicit menu/Ctrl+Enter Play
+            // stays on the separate `on_play` rebuild path.
             {
-                let on_play = shared.on_play.clone();
-                let on_queue = shared.on_queue.clone();
+                let on_primary = shared.on_primary.clone();
                 let list_item_weak = list_item.downgrade();
-                play_button.connect_clicked(move |btn| {
+                play_button.connect_clicked(move |_| {
                     let Some(li) = list_item_weak.upgrade() else {
                         return;
                     };
@@ -196,19 +201,8 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                     let boxed = obj.downcast_ref::<glib::BoxedAnyObject>().unwrap();
                     let album: std::cell::Ref<AlbumSummary> = boxed.borrow();
 
-                    let shift = btn
-                        .display()
-                        .default_seat()
-                        .and_then(|seat| seat.keyboard())
-                        .is_some_and(|kb| {
-                            kb.modifier_state()
-                                .contains(gtk4::gdk::ModifierType::SHIFT_MASK)
-                        });
-                    if shift {
-                        if let Some(cb) = on_queue.borrow().clone() {
-                            cb(&album);
-                        }
-                    } else if let Some(cb) = on_play.borrow().clone() {
+                    let callback = on_primary.borrow().clone();
+                    if let Some(cb) = callback {
                         cb(&album);
                     }
                 });
@@ -349,13 +343,10 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                     });
 
             let playback = if is_now_playing {
-                let paused = card
-                    .ancestor(gtk4::GridView::static_type())
-                    .is_some_and(|grid| grid.has_css_class("playback-paused"));
-                if paused {
-                    AlbumCardPlayback::Paused
-                } else {
-                    AlbumCardPlayback::Playing
+                match shared.playback_state.get() {
+                    PlaybackState::Playing => AlbumCardPlayback::Playing,
+                    PlaybackState::Paused => AlbumCardPlayback::Paused,
+                    PlaybackState::Stopped => AlbumCardPlayback::LoadedStopped,
                 }
             } else {
                 AlbumCardPlayback::Normal
@@ -371,11 +362,23 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             // Bottom row: spacer (first child), then play button (last child).
             if let Some(bottom_row) = hover_box.last_child().and_downcast::<gtk4::Box>() {
                 if let Some(play_btn) = bottom_row.last_child().and_downcast::<gtk4::Button>() {
-                    play_btn.set_icon_name(if is_now_playing {
-                        "media-playback-pause-symbolic"
-                    } else {
-                        "media-playback-start-symbolic"
-                    });
+                    let (icon, label) = match playback {
+                        AlbumCardPlayback::Playing => (
+                            "media-playback-pause-symbolic",
+                            strings::text(strings::PAUSE_ALBUM),
+                        ),
+                        AlbumCardPlayback::Paused => (
+                            "media-playback-start-symbolic",
+                            strings::text(strings::RESUME_ALBUM),
+                        ),
+                        AlbumCardPlayback::Normal | AlbumCardPlayback::LoadedStopped => (
+                            "media-playback-start-symbolic",
+                            strings::text(strings::PLAY_ALBUM),
+                        ),
+                    };
+                    play_btn.set_icon_name(icon);
+                    play_btn.set_tooltip_text(Some(&label));
+                    play_btn.update_property(&[gtk4::accessible::Property::Label(&label)]);
                 }
             }
         });

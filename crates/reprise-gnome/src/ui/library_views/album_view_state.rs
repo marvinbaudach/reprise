@@ -6,6 +6,7 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::playback::PlaybackState;
 use reprise_core::queries::{self, AlbumSummary};
 use rusqlite::Connection;
 
@@ -128,6 +129,19 @@ impl AlbumViewState {
             }
             if let Some((new_album, new_artist)) = album {
                 rebind_in_store(&store, &new_album, &new_artist);
+            }
+        })
+    }
+
+    pub(in crate::ui) fn playback_state_callback(&self) -> Rc<dyn Fn(PlaybackState)> {
+        let playback_state = self.card_shared.playback_state.clone();
+        let now_playing_album = self.card_shared.now_playing_album.clone();
+        let store = self.store.clone();
+        Rc::new(move |state| {
+            playback_state.set(state);
+            let current_album = now_playing_album.borrow().clone();
+            if let Some((album, artist)) = current_album {
+                rebind_in_store(&store, &album, &artist);
             }
         })
     }

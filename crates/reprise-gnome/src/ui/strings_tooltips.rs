@@ -7,7 +7,9 @@ macro_rules! N_ {
 use super::{formatted, text};
 
 /// Tooltip of the album-card hover-overlay play button (TIP-1a).
-pub const PLAY_ALBUM: &str = N_!("Play album");
+pub const PLAY_ALBUM: &str = N_!("Play album (Ctrl+Enter)");
+pub const PAUSE_ALBUM: &str = N_!("Pause album");
+pub const RESUME_ALBUM: &str = N_!("Resume album");
 
 /// Transport tooltips (TIP-1b): verb + object, shortcut in parentheses.
 /// PLAY/PAUSE/PREVIOUS/NEXT stay as menu labels (compact player menu).

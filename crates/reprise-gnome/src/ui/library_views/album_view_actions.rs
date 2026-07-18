@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use libadwaita as adw;
 use reprise_core::queries::AlbumSummary;
 use reprise_core::view_source::ViewSource;
 
@@ -23,6 +22,42 @@ use crate::ui::album_card_actions;
 use crate::ui::album_card_css;
 use crate::ui::album_card_state::AlbumCardIdentityRegistry;
 use crate::ui::album_context_menu::{self, AlbumMenuShared};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) enum AlbumKeyAction {
+    ExplicitPlay,
+    Propagate,
+}
+
+pub(in crate::ui) fn album_key_action(
+    key: gtk4::gdk::Key,
+    modifiers: gtk4::gdk::ModifierType,
+) -> AlbumKeyAction {
+    let enter = matches!(key, gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter);
+    let control_only = modifiers.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+        && !modifiers.intersects(
+            gtk4::gdk::ModifierType::SHIFT_MASK
+                | gtk4::gdk::ModifierType::ALT_MASK
+                | gtk4::gdk::ModifierType::SUPER_MASK,
+        );
+    if enter && control_only {
+        AlbumKeyAction::ExplicitPlay
+    } else {
+        AlbumKeyAction::Propagate
+    }
+}
+
+pub(in crate::ui) fn route_album_key(
+    key: gtk4::gdk::Key,
+    modifiers: gtk4::gdk::ModifierType,
+    explicit_play: impl FnOnce() -> bool,
+) -> gtk4::glib::Propagation {
+    if album_key_action(key, modifiers) == AlbumKeyAction::ExplicitPlay && explicit_play() {
+        gtk4::glib::Propagation::Stop
+    } else {
+        gtk4::glib::Propagation::Proceed
+    }
+}
 
 pub(in crate::ui) struct AlbumViewActions {
     conn: Rc<RefCell<Connection>>,
@@ -62,9 +97,25 @@ impl AlbumViewActions {
         *self.menu_shared.on_play.borrow_mut() = Some(action);
     }
 
-    pub(in crate::ui) fn set_on_queue(&self, callback: impl Fn(Vec<i64>) + 'static) {
+    pub(in crate::ui) fn set_on_primary(
+        &self,
+        callback: impl Fn(Vec<i64>, usize, ViewSource, AlbumSummary) + 'static,
+    ) {
         let conn = self.conn.clone();
-        let callback = Rc::new(callback);
+        let action: AlbumAction = Rc::new(move |album: &AlbumSummary| {
+            let ids = {
+                let conn = conn.borrow();
+                album_card_actions::album_track_ids(&conn, album)
+            };
+            if !ids.is_empty() {
+                callback(ids, 0, album_source(album), album.clone());
+            }
+        });
+        *self.card_shared.on_primary.borrow_mut() = Some(action);
+    }
+
+    pub(in crate::ui) fn set_on_play_next(&self, callback: impl Fn(Vec<i64>) + 'static) {
+        let conn = self.conn.clone();
         let action: AlbumAction = Rc::new(move |album: &AlbumSummary| {
             let ids = {
                 let conn = conn.borrow();
@@ -74,34 +125,35 @@ impl AlbumViewActions {
                 callback(ids);
             }
         });
-        *self.card_shared.on_queue.borrow_mut() = Some(action.clone());
-        *self.menu_shared.on_queue.borrow_mut() = Some(action);
+        *self.menu_shared.on_play_next.borrow_mut() = Some(action);
     }
 
-    pub(in crate::ui) fn set_on_shuffle(
-        &self,
-        callback: impl Fn(Vec<i64>, usize, ViewSource) + 'static,
-    ) {
+    pub(in crate::ui) fn set_on_queue(&self, callback: impl Fn(Vec<i64>) + 'static) {
         let conn = self.conn.clone();
-        let callback = Rc::new(callback);
         let action: AlbumAction = Rc::new(move |album: &AlbumSummary| {
-            let mut ids = {
+            let ids = {
                 let conn = conn.borrow();
                 album_card_actions::album_track_ids(&conn, album)
             };
             if !ids.is_empty() {
-                album_card_actions::shuffle_ids(&mut ids);
-                callback(ids, 0, album_source(album));
+                callback(ids);
             }
         });
-        *self.menu_shared.on_shuffle.borrow_mut() = Some(action);
+        *self.menu_shared.on_queue.borrow_mut() = Some(action);
     }
 
-    pub(in crate::ui) fn set_toast_overlay(&self, overlay: &adw::ToastOverlay) {
-        let overlay = overlay.clone();
-        *self.menu_shared.on_toast.borrow_mut() = Some(Rc::new(move |text: String| {
-            crate::ui::toasts::show(&overlay, &text);
-        }));
+    pub(in crate::ui) fn set_on_edit_tags(&self, callback: impl Fn(Vec<i64>) + 'static) {
+        let conn = self.conn.clone();
+        let action: AlbumAction = Rc::new(move |album: &AlbumSummary| {
+            let ids = {
+                let conn = conn.borrow();
+                album_card_actions::album_track_ids(&conn, album)
+            };
+            if !ids.is_empty() {
+                callback(ids);
+            }
+        });
+        *self.menu_shared.on_edit_tags.borrow_mut() = Some(action);
     }
 }
 
@@ -181,6 +233,14 @@ fn resolve_card_album(
     identities.borrow().resolve(card.as_ptr() as usize)
 }
 
+pub(in crate::ui) fn focused_album(
+    grid: &gtk4::GridView,
+    identities: &Rc<RefCell<AlbumCardIdentityRegistry>>,
+) -> Option<AlbumSummary> {
+    let card = focused_album_card(grid)?;
+    resolve_card_album(&card, identities)
+}
+
 fn picked_album_card(grid: &gtk4::GridView, x: f64, y: f64) -> Option<gtk4::Widget> {
     let mut current = grid.pick(x, y, gtk4::PickFlags::DEFAULT);
     while let Some(widget) = current {
@@ -203,4 +263,57 @@ fn focused_album_card(grid: &gtk4::GridView) -> Option<gtk4::Widget> {
         current = widget.first_child();
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn grid_2_enter_opens_detail_ctrl_enter_plays() {
+        let calls = Cell::new(0);
+        assert_eq!(
+            route_album_key(
+                gtk4::gdk::Key::Return,
+                gtk4::gdk::ModifierType::empty(),
+                || {
+                    calls.set(calls.get() + 1);
+                    true
+                }
+            ),
+            gtk4::glib::Propagation::Proceed
+        );
+        assert_eq!(calls.get(), 0, "plain Enter stays native activation");
+        assert_eq!(
+            route_album_key(
+                gtk4::gdk::Key::Return,
+                gtk4::gdk::ModifierType::CONTROL_MASK,
+                || {
+                    calls.set(calls.get() + 1);
+                    true
+                }
+            ),
+            gtk4::glib::Propagation::Stop
+        );
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn grid_2_space_is_global_playpause_not_album() {
+        let album_calls = Cell::new(0);
+        assert_eq!(
+            route_album_key(
+                gtk4::gdk::Key::space,
+                gtk4::gdk::ModifierType::empty(),
+                || {
+                    album_calls.set(album_calls.get() + 1);
+                    true
+                }
+            ),
+            gtk4::glib::Propagation::Proceed
+        );
+        assert_eq!(album_calls.get(), 0);
+    }
 }

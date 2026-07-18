@@ -452,6 +452,12 @@ impl TrackList {
         *self.shared.on_play_next_selected.borrow_mut() = Some(Rc::new(callback));
     }
 
+    /// Opens the existing batch tag editor for an explicit present-track id
+    /// set, used by album-container actions.
+    pub(in crate::ui) fn edit_tags_for_ids(&self, ids: &[i64]) {
+        crate::ui::tag_edit_flow::begin_for_ids(&self.shared, ids);
+    }
+
     pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
     }

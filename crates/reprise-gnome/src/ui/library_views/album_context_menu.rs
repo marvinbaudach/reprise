@@ -1,110 +1,67 @@
-//! Right-click context menu for album grid cards. Builds a GMenu model
-//! and a `gio::SimpleActionGroup` with handlers for Play, Shuffle,
-//! Add to Queue, Add to Playlist (submenu), Edit Tags, Go to Folder.
+//! Shared pointer/keyboard context menu for album grid cards.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
-use gtk4::glib;
 use gtk4::prelude::*;
-use reprise_core::library::playlists;
 use reprise_core::queries::AlbumSummary;
-use rusqlite::Connection;
 
-use crate::ui::album_card::AlbumActionSlot;
-use crate::ui::album_card_actions;
+use crate::ui::album_card::{AlbumActionSlot, ArtistActivateSlot};
 use crate::ui::popover_lifecycle;
 use crate::ui::strings;
-use crate::ui::track_actions;
 
 /// The action group name inserted on the parent widget — exported so
 /// Task 7 (album view wiring) can reference it without reaching into
 /// this module's private constants.
 pub(in crate::ui) const ACTION_GROUP_NAME: &str = "albumctx";
 
-type ToastCallback = Rc<dyn Fn(String)>;
-type ToastCallbackSlot = Rc<RefCell<Option<ToastCallback>>>;
-
 const ACTION_PLAY: &str = "play";
-const ACTION_SHUFFLE: &str = "shuffle";
+const ACTION_PLAY_NEXT: &str = "play-next";
 const ACTION_ADD_QUEUE: &str = "add-to-queue";
-const ACTION_ADD_PLAYLIST: &str = "add-to-playlist";
-const ACTION_NEW_PLAYLIST: &str = "new-playlist";
+const ACTION_GO_TO_ARTIST: &str = "go-to-artist";
 const ACTION_EDIT_TAGS: &str = "edit-tags";
-const ACTION_GO_TO_FOLDER: &str = "go-to-folder";
 
 /// Shared state captured by action closures.
 pub(in crate::ui) struct AlbumMenuShared {
-    pub conn: Rc<RefCell<Connection>>,
     /// The album under the cursor when the menu was opened.
     pub target_album: RefCell<Option<AlbumSummary>>,
     /// Callback: replace queue + play.
     pub on_play: AlbumActionSlot,
+    /// Callback: prepend the album to Play Next.
+    pub on_play_next: AlbumActionSlot,
     /// Callback: append to queue.
     pub on_queue: AlbumActionSlot,
-    /// Callback: shuffle + play.
-    pub on_shuffle: AlbumActionSlot,
-    /// Callback: show toast after playlist add.
-    pub on_toast: ToastCallbackSlot,
+    /// Callback: navigate to and select the album artist.
+    pub on_artist: ArtistActivateSlot,
+    /// Callback: open the batch tag editor for the album.
+    pub on_edit_tags: AlbumActionSlot,
 }
 
-/// Builds the full GMenu model (rebuilt on each show to refresh playlists).
-fn build_menu(conn: &Connection) -> gio::Menu {
+/// Builds the exact five-item model shared by pointer and keyboard openings.
+fn build_menu() -> gio::Menu {
     let menu = gio::Menu::new();
-
-    // Section 1 — primary: Play, Shuffle, Add to Queue.
-    let primary = gio::Menu::new();
-    primary.append(
+    menu.append(
         Some(&strings::text(strings::ALBUM_MENU_PLAY)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_PLAY}")),
     );
-    primary.append(
-        Some(&strings::text(strings::ALBUM_MENU_SHUFFLE)),
-        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_SHUFFLE}")),
+    menu.append(
+        Some(&strings::text(strings::ALBUM_MENU_PLAY_NEXT)),
+        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_PLAY_NEXT}")),
     );
-    primary.append(
+    menu.append(
         Some(&strings::text(strings::ALBUM_MENU_ADD_QUEUE)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_ADD_QUEUE}")),
     );
-    menu.append_section(None, &primary);
-
-    // Section 2 — playlist: Add to Playlist submenu (with New Playlist leaf).
-    let playlist_section = gio::Menu::new();
-    let playlist_sub = gio::Menu::new();
-    if let Ok(lists) = playlists::list(conn) {
-        for pl in lists {
-            let item = gio::MenuItem::new(Some(&pl.name), None);
-            item.set_action_and_target_value(
-                Some(&format!("{ACTION_GROUP_NAME}.{ACTION_ADD_PLAYLIST}")),
-                Some(&pl.id.to_variant()),
-            );
-            playlist_sub.append_item(&item);
-        }
-    }
-    playlist_sub.append(
-        Some(&strings::text(strings::ALBUM_MENU_NEW_PLAYLIST)),
-        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_NEW_PLAYLIST}")),
+    menu.append(
+        Some(&strings::text(strings::ALBUM_MENU_GO_TO_ARTIST)),
+        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_GO_TO_ARTIST}")),
     );
-    playlist_section.append_submenu(
-        Some(&strings::text(strings::ALBUM_MENU_ADD_PLAYLIST)),
-        &playlist_sub,
-    );
-    menu.append_section(None, &playlist_section);
-
-    // Section 3 — utility: Edit Tags, Go to Folder.
-    let utility = gio::Menu::new();
-    utility.append(
+    menu.append(
         Some(&strings::text(strings::ALBUM_MENU_EDIT_TAGS)),
         Some(&format!("{ACTION_GROUP_NAME}.{ACTION_EDIT_TAGS}")),
     );
-    utility.append(
-        Some(&strings::text(strings::ALBUM_MENU_GO_TO_FOLDER)),
-        Some(&format!("{ACTION_GROUP_NAME}.{ACTION_GO_TO_FOLDER}")),
-    );
-    menu.append_section(None, &utility);
-
     menu
 }
 
@@ -130,21 +87,21 @@ pub(in crate::ui) fn wire_actions(shared: &Rc<AlbumMenuShared>) -> gio::SimpleAc
     }
     group.add_action(&play);
 
-    // Shuffle.
-    let shuffle = gio::SimpleAction::new(ACTION_SHUFFLE, None);
+    // Play next.
+    let play_next = gio::SimpleAction::new(ACTION_PLAY_NEXT, None);
     {
         let shared = shared.clone();
-        shuffle.connect_activate(move |_, _| {
+        play_next.connect_activate(move |_, _| {
             let album = shared.target_album.borrow().clone();
             if let Some(album) = album {
-                let cb = shared.on_shuffle.borrow().clone();
+                let cb = shared.on_play_next.borrow().clone();
                 if let Some(cb) = cb {
                     cb(&album);
                 }
             }
         });
     }
-    group.add_action(&shuffle);
+    group.add_action(&play_next);
 
     // Add to Queue.
     let add_queue = gio::SimpleAction::new(ACTION_ADD_QUEUE, None);
@@ -162,103 +119,37 @@ pub(in crate::ui) fn wire_actions(shared: &Rc<AlbumMenuShared>) -> gio::SimpleAc
     }
     group.add_action(&add_queue);
 
-    // Add to Playlist (with playlist id parameter).
-    let add_playlist = gio::SimpleAction::new(ACTION_ADD_PLAYLIST, Some(glib::VariantTy::INT64));
+    // Go to artist.
+    let go_to_artist = gio::SimpleAction::new(ACTION_GO_TO_ARTIST, None);
     {
         let shared = shared.clone();
-        add_playlist.connect_activate(move |_, param| {
-            let Some(playlist_id) = param.and_then(libadwaita::glib::Variant::get::<i64>) else {
-                tracing::warn!("album context menu: add-to-playlist fired with no playlist id");
-                return;
-            };
+        go_to_artist.connect_activate(move |_, _| {
             let album = shared.target_album.borrow().clone();
-            let Some(album) = album else { return };
-            // Fetch ids first, drop the borrow, then call add_selected_to_playlist.
-            let ids = {
-                let conn = shared.conn.borrow();
-                album_card_actions::album_track_ids(&conn, &album)
-            };
-            if ids.is_empty() {
-                return;
-            }
-            match track_actions::add_selected_to_playlist(&shared.conn, playlist_id, &ids) {
-                Ok(count) => {
-                    tracing::info!(playlist_id, count, "album context menu: tracks added to playlist");
-                    let cb = shared.on_toast.borrow().clone();
-                    if let Some(cb) = cb {
-                        cb(strings::tracks_added_to_playlist_toast(count as usize, &playlist_id_name(&shared.conn, playlist_id)));
-                    }
-                }
-                Err(error) => {
-                    tracing::error!(%error, playlist_id, "album context menu: failed to add tracks to playlist");
+            if let Some(album) = album {
+                let cb = shared.on_artist.borrow().clone();
+                if let Some(cb) = cb {
+                    cb(album.album_artist);
                 }
             }
         });
     }
-    group.add_action(&add_playlist);
+    group.add_action(&go_to_artist);
 
-    // New Playlist — uses album title as playlist name (v1 simplest approach).
-    let new_playlist = gio::SimpleAction::new(ACTION_NEW_PLAYLIST, None);
-    {
-        let shared = shared.clone();
-        new_playlist.connect_activate(move |_, _| {
-            let album = shared.target_album.borrow().clone();
-            let Some(album) = album else { return };
-            let ids = {
-                let conn = shared.conn.borrow();
-                album_card_actions::album_track_ids(&conn, &album)
-            };
-            if ids.is_empty() {
-                return;
-            }
-            match track_actions::create_playlist_and_add(&shared.conn, &album.album, &ids) {
-                Ok((_id, count)) => {
-                    tracing::info!(
-                        name = %album.album,
-                        count,
-                        "album context menu: playlist created and tracks added"
-                    );
-                    let cb = shared.on_toast.borrow().clone();
-                    if let Some(cb) = cb {
-                        cb(strings::tracks_added_to_playlist_toast(count as usize, &album.album));
-                    }
-                }
-                Err(error) => {
-                    tracing::error!(%error, name = %album.album, "album context menu: failed to create playlist");
-                }
-            }
-        });
-    }
-    group.add_action(&new_playlist);
-
-    // Edit Tags — logs intent; full tag-editor wiring done in album view.
+    // Edit tags.
     let edit_tags = gio::SimpleAction::new(ACTION_EDIT_TAGS, None);
     {
         let shared = shared.clone();
         edit_tags.connect_activate(move |_, _| {
             let album = shared.target_album.borrow().clone();
-            let Some(album) = album else { return };
-            let ids = {
-                let conn = shared.conn.borrow();
-                album_card_actions::album_track_ids(&conn, &album)
-            };
-            tracing::info!(count = ids.len(), album = %album.album, "album context menu: edit tags requested");
-        });
-    }
-    group.add_action(&edit_tags);
-
-    // Go to Folder.
-    let go_folder = gio::SimpleAction::new(ACTION_GO_TO_FOLDER, None);
-    {
-        let shared = shared.clone();
-        go_folder.connect_activate(move |_, _| {
-            let album = shared.target_album.borrow().clone();
             if let Some(album) = album {
-                album_card_actions::open_folder(&album.representative_path);
+                let cb = shared.on_edit_tags.borrow().clone();
+                if let Some(cb) = cb {
+                    cb(&album);
+                }
             }
         });
     }
-    group.add_action(&go_folder);
+    group.add_action(&edit_tags);
 
     group
 }
@@ -273,10 +164,7 @@ pub(in crate::ui) fn show(
     y: f64,
 ) {
     *shared.target_album.borrow_mut() = Some(album);
-    let menu_model = {
-        let conn = shared.conn.borrow();
-        build_menu(&conn)
-    };
+    let menu_model = build_menu();
     let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
     popover.set_parent(parent.upcast_ref::<gtk4::Widget>());
     popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
@@ -285,27 +173,100 @@ pub(in crate::ui) fn show(
     popover.popup();
 }
 
-/// Resolves a playlist id to its display name for toast messages.
-/// Falls back to `"playlist {id}"` if the lookup fails.
-fn playlist_id_name(conn: &Rc<RefCell<Connection>>, playlist_id: i64) -> String {
-    let conn = conn.borrow();
-    playlists::list(&conn)
-        .unwrap_or_default()
-        .into_iter()
-        .find(|p| p.id == playlist_id)
-        .map_or_else(|| format!("playlist {playlist_id}"), |p| p.name)
-}
-
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
+
+    fn labels(model: &impl IsA<gio::MenuModel>) -> Vec<String> {
+        let model = model.upcast_ref::<gio::MenuModel>();
+        let mut result = Vec::new();
+        for index in 0..model.n_items() {
+            if let Some(label) = model
+                .item_attribute_value(index, gio::MENU_ATTRIBUTE_LABEL, None)
+                .and_then(|value| value.get::<String>())
+            {
+                result.push(label);
+            }
+            for link in [gio::MENU_LINK_SECTION, gio::MENU_LINK_SUBMENU] {
+                if let Some(child) = model.item_link(index, link) {
+                    result.extend(labels(&child));
+                }
+            }
+        }
+        result
+    }
 
     #[test]
     fn build_menu_has_all_sections() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let menu = build_menu(&conn);
-        // 3 sections: primary (play/shuffle/queue), playlist, utility (tags/folder).
-        assert_eq!(menu.n_items(), 3);
+        let menu = build_menu();
+        assert_eq!(menu.n_items(), 5);
+    }
+
+    #[test]
+    fn album_menu_contains_exactly_the_five_shared_actions_in_order() {
+        assert_eq!(
+            labels(&build_menu()),
+            [
+                "Play",
+                "Play next",
+                "Add to queue",
+                "Go to artist",
+                "Edit tags...",
+            ]
+        );
+    }
+
+    #[test]
+    fn every_album_menu_item_invokes_its_shared_real_callback() {
+        let album_calls = Rc::new(Cell::new(0));
+        let artist_calls = Rc::new(Cell::new(0));
+        let album_slot = || {
+            let calls = album_calls.clone();
+            Rc::new(RefCell::new(Some(Rc::new(move |_: &AlbumSummary| {
+                calls.set(calls.get() + 1);
+            })
+                as crate::ui::album_card::AlbumAction)))
+        };
+        let artist_slot = {
+            let calls = artist_calls.clone();
+            Rc::new(RefCell::new(Some(Rc::new(move |artist: String| {
+                assert_eq!(artist, "Artist");
+                calls.set(calls.get() + 1);
+            })
+                as crate::ui::album_card::ArtistActivate)))
+        };
+        let shared = Rc::new(AlbumMenuShared {
+            target_album: RefCell::new(Some(AlbumSummary {
+                album: "Album".into(),
+                album_artist: "Artist".into(),
+                representative_path: String::new(),
+                track_count: 1,
+                year: None,
+                total_duration_ms: 0,
+                max_added_at: 0,
+                total_play_count: 0,
+            })),
+            on_play: album_slot(),
+            on_play_next: album_slot(),
+            on_queue: album_slot(),
+            on_artist: artist_slot,
+            on_edit_tags: album_slot(),
+        });
+        let group = wire_actions(&shared);
+
+        for action in [
+            ACTION_PLAY,
+            ACTION_PLAY_NEXT,
+            ACTION_ADD_QUEUE,
+            ACTION_EDIT_TAGS,
+        ] {
+            group.activate_action(action, None);
+        }
+        group.activate_action(ACTION_GO_TO_ARTIST, None);
+
+        assert_eq!(album_calls.get(), 4);
+        assert_eq!(artist_calls.get(), 1);
     }
 }
