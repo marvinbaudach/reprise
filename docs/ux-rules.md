@@ -191,7 +191,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Farbfläche (Akzent-Pipeline), Play all/Shuffle-Pills (PLAY-1a), Trackliste
   nach Disc/Tracknummer. Spielender Track: Akzent-Row + EQ-Icon + bold —
   identisch in jeder Liste der App (eine Markierungssprache).
-- **GRID-1** [geplant] [gtk] — Persistenter Playing-Zustand: Das geladene
+- **GRID-1** [aktiv] [gtk] — Persistenter Playing-Zustand: Das geladene
   Album zeigt unabhängig von Hover und Fokus oben links auf dem Cover das
   gemeinsame EQ-Badge und einen 1.5-px-Innenring um das Cover. Beides nutzt
   `@reprise_player_accent`. Bei Pause bleibt der Ring und die EQ-Bewegung
