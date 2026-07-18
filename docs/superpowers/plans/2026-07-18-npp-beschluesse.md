@@ -66,7 +66,7 @@ Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs i
   Keine Lyrics → dezenter Leerzustand („No lyrics found", keine Suche-CTA in
   v1) mit **Inline-Retry** bei Fehlern (Beschluss 9). Instrumental-Gap
   (>10 s ohne Zeile) → aktive Zeile bleibt, dimmt auf 60 %.
-- **NPP-10 · Trackwechsel** `[geplant]` — Cover, Titelblock, Glow und
+- **NPP-10 · Trackwechsel** `[aktiv]` — Cover, Titelblock, Glow und
   Tab-Inhalt crossfaden gemeinsam (Standard-Token, MOT-5); Lyrics starten auf
   Zeile 0 zentriert. Kein Slide — Trackwechsel ist kein Ortswechsel.
 

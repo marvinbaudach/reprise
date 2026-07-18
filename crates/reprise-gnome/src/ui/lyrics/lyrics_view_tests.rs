@@ -236,3 +236,24 @@ fn active_lines_center_and_clamp_in_a_mapped_panel() {
     assert!((end - maximum).abs() < 1.0);
     window.close();
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_10_new_lyrics_start_with_line_zero_centered() {
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+    let lines = (0..20)
+        .map(|index| TimedLine::new(i64::from(index) * 1_000, format!("line {index}")))
+        .collect();
+    view.show_result(&LyricsBody::Synced(lines));
+    let window = gtk4::Window::builder()
+        .default_width(300)
+        .default_height(240)
+        .child(view.widget())
+        .build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(view.line_center_offset(0).abs() < 2.0);
+    window.close();
+}

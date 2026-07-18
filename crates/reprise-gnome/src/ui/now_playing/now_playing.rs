@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
+use libadwaita::prelude::AnimationExt;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::playback::PlaybackState;
 use rusqlite::Connection;
@@ -88,6 +89,7 @@ fn panel_presentation(
 struct PanelWidgets {
     column: NowPlayingColumn,
     stage: gtk4::Box,
+    track_content: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
     cover: gtk4::Image,
@@ -244,10 +246,14 @@ fn build_widgets_for_session(
     stage.add_css_class("reprise-now-playing-stage");
     stage.add_css_class("reprise-now-playing-idle");
     stage.set_vexpand(true);
-    stage.append(&head_overlay);
-    stage.append(&tabs);
-    stage.append(&tab_stack);
-    stage.append(&footer);
+    let track_content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    track_content.add_css_class("reprise-now-playing-track-content");
+    track_content.set_vexpand(true);
+    track_content.append(&head_overlay);
+    track_content.append(&tabs);
+    track_content.append(&tab_stack);
+    track_content.append(&footer);
+    stage.append(&track_content);
 
     let toolbar = adw::ToolbarView::new();
     toolbar.set_content(Some(&stage));
@@ -255,6 +261,7 @@ fn build_widgets_for_session(
     PanelWidgets {
         column,
         stage,
+        track_content,
         lyrics,
         up_next,
         cover,
@@ -277,6 +284,8 @@ pub(in crate::ui) struct NowPlayingPanel {
     loaded_track: RefCell<Option<NowPlaying>>,
     playback_state: Cell<PlaybackState>,
     syncing_visibility: Cell<bool>,
+    track_animation: RefCell<Option<adw::TimedAnimation>>,
+    track_animation_generation: Cell<u64>,
 }
 
 impl NowPlayingPanel {
@@ -304,6 +313,8 @@ impl NowPlayingPanel {
             loaded_track: RefCell::new(None),
             playback_state: Cell::new(PlaybackState::Stopped),
             syncing_visibility: Cell::new(false),
+            track_animation: RefCell::new(None),
+            track_animation_generation: Cell::new(0),
         });
         panel.wire();
         panel.render_track();
@@ -334,14 +345,33 @@ impl NowPlayingPanel {
         self.syncing_visibility.set(false);
     }
 
-    pub(in crate::ui) fn set_loaded_track(&self, track: Option<NowPlaying>) {
+    pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
+        let changed = {
+            let current = self.loaded_track.borrow();
+            match (current.as_ref(), track.as_ref()) {
+                (Some(current), Some(next)) => current.id != next.id || current.path != next.path,
+                (None, None) => false,
+                _ => true,
+            }
+        };
         *self.loaded_track.borrow_mut() = track;
-        self.render_track();
+        if !changed {
+            if self.track_animation.borrow().is_none() {
+                self.render_track();
+            }
+            return;
+        }
+        if !crate::ui::motion::animations_enabled() {
+            self.cancel_track_animation();
+            self.widgets.track_content.set_opacity(1.0);
+            self.render_track();
+            return;
+        }
+        self.animate_track_change();
     }
 
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
         self.playback_state.set(state);
-        self.render_track();
     }
 
     pub(in crate::ui) fn set_up_next_entries(&self, entries: &[UpNextEntry]) {
@@ -428,6 +458,73 @@ impl NowPlayingPanel {
                 &self.cover_generation,
             );
         }
+    }
+
+    fn animate_track_change(self: &Rc<Self>) {
+        self.cancel_track_animation();
+        let generation = self.track_animation_generation.get().wrapping_add(1);
+        self.track_animation_generation.set(generation);
+        let target = adw::CallbackAnimationTarget::new({
+            let content = self.widgets.track_content.clone();
+            move |value| content.set_opacity(value)
+        });
+        let fade_out = crate::ui::motion::timed(
+            &self.widgets.track_content,
+            self.widgets.track_content.opacity(),
+            0.0,
+            crate::ui::motion::STANDARD,
+            target,
+        );
+        fade_out.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
+        let panel = Rc::downgrade(self);
+        fade_out.connect_done(move |_| {
+            let Some(panel) = panel.upgrade() else {
+                return;
+            };
+            if panel.track_animation_generation.get() != generation {
+                return;
+            }
+            panel.render_track();
+            let target = adw::CallbackAnimationTarget::new({
+                let content = panel.widgets.track_content.clone();
+                move |value| content.set_opacity(value)
+            });
+            let fade_in = crate::ui::motion::timed(
+                &panel.widgets.track_content,
+                0.0,
+                1.0,
+                crate::ui::motion::STANDARD,
+                target,
+            );
+            fade_in.set_duration(crate::ui::motion::half(crate::ui::motion::STANDARD));
+            let panel_for_done = Rc::downgrade(&panel);
+            fade_in.connect_done(move |_| {
+                let Some(panel) = panel_for_done.upgrade() else {
+                    return;
+                };
+                if panel.track_animation_generation.get() == generation {
+                    panel.track_animation.borrow_mut().take();
+                    panel.widgets.track_content.set_opacity(1.0);
+                }
+            });
+            *panel.track_animation.borrow_mut() = Some(fade_in.clone());
+            fade_in.play();
+        });
+        *self.track_animation.borrow_mut() = Some(fade_out.clone());
+        fade_out.play();
+    }
+
+    fn cancel_track_animation(&self) {
+        self.track_animation_generation
+            .set(self.track_animation_generation.get().wrapping_add(1));
+        if let Some(animation) = self.track_animation.borrow_mut().take() {
+            animation.pause();
+        }
+    }
+
+    #[cfg(test)]
+    fn has_track_animation(&self) -> bool {
+        self.track_animation.borrow().is_some()
     }
 }
 
