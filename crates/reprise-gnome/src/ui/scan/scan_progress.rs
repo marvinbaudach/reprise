@@ -448,7 +448,9 @@ impl WeakEmptyScanIndicator {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::time::Duration;
 
+    use gtk4::prelude::*;
     use reprise_core::library::scanner::ScanProgress;
 
     use super::{unavailable_state, view_state, ProgressMode, ScanProgressView};
@@ -546,6 +548,52 @@ mod tests {
             crate::ui::motion::STANDARD_MS
         );
 
+        settings.set_gtk_enable_animations(previous);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_2_background_surfaces_fade_in_place_without_layout_motion() {
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let previous = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(true);
+        let view = ScanProgressView::new();
+        let marker = gtk4::Label::new(Some("Stable sibling"));
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(view.widget());
+        root.append(&marker);
+        let window = gtk4::Window::builder()
+            .default_width(420)
+            .default_height(240)
+            .child(&root)
+            .build();
+        window.present();
+        view.show(&ScanProgress::Discovering);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert_eq!(
+            view.widget().transition_type(),
+            gtk4::RevealerTransitionType::Crossfade
+        );
+        let marker_y = || {
+            marker
+                .compute_point(&root, &gtk4::graphene::Point::new(0.0, 0.0))
+                .expect("marker must remain in the test layout")
+                .y()
+        };
+        let during_fade_y = marker_y();
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(
+            Duration::from_millis(u64::from(crate::ui::motion::STANDARD_MS) + 50),
+            move || quit.quit(),
+        );
+        main_loop.run();
+        assert_eq!(marker_y(), during_fade_y);
+
+        view.finish();
+        window.close();
         settings.set_gtk_enable_animations(previous);
     }
 }
