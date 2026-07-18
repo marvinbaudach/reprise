@@ -380,7 +380,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Davorliegende manuelle Einträge bleiben in „Next in Queue" und spielen
   danach; es gibt weder stilles Verwerfen noch Dialog oder Queue-Historie.
   „Remove" entfernt aus der Queue, nie aus der Library.
-- **QUE-6** [geplant] [core] — Beide Flächen lesen ein gemeinsames
+- **QUE-6** [aktiv] [core] — Beide Flächen lesen ein gemeinsames
   Queue-Modell. Metadaten kommen in einer Sammelabfrage über die Queue-IDs,
   nie in einer Abfrage pro Zeile; Row-Recycling und Laden des sichtbaren
   Fensters begrenzen Widgets und Arbeit unabhängig von der Queue-Länge. Bei

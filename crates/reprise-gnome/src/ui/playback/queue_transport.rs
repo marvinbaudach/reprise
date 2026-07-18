@@ -16,6 +16,7 @@
 use std::rc::Rc;
 
 use crate::ui::player_controller::{PlayerController, StartPlayback};
+use crate::ui::track_list::queue_sections::{compose, QueueViewModel};
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::Queue;
@@ -114,16 +115,6 @@ fn move_rows_to_front(
     context.remove_order_positions(&snapshot_positions);
     pending.prepend(&ids);
     ids.len()
-}
-
-/// The Queue view's composite parts (QUE-1), in display order. Produced by
-/// `PlayerController::queue_view_sections`, composed into the visible model
-/// by `ui::track_list::queue_sections::compose`.
-pub(crate) struct QueueViewSections {
-    pub now_playing: Option<i64>,
-    pub play_next: Vec<i64>,
-    pub up_next_rest: Vec<i64>,
-    pub origin_label: Option<String>,
 }
 
 impl PlayerController {
@@ -290,7 +281,7 @@ impl PlayerController {
     /// track, pending manual entries, and the snapshot's play-order tail —
     /// plus the origin label for the `Up Next · from <label>` title. Each
     /// list is cloned out in its own statement (borrow discipline).
-    pub(in crate::ui) fn queue_view_sections(&self) -> QueueViewSections {
+    pub(in crate::ui) fn queue_view_model(&self) -> QueueViewModel {
         let now_playing = self.now_playing.borrow().as_ref().map(|np| np.id);
         let play_next = self.up_next.borrow().ids().to_vec();
         let up_next_rest = self.queue.borrow().remaining_after_current();
@@ -299,12 +290,12 @@ impl PlayerController {
             .borrow()
             .as_ref()
             .map(|origin| origin.label.clone());
-        QueueViewSections {
+        compose(
             now_playing,
-            play_next,
-            up_next_rest,
-            origin_label,
-        }
+            &play_next,
+            &up_next_rest,
+            origin_label.as_deref(),
+        )
     }
 
     /// QUE-5: the sidebar's "Queue · N" — pending manual entries plus the
