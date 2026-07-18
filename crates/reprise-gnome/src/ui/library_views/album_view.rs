@@ -71,6 +71,27 @@ impl AlbumView {
             .build();
         grid_view.add_css_class("library-grid");
 
+        // Keyboard path: Enter on the focused card fires GridView's built-in
+        // `activate` (GtkListBase binds Return/KP_Enter), mirroring the
+        // pointer path (`GestureClick` on the card Box in `album_card`).
+        {
+            let on_activate = on_activate.clone();
+            let filter_model = filter_model.clone();
+            grid_view.connect_activate(move |_grid, position| {
+                let Some(obj) = filter_model.item(position) else {
+                    return;
+                };
+                let Some(boxed) = obj.downcast_ref::<glib::BoxedAnyObject>() else {
+                    return;
+                };
+                let album = boxed.borrow::<AlbumSummary>().clone();
+                let callback = on_activate.borrow().clone();
+                if let Some(cb) = callback {
+                    cb(album);
+                }
+            });
+        }
+
         let menu_shared = Rc::new(AlbumMenuShared {
             conn: conn.clone(),
             target_album: RefCell::new(None),
@@ -222,6 +243,39 @@ impl AlbumView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn keyboard_activate_on_grid_opens_album() {
+        gtk4::init().unwrap();
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
+             ('/one.flac','One','Artist A','First',0);",
+        )
+        .unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+        let loader =
+            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let view = AlbumView::new(&conn, loader);
+
+        let activated: Rc<RefCell<Option<AlbumSummary>>> = Rc::new(RefCell::new(None));
+        {
+            let activated = activated.clone();
+            view.set_on_activate(move |album| {
+                *activated.borrow_mut() = Some(album);
+            });
+        }
+
+        // `activate` is the signal GridView's built-in Enter binding emits
+        // for the focused cell — emitting it directly exercises the same
+        // handler the keyboard path runs.
+        view.grid_widget().emit_by_name::<()>("activate", &[&0u32]);
+
+        let opened = activated.borrow();
+        assert_eq!(opened.as_ref().map(|a| a.album.as_str()), Some("First"));
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
