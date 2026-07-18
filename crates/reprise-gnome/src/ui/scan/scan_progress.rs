@@ -130,10 +130,17 @@ impl ScanProgressView {
         let spinner = gtk4::Spinner::builder().spinning(false).build();
         spinner.add_css_class("scan-card-spinner");
 
+        // Ellipsize, or this card dictates the sidebar's width: a label without
+        // it reports its full text as its MINIMUM width, and GTK cannot
+        // allocate the sidebar narrower than that. Measured, the detail line
+        // ("743 of 1670 checked · 0 downloaded · 0 unavailable") demanded
+        // 353 px and pushed the 240 px sidebar (NPP-1) out to ~295 px. The
+        // card is a passenger in the sidebar; it must never drive its width.
         let title = gtk4::Label::builder()
             .label("")
             .halign(gtk4::Align::Start)
             .hexpand(true)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
         title.add_css_class("scan-card-title");
 
@@ -155,6 +162,7 @@ impl ScanProgressView {
             .label("")
             .halign(gtk4::Align::Start)
             .hexpand(true)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
         detail.add_css_class("scan-card-detail");
 

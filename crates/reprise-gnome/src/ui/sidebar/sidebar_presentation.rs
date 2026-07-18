@@ -219,7 +219,16 @@ pub(in crate::ui) fn append_problem_header(listbox: &gtk4::ListBox) -> gtk4::Lis
     append_header(listbox, &strings::text(strings::SIDEBAR_SECTION_ISSUES))
 }
 
+/// Pins the navigation sidebar at [`SIDEBAR_MIN_WIDTH`] real pixels (NPP-1).
+///
+/// The unit matters: `AdwOverlaySplitView` measures its sidebar in `sp`
+/// (scale-independent units) by default, so the 240 below rendered as 295 px
+/// on a display whose text scale is 1.23 — the "240 left, 300 right" ratio
+/// silently inverted. The info panel hits its 300 px exactly because it also
+/// carries a `width_request`, which is always in pixels; asking for `Px` here
+/// makes both columns speak the same unit.
 pub(in crate::ui) fn style_overlay_split_view(split: &adw::OverlaySplitView) {
+    split.set_sidebar_width_unit(adw::LengthUnit::Px);
     split.set_min_sidebar_width(SIDEBAR_MIN_WIDTH);
     split.set_max_sidebar_width(SIDEBAR_MAX_WIDTH);
     split.set_sidebar_width_fraction(SIDEBAR_WIDTH_FRACTION);
@@ -380,6 +389,12 @@ mod tests {
         assert_eq!(split.min_sidebar_width(), 240.0);
         assert_eq!(split.max_sidebar_width(), 240.0);
         assert_eq!(split.sidebar_width_fraction(), 0.22);
+        // NPP-1 is a PIXEL contract. Adwaita defaults this to `Sp`, which
+        // rendered the 240 above as 295 px at text scale 1.23 while the info
+        // panel (pinned by a pixel `width_request`) stayed at 300 — the
+        // deliberate 240/300 asymmetry collapsed. Assert the unit, not just
+        // the number.
+        assert_eq!(split.sidebar_width_unit(), adw::LengthUnit::Px);
     }
 
     fn test_split_view() -> adw::OverlaySplitView {
