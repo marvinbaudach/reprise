@@ -249,6 +249,9 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         last_tick_us: 0,
         build_progress: 1.0,
         build_start_us: 0,
+        previous_bars: Vec::new(),
+        crossfade_progress: 1.0,
+        crossfade_start_us: 0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         duration_ms: 0,
@@ -271,6 +274,9 @@ fn ensure_resampled_populates_on_width_change() {
         last_tick_us: 0,
         build_progress: 1.0,
         build_start_us: 0,
+        previous_bars: Vec::new(),
+        crossfade_progress: 1.0,
+        crossfade_start_us: 0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         duration_ms: 0,
@@ -283,6 +289,14 @@ fn ensure_resampled_populates_on_width_change() {
     let before_len = state.display_peaks.len();
     ensure_resampled(&mut state, 600);
     assert_eq!(state.display_peaks.len(), before_len);
+
+    state.previous_bars = vec![DisplayBar::Level(0.25); before_len];
+    state.crossfade_progress = 0.5;
+    state.crossfade_start_us = 1;
+    ensure_resampled(&mut state, 500);
+    assert!(state.previous_bars.is_empty());
+    assert_eq!(state.crossfade_progress, 1.0);
+    assert_eq!(state.crossfade_start_us, 0);
 }
 
 #[test]
@@ -341,6 +355,92 @@ fn mot_7_waveform_completes_build_up_when_animations_disabled_mid_build() {
     waveform.set_fraction_smooth(0.30);
 
     assert_eq!(waveform.state.borrow().build_progress, 1.0);
+    assert!(waveform.tick_id.borrow().is_none());
+
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_waveform_crossfades_to_the_new_track_instead_of_rebuilding() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let waveform = WaveformSeek::new();
+    let window = gtk4::Window::new();
+    window.set_default_size(600, 80);
+    window.set_child(Some(waveform.widget()));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    waveform.set_peaks(vec![80u8; 1000]);
+    {
+        let mut state = waveform.state.borrow_mut();
+        ensure_resampled(&mut state, 600);
+        state.build_progress = 1.0;
+    }
+
+    waveform.set_peaks(vec![220u8; 1000]);
+    {
+        let state = waveform.state.borrow();
+        assert!(!state.previous_bars.is_empty());
+        assert_eq!(state.crossfade_progress, 0.0);
+        assert_eq!(state.build_progress, 1.0);
+    }
+    assert!(waveform.tick_id.borrow().is_some());
+
+    let second_track_bars = {
+        let mut state = waveform.state.borrow_mut();
+        ensure_resampled(&mut state, 600);
+        state.display_peaks.clone()
+    };
+    waveform.set_peaks(vec![140u8; 1000]);
+    {
+        let state = waveform.state.borrow();
+        assert_eq!(state.previous_bars, second_track_bars);
+        assert_eq!(state.crossfade_progress, 0.0);
+        assert_eq!(state.build_progress, 1.0);
+    }
+
+    let frame_time = waveform.widget().frame_clock().unwrap().frame_time();
+    waveform.state.borrow_mut().crossfade_start_us =
+        frame_time - i64::from(motion::AMBIENT_MS) * 1_000 - 1;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+    while waveform.state.borrow().crossfade_progress < 1.0 && std::time::Instant::now() < deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    {
+        let state = waveform.state.borrow();
+        assert_eq!(state.crossfade_progress, 1.0);
+        assert!(state.previous_bars.is_empty());
+    }
+    assert!(waveform.tick_id.borrow().is_none());
+
+    settings.set_gtk_enable_animations(previous);
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_7_waveform_crossfade_hard_switches_when_animations_are_disabled() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
+
+    let waveform = WaveformSeek::new();
+    waveform.state.borrow_mut().display_peaks = vec![DisplayBar::Level(0.25); 40];
+    waveform.set_peaks(vec![220u8; 1000]);
+
+    let state = waveform.state.borrow();
+    assert!(state.previous_bars.is_empty());
+    assert_eq!(state.crossfade_progress, 1.0);
+    assert_eq!(state.build_progress, 1.0);
+    drop(state);
     assert!(waveform.tick_id.borrow().is_none());
 
     settings.set_gtk_enable_animations(previous);
