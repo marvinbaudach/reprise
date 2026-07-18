@@ -11,8 +11,8 @@ use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::device_sync_runtime::DeviceSyncRuntime;
-use crate::ui::info_panel::InfoPanel;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
+use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::preference_playback::build_equalizer_surface;
 use crate::ui::preference_plugins::{plugin_applies_live, plugin_description, plugin_title};
@@ -97,7 +97,7 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) sidebar_page: adw::NavigationPage,
     pub(in crate::ui) status_bar: StatusBar,
     pub(in crate::ui) library_player_bar: LibraryPlayerBarShell,
-    pub(in crate::ui) info_panel: Rc<InfoPanel>,
+    pub(in crate::ui) info_panel: Rc<NowPlayingPanel>,
     pub(in crate::ui) scan_button: gtk4::Button,
     scan_controls: ScanControls,
     pub(in crate::ui) library_folder_rows: RefCell<Vec<glib::WeakRef<adw::ActionRow>>>,
@@ -131,7 +131,7 @@ impl PreferencesContext {
         sidebar_page: &adw::NavigationPage,
         status_bar: &StatusBar,
         library_player_bar: &LibraryPlayerBarShell,
-        info_panel: &Rc<InfoPanel>,
+        info_panel: &Rc<NowPlayingPanel>,
         scan_button: &gtk4::Button,
         scan_controls: &ScanControls,
         player: Option<&Rc<PlayerController>>,

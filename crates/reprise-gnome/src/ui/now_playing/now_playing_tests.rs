@@ -171,7 +171,7 @@ fn lyrics_context_is_independent_and_survives_panel_close() {
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = InfoPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
+    let panel = NowPlayingPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
 
     panel.set_context(PanelContext::Multiple(2));
     let information_title = panel.widgets.title.text();
@@ -217,12 +217,12 @@ fn multiple_selection_uses_a_finished_empty_state_without_refresh() {
     let cover_runtime = crate::ui::cover_download_worker::setup();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.InfoPanelMultipleTest")
+        .application_id("org.reprise.Reprise.NowPlayingPanelMultipleTest")
         .build();
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = InfoPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
+    let panel = NowPlayingPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
 
     panel.set_context(PanelContext::Multiple(4));
 
@@ -259,12 +259,12 @@ fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
     let cover_runtime = crate::ui::cover_download_worker::setup();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
-        .application_id("org.reprise.Reprise.InfoPanelTest")
+        .application_id("org.reprise.Reprise.NowPlayingPanelTest")
         .build();
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = InfoPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
+    let panel = NowPlayingPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
     panel.retain_for_window(&window);
     let weak = Rc::downgrade(&panel);
     let toggle = panel.toggle_button();

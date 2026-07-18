@@ -8,20 +8,20 @@ use reprise_core::artist_news::{AlbumNews, ArtistNews, NewsError, NewsKind};
 use reprise_core::cover::ThumbnailSize;
 use rusqlite::Connection;
 
-use super::artist_news_worker::{ArtistNewsRequest, ArtistNewsResponse, ArtistNewsRuntime};
 use super::artist_portrait_worker::ArtistPortraitRuntime;
 use super::cover_loader::CoverLoader;
-use super::info_panel_empty_state;
-use super::info_panel_feedback::request_feedback;
-use super::info_panel_portrait::InfoPanelPortrait;
-use super::info_panel_state::{PanelContext, PanelState, RequestIntent};
-use super::information_column::InformationColumn;
-#[cfg(test)]
-use super::information_column::PANEL_WIDTH;
 use super::lyrics_strings;
 use super::lyrics_view::LyricsView;
+use super::now_playing_column::NowPlayingColumn;
+#[cfg(test)]
+use super::now_playing_column::PANEL_WIDTH;
+use super::now_playing_empty_state;
+use super::now_playing_feedback::request_feedback;
+use super::now_playing_portrait::NowPlayingPanelPortrait;
+use super::now_playing_state::{PanelContext, PanelState, RequestIntent};
 use super::strings;
 use super::track_list::TrackList;
+use crate::ui::artist_news_worker::{ArtistNewsRequest, ArtistNewsResponse, ArtistNewsRuntime};
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_ARTIST_NEWS";
 const INFORMATION_PAGE: &str = "information";
@@ -78,7 +78,7 @@ fn release_group_uri(mbid: &str) -> Option<String> {
 }
 
 struct PanelWidgets {
-    column: InformationColumn,
+    column: NowPlayingColumn,
     #[cfg(test)]
     header: adw::HeaderBar,
     stack: gtk4::Stack,
@@ -184,7 +184,7 @@ fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidget
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.set_content(Some(&stack));
-    let column = InformationColumn::new(content, &toolbar, visible);
+    let column = NowPlayingColumn::new(content, &toolbar, visible);
     let enable = adw::SwitchRow::builder()
         .title(strings::text(strings::ARTIST_NEWS))
         .subtitle(strings::text(strings::ARTIST_NEWS_PRIVACY))
@@ -220,12 +220,12 @@ fn metadata_label() -> gtk4::Label {
     label
 }
 
-pub(in crate::ui) struct InfoPanel {
+pub(in crate::ui) struct NowPlayingPanel {
     widgets: PanelWidgets,
     toggle: gtk4::ToggleButton,
     conn: Rc<RefCell<Connection>>,
     runtime: Rc<ArtistNewsRuntime>,
-    portrait: Rc<InfoPanelPortrait>,
+    portrait: Rc<NowPlayingPanelPortrait>,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     state: RefCell<PanelState>,
@@ -235,7 +235,7 @@ pub(in crate::ui) struct InfoPanel {
     window: glib::WeakRef<adw::ApplicationWindow>,
 }
 
-impl InfoPanel {
+impl NowPlayingPanel {
     pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
         window: &adw::ApplicationWindow,
@@ -246,7 +246,8 @@ impl InfoPanel {
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let widgets = build_widgets(content, visible);
-        let portrait = InfoPanelPortrait::new(widgets.portrait.clone(), portraits, &cover_loader);
+        let portrait =
+            NowPlayingPanelPortrait::new(widgets.portrait.clone(), portraits, &cover_loader);
         // Restore the last selected tab before `wire` attaches the
         // persistence handler, so the restore itself is never echoed back
         // into the settings table.
@@ -305,7 +306,7 @@ impl InfoPanel {
     /// Keeps the callback owner alive for exactly as long as the window.
     ///
     /// Widgets keep their signal handlers but those handlers deliberately
-    /// capture only `Weak<InfoPanel>` values. Without this window-owned
+    /// capture only `Weak<NowPlayingPanel>` values. Without this window-owned
     /// strong reference, the panel would remain painted while every handler
     /// became inert as soon as `window::build` returned.
     pub(in crate::ui) fn retain_for_window(self: &Rc<Self>, window: &adw::ApplicationWindow) {
@@ -598,7 +599,7 @@ impl InfoPanel {
             return;
         }
         let context = self.state.borrow().context().clone();
-        match info_panel_empty_state::build(&context) {
+        match now_playing_empty_state::build(&context) {
             Some(status) => self.render_empty_state(&status),
             None => self.render_loading(),
         }
@@ -770,5 +771,5 @@ fn news_error_text(error: &NewsError) -> String {
 }
 
 #[cfg(test)]
-#[path = "info_panel_tests.rs"]
+#[path = "now_playing_tests.rs"]
 mod tests;

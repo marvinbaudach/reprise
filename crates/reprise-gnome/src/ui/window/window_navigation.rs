@@ -193,7 +193,7 @@ mod tests {
             .build();
         let info_sidebar = adw::ToolbarView::new();
         let info_content = gtk4::Label::new(Some("Info content"));
-        let information = crate::ui::info_panel::information_column::InformationColumn::new(
+        let information = crate::ui::now_playing::now_playing_column::NowPlayingColumn::new(
             &info_content,
             &info_sidebar,
             true,

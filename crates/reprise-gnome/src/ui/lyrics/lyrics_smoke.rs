@@ -7,14 +7,14 @@ use std::time::Duration;
 use gtk4::glib;
 use rusqlite::Connection;
 
-use super::info_panel::InfoPanel;
+use super::now_playing::NowPlayingPanel;
 use super::player_controller::PlayerController;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_LYRICS";
 
 pub(in crate::ui) fn arm(
     player: Option<&Rc<PlayerController>>,
-    panel: &Rc<InfoPanel>,
+    panel: &Rc<NowPlayingPanel>,
     conn: &Rc<RefCell<Connection>>,
 ) {
     if std::env::var(SMOKE_ENV).as_deref() != Ok("1") {
