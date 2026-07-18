@@ -451,6 +451,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 if let Some(playing_layer) = placeholder
                     .next_sibling()
                     .and_then(|playing_frame| playing_frame.next_sibling())
+                    .and_then(|focus_frame| focus_frame.next_sibling())
                     .and_downcast::<gtk4::Box>()
                 {
                     playing_layer.set_visible(false);
