@@ -526,7 +526,7 @@ fn undo_tombstone_clears_removed_at_and_restores_presence() {
 
 /// Bullet 3: `purge_tombstones` is where a tombstone finally becomes
 /// irreversible — it must select every currently-tombstoned id and hand
-/// them to [`remove_tracks`] (not reimplement deletion), so a MIDDLE
+/// them to `remove_tracks_impl` (not reimplement deletion), so a MIDDLE
 /// playlist row's removal still compacts positions gaplessly, exactly like
 /// `remove_missing_tracks`'s own middle-row regression test in
 /// `tests_maintenance.rs`. The returned ids are what the caller (toast

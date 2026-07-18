@@ -198,8 +198,8 @@ fn run_auto_clean_hard_deletes_eligible_tracks_and_spares_the_rest() {
 /// that row survives with its playlist membership and listen history
 /// intact while the genuinely-eligible ids are deleted.
 ///
-/// Before this fix (`run_auto_clean` routed through the unguarded
-/// `maintenance::remove_tracks`, a bare `DELETE FROM tracks WHERE id = ?1`
+/// Before this fix (`run_auto_clean` routed through an unguarded
+/// id-only delete, a bare `DELETE FROM tracks WHERE id = ?1`
 /// with no re-check), this exact call would have hard-deleted the
 /// resurrected row and cascaded away its playlist membership and listen
 /// history right along with it; this test fails against that code and
