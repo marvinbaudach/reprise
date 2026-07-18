@@ -77,9 +77,13 @@ case "$tool" in
         label="Search all fields"
         index=4
         ;;
+      4|5)
+        label="Search all fields"
+        index=5
+        ;;
       *)
         label="No results"
-        index=5
+        index=6
         ;;
     esac
     jq -n --arg label "$label" --argjson index "$index" '{
@@ -91,12 +95,13 @@ case "$tool" in
     }'
     ;;
   click)
-    jq -e '.element_index == 2 and .pid == 42 and .window_id == 7' \
+    jq -e '(.element_index == 2 or .element_index == 4) and
+      .pid == 42 and .window_id == 7' \
       <<<"$payload" >/dev/null
     jq -n '{effect: "confirmed", verified: true}'
     ;;
   type_text)
-    jq -e '.element_index == 4 and .pid == 42 and .window_id == 7 and .text == "nomatch"' \
+    jq -e '.element_index == 5 and .pid == 42 and .window_id == 7 and .text == "nomatch"' \
       <<<"$payload" >/dev/null
     jq -n '{effect: "confirmed", verified: true}'
     ;;
@@ -118,6 +123,7 @@ assert_snapshot_contains \
   "$CUA_E2E_OUT_DIR/fresh-install-skip-after.json" \
   "No music yet"
 
+cua_click_label 42 7 "Search all fields" "populated-search-toggle"
 cua_type_text_label 42 7 "Search all fields" "nomatch" "populated-search"
 assert_snapshot_contains \
   "$CUA_E2E_OUT_DIR/populated-search-after.json" \
@@ -125,6 +131,9 @@ assert_snapshot_contains \
 
 mapfile -t calls < <(cut -f1 "$CUA_E2E_CALL_LOG")
 expected=(
+  get_window_state
+  click
+  get_window_state
   get_window_state
   click
   get_window_state
