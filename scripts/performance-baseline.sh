@@ -10,7 +10,8 @@ usage: scripts/performance-baseline.sh OUTPUT_DIR [--quick]
 
 Builds release-profile scalability probes against generated metadata only.
 The normal run records query and track-list results for 10,000 and 100,000
-tracks. --quick records only the 10,000-track scenario.
+tracks, including committed writes against private database copies. --quick
+records only the 10,000-track scenario.
 
 OUTPUT_DIR must not already exist. The runner creates it and writes a manifest,
 one query JSON report, and one track-list log per scenario. The Git worktree

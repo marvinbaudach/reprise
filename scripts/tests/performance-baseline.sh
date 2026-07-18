@@ -14,7 +14,7 @@ if [[ $output != *"usage: scripts/performance-baseline.sh OUTPUT_DIR [--quick]"*
 fi
 
 help=$(scripts/performance-baseline.sh --help)
-for required in "10,000" "100,000" "--quick" "generated metadata"; do
+for required in "10,000" "100,000" "--quick" "generated metadata" "committed writes"; do
   if [[ $help != *"$required"* ]]; then
     echo "performance baseline help must mention: $required" >&2
     exit 1

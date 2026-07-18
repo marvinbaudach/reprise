@@ -33,11 +33,16 @@ scripts/performance-baseline.sh /tmp/reprise-performance-results
 The normal run generates fresh 10,000- and 100,000-track databases under a
 private temporary directory, measures database open/migration, library count,
 first/middle/final 200-row windows, filtered count, library statistics, and
-playback-id projection, then exercises TrackListModel scroll access at the same
-sizes. The query JSON also records SQLite's title-window query-plan details,
-whether the plan needs a temporary ORDER BY sort, and the selected index name.
-It retains a manifest, stable-schema query JSON, and model logs in the requested
-output directory. `--quick` runs only the 10,000-track scenario.
+playback-id projection. It then measures committed batches of up to 10,000
+inserts, index-relevant metadata updates, present-to-missing transitions, and
+missing-to-present restores before exercising TrackListModel scroll access at
+the same sizes. Every write sample uses a disposable copy of the generated
+database, so iterations start from identical state and never mutate the
+source profile used by the read measurements. The query JSON also records
+SQLite's title-window query-plan details, whether the plan needs a temporary
+ORDER BY sort, and the selected index name. It retains a manifest, stable-schema
+query JSON, and model logs in the requested output directory. `--quick` runs
+only the 10,000-track scenario.
 
 Elapsed times are evidence for comparing two commits on the same host, not a
 portable CI threshold. Deterministic budgets are hard assertions: the model may

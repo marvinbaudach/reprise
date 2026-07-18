@@ -1,18 +1,22 @@
-//! Isolated generated-metadata scalability baseline for Reprise queries.
+//! Isolated generated-metadata scalability baseline for Reprise queries and
+//! committed database writes.
 //!
 //! The caller must provide a database path that does not exist. This keeps the
 //! tool fail-closed: it can never benchmark against (or seed) the user's real
 //! library by accident. `scripts/performance-baseline.sh` supplies a path in a
 //! private temporary directory and runs the documented 10,000/100,000-track
-//! scenarios.
+//! scenarios. Write samples use disposable copies of that generated database,
+//! so every committed batch starts from identical state and the source
+//! profile used for read measurements remains unchanged.
 
 use std::error::Error;
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction};
 use serde::Serialize;
 
 const USAGE: &str =
@@ -21,6 +25,7 @@ const DEFAULT_ITERATIONS: usize = 5;
 const MAX_ITERATIONS: usize = 100;
 const MAX_GENERATED_TRACKS: usize = 1_000_000;
 const WINDOW_ROWS: i64 = 200;
+const WRITE_BATCH_LIMIT: usize = 10_000;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Config {
@@ -119,6 +124,11 @@ struct BaselineReport {
     filtered_count: TimingSummary,
     library_stats: TimingSummary,
     playback_ids: TimingSummary,
+    write_batch_rows: usize,
+    insert_batch: TimingSummary,
+    metadata_update_batch: TimingSummary,
+    hide_batch: TimingSummary,
+    restore_batch: TimingSummary,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -156,13 +166,23 @@ fn explain_window(conn: &Connection, sort_field: &str) -> rusqlite::Result<Query
 
 fn seed_generated_metadata(conn: &mut Connection, track_count: usize) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
+    insert_generated_metadata(&tx, 0, track_count)?;
+    tx.commit()
+}
+
+fn insert_generated_metadata(
+    conn: &Connection,
+    start: usize,
+    track_count: usize,
+) -> rusqlite::Result<usize> {
+    let mut inserted = 0;
     {
-        let mut insert = tx.prepare_cached(
+        let mut insert = conn.prepare_cached(
             "INSERT INTO tracks (path, title, artist, album, album_artist, genre, year, \
              track_no, duration_ms, rating, play_count, added_at) \
              VALUES (?1, ?2, ?3, ?4, ?3, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )?;
-        for index in 0..track_count {
+        for index in start..start.saturating_add(track_count) {
             let title_prefix = if index.is_multiple_of(997) {
                 "Needle"
             } else {
@@ -181,9 +201,10 @@ fn seed_generated_metadata(conn: &mut Connection, track_count: usize) -> rusqlit
                 i64::try_from(index % 500).unwrap_or(0),
                 i64::try_from(index).unwrap_or(i64::MAX),
             ])?;
+            inserted += 1;
         }
     }
-    tx.commit()
+    Ok(inserted)
 }
 
 fn elapsed_us(started: Instant) -> u64 {
@@ -204,6 +225,76 @@ where
             Some(expected) if expected != result_rows => {
                 return Err(format!(
                     "measurement result changed between iterations: {expected} != {result_rows}"
+                )
+                .into());
+            }
+            None => expected_rows = Some(result_rows),
+            Some(_) => {}
+        }
+    }
+    Ok(TimingSummary::from_samples(
+        samples,
+        expected_rows.unwrap_or(0),
+    ))
+}
+
+fn append_path_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = OsString::from(path.as_os_str());
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+fn remove_generated_database(path: &Path) -> std::io::Result<()> {
+    for candidate in [
+        path.to_path_buf(),
+        append_path_suffix(path, "-wal"),
+        append_path_suffix(path, "-shm"),
+    ] {
+        if candidate.exists() {
+            std::fs::remove_file(candidate)?;
+        }
+    }
+    Ok(())
+}
+
+fn no_write_setup(_conn: &mut Connection) -> rusqlite::Result<()> {
+    Ok(())
+}
+
+fn measure_committed_write<S, F>(
+    source_path: &Path,
+    label: &str,
+    iterations: usize,
+    mut setup: S,
+    mut operation: F,
+) -> Result<TimingSummary, Box<dyn Error>>
+where
+    S: FnMut(&mut Connection) -> rusqlite::Result<()>,
+    F: for<'tx> FnMut(&Transaction<'tx>) -> rusqlite::Result<usize>,
+{
+    let mut samples = Vec::with_capacity(iterations);
+    let mut expected_rows = None;
+    for iteration in 0..iterations {
+        let clone_path = append_path_suffix(source_path, &format!(".{label}-{iteration}"));
+        std::fs::copy(source_path, &clone_path)?;
+        let measured = (|| -> Result<(u64, usize), Box<dyn Error>> {
+            let mut conn = reprise_core::db::open_migrated(Some(&clone_path))?;
+            setup(&mut conn)?;
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+
+            let started = Instant::now();
+            let tx = conn.transaction()?;
+            let result_rows = operation(&tx)?;
+            tx.commit()?;
+            Ok((elapsed_us(started), result_rows))
+        })();
+        remove_generated_database(&clone_path)?;
+        let (elapsed, result_rows) = measured?;
+        samples.push(elapsed);
+        match expected_rows {
+            Some(expected) if expected != result_rows => {
+                return Err(format!(
+                    "write result changed between iterations: {expected} != {result_rows}"
                 )
                 .into());
             }
@@ -274,9 +365,63 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         let ids = queries::query_track_ids(&conn, &ViewSource::Library, "title", "asc", "", &[])?;
         Ok(ids.len())
     })?;
+    drop(conn);
+
+    let write_batch_rows = config.track_count.min(WRITE_BATCH_LIMIT);
+    let write_batch_rows_i64 = i64::try_from(write_batch_rows).unwrap_or(i64::MAX);
+    let insert_batch = measure_committed_write(
+        &config.db_path,
+        "insert",
+        config.iterations,
+        no_write_setup,
+        |tx| insert_generated_metadata(tx, config.track_count, write_batch_rows),
+    )?;
+    let metadata_update_batch = measure_committed_write(
+        &config.db_path,
+        "metadata-update",
+        config.iterations,
+        no_write_setup,
+        |tx| {
+            tx.execute(
+                "UPDATE tracks SET title = title || ' updated', \
+                 album = album || ' updated', track_no = track_no + 1 WHERE id <= ?1",
+                [write_batch_rows_i64],
+            )
+        },
+    )?;
+    let hide_batch = measure_committed_write(
+        &config.db_path,
+        "hide",
+        config.iterations,
+        no_write_setup,
+        |tx| {
+            tx.execute(
+                "UPDATE tracks SET missing_since = 1 WHERE id <= ?1",
+                [write_batch_rows_i64],
+            )
+        },
+    )?;
+    let restore_batch = measure_committed_write(
+        &config.db_path,
+        "restore",
+        config.iterations,
+        |conn| {
+            conn.execute(
+                "UPDATE tracks SET missing_since = 1 WHERE id <= ?1",
+                [write_batch_rows_i64],
+            )?;
+            Ok(())
+        },
+        |tx| {
+            tx.execute(
+                "UPDATE tracks SET missing_since = NULL WHERE id <= ?1",
+                [write_batch_rows_i64],
+            )
+        },
+    )?;
 
     Ok(BaselineReport {
-        schema_version: 3,
+        schema_version: 4,
         generated_tracks: config.track_count,
         database_bytes: std::fs::metadata(&config.db_path)?.len(),
         iterations: config.iterations,
@@ -291,6 +436,11 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         filtered_count,
         library_stats,
         playback_ids,
+        write_batch_rows,
+        insert_batch,
+        metadata_update_batch,
+        hide_batch,
+        restore_batch,
     })
 }
 
@@ -404,7 +554,7 @@ mod tests {
     #[test]
     fn report_serializes_the_stable_json_contract() {
         let report = BaselineReport {
-            schema_version: 3,
+            schema_version: 4,
             generated_tracks: 10_000,
             database_bytes: 42,
             iterations: 3,
@@ -433,12 +583,17 @@ mod tests {
             filtered_count: TimingSummary::from_samples(vec![18, 16, 17], 11),
             library_stats: TimingSummary::from_samples(vec![21, 19, 20], 10_000),
             playback_ids: TimingSummary::from_samples(vec![24, 22, 23], 10_000),
+            write_batch_rows: 1_000,
+            insert_batch: TimingSummary::from_samples(vec![30, 28, 29], 1_000),
+            metadata_update_batch: TimingSummary::from_samples(vec![33, 31, 32], 1_000),
+            hide_batch: TimingSummary::from_samples(vec![36, 34, 35], 1_000),
+            restore_batch: TimingSummary::from_samples(vec![39, 37, 38], 1_000),
         };
 
         assert_eq!(
             serde_json::to_value(report).unwrap(),
             serde_json::json!({
-                "schema_version": 3,
+                "schema_version": 4,
                 "generated_tracks": 10000,
                 "database_bytes": 42,
                 "iterations": 3,
@@ -460,7 +615,12 @@ mod tests {
                 },
                 "filtered_count": {"min_us": 16, "median_us": 17, "max_us": 18, "result_rows": 11},
                 "library_stats": {"min_us": 19, "median_us": 20, "max_us": 21, "result_rows": 10000},
-                "playback_ids": {"min_us": 22, "median_us": 23, "max_us": 24, "result_rows": 10000}
+                "playback_ids": {"min_us": 22, "median_us": 23, "max_us": 24, "result_rows": 10000},
+                "write_batch_rows": 1000,
+                "insert_batch": {"min_us": 28, "median_us": 29, "max_us": 30, "result_rows": 1000},
+                "metadata_update_batch": {"min_us": 31, "median_us": 32, "max_us": 33, "result_rows": 1000},
+                "hide_batch": {"min_us": 34, "median_us": 35, "max_us": 36, "result_rows": 1000},
+                "restore_batch": {"min_us": 37, "median_us": 38, "max_us": 39, "result_rows": 1000}
             })
         );
     }
@@ -504,8 +664,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.generated_tracks, 2);
+        assert_eq!(report.write_batch_rows, 2);
+        assert_eq!(report.insert_batch.result_rows, 2);
+        assert_eq!(report.metadata_update_batch.result_rows, 2);
+        assert_eq!(report.hide_batch.result_rows, 2);
+        assert_eq!(report.restore_batch.result_rows, 2);
         let conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
         assert!(reprise_core::library::settings::get_onboarding_completed(&conn).unwrap());
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM tracks", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
 
         drop(conn);
         std::fs::remove_file(db_path).unwrap();
