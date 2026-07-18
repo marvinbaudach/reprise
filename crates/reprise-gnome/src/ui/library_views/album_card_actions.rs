@@ -9,18 +9,10 @@ use gtk4::glib;
 use reprise_core::queries::{self, AlbumSummary};
 use rusqlite::Connection;
 
-/// Fetches track IDs for an album, ordered by `track_no ASC` (path ASC
-/// fallback — the `order_expr_and_dir("track_no", "asc")` mapping).
+/// Fetches track IDs for an album in canonical disc and track order.
 pub(in crate::ui) fn album_track_ids(conn: &Connection, album: &AlbumSummary) -> Vec<i64> {
-    queries::query_album_track_ids(
-        conn,
-        &album.album,
-        &album.album_artist,
-        "track_no",
-        "asc",
-        "",
-    )
-    .unwrap_or_default()
+    queries::query_album_canonical_track_ids(conn, &album.album, &album.album_artist)
+        .unwrap_or_default()
 }
 
 /// Opens the parent folder of a track's path in the default file manager.
@@ -58,14 +50,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn album_track_ids_returns_tracks_ordered_by_track_number() {
+    fn album_track_ids_uses_canonical_disc_and_track_order() {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         conn.execute_batch(
-            "INSERT INTO tracks (id,path,title,artist,album,album_artist,track_no,added_at) VALUES
-             (1,'/a.flac','A','Art','Alb','',3,0),
-             (2,'/b.flac','B','Art','Alb','',1,0),
-             (3,'/c.flac','C','Art','Alb','',2,0);",
+            "INSERT INTO tracks
+               (id,path,title,artist,album,album_artist,disc_no,track_no,added_at) VALUES
+             (1,'/a.flac','Disc two','Art','Alb','',2,1,0),
+             (2,'/b.flac','Legacy disc','Art','Alb','',NULL,2,0),
+             (3,'/c.flac','Disc one','Art','Alb','',1,1,0);",
         )
         .unwrap();
         let album = AlbumSummary {
@@ -80,7 +73,7 @@ mod tests {
         };
 
         let ids = album_track_ids(&conn, &album);
-        assert_eq!(ids, vec![2, 3, 1]);
+        assert_eq!(ids, vec![3, 2, 1]);
     }
 
     #[test]

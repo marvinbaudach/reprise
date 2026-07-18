@@ -189,12 +189,13 @@ pub(crate) fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
 }
 
 /// Return type for tag_param_values: (title, artist, album, album_artist,
-/// year, track_no, genre, duration_ms, bitrate_kbps, untagged).
+/// year, track_no, disc_no, genre, duration_ms, bitrate_kbps, untagged).
 type TagParams<'a> = (
     &'a str,
     &'a str,
     &'a str,
     &'a str,
+    Option<i32>,
     Option<i32>,
     Option<i32>,
     &'a str,
@@ -211,7 +212,7 @@ fn now_unix() -> i64 {
 
 /// Extracts tag-derived column values in the canonical order used by both
 /// move-UPDATE and INSERT/upsert statements: title, artist, album, album_artist,
-/// year, track_no, genre, duration_ms, bitrate_kbps, untagged. Having a single
+/// year, track_no, disc_no, genre, duration_ms, bitrate_kbps, untagged. Having a single
 /// source for this ordering ensures that adding/removing columns is a
 /// one-place change. `untagged` (Task 1.8) is threaded through here rather
 /// than left for each call site to append separately, same reasoning as
@@ -228,6 +229,7 @@ fn tag_param_values<'a>(
         &meta.album_artist,
         meta.year,
         meta.track_no,
+        meta.disc_no,
         &meta.genre,
         meta.duration_ms,
         meta.bitrate_kbps,
@@ -596,6 +598,7 @@ fn scan_folder_inner(
                         album_artist_p,
                         year_p,
                         track_no_p,
+                        disc_no_p,
                         genre_p,
                         duration_ms_p,
                         bitrate_kbps_p,
@@ -603,15 +606,15 @@ fn scan_folder_inner(
                     ) = tag_param_values(&title, &meta, untagged);
                     tx.execute(
                         "INSERT INTO tracks (path, title, artist, album, album_artist, year,
-                           track_no, genre, duration_ms, bitrate_kbps, added_at, file_mtime,
+                           track_no, disc_no, genre, duration_ms, bitrate_kbps, added_at, file_mtime,
                            file_size, device, inode, mount_point, untagged)
-                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
                          ON CONFLICT(path) DO UPDATE SET
                            title=?2, artist=?3, album=?4, album_artist=?5, year=?6,
-                           track_no=?7, genre=?8, duration_ms=?9, bitrate_kbps=?10,
-                           file_mtime=?12, missing_since=NULL, missing_reason=NULL,
-                           removed_at=NULL, file_size=?13, device=?14, inode=?15,
-                           mount_point=?16, untagged=?17",
+                           track_no=?7, disc_no=?8, genre=?9, duration_ms=?10, bitrate_kbps=?11,
+                           file_mtime=?13, missing_since=NULL, missing_reason=NULL,
+                           removed_at=NULL, file_size=?14, device=?15, inode=?16,
+                           mount_point=?17, untagged=?18",
                         rusqlite::params![
                             path_str,
                             title_p,
@@ -620,6 +623,7 @@ fn scan_folder_inner(
                             album_artist_p,
                             year_p,
                             track_no_p,
+                            disc_no_p,
                             genre_p,
                             duration_ms_p,
                             bitrate_kbps_p,

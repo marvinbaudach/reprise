@@ -374,6 +374,7 @@ fn read_meta_roundtrip() {
         ..lofty::tag::items::Timestamp::default()
     });
     tag.set_track(9);
+    tag.set_disk(2);
     tag.set_genre("Deathcore".into());
     tag.save_to_path(&file, lofty::config::WriteOptions::default())
         .unwrap();
@@ -384,7 +385,47 @@ fn read_meta_roundtrip() {
     assert_eq!(meta.album, "God Hand");
     assert_eq!(meta.year, Some(2019));
     assert_eq!(meta.track_no, Some(9));
+    assert_eq!(meta.disc_no, Some(2));
     assert!(meta.duration_ms > 0);
+}
+
+#[test]
+fn scan_persists_disc_number_and_move_reconcile_preserves_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let original = fixture_copy(tmp.path(), "disc-two.flac");
+    let mut tag = Tag::new(TagType::VorbisComments);
+    tag.set_title("Second Disc".into());
+    tag.set_artist("Artist".into());
+    tag.set_album("Album".into());
+    tag.set_track(1);
+    tag.set_disk(2);
+    tag.save_to_path(&original, lofty::config::WriteOptions::default())
+        .unwrap();
+
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let imported_disc: Option<i32> = conn
+        .query_row(
+            "SELECT disc_no FROM tracks WHERE path = ?1",
+            [original.to_string_lossy().to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(imported_disc, Some(2));
+
+    let moved = tmp.path().join("disc-two-moved.flac");
+    std::fs::rename(&original, &moved).unwrap();
+    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    assert_eq!(report.moved, 1);
+    let moved_disc: Option<i32> = conn
+        .query_row(
+            "SELECT disc_no FROM tracks WHERE path = ?1",
+            [moved.to_string_lossy().to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(moved_disc, Some(2));
 }
 
 #[test]
