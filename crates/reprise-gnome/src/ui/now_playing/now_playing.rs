@@ -123,6 +123,7 @@ fn build_widgets_for_session(
         PanelTab::UpNext => up_next_button.set_active(true),
         PanelTab::Lyrics => lyrics_button.set_active(true),
     }
+    lyrics.set_tab_open(session.selected.get() == PanelTab::Lyrics);
     let tabs = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     tabs.set_homogeneous(true);
     tabs.set_halign(gtk4::Align::Center);
@@ -178,7 +179,9 @@ fn build_widgets_for_session(
         let session = session.clone();
         let footer = footer.clone();
         let footers = footers.clone();
+        let lyrics = lyrics.clone();
         lyrics_button.connect_toggled(move |button| {
+            lyrics.set_tab_open(button.is_active());
             if button.is_active() {
                 session.selected.set(PanelTab::Lyrics);
                 stack.set_visible_child_name(LYRICS_PAGE);

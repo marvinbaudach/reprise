@@ -509,6 +509,14 @@ pub fn build(
         let preferences = preferences.clone();
         device_view.set_on_settings(move || preferences.present_page("synchronization"));
     }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        info_panel.lyrics_view().set_on_settings(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_page("plugins");
+            }
+        });
+    }
     super::window_runtime_wiring::wire(super::window_runtime_wiring::RuntimeWiring {
         app,
         window: &window,

@@ -2491,6 +2491,18 @@ msgstr "Spiele einen Titel ab, um seinen Songtext zu sehen"
 msgid "Loading lyrics…"
 msgstr "Songtext wird geladen…"
 
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs
+msgid "Online lyrics are disabled"
+msgstr "Online-Songtexte sind deaktiviert"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs
+msgid "Enable them to load missing lyrics automatically"
+msgstr "Aktiviere sie, um fehlende Songtexte automatisch zu laden"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs
+msgid "Enable in Settings"
+msgstr "In den Einstellungen aktivieren"
+
 #: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:12
 msgid "Instrumental"
 msgstr "Instrumental"

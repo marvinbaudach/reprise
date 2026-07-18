@@ -25,11 +25,13 @@ const UNSYNCED_CLASS: &str = "lyrics-unsynced";
 const CONTENT_PAGE: &str = "content";
 const LOADING_PAGE: &str = "loading";
 const STATUS_PAGE: &str = "status";
+const DISABLED_PAGE: &str = "disabled";
 
 type RetryCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type StatusCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type FooterCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
+type OpenCallback = Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>;
 
 #[derive(Clone)]
 struct LyricsLine {
@@ -45,6 +47,10 @@ pub(in crate::ui) struct LyricsView {
     loading_track: gtk4::Label,
     status: gtk4::Label,
     retry: gtk4::Button,
+    #[cfg(test)]
+    disabled: adw::StatusPage,
+    #[cfg(test)]
+    settings: gtk4::Button,
     lines: RefCell<Vec<LyricsLine>>,
     active_line: Cell<Option<usize>>,
     active_alpha: Cell<u8>,
@@ -55,6 +61,9 @@ pub(in crate::ui) struct LyricsView {
     on_status_changed: StatusCallback,
     on_footer_changed: FooterCallback,
     on_seek: SeekCallback,
+    on_settings: RetryCallback,
+    on_tab_open_changed: OpenCallback,
+    tab_open: Cell<bool>,
     scroll_state: RefCell<LyricsScrollState>,
     scroll_timer: Rc<dyn ScrollTimer>,
     pause_timer: RefCell<Option<Box<dyn ScrollTimerHandle>>>,
@@ -113,6 +122,19 @@ impl LyricsView {
         status_box.append(&status);
         status_box.append(&retry);
 
+        let settings =
+            gtk4::Button::with_label(&lyrics_strings::text(lyrics_strings::ENABLE_IN_SETTINGS));
+        settings.add_css_class("suggested-action");
+        settings.set_halign(gtk4::Align::Center);
+        let disabled = adw::StatusPage::builder()
+            .icon_name("network-offline-symbolic")
+            .title(lyrics_strings::text(lyrics_strings::ONLINE_LYRICS_DISABLED))
+            .description(lyrics_strings::text(
+                lyrics_strings::ENABLE_LYRICS_DESCRIPTION,
+            ))
+            .build();
+        disabled.set_child(Some(&settings));
+
         let root = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
             .transition_duration(crate::ui::motion::STANDARD_MS)
@@ -121,11 +143,20 @@ impl LyricsView {
         root.add_named(&scrolled, Some(CONTENT_PAGE));
         root.add_named(&loading, Some(LOADING_PAGE));
         root.add_named(&status_box, Some(STATUS_PAGE));
+        root.add_named(&disabled, Some(DISABLED_PAGE));
 
         let on_retry: RetryCallback = Rc::new(RefCell::new(None));
         let retry_callback = on_retry.clone();
         retry.connect_clicked(move |_| {
             let callback = retry_callback.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        let on_settings: RetryCallback = Rc::new(RefCell::new(None));
+        let settings_callback = on_settings.clone();
+        settings.connect_clicked(move |_| {
+            let callback = settings_callback.borrow().clone();
             if let Some(callback) = callback {
                 callback();
             }
@@ -138,6 +169,10 @@ impl LyricsView {
             loading_track,
             status,
             retry,
+            #[cfg(test)]
+            disabled,
+            #[cfg(test)]
+            settings,
             lines: RefCell::new(Vec::new()),
             active_line: Cell::new(None),
             active_alpha: Cell::new(100),
@@ -148,6 +183,9 @@ impl LyricsView {
             on_status_changed: Rc::new(RefCell::new(None)),
             on_footer_changed: Rc::new(RefCell::new(None)),
             on_seek: Rc::new(RefCell::new(None)),
+            on_settings,
+            on_tab_open_changed: Rc::new(RefCell::new(None)),
+            tab_open: Cell::new(false),
             scroll_state: RefCell::new(LyricsScrollState::default()),
             scroll_timer,
             pause_timer: RefCell::new(None),
@@ -183,6 +221,13 @@ impl LyricsView {
             .set_text(&format!("{}\n{}", title.trim(), artist.trim()));
         self.root.set_visible_child_name(LOADING_PAGE);
         self.set_feedback(true, false);
+    }
+
+    pub(in crate::ui) fn show_disabled(&self) {
+        self.clear_lines();
+        self.set_footer("");
+        self.root.set_visible_child_name(DISABLED_PAGE);
+        self.set_feedback(false, false);
     }
 
     pub(in crate::ui) fn show_result(self: &Rc<Self>, body: &LyricsBody) {
@@ -288,6 +333,28 @@ impl LyricsView {
 
     pub(in crate::ui) fn set_on_seek(&self, callback: impl Fn(i64) + 'static) {
         *self.on_seek.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_settings(&self, callback: impl Fn() + 'static) {
+        *self.on_settings.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_tab_open_changed(&self, callback: impl Fn(bool) + 'static) {
+        *self.on_tab_open_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_tab_open(&self, open: bool) {
+        if self.tab_open.replace(open) == open {
+            return;
+        }
+        let callback = self.on_tab_open_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(open);
+        }
+    }
+
+    pub(in crate::ui) fn is_tab_open(&self) -> bool {
+        self.tab_open.get()
     }
 
     pub(in crate::ui) fn external_seek(self: &Rc<Self>) {
@@ -475,6 +542,23 @@ impl LyricsView {
     #[cfg(test)]
     pub(in crate::ui) fn retry_has_css_class(&self, class: &str) -> bool {
         self.retry.has_css_class(class)
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn disabled_snapshot(&self) -> (Option<String>, String, String, String) {
+        (
+            self.disabled.icon_name().map(|name| name.to_string()),
+            self.disabled.title().to_string(),
+            self.disabled
+                .description()
+                .map_or_else(String::new, |description| description.to_string()),
+            self.settings.label().unwrap_or_default().to_string(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn activate_settings_for_test(&self) {
+        self.settings.emit_clicked();
     }
 
     #[cfg(test)]
