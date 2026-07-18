@@ -470,6 +470,7 @@ pub fn build(
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome =
         super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
+    crate::ui::new_releases::popover::install(&header, &window, conn, db_path);
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());

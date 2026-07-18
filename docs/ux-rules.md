@@ -809,7 +809,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
   und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
   Akzentfarbe plus Initialen — niemals ein Loch oder einen Dauer-Spinner.
-- **NR-3** [geplant] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
+- **NR-3** [aktiv] [gtk] — Die Header-Lupe ✦ erscheint nur bei vorhandenen
   Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
   Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
   erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
@@ -818,10 +818,10 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   verbergen; vorhandene Hidden-Einträge halten „See all" erreichbar und die
   Fußzeile „N hidden · Show" macht sie rückholbar. Ein künftiges „Remind me"
   bleibt bis zu einem eigenen Scheduler ausdrücklich außerhalb dieser Regel.
-- **NR-5** [geplant] [gtk] — Das Popover ist transient und verändert den
+- **NR-5** [aktiv] [gtk] — Das Popover ist transient und verändert den
   Navigations-Stack nie. Erst „See all" navigiert regulär in den Digest-Ort;
   Schließen kehrt ohne Zustandsverlust zur aktuellen Ansicht zurück.
-- **NR-6** [geplant] [gtk] — „Fetch now" ersetzt während des Abrufs sein
+- **NR-6** [aktiv] [gtk] — „Fetch now" ersetzt während des Abrufs sein
   Refresh-Icon durch einen Spinner und zeigt sonst das Alter der letzten
   Aktualisierung. Offline oder Fehler zeigen weiter den letzten Cache samt
   Alter und nur einen dezenten Inline-Hinweis im Fuß — nie ein Fehlerbanner.

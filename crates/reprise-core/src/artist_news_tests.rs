@@ -1,9 +1,9 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    artist_search_url, artists_for_fetch, most_played_album_track_path, parse_artist_mbid,
-    parse_release_groups, query_releases, refresh_with, release_groups_url, ArtistMatch,
-    FetchScope, NewsKind,
+    artist_search_url, artists_for_fetch, mark_releases_seen, most_played_album_track_path,
+    parse_artist_mbid, parse_release_groups, query_releases, refresh_with, release_groups_url,
+    unseen_release_count, ArtistMatch, FetchScope, NewsKind,
 };
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -378,4 +378,92 @@ fn nr_2_accent_source_uses_the_most_played_album() {
         path.as_deref(),
         Some(std::path::Path::new("/music/a-one.flac"))
     );
+}
+
+#[test]
+fn nr_3_opening_marks_seen_clears_badge() {
+    let conn = migrated_conn();
+    insert_release(&conn, "one", None);
+    insert_release(&conn, "two", None);
+    insert_release(&conn, "already-seen", Some(50));
+    assert_eq!(unseen_release_count(&conn).unwrap(), 2);
+
+    mark_releases_seen(&conn, &["one".into(), "two".into()], 100).unwrap();
+
+    assert_eq!(unseen_release_count(&conn).unwrap(), 0);
+    let seen_at: Vec<Option<i64>> = ["one", "two", "already-seen"]
+        .into_iter()
+        .map(|id| {
+            conn.query_row(
+                "SELECT seen_at FROM new_releases WHERE release_group_mbid = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap()
+        })
+        .collect();
+    assert_eq!(seen_at, [Some(100), Some(100), Some(50)]);
+}
+
+#[test]
+fn nr_3_seen_item_not_rebadged() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, artist_mbid, added_at) \
+         VALUES ('/music/track.flac', 'Track', 'Pink Floyd', ?1, 0)",
+        [ARTIST_ID],
+    )
+    .unwrap();
+    let first_payload = r#"{"release-groups":[
+      {"id":"known","title":"Known","first-release-date":"2026-08-01","primary-type":"Album"}
+    ]}"#;
+    let mut first_fetch = |_url: &str| Ok(first_payload.to_string());
+    refresh_with(
+        &conn,
+        date(),
+        10,
+        FetchScope::TopArtists,
+        true,
+        &mut first_fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+    mark_releases_seen(&conn, &["known".into()], 20).unwrap();
+
+    let second_payload = r#"{"release-groups":[
+      {"id":"known","title":"Known","first-release-date":"2026-08-01","primary-type":"Album"},
+      {"id":"new","title":"New","first-release-date":"2026-08-02","primary-type":"Album"}
+    ]}"#;
+    let mut second_fetch = |_url: &str| Ok(second_payload.to_string());
+    refresh_with(
+        &conn,
+        date(),
+        30,
+        FetchScope::TopArtists,
+        true,
+        &mut second_fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+
+    assert_eq!(unseen_release_count(&conn).unwrap(), 1);
+    let known_seen: Option<i64> = conn
+        .query_row(
+            "SELECT seen_at FROM new_releases WHERE release_group_mbid = 'known'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(known_seen, Some(20));
+}
+
+fn insert_release(conn: &rusqlite::Connection, mbid: &str, seen_at: Option<i64>) {
+    conn.execute(
+        "INSERT INTO new_releases (
+           release_group_mbid, artist_name, artist_mbid, title, release_type,
+           first_release_date, fetched_at, seen_at, fallback_accent
+         ) VALUES (?1, 'Artist', 'artist-id', 'Release', 'Album', '2026-08-01', 1, ?2, '#123456')",
+        rusqlite::params![mbid, seen_at],
+    )
+    .unwrap();
 }
