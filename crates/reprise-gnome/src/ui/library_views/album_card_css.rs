@@ -42,18 +42,18 @@ pub(in crate::ui) fn css() -> String {
            outline-offset: 4px; \
            border-radius: {radius}; }}\n\
          \
-         // Cover container: square, rounded, shadow, hairline.
+         /* Cover container: square, rounded, shadow, hairline. */
          .{COVER_CONTAINER_CLASS} {{ \
            border-radius: 10px; \
            box-shadow: 0 4px 14px rgba(0,0,0,0.30); \
            overflow: hidden; \
            border: 1px solid alpha(white, 0.06); }}\n\
          \
-         // Cover image fills container.
+         /* Cover image fills container. */
          .{COVER_CLASS} {{ \
            border-radius: 10px; }}\n\
          \
-         // Hover overlay: gradient + play button, fades in.
+         /* Hover overlay: gradient + play button, fades in. */
          .{HOVER_OVERLAY_CLASS} {{ \
            opacity: 0; \
            transition: opacity {transition}; \
@@ -62,7 +62,7 @@ pub(in crate::ui) fn css() -> String {
          .{CARD_CLASS}:focus-visible .{HOVER_OVERLAY_CLASS} {{ \
            opacity: 1; }}\n\
          \
-         // Play button: round, accent bg, centered icon.
+         /* Play button: round, accent bg, centered icon. */
          .{PLAY_BUTTON_CLASS} {{ \
            min-width: 42px; min-height: 42px; \
            border-radius: 999px; \
@@ -73,14 +73,14 @@ pub(in crate::ui) fn css() -> String {
          .{PLAY_BUTTON_CLASS}:hover {{ \
            background-color: lighter(@accent_bg_color); }}\n\
          \
-         // EQ container: bottom-left, always visible when now-playing.
+         /* EQ container: bottom-left, always visible when now-playing. */
          .{EQ_CONTAINER_CLASS} {{ \
            margin: 8px; \
            padding: 4px; \
            background-color: rgba(0,0,0,0.5); \
            border-radius: 6px; }}\n\
          \
-         // Text labels below cover.
+         /* Text labels below cover. */
          .{TITLE_CLASS} {{ \
            font-weight: 700; font-size: 13.5px; \
            margin-top: 8px; }}\n\
@@ -91,7 +91,7 @@ pub(in crate::ui) fn css() -> String {
            text-decoration: underline; \
            text-decoration-color: alpha(@window_fg_color, 0.35); }}\n\
          \
-         // Placeholder: gradient bg + centered initial.
+         /* Placeholder: gradient bg + centered initial. */
          .{PLACEHOLDER_CLASS} {{ \
            border-radius: 10px; }}\n\
          .{PLACEHOLDER_INITIAL_CLASS} {{ \
@@ -129,5 +129,22 @@ mod tests {
         for index in 0..super::PLACEHOLDER_GRADIENT_COUNT {
             assert!(css.contains(&format!(".album-placeholder-gradient-{index}")));
         }
+    }
+
+    #[test]
+    fn css_contains_no_invalid_line_comments() {
+        let css = super::css();
+        assert!(
+            css.lines().all(|line| !line.trim_start().starts_with("//")),
+            "CSS must use block comments because // discards the next rule"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn album_card_css_parses_without_errors() {
+        gtk4::init().unwrap();
+        let errors = crate::ui::style::css_parse_errors(&super::css());
+        assert!(errors.is_empty(), "CSS parse errors: {errors:?}");
     }
 }

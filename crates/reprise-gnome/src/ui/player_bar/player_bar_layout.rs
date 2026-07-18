@@ -304,7 +304,7 @@ pub(in crate::ui) fn css() -> String {
          .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
            opacity: 0; transition: opacity {TRANSITION}; }}\n\
          .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\
-         .mini-eq {{ margin-start: 4px; }}\n\
+         .mini-eq {{ margin-left: 4px; }}\n\
          .mini-eq > box {{ \
            min-width: 3px; min-height: 4px; \
            border-radius: 1px; \
@@ -427,5 +427,20 @@ mod tests {
         assert!(css.contains(".player-bar-artist"));
         assert!(css.contains("border-radius: 8px"));
         assert!(css.contains("scale(0.94)"));
+    }
+
+    #[test]
+    fn css_uses_supported_mini_eq_spacing_property() {
+        let css = super::css();
+        assert!(css.contains(".mini-eq { margin-left: 4px; }"));
+        assert!(!css.contains("margin-start"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn player_bar_css_parses_without_errors() {
+        gtk4::init().unwrap();
+        let errors = crate::ui::style::css_parse_errors(&super::css());
+        assert!(errors.is_empty(), "CSS parse errors: {errors:?}");
     }
 }
