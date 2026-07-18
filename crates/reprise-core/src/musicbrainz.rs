@@ -59,6 +59,7 @@ pub fn get(url: &str) -> Result<String, FetchError> {
 enum FixtureRequest {
     Artist(String),
     ReleaseGroups(String),
+    NewReleases(String),
 }
 
 impl FixtureRequest {
@@ -66,6 +67,7 @@ impl FixtureRequest {
         match self {
             Self::Artist(artist) => format!("artist-{artist}.json"),
             Self::ReleaseGroups(mbid) => format!("release-groups-{mbid}.json"),
+            Self::NewReleases(mbid) => format!("new-releases-{mbid}.json"),
         }
     }
 
@@ -73,6 +75,7 @@ impl FixtureRequest {
         match self {
             Self::Artist(artist) => ("artist", artist),
             Self::ReleaseGroups(mbid) => ("release-group", mbid),
+            Self::NewReleases(mbid) => ("new-releases", mbid),
         }
     }
 }
@@ -88,6 +91,9 @@ fn fixture_request(url: &str) -> Option<FixtureRequest> {
     if url.contains("/release-group?") {
         let value = url.split_once("artist=")?.1;
         let mbid = value.split_once('&').map_or(value, |(mbid, _)| mbid);
+        if url.contains("type=album%7Cep%7Csingle") {
+            return Some(FixtureRequest::NewReleases(mbid.to_owned()));
+        }
         return Some(FixtureRequest::ReleaseGroups(mbid.to_owned()));
     }
     None
@@ -157,12 +163,20 @@ fn request_delay(previous: Option<Instant>, now: Instant) -> Duration {
 }
 
 fn respect_rate_limit() {
-    let mut previous = lock_unpoisoned(&LAST_REQUEST);
-    let delay = request_delay(*previous, Instant::now());
+    respect_rate_limit_with(&LAST_REQUEST, &mut Instant::now, &mut std::thread::sleep);
+}
+
+fn respect_rate_limit_with<N, S>(limiter: &Mutex<Option<Instant>>, now: &mut N, sleep: &mut S)
+where
+    N: FnMut() -> Instant,
+    S: FnMut(Duration),
+{
+    let mut previous = lock_unpoisoned(limiter);
+    let delay = request_delay(*previous, now());
     if !delay.is_zero() {
-        std::thread::sleep(delay);
+        sleep(delay);
     }
-    *previous = Some(Instant::now());
+    *previous = Some(now());
 }
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -174,6 +188,7 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
@@ -196,6 +211,25 @@ mod tests {
             request_delay(Some(now - Duration::from_secs(2)), now),
             Duration::ZERO
         );
+    }
+
+    #[test]
+    fn nr_1_fetch_respects_rate_limit() {
+        let base = Instant::now();
+        let elapsed = Cell::new(Duration::ZERO);
+        let slept = Cell::new(Duration::ZERO);
+        let limiter = Mutex::new(None);
+        let mut now = || base + elapsed.get();
+        let mut sleep = |duration| {
+            slept.set(slept.get() + duration);
+            elapsed.set(elapsed.get() + duration);
+        };
+
+        respect_rate_limit_with(&limiter, &mut now, &mut sleep);
+        elapsed.set(Duration::from_millis(250));
+        respect_rate_limit_with(&limiter, &mut now, &mut sleep);
+
+        assert_eq!(slept.get(), Duration::from_millis(750));
     }
 
     #[test]
@@ -225,6 +259,33 @@ mod tests {
             ))
         );
         assert_eq!(fixture_request("https://example.test/private/path"), None);
+    }
+
+    #[test]
+    fn new_releases_endpoint_has_a_dedicated_fixture_route() {
+        let url = "https://musicbrainz.org/ws/2/release-group?artist=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&fmt=json";
+        assert_eq!(
+            fixture_request(url),
+            Some(FixtureRequest::NewReleases(
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into()
+            ))
+        );
+        assert_eq!(
+            FixtureRequest::NewReleases("artist-id".into()).filename(),
+            "new-releases-artist-id.json"
+        );
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory
+                .path()
+                .join("new-releases-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.json"),
+            r#"{"release-groups":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            fixture_get(url, directory.path()).unwrap(),
+            r#"{"release-groups":[]}"#
+        );
     }
 
     #[test]

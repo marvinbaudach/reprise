@@ -1,13 +1,9 @@
-use std::cell::Cell;
-
 use chrono::NaiveDate;
-use tempfile::TempDir;
 
 use crate::artist_news::{
-    artist_search_url, cache_file, load_or_refresh_with, parse_artist_mbid, parse_release_groups,
-    release_groups_url, ArtistMatch, NewsError, NewsKind,
+    artist_search_url, artists_for_fetch, parse_artist_mbid, parse_release_groups, query_releases,
+    refresh_with, release_groups_url, ArtistMatch, FetchScope, NewsKind,
 };
-use crate::musicbrainz::FetchError;
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const SEARCH_EXACT: &str = r#"{"artists":[{"id":"83d91898-7763-47d7-b03b-b92132375c47","name":"Pink Floyd","score":100}]}"#;
@@ -30,7 +26,7 @@ fn urls_encode_artist_and_bound_release_group_browse() {
     assert!(hostile.contains("%5C%5C%5C%22"));
     assert_eq!(
         release_groups_url(ARTIST_ID),
-        format!("https://musicbrainz.org/ws/2/release-group?artist={ARTIST_ID}&type=album%7Cep&release-group-status=website-default&limit=100&fmt=json")
+        format!("https://musicbrainz.org/ws/2/release-group?artist={ARTIST_ID}&type=album%7Cep%7Csingle&release-group-status=website-default&limit=100&fmt=json")
     );
 }
 
@@ -92,13 +88,12 @@ fn release_parser_excludes_secondary_and_non_album_types() {
 }
 
 #[test]
-fn date_window_includes_exact_boundaries_and_ignores_missing_dates() {
+fn date_filter_keeps_current_albums_and_ignores_missing_dates() {
     let json = r#"{"release-groups":[
       {"id":"today","title":"Today","first-release-date":"2026-07-13","primary-type":"Album"},
       {"id":"future","title":"Future Edge","first-release-date":"2027-07-13","primary-type":"Album"},
-      {"id":"old","title":"Past Edge","first-release-date":"2025-07-13","primary-type":"Album"},
-      {"id":"too-far","title":"Too Far","first-release-date":"2027-07-14","primary-type":"Album"},
-      {"id":"too-old","title":"Too Old","first-release-date":"2025-07-12","primary-type":"Album"},
+      {"id":"recent","title":"Recent","first-release-date":"2026-04-15","primary-type":"Album"},
+      {"id":"too-old","title":"Too Old","first-release-date":"2026-04-13","primary-type":"Album"},
       {"id":"unknown","title":"Unknown","primary-type":"Album"}
     ]}"#;
     let items = parse_release_groups(json, &[], date());
@@ -107,7 +102,61 @@ fn date_window_includes_exact_boundaries_and_ignores_missing_dates() {
         .iter()
         .any(|item| item.title == "Today" && item.kind == NewsKind::Upcoming));
     assert!(items.iter().any(|item| item.title == "Future Edge"));
-    assert!(items.iter().any(|item| item.title == "Past Edge"));
+    assert!(items.iter().any(|item| item.title == "Recent"));
+}
+
+#[test]
+fn nr_1_album_and_ep_window_starts_ninety_days_ago() {
+    let json = r#"{"release-groups":[
+      {"id":"album-edge","title":"Album Edge","first-release-date":"2026-04-14","primary-type":"Album"},
+      {"id":"ep-edge","title":"EP Edge","first-release-date":"2026-04-14","primary-type":"EP"},
+      {"id":"too-old","title":"Too Old","first-release-date":"2026-04-13","primary-type":"Album"},
+      {"id":"future","title":"Distant Future","first-release-date":"2028-01-01","primary-type":"Album"}
+    ]}"#;
+
+    let titles = parse_release_groups(json, &[], date())
+        .into_iter()
+        .map(|item| item.title)
+        .collect::<Vec<_>>();
+
+    assert_eq!(titles, ["Distant Future", "Album Edge", "EP Edge"]);
+}
+
+#[test]
+fn nr_1_singles_require_a_complete_future_date() {
+    let json = r#"{"release-groups":[
+      {"id":"future","title":"Future Single","first-release-date":"2026-07-14","primary-type":"Single"},
+      {"id":"today","title":"Today Single","first-release-date":"2026-07-13","primary-type":"Single"},
+      {"id":"past","title":"Past Single","first-release-date":"2026-07-12","primary-type":"Single"},
+      {"id":"month","title":"Month Single","first-release-date":"2026-08","primary-type":"Single"},
+      {"id":"year","title":"Year Single","first-release-date":"2027","primary-type":"Single"}
+    ]}"#;
+
+    let titles = parse_release_groups(json, &[], date())
+        .into_iter()
+        .map(|item| item.title)
+        .collect::<Vec<_>>();
+
+    assert_eq!(titles, ["Future Single"]);
+}
+
+#[test]
+fn nr_1_secondary_types_are_excluded_before_the_five_item_cap() {
+    let json = r#"{"release-groups":[
+      {"id":"live","title":"Live","first-release-date":"2026-08-01","primary-type":"Album","secondary-types":["Live"]},
+      {"id":"one","title":"One","first-release-date":"2026-08-01","primary-type":"Album"},
+      {"id":"two","title":"Two","first-release-date":"2026-08-02","primary-type":"EP"},
+      {"id":"three","title":"Three","first-release-date":"2026-08-03","primary-type":"Single"},
+      {"id":"four","title":"Four","first-release-date":"2026-08-04","primary-type":"Album"},
+      {"id":"five","title":"Five","first-release-date":"2026-08-05","primary-type":"EP"},
+      {"id":"six","title":"Six","first-release-date":"2026-08-06","primary-type":"Album"}
+    ]}"#;
+
+    let items = parse_release_groups(json, &[], date());
+
+    assert_eq!(items.len(), 5);
+    assert!(items.iter().all(|item| item.title != "Live"));
+    assert!(items.iter().all(|item| item.title != "Six"));
 }
 
 #[test]
@@ -130,142 +179,136 @@ fn releases_sort_upcoming_ascending_then_new_descending_and_cap_at_five() {
     );
 }
 
-fn fixture_fetch<'a>(
-    calls: &'a Cell<usize>,
-) -> impl FnMut(&str) -> Result<String, FetchError> + 'a {
-    move |url| {
-        calls.set(calls.get() + 1);
-        if url.contains("/artist/") {
-            Ok(SEARCH_EXACT.into())
-        } else {
-            Ok(RELEASES.into())
-        }
-    }
+fn migrated_conn() -> rusqlite::Connection {
+    let conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    conn
 }
 
 #[test]
-fn fresh_cache_avoids_network_and_forced_refresh_reuses_artist_mbid() {
-    let temp = TempDir::new().unwrap();
-    let calls = Cell::new(0);
-    let mut fetch = fixture_fetch(&calls);
-    let first = load_or_refresh_with(
-        "Pink Floyd",
-        &[],
-        date(),
-        false,
-        1_000_000,
-        temp.path(),
-        &mut fetch,
+fn nr_1_tag_mbid_skips_search_and_persists_releases() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, artist_mbid, album, play_count, added_at) \
+         VALUES ('/music/one.flac', 'One', 'Pink Floyd', ?1, 'Local Album', 20, 0)",
+        [ARTIST_ID],
     )
     .unwrap();
-    assert_eq!(calls.get(), 2);
-    let cached = load_or_refresh_with(
-        "Pink Floyd",
-        &[],
-        date(),
-        false,
-        1_000_100,
-        temp.path(),
-        &mut fetch,
-    )
-    .unwrap();
-    assert_eq!(cached, first);
-    assert_eq!(calls.get(), 2);
-    let _ = load_or_refresh_with(
-        "Pink Floyd",
-        &[],
-        date(),
-        true,
-        1_000_200,
-        temp.path(),
-        &mut fetch,
-    )
-    .unwrap();
-    assert_eq!(calls.get(), 3);
-}
-
-#[test]
-fn network_failure_returns_stale_positive_cache() {
-    let temp = TempDir::new().unwrap();
-    let calls = Cell::new(0);
-    let mut fetch = fixture_fetch(&calls);
-    load_or_refresh_with(
-        "Pink Floyd",
-        &[],
-        date(),
-        false,
-        10,
-        temp.path(),
-        &mut fetch,
-    )
-    .unwrap();
-    let mut offline = |_: &str| Err(FetchError::Transport);
-    let stale = load_or_refresh_with(
-        "Pink Floyd",
-        &[],
-        date(),
-        true,
-        20,
-        temp.path(),
-        &mut offline,
-    )
-    .unwrap();
-    assert!(stale.stale);
-    assert_eq!(stale.artist_mbid, ARTIST_ID);
-}
-
-#[test]
-fn corrupt_cache_is_ignored_and_replaced() {
-    let temp = TempDir::new().unwrap();
-    std::fs::create_dir_all(temp.path()).unwrap();
-    std::fs::write(cache_file(temp.path(), "Pink Floyd"), b"broken").unwrap();
-    let calls = Cell::new(0);
-    let mut fetch = fixture_fetch(&calls);
-    let result = load_or_refresh_with(
-        "Pink Floyd",
-        &[],
-        date(),
-        false,
-        10,
-        temp.path(),
-        &mut fetch,
-    )
-    .unwrap();
-    assert_eq!(result.items.len(), 2);
-    assert_eq!(calls.get(), 2);
-}
-
-#[test]
-fn negative_match_is_cached_for_one_day() {
-    let temp = TempDir::new().unwrap();
-    let calls = Cell::new(0);
-    let mut no_match = |_: &str| {
-        calls.set(calls.get() + 1);
-        Ok(r#"{"artists":[]}"#.to_string())
+    let mut urls = Vec::new();
+    let mut fetch = |url: &str| {
+        urls.push(url.to_string());
+        Ok(RELEASES.to_string())
     };
-    assert_eq!(
-        load_or_refresh_with(
-            "Unknown",
-            &[],
-            date(),
-            false,
-            100,
-            temp.path(),
-            &mut no_match
-        ),
-        Err(NewsError::Unmatched)
-    );
-    assert_eq!(
-        load_or_refresh_with(
-            "Unknown",
-            &[],
-            date(),
-            false,
-            200,
-            temp.path(),
-            &mut no_match
-        ),
-        Err(NewsError::Unmatched)
-    );
-    assert_eq!(calls.get(), 1);
+
+    let report = refresh_with(
+        &conn,
+        date(),
+        1_000_000,
+        FetchScope::TopArtists,
+        true,
+        &mut fetch,
+    )
+    .unwrap();
+
+    assert_eq!(report.artists_fetched, 1);
+    assert_eq!(report.releases_upserted, 2);
+    assert_eq!(urls.len(), 1);
+    assert!(urls[0].contains("/release-group?"));
+    let releases = query_releases(&conn, true, date()).unwrap();
+    assert_eq!(releases.len(), 2);
+    assert!(releases.iter().all(|release| {
+        release.artist_name == "Pink Floyd" && release.artist_mbid == ARTIST_ID
+    }));
+
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, artist_mbid, album, added_at) \
+         VALUES ('/music/two.flac', 'Two', 'Pink Floyd', ?1, 'Future Album', 0)",
+        [ARTIST_ID],
+    )
+    .unwrap();
+    let after_import = query_releases(&conn, true, date()).unwrap();
+    assert_eq!(after_import.len(), 1);
+    assert_eq!(after_import[0].title, "Recent EP");
+}
+
+#[test]
+fn nr_1_name_resolution_persists_positive_and_negative_results() {
+    let conn = migrated_conn();
+    for (path, artist, plays) in [
+        ("/music/pink.flac", "Pink Floyd", 20),
+        ("/music/unknown.flac", "Unknown", 10),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, play_count, added_at) \
+             VALUES (?1, 'Track', ?2, ?3, 0)",
+            rusqlite::params![path, artist, plays],
+        )
+        .unwrap();
+    }
+    let mut fetch = |url: &str| {
+        if url.contains("Pink%20Floyd") {
+            Ok(SEARCH_EXACT.to_string())
+        } else if url.contains("Unknown") {
+            Ok(r#"{"artists":[]}"#.to_string())
+        } else {
+            Ok(RELEASES.to_string())
+        }
+    };
+
+    let report = refresh_with(
+        &conn,
+        date(),
+        1_000_000,
+        FetchScope::TopArtists,
+        true,
+        &mut fetch,
+    )
+    .unwrap();
+
+    assert_eq!((report.artists_fetched, report.unmatched), (1, 1));
+    let positive: (Option<String>, i64) = conn
+        .query_row(
+            "SELECT artist_mbid, artist_mbid_negative FROM tracks WHERE artist = 'Pink Floyd'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(positive, (Some(ARTIST_ID.into()), 0));
+    let negative: (Option<String>, i64) = conn
+        .query_row(
+            "SELECT artist_mbid, artist_mbid_negative FROM tracks WHERE artist = 'Unknown'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(negative, (None, 1));
+}
+
+#[test]
+fn nr_1_fetch_queue_prioritizes_top_artists_and_rotates_the_rest_by_day() {
+    let conn = migrated_conn();
+    for index in 0..27 {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, play_count, added_at) \
+             VALUES (?1, 'Track', ?2, ?3, 0)",
+            rusqlite::params![
+                format!("/music/{index}.flac"),
+                format!("Artist {index:02}"),
+                100 - index
+            ],
+        )
+        .unwrap();
+    }
+
+    let top = artists_for_fetch(&conn, FetchScope::TopArtists).unwrap();
+    let day_zero = artists_for_fetch(&conn, FetchScope::AllArtists { day_index: 0 }).unwrap();
+    let day_one = artists_for_fetch(&conn, FetchScope::AllArtists { day_index: 1 }).unwrap();
+
+    assert_eq!(top.len(), 20);
+    assert_eq!(top[0].name, "Artist 00");
+    assert_eq!(top[19].name, "Artist 19");
+    assert_eq!(day_zero.len(), 25);
+    assert_eq!(day_zero[20].name, "Artist 20");
+    assert_eq!(day_one.len(), 22);
+    assert_eq!(day_one[20].name, "Artist 25");
 }
