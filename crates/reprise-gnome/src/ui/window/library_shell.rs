@@ -31,7 +31,7 @@ const SMOKE_LIBRARY_VIEW_ENV: &str = "REPRISE_SMOKE_LIBRARY_VIEW";
 
 pub(in crate::ui) struct LibraryShell {
     pub sidebar_page: adw::NavigationPage,
-    pub split_view: adw::NavigationSplitView,
+    pub split_view: adw::OverlaySplitView,
     pub content_nav: adw::NavigationView,
     pub info_panel: Rc<InfoPanel>,
 }
@@ -45,7 +45,10 @@ pub(in crate::ui) fn build_views(
     albums: &impl IsA<gtk4::Widget>,
     artists: &impl IsA<gtk4::Widget>,
 ) -> LibraryViews {
-    let stack = gtk4::Stack::new();
+    let stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(crate::ui::motion::STANDARD_MS)
+        .build();
     stack.add_titled(
         tracks,
         Some(LIBRARY_VIEW_TRACKS),
@@ -235,6 +238,24 @@ pub(in crate::ui) fn wire_source_routing(
     sidebar.set_on_show_content(move || show_content());
 }
 
+/// Builds the library split view in its collapsed default. It starts with the
+/// sidebar hidden rather than expanded: the wide breakpoint (and its
+/// `collapsed`-notify wiring) reveals the sidebar column once the window is at
+/// least [`SIDEBAR_BREAKPOINT_WIDTH`] wide, so a narrow restored width simply
+/// leaves the sidebar closed instead of overlaying the content underneath it.
+fn build_split_view(
+    sidebar_page: &adw::NavigationPage,
+    content_nav: &adw::NavigationView,
+) -> adw::OverlaySplitView {
+    adw::OverlaySplitView::builder()
+        .sidebar(sidebar_page)
+        .content(content_nav)
+        .sidebar_position(gtk4::PackType::Start)
+        .show_sidebar(false)
+        .collapsed(true)
+        .build()
+}
+
 pub(in crate::ui) fn build(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<Connection>>,
@@ -262,16 +283,8 @@ pub(in crate::ui) fn build(
         info_panel.widget(),
         &strings::text(strings::APP_NAME),
     );
-    let content_page = adw::NavigationPage::builder()
-        .title(strings::text(strings::APP_NAME))
-        .child(&content_nav)
-        .build();
-    let split_view = adw::NavigationSplitView::builder()
-        .sidebar(&sidebar_page)
-        .content(&content_page)
-        .collapsed(true)
-        .build();
-    super::sidebar_presentation::style_split_view(&split_view);
+    let split_view = build_split_view(&sidebar_page, &content_nav);
+    super::sidebar_presentation::style_overlay_split_view(&split_view);
     let condition = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MinWidth,
         f64::from(SIDEBAR_BREAKPOINT_WIDTH),
@@ -308,6 +321,27 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
+    fn sidebar_split_view_starts_closed_so_narrow_restores_never_overlay_content() {
+        gtk4::init().unwrap();
+        let sidebar_page = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let content = adw::NavigationView::new();
+
+        let split = build_split_view(&sidebar_page, &content);
+
+        assert!(split.is_collapsed());
+        assert_eq!(split.sidebar_position(), gtk4::PackType::Start);
+        assert!(
+            !split.shows_sidebar(),
+            "a narrow (sub-breakpoint) restored window must not start with the \
+             sidebar overlaid on top of the content"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn library_views_expose_tracks_albums_and_artists_in_order() {
         if gtk4::init().is_err() {
             return;
@@ -334,6 +368,14 @@ mod tests {
         assert_eq!(
             views.stack.child_by_name(LIBRARY_VIEW_ARTISTS),
             Some(artists.upcast())
+        );
+        assert_eq!(
+            views.stack.transition_type(),
+            gtk4::StackTransitionType::Crossfade
+        );
+        assert_eq!(
+            views.stack.transition_duration(),
+            crate::ui::motion::STANDARD_MS
         );
     }
 }

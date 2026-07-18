@@ -260,7 +260,7 @@ impl Sidebar {
         }
     }
 
-    /// The root widget to embed as the `AdwNavigationSplitView`'s sidebar
+    /// The root widget to embed as the main `AdwOverlaySplitView`'s sidebar
     /// page content.
     pub fn widget(&self) -> &gtk4::Box {
         &self.root

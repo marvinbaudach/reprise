@@ -18,16 +18,8 @@ policy_files=(
   crates/reprise-gnome/src/ui/style/tokens.rs
 )
 
-# Phase 2 -- migrated in T4/T5 and removed from this allowlist.
-# missing_progress.rs is missing-import-errors territory (still an open branch);
-# its background progress-card revealer is migrated alongside scan_progress.rs
-# once that work lands, not from this branch.
-phase_two_allowlist=(
-  crates/reprise-gnome/src/ui/sidebar/sidebar_device_card.rs
-  crates/reprise-gnome/src/ui/scan/scan_progress.rs
-  crates/reprise-gnome/src/ui/issues/missing_progress.rs
-  crates/reprise-gnome/src/ui/window/window.rs
-)
+# Phase 2 migrations are complete; this list intentionally stays empty.
+phase_two_allowlist=()
 
 # --- Literal-duration detection (heuristic; see the limits below) ---
 #
