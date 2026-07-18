@@ -53,7 +53,6 @@ impl AlbumView {
             cover_loader,
             generation: Rc::new(Cell::new(0)),
             now_playing_album: Rc::new(RefCell::new(None)),
-            on_activate: on_activate.clone(),
             on_play: Rc::new(RefCell::new(None)),
             on_queue: Rc::new(RefCell::new(None)),
             on_artist_activate: on_artist_activate.clone(),
@@ -68,8 +67,35 @@ impl AlbumView {
             .factory(&factory)
             .min_columns(1)
             .max_columns(200)
+            // One click opens an album: the CELL machinery emits `activate`
+            // (routed below), which is reliable where a `GestureClick` on
+            // the plain card `Box` was not — the cell claims press
+            // sequences before a card gesture's `released` can fire.
+            .single_click_activate(true)
             .build();
         grid_view.add_css_class("library-grid");
+
+        // The single activation path for pointer AND keyboard: a single
+        // click (via `single_click_activate` above) and Enter on the
+        // focused card (GtkListBase binds Return/KP_Enter) both emit
+        // `activate`, routed here to `on_activate`.
+        {
+            let on_activate = on_activate.clone();
+            let filter_model = filter_model.clone();
+            grid_view.connect_activate(move |_grid, position| {
+                let Some(obj) = filter_model.item(position) else {
+                    return;
+                };
+                let Some(boxed) = obj.downcast_ref::<glib::BoxedAnyObject>() else {
+                    return;
+                };
+                let album = boxed.borrow::<AlbumSummary>().clone();
+                let callback = on_activate.borrow().clone();
+                if let Some(cb) = callback {
+                    cb(album);
+                }
+            });
+        }
 
         let menu_shared = Rc::new(AlbumMenuShared {
             conn: conn.clone(),
@@ -87,6 +113,41 @@ impl AlbumView {
             .vexpand(true)
             .hexpand(true)
             .build();
+
+        // Pointer → keyboard handoff: a primary click on EMPTY grid space
+        // hands the grid keyboard focus, so arrows / Enter / Menu key work
+        // right away. `pressed` in the CAPTURE phase on the scrolled window:
+        // `GtkListBase`'s internal gesture claims the sequence even on empty
+        // space (retroactively denying other gestures), so a bubble or
+        // capture `released` never fires here. Card hits are explicitly
+        // skipped — grabbing focus mid-press scrolls the grid to its focused
+        // cell, which cancels the card's own click gesture (a real caught
+        // regression: cards stopped opening).
+        {
+            let empty_click = gtk4::GestureClick::new();
+            empty_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            let grid = grid_view.downgrade();
+            empty_click.connect_pressed(move |gesture, _n, x, y| {
+                let Some(scrolled) = gesture.widget() else { return };
+                let mut hit = scrolled.pick(x, y, gtk4::PickFlags::DEFAULT);
+                while let Some(widget) = hit {
+                    if widget.has_css_class(crate::ui::album_card_css::CARD_CLASS) {
+                        return;
+                    }
+                    if widget == scrolled {
+                        break;
+                    }
+                    hit = widget.parent();
+                }
+                let Some(grid) = grid.upgrade() else { return };
+                if grid.grab_focus() {
+                    tracing::debug!("album grid: empty-space click focused the grid");
+                } else {
+                    tracing::debug!("album grid: empty-space click focus refused");
+                }
+            });
+            scrolled.add_controller(empty_click);
+        }
 
         // ── Empty states ───────────────────────────────────────────────
         let empty = adw::StatusPage::builder()
@@ -222,6 +283,39 @@ impl AlbumView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn keyboard_activate_on_grid_opens_album() {
+        gtk4::init().unwrap();
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
+             ('/one.flac','One','Artist A','First',0);",
+        )
+        .unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+        let loader =
+            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let view = AlbumView::new(&conn, loader);
+
+        let activated: Rc<RefCell<Option<AlbumSummary>>> = Rc::new(RefCell::new(None));
+        {
+            let activated = activated.clone();
+            view.set_on_activate(move |album| {
+                *activated.borrow_mut() = Some(album);
+            });
+        }
+
+        // `activate` is the signal GridView's built-in Enter binding emits
+        // for the focused cell — emitting it directly exercises the same
+        // handler the keyboard path runs.
+        view.grid_widget().emit_by_name::<()>("activate", &[&0u32]);
+
+        let opened = activated.borrow();
+        assert_eq!(opened.as_ref().map(|a| a.album.as_str()), Some("First"));
+    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]

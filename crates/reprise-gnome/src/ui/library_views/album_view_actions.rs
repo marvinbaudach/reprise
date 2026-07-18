@@ -115,38 +115,86 @@ pub(in crate::ui) fn install_context_menu(
     grid_view.insert_action_group(album_context_menu::ACTION_GROUP_NAME, Some(&action_group));
 
     let right_click = gtk4::GestureClick::builder().button(3).build();
-    let menu_shared = menu_shared.clone();
-    let grid_weak = grid_view.downgrade();
-    let filter_model = filter_model.clone();
-    right_click.connect_released(move |gesture, _press_count, x, y| {
-        gesture.set_state(gtk4::EventSequenceState::Claimed);
-        let Some(grid) = grid_weak.upgrade() else {
-            return;
-        };
-        let Some(card) = picked_album_card(&grid, x, y) else {
-            return;
-        };
-        let tooltip = card.tooltip_text().unwrap_or_default();
-        let mut parts = tooltip.split(" \u{00b7} ");
-        let album_title = parts.next().unwrap_or_default();
-        let album_artist = parts.next().unwrap_or_default();
-        for index in 0..filter_model.n_items() {
-            let Some(object) = filter_model.item(index) else {
-                continue;
+    {
+        let menu_shared = menu_shared.clone();
+        let grid_weak = grid_view.downgrade();
+        let filter_model = filter_model.clone();
+        right_click.connect_released(move |gesture, _press_count, x, y| {
+            gesture.set_state(gtk4::EventSequenceState::Claimed);
+            let Some(grid) = grid_weak.upgrade() else {
+                return;
             };
-            let Some(boxed) = object.downcast_ref::<glib::BoxedAnyObject>() else {
-                continue;
+            let Some(card) = picked_album_card(&grid, x, y) else {
+                return;
             };
-            let album: std::cell::Ref<AlbumSummary> = boxed.borrow();
-            if album_view_state::identity_matches(&album, album_title, album_artist) {
-                let selected = album.clone();
-                drop(album);
-                album_context_menu::show(&card, &menu_shared, selected, x, y);
-                break;
-            }
-        }
-    });
+            let Some(selected) = resolve_card_album(&card, &filter_model) else {
+                return;
+            };
+            album_context_menu::show(&card, &menu_shared, selected, x, y);
+        });
+    }
     grid_view.add_controller(right_click);
+
+    // Keyboard path (Menu key / Shift+F10): the same menu for the FOCUSED
+    // card — mirrors `track_list_context_keys` on the track table.
+    let key_controller = gtk4::EventControllerKey::new();
+    {
+        let menu_shared = menu_shared.clone();
+        let grid_weak = grid_view.downgrade();
+        let filter_model = filter_model.clone();
+        key_controller.connect_key_pressed(move |_, key, _, modifiers| {
+            let is_shortcut = crate::ui::track_list::track_list_context_keys::
+                is_context_menu_shortcut(key, modifiers);
+            if !is_shortcut {
+                return gtk4::glib::Propagation::Proceed;
+            }
+            let Some(grid) = grid_weak.upgrade() else {
+                return gtk4::glib::Propagation::Proceed;
+            };
+            let Some(card) = focused_album_card(&grid) else {
+                return gtk4::glib::Propagation::Proceed;
+            };
+            let Some(selected) = resolve_card_album(&card, &filter_model) else {
+                return gtk4::glib::Propagation::Proceed;
+            };
+            album_context_menu::show(
+                &card,
+                &menu_shared,
+                selected,
+                f64::from(card.width()) / 2.0,
+                f64::from(card.height()) / 2.0,
+            );
+            tracing::debug!("album context menu opened from keyboard");
+            gtk4::glib::Propagation::Stop
+        });
+    }
+    grid_view.add_controller(key_controller);
+}
+
+/// Resolves the `AlbumSummary` a card widget represents via its tooltip
+/// identity ("Title · Artist · …") — shared by the pointer and keyboard
+/// context-menu paths.
+fn resolve_card_album(
+    card: &gtk4::Widget,
+    filter_model: &gtk4::FilterListModel,
+) -> Option<AlbumSummary> {
+    let tooltip = card.tooltip_text().unwrap_or_default();
+    let mut parts = tooltip.split(" \u{00b7} ");
+    let album_title = parts.next().unwrap_or_default();
+    let album_artist = parts.next().unwrap_or_default();
+    for index in 0..filter_model.n_items() {
+        let Some(object) = filter_model.item(index) else {
+            continue;
+        };
+        let Some(boxed) = object.downcast_ref::<glib::BoxedAnyObject>() else {
+            continue;
+        };
+        let album: std::cell::Ref<AlbumSummary> = boxed.borrow();
+        if album_view_state::identity_matches(&album, album_title, album_artist) {
+            return Some(album.clone());
+        }
+    }
+    None
 }
 
 fn picked_album_card(grid: &gtk4::GridView, x: f64, y: f64) -> Option<gtk4::Widget> {
@@ -156,6 +204,19 @@ fn picked_album_card(grid: &gtk4::GridView, x: f64, y: f64) -> Option<gtk4::Widg
             return Some(widget);
         }
         current = widget.parent();
+    }
+    None
+}
+
+/// The card `Box` inside the grid cell that currently has keyboard focus —
+/// `focus_child` is the cell wrapper, the card is its subtree.
+fn focused_album_card(grid: &gtk4::GridView) -> Option<gtk4::Widget> {
+    let mut current = grid.focus_child();
+    while let Some(widget) = current {
+        if widget.has_css_class(album_card_css::CARD_CLASS) {
+            return Some(widget);
+        }
+        current = widget.first_child();
     }
     None
 }

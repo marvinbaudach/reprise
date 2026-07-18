@@ -342,7 +342,10 @@ pub fn build(
         album_view.widget(),
         artist_view.widget(),
     );
-    super::library_shell::wire_album_view(&library_views, &album_view, &track_list);
+    // NAV-2: shared navigation history — created before the view wiring so
+    // album/artist cross-navigation can record the places it leaves.
+    let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
+    super::library_shell::wire_album_view(&library_views, &album_view, &track_list, &nav_history);
     if let Some(player) = &player {
         let grid = album_view.grid_widget().downgrade();
         player.set_on_playback_state_changed_album(move |state| {
@@ -357,7 +360,7 @@ pub fn build(
             }
         });
     }
-    super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list);
+    super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list, &nav_history);
     // Wire playback → track-table selection and Artists-view now-playing. Done
     // here (not right after `track_list` is built) because the closure captures
     // a strong `Rc<ArtistView>`, which must exist first.
@@ -528,6 +531,7 @@ pub fn build(
         preferences: &preferences,
         cover_batch: &cover_batch,
         first_run_decision,
+        nav_history: &nav_history,
     });
 
     tracing::info!("main window built");

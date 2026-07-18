@@ -246,6 +246,7 @@ impl Sidebar {
 
         wire_row_selected(&shared);
         wire_row_activated(&shared);
+        wire_focus_leave_resync(&shared);
 
         rebuild(&shared, Some(ViewSource::default()), "initial build");
 
@@ -513,6 +514,14 @@ fn wire_row_selected(shared: &Rc<Shared>) {
 /// only one row is ever visually selected across the main list and the
 /// bottom-pinned issues list — `sibling`'s handler then fires with `None` and
 /// returns early, so there is no source change and no loop.
+///
+/// A selection that arrived through KEYBOARD FOCUS (`row.has_focus()`) does
+/// NOT route: GTK's `ListBox` selects a row the moment Tab/arrow focus
+/// lands on it, so routing here made merely tabbing THROUGH the sidebar
+/// switch the whole view (keyboard-nav optics run: Tab #2 yanked the app to
+/// the Queue). Focus-driven selection is browsing; committing is a single
+/// click or Enter/Space — both fire `row-activated`, where the route lives
+/// alongside the programmatic (focus-less) selection path here.
 fn wire_row_selected_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox, sibling: &gtk4::ListBox) {
     let shared = shared.clone();
     let sibling = sibling.clone();
@@ -521,36 +530,46 @@ fn wire_row_selected_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox, sibling: &
             return;
         };
         sibling.unselect_all();
-        let matched = shared
-            .rows
-            .borrow()
-            .iter()
-            .find(|(r, _, _)| r == row)
-            .map(|(_, source, title)| (source.clone(), title.clone()));
-        let Some((source, title)) = matched else {
-            // Selecting the "New playlist" row (or a header) can't happen —
-            // both are `selectable(false)` — so this would only fire for a
-            // genuine bug in row bookkeeping; warn rather than panic.
-            tracing::warn!("sidebar: selected row not found in row map; ignoring");
-            return;
-        };
-        if *shared.current_source.borrow() == source {
-            // Same logical source as before (a routine refresh's silent
-            // re-select, or re-selecting the row that's already active) —
-            // nothing to notify.
+        if row.has_focus() {
             return;
         }
-        tracing::debug!(source = %source.label(), "sidebar: row selected");
-        *shared.current_source.borrow_mut() = source.clone();
-        // Hoisted clone-out before calling, per this project's `RefCell`
-        // callback discipline (see the module doc's `## Reentrancy`
-        // section): `on_select` can synchronously trigger a `rebuild` that
-        // touches every field on `shared`, including this same `RefCell`.
-        let callback = shared.on_select.borrow().clone();
-        if let Some(callback) = callback {
-            callback(source, title);
-        }
+        route_row(&shared, row);
     });
+}
+
+/// Resolves `row` to its `ViewSource` and routes there (dedup'd against
+/// `current_source`) — the shared tail of programmatic selection
+/// (`row-selected` without focus) and user activation (`row-activated`).
+fn route_row(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
+    let matched = shared
+        .rows
+        .borrow()
+        .iter()
+        .find(|(r, _, _)| r == row)
+        .map(|(_, source, title)| (source.clone(), title.clone()));
+    let Some((source, title)) = matched else {
+        // Selecting the "New playlist" row (or a header) can't happen —
+        // both are `selectable(false)` — so this would only fire for a
+        // genuine bug in row bookkeeping; warn rather than panic.
+        tracing::warn!("sidebar: selected row not found in row map; ignoring");
+        return;
+    };
+    if *shared.current_source.borrow() == source {
+        // Same logical source as before (a routine refresh's silent
+        // re-select, or re-selecting the row that's already active) —
+        // nothing to notify.
+        return;
+    }
+    tracing::debug!(source = %source.label(), "sidebar: row selected");
+    *shared.current_source.borrow_mut() = source.clone();
+    // Hoisted clone-out before calling, per this project's `RefCell`
+    // callback discipline (see the module doc's `## Reentrancy`
+    // section): `on_select` can synchronously trigger a `rebuild` that
+    // touches every field on `shared`, including this same `RefCell`.
+    let callback = shared.on_select.borrow().clone();
+    if let Some(callback) = callback {
+        callback(source, title);
+    }
 }
 
 /// Wires the `ListBox`'s `row-activated` signal. Every navigation row is
@@ -567,6 +586,30 @@ fn wire_row_selected_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox, sibling: &
 /// real `on_select`-driven switch is harmless. The "New playlist" row (non-
 /// selectable, so it never appears in `shared.rows`) is handled separately:
 /// it opens the dialog instead.
+/// While keyboard focus browses the sidebar, GTK's focus-driven selection
+/// wanders WITHOUT routing (see `wire_row_selected_on`). If focus then
+/// leaves the lists without a commit, snap the visual selection back to the
+/// source that is actually shown — otherwise a merely-browsed row stays
+/// highlighted while the content shows something else.
+fn wire_focus_leave_resync(shared: &Rc<Shared>) {
+    for listbox in [&shared.listbox, &shared.issues_listbox] {
+        let controller = gtk4::EventControllerFocus::new();
+        let shared = shared.clone();
+        controller.connect_leave(move |_| {
+            let current = shared.current_source.borrow().clone();
+            let Some(row) = find_row(&shared, &current) else {
+                return;
+            };
+            if !row.is_selected() {
+                // Re-selecting fires `row-selected`, whose `route_row` then
+                // dedups against `current_source` — no reroute, no loop.
+                select_row_in_its_listbox(&row);
+            }
+        });
+        listbox.add_controller(controller);
+    }
+}
+
 fn wire_row_activated(shared: &Rc<Shared>) {
     wire_row_activated_on(shared, &shared.listbox);
     wire_row_activated_on(shared, &shared.issues_listbox);
@@ -590,6 +633,13 @@ fn wire_row_activated_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox) {
         }
         let is_nav_row = shared.rows.borrow().iter().any(|(r, _, _)| r == row);
         if is_nav_row {
+            // The user COMMITTED to this row (single click, Enter, Space) —
+            // route now. Focus-driven `row-selected` deliberately skipped
+            // routing (see `wire_row_selected_on`); a click still navigates
+            // with that one click because activation fires right after the
+            // focus-selection, and `route_row`'s dedup keeps the pair from
+            // routing twice.
+            route_row(&shared, row);
             // Hoisted clone-out before calling, per this project's `RefCell`
             // callback discipline (same reasoning as `wire_row_selected`'s
             // `on_select` clone-out just above).
