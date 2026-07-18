@@ -7,7 +7,7 @@ use libadwaita as adw;
 use libadwaita::prelude::AnimationExt;
 
 use super::{centered_scroll_value, LyricsView};
-use crate::ui::lyrics::lyrics_scroll::{PauseHandle, USER_PAUSE_MS};
+use crate::ui::lyrics::lyrics_scroll::{content_margins, PauseHandle, USER_PAUSE_MS};
 
 impl LyricsView {
     pub(super) fn wire_scroll_input(self: &Rc<Self>) {
@@ -125,9 +125,9 @@ impl LyricsView {
             if !view.scroll_state.borrow().should_follow_active_line() {
                 return;
             }
-            let padding = ((view.scrolled.height() - label.height()) / 2).max(18);
-            view.content.set_margin_top(padding);
-            view.content.set_margin_bottom(padding);
+            let (top, bottom) = content_margins(view.scrolled.height(), label.height());
+            view.content.set_margin_top(top);
+            view.content.set_margin_bottom(bottom);
             let view = Rc::downgrade(&view);
             gtk4::glib::idle_add_local_once(move || {
                 if let Some(view) = view.upgrade() {

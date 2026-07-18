@@ -812,8 +812,8 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 - **NPP-10** [aktiv] [gtk] — Trackwechsel ist kein Ortswechsel: Cover,
   Titelblock, Glow und Tab-Inhalt crossfaden **gemeinsam** in einem
   Übergang (Standard-Token, MOT-5), niemals als Slide; die Lyrics starten
-  danach auf Zeile 0 zentriert. `gtk-enable-animations=false` schaltet auch
-  hier hart (MOT-7).
+  danach bei Zeile 0 und positionieren sie gemäß LYR-4.
+  `gtk-enable-animations=false` schaltet auch hier hart (MOT-7).
 
 ## Q. Suche
 
@@ -918,7 +918,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   beidseitig (zeigen ↔ verstecken). Das Verstecken löscht die Query nie: bei
   nicht leerer Query bleibt ihr Chip sichtbar und die Lupe im
   `:checked`-Akzentstil (FIL-1, SEARCH-3/5).
-- **LYR-4** [geplant] [gtk] — Die Zentrierung der aktiven Lyrics-Zeile wird
+- **LYR-4** [aktiv] [gtk] — Die Zentrierung der aktiven Lyrics-Zeile wird
   am Songanfang nach oben geklemmt. Solange nicht genug Kontextzeilen über
   der aktiven Zeile liegen, sitzt der Textblock oben; erst mit genügend
   Vorlauf wandert die aktive Zeile in die Mitte.
