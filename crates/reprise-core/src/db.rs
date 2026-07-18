@@ -335,6 +335,16 @@ ON tracks(title COLLATE NOCASE)
 WHERE missing_since IS NULL AND removed_at IS NULL;
 "#;
 
+/// Schema v14: streams album-sorted visible-library windows from a partial
+/// index instead of re-sorting the full library for every 200-row page. The
+/// expression and collation exactly match the shared album sort contract;
+/// `track_no` preserves the established within-album order.
+const SCHEMA_V14: &str = r#"
+CREATE INDEX idx_tracks_present_album_order
+ON tracks(album COLLATE NOCASE, track_no)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -469,6 +479,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V13)?;
         tx.pragma_update(None, "user_version", 13)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 14 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V14)?;
+        tx.pragma_update(None, "user_version", 14)?;
         tx.commit()?;
     }
     Ok(())
