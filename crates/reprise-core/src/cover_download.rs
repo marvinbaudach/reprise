@@ -11,7 +11,7 @@ use crate::{cover, musicbrainz};
 const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;
@@ -184,7 +184,7 @@ fn is_clean_caa_miss(status: u16) -> bool {
     status == 404
 }
 
-fn validated_image_extension(bytes: &[u8]) -> Option<&'static str> {
+pub(crate) fn validated_image_extension(bytes: &[u8]) -> Option<&'static str> {
     let format = image::guess_format(bytes).ok()?;
     let ext = match format {
         image::ImageFormat::Jpeg => "jpg",
