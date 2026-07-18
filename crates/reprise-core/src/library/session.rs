@@ -238,6 +238,7 @@ mod tests {
                 genre: Some("Rock".into()),
                 artist: Some("A".into()),
                 album: Some("Stage".into()),
+                ..BrowseFilter::default()
             },
             sort_field: "rating".into(),
             sort_dir: "desc".into(),

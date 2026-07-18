@@ -652,7 +652,7 @@ fn browse_and_text_filter_match_across_window_count_ids_and_stats() {
     let browse = BrowseFilter {
         genre: Some("Rock".into()),
         artist: Some("A".into()),
-        album: None,
+        ..BrowseFilter::default()
     };
     let rows = query_track_window_browsed(
         &mut conn,

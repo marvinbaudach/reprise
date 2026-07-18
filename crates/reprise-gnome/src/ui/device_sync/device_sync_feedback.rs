@@ -21,7 +21,7 @@ struct PreviousDevice {
 
 pub(in crate::ui) fn install(
     header: &adw::HeaderBar,
-    split_view: &adw::NavigationSplitView,
+    split_view: &adw::OverlaySplitView,
     overlay: &adw::ToastOverlay,
     runtime: &Rc<DeviceSyncRuntime>,
 ) {
@@ -30,11 +30,25 @@ pub(in crate::ui) fn install(
     spinner.set_visible(false);
     header.pack_end(&spinner);
     let active = Rc::new(Cell::new(false));
-    let active_for_collapse = active.clone();
-    let spinner_for_collapse = spinner.clone();
-    split_view.connect_collapsed_notify(move |split_view| {
-        spinner_for_collapse.set_visible(split_view.is_collapsed() && active_for_collapse.get());
-    });
+    // The header spinner mirrors "a sync runs while the sidebar card is not
+    // visible". Card visibility tracks `show-sidebar` (an expanded overlay
+    // shows the card too), so react to both notifications — a manual header
+    // toggle in wide mode flips `show-sidebar` without touching `collapsed`,
+    // and a sync-state event alone would otherwise leave the spinner stale.
+    {
+        let active = active.clone();
+        let spinner = spinner.clone();
+        split_view.connect_collapsed_notify(move |split_view| {
+            sync_spinner_visibility(&spinner, split_view, active.get());
+        });
+    }
+    {
+        let active = active.clone();
+        let spinner = spinner.clone();
+        split_view.connect_show_sidebar_notify(move |split_view| {
+            sync_spinner_visibility(&spinner, split_view, active.get());
+        });
+    }
 
     let previous = Rc::new(RefCell::new(HashMap::<String, PreviousDevice>::new()));
     let split_view = split_view.clone();
@@ -48,13 +62,13 @@ pub(in crate::ui) fn install(
 
 fn update_header(
     spinner: &gtk4::Spinner,
-    split_view: &adw::NavigationSplitView,
+    split_view: &adw::OverlaySplitView,
     active: &Cell<bool>,
     state: &DeviceSyncState,
 ) {
     let syncing = state.devices.iter().find(|device| is_syncing(device));
     active.set(syncing.is_some());
-    spinner.set_visible(split_view.is_collapsed() && syncing.is_some());
+    sync_spinner_visibility(spinner, split_view, syncing.is_some());
     if let Some(device) = syncing {
         spinner.start();
         spinner.set_tooltip_text(Some(&sync_tooltip(device)));
@@ -62,6 +76,22 @@ fn update_header(
         spinner.stop();
         spinner.set_tooltip_text(None);
     }
+}
+
+/// The sidebar sync card is visible exactly while the sidebar itself is shown —
+/// both as a permanent column and as an expanded overlay. The header spinner is
+/// the fallback for when that card is hidden, so it must never double up with a
+/// visible card: show it only while a sync runs and `show-sidebar` is off.
+fn header_spinner_visible(syncing: bool, shows_sidebar: bool) -> bool {
+    syncing && !shows_sidebar
+}
+
+fn sync_spinner_visibility(
+    spinner: &gtk4::Spinner,
+    split_view: &adw::OverlaySplitView,
+    syncing: bool,
+) {
+    spinner.set_visible(header_spinner_visible(syncing, split_view.shows_sidebar()));
 }
 
 fn show_transitions(
@@ -161,5 +191,52 @@ mod tests {
     #[test]
     fn finishing_is_reported_as_complete_progress() {
         assert_eq!(phase_percent(&PlannedSyncPhase::Finishing), 100);
+    }
+
+    #[test]
+    fn header_spinner_only_fills_in_when_the_sidebar_card_is_hidden() {
+        // No sync: never shown, regardless of the sidebar.
+        assert!(!header_spinner_visible(false, false));
+        assert!(!header_spinner_visible(false, true));
+        // Sync + sidebar card visible (wide column or expanded overlay):
+        // the card carries the status, so the header must not double up.
+        assert!(!header_spinner_visible(true, true));
+        // Sync + sidebar hidden (manually hidden while wide, or collapsed and
+        // not expanded): the card is gone, so the header is the only surface.
+        assert!(header_spinner_visible(true, false));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn header_spinner_shows_when_a_wide_sidebar_is_hidden_mid_sync() {
+        gtk4::init().unwrap();
+        let sidebar = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let content = gtk4::Label::new(Some("Content"));
+        // Wide mode: not collapsed. Hiding the sidebar keeps `collapsed` false,
+        // so the old `is_collapsed()` gate would have left the spinner hidden.
+        let split = adw::OverlaySplitView::builder()
+            .sidebar(&sidebar)
+            .content(&content)
+            .sidebar_position(gtk4::PackType::Start)
+            .collapsed(false)
+            .show_sidebar(false)
+            .build();
+        let spinner = gtk4::Spinner::new();
+        spinner.set_visible(false);
+
+        assert!(!split.is_collapsed(), "the regressed gate hinges on this");
+        sync_spinner_visibility(&spinner, &split, true);
+        assert!(
+            spinner.is_visible(),
+            "a hidden wide sidebar must surface the header spinner"
+        );
+
+        // Re-showing the sidebar column hands the status back to its card.
+        split.set_show_sidebar(true);
+        sync_spinner_visibility(&spinner, &split, true);
+        assert!(!spinner.is_visible());
     }
 }

@@ -1,22 +1,16 @@
-//! Builds the main application window: an `adw::NavigationSplitView` (Stage
-//! 3 Task 4) whose sidebar page holds `ui::sidebar::Sidebar` and whose
-//! content page holds the pre-existing libadwaita `ToolbarView` — a header
+//! Builds the main application window: an `adw::OverlaySplitView` whose left
+//! sidebar holds `ui::sidebar::Sidebar` and whose content holds the
+//! pre-existing libadwaita `ToolbarView` — a header
 //! bar over the full Library layout, compact track statistics at the
 //! content's bottom-right corner, the player bar, and an `adw::ToastOverlay`
 //! wrapping the track content so scan errors can surface a toast.
 //!
 //! ## Sidebar toggle
 //!
-//! `AdwNavigationSplitView` collapses into a push/pop navigation stack at
-//! narrow widths on its own (Adwaita default behavior — this module doesn't
-//! fight it: `adw::HeaderBar` embedded in a page inside that stack shows its
-//! own back button automatically). The headerbar also gets an explicit,
-//! persistent `sidebar-show-symbolic` toggle button. At wide widths it folds
-//! the complete sidebar column away so the track table receives that space;
-//! at narrow widths it switches between the native sidebar and content pages.
-//! `NavigationSplitView` has no `show-sidebar` property (that's
-//! `AdwOverlaySplitView`'s API), so `wire_sidebar_toggle` coordinates its
-//! `collapsed` and `show-content` properties.
+//! `AdwOverlaySplitView` keeps the content mounted while its Start-positioned
+//! sidebar collapses into an overlay below 800 px. The persistent header
+//! toggle controls `show-sidebar`; responsive collapse never overwrites the
+//! user's explicit hidden preference.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -378,8 +372,12 @@ pub fn build(
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
     let content_stack = gtk4::Stack::new();
+    // Size to the visible page (see the library stack's `set_hhomogeneous`):
+    // Stats/Device pages must not inherit the library's minimum width, nor vice
+    // versa, or the whole content is forced past the window edge (QA #3/#4).
+    content_stack.set_hhomogeneous(false);
     content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
-    content_stack.set_transition_duration(150);
+    content_stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
     content_stack.add_named(&library_views.stack, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));

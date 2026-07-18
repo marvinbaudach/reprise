@@ -57,8 +57,7 @@ mod tests {
         track_list.set_filter("falling");
         *track_list.shared.browse_filter.borrow_mut() = BrowseFilter {
             genre: Some("Metal".into()),
-            artist: None,
-            album: None,
+            ..BrowseFilter::default()
         };
         track_list.reload();
 

@@ -345,4 +345,8 @@ fn mot_1_lyrics_pages_use_the_standard_motion_token() {
         lyrics.root.transition_duration(),
         crate::ui::motion::STANDARD_MS
     );
+    assert_eq!(
+        lyrics.root.transition_type(),
+        gtk4::StackTransitionType::Crossfade
+    );
 }

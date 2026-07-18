@@ -254,7 +254,7 @@ fn seeded_state(fixture: &str) -> Option<SessionState> {
         browse: reprise_core::queries::BrowseFilter {
             genre: Some("Rock".into()),
             artist: Some(String::new()),
-            album: None,
+            ..reprise_core::queries::BrowseFilter::default()
         },
         sort_field: "rating".into(),
         sort_dir: "desc".into(),

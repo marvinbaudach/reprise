@@ -1,7 +1,7 @@
 //! The Artists library view: a master/detail split.
 //!
-//! Composes the [`ArtistMaster`] list (fixed-width left pane) with the
-//! [`ArtistDetailPane`] (flexible right pane) inside a horizontal `gtk4::Box`,
+//! Composes the [`ArtistMaster`] list (resizable left pane) with the
+//! [`ArtistDetailPane`] (flexible right pane) inside a horizontal `gtk4::Paned`,
 //! wrapped in an outer `gtk4::Stack` that swaps in an empty-library
 //! `StatusPage` when there are no artists. Selecting an artist in the master
 //! drives `ArtistDetailPane::show_artist`.
@@ -22,6 +22,11 @@ use crate::ui::strings;
 
 const SPLIT_CHILD: &str = "split";
 const EMPTY_CHILD: &str = "empty";
+
+/// Initial width of the resizable master pane — the `Paned` divider's starting
+/// position. The user can drag it narrower (down to the master's own minimum
+/// width, see [`ArtistMaster`]) or wider.
+const INITIAL_MASTER_WIDTH: i32 = 300;
 
 /// Owned, reference-counted view state. `ArtistView` keeps the sole strong
 /// reference; `refresh_callback` hands out a `Weak` so a stale timer can never
@@ -56,10 +61,21 @@ impl ArtistView {
 
         let detail_widget = detail.widget();
         detail_widget.set_hexpand(true);
-        let split = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        // A draggable `Paned` (not a fixed `Box`) so the user can resize the
+        // master pane with the mouse. `resize_start_child(false)` keeps the
+        // master at its set width when the *window* resizes — the detail pane
+        // absorbs the slack; `shrink_start_child(false)` floors the drag at the
+        // master's own minimum width (see `ArtistMaster`) so it can shrink but
+        // never collapse.
+        let split = gtk4::Paned::builder()
+            .orientation(gtk4::Orientation::Horizontal)
+            .start_child(master.widget())
+            .end_child(detail_widget)
+            .resize_start_child(false)
+            .shrink_start_child(false)
+            .position(INITIAL_MASTER_WIDTH)
+            .build();
         split.add_css_class("artist-view");
-        split.append(master.widget());
-        split.append(detail_widget);
 
         let empty = adw::StatusPage::builder()
             .icon_name("avatar-default-symbolic")
@@ -152,6 +168,10 @@ impl ArtistView {
         callback: impl Fn(ArtistAlbum, String) + 'static,
     ) {
         self.inner.detail.set_on_album_activate(callback);
+    }
+
+    pub(in crate::ui) fn set_on_track_activate(&self, callback: impl Fn(i64, String) + 'static) {
+        self.inner.detail.set_on_track_activate(callback);
     }
 
     #[cfg(test)]
