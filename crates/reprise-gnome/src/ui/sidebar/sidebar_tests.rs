@@ -98,6 +98,27 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn issues_list_is_the_bottom_most_root_child_below_the_activity_slot() {
+    gtk4::init().unwrap();
+    let scrolled = gtk4::ScrolledWindow::new();
+    let activity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let issues = gtk4::ListBox::new();
+    let root = build_root(&scrolled, &activity, &issues);
+
+    // The scrolling nav list stays on top and the issues list is pinned at
+    // the very bottom (QA #6), with the activity slot sandwiched between so an
+    // active scan/relink card grows upward instead of pushing issues off the
+    // bottom edge.
+    assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
+    assert_eq!(
+        scrolled.next_sibling().as_ref(),
+        Some(activity.upcast_ref())
+    );
+    assert_eq!(root.last_child().as_ref(), Some(issues.upcast_ref()));
+}
+
+#[test]
 fn keeps_requested_source_when_its_row_still_exists() {
     let (source, fell_back) = resolve_select_source(ViewSource::Playlist(3), true);
     assert_eq!(source, ViewSource::Playlist(3));
