@@ -21,6 +21,41 @@ fn seeded_conn_with_tracks(count: i64) -> Connection {
 }
 
 #[test]
+fn que_6_metadata_loads_in_one_query() {
+    let conn = seeded_conn_with_tracks(4);
+    let queue_ids = vec![4, 2, 3, 1];
+    let query_count = std::cell::Cell::new(0);
+
+    let rows = super::queue::query_track_window_queue_counted(
+        &conn,
+        &queue_ids,
+        0,
+        queue_ids.len() as i64,
+        || query_count.set(query_count.get() + 1),
+    )
+    .unwrap();
+
+    assert_eq!(query_count.get(), 1);
+    assert_eq!(
+        rows.into_iter().map(|track| track.id).collect::<Vec<_>>(),
+        queue_ids
+    );
+}
+
+#[test]
+fn queue_duration_sums_duplicates_and_skips_stale_ids_in_one_batch() {
+    let conn = seeded_conn_with_tracks(2);
+    conn.execute("UPDATE tracks SET duration_ms = id * 1000", [])
+        .unwrap();
+
+    assert_eq!(
+        query_queue_duration_ms(&conn, &[2, 1, 2, 999]).unwrap(),
+        5_000
+    );
+    assert_eq!(query_queue_duration_ms(&conn, &[]).unwrap(), 0);
+}
+
+#[test]
 fn queue_window_follows_the_ids_order_not_id_order() {
     let conn = seeded_conn_with_tracks(3);
     let mut conn = conn;

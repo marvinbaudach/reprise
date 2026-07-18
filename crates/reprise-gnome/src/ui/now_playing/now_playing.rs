@@ -14,77 +14,15 @@ use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
 #[cfg(test)]
 use super::now_playing_column::PANEL_WIDTH;
+use super::panel_state::*;
 use super::strings;
-use super::up_next_panel::{UpNextEntry, UpNextPanel};
+use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::player_controller::NowPlaying;
 use crate::ui::style::tokens;
 
-const UP_NEXT_PAGE: &str = "up-next";
-const LYRICS_PAGE: &str = "lyrics";
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-enum PanelTab {
-    #[default]
-    UpNext,
-    Lyrics,
-}
-
-impl PanelTab {
-    fn page_name(self) -> &'static str {
-        match self {
-            Self::UpNext => UP_NEXT_PAGE,
-            Self::Lyrics => LYRICS_PAGE,
-        }
-    }
-}
-
-#[derive(Default)]
-struct TabSession {
-    selected: Cell<PanelTab>,
-}
-
-#[derive(Default)]
-struct TabFooters {
-    up_next: String,
-    lyrics: String,
-}
-
-thread_local! {
-    static TAB_SESSION: Rc<TabSession> = Rc::new(TabSession::default());
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PanelPresentation {
-    title: String,
-    subtitle: String,
-    idle: bool,
-}
-
-fn panel_presentation(
-    track: Option<&NowPlaying>,
-    _playback_state: PlaybackState,
-) -> PanelPresentation {
-    let Some(track) = track else {
-        return PanelPresentation {
-            title: strings::text(strings::NOW_PLAYING_NOTHING),
-            subtitle: String::new(),
-            idle: true,
-        };
-    };
-    let subtitle = match (track.artist.trim(), track.album.trim()) {
-        ("", "") => String::new(),
-        (artist, "") => artist.to_owned(),
-        ("", album) => album.to_owned(),
-        (artist, album) => format!("{artist} · {album}"),
-    };
-    PanelPresentation {
-        title: track.title.clone(),
-        subtitle,
-        idle: false,
-    }
-}
+type OnVoid = Rc<dyn Fn()>;
 
 struct PanelWidgets {
     column: NowPlayingColumn,
@@ -105,14 +43,22 @@ struct PanelWidgets {
     session: Rc<TabSession>,
 }
 
-fn build_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
-    TAB_SESSION.with(|session| build_widgets_for_session(content, visible, session))
+fn build_widgets(
+    content: &impl IsA<gtk4::Widget>,
+    visible: bool,
+    conn: Rc<RefCell<Connection>>,
+    cover_loader: &Rc<CoverLoader>,
+) -> PanelWidgets {
+    TAB_SESSION
+        .with(|session| build_widgets_for_session(content, visible, session, conn, cover_loader))
 }
 
 fn build_widgets_for_session(
     content: &impl IsA<gtk4::Widget>,
     visible: bool,
     session: &Rc<TabSession>,
+    conn: Rc<RefCell<Connection>>,
+    cover_loader: &Rc<CoverLoader>,
 ) -> PanelWidgets {
     let cover = gtk4::Image::builder()
         .pixel_size(tokens::NOW_PLAYING_COVER_SIZE)
@@ -156,7 +102,7 @@ fn build_widgets_for_session(
     head_overlay.add_overlay(&head);
 
     let lyrics = LyricsView::new();
-    let up_next = UpNextPanel::new();
+    let up_next = UpNextPanel::new(conn, cover_loader);
     let tab_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)
         .transition_duration(crate::ui::motion::STANDARD_MS)
@@ -284,6 +230,7 @@ pub(in crate::ui) struct NowPlayingPanel {
     loaded_track: RefCell<Option<NowPlaying>>,
     playback_state: Cell<PlaybackState>,
     syncing_visibility: Cell<bool>,
+    on_up_next_refresh: RefCell<Option<OnVoid>>,
     track_animation: RefCell<Option<adw::TimedAnimation>>,
     track_animation_generation: Cell<u64>,
 }
@@ -300,7 +247,7 @@ impl NowPlayingPanel {
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let panel = Rc::new(Self {
-            widgets: build_widgets(content, visible),
+            widgets: build_widgets(content, visible, conn.clone(), &cover_loader),
             toggle: gtk4::ToggleButton::builder()
                 .icon_name("sidebar-show-right-symbolic")
                 .tooltip_text(strings::text(strings::INFO_PANEL_TOGGLE))
@@ -313,6 +260,7 @@ impl NowPlayingPanel {
             loaded_track: RefCell::new(None),
             playback_state: Cell::new(PlaybackState::Stopped),
             syncing_visibility: Cell::new(false),
+            on_up_next_refresh: RefCell::new(None),
             track_animation: RefCell::new(None),
             track_animation_generation: Cell::new(0),
         });
@@ -338,11 +286,22 @@ impl NowPlayingPanel {
         self.widgets.column.set_visible(true);
     }
 
+    pub(in crate::ui) fn show_up_next(&self) {
+        let (visible, selected) = up_next_route_state();
+        self.widgets.tab_buttons[match selected {
+            PanelTab::UpNext => 0,
+            PanelTab::Lyrics => 1,
+        }]
+        .set_active(true);
+        self.widgets.column.set_visible(visible);
+    }
+
     pub(in crate::ui) fn apply_persisted_visibility(&self, visible: bool) {
         self.syncing_visibility.set(true);
         self.widgets.column.set_visible(visible);
         self.toggle.set_active(visible);
         self.syncing_visibility.set(false);
+        self.request_up_next_refresh_if_visible();
     }
 
     pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
@@ -374,11 +333,11 @@ impl NowPlayingPanel {
         self.playback_state.set(state);
     }
 
-    pub(in crate::ui) fn set_up_next_entries(&self, entries: &[UpNextEntry]) {
-        let text = self
-            .widgets
-            .up_next
-            .set_entries(entries, &self.cover_loader);
+    pub(in crate::ui) fn set_up_next_model(
+        &self,
+        model: &crate::ui::track_list::queue_sections::QueueViewModel,
+    ) {
+        let text = self.widgets.up_next.set_queue_model(model);
         self.widgets.footers.borrow_mut().up_next = text.clone();
         if self.widgets.session.selected.get() == PanelTab::UpNext {
             self.widgets.footer.set_label(&text);
@@ -390,6 +349,25 @@ impl NowPlayingPanel {
         callback: impl Fn(crate::ui::track_list::queue_row_mapping::QueueRow) + 'static,
     ) {
         self.widgets.up_next.set_on_jump(callback);
+    }
+
+    pub(in crate::ui) fn set_on_up_next_remove(
+        &self,
+        callback: impl Fn(crate::ui::track_list::queue_row_mapping::QueueRow) + 'static,
+    ) {
+        self.widgets.up_next.set_on_remove(callback);
+    }
+
+    pub(in crate::ui) fn set_on_up_next_refresh(&self, callback: impl Fn() + 'static) {
+        *self.on_up_next_refresh.borrow_mut() = Some(Rc::new(callback));
+        self.request_up_next_refresh_if_visible();
+    }
+
+    pub(in crate::ui) fn is_up_next_visible(&self) -> bool {
+        should_render_up_next(
+            self.widgets.column.is_visible(),
+            self.widgets.session.selected.get(),
+        )
     }
 
     /// Keeps the callback owner alive for exactly as long as the window.
@@ -406,6 +384,15 @@ impl NowPlayingPanel {
             let Some(panel) = weak.upgrade() else { return };
             if !panel.syncing_visibility.get() {
                 panel.widgets.column.set_visible(button.is_active());
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        self.widgets.tab_buttons[0].connect_toggled(move |button| {
+            if button.is_active() {
+                if let Some(panel) = weak.upgrade() {
+                    panel.request_up_next_refresh_if_visible();
+                }
             }
         });
 
@@ -430,7 +417,18 @@ impl NowPlayingPanel {
                 if let Err(error) = saved {
                     tracing::warn!(%error, "could not save now-playing panel visibility");
                 }
+                panel.request_up_next_refresh_if_visible();
             });
+    }
+
+    fn request_up_next_refresh_if_visible(&self) {
+        if !self.is_up_next_visible() {
+            return;
+        }
+        let callback = self.on_up_next_refresh.borrow().clone();
+        if let Some(callback) = callback {
+            callback();
+        }
     }
 
     fn render_track(&self) {

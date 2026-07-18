@@ -43,6 +43,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) header: &'a adw::HeaderBar,
     pub(in crate::ui) search_entry: &'a gtk4::SearchEntry,
+    pub(in crate::ui) search_bar: &'a gtk4::SearchBar,
     pub(in crate::ui) sidebar_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_page: &'a adw::NavigationPage,
     pub(in crate::ui) split_view: &'a adw::OverlaySplitView,
@@ -79,6 +80,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         db_path,
         header,
         search_entry,
+        search_bar,
         sidebar_toggle,
         sidebar_page,
         split_view,
@@ -160,9 +162,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     });
 
     if let Some(player) = player {
-        let sidebar_for_queue = sidebar.clone();
+        let info_panel_for_queue = info_panel.clone();
         player.bar.connect_queue_clicked(move || {
-            sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
+            info_panel_for_queue.show_up_next();
         });
 
         // NAV-9 "Jump to Now Playing": cover/title clicks and Ctrl+L
@@ -200,10 +202,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 // explicit `record_route` pushes the left place for such
                 // origins (row-backed ones would record via `on_select`
                 // anyway; the duplicate is suppressed).
-                let place = crate::ui::nav_history::NavPlace {
-                    source: origin.clone(),
-                    library_tab: Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
-                };
+                let place = crate::ui::nav_history::NavPlace::source(
+                    origin.clone(),
+                    Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
+                );
                 nav_history.record_route(&place);
                 super::library_shell::route_to_place(
                     &place,
@@ -455,7 +457,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
 
-    header.pack_end(search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     app.set_accels_for_action("win.preferences", &["<Control>comma"]);
@@ -520,7 +521,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         window_title,
         &search_restore_guard,
     );
-    super::shortcuts::wire(app, window, search_entry, track_list, player.clone());
+    super::shortcuts::wire(app, window, search_bar, search_entry, player.clone());
 
     super::scan_flow::wire_scan_button(
         scan_controls,
@@ -577,10 +578,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // so seed the history's "current place" here — without it the FIRST
     // cross-navigation after startup (e.g. opening an album from the grid)
     // would have no previous place to push and Back would do nothing.
-    nav_history.record_route(&crate::ui::nav_history::NavPlace {
-        source: restored_source,
-        library_tab: Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
-    });
+    nav_history.record_route(&crate::ui::nav_history::NavPlace::source(
+        restored_source,
+        Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
+    ));
     super::session_restore::wire_close(
         window,
         conn,

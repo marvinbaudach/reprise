@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::cell::{Cell, RefCell};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use reprise_core::artist_news::{ArtistNews, NewsError};
@@ -102,7 +103,7 @@ impl ArtistNewsRuntime {
     pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
         let enabled = reprise_core::modules::is_enabled(
             conn,
-            &reprise_core::modules::ARTIST_NEWS_MODULE,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or_else(|error| {
             tracing::warn!(%error, "could not read Artist News module state; defaulting to off");
@@ -110,7 +111,7 @@ impl ArtistNewsRuntime {
         });
         Rc::new(Self {
             enabled: Rc::new(Cell::new(enabled)),
-            worker: spawn(),
+            worker: spawn(database_path(conn)),
             subscribers: EnabledSubscribers::default(),
         })
     }
@@ -122,7 +123,7 @@ impl ArtistNewsRuntime {
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(
             conn,
-            &reprise_core::modules::ARTIST_NEWS_MODULE,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
             enabled,
         )?;
         if self.enabled.replace(enabled) != enabled {
@@ -155,18 +156,57 @@ impl ArtistNewsRuntime {
     }
 }
 
-fn spawn() -> async_channel::Sender<ArtistNewsRequest> {
+fn database_path(conn: &rusqlite::Connection) -> Option<PathBuf> {
+    let mut statement = conn.prepare("PRAGMA database_list").ok()?;
+    let mut rows = statement.query([]).ok()?;
+    while let Some(row) = rows.next().ok()? {
+        let name = row.get::<_, String>(1).ok()?;
+        let path = row.get::<_, String>(2).ok()?;
+        if name == "main" && !path.is_empty() {
+            return Some(PathBuf::from(path));
+        }
+    }
+    None
+}
+
+fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequest> {
     let (sender, receiver) = async_channel::unbounded::<ArtistNewsRequest>();
     let result = std::thread::Builder::new()
         .name("reprise-artist-news".into())
         .spawn(move || {
+            let connection = database_path
+                .as_deref()
+                .map(|path| reprise_core::db::open_migrated(Some(path)));
             while let Ok(request) = receiver.recv_blocking() {
-                let result = reprise_core::artist_news::load_or_refresh(
-                    &request.artist,
-                    &request.local_albums,
-                    chrono::Local::now().date_naive(),
-                    request.force,
-                );
+                let today = chrono::Local::now().date_naive();
+                let result = match connection.as_ref() {
+                    Some(Ok(conn)) => {
+                        reprise_core::artist_news::configured_fetch_scope(conn, today)
+                            .map_err(|error| NewsError::Database(error.to_string()))
+                            .and_then(|scope| {
+                                reprise_core::artist_news::refresh(
+                                conn,
+                                today,
+                                scope,
+                                request.force,
+                                crate::ui::new_releases::release_cover::fallback_accent_for_artist,
+                            )
+                            })
+                            .and_then(|_| {
+                                reprise_core::artist_news::query_artist_news_by_name(
+                                    conn,
+                                    &request.artist,
+                                    today,
+                                )
+                                .map_err(|error| NewsError::Database(error.to_string()))?
+                                .ok_or(NewsError::Unmatched)
+                            })
+                    }
+                    Some(Err(error)) => Err(NewsError::Database(error.to_string())),
+                    None => Err(NewsError::Database(
+                        "the active database has no persistent path".into(),
+                    )),
+                };
                 let _ = request.response.try_send(ArtistNewsResponse {
                     generation: request.generation,
                     result,
@@ -206,7 +246,7 @@ mod tests {
         assert!(runtime.enabled.get());
         assert!(reprise_core::modules::is_enabled(
             &conn,
-            &reprise_core::modules::ARTIST_NEWS_MODULE
+            &reprise_core::modules::NEW_RELEASES_MODULE
         )
         .unwrap());
     }

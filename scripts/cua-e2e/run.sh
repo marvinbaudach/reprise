@@ -202,6 +202,8 @@ run_populated_library_scenario() {
   assert_app_log_contains \
     "$APP_LOG" "queue set from view" "play-2-doubleclick-row"
 
+  cua_click_label \
+    "$APP_PID" "$WINDOW_ID" "Search all fields" populated-search-toggle
   cua_type_text_label \
     "$APP_PID" "$WINDOW_ID" "Search all fields" "nomatch" populated-search
   results_path=$(wait_for_label "$APP_PID" "$WINDOW_ID" "No results" populated-no-results)

@@ -1,6 +1,6 @@
-//! Keyboard shortcuts (Stage 3 Task 9): Space (play/pause), Ctrl+F (focus +
-//! select the search entry), and Escape (two-stage: clear the search text
-//! first, then hand focus back to the track list). Enter/double-click row
+//! Keyboard shortcuts (Stage 3 Task 9): Space (play/pause), Ctrl+F (reveal +
+//! focus + select the search entry), and Escape (two-stage: clear the search
+//! text first, then collapse the search bar). Enter/double-click row
 //! activation already works natively (`ui::track_list`'s `wire_activate`) —
 //! nothing to add here for that.
 //!
@@ -42,20 +42,10 @@
 //!   *action's* behavior correct and testable regardless of exactly how that
 //!   routing happens to work in a given GTK4 point release.
 //!
-//! - **Escape** is wired through neither of the above — no `gio::
-//!   SimpleAction`, no accelerator. `gtk::SearchEntry` already has a
-//!   built-in `stop-search` signal, a *keybinding signal* GTK itself default-
-//!   binds to Escape (confirmed against the installed `Gtk-4.0.gir`:
-//!   "The default bindings for this signal is Escape"). Connecting to it
-//!   directly is the robust route for two reasons: (1) it only ever fires
-//!   while the search entry itself has keyboard focus, and (2) a modal
-//!   dialog (`AdwAlertDialog`, `gtk::FileDialog`) grabs focus onto itself
-//!   while open, so the search entry — and thus this handler — structurally
-//!   cannot see an Escape meant for the dialog. That is exactly the "don't
-//!   swallow Escape globally if a dialog is open" requirement, satisfied by
-//!   construction rather than by a manual "is a dialog open?" check. The
-//!   two-stage clear/refocus decision itself is the pure, unit-tested
-//!   `escape_action_for` predicate.
+//! - **Escape** is handled by a capture-phase key controller on the search
+//!   bar. This intercepts the entry's built-in `stop-search` default before
+//!   GTK can collapse a non-empty query, while remaining scoped to focus
+//!   inside the bar so dialogs keep their own Escape behavior.
 //!
 //! ## What's verified headlessly vs. manually
 //!
@@ -75,7 +65,6 @@ use libadwaita as adw;
 use std::rc::Rc;
 
 use super::player_controller::PlayerController;
-use super::track_list::TrackList;
 
 /// Bare `gio::SimpleAction` names in the window's `"win"` action group —
 /// internal identifiers, not user-facing text.
@@ -105,9 +94,8 @@ fn focused_widget_is_text_entry(focus: Option<&gtk4::Widget>) -> bool {
 pub enum EscapeAction {
     /// First press (search has text): clear it, keep focus in the entry.
     ClearSearchText,
-    /// Second press (search is already empty): hand focus back to the track
-    /// list.
-    FocusTrackList,
+    /// Second press (search is already empty): collapse the search bar.
+    CollapseSearchBar,
 }
 
 /// Pure decision for Escape's two-stage behavior.
@@ -115,12 +103,12 @@ pub fn escape_action_for(search_has_text: bool) -> EscapeAction {
     if search_has_text {
         EscapeAction::ClearSearchText
     } else {
-        EscapeAction::FocusTrackList
+        EscapeAction::CollapseSearchBar
     }
 }
 
 /// Wires all three shortcuts. Called once from `window::build`, after
-/// `window`, `search_entry`, `track_list`, and `player` all exist. `player`
+/// `window`, `search_bar`, `search_entry`, and `player` all exist. `player`
 /// is `None` when GStreamer was unavailable at startup (see `window::
 /// build`'s own doc comment on that degradation) — the Space action still
 /// registers in that case (so the accelerator itself is harmless to press),
@@ -128,13 +116,13 @@ pub fn escape_action_for(search_has_text: bool) -> EscapeAction {
 pub fn wire(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
+    search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
-    track_list: &Rc<TrackList>,
     player: Option<Rc<PlayerController>>,
 ) {
     wire_toggle_play_pause(app, window, player);
-    wire_focus_search(app, window, search_entry);
-    wire_escape(search_entry, track_list.clone());
+    wire_focus_search(app, window, search_bar, search_entry);
+    wire_escape(search_bar, search_entry);
 }
 
 /// Space: `win.toggle-play-pause`, accelerated to `"space"`. See the module
@@ -176,8 +164,8 @@ fn wire_toggle_play_pause(
     app.set_accels_for_action(&format!("win.{ACTION_TOGGLE_PLAY_PAUSE}"), &["space"]);
 }
 
-/// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — grabs
-/// keyboard focus and selects the entry's full text (mirroring how most
+/// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — reveals the
+/// search bar, grabs keyboard focus and selects the entry's full text (mirroring how most
 /// desktop apps' "Find" shortcut behaves: a second Ctrl+F with existing text
 /// re-selects it all, ready to be typed over). `search_entry` is captured
 /// weakly for the same reference-cycle reason as `wire_toggle_play_pause`'s
@@ -186,15 +174,22 @@ fn wire_toggle_play_pause(
 fn wire_focus_search(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
+    search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
 ) {
     let action = gio::SimpleAction::new(ACTION_FOCUS_SEARCH, None);
+    let search_bar_weak = search_bar.downgrade();
     let search_entry_weak = search_entry.downgrade();
     action.connect_activate(move |_, _| {
+        let Some(search_bar) = search_bar_weak.upgrade() else {
+            tracing::warn!("focus-search: search bar is gone; ignoring");
+            return;
+        };
         let Some(search_entry) = search_entry_weak.upgrade() else {
             tracing::warn!("focus-search: search entry is gone; ignoring");
             return;
         };
+        search_bar.set_search_mode(true);
         search_entry.grab_focus();
         search_entry.select_region(0, -1);
     });
@@ -202,32 +197,88 @@ fn wire_focus_search(
     app.set_accels_for_action(&format!("win.{ACTION_FOCUS_SEARCH}"), &["<Control>f"]);
 }
 
-/// Escape: connects directly to `gtk::SearchEntry`'s own built-in
-/// `stop-search` signal — see the module doc's `## Escape` bullet for why
-/// this is wired outside the `gio::SimpleAction`/accelerator mechanism the
-/// other two shortcuts use. `track_list` is a strong `Rc`, not `Weak`: this
-/// closure lives exactly as long as `search_entry` itself (a widget in the
-/// permanent header bar, never rebuilt or torn down while the window is
-/// open), so there is no dangling-callback risk to guard against here the
-/// way the `Weak` window/entry captures above guard against `window` (which
-/// owns the action, and thus indirectly the closure) keeping itself alive.
-fn wire_escape(search_entry: &gtk4::SearchEntry, track_list: Rc<TrackList>) {
-    search_entry.connect_stop_search(move |entry| {
-        let has_text = !entry.text().is_empty();
-        match escape_action_for(has_text) {
-            EscapeAction::ClearSearchText => entry.set_text(""),
-            EscapeAction::FocusTrackList => {
-                if !track_list.focus_track_list() {
-                    tracing::warn!("escape: could not move focus to the track list");
-                }
-            }
+fn apply_search_escape(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) {
+    match escape_action_for(!search_entry.text().is_empty()) {
+        EscapeAction::ClearSearchText => {
+            search_entry.set_text("");
+            search_bar.set_search_mode(true);
+            search_entry.grab_focus();
         }
+        EscapeAction::CollapseSearchBar => search_bar.set_search_mode(false),
+    }
+}
+
+fn wire_escape(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) {
+    let controller = gtk4::EventControllerKey::new();
+    controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    let bar = search_bar.downgrade();
+    let entry = search_entry.downgrade();
+    controller.connect_key_pressed(move |_, key, _, _| {
+        let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
+            return gtk4::glib::Propagation::Proceed;
+        };
+        if key != gtk4::gdk::Key::Escape || !bar.is_search_mode() {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        apply_search_escape(&bar, &entry);
+        gtk4::glib::Propagation::Stop
     });
+    search_bar.add_controller(controller);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libadwaita::prelude::AdwApplicationWindowExt;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_2_ctrl_f_reveals_and_focuses() {
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.SearchShortcutTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let entry = gtk4::SearchEntry::new();
+        let search_bar = gtk4::SearchBar::new();
+        search_bar.set_child(Some(&entry));
+        window.set_content(Some(&search_bar));
+        wire_focus_search(&app, &window, &search_bar, &entry);
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        ActionGroupExt::activate_action(&window, "focus-search", None);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(search_bar.is_search_mode());
+        assert!(entry.has_focus());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_4_escape_clears_then_collapses() {
+        gtk4::init().unwrap();
+        let search_bar = gtk4::SearchBar::new();
+        let entry = gtk4::SearchEntry::new();
+        search_bar.set_child(Some(&entry));
+        search_bar.set_search_mode(true);
+        entry.set_text("falling");
+
+        apply_search_escape(&search_bar, &entry);
+        assert_eq!(entry.text(), "");
+        assert!(search_bar.is_search_mode());
+
+        apply_search_escape(&search_bar, &entry);
+        assert!(!search_bar.is_search_mode());
+    }
+
+    #[test]
+    fn nav_6_escape_changes_search_state_without_navigation() {
+        assert_eq!(escape_action_for(true), EscapeAction::ClearSearchText);
+        assert_eq!(escape_action_for(false), EscapeAction::CollapseSearchBar);
+    }
 
     #[test]
     fn space_toggles_when_focus_is_not_a_text_entry() {
@@ -245,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn escape_focuses_track_list_when_search_is_empty() {
-        assert_eq!(escape_action_for(false), EscapeAction::FocusTrackList);
+    fn escape_collapses_search_bar_when_search_is_empty() {
+        assert_eq!(escape_action_for(false), EscapeAction::CollapseSearchBar);
     }
 }

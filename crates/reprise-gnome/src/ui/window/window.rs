@@ -133,7 +133,6 @@ pub fn build(
         .build();
 
     let header = adw::HeaderBar::new();
-    super::library_chrome::style_header(&header, &search_entry);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
     let maintenance_actions = super::library_chrome::build_maintenance_actions();
@@ -251,20 +250,10 @@ pub fn build(
     // doc comment in `player_controller.rs`). `None` (GStreamer unavailable)
     // degrades to an always-empty queue view, matching every other
     // player-unavailable degradation in this function.
+    let queue_model = super::window_queue_model::build(&player);
     let queue_ids_provider = {
-        let player = player.clone();
-        move || match &player {
-            Some(controller) => {
-                let parts = controller.queue_view_sections();
-                crate::ui::track_list::queue_sections::compose(
-                    parts.now_playing,
-                    &parts.play_next,
-                    &parts.up_next_rest,
-                    parts.origin_label.as_deref(),
-                )
-            }
-            None => crate::ui::track_list::queue_sections::QueueViewModel::default(),
-        }
+        let queue_model = queue_model.clone();
+        move || queue_model.borrow().clone()
     };
 
     let track_list = {
@@ -374,6 +363,7 @@ pub fn build(
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
+    let new_releases_digest = crate::ui::new_releases::digest::NewReleasesDigest::new(conn.clone());
     let content_stack = gtk4::Stack::new();
     // Size to the visible page (see the library stack's `set_hhomogeneous`):
     // Stats/Device pages must not inherit the library's minimum width, nor vice
@@ -384,6 +374,7 @@ pub fn build(
     content_stack.add_named(&library_views.stack, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));
+    content_stack.add_named(new_releases_digest.widget(), Some("new-releases"));
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
@@ -426,38 +417,7 @@ pub fn build(
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
-        let panel = Rc::downgrade(&info_panel);
-        player.set_on_now_playing_panel_track_changed(move |track| {
-            if let Some(panel) = panel.upgrade() {
-                panel.set_loaded_track(track);
-            }
-        });
-        let panel = Rc::downgrade(&info_panel);
-        player.set_on_now_playing_panel_state_changed(move |state| {
-            if let Some(panel) = panel.upgrade() {
-                panel.set_playback_state(state);
-            }
-        });
-
-        let player_weak = Rc::downgrade(player);
-        let panel_weak = Rc::downgrade(&info_panel);
-        let refresh_up_next: Rc<dyn Fn()> = Rc::new(move || {
-            let (Some(player), Some(panel)) = (player_weak.upgrade(), panel_weak.upgrade()) else {
-                return;
-            };
-            let entries = player.now_playing_panel_up_next_entries();
-            panel.set_up_next_entries(&entries);
-        });
-        let refresh_on_queue_change = refresh_up_next.clone();
-        player.add_on_queue_changed(move || refresh_on_queue_change());
-        refresh_up_next();
-
-        let player = Rc::downgrade(player);
-        info_panel.set_on_up_next_jump(move |row| {
-            if let Some(player) = player.upgrade() {
-                player.jump_to_queue_row(row);
-            }
-        });
+        super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
     }
     let player_bar_widget = player
         .as_ref()
@@ -469,7 +429,29 @@ pub fn build(
         bar_position,
     );
     toast_overlay.set_child(Some(library_player_bar.widget()));
-    let library_chrome = super::library_chrome::build(&header, &toast_overlay);
+    let library_chrome =
+        super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
+    let open_new_releases = {
+        let digest = new_releases_digest.clone();
+        let nav_history = nav_history.clone();
+        let content_stack = content_stack.clone();
+        Rc::new(move || {
+            let Some(_place) = nav_history.record_new_releases() else {
+                tracing::warn!("cannot open New Releases before navigation is initialized");
+                return;
+            };
+            digest.refresh();
+            content_stack.set_visible_child_name("new-releases");
+        })
+    };
+    crate::ui::new_releases::popover::install(
+        &header,
+        &window,
+        conn,
+        db_path,
+        open_new_releases,
+        &artist_news,
+    );
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());
@@ -531,6 +513,7 @@ pub fn build(
         db_path,
         header: &header,
         search_entry: &search_entry,
+        search_bar: &library_chrome.search_bar,
         sidebar_toggle: &sidebar_toggle,
         sidebar_page: &sidebar_page,
         split_view: &split_view,

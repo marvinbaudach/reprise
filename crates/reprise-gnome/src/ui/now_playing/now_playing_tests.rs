@@ -12,6 +12,30 @@ fn loaded_track() -> NowPlaying {
     }
 }
 
+fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
+    let conn = reprise_core::db::open(None).unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+    build_widgets(content, visible, Rc::new(RefCell::new(conn)), &cover_loader)
+}
+
+fn test_widgets_for_session(
+    content: &impl IsA<gtk4::Widget>,
+    visible: bool,
+    session: &Rc<TabSession>,
+) -> PanelWidgets {
+    let conn = reprise_core::db::open(None).unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+    build_widgets_for_session(
+        content,
+        visible,
+        session,
+        Rc::new(RefCell::new(conn)),
+        &cover_loader,
+    )
+}
+
 #[test]
 fn loaded_track_presentation_is_identical_while_playing_or_paused() {
     let track = loaded_track();
@@ -44,6 +68,13 @@ fn now_playing_panel_visibility_round_trips_through_settings() {
     assert!(!reprise_core::library::settings::get_info_panel_visible(
         &conn
     ));
+}
+
+#[test]
+fn que_6_closed_panel_does_not_render() {
+    assert!(!should_render_up_next(false, PanelTab::UpNext));
+    assert!(!should_render_up_next(true, PanelTab::Lyrics));
+    assert!(should_render_up_next(true, PanelTab::UpNext));
 }
 
 #[test]
@@ -93,7 +124,7 @@ fn now_playing_css_defines_the_two_segment_pill_and_footer() {
 fn panel_has_no_local_header_refresh_or_close_buttons() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let widgets = build_widgets(&content, true);
+    let widgets = test_widgets(&content, true);
     let tree = widget_tree(widgets.column.widget().upcast_ref());
 
     assert!(tree.iter().all(|widget| !widget.is::<adw::HeaderBar>()));
@@ -113,7 +144,7 @@ fn panel_has_no_local_header_refresh_or_close_buttons() {
 fn npp_2_no_volume_in_panel() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let widgets = build_widgets(&content, true);
+    let widgets = test_widgets(&content, true);
     let tree = widget_tree(widgets.column.widget().upcast_ref());
 
     assert!(tree.iter().all(|widget| !widget.is::<gtk4::VolumeButton>()));
@@ -125,7 +156,7 @@ fn npp_2_no_volume_in_panel() {
 fn head_and_pill_match_the_21a_structure() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let widgets = build_widgets(&content, true);
+    let widgets = test_widgets(&content, true);
 
     assert_eq!(widgets.cover.pixel_size(), 168);
     assert_eq!(widgets.cover.width_request(), 168);
@@ -178,11 +209,11 @@ fn npp_4_tab_persists_in_session() {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let session = Rc::new(TabSession::default());
 
-    let first = build_widgets_for_session(&content, true, &session);
+    let first = test_widgets_for_session(&content, true, &session);
     first.tab_buttons[1].set_active(true);
     assert_eq!(session.selected.get(), PanelTab::Lyrics);
 
-    let rebuilt = build_widgets_for_session(&content, true, &session);
+    let rebuilt = test_widgets_for_session(&content, true, &session);
     assert!(rebuilt.tab_buttons[1].is_active());
     assert_eq!(
         rebuilt.tab_stack.visible_child_name().as_deref(),
@@ -190,10 +221,39 @@ fn npp_4_tab_persists_in_session() {
     );
 
     let restarted_session = Rc::new(TabSession::default());
-    let restarted = build_widgets_for_session(&content, true, &restarted_session);
+    let restarted = test_widgets_for_session(&content, true, &restarted_session);
     assert!(restarted.tab_buttons[0].is_active());
     assert_eq!(
         restarted.tab_stack.visible_child_name().as_deref(),
+        Some(UP_NEXT_PAGE)
+    );
+}
+
+#[test]
+fn queue_icon_route_targets_the_existing_up_next_page() {
+    let (visible, selected) = up_next_route_state();
+
+    assert!(visible);
+    assert_eq!(selected, PanelTab::UpNext);
+    assert_eq!(selected.page_name(), UP_NEXT_PAGE);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn que_1_bar_icon_opens_same_list() {
+    gtk4::init().unwrap();
+    let (window, panel) = test_panel("org.reprise.Reprise.QueuePanelRouteTest");
+    panel.retain_for_window(&window);
+    panel.widgets.tab_buttons[1].set_active(true);
+    panel.widgets.column.set_visible(false);
+
+    panel.show_up_next();
+
+    assert!(panel.widgets.column.is_visible());
+    assert!(panel.widgets.tab_buttons[0].is_active());
+    assert_eq!(panel.widgets.session.selected.get(), PanelTab::UpNext);
+    assert_eq!(
+        panel.widgets.tab_stack.visible_child_name().as_deref(),
         Some(UP_NEXT_PAGE)
     );
 }
@@ -246,7 +306,7 @@ fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
 fn npp_10_track_change_uses_one_shared_crossfade() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let widgets = build_widgets(&content, true);
+    let widgets = test_widgets(&content, true);
     let shared_tree = widget_tree(widgets.track_content.upcast_ref());
     assert!(shared_tree.iter().any(|widget| widget == &widgets.cover));
     assert!(shared_tree.iter().any(|widget| widget == &widgets.title));

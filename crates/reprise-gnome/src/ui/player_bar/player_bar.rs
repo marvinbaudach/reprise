@@ -97,7 +97,7 @@ pub struct PlayerBar {
     volume_scale: gtk4::Scale,
     /// Volume icon button — click toggles mute.
     volume_icon: gtk4::Button,
-    /// Button that opens the queue panel (Task 7 wires the callback).
+    /// Button that opens the shared queue's Up Next panel view.
     queue_button: gtk4::Button,
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
@@ -586,8 +586,8 @@ impl PlayerBar {
         self.updating_volume.set(false);
     }
 
-    /// Wires the queue button; `f` is called on every click — the caller
-    /// decides what "show queue" means (Task 7 wires this).
+    /// Wires the queue button; `f` is called on every click so the window can
+    /// reveal its shared Up Next panel view.
     pub fn connect_queue_clicked<F: Fn() + 'static>(&self, f: F) {
         self.queue_button.connect_clicked(move |_| f());
     }
