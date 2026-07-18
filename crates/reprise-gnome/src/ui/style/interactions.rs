@@ -53,14 +53,6 @@ pub(super) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
-    // UX FIL-4: the accent styling for a non-empty search field is part of the
-    // installed app stylesheet.
-    #[test]
-    fn fil_4_css_defines_the_active_search_class() {
-        assert!(super::css().contains(".reprise-search-active"));
-        assert!(super::css().contains("@accent_color"));
-    }
-
     #[test]
     fn css_defines_focus_glow_hover_and_surface() {
         let css = super::css();

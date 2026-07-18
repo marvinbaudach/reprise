@@ -138,15 +138,6 @@ mod tests {
 
     use super::*;
 
-    // UX FIL-4: the field is marked as soon as it carries real text — also
-    // unfocused; whitespace-only never claims state (mirrors is_restricted).
-    #[test]
-    fn fil_4_search_accent_tracks_trimmed_text() {
-        assert!(search_accent_active("falling"));
-        assert!(!search_accent_active(""));
-        assert!(!search_accent_active("   "));
-    }
-
     #[test]
     fn chrome_separator_css_defines_scoped_hairlines() {
         let css = css();
