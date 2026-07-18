@@ -68,6 +68,21 @@ impl LazyReleaseCover {
         picture.set_visible(false);
         root.add_overlay(&picture);
 
+        let hairline = gtk4::DrawingArea::new();
+        hairline.set_can_target(false);
+        hairline.set_draw_func(|_, context, width, height| {
+            context.set_source_rgba(1.0, 1.0, 1.0, 0.22);
+            context.set_line_width(1.0);
+            context.rectangle(
+                0.5,
+                0.5,
+                f64::from(width).max(1.0) - 1.0,
+                f64::from(height).max(1.0) - 1.0,
+            );
+            let _ = context.stroke();
+        });
+        root.add_overlay(&hairline);
+
         wire_lazy_fetch(&root, &picture, release_group_mbid);
         Self { root }
     }

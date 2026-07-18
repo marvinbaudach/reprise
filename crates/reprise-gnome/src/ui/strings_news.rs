@@ -36,6 +36,8 @@ pub const NEW_RELEASES: &str = N_!("New Releases");
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
+pub const SEE_ALL_RELEASES: &str = N_!("See all");
+pub const HIDE_RELEASE: &str = N_!("Hide");
 
 pub fn tracks_selected(count: usize) -> String {
     let count_text = count.to_string();
@@ -92,6 +94,11 @@ pub fn new_releases_updated_ago(timestamp: i64, now: i64) -> String {
     }
     let days = age / (24 * 60 * 60);
     formatted(N_!("Updated {age} d ago"), &[("age", &days.to_string())])
+}
+
+pub fn new_releases_hidden(count: usize) -> String {
+    let count = count.to_string();
+    formatted(N_!("{count} hidden · Show"), &[("count", &count)])
 }
 
 fn news_timestamp_date(timestamp: i64) -> String {

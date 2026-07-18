@@ -92,10 +92,10 @@ pub(in crate::ui) fn wire_album_view(
         };
         // NAV-2: cross-navigation bypasses the sidebar choke point, so it
         // records its route itself — Back must return to the album grid.
-        nav_history_activate.record_route(&NavPlace {
-            source: source.clone(),
-            library_tab: Some(LIBRARY_VIEW_TRACKS.to_owned()),
-        });
+        nav_history_activate.record_route(&NavPlace::source(
+            source.clone(),
+            Some(LIBRARY_VIEW_TRACKS.to_owned()),
+        ));
         track_list_clone.set_source(source);
         if let Some(stack) = stack.upgrade() {
             stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
@@ -152,10 +152,10 @@ pub(in crate::ui) fn wire_artist_view(
             let source = ViewSource::Artist(artist);
             // NAV-2: cross-navigation records its own route (see
             // `wire_album_view`) so Back returns to the Artists view.
-            nav_history.record_route(&NavPlace {
-                source: source.clone(),
-                library_tab: Some(LIBRARY_VIEW_TRACKS.to_owned()),
-            });
+            nav_history.record_route(&NavPlace::source(
+                source.clone(),
+                Some(LIBRARY_VIEW_TRACKS.to_owned()),
+            ));
             track_list.set_source(source);
             stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
         });
@@ -176,10 +176,10 @@ pub(in crate::ui) fn wire_artist_view(
                 album: album.album,
                 album_artist: artist,
             };
-            nav_history.record_route(&NavPlace {
-                source: source.clone(),
-                library_tab: Some(LIBRARY_VIEW_TRACKS.to_owned()),
-            });
+            nav_history.record_route(&NavPlace::source(
+                source.clone(),
+                Some(LIBRARY_VIEW_TRACKS.to_owned()),
+            ));
             track_list.set_source(source);
             stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
         });
@@ -262,10 +262,10 @@ pub(in crate::ui) fn wire_source_routing(
         // Routed sources always land on the Tracks tab (set below); the
         // pushed PREVIOUS place carries whatever tab `note_library_tab`
         // last observed there.
-        nav_history.record_route(&NavPlace {
-            source: source.clone(),
-            library_tab: Some(LIBRARY_VIEW_TRACKS.to_owned()),
-        });
+        nav_history.record_route(&NavPlace::source(
+            source.clone(),
+            Some(LIBRARY_VIEW_TRACKS.to_owned()),
+        ));
         let viewed = {
             let conn = conn.borrow();
             crate::ui::view_session::record_issue_viewed(
@@ -344,6 +344,20 @@ pub(in crate::ui) fn route_to_place(
         reason,
         "history nav: routing to place"
     );
+    if place.is_new_releases() {
+        content_stack.set_visible_child_name("new-releases");
+        let content_stack = content_stack.downgrade();
+        gtk4::glib::idle_add_local_once(move || {
+            let granted = content_stack
+                .upgrade()
+                .and_then(|stack| stack.visible_child())
+                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward));
+            if !granted {
+                tracing::debug!("history nav: New Releases digest did not take focus");
+            }
+        });
+        return;
+    }
     match &place.source {
         ViewSource::Album { .. } | ViewSource::Artist(_) => {
             content_stack.set_visible_child_name("library");

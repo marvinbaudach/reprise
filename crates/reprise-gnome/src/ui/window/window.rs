@@ -373,6 +373,7 @@ pub fn build(
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
+    let new_releases_digest = crate::ui::new_releases::digest::NewReleasesDigest::new(conn.clone());
     let content_stack = gtk4::Stack::new();
     // Size to the visible page (see the library stack's `set_hhomogeneous`):
     // Stats/Device pages must not inherit the library's minimum width, nor vice
@@ -383,6 +384,7 @@ pub fn build(
     content_stack.add_named(&library_views.stack, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));
+    content_stack.add_named(new_releases_digest.widget(), Some("new-releases"));
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
@@ -470,7 +472,20 @@ pub fn build(
     toast_overlay.set_child(Some(library_player_bar.widget()));
     let library_chrome =
         super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
-    crate::ui::new_releases::popover::install(&header, &window, conn, db_path);
+    let open_new_releases = {
+        let digest = new_releases_digest.clone();
+        let nav_history = nav_history.clone();
+        let content_stack = content_stack.clone();
+        Rc::new(move || {
+            let Some(_place) = nav_history.record_new_releases() else {
+                tracing::warn!("cannot open New Releases before navigation is initialized");
+                return;
+            };
+            digest.refresh();
+            content_stack.set_visible_child_name("new-releases");
+        })
+    };
+    crate::ui::new_releases::popover::install(&header, &window, conn, db_path, open_new_releases);
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());
