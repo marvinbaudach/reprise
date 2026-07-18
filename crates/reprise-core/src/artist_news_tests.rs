@@ -1,8 +1,9 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    artist_search_url, artists_for_fetch, mark_releases_seen, most_played_album_track_path,
-    parse_artist_mbid, parse_release_groups, query_releases, refresh_with, release_groups_url,
+    artist_search_url, artists_for_fetch, hidden_release_count, mark_releases_seen,
+    most_played_album_track_path, parse_artist_mbid, parse_release_groups, query_releases,
+    refresh_with, release_groups_url, set_release_hidden, show_hidden_releases,
     unseen_release_count, ArtistMatch, FetchScope, NewsKind,
 };
 
@@ -455,6 +456,35 @@ fn nr_3_seen_item_not_rebadged() {
         )
         .unwrap();
     assert_eq!(known_seen, Some(20));
+}
+
+#[test]
+fn nr_4_hide_sets_hidden_and_show_restores_hidden_releases() {
+    let conn = migrated_conn();
+    insert_release(&conn, "one", None);
+    insert_release(&conn, "two", None);
+
+    set_release_hidden(&conn, "one", true).unwrap();
+
+    assert_eq!(hidden_release_count(&conn).unwrap(), 1);
+    assert_eq!(
+        query_releases(&conn, false, date())
+            .unwrap()
+            .into_iter()
+            .map(|release| release.release_group_mbid)
+            .collect::<Vec<_>>(),
+        ["two"]
+    );
+    assert!(query_releases(&conn, true, date())
+        .unwrap()
+        .into_iter()
+        .find(|release| release.release_group_mbid == "one")
+        .is_some_and(|release| release.hidden));
+
+    show_hidden_releases(&conn).unwrap();
+
+    assert_eq!(hidden_release_count(&conn).unwrap(), 0);
+    assert_eq!(query_releases(&conn, false, date()).unwrap().len(), 2);
 }
 
 fn insert_release(conn: &rusqlite::Connection, mbid: &str, seen_at: Option<i64>) {

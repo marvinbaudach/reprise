@@ -458,6 +458,31 @@ pub fn unseen_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
     )
 }
 
+pub fn hidden_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM new_releases WHERE hidden = 1",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn set_release_hidden(
+    conn: &Connection,
+    release_group_mbid: &str,
+    hidden: bool,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE new_releases SET hidden = ?1 WHERE release_group_mbid = ?2",
+        rusqlite::params![i64::from(hidden), release_group_mbid],
+    )?;
+    Ok(())
+}
+
+pub fn show_hidden_releases(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute("UPDATE new_releases SET hidden = 0 WHERE hidden = 1", [])?;
+    Ok(())
+}
+
 pub fn mark_releases_seen(
     conn: &Connection,
     release_group_mbids: &[String],

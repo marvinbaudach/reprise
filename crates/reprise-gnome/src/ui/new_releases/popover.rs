@@ -12,6 +12,7 @@ use crate::ui::{one_shot_task, popover_lifecycle, strings};
 use super::release_cover::{fallback_accent_for_artist, LazyReleaseCover};
 
 const POPOVER_LIMIT: usize = 5;
+const HERO_COVER_EDGE: i32 = 56;
 const ROW_COVER_EDGE: i32 = 34;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -47,6 +48,10 @@ fn footer_presentation(latest: Option<i64>, now: i64, failed: bool) -> FooterPre
     }
 }
 
+fn see_all_visible(total: usize, visible: usize, hidden: usize) -> bool {
+    total > visible || hidden > 0
+}
+
 struct NewReleasesPopover {
     conn: Rc<RefCell<rusqlite::Connection>>,
     database_path: PathBuf,
@@ -54,19 +59,30 @@ struct NewReleasesPopover {
     badge: gtk4::Label,
     popover: gtk4::Popover,
     rows: gtk4::Box,
+    see_all: gtk4::Button,
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
     spinner: gtk4::Spinner,
     updated: gtk4::Label,
     failure: gtk4::Label,
     fetching: Cell<bool>,
+    on_see_all: Rc<dyn Fn()>,
 }
 
 impl NewReleasesPopover {
-    fn new(conn: Rc<RefCell<rusqlite::Connection>>, database_path: PathBuf) -> Rc<Self> {
+    fn new(
+        conn: Rc<RefCell<rusqlite::Connection>>,
+        database_path: PathBuf,
+        on_see_all: Rc<dyn Fn()>,
+    ) -> Rc<Self> {
         let (button, badge) = build_button();
         let popover = gtk4::Popover::new();
         let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        let see_all = gtk4::Button::with_label(&strings::text(strings::SEE_ALL_RELEASES));
+        see_all.add_css_class("flat");
+        see_all.add_css_class("pill");
+        see_all.set_halign(gtk4::Align::Center);
+        see_all.set_visible(false);
         let (footer, fetch_button, fetch_stack, spinner, updated, failure) = build_footer();
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         content.set_margin_top(10);
@@ -74,6 +90,7 @@ impl NewReleasesPopover {
         content.set_margin_start(10);
         content.set_margin_end(10);
         content.append(&rows);
+        content.append(&see_all);
         content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         content.append(&footer);
         popover.set_child(Some(&content));
@@ -87,12 +104,14 @@ impl NewReleasesPopover {
             badge,
             popover,
             rows,
+            see_all,
             fetch_button,
             fetch_stack,
             spinner,
             updated,
             failure,
             fetching: Cell::new(false),
+            on_see_all,
         });
         state.wire();
         state.render(false, false);
@@ -120,12 +139,20 @@ impl NewReleasesPopover {
                 state.fetch_now();
             }
         });
+
+        let weak = Rc::downgrade(self);
+        self.see_all.connect_clicked(move |_| {
+            if let Some(state) = weak.upgrade() {
+                state.popover.popdown();
+                (state.on_see_all)();
+            }
+        });
     }
 
     fn render(&self, mark_seen: bool, failed: bool) {
         let today = chrono::Local::now().date_naive();
-        let releases =
-            match reprise_core::artist_news::query_releases(&self.conn.borrow(), false, today) {
+        let all_releases =
+            match reprise_core::artist_news::query_releases(&self.conn.borrow(), true, today) {
                 Ok(releases) => releases,
                 Err(error) => {
                     tracing::warn!(%error, "could not query New Releases");
@@ -133,11 +160,20 @@ impl NewReleasesPopover {
                     return;
                 }
             };
-        self.button.set_visible(!releases.is_empty());
+        let releases = all_releases
+            .iter()
+            .filter(|release| !release.hidden)
+            .cloned()
+            .collect::<Vec<_>>();
+        let hidden = all_releases.iter().filter(|release| release.hidden).count();
+        self.button.set_visible(!all_releases.is_empty());
         clear_box(&self.rows);
-        for release in releases.iter().take(POPOVER_LIMIT) {
-            self.rows.append(&build_release_row(release));
+        for (index, release) in releases.iter().take(POPOVER_LIMIT).enumerate() {
+            self.rows.append(&build_release_row(release, index == 0));
         }
+        let visible = releases.len().min(POPOVER_LIMIT);
+        self.see_all
+            .set_visible(see_all_visible(releases.len(), visible, hidden));
 
         if mark_seen {
             let effect = opening_effect(&releases);
@@ -155,7 +191,7 @@ impl NewReleasesPopover {
         let unseen = reprise_core::artist_news::unseen_release_count(&self.conn.borrow())
             .unwrap_or_default();
         self.badge.set_visible(unseen > 0);
-        let latest = releases.iter().map(|release| release.fetched_at).max();
+        let latest = all_releases.iter().map(|release| release.fetched_at).max();
         let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
         self.updated.set_label(&footer.updated);
         self.failure.set_visible(footer.show_cached_failure);
@@ -211,8 +247,9 @@ pub(in crate::ui) fn install(
     window: &adw::ApplicationWindow,
     conn: &Rc<RefCell<rusqlite::Connection>>,
     database_path: &Path,
+    on_see_all: Rc<dyn Fn()>,
 ) {
-    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf());
+    let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf(), on_see_all);
     header.pack_end(&state.button);
     state.retain_for_window(window);
 }
@@ -292,12 +329,16 @@ fn build_footer() -> (
     (footer, fetch_button, stack, spinner, updated, failure)
 }
 
-fn build_release_row(release: &reprise_core::artist_news::StoredRelease) -> gtk4::Box {
+fn build_release_row(release: &reprise_core::artist_news::StoredRelease, hero: bool) -> gtk4::Box {
     let cover = LazyReleaseCover::new(
         &release.release_group_mbid,
         &release.artist_name,
         &release.fallback_accent,
-        ROW_COVER_EDGE,
+        if hero {
+            HERO_COVER_EDGE
+        } else {
+            ROW_COVER_EDGE
+        },
     );
     let title = gtk4::Label::new(Some(&release.title));
     title.set_xalign(0.0);
@@ -360,13 +401,21 @@ mod tests {
     }
 
     #[test]
+    fn nr_4_see_all_appears_for_overflow_or_hidden_entries() {
+        assert!(!see_all_visible(5, 5, 0));
+        assert!(see_all_visible(6, 5, 0));
+        assert!(see_all_visible(5, 5, 1));
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn nr_3_header_button_is_visible_only_when_releases_exist() {
         gtk4::init().unwrap();
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let state = NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"));
+        let state =
+            NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), Rc::new(|| {}));
         assert!(!state.button.is_visible());
 
         conn.borrow()

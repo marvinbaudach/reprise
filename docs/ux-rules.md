@@ -813,7 +813,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Einträgen und trägt einen Badge ausschließlich für `seen_at IS NULL`.
   Öffnen stempelt die gelistete Episode als gesehen; sie badgt nie erneut,
   erst ein später neu gefundener Eintrag erzeugt wieder einen Badge (FB-4).
-- **NR-4** [geplant] [gtk] — „See all" öffnet einen echten Digest-Ort mit
+- **NR-4** [aktiv] [gtk] — „See all" öffnet einen echten Digest-Ort mit
   Back/Forward-Historie, aber ohne Sidebar-Eintrag. Releases lassen sich dort
   verbergen; vorhandene Hidden-Einträge halten „See all" erreichbar und die
   Fußzeile „N hidden · Show" macht sie rückholbar. Ein künftiges „Remind me"

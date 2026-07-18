@@ -206,10 +206,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 // explicit `record_route` pushes the left place for such
                 // origins (row-backed ones would record via `on_select`
                 // anyway; the duplicate is suppressed).
-                let place = crate::ui::nav_history::NavPlace {
-                    source: origin.clone(),
-                    library_tab: Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
-                };
+                let place = crate::ui::nav_history::NavPlace::source(
+                    origin.clone(),
+                    Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
+                );
                 nav_history.record_route(&place);
                 super::library_shell::route_to_place(
                     &place,
@@ -582,10 +582,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // so seed the history's "current place" here — without it the FIRST
     // cross-navigation after startup (e.g. opening an album from the grid)
     // would have no previous place to push and Back would do nothing.
-    nav_history.record_route(&crate::ui::nav_history::NavPlace {
-        source: restored_source,
-        library_tab: Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
-    });
+    nav_history.record_route(&crate::ui::nav_history::NavPlace::source(
+        restored_source,
+        Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
+    ));
     super::session_restore::wire_close(
         window,
         conn,
