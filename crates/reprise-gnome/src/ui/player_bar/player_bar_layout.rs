@@ -260,7 +260,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 /// border-radius, title/artist/time label styling, transport hover, mini-EQ
 /// animation, volume-knob visibility, and artist-label hover colour.
 pub(in crate::ui) fn css() -> String {
-    use super::style::tokens::TRANSITION;
+    use super::{motion, style::tokens::TRANSITION};
+    let micro_ms = motion::MICRO_MS;
+    let micro_easing = motion::MICRO_CSS_EASING;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
            background-color: rgb(26, 26, 26); \
@@ -276,6 +278,12 @@ pub(in crate::ui) fn css() -> String {
            box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.75), \
                        0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
          .{PLAY_CSS_CLASS}:active {{ transform: scale(0.94); }}\n\
+         .{PLAY_CSS_CLASS}.pulsing {{ \
+           animation: reprise-play-pulse {micro_ms}ms {micro_easing} 1; }}\n\
+         @keyframes reprise-play-pulse {{ \
+           0%   {{ transform: scale(1.0); }} \
+           50%  {{ transform: scale(0.92); }} \
+           100% {{ transform: scale(1.0); }} }}\n\
          .{COVER_CSS_CLASS} {{ \
            border-radius: 8px; \
            box-shadow: inset 0 0 0 1px alpha(white, 0.08); \
@@ -402,6 +410,13 @@ mod tests {
         assert!(css.contains(".player-bar-play"));
         assert!(css.contains("@reprise_player_accent"));
         assert!(css.contains(".player-bar-surface"));
+        assert!(css.contains("@keyframes reprise-play-pulse"));
+        assert!(css.contains("transform: scale(0.92)"));
+        assert!(css.contains(&format!(
+            "animation: reprise-play-pulse {}ms {} 1",
+            crate::ui::motion::MICRO_MS,
+            crate::ui::motion::MICRO_CSS_EASING
+        )));
     }
 
     #[test]
