@@ -878,7 +878,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   eingeschaltetem Modul; Online-Lyrics haben ebenfalls einen Schalter, damit
   vollständig netzfreie Nutzung möglich bleibt. Ein Ausschalten wirkt sofort
   und versteckt bereits lokal gecachte Bilder nicht.
-- **NET-2** [geplant] [core] — Updates schützen nachweisbare bisherige Nutzung:
+- **NET-2** [aktiv] [core] — Updates schützen nachweisbare bisherige Nutzung:
   vorhandene heruntergeladene Cover bzw. Portraits aktivieren ihr Modul,
   bestehende Bibliotheksdatenbanken behalten Online-Lyrics, und ein zuvor
   aktives `artist_news` wird als aktives New-Releases-Modul übernommen.
