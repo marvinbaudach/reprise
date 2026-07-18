@@ -51,6 +51,7 @@ pub(crate) mod preferences;
 pub mod primary_menu;
 mod scan;
 mod scrobbling;
+mod scroll_center;
 pub mod session_restore;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
