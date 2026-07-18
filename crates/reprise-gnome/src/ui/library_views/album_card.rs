@@ -135,6 +135,17 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .can_target(false)
                 .build();
 
+            // The GridView's native `child` node owns keyboard focus. This
+            // cover-only overlay renders its outer focus ring via a selector
+            // rooted at that real focused node; the card itself is not a tab
+            // stop.
+            let focus_frame = gtk4::Box::builder()
+                .css_classes(vec![css::FOCUS_FRAME_CLASS.to_owned()])
+                .halign(gtk4::Align::Fill)
+                .valign(gtk4::Align::Fill)
+                .can_target(false)
+                .build();
+
             // Overlay: cover image is the base child, overlays are layered on top.
             let cover_overlay = gtk4::Overlay::builder()
                 .css_classes(vec![css::COVER_CONTAINER_CLASS.to_owned()])
@@ -142,6 +153,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .build();
             cover_overlay.add_overlay(&placeholder);
             cover_overlay.add_overlay(&playing_frame);
+            cover_overlay.add_overlay(&focus_frame);
             cover_overlay.add_overlay(&playing_layer);
             cover_overlay.add_overlay(&hover_overlay);
 
@@ -321,7 +333,12 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .and_downcast::<gtk4::Box>()
                 .expect("playing frame Box");
 
-            let playing_layer = playing_frame
+            let focus_frame = playing_frame
+                .next_sibling()
+                .and_downcast::<gtk4::Box>()
+                .expect("focus frame Box");
+
+            let playing_layer = focus_frame
                 .next_sibling()
                 .and_downcast::<gtk4::Box>()
                 .expect("playing_layer Box");
