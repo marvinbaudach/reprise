@@ -18,6 +18,30 @@ a merge-readiness linter. Headless success proves behavior and widget state;
 it does not prove native Wayland rendering, pointer feel, audible output,
 desktop media integration, portals, or real hardware.
 
+### Generated-metadata scalability baseline
+
+Run the release-profile scalability baseline with an explicit new output
+directory:
+
+```sh
+scripts/performance-baseline.sh /tmp/reprise-performance-results
+```
+
+The normal run generates fresh 10,000- and 100,000-track databases under a
+private temporary directory, measures database open/migration, library count,
+first/middle/final 200-row windows, filtered count, library statistics, and
+playback-id projection, then exercises TrackListModel scroll access at the same
+sizes. It retains a manifest, stable-schema query JSON, and model logs in the
+requested output directory. `--quick` runs only the 10,000-track scenario.
+
+Elapsed times are evidence for comparing two commits on the same host, not a
+portable CI threshold. Deterministic budgets are hard assertions: the model may
+retain at most eight SQL windows and 1,600 track rows regardless of library
+size. The runner requires a clean Git worktree so its manifest identifies the
+compiled sources exactly, refuses an existing output directory, and the core
+probe refuses an existing database, so neither can overwrite a user profile.
+All rows are generated metadata with synthetic paths; no audio file is opened.
+
 ## Required merge gates
 
 Every branch intended for `main` must pass `scripts/check-merge-readiness.sh`.
@@ -82,9 +106,10 @@ as a release-green signal. Do not weaken `msgcmp` to hide the mismatch.
 - Add database upgrade fixtures for every supported schema version plus a
   failed migration step. Verify rollback, data preservation, indexes, foreign
   keys, and an idempotent second open.
-- Add scalability budgets using generated metadata only: startup/query/scroll
-  behavior at 10,000 and 100,000 tracks, bounded row-widget/provider counts,
-  and bounded queue/cache memory growth.
+- Extend the generated-metadata scalability baseline beyond its completed
+  query/TrackListModel coverage: measure full installed-app startup, bound live
+  row-widget/provider counts, and bound queue memory growth at 10,000 and
+  100,000 tracks.
 - Add accessibility assertions for names, roles, keyboard reachability, focus
   order, high-contrast behavior, and reduced-motion behavior on the principal
   library, player, preferences, and tag-editor flows.
