@@ -21,6 +21,7 @@ use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::strings;
 use super::track_list::TrackList;
+use crate::ui::nav_history::{NavHistory, NavPlace};
 use reprise_core::queries::ArtistAlbum;
 use reprise_core::view_source::ViewSource;
 
@@ -78,24 +79,47 @@ pub(in crate::ui) fn wire_album_view(
     views: &LibraryViews,
     album_view: &AlbumView,
     track_list: &Rc<TrackList>,
+    nav_history: &Rc<NavHistory>,
 ) {
-    // Card click → switch to Tracks tab with album source.
+    // Card click / Enter → switch to Tracks tab with album source.
     let track_list_clone = track_list.clone();
     let stack = views.stack.downgrade();
+    let nav_history_activate = nav_history.clone();
     album_view.set_on_activate(move |album| {
         let source = ViewSource::Album {
             album: album.album.clone(),
             album_artist: album.album_artist.clone(),
         };
+        // NAV-2: cross-navigation bypasses the sidebar choke point, so it
+        // records its route itself — Back must return to the album grid.
+        nav_history_activate.record_route(&NavPlace {
+            source: source.clone(),
+            library_tab: Some(LIBRARY_VIEW_TRACKS.to_owned()),
+        });
         track_list_clone.set_source(source);
         if let Some(stack) = stack.upgrade() {
             stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
         }
+        // Keyboard flow: hand focus to the track table once the stack switch
+        // has mapped it, so Enter → arrow keys works without a Tab detour.
+        // Best-effort (idle so the new page is mapped); a `false` return is
+        // logged, matching every other focus move in this codebase.
+        let track_list_focus = Rc::downgrade(&track_list_clone);
+        gtk4::glib::idle_add_local_once(move || {
+            if let Some(track_list) = track_list_focus.upgrade() {
+                if !track_list.focus_track_list() {
+                    tracing::debug!("album activate: track list did not take focus");
+                }
+            }
+        });
     });
 
     // Artist label click → switch to Artists tab.
     let stack = views.stack.downgrade();
+    let nav_history_artist = nav_history.clone();
     album_view.set_on_artist_activate(move |_artist| {
+        // A tab-only navigation: same source, Albums → Artists tab.
+        nav_history_artist.record_tab_route(LIBRARY_VIEW_ARTISTS);
         if let Some(stack) = stack.upgrade() {
             stack.set_visible_child_name(LIBRARY_VIEW_ARTISTS);
         }
@@ -114,16 +138,25 @@ pub(in crate::ui) fn wire_artist_view(
     views: &LibraryViews,
     artist_view: &ArtistView,
     track_list: &Rc<TrackList>,
+    nav_history: &Rc<NavHistory>,
 ) {
     // "Show all tracks" for the selected artist opens the track table.
     {
         let track_list = Rc::downgrade(track_list);
         let stack = views.stack.clone();
+        let nav_history = nav_history.clone();
         artist_view.set_on_show_all_tracks(move |artist| {
             let Some(track_list) = track_list.upgrade() else {
                 return;
             };
-            track_list.set_source(ViewSource::Artist(artist));
+            let source = ViewSource::Artist(artist);
+            // NAV-2: cross-navigation records its own route (see
+            // `wire_album_view`) so Back returns to the Artists view.
+            nav_history.record_route(&NavPlace {
+                source: source.clone(),
+                library_tab: Some(LIBRARY_VIEW_TRACKS.to_owned()),
+            });
+            track_list.set_source(source);
             stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
         });
     }
@@ -134,14 +167,20 @@ pub(in crate::ui) fn wire_artist_view(
     {
         let track_list = Rc::downgrade(track_list);
         let stack = views.stack.clone();
+        let nav_history = nav_history.clone();
         artist_view.set_on_album_activate(move |album: ArtistAlbum, artist: String| {
             let Some(track_list) = track_list.upgrade() else {
                 return;
             };
-            track_list.set_source(ViewSource::Album {
+            let source = ViewSource::Album {
                 album: album.album,
                 album_artist: artist,
+            };
+            nav_history.record_route(&NavPlace {
+                source: source.clone(),
+                library_tab: Some(LIBRARY_VIEW_TRACKS.to_owned()),
             });
+            track_list.set_source(source);
             stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
         });
     }
@@ -205,10 +244,28 @@ pub(in crate::ui) fn wire_source_routing(
     let sidebar_for_select = sidebar.clone();
     let show_content_on_select = show_content.clone();
     let nav_history = nav_history.clone();
+    // NAV-2: the Tracks/Albums/Artists switcher is a mode switch, not a
+    // history entry — but the CURRENT place's tab must stay fresh so the
+    // next push remembers the tab the user actually left (e.g. the album
+    // grid).
+    {
+        let nav_history = nav_history.clone();
+        views.stack.connect_visible_child_name_notify(move |stack| {
+            if let Some(name) = stack.visible_child_name() {
+                nav_history.note_library_tab(&name);
+            }
+        });
+    }
     sidebar.set_on_select(move |source, source_name| {
         // NAV-2: every routed switch records the place it leaves. Back
         // re-routes through here too, silenced by its suppression flag.
-        nav_history.record_route(&source);
+        // Routed sources always land on the Tracks tab (set below); the
+        // pushed PREVIOUS place carries whatever tab `note_library_tab`
+        // last observed there.
+        nav_history.record_route(&NavPlace {
+            source: source.clone(),
+            library_tab: Some(LIBRARY_VIEW_TRACKS.to_owned()),
+        });
         let viewed = {
             let conn = conn.borrow();
             crate::ui::view_session::record_issue_viewed(
@@ -260,6 +317,80 @@ fn build_split_view(
         .show_sidebar(false)
         .collapsed(true)
         .build()
+}
+
+/// NAV-2/NAV-9: routes to a remembered place — the re-entrant twin of
+/// `wire_source_routing`'s `on_select` body, used by Back, Forward, and
+/// the now-playing jump. Row-backed sources go through the sidebar
+/// (keeping highlight/title/adaptive nav in sync) with the remembered
+/// library tab restored afterwards; the row-less detail sources
+/// (`Album`/`Artist`) re-drive the cross-navigation path directly, because
+/// `sidebar::rebuild` would substitute Library for a source without a row.
+pub(in crate::ui) fn route_to_place(
+    place: &NavPlace,
+    sidebar: &Rc<Sidebar>,
+    track_list: &Rc<TrackList>,
+    content_stack: &gtk4::Stack,
+    library_stack: &gtk4::Stack,
+    album_grid: &gtk4::GridView,
+    reason: &str,
+) {
+    tracing::debug!(
+        source = %place.source.label(),
+        tab = place.library_tab.as_deref().unwrap_or(""),
+        reason,
+        "history nav: routing to place"
+    );
+    match &place.source {
+        ViewSource::Album { .. } | ViewSource::Artist(_) => {
+            content_stack.set_visible_child_name("library");
+            library_stack.set_visible_child_name(
+                place.library_tab.as_deref().unwrap_or(LIBRARY_VIEW_TRACKS),
+            );
+            track_list.set_source(place.source.clone());
+            crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &place.source);
+        }
+        _ => {
+            sidebar.refresh_and_select(place.source.clone(), reason);
+            if let Some(tab) = &place.library_tab {
+                library_stack.set_visible_child_name(tab);
+            }
+        }
+    }
+    // Keyboard flow: hand focus to the restored view (the Back/Forward twin
+    // of `wire_album_view`'s focus-follow), so arrows / Enter / Menu key
+    // keep working without a Tab detour. Best-effort in an idle (the stack
+    // switch must map the page first); a `false` is logged like every other
+    // focus move in this codebase.
+    let restored_tab = place
+        .library_tab
+        .clone()
+        .unwrap_or_else(|| LIBRARY_VIEW_TRACKS.to_owned());
+    let track_list_focus = Rc::downgrade(track_list);
+    let album_grid_focus = album_grid.downgrade();
+    let library_stack_focus = library_stack.downgrade();
+    gtk4::glib::idle_add_local_once(move || {
+        let granted = if restored_tab == LIBRARY_VIEW_TRACKS {
+            track_list_focus
+                .upgrade()
+                .is_some_and(|track_list| track_list.focus_track_list())
+        } else if restored_tab == LIBRARY_VIEW_ALBUMS {
+            // The album GRID, not the page's first focusable (that would be
+            // the sort dropdown): focus returns to the focused card so
+            // arrows / Enter / Menu key keep working immediately.
+            album_grid_focus.upgrade().is_some_and(|grid| grid.grab_focus())
+        } else {
+            // Artists page: focus its first focusable child (the artist
+            // master list).
+            library_stack_focus
+                .upgrade()
+                .and_then(|stack| stack.visible_child())
+                .is_some_and(|child| child.child_focus(gtk4::DirectionType::TabForward))
+        };
+        if !granted {
+            tracing::debug!("history nav: restored view did not take focus");
+        }
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
