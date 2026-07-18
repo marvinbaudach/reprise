@@ -103,21 +103,14 @@ Befunde haben die Vorgabe verändert:
    `enabled = true`** — wer die Funktion heute nutzt, verliert sie nicht
    stillschweigend. Frische Installationen starten aus und holen nichts ohne
    Zustimmung.
-9. **DISCOVER-1: genau eine Entdeckungszeile, einmalig.** Beschluss 6 und 8
-   machen alle Netz-Features opt-in — damit erscheint ✦ nie und das Feature
-   wäre für die meisten Nutzer faktisch nicht existent. Gegenmittel: **eine**
-   dezente Zeile am Kopf der Artists-Ansicht („Neue Releases deiner Artists
-   verfolgen? — Aktivieren", Link auf die Plugins-Seite, × zum Wegklicken),
-   die durch ein Settings-Flag **genau einmal** erscheint. Dort stimmt der
-   Kontext (man schaut gerade auf seine Artists), sie ist keine Bitte im
-   Badge-Sinn (P-1 bleibt sauber) und sie nagelt nicht.
-   **Bedingungen:** erst nach dem ersten abgeschlossenen Scan und nur, wenn
-   Artists mit MB-MBID existieren — auf einer leeren Library am ersten Start
-   wäre sie nur Lärm, und ohne MBIDs könnte NR ohnehin nichts finden.
-   **Obergrenze:** Es wird **nie mehr als eine** solche Zeile gezeigt. Sollten
-   Cover-/Portrait-Download später auch Entdeckbarkeit brauchen, wird daraus
-   **eine gemeinsame** „Netz-Features aktivieren?"-Zeile, die auf die
-   Plugins-Seite führt — niemals drei gestapelte Hinweise.
+9. **Entdeckbarkeit wandert in den Folge-Branch.** Beschluss 6 macht das
+   Modul opt-in — damit erscheint ✦ nie und das Feature wäre unsichtbar.
+   Die Gegenmaßnahme (kontextueller Einmal-Hinweis) wird **nicht hier**
+   gebaut: Sie gehört zu einem querschnittlichen Entdeckungssystem über alle
+   vier Netz-Features, samt Evidenz-Triggern und der Regel, dass nie zwei
+   „aktivieren"-Zeilen gleichzeitig erscheinen. Gebaut in
+   `feat/network-opt-in`; hier in einfacher Form gebaut, müsste sie dort
+   sofort umgeschrieben werden.
 10. **Ein Branch, sequenziell.** `feat/search-and-new-releases`: erst Teil A
    komplett (Headerbar auf Lupe + Pill-links umgebaut, Tests und e2e
    nachgezogen), dann Teil B in die dann stabile Headerbar. Beide Features
