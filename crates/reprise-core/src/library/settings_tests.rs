@@ -54,33 +54,6 @@ fn sidebar_collapse_round_trips_and_defaults_to_expanded() {
 }
 
 #[test]
-fn info_panel_tab_round_trips_and_rejects_unknown_names() {
-    let conn = migrated_conn();
-    // Default: the information page.
-    assert_eq!(get_info_panel_tab(&conn), InfoPanelTab::Information);
-    set_info_panel_tab(&conn, InfoPanelTab::Lyrics).unwrap();
-    assert_eq!(get_info_panel_tab(&conn), InfoPanelTab::Lyrics);
-    set_info_panel_tab(&conn, InfoPanelTab::Information).unwrap();
-    assert_eq!(get_info_panel_tab(&conn), InfoPanelTab::Information);
-    // A corrupted/unknown stored value degrades to the default.
-    set_setting(&conn, INFO_PANEL_TAB_KEY, "garbage").unwrap();
-    assert_eq!(get_info_panel_tab(&conn), InfoPanelTab::Information);
-}
-
-#[test]
-fn info_panel_tab_names_round_trip() {
-    assert_eq!(
-        InfoPanelTab::from_name(InfoPanelTab::Lyrics.name()),
-        Some(InfoPanelTab::Lyrics)
-    );
-    assert_eq!(
-        InfoPanelTab::from_name(InfoPanelTab::Information.name()),
-        Some(InfoPanelTab::Information)
-    );
-    assert_eq!(InfoPanelTab::from_name("nope"), None);
-}
-
-#[test]
 fn different_keys_do_not_clobber_each_other() {
     let conn = migrated_conn();
     set_setting(&conn, "a", "1").unwrap();

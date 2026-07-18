@@ -169,6 +169,33 @@ fn idle_uses_a_placeholder_cover_without_the_accent_glow() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn npp_4_tab_persists_in_session() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let session = Rc::new(TabSession::default());
+
+    let first = build_widgets_for_session(&content, true, &session);
+    first.tab_buttons[1].set_active(true);
+    assert_eq!(session.selected.get(), PanelTab::Lyrics);
+
+    let rebuilt = build_widgets_for_session(&content, true, &session);
+    assert!(rebuilt.tab_buttons[1].is_active());
+    assert_eq!(
+        rebuilt.tab_stack.visible_child_name().as_deref(),
+        Some(LYRICS_PAGE)
+    );
+
+    let restarted_session = Rc::new(TabSession::default());
+    let restarted = build_widgets_for_session(&content, true, &restarted_session);
+    assert!(restarted.tab_buttons[0].is_active());
+    assert_eq!(
+        restarted.tab_stack.visible_child_name().as_deref(),
+        Some(UP_NEXT_PAGE)
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn loaded_and_idle_tracks_render_from_the_player_context() {
     gtk4::init().unwrap();
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingContextTest");
