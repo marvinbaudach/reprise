@@ -346,16 +346,19 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## J. Queue-Ansicht
 
-- **QUE-1** [geplant] [gtk] — Die Queue ist nie leer, solange etwas spielt.
-  Sie zeigt drei Abschnitte, in dieser Reihenfolge: **Now Playing** (1 Row,
-  Akzent + EQ, wie überall) · **Play Next** — manuell eingereihte Tracks
-  („Play next"/„Add to queue"), nur wenn vorhanden, mit Sektionstitel ·
-  **Up Next · aus <Quelle>** — der Rest des Playback-Snapshots (z. B. „Up
-  Next · from Late Night" oder „· from Neverbloom"), inklusive
-  Shuffle-Reihenfolge, falls Shuffle an.
-- **QUE-2** [geplant] [core] — Abspiellogik = Anzeigereihenfolge: erst
-  Play-Next-Einträge (FIFO), dann der Snapshot ab aktueller Position. Keine
-  versteckte Priorität — was die View zeigt, ist was passiert.
+- **QUE-1** [geplant] [gtk] — Ein gemeinsames Queue-Modell speist zwei
+  Flächen mit unterschiedlicher Tiefe: Die Sidebar-Zeile „Queue" öffnet die
+  ColumnView als Verwaltungsfläche mit Sektionen, DnD-Reorder, Rechtsklick,
+  Clear und StatusPage. Das Playerleisten-Icon öffnet dagegen das Panel auf
+  „Up Next" als Sichtfläche derselben Queue mit Sektionen, Sprung und Remove,
+  aber ohne Reorder oder DnD. Keine Fläche führt eine eigene zweite Liste.
+- **QUE-2** [geplant] [gtk] — Das Panel gliedert die Zukunft in genau zwei
+  bedingte Sektionen: **Next in Queue** für manuell eingereihte Tracks und
+  **Continuing from „<Album/Playlist>"** für den automatischen Kontext aus
+  `play_origin`. Ein Header erscheint nur, wenn seine Sektion Einträge hat;
+  eine leere manuelle Sektion lässt ausschließlich „Continuing …" stehen.
+  Ihre sichtbare Reihenfolge ist zugleich die Abspielreihenfolge; solange
+  etwas spielt, zeigt die Queue nie zwei leere Sektionen.
 - **QUE-3** [geplant] [gtk] — Interaktion: DnD-Reorder innerhalb „Play
   Next" und innerhalb „Up Next" (der Snapshot wird echt umsortiert;
   QUE-2 bleibt gewahrt: Anzeige = Abspielreihenfolge). Up-Next-Rows sind
@@ -372,9 +375,17 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **QUE-4** [geplant] [gtk] — Leerzustand gibt es nur ohne Wiedergabe:
   StatusPage „Nothing queued — play something" (FB-5, ein nächster Schritt,
   kein Grid an Vorschlägen).
-- **QUE-5** [geplant] [core] — Sidebar-Zähler „Queue · N": N = Play Next +
-  verbleibende Up-Next-Tracks (nicht Gesamt-Snapshot). Der Zähler ist eine
-  Bestandsanzeige, kein Badge (P-1: keine „Bitte").
+- **QUE-5** [geplant] [core] — Ein Sprung zu einem Queue-Eintrag setzt die
+  Abspielposition und konsumiert ausschließlich den geklickten Eintrag.
+  Davorliegende manuelle Einträge bleiben in „Next in Queue" und spielen
+  danach; es gibt weder stilles Verwerfen noch Dialog oder Queue-Historie.
+  „Remove" entfernt aus der Queue, nie aus der Library.
+- **QUE-6** [geplant] [core] — Beide Flächen lesen ein gemeinsames
+  Queue-Modell. Metadaten kommen in einer Sammelabfrage über die Queue-IDs,
+  nie in einer Abfrage pro Zeile; Row-Recycling und Laden des sichtbaren
+  Fensters begrenzen Widgets und Arbeit unabhängig von der Queue-Länge. Bei
+  geschlossenem Panel oder einem anderen aktiven Tab aktualisieren
+  Trackwechsel und Reorder nur das Modell und rendern keine Panel-Zeilen.
 
 ## K. Filter- & Such-Sichtbarkeit
 
