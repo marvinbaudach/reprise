@@ -17,6 +17,7 @@ use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::motion;
 use crate::ui::player_bar_layout::{self, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::strings;
 use crate::ui::waveform_seek::WaveformSeek;
@@ -109,10 +110,12 @@ pub struct PlayerBar {
     on_artist_click: TitleClickCallback,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
-    current_track_animation: RefCell<Option<libadwaita::TimedAnimation>>,
-    /// Held for the 120 ms play↔pause icon cross-fade (spec 1.4); replaced on
+    current_track_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
+    track_animation_generation: Rc<Cell<u64>>,
+    /// Held for the 150 ms play↔pause icon cross-fade; replaced on
     /// each state change. Kept alive to prevent GC between ticks.
-    current_icon_animation: RefCell<Option<libadwaita::TimedAnimation>>,
+    current_icon_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
+    icon_animation_generation: Rc<Cell<u64>>,
 }
 
 impl PlayerBar {
@@ -224,8 +227,10 @@ impl PlayerBar {
             on_title_click,
             on_cover_click,
             on_artist_click,
-            current_track_animation: RefCell::new(None),
-            current_icon_animation: RefCell::new(None),
+            current_track_animation: Rc::new(RefCell::new(None)),
+            track_animation_generation: Rc::new(Cell::new(0)),
+            current_icon_animation: Rc::new(RefCell::new(None)),
+            icon_animation_generation: Rc::new(Cell::new(0)),
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
         bar.set_repeat_indicator(Repeat::Off);
@@ -270,27 +275,23 @@ impl PlayerBar {
     /// `player_controller.rs`) — no extra DB query needed.
     ///
     /// Cross-fades the labels over 250 ms (125 ms fade-out, 125 ms fade-in)
-    /// when GTK animations are enabled; falls back to an instant swap
-    /// otherwise (Task 9).
+    /// and follows GTK's system animation setting through [`motion::timed`].
     pub fn set_track(&self, title: &str, artist: &str) {
         self.animate_track_change(title, artist);
     }
 
     /// 250 ms opacity cross-fade: fade out cover + labels, swap text, fade in.
-    /// Gated on `gtk-enable-animations`; instant fallback otherwise (spec 1.4).
+    /// The system animation setting is followed by the central motion helper.
     fn animate_track_change(&self, title: &str, artist: &str) {
-        let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
-        if !animate {
-            self.title_label.set_text(title);
-            self.artist_label.set_text(artist);
-            return;
-        }
-
+        let generation = self.track_animation_generation.get().wrapping_add(1);
+        self.track_animation_generation.set(generation);
         let title = title.to_string();
         let artist = artist.to_string();
         let title_label = self.title_label.clone();
         let artist_label = self.artist_label.clone();
         let cover = self.cover.clone();
+        let animation_slot = self.current_track_animation.clone();
+        let animation_generation = self.track_animation_generation.clone();
 
         // Fade-out: opacity 1 → 0 over 125 ms (cover + labels together).
         let fade_out_target = libadwaita::CallbackAnimationTarget::new({
@@ -303,8 +304,13 @@ impl PlayerBar {
                 cover.set_opacity(value);
             }
         });
-        let fade_out =
-            libadwaita::TimedAnimation::new(&self.title_label, 1.0, 0.0, 125, fade_out_target);
+        let fade_out = motion::timed(
+            &self.title_label,
+            1.0,
+            0.0,
+            motion::STANDARD,
+            fade_out_target,
+        );
 
         // After fade-out: swap text and fade in (opacity 0 → 1 over 125 ms).
         // Cover image is swapped externally by CoverLoader; fade-in reveals it.
@@ -315,6 +321,13 @@ impl PlayerBar {
             move |_| {
                 title_label.set_text(&title);
                 artist_label.set_text(&artist);
+
+                if animation_generation.get() != generation {
+                    title_label.set_opacity(1.0);
+                    artist_label.set_opacity(1.0);
+                    cover.set_opacity(1.0);
+                    return;
+                }
 
                 let fade_in_target = libadwaita::CallbackAnimationTarget::new({
                     let title_label = title_label.clone();
@@ -327,27 +340,33 @@ impl PlayerBar {
                     }
                 });
                 let fade_in =
-                    libadwaita::TimedAnimation::new(&title_label, 0.0, 1.0, 125, fade_in_target);
+                    motion::timed(&title_label, 0.0, 1.0, motion::STANDARD, fade_in_target);
+                fade_in.set_duration(motion::half(motion::STANDARD));
+                motion::replace_animation(&animation_slot, fade_in.clone());
                 fade_in.play();
             }
         });
+        fade_out.set_duration(motion::half(motion::STANDARD));
+        motion::replace_animation(&self.current_track_animation, fade_out.clone());
         fade_out.play();
-
-        // Keep the fade-out alive until done; the fade-in is self-contained
-        // inside the connect_done closure.
-        *self.current_track_animation.borrow_mut() = Some(fade_out);
     }
 
     /// Clears the track labels back to empty — used when playback stops with
     /// no track active.
     pub fn clear_track(&self) {
+        let generation = self.track_animation_generation.get().wrapping_add(1);
+        self.track_animation_generation.set(generation);
+        let previous = self.current_track_animation.borrow_mut().take();
+        if let Some(previous) = previous {
+            previous.skip();
+        }
         self.title_label.set_text("");
         self.artist_label.set_text("");
         self.clear_cover();
     }
 
-    /// Applies a `PlaybackState`: cross-fades the play/pause icon (120 ms, spec
-    /// 1.4), toggles the mini-EQ animation, and refreshes sensitivity.
+    /// Applies a `PlaybackState`: cross-fades the play/pause icon in two 75 ms
+    /// halves, toggles the mini-EQ animation, and refreshes sensitivity.
     pub fn set_state(&self, state: PlaybackState) {
         let is_playing = state == PlaybackState::Playing;
         let new_icon = if is_playing { ICON_PAUSE } else { ICON_PLAY };
@@ -366,34 +385,44 @@ impl PlayerBar {
         self.animate_play_icon_change(new_icon);
     }
 
-    /// 120 ms opacity cross-fade for the play↔pause icon swap (spec 1.4).
-    /// Gated on `gtk-enable-animations`; instant swap otherwise.
+    /// 150 ms opacity cross-fade for the play↔pause icon swap.
     fn animate_play_icon_change(&self, new_icon: &'static str) {
-        let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
-        if !animate {
-            self.play_pause_button.set_icon_name(new_icon);
-            return;
-        }
+        let generation = self.icon_animation_generation.get().wrapping_add(1);
+        self.icon_animation_generation.set(generation);
         let button = self.play_pause_button.clone();
+        let animation_slot = self.current_icon_animation.clone();
+        let animation_generation = self.icon_animation_generation.clone();
 
         let fade_out_target = libadwaita::CallbackAnimationTarget::new({
             let button = button.clone();
             move |value| button.set_opacity(value)
         });
-        let fade_out =
-            libadwaita::TimedAnimation::new(&self.play_pause_button, 1.0, 0.0, 60, fade_out_target);
+        let fade_out = motion::timed(
+            &self.play_pause_button,
+            1.0,
+            0.0,
+            motion::MICRO,
+            fade_out_target,
+        );
 
         fade_out.connect_done(move |_| {
             button.set_icon_name(new_icon);
+            if animation_generation.get() != generation {
+                button.set_opacity(1.0);
+                return;
+            }
             let fade_in_target = libadwaita::CallbackAnimationTarget::new({
                 let button = button.clone();
                 move |value| button.set_opacity(value)
             });
-            let fade_in = libadwaita::TimedAnimation::new(&button, 0.0, 1.0, 60, fade_in_target);
+            let fade_in = motion::timed(&button, 0.0, 1.0, motion::MICRO, fade_in_target);
+            fade_in.set_duration(motion::half(motion::MICRO));
+            motion::replace_animation(&animation_slot, fade_in.clone());
             fade_in.play();
         });
+        fade_out.set_duration(motion::half(motion::MICRO));
+        motion::replace_animation(&self.current_icon_animation, fade_out.clone());
         fade_out.play();
-        *self.current_icon_animation.borrow_mut() = Some(fade_out);
     }
 
     /// Updates the waveform's played fraction and the time labels for a
@@ -657,3 +686,7 @@ impl Default for PlayerBar {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "player_bar_tests.rs"]
+mod tests;

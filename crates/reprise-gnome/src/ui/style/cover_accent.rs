@@ -15,6 +15,8 @@ use std::cell::RefCell;
 use gtk4::prelude::IsA;
 use libadwaita::prelude::AnimationExt;
 
+use crate::ui::motion;
+
 /// Edge length the cover is scaled to before sampling — small enough to be
 /// cheap, large enough to be representative.
 const SAMPLE_EDGE: i32 = 32;
@@ -310,17 +312,20 @@ fn lerp(a: u8, b: u8, t: f64) -> u8 {
         .clamp(0.0, 255.0) as u8
 }
 
-/// Animates the cover accent from `old` to `new` over 400 ms using
-/// `adw::TimedAnimation`. Falls back to an instant switch when GTK animations
-/// are disabled or when `old == new`. A `None` argument uses the Petrol teal
-/// fallback (#1CA98F) as the interpolation endpoint.
+/// Animates the cover accent from `old` to `new` with the Ambient token.
+/// The central motion helper follows the system animation setting. A `None`
+/// argument uses the Petrol teal fallback (#1CA98F) as the interpolation
+/// endpoint.
 pub(in crate::ui) fn cross_fade_accent(
     old: Option<Rgb>,
     new: Option<Rgb>,
     widget: &impl IsA<gtk4::Widget>,
 ) {
-    let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
-    if !animate || old == new {
+    if old == new {
+        let previous = CURRENT_ANIMATION.with(|slot| slot.borrow_mut().take());
+        if let Some(previous) = previous {
+            previous.skip();
+        }
         set_cover_accent(new);
         return;
     }
@@ -335,11 +340,9 @@ pub(in crate::ui) fn cross_fade_accent(
         set_cover_accent(Some(Rgb { r, g, b }));
     });
 
-    let animation = libadwaita::TimedAnimation::new(widget, 0.0, 1.0, 400, target);
+    let animation = motion::timed(widget, 0.0, 1.0, motion::AMBIENT, target);
+    CURRENT_ANIMATION.with(|slot| motion::replace_animation(slot, animation.clone()));
     animation.play();
-
-    // Keep the animation alive until it finishes (or the next fade replaces it).
-    CURRENT_ANIMATION.with(|slot| *slot.borrow_mut() = Some(animation));
 }
 
 // ---------------------------------------------------------------------------
@@ -487,5 +490,45 @@ mod tests {
         assert_eq!(lerp(0, 200, 1.0), 200);
         assert_eq!(lerp(0, 200, 0.5), 100);
         assert_eq!(lerp(100, 200, 0.5), 150);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_6_replacing_an_accent_fade_skips_the_previous_animation() {
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let previous_setting = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(true);
+        let label = gtk4::Label::new(None);
+        let red = Some(Rgb {
+            r: 220,
+            g: 40,
+            b: 40,
+        });
+        let blue = Some(Rgb {
+            r: 40,
+            g: 40,
+            b: 220,
+        });
+        let green = Some(Rgb {
+            r: 40,
+            g: 220,
+            b: 40,
+        });
+
+        cross_fade_accent(red, blue, &label);
+        let first = CURRENT_ANIMATION.with(|slot| slot.borrow().as_ref().unwrap().clone());
+        cross_fade_accent(blue, green, &label);
+
+        assert_eq!(first.state(), libadwaita::AnimationState::Finished);
+        CURRENT_ANIMATION.with(|slot| {
+            let animation = slot.borrow();
+            let animation = animation.as_ref().unwrap();
+            assert_eq!(animation.duration(), motion::AMBIENT_MS);
+            assert_eq!(animation.easing(), motion::AMBIENT_EASING);
+            assert!(animation.follows_enable_animations_setting());
+        });
+
+        settings.set_gtk_enable_animations(previous_setting);
     }
 }

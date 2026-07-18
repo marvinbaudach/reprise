@@ -30,14 +30,13 @@ use super::compact_player_layouts::{build_mini, MiniWidgets};
 use super::compact_player_menu::{self, CompactMenu};
 use super::compact_player_scroll;
 use super::cover_loader::CoverLoader;
+use super::motion;
 use super::strings;
 use super::style;
 
 const ICON_PLAY: &str = "media-playback-start-symbolic";
 const ICON_PAUSE: &str = "media-playback-pause-symbolic";
 
-/// Duration of one half of the label opacity crossfade (fade-out or fade-in).
-const CROSSFADE_HALF_MS: u32 = 125;
 /// How long the volume feedback bar stays visible after a scroll event.
 const VOL_BAR_LINGER_MS: u64 = 800;
 /// Delay before the hover overlay fades out after the pointer leaves.
@@ -57,6 +56,9 @@ struct Inner {
     vol_bar_hide_source: RefCell<Option<gtk4::glib::SourceId>>,
     /// Pending hide-timer handle for the hover overlay.
     hover_hide_source: RefCell<Option<gtk4::glib::SourceId>>,
+    /// The active title/artist crossfade half, replaced with skip semantics.
+    current_track_animation: Rc<RefCell<Option<adw::TimedAnimation>>>,
+    track_animation_generation: Rc<Cell<u64>>,
 }
 
 // ── Public type ─────────────────────────────────────────────────────────────
@@ -97,6 +99,8 @@ impl CompactPlayer {
             current_volume: Cell::new(1.0),
             vol_bar_hide_source: RefCell::new(None),
             hover_hide_source: RefCell::new(None),
+            current_track_animation: Rc::new(RefCell::new(None)),
+            track_animation_generation: Rc::new(Cell::new(0)),
         });
 
         wire_hover(&inner);
@@ -126,21 +130,21 @@ impl CompactPlayer {
 // ── State setters (called from `now_playing_wiring`) ─────────────────────────
 
 impl CompactPlayer {
-    /// Crossfades the title and artist labels when the track changes (gated on
-    /// `gtk-enable-animations`). The cover is not animated here — it is
-    /// managed by `CoverLoader` asynchronously.
+    /// Crossfades the title and artist labels when the track changes. The
+    /// central motion helper follows the system animation setting; the cover
+    /// is managed by `CoverLoader` asynchronously.
     pub(in crate::ui) fn set_track(&self, title: &str, artist: &str) {
-        let animate = gtk4::Settings::default().is_none_or(|s| s.is_gtk_enable_animations());
-        if animate {
-            start_label_crossfade(&self.0, title.to_owned(), artist.to_owned());
-        } else {
-            self.0.widgets.title_label.set_text(title);
-            self.0.widgets.artist_label.set_text(artist);
-        }
+        start_label_crossfade(&self.0, title.to_owned(), artist.to_owned());
     }
 
     /// Resets all displayed metadata to the empty state.
     pub(in crate::ui) fn clear_track(&self) {
+        let generation = self.0.track_animation_generation.get().wrapping_add(1);
+        self.0.track_animation_generation.set(generation);
+        let previous = self.0.current_track_animation.borrow_mut().take();
+        if let Some(previous) = previous {
+            previous.skip();
+        }
         self.0.widgets.title_label.set_text("");
         self.0.widgets.artist_label.set_text("");
         self.0.current_duration_ms.set(0);
@@ -398,33 +402,53 @@ fn wire_keyboard_menu(inner: &Rc<Inner>) {
 }
 
 /// Cross-fades the title and artist labels: fade out → swap text → fade in.
-/// Uses two simultaneous `adw::TimedAnimation`s on `opacity`; the swap and
-/// fade-in are triggered by the `done` signal of the title fade-out.
+/// Uses one callback target for both labels; the swap and fade-in are
+/// triggered by the fade-out's `done` signal.
 fn start_label_crossfade(inner: &Rc<Inner>, title: String, artist: String) {
+    let generation = inner.track_animation_generation.get().wrapping_add(1);
+    inner.track_animation_generation.set(generation);
     let title_lbl = inner.widgets.title_label.clone();
     let artist_lbl = inner.widgets.artist_label.clone();
+    let animation_slot = inner.current_track_animation.clone();
+    let animation_generation = inner.track_animation_generation.clone();
 
-    // Fade out title; on completion, swap and fade in both.
-    let tgt_title = adw::PropertyAnimationTarget::new(&title_lbl, "opacity");
-    let fade_out = adw::TimedAnimation::new(&title_lbl, 1.0, 0.0, CROSSFADE_HALF_MS, tgt_title);
-
-    // Fade out artist simultaneously (no done handler needed).
-    let tgt_artist = adw::PropertyAnimationTarget::new(&artist_lbl, "opacity");
-    let fade_out_a = adw::TimedAnimation::new(&artist_lbl, 1.0, 0.0, CROSSFADE_HALF_MS, tgt_artist);
+    let fade_out_target = adw::CallbackAnimationTarget::new({
+        let title_lbl = title_lbl.clone();
+        let artist_lbl = artist_lbl.clone();
+        move |value| {
+            title_lbl.set_opacity(value);
+            artist_lbl.set_opacity(value);
+        }
+    });
+    let fade_out = motion::timed(&title_lbl, 1.0, 0.0, motion::STANDARD, fade_out_target);
 
     fade_out.connect_done(move |_| {
         title_lbl.set_text(&title);
         artist_lbl.set_text(&artist);
 
-        let tgt_t = adw::PropertyAnimationTarget::new(&title_lbl, "opacity");
-        adw::TimedAnimation::new(&title_lbl, 0.0, 1.0, CROSSFADE_HALF_MS, tgt_t).play();
+        if animation_generation.get() != generation {
+            title_lbl.set_opacity(1.0);
+            artist_lbl.set_opacity(1.0);
+            return;
+        }
 
-        let tgt_a = adw::PropertyAnimationTarget::new(&artist_lbl, "opacity");
-        adw::TimedAnimation::new(&artist_lbl, 0.0, 1.0, CROSSFADE_HALF_MS, tgt_a).play();
+        let fade_in_target = adw::CallbackAnimationTarget::new({
+            let title_lbl = title_lbl.clone();
+            let artist_lbl = artist_lbl.clone();
+            move |value| {
+                title_lbl.set_opacity(value);
+                artist_lbl.set_opacity(value);
+            }
+        });
+        let fade_in = motion::timed(&title_lbl, 0.0, 1.0, motion::STANDARD, fade_in_target);
+        fade_in.set_duration(motion::half(motion::STANDARD));
+        motion::replace_animation(&animation_slot, fade_in.clone());
+        fade_in.play();
     });
 
+    fade_out.set_duration(motion::half(motion::STANDARD));
+    motion::replace_animation(&inner.current_track_animation, fade_out.clone());
     fade_out.play();
-    fade_out_a.play();
 }
 
 /// Shows the accent-coloured volume bar at the top edge of the card, then
@@ -477,5 +501,38 @@ mod tests {
         player.set_on_restore(Rc::new(move || fired2.set(true)));
         player.activate_restore_for_test();
         assert!(fired.get());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_6_compact_track_change_replaces_the_running_animation_slot() {
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let previous = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(true);
+
+        let player = CompactPlayer::new();
+        let window = gtk4::Window::new();
+        window.set_child(Some(player.handle()));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        player.0.widgets.title_label.set_text("Before");
+        player.set_track("First", "First artist");
+        player.set_track("Second", "Second artist");
+
+        assert_eq!(player.0.widgets.title_label.text(), "First");
+        assert_eq!(player.0.widgets.artist_label.text(), "First artist");
+        assert_eq!(player.0.widgets.title_label.opacity(), 1.0);
+        {
+            let animation = player.0.current_track_animation.borrow();
+            let animation = animation.as_ref().unwrap();
+            assert_eq!(animation.duration(), motion::half(motion::STANDARD));
+            assert_eq!(animation.easing(), motion::STANDARD_EASING);
+            assert!(animation.follows_enable_animations_setting());
+        }
+
+        settings.set_gtk_enable_animations(previous);
+        window.close();
     }
 }

@@ -80,6 +80,7 @@ impl LyricsView {
 
         let root = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
+            .transition_duration(crate::ui::motion::STANDARD_MS)
             .vexpand(true)
             .build();
         root.add_named(&scrolled, Some(CONTENT_PAGE));
@@ -330,4 +331,18 @@ pub(in crate::ui) fn centered_scroll_value(
 /// Active synchronized-line emphasis; installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
     format!(".{ACTIVE_LINE_CLASS} {{ color: @accent_color; font-weight: 700; }}")
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_1_lyrics_pages_use_the_standard_motion_token() {
+    gtk4::init().unwrap();
+
+    let lyrics = LyricsView::new();
+
+    assert_eq!(
+        lyrics.root.transition_duration(),
+        crate::ui::motion::STANDARD_MS
+    );
 }

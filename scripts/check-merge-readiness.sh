@@ -45,6 +45,9 @@ scripts/check-architecture.sh
 echo "== UX traceability =="
 scripts/check-ux-traceability.sh
 
+echo "== Motion tokens =="
+scripts/check-motion-tokens.sh
+
 echo "== Rust formatting =="
 cargo fmt --check
 
@@ -63,6 +66,13 @@ env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
 
 echo "== Rule-named display tests =="
 scripts/check-display-tests.sh --rule-named
+
+# The MOT section of docs/ux-rules.md is Phase 2, so the motion tests carry no
+# active/committed rule prefix yet and --rule-named filters them all out. Run
+# them explicitly so the Phase 1 gate actually exercises the motion behaviour
+# instead of silently skipping every #[ignore]d motion test.
+echo "== Motion display tests =="
+scripts/check-display-tests.sh --motion
 
 echo "== Dependency audit =="
 cargo audit

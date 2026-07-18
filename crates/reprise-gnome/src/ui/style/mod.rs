@@ -228,4 +228,113 @@ mod tests {
         super::install();
         super::INSTALLED.with(|installed| assert!(!installed.get()));
     }
+
+    /// Iterates the default main context until `ms` wall-clock milliseconds
+    /// have passed, so frame-clock driven CSS animation can progress.
+    fn pump_ms(ms: u64) {
+        let done = std::rc::Rc::new(std::cell::Cell::new(false));
+        let done_setter = done.clone();
+        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || {
+            done_setter.set(true);
+        });
+        let context = gtk4::glib::MainContext::default();
+        while !done.get() {
+            context.iteration(true);
+        }
+    }
+
+    /// CSS T-V probe (motion plan, task T2): establishes whether GTK's CSS
+    /// `transition:` and `@keyframes` machinery follows
+    /// `gtk-enable-animations=false`. A probe box animates `min-height`
+    /// 10px⇄90px over 600 ms; sampling mid-flight distinguishes an
+    /// interpolating run from a hard switch. The finding is recorded in the
+    /// `ui/motion.rs` module docs (MOT-7 contract).
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mot_7_css_honours_enable_animations_setting() {
+        use gtk4::prelude::*;
+
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let previous = settings.is_gtk_enable_animations();
+
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_string(
+            ".tv-probe { min-height: 10px; transition: min-height 600ms linear; }
+             .tv-probe.tv-grown { min-height: 90px; }
+             @keyframes tv-loop { from { min-height: 10px; } to { min-height: 90px; } }
+             .tv-probe.tv-looping { animation: tv-loop 600ms linear infinite alternate; }",
+        );
+        let display = gtk4::gdk::Display::default().unwrap();
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+
+        let probe = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        probe.add_css_class("tv-probe");
+        probe.set_valign(gtk4::Align::Start);
+        let window = gtk4::Window::new();
+        window.set_default_size(300, 300);
+        window.set_child(Some(&probe));
+        window.present();
+        pump_ms(100);
+        assert_eq!(probe.height(), 10);
+
+        // Baseline: with animations enabled the transition must interpolate,
+        // otherwise this environment cannot answer the question at all.
+        settings.set_gtk_enable_animations(true);
+        probe.add_css_class("tv-grown");
+        pump_ms(200);
+        let mid_enabled = probe.height();
+        pump_ms(1200);
+        let end_enabled = probe.height();
+        probe.remove_css_class("tv-grown");
+        pump_ms(1200);
+
+        // The same style change with animations disabled.
+        settings.set_gtk_enable_animations(false);
+        probe.add_css_class("tv-grown");
+        pump_ms(200);
+        let mid_disabled = probe.height();
+        pump_ms(1200);
+        let end_disabled = probe.height();
+        probe.remove_css_class("tv-grown");
+        pump_ms(1200);
+
+        // Keyframes while animations stay disabled: two mid-cycle samples.
+        probe.add_css_class("tv-looping");
+        pump_ms(150);
+        let loop_sample_a = probe.height();
+        pump_ms(220);
+        let loop_sample_b = probe.height();
+        probe.remove_css_class("tv-looping");
+
+        println!(
+            "T-V probe: enabled mid={mid_enabled} end={end_enabled}; \
+             disabled mid={mid_disabled} end={end_disabled}; \
+             disabled keyframes samples a={loop_sample_a} b={loop_sample_b}"
+        );
+
+        settings.set_gtk_enable_animations(previous);
+        window.close();
+
+        assert_eq!(end_enabled, 90);
+        assert!(
+            mid_enabled > 10 && mid_enabled < 90,
+            "baseline transition did not interpolate (mid={mid_enabled}) — probe inconclusive"
+        );
+        // Finding (first executed 2026-07-18 on Xvfb): CSS honours the setting.
+        assert_eq!(
+            mid_disabled, 90,
+            "CSS transition interpolated despite gtk-enable-animations=false"
+        );
+        assert_eq!(end_disabled, 90);
+        assert_eq!(
+            (loop_sample_a, loop_sample_b),
+            (10, 10),
+            "CSS @keyframes kept running despite gtk-enable-animations=false"
+        );
+    }
 }
