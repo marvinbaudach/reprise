@@ -10,9 +10,9 @@ pub(in crate::ui) const COVER_CONTAINER_CLASS: &str = "album-cover-container";
 pub(in crate::ui) const FOCUS_FRAME_CLASS: &str = "album-focus-frame";
 pub(in crate::ui) const PLAYING_FRAME_CLASS: &str = "album-playing-frame";
 pub(in crate::ui) const PLAYING_LAYER_CLASS: &str = "album-playing-layer";
-pub(in crate::ui) const HOVER_OVERLAY_CLASS: &str = "album-hover-overlay";
+pub(in crate::ui) const HOVER_OVERLAY_CLASS: &str = "album-bottom-gradient";
+pub(in crate::ui) const META_CLASS: &str = "album-card-meta";
 pub(in crate::ui) const PLAY_BUTTON_CLASS: &str = "album-play-btn";
-pub(in crate::ui) const EQ_CONTAINER_CLASS: &str = "album-eq-container";
 pub(in crate::ui) const TITLE_CLASS: &str = "album-card-title";
 pub(in crate::ui) const SUBTITLE_CLASS: &str = "album-card-subtitle";
 pub(in crate::ui) const PLACEHOLDER_CLASS: &str = "album-placeholder";
@@ -63,11 +63,15 @@ pub(in crate::ui) fn css() -> String {
          .{COVER_CLASS} {{ \
            border-radius: 10px; }}\n\
          \
-         /* Hover overlay: gradient + play button, fades in. */
+         /* Bottom interaction gradient: metadata + play button, fades in. */
          .{HOVER_OVERLAY_CLASS} {{ \
            opacity: 0; \
            transition: opacity {transition}; \
-           border-radius: 10px; }}\n\
+           padding: 40px 8px 8px; \
+           border-radius: 10px; \
+           background: linear-gradient(to bottom, \
+             rgba(0,0,0,0.0) 0%, rgba(0,0,0,0.28) 38%, \
+             rgba(0,0,0,0.82) 100%); }}\n\
          .{CARD_CLASS}:hover .{HOVER_OVERLAY_CLASS}, \
          .library-grid child:focus-visible .{HOVER_OVERLAY_CLASS} {{ \
            opacity: 1; }}\n\
@@ -76,19 +80,15 @@ pub(in crate::ui) fn css() -> String {
          .{PLAY_BUTTON_CLASS} {{ \
            min-width: 42px; min-height: 42px; \
            border-radius: 999px; \
-           background-color: @accent_bg_color; \
-           color: @accent_fg_color; \
-           margin: 8px; \
-           box-shadow: 0 2px 8px rgba(0,0,0,0.3); }}\n\
+           background-color: @reprise_player_accent; \
+           color: white; margin: 0; \
+           transition: box-shadow {transition}, background-color {transition}; \
+           box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.40); }}\n\
          .{PLAY_BUTTON_CLASS}:hover {{ \
-           background-color: lighter(@accent_bg_color); }}\n\
-         \
-         /* EQ container: bottom-left, always visible when now-playing. */
-         .{EQ_CONTAINER_CLASS} {{ \
-           margin: 8px; \
-           padding: 4px; \
-           background-color: rgba(0,0,0,0.5); \
-           border-radius: 6px; }}\n\
+           background-color: lighter(@reprise_player_accent); \
+           box-shadow: 0 0 18px alpha(@reprise_player_accent, 0.60); }}\n\
+         .{META_CLASS} {{ \
+           color: alpha(white, 0.78); font-size: 10.5px; }}\n\
          \
          /* Text labels below cover. */
          .{TITLE_CLASS} {{ \
@@ -130,9 +130,9 @@ mod tests {
         assert!(css.contains(".album-playing-frame"));
         assert!(css.contains(".album-playing-layer"));
         assert!(css.contains(".album-cover"));
-        assert!(css.contains(".album-hover-overlay"));
+        assert!(css.contains(".album-bottom-gradient"));
+        assert!(css.contains(".album-card-meta"));
         assert!(css.contains(".album-play-btn"));
-        assert!(css.contains(".album-eq-container"));
         assert!(css.contains(".album-card-title"));
         assert!(css.contains(".album-card-subtitle"));
         assert!(css.contains(".album-placeholder"));
@@ -157,10 +157,21 @@ mod tests {
     fn focus_and_playing_layers_have_independent_cover_only_selectors() {
         let css = super::css();
         assert!(css.contains(".library-grid child:focus-visible .album-focus-frame"));
-        assert!(css.contains(".library-grid child:focus-visible .album-hover-overlay"));
+        assert!(css.contains(".library-grid child:focus-visible .album-bottom-gradient"));
         assert!(css.contains("box-shadow: 0 0 0 2px @accent_color"));
         assert!(css.contains("inset 0 0 0 1.5px @reprise_player_accent"));
         assert!(!css.contains(".album-card:focus-visible"));
+    }
+
+    #[test]
+    fn grid_4_bottom_gradient_css_contract() {
+        let css = super::css();
+        assert!(css.contains(".album-bottom-gradient"));
+        assert!(css.contains("linear-gradient(to bottom"));
+        assert!(css.contains("@reprise_player_accent"));
+        assert!(css.contains("transition: opacity 150ms ease-out"));
+        assert!(!css.contains("@accent_bg_color"));
+        assert!(!css.contains("album-eq-container"));
     }
 
     #[test]

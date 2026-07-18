@@ -65,8 +65,8 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
     artist_label.set_xalign(0.0);
     artist_label.set_hexpand(true);
     artist_label.add_css_class(CSS_ARTIST);
-    arm_ellipsis_tooltip(&title_label);
-    arm_ellipsis_tooltip(&artist_label);
+    crate::ui::ellipsis_tooltip::arm(&title_label);
+    crate::ui::ellipsis_tooltip::arm(&artist_label);
 
     // — Meta row (title · artist) —
     let meta_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
@@ -199,20 +199,6 @@ pub(in crate::ui) fn mini_css() -> String {
            border-radius: 0 {CARD_RADIUS}px 0 {CARD_RADIUS}px; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}"
     )
-}
-
-/// Installs a tooltip that only appears when the label text is ellipsized.
-fn arm_ellipsis_tooltip(label: &gtk4::Label) {
-    label.set_has_tooltip(true);
-    label.connect_query_tooltip(|label, _x, _y, _keyboard, tooltip| {
-        let (_, natural, _, _) = label.measure(gtk4::Orientation::Horizontal, -1);
-        if natural > label.width() {
-            tooltip.set_text(Some(&label.text()));
-            true
-        } else {
-            false
-        }
-    });
 }
 
 #[cfg(test)]
