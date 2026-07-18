@@ -45,7 +45,12 @@ pub(in crate::ui) fn build_views(
     albums: &impl IsA<gtk4::Widget>,
     artists: &impl IsA<gtk4::Widget>,
 ) -> LibraryViews {
+    // Size to the visible page, not the widest one: a homogeneous stack would
+    // reserve the (wide) track table's minimum width even while the Artists or
+    // Albums page is shown, forcing the whole content — and the full-width
+    // player bar below it — past the window edge (QA #3/#4).
     let stack = gtk4::Stack::builder()
+        .hhomogeneous(false)
         .transition_type(gtk4::StackTransitionType::Crossfade)
         .transition_duration(crate::ui::motion::STANDARD_MS)
         .build();

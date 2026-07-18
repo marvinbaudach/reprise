@@ -370,6 +370,10 @@ pub fn build(
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
     let content_stack = gtk4::Stack::new();
+    // Size to the visible page (see the library stack's `set_hhomogeneous`):
+    // Stats/Device pages must not inherit the library's minimum width, nor vice
+    // versa, or the whole content is forced past the window edge (QA #3/#4).
+    content_stack.set_hhomogeneous(false);
     content_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     content_stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
     content_stack.add_named(&library_views.stack, Some("library"));
