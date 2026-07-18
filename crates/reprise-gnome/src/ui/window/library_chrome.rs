@@ -39,6 +39,7 @@ pub(in crate::ui) fn build(
     header: &adw::HeaderBar,
     content: &impl IsA<gtk4::Widget>,
 ) -> LibraryChrome {
+    header.add_css_class("reprise-library-header");
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
     root.add_top_bar(header);
@@ -110,7 +111,11 @@ pub(in crate::ui) fn build_library_title(
 /// `@window_fg_color` (near-white on the dark theme) keeps it theme-aware.
 /// Installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
-    ".reprise-view-switcher { \
+    ".reprise-library-split .reprise-library-sidebar { \
+       border-right: 1px solid rgba(255, 255, 255, 0.06); }\n\
+     .reprise-library-header { \
+       border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
+     .reprise-view-switcher { \
        background-color: alpha(@window_fg_color, 0.06); \
        border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\
      .reprise-view-switcher > button { \
@@ -142,6 +147,25 @@ mod tests {
     }
 
     #[test]
+    fn chrome_separator_css_defines_scoped_hairlines() {
+        let css = css();
+
+        assert!(css.contains(".reprise-library-split .reprise-library-sidebar"));
+        assert!(css.contains("border-right: 1px solid rgba(255, 255, 255, 0.06)"));
+        assert!(css.contains(".reprise-library-header"));
+        assert!(css.contains("border-bottom: 1px solid rgba(255, 255, 255, 0.06)"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn chrome_separator_css_parses() {
+        gtk4::init().unwrap();
+        let errors = crate::ui::style::css_parse_errors(&css());
+
+        assert!(errors.is_empty(), "CSS parse errors: {errors:?}");
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn header_spans_the_navigation_with_loose_centering() {
         if gtk4::init().is_err() {
@@ -161,6 +185,7 @@ mod tests {
         assert_eq!(header.centering_policy(), adw::CenteringPolicy::Loose);
         assert_eq!(search.width_request(), 300);
         assert_eq!(chrome.root.top_bar_style(), adw::ToolbarStyle::Flat);
+        assert!(header.has_css_class("reprise-library-header"));
         assert_eq!(
             chrome.root.content().as_ref(),
             Some(navigation.upcast_ref())
