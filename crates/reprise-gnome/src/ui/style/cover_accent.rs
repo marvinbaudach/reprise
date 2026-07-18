@@ -101,6 +101,25 @@ fn oklab_to_linear_rgb(lab_l: f64, lab_a: f64, lab_b: f64) -> (f64, f64, f64) {
     (r, g, b)
 }
 
+/// Scales an sRGB color's OKLCH chroma while preserving its lightness and hue.
+/// Inputs and outputs use Cairo's normalized 0..1 channel range. This is pure
+/// color math and deliberately does not touch the global cover-accent provider.
+pub(in crate::ui) fn scale_chroma(r: f64, g: f64, b: f64, factor: f64) -> (f64, f64, f64) {
+    let to_channel = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let (l, a, b) = linear_rgb_to_oklab(
+        to_linear(to_channel(r)),
+        to_linear(to_channel(g)),
+        to_linear(to_channel(b)),
+    );
+    let factor = factor.clamp(0.0, 1.0);
+    let (lr, lg, lb) = oklab_to_linear_rgb(l, a * factor, b * factor);
+    (
+        f64::from(from_linear(lr)) / 255.0,
+        f64::from(from_linear(lg)) / 255.0,
+        f64::from(from_linear(lb)) / 255.0,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // OKLCH clamping
 // ---------------------------------------------------------------------------
@@ -405,6 +424,27 @@ mod tests {
             clamped.r > 100 && clamped.r < 230,
             "unexpected clamped red: {clamped:?}"
         );
+    }
+
+    #[test]
+    fn chroma_scaling_is_draw_local_and_leaves_provider_state_untouched() {
+        ACCENT_PROVIDER.with(|slot| slot.borrow_mut().take());
+        CURRENT_ANIMATION.with(|slot| slot.borrow_mut().take());
+
+        let original = (0.8, 0.2, 0.1);
+        let unchanged = scale_chroma(original.0, original.1, original.2, 1.0);
+        assert!((unchanged.0 - original.0).abs() <= 1.0 / 255.0);
+        assert!((unchanged.1 - original.1).abs() <= 1.0 / 255.0);
+        assert!((unchanged.2 - original.2).abs() <= 1.0 / 255.0);
+
+        let gray = scale_chroma(original.0, original.1, original.2, 0.0);
+        assert!((gray.0 - gray.1).abs() <= 1.0 / 255.0);
+        assert!((gray.1 - gray.2).abs() <= 1.0 / 255.0);
+
+        // Chroma scaling is pure draw-time math: it neither replaces nor
+        // reloads the application-wide cover-accent provider.
+        ACCENT_PROVIDER.with(|slot| assert!(slot.borrow().is_none()));
+        CURRENT_ANIMATION.with(|slot| assert!(slot.borrow().is_none()));
     }
 
     #[test]
