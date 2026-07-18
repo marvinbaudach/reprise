@@ -338,10 +338,19 @@ WHERE missing_since IS NULL AND removed_at IS NULL;
 /// Schema v14: streams album-sorted visible-library windows from a partial
 /// index instead of re-sorting the full library for every 200-row page. The
 /// expression and collation exactly match the shared album sort contract;
-/// `track_no` preserves the established within-album order.
+/// `track_no` preserves the established within-album order. Recreating the
+/// title index last is intentional: before SQLite has collected statistics,
+/// otherwise it uses the newest equally eligible partial index for aggregate
+/// scans. Album order scatters table lookups for counts and duration sums,
+/// while title order retains the established, cache-friendly query plan.
 const SCHEMA_V14: &str = r#"
 CREATE INDEX idx_tracks_present_album_order
 ON tracks(album COLLATE NOCASE, track_no)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+
+DROP INDEX idx_tracks_present_title_nocase;
+CREATE INDEX idx_tracks_present_title_nocase
+ON tracks(title COLLATE NOCASE)
 WHERE missing_since IS NULL AND removed_at IS NULL;
 "#;
 
