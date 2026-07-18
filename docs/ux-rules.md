@@ -209,7 +209,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Hover bleiben getrennte Zustandslayer: Playing innen, Fokus außen,
   Interaktions-Overlay darüber; kombinierte Zustände verdecken einander
   nicht.
-- **GRID-4** [geplant] [gtk] — Bottom-Gradient-Overlay: Hover oder Fokus
+- **GRID-4** [aktiv] [gtk] — Bottom-Gradient-Overlay: Hover oder Fokus
   blendet statt einer schwebenden Tooltip-Box einen unten verankerten
   Abdunkel-Gradienten ein. Darin stehen eine dünne Metazeile („13 tracks ·
   47 min") und unten rechts ein Play/Pause-Button in

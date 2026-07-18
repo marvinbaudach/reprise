@@ -30,6 +30,22 @@ pub fn album_duration(total_ms: i64) -> String {
     }
 }
 
+pub fn album_meta(track_count: i64, total_duration_ms: i64) -> String {
+    let count = usize::try_from(track_count.max(0)).unwrap_or(usize::MAX);
+    let count_text = count.to_string();
+    let tracks = super::plural(
+        N_!("{count} track"),
+        N_!("{count} tracks"),
+        count,
+        &[("count", &count_text)],
+    );
+    if total_duration_ms <= 0 {
+        tracks
+    } else {
+        format!("{tracks} · {}", album_duration(total_duration_ms))
+    }
+}
+
 pub const ABOUT_REPRISE: &str = N_!("About Reprise");
 pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linux Platform");
 

@@ -111,6 +111,22 @@ fn placeholder_gradient_class_stays_in_palette() {
 }
 
 #[test]
+fn album_meta_formats_plural_singular_and_missing_duration() {
+    let mut summary = album("Album");
+    summary.track_count = 13;
+    summary.total_duration_ms = 47 * 60_000;
+    assert_eq!(format_meta(&summary), "13 tracks · 47 min");
+
+    summary.track_count = 1;
+    summary.total_duration_ms = 60_000;
+    assert_eq!(format_meta(&summary), "1 track · 1 min");
+
+    summary.track_count = 2;
+    summary.total_duration_ms = 0;
+    assert_eq!(format_meta(&summary), "2 tracks");
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn grid_1_playing_badge_persists_without_hover() {
     gtk4::init().unwrap();
@@ -220,6 +236,55 @@ fn grid_3_focus_ring_and_overlay_on_focus() {
         crate::ui::album_view_actions::AlbumKeyAction::Propagate,
         "arrow navigation stays native to the two-column GridView"
     );
+
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn grid_4_hover_uses_bottom_gradient_not_tooltip_box() {
+    gtk4::init().unwrap();
+    let shared = shared(None);
+    let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
+    let mut summary = album("Test Album");
+    summary.track_count = 13;
+    summary.total_duration_ms = 47 * 60_000;
+    store.append(&glib::BoxedAnyObject::new(summary));
+    let selection = gtk4::NoSelection::new(Some(store));
+    let grid = gtk4::GridView::new(Some(selection), Some(build_factory(&shared)));
+    let window = gtk4::Window::builder().child(&grid).build();
+    window.present();
+    wait_for_layout();
+
+    let card = descendants_with_class(grid.upcast_ref(), css::CARD_CLASS)
+        .into_iter()
+        .next()
+        .expect("album card");
+    let cover = descendants_with_class(&card, css::COVER_CONTAINER_CLASS)
+        .into_iter()
+        .next()
+        .expect("cover container");
+    let gradient = descendants_with_class(&card, css::HOVER_OVERLAY_CLASS)
+        .into_iter()
+        .next()
+        .and_downcast::<gtk4::Box>()
+        .expect("bottom gradient");
+    assert_eq!(gradient.valign(), gtk4::Align::End);
+    assert_eq!(
+        descendants_with_class(gradient.upcast_ref(), css::META_CLASS)
+            .into_iter()
+            .next()
+            .and_downcast::<gtk4::Label>()
+            .unwrap()
+            .text(),
+        "13 tracks · 47 min"
+    );
+    assert_eq!(
+        descendants_with_class(gradient.upcast_ref(), css::PLAY_BUTTON_CLASS).len(),
+        1
+    );
+    assert!(card.tooltip_text().is_none());
+    assert!(cover.tooltip_text().is_none());
 
     window.close();
 }

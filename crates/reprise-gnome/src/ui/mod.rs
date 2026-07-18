@@ -29,6 +29,7 @@ pub mod delete_tracks;
 mod device_sync;
 mod device_view;
 pub mod dialogs;
+pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;

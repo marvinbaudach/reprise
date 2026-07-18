@@ -89,16 +89,20 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .build();
             playing_layer.append(&eq_bars::build(eq_bars::EqVariant::Animated));
 
-            // Hover overlay: gradient scrim + bottom-row play button.
+            // Bottom interaction gradient: metadata + play button. It stays
+            // independent from the persistent EQ/playing layer.
             let hover_overlay = gtk4::Box::builder()
                 .orientation(gtk4::Orientation::Vertical)
                 .css_classes(vec![css::HOVER_OVERLAY_CLASS.to_owned()])
                 .halign(gtk4::Align::Fill)
-                .valign(gtk4::Align::Fill)
+                .valign(gtk4::Align::End)
                 .build();
-            let spacer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-            spacer.set_vexpand(true);
-            hover_overlay.append(&spacer);
+            let meta_label = gtk4::Label::builder()
+                .css_classes(vec![css::META_CLASS.to_owned()])
+                .xalign(0.0)
+                .halign(gtk4::Align::Fill)
+                .build();
+            hover_overlay.append(&meta_label);
 
             // Bottom row: play button at the right edge.
             let bottom_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
@@ -170,6 +174,8 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .ellipsize(gtk4::pango::EllipsizeMode::End)
                 .max_width_chars(24)
                 .build();
+            crate::ui::ellipsis_tooltip::arm(&title_label);
+            crate::ui::ellipsis_tooltip::arm(&subtitle_label);
 
             // Artist deep-link: GestureClick on subtitle.
             let artist_click = gtk4::GestureClick::new();
@@ -376,7 +382,11 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 playing_frame.remove_css_class(css::PLAYING_FRAME_CLASS);
             }
 
-            // Bottom row: spacer (first child), then play button (last child).
+            if let Some(meta_label) = hover_box.first_child().and_downcast::<gtk4::Label>() {
+                meta_label.set_text(&format_meta(&album));
+            }
+
+            // Bottom row: spacer, then play button.
             if let Some(bottom_row) = hover_box.last_child().and_downcast::<gtk4::Box>() {
                 if let Some(play_btn) = bottom_row.last_child().and_downcast::<gtk4::Button>() {
                     let (icon, label) = match playback {
@@ -507,7 +517,7 @@ pub(in crate::ui) fn derive_initial(album: &str) -> String {
         .map_or_else(|| "♪".to_string(), |c| c.to_uppercase().to_string())
 }
 
-/// Legacy album-summary formatting retained for the bottom metadata line.
+/// Full album summary retained as the card's accessible description.
 pub(in crate::ui) fn format_tooltip(album: &AlbumSummary) -> String {
     let mut parts = vec![album.album.clone()];
     if !album.album_artist.is_empty() {
@@ -516,7 +526,10 @@ pub(in crate::ui) fn format_tooltip(album: &AlbumSummary) -> String {
     if let Some(year) = album.year {
         parts.push(year.to_string());
     }
-    parts.push(format!("{} tracks", album.track_count));
-    parts.push(strings::album_duration(album.total_duration_ms));
+    parts.push(format_meta(album));
     parts.join(" · ")
+}
+
+pub(in crate::ui) fn format_meta(album: &AlbumSummary) -> String {
+    strings::album_meta(album.track_count, album.total_duration_ms)
 }
