@@ -381,12 +381,10 @@ impl TrackListModel {
         self.imp().state.borrow().cache.keys().copied().collect()
     }
 
-    /// Test-only performance diagnostics: number of cached SQL windows and
-    /// total `Track` rows retained by them. The generated-metadata scalability
-    /// probe uses both values to enforce the model's memory budget without
-    /// exposing cache internals to production callers.
-    #[cfg(test)]
-    fn cache_usage(&self) -> (usize, usize) {
+    /// Performance diagnostics for the generated-metadata benchmark: number
+    /// of cached SQL windows and total `Track` rows retained by them. Kept
+    /// crate-private so normal UI behavior cannot couple to cache internals.
+    pub(in crate::ui) fn cache_usage(&self) -> (usize, usize) {
         let state = self.imp().state.borrow();
         let rows = state.cache.values().map(Vec::len).sum();
         (state.cache.len(), rows)
