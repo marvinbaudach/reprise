@@ -452,7 +452,7 @@ pub fn run_auto_clean(conn: &mut Connection, now: i64) -> Result<Vec<i64>, rusql
 /// Total count of `MISSING` tracks (`missing_since IS NOT NULL AND
 /// removed_at IS NULL`), across every `missing_reason` — see this section's
 /// header comment for why this is a different question from [`count_new_
-/// missing`]. Tombstoned rows (`removed_at` set) are excluded by [`MISSING`]
+/// missing`]. Tombstoned rows (`removed_at` set) are excluded by `MISSING`
 /// itself: the user already asked for those to be gone, so they can't be
 /// what makes the sidebar row exist.
 pub fn count_missing(conn: &Connection) -> Result<u32, rusqlite::Error> {
@@ -469,7 +469,7 @@ pub fn count_missing(conn: &Connection) -> Result<u32, rusqlite::Error> {
 /// why "strictly after", not the full total, is the badge's definition.
 /// `missing_since > last_viewed` already implies `missing_since IS NOT
 /// NULL` on its own (SQLite's `>` against `NULL` is never true), but this
-/// still composes the shared [`MISSING`] predicate rather than relying on
+/// still composes the shared `MISSING` predicate rather than relying on
 /// that implication implicitly — the `removed_at IS NULL` half has no such
 /// free ride, and a reader should never have to re-derive "why is this
 /// query safe" from a comparison operator's NULL semantics.
