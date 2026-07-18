@@ -195,6 +195,23 @@ fn build_widgets_for_session(
     footer.set_label(&initial_footer);
 
     {
+        let lyrics_weak = Rc::downgrade(&lyrics);
+        let footer = footer.clone();
+        let footers = footers.clone();
+        let session = session.clone();
+        lyrics.set_on_footer_changed(move || {
+            let Some(lyrics) = lyrics_weak.upgrade() else {
+                return;
+            };
+            let text = lyrics.footer_text();
+            footers.borrow_mut().lyrics = text.clone();
+            if session.selected.get() == PanelTab::Lyrics {
+                footer.set_label(&text);
+            }
+        });
+    }
+
+    {
         let stack = tab_stack.clone();
         let session = session.clone();
         let footer = footer.clone();

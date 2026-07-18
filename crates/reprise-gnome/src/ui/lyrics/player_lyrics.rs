@@ -66,12 +66,15 @@ impl PlayerLyrics {
     }
 
     pub(in crate::ui) fn set_position(&self, position_ms: i64) {
-        self.position_ms.set(position_ms.max(0));
-        let changed = self.state.borrow_mut().update_position(position_ms);
-        if let Some(active) = changed {
-            if let Some(view) = self.view() {
-                view.set_active_line(active);
-            }
+        let position_ms = position_ms.max(0);
+        self.position_ms.set(position_ms);
+        let (active, timestamp_ms) = {
+            let mut state = self.state.borrow_mut();
+            state.update_position(position_ms);
+            (state.active_line(), state.active_line_timestamp_ms())
+        };
+        if let Some(view) = self.view() {
+            view.set_active_line_at(active, timestamp_ms, position_ms);
         }
     }
 
@@ -127,24 +130,24 @@ impl PlayerLyrics {
         if let Some(view) = self.view() {
             view.show_result(body);
         }
-        let active = self
-            .state
-            .borrow_mut()
-            .update_position(self.position_ms.get());
-        if let Some(active) = active {
-            if let Some(view) = self.view() {
-                view.set_active_line(active);
-            }
+        let (active, timestamp_ms) = {
+            let mut state = self.state.borrow_mut();
+            state.update_position(self.position_ms.get());
+            (state.active_line(), state.active_line_timestamp_ms())
+        };
+        if let Some(view) = self.view() {
+            view.set_active_line_at(active, timestamp_ms, self.position_ms.get());
         }
     }
 
     fn render_current(&self) {
-        let (query, body, active) = {
+        let (query, body, active, timestamp_ms) = {
             let state = self.state.borrow();
             (
                 state.query().cloned(),
                 state.body().cloned(),
                 state.active_line(),
+                state.active_line_timestamp_ms(),
             )
         };
         let Some(view) = self.view() else {
@@ -153,7 +156,7 @@ impl PlayerLyrics {
         match (query, body) {
             (_, Some(body)) => {
                 view.show_result(&body);
-                view.set_active_line(active);
+                view.set_active_line_at(active, timestamp_ms, self.position_ms.get());
             }
             (Some(query), None) => view.show_loading(&query.title, &query.artist),
             (None, None) => view.show_empty(),
