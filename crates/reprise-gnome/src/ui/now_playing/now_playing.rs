@@ -286,6 +286,16 @@ impl NowPlayingPanel {
         self.widgets.column.set_visible(true);
     }
 
+    pub(in crate::ui) fn show_up_next(&self) {
+        let (visible, selected) = up_next_route_state();
+        self.widgets.tab_buttons[match selected {
+            PanelTab::UpNext => 0,
+            PanelTab::Lyrics => 1,
+        }]
+        .set_active(true);
+        self.widgets.column.set_visible(visible);
+    }
+
     pub(in crate::ui) fn apply_persisted_visibility(&self, visible: bool) {
         self.syncing_visibility.set(true);
         self.widgets.column.set_visible(visible);
