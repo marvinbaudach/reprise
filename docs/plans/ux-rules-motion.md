@@ -2,7 +2,7 @@
 slug: ux-rules-motion
 worktree: /home/marvin/Projects/reprise/.worktrees/transitions
 branch: feat/ux-rules-motion
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-07-17
 ---
@@ -339,8 +339,9 @@ git commit -m "feat(motion): MOT-6 skip semantics and player-side token migratio
 
 #### Task 8: Token-Migration der konfliktfreien Rest-Call-Sites
 
-- `tokens.rs`: `TRANSITION` konsumiert `motion::MICRO_MS` (Wert bleibt
-  150 ms — Hover/Focus/Press bleiben unverändert schnell).
+- `tokens.rs`: `TRANSITION` konsumiert `motion::MICRO_MS` (Hover/Focus/Press:
+  Dauer bleibt 150 ms; Easing folgt dem Micro-Token (ease-out), abgenommen im
+  Review 2026-07-18).
 - `info_panel.rs:148`, `lyrics_view.rs:82`, `browse_chooser.rs:28`,
   `preference_rhythmbox.rs:323`: explizite `set_transition_duration` mit
   Standard-Token (bisher Default ~200 → bewusst 250).
