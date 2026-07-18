@@ -47,18 +47,18 @@ Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs i
   Nachbarzeilen gestuft: ±1 → weiß 45 %, ±2 → 32 %, weiter → 28 %. Alle Zeilen
   zentriert, 13 px, großzügiger Abstand (~13 px gap). Ganze LRC-Zeilen, kein
   Karaoke-Wort-Highlight.
-- **NPP-6 · Zeilenwechsel-Motion** `[geplant]` — Beim Timestamp-Wechsel
+- **NPP-6 · Zeilenwechsel-Motion** `[aktiv]` — Beim Timestamp-Wechsel
   blendet die neue Zeile 45 % → weiß+bold, die alte zurück (Micro-Token
   150 ms ease-out); gleichzeitig scrollt die Liste die aktive Zeile mittig
   (Standard-Token, ease-out-cubic — kein Spring). Der Unterstrich wandert
   nicht — er gehört zur aktiven Zeile und faded mit ihr.
-- **NPP-7 · Manuelles Scrollen gewinnt** `[geplant]` — User-Scroll pausiert
+- **NPP-7 · Manuelles Scrollen gewinnt** `[aktiv]` — User-Scroll pausiert
   den Auto-Scroll 4 s (Timer resettet bei jedem User-Scroll-Event); danach
   gleitet die Liste zurück zur aktiven Zeile. Während der Pause bekommt die
   aktive Zeile ihr Highlight weiter (nur kein Scroll). User-Scroll bricht auch
   einen laufenden Rück-Glide ab und startet die 4 s neu; programmatische
   Scrolls resetten den Timer nie.
-- **NPP-8 · Klick = Seek** `[geplant]` — Klick auf eine Zeile seekt zum
+- **NPP-8 · Klick = Seek** `[aktiv]` — Klick auf eine Zeile seekt zum
   Timestamp (nur synced). Hover: weiß 65 % + Pointer. Einzige
   Klick-Interaktion im Lyrics-Tab; Lyrics-Text ist nicht selektierbar.
 - **NPP-9 · Fallbacks** `[aktiv]` — Unsynced → statischer scrollbarer Text

@@ -66,6 +66,14 @@ impl PlayerLyrics {
     }
 
     pub(in crate::ui) fn set_position(&self, position_ms: i64) {
+        self.update_position(position_ms, false);
+    }
+
+    pub(in crate::ui) fn external_seek(&self, position_ms: i64) {
+        self.update_position(position_ms, true);
+    }
+
+    fn update_position(&self, position_ms: i64, external_seek: bool) {
         let position_ms = position_ms.max(0);
         self.position_ms.set(position_ms);
         let (active, timestamp_ms) = {
@@ -75,6 +83,9 @@ impl PlayerLyrics {
         };
         if let Some(view) = self.view() {
             view.set_active_line_at(active, timestamp_ms, position_ms);
+            if external_seek {
+                view.external_seek();
+            }
         }
     }
 
@@ -189,8 +200,14 @@ pub(in crate::ui) fn start_track_for_lyrics(
 }
 
 impl PlayerController {
-    pub(in crate::ui) fn set_lyrics_view(&self, view: &Rc<LyricsView>) {
+    pub(in crate::ui) fn set_lyrics_view(self: &Rc<Self>, view: &Rc<LyricsView>) {
         self.lyrics.set_view(view);
+        let player = Rc::downgrade(self);
+        view.set_on_seek(move |position_ms| {
+            if let Some(player) = player.upgrade() {
+                player.seek(position_ms);
+            }
+        });
     }
 
     pub(in crate::ui) fn sync_lyrics_track(&self, query: Option<LyricsQuery>) {

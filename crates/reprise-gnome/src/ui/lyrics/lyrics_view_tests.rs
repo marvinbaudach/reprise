@@ -1,6 +1,10 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gtk4::prelude::*;
 use reprise_core::lyrics::{LyricsBody, LyricsError, TimedLine};
 
+use super::lyrics_scroll::{ManualScrollTimer, ScrollMode};
 use super::lyrics_view::{
     active_line_alpha, centered_scroll_value, css, line_alpha, lyrics_footer, LyricsView,
     ACTIVE_LINE_CLASS, INLINE_RETRY_CLASS,
@@ -27,6 +31,17 @@ fn npp_5_line_hierarchy_uses_the_decided_alpha_steps() {
     ] {
         assert!(css.contains(declaration), "missing {declaration}");
     }
+}
+
+#[test]
+fn npp_6_line_changes_use_the_micro_fade_token() {
+    let css = css();
+    assert!(css.contains(&format!(
+        "transition: opacity {}ms {}",
+        crate::ui::motion::MICRO_MS,
+        crate::ui::motion::MICRO_CSS_EASING
+    )));
+    assert!(css.contains(".lyrics-line:hover { opacity: 0.65; }"));
 }
 
 #[test]
@@ -122,6 +137,66 @@ fn npp_9_errors_offer_only_inline_retry() {
     view.show_error(&LyricsError::NotFound);
     assert!(!view.retry_is_visible());
     assert_eq!(view.status_text(), "No lyrics found");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_7_user_scroll_pauses_autoscroll() {
+    gtk4::init().unwrap();
+    let timer = ManualScrollTimer::new();
+    let view = LyricsView::new_with_timer(timer.clone());
+    view.show_result(&LyricsBody::Synced(vec![TimedLine::new(
+        1_000,
+        "synthetic line",
+    )]));
+    view.set_active_line(Some(0));
+
+    view.simulate_user_scroll();
+    assert_eq!(view.scroll_mode(), ScrollMode::UserPause);
+    assert_eq!(timer.active_timer_count(), 1);
+    timer.advance(2_000);
+    view.simulate_user_scroll();
+    assert_eq!(
+        timer.active_timer_count(),
+        1,
+        "a new event resets the timer"
+    );
+    view.simulate_programmatic_scroll();
+    assert_eq!(timer.active_timer_count(), 1);
+    timer.advance(3_999);
+    assert_eq!(view.scroll_mode(), ScrollMode::UserPause);
+    timer.advance(1);
+    assert_eq!(view.scroll_mode(), ScrollMode::Returning);
+
+    view.simulate_user_scroll();
+    assert_eq!(view.scroll_mode(), ScrollMode::UserPause);
+    assert!(!view.has_scroll_animation());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_8_line_click_seeks() {
+    gtk4::init().unwrap();
+    let timer = ManualScrollTimer::new();
+    let view = LyricsView::new_with_timer(timer.clone());
+    view.show_result(&LyricsBody::Synced(vec![
+        TimedLine::new(1_000, "first synthetic line"),
+        TimedLine::new(2_500, "second synthetic line"),
+    ]));
+    let sought = Rc::new(Cell::new(None));
+    let sought_for_callback = sought.clone();
+    view.set_on_seek(move |position_ms| sought_for_callback.set(Some(position_ms)));
+
+    view.simulate_user_scroll();
+    view.simulate_line_click(1);
+    assert_eq!(sought.get(), Some(2_500));
+    assert_eq!(view.scroll_mode(), ScrollMode::Auto);
+    assert_eq!(timer.active_timer_count(), 0);
+
+    view.simulate_user_scroll();
+    view.simulate_external_seek();
+    assert_eq!(view.scroll_mode(), ScrollMode::Auto);
+    assert_eq!(timer.active_timer_count(), 0);
 }
 
 #[test]
