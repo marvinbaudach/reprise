@@ -111,6 +111,8 @@ pub(in crate::ui) const NOW_PLAYING_FOOTER_ALPHA: &str = "0.35";
 pub(in crate::ui) const NOW_PLAYING_TITLE_SIZE: &str = "15px";
 pub(in crate::ui) const NOW_PLAYING_SUBTITLE_SIZE: &str = "12px";
 pub(in crate::ui) const NOW_PLAYING_FOOTER_SIZE: &str = "10.5px";
+pub(in crate::ui) const NOW_PLAYING_QUEUE_COVER_SIZE: i32 = 32;
+pub(in crate::ui) const NOW_PLAYING_QUEUE_TITLE_SIZE: &str = "13.5px";
 
 // --- Artists master/detail view (see `super::super::artist_view_css`) ---
 
