@@ -233,7 +233,7 @@ pub fn query_sync_tracks(
 /// mark-vanished phase (`library::scanner::scan_folder`) uses — one `SELECT`
 /// of the row's `path`/`device` first. The expected path is the identity
 /// snapshot taken before the asynchronous backend fault arrived. Both the
-/// read and write require that same path plus [`PRESENT`], and the file is
+/// read and write require that same path plus `PRESENT`, and the file is
 /// rechecked immediately before writing. A watcher/Locate reconcile that
 /// wins the race therefore survives instead of having its new live identity
 /// marked missing by stale fault work. Returns whether one row changed.
