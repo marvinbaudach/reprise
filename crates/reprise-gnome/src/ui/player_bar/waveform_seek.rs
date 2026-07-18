@@ -12,11 +12,13 @@ use std::f64::consts::{FRAC_PI_2, PI};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use libadwaita::prelude::AnimationExt;
 
 #[cfg(test)]
 use super::waveform_shape::{aggregate_rms, smooth_neighbors};
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use crate::ui::motion;
+use crate::ui::style::cover_accent::scale_chroma;
 use reprise_core::format::format_duration;
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
@@ -47,6 +49,8 @@ const PLAYHEAD_ALPHA: f64 = 0.70;
 const GHOST_ALPHA: f64 = 0.40;
 /// Ambient build-up animation duration in seconds.
 const BUILD_DURATION_S: f64 = motion::AMBIENT_MS as f64 / 1_000.0;
+/// Track-change alpha crossfade duration in seconds.
+const CROSSFADE_DURATION_S: f64 = motion::AMBIENT_MS as f64 / 1_000.0;
 /// Per-bar stagger increment in seconds.
 const BAR_STAGGER_S: f64 = 0.002;
 
@@ -102,6 +106,14 @@ fn compute_bar_count(width: i32) -> usize {
 /// Re-aggregates from the cached `raw_peaks` (never re-decodes) when the
 /// width changed or the cache is empty.
 fn ensure_resampled(state: &mut State, width: i32) {
+    if state.last_display_width != 0
+        && state.last_display_width != width
+        && state.crossfade_progress < 1.0
+    {
+        state.previous_bars.clear();
+        state.crossfade_progress = 1.0;
+        state.crossfade_start_us = 0;
+    }
     if state.raw_peaks.is_empty() {
         state.display_peaks.clear();
         return;
@@ -129,6 +141,14 @@ struct State {
     // Build-up animation.
     build_progress: f64, // 0.0 = not started, 1.0 = complete
     build_start_us: i64, // 0 means not running
+    // Track-change alpha crossfade.
+    previous_bars: Vec<DisplayBar>,
+    crossfade_progress: f64, // 1.0 means no crossfade is running
+    crossfade_start_us: i64,
+    // Pause desaturation animation.
+    desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
+    #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
+    desaturation_target: f64,
     min_bar_height: f64,
     max_bar_height: f64,
     // Duration of the current track (ms), for formatted tooltip display.
@@ -145,6 +165,10 @@ pub(in crate::ui) struct WaveformSeek {
     /// an extra flag.  `TickCallbackId` is not `Clone`, so we take it out to
     /// call `.remove()` rather than copying it.
     tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>>,
+    /// Active pause-desaturation animation. Replacements skip the previous
+    /// visual state before starting from its settled endpoint.
+    #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
+    desaturation_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
 }
 
 impl WaveformSeek {
@@ -185,12 +209,18 @@ impl WaveformSeek {
             last_tick_us: 0,
             build_progress: 1.0,
             build_start_us: 0,
+            previous_bars: Vec::new(),
+            crossfade_progress: 1.0,
+            crossfade_start_us: 0,
+            desaturation_progress: 0.0,
+            desaturation_target: 0.0,
             min_bar_height: min_h,
             max_bar_height: max_h,
             duration_ms: 0,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
         let tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>> = Rc::new(RefCell::new(None));
+        let desaturation_animation = Rc::new(RefCell::new(None));
 
         area.set_draw_func({
             let state = state.clone();
@@ -300,6 +330,7 @@ impl WaveformSeek {
             state,
             on_seek,
             tick_id,
+            desaturation_animation,
         }
     }
 
@@ -311,23 +342,94 @@ impl WaveformSeek {
     /// animation (gated on `gtk-enable-animations`). Use this whenever the
     /// track changes.
     pub(in crate::ui) fn set_peaks(&self, peaks: Vec<u8>) {
-        let now = self.area.frame_clock().map_or(0, |c| c.frame_time());
+        let build_start_us = self.area.frame_clock().map_or(0, |c| c.frame_time());
+        let crossfade_start_us = gtk4::glib::monotonic_time();
         let animate = motion::animations_enabled();
+        if !animate {
+            let existing_tick = self.tick_id.borrow_mut().take();
+            if let Some(existing_tick) = existing_tick {
+                existing_tick.remove();
+            }
+        }
         let mut s = self.state.borrow_mut();
+        // Bars currently on screen to fade *from*: the resolved bars, or — if a
+        // crossfade is still mid-flight because no draw has resampled yet — the
+        // ones it is already fading from (two `set_peaks` with no draw between
+        // must not lose that source and rebuild). Empty incoming peaks arm no
+        // crossfade: draw() takes the fallback, so its tick would show nothing.
+        let crossfade_in_flight = s.crossfade_progress < 1.0 && !s.previous_bars.is_empty();
+        let has_visible_bars = !s.display_peaks.is_empty() || crossfade_in_flight;
+        if animate && has_visible_bars && !peaks.is_empty() {
+            // When display_peaks is empty, keep the in-flight previous_bars.
+            if !s.display_peaks.is_empty() {
+                s.previous_bars = std::mem::take(&mut s.display_peaks);
+            }
+            s.crossfade_progress = 0.0;
+            s.crossfade_start_us = crossfade_start_us;
+            s.build_progress = 1.0;
+            s.build_start_us = 0;
+        } else {
+            s.previous_bars.clear();
+            s.crossfade_progress = 1.0;
+            s.crossfade_start_us = 0;
+            if animate && !peaks.is_empty() {
+                s.build_progress = 0.0;
+                s.build_start_us = build_start_us;
+            } else {
+                s.build_progress = 1.0;
+                s.build_start_us = 0;
+            }
+        }
         s.raw_peaks = peaks;
         s.display_peaks.clear();
-        s.last_display_width = 0; // force resample on next draw
-        if animate && !s.raw_peaks.is_empty() {
-            s.build_progress = 0.0;
-            s.build_start_us = now;
-        } else {
-            s.build_progress = 1.0;
+        if !animate {
+            s.fraction = s.target_fraction;
+            s.fraction_velocity = 0.0;
         }
+        let should_tick = s.build_progress < 1.0 || s.crossfade_progress < 1.0;
         drop(s);
         self.area.queue_draw();
-        if animate {
+        if should_tick {
             self.ensure_tick_callback();
         }
+    }
+
+    /// Animates the local waveform fill toward the paused or playing chroma.
+    /// This never mutates the application-wide cover-accent provider.
+    #[allow(dead_code)] // Wired from PlayerBar and Compact only after the Phase-B gate opens.
+    pub(in crate::ui) fn set_paused(&self, paused: bool) {
+        let target = if paused { 1.0 } else { 0.0 };
+        if self.state.borrow().desaturation_target == target {
+            return;
+        }
+
+        if !motion::animations_enabled() {
+            let previous = self.desaturation_animation.borrow_mut().take();
+            if let Some(previous) = previous {
+                previous.skip();
+            }
+            let mut state = self.state.borrow_mut();
+            state.desaturation_progress = target;
+            state.desaturation_target = target;
+            drop(state);
+            self.area.queue_draw();
+            return;
+        }
+
+        // Start from the current interpolated value (read before the skip
+        // below overwrites it), so a fast Pause→Play reversal glides from
+        // mid-flight instead of snapping to the old target and flashing grey.
+        let from = self.state.borrow().desaturation_progress;
+        self.state.borrow_mut().desaturation_target = target;
+        let state = self.state.clone();
+        let area = self.area.clone();
+        let animation_target = libadwaita::CallbackAnimationTarget::new(move |value| {
+            state.borrow_mut().desaturation_progress = value;
+            area.queue_draw();
+        });
+        let animation = motion::timed(&self.area, from, target, motion::STANDARD, animation_target);
+        motion::replace_animation(&self.desaturation_animation, animation.clone());
+        animation.play();
     }
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
@@ -361,7 +463,14 @@ impl WaveformSeek {
             // advanced it was just removed, so without this the waveform would
             // freeze half-built if animations are disabled mid-build. Mirrors
             // the disabled branch of `set_peaks`.
-            self.state.borrow_mut().build_progress = 1.0;
+            {
+                let mut state = self.state.borrow_mut();
+                state.build_progress = 1.0;
+                state.build_start_us = 0;
+                state.previous_bars.clear();
+                state.crossfade_progress = 1.0;
+                state.crossfade_start_us = 0;
+            }
             self.set_fraction(fraction);
             return;
         }
@@ -402,8 +511,8 @@ impl WaveformSeek {
     }
 
     /// Installs a `GdkFrameClock` tick callback if one is not already running.
-    /// The callback advances the interpolation and build-up animation each frame,
-    /// then stops itself when both are settled.
+    /// The callback advances interpolation, build-up, and track crossfade each
+    /// frame, then stops itself when all three are settled.
     fn ensure_tick_callback(&self) {
         if self.tick_id.borrow().is_some() {
             return;
@@ -428,13 +537,28 @@ impl WaveformSeek {
                     let elapsed = (now - s.build_start_us) as f64 / 1_000_000.0;
                     s.build_progress = (elapsed / BUILD_DURATION_S).clamp(0.0, 1.0);
                 }
+
+                if s.crossfade_progress < 1.0 && s.crossfade_start_us > 0 {
+                    let elapsed = (now - s.crossfade_start_us) as f64 / 1_000_000.0;
+                    s.crossfade_progress = (elapsed / CROSSFADE_DURATION_S).clamp(0.0, 1.0);
+                    if s.crossfade_progress >= 1.0 {
+                        s.previous_bars.clear();
+                        s.crossfade_start_us = 0;
+                    }
+                }
             } else {
                 s.fraction = s.target_fraction;
                 s.fraction_velocity = 0.0;
                 s.build_progress = 1.0;
+                s.build_start_us = 0;
+                s.previous_bars.clear();
+                s.crossfade_progress = 1.0;
+                s.crossfade_start_us = 0;
             }
 
-            let settled = (s.fraction - s.target_fraction).abs() < 0.001 && s.build_progress >= 1.0;
+            let settled = (s.fraction - s.target_fraction).abs() < 0.001
+                && s.build_progress >= 1.0
+                && s.crossfade_progress >= 1.0;
             drop(s);
 
             area.queue_draw();
@@ -467,26 +591,100 @@ fn draw(
         return;
     }
 
-    let count = state.display_peaks.len();
+    let color = area.color();
+    let color = (
+        f64::from(color.red()),
+        f64::from(color.green()),
+        f64::from(color.blue()),
+    );
+    let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
+    let (r, g, b) = scale_chroma(color.0, color.1, color.2, chroma_factor);
+
+    if state.crossfade_progress < 1.0 && !state.previous_bars.is_empty() {
+        draw_bars(
+            cr,
+            w,
+            h,
+            &state.previous_bars,
+            state,
+            BarDrawStyle {
+                color: (r, g, b),
+                build_progress: 1.0,
+                opacity: 1.0 - state.crossfade_progress,
+            },
+        );
+        draw_bars(
+            cr,
+            w,
+            h,
+            &state.display_peaks,
+            state,
+            BarDrawStyle {
+                color: (r, g, b),
+                build_progress: 1.0,
+                opacity: state.crossfade_progress,
+            },
+        );
+    } else {
+        draw_bars(
+            cr,
+            w,
+            h,
+            &state.display_peaks,
+            state,
+            BarDrawStyle {
+                color: (r, g, b),
+                build_progress: state.build_progress,
+                opacity: 1.0,
+            },
+        );
+    }
+
+    // Playhead: a 1 px line at the exact fraction, drawn over the bars —
+    // replaces the old partially-filled boundary bar (the played/unplayed
+    // switch is a hard per-bucket cut instead).
+    let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
+    cr.set_source_rgba(r, g, b, PLAYHEAD_ALPHA);
+    cr.rectangle(
+        playhead_x - 0.5,
+        (h - state.max_bar_height) / 2.0,
+        1.0,
+        state.max_bar_height,
+    );
+    let _ = cr.fill();
+}
+
+#[derive(Clone, Copy)]
+struct BarDrawStyle {
+    color: (f64, f64, f64),
+    build_progress: f64,
+    opacity: f64,
+}
+
+fn draw_bars(
+    cr: &gtk4::cairo::Context,
+    w: f64,
+    h: f64,
+    bars: &[DisplayBar],
+    state: &State,
+    style: BarDrawStyle,
+) {
+    let count = bars.len();
+    if count == 0 {
+        return;
+    }
     // Slots fill the full width so the seek mapping stays linear; when the
     // bar-count cap kicks in the gaps simply widen (bars stay 3 px).
     let slot = w / count as f64;
     let bar_w = BAR_WIDTH.min(slot.max(1.0));
 
-    let color = area.color();
-    let (r, g, b) = (
-        f64::from(color.red()),
-        f64::from(color.green()),
-        f64::from(color.blue()),
-    );
-
-    for (index, &bar) in state.display_peaks.iter().enumerate() {
+    for (index, &bar) in bars.iter().enumerate() {
         // Staggered build-up: each bar has a small time offset so they rise
         // one after another from left to right over the Ambient window.
-        let stagger = if state.build_progress < 1.0 {
+        let stagger = if style.build_progress < 1.0 {
             let bar_delay = index as f64 * BAR_STAGGER_S;
             let bar_delay_normalized = bar_delay / BUILD_DURATION_S;
-            let adjusted = (state.build_progress - bar_delay_normalized).max(0.0)
+            let adjusted = (style.build_progress - bar_delay_normalized).max(0.0)
                 / (1.0 - bar_delay_normalized).max(0.01);
             adjusted.clamp(0.0, 1.0)
         } else {
@@ -526,31 +724,19 @@ fn draw(
                 .hover_fraction
                 .is_some_and(|hover| bar_center <= hover);
 
+        let (r, g, b) = style.color;
         if is_ghost {
-            cr.set_source_rgba(r, g, b, GHOST_ALPHA);
+            cr.set_source_rgba(r, g, b, GHOST_ALPHA * style.opacity);
         } else if played {
-            cr.set_source_rgba(r, g, b, 1.0);
+            cr.set_source_rgba(r, g, b, style.opacity);
         } else if is_hover_preview {
-            cr.set_source_rgba(1.0, 1.0, 1.0, HOVER_PREVIEW_ALPHA);
+            cr.set_source_rgba(1.0, 1.0, 1.0, HOVER_PREVIEW_ALPHA * style.opacity);
         } else {
-            cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA);
+            cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * style.opacity);
         }
         rounded_bar(cr, x, y, bar_w, bar_h, BAR_RADIUS);
         let _ = cr.fill();
     }
-
-    // Playhead: a 1 px line at the exact fraction, drawn over the bars —
-    // replaces the old partially-filled boundary bar (the played/unplayed
-    // switch is a hard per-bucket cut instead).
-    let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
-    cr.set_source_rgba(1.0, 1.0, 1.0, PLAYHEAD_ALPHA);
-    cr.rectangle(
-        playhead_x - 0.5,
-        (h - state.max_bar_height) / 2.0,
-        1.0,
-        state.max_bar_height,
-    );
-    let _ = cr.fill();
 }
 
 /// Skeleton waveform: deterministic pseudo-random bar heights that look like
@@ -570,11 +756,13 @@ fn draw_fallback(
     let bar_w = BAR_WIDTH.min(slot.max(1.0));
 
     let color = area.color();
-    let (r, g, b) = (
+    let color = (
         f64::from(color.red()),
         f64::from(color.green()),
         f64::from(color.blue()),
     );
+    let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
+    let (r, g, b) = scale_chroma(color.0, color.1, color.2, chroma_factor);
 
     for index in 0..count {
         // Deterministic pseudo-random height using a simple hash.
