@@ -222,6 +222,8 @@ fn parse_smoke_state(value: &str) -> Option<SessionState> {
         genre: parse_optional(fields.next()?),
         artist: parse_optional(fields.next()?),
         album: parse_optional(fields.next()?),
+        // Year/Rating are not part of the smoke fixture's wire format.
+        ..BrowseFilter::default()
     };
     let sort_field = fields.next()?.to_string();
     let sort_dir = fields.next()?.to_string();

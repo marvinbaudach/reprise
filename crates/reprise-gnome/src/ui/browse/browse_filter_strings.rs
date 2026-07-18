@@ -19,9 +19,13 @@ pub(in crate::ui) const NO_FILTERS_AVAILABLE: &str = N_!("All filters are active
 pub(in crate::ui) const BROWSE_GENRE: &str = N_!("Genre");
 pub(in crate::ui) const BROWSE_ARTIST: &str = N_!("Artist");
 pub(in crate::ui) const BROWSE_ALBUM: &str = N_!("Album");
+pub(in crate::ui) const BROWSE_YEAR: &str = N_!("Year");
+pub(in crate::ui) const BROWSE_RATING: &str = N_!("Rating");
 pub(in crate::ui) const UNKNOWN_GENRE: &str = N_!("Unknown genre");
 pub(in crate::ui) const UNKNOWN_ARTIST: &str = N_!("Unknown artist");
 pub(in crate::ui) const UNKNOWN_ALBUM: &str = N_!("Unknown album");
+pub(in crate::ui) const UNKNOWN_YEAR: &str = N_!("Unknown year");
+pub(in crate::ui) const UNKNOWN_RATING: &str = N_!("Unrated");
 
 pub(in crate::ui) fn text(message: &str) -> String {
     crate::i18n::gettext(message)
