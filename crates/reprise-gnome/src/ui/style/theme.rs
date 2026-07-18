@@ -5,6 +5,10 @@
 //! those named colors at draw time, swapping the palette recolors the whole
 //! app at once — the mechanism the redesign's live theme picker will drive.
 //!
+//! The dark palettes follow design frame 14a's surface hierarchy: the central
+//! table is darkest, side panels sit one step above it, and the header bar is
+//! another step brighter. Cards remain brighter than their panel surface.
+//!
 //! The concrete color values below are extracted from the design frames and
 //! are deliberately approximate; a later pass tunes them against the exact
 //! canonical palettes (Perpetual Rain, Night Terrain, …).
@@ -79,9 +83,9 @@ impl Theme {
             Theme::PerpetualRain => Palette {
                 window_bg: "#16181b",
                 view_bg: "#1b1e22",
-                card_bg: "#22262b",
-                headerbar_bg: "#16181b",
-                sidebar_bg: "#191c20",
+                card_bg: "#272d33",
+                headerbar_bg: "#262b31",
+                sidebar_bg: "#22262b",
                 popover_bg: "#404650",
                 dialog_bg: "#353b44",
                 fg: "#e7e9ec",
@@ -93,9 +97,9 @@ impl Theme {
             Theme::NightTerrain => Palette {
                 window_bg: "#13161c",
                 view_bg: "#191d25",
-                card_bg: "#20252f",
-                headerbar_bg: "#13161c",
-                sidebar_bg: "#161a21",
+                card_bg: "#252b37",
+                headerbar_bg: "#242a35",
+                sidebar_bg: "#20252f",
                 popover_bg: "#3e4452",
                 dialog_bg: "#333a48",
                 fg: "#e4e7ec",
@@ -107,9 +111,9 @@ impl Theme {
             Theme::MutedBloom => Palette {
                 window_bg: "#1a1518",
                 view_bg: "#201a1e",
-                card_bg: "#282027",
-                headerbar_bg: "#1a1518",
-                sidebar_bg: "#1d171b",
+                card_bg: "#2d252c",
+                headerbar_bg: "#2c242c",
+                sidebar_bg: "#282027",
                 popover_bg: "#463c48",
                 dialog_bg: "#3a343c",
                 fg: "#ece6ea",
@@ -265,6 +269,38 @@ mod tests {
             let p = theme.palette();
             assert_ne!(p.dialog_bg, p.card_bg, "{theme:?} dialog_bg == card_bg");
             assert_ne!(p.dialog_bg, p.window_bg, "{theme:?} dialog_bg == window_bg");
+        }
+    }
+
+    #[test]
+    fn dark_palettes_follow_14a_surface_hierarchy() {
+        fn channel_sum(hex: &str) -> u16 {
+            let hex = hex.strip_prefix('#').expect("palette color starts with #");
+            [0, 2, 4]
+                .into_iter()
+                .map(|offset| u16::from_str_radix(&hex[offset..offset + 2], 16).unwrap())
+                .sum()
+        }
+
+        for theme in Theme::all() {
+            let p = theme.palette();
+            let view = channel_sum(p.view_bg);
+            let sidebar = channel_sum(p.sidebar_bg);
+            let headerbar = channel_sum(p.headerbar_bg);
+            let card = channel_sum(p.card_bg);
+
+            assert!(
+                view < sidebar,
+                "{theme:?}: view must be darker than sidebar"
+            );
+            assert!(
+                sidebar < headerbar,
+                "{theme:?}: sidebar must be darker than headerbar"
+            );
+            assert!(
+                sidebar < card,
+                "{theme:?}: sidebar must be darker than cards"
+            );
         }
     }
 }
