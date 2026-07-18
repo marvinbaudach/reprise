@@ -31,7 +31,7 @@ const SMOKE_LIBRARY_VIEW_ENV: &str = "REPRISE_SMOKE_LIBRARY_VIEW";
 
 pub(in crate::ui) struct LibraryShell {
     pub sidebar_page: adw::NavigationPage,
-    pub split_view: adw::NavigationSplitView,
+    pub split_view: adw::OverlaySplitView,
     pub content_nav: adw::NavigationView,
     pub info_panel: Rc<InfoPanel>,
 }
@@ -45,7 +45,10 @@ pub(in crate::ui) fn build_views(
     albums: &impl IsA<gtk4::Widget>,
     artists: &impl IsA<gtk4::Widget>,
 ) -> LibraryViews {
-    let stack = gtk4::Stack::new();
+    let stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(crate::ui::motion::STANDARD_MS)
+        .build();
     stack.add_titled(
         tracks,
         Some(LIBRARY_VIEW_TRACKS),
@@ -262,16 +265,14 @@ pub(in crate::ui) fn build(
         info_panel.widget(),
         &strings::text(strings::APP_NAME),
     );
-    let content_page = adw::NavigationPage::builder()
-        .title(strings::text(strings::APP_NAME))
-        .child(&content_nav)
-        .build();
-    let split_view = adw::NavigationSplitView::builder()
+    let split_view = adw::OverlaySplitView::builder()
         .sidebar(&sidebar_page)
-        .content(&content_page)
+        .content(&content_nav)
+        .sidebar_position(gtk4::PackType::Start)
+        .show_sidebar(true)
         .collapsed(true)
         .build();
-    super::sidebar_presentation::style_split_view(&split_view);
+    super::sidebar_presentation::style_overlay_split_view(&split_view);
     let condition = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MinWidth,
         f64::from(SIDEBAR_BREAKPOINT_WIDTH),
@@ -334,6 +335,14 @@ mod tests {
         assert_eq!(
             views.stack.child_by_name(LIBRARY_VIEW_ARTISTS),
             Some(artists.upcast())
+        );
+        assert_eq!(
+            views.stack.transition_type(),
+            gtk4::StackTransitionType::Crossfade
+        );
+        assert_eq!(
+            views.stack.transition_duration(),
+            crate::ui::motion::STANDARD_MS
         );
     }
 }
