@@ -2,8 +2,8 @@ use reprise_core::modules::ModuleDescriptor;
 
 use super::strings;
 
-pub(in crate::ui) fn plugin_applies_live(id: &str) -> bool {
-    matches!(id, "new_releases" | "listenbrainz" | "lastfm")
+pub(in crate::ui) fn plugin_applies_live(descriptor: &ModuleDescriptor) -> bool {
+    descriptor.applies_live
 }
 
 pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
@@ -11,6 +11,9 @@ pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
         "listenbrainz" => strings::LISTENBRAINZ,
         "lastfm" => strings::LASTFM,
         "new_releases" => strings::NEW_RELEASES,
+        "cover_download" => strings::COVER_DOWNLOAD,
+        "artist_portraits" => strings::ARTIST_PORTRAITS,
+        "online_lyrics" => strings::ONLINE_LYRICS,
         _ => return descriptor.name.to_string(),
     };
     strings::text(message)
@@ -21,6 +24,9 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
         "lastfm" => strings::PLUGIN_LASTFM_DESCRIPTION,
         "new_releases" => strings::NEW_RELEASES_DESCRIPTION,
+        "cover_download" => strings::COVER_DOWNLOAD_DESCRIPTION,
+        "artist_portraits" => strings::ARTIST_PORTRAITS_DESCRIPTION,
+        "online_lyrics" => strings::ONLINE_LYRICS_DESCRIPTION,
         _ => return descriptor.description.to_string(),
     };
     strings::text(message)
@@ -36,7 +42,6 @@ mod tests {
 
         assert_eq!(plugin_title(descriptor), "New Releases");
         assert!(plugin_description(descriptor).contains("contacts MusicBrainz"));
-        assert!(plugin_applies_live("new_releases"));
-        assert!(!plugin_applies_live("artist_news"));
+        assert!(plugin_applies_live(descriptor));
     }
 }

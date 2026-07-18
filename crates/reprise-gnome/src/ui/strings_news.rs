@@ -36,6 +36,13 @@ pub const NEWS_OPEN_MUSICBRAINZ: &str = N_!("Open in MusicBrainz");
 pub const NEW_RELEASES: &str = N_!("New Releases");
 pub const NEW_RELEASES_DESCRIPTION: &str =
     N_!("Show upcoming and newly released albums · contacts MusicBrainz");
+pub const COVER_DOWNLOAD: &str = N_!("Album Covers");
+pub const COVER_DOWNLOAD_DESCRIPTION: &str =
+    N_!("Download missing album covers · contacts MusicBrainz and coverartarchive.org");
+pub const ARTIST_PORTRAITS: &str = N_!("Artist Portraits");
+pub const ARTIST_PORTRAITS_DESCRIPTION: &str = N_!("Show artist images · contacts Deezer");
+pub const ONLINE_LYRICS: &str = N_!("Online Lyrics");
+pub const ONLINE_LYRICS_DESCRIPTION: &str = N_!("Load missing lyrics · contacts LRCLIB");
 pub const NEW_RELEASES_ARTISTS: &str = N_!("Artists");
 pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
 pub const ALL_ARTISTS: &str = N_!("All artists");

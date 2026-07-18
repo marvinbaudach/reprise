@@ -1601,34 +1601,59 @@ msgstr "Neue Veröffentlichungen"
 #: crates/reprise-gnome/src/ui/strings_news.rs:38
 msgid "Show upcoming and newly released albums · contacts MusicBrainz"
 msgstr "Kommende und neu erschienene Alben anzeigen · kontaktiert MusicBrainz"
-"Kommende und neu veröffentlichte Alben von MusicBrainz anzeigen (Netzwerk; "
-"standardmäßig aus)"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:40
+#: crates/reprise-gnome/src/ui/strings_news.rs:39
+msgid "Album Covers"
+msgstr "Albumcover"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:41
+msgid ""
+"Download missing album covers · contacts MusicBrainz and coverartarchive.org"
+msgstr ""
+"Fehlende Albumcover herunterladen · kontaktiert MusicBrainz und "
+"coverartarchive.org"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:42
+msgid "Artist Portraits"
+msgstr "Interpretenporträts"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:43
+msgid "Show artist images · contacts Deezer"
+msgstr "Interpretenbilder anzeigen · kontaktiert Deezer"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:44
+msgid "Online Lyrics"
+msgstr "Online-Songtexte"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:45
+msgid "Load missing lyrics · contacts LRCLIB"
+msgstr "Fehlende Songtexte laden · kontaktiert LRCLIB"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:47
 msgid "Top artists only"
 msgstr "Nur meistgehörte Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:41
+#: crates/reprise-gnome/src/ui/strings_news.rs:48
 msgid "All artists"
 msgstr "Alle Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:42
+#: crates/reprise-gnome/src/ui/strings_news.rs:49
 msgid "Fetch now"
 msgstr "Jetzt abrufen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:43
+#: crates/reprise-gnome/src/ui/strings_news.rs:50
 msgid "Refresh failed · showing saved releases"
 msgstr "Aktualisierung fehlgeschlagen · zeigt gespeicherte Veröffentlichungen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:44
+#: crates/reprise-gnome/src/ui/strings_news.rs:51
 msgid "Updated just now"
 msgstr "Gerade aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:45
+#: crates/reprise-gnome/src/ui/strings_news.rs:52
 msgid "See all"
 msgstr "Alle anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:46
+#: crates/reprise-gnome/src/ui/strings_news.rs:53
 msgid "Hide"
 msgstr "Ausblenden"
 
