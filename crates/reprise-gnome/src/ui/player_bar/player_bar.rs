@@ -386,6 +386,7 @@ impl PlayerBar {
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
         self.playback_state.set(state);
         self.set_mini_eq_playing(is_playing);
+        self.waveform.set_paused(!is_playing);
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
             self.set_position(0, 0);

@@ -49,6 +49,22 @@ fn mot_5_play_pause_pulses_on_state_change() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_player_bar_state_propagates_pause_to_waveform() {
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+
+    bar.set_state(PlaybackState::Playing);
+    assert_eq!(bar.waveform.desaturation_target_for_test(), 0.0);
+    bar.set_state(PlaybackState::Paused);
+    assert_eq!(bar.waveform.desaturation_target_for_test(), 1.0);
+    bar.set_state(PlaybackState::Playing);
+    assert_eq!(bar.waveform.desaturation_target_for_test(), 0.0);
+    bar.set_state(PlaybackState::Stopped);
+    assert_eq!(bar.waveform.desaturation_target_for_test(), 1.0);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mot_6_second_track_and_state_changes_finish_the_previous_visual_state() {
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
