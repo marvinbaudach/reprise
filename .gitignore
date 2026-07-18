@@ -33,3 +33,7 @@ doc/
 # (conventions in docs/agents, decisions in docs/adr, briefs in docs/plans).
 # It was ignored while it collected generated status dumps — keep those out
 # (session scratch belongs in .superpowers/) and docs/ stays worth reading.
+
+# Pipeline scratch files (codex-run.sh writes these per run)
+.pipeline-task.md
+.pipeline-codex.md
