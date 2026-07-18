@@ -87,8 +87,8 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-stage"));
-    assert!(css.contains("background-color: #17191c"));
-    assert!(!css.contains("@sidebar_bg_color"));
+    assert!(css.contains("background-color: @sidebar_bg_color"));
+    assert!(!css.contains("background-color: #17191c"));
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient"));
     assert!(css.contains("alpha(@reprise_player_accent, 0.4)"));

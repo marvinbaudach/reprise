@@ -178,6 +178,30 @@ fn reload_theme_for_appearance() {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn style_2_side_surfaces_follow_the_theme() {
+        let css = super::app_css();
+
+        assert!(css.contains(
+            ".reprise-library-split .reprise-library-sidebar { background-color: @sidebar_bg_color;"
+        ));
+        assert!(css.contains(".reprise-now-playing-stage { background-color: @sidebar_bg_color;"));
+        assert!(css.contains("border-right: 1px solid rgba(255, 255, 255, 0.06)"));
+        assert!(css.contains("border-left: 1px solid rgba(255, 255, 255, 0.06)"));
+
+        for theme in super::theme::Theme::all() {
+            for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
+                assert!(
+                    super::theme::theme_css(theme, is_dark).contains(&format!(
+                        "@define-color sidebar_bg_color {};",
+                        palette.sidebar_bg
+                    )),
+                    "{theme:?} did not project its sidebar surface into both consumers"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn app_css_contains_every_feature_section() {
         let css = super::app_css();
 

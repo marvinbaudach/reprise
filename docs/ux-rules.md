@@ -922,7 +922,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   am Songanfang nach oben geklemmt. Solange nicht genug Kontextzeilen über
   der aktiven Zeile liegen, sitzt der Textblock oben; erst mit genügend
   Vorlauf wandert die aktive Zeile in die Mitte.
-- **STYLE-2** [geplant] [gtk] — Content und Tracktabelle verwenden die
+- **STYLE-2** [aktiv] [gtk] — Content und Tracktabelle verwenden die
   `.view`-Stufe; linke Sidebar und rechtes Now-Playing-Panel verwenden
   gemeinsam die eine Stufe höhere `sidebar_bg`-Fläche des aktiven Themes.
   Beide Flanken tragen an ihrer Innenkante eine 1-px-Hairline. Es gibt keine
