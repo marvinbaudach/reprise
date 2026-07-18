@@ -781,13 +781,19 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 - **SEARCH-1** [aktiv] [gtk] — Im Ruhezustand belegt die Suche in der
   Headerbar nur eine Lupe. Das Suchfeld lebt in einer zweiten, standardmäßig
   eingeklappten Top-Bar und wird nie als permanentes breites Feld dargestellt.
-- **SEARCH-2** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
-  Tippen öffnet die Suchleiste und fokussiert das Feld. Die Leiste fährt mit
-  dem zentralen Standard-Motion-Token ein und aus (MOT-1/3).
-- **SEARCH-3** [aktiv] [gtk] — Eine nicht-leere Query bleibt auch bei
-  eingeklappter Suchleiste sichtbar: Ihr Such-Chip bleibt bestehen und die
-  Lupe trägt den aktiven Toggle-Zustand. Die Lupe bekommt keinen Badge-Punkt;
-  Punkte bleiben ausschließlich der Bitte-Rolle vorbehalten (FB-4, P-1).
+- **SEARCH-2** [geplant] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+  Tippen öffnet die Suchleiste und fokussiert das Feld. Sie ist ein
+  vollbreiter Streifen bündig unter der Headerbar, hat eine eigene Fläche mit
+  unterer Trennlinie und schiebt beim Reveal den Inhalt nach unten; das
+  Suchfeld ist darin per Clamp auf ungefähr 450 px zentriert. Die Leiste
+  slidet mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern
+  gilt deren Default, sofern er dem Standard-Token entspricht.
+- **SEARCH-3** [geplant] [gtk] — Die Lupe ist ein ToggleButton und trägt bei
+  offener Suchleiste **oder** aktiver nicht-leerer Query den
+  `:checked`-Akzentstil. Eine Query bleibt auch bei eingeklappter Suchleiste
+  sichtbar: Ihr Such-Chip bleibt bestehen. Die Lupe bekommt keinen
+  Badge-Punkt; Punkte bleiben ausschließlich der Bitte-Rolle vorbehalten
+  (FB-4, P-1).
 - **SEARCH-4** [aktiv] [gtk] — Esc ist zweistufig und gilt für die ganze
   Suchleiste: Mit Text leert das erste Esc die Query, lässt die Leiste offen
   und das Feld fokussiert; bei leerem Feld klappt Esc die Leiste ein. Eine
