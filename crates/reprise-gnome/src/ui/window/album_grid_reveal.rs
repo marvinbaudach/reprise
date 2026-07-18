@@ -2,6 +2,8 @@
 
 use std::rc::Rc;
 
+use crate::ui::nav_history::{NavHistory, NavPlace};
+
 pub(in crate::ui) type RevealCallback = Rc<dyn Fn()>;
 pub(in crate::ui) type AlbumRevealCallback = Rc<dyn Fn(&str, &str) -> bool>;
 
@@ -24,6 +26,19 @@ pub(in crate::ui) fn coordinator(steps: RevealSteps) -> RevealCallback {
             (steps.fallback_to_track)();
         }
     })
+}
+
+/// Records the public Albums destination while suppressing the sidebar's
+/// internal Library/Tracks route from becoming a second Back entry.
+pub(in crate::ui) fn route_with_history(
+    history: &NavHistory,
+    target: &NavPlace,
+    route: impl FnOnce(),
+) {
+    history.record_route(target);
+    history.begin_back();
+    route();
+    history.end_back();
 }
 
 #[cfg(test)]
@@ -106,10 +121,8 @@ mod tests {
     }
 
     #[test]
-    fn revealing_albums_deduplicates_the_current_history_place() {
+    fn revealing_albums_deduplicates_sidebar_track_routing_from_history() {
         use reprise_core::view_source::ViewSource;
-
-        use crate::ui::nav_history::{NavHistory, NavPlace};
 
         let albums = NavPlace {
             source: ViewSource::Library,
@@ -121,10 +134,29 @@ mod tests {
         };
         let history = NavHistory::default();
         history.record_route(&queue);
-        history.record_route(&albums);
-        history.record_route(&albums);
+        route_with_history(&history, &albums, || {
+            // `route_to_place` reaches Library through the sidebar, whose
+            // canonical route is Tracks before the requested Albums tab is
+            // restored. GRID-5 must suppress that internal implementation step.
+            history.record_route(&NavPlace {
+                source: ViewSource::Library,
+                library_tab: Some("tracks".into()),
+            });
+            history.note_library_tab("albums");
+        });
 
         assert_eq!(history.go_back(), Some(queue));
         assert_eq!(history.go_back(), None);
+
+        let already_albums = NavHistory::default();
+        already_albums.record_route(&albums);
+        route_with_history(&already_albums, &albums, || {
+            already_albums.record_route(&NavPlace {
+                source: ViewSource::Library,
+                library_tab: Some("tracks".into()),
+            });
+            already_albums.note_library_tab("albums");
+        });
+        assert_eq!(already_albums.go_back(), None);
     }
 }

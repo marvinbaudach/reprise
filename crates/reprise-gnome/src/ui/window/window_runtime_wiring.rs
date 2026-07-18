@@ -208,16 +208,17 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                             source: ViewSource::Library,
                             library_tab: Some(super::library_shell::LIBRARY_VIEW_ALBUMS.to_owned()),
                         };
-                        nav_history.record_route(&place);
-                        super::library_shell::route_to_place(
-                            &place,
-                            &sidebar,
-                            &track_list,
-                            &content_stack,
-                            &library_stack,
-                            &album_grid,
-                            "reveal playing album",
-                        );
+                        super::album_grid_reveal::route_with_history(&nav_history, &place, || {
+                            super::library_shell::route_to_place(
+                                &place,
+                                &sidebar,
+                                &track_list,
+                                &content_stack,
+                                &library_stack,
+                                &album_grid,
+                                "reveal playing album",
+                            );
+                        });
                     })
                 },
                 clear_search: {
