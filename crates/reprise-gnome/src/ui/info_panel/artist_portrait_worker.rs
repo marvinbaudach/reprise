@@ -1,4 +1,3 @@
-use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use reprise_core::artist_portrait::{PortraitError, PortraitOutcome};
@@ -17,139 +16,22 @@ pub(in crate::ui) struct ArtistPortraitResponse {
     pub result: Result<PortraitOutcome, PortraitError>,
 }
 
-type IsAlive = Rc<dyn Fn() -> bool>;
-type OnEnabled = Rc<dyn Fn(bool)>;
-
-#[derive(Clone)]
-struct EnabledSubscriber {
-    id: u64,
-    is_alive: IsAlive,
-    callback: OnEnabled,
-}
-
-#[derive(Default)]
-struct EnabledSubscribers {
-    next_id: Cell<u64>,
-    entries: RefCell<Vec<EnabledSubscriber>>,
-}
-
-impl EnabledSubscribers {
-    fn subscribe(
-        &self,
-        current: bool,
-        is_alive: impl Fn() -> bool + 'static,
-        callback: impl Fn(bool) + 'static,
-    ) {
-        self.prune();
-        let is_alive: IsAlive = Rc::new(is_alive);
-        if !is_alive() {
-            return;
-        }
-        let callback: OnEnabled = Rc::new(callback);
-        callback(current);
-        if !is_alive() {
-            return;
-        }
-        let id = self.next_id.get().wrapping_add(1);
-        self.next_id.set(id);
-        self.entries.borrow_mut().push(EnabledSubscriber {
-            id,
-            is_alive,
-            callback,
-        });
-    }
-
-    fn notify(&self, enabled: bool) {
-        self.prune();
-        let entries = self.entries.borrow().clone();
-        for entry in entries {
-            if (entry.is_alive)() {
-                (entry.callback)(enabled);
-            }
-        }
-        self.prune();
-    }
-
-    fn prune(&self) {
-        let entries = self.entries.borrow().clone();
-        let dead = entries
-            .iter()
-            .filter_map(|entry| (!(entry.is_alive)()).then_some(entry.id))
-            .collect::<Vec<_>>();
-        if dead.is_empty() {
-            return;
-        }
-        self.entries
-            .borrow_mut()
-            .retain(|entry| !dead.contains(&entry.id));
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.entries.borrow().len()
-    }
-}
-
 pub(in crate::ui) struct ArtistPortraitRuntime {
-    pub enabled: Rc<Cell<bool>>,
     worker: async_channel::Sender<ArtistPortraitRequest>,
-    subscribers: EnabledSubscribers,
 }
 
 impl ArtistPortraitRuntime {
-    pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
-        let enabled = reprise_core::modules::is_enabled(
-            conn,
-            &reprise_core::modules::ARTIST_PORTRAIT_MODULE,
-        )
-        .unwrap_or_else(|error| {
-            tracing::warn!(%error, "could not read Artist Portrait module state; defaulting to off");
-            false
-        });
-        Rc::new(Self {
-            enabled: Rc::new(Cell::new(enabled)),
-            worker: spawn(),
-            subscribers: EnabledSubscribers::default(),
-        })
-    }
-
-    pub(in crate::ui) fn set_enabled(
-        &self,
-        conn: &rusqlite::Connection,
-        enabled: bool,
-    ) -> Result<(), rusqlite::Error> {
-        reprise_core::modules::set_enabled(
-            conn,
-            &reprise_core::modules::ARTIST_PORTRAIT_MODULE,
-            enabled,
-        )?;
-        if self.enabled.replace(enabled) != enabled {
-            self.subscribers.notify(enabled);
-        }
-        Ok(())
-    }
-
-    pub(in crate::ui) fn subscribe_enabled(
-        &self,
-        is_alive: impl Fn() -> bool + 'static,
-        callback: impl Fn(bool) + 'static,
-    ) {
-        self.subscribers
-            .subscribe(self.enabled.get(), is_alive, callback);
+    pub(in crate::ui) fn setup() -> Rc<Self> {
+        Rc::new(Self { worker: spawn() })
     }
 
     pub(in crate::ui) fn request(&self, request: ArtistPortraitRequest) {
-        if !self.enabled.get() || request.artist.trim().is_empty() {
+        if request.artist.trim().is_empty() {
             return;
         }
         if let Err(error) = self.worker.try_send(request) {
             tracing::warn!(%error, "could not queue Artist Portrait request");
         }
-    }
-
-    #[cfg(test)]
-    fn subscriber_count(&self) -> usize {
-        self.subscribers.len()
     }
 }
 
@@ -172,60 +54,4 @@ fn spawn() -> async_channel::Sender<ArtistPortraitRequest> {
         tracing::warn!(%error, "could not start Artist Portrait worker");
     }
     sender
-}
-
-#[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    use super::*;
-
-    fn migrated_conn() -> rusqlite::Connection {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn
-    }
-
-    #[test]
-    fn runtime_defaults_off() {
-        let runtime = ArtistPortraitRuntime::setup(&migrated_conn());
-        assert!(!runtime.enabled.get());
-    }
-
-    #[test]
-    fn runtime_activation_persists_and_updates_live_state() {
-        let conn = migrated_conn();
-        let runtime = ArtistPortraitRuntime::setup(&conn);
-        runtime.set_enabled(&conn, true).unwrap();
-        assert!(runtime.enabled.get());
-        assert!(reprise_core::modules::is_enabled(
-            &conn,
-            &reprise_core::modules::ARTIST_PORTRAIT_MODULE
-        )
-        .unwrap());
-    }
-
-    #[test]
-    fn dead_enabled_subscriber_is_removed_safely() {
-        let conn = migrated_conn();
-        let runtime = ArtistPortraitRuntime::setup(&conn);
-        let alive = Rc::new(Cell::new(true));
-        let calls = Rc::new(Cell::new(0));
-        runtime.subscribe_enabled(
-            {
-                let alive = alive.clone();
-                move || alive.get()
-            },
-            {
-                let calls = calls.clone();
-                move |_| calls.set(calls.get() + 1)
-            },
-        );
-        assert_eq!(calls.get(), 1);
-        alive.set(false);
-        runtime.set_enabled(&conn, true).unwrap();
-        assert_eq!(calls.get(), 1);
-        assert_eq!(runtime.subscriber_count(), 0);
-    }
 }

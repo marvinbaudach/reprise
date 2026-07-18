@@ -155,7 +155,6 @@ impl ArtistDetailPane {
 
         wire_albums_show_all(&inner);
         wire_top_show_all(&inner);
-        subscribe_portrait_enabled(&inner.portraits, &inner);
 
         Self { root, inner }
     }
@@ -240,7 +239,7 @@ impl ArtistDetailPane {
 }
 
 fn request_portrait(inner: &Rc<Inner>, artist: String) {
-    if !inner.portraits.enabled.get() || artist.trim().is_empty() {
+    if artist.trim().is_empty() {
         return;
     }
     let generation = inner.generation.get();
@@ -256,7 +255,7 @@ fn request_portrait(inner: &Rc<Inner>, artist: String) {
         let Ok(response) = receiver.recv().await else {
             return;
         };
-        if response.generation != inner.generation.get() || !inner.portraits.enabled.get() {
+        if response.generation != inner.generation.get() {
             return;
         }
         if let Ok(PortraitOutcome::Found(path)) = response.result {
@@ -265,25 +264,6 @@ fn request_portrait(inner: &Rc<Inner>, artist: String) {
             }
         }
     });
-}
-
-fn subscribe_portrait_enabled(portraits: &Rc<ArtistPortraitRuntime>, inner: &Rc<Inner>) {
-    let alive = Rc::downgrade(inner);
-    let target = alive.clone();
-    portraits.subscribe_enabled(
-        move || alive.upgrade().is_some(),
-        move |enabled| {
-            let Some(inner) = target.upgrade() else {
-                return;
-            };
-            if !enabled {
-                inner.hero.clear_portrait();
-                return;
-            }
-            let artist = inner.current_artist.borrow().clone();
-            request_portrait(&inner, artist);
-        },
-    );
 }
 
 /// Repopulates the albums FlowBox. Empty albums clear the glow and show the
@@ -485,8 +465,7 @@ mod tests {
         // 2026-07-15T00:00:00Z — a fixed reference "now" so the year window is
         // clock-independent.
         const NOW: i64 = 1_784_073_600;
-        let portraits =
-            crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
         let pane = ArtistDetailPane::new(conn, loader, portraits);
         pane.show_artist("Solo", NOW);
 

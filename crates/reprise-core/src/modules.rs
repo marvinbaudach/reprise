@@ -48,20 +48,9 @@ pub const ARTIST_NEWS_MODULE: ModuleDescriptor = ModuleDescriptor {
     default_enabled: false,
 };
 
-pub const ARTIST_PORTRAIT_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "artist_portrait",
-    name: "Artist Portraits",
-    description: "Show artist photos fetched from Deezer (network; off by default)",
-    default_enabled: false,
-};
-
 /// Every optional integration the app currently exposes, in Plugins-page order.
-pub const ALL_MODULES: &[&ModuleDescriptor] = &[
-    &ARTIST_NEWS_MODULE,
-    &ARTIST_PORTRAIT_MODULE,
-    &LISTENBRAINZ_MODULE,
-    &LASTFM_MODULE,
-];
+pub const ALL_MODULES: &[&ModuleDescriptor] =
+    &[&ARTIST_NEWS_MODULE, &LISTENBRAINZ_MODULE, &LASTFM_MODULE];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -174,16 +163,10 @@ mod tests {
     }
 
     #[test]
-    fn artist_portrait_is_listed_and_defaults_off() {
-        let conn = migrated_conn();
-        assert!(ALL_MODULES
+    fn all_modules_excludes_always_on_artist_portrait() {
+        assert!(!ALL_MODULES
             .iter()
-            .any(|module| module.id == ARTIST_PORTRAIT_MODULE.id));
-        assert!(!is_enabled(&conn, &ARTIST_PORTRAIT_MODULE).unwrap());
-        assert_eq!(
-            enabled_key(&ARTIST_PORTRAIT_MODULE),
-            "module.artist_portrait.enabled"
-        );
+            .any(|module| module.id == "artist_portrait"));
     }
 
     #[test]

@@ -64,21 +64,6 @@ impl RowHandles {
     }
 }
 
-pub(in crate::ui) fn apply_portrait_enabled(
-    registry: &Registry,
-    portraits: &Rc<ArtistPortraitRuntime>,
-    enabled: bool,
-) {
-    let rows = registry.borrow().values().cloned().collect::<Vec<_>>();
-    for row in rows {
-        if enabled {
-            request_portrait(&row, portraits);
-        } else {
-            row.clear_portrait();
-        }
-    }
-}
-
 /// Whether `row_artist` is the currently-playing artist (Unicode case-folded,
 /// matching the case-insensitive sort keys elsewhere in the master list).
 fn is_now_playing(now_playing: Option<&str>, row_artist: &str) -> bool {
@@ -242,9 +227,6 @@ fn bind_row(
 }
 
 fn request_portrait(handles: &RowHandles, portraits: &Rc<ArtistPortraitRuntime>) {
-    if !portraits.enabled.get() {
-        return;
-    }
     let artist = handles.artist.borrow().clone();
     if artist.is_empty() {
         return;
@@ -258,13 +240,11 @@ fn request_portrait(handles: &RowHandles, portraits: &Rc<ArtistPortraitRuntime>)
     });
     let handles_artist = handles.artist.clone();
     let portrait = handles.portrait.clone();
-    let portraits = portraits.clone();
     glib::spawn_future_local(async move {
         let Ok(response) = receiver.recv().await else {
             return;
         };
-        if handles_artist.borrow().as_str() != response.artist.as_str() || !portraits.enabled.get()
-        {
+        if handles_artist.borrow().as_str() != response.artist.as_str() {
             return;
         }
         if let Ok(PortraitOutcome::Found(path)) = response.result {
