@@ -46,7 +46,6 @@ pub(in crate::ui) fn css() -> String {
          .{COVER_CONTAINER_CLASS} {{ \
            border-radius: 10px; \
            box-shadow: 0 4px 14px rgba(0,0,0,0.30); \
-           overflow: hidden; \
            border: 1px solid alpha(white, 0.06); }}\n\
          \
          /* Cover image fills container. */

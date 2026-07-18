@@ -55,12 +55,24 @@ printf '%s\n' \
   '    TimedAnimation::new(widget, 0.0, 1.0, 1, target);' \
   '}' > "$ui_root/motion.rs"
 printf '%s\n' 'const TRANSITION: &str = "150ms ease-out";' > "$ui_root/style/tokens.rs"
-printf '%s\n' 'fn phase_two() { stack.set_transition_duration(150); }' \
+printf '%s\n' 'fn literal_duration() { stack.set_transition_duration(150); }' \
   > "$ui_root/sidebar/sidebar_device_card.rs"
-printf '%s\n' 'fn phase_two() { stack.transition_duration(150); }' \
+printf '%s\n' 'fn literal_duration() { stack.transition_duration(150); }' \
   > "$ui_root/scan/scan_progress.rs"
-printf '%s\n' 'fn phase_two() { stack.set_transition_duration(150); }' \
+printf '%s\n' 'fn literal_duration() { stack.set_transition_duration(150); }' \
   > "$ui_root/window/window.rs"
 
+if MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" \
+    >"$fixture/out" 2>"$fixture/err"; then
+  echo "motion token lint accepted literal durations in ordinary UI files" >&2
+  exit 1
+fi
+rg --quiet 'literal animation duration.*sidebar/sidebar_device_card.rs' "$fixture/err"
+rg --quiet 'literal animation duration.*scan/scan_progress.rs' "$fixture/err"
+rg --quiet 'literal animation duration.*window/window.rs' "$fixture/err"
+
+rm "$ui_root/sidebar/sidebar_device_card.rs" \
+  "$ui_root/scan/scan_progress.rs" \
+  "$ui_root/window/window.rs"
 MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" >/dev/null
 echo "Motion token lint tests passed"
