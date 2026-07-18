@@ -53,6 +53,7 @@ fn app_css() -> String {
         super::player_bar_layout::css(),
         super::preference_choice_cards::css(),
         super::preference_playback::css(),
+        super::preference_plugins::css(),
         super::preferences_window::css(),
         super::rating::css(),
         super::track_list_header_style::css(),

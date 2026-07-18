@@ -514,23 +514,23 @@ pub fn build(
         let preferences = Rc::downgrade(&preferences);
         info_panel.lyrics_view().set_on_settings(move || {
             if let Some(preferences) = preferences.upgrade() {
-                preferences.present_page("plugins");
+                preferences.present_plugins(crate::ui::preference_plugins::ONLINE_LYRICS_TARGETS);
             }
         });
     }
     {
         let preferences = Rc::downgrade(&preferences);
-        album_view.set_on_hint_settings(move |_targets| {
+        album_view.set_on_hint_settings(move |targets| {
             if let Some(preferences) = preferences.upgrade() {
-                preferences.present_page("plugins");
+                preferences.present_plugins(targets);
             }
         });
     }
     {
         let preferences = Rc::downgrade(&preferences);
-        artist_view.set_on_hint_settings(move |_targets| {
+        artist_view.set_on_hint_settings(move |targets| {
             if let Some(preferences) = preferences.upgrade() {
-                preferences.present_page("plugins");
+                preferences.present_plugins(targets);
             }
         });
     }
