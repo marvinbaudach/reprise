@@ -26,7 +26,6 @@ phase_two_allowlist=(
   crates/reprise-gnome/src/ui/sidebar/sidebar_device_card.rs
   crates/reprise-gnome/src/ui/scan/scan_progress.rs
   crates/reprise-gnome/src/ui/issues/missing_progress.rs
-  crates/reprise-gnome/src/ui/window/window.rs
 )
 
 # --- Literal-duration detection (heuristic; see the limits below) ---

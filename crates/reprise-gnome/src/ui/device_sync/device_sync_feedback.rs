@@ -21,7 +21,7 @@ struct PreviousDevice {
 
 pub(in crate::ui) fn install(
     header: &adw::HeaderBar,
-    split_view: &adw::NavigationSplitView,
+    split_view: &adw::OverlaySplitView,
     overlay: &adw::ToastOverlay,
     runtime: &Rc<DeviceSyncRuntime>,
 ) {
@@ -48,7 +48,7 @@ pub(in crate::ui) fn install(
 
 fn update_header(
     spinner: &gtk4::Spinner,
-    split_view: &adw::NavigationSplitView,
+    split_view: &adw::OverlaySplitView,
     active: &Cell<bool>,
     state: &DeviceSyncState,
 ) {

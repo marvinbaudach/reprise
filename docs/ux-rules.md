@@ -668,7 +668,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   Transitions folgen direkten Nutzeraktionen. Scan/Watcher/Mount/Sync
   schalten hart bzw. faden ohne Verschiebung (P-4 in Motion-Sprache).
   Ausnahme: die vom Nutzer gestartete Prozess-Karte darf füllen/pulsieren.
-- **MOT-3** [geplant] [gtk] — Symmetrie: gleiches Muster = gleiches Widget
+- **MOT-3** [aktiv] [gtk] — Symmetrie: gleiches Muster = gleiches Widget
   + gleiches Token. Konkret: die linke Bibliotheks-Sidebar nutzt exakt das
   Widget und damit exakt die Transition der rechten Info-Spalte
   (`adw::OverlaySplitView`, Position Start — Auslöser dieser Sektion); der
