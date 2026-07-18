@@ -1,5 +1,51 @@
 use super::*;
 use libadwaita::prelude::AnimationExt;
+use std::time::Duration;
+
+fn run_main_loop_for(milliseconds: u32) {
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(Duration::from_millis(milliseconds.into()), move || {
+        quit.quit();
+    });
+    main_loop.run();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_play_pause_pulses_on_state_change() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let bar = PlayerBar::new();
+    let window = gtk4::Window::new();
+    window.set_child(Some(bar.widget()));
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    bar.set_state(PlaybackState::Paused);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(!bar.play_pause_button.has_css_class("pulsing"));
+
+    bar.set_state(PlaybackState::Playing);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(bar.play_pause_button.has_css_class("pulsing"));
+
+    run_main_loop_for(motion::half(motion::MICRO));
+    bar.set_state(PlaybackState::Paused);
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(bar.play_pause_button.has_css_class("pulsing"));
+
+    run_main_loop_for(motion::half(motion::MICRO) + 20);
+    assert!(bar.play_pause_button.has_css_class("pulsing"));
+    run_main_loop_for(motion::half(motion::MICRO) + 20);
+    assert!(!bar.play_pause_button.has_css_class("pulsing"));
+
+    settings.set_gtk_enable_animations(previous);
+    window.close();
+}
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
