@@ -1,7 +1,46 @@
 use gtk4::prelude::*;
 use reprise_core::lyrics::{LyricsBody, LyricsError, TimedLine};
 
-use super::lyrics_view::{centered_scroll_value, LyricsView, ACTIVE_LINE_CLASS};
+use super::lyrics_view::{
+    active_line_alpha, centered_scroll_value, css, line_alpha, lyrics_footer, LyricsView,
+    ACTIVE_LINE_CLASS, INLINE_RETRY_CLASS,
+};
+
+#[test]
+fn npp_5_line_hierarchy_uses_the_decided_alpha_steps() {
+    assert_eq!(line_alpha(Some(3), 3), 100);
+    assert_eq!(line_alpha(Some(3), 2), 45);
+    assert_eq!(line_alpha(Some(3), 4), 45);
+    assert_eq!(line_alpha(Some(3), 1), 32);
+    assert_eq!(line_alpha(Some(3), 5), 32);
+    assert_eq!(line_alpha(Some(3), 0), 28);
+    assert_eq!(line_alpha(None, 3), 28);
+
+    let css = css();
+    for declaration in [
+        "font-size: 13px",
+        "font-size: 15px",
+        "font-weight: 700",
+        "min-width: 26px",
+        "min-height: 2.5px",
+        "background-color: @reprise_player_accent",
+    ] {
+        assert!(css.contains(declaration), "missing {declaration}");
+    }
+}
+
+#[test]
+fn npp_9_fallbacks_keep_source_and_instrumental_gap_semantics() {
+    let synced = LyricsBody::Synced(vec![TimedLine::new(1_000, "synthetic line")]);
+    let plain = LyricsBody::Plain("synthetic plain text".into());
+
+    assert_eq!(lyrics_footer(&synced), "synced · LRCLIB");
+    assert_eq!(lyrics_footer(&plain), "lyrics · tags");
+    assert_eq!(lyrics_footer(&LyricsBody::Instrumental), "");
+    assert_eq!(active_line_alpha(1_000, 11_000), 100);
+    assert_eq!(active_line_alpha(1_000, 11_001), 60);
+    assert!(css().contains("color: alpha(#ffffff, 0.65)"));
+}
 
 #[test]
 fn centered_scroll_clamps_at_start_middle_and_end() {
@@ -13,7 +52,7 @@ fn centered_scroll_clamps_at_start_middle_and_end() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn lyrics_bodies_are_selectable_and_only_one_timed_line_is_active() {
+fn lyrics_bodies_are_not_selectable_and_only_one_timed_line_is_active() {
     gtk4::init().unwrap();
     let view = LyricsView::new();
     view.show_result(&LyricsBody::Synced(vec![
@@ -23,7 +62,7 @@ fn lyrics_bodies_are_selectable_and_only_one_timed_line_is_active() {
     ]));
     let labels = view.line_labels();
     assert_eq!(labels.len(), 3);
-    assert!(labels.iter().all(gtk4::Label::is_selectable));
+    assert!(labels.iter().all(|label| !label.is_selectable()));
     assert!(labels.iter().all(gtk4::Label::wraps));
 
     view.set_active_line(Some(1));
@@ -48,7 +87,7 @@ fn lyrics_bodies_are_selectable_and_only_one_timed_line_is_active() {
     view.show_result(&LyricsBody::Plain("synthetic plain text".into()));
     let plain = view.line_labels();
     assert_eq!(plain.len(), 1);
-    assert!(plain[0].is_selectable());
+    assert!(!plain[0].is_selectable());
     assert!(plain[0].wraps());
 
     view.show_result(&LyricsBody::Instrumental);
@@ -69,6 +108,20 @@ fn temporary_error_exposes_retry_but_not_found_does_not() {
     assert!(view.retry_is_visible());
     view.show_error(&LyricsError::NotFound);
     assert!(!view.retry_is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_9_errors_offer_only_inline_retry() {
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+
+    view.show_error(&LyricsError::Temporary);
+    assert!(view.retry_is_visible());
+    assert!(view.retry_has_css_class(INLINE_RETRY_CLASS));
+    view.show_error(&LyricsError::NotFound);
+    assert!(!view.retry_is_visible());
+    assert_eq!(view.status_text(), "No lyrics found");
 }
 
 #[test]

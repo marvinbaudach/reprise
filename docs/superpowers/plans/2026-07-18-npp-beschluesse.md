@@ -42,7 +42,7 @@ Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs i
 
 ### Synced Lyrics (Lyrics-Tab)
 
-- **NPP-5 · Zeilen-Styling** `[geplant]` — Aktive Zeile 15 px bold weiß +
+- **NPP-5 · Zeilen-Styling** `[aktiv]` — Aktive Zeile 15 px bold weiß +
   Akzent-Unterstrich (26×2.5 px, zentriert, Farbe = Cover-Akzent).
   Nachbarzeilen gestuft: ±1 → weiß 45 %, ±2 → 32 %, weiter → 28 %. Alle Zeilen
   zentriert, 13 px, großzügiger Abstand (~13 px gap). Ganze LRC-Zeilen, kein
@@ -61,7 +61,7 @@ Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs i
 - **NPP-8 · Klick = Seek** `[geplant]` — Klick auf eine Zeile seekt zum
   Timestamp (nur synced). Hover: weiß 65 % + Pointer. Einzige
   Klick-Interaktion im Lyrics-Tab; Lyrics-Text ist nicht selektierbar.
-- **NPP-9 · Fallbacks** `[geplant]` — Unsynced → statischer scrollbarer Text
+- **NPP-9 · Fallbacks** `[aktiv]` — Unsynced → statischer scrollbarer Text
   (13 px, weiß 65 %), kein Highlight, kein Auto-Scroll, Fuß „lyrics · tags".
   Keine Lyrics → dezenter Leerzustand („No lyrics found", keine Suche-CTA in
   v1) mit **Inline-Retry** bei Fehlern (Beschluss 9). Instrumental-Gap
