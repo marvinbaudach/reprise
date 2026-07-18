@@ -138,7 +138,7 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
 
     let hover_revealer = gtk4::Revealer::new();
     hover_revealer.set_transition_type(gtk4::RevealerTransitionType::Crossfade);
-    hover_revealer.set_transition_duration(150);
+    hover_revealer.set_transition_duration(super::motion::MICRO_MS);
     hover_revealer.set_child(Some(&hover_row));
     hover_revealer.set_reveal_child(false);
     hover_revealer.set_can_target(false);
@@ -186,7 +186,7 @@ pub(in crate::ui) fn mini_css() -> String {
            color: #ffffff; \
            box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.40); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
-                       transform 120ms ease-out; }}\n\
+                       transform {TRANSITION}; }}\n\
          .{CSS_PLAY}:hover {{ box-shadow: 0 0 18px alpha(@reprise_player_accent, 0.60); }}\n\
          .{CSS_PLAY}:active {{ transform: scale(0.92); }}\n\
          .{CSS_TITLE} {{ font-weight: bold; font-size: 13px; }}\n\

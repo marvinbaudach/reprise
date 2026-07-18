@@ -321,6 +321,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
     // === Stack ===
     let stack = gtk4::Stack::new();
     stack.set_transition_type(gtk4::StackTransitionType::SlideLeft);
+    stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
     stack.add_named(&selection_box, Some("selection"));
     stack.add_named(&progress_box, Some("progress"));
     stack.add_named(&complete_box, Some("complete"));

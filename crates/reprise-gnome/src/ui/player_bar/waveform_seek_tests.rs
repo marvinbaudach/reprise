@@ -294,3 +294,54 @@ fn mini_waveform_has_16px_height() {
     let w = WaveformSeek::new_mini();
     assert_eq!(w.widget().content_height(), 16);
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_7_waveform_position_hard_switches_when_system_animations_are_disabled() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
+
+    let waveform = WaveformSeek::new();
+    waveform.set_fraction(0.20);
+    waveform.state.borrow_mut().last_tick_us = gtk4::glib::monotonic_time() - 1_000_000;
+    waveform.set_fraction_smooth(0.22);
+
+    let state = waveform.state.borrow();
+    assert_eq!(state.fraction, 0.22);
+    assert_eq!(state.target_fraction, 0.22);
+    assert_eq!(state.fraction_velocity, 0.0);
+    drop(state);
+    assert!(waveform.tick_id.borrow().is_none());
+
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_7_waveform_completes_build_up_when_animations_disabled_mid_build() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+
+    // Start an Ambient build-up with animations on.
+    settings.set_gtk_enable_animations(true);
+    let waveform = WaveformSeek::new();
+    waveform.set_peaks(vec![128u8; 1000]);
+    assert!(
+        waveform.state.borrow().build_progress < 1.0,
+        "set_peaks with animations on should start an in-progress build-up"
+    );
+
+    // Disable animations mid-build, then deliver a smooth position update.
+    // The build-up must be marked complete (the advancing tick is removed
+    // here), otherwise the waveform freezes half-built.
+    settings.set_gtk_enable_animations(false);
+    waveform.set_fraction_smooth(0.30);
+
+    assert_eq!(waveform.state.borrow().build_progress, 1.0);
+    assert!(waveform.tick_id.borrow().is_none());
+
+    settings.set_gtk_enable_animations(previous);
+}
