@@ -307,15 +307,6 @@ pub fn remove_missing_tracks(
     remove_tracks_impl(conn, ids, RemoveGuard::MissingOnly)
 }
 
-/// Explicit, DATABASE-ONLY removal for live or missing tracks. This never
-/// touches a media file. Like [`remove_missing_tracks`], it deletes and
-/// compacts every affected playlist in one transaction and returns the
-/// unique ids actually removed in first-input order. The UI must separately
-/// purge these exact ids from its playback queue.
-pub fn remove_tracks(conn: &mut Connection, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
-    remove_tracks_impl(conn, ids, RemoveGuard::Any)
-}
-
 /// Deletes only rows whose current `(id, path)` identity still matches the
 /// caller's snapshot. Dialog and filesystem operations can outlive the row
 /// they started from, and track ids are reusable, so an id-only delete would
@@ -335,8 +326,10 @@ pub fn remove_tracks_matching_paths(
 /// Which rows `remove_tracks_impl`'s per-id `DELETE` is allowed to actually
 /// touch — an extra condition appended to `WHERE id = ?1`, re-checked at
 /// delete time rather than trusted from whatever snapshot the caller
-/// selected `ids` from. `Any` is the explicit live-or-missing removal API
-/// (`remove_tracks`, no extra guard). `MissingOnly` is `remove_missing_tracks`'s
+/// selected `ids` from. `Any` applies no missing/tombstone state guard and is
+/// used only by `remove_tracks_matching_paths`, which always pairs it with a
+/// mandatory `(id, path)` identity check — the id-only `Any` form is
+/// `unreachable!`. `MissingOnly` is `remove_missing_tracks`'s
 /// belt-and-braces check against a row that raced back to present since the
 /// caller's selection. `TombstonedOnly` is `purge_tombstones`'s guard against the
 /// mirror race on the other side of the same problem: the scanner's
@@ -392,7 +385,7 @@ fn remove_track_requests_impl<'a>(
                 rusqlite::params![id, expected_path.to_string_lossy()],
             )?,
             (RemoveGuard::Any, None) => {
-                tx.execute("DELETE FROM tracks WHERE id = ?1", rusqlite::params![id])?
+                unreachable!("RemoveGuard::Any is only ever paired with a path-identity check")
             }
             (RemoveGuard::MissingOnly, None) => tx.execute(
                 &format!("DELETE FROM tracks WHERE id = ?1 AND {MISSING}"),
@@ -422,7 +415,7 @@ fn remove_track_requests_impl<'a>(
 
 /// Auto-clean's own DATABASE-ONLY removal (Finding 1, review pass on Task
 /// 2.3): the guarded version `queries::issues::run_auto_clean` calls instead
-/// of the unguarded [`remove_tracks`]. `run_auto_clean` selects eligible ids
+/// of an unguarded id-only delete. `run_auto_clean` selects eligible ids
 /// via `auto_clean_eligible`, then hands them here — this function re-checks
 /// each id's eligibility (still missing, still `missing_reason = 'deleted'`)
 /// at delete time via [`RemoveGuard::AutoCleanEligible`], closing the same
@@ -455,9 +448,9 @@ pub(crate) fn remove_auto_clean_eligible_tracks(
 // -- Tombstone operations (Task 2.2, 10-second undo) ---------------------
 //
 // The Missing source's "Remove all N from library" action needs an undo
-// window, and a hard delete cannot honestly offer one. `remove_tracks`
-// (above) is a real, immediate, irreversible delete — correct for its own
-// callers, but the wrong primitive for a "Remove" the user might click
+// window, and a hard delete cannot honestly offer one. A bare
+// `remove_tracks_impl` delete is real, immediate, and irreversible — correct
+// for its own callers, but the wrong primitive for a "Remove" the user might click
 // "Undo" on ten seconds later.
 //
 // A snapshot-and-restore undo (save the row, delete it, re-insert on undo)
@@ -479,7 +472,7 @@ pub(crate) fn remove_auto_clean_eligible_tracks(
 // is for the whole window. `undo_tombstone` is then just clearing that one
 // column back to `NULL`; there is nothing to restore because nothing was
 // ever lost. `purge_tombstones` is the one place a tombstone finally
-// becomes the real, `remove_tracks`-powered delete, once the window has
+// becomes the real, `remove_tracks_impl`-powered delete, once the window has
 // closed without an undo.
 //
 // Tests for this section live in `tests_issues.rs`, not the `tests_
@@ -575,7 +568,7 @@ pub fn undo_tombstone(conn: &Connection, ids: &[i64]) -> Result<usize, rusqlite:
 /// is wired by a later task). Both funnel through this one function so
 /// there is exactly one place a tombstone turns into a real delete.
 ///
-/// Deliberately reuses the same shared deletion path as [`remove_tracks`]
+/// Deliberately reuses the same shared deletion path as [`remove_missing_tracks`]
 /// (both funnel through `remove_tracks_impl`) rather than re-implementing
 /// deletion: that path already gets the hard part right inside one
 /// transaction — every affected playlist's positions compacted, the FK
