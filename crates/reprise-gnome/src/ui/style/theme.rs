@@ -273,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn dark_palettes_follow_14a_surface_hierarchy() {
+    fn style_2_side_surfaces_sit_above_the_table() {
         fn channel_sum(hex: &str) -> u16 {
             let hex = hex.strip_prefix('#').expect("palette color starts with #");
             [0, 2, 4]
@@ -300,6 +300,12 @@ mod tests {
             assert!(
                 sidebar < card,
                 "{theme:?}: sidebar must be darker than cards"
+            );
+
+            let light = theme.light_palette();
+            assert!(
+                channel_sum(light.sidebar_bg) < channel_sum(light.view_bg),
+                "{theme:?}: light sidebar must be darker than the table"
             );
         }
     }

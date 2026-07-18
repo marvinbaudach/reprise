@@ -538,18 +538,19 @@ pub(in crate::ui) fn css() -> String {
     use tokens::{
         NOW_PLAYING_FOOTER_ALPHA, NOW_PLAYING_FOOTER_SIZE, NOW_PLAYING_GLOW_ALPHA,
         NOW_PLAYING_PILL_ACTIVE_ALPHA, NOW_PLAYING_PILL_BG_ALPHA, NOW_PLAYING_PILL_RADIUS,
-        NOW_PLAYING_STAGE_BG, NOW_PLAYING_SUBTITLE_ALPHA, NOW_PLAYING_SUBTITLE_SIZE,
-        NOW_PLAYING_TITLE_SIZE, RADIUS_SURFACE,
+        NOW_PLAYING_SUBTITLE_ALPHA, NOW_PLAYING_SUBTITLE_SIZE, NOW_PLAYING_TITLE_SIZE,
+        RADIUS_SURFACE,
     };
 
     format!(
         ".reprise-now-playing-stage {{ \
-       background-color: {NOW_PLAYING_STAGE_BG}; color: #ffffff; min-width: 300px; }}\n\
+       background-color: @sidebar_bg_color; color: #ffffff; min-width: 300px; \
+       border-left: 1px solid rgba(255, 255, 255, 0.06); }}\n\
      .reprise-now-playing-glow {{ \
        min-height: 300px; \
        background-image: radial-gradient(ellipse at center, \
          alpha(@reprise_player_accent, {NOW_PLAYING_GLOW_ALPHA}) 0%, \
-         alpha({NOW_PLAYING_STAGE_BG}, 0) 70%); }}\n\
+         alpha(@sidebar_bg_color, 0) 70%); }}\n\
      .reprise-now-playing-idle .reprise-now-playing-glow {{ \
        background-image: none; }}\n\
      .reprise-now-playing-head {{ padding: 22px 18px 16px; }}\n\
