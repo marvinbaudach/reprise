@@ -5,4 +5,4 @@ mod surface;
 
 #[allow(unused_imports)]
 use super::*;
-pub(in crate::ui) use surface::NowPlayingPanel;
+pub(in crate::ui) use surface::{css, NowPlayingPanel};

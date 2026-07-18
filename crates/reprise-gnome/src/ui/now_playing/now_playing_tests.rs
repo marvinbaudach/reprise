@@ -52,6 +52,43 @@ fn now_playing_panel_has_the_fixed_npp_width() {
 }
 
 #[test]
+fn now_playing_css_defines_the_21a_stage_head_and_glow() {
+    let css = css();
+
+    assert!(css.contains(".reprise-now-playing-stage"));
+    assert!(css.contains("background-color: #17191c"));
+    assert!(!css.contains("@sidebar_bg_color"));
+    assert!(css.contains(".reprise-now-playing-glow"));
+    assert!(css.contains("radial-gradient"));
+    assert!(css.contains("alpha(@reprise_player_accent, 0.4)"));
+    assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
+    assert!(css.contains("border-radius: 12px"));
+    assert!(css.contains("font-size: 15px"));
+    assert!(css.contains("font-size: 12px"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn now_playing_css_parses_without_gtk_errors() {
+    gtk4::init().unwrap();
+    let errors = crate::ui::style::css_parse_errors(&css());
+    assert!(errors.is_empty(), "GTK reported CSS errors: {errors:?}");
+}
+
+#[test]
+fn now_playing_css_defines_the_two_segment_pill_and_footer() {
+    let css = css();
+
+    assert!(css.contains(".reprise-now-playing-tabs"));
+    assert!(css.contains("border-radius: 99px"));
+    assert!(css.contains("alpha(#ffffff, 0.06)"));
+    assert!(css.contains("alpha(#ffffff, 0.14)"));
+    assert!(css.contains(".reprise-now-playing-footer"));
+    assert!(css.contains("font-size: 10.5px"));
+    assert!(css.contains("alpha(#ffffff, 0.35)"));
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn panel_has_no_local_header_refresh_or_close_buttons() {
     gtk4::init().unwrap();
@@ -68,6 +105,66 @@ fn panel_has_no_local_header_refresh_or_close_buttons() {
     assert!(!icon_names
         .iter()
         .any(|name| { name == "view-refresh-symbolic" || name == "window-close-symbolic" }));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+#[allow(deprecated)]
+fn npp_2_no_volume_in_panel() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = build_widgets(&content, true);
+    let tree = widget_tree(widgets.column.widget().upcast_ref());
+
+    assert!(tree.iter().all(|widget| !widget.is::<gtk4::VolumeButton>()));
+    assert!(tree.iter().all(|widget| !widget.is::<gtk4::Scale>()));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn head_and_pill_match_the_21a_structure() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = build_widgets(&content, true);
+
+    assert_eq!(widgets.cover.pixel_size(), 168);
+    assert_eq!(widgets.cover.width_request(), 168);
+    assert_eq!(widgets.cover.height_request(), 168);
+    assert!(widgets.title.has_css_class("reprise-now-playing-title"));
+    assert!(widgets
+        .subtitle
+        .has_css_class("reprise-now-playing-subtitle"));
+    assert_eq!(widgets.tab_buttons.len(), 2);
+    assert_eq!(widgets.tab_buttons[0].label().as_deref(), Some("Up Next"));
+    assert_eq!(widgets.tab_buttons[1].label().as_deref(), Some("Lyrics"));
+    assert!(widgets
+        .tab_buttons
+        .iter()
+        .all(|button| button.has_css_class("reprise-now-playing-tab")));
+    assert!(widgets.footer.has_css_class("reprise-now-playing-footer"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn idle_uses_a_placeholder_cover_without_the_accent_glow() {
+    gtk4::init().unwrap();
+    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingIdleTest");
+    panel.retain_for_window(&window);
+
+    assert_eq!(panel.widgets.title.text(), "Nothing playing");
+    assert_eq!(
+        panel.widgets.cover.icon_name().as_deref(),
+        Some("audio-x-generic-symbolic")
+    );
+    assert!(panel
+        .widgets
+        .stage
+        .has_css_class("reprise-now-playing-idle"));
+    panel.set_loaded_track(Some(loaded_track()));
+    assert!(!panel
+        .widgets
+        .stage
+        .has_css_class("reprise-now-playing-idle"));
 }
 
 #[test]

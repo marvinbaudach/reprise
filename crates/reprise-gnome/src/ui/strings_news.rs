@@ -11,6 +11,7 @@ pub const INFORMATION: &str = N_!("Information");
 /// Tooltip of the headerbar Now Playing panel toggle (TIP-1b).
 pub const INFO_PANEL_TOGGLE: &str = N_!("Toggle Now Playing panel");
 pub const NOW_PLAYING_NOTHING: &str = N_!("Nothing playing");
+pub const UP_NEXT: &str = N_!("Up Next");
 pub const ARTIST_NEWS: &str = N_!("Artist & Album News");
 pub const ARTIST_NEWS_DESCRIPTION: &str =
     N_!("Show upcoming and newly released albums from MusicBrainz (network; off by default)");
