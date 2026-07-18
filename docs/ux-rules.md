@@ -873,7 +873,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
 
 ## T. Netz-Features opt-in
 
-- **NET-1** [geplant] [gtk] — Automatische und massenhafte Netzabrufe sind
+- **NET-1** [aktiv] [gtk] — Automatische und massenhafte Netzabrufe sind
   opt-in. Cover-Downloads, Artist-Portraits und New Releases starten nur bei
   eingeschaltetem Modul; Online-Lyrics haben ebenfalls einen Schalter, damit
   vollständig netzfreie Nutzung möglich bleibt. Ein Ausschalten wirkt sofort

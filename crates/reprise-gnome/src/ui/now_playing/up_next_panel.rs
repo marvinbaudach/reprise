@@ -494,7 +494,7 @@ mod tests {
         )
         .unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
         let panel = UpNextPanel::new(conn, &cover_loader);
         let jumped = Rc::new(RefCell::new(None));
         let jumped_on_click = jumped.clone();
@@ -530,7 +530,7 @@ mod tests {
         )
         .unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
         let panel = UpNextPanel::new(conn, &cover_loader);
         let removed = Rc::new(RefCell::new(None));
         let removed_on_click = removed.clone();

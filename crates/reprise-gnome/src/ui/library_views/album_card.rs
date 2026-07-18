@@ -527,7 +527,7 @@ mod tests {
         let (worker, _receiver) = async_channel::unbounded();
         let cover_loader =
             CoverLoader::new(crate::ui::cover_download_worker::CoverDownloadRuntime {
-                enabled: false,
+                enabled: Rc::new(Cell::new(false)),
                 worker,
             });
         let shared = Rc::new(AlbumCardShared {
