@@ -781,7 +781,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 - **SEARCH-1** [aktiv] [gtk] — Im Ruhezustand belegt die Suche in der
   Headerbar nur eine Lupe. Das Suchfeld lebt in einer zweiten, standardmäßig
   eingeklappten Top-Bar und wird nie als permanentes breites Feld dargestellt.
-- **SEARCH-2** [geplant] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+- **SEARCH-2** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
   Tippen öffnet die Suchleiste und fokussiert das Feld. Sie ist ein
   vollbreiter Streifen bündig unter der Headerbar, hat eine eigene Fläche mit
   unterer Trennlinie und schiebt beim Reveal den Inhalt nach unten; das

@@ -53,8 +53,14 @@ pub(in crate::ui) fn build(
     ))]);
     header.pack_end(&search_toggle);
 
+    let search_clamp = adw::Clamp::builder()
+        .maximum_size(450)
+        .child(search_entry)
+        .build();
     let search_bar = gtk4::SearchBar::new();
-    search_bar.set_child(Some(search_entry));
+    search_bar.set_hexpand(true);
+    search_bar.add_css_class("reprise-search-strip");
+    search_bar.set_child(Some(&search_clamp));
     search_bar.connect_entry(search_entry);
     search_bar.set_key_capture_widget(Some(key_capture_widget));
     wire_search_toggle(&search_toggle, &search_bar, search_entry);
@@ -162,6 +168,9 @@ pub(in crate::ui) fn css() -> String {
      .reprise-library-header { \
        background-color: @headerbar_bg_color; \
        border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
+     .reprise-search-strip { \
+       background-color: @headerbar_bg_color; \
+       border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
      .reprise-view-switcher { \
        background-color: alpha(@window_fg_color, 0.06); \
        border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\
@@ -202,7 +211,48 @@ mod tests {
             Some("system-search-symbolic")
         );
         assert!(!chrome.search_bar.is_search_mode());
-        assert_eq!(chrome.search_bar.child().as_ref(), Some(entry.upcast_ref()));
+        let clamp = chrome
+            .search_bar
+            .child()
+            .and_downcast::<adw::Clamp>()
+            .expect("search entry must be wrapped by a clamp");
+        assert!(entry.is_ancestor(&clamp));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_2_bar_reveals_flush_under_headerbar() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let content = gtk4::Label::new(Some("Library"));
+        let entry = gtk4::SearchEntry::new();
+
+        let chrome = build(&header, &content, &entry, &window);
+        let clamp = chrome
+            .search_bar
+            .child()
+            .and_downcast::<adw::Clamp>()
+            .expect("search strip child must be the width clamp");
+
+        assert!(header.is_ancestor(&chrome.root));
+        assert!(chrome.search_bar.is_ancestor(&chrome.root));
+        assert_eq!(chrome.root.content().as_ref(), Some(content.upcast_ref()));
+        assert!(entry.is_ancestor(&clamp));
+        assert_eq!(clamp.maximum_size(), 450);
+        assert!(chrome.search_bar.hexpands());
+        assert!(chrome.search_bar.has_css_class("reprise-search-strip"));
+        chrome.search_bar.set_search_mode(true);
+        assert!(chrome.search_bar.is_search_mode());
+
+        let css = css();
+        let strip_css = css
+            .split(".reprise-search-strip")
+            .nth(1)
+            .and_then(|rule| rule.split('}').next())
+            .expect("search strip CSS rule");
+        assert!(strip_css.contains("background-color: @headerbar_bg_color"));
+        assert!(strip_css.contains("border-bottom: 1px solid"));
     }
 
     #[test]
