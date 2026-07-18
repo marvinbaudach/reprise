@@ -93,7 +93,7 @@ fn wire_search_toggle(
         let (Some(bar), Some(entry)) = (bar.upgrade(), entry.upgrade()) else {
             return;
         };
-        bar.set_search_mode(!bar.is_search_mode());
+        bar.set_search_mode(crate::ui::shortcuts::next_search_mode(bar.is_search_mode()));
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
     });
 
@@ -289,6 +289,32 @@ mod tests {
             ),
             vec!["⌕ “falling” in any field"]
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_6_hidden_query_survives_as_chip() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let content = gtk4::Label::new(Some("Library"));
+        let entry = gtk4::SearchEntry::new();
+        let chrome = build(&header, &content, &entry, &window);
+        chrome.search_bar.set_search_mode(true);
+        entry.set_text("falling");
+
+        chrome.search_toggle.emit_clicked();
+
+        let chips = crate::ui::browse::browse_bar::chip_labels(
+            &entry.text(),
+            &reprise_core::queries::BrowseFilter::default(),
+            true,
+        );
+
+        assert!(!chrome.search_bar.is_search_mode());
+        assert_eq!(entry.text(), "falling");
+        assert!(chrome.search_toggle.is_active());
+        assert_eq!(chips, vec!["⌕ “falling” in any field"]);
     }
 
     #[test]
