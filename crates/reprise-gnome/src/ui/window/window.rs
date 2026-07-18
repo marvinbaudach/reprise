@@ -133,7 +133,7 @@ pub fn build(
         .build();
 
     let header = adw::HeaderBar::new();
-    super::library_chrome::style_header(&header, &search_entry);
+    super::library_chrome::style_header(&header);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
     let maintenance_actions = super::library_chrome::build_maintenance_actions();
@@ -469,7 +469,8 @@ pub fn build(
         bar_position,
     );
     toast_overlay.set_child(Some(library_player_bar.widget()));
-    let library_chrome = super::library_chrome::build(&header, &toast_overlay);
+    let library_chrome =
+        super::library_chrome::build(&header, &toast_overlay, &search_entry, &window);
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());
@@ -531,6 +532,7 @@ pub fn build(
         db_path,
         header: &header,
         search_entry: &search_entry,
+        search_bar: &library_chrome.search_bar,
         sidebar_toggle: &sidebar_toggle,
         sidebar_page: &sidebar_page,
         split_view: &split_view,

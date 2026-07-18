@@ -43,6 +43,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) header: &'a adw::HeaderBar,
     pub(in crate::ui) search_entry: &'a gtk4::SearchEntry,
+    pub(in crate::ui) search_bar: &'a gtk4::SearchBar,
     pub(in crate::ui) sidebar_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_page: &'a adw::NavigationPage,
     pub(in crate::ui) split_view: &'a adw::OverlaySplitView,
@@ -79,6 +80,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         db_path,
         header,
         search_entry,
+        search_bar,
         sidebar_toggle,
         sidebar_page,
         split_view,
@@ -459,7 +461,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
 
-    header.pack_end(search_entry);
     cover_batch.start();
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     app.set_accels_for_action("win.preferences", &["<Control>comma"]);
@@ -524,7 +525,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         window_title,
         &search_restore_guard,
     );
-    super::shortcuts::wire(app, window, search_entry, track_list, player.clone());
+    super::shortcuts::wire(
+        app,
+        window,
+        search_bar,
+        search_entry,
+        track_list,
+        player.clone(),
+    );
 
     super::scan_flow::wire_scan_button(
         scan_controls,

@@ -44,10 +44,7 @@ pub(super) fn css() -> String {
          floating-sheet > sheet headerbar {{ \
            background-color: alpha(white, {DIALOG_HEADER_TINT_ALPHA}); }}\n\
          floating-sheet > sheet .boxed-list {{ \
-           background-color: alpha(white, {DIALOG_CARD_ALPHA}); }}
-         .reprise-search-active {{ \
-           border: 1px solid alpha(@accent_color, 0.5); \
-           background-color: alpha(@accent_bg_color, 0.16); }}"
+           background-color: alpha(white, {DIALOG_CARD_ALPHA}); }}"
     )
 }
 
