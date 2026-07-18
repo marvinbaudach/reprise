@@ -32,4 +32,15 @@ if [[ $output != *"output directory already exists"* ]]; then
   exit 1
 fi
 
+for required_pattern in \
+  'cua-driver get_window_state' \
+  'cua-driver scroll' \
+  'suspected_noop' \
+  'visible track labels did not change'; do
+  if ! rg --quiet --fixed-strings "$required_pattern" scripts/performance-runtime-baseline.sh; then
+    echo "runtime performance runner is missing CUA scroll contract: $required_pattern" >&2
+    exit 1
+  fi
+done
+
 echo "Runtime performance baseline CLI checks passed"
