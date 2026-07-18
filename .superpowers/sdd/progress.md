@@ -545,3 +545,18 @@ MOT-5 Flip: complete (base 40b1492). Alle drei geforderten Verhalten sind implem
 Bewusst NICHT umgesetzt: die MOT-4-Queue-Ausnahme (DnD-Drop/Einzel-Remove animieren). Sie ist erlaubend, nicht fordernd, und über den TAG-1-reload()-Pfad (SQL-Requery + Model-Swap) gäbe es keine animierbare Zeilenidentität — echte Umsetzung wäre ein eigener Architektur-Beschluss im Queue-Kontext.
 
 Verifikation unter der vorgeschriebenen Isolation (dbus-run-session + xvfb-run + GDK_BACKEND=x11 + leeres WAYLAND_DISPLAY): --motion 25/25, --css 7/7, Workspace 759/659/55, fmt/clippy/traceability/motion-lint/architecture grün. Lektion aus diesem Branch: xvfb-run allein isoliert auf einem Wayland-Host nicht — ohne GDK_BACKEND=x11 und leeres WAYLAND_DISPLAY hängt sich GTK an den echten Compositor, und backend-abhängige Defekte (X11 verteilt neu registrierte Frame-Clock-Ticks synchron) bleiben unentdeckt.
+
+## 2026-07-18 — Bilingual GitHub engineering showcase
+
+Branch: feat/performance-optimizations
+Base: a41c53f
+Lock: claimed by Codex in this worktree on 2026-07-18
+Stage: update the private source README and public reprise-showcase for application use
+
+- SHOWCASE-1: complete (commit 5ac13860, base a41c53f, repaired six public Rustdoc comments that linked to private query helpers; the warning-denied documentation gate was red before the fix and green after it).
+- SHOWCASE-2: complete (commit 787f9c6e, base 5ac13860, rewrote the source README as a bilingual evidence-led engineering case study, added the German README and a gated drift contract, updated the automated test baseline, and documented the measured performance/architecture/UX/AI roadmap without presenting planned work as shipped).
+- Public showcase: complete (`marvinbaudach/reprise-showcase` main commits 54cb700b, a3218ab, and 3cfa7104; refreshed the English landing page, added the German translation, then corrected its locale-specific number formatting). Both files were fetched back from GitHub and checked for the project date, analyzer totals, benchmark results, test/UX counts, and roadmap status.
+
+Stage review: complete. The Bewerbung analyzer measured committed source HEAD a41c53f at 88,789 Rust code lines (58,053 product and 30,736 test; CV display 58,100 + 30,700 = 88,800). Final verification passed: bilingual README contract, QA-linter policy, architecture, UX traceability (60 active rules), motion tokens, fmt, strict all-target workspace clippy, warning-denied workspace Rustdoc, core purity, workspace tests (758 core passed / 1 ignored; 669 GNOME passed / 138 ignored; 55 platform passed), diff checks, and audit with only accepted RUSTSEC-2024-0436. Assumption: same-host release medians are presented as comparison evidence, while cache/memory limits are the portable hard budgets. Manual remainder: replace the clearly labelled design-system previews in the public showcase with real running-app screenshots after the native GNOME visual pass; no fabricated screenshot was added. Residual GitHub metadata item: the connector verified the showcase is public but does not expose repository description/topic mutation, and shell GitHub access was network-blocked, so description/topics were not changed.
+
+Lock: released by Codex in this worktree on 2026-07-18
