@@ -564,6 +564,30 @@ fn migrate_v13_to_v14_indexes_present_album_order_without_changing_rows() {
         .any(|detail| detail.contains("USE TEMP B-TREE FOR ORDER BY")));
     drop(statement);
 
+    for query in [
+        "SELECT count(*) FROM tracks \
+         WHERE missing_since IS NULL AND removed_at IS NULL \
+         AND (title LIKE '%needle%' ESCAPE '\\' OR artist LIKE '%needle%' ESCAPE '\\' \
+         OR album LIKE '%needle%' ESCAPE '\\' OR genre LIKE '%needle%' ESCAPE '\\')",
+        "SELECT count(*), coalesce(sum(duration_ms), 0) FROM tracks \
+         WHERE missing_since IS NULL AND removed_at IS NULL",
+    ] {
+        let mut aggregate_plan = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {query}"))
+            .unwrap();
+        let details = aggregate_plan
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert!(
+            details
+                .iter()
+                .any(|detail| detail.contains("USING INDEX idx_tracks_present_title_nocase")),
+            "aggregate query regressed to a cache-hostile plan: {details:?}"
+        );
+    }
+
     let titles = crate::queries::query_track_window(
         &mut conn,
         &crate::view_source::ViewSource::Library,
