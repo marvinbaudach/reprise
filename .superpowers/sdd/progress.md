@@ -485,8 +485,8 @@ Base: e0493d0
 Lock: claimed by Codex in this worktree on 2026-07-18
 Stage: isolated 10,000/100,000-track query and scroll/cache measurement baseline
 
-- PERF-1: in progress — synthetic core query baseline CLI with stable JSON output.
-- PERF-2: pending — large-library TrackListModel scroll/cache probe.
+- PERF-1: complete (commit f9d3ac4, base e0493d0, added a fail-closed synthetic query baseline with stable JSON timing output and a verified 10,000-track run).
+- PERF-2: in progress — large-library TrackListModel scroll/cache probe.
 - PERF-3: pending — orchestration, documentation, full gates, and stage review.
 
 ## 2026-07-18 — Theme-Flächenhierarchie + Theme-Akzent-Fallback
