@@ -322,6 +322,13 @@ CREATE INDEX idx_new_releases_artist ON new_releases(artist_mbid);
 CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS NULL;
 "#;
 
+// Schema v13 has no SQL shape change. Its transactional Rust step records
+// evidence-backed opt-ins for pre-existing databases: positive image-cache
+// entries preserve cover and portrait downloads, every existing database
+// preserves the previously ungated online lyrics, and the retired Artist
+// News opt-in carries forward to New Releases. Explicit current settings
+// always win because the migration inserts only missing keys.
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -350,7 +357,18 @@ CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS N
 /// call being a no-op) is unaffected — every existing migration test still
 /// passes unmodified.
 pub fn migrate(conn: &Connection) -> Result<(), DbError> {
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let cover_cache = crate::cover_download::downloaded_dir();
+    let portrait_cache = crate::artist_portrait::cache::cache_dir();
+    migrate_with_cache_dirs(conn, &cover_cache, &portrait_cache)
+}
+
+pub(crate) fn migrate_with_cache_dirs(
+    conn: &Connection,
+    cover_cache: &Path,
+    portrait_cache: &Path,
+) -> Result<(), DbError> {
+    let initial_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = initial_version;
     if version < 1 {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V1)?;
@@ -451,7 +469,72 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 12)?;
         tx.commit()?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 13 {
+        let tx = conn.unchecked_transaction()?;
+        grandfather_network_features(&tx, initial_version > 0, cover_cache, portrait_cache)?;
+        tx.pragma_update(None, "user_version", 13)?;
+        tx.commit()?;
+    }
     Ok(())
+}
+
+fn grandfather_network_features(
+    tx: &rusqlite::Transaction<'_>,
+    existing_database: bool,
+    cover_cache: &Path,
+    portrait_cache: &Path,
+) -> Result<(), rusqlite::Error> {
+    if existing_database {
+        enable_module_if_unset(tx, &crate::modules::ONLINE_LYRICS_MODULE)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO settings (key, value) \
+             SELECT ?1, '1' \
+             FROM settings \
+             WHERE key = ?2 AND value = '1'",
+            rusqlite::params![
+                crate::modules::enabled_key(&crate::modules::NEW_RELEASES_MODULE),
+                "module.artist_news.enabled"
+            ],
+        )?;
+    }
+    if existing_database && cache_contains_image(cover_cache, crate::cover_download::IMAGE_EXTS) {
+        enable_module_if_unset(tx, &crate::modules::COVER_DOWNLOAD_MODULE)?;
+    }
+    if existing_database
+        && cache_contains_image(portrait_cache, crate::artist_portrait::cache::IMAGE_EXTS)
+    {
+        enable_module_if_unset(tx, &crate::modules::ARTIST_PORTRAITS_MODULE)?;
+    }
+    Ok(())
+}
+
+fn enable_module_if_unset(
+    tx: &rusqlite::Transaction<'_>,
+    module: &crate::modules::ModuleDescriptor,
+) -> Result<(), rusqlite::Error> {
+    tx.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, '1')",
+        [crate::modules::enabled_key(module)],
+    )?;
+    Ok(())
+}
+
+fn cache_contains_image(directory: &Path, extensions: &[&str]) -> bool {
+    std::fs::read_dir(directory).is_ok_and(|entries| {
+        entries.filter_map(Result::ok).any(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_file())
+                && entry
+                    .path()
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| {
+                        extensions
+                            .iter()
+                            .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+                    })
+        })
+    })
 }
 
 /// Stores pre-computed waveform peaks for a track.
