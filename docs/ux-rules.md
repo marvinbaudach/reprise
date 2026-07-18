@@ -788,7 +788,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Suchfeld ist darin per Clamp auf ungefähr 450 px zentriert. Die Leiste
   slidet mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern
   gilt deren Default, sofern er dem Standard-Token entspricht.
-- **SEARCH-3** [geplant] [gtk] — Die Lupe ist ein ToggleButton und trägt bei
+- **SEARCH-3** [aktiv] [gtk] — Die Lupe ist ein ToggleButton und trägt bei
   offener Suchleiste **oder** aktiver nicht-leerer Query den
   `:checked`-Akzentstil. Eine Query bleibt auch bei eingeklappter Suchleiste
   sichtbar: Ihr Such-Chip bleibt bestehen. Die Lupe bekommt keinen
