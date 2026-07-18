@@ -114,6 +114,8 @@ struct BaselineReport {
     middle_window: TimingSummary,
     final_window: TimingSummary,
     title_window_query_plan: QueryPlanSummary,
+    album_final_window: TimingSummary,
+    album_window_query_plan: QueryPlanSummary,
     filtered_count: TimingSummary,
     library_stats: TimingSummary,
     playback_ids: TimingSummary,
@@ -143,8 +145,8 @@ fn summarize_query_plan(details: Vec<String>) -> QueryPlanSummary {
     }
 }
 
-fn explain_title_window(conn: &Connection) -> rusqlite::Result<QueryPlanSummary> {
-    let query = queries::build_track_query("title", "asc", false);
+fn explain_window(conn: &Connection, sort_field: &str) -> rusqlite::Result<QueryPlanSummary> {
+    let query = queries::build_track_query(sort_field, "asc", false);
     let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {query}"))?;
     let details = statement
         .query_map(rusqlite::params![WINDOW_ROWS, 0], |row| row.get(3))?
@@ -250,13 +252,15 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         Ok(usize::try_from(count).unwrap_or(usize::MAX))
     })?;
 
-    let first_window = measure_window(&mut conn, config.iterations, 0)?;
+    let first_window = measure_window(&mut conn, config.iterations, "title", 0)?;
     let middle_offset = i64::try_from(config.track_count / 2).unwrap_or(i64::MAX);
-    let middle_window = measure_window(&mut conn, config.iterations, middle_offset)?;
+    let middle_window = measure_window(&mut conn, config.iterations, "title", middle_offset)?;
     let final_offset =
         i64::try_from(config.track_count.saturating_sub(WINDOW_ROWS as usize)).unwrap_or(i64::MAX);
-    let final_window = measure_window(&mut conn, config.iterations, final_offset)?;
-    let title_window_query_plan = explain_title_window(&conn)?;
+    let final_window = measure_window(&mut conn, config.iterations, "title", final_offset)?;
+    let title_window_query_plan = explain_window(&conn, "title")?;
+    let album_final_window = measure_window(&mut conn, config.iterations, "album", final_offset)?;
+    let album_window_query_plan = explain_window(&conn, "album")?;
 
     let filtered_count = measure(config.iterations, || {
         let count = queries::query_track_count(&conn, &ViewSource::Library, "needle", &[])?;
@@ -272,7 +276,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
     })?;
 
     Ok(BaselineReport {
-        schema_version: 2,
+        schema_version: 3,
         generated_tracks: config.track_count,
         database_bytes: std::fs::metadata(&config.db_path)?.len(),
         iterations: config.iterations,
@@ -282,6 +286,8 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         middle_window,
         final_window,
         title_window_query_plan,
+        album_final_window,
+        album_window_query_plan,
         filtered_count,
         library_stats,
         playback_ids,
@@ -291,13 +297,14 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
 fn measure_window(
     conn: &mut Connection,
     iterations: usize,
+    sort_field: &str,
     offset: i64,
 ) -> Result<TimingSummary, Box<dyn Error>> {
     measure(iterations, || {
         let rows = queries::query_track_window(
             conn,
             &ViewSource::Library,
-            "title",
+            sort_field,
             "asc",
             "",
             offset,
@@ -397,7 +404,7 @@ mod tests {
     #[test]
     fn report_serializes_the_stable_json_contract() {
         let report = BaselineReport {
-            schema_version: 2,
+            schema_version: 3,
             generated_tracks: 10_000,
             database_bytes: 42,
             iterations: 3,
@@ -414,6 +421,15 @@ mod tests {
                 uses_temp_sort: true,
                 index_name: None,
             },
+            album_final_window: TimingSummary::from_samples(vec![27, 25, 26], 200),
+            album_window_query_plan: QueryPlanSummary {
+                details: vec![
+                    "SCAN tracks".to_string(),
+                    "USE TEMP B-TREE FOR ORDER BY".to_string(),
+                ],
+                uses_temp_sort: true,
+                index_name: None,
+            },
             filtered_count: TimingSummary::from_samples(vec![18, 16, 17], 11),
             library_stats: TimingSummary::from_samples(vec![21, 19, 20], 10_000),
             playback_ids: TimingSummary::from_samples(vec![24, 22, 23], 10_000),
@@ -422,7 +438,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(report).unwrap(),
             serde_json::json!({
-                "schema_version": 2,
+                "schema_version": 3,
                 "generated_tracks": 10000,
                 "database_bytes": 42,
                 "iterations": 3,
@@ -432,6 +448,12 @@ mod tests {
                 "middle_window": {"min_us": 10, "median_us": 11, "max_us": 12, "result_rows": 200},
                 "final_window": {"min_us": 13, "median_us": 14, "max_us": 15, "result_rows": 200},
                 "title_window_query_plan": {
+                    "details": ["SCAN tracks", "USE TEMP B-TREE FOR ORDER BY"],
+                    "uses_temp_sort": true,
+                    "index_name": null
+                },
+                "album_final_window": {"min_us": 25, "median_us": 26, "max_us": 27, "result_rows": 200},
+                "album_window_query_plan": {
                     "details": ["SCAN tracks", "USE TEMP B-TREE FOR ORDER BY"],
                     "uses_temp_sort": true,
                     "index_name": null
