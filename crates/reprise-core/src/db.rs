@@ -294,6 +294,13 @@ const SCHEMA_V11: &str = r#"
 ALTER TABLE tracks DROP COLUMN missing;
 "#;
 
+/// Schema v12: stores the optional disc number used to build album queues in
+/// canonical multi-disc order. Existing rows stay `NULL`, which album order
+/// deliberately interprets as disc 1 for backwards compatibility.
+const SCHEMA_V12: &str = r#"
+ALTER TABLE tracks ADD COLUMN disc_no INTEGER;
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -414,6 +421,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V11)?;
         tx.pragma_update(None, "user_version", 11)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 12 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V12)?;
+        tx.pragma_update(None, "user_version", 12)?;
         tx.commit()?;
     }
     Ok(())
