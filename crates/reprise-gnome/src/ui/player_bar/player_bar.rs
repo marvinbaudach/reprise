@@ -51,6 +51,10 @@ pub(in crate::ui) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
 const MINI_EQ_PLAYING_CLASS: &str = "playing";
 const PLAY_PULSE_CSS_CLASS: &str = "pulsing";
+/// Keeps a retriggered keyframe class absent across at least one compositor
+/// frame before it is re-added. Frame-clock tick callbacks can run
+/// synchronously on X11, so they cannot provide this separation reliably.
+const PLAY_PULSE_RETRIGGER_DELAY_MS: u64 = 30;
 
 fn schedule_play_pulse_removal(
     button: &gtk4::Button,
@@ -433,15 +437,17 @@ impl PlayerBar {
         let button = self.play_pause_button.clone();
         let pulse_generation = self.play_pulse_generation.clone();
         let pulse_readd_pending = self.play_pulse_readd_pending.clone();
-        button.add_tick_callback(move |button, _| {
-            if pulse_generation.get() != generation {
-                return gtk4::glib::ControlFlow::Break;
-            }
-            button.add_css_class(PLAY_PULSE_CSS_CLASS);
-            pulse_readd_pending.set(false);
-            schedule_play_pulse_removal(button, pulse_generation.clone(), generation);
-            gtk4::glib::ControlFlow::Break
-        });
+        gtk4::glib::timeout_add_local_once(
+            Duration::from_millis(PLAY_PULSE_RETRIGGER_DELAY_MS),
+            move || {
+                if pulse_generation.get() != generation {
+                    return;
+                }
+                button.add_css_class(PLAY_PULSE_CSS_CLASS);
+                pulse_readd_pending.set(false);
+                schedule_play_pulse_removal(&button, pulse_generation.clone(), generation);
+            },
+        );
     }
 
     /// 150 ms opacity cross-fade for the play↔pause icon swap.
