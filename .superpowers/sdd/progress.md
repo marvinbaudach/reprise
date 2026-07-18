@@ -518,7 +518,17 @@ Stage: identify, test-drive, and compare the highest-value reproducible 100,000-
 
 - PERF-OPT-1: complete (commit ddaa3f3, base c336590, captured the title-window SQLite plan in the stable benchmark contract; the 100,000-track before run measured 6,496/27,348/48,874 us medians for first/middle/final windows and confirmed a full scan plus temporary ORDER BY B-tree).
 - PERF-OPT-2: complete (shadow commit bf8394d, base ddaa3f3, schema v12 adds a partial NOCASE title index for present tracks; migration, plan selection, data preservation, and visible ordering are regression-tested. The primary worktree Git metadata became read-only before this commit, so the preserved shadow commit is bundled at stage close-out).
-- PERF-OPT-3: in progress — paired release comparison, full gates, and stage review.
+- PERF-OPT-3: complete (shadow commit b3644cc, base bf8394d, added a fail-closed generated-query comparison report covering storage, open time, first/middle/final windows, playback IDs, and before/after SQLite plans).
+
+Stage review: complete. A clean release pair compared committed baseline `ddaa3f3` with shadow candidate `b3644cc` at 10,000 and 100,000 generated tracks. At 100,000 tracks the first/middle/final title windows changed from 7,649/31,263/53,605 us to 157/635/1,333 us (-97.95/-97.97/-97.51%), and playback-id projection changed from 8,125 to 298 us (-96.33%). At 10,000 tracks the final window changed from 5,981 to 216 us (-96.39%). SQLite changed from a full scan plus temporary ORDER BY B-tree to `SCAN tracks USING INDEX idx_tracks_present_title_nocase`; the index adds 2,379,776 bytes at 100,000 tracks (+9.85%). Seven direct copies of the synthetic v11 database measured the one-time v12 index build at 36,634 us median (26,547–37,247 us). Repeated database-open timing did not regress in this pair (443 to 359 us at 100,000 tracks), but remains same-host noise rather than a performance claim.
+
+Final gates passed: fmt, strict workspace clippy, workspace tests (core 758 passed / 1 ignored; GNOME 669 passed / 138 ignored; platform 55 passed), architecture, UX traceability (60 active rules), QA policy including both comparison contracts, core purity, and audit with only accepted RUSTSEC-2024-0436. One unrelated `one_shot_task` async test observed an intermediate progress value in the first full run; it passed five focused repetitions and the complete rerun. Adversarial benchmark review caught and rejected two candidate reports contaminated by an older baseline binary in the local Cargo target; a full target rebuild produced the accepted index-selecting comparison.
+
+Assumptions: same-host release medians are comparison evidence, the partial index deliberately optimizes the default present-library title order only, and row ordering among equal NOCASE titles remains SQLite row-id order as before. Residual costs/risks: each visible-track insert/update maintains the additional index; its scan-write overhead is not yet measured, other sort fields and filtered searches still need separate plan evidence, and the installed GTK/startup/CUA axes remain host-deferred because this sandbox blocks private Xvfb sockets. No real database, music file, live desktop, or user profile was touched.
+
+Git handoff: the primary worktree Git metadata became read-only after `ddaa3f3`; commits `bf8394d` and `b3644cc` plus this close-out are preserved on the local shadow branch and in `.superpowers/sdd/performance-optimization-stage.bundle`. The primary branch itself was not advanced or pushed.
+
+Lock: released by Codex in this worktree on 2026-07-18
 
 ## 2026-07-18 — Theme-Flächenhierarchie + Theme-Akzent-Fallback
 
