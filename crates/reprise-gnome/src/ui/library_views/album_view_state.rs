@@ -6,10 +6,12 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::playback::PlaybackState;
 use reprise_core::queries::{self, AlbumSummary};
 use rusqlite::Connection;
 
 use crate::ui::album_card::AlbumCardShared;
+use crate::ui::album_card_state::{album_index, PendingAlbumReveal};
 use crate::ui::album_header;
 use crate::ui::strings;
 
@@ -132,6 +134,19 @@ impl AlbumViewState {
         })
     }
 
+    pub(in crate::ui) fn playback_state_callback(&self) -> Rc<dyn Fn(PlaybackState)> {
+        let playback_state = self.card_shared.playback_state.clone();
+        let now_playing_album = self.card_shared.now_playing_album.clone();
+        let store = self.store.clone();
+        Rc::new(move |state| {
+            playback_state.set(state);
+            let current_album = now_playing_album.borrow().clone();
+            if let Some((album, artist)) = current_album {
+                rebind_in_store(&store, &album, &artist);
+            }
+        })
+    }
+
     pub(in crate::ui) fn refresh_callback(&self) -> Rc<dyn Fn()> {
         let state = self.clone();
         Rc::new(move || {
@@ -139,6 +154,40 @@ impl AlbumViewState {
                 state.refresh();
             }
         })
+    }
+
+    pub(in crate::ui) fn reveal_album(
+        &self,
+        grid: &gtk4::GridView,
+        title: &str,
+        artist: &str,
+    ) -> bool {
+        self.apply_filter("");
+        let albums = (0..self.filter_model.n_items())
+            .filter_map(|index| {
+                let object = self.filter_model.item(index)?;
+                let boxed = object.downcast_ref::<glib::BoxedAnyObject>()?;
+                let album = boxed.borrow::<AlbumSummary>().clone();
+                Some(album)
+            })
+            .collect::<Vec<_>>();
+        let Some(index) = album_index(&albums, title, artist) else {
+            return false;
+        };
+
+        let generation = self.card_shared.reveal_generation.get().wrapping_add(1);
+        self.card_shared.reveal_generation.set(generation);
+        *self.card_shared.pending_reveal.borrow_mut() = Some(PendingAlbumReveal {
+            album: title.to_owned(),
+            artist: artist.to_owned(),
+            generation,
+        });
+        rebind_in_store(&self.store, title, artist);
+
+        let scroll = gtk4::ScrollInfo::new();
+        scroll.set_enable_vertical(true);
+        grid.scroll_to(index, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        true
     }
 
     #[cfg(test)]

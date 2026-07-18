@@ -29,6 +29,7 @@ pub mod delete_tracks;
 mod device_sync;
 mod device_view;
 pub mod dialogs;
+pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;
@@ -37,6 +38,7 @@ pub mod import_errors_view;
 pub(crate) mod info_panel;
 mod issues;
 mod library_views;
+pub(crate) mod link_activation;
 mod lyrics;
 pub(crate) mod motion;
 mod mounts;
@@ -97,10 +99,10 @@ use device_sync::{
 };
 #[allow(unused_imports)]
 use library_views::{
-    album_card, album_card_actions, album_card_css, album_context_menu, album_header, album_view,
-    album_view_actions, album_view_state, artist_avatar, artist_detail_hero, artist_detail_pane,
-    artist_detail_row, artist_master, artist_master_row, artist_view, artist_view_css,
-    library_view_css,
+    album_card, album_card_actions, album_card_css, album_card_state, album_context_menu,
+    album_header, album_view, album_view_actions, album_view_state, artist_avatar,
+    artist_detail_hero, artist_detail_pane, artist_detail_row, artist_master, artist_master_row,
+    artist_view, artist_view_css, library_view_css,
 };
 #[allow(unused_imports)]
 use lyrics::{

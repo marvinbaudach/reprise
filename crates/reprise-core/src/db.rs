@@ -322,6 +322,13 @@ CREATE INDEX idx_new_releases_artist ON new_releases(artist_mbid);
 CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS NULL;
 "#;
 
+/// Schema v13: stores the optional disc number used to build album queues in
+/// canonical multi-disc order. Existing rows stay `NULL`, which album order
+/// deliberately interprets as disc 1 for backwards compatibility.
+const SCHEMA_V13: &str = r#"
+ALTER TABLE tracks ADD COLUMN disc_no INTEGER;
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -449,6 +456,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V12)?;
         tx.pragma_update(None, "user_version", 12)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 13 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V13)?;
+        tx.pragma_update(None, "user_version", 13)?;
         tx.commit()?;
     }
     Ok(())

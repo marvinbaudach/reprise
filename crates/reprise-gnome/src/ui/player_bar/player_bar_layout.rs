@@ -92,9 +92,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     track_box.append(&artist_label);
     track_box.set_valign(gtk4::Align::Center);
 
-    // Cover: pointer cursor signals interactivity (click → Now-Playing-Panel).
-    cover.set_cursor_from_name(Some("pointer"));
-
     // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     info_box.set_margin_start(12);
