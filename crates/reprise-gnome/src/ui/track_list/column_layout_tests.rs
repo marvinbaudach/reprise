@@ -22,12 +22,13 @@ fn numeric_metadata_columns_are_classified_for_centering() {
 }
 
 #[test]
-fn only_resizable_fixed_width_columns_persist_their_width() {
-    // Cover is not resizable; Title expands — neither has a meaningful,
-    // user-set fixed width to store.
+fn every_non_cover_column_can_persist_its_width() {
+    // Cover is not resizable (fixed 40px thumbnail) — never stored. Every
+    // other column, Title included, can hold a user-set width; Title only once
+    // its fill-expand has been turned off (see `is_width_persistable_now`).
     assert!(!is_width_persistable(ColumnId::Cover));
-    assert!(!is_width_persistable(ColumnId::Title));
     for id in [
+        ColumnId::Title,
         ColumnId::Artist,
         ColumnId::Album,
         ColumnId::Genre,
@@ -37,8 +38,27 @@ fn only_resizable_fixed_width_columns_persist_their_width() {
         ColumnId::PlayCount,
         ColumnId::TrackNumber,
     ] {
-        assert!(is_width_persistable(id), "{id:?} should persist its width");
+        assert!(is_width_persistable(id), "{id:?} should be persistable");
     }
+}
+
+#[test]
+fn title_width_is_stored_only_after_its_fill_expand_is_turned_off() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let column = gtk4::ColumnViewColumn::builder().build();
+
+    // While Title still fills (expand on), its width is not a real preference.
+    column.set_expand(true);
+    assert!(!is_width_persistable_now(ColumnId::Title, &column));
+
+    // A manual resize turns the fill off; the width becomes storable.
+    column.set_expand(false);
+    assert!(is_width_persistable_now(ColumnId::Title, &column));
+
+    // Cover is excluded regardless of expand state.
+    assert!(!is_width_persistable_now(ColumnId::Cover, &column));
 }
 
 #[test]
@@ -101,6 +121,7 @@ fn test_registry(ids: &[ColumnId]) -> ColumnRegistry {
         view,
         columns,
         syncing_order: Rc::new(Cell::new(false)),
+        syncing_width: Rc::new(Cell::new(false)),
     }
 }
 
@@ -269,15 +290,18 @@ fn duplicate_or_unknown_ids_are_rejected() {
 }
 
 #[test]
-fn parse_layout_respects_order_and_visibility_without_pinning() {
-    // Cover and Title are no longer forced to the front or forced visible:
-    // a stored layout is honored verbatim (missing columns still append).
+fn parse_layout_pins_cover_first_and_always_visible_but_respects_the_rest() {
+    // Cover is pinned to the front AND forced visible regardless of the stored
+    // layout (it is out of the editor, so it can't be toggled). Every other
+    // column's order and visibility is honored verbatim (missing columns still
+    // append); a stored layout that omits Title from the visible set keeps it
+    // hidden.
     let layout = parse_layout("artist,album;artist,album").unwrap();
-    assert_eq!(layout.order[..2], [ColumnId::Artist, ColumnId::Album]);
-    assert!(!layout.visible.contains(&ColumnId::Cover));
+    assert_eq!(layout.order[0], ColumnId::Cover);
+    assert_eq!(layout.order[1..3], [ColumnId::Artist, ColumnId::Album]);
+    assert!(layout.visible.contains(&ColumnId::Cover));
     assert!(!layout.visible.contains(&ColumnId::Title));
     // Every known column is still present in the normalized order.
-    assert!(layout.order.contains(&ColumnId::Cover));
     assert!(layout.order.contains(&ColumnId::Title));
 }
 
@@ -354,11 +378,13 @@ fn optional_visibility_changes_without_changing_order() {
 }
 
 #[test]
-fn cover_and_title_can_be_hidden_like_any_column() {
+fn cover_cannot_be_hidden_but_other_columns_can() {
     let layout = ColumnLayout::default();
+    // Cover is a fixed leading column — trying to hide it is a no-op.
     let cover_hidden = set_column_visible(&layout, ColumnId::Cover, false);
-    assert!(!cover_hidden.visible.contains(&ColumnId::Cover));
+    assert!(cover_hidden.visible.contains(&ColumnId::Cover));
     assert_eq!(cover_hidden.order, layout.order);
+    // Title (like every other listed column) can still be hidden.
     let title_hidden = set_column_visible(&layout, ColumnId::Title, false);
     assert!(!title_hidden.visible.contains(&ColumnId::Title));
     assert_eq!(title_hidden.order, layout.order);
@@ -395,22 +421,23 @@ fn movable_column_can_be_inserted_after_the_target() {
 }
 
 #[test]
-fn cover_and_title_move_freely_while_self_moves_are_noops() {
+fn cover_stays_pinned_first_while_other_columns_move_freely() {
     let layout = ColumnLayout::default();
     // Self-move stays a no-op.
     assert_eq!(
         move_column(&layout, ColumnId::Artist, ColumnId::Artist),
         layout
     );
-    // Cover may be moved after Title (previously forbidden).
+    // Cover cannot be moved off the leading position: even an explicit
+    // "move Cover after Title" normalizes right back to Cover first.
     let moved = move_column_after(&layout, ColumnId::Cover, ColumnId::Title);
-    let title_index = moved
-        .order
-        .iter()
-        .position(|id| *id == ColumnId::Title)
-        .unwrap();
-    assert_eq!(moved.order[title_index + 1], ColumnId::Cover);
-    // Artist may be moved before Title (Title is no longer an anchor).
+    assert_eq!(moved.order[0], ColumnId::Cover);
+    // Nor can another column be placed before Cover: "move Artist before
+    // Cover" lands it right after the pinned Cover, not ahead of it.
+    let moved = move_column(&layout, ColumnId::Artist, ColumnId::Cover);
+    assert_eq!(moved.order[0], ColumnId::Cover);
+    assert_eq!(moved.order[1], ColumnId::Artist);
+    // Title (no longer an anchor) still moves freely among the rest.
     let moved = move_column(&layout, ColumnId::Artist, ColumnId::Title);
     let title_index = moved
         .order

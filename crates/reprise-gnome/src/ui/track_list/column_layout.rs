@@ -91,11 +91,23 @@ fn column_width_policy(id: ColumnId) -> ColumnWidthPolicy {
     }
 }
 
-/// Whether a column's user-dragged width is worth persisting. Cover is not
-/// resizable and Title expands to fill remaining space, so their fixed width is
-/// not a meaningful user preference — every other column is stored.
+/// Whether a column's width can ever become a persisted user preference.
+/// Cover is the only categorical exclusion — it is not resizable and shows a
+/// fixed 40 px thumbnail. Title *is* persistable, but only once the user has
+/// taken manual control of it: its first header-drag resize turns its
+/// fill-expand off (see [`wire_width_persistence`]). Until then
+/// [`is_width_persistable_now`] keeps a still-filling column out of the stored
+/// set, because its fill width is not a meaningful preference.
 pub(super) fn is_width_persistable(id: ColumnId) -> bool {
-    !matches!(id, ColumnId::Cover) && !column_width_policy(id).expand
+    !matches!(id, ColumnId::Cover)
+}
+
+/// Whether `column`'s current fixed width should be written out right now.
+/// Layers the live expand state onto [`is_width_persistable`]: a column still
+/// expanding to fill (only ever Title, and only until its first manual resize)
+/// is skipped, so the default fill is never mistaken for a user preference.
+fn is_width_persistable_now(id: ColumnId, column: &gtk4::ColumnViewColumn) -> bool {
+    is_width_persistable(id) && !column.expands()
 }
 
 fn apply_column_width_policy(column: &gtk4::ColumnViewColumn, id: ColumnId) {
@@ -351,11 +363,17 @@ fn parse_ids(value: &str) -> Option<Vec<ColumnId>> {
         .collect()
 }
 
-fn normalize(order: Vec<ColumnId>, visible: HashSet<ColumnId>) -> ColumnLayout {
-    // The stored order is honored verbatim; any column not mentioned is
+fn normalize(order: Vec<ColumnId>, mut visible: HashSet<ColumnId>) -> ColumnLayout {
+    // Cover is a fixed leading column: always rendered first AND always visible,
+    // whatever order/visibility was stored, imported, or produced by a drag. It
+    // is a 40px artwork column that leads the row, deliberately absent from the
+    // column editor and the header drag-reorder — so both its position and its
+    // visibility are fixed here rather than user-controlled. Every other column
+    // keeps its stored order and visibility; any column not mentioned is
     // appended in the built-in default order so all columns stay reachable.
-    // Cover and Title are ordinary columns — no forced position or visibility.
+    visible.insert(ColumnId::Cover);
     let mut normalized = Vec::with_capacity(DEFAULT_ORDER.len());
+    normalized.push(ColumnId::Cover);
     for id in order.into_iter().chain(DEFAULT_ORDER) {
         if !normalized.contains(&id) {
             normalized.push(id);
@@ -380,6 +398,10 @@ pub struct ColumnRegistry {
     /// `apply` rebuilds the column list programmatically — only genuine user
     /// header drags may persist an order from the model side.
     syncing_order: Rc<Cell<bool>>,
+    /// Suppresses the Title fill-expand→fixed flip in `wire_width_persistence`
+    /// while `reset_widths` reapplies policy widths — so a reset restoring
+    /// Title's default fill is never misread as a manual resize.
+    syncing_width: Rc<Cell<bool>>,
 }
 
 impl ColumnRegistry {
@@ -441,12 +463,16 @@ impl ColumnRegistry {
             .is_some_and(gtk4::ColumnViewColumn::is_visible)
     }
 
-    /// Restores every column to its built-in policy width. The wired
-    /// `fixed-width` listeners then persist these defaults on the next tick.
+    /// Restores every column to its built-in policy width (and re-arms Title's
+    /// fill-expand). The wired `fixed-width` listeners then persist these
+    /// defaults on the next tick; `syncing_width` mutes the manual-resize flip
+    /// during the reapply so restoring Title's fill is not mistaken for a drag.
     pub fn reset_widths(&self) {
+        self.syncing_width.set(true);
         for (id, column) in &self.columns {
             apply_column_width_policy(column, *id);
         }
+        self.syncing_width.set(false);
     }
 }
 
@@ -469,6 +495,14 @@ fn restore_stored_widths(
     for (id, width) in crate::ui::column_widths::parse_widths(&stored) {
         if is_width_persistable(id) {
             if let Some(column) = columns.get(&id) {
+                // A stored width means the user took manual control: lock a
+                // still-filling column (only ever Title) to that fixed width so
+                // it stops expanding — mirrors the runtime flip in
+                // `wire_width_persistence`, applied here before any listener is
+                // wired so it never self-triggers a save.
+                if column.expands() {
+                    column.set_expand(false);
+                }
                 column.set_fixed_width(width);
             }
         }
@@ -479,6 +513,7 @@ fn restore_stored_widths(
 fn save_widths_now(shared: &Shared, columns: &[(ColumnId, gtk4::ColumnViewColumn)]) {
     let widths: Vec<(ColumnId, i32)> = columns
         .iter()
+        .filter(|(id, column)| is_width_persistable_now(*id, column))
         .map(|(id, column)| (*id, column.fixed_width()))
         .collect();
     let serialized = crate::ui::column_widths::serialize_widths(&widths);
@@ -494,6 +529,7 @@ fn save_widths_now(shared: &Shared, columns: &[(ColumnId, gtk4::ColumnViewColumn
 fn wire_width_persistence(
     shared: &Rc<Shared>,
     columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>,
+    syncing_width: &Rc<Cell<bool>>,
 ) {
     let snapshot: Rc<Vec<(ColumnId, gtk4::ColumnViewColumn)>> = Rc::new(
         columns
@@ -507,7 +543,16 @@ fn wire_width_persistence(
         let shared_weak = Rc::downgrade(shared);
         let snapshot = snapshot.clone();
         let debounce = debounce.clone();
-        column.connect_fixed_width_notify(move |_| {
+        let syncing_width = syncing_width.clone();
+        column.connect_fixed_width_notify(move |column| {
+            // A user header-drag on the still-filling Title column locks it to
+            // a fixed, user-controlled width (its first manual resize), so it
+            // can finally be dragged smaller instead of re-absorbing the freed
+            // space. Muted while `reset_widths` reapplies policy widths, so a
+            // reset re-arming the fill is never misread as a manual resize.
+            if !syncing_width.get() && column.expands() {
+                column.set_expand(false);
+            }
             if let Some(pending) = debounce.borrow_mut().take() {
                 pending.remove();
             }
@@ -680,7 +725,8 @@ pub(super) fn build_columns(
         apply_column_width_policy(column, *id);
     }
     restore_stored_widths(&columns, &shared.conn.borrow());
-    wire_width_persistence(shared, &columns);
+    let syncing_width = Rc::new(Cell::new(false));
+    wire_width_persistence(shared, &columns, &syncing_width);
     // GTK's native header drag-reorder is broken in 4.22 (the title widget's
     // own click gesture claims the press before the view's own drag gesture
     // ever gets a threshold-based claim — see `column_header_dnd`'s module
@@ -695,6 +741,7 @@ pub(super) fn build_columns(
         view: view.clone(),
         columns,
         syncing_order,
+        syncing_width,
     };
     let layout = load_layout(&shared.conn.borrow());
     registry.apply(&layout);
