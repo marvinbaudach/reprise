@@ -114,6 +114,7 @@ pub(in crate::ui) fn css() -> String {
     ".reprise-library-split .reprise-library-sidebar { \
        border-right: 1px solid rgba(255, 255, 255, 0.06); }\n\
      .reprise-library-header { \
+       background-color: @headerbar_bg_color; \
        border-bottom: 1px solid rgba(255, 255, 255, 0.06); }\n\
      .reprise-view-switcher { \
        background-color: alpha(@window_fg_color, 0.06); \
@@ -154,6 +155,14 @@ mod tests {
         assert!(css.contains("border-right: 1px solid rgba(255, 255, 255, 0.06)"));
         assert!(css.contains(".reprise-library-header"));
         assert!(css.contains("border-bottom: 1px solid rgba(255, 255, 255, 0.06)"));
+        // The headerbar sits in an `AdwToolbarView` with `ToolbarStyle::Flat`,
+        // which deliberately drops the bar's own background — so inheriting
+        // `@headerbar_bg_color` renders the WINDOW color instead and the 14a
+        // surface step silently disappears (measured on a headless run: the
+        // bar painted `#16181b`, not the palette's `#262b31`). Setting the
+        // background explicitly is what puts the step on screen; a palette
+        // value alone never reaches it.
+        assert!(css.contains("background-color: @headerbar_bg_color"));
     }
 
     #[test]
