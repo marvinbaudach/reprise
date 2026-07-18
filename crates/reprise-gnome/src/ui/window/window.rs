@@ -250,20 +250,10 @@ pub fn build(
     // doc comment in `player_controller.rs`). `None` (GStreamer unavailable)
     // degrades to an always-empty queue view, matching every other
     // player-unavailable degradation in this function.
+    let queue_model = super::window_queue_model::build(&player);
     let queue_ids_provider = {
-        let player = player.clone();
-        move || match &player {
-            Some(controller) => {
-                let parts = controller.queue_view_sections();
-                crate::ui::track_list::queue_sections::compose(
-                    parts.now_playing,
-                    &parts.play_next,
-                    &parts.up_next_rest,
-                    parts.origin_label.as_deref(),
-                )
-            }
-            None => crate::ui::track_list::queue_sections::QueueViewModel::default(),
-        }
+        let queue_model = queue_model.clone();
+        move || queue_model.borrow().clone()
     };
 
     let track_list = {
@@ -427,38 +417,7 @@ pub fn build(
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
-        let panel = Rc::downgrade(&info_panel);
-        player.set_on_now_playing_panel_track_changed(move |track| {
-            if let Some(panel) = panel.upgrade() {
-                panel.set_loaded_track(track);
-            }
-        });
-        let panel = Rc::downgrade(&info_panel);
-        player.set_on_now_playing_panel_state_changed(move |state| {
-            if let Some(panel) = panel.upgrade() {
-                panel.set_playback_state(state);
-            }
-        });
-
-        let player_weak = Rc::downgrade(player);
-        let panel_weak = Rc::downgrade(&info_panel);
-        let refresh_up_next: Rc<dyn Fn()> = Rc::new(move || {
-            let (Some(player), Some(panel)) = (player_weak.upgrade(), panel_weak.upgrade()) else {
-                return;
-            };
-            let entries = player.now_playing_panel_up_next_entries();
-            panel.set_up_next_entries(&entries);
-        });
-        let refresh_on_queue_change = refresh_up_next.clone();
-        player.add_on_queue_changed(move || refresh_on_queue_change());
-        refresh_up_next();
-
-        let player = Rc::downgrade(player);
-        info_panel.set_on_up_next_jump(move |row| {
-            if let Some(player) = player.upgrade() {
-                player.jump_to_queue_row(row);
-            }
-        });
+        super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
     }
     let player_bar_widget = player
         .as_ref()

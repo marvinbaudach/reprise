@@ -41,6 +41,32 @@ pub(crate) struct QueueViewModel {
     pub sections: Vec<QueueSection>,
 }
 
+impl QueueViewModel {
+    /// The shared queue projection used by the compact panel: the exact same
+    /// model with the optional Now Playing prefix removed and section offsets
+    /// rebased. No queue composition is repeated in the panel.
+    pub(crate) fn upcoming(&self) -> Self {
+        let now_playing_len = self
+            .sections
+            .first()
+            .filter(|section| section.kind == QueueSectionKind::NowPlaying)
+            .map_or(0, |section| section.len);
+        let skip = usize::try_from(now_playing_len).unwrap_or(self.ids.len());
+        let ids = self.ids.get(skip..).unwrap_or_default().to_vec();
+        let sections = self
+            .sections
+            .iter()
+            .filter(|section| section.kind != QueueSectionKind::NowPlaying)
+            .map(|section| QueueSection {
+                start: section.start.saturating_sub(now_playing_len),
+                len: section.len,
+                kind: section.kind.clone(),
+            })
+            .collect();
+        Self { ids, sections }
+    }
+}
+
 /// Composes the three queue parts into display order (QUE-1). Sections are
 /// emitted only when non-empty; an entirely empty composition (nothing
 /// playing, nothing pending) yields the empty model that routes the view to
@@ -217,6 +243,21 @@ mod tests {
         assert_eq!(
             section_ranges(&model.sections),
             vec![(0, 1), (1, 3), (3, 6)]
+        );
+    }
+
+    #[test]
+    fn upcoming_reuses_the_composition_without_the_now_playing_prefix() {
+        let model = compose(Some(1), &[2, 3], &[4, 5], Some("Late Night")).upcoming();
+
+        assert_eq!(model.ids, vec![2, 3, 4, 5]);
+        assert_eq!(section_ranges(&model.sections), vec![(0, 2), (2, 4)]);
+        assert_eq!(model.sections[0].kind, QueueSectionKind::PlayNext);
+        assert_eq!(
+            model.sections[1].kind,
+            QueueSectionKind::UpNext {
+                source_label: "Late Night".into()
+            }
         );
     }
 
