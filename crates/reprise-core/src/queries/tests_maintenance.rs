@@ -259,7 +259,6 @@ fn remove_missing_tracks_empty_slice_is_a_no_op() {
     assert_eq!(count, 2);
 }
 
-
 /// Property-style regression test (the reviewer's ask): runs a scripted
 /// sequence of add/remove/move/hard-delete operations against a real
 /// playlist and a real `queue::Queue`, asserting the gapless-positions

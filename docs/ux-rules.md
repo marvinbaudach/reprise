@@ -632,6 +632,82 @@ ist ihre eigene Aussage).
   Dateien vorhanden sind und im selben Ordner liegen (eine
   Nautilus-Mehrfachmarkierung in einem Fenster), sonst ausgegraut.
 
+## O. Motion & Transitions
+
+<!-- Sektionsbuchstabe: M (Tooltips) ist auf main vergeben; N ist durch
+     feature/context-menu-unification („N. Track-Kontextmenü") beansprucht.
+     Motion nimmt daher O; die Buchstabenlage wurde beim Einfügen dieser
+     Sektion gegen den main-Stand verifiziert. -->
+
+Motion illustriert, sie informiert nie exklusiv: jede Transition bestätigt
+eine Zustandsänderung, die auch ohne sie vollständig sichtbar wäre —
+`gtk-enable-animations=false` ist der Beweis (MOT-7). Animationen folgen
+direkten Nutzeraktionen; Hintergrundprozesse schalten hart oder faden an
+Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
+
+- **MOT-1** [geplant] [gtk] — Vier Tokens, keine freien Zahlen: jede von
+  Reprise selbst konfigurierte Animation nutzt eines von vier Tokens aus
+  `ui/motion.rs`: **Micro** 150 ms ease-out für Control-Zustand
+  (Icon-Wechsel Play⇄Pause, Hover-Pills, Chips, Rating, Press-Scale;
+  Icon-Crossfades laufen als zwei Micro-Hälften à 75 ms) · **Standard**
+  250 ms ease-out-cubic für Flächen (Sidebar-/Panel-Reveal, Toast rein,
+  Card-Collapse, Crossfades Cover/StatusPage⇄Liste) · **Ambient** 400 ms
+  ease-out-cubic für atmosphärische, nicht-interaktive Übergänge
+  (Akzentfarben-Crossfade) · **Spatial** = AdwSpringAnimation mit
+  Adw-Default-Springparametern für gerichtete Navigation, im Code angelegt
+  ab dem ersten gerichteten Navigationsfall. Ease-in nur für Verlassendes
+  (Toast raus, Micro-Dauer); linear nur für echte Fortschrittsbalken.
+  Adw-interne Widget-Animationen ohne Dauer-API (OverlaySplitView,
+  NavigationSplitView, ToastOverlay, Banner, Dialog, Popover — z. B. die
+  Push/Pop-Slides der Einstellungs-Unterseiten) gelten als systemgegeben
+  und sind vom Token-Zwang ausgenommen.
+  <!-- Flip-Kriterium MOT-1: alle Call-Sites aus dem Audit-Inventar des
+       Motion-Plans konsumieren Tokens; scripts/check-motion-tokens.sh ist
+       scharf und ohne Restlisten-Allowlist. -->
+- **MOT-2** [geplant] [gtk] — Nutzeraktion animiert, Hintergrund nie:
+  Transitions folgen direkten Nutzeraktionen. Scan/Watcher/Mount/Sync
+  schalten hart bzw. faden ohne Verschiebung (P-4 in Motion-Sprache).
+  Ausnahme: die vom Nutzer gestartete Prozess-Karte darf füllen/pulsieren.
+- **MOT-3** [geplant] [gtk] — Symmetrie: gleiches Muster = gleiches Widget
+  + gleiches Token. Konkret: die linke Bibliotheks-Sidebar nutzt exakt das
+  Widget und damit exakt die Transition der rechten Info-Spalte
+  (`adw::OverlaySplitView`, Position Start — Auslöser dieser Sektion); der
+  innere Tracks/Albums/Artists-Wechsel und die StatusPage⇄Liste-Stacks
+  crossfaden mit dem Standard-Token wie der äußere
+  Library/Stats/Device-Stack.
+- **MOT-4** [geplant] [manuell] — Listen bewegen sich nicht: kein
+  Stagger/Fade-in pro Row (windowed Model, 200er-Fenster, Bibliotheken
+  jenseits 1 600 Rows). Erlaubt: ein Crossfade der gesamten Fläche beim
+  View-Wechsel; benannte Ausnahme: die Queue darf DnD-Drop und
+  Einzel-Remove animieren.
+  <!-- Die Queue-Ausnahme ist erlaubend, nicht fordernd; ihre Umsetzung
+       liegt im Folge-Branch und blockiert den MOT-4-Flip nicht. -->
+- **MOT-5** [geplant] [gtk] — Player-Leiste lebt, aber leise: Play→Pause =
+  Icon-Crossfade (zwei Micro-Hälften) + Scale-Puls (1.0→0.92→1.0, Micro);
+  Track-Wechsel = Cover/Titel-Crossfade; die Waveform crossfadet zum neuen
+  Track statt auf 0 zu fahren; Pause entsättigt den Waveform-Fill leicht
+  (zur Draw-Zeit), Play kehrt es um — die Akzent-Pipeline (`cover_accent`)
+  bleibt unberührt. Die EQ-Indikatoren (Trackliste, Mini-Player) laufen
+  nur während aktiver Wiedergabe; die Idle-Leiste ist statisch — kein
+  Dauerloop ohne Wiedergabe.
+  <!-- Flip-Kriterium MOT-5 (Folge-Branch, Muster TIP-1b/2b): Scale-Puls,
+       Waveform-Crossfade und Pause-Entsättigung sind implementiert und
+       per [gtk]-Test gedeckt. Icon- und Track-Crossfade existieren
+       bereits tokenisiert; sie allein flippen die Regel nicht. -->
+- **MOT-6** [geplant] [gtk] — Nichts blockiert: das Modell ändert sich am
+  Frame 0, die Animation illustriert nur. Eine zweite Aktion während einer
+  laufenden Animation springt per `AdwAnimation::skip()` zum Endzustand und
+  startet dann die neue; Animations-Slots (Track-Crossfade, Icon-Crossfade,
+  Akzent-Fade) rufen `skip()` statt den alten Handle stillschweigend zu
+  droppen.
+- **MOT-7** [geplant] [gtk] — `gtk-enable-animations=false` gewinnt
+  ausnahmslos: jedes Token degradiert zentral in `ui/motion.rs` zum
+  Hard-Switch (`follow-enable-animations-setting` bzw. der zentrale
+  Gate-Helper `animations_enabled()`), nicht an 30 Call-Sites. Gilt auch
+  für eigene Tick-Callbacks (Waveform-Positions-Glättung: Position hart
+  setzen; Progress-Interpolation) und Pulse-Timer. `gtk::Spinner` und
+  GTK-interne CSS-Mechanik sind Systemverhalten und werden nicht gegated.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
