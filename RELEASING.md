@@ -142,6 +142,13 @@ Do not point development hooks at the maintainer's real library.
   opens without duplicate Back history, visible search text clears, the loaded card
   is focused, centered, and highlighted for about one second, reduced motion uses a
   static highlight, and a missing album silently falls back to NAV-9a's track origin.
+- GRID-6: Open a non-first album from the grid, then go Back. Confirm the same
+  album card regains keyboard focus and is scrolled into view without clearing
+  the current album filter or replaying the GRID-5 reveal highlight.
+- For the reduced-motion variants above, toggle GNOME's system animation
+  setting for the duration of the test and restore its previous value after
+  closing Reprise. A per-profile GTK `settings.ini` can be overridden by the
+  live desktop's XSettings value and is not sufficient evidence on GNOME.
 - With disposable tagged audio and real speakers, adjust all equalizer bands and
   presets while playing, then compare ReplayGain Off, Per Track, and Per Album on
   files containing valid ReplayGain tags. Equalizer and ReplayGain belong only to

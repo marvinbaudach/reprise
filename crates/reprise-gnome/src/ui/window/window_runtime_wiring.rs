@@ -253,30 +253,39 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let content_stack = content_stack.clone();
             let library_stack = library_views.stack.clone();
             let album_grid = album_view.grid_widget().clone();
+            let restore_album_focus = album_view.restore_focus_callback();
             back_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_back() else {
                     tracing::debug!("nav back: history is empty");
                     return;
                 };
-                nav_history.begin_back();
-                crate::ui::sidebar_session::sync_current_source(
-                    &sidebar.shared,
-                    &track_list.current_source(),
-                );
-                // Remember the restored place as current — row-less targets
-                // (Album/Artist) never reach the sidebar choke point that
-                // would otherwise do this. Suppressed by begin_back above.
-                nav_history.record_route(&place);
-                super::library_shell::route_to_place(
+                let current_source = track_list.current_source();
+                super::album_grid_reveal::route_back_restoring_album_focus(
+                    &current_source,
                     &place,
-                    &sidebar,
-                    &track_list,
-                    &content_stack,
-                    &library_stack,
-                    &album_grid,
-                    "nav back",
+                    || {
+                        nav_history.begin_back();
+                        crate::ui::sidebar_session::sync_current_source(
+                            &sidebar.shared,
+                            &track_list.current_source(),
+                        );
+                        // Remember the restored place as current — row-less targets
+                        // (Album/Artist) never reach the sidebar choke point that
+                        // would otherwise do this. Suppressed by begin_back above.
+                        nav_history.record_route(&place);
+                        super::library_shell::route_to_place(
+                            &place,
+                            &sidebar,
+                            &track_list,
+                            &content_stack,
+                            &library_stack,
+                            &album_grid,
+                            "nav back",
+                        );
+                        nav_history.end_back();
+                    },
+                    &restore_album_focus,
                 );
-                nav_history.end_back();
             });
         }
         window.add_action(&back_action);
