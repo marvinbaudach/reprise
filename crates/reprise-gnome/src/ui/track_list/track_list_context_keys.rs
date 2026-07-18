@@ -7,7 +7,12 @@ use super::popover_lifecycle;
 use super::track_list_context_menu;
 use super::Shared;
 
-fn is_context_menu_shortcut(key: gdk::Key, modifiers: gdk::ModifierType) -> bool {
+/// Shared with the album grid's keyboard context menu
+/// (`album_view_actions`): Menu key or Shift+F10, per GNOME convention.
+pub(in crate::ui) fn is_context_menu_shortcut(
+    key: gdk::Key,
+    modifiers: gdk::ModifierType,
+) -> bool {
     key == gdk::Key::Menu
         || (key == gdk::Key::F10 && modifiers.contains(gdk::ModifierType::SHIFT_MASK))
 }

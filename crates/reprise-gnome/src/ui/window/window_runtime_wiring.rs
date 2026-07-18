@@ -68,6 +68,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) preferences: &'a Rc<PreferencesContext>,
     pub(in crate::ui) cover_batch: &'a Rc<CoverDownloadBatch>,
     pub(in crate::ui) first_run_decision: FirstRunDecision,
+    pub(in crate::ui) nav_history: &'a Rc<crate::ui::nav_history::NavHistory>,
 }
 
 pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
@@ -103,6 +104,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         preferences,
         cover_batch,
         first_run_decision,
+        nav_history,
     } = args;
 
     let minimal_toggle = minimal_view.clone();
@@ -161,7 +163,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         }
     });
 
-    let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
     if let Some(player) = player {
         let sidebar_for_queue = sidebar.clone();
         player.bar.connect_queue_clicked(move || {
@@ -176,6 +177,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let player = Rc::downgrade(player);
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
+            let nav_history = nav_history.clone();
+            let content_stack = content_stack.clone();
+            let library_stack = library_views.stack.clone();
+            let album_grid = album_view.grid_widget().clone();
             Rc::new(move || {
                 let Some(player) = player.upgrade() else {
                     return;
@@ -193,7 +198,26 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar.shared,
                     &track_list.current_source(),
                 );
-                sidebar.refresh_and_select(origin, "jump to now playing");
+                // Route via `route_to_place`, not `refresh_and_select`: a
+                // row-less origin (Album/Artist detail) would otherwise be
+                // substituted with Library by the sidebar's fallback. The
+                // explicit `record_route` pushes the left place for such
+                // origins (row-backed ones would record via `on_select`
+                // anyway; the duplicate is suppressed).
+                let place = crate::ui::nav_history::NavPlace {
+                    source: origin.clone(),
+                    library_tab: Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
+                };
+                nav_history.record_route(&place);
+                super::library_shell::route_to_place(
+                    &place,
+                    &sidebar,
+                    &track_list,
+                    &content_stack,
+                    &library_stack,
+                    &album_grid,
+                    "jump to now playing",
+                );
                 // Deferred one main-loop round: the routed reload above has
                 // scheduled idle work of its own; centering runs after the
                 // rebuilt list exists (select_current_track keeps its own
@@ -226,8 +250,11 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let nav_history = nav_history.clone();
             let sidebar = sidebar.clone();
             let track_list = track_list.clone();
+            let content_stack = content_stack.clone();
+            let library_stack = library_views.stack.clone();
+            let album_grid = album_view.grid_widget().clone();
             back_action.connect_activate(move |_, _| {
-                let Some(target) = nav_history.pop() else {
+                let Some(place) = nav_history.go_back() else {
                     tracing::debug!("nav back: history is empty");
                     return;
                 };
@@ -236,12 +263,85 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                     &sidebar.shared,
                     &track_list.current_source(),
                 );
-                sidebar.refresh_and_select(target, "nav back");
+                // Remember the restored place as current — row-less targets
+                // (Album/Artist) never reach the sidebar choke point that
+                // would otherwise do this. Suppressed by begin_back above.
+                nav_history.record_route(&place);
+                super::library_shell::route_to_place(
+                    &place,
+                    &sidebar,
+                    &track_list,
+                    &content_stack,
+                    &library_stack,
+                    &album_grid,
+                    "nav back",
+                );
                 nav_history.end_back();
             });
         }
         window.add_action(&back_action);
         app.set_accels_for_action("win.nav-back", &["<Alt>Left"]);
+
+        // NAV-2 Forward: the browser counterpart — returns to the place the
+        // last Back left, until a new navigation invalidates it.
+        let forward_action = gtk4::gio::SimpleAction::new("nav-forward", None);
+        {
+            let nav_history = nav_history.clone();
+            let sidebar = sidebar.clone();
+            let track_list = track_list.clone();
+            let content_stack = content_stack.clone();
+            let library_stack = library_views.stack.clone();
+            let album_grid = album_view.grid_widget().clone();
+            forward_action.connect_activate(move |_, _| {
+                let Some(place) = nav_history.go_forward() else {
+                    tracing::debug!("nav forward: nothing ahead");
+                    return;
+                };
+                nav_history.begin_back();
+                crate::ui::sidebar_session::sync_current_source(
+                    &sidebar.shared,
+                    &track_list.current_source(),
+                );
+                nav_history.record_route(&place);
+                super::library_shell::route_to_place(
+                    &place,
+                    &sidebar,
+                    &track_list,
+                    &content_stack,
+                    &library_stack,
+                    &album_grid,
+                    "nav forward",
+                );
+                nav_history.end_back();
+            });
+        }
+        window.add_action(&forward_action);
+        app.set_accels_for_action("win.nav-forward", &["<Alt>Right"]);
+
+        // Browser-style mouse navigation buttons: 8 (back) / 9 (forward)
+        // fire the same actions as Alt+Left / Alt+Right. One gesture
+        // listening to all buttons, claiming ONLY 8/9 so every other button
+        // passes through untouched; capture phase on the toplevel so it
+        // works over every view.
+        let mouse_nav = gtk4::GestureClick::builder()
+            .button(0)
+            .propagation_phase(gtk4::PropagationPhase::Capture)
+            .build();
+        {
+            let window = window.downgrade();
+            mouse_nav.connect_pressed(move |gesture, _n, _x, _y| {
+                let action = match gesture.current_button() {
+                    8 => "nav-back",
+                    9 => "nav-forward",
+                    _ => return,
+                };
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
+                if let Some(window) = window.upgrade() {
+                    gtk4::gio::prelude::ActionGroupExt::activate_action(&window, action, None);
+                }
+            });
+        }
+        window.add_controller(mouse_nav);
 
         // Dev/verification hook (permanent, like `REPRISE_SMOKE_ACTIVATE`):
         // `REPRISE_SMOKE_JUMP=1` fires the NAV-9 jump action ~2s after
@@ -273,6 +373,63 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 gtk4::gio::prelude::ActionGroupExt::activate_action(
                     &window_for_back,
                     "nav-back",
+                    None,
+                );
+            });
+        }
+
+        // Dev/verification hook (permanent, like `REPRISE_SMOKE_JUMP`):
+        // `REPRISE_SMOKE_FOCUS_ALBUMS=1` opens the Albums tab and hands
+        // keyboard focus to the album grid — the deterministic entry point
+        // for keyboard-flow E2E (focus ring, Enter, Menu key) without
+        // walking the window's whole Tab chain.
+        if std::env::var("REPRISE_SMOKE_FOCUS_ALBUMS").is_ok() {
+            let library_stack = library_views.stack.clone();
+            let grid = album_view.grid_widget().downgrade();
+            gtk4::glib::timeout_add_seconds_local_once(2, move || {
+                library_stack
+                    .set_visible_child_name(super::library_shell::LIBRARY_VIEW_ALBUMS);
+                let Some(grid) = grid.upgrade() else { return };
+                let granted = grid.grab_focus();
+                tracing::info!(granted, "smoke: focused album grid");
+            });
+        }
+
+        // Dev/verification hook (permanent, like `REPRISE_SMOKE_JUMP`):
+        // `REPRISE_SMOKE_ALBUM_BACK=1` drives the album cross-navigation
+        // round trip headless — opens the Albums tab, activates the first
+        // album card (the same `activate` signal the Enter key fires on a
+        // focused cell), fires NAV-2 back, then NAV-2 forward. Headless E2E
+        // asserts the "history nav: routing to place" lines restore the
+        // albums tab and then the album detail again.
+        if std::env::var("REPRISE_SMOKE_ALBUM_BACK").is_ok() {
+            let library_stack = library_views.stack.clone();
+            gtk4::glib::timeout_add_seconds_local_once(4, move || {
+                tracing::info!("smoke: opening albums tab");
+                library_stack
+                    .set_visible_child_name(super::library_shell::LIBRARY_VIEW_ALBUMS);
+            });
+            let grid = album_view.grid_widget().downgrade();
+            gtk4::glib::timeout_add_seconds_local_once(6, move || {
+                let Some(grid) = grid.upgrade() else { return };
+                tracing::info!("smoke: activating first album card");
+                gtk4::prelude::ObjectExt::emit_by_name::<()>(&grid, "activate", &[&0u32]);
+            });
+            let window_for_back = window.clone();
+            gtk4::glib::timeout_add_seconds_local_once(8, move || {
+                tracing::info!("smoke: firing nav-back after album");
+                gtk4::gio::prelude::ActionGroupExt::activate_action(
+                    &window_for_back,
+                    "nav-back",
+                    None,
+                );
+            });
+            let window_for_forward = window.clone();
+            gtk4::glib::timeout_add_seconds_local_once(10, move || {
+                tracing::info!("smoke: firing nav-forward after back");
+                gtk4::gio::prelude::ActionGroupExt::activate_action(
+                    &window_for_forward,
+                    "nav-forward",
                     None,
                 );
             });
@@ -315,7 +472,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let show_content_if_collapsed = super::window_navigation::show_content_callback(split_view);
     super::library_shell::wire_source_routing(
         sidebar,
-        &nav_history,
+        nav_history,
         track_list,
         stats_view,
         conn,
@@ -422,6 +579,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     );
     let restored_source = super::view_session::snapshot(track_list).source;
     library_title.set_library_navigation_visible(matches!(restored_source, ViewSource::Library));
+    // NAV-2: session restore selects the source silently (no `on_select`),
+    // so seed the history's "current place" here — without it the FIRST
+    // cross-navigation after startup (e.g. opening an album from the grid)
+    // would have no previous place to push and Back would do nothing.
+    nav_history.record_route(&crate::ui::nav_history::NavPlace {
+        source: restored_source,
+        library_tab: Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
+    });
     super::session_restore::wire_close(
         window,
         conn,
