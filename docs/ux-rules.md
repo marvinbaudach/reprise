@@ -700,7 +700,7 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   startet dann die neue; Animations-Slots (Track-Crossfade, Icon-Crossfade,
   Akzent-Fade) rufen `skip()` statt den alten Handle stillschweigend zu
   droppen.
-- **MOT-7** [geplant] [gtk] — `gtk-enable-animations=false` gewinnt
+- **MOT-7** [aktiv] [gtk] — `gtk-enable-animations=false` gewinnt
   ausnahmslos: jedes Token degradiert zentral in `ui/motion.rs` zum
   Hard-Switch (`follow-enable-animations-setting` bzw. der zentrale
   Gate-Helper `animations_enabled()`), nicht an 30 Call-Sites. Gilt auch
