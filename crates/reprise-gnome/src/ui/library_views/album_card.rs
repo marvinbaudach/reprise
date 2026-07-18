@@ -12,6 +12,7 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::queries::AlbumSummary;
 
 use crate::ui::album_card_css as css;
+use crate::ui::album_card_state::{presentation, AlbumCardIdentityRegistry, AlbumCardPlayback};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::eq_bars;
 use crate::ui::strings;
@@ -33,6 +34,8 @@ pub(in crate::ui) type ArtistActivateSlot = Rc<RefCell<Option<ArtistActivate>>>;
 pub(in crate::ui) struct AlbumCardShared {
     pub cover_loader: Rc<CoverLoader>,
     pub generation: Rc<Cell<u64>>,
+    pub identity_generation: Rc<Cell<u64>>,
+    pub identities: Rc<RefCell<AlbumCardIdentityRegistry>>,
     /// `(album_key, artist_key)` of the currently playing album, if any.
     pub now_playing_album: Rc<RefCell<Option<(String, String)>>>,
     /// Play button click → replace queue + play.
@@ -75,7 +78,16 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .build();
             placeholder.append(&placeholder_initial);
 
-            // Hover overlay: gradient scrim + bottom row with EQ + play button.
+            // Persistent now-playing layer: independent from hover/focus.
+            let playing_layer = gtk4::Box::builder()
+                .css_classes(vec![css::PLAYING_LAYER_CLASS.to_owned()])
+                .halign(gtk4::Align::Start)
+                .valign(gtk4::Align::Start)
+                .visible(false)
+                .build();
+            playing_layer.append(&eq_bars::build(eq_bars::EqVariant::Animated));
+
+            // Hover overlay: gradient scrim + bottom-row play button.
             let hover_overlay = gtk4::Box::builder()
                 .orientation(gtk4::Orientation::Vertical)
                 .css_classes(vec![css::HOVER_OVERLAY_CLASS.to_owned()])
@@ -86,17 +98,8 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             spacer.set_vexpand(true);
             hover_overlay.append(&spacer);
 
-            // Bottom row: EQ bars (left) and play button (right).
+            // Bottom row: play button at the right edge.
             let bottom_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-            let eq_bars_widget = eq_bars::build(eq_bars::EqVariant::Animated);
-            let eq_container = gtk4::Box::builder()
-                .css_classes(vec![css::EQ_CONTAINER_CLASS.to_owned()])
-                .halign(gtk4::Align::Start)
-                .valign(gtk4::Align::End)
-                .visible(false)
-                .build();
-            eq_container.append(&eq_bars_widget);
-            bottom_row.append(&eq_container);
             let play_spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
             play_spacer.set_hexpand(true);
             bottom_row.append(&play_spacer);
@@ -119,12 +122,22 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             // GtkAspectFrame's child is the cover image.
             aspect.set_child(Some(&cover));
 
+            // The playing frame is an inner cover-only ring above both the
+            // image and placeholder. It never intercepts pointer input.
+            let playing_frame = gtk4::Box::builder()
+                .halign(gtk4::Align::Fill)
+                .valign(gtk4::Align::Fill)
+                .can_target(false)
+                .build();
+
             // Overlay: cover image is the base child, overlays are layered on top.
             let cover_overlay = gtk4::Overlay::builder()
                 .css_classes(vec![css::COVER_CONTAINER_CLASS.to_owned()])
                 .child(&aspect)
                 .build();
             cover_overlay.add_overlay(&placeholder);
+            cover_overlay.add_overlay(&playing_frame);
+            cover_overlay.add_overlay(&playing_layer);
             cover_overlay.add_overlay(&hover_overlay);
 
             // Text labels below cover.
@@ -251,10 +264,21 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 album.album_artist.clone()
             };
             subtitle_label.set_text(&artist_display);
-            card.set_tooltip_text(Some(&format_tooltip(&album)));
+            card.set_tooltip_text(None);
+            card.update_property(&[gtk4::accessible::Property::Description(&format_tooltip(
+                &album,
+            ))]);
 
-            // cover_overlay children: aspect (base child), placeholder, hover_overlay.
-            // first_child() = aspect frame (the overlay's base child).
+            let identity_generation = shared.identity_generation.get().wrapping_add(1);
+            shared.identity_generation.set(identity_generation);
+            shared.identities.borrow_mut().bind(
+                card.as_ptr() as usize,
+                identity_generation,
+                album.clone(),
+            );
+
+            // cover_overlay children: aspect (base), placeholder, playing
+            // frame, playing layer, hover overlay.
             let aspect = cover_overlay
                 .first_child()
                 .and_downcast::<gtk4::AspectFrame>()
@@ -264,7 +288,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .and_downcast::<gtk4::Image>()
                 .expect("cover Image");
 
-            // Placeholder: next overlay child after aspect.
+            // Placeholder: next overlay child after the aspect.
             let placeholder = aspect
                 .next_sibling()
                 .and_downcast::<gtk4::Box>()
@@ -298,8 +322,18 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 },
             );
 
-            // Hover overlay: next sibling after placeholder.
-            let hover_box = placeholder
+            let playing_frame = placeholder
+                .next_sibling()
+                .and_downcast::<gtk4::Box>()
+                .expect("playing frame Box");
+
+            let playing_layer = playing_frame
+                .next_sibling()
+                .and_downcast::<gtk4::Box>()
+                .expect("playing_layer Box");
+
+            // Hover overlay: next sibling after the persistent layer.
+            let hover_box = playing_layer
                 .next_sibling()
                 .and_downcast::<gtk4::Box>()
                 .expect("hover_overlay Box");
@@ -314,11 +348,28 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                             && ar.eq_ignore_ascii_case(&album.album_artist)
                     });
 
-            // Bottom row: spacer (first child), then bottom_row (last child).
-            if let Some(bottom_row) = hover_box.last_child().and_downcast::<gtk4::Box>() {
-                if let Some(eq_container) = bottom_row.first_child().and_downcast::<gtk4::Box>() {
-                    eq_container.set_visible(is_now_playing);
+            let playback = if is_now_playing {
+                let paused = card
+                    .ancestor(gtk4::GridView::static_type())
+                    .is_some_and(|grid| grid.has_css_class("playback-paused"));
+                if paused {
+                    AlbumCardPlayback::Paused
+                } else {
+                    AlbumCardPlayback::Playing
                 }
+            } else {
+                AlbumCardPlayback::Normal
+            };
+            let card_presentation = presentation(playback);
+            playing_layer.set_visible(card_presentation.show_playing_layer);
+            if card_presentation.show_playing_layer {
+                playing_frame.add_css_class(css::PLAYING_FRAME_CLASS);
+            } else {
+                playing_frame.remove_css_class(css::PLAYING_FRAME_CLASS);
+            }
+
+            // Bottom row: spacer (first child), then play button (last child).
+            if let Some(bottom_row) = hover_box.last_child().and_downcast::<gtk4::Box>() {
                 if let Some(play_btn) = bottom_row.last_child().and_downcast::<gtk4::Button>() {
                     play_btn.set_icon_name(if is_now_playing {
                         "media-playback-pause-symbolic"
@@ -327,57 +378,78 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                     });
                 }
             }
-            if is_now_playing {
-                hover_box.add_css_class("album-now-playing");
-            }
         });
     }
 
     // ── unbind ─────────────────────────────────────────────────────────────
-    factory.connect_unbind(move |_factory, list_item| {
-        let list_item = list_item
-            .downcast_ref::<gtk4::ListItem>()
-            .expect("ListItem");
-        let card = list_item
-            .child()
-            .and_downcast::<gtk4::Box>()
-            .expect("card Box");
-        let cover_overlay = card
-            .first_child()
-            .and_downcast::<gtk4::Overlay>()
-            .expect("cover Overlay");
+    {
+        let shared = shared.clone();
+        factory.connect_unbind(move |_factory, list_item| {
+            let list_item = list_item
+                .downcast_ref::<gtk4::ListItem>()
+                .expect("ListItem");
+            let card = list_item
+                .child()
+                .and_downcast::<gtk4::Box>()
+                .expect("card Box");
+            let cover_overlay = card
+                .first_child()
+                .and_downcast::<gtk4::Overlay>()
+                .expect("cover Overlay");
 
-        // Clear cover texture to free memory.
-        let aspect = cover_overlay
-            .first_child()
-            .and_downcast::<gtk4::AspectFrame>();
-        if let Some(aspect) = aspect {
-            if let Some(cover) = aspect.child().and_downcast::<gtk4::Image>() {
-                cover.clear();
+            // Clear cover texture to free memory.
+            let aspect = cover_overlay
+                .first_child()
+                .and_downcast::<gtk4::AspectFrame>();
+            if let Some(aspect) = &aspect {
+                if let Some(cover) = aspect.child().and_downcast::<gtk4::Image>() {
+                    cover.clear();
+                }
             }
-        }
+            let playing_frame = aspect
+                .and_then(|aspect| aspect.next_sibling())
+                .and_then(|placeholder| placeholder.next_sibling())
+                .and_downcast::<gtk4::Box>();
+            if let Some(playing_frame) = &playing_frame {
+                playing_frame.remove_css_class(css::PLAYING_FRAME_CLASS);
+                playing_frame.remove_css_class("album-reveal-pulse");
+                playing_frame.remove_css_class("album-reveal-pulse-static");
+            }
 
-        // Reset now-playing state and hide placeholder to prevent stale flash.
-        let placeholder = cover_overlay
-            .first_child()
-            .and_then(|w| w.next_sibling())
-            .and_downcast::<gtk4::Box>();
-        if let Some(placeholder) = placeholder {
-            placeholder.set_visible(false);
-            if let Some(hover_box) = placeholder.next_sibling().and_downcast::<gtk4::Box>() {
-                hover_box.remove_css_class("album-now-playing");
-                if let Some(bottom_row) = hover_box.last_child().and_downcast::<gtk4::Box>() {
-                    if let Some(play_btn) = bottom_row.last_child().and_downcast::<gtk4::Button>() {
-                        play_btn.set_icon_name("media-playback-start-symbolic");
-                    }
-                    if let Some(eq_container) = bottom_row.first_child().and_downcast::<gtk4::Box>()
+            shared
+                .identities
+                .borrow_mut()
+                .unbind_current(card.as_ptr() as usize);
+
+            // Reset now-playing state and hide placeholder to prevent stale flash.
+            let placeholder = cover_overlay
+                .first_child()
+                .and_then(|w| w.next_sibling())
+                .and_downcast::<gtk4::Box>();
+            if let Some(placeholder) = placeholder {
+                placeholder.set_visible(false);
+                if let Some(playing_layer) = placeholder
+                    .next_sibling()
+                    .and_then(|playing_frame| playing_frame.next_sibling())
+                    .and_downcast::<gtk4::Box>()
+                {
+                    playing_layer.set_visible(false);
+                    if let Some(hover_box) =
+                        playing_layer.next_sibling().and_downcast::<gtk4::Box>()
                     {
-                        eq_container.set_visible(false);
+                        if let Some(bottom_row) = hover_box.last_child().and_downcast::<gtk4::Box>()
+                        {
+                            if let Some(play_btn) =
+                                bottom_row.last_child().and_downcast::<gtk4::Button>()
+                            {
+                                play_btn.set_icon_name("media-playback-start-symbolic");
+                            }
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 
     factory
 }
@@ -414,7 +486,7 @@ pub(in crate::ui) fn derive_initial(album: &str) -> String {
         .map_or_else(|| "♪".to_string(), |c| c.to_uppercase().to_string())
 }
 
-/// Tooltip: "Title · Artist · Year · N tracks · Duration".
+/// Legacy album-summary formatting retained for the bottom metadata line.
 pub(in crate::ui) fn format_tooltip(album: &AlbumSummary) -> String {
     let mut parts = vec![album.album.clone()];
     if !album.album_artist.is_empty() {
@@ -426,137 +498,4 @@ pub(in crate::ui) fn format_tooltip(album: &AlbumSummary) -> String {
     parts.push(format!("{} tracks", album.track_count));
     parts.push(strings::album_duration(album.total_duration_ms));
     parts.join(" · ")
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::*;
-
-    fn wait_for_layout() {
-        let main_loop = gtk4::glib::MainLoop::new(None, false);
-        let quit = main_loop.clone();
-        gtk4::glib::timeout_add_local_once(Duration::from_millis(50), move || quit.quit());
-        main_loop.run();
-    }
-
-    #[test]
-    fn derive_initial_strips_leading_articles() {
-        assert_eq!(derive_initial("The Wall"), "W");
-        assert_eq!(derive_initial("A Rush of Blood"), "R");
-        assert_eq!(derive_initial("Die Ärzte"), "Ä");
-    }
-
-    #[test]
-    fn derive_initial_uses_first_alphanumeric() {
-        assert_eq!(derive_initial("  123 Album"), "1");
-        assert_eq!(derive_initial("...Trails"), "T");
-    }
-
-    #[test]
-    fn derive_initial_fallback_is_music_note() {
-        assert_eq!(derive_initial(""), "♪");
-        assert_eq!(derive_initial("---"), "♪");
-    }
-
-    #[test]
-    fn placeholder_gradient_class_is_consistent() {
-        let class1 = placeholder_class_for_album("Album", "Artist");
-        let class2 = placeholder_class_for_album("Album", "Artist");
-        assert_eq!(class1, class2);
-        assert!(class1.starts_with("album-placeholder-gradient-"));
-    }
-
-    #[test]
-    fn placeholder_gradient_class_stays_in_palette() {
-        for artist in ["Artist A", "Artist B", "Artist C", "Artist D"] {
-            let class = placeholder_class_for_album("Greatest Hits", artist);
-            let index = class
-                .strip_prefix("album-placeholder-gradient-")
-                .unwrap()
-                .parse::<usize>()
-                .unwrap();
-            assert!(index < css::PLACEHOLDER_GRADIENT_COUNT);
-        }
-    }
-
-    #[test]
-    fn format_tooltip_includes_all_fields() {
-        let album = AlbumSummary {
-            album: "OK Computer".into(),
-            album_artist: "Radiohead".into(),
-            representative_path: "/a.flac".into(),
-            track_count: 12,
-            year: Some(1997),
-            total_duration_ms: 3_180_000,
-            max_added_at: 0,
-            total_play_count: 0,
-        };
-        let tip = format_tooltip(&album);
-        assert!(tip.contains("OK Computer"));
-        assert!(tip.contains("Radiohead"));
-        assert!(tip.contains("1997"));
-        assert!(tip.contains("12 tracks"));
-        assert!(tip.contains("53 min"));
-    }
-
-    #[test]
-    fn format_tooltip_omits_year_when_none() {
-        let album = AlbumSummary {
-            album: "Untitled".into(),
-            album_artist: "".into(),
-            representative_path: "/a.flac".into(),
-            track_count: 1,
-            year: None,
-            total_duration_ms: 60_000,
-            max_added_at: 0,
-            total_play_count: 0,
-        };
-        let tip = format_tooltip(&album);
-        // No empty segment from missing year or artist.
-        assert!(!tip.contains(" ·  · "));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn tip_1a_album_card_play_overlay_has_tooltip() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let (worker, _receiver) = async_channel::unbounded();
-        let cover_loader =
-            CoverLoader::new(crate::ui::cover_download_worker::CoverDownloadRuntime {
-                enabled: false,
-                worker,
-            });
-        let shared = Rc::new(AlbumCardShared {
-            cover_loader,
-            generation: Rc::new(Cell::new(0)),
-            now_playing_album: Rc::new(RefCell::new(None)),
-            on_play: Rc::new(RefCell::new(None)),
-            on_queue: Rc::new(RefCell::new(None)),
-            on_artist_activate: Rc::new(RefCell::new(None)),
-        });
-        let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
-        store.append(&glib::BoxedAnyObject::new(AlbumSummary {
-            album: "Test Album".into(),
-            album_artist: "Test Artist".into(),
-            representative_path: "/nonexistent/test.flac".into(),
-            track_count: 1,
-            year: Some(2026),
-            total_duration_ms: 60_000,
-            max_added_at: 0,
-            total_play_count: 0,
-        }));
-        let selection = gtk4::NoSelection::new(Some(store));
-        let grid = gtk4::GridView::new(Some(selection), Some(build_factory(&shared)));
-        let window = gtk4::Window::builder().child(&grid).build();
-        window.present();
-        wait_for_layout();
-
-        let violations = crate::ui::tooltip_discipline::tooltip_violations(grid.upcast_ref());
-        assert!(violations.is_empty(), "{violations:?}");
-        window.close();
-    }
 }

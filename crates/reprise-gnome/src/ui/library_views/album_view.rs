@@ -13,6 +13,7 @@ use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use crate::ui::album_card::{self, AlbumActivateSlot, AlbumCardShared, ArtistActivateSlot};
+use crate::ui::album_card_state::AlbumCardIdentityRegistry;
 use crate::ui::album_context_menu::AlbumMenuShared;
 use crate::ui::album_header::{self, AlbumSortKey};
 use crate::ui::album_view_actions::{self, AlbumViewActions};
@@ -52,6 +53,8 @@ impl AlbumView {
         let card_shared = Rc::new(AlbumCardShared {
             cover_loader,
             generation: Rc::new(Cell::new(0)),
+            identity_generation: Rc::new(Cell::new(0)),
+            identities: Rc::new(RefCell::new(AlbumCardIdentityRegistry::default())),
             now_playing_album: Rc::new(RefCell::new(None)),
             on_play: Rc::new(RefCell::new(None)),
             on_queue: Rc::new(RefCell::new(None)),
@@ -105,7 +108,7 @@ impl AlbumView {
             on_shuffle: Rc::new(RefCell::new(None)),
             on_toast: Rc::new(RefCell::new(None)),
         });
-        album_view_actions::install_context_menu(&grid_view, &filter_model, &menu_shared);
+        album_view_actions::install_context_menu(&grid_view, &card_shared.identities, &menu_shared);
 
         let scrolled = gtk4::ScrolledWindow::builder()
             .child(&grid_view)

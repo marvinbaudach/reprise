@@ -7,6 +7,8 @@ use crate::ui::style::tokens;
 pub(in crate::ui) const CARD_CLASS: &str = "album-card";
 pub(in crate::ui) const COVER_CLASS: &str = "album-cover";
 pub(in crate::ui) const COVER_CONTAINER_CLASS: &str = "album-cover-container";
+pub(in crate::ui) const PLAYING_FRAME_CLASS: &str = "album-playing-frame";
+pub(in crate::ui) const PLAYING_LAYER_CLASS: &str = "album-playing-layer";
 pub(in crate::ui) const HOVER_OVERLAY_CLASS: &str = "album-hover-overlay";
 pub(in crate::ui) const PLAY_BUTTON_CLASS: &str = "album-play-btn";
 pub(in crate::ui) const EQ_CONTAINER_CLASS: &str = "album-eq-container";
@@ -47,6 +49,14 @@ pub(in crate::ui) fn css() -> String {
            border-radius: 10px; \
            box-shadow: 0 4px 14px rgba(0,0,0,0.30); \
            border: 1px solid alpha(white, 0.06); }}\n\
+         .{PLAYING_FRAME_CLASS} {{ \
+           border-radius: 10px; \
+           box-shadow: inset 0 0 0 1.5px @reprise_player_accent; }}\n\
+         .{PLAYING_LAYER_CLASS} {{ \
+           margin: 8px; padding: 4px; \
+           color: @reprise_player_accent; \
+           background-color: rgba(0,0,0,0.5); \
+           border-radius: 6px; }}\n\
          \
          /* Cover image fills container. */
          .{COVER_CLASS} {{ \
@@ -116,6 +126,8 @@ mod tests {
         let css = super::css();
         assert!(css.contains(".album-card"));
         assert!(css.contains(".album-cover-container"));
+        assert!(css.contains(".album-playing-frame"));
+        assert!(css.contains(".album-playing-layer"));
         assert!(css.contains(".album-cover"));
         assert!(css.contains(".album-hover-overlay"));
         assert!(css.contains(".album-play-btn"));
@@ -124,6 +136,7 @@ mod tests {
         assert!(css.contains(".album-card-subtitle"));
         assert!(css.contains(".album-placeholder"));
         assert!(css.contains("outline: 2px solid @accent_color"));
+        assert!(css.contains("inset 0 0 0 1.5px @reprise_player_accent"));
         assert!(css.contains("box-shadow: 0 4px 14px"));
         for index in 0..super::PLACEHOLDER_GRADIENT_COUNT {
             assert!(css.contains(&format!(".album-placeholder-gradient-{index}")));

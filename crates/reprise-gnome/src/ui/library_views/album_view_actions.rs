@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::queries::AlbumSummary;
@@ -22,8 +21,8 @@ use rusqlite::Connection;
 use crate::ui::album_card::{AlbumAction, AlbumCardShared};
 use crate::ui::album_card_actions;
 use crate::ui::album_card_css;
+use crate::ui::album_card_state::AlbumCardIdentityRegistry;
 use crate::ui::album_context_menu::{self, AlbumMenuShared};
-use crate::ui::album_view_state;
 
 pub(in crate::ui) struct AlbumViewActions {
     conn: Rc<RefCell<Connection>>,
@@ -108,7 +107,7 @@ impl AlbumViewActions {
 
 pub(in crate::ui) fn install_context_menu(
     grid_view: &gtk4::GridView,
-    filter_model: &gtk4::FilterListModel,
+    identities: &Rc<RefCell<AlbumCardIdentityRegistry>>,
     menu_shared: &Rc<AlbumMenuShared>,
 ) {
     let action_group = album_context_menu::wire_actions(menu_shared);
@@ -118,7 +117,7 @@ pub(in crate::ui) fn install_context_menu(
     {
         let menu_shared = menu_shared.clone();
         let grid_weak = grid_view.downgrade();
-        let filter_model = filter_model.clone();
+        let identities = identities.clone();
         right_click.connect_released(move |gesture, _press_count, x, y| {
             gesture.set_state(gtk4::EventSequenceState::Claimed);
             let Some(grid) = grid_weak.upgrade() else {
@@ -127,7 +126,7 @@ pub(in crate::ui) fn install_context_menu(
             let Some(card) = picked_album_card(&grid, x, y) else {
                 return;
             };
-            let Some(selected) = resolve_card_album(&card, &filter_model) else {
+            let Some(selected) = resolve_card_album(&card, &identities) else {
                 return;
             };
             album_context_menu::show(&card, &menu_shared, selected, x, y);
@@ -141,7 +140,7 @@ pub(in crate::ui) fn install_context_menu(
     {
         let menu_shared = menu_shared.clone();
         let grid_weak = grid_view.downgrade();
-        let filter_model = filter_model.clone();
+        let identities = identities.clone();
         key_controller.connect_key_pressed(move |_, key, _, modifiers| {
             let is_shortcut =
                 crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut(
@@ -156,7 +155,7 @@ pub(in crate::ui) fn install_context_menu(
             let Some(card) = focused_album_card(&grid) else {
                 return gtk4::glib::Propagation::Proceed;
             };
-            let Some(selected) = resolve_card_album(&card, &filter_model) else {
+            let Some(selected) = resolve_card_album(&card, &identities) else {
                 return gtk4::glib::Propagation::Proceed;
             };
             album_context_menu::show(
@@ -173,30 +172,13 @@ pub(in crate::ui) fn install_context_menu(
     grid_view.add_controller(key_controller);
 }
 
-/// Resolves the `AlbumSummary` a card widget represents via its tooltip
-/// identity ("Title · Artist · …") — shared by the pointer and keyboard
-/// context-menu paths.
+/// Resolves the current generation-safe identity registered for a recycled
+/// card. Pointer and keyboard context menus share this exact lookup.
 fn resolve_card_album(
     card: &gtk4::Widget,
-    filter_model: &gtk4::FilterListModel,
+    identities: &Rc<RefCell<AlbumCardIdentityRegistry>>,
 ) -> Option<AlbumSummary> {
-    let tooltip = card.tooltip_text().unwrap_or_default();
-    let mut parts = tooltip.split(" \u{00b7} ");
-    let album_title = parts.next().unwrap_or_default();
-    let album_artist = parts.next().unwrap_or_default();
-    for index in 0..filter_model.n_items() {
-        let Some(object) = filter_model.item(index) else {
-            continue;
-        };
-        let Some(boxed) = object.downcast_ref::<glib::BoxedAnyObject>() else {
-            continue;
-        };
-        let album: std::cell::Ref<AlbumSummary> = boxed.borrow();
-        if album_view_state::identity_matches(&album, album_title, album_artist) {
-            return Some(album.clone());
-        }
-    }
-    None
+    identities.borrow().resolve(card.as_ptr() as usize)
 }
 
 fn picked_album_card(grid: &gtk4::GridView, x: f64, y: f64) -> Option<gtk4::Widget> {
