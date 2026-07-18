@@ -517,8 +517,8 @@ Lock: claimed by Codex in this worktree on 2026-07-18
 Stage: identify, test-drive, and compare the highest-value reproducible 100,000-track query bottleneck
 
 - PERF-OPT-1: complete (commit ddaa3f3, base c336590, captured the title-window SQLite plan in the stable benchmark contract; the 100,000-track before run measured 6,496/27,348/48,874 us medians for first/middle/final windows and confirmed a full scan plus temporary ORDER BY B-tree).
-- PERF-OPT-2: in progress — behavior-preserving optimization.
-- PERF-OPT-3: pending — paired release comparison, full gates, and stage review.
+- PERF-OPT-2: complete (shadow commit bf8394d, base ddaa3f3, schema v12 adds a partial NOCASE title index for present tracks; migration, plan selection, data preservation, and visible ordering are regression-tested. The primary worktree Git metadata became read-only before this commit, so the preserved shadow commit is bundled at stage close-out).
+- PERF-OPT-3: in progress — paired release comparison, full gates, and stage review.
 
 ## 2026-07-18 — Theme-Flächenhierarchie + Theme-Akzent-Fallback
 
