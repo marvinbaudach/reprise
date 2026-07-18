@@ -15,7 +15,7 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::artist_detail::ArtistTopTrack;
 use reprise_core::queries::ArtistAlbum;
 
-use crate::ui::artist_detail_pane::AlbumCallback;
+use crate::ui::artist_detail_pane::{AlbumCallback, TrackCallback};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::strings;
@@ -103,6 +103,8 @@ pub(in crate::ui) fn build_top_track_row(
     token: u64,
     rank: usize,
     track: &ArtistTopTrack,
+    on_activate: TrackCallback,
+    artist: String,
 ) -> (gtk4::Box, TopTrackRow) {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     row.add_css_class("artist-top-track");
@@ -156,6 +158,24 @@ pub(in crate::ui) fn build_top_track_row(
     let eq = eq_bars::build(EqVariant::Animated);
     eq.set_visible(false);
     row.append(&eq);
+
+    // Double-click plays this track in the artist's context. A plain `Box` in a
+    // vertical list (not a `ColumnView` cell), so the `GestureClick` is
+    // delivered reliably — no row machinery competes for the sequence.
+    let click = gtk4::GestureClick::new();
+    click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+    let track_id = track.track_id;
+    click.connect_released(move |gesture, n_press, _x, _y| {
+        if n_press != 2 {
+            return;
+        }
+        gesture.set_state(gtk4::EventSequenceState::Claimed);
+        let callback = on_activate.borrow().clone();
+        if let Some(callback) = callback {
+            callback(track_id, artist.clone());
+        }
+    });
+    row.add_controller(click);
 
     let handle = TopTrackRow {
         track_id: track.track_id,
