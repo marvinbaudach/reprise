@@ -37,11 +37,11 @@ pub(in crate::ui) struct Palette {
     pub(in crate::ui) dialog_bg: &'static str,
     pub(in crate::ui) fg: &'static str,
     pub(in crate::ui) dim_fg: &'static str,
-    /// Teal selection/toggle accent.
+    /// Theme-specific selection/toggle accent.
     pub(in crate::ui) accent: &'static str,
     pub(in crate::ui) accent_fg: &'static str,
-    /// Warm play/waveform accent — the static fallback until the P5
-    /// cover-derived accent subsystem drives it per track.
+    /// Static play/waveform fallback: the theme accent (decision 8). The
+    /// cover-derived accent pipeline overrides it per track when available.
     pub(in crate::ui) player_accent: &'static str,
 }
 
@@ -92,7 +92,7 @@ impl Theme {
                 dim_fg: "#9198a0",
                 accent: "#33c9a3",
                 accent_fg: "#04140f",
-                player_accent: "#e8703a",
+                player_accent: "#33c9a3",
             },
             Theme::NightTerrain => Palette {
                 window_bg: "#13161c",
@@ -106,7 +106,7 @@ impl Theme {
                 dim_fg: "#8b93a1",
                 accent: "#4db6a9",
                 accent_fg: "#05130f",
-                player_accent: "#d98a3d",
+                player_accent: "#4db6a9",
             },
             Theme::MutedBloom => Palette {
                 window_bg: "#1a1518",
@@ -120,7 +120,7 @@ impl Theme {
                 dim_fg: "#a2949c",
                 accent: "#c98bd0",
                 accent_fg: "#180612",
-                player_accent: "#e08a5a",
+                player_accent: "#c98bd0",
             },
         }
     }
@@ -301,6 +301,18 @@ mod tests {
                 sidebar < card,
                 "{theme:?}: sidebar must be darker than cards"
             );
+        }
+    }
+
+    #[test]
+    fn static_player_accent_matches_theme_accent_in_both_appearances() {
+        for theme in Theme::all() {
+            for palette in [theme.palette(), theme.light_palette()] {
+                assert_eq!(
+                    palette.player_accent, palette.accent,
+                    "{theme:?} player fallback must use the theme accent"
+                );
+            }
         }
     }
 }
