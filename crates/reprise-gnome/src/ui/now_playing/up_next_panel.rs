@@ -12,12 +12,31 @@ use rusqlite::Connection;
 
 use super::cover_loader::CoverLoader;
 use crate::ui::track_list::queue_row_mapping::{classify, QueueRow};
-use crate::ui::track_list::queue_sections::{section_ranges, QueueViewModel};
+use crate::ui::track_list::queue_sections::{section_ranges, QueueSectionKind, QueueViewModel};
 use crate::ui::track_list::track_list_model::TrackListModel;
 
 fn queue_rows(model: &QueueViewModel) -> Vec<QueueRow> {
     (0..u32::try_from(model.ids.len()).unwrap_or(u32::MAX))
         .filter_map(|position| classify(position, &model.sections))
+        .collect()
+}
+
+fn panel_section_headers(model: &QueueViewModel) -> Vec<(u32, String)> {
+    model
+        .sections
+        .iter()
+        .filter_map(|section| {
+            let title = match &section.kind {
+                QueueSectionKind::PlayNext => {
+                    super::strings::text(super::strings::QUEUE_NEXT_IN_QUEUE)
+                }
+                QueueSectionKind::UpNext { source_label } => {
+                    super::strings::queue_continuing_from(source_label)
+                }
+                QueueSectionKind::NowPlaying => return None,
+            };
+            Some((section.start, title))
+        })
         .collect()
 }
 
@@ -48,6 +67,7 @@ pub(in crate::ui) struct UpNextPanel {
     root: gtk4::Stack,
     model: TrackListModel,
     queue_rows: Rc<RefCell<Vec<QueueRow>>>,
+    section_headers: Rc<RefCell<Vec<(u32, String)>>>,
     on_jump: Rc<RefCell<Option<OnJump>>>,
     conn: Rc<RefCell<Connection>>,
 }
@@ -59,10 +79,12 @@ impl UpNextPanel {
     ) -> Rc<Self> {
         let model = TrackListModel::new(conn.clone());
         let queue_rows = Rc::new(RefCell::new(Vec::new()));
+        let section_headers = Rc::new(RefCell::new(Vec::new()));
         let on_jump = Rc::new(RefCell::new(None));
         let factory = build_factory(cover_loader, &queue_rows, &on_jump);
         let selection = gtk4::NoSelection::new(Some(model.clone()));
         let rows = gtk4::ListView::new(Some(selection), Some(factory));
+        rows.set_header_factory(Some(&build_header_factory(&section_headers)));
         rows.add_css_class("reprise-up-next-list");
         let scrolled = gtk4::ScrolledWindow::builder()
             .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -87,6 +109,7 @@ impl UpNextPanel {
             root,
             model,
             queue_rows,
+            section_headers,
             on_jump,
             conn,
         })
@@ -103,6 +126,7 @@ impl UpNextPanel {
     pub(in crate::ui) fn set_queue_model(&self, model: &QueueViewModel) -> String {
         let upcoming = model.upcoming();
         *self.queue_rows.borrow_mut() = queue_rows(&upcoming);
+        *self.section_headers.borrow_mut() = panel_section_headers(&upcoming);
         self.model
             .set_queue_snapshot(&upcoming.ids, section_ranges(&upcoming.sections));
         self.root
@@ -123,6 +147,36 @@ impl UpNextPanel {
         };
         format_up_next_footer_total(upcoming.ids.len(), total_duration_ms)
     }
+}
+
+fn build_header_factory(
+    section_headers: &Rc<RefCell<Vec<(u32, String)>>>,
+) -> gtk4::SignalListItemFactory {
+    let factory = gtk4::SignalListItemFactory::new();
+    let section_headers = section_headers.clone();
+    factory.connect_bind(move |_, object| {
+        let Some(header) = object.downcast_ref::<gtk4::ListHeader>() else {
+            return;
+        };
+        let title = section_headers
+            .borrow()
+            .iter()
+            .find(|(start, _)| *start == header.start())
+            .map(|(_, title)| title.clone())
+            .unwrap_or_default();
+        let label = gtk4::Label::builder()
+            .label(&title)
+            .xalign(0.0)
+            .css_classes(["heading", "reprise-up-next-section"])
+            .build();
+        header.set_child(Some(&label));
+    });
+    factory.connect_unbind(|_, object| {
+        if let Some(header) = object.downcast_ref::<gtk4::ListHeader>() {
+            header.set_child(gtk4::Widget::NONE);
+        }
+    });
+    factory
 }
 
 fn list_item_key(item: &gtk4::ListItem) -> usize {
@@ -272,6 +326,8 @@ pub(in crate::ui) fn css() -> String {
     };
     format!(
         ".reprise-up-next-list {{ padding: 0 12px; }}\n\
+         .reprise-up-next-section {{ \
+           color: alpha(#ffffff, {MUTED_TEXT_ALPHA}); padding: 12px 6px 5px; }}\n\
          .reprise-up-next-row {{ \
            background: transparent; border: none; box-shadow: none; \
            padding: 5px 6px; }}\n\
@@ -331,6 +387,40 @@ mod tests {
         let manual =
             crate::ui::track_list::queue_sections::compose(Some(20), &[90], &[], None).upcoming();
         assert_eq!(queue_rows(&manual), vec![QueueRow::PlayNext(0)]);
+    }
+
+    #[test]
+    fn que_2_two_sections_headers_conditional() {
+        let both = crate::ui::track_list::queue_sections::compose(
+            Some(10),
+            &[20, 21],
+            &[30],
+            Some("Late Night"),
+        )
+        .upcoming();
+        assert_eq!(
+            panel_section_headers(&both),
+            vec![
+                (0, "Next in Queue".to_owned()),
+                (2, "Continuing from “Late Night”".to_owned()),
+            ]
+        );
+
+        let automatic_only =
+            crate::ui::track_list::queue_sections::compose(Some(10), &[], &[30], Some("Album"))
+                .upcoming();
+        assert_eq!(
+            panel_section_headers(&automatic_only),
+            vec![(0, "Continuing from “Album”".to_owned())]
+        );
+
+        let manual_only =
+            crate::ui::track_list::queue_sections::compose(Some(10), &[20], &[], None).upcoming();
+        assert_eq!(
+            panel_section_headers(&manual_only),
+            vec![(0, "Next in Queue".to_owned())]
+        );
+        assert!(panel_section_headers(&QueueViewModel::default()).is_empty());
     }
 
     #[test]

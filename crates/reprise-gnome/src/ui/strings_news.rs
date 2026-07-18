@@ -13,6 +13,7 @@ pub const INFO_PANEL_TOGGLE: &str = N_!("Toggle Now Playing panel");
 pub const NOW_PLAYING_NOTHING: &str = N_!("Nothing playing");
 pub const UP_NEXT: &str = N_!("Up Next");
 pub const QUEUE_EMPTY: &str = N_!("Queue is empty");
+pub const QUEUE_NEXT_IN_QUEUE: &str = N_!("Next in Queue");
 pub const ARTIST_NEWS: &str = N_!("Artist & Album News");
 pub const ARTIST_NEWS_DESCRIPTION: &str =
     N_!("Show upcoming and newly released albums from MusicBrainz (network; off by default)");
@@ -62,6 +63,10 @@ pub fn up_next_footer(count: usize, duration: &str) -> String {
         count,
         &[("count", &count_text), ("duration", duration)],
     )
+}
+
+pub fn queue_continuing_from(source: &str) -> String {
+    formatted(N_!("Continuing from “{source}”"), &[("source", source)])
 }
 
 pub fn news_release_meta(primary_type: &str, date: &str) -> String {

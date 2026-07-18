@@ -352,7 +352,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Clear und StatusPage. Das Playerleisten-Icon öffnet dagegen das Panel auf
   „Up Next" als Sichtfläche derselben Queue mit Sektionen, Sprung und Remove,
   aber ohne Reorder oder DnD. Keine Fläche führt eine eigene zweite Liste.
-- **QUE-2** [geplant] [gtk] — Das Panel gliedert die Zukunft in genau zwei
+- **QUE-2** [aktiv] [gtk] — Das Panel gliedert die Zukunft in genau zwei
   bedingte Sektionen: **Next in Queue** für manuell eingereihte Tracks und
   **Continuing from „<Album/Playlist>"** für den automatischen Kontext aus
   `play_origin`. Ein Header erscheint nur, wenn seine Sektion Einträge hat;
