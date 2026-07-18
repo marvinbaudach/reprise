@@ -128,7 +128,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let rescan_watcher_state = watcher_state.clone();
     let sync_preferences = preferences.clone();
     let menu_preferences = preferences.clone();
-    let stats_sidebar = sidebar.clone();
     let cancel_scan_controls = scan_controls.clone();
     let library_menu = super::primary_menu::install(
         header,
@@ -136,9 +135,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         track_list,
         super::primary_menu::Callbacks {
             on_minimal_view: Rc::new(move || minimal_toggle.toggle()),
-            on_my_stats: Rc::new(move || {
-                stats_sidebar.refresh_and_select(ViewSource::MyStats, "primary menu");
-            }),
             on_rescan_library: Rc::new(move || {
                 super::scan_flow::trigger_rescan_of_library_root(
                     &rescan_conn,

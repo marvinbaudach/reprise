@@ -41,7 +41,14 @@ fn npp_6_line_changes_use_the_micro_fade_token() {
         crate::ui::motion::MICRO_MS,
         crate::ui::motion::MICRO_CSS_EASING
     )));
-    assert!(css.contains(".lyrics-line:hover { opacity: 0.65; }"));
+    // NPP-8 scopes the hover to lines where clicking actually seeks, so the
+    // rule must exclude both unsynced and active lines. Asserting the
+    // exclusions rather than the whole literal keeps this honest: applying it
+    // to every line dimmed the active line and let the accent glow bleed
+    // through unsynced text (which read as brown on a warm cover).
+    assert!(css.contains(":not(.lyrics-unsynced)"));
+    assert!(css.contains(":not(.lyrics-line-active)"));
+    assert!(css.contains("opacity: 0.65;"));
 }
 
 #[test]
