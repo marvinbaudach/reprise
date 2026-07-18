@@ -310,13 +310,16 @@ fn build_split_view(
     sidebar_page: &adw::NavigationPage,
     content_nav: &adw::NavigationView,
 ) -> adw::OverlaySplitView {
-    adw::OverlaySplitView::builder()
+    sidebar_page.add_css_class("reprise-library-sidebar");
+    let split = adw::OverlaySplitView::builder()
         .sidebar(sidebar_page)
         .content(content_nav)
         .sidebar_position(gtk4::PackType::Start)
         .show_sidebar(false)
         .collapsed(true)
-        .build()
+        .build();
+    split.add_css_class("reprise-library-split");
+    split
 }
 
 /// NAV-2/NAV-9: routes to a remembered place — the re-entrant twin of
@@ -480,6 +483,22 @@ mod tests {
             "a narrow (sub-breakpoint) restored window must not start with the \
              sidebar overlaid on top of the content"
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn library_split_is_scoped_for_chrome_separators() {
+        gtk4::init().unwrap();
+        let sidebar_page = adw::NavigationPage::builder()
+            .title("Sidebar")
+            .child(&gtk4::Label::new(Some("Sidebar")))
+            .build();
+        let content = adw::NavigationView::new();
+
+        let split = build_split_view(&sidebar_page, &content);
+
+        assert!(split.has_css_class("reprise-library-split"));
+        assert!(sidebar_page.has_css_class("reprise-library-sidebar"));
     }
 
     #[test]

@@ -4,11 +4,12 @@
 //! off-main and installed as an override of `@reprise_player_accent` in a
 //! dedicated high-priority provider — so the waveform and the play button
 //! (which read that color) take on the album's hue, while selection and
-//! toggles (which read `@accent_color`) keep the theme's teal.
+//! toggles (which read `@accent_color`) keep the theme accent.
 //!
 //! When a cover is missing, grayscale, or too dark/washed-out to read on the
 //! dark surfaces, the override is cleared and the theme's own
-//! `@reprise_player_accent` (the "Petrol" fallback) applies again.
+//! `@reprise_player_accent` applies again. That static fallback is the selected
+//! theme's accent; the palette remains its single source of truth.
 
 use std::cell::RefCell;
 
@@ -20,14 +21,6 @@ use crate::ui::motion;
 /// Edge length the cover is scaled to before sampling — small enough to be
 /// cheap, large enough to be representative.
 const SAMPLE_EDGE: i32 = 32;
-
-/// Fallback accent when no cover color is available — the Petrol teal
-/// (#1CA98F) that matches the theme's `@reprise_player_accent`.
-const FALLBACK_RGB: Rgb = Rgb {
-    r: 28,
-    g: 169,
-    b: 143,
-};
 
 /// An extracted 8-bit color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -331,10 +324,47 @@ fn lerp(a: u8, b: u8, t: f64) -> u8 {
         .clamp(0.0, 255.0) as u8
 }
 
+/// Resolves the selected theme's static accent without duplicating a fallback
+/// literal in the cover pipeline.
+fn theme_fallback_rgb() -> Rgb {
+    let accent = super::CURRENT_THEME.with(|slot| slot.get().palette().accent);
+    let hex = accent
+        .strip_prefix('#')
+        .filter(|hex| hex.len() == 6)
+        .expect("theme accent must use #RRGGBB");
+    let channel = |offset| {
+        u8::from_str_radix(&hex[offset..offset + 2], 16)
+            .expect("theme accent must use hexadecimal channels")
+    };
+    Rgb {
+        r: channel(0),
+        g: channel(2),
+        b: channel(4),
+    }
+}
+
+fn accent_during_fade(
+    old: Option<Rgb>,
+    new: Option<Rgb>,
+    fallback: Rgb,
+    value: f64,
+) -> Option<Rgb> {
+    if new.is_none() && value >= 1.0 {
+        return None;
+    }
+    let old = old.unwrap_or(fallback);
+    let new = new.unwrap_or(fallback);
+    Some(Rgb {
+        r: lerp(old.r, new.r, value),
+        g: lerp(old.g, new.g, value),
+        b: lerp(old.b, new.b, value),
+    })
+}
+
 /// Animates the cover accent from `old` to `new` with the Ambient token.
 /// The central motion helper follows the system animation setting. A `None`
-/// argument uses the Petrol teal fallback (#1CA98F) as the interpolation
-/// endpoint.
+/// argument uses the selected palette's theme accent as the interpolation
+/// endpoint; clearing the override after the fade exposes the same color.
 pub(in crate::ui) fn cross_fade_accent(
     old: Option<Rgb>,
     new: Option<Rgb>,
@@ -349,14 +379,9 @@ pub(in crate::ui) fn cross_fade_accent(
         return;
     }
 
-    let old_rgb = old.unwrap_or(FALLBACK_RGB);
-    let new_rgb = new.unwrap_or(FALLBACK_RGB);
-
+    let fallback = theme_fallback_rgb();
     let target = libadwaita::CallbackAnimationTarget::new(move |value| {
-        let r = lerp(old_rgb.r, new_rgb.r, value);
-        let g = lerp(old_rgb.g, new_rgb.g, value);
-        let b = lerp(old_rgb.b, new_rgb.b, value);
-        set_cover_accent(Some(Rgb { r, g, b }));
+        set_cover_accent(accent_during_fade(old, new, fallback, value));
     });
 
     let animation = motion::timed(widget, 0.0, 1.0, motion::AMBIENT, target);
@@ -530,6 +555,23 @@ mod tests {
         assert_eq!(lerp(0, 200, 1.0), 200);
         assert_eq!(lerp(0, 200, 0.5), 100);
         assert_eq!(lerp(100, 200, 0.5), 150);
+    }
+
+    #[test]
+    fn fade_to_theme_fallback_clears_cover_override_at_endpoint() {
+        let cover = Some(Rgb {
+            r: 200,
+            g: 80,
+            b: 40,
+        });
+        let fallback = Rgb {
+            r: 51,
+            g: 201,
+            b: 163,
+        };
+
+        assert!(accent_during_fade(cover, None, fallback, 0.5).is_some());
+        assert_eq!(accent_during_fade(cover, None, fallback, 1.0), None);
     }
 
     #[test]

@@ -5,6 +5,10 @@
 //! those named colors at draw time, swapping the palette recolors the whole
 //! app at once — the mechanism the redesign's live theme picker will drive.
 //!
+//! The dark palettes follow design frame 14a's surface hierarchy: the central
+//! table is darkest, side panels sit one step above it, and the header bar is
+//! another step brighter. Cards remain brighter than their panel surface.
+//!
 //! The concrete color values below are extracted from the design frames and
 //! are deliberately approximate; a later pass tunes them against the exact
 //! canonical palettes (Perpetual Rain, Night Terrain, …).
@@ -33,11 +37,11 @@ pub(in crate::ui) struct Palette {
     pub(in crate::ui) dialog_bg: &'static str,
     pub(in crate::ui) fg: &'static str,
     pub(in crate::ui) dim_fg: &'static str,
-    /// Teal selection/toggle accent.
+    /// Theme-specific selection/toggle accent.
     pub(in crate::ui) accent: &'static str,
     pub(in crate::ui) accent_fg: &'static str,
-    /// Warm play/waveform accent — the static fallback until the P5
-    /// cover-derived accent subsystem drives it per track.
+    /// Static play/waveform fallback: the theme accent (decision 8). The
+    /// cover-derived accent pipeline overrides it per track when available.
     pub(in crate::ui) player_accent: &'static str,
 }
 
@@ -79,44 +83,44 @@ impl Theme {
             Theme::PerpetualRain => Palette {
                 window_bg: "#16181b",
                 view_bg: "#1b1e22",
-                card_bg: "#22262b",
-                headerbar_bg: "#16181b",
-                sidebar_bg: "#191c20",
+                card_bg: "#272d33",
+                headerbar_bg: "#262b31",
+                sidebar_bg: "#22262b",
                 popover_bg: "#404650",
                 dialog_bg: "#353b44",
                 fg: "#e7e9ec",
                 dim_fg: "#9198a0",
                 accent: "#33c9a3",
                 accent_fg: "#04140f",
-                player_accent: "#e8703a",
+                player_accent: "#33c9a3",
             },
             Theme::NightTerrain => Palette {
                 window_bg: "#13161c",
                 view_bg: "#191d25",
-                card_bg: "#20252f",
-                headerbar_bg: "#13161c",
-                sidebar_bg: "#161a21",
+                card_bg: "#252b37",
+                headerbar_bg: "#242a35",
+                sidebar_bg: "#20252f",
                 popover_bg: "#3e4452",
                 dialog_bg: "#333a48",
                 fg: "#e4e7ec",
                 dim_fg: "#8b93a1",
                 accent: "#4db6a9",
                 accent_fg: "#05130f",
-                player_accent: "#d98a3d",
+                player_accent: "#4db6a9",
             },
             Theme::MutedBloom => Palette {
                 window_bg: "#1a1518",
                 view_bg: "#201a1e",
-                card_bg: "#282027",
-                headerbar_bg: "#1a1518",
-                sidebar_bg: "#1d171b",
+                card_bg: "#2d252c",
+                headerbar_bg: "#2c242c",
+                sidebar_bg: "#282027",
                 popover_bg: "#463c48",
                 dialog_bg: "#3a343c",
                 fg: "#ece6ea",
                 dim_fg: "#a2949c",
                 accent: "#c98bd0",
                 accent_fg: "#180612",
-                player_accent: "#e08a5a",
+                player_accent: "#c98bd0",
             },
         }
     }
@@ -265,6 +269,50 @@ mod tests {
             let p = theme.palette();
             assert_ne!(p.dialog_bg, p.card_bg, "{theme:?} dialog_bg == card_bg");
             assert_ne!(p.dialog_bg, p.window_bg, "{theme:?} dialog_bg == window_bg");
+        }
+    }
+
+    #[test]
+    fn dark_palettes_follow_14a_surface_hierarchy() {
+        fn channel_sum(hex: &str) -> u16 {
+            let hex = hex.strip_prefix('#').expect("palette color starts with #");
+            [0, 2, 4]
+                .into_iter()
+                .map(|offset| u16::from_str_radix(&hex[offset..offset + 2], 16).unwrap())
+                .sum()
+        }
+
+        for theme in Theme::all() {
+            let p = theme.palette();
+            let view = channel_sum(p.view_bg);
+            let sidebar = channel_sum(p.sidebar_bg);
+            let headerbar = channel_sum(p.headerbar_bg);
+            let card = channel_sum(p.card_bg);
+
+            assert!(
+                view < sidebar,
+                "{theme:?}: view must be darker than sidebar"
+            );
+            assert!(
+                sidebar < headerbar,
+                "{theme:?}: sidebar must be darker than headerbar"
+            );
+            assert!(
+                sidebar < card,
+                "{theme:?}: sidebar must be darker than cards"
+            );
+        }
+    }
+
+    #[test]
+    fn static_player_accent_matches_theme_accent_in_both_appearances() {
+        for theme in Theme::all() {
+            for palette in [theme.palette(), theme.light_palette()] {
+                assert_eq!(
+                    palette.player_accent, palette.accent,
+                    "{theme:?} player fallback must use the theme accent"
+                );
+            }
         }
     }
 }

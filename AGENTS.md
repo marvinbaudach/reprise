@@ -164,3 +164,17 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
   shows a stale result (see `cover_loader.rs`).
 - Runtime-optional features are **modules** in `reprise-core::modules` (a descriptor + a
   persisted `module.<id>.enabled` flag); gate the behavior on `modules::is_enabled`.
+
+## Aktive Parallel-Lanes (2026-07-18 — Block entfernen, sobald beide Branches gemergt sind)
+
+Zwei Branches arbeiten parallel; die Datei-Ownership ist verbindlich (Details in den
+jeweiligen Taskplänen unter `docs/superpowers/plans/2026-07-18-*`):
+
+- `feat/now-playing-panel` — NPP-Umbau. Besitzt `ui/info_panel/` → `ui/now_playing/`,
+  `ui/artist_news/` (neu), `ui/lyrics/`, `ui/sidebar/sidebar_presentation.rs`,
+  `ui/style/mod.rs`, `ui/style/tokens.rs`, `ui/strings*`.
+- `feat/theme-surface-hierarchy` — 14a-Flächenhierarchie + Petrol-Fallback. Besitzt
+  `ui/style/theme.rs`, `ui/style/cover_accent.rs`, `ui/window/library_chrome.rs`,
+  `ui/window/library_shell.rs`.
+
+Kein Branch fasst Dateien der anderen Lane oder `docs/ux-rules.md` an.
