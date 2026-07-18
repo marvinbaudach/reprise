@@ -933,7 +933,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Playback-Akzent (`@reprise_player_accent`) bezeichnet ausschließlich den
   laufenden Track wie Play/Pause, Waveform, Playing-Row, EQ, Glow und
   GRID-1-Innenring. Ein Element mischt die Rollen nie.
-- **CONTRAST-1** [geplant] [gtk] — Es gibt drei zentrale Textstufen: Primär
+- **CONTRAST-1** [aktiv] [gtk] — Es gibt drei zentrale Textstufen: Primär
   ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
   Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
   Hinweise und deaktivierte Sekundärtexte. Passende Adwaita-Named-Colors
@@ -942,7 +942,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   eine echte untere Leiste mit definierter Fläche und oberer Hairline. Sie
   reserviert eigenen Platz und überdeckt nie eine Trackzeile; erst gegen
   diese feste Fläche wird ihr Sekundärtext-Kontrast bestimmt.
-- **CONTRAST-3** [geplant] [gtk] — Statuszeilen, Spaltenköpfe,
+- **CONTRAST-3** [aktiv] [gtk] — Statuszeilen, Spaltenköpfe,
   Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
   Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
   Kleinschrift und benötigt dieselbe Prüfung wie Hint bei Normalgröße.

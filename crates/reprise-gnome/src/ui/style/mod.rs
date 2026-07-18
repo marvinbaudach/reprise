@@ -15,6 +15,7 @@
 pub(super) mod cover_accent;
 pub(super) mod interactions;
 pub(super) mod menus;
+mod text_levels;
 pub(super) mod theme;
 pub(super) mod tokens;
 
@@ -36,6 +37,7 @@ thread_local! {
 fn app_css() -> String {
     [
         interactions::css(),
+        text_levels::css(),
         super::link_activation::css(),
         menus::css(),
         super::browse_bar::css(),
@@ -213,6 +215,9 @@ mod tests {
             ".player-bar-play",
             ".reprise-surface",
             ".reprise-hover:hover",
+            ".reprise-text-primary",
+            ".reprise-text-secondary",
+            ".reprise-text-hint",
             ".reprise-filter-chip",
             ".reprise-column-drop-before",
             ".reprise-column-row:hover",

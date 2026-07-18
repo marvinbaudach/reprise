@@ -54,7 +54,7 @@ impl StatusBar {
         label.set_margin_top(4);
         label.set_margin_bottom(4);
         label.set_margin_end(12);
-        label.add_css_class("dim-label");
+        label.add_css_class("reprise-text-secondary");
         label.add_css_class("caption");
         // Nothing to summarize until the first `refresh()` call resolves —
         // avoids a flash of "0 tracks · 0 minutes" before the initial track

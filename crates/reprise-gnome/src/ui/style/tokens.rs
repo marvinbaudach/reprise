@@ -4,9 +4,14 @@
 //! to adjust lives here; the structural selectors stay with the feature that
 //! owns the CSS classes (see [`super::app_css`]'s section list).
 
-/// Foreground alpha for sortable track-table column titles — quieter than
-/// song metadata without looking disabled.
-pub(in crate::ui) const HEADER_TEXT_ALPHA: &str = "0.78";
+/// Primary text alpha for titles, track names, and values.
+pub(in crate::ui) const PRIMARY_TEXT_ALPHA: f64 = 0.95;
+
+/// Secondary text alpha for artists, status, metadata, and column headings.
+pub(in crate::ui) const SECONDARY_TEXT_ALPHA: f64 = 0.70;
+
+/// Hint text alpha for placeholders and disabled secondary copy.
+pub(in crate::ui) const HINT_TEXT_ALPHA: f64 = 0.50;
 
 /// Resting background alpha for filter chips (over `@accent_bg_color`).
 pub(in crate::ui) const CHIP_BG_ALPHA: &str = "0.22";
