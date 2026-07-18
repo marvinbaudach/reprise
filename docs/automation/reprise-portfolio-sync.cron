@@ -1,0 +1,3 @@
+# Reprise portfolio weekly sync
+CRON_TZ=Europe/Zurich
+30 7 * * 1 /bin/bash -lc 'mkdir -p /home/marvin/.local/state/reprise-portfolio-sync && /home/marvin/Projects/reprise/scripts/weekly-portfolio-sync.sh >> /home/marvin/.local/state/reprise-portfolio-sync/cron.log 2>&1'
