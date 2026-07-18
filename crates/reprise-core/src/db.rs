@@ -322,6 +322,19 @@ CREATE INDEX idx_new_releases_artist ON new_releases(artist_mbid);
 CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS NULL;
 "#;
 
+/// Schema v13: gives the default title-sorted library window the ordering
+/// SQLite needs to stream rows instead of sorting the whole library into a
+/// temporary B-tree for every 200-row window. The partial predicate exactly
+/// matches the shared `queries::PRESENT` contract, so missing and tombstoned
+/// rows do not enlarge this library-only index. `COLLATE NOCASE` must be part
+/// of the index expression because the visible title order uses that collation
+/// and SQLite cannot satisfy it from a binary-collated title index.
+const SCHEMA_V13: &str = r#"
+CREATE INDEX idx_tracks_present_title_nocase
+ON tracks(title COLLATE NOCASE)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -449,6 +462,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V12)?;
         tx.pragma_update(None, "user_version", 12)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 13 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V13)?;
+        tx.pragma_update(None, "user_version", 13)?;
         tx.commit()?;
     }
     Ok(())

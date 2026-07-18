@@ -544,5 +544,6 @@ pub fn build(
 
     tracing::info!("main window built");
     window.present();
+    super::runtime_performance::arm(&window, &track_list);
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
 }
