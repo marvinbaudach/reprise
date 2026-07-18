@@ -25,9 +25,11 @@ require_executable scripts/check-architecture.sh
 require_executable scripts/check-motion-tokens.sh
 require_executable scripts/check-merge-readiness.sh
 require_executable scripts/install-git-hooks.sh
+require_executable scripts/performance-baseline.sh
 require_executable scripts/cua-e2e/run.sh
 require_executable scripts/tests/cua-e2e.sh
 require_executable scripts/tests/motion-tokens.sh
+require_executable scripts/tests/performance-baseline.sh
 require_executable .githooks/pre-push
 
 require_pattern 'merge-base --is-ancestor' scripts/check-merge-readiness.sh
@@ -65,6 +67,7 @@ require_pattern '^## Known harness constraints' TESTING.md
 
 scripts/tests/cua-e2e.sh
 scripts/tests/motion-tokens.sh
+scripts/tests/performance-baseline.sh
 scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"
