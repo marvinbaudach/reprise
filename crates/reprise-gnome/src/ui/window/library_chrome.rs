@@ -51,7 +51,13 @@ pub(in crate::ui) fn search_accent_active(text: &str) -> bool {
 }
 
 pub(in crate::ui) fn style_header(header: &adw::HeaderBar, search: &gtk4::SearchEntry) {
-    header.set_centering_policy(adw::CenteringPolicy::Strict);
+    // Loose (not Strict) centering: at comfortable widths the view switcher is
+    // still centered, but Strict reserves 2×max(start, end) around the centre —
+    // the 300px search entry alone forces a ~1404px header minimum, which cuts
+    // off the header's right controls (and squeezes the content past the info
+    // panel) on a maximised HiDPI screen. Loose keeps everything visible and
+    // only lets the switcher drift off-centre when space is genuinely tight.
+    header.set_centering_policy(adw::CenteringPolicy::Loose);
     search.set_width_request(SEARCH_WIDTH);
     search.set_hexpand(false);
     search.connect_search_changed(|entry| {
@@ -137,7 +143,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn header_spans_the_navigation_with_strict_centering() {
+    fn header_spans_the_navigation_with_loose_centering() {
         if gtk4::init().is_err() {
             return;
         }
@@ -149,7 +155,10 @@ mod tests {
         let navigation = test_navigation();
         let chrome = build(&header, &navigation);
 
-        assert_eq!(header.centering_policy(), adw::CenteringPolicy::Strict);
+        // Loose, not Strict: Strict reserves 2×max(start,end) and forces a
+        // ~1404px header minimum that cuts the right controls on a maximised
+        // HiDPI screen (QA #3/#4).
+        assert_eq!(header.centering_policy(), adw::CenteringPolicy::Loose);
         assert_eq!(search.width_request(), 300);
         assert_eq!(chrome.root.top_bar_style(), adw::ToolbarStyle::Flat);
         assert_eq!(
