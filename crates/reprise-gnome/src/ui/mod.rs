@@ -106,10 +106,7 @@ use lyrics::{
     lyrics_smoke, lyrics_state, lyrics_strings, lyrics_view, lyrics_worker, player_lyrics,
 };
 #[allow(unused_imports)]
-use now_playing::{
-    artist_portrait_worker, now_playing_column, now_playing_empty_state, now_playing_feedback,
-    now_playing_state,
-};
+use now_playing::{artist_portrait_worker, now_playing_column};
 #[allow(unused_imports)]
 use playback::{audio_effects, play_tracking, player_event_handling, up_next_transport};
 #[allow(unused_imports)]
@@ -161,7 +158,7 @@ use track_list::{
     column_header_dnd, column_layout_editor, column_widths, current_track_selection, list_density,
     track_content, track_cover, track_list_builder, track_list_context_keys,
     track_list_header_style, track_list_layout, track_list_queue_menu, track_list_reload,
-    track_list_rescan, track_list_row_interaction, track_list_selection,
+    track_list_rescan, track_list_row_interaction,
 };
 #[allow(unused_imports)]
 pub(crate) use track_list::{

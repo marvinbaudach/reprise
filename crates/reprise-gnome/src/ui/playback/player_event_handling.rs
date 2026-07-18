@@ -14,13 +14,14 @@ impl PlayerController {
                 tracing::info!(?state, "player bar: applying state change");
                 self.sync_state(state);
                 if state == PlaybackState::Stopped {
-                    self.sync_clear_track();
-                    // Defensive, like the `sync_clear_track()` above:
+                    // Defensive, before `sync_clear_track()` fans out the
+                    // empty loaded-track snapshot:
                     // `reset_to_stopped` (the only caller of `Player::stop`)
                     // already clears `now_playing` itself before this event
                     // even has a chance to drain, but a stray `Stopped` from
                     // elsewhere must not leave stale metadata mirrored.
                     *self.now_playing.borrow_mut() = None;
+                    self.sync_clear_track();
                     // Now-playing observers (the track table's + the Artists
                     // view's mini-EQ) are turned off via the
                     // `playback_state_changed(Stopped)` fan-out that

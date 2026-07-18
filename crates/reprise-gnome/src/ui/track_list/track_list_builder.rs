@@ -20,7 +20,6 @@ use super::track_list_dnd_smoke;
 use super::track_list_empty_state::build_status_page;
 use super::track_list_model::TrackListModel;
 use super::track_list_reload::reload;
-use super::track_list_selection;
 use super::track_list_smoke::{
     arm_smoke_activate, arm_smoke_filter, arm_smoke_sort_column, arm_smoke_source,
 };
@@ -134,7 +133,6 @@ pub(in crate::ui) fn build(
         on_scan_queue_purge_ids: RefCell::new(None),
         on_tags_mutated: RefCell::new(None),
         on_import_errors_mutated: RefCell::new(None),
-        on_selection_changed: RefCell::new(None),
         player: RefCell::new(std::rc::Weak::new()),
     });
 
@@ -151,7 +149,6 @@ pub(in crate::ui) fn build(
         });
     }
 
-    track_list_selection::wire(&shared);
     {
         let shared_weak = Rc::downgrade(&shared);
         browse_bar.set_on_changed(move |filter| {
