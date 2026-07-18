@@ -5,13 +5,14 @@ use libadwaita::prelude::*;
 
 use super::strings;
 
-const SEARCH_WIDTH: i32 = 300;
-pub(in crate::ui) const SEARCH_ACTIVE_CLASS: &str = "reprise-search-active";
 const LIBRARY_TITLE_SOURCE: &str = "source";
 const LIBRARY_TITLE_SWITCHER: &str = "library-switcher";
 
 pub(in crate::ui) struct LibraryChrome {
     pub(in crate::ui) root: adw::ToolbarView,
+    pub(in crate::ui) search_bar: gtk4::SearchBar,
+    #[cfg(test)]
+    pub(in crate::ui) search_toggle: gtk4::ToggleButton,
 }
 
 pub(in crate::ui) struct LibraryMaintenanceActions {
@@ -38,20 +39,44 @@ impl LibraryTitle {
 pub(in crate::ui) fn build(
     header: &adw::HeaderBar,
     content: &impl IsA<gtk4::Widget>,
+    search_entry: &gtk4::SearchEntry,
+    key_capture_widget: &impl IsA<gtk4::Widget>,
 ) -> LibraryChrome {
     header.add_css_class("reprise-library-header");
+    let search_toggle = gtk4::ToggleButton::builder()
+        .icon_name("system-search-symbolic")
+        .tooltip_text(strings::text(strings::SEARCH_PLACEHOLDER))
+        .css_classes(["flat", "reprise-panel-toggle"])
+        .build();
+    search_toggle.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::SEARCH_PLACEHOLDER,
+    ))]);
+    header.pack_end(&search_toggle);
+
+    let search_bar = gtk4::SearchBar::new();
+    search_bar.set_child(Some(search_entry));
+    search_bar.connect_entry(search_entry);
+    search_bar.set_key_capture_widget(Some(key_capture_widget));
+    search_toggle
+        .bind_property("active", &search_bar, "search-mode-enabled")
+        .bidirectional()
+        .sync_create()
+        .build();
+
     let root = adw::ToolbarView::new();
     root.set_top_bar_style(adw::ToolbarStyle::Flat);
     root.add_top_bar(header);
+    root.add_top_bar(&search_bar);
     root.set_content(Some(content));
-    LibraryChrome { root }
+    LibraryChrome {
+        root,
+        search_bar,
+        #[cfg(test)]
+        search_toggle,
+    }
 }
 
-pub(in crate::ui) fn search_accent_active(text: &str) -> bool {
-    !text.trim().is_empty()
-}
-
-pub(in crate::ui) fn style_header(header: &adw::HeaderBar, search: &gtk4::SearchEntry) {
+pub(in crate::ui) fn style_header(header: &adw::HeaderBar) {
     // Loose (not Strict) centering: at comfortable widths the view switcher is
     // still centered, but Strict reserves 2×max(start, end) around the centre —
     // the 300px search entry alone forces a ~1404px header minimum, which cuts
@@ -59,15 +84,6 @@ pub(in crate::ui) fn style_header(header: &adw::HeaderBar, search: &gtk4::Search
     // panel) on a maximised HiDPI screen. Loose keeps everything visible and
     // only lets the switcher drift off-centre when space is genuinely tight.
     header.set_centering_policy(adw::CenteringPolicy::Loose);
-    search.set_width_request(SEARCH_WIDTH);
-    search.set_hexpand(false);
-    search.connect_search_changed(|entry| {
-        if search_accent_active(&entry.text()) {
-            entry.add_css_class(SEARCH_ACTIVE_CLASS);
-        } else {
-            entry.remove_css_class(SEARCH_ACTIVE_CLASS);
-        }
-    });
 }
 
 pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
@@ -139,6 +155,27 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_1_idle_is_icon_not_field() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let content = gtk4::Label::new(Some("Library"));
+        let entry = gtk4::SearchEntry::new();
+
+        let chrome = build(&header, &content, &entry, &window);
+
+        assert!(!entry.is_ancestor(&header));
+        assert!(chrome.search_toggle.is_ancestor(&header));
+        assert_eq!(
+            chrome.search_toggle.icon_name().as_deref(),
+            Some("system-search-symbolic")
+        );
+        assert!(!chrome.search_bar.is_search_mode());
+        assert_eq!(chrome.search_bar.child().as_ref(), Some(entry.upcast_ref()));
+    }
+
+    #[test]
     fn chrome_separator_css_defines_scoped_hairlines() {
         let css = css();
 
@@ -175,15 +212,15 @@ mod tests {
         let title = adw::WindowTitle::new("Music", "");
         let search = gtk4::SearchEntry::new();
         header.set_title_widget(Some(&title));
-        style_header(&header, &search);
+        style_header(&header);
         let navigation = test_navigation();
-        let chrome = build(&header, &navigation);
+        let window = adw::ApplicationWindow::builder().build();
+        let chrome = build(&header, &navigation, &search, &window);
 
         // Loose, not Strict: Strict reserves 2×max(start,end) and forces a
         // ~1404px header minimum that cuts the right controls on a maximised
         // HiDPI screen (QA #3/#4).
         assert_eq!(header.centering_policy(), adw::CenteringPolicy::Loose);
-        assert_eq!(search.width_request(), 300);
         assert_eq!(chrome.root.top_bar_style(), adw::ToolbarStyle::Flat);
         assert!(header.has_css_class("reprise-library-header"));
         assert_eq!(
@@ -275,7 +312,9 @@ mod tests {
             reprise_core::library::settings::PlayerBarPosition::Top,
         );
 
-        let chrome = build(&header, shell.widget());
+        let window = adw::ApplicationWindow::builder().build();
+        let search = gtk4::SearchEntry::new();
+        let chrome = build(&header, shell.widget(), &search, &window);
 
         assert!(header.is_ancestor(&chrome.root));
         assert_eq!(

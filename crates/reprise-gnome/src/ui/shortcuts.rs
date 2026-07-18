@@ -128,12 +128,13 @@ pub fn escape_action_for(search_has_text: bool) -> EscapeAction {
 pub fn wire(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
+    search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
     track_list: &Rc<TrackList>,
     player: Option<Rc<PlayerController>>,
 ) {
     wire_toggle_play_pause(app, window, player);
-    wire_focus_search(app, window, search_entry);
+    wire_focus_search(app, window, search_bar, search_entry);
     wire_escape(search_entry, track_list.clone());
 }
 
@@ -176,8 +177,8 @@ fn wire_toggle_play_pause(
     app.set_accels_for_action(&format!("win.{ACTION_TOGGLE_PLAY_PAUSE}"), &["space"]);
 }
 
-/// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — grabs
-/// keyboard focus and selects the entry's full text (mirroring how most
+/// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — reveals the
+/// search bar, grabs keyboard focus and selects the entry's full text (mirroring how most
 /// desktop apps' "Find" shortcut behaves: a second Ctrl+F with existing text
 /// re-selects it all, ready to be typed over). `search_entry` is captured
 /// weakly for the same reference-cycle reason as `wire_toggle_play_pause`'s
@@ -186,15 +187,22 @@ fn wire_toggle_play_pause(
 fn wire_focus_search(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
+    search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
 ) {
     let action = gio::SimpleAction::new(ACTION_FOCUS_SEARCH, None);
+    let search_bar_weak = search_bar.downgrade();
     let search_entry_weak = search_entry.downgrade();
     action.connect_activate(move |_, _| {
+        let Some(search_bar) = search_bar_weak.upgrade() else {
+            tracing::warn!("focus-search: search bar is gone; ignoring");
+            return;
+        };
         let Some(search_entry) = search_entry_weak.upgrade() else {
             tracing::warn!("focus-search: search entry is gone; ignoring");
             return;
         };
+        search_bar.set_search_mode(true);
         search_entry.grab_focus();
         search_entry.select_region(0, -1);
     });
@@ -228,6 +236,32 @@ fn wire_escape(search_entry: &gtk4::SearchEntry, track_list: Rc<TrackList>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libadwaita::prelude::AdwApplicationWindowExt;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_2_ctrl_f_reveals_and_focuses() {
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.SearchShortcutTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let entry = gtk4::SearchEntry::new();
+        let search_bar = gtk4::SearchBar::new();
+        search_bar.set_child(Some(&entry));
+        window.set_content(Some(&search_bar));
+        wire_focus_search(&app, &window, &search_bar, &entry);
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        ActionGroupExt::activate_action(&window, "focus-search", None);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!(search_bar.is_search_mode());
+        assert!(entry.has_focus());
+    }
 
     #[test]
     fn space_toggles_when_focus_is_not_a_text_entry() {
