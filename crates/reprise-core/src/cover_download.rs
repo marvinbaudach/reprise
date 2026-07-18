@@ -22,6 +22,12 @@ enum CaaFetchResult {
     TransientFailure,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReleaseGroupCover {
+    Image(PathBuf),
+    Fallback,
+}
+
 /// Cache key for an album's downloaded cover: normalized album-artist + album,
 /// hashed to hex. One cover per album — every track of an album shares it.
 pub fn album_key(album_artist: &str, album: &str) -> String {
@@ -64,6 +70,40 @@ pub(crate) fn musicbrainz_search_url(album_artist: &str, album: &str) -> String 
 
 pub(crate) fn caa_front_url(mbid: &str) -> String {
     format!("https://coverartarchive.org/release/{mbid}/front")
+}
+
+pub fn caa_release_group_front_url(mbid: &str) -> String {
+    format!(
+        "https://coverartarchive.org/release-group/{}/front-250",
+        musicbrainz::urlencode(mbid)
+    )
+}
+
+fn release_group_key(mbid: &str) -> String {
+    cover::hash_hex(format!("release-group\u{1}{}", mbid.trim()).as_bytes())
+}
+
+pub fn release_group_cover_path(mbid: &str) -> Option<PathBuf> {
+    downloaded_cover_path(&release_group_key(mbid))
+}
+
+pub fn fetch_release_group_cover(mbid: &str) -> ReleaseGroupCover {
+    fetch_release_group_cover_with(mbid, &mut |url| http_get_bytes(url))
+}
+
+fn fetch_release_group_cover_with<F>(mbid: &str, fetch: &mut F) -> ReleaseGroupCover
+where
+    F: FnMut(&str) -> CaaFetchResult,
+{
+    let key = release_group_key(mbid);
+    if let Some(path) = downloaded_cover_path(&key) {
+        return ReleaseGroupCover::Image(path);
+    }
+    match fetch(&caa_release_group_front_url(mbid)) {
+        CaaFetchResult::Found(bytes, extension) => store_downloaded(&key, &bytes, extension)
+            .map_or(ReleaseGroupCover::Fallback, ReleaseGroupCover::Image),
+        CaaFetchResult::NotFound | CaaFetchResult::TransientFailure => ReleaseGroupCover::Fallback,
+    }
 }
 
 pub(crate) fn parse_best_release(json: &str, album_artist: &str, album: &str) -> Option<String> {
@@ -287,6 +327,10 @@ mod tests {
             caa_front_url("11111111-1111-1111-1111-111111111111"),
             "https://coverartarchive.org/release/11111111-1111-1111-1111-111111111111/front"
         );
+        assert_eq!(
+            caa_release_group_front_url("11111111-1111-1111-1111-111111111111"),
+            "https://coverartarchive.org/release-group/11111111-1111-1111-1111-111111111111/front-250"
+        );
     }
 
     #[test]
@@ -318,6 +362,16 @@ mod tests {
         assert!(is_clean_caa_miss(404));
         assert!(!is_clean_caa_miss(500));
         assert!(!is_clean_caa_miss(429));
+    }
+
+    #[test]
+    fn nr_2_missing_cover_uses_fallback_tile() {
+        let mut fetch = |_url: &str| CaaFetchResult::NotFound;
+
+        let result =
+            fetch_release_group_cover_with("99999999-9999-9999-9999-999999999999", &mut fetch);
+
+        assert_eq!(result, ReleaseGroupCover::Fallback);
     }
 
     #[test]

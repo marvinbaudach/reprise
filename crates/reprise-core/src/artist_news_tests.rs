@@ -1,8 +1,9 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    artist_search_url, artists_for_fetch, parse_artist_mbid, parse_release_groups, query_releases,
-    refresh_with, release_groups_url, ArtistMatch, FetchScope, NewsKind,
+    artist_search_url, artists_for_fetch, most_played_album_track_path, parse_artist_mbid,
+    parse_release_groups, query_releases, refresh_with, release_groups_url, ArtistMatch,
+    FetchScope, NewsKind,
 };
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -185,6 +186,10 @@ fn migrated_conn() -> rusqlite::Connection {
     conn
 }
 
+fn no_accent(_conn: &rusqlite::Connection, _artist: &str) -> Option<String> {
+    None
+}
+
 #[test]
 fn nr_1_tag_mbid_skips_search_and_persists_releases() {
     let conn = migrated_conn();
@@ -207,6 +212,7 @@ fn nr_1_tag_mbid_skips_search_and_persists_releases() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
+        &mut no_accent,
     )
     .unwrap();
 
@@ -262,6 +268,7 @@ fn nr_1_name_resolution_persists_positive_and_negative_results() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
+        &mut no_accent,
     )
     .unwrap();
 
@@ -311,4 +318,64 @@ fn nr_1_fetch_queue_prioritizes_top_artists_and_rotates_the_rest_by_day() {
     assert_eq!(day_zero[20].name, "Artist 20");
     assert_eq!(day_one.len(), 22);
     assert_eq!(day_one[20].name, "Artist 25");
+}
+
+#[test]
+fn nr_2_fallback_accent_is_computed_when_release_is_inserted() {
+    let conn = migrated_conn();
+    conn.execute(
+        "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+         VALUES ('/music/accent.flac', 'Track', 'Pink Floyd', ?1, 10, 0)",
+        [ARTIST_ID],
+    )
+    .unwrap();
+    let mut fetch = |_url: &str| Ok(RELEASES.to_string());
+    let mut accent = |_conn: &rusqlite::Connection, artist: &str| {
+        assert_eq!(artist, "Pink Floyd");
+        Some("#123456".to_string())
+    };
+
+    refresh_with(
+        &conn,
+        date(),
+        1_000_000,
+        FetchScope::TopArtists,
+        true,
+        &mut fetch,
+        &mut accent,
+    )
+    .unwrap();
+
+    let stored: String = conn
+        .query_row(
+            "SELECT fallback_accent FROM new_releases LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, "#123456");
+}
+
+#[test]
+fn nr_2_accent_source_uses_the_most_played_album() {
+    let conn = migrated_conn();
+    for (path, album, plays) in [
+        ("/music/a-one.flac", "Album A", 5),
+        ("/music/a-two.flac", "Album A", 4),
+        ("/music/b.flac", "Album B", 8),
+    ] {
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+             VALUES (?1, 'Track', 'Artist', ?2, ?3, 0)",
+            rusqlite::params![path, album, plays],
+        )
+        .unwrap();
+    }
+
+    let path = most_played_album_track_path(&conn, "Artist").unwrap();
+
+    assert_eq!(
+        path.as_deref(),
+        Some(std::path::Path::new("/music/a-one.flac"))
+    );
 }

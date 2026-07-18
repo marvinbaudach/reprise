@@ -805,7 +805,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Play-Count priorisiert. Pro Artist bleiben höchstens fünf reguläre Alben
   oder EPs der letzten 90 Tage sowie ausschließlich zukünftige Singles;
   unvollständige Daten gelten nie als zukünftig, Sekundärtypen bleiben draußen.
-- **NR-2** [geplant] [gtk] — Release-Cover laden lazy über Cover Art Archive
+- **NR-2** [aktiv] [gtk] — Release-Cover laden lazy über Cover Art Archive
   (`/release-group/{mbid}/front-250`). Ein fehlendes Cover ist Normalzustand
   und zeigt sofort eine gleich große Kachel aus gespeicherter Artist-
   Akzentfarbe plus Initialen — niemals ein Loch oder einen Dauer-Spinner.

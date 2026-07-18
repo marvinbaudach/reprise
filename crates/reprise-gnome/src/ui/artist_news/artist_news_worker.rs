@@ -185,6 +185,7 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequ
                         today,
                         reprise_core::artist_news::FetchScope::TopArtists,
                         request.force,
+                        crate::ui::new_releases::release_cover::fallback_accent_for_artist,
                     )
                     .and_then(|_| {
                         reprise_core::artist_news::query_artist_news_by_name(
