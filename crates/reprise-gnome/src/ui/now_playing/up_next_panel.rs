@@ -54,6 +54,7 @@ fn format_up_next_footer_total(count: usize, total_duration_ms: i64) -> String {
 }
 
 type OnJump = Rc<dyn Fn(QueueRow)>;
+type OnRemove = Rc<dyn Fn(QueueRow)>;
 
 struct RowWidgets {
     cover: gtk4::Image,
@@ -69,6 +70,7 @@ pub(in crate::ui) struct UpNextPanel {
     queue_rows: Rc<RefCell<Vec<QueueRow>>>,
     section_headers: Rc<RefCell<Vec<(u32, String)>>>,
     on_jump: Rc<RefCell<Option<OnJump>>>,
+    on_remove: Rc<RefCell<Option<OnRemove>>>,
     conn: Rc<RefCell<Connection>>,
 }
 
@@ -81,7 +83,8 @@ impl UpNextPanel {
         let queue_rows = Rc::new(RefCell::new(Vec::new()));
         let section_headers = Rc::new(RefCell::new(Vec::new()));
         let on_jump = Rc::new(RefCell::new(None));
-        let factory = build_factory(cover_loader, &queue_rows, &on_jump);
+        let on_remove = Rc::new(RefCell::new(None));
+        let factory = build_factory(cover_loader, &queue_rows, &on_jump, &on_remove);
         let selection = gtk4::NoSelection::new(Some(model.clone()));
         let rows = gtk4::ListView::new(Some(selection), Some(factory));
         rows.set_header_factory(Some(&build_header_factory(&section_headers)));
@@ -111,6 +114,7 @@ impl UpNextPanel {
             queue_rows,
             section_headers,
             on_jump,
+            on_remove,
             conn,
         })
     }
@@ -121,6 +125,10 @@ impl UpNextPanel {
 
     pub(in crate::ui) fn set_on_jump(&self, callback: impl Fn(QueueRow) + 'static) {
         *self.on_jump.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_remove(&self, callback: impl Fn(QueueRow) + 'static) {
+        *self.on_remove.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_queue_model(&self, model: &QueueViewModel) -> String {
@@ -187,29 +195,40 @@ fn build_factory(
     cover_loader: &Rc<CoverLoader>,
     queue_rows: &Rc<RefCell<Vec<QueueRow>>>,
     on_jump: &Rc<RefCell<Option<OnJump>>>,
+    on_remove: &Rc<RefCell<Option<OnRemove>>>,
 ) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
     let states: Rc<RefCell<HashMap<usize, Rc<RowWidgets>>>> = Rc::new(RefCell::new(HashMap::new()));
     {
         let states = states.clone();
         let on_jump = on_jump.clone();
+        let on_remove = on_remove.clone();
         factory.connect_setup(move |_, object| {
             let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
                 return;
             };
-            let (button, widgets) = build_row_widgets();
+            let (row_widget, jump_button, remove_button, widgets) = build_row_widgets();
             let widgets = Rc::new(widgets);
             let widgets_on_click = widgets.clone();
             let on_jump = on_jump.clone();
-            button.connect_clicked(move |_| {
+            jump_button.connect_clicked(move |_| {
                 let row = widgets_on_click.row.get();
                 let callback = on_jump.borrow().clone();
                 if let (Some(row), Some(callback)) = (row, callback) {
                     callback(row);
                 }
             });
+            let widgets_on_remove = widgets.clone();
+            let on_remove = on_remove.clone();
+            remove_button.connect_clicked(move |_| {
+                let row = widgets_on_remove.row.get();
+                let callback = on_remove.borrow().clone();
+                if let (Some(row), Some(callback)) = (row, callback) {
+                    callback(row);
+                }
+            });
             states.borrow_mut().insert(list_item_key(item), widgets);
-            item.set_child(Some(&button));
+            item.set_child(Some(&row_widget));
         });
     }
     {
@@ -276,7 +295,7 @@ fn build_factory(
     factory
 }
 
-fn build_row_widgets() -> (gtk4::Button, RowWidgets) {
+fn build_row_widgets() -> (gtk4::Box, gtk4::Button, gtk4::Button, RowWidgets) {
     let cover_size = crate::ui::style::tokens::NOW_PLAYING_QUEUE_COVER_SIZE;
     let cover = gtk4::Image::builder()
         .pixel_size(cover_size)
@@ -304,12 +323,25 @@ fn build_row_widgets() -> (gtk4::Button, RowWidgets) {
     content.append(&cover);
     content.append(&labels);
 
-    let button = gtk4::Button::builder()
+    let jump_button = gtk4::Button::builder()
         .child(&content)
         .css_classes(["flat", "reprise-up-next-row"])
+        .hexpand(true)
         .build();
+    let remove_button = gtk4::Button::builder()
+        .icon_name("list-remove-symbolic")
+        .tooltip_text(super::strings::remove_from_queue_label(1))
+        .css_classes(["flat", "circular", "reprise-up-next-remove"])
+        .valign(gtk4::Align::Center)
+        .build();
+    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    row.add_css_class("reprise-up-next-row-container");
+    row.append(&jump_button);
+    row.append(&remove_button);
     (
-        button,
+        row,
+        jump_button,
+        remove_button,
         RowWidgets {
             cover,
             title,
@@ -332,6 +364,8 @@ pub(in crate::ui) fn css() -> String {
            background: transparent; border: none; box-shadow: none; \
            padding: 5px 6px; }}\n\
          .reprise-up-next-row:hover {{ background: alpha(#ffffff, 0.06); }}\n\
+         .reprise-up-next-remove {{ color: alpha(#ffffff, {MUTED_TEXT_ALPHA}); }}\n\
+         .reprise-up-next-remove:hover {{ color: #ffffff; }}\n\
          .reprise-up-next-cover {{ border-radius: {RADIUS_SURFACE}; }}\n\
          .reprise-up-next-title {{ \
            color: #ffffff; font-size: {NOW_PLAYING_QUEUE_TITLE_SIZE}; }}\n\
@@ -345,15 +379,19 @@ pub(in crate::ui) fn css() -> String {
 mod tests {
     use super::*;
 
-    fn collect_row_buttons(widget: &gtk4::Widget, buttons: &mut Vec<gtk4::Button>) {
+    fn collect_buttons_with_class(
+        widget: &gtk4::Widget,
+        class: &str,
+        buttons: &mut Vec<gtk4::Button>,
+    ) {
         if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
-            if button.has_css_class("reprise-up-next-row") {
+            if button.has_css_class(class) {
                 buttons.push(button);
             }
         }
         let mut child = widget.first_child();
         while let Some(widget) = child {
-            collect_row_buttons(&widget, buttons);
+            collect_buttons_with_class(&widget, class, buttons);
             child = widget.next_sibling();
         }
     }
@@ -469,9 +507,49 @@ mod tests {
         while glib::MainContext::default().iteration(false) {}
 
         let mut buttons = Vec::new();
-        collect_row_buttons(panel.widget().upcast_ref(), &mut buttons);
+        collect_buttons_with_class(
+            panel.widget().upcast_ref(),
+            "reprise-up-next-row",
+            &mut buttons,
+        );
         buttons[1].emit_clicked();
 
         assert_eq!(*jumped.borrow(), Some(QueueRow::UpNext(0)));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn panel_remove_targets_the_exact_queue_entry() {
+        gtk4::init().unwrap();
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+             (20, '/tmp/20.mp3', 'Track 20', 'Artist', 0),
+             (40, '/tmp/40.mp3', 'Track 40', 'Artist', 0);",
+        )
+        .unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+        let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let panel = UpNextPanel::new(conn, &cover_loader);
+        let removed = Rc::new(RefCell::new(None));
+        let removed_on_click = removed.clone();
+        panel.set_on_remove(move |row| *removed_on_click.borrow_mut() = Some(row));
+        let model =
+            crate::ui::track_list::queue_sections::compose(Some(10), &[20], &[40], Some("Music"));
+        panel.set_queue_model(&model);
+        let window = gtk4::Window::builder().child(panel.widget()).build();
+        window.present();
+        while glib::MainContext::default().iteration(false) {}
+
+        let mut buttons = Vec::new();
+        collect_buttons_with_class(
+            panel.widget().upcast_ref(),
+            "reprise-up-next-remove",
+            &mut buttons,
+        );
+        buttons[1].emit_clicked();
+
+        assert_eq!(*removed.borrow(), Some(QueueRow::UpNext(0)));
     }
 }

@@ -56,7 +56,8 @@ pub fn tracks_selected(count: usize) -> String {
 }
 
 pub fn up_next_footer(count: usize, duration: &str) -> String {
-    let count_text = count.to_string();
+    let count_text =
+        reprise_core::format::format_thousands(i64::try_from(count).unwrap_or(i64::MAX));
     plural(
         "{count} track · {duration}",
         "{count} tracks · {duration}",

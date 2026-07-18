@@ -351,6 +351,13 @@ impl NowPlayingPanel {
         self.widgets.up_next.set_on_jump(callback);
     }
 
+    pub(in crate::ui) fn set_on_up_next_remove(
+        &self,
+        callback: impl Fn(crate::ui::track_list::queue_row_mapping::QueueRow) + 'static,
+    ) {
+        self.widgets.up_next.set_on_remove(callback);
+    }
+
     pub(in crate::ui) fn set_on_up_next_refresh(&self, callback: impl Fn() + 'static) {
         *self.on_up_next_refresh.borrow_mut() = Some(Rc::new(callback));
         self.request_up_next_refresh_if_visible();

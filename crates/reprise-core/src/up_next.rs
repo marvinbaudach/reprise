@@ -152,6 +152,15 @@ mod tests {
     }
 
     #[test]
+    fn que_3_played_manual_entries_removed() {
+        let mut queue = UpNextQueue::default();
+        queue.append(&[10, 20, 30]);
+
+        assert_eq!(queue.pop_front(), Some(10));
+        assert_eq!(queue.ids(), &[20, 30]);
+    }
+
+    #[test]
     fn move_item_reorders_only_valid_distinct_positions() {
         let mut queue = UpNextQueue::default();
         queue.append(&[1, 2, 3, 4]);

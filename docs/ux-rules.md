@@ -359,22 +359,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   eine leere manuelle Sektion lässt ausschließlich „Continuing …" stehen.
   Ihre sichtbare Reihenfolge ist zugleich die Abspielreihenfolge; solange
   etwas spielt, zeigt die Queue nie zwei leere Sektionen.
-- **QUE-3** [geplant] [gtk] — Interaktion: DnD-Reorder innerhalb „Play
-  Next" und innerhalb „Up Next" (der Snapshot wird echt umsortiert;
-  QUE-2 bleibt gewahrt: Anzeige = Abspielreihenfolge). Up-Next-Rows sind
-  nach „Play Next" ziehbar (Promotion, verlässt den Snapshot); Drop auf
-  die Now-Playing-Row reiht als Nächstes ein (Up-Next-Row → Front von
-  „Play Next", Play-Next-Row → Front-Move). Play-Next-Rows sind nicht in
-  den Snapshot ziehbar (keine Demotion). Der Drop-Indikator erscheint nur
-  auf Rows, auf denen der Drop tatsächlich wirkt. Rechtsklick „Remove
-  from queue" überall (entfernt aus dem Snapshot, nicht aus der Library);
-  Doppelklick auf eine Queue-Row springt dorthin (Playhead, kein
-  Neuaufbau — Ausnahme zu NAV-4). „Clear queue"-Button räumt nur „Play
-  Next"; der Snapshot bleibt (er verschwindet erst mit Playback-Stop oder
-  neuem Kontext).
-- **QUE-4** [geplant] [gtk] — Leerzustand gibt es nur ohne Wiedergabe:
-  StatusPage „Nothing queued — play something" (FB-5, ein nächster Schritt,
-  kein Grid an Vorschlägen).
+- **QUE-3** [aktiv] [core] — Abgespielte manuelle Einträge verschwinden beim
+  Trackwechsel still aus „Next in Queue": kein Durchstreichen und kein
+  Verharren. Die Sektion enthält ausschließlich die noch ausstehende Zukunft.
+  „Remove" im Panel entfernt genau den Eintrag aus der Queue, nie aus der
+  Library.
+- **QUE-4** [aktiv] [core] — Die Queue-Fußzeile formatiert Trackzahlen mit
+  derselben gemeinsamen Tausendertrenner-Funktion wie die Library; es gibt
+  keinen zweiten Formatierungspfad.
 - **QUE-5** [aktiv] [core] — Ein Sprung zu einem Queue-Eintrag setzt die
   Abspielposition und konsumiert ausschließlich den geklickten Eintrag.
   Davorliegende manuelle Einträge bleiben in „Next in Queue" und spielen
