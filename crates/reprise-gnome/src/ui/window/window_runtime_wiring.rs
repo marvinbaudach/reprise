@@ -162,9 +162,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     });
 
     if let Some(player) = player {
-        let sidebar_for_queue = sidebar.clone();
+        let info_panel_for_queue = info_panel.clone();
         player.bar.connect_queue_clicked(move || {
-            sidebar_for_queue.refresh_and_select(ViewSource::Queue, "player bar queue button");
+            info_panel_for_queue.show_up_next();
         });
 
         // NAV-9 "Jump to Now Playing": cover/title clicks and Ctrl+L

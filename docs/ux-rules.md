@@ -346,7 +346,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 
 ## J. Queue-Ansicht
 
-- **QUE-1** [geplant] [gtk] — Ein gemeinsames Queue-Modell speist zwei
+- **QUE-1** [aktiv] [gtk] — Ein gemeinsames Queue-Modell speist zwei
   Flächen mit unterschiedlicher Tiefe: Die Sidebar-Zeile „Queue" öffnet die
   ColumnView als Verwaltungsfläche mit Sektionen, DnD-Reorder, Rechtsklick,
   Clear und StatusPage. Das Playerleisten-Icon öffnet dagegen das Panel auf

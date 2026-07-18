@@ -29,6 +29,10 @@ pub(super) fn should_render_up_next(panel_visible: bool, selected_tab: PanelTab)
     panel_visible && selected_tab == PanelTab::UpNext
 }
 
+pub(super) fn up_next_route_state() -> (bool, PanelTab) {
+    (true, PanelTab::UpNext)
+}
+
 #[derive(Default)]
 pub(super) struct TabSession {
     pub(super) selected: Cell<PanelTab>,
