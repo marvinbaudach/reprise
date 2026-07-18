@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-pub(in crate::ui) const PANEL_WIDTH: i32 = 340;
+pub(in crate::ui) const PANEL_WIDTH: i32 = 300;
 
 #[derive(Clone)]
 pub(in crate::ui) struct InformationColumn {
