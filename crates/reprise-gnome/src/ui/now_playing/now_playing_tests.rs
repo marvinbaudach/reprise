@@ -150,6 +150,9 @@ fn idle_uses_a_placeholder_cover_without_the_accent_glow() {
     gtk4::init().unwrap();
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingIdleTest");
     panel.retain_for_window(&window);
+    let settings = gtk4::Settings::default().unwrap();
+    let animations_were_enabled = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
 
     assert_eq!(panel.widgets.title.text(), "Nothing playing");
     assert_eq!(
@@ -165,6 +168,7 @@ fn idle_uses_a_placeholder_cover_without_the_accent_glow() {
         .widgets
         .stage
         .has_css_class("reprise-now-playing-idle"));
+    settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
 #[test]
@@ -200,6 +204,9 @@ fn loaded_and_idle_tracks_render_from_the_player_context() {
     gtk4::init().unwrap();
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingContextTest");
     panel.retain_for_window(&window);
+    let settings = gtk4::Settings::default().unwrap();
+    let animations_were_enabled = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
 
     panel.set_loaded_track(Some(loaded_track()));
     panel.set_playback_state(PlaybackState::Playing);
@@ -214,6 +221,7 @@ fn loaded_and_idle_tracks_render_from_the_player_context() {
     panel.set_loaded_track(None);
     assert_eq!(panel.widgets.title.text(), "Nothing playing");
     assert!(panel.widgets.subtitle.text().is_empty());
+    settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
 #[test]
@@ -231,6 +239,43 @@ fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
     assert!(!weak.upgrade().unwrap().widgets.column.is_visible());
     toggle.set_active(true);
     assert!(weak.upgrade().unwrap().widgets.column.is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_10_track_change_uses_one_shared_crossfade() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = build_widgets(&content, true);
+    let shared_tree = widget_tree(widgets.track_content.upcast_ref());
+    assert!(shared_tree.iter().any(|widget| widget == &widgets.cover));
+    assert!(shared_tree.iter().any(|widget| widget == &widgets.title));
+    assert!(shared_tree
+        .iter()
+        .any(|widget| widget == &widgets.tab_stack));
+    assert_eq!(
+        widgets.stage.first_child(),
+        Some(widgets.track_content.clone().upcast())
+    );
+    assert!(widgets.track_content.next_sibling().is_none());
+
+    let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingCrossfadeTest");
+    panel.retain_for_window(&window);
+    let settings = gtk4::Settings::default().unwrap();
+    let animations_were_enabled = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+    panel.set_loaded_track(Some(loaded_track()));
+    assert!(panel.has_track_animation());
+
+    settings.set_gtk_enable_animations(false);
+    let mut next = loaded_track();
+    next.id = 8;
+    next.title = "Hard-switched title".into();
+    panel.set_loaded_track(Some(next));
+    assert_eq!(panel.widgets.title.text(), "Hard-switched title");
+    assert_eq!(panel.widgets.track_content.opacity(), 1.0);
+    assert!(!panel.has_track_animation());
+    settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
 fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
