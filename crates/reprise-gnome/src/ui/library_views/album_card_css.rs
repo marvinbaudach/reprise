@@ -8,6 +8,10 @@ pub(in crate::ui) const CARD_CLASS: &str = "album-card";
 pub(in crate::ui) const COVER_CLASS: &str = "album-cover";
 pub(in crate::ui) const COVER_CONTAINER_CLASS: &str = "album-cover-container";
 pub(in crate::ui) const FOCUS_FRAME_CLASS: &str = "album-focus-frame";
+pub(in crate::ui) const REVEAL_FRAME_CLASS: &str = "album-reveal-frame";
+pub(in crate::ui) const REVEAL_PULSE_CLASS: &str = "album-reveal-pulse";
+pub(in crate::ui) const REVEAL_PULSE_STATIC_CLASS: &str = "album-reveal-pulse-static";
+pub(in crate::ui) const REVEAL_DURATION_MS: u64 = 1_000;
 pub(in crate::ui) const PLAYING_FRAME_CLASS: &str = "album-playing-frame";
 pub(in crate::ui) const PLAYING_LAYER_CLASS: &str = "album-playing-layer";
 pub(in crate::ui) const HOVER_OVERLAY_CLASS: &str = "album-bottom-gradient";
@@ -53,6 +57,16 @@ pub(in crate::ui) fn css() -> String {
            box-shadow: 0 0 0 2px @accent_color; }}\n\
          .library-grid child:focus-visible .{FOCUS_FRAME_CLASS} {{ \
            opacity: 1; }}\n\
+         .{REVEAL_FRAME_CLASS}.{REVEAL_PULSE_CLASS} {{ \
+           animation: album-reveal-highlight 500ms ease-in-out 2; }}\n\
+         .{REVEAL_FRAME_CLASS}.{REVEAL_PULSE_STATIC_CLASS} {{ \
+           border-radius: 10px; \
+           box-shadow: 0 0 0 3px alpha(@accent_color, 0.55), \
+                       0 0 18px alpha(@accent_color, 0.38); }}\n\
+         @keyframes album-reveal-highlight {{ \
+           0%, 100% {{ box-shadow: 0 0 0 0 alpha(@accent_color, 0.0); }} \
+           50% {{ box-shadow: 0 0 0 3px alpha(@accent_color, 0.65), \
+                 0 0 20px alpha(@accent_color, 0.45); }} }}\n\
          .{PLAYING_LAYER_CLASS} {{ \
            margin: 8px; padding: 4px; \
            color: @reprise_player_accent; \
@@ -127,6 +141,7 @@ mod tests {
         assert!(css.contains(".album-card"));
         assert!(css.contains(".album-cover-container"));
         assert!(css.contains(".album-focus-frame"));
+        assert!(css.contains(".album-reveal-frame"));
         assert!(css.contains(".album-playing-frame"));
         assert!(css.contains(".album-playing-layer"));
         assert!(css.contains(".album-cover"));
@@ -138,6 +153,8 @@ mod tests {
         assert!(css.contains(".album-placeholder"));
         assert!(css.contains("box-shadow: 0 0 0 2px @accent_color"));
         assert!(css.contains("inset 0 0 0 1.5px @reprise_player_accent"));
+        assert!(css.contains("animation: album-reveal-highlight 500ms ease-in-out 2"));
+        assert_eq!(super::REVEAL_DURATION_MS, 1_000);
         assert!(css.contains("box-shadow: 0 4px 14px"));
         for index in 0..super::PLACEHOLDER_GRADIENT_COUNT {
             assert!(css.contains(&format!(".album-placeholder-gradient-{index}")));

@@ -1,3 +1,4 @@
+pub(crate) mod album_identity;
 pub(in crate::ui) mod audio_effects;
 pub(crate) mod now_playing_wiring;
 pub(crate) mod play_origin;

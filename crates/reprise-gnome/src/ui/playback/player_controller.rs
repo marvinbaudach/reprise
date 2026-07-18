@@ -258,7 +258,7 @@ pub struct PlayerController {
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
-    /// Queue view's `Up Next · from <label>` title and NAV-9's jump target.
+    /// Queue view's `Up Next · from <label>` title and NAV-9a's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
@@ -526,39 +526,6 @@ impl PlayerController {
 
     pub fn set_view_refill_provider(&self, provider: impl Fn() -> Vec<i64> + 'static) {
         *self.view_refill_ids.borrow_mut() = Some(Rc::new(provider));
-    }
-
-    /// The *effective album artist* of the currently-playing track, or `None`
-    /// when nothing is playing / the resolved artist is blank. Used by the
-    /// player-bar artist deep-link to select the right Artists-tab master row.
-    ///
-    /// The now-playing display cache (`NowPlaying`) only carries the *track*
-    /// artist, but the Artists view groups by album artist, so this resolves
-    /// the effective album artist from the DB by id using the same
-    /// `EFFECTIVE_ALBUM_ARTIST` fallback (album artist when tagged, else track
-    /// artist) that the Artists view groups by — see `queries::
-    /// query_track_album_artist`. Borrow discipline: the `now_playing` borrow
-    /// drops at the end of its own `let` statement before `conn` is borrowed.
-    pub fn current_track_album_artist(&self) -> Option<String> {
-        let id = self.now_playing.borrow().as_ref().map(|track| track.id)?;
-        let artist = {
-            let conn = self.conn.borrow();
-            reprise_core::queries::query_track_album_artist(&conn, id)
-                .inspect_err(|error| {
-                    tracing::warn!(%error, id, "album-artist deep-link lookup failed");
-                })
-                .ok()
-                .flatten()?
-        };
-        let trimmed = artist.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
-    }
-
-    /// Clone-out album identity for album-card toggle/reveal decisions.
-    pub fn current_album_identity(&self) -> Option<(String, String)> {
-        let album = self.now_playing.borrow().as_ref()?.album.clone();
-        let album_artist = self.current_track_album_artist()?;
-        Some((album, album_artist))
     }
 
     /// Current coarse playback state without exposing controller internals.

@@ -5,6 +5,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -13,7 +14,10 @@ use reprise_core::playback::PlaybackState;
 use reprise_core::queries::AlbumSummary;
 
 use crate::ui::album_card_css as css;
-use crate::ui::album_card_state::{presentation, AlbumCardIdentityRegistry, AlbumCardPlayback};
+use crate::ui::album_card_state::{
+    presentation, AlbumCardIdentityRegistry, AlbumCardPlayback, PendingAlbumReveal,
+    RevealBindingRegistry,
+};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::eq_bars;
 use crate::ui::strings;
@@ -38,6 +42,9 @@ pub(in crate::ui) struct AlbumCardShared {
     pub identity_generation: Rc<Cell<u64>>,
     pub identities: Rc<RefCell<AlbumCardIdentityRegistry>>,
     pub playback_state: Rc<Cell<PlaybackState>>,
+    pub reveal_generation: Rc<Cell<u64>>,
+    pub pending_reveal: Rc<RefCell<Option<PendingAlbumReveal>>>,
+    pub reveal_bindings: Rc<RefCell<RevealBindingRegistry>>,
     /// `(album_key, artist_key)` of the currently playing album, if any.
     pub now_playing_album: Rc<RefCell<Option<(String, String)>>>,
     /// Play button click → replace queue + play.
@@ -150,6 +157,15 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .can_target(false)
                 .build();
 
+            // Reveal pulse is a third cover-only visual layer. It never
+            // replaces the persistent playing ring or native focus ring.
+            let reveal_frame = gtk4::Box::builder()
+                .css_classes(vec![css::REVEAL_FRAME_CLASS.to_owned()])
+                .halign(gtk4::Align::Fill)
+                .valign(gtk4::Align::Fill)
+                .can_target(false)
+                .build();
+
             // Overlay: cover image is the base child, overlays are layered on top.
             let cover_overlay = gtk4::Overlay::builder()
                 .css_classes(vec![css::COVER_CONTAINER_CLASS.to_owned()])
@@ -158,6 +174,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             cover_overlay.add_overlay(&placeholder);
             cover_overlay.add_overlay(&playing_frame);
             cover_overlay.add_overlay(&focus_frame);
+            cover_overlay.add_overlay(&reveal_frame);
             cover_overlay.add_overlay(&playing_layer);
             cover_overlay.add_overlay(&hover_overlay);
 
@@ -344,7 +361,12 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .and_downcast::<gtk4::Box>()
                 .expect("focus frame Box");
 
-            let playing_layer = focus_frame
+            let reveal_frame = focus_frame
+                .next_sibling()
+                .and_downcast::<gtk4::Box>()
+                .expect("reveal frame Box");
+
+            let playing_layer = reveal_frame
                 .next_sibling()
                 .and_downcast::<gtk4::Box>()
                 .expect("playing_layer Box");
@@ -380,6 +402,42 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 playing_frame.add_css_class(css::PLAYING_FRAME_CLASS);
             } else {
                 playing_frame.remove_css_class(css::PLAYING_FRAME_CLASS);
+            }
+
+            let pending_reveal = shared.pending_reveal.borrow().clone();
+            if let Some(pending) = pending_reveal.filter(|pending| pending.matches(&album)) {
+                let pulse_class = if crate::ui::motion::animations_enabled() {
+                    css::REVEAL_PULSE_CLASS
+                } else {
+                    css::REVEAL_PULSE_STATIC_CLASS
+                };
+                reveal_frame.remove_css_class(css::REVEAL_PULSE_CLASS);
+                reveal_frame.remove_css_class(css::REVEAL_PULSE_STATIC_CLASS);
+                reveal_frame.add_css_class(pulse_class);
+                shared.pending_reveal.borrow_mut().take();
+
+                let reveal_key = reveal_frame.as_ptr() as usize;
+                shared
+                    .reveal_bindings
+                    .borrow_mut()
+                    .bind(reveal_key, pending.generation);
+
+                let reveal_frame = reveal_frame.downgrade();
+                let reveal_bindings = shared.reveal_bindings.clone();
+                gtk4::glib::timeout_add_local_once(
+                    Duration::from_millis(css::REVEAL_DURATION_MS),
+                    move || {
+                        let may_clear = reveal_bindings
+                            .borrow_mut()
+                            .take_if_current(reveal_key, pending.generation);
+                        if may_clear {
+                            if let Some(reveal_frame) = reveal_frame.upgrade() {
+                                reveal_frame.remove_css_class(css::REVEAL_PULSE_CLASS);
+                                reveal_frame.remove_css_class(css::REVEAL_PULSE_STATIC_CLASS);
+                            }
+                        }
+                    },
+                );
             }
 
             if let Some(meta_label) = hover_box.first_child().and_downcast::<gtk4::Label>() {
@@ -442,8 +500,17 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .and_downcast::<gtk4::Box>();
             if let Some(playing_frame) = &playing_frame {
                 playing_frame.remove_css_class(css::PLAYING_FRAME_CLASS);
-                playing_frame.remove_css_class("album-reveal-pulse");
-                playing_frame.remove_css_class("album-reveal-pulse-static");
+                if let Some(reveal_frame) = playing_frame
+                    .next_sibling()
+                    .and_then(|focus_frame| focus_frame.next_sibling())
+                {
+                    shared
+                        .reveal_bindings
+                        .borrow_mut()
+                        .unbind_current(reveal_frame.as_ptr() as usize);
+                    reveal_frame.remove_css_class(css::REVEAL_PULSE_CLASS);
+                    reveal_frame.remove_css_class(css::REVEAL_PULSE_STATIC_CLASS);
+                }
             }
 
             shared
@@ -462,6 +529,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                     .next_sibling()
                     .and_then(|playing_frame| playing_frame.next_sibling())
                     .and_then(|focus_frame| focus_frame.next_sibling())
+                    .and_then(|reveal_frame| reveal_frame.next_sibling())
                     .and_downcast::<gtk4::Box>()
                 {
                     playing_layer.set_visible(false);
