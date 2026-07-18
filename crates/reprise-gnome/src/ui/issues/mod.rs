@@ -20,8 +20,7 @@ pub(in crate::ui) fn css() -> String {
 
     format!(
         ".issue-card {{ background-color: alpha(white, 0.035); \
-           border: 1px solid alpha(white, 0.05); border-radius: {RADIUS_SURFACE}; \
-           overflow: hidden; }}\n\
+           border: 1px solid alpha(white, 0.05); border-radius: {RADIUS_SURFACE}; }}\n\
          .issue-card-header {{ background-color: alpha(white, 0.03); padding: 10px 12px; }}\n\
          .issue-card-icon {{ font-size: 16px; }}\n\
          .issue-card-title {{ font-size: 13px; font-weight: 700; }}\n\
@@ -47,6 +46,11 @@ pub(in crate::ui) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn issue_css_omits_unsupported_overflow_property() {
+        assert!(!super::css().contains("overflow:"));
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn issue_css_parses_without_errors() {

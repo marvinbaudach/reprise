@@ -11,8 +11,11 @@ case "${1:-}" in
   # because the MOT section is not committed yet, so --rule-named would filter
   # every motion test out and #[ignore] would then skip it entirely.
   --motion) mode=motion ;;
+  # --css runs only ignored CSS-provider parsing guards. Keep this targeted:
+  # unrelated display tests remain owned by their rule or motion gates.
+  --css) mode=css ;;
   *)
-    echo "Usage: $0 [--rule-named | --motion]" >&2
+    echo "Usage: $0 [--rule-named | --motion | --css]" >&2
     exit 2
     ;;
 esac
@@ -21,6 +24,17 @@ mapfile -t tests < <(
   cargo test -p reprise-gnome -- --ignored --list \
     | sed -n 's/: test$//p'
 )
+
+if [[ $mode == css ]]; then
+  css_tests=()
+  for test in "${tests[@]}"; do
+    test_name=${test##*::}
+    if [[ $test_name =~ css.*pars ]]; then
+      css_tests+=("$test")
+    fi
+  done
+  tests=("${css_tests[@]}")
+fi
 
 if [[ $mode == motion ]]; then
   motion_tests=()
