@@ -514,3 +514,90 @@ fn mot_7_waveform_desaturation_hard_switches_when_animations_are_disabled() {
 
     settings.set_gtk_enable_animations(previous);
 }
+
+// A fast Pause→Play reversal must continue from the fill's CURRENT chroma,
+// not snap to the outgoing target and flash grey (review finding M1).
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_desaturation_reversal_continues_from_current_progress() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let waveform = WaveformSeek::new();
+    waveform.set_paused(true); // desaturation fade 0.0 → 1.0
+                               // Simulate the fade caught mid-flight, well before it settles.
+    waveform.state.borrow_mut().desaturation_progress = 0.4;
+
+    waveform.set_paused(false); // reversal back toward 0.0
+    let reversal = waveform
+        .desaturation_animation
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .clone();
+    // The new animation starts from 0.4 (mid-flight), NOT 1.0 (old target).
+    assert_eq!(reversal.value_from(), 0.4);
+    assert_eq!(reversal.value_to(), 0.0);
+
+    settings.set_gtk_enable_animations(previous);
+}
+
+// Switching to a track that has no waveform must not arm a crossfade: draw()
+// takes the fallback path, so the 400 ms tick would animate nothing (N2).
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_waveform_skips_crossfade_when_new_track_has_no_peaks() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let waveform = WaveformSeek::new();
+    waveform.state.borrow_mut().display_peaks = vec![DisplayBar::Level(0.25); 40];
+
+    waveform.set_peaks(Vec::new()); // track with no precomputed waveform
+    let state = waveform.state.borrow();
+    assert!(state.previous_bars.is_empty());
+    assert_eq!(state.crossfade_progress, 1.0);
+    assert_eq!(state.build_progress, 1.0);
+    drop(state);
+    assert!(waveform.tick_id.borrow().is_none());
+
+    settings.set_gtk_enable_animations(previous);
+}
+
+// Two `set_peaks` with no draw between them (rapid "next") must keep crossfading
+// from the last visible bars, not silently fall back to a build-up (N3). Note:
+// no manual `ensure_resampled` between the calls — that is the whole point.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mot_5_waveform_crossfade_survives_a_second_set_peaks_without_a_draw() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let waveform = WaveformSeek::new();
+    // Track A is on screen (resolved bars present).
+    let a_bars = vec![DisplayBar::Level(0.25); 40];
+    waveform.state.borrow_mut().display_peaks = a_bars.clone();
+
+    waveform.set_peaks(vec![220u8; 1000]); // → crossfade from A, display_peaks cleared
+    assert_eq!(waveform.state.borrow().crossfade_progress, 0.0);
+
+    // Second switch before any draw resamples display_peaks.
+    waveform.set_peaks(vec![140u8; 1000]);
+    let state = waveform.state.borrow();
+    assert_eq!(
+        state.previous_bars, a_bars,
+        "the last visible bars must remain the crossfade source"
+    );
+    assert_eq!(state.crossfade_progress, 0.0);
+    assert_eq!(state.build_progress, 1.0, "must crossfade, not rebuild");
+    drop(state);
+    assert!(waveform.tick_id.borrow().is_some());
+
+    settings.set_gtk_enable_animations(previous);
+}

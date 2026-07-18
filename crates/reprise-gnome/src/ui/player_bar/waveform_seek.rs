@@ -352,9 +352,18 @@ impl WaveformSeek {
             }
         }
         let mut s = self.state.borrow_mut();
-        let has_previous_bars = !s.display_peaks.is_empty();
-        if animate && has_previous_bars {
-            s.previous_bars = std::mem::take(&mut s.display_peaks);
+        // Bars currently on screen to fade *from*: the resolved bars, or — if a
+        // crossfade is still mid-flight because no draw has resampled yet — the
+        // ones it is already fading from (two `set_peaks` with no draw between
+        // must not lose that source and rebuild). Empty incoming peaks arm no
+        // crossfade: draw() takes the fallback, so its tick would show nothing.
+        let crossfade_in_flight = s.crossfade_progress < 1.0 && !s.previous_bars.is_empty();
+        let has_visible_bars = !s.display_peaks.is_empty() || crossfade_in_flight;
+        if animate && has_visible_bars && !peaks.is_empty() {
+            // When display_peaks is empty, keep the in-flight previous_bars.
+            if !s.display_peaks.is_empty() {
+                s.previous_bars = std::mem::take(&mut s.display_peaks);
+            }
             s.crossfade_progress = 0.0;
             s.crossfade_start_us = crossfade_start_us;
             s.build_progress = 1.0;
@@ -407,13 +416,10 @@ impl WaveformSeek {
             return;
         }
 
-        let state = self.state.borrow();
-        let from = if self.desaturation_animation.borrow().is_some() {
-            state.desaturation_target
-        } else {
-            state.desaturation_progress
-        };
-        drop(state);
+        // Start from the current interpolated value (read before the skip
+        // below overwrites it), so a fast Pause→Play reversal glides from
+        // mid-flight instead of snapping to the old target and flashing grey.
+        let from = self.state.borrow().desaturation_progress;
         self.state.borrow_mut().desaturation_target = target;
         let state = self.state.clone();
         let area = self.area.clone();
