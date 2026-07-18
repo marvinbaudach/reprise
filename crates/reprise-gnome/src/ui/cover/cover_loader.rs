@@ -35,8 +35,7 @@ struct CachedCover {
 pub struct CoverLoader {
     cache: RefCell<HashMap<String, CachedCover>>,
     order: RefCell<std::collections::VecDeque<String>>,
-    download_enabled: bool,
-    download_worker: Option<async_channel::Sender<DownloadRequest>>,
+    download: CoverDownloadRuntime,
 }
 
 trait CoverTarget: Clone + 'static {
@@ -81,8 +80,7 @@ impl CoverLoader {
         Rc::new(Self {
             cache: RefCell::new(HashMap::new()),
             order: RefCell::new(std::collections::VecDeque::new()),
-            download_enabled: runtime.enabled,
-            download_worker: Some(runtime.worker),
+            download: runtime,
         })
     }
 
@@ -246,19 +244,13 @@ impl CoverLoader {
             if current.get() != token {
                 return;
             }
-            if cache_path.is_none() && this.download_enabled {
-                let Some(worker) = this.download_worker.clone() else {
-                    return;
-                };
+            if cache_path.is_none() {
                 let (response, result) = async_channel::bounded(1);
-                if worker
-                    .try_send(DownloadRequest {
-                        track_path: path_owned.clone(),
-                        skip_if_covered: false,
-                        response,
-                    })
-                    .is_err()
-                {
+                if !this.download.try_request(DownloadRequest {
+                    track_path: path_owned.clone(),
+                    skip_if_covered: false,
+                    response,
+                }) {
                     return;
                 }
                 let Ok(DownloadOutcome::Downloaded(downloaded_path)) = result.recv().await else {

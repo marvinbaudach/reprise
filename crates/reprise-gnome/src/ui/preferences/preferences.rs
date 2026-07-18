@@ -10,12 +10,13 @@ use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, Repl
 use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
+use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::preference_playback::build_equalizer_surface;
-use crate::ui::preference_plugins::{plugin_applies_live, plugin_description, plugin_title};
 use crate::ui::scan_flow::ScanControls;
 use crate::ui::scan_progress::ScanProgressView;
 use crate::ui::scrobble_runtime::ScrobbleRuntime;
@@ -113,6 +114,8 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) syncing_lastfm: Cell<bool>,
     pub(in crate::ui) lastfm_activation_pending: Cell<bool>,
     pub(in crate::ui) artist_news: Rc<ArtistNewsRuntime>,
+    pub(in crate::ui) cover_download: CoverDownloadRuntime,
+    pub(in crate::ui) artist_portrait: Rc<ArtistPortraitRuntime>,
     pub(in crate::ui) decorations: Rc<WindowDecorations>,
     pub(in crate::ui) device_sync: Rc<DeviceSyncRuntime>,
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
@@ -138,6 +141,8 @@ impl PreferencesContext {
         listenbrainz: &Rc<ScrobbleRuntime>,
         lastfm: &Rc<ScrobbleRuntime>,
         artist_news: &Rc<ArtistNewsRuntime>,
+        cover_download: &CoverDownloadRuntime,
+        artist_portrait: &Rc<ArtistPortraitRuntime>,
         decorations: &Rc<WindowDecorations>,
         device_sync: &Rc<DeviceSyncRuntime>,
     ) -> Rc<Self> {
@@ -166,6 +171,8 @@ impl PreferencesContext {
             syncing_lastfm: Cell::new(false),
             lastfm_activation_pending: Cell::new(false),
             artist_news: artist_news.clone(),
+            cover_download: cover_download.clone(),
+            artist_portrait: artist_portrait.clone(),
             decorations: decorations.clone(),
             device_sync: device_sync.clone(),
             preferences_dialog: RefCell::new(glib::WeakRef::new()),
@@ -633,106 +640,6 @@ impl PreferencesContext {
             player.apply_transition();
         }
     }
-
-    fn plugins_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        let page = adw::PreferencesPage::builder()
-            .title(strings::text(strings::PREFERENCES_PLUGINS))
-            .icon_name("application-x-addon-symbolic")
-            .build();
-        let group = adw::PreferencesGroup::new();
-        for descriptor in reprise_core::modules::ALL_MODULES {
-            // Scrobbling services use inline ExpanderRows instead of SwitchRows.
-            if descriptor.id == "listenbrainz" {
-                group.add(&self.build_listenbrainz_row());
-                continue;
-            }
-            if descriptor.id == "lastfm" {
-                group.add(&self.build_lastfm_row());
-                continue;
-            }
-
-            let description = plugin_description(descriptor);
-            let subtitle = if plugin_applies_live(descriptor) {
-                description
-            } else {
-                format!(
-                    "{} · {}",
-                    description,
-                    strings::text(strings::RESTART_REQUIRED)
-                )
-            };
-            let active = reprise_core::modules::is_enabled(&self.conn.borrow(), descriptor)
-                .unwrap_or(descriptor.default_enabled);
-            let row = adw::SwitchRow::builder()
-                .title(plugin_title(descriptor))
-                .subtitle(subtitle)
-                .use_markup(false)
-                .active(active)
-                .build();
-            let scope_row = (descriptor.id == "new_releases")
-                .then(|| super::preference_new_releases::scope_row(&self.conn, active));
-            let syncing = Rc::new(Cell::new(false));
-            let weak = Rc::downgrade(self);
-            let descriptor = *descriptor;
-            let syncing_notify = syncing.clone();
-            let scope_notify = scope_row.clone();
-            row.connect_active_notify(move |row| {
-                let Some(context) = weak.upgrade() else {
-                    return;
-                };
-                if syncing_notify.get() {
-                    return;
-                }
-                let active = row.is_active();
-                if let Some(scope) = &scope_notify {
-                    scope.set_sensitive(active);
-                }
-                let result = if descriptor.id == "new_releases" {
-                    context
-                        .artist_news
-                        .set_enabled(&context.conn.borrow(), active)
-                } else {
-                    reprise_core::modules::set_enabled(&context.conn.borrow(), descriptor, active)
-                };
-                if let Err(error) = result {
-                    tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
-                    syncing_notify.set(true);
-                    row.set_active(!active);
-                    syncing_notify.set(false);
-                }
-            });
-            if descriptor.id == "new_releases" {
-                let alive = glib::WeakRef::new();
-                alive.set(Some(&row));
-                let target = alive.clone();
-                let scope_target = scope_row.as_ref().map(|scope| {
-                    let target = glib::WeakRef::new();
-                    target.set(Some(scope));
-                    target
-                });
-                let syncing = syncing.clone();
-                self.artist_news.subscribe_enabled(
-                    move || alive.upgrade().is_some(),
-                    move |enabled| {
-                        let Some(row) = target.upgrade() else { return };
-                        syncing.set(true);
-                        row.set_active(enabled);
-                        syncing.set(false);
-                        if let Some(scope) = scope_target.as_ref().and_then(glib::WeakRef::upgrade)
-                        {
-                            scope.set_sensitive(enabled);
-                        }
-                    },
-                );
-            }
-            group.add(&row);
-            if let Some(scope) = scope_row {
-                group.add(&scope);
-            }
-        }
-        page.add(&group);
-        page
-    }
 }
 
 pub(in crate::ui) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::ActionRow {
@@ -748,6 +655,7 @@ pub(in crate::ui) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::Act
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::preference_plugins::plugin_applies_live;
 
     #[test]
     fn gapless_control_is_available_only_without_crossfade_overlap() {

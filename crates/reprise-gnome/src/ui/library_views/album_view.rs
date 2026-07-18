@@ -298,8 +298,9 @@ mod tests {
         )
         .unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let loader = crate::ui::cover_loader::CoverLoader::new(
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
         let view = AlbumView::new(&conn, loader);
 
         let activated: Rc<RefCell<Option<AlbumSummary>>> = Rc::new(RefCell::new(None));
@@ -332,8 +333,9 @@ mod tests {
         )
         .unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let loader = crate::ui::cover_loader::CoverLoader::new(
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
         let view = AlbumView::new(&conn, loader);
 
         assert_eq!(view.album_count(), 2);

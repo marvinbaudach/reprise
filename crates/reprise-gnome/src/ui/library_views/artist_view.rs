@@ -227,10 +227,11 @@ mod tests {
         )
         .unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let loader = crate::ui::cover_loader::CoverLoader::new(
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
 
-        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup_for_test();
         let view = ArtistView::new(conn, loader, portraits);
         assert_eq!(view.master_count(), 2);
 
@@ -253,10 +254,11 @@ mod tests {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let loader = crate::ui::cover_loader::CoverLoader::new(
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
 
-        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup_for_test();
         let view = Rc::new(ArtistView::new(conn.clone(), loader, portraits));
         assert_eq!(view.master_count(), 0);
 

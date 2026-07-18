@@ -15,7 +15,7 @@ fn loaded_track() -> NowPlaying {
 fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
-    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     build_widgets(content, visible, Rc::new(RefCell::new(conn)), &cover_loader)
 }
 
@@ -26,7 +26,7 @@ fn test_widgets_for_session(
 ) -> PanelWidgets {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
-    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     build_widgets_for_session(
         content,
         visible,
@@ -342,8 +342,8 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
-    let portraits = ArtistPortraitRuntime::setup();
-    let cover_runtime = crate::ui::cover_download_worker::setup();
+    let portraits = ArtistPortraitRuntime::setup_for_test();
+    let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
         .application_id(application_id)

@@ -533,9 +533,10 @@ mod tests {
         .unwrap();
         let conn = std::rc::Rc::new(std::cell::RefCell::new(conn));
         let selected = std::rc::Rc::new(std::cell::RefCell::new(None));
-        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
-        let cover_loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup_for_test();
+        let cover_loader = crate::ui::cover_loader::CoverLoader::new(
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
         let master = ArtistMaster::new(conn, &portraits, &cover_loader);
         master.set_on_select({
             let selected = selected.clone();
