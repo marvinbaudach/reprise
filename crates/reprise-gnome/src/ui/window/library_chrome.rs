@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn search_3_active_query_shows_chip_when_collapsed() {
+    fn search_3_lens_checked_when_active() {
         gtk4::init().unwrap();
         let window = adw::ApplicationWindow::builder().build();
         let header = adw::HeaderBar::new();
@@ -265,8 +265,13 @@ mod tests {
         let entry = gtk4::SearchEntry::new();
         let chrome = build(&header, &content, &entry, &window);
 
-        entry.set_text("falling");
+        assert!(!chrome.search_toggle.is_active());
+        chrome.search_bar.set_search_mode(true);
+        assert!(chrome.search_toggle.is_active());
+
         chrome.search_bar.set_search_mode(false);
+        assert!(!chrome.search_toggle.is_active());
+        entry.set_text("falling");
 
         assert!(search_toggle_active(
             chrome.search_bar.is_search_mode(),
