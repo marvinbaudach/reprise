@@ -7,15 +7,16 @@ Artist-News-Folge-Task: Frame **22a**. Design-Quelle ist das claude.ai/design-
 Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs in
 `docs/design/` sind nicht maßgeblich).
 
-> **Regelwerk-Vermerk:** Die NPP-Regeln leben vorerst **in diesem Dokument**
-> (`[geplant]` → `[aktiv]` im jeweiligen Implementierungs-Commit). Sie werden
-> **nicht** in diesem Task nach `docs/ux-rules.md` eingetragen —
-> Ownership-Beschluss, um Konflikte mit parallel laufenden Regelwerk-Branches
-> zu vermeiden. Die Überführung als **Sektion P** ins Regelwerk (mit
-> regelbenannten Tests, `scripts/check-ux-traceability.sh`-konform) ist ein
-> eigener Folge-Commit nach Merge-Lage.
+> **Regelwerk-Vermerk (erledigt 2026-07-18):** Die Überführung ist passiert —
+> **normativ ist ab sofort Abschnitt P von `docs/ux-rules.md`** (NPP-1–10, alle
+> `[aktiv]`, jede Regel durch einen regelbenannten Test gedeckt und von
+> `scripts/check-ux-traceability.sh` erzwungen). Die Regelfassung unten bleibt
+> als *historischer* Wortlaut des Grillings stehen; bei Abweichungen gewinnt das
+> Regelwerk. Dieses Dokument ist das **Beschluss-Ledger**: es hält das *Warum*
+> und die Detailentscheidungen, die unterhalb der Regel-Ebene liegen — dafür
+> gibt es im Regelwerk keinen Platz.
 
-## NPP-Regeln (verbindliche Fassung aus Design 21)
+## NPP-Regeln (historischer Grilling-Wortlaut — normativ ist ux-rules.md § P)
 
 ### Struktur
 
@@ -145,5 +146,5 @@ Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs i
 |------|----------|--------|
 | Artist News in Artist-Detail-View | Frame 22a | News-Sektion unter Top Tracks, Release-Karte, „Remind me" `[geplant]` |
 | Audio-Visualizer (Visual-Tab) | Frames 21b/10b/10c | GPU-Muster, Presets, F11, Labs-Plugin; Segment erscheint erst damit |
-| NPP-Regeln → ux-rules.md Sektion P | dieses Dokument | Überführung + Traceability nach Merge-Lage |
-| 14a-Flächenhierarchie + Petrol | Beschlüsse 7/8 | läuft parallel auf `feat/theme-surface-hierarchy` |
+| ~~NPP-Regeln → ux-rules.md Sektion P~~ | dieses Dokument | **erledigt 2026-07-18** — Abschnitt P, NPP-1–10 `[aktiv]`, 59 Regeln traceable |
+| ~~14a-Flächenhierarchie + Petrol~~ | Beschlüsse 7/8 | **erledigt 2026-07-18** — `feat/theme-surface-hierarchy` auf main gemergt |

@@ -708,6 +708,78 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
   setzen; Progress-Interpolation) und Pulse-Timer. `gtk::Spinner` und
   GTK-interne CSS-Mechanik sind Systemverhalten und werden nicht gegated.
 
+## P. Now-Playing-Panel
+
+<!-- Sektionsbuchstabe: O (Motion) ist die letzte auf main vergebene Sektion;
+     P schließt lückenlos an. Die Regeln stammen aus dem Grilling vom
+     2026-07-18 zu Design 21/21a; das Beschluss-Ledger unter
+     docs/superpowers/plans/2026-07-18-npp-beschluesse.md hält das Warum und
+     die Detailentscheidungen unterhalb der Regel-Ebene. -->
+
+Die rechte Spalte gehört dem **spielenden** Track, nie der Library-Selektion:
+sie ist kein Inspektor, sondern die Bühne des laufenden Stücks. Ein pausierter
+Track zählt als geladen und bleibt stehen; ohne geladenen Track zeigt das
+Panel einen ruhigen Platzhalter, statt sich von selbst zu schließen (P-1 für
+die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
+
+- **NPP-1** [aktiv] [gtk] — Geometrie ist ein **Pixel**-Vertrag und bewusst
+  ungleich: linke Sidebar fix **240 px**, rechtes Panel fix **300 px**, beide
+  gepinnt statt als Spanne. Das Panel klappt mit derselben Slide-Transition
+  ein wie die Sidebar (MOT-3, Standard-Token). Zwei Fallstricke, beide
+  gemessen statt vermutet: `AdwOverlaySplitView` rechnet ohne
+  `sidebar-width-unit = Px` in `sp`, und ein Kind ohne `ellipsize` erzwingt
+  über seine Textbreite eine Mindestbreite, die `max-sidebar-width` nicht
+  unterschreiten kann — ein Statuselement in der Sidebar darf deren Breite
+  nie diktieren.
+- **NPP-2** [aktiv] [gtk] — Aufbau von oben: Cover 168 px (Radius 12,
+  Schatten + 1 px Inset-Hairline) → Titel 15 px bold → „Artist · Album"
+  12 px weiß 55 % → **Pill-Toggle** (Segmente, kein Tab-Bar-Widget) →
+  Tab-Inhalt → Fußzeile 10.5 px weiß 35 %, deren Inhalt der aktive Tab
+  stellt. Kein Panel-Header: Schließen läuft über den App-Header-Toggle,
+  ein Retry gehört in den Fehlerzustand des Tabs. **Kein Volume-Regler**
+  (P-1).
+- **NPP-3** [aktiv] [gtk] — Glow statt Volltint: ein radialer Verlauf aus der
+  Cover-Akzentfarbe liegt im oberen Drittel hinter dem Cover und läuft nach
+  unten auf neutrales Panel-Dunkel aus. Der Grund ist Lesbarkeit — die
+  Grundfläche bleibt neutral, damit der Lyrics-Kontrast über die ganze Höhe
+  konstant ist. Fallback ist der Theme-Akzent (Petrol), Idle zeigt keinen
+  Glow. Als Verlauf gerendert, nie live geblurrt.
+- **NPP-4** [aktiv] [gtk] — Tab-Gedächtnis nur für die Session (NAV-5);
+  ein Neustart landet auf Up Next. Die Panel-*Sichtbarkeit* persistiert
+  weiterhin über Neustarts hinweg — Tab und Sichtbarkeit sind getrennte
+  Zustände.
+- **NPP-5** [aktiv] [gtk] — Zeilen-Hierarchie im Lyrics-Tab: aktive Zeile
+  15 px bold weiß mit Akzent-Unterstrich (26 × 2.5 px, zentriert, Farbe =
+  Cover-Akzent), Nachbarn gestuft weiß 45 % (±1) / 32 % (±2) / 28 %
+  (weiter). Alle Zeilen zentriert, 13 px, großzügiger Abstand. Ganze
+  LRC-Zeilen, kein Karaoke-Wort-Highlight.
+- **NPP-6** [aktiv] [gtk] — Zeilenwechsel: die neue Zeile blendet auf
+  weiß+bold, die alte zurück (Micro-Token); gleichzeitig gleitet die Liste
+  die aktive Zeile mittig (Standard-Token, ease-out-cubic — kein Spring,
+  Lyrics sollen ruhig laufen). Der Unterstrich wandert nicht, er gehört zur
+  aktiven Zeile und faded mit ihr.
+- **NPP-7** [aktiv] [gtk] — Manuelles Scrollen gewinnt: User-Scroll pausiert
+  den Auto-Scroll 4 s und resettet den Timer bei jedem weiteren Ereignis,
+  danach gleitet die Liste zur aktiven Zeile zurück; ein laufender
+  Rück-Glide wird dabei abgebrochen. Das Highlight läuft während der Pause
+  weiter — pausiert ist nur der Scroll. Programmatische Scrolls resetten den
+  Timer nie, sonst würde sich das Panel selbst aussperren.
+- **NPP-8** [aktiv] [gtk] — Klick auf eine Zeile seekt zu ihrem Timestamp
+  (nur synced); Hover hebt auf weiß 65 % mit Pointer. Das ist die einzige
+  Klick-Interaktion im Lyrics-Tab, und der Text ist nicht selektierbar. Ein
+  Seek — von hier oder aus der Waveform — springt sofort zur neuen aktiven
+  Zeile, ohne den 4-s-Timer aus NPP-7.
+- **NPP-9** [aktiv] [gtk] — Fallbacks ohne Sackgasse: unsynced → statischer
+  scrollbarer Text (weiß 65 %), kein Highlight, kein Auto-Scroll, Fuß
+  „lyrics · tags"; keine Lyrics → dezenter Leerzustand ohne Such-CTA;
+  Fehler → Inline-Retry im Tab. Instrumental-Gap (> 10 s ohne Zeile) hält
+  die aktive Zeile und dimmt sie auf 60 %, statt das Highlight zu verlieren.
+- **NPP-10** [aktiv] [gtk] — Trackwechsel ist kein Ortswechsel: Cover,
+  Titelblock, Glow und Tab-Inhalt crossfaden **gemeinsam** in einem
+  Übergang (Standard-Token, MOT-5), niemals als Slide; die Lyrics starten
+  danach auf Zeile 0 zentriert. `gtk-enable-animations=false` schaltet auch
+  hier hart (MOT-7).
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
