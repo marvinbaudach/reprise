@@ -172,6 +172,60 @@ fn grid_1_playing_badge_persists_without_hover() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn grid_3_focus_ring_and_overlay_on_focus() {
+    gtk4::init().unwrap();
+    let shared = shared(Some(("Album 1", "Artist")));
+    let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
+    for title in ["Album 1", "Album 2", "Album 3", "Album 4"] {
+        store.append(&glib::BoxedAnyObject::new(album(title)));
+    }
+    let selection = gtk4::NoSelection::new(Some(store));
+    let grid = gtk4::GridView::new(Some(selection), Some(build_factory(&shared)));
+    grid.add_css_class("library-grid");
+    grid.set_min_columns(2);
+    grid.set_max_columns(2);
+    let window = gtk4::Window::builder()
+        .default_width(500)
+        .default_height(600)
+        .child(&grid)
+        .build();
+    window.present();
+    wait_for_layout();
+
+    grid.scroll_to(0, gtk4::ListScrollFlags::FOCUS, None);
+    wait_for_layout();
+    let focused_cell = grid.focus_child().expect("native focused grid child");
+    let focused_card = descendants_with_class(&focused_cell, css::CARD_CLASS)
+        .into_iter()
+        .next()
+        .expect("focused album card");
+    assert_eq!(
+        descendants_with_class(&focused_card, css::FOCUS_FRAME_CLASS).len(),
+        1
+    );
+    assert_eq!(
+        descendants_with_class(&focused_card, css::HOVER_OVERLAY_CLASS).len(),
+        1
+    );
+    assert_eq!(
+        descendants_with_class(&focused_card, css::PLAYING_FRAME_CLASS).len(),
+        1,
+        "playing and focus frames remain separate on the loaded album"
+    );
+    assert_eq!(
+        crate::ui::album_view_actions::album_key_action(
+            gtk4::gdk::Key::Right,
+            gtk4::gdk::ModifierType::empty(),
+        ),
+        crate::ui::album_view_actions::AlbumKeyAction::Propagate,
+        "arrow navigation stays native to the two-column GridView"
+    );
+
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn tip_1a_album_card_play_overlay_has_tooltip() {
     if gtk4::init().is_err() {
         return;

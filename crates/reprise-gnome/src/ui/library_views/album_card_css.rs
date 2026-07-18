@@ -7,6 +7,7 @@ use crate::ui::style::tokens;
 pub(in crate::ui) const CARD_CLASS: &str = "album-card";
 pub(in crate::ui) const COVER_CLASS: &str = "album-cover";
 pub(in crate::ui) const COVER_CONTAINER_CLASS: &str = "album-cover-container";
+pub(in crate::ui) const FOCUS_FRAME_CLASS: &str = "album-focus-frame";
 pub(in crate::ui) const PLAYING_FRAME_CLASS: &str = "album-playing-frame";
 pub(in crate::ui) const PLAYING_LAYER_CLASS: &str = "album-playing-layer";
 pub(in crate::ui) const HOVER_OVERLAY_CLASS: &str = "album-hover-overlay";
@@ -39,11 +40,6 @@ pub(in crate::ui) fn css() -> String {
         ".{CARD_CLASS} {{ \
            padding: 0; margin: 0; \
            background: transparent; border: none; outline: none; }}\n\
-         .{CARD_CLASS}:focus-visible {{ \
-           outline: 2px solid @accent_color; \
-           outline-offset: 4px; \
-           border-radius: {radius}; }}\n\
-         \
          /* Cover container: square, rounded, shadow, hairline. */
          .{COVER_CONTAINER_CLASS} {{ \
            border-radius: 10px; \
@@ -52,6 +48,11 @@ pub(in crate::ui) fn css() -> String {
          .{PLAYING_FRAME_CLASS} {{ \
            border-radius: 10px; \
            box-shadow: inset 0 0 0 1.5px @reprise_player_accent; }}\n\
+         .{FOCUS_FRAME_CLASS} {{ \
+           opacity: 0; border-radius: 10px; \
+           box-shadow: 0 0 0 2px @accent_color; }}\n\
+         .library-grid child:focus-visible .{FOCUS_FRAME_CLASS} {{ \
+           opacity: 1; }}\n\
          .{PLAYING_LAYER_CLASS} {{ \
            margin: 8px; padding: 4px; \
            color: @reprise_player_accent; \
@@ -68,7 +69,7 @@ pub(in crate::ui) fn css() -> String {
            transition: opacity {transition}; \
            border-radius: 10px; }}\n\
          .{CARD_CLASS}:hover .{HOVER_OVERLAY_CLASS}, \
-         .{CARD_CLASS}:focus-visible .{HOVER_OVERLAY_CLASS} {{ \
+         .library-grid child:focus-visible .{HOVER_OVERLAY_CLASS} {{ \
            opacity: 1; }}\n\
          \
          /* Play button: round, accent bg, centered icon. */
@@ -106,7 +107,6 @@ pub(in crate::ui) fn css() -> String {
          .{PLACEHOLDER_INITIAL_CLASS} {{ \
            font-size: 48px; font-weight: 700; \
            color: alpha(white, 0.85); }}",
-        radius = tokens::RADIUS_SURFACE,
         transition = tokens::TRANSITION,
     );
     for (index, (start_hue, end_hue)) in PLACEHOLDER_GRADIENT_HUES.iter().enumerate() {
@@ -126,6 +126,7 @@ mod tests {
         let css = super::css();
         assert!(css.contains(".album-card"));
         assert!(css.contains(".album-cover-container"));
+        assert!(css.contains(".album-focus-frame"));
         assert!(css.contains(".album-playing-frame"));
         assert!(css.contains(".album-playing-layer"));
         assert!(css.contains(".album-cover"));
@@ -135,7 +136,7 @@ mod tests {
         assert!(css.contains(".album-card-title"));
         assert!(css.contains(".album-card-subtitle"));
         assert!(css.contains(".album-placeholder"));
-        assert!(css.contains("outline: 2px solid @accent_color"));
+        assert!(css.contains("box-shadow: 0 0 0 2px @accent_color"));
         assert!(css.contains("inset 0 0 0 1.5px @reprise_player_accent"));
         assert!(css.contains("box-shadow: 0 4px 14px"));
         for index in 0..super::PLACEHOLDER_GRADIENT_COUNT {
@@ -150,6 +151,16 @@ mod tests {
             css.lines().all(|line| !line.trim_start().starts_with("//")),
             "CSS must use block comments because // discards the next rule"
         );
+    }
+
+    #[test]
+    fn focus_and_playing_layers_have_independent_cover_only_selectors() {
+        let css = super::css();
+        assert!(css.contains(".library-grid child:focus-visible .album-focus-frame"));
+        assert!(css.contains(".library-grid child:focus-visible .album-hover-overlay"));
+        assert!(css.contains("box-shadow: 0 0 0 2px @accent_color"));
+        assert!(css.contains("inset 0 0 0 1.5px @reprise_player_accent"));
+        assert!(!css.contains(".album-card:focus-visible"));
     }
 
     #[test]

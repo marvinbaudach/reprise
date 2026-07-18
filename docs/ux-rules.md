@@ -203,7 +203,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   Space bleibt global Play/Pause. Menütaste und Shift+F10 öffnen an der
   fokussierten Kachel dasselbe Menü wie Rechtsklick, exakt mit Play, Play
   next, Add to queue, Go to artist und Edit tags….
-- **GRID-3** [geplant] [gtk] — Sichtbarer Fokus und Zustandskomposition:
+- **GRID-3** [aktiv] [gtk] — Sichtbarer Fokus und Zustandskomposition:
   Tastaturfokus zeichnet einen 2-px-Außenring in `@accent_color` nur um das
   Cover und zeigt dieselbe Play-Affordance wie Hover. Playing, Fokus und
   Hover bleiben getrennte Zustandslayer: Playing innen, Fokus außen,
