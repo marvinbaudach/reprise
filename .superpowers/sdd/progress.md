@@ -487,7 +487,11 @@ Stage: isolated 10,000/100,000-track query and scroll/cache measurement baseline
 
 - PERF-1: complete (commit f9d3ac4, base e0493d0, added a fail-closed synthetic query baseline with stable JSON timing output and a verified 10,000-track run).
 - PERF-2: complete (commit 679f15a, base f9d3ac4, added 10,000/100,000-track scroll probes with independent hard budgets of eight cached windows and 1,600 retained rows).
-- PERF-3: in progress — orchestration, documentation, full gates, and stage review.
+- PERF-3: complete (commit 4ec74b9, base 679f15a, added the clean-worktree release orchestrator, reproducibility manifest, retained artifacts, CLI policy tests, and operator documentation).
+
+Stage review: complete. A clean-commit release run at `4ec74b9` passed for both 10,000 and 100,000 generated tracks; TrackListModel retained exactly eight SQL windows / 1,600 rows at both sizes (about 21 ms and 251 ms respectively on this host). Final gates passed: fmt, clippy `--all-targets --workspace -D warnings`, workspace tests (core 758 passed / 1 ignored; GNOME 668 passed / 138 ignored; platform 55 passed), architecture, UX traceability (60 active rules), core purity, QA linter policy, and audit with only the accepted RUSTSEC-2024-0436 warning. Assumption: elapsed times are same-host comparison evidence, not portable pass/fail thresholds; only the cache bounds are hard budgets. Deferred by scope and recorded in `TESTING.md`: installed-app startup, live GTK row-widget/provider counts, queue-memory growth, and manual rendered scroll feel. Residual risk / next-stage candidate: deep title-sorted SQL `OFFSET` windows grow roughly linearly with position at 100,000 tracks; keyset or anchored paging needs a separate design stage rather than an unmeasured optimization here. No product behavior, real database, music file, or live desktop was touched.
+
+Lock: released by Codex in this worktree on 2026-07-18
 
 ## 2026-07-18 — Theme-Flächenhierarchie + Theme-Akzent-Fallback
 
