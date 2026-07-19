@@ -258,7 +258,7 @@ pub struct PlayerController {
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
-    /// Queue view's `Up Next · from <label>` title and NAV-9a's jump target.
+    /// Queue view's named virtual context tail and NAV-9a's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.

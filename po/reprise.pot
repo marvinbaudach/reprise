@@ -740,11 +740,6 @@ msgstr ""
 msgid "Play Next"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings.rs:480
-#, rust-format
-msgid "Up Next · from {}"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings.rs:481
 msgid "Nothing queued"
 msgstr ""
@@ -1329,6 +1324,13 @@ msgstr ""
 #, rust-format
 msgid "{count} track selected"
 msgid_plural "{count} tracks selected"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:72
+#, rust-format
+msgid "Playing from {source} · {count} track"
+msgid_plural "Playing from {source} · {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 

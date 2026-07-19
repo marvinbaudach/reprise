@@ -66,8 +66,15 @@ pub fn up_next_footer(count: usize, duration: &str) -> String {
     )
 }
 
-pub fn queue_continuing_from(source: &str) -> String {
-    formatted(N_!("Continuing from “{source}”"), &[("source", source)])
+pub fn queue_context_tail(source: &str, count: usize) -> String {
+    let count_text =
+        reprise_core::format::format_thousands(i64::try_from(count).unwrap_or(i64::MAX));
+    plural(
+        "Playing from {source} · {count} track",
+        "Playing from {source} · {count} tracks",
+        count,
+        &[("source", source), ("count", &count_text)],
+    )
 }
 
 pub fn news_release_meta(primary_type: &str, date: &str) -> String {
