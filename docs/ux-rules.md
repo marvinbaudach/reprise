@@ -964,7 +964,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   nach oben materialisiert genau diesen Eintrag in der manuellen Sektion.
   Multi-Select, Clear, Save-as-Playlist und das vollständige Kontextmenü
   bleiben in der Queue-ColumnView.
-- **NPP-11** [geplant] [gtk] — Die Panel-Ansichten verwenden einen
+- **NPP-11** [aktiv] [gtk] — Die Panel-Ansichten verwenden einen
   zentrierten `AdwViewSwitcher` als Title-Widget und degradieren bei schmalem
   Fenster adaptiv zu einer unteren `AdwViewSwitcherBar` oder einem
   icons-only `AdwInlineViewSwitcher` per `AdwBreakpoint`. Umsetzung in Batch
