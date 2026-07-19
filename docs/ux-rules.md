@@ -229,7 +229,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
   die Album-Übersicht stellt den Tastaturfokus auf genau der zuvor
   aktivierten Albumkachel wieder her und scrollt sie bei Bedarf sichtbar.
-- **ART-1** [geplant] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
+- **ART-1** [aktiv] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.
 - **ART-2** [geplant] [gtk] — Artist-Detail: Hero-Glow (vorberechnete
