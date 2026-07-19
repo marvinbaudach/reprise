@@ -307,14 +307,14 @@ fn lyr_4_start_of_song_is_not_centered() {
         .child(view.widget())
         .build();
     window.present();
-    settle_until(1000, || view.widget().allocated_height() > 0);
+    settle_until(1000, || view.widget().height() > 0);
 
     assert!(
         (view.line_viewport_top_offset(0) - 18.0).abs() < 2.0,
         "top offset was {} (expected ~18), center offset {}, allocated height {}",
         view.line_viewport_top_offset(0),
         view.line_center_offset(0),
-        view.widget().allocated_height()
+        view.widget().height()
     );
     assert!(view.line_center_offset(0) < -20.0);
 
