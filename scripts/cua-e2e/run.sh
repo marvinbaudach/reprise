@@ -101,6 +101,16 @@ wait_for_label_absent() {
   return 1
 }
 
+cua_open_main_menu() {
+  local pid=$1 window_id=$2 stem=$3
+
+  # AT-SPI reports MenuButton activation as "unverifiable" even when GTK did
+  # not toggle it. F10 is the application's standard main-menu contract and
+  # avoids treating that false-positive delivery report as an open popover.
+  cua_press_key_window "$pid" "$window_id" f10 "$stem-f10"
+  wait_for_label "$pid" "$window_id" "Library Doctor" "$stem-open" >/dev/null
+}
+
 APP_PID=""
 APP_LOG=""
 WINDOW_ID=""
@@ -310,7 +320,7 @@ run_library_doctor_scenario() {
     library-doctor "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
   wait_for_label "$APP_PID" "$WINDOW_ID" "Search all fields" doctor-library >/dev/null
 
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Main menu" doctor-menu
+  cua_open_main_menu "$APP_PID" "$WINDOW_ID" doctor-menu
   cua_click_label "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-entry
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-enable
@@ -342,7 +352,7 @@ run_library_doctor_scenario() {
     "$APP_PID" "$WINDOW_ID" "Tags updated · $fixture_count tracks" doctor-applied)
   assert_snapshot_contains "$applied_path" "Revert"
 
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Main menu" doctor-menu-after-apply
+  cua_open_main_menu "$APP_PID" "$WINDOW_ID" doctor-menu-after-apply
   cua_click_label "$APP_PID" "$WINDOW_ID" "Preferences" doctor-preferences
   wait_for_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-preferences-open >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-plugins-page
