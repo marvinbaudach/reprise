@@ -477,7 +477,7 @@ if [[ "${1:-}" == "--private-session" ]]; then
   exit 0
 fi
 
-for command in "$CUA_DRIVER_BIN" Xvfb openbox dbus-run-session ffmpeg jq rg wmctrl; do
+for command in "$CUA_DRIVER_BIN" Xvfb openbox cargo dbus-run-session ffmpeg jq rg wmctrl; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
@@ -486,8 +486,14 @@ if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
 fi
 
 case "$CUA_E2E_PROFILE" in
-  debug) CUA_E2E_BIN_PATH="$repo_root/target/debug/reprise" ;;
-  release) CUA_E2E_BIN_PATH="$repo_root/target/release/reprise" ;;
+  debug)
+    (cd "$repo_root" && cargo build --locked -p reprise-gnome)
+    CUA_E2E_BIN_PATH="$repo_root/target/debug/reprise"
+    ;;
+  release)
+    (cd "$repo_root" && cargo build --locked -p reprise-gnome --release)
+    CUA_E2E_BIN_PATH="$repo_root/target/release/reprise"
+    ;;
   *) echo "CUA_E2E_PROFILE must be debug or release" >&2; exit 2 ;;
 esac
 if [[ ! -x "$CUA_E2E_BIN_PATH" ]]; then
