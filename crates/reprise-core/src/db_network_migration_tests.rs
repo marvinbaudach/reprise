@@ -48,7 +48,7 @@ fn net_2_migration_preserves_existing_cover_usage() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 17);
+    assert_eq!(version, 18);
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn net_2_stats_v16_database_runs_network_grandfathering_at_v17() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 17);
+    assert_eq!(version, 18);
     assert!(!crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
     assert!(crate::modules::is_enabled(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
 }

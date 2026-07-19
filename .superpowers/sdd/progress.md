@@ -650,3 +650,5 @@ Assumption: the current smart-playlist rule engine combines rules with `AND` and
 Branch: feat/tag-rework
 Lock: claimed by Codex in this worktree on 2026-07-19
 Stage: implement the Library Doctor local/remote scan, mandatory per-field review, journaled apply/revert, and GTK navigation from the approved Frames 26a/26b/27 plan.
+
+Task DOC-1: complete (commit 2ea322e, base 5182582, defined the split Library Doctor UX contracts DOC-1a through DOC-6c as planned rules in section W).
