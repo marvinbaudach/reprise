@@ -203,6 +203,39 @@ fn doc_3a_none_clears_every_row() {
 }
 
 #[test]
+fn doc_1d_review_remote_toggle_removes_selection_and_restores_local_result() {
+    let mut remote = proposal(1, DoctorField::Title, ProposalSource::MusicBrainz);
+    remote.local_fallback = Some(DoctorLocalFallback::Proposal {
+        proposed: DoctorValue::Text("local-title".into()),
+        confidence: 100,
+        problem_class: ProblemClass::CasingWhitespace,
+    });
+    let mut source = scan(vec![remote]);
+    source.options.remote_enabled = true;
+    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::AllChanges);
+    let remote_id = review.rows()[0].id;
+    review.set_selected(remote_id, true).unwrap();
+
+    review.set_remote_visible(false);
+
+    assert!(!review.remote_visible());
+    assert_eq!(review.rows().len(), 1);
+    assert_eq!(review.rows()[0].source, ProposalSource::Local);
+    assert_eq!(
+        review.rows()[0].proposed,
+        DoctorValue::Text("local-title".into())
+    );
+    assert!(review.rows()[0].selected);
+
+    review.set_remote_visible(true);
+
+    assert!(review.remote_visible());
+    assert_eq!(review.rows().len(), 1);
+    assert_eq!(review.rows()[0].source, ProposalSource::MusicBrainz);
+    assert!(!review.rows()[0].selected);
+}
+
+#[test]
 fn doc_3a_tie_choice_materializes_only_real_diffs() {
     let group = unresolved_group(
         DoctorField::Artist,
