@@ -44,16 +44,19 @@ const SMOKE_FILTER_ENV_VAR: &str = "REPRISE_SMOKE_FILTER";
 /// Dev/verification hook (permanent, like the other `REPRISE_SMOKE_*` hooks
 /// above): when set, switches the track list to the named `ViewSource` once
 /// the initial load has run and the main loop is idle, through the exact
-/// same `TrackList::set_source` path the future sidebar (Task 4) will use.
-/// Accepted values: `library`, `missing`, `queue`, `import_errors`, or
+/// same source-routing path as the sidebar. Track-list sources continue
+/// through `TrackList::set_source`; `my_stats` is delegated to the window
+/// router because it opens a separate content view. Accepted values:
+/// `library`, `missing`, `queue`, `import_errors`, `my_stats`, or
 /// `playlist:<id>`/`smart:<id>` (Task 4 wires the sidebar UI for the latter
-/// two; the query layer and this hook already support them). Logs `"view
-/// source set"` plus the resulting row count, so a headless run can assert
-/// both the switch and the row count it produced.
+/// two; the query layer and this hook already support them). Track-list
+/// targets log `"view source set"` plus the resulting row count; `my_stats`
+/// logs that the separate view opened through sidebar routing.
 ///
 /// Usage: `REPRISE_SCAN_DIR=… REPRISE_SMOKE_SOURCE=missing REPRISE_SMOKE_QUIT=1
-///  xvfb-run -a cargo run`.
-const SMOKE_SOURCE_ENV_VAR: &str = "REPRISE_SMOKE_SOURCE";
+///  xvfb-run -a cargo run`, or `REPRISE_SMOKE_SOURCE=my_stats
+///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
+pub(in crate::ui) const SMOKE_SOURCE_ENV_VAR: &str = "REPRISE_SMOKE_SOURCE";
 
 /// Dev/verification hook (permanent, like the other `REPRISE_SMOKE_*` hooks
 /// above; added for the Task 5 Fix Round 1 "remove from playlist targets the
@@ -119,12 +122,13 @@ pub(in crate::ui) fn arm_smoke_filter(shared: &Rc<Shared>) {
 /// swallowed. Accepts `playlist:<id>`/`smart:<id>` too (Task 4's sidebar is
 /// the eventual primary way to reach those, but the query layer and this
 /// hook already support them).
-fn parse_smoke_source(value: &str) -> Option<ViewSource> {
+pub(in crate::ui) fn parse_smoke_source(value: &str) -> Option<ViewSource> {
     match value {
         "library" => Some(ViewSource::Library),
         "missing" => Some(ViewSource::Missing),
         "queue" => Some(ViewSource::Queue),
         "import_errors" => Some(ViewSource::ImportErrors),
+        "my_stats" => Some(ViewSource::MyStats),
         _ => value
             .strip_prefix("playlist:")
             .and_then(|id| id.parse::<i64>().ok())
@@ -186,7 +190,8 @@ fn resolve_smoke_source_playlist_by_name(shared: &Rc<Shared>, value: &str) -> Op
 /// Values `parse_smoke_source` can't parse directly (today: only
 /// `playlist:<name>`, since ids aren't stable across scratch DBs — see
 /// `resolve_smoke_source_playlist_by_name`) fall back to a by-name playlist
-/// lookup before giving up.
+/// lookup before giving up. `my_stats` is recognized here but left untouched
+/// for the window router armed by `library_shell::wire_source_routing`.
 pub(in crate::ui) fn arm_smoke_source(shared: &Rc<Shared>) {
     let Ok(text) = std::env::var(SMOKE_SOURCE_ENV_VAR) else {
         return;
@@ -202,6 +207,12 @@ pub(in crate::ui) fn arm_smoke_source(shared: &Rc<Shared>) {
             );
             return;
         };
+        if matches!(source, ViewSource::MyStats) {
+            tracing::debug!(
+                "{SMOKE_SOURCE_ENV_VAR}=my_stats delegated to the window source router"
+            );
+            return;
+        }
         tracing::info!(value = %text, "{SMOKE_SOURCE_ENV_VAR} set: applying programmatic view-source switch");
         set_source_and_reload(&shared, source);
         let label = shared.source.borrow().label();
@@ -255,4 +266,14 @@ pub(in crate::ui) fn arm_smoke_sort_column(
         );
         column_view.sort_by_column(Some(&column), gtk4::SortType::Ascending);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn my_stats_is_a_supported_smoke_source() {
+        assert_eq!(parse_smoke_source("my_stats"), Some(ViewSource::MyStats));
+    }
 }
