@@ -101,14 +101,18 @@ wait_for_label_absent() {
   return 1
 }
 
-cua_open_main_menu() {
-  local pid=$1 window_id=$2 stem=$3
+cua_activate_main_menu_item() {
+  local pid=$1 window_id=$2 label=$3 stem=$4
+  local focus_path
 
-  # AT-SPI reports MenuButton activation as "unverifiable" even when GTK did
-  # not toggle it. F10 is the application's standard main-menu contract and
-  # avoids treating that false-positive delivery report as an open popover.
-  cua_press_key_window "$pid" "$window_id" f10 "$stem-f10"
-  wait_for_label "$pid" "$window_id" "Library Doctor" "$stem-open" >/dev/null
+  # Under X11 the GTK popover is a detached window. The main-window CUA
+  # snapshot therefore cannot expose its item labels even though GTK has
+  # opened the menu. The app's focus probe does observe the popup, so follow
+  # the F10 contract with native Down traversal and activate the focused item.
+  cua_hotkey "$pid" "$window_id" "$stem-f10" f10
+  focus_path=$(cua_focus_label_via_key "$pid" "$window_id" "$label" down "$stem-focus")
+  assert_focus_evidence_label "$focus_path" "$label"
+  cua_press_key_window "$pid" "$window_id" enter "$stem-enter"
 }
 
 APP_PID=""
@@ -129,6 +133,8 @@ start_scenario_app() {
   local focus_state="$CUA_E2E_OUT_DIR/$scenario-focus-state.txt"
   local -a scenario_env=(-u REPRISE_SCAN_DIR -u REPRISE_SMOKE_TAG_EDIT)
 
+  CUA_E2E_FOCUS_STATE="$focus_state"
+  export CUA_E2E_FOCUS_STATE
   mkdir -p "$profile_root/data" "$profile_root/cache" "$profile_root/config"
   if [[ -n "$scan_dir" ]]; then
     scenario_env+=(REPRISE_SCAN_DIR="$scan_dir")
@@ -152,6 +158,9 @@ start_scenario_app() {
     REPRISE_LOG=debug \
     "$CUA_E2E_BIN_PATH" >"$APP_LOG" 2>&1 &
   APP_PID=$!
+  # Lets cua_driver fail fast instead of waiting out a 120s timeout per call
+  # once the app is gone (see lib.sh).
+  export CUA_E2E_APP_PID="$APP_PID"
   if ! WINDOW_ID=$(wait_for_window "$APP_PID"); then
     echo "$scenario did not expose a Reprise window" >&2
     tail -n 60 "$APP_LOG" >&2 || true
@@ -221,6 +230,8 @@ run_populated_library_scenario() {
   assert_snapshot_contains "$missing_path" "Missing files"
 
   CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-focus-state.txt" \
+  CUA_E2E_APP_PID="$APP_PID" \
+  CUA_E2E_WM_PID="$OPENBOX_PID" \
     "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
   restart_private_cua_daemon
 
@@ -320,8 +331,8 @@ run_library_doctor_scenario() {
     library-doctor "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
   wait_for_label "$APP_PID" "$WINDOW_ID" "Search all fields" doctor-library >/dev/null
 
-  cua_open_main_menu "$APP_PID" "$WINDOW_ID" doctor-menu
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-entry
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-entry
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-enable
   wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run-ready >/dev/null
@@ -352,8 +363,8 @@ run_library_doctor_scenario() {
     "$APP_PID" "$WINDOW_ID" "Tags updated · $fixture_count tracks" doctor-applied)
   assert_snapshot_contains "$applied_path" "Revert"
 
-  cua_open_main_menu "$APP_PID" "$WINDOW_ID" doctor-menu-after-apply
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Preferences" doctor-preferences
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Preferences" doctor-preferences
   wait_for_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-preferences-open >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-plugins-page
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin-enabled >/dev/null
@@ -526,6 +537,9 @@ DISPLAY=":$display_number"
 export DISPLAY
 openbox >"$CUA_E2E_OUT_DIR/openbox.log" 2>&1 &
 OPENBOX_PID=$!
+# Lets cua_driver fail fast if the WM dies mid-run instead of delivering keys
+# into the void (see lib.sh).
+export CUA_E2E_WM_PID="$OPENBOX_PID"
 sleep 0.5
 if ! kill -0 "$OPENBOX_PID" 2>/dev/null; then
   echo "Openbox did not start on the private display" >&2

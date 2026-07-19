@@ -12,6 +12,55 @@ assert_after_has_focus() {
   assert_unique_focus "$CUA_E2E_OUT_DIR/$stem-after.json"
 }
 
+# Returns the app to the state every scenario assumes: Tracks visible, no
+# search filter, nothing popped up.
+#
+# The manifest drives twelve scenarios against ONE app instance. Nothing used to
+# reset between them, and it stayed invisible only because the runner died on
+# the first red surface. Once it ran the whole list, one leaked search filter
+# from `app-shell` cascaded: `tracks` searched a list filtered to zero rows,
+# `albums` pressed Enter on the wrong target and opened the main menu, `artists`
+# ran trapped inside that popover and toggled Compact Mode, and the last two
+# scenarios then measured a 430x76 mini-player. Five failures, one leak.
+#
+# This must verify rather than hope. A reset that silently fails would make the
+# next surface fail for a reason that has nothing to do with what it tests —
+# exactly the confusion it exists to prevent.
+reset_surface_baseline() {
+  local pid=$1 window_id=$2 stem=$3 state_path
+
+  # Escape closes a popover or dialog; a second one collapses a revealed search
+  # bar. Both are no-ops when nothing is open.
+  cua_press_key_window "$pid" "$window_id" escape "$stem-reset-1" || return 1
+  cua_press_key_window "$pid" "$window_id" escape "$stem-reset-2" || return 1
+
+  # Escape does not undo navigation, and several scenarios end on a different
+  # view — `issues-import` finishes inside Missing files. Use the documented
+  # Back accelerator (help.rs lists <Alt>Left as "Back to previous view"),
+  # which is what a keyboard user would reach for and is one keystroke rather
+  # than a traversal. Repeat it: a scenario may be several places deep, and
+  # Back on an empty history is a no-op.
+  #
+  # An earlier version of this comment claimed the sidebar is absent from the
+  # accessibility tree on that view and therefore cannot be tabbed to. That was
+  # wrong — Music, Queue and My Stats are all present, at the same counts as in
+  # the working sidebar scenario. The tab-based reset failed because the run's
+  # window manager had died and no key was reaching the app at all, not because
+  # of anything about this view. Alt+Left remains the better reset; the reason
+  # given for it was not.
+  local attempt
+  for attempt in 1 2 3 4; do
+    cua_hotkey "$pid" "$window_id" "$stem-reset-back-$attempt" alt left || return 1
+  done
+
+  state_path=$(cua_wait_for_label "$pid" "$window_id" "sine_01" "$stem-reset-state") || {
+    echo "reset before '$stem' did not restore the Tracks baseline; the previous" >&2
+    echo "surface left state behind that this scenario cannot run against" >&2
+    return 1
+  }
+  assert_snapshot_contains "$state_path" "Tracks" || return 1
+}
+
 keyboard_app_shell() {
   local pid=$1 window_id=$2 search_result_path
   cua_hotkey "$pid" "$window_id" acc-shell-search ctrl f
@@ -54,6 +103,18 @@ keyboard_tracks_playlist_queue() {
   assert_after_has_focus acc-tracks-context-close
 }
 
+# KNOWN GAP — these two tab for "Albums"/"Artists" directly, which cannot land:
+# the view switcher is a toggle group, and GTK exposes a toggle group as a
+# SINGLE tab stop, with arrow keys moving between members. So the traversal
+# walks the whole focus ring, cycles it several times, and ends on whatever it
+# happened to stop at — which in one run was the unlabeled main-menu button, so
+# the following Enter opened a popover and a later scenario toggled Compact
+# Mode from inside it. The per-surface reset now contains that damage.
+#
+# The fix is arrow traversal, but the entry point is not established: tabbing to
+# "Tracks" first also fails to land ("Tab traversal never focused 'Tracks'"), so
+# the group is reached under some other name or role. Left as-is deliberately —
+# a guessed traversal that happens to pass is worse than a documented gap.
 keyboard_albums() {
   local pid=$1 window_id=$2 tab_path focus_path
   tab_path=$(cua_focus_label_via_tab \
@@ -82,6 +143,16 @@ keyboard_artists() {
 
 keyboard_player_now_playing() {
   local pid=$1 window_id=$2 focus_path state_path
+  # This scenario waits for "Pause (Space)", which only exists while something
+  # plays — nothing here started playback, so it depended on a previous surface
+  # having left a track running. Establish the precondition instead: focus a
+  # track and activate it.
+  focus_path=$(cua_focus_label_via_tab \
+    "$pid" "$window_id" sine_01 acc-player-precondition)
+  assert_focus_evidence_label "$focus_path" sine_01
+  cua_press_key_window "$pid" "$window_id" enter acc-player-precondition-play
+  cua_wait_for_label "$pid" "$window_id" "Pause (Space)" acc-player-playing >/dev/null
+
   focus_path=$(cua_focus_label_via_tab \
     "$pid" "$window_id" "Pause (Space)" acc-player-focus)
   assert_focus_evidence_label "$focus_path" "Pause (Space)"
@@ -208,6 +279,11 @@ run_manifest() {
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
     echo "[cua-keyboard] $surface"
+    if ! reset_surface_baseline "$pid" "$window_id" "$surface"; then
+      echo "[cua-keyboard] $surface: reset failed, surface not exercised" >&2
+      failed+=("$surface (reset)")
+      continue
+    fi
     if "$scenario" "$pid" "$window_id"; then
       passed=$((passed + 1))
     else
