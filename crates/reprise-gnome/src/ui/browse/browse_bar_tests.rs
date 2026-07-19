@@ -254,3 +254,21 @@ fn widget_projects_removable_chips_without_a_redundant_reset_button() {
         Some("+ Add filter".into())
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rebuilding_chips_reparents_the_persistent_filter_button() {
+    gtk4::init().unwrap();
+    let conn = Connection::open_in_memory().unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    let bar = BrowseBar::new(Rc::new(RefCell::new(conn)));
+
+    bar.refresh();
+
+    let wrapper = bar
+        .add_filter
+        .parent()
+        .and_downcast::<gtk4::FlowBoxChild>()
+        .expect("add-filter button must have a FlowBoxChild wrapper");
+    assert_eq!(wrapper.parent(), Some(bar.chips.clone().upcast()));
+}
