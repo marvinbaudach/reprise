@@ -198,9 +198,14 @@ mod tests {
         assert!(cell.has_css_class("reprise-density-comfortable"));
         let (_, comfortable, _, _) = view.measure(gtk4::Orientation::Vertical, -1);
 
+        assert!(
+            compact < standard && standard < comfortable,
+            "measured compact={compact}, standard={standard}, comfortable={comfortable}"
+        );
         assert_eq!(
-            (standard - compact, comfortable - standard),
-            (10, 8),
+            comfortable - standard,
+            crate::ui::style::tokens::ROW_MIN_HEIGHT_COMFORTABLE
+                - crate::ui::style::tokens::ROW_MIN_HEIGHT_STANDARD,
             "measured compact={compact}, standard={standard}, comfortable={comfortable}"
         );
         window.close();

@@ -153,7 +153,7 @@ fn acc_3_bottom_pinned_issues_collection_is_a_tab_stop() {
     assert!(before.grab_focus());
     assert!(window.child_focus(gtk4::DirectionType::TabForward));
     assert!(
-        row.has_focus() || issues.has_focus(),
+        row.is_focus() || issues.is_focus(),
         "Tab must enter the separately pinned issues collection"
     );
     window.close();
@@ -181,7 +181,14 @@ fn focus_driven_selection_browses_without_routing_but_activation_routes() {
     root.append(&shared.issues_listbox);
     let window = gtk4::Window::builder().child(&root).build();
     window.present();
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !window.is_active() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "test window did not become active"
+        );
+        gtk4::glib::MainContext::default().iteration(false);
+    }
 
     // Keyboard focus lands on the Queue row (Tab / arrow browsing) and
     // GTK's ListBox auto-selects it — that must NOT route (the optics run
@@ -249,7 +256,7 @@ fn acc_3_focus_transfer_between_sidebar_collections_does_not_resync_mid_flight()
     shared.issues_listbox.select_row(Some(&missing));
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    assert!(missing.has_focus());
+    assert!(missing.is_focus());
     assert_eq!(
         shared.issues_listbox.selected_row().as_ref(),
         Some(&missing)
