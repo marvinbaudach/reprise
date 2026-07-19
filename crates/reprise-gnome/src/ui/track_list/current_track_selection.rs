@@ -395,10 +395,19 @@ mod tests {
             .shared
             .column_view
             .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
-        while gtk4::glib::MainContext::default().iteration(false) {}
         let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+        // `scroll_to` settles over later main-loop turns, so pumping once is not
+        // enough to establish the precondition. This is test setup, not the
+        // behaviour under test: wait until the viewport actually moved.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1000);
+        while adjustment.value() <= 0.0 && std::time::Instant::now() < deadline {
+            gtk4::glib::MainContext::default().iteration(false);
+        }
         let before = adjustment.value();
-        assert!(before > 0.0);
+        assert!(
+            before > 0.0,
+            "precondition: the list must be scrolled away from the top"
+        );
         track_list.shared.selection.select_item(10, true);
         track_list.update_current_track(track_id, None, true);
         while gtk4::glib::MainContext::default().iteration(false) {}
