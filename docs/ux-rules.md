@@ -1057,8 +1057,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Stunden („68 hours"; unter einer Stunde in Minuten, nie „0 hours"), eine
   Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
   Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
-  Sekundär-Ton. Rechts steht das Zeitraum-Dropdown („<Jahr> so far / <Vorjahr> /
-  All time / Last 30 days"). Darunter läuft ein schlankes Area-Ribbon der
+  Sekundär-Ton. Bei ausreichender Breite steht rechts das Zeitraum-Dropdown
+  („<Jahr> so far / <Vorjahr> / All time / Last 30 days"). Bevor Gesamtzeit
+  oder Pill ellipsieren, brechen Dropdown und Customize-Menü unter den Hero
+  um; bei noch engerer Breite steht die Pill unter dem Stundenanker. Darunter
+  läuft ein schlankes Area-Ribbon der
   Hörzeit, dessen Achse **exakt dem gewählten Zeitraum** folgt — „2026 so far"
   zeigt Jan–Jul, nie ein rollendes 12-Monats-Fenster. Der laufende Bucket ist
   offen markiert (gestrichelt, hohler Punkt), der Peak gesetzt; Hover nennt den
