@@ -313,7 +313,7 @@ fn finish_waveform(sum_squares: &[f64], counts: &[u64]) -> Vec<u8> {
         return vec![0; rms.len()];
     }
     rms.into_iter()
-        .map(|value| (value / maximum * 255.0).round() as u8)
+        .map(|value| ((value / maximum).sqrt() * 255.0).round() as u8)
         .collect()
 }
 

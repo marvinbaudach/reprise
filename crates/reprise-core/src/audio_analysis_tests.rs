@@ -1,4 +1,6 @@
 use super::*;
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 const SAMPLE_RATE: u32 = 8_000;
 const MAX_STREAMING_FRAME_BUFFER: usize = 256;
@@ -206,4 +208,27 @@ fn empty_chunks_and_a_partial_final_frame_are_safe() {
     let result = accumulator.finish().unwrap();
     assert_eq!(result.waveform_peaks.len(), 1_000);
     assert!(result.profile.intensity.value().get().is_finite());
+}
+
+#[test]
+fn backend_trait_object_receives_path_and_cancellation() {
+    struct FakeBackend;
+
+    impl AudioAnalysisBackend for FakeBackend {
+        fn analyze(
+            &self,
+            path: &Path,
+            cancelled: &AtomicBool,
+        ) -> Result<AnalysisOutput, AudioAnalysisError> {
+            assert_eq!(path, Path::new("fixture.wav"));
+            assert!(!cancelled.load(std::sync::atomic::Ordering::Acquire));
+            Ok(analyze(&sine(440.0, 0.1, 0.5)))
+        }
+    }
+
+    let backend: &dyn AudioAnalysisBackend = &FakeBackend;
+    let result = backend
+        .analyze(Path::new("fixture.wav"), &AtomicBool::new(false))
+        .unwrap();
+    assert_eq!(result.waveform_peaks.len(), 1_000);
 }

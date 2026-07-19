@@ -12,6 +12,10 @@ pub use accumulator::{
     project_profile, AnalysisOutput, AudioEvidenceAccumulator, AudioExtractionError,
 };
 
+#[path = "audio_analysis_backend.rs"]
+mod backend;
+pub use backend::{AudioAnalysisBackend, AudioAnalysisError};
+
 /// Bump only when decoding or evidence extraction changes and cached audio
 /// must be read again.
 pub const CURRENT_EXTRACTOR_VERSION: u32 = 1;
