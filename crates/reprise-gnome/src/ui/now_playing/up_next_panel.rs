@@ -58,6 +58,7 @@ fn format_up_next_footer_total(count: usize, total_duration_ms: i64) -> String {
 
 type OnJump = Rc<dyn Fn(QueueRow)>;
 type OnRemove = Rc<dyn Fn(QueueRow)>;
+type OnReorder = Rc<dyn Fn(QueueRow, QueueRow)>;
 
 struct RowWidgets {
     cover: gtk4::Image,
@@ -65,6 +66,7 @@ struct RowWidgets {
     artist: gtk4::Label,
     generation: Rc<Cell<u64>>,
     row: Cell<Option<QueueRow>>,
+    drop_target: gtk4::DropTarget,
 }
 
 pub(in crate::ui) struct UpNextPanel {
@@ -74,6 +76,7 @@ pub(in crate::ui) struct UpNextPanel {
     section_headers: Rc<RefCell<Vec<(u32, String)>>>,
     on_jump: Rc<RefCell<Option<OnJump>>>,
     on_remove: Rc<RefCell<Option<OnRemove>>>,
+    on_reorder: Rc<RefCell<Option<OnReorder>>>,
     conn: Rc<RefCell<Connection>>,
 }
 
@@ -87,7 +90,14 @@ impl UpNextPanel {
         let section_headers = Rc::new(RefCell::new(Vec::new()));
         let on_jump = Rc::new(RefCell::new(None));
         let on_remove = Rc::new(RefCell::new(None));
-        let factory = build_factory(cover_loader, &queue_sections, &on_jump, &on_remove);
+        let on_reorder = Rc::new(RefCell::new(None));
+        let factory = build_factory(
+            cover_loader,
+            &queue_sections,
+            &on_jump,
+            &on_remove,
+            &on_reorder,
+        );
         let selection = gtk4::NoSelection::new(Some(model.clone()));
         let rows = gtk4::ListView::new(Some(selection), Some(factory));
         rows.set_header_factory(Some(&build_header_factory(&section_headers)));
@@ -97,6 +107,7 @@ impl UpNextPanel {
             .vexpand(true)
             .child(&rows)
             .build();
+        install_drag_autoscroll(&scrolled);
         let empty = gtk4::Label::new(Some(&super::strings::text(super::strings::QUEUE_EMPTY)));
         empty.add_css_class("reprise-up-next-empty");
         empty.set_vexpand(true);
@@ -118,6 +129,7 @@ impl UpNextPanel {
             section_headers,
             on_jump,
             on_remove,
+            on_reorder,
             conn,
         })
     }
@@ -132,6 +144,10 @@ impl UpNextPanel {
 
     pub(in crate::ui) fn set_on_remove(&self, callback: impl Fn(QueueRow) + 'static) {
         *self.on_remove.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_reorder(&self, callback: impl Fn(QueueRow, QueueRow) + 'static) {
+        *self.on_reorder.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_queue_model(&self, model: &QueueViewModel) -> String {
@@ -205,6 +221,7 @@ fn build_factory(
     queue_sections: &Rc<RefCell<Vec<QueueSection>>>,
     on_jump: &Rc<RefCell<Option<OnJump>>>,
     on_remove: &Rc<RefCell<Option<OnRemove>>>,
+    on_reorder: &Rc<RefCell<Option<OnReorder>>>,
 ) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
     let states: Rc<RefCell<HashMap<usize, Rc<RowWidgets>>>> = Rc::new(RefCell::new(HashMap::new()));
@@ -212,6 +229,7 @@ fn build_factory(
         let states = states.clone();
         let on_jump = on_jump.clone();
         let on_remove = on_remove.clone();
+        let on_reorder = on_reorder.clone();
         factory.connect_setup(move |_, object| {
             let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
                 return;
@@ -236,6 +254,51 @@ fn build_factory(
                     callback(row);
                 }
             });
+            let drag_source = gtk4::DragSource::new();
+            drag_source.set_actions(gtk4::gdk::DragAction::MOVE);
+            let widgets_for_drag = widgets.clone();
+            drag_source.connect_prepare(move |_, _, _| {
+                let row = widgets_for_drag.row.get()?;
+                Some(gtk4::gdk::ContentProvider::for_value(
+                    &encode_drag_row(row).to_value(),
+                ))
+            });
+            row_widget.add_controller(drag_source);
+
+            let widgets_for_enter = widgets.clone();
+            widgets.drop_target.connect_enter(move |_, _, _| {
+                if matches!(widgets_for_enter.row.get(), Some(QueueRow::PlayNext(_))) {
+                    gtk4::gdk::DragAction::MOVE
+                } else {
+                    gtk4::gdk::DragAction::empty()
+                }
+            });
+            let widgets_for_drop = widgets.clone();
+            let on_reorder = on_reorder.clone();
+            widgets.drop_target.connect_drop(move |_, value, _, _| {
+                let Ok(payload) = value.get::<String>() else {
+                    return false;
+                };
+                let (Some(from), Some(to)) =
+                    (decode_drag_row(&payload), widgets_for_drop.row.get())
+                else {
+                    return false;
+                };
+                if !matches!(to, QueueRow::PlayNext(_)) {
+                    return false;
+                }
+                if crate::ui::track_list::queue_row_mapping::reorder_rows(from, to).is_none() {
+                    return false;
+                }
+                let callback = on_reorder.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(from, to);
+                    true
+                } else {
+                    false
+                }
+            });
+            row_widget.add_controller(widgets.drop_target.clone());
             states.borrow_mut().insert(list_item_key(item), widgets);
             item.set_child(Some(&row_widget));
         });
@@ -260,9 +323,15 @@ fn build_factory(
             let track = boxed.borrow::<Track>();
             widgets.title.set_label(&track.title);
             widgets.artist.set_label(&track.artist);
+            let row = classify(item.position(), &queue_sections.borrow());
+            widgets.row.set(row);
             widgets
-                .row
-                .set(classify(item.position(), &queue_sections.borrow()));
+                .drop_target
+                .set_actions(if matches!(row, Some(QueueRow::PlayNext(_))) {
+                    gtk4::gdk::DragAction::MOVE
+                } else {
+                    gtk4::gdk::DragAction::empty()
+                });
             let generation = widgets.generation.get().wrapping_add(1);
             widgets.generation.set(generation);
             CoverLoader::set_placeholder(&widgets.cover);
@@ -288,6 +357,9 @@ fn build_factory(
                 .generation
                 .set(widgets.generation.get().wrapping_add(1));
             widgets.row.set(None);
+            widgets
+                .drop_target
+                .set_actions(gtk4::gdk::DragAction::empty());
             widgets.title.set_label("");
             widgets.artist.set_label("");
             CoverLoader::set_placeholder(&widgets.cover);
@@ -357,8 +429,71 @@ fn build_row_widgets() -> (gtk4::Box, gtk4::Button, gtk4::Button, RowWidgets) {
             artist,
             generation: Rc::new(Cell::new(0)),
             row: Cell::new(None),
+            drop_target: gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::empty()),
         },
     )
+}
+
+fn encode_drag_row(row: QueueRow) -> String {
+    match row {
+        QueueRow::NowPlaying => "playing".to_owned(),
+        QueueRow::PlayNext(index) => format!("manual:{index}"),
+        QueueRow::UpNext(index) => format!("context:{index}"),
+    }
+}
+
+fn decode_drag_row(payload: &str) -> Option<QueueRow> {
+    let (section, index) = payload.split_once(':')?;
+    let index = index.parse().ok()?;
+    match section {
+        "manual" => Some(QueueRow::PlayNext(index)),
+        "context" => Some(QueueRow::UpNext(index)),
+        _ => None,
+    }
+}
+
+fn install_drag_autoscroll(scrolled: &gtk4::ScrolledWindow) {
+    const EDGE_PX: f64 = 48.0;
+    const STEP_PX: f64 = 24.0;
+
+    let motion = gtk4::DropControllerMotion::new();
+    let scrolled_for_motion = scrolled.clone();
+    motion.connect_motion(move |_, _, y| {
+        let adjustment = scrolled_for_motion.vadjustment();
+        adjustment.set_value(autoscroll_value(
+            adjustment.value(),
+            adjustment.lower(),
+            adjustment.upper(),
+            adjustment.page_size(),
+            f64::from(scrolled_for_motion.height()),
+            y,
+            EDGE_PX,
+            STEP_PX,
+        ));
+    });
+    scrolled.add_controller(motion);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn autoscroll_value(
+    current: f64,
+    lower: f64,
+    upper: f64,
+    page_size: f64,
+    height: f64,
+    pointer_y: f64,
+    edge: f64,
+    step: f64,
+) -> f64 {
+    let max = (upper - page_size).max(lower);
+    let next = if pointer_y < edge {
+        current - step
+    } else if pointer_y > height - edge {
+        current + step
+    } else {
+        current
+    };
+    next.clamp(lower, max)
 }
 
 pub(in crate::ui) fn css() -> String {
@@ -477,6 +612,30 @@ mod tests {
         assert_eq!(
             format_up_next_footer(&[90_000, 330_000]),
             "2 tracks · 7 minutes"
+        );
+    }
+
+    #[test]
+    fn panel_drag_payload_and_edge_autoscroll_are_bounded() {
+        assert_eq!(
+            decode_drag_row(&encode_drag_row(QueueRow::PlayNext(3))),
+            Some(QueueRow::PlayNext(3))
+        );
+        assert_eq!(
+            decode_drag_row(&encode_drag_row(QueueRow::UpNext(7))),
+            Some(QueueRow::UpNext(7))
+        );
+        assert_eq!(
+            autoscroll_value(100.0, 0.0, 500.0, 100.0, 300.0, 20.0, 48.0, 24.0),
+            76.0
+        );
+        assert_eq!(
+            autoscroll_value(390.0, 0.0, 500.0, 100.0, 300.0, 290.0, 48.0, 24.0),
+            400.0
+        );
+        assert_eq!(
+            autoscroll_value(100.0, 0.0, 500.0, 100.0, 300.0, 150.0, 48.0, 24.0),
+            100.0
         );
     }
 
