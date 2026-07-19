@@ -602,4 +602,37 @@ mod tests {
 
         assert!(state.button.is_visible());
     }
+
+    /// The reachability gap NR-8 closes. Every other test here enables the
+    /// module *after* inserting a release, so none of them walks the path a
+    /// real user takes: switch the plugin on while the table is still empty.
+    /// On that path the sparkle never appears, "Fetch now" lives inside the
+    /// popover behind it, and nothing else requests a fetch — so the feature
+    /// can never populate itself. Green rule-by-rule tests missed this because
+    /// the defect sits between the rules, not inside one.
+    #[test]
+    #[ignore = "UX NR-8 [geplant] — enabling the module must trigger the first fetch"]
+    fn nr_8_enabling_the_module_reaches_a_fetch() {
+        gtk4::init().unwrap();
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let conn = Rc::new(RefCell::new(conn));
+        let state =
+            NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), Rc::new(|| {}));
+
+        // The real user action: consent, with nothing fetched yet.
+        reprise_core::modules::set_enabled(
+            &conn.borrow(),
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+            true,
+        )
+        .unwrap();
+        state.render(false, false);
+
+        assert!(
+            state.button.is_visible(),
+            "enabling the module must leave a reachable entry point, otherwise \
+             the user consents and nothing can ever happen"
+        );
+    }
 }

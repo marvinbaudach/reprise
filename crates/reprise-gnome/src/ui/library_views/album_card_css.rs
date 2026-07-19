@@ -110,7 +110,7 @@ pub(in crate::ui) fn css() -> String {
            margin-top: 8px; }}\n\
          .{SUBTITLE_CLASS} {{ \
            font-size: 12px; \
-           color: alpha(@window_fg_color, 0.50); }}\n\
+           color: @reprise_secondary_fg_color; }}\n\
          .{SUBTITLE_CLASS}:hover {{ \
            text-decoration: underline; \
            text-decoration-color: alpha(@window_fg_color, 0.35); }}\n\

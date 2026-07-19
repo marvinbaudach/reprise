@@ -119,17 +119,6 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
-    /// One-shot marker armed by `activate_track` with the id the user just
-    /// started from the table (double-click/Enter/queue activation), telling
-    /// the next now-playing follow (`current_track_selection::
-    /// select_current_track`) to select the row but skip the viewport
-    /// centering — the row is already on screen under the pointer, so a
-    /// center would visibly yank the table. Consumed (`take`) on every
-    /// follow regardless of id so a stale marker from an activation that
-    /// never reached playback can't suppress a later auto-advance scroll.
-    /// A `Cell`: `Copy` payload, single-threaded UI access, same rationale
-    /// as `playing_track_id`.
-    pub(in crate::ui) suppress_follow_scroll: Cell<Option<i64>>,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
     /// eligible drag is in flight; the drop-indicator eligibility check in
@@ -172,17 +161,11 @@ pub(in crate::ui) struct Shared {
     /// set_source` (and the `REPRISE_SMOKE_SOURCE` hook); read by `reload`
     /// and `queue_ids_for_activation`.
     pub(in crate::ui) source: RefCell<ViewSource>,
-    /// Supplies the current queue's track ids, in play order, when `source`
-    /// is `ViewSource::Queue` — see `queries::query_track_window`'s doc
-    /// comment for why that source needs an explicit id list. Wired once at
-    /// construction (`TrackList::new`'s `queue_ids_provider` parameter) to a
-    /// closure over the `PlayerController`, which already exists by the
-    /// time `TrackList::new` runs (see `window::build`) — unlike `toast_
-    /// overlay`/`on_activate`, no post-construction injection dance is
-    /// needed here. A `Box<dyn Fn() -> Vec<i64>>`, not a `WeakRef`-style
-    /// seam: the closure itself only holds whatever `window::build` gives
-    /// it (typically a clone of `Option<Rc<PlayerController>>`), so there's
-    /// no ownership cycle back to `TrackList` to worry about.
+    /// Supplies the current queue projection when `source` is Queue. The
+    /// projection retains only Now Playing and manual ids; its playback-
+    /// context tail is exposed through bounded id windows (QUE-7). Wired at
+    /// construction to the shared window snapshot, with no ownership cycle
+    /// back to `TrackList`.
     pub(in crate::ui) queue_ids_provider: Box<dyn Fn() -> super::queue_sections::QueueViewModel>,
     /// The Queue source's current section layout (QUE-1) — written by
     /// `reload` from the provider's `QueueViewModel`, read by the header
@@ -446,6 +429,21 @@ impl TrackList {
     /// deferred NAV-5 scroll restore would clobber the jump's centering.
     pub fn forget_view_state(&self, source: &ViewSource) {
         self.shared.view_state_memory.borrow_mut().remove(source);
+    }
+
+    pub(in crate::ui) fn remember_current_view_state(&self) {
+        let source = self.current_source();
+        let state = super::view_state_memory::capture(&self.shared);
+        self.shared
+            .view_state_memory
+            .borrow_mut()
+            .insert(source, state);
+    }
+
+    pub(in crate::ui) fn restore_current_view_state(&self) {
+        let source = self.current_source();
+        let ids = self.shared.current_view_ids();
+        super::view_state_memory::restore_on_attach(&self.shared, &source, &ids);
     }
 
     pub fn set_on_play_next_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {

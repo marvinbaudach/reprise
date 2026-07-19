@@ -162,7 +162,7 @@ pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4:
     let label = gtk4::Label::new(Some(text));
     label.set_xalign(0.0);
     label.add_css_class("caption-heading");
-    label.add_css_class("dim-label");
+    label.add_css_class("reprise-text-secondary");
     label.set_margin_start(ROW_HORIZONTAL_MARGIN);
     label.set_margin_end(ROW_HORIZONTAL_MARGIN);
     label.set_margin_top(14);
@@ -354,7 +354,7 @@ mod tests {
         let label = row.child().unwrap().downcast::<gtk4::Label>().unwrap();
         assert_eq!(label.text(), "ISSUES");
         assert!(label.has_css_class("caption-heading"));
-        assert!(label.has_css_class("dim-label"));
+        assert!(label.has_css_class("reprise-text-secondary"));
     }
 
     #[test]
