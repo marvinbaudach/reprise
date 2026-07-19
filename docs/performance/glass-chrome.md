@@ -33,17 +33,27 @@ drawing is one 32 x 32 texture (4 KiB decoded RGBA) scaled behind the grid at
 not draw it. The runner reports the cold downscale, cold blur, and 1,000 cached
 lookups separately in `album-glow.json`.
 
-## 2026-07-19 local evidence
+## 2026-07-19 evidence
 
 The release microbenchmark on the implementation host used a generated
 1200 x 1200 gradient cover and measured 3.631 ms for the single downscale,
 0.114 ms for the single blur, and 3.745 ms total. The p95 of 1,000 cache hits
 was 0.571 microseconds. The resulting decoded texture is 4 KiB.
 
-The paired frame run is a **deferred host check**. Its isolated launch reached
-`dbus-run-session`, where the managed sandbox rejected creation of the private
-bus socket with `Operation not permitted`; consequently no baseline/glass
-frame numbers are claimed here. Run the command above in the normal host shell
-and retain `baseline.json`, `glass.json`, and `summary.json`. Native-Wayland
-visual quality and GPU completion remain a manual compositor check even after
-that CPU gate passes.
+The fully isolated host run used `GskGLRenderer`, 10 warm-up frames and 120
+retained frames per mode. Baseline measured 0.246 ms p95. Glass measured
+0.231 ms p95 and 0.435 ms maximum, with the fail-closed calculation reporting
+0 ms p95 overhead. All three budgets passed by wide margins: 20 ms p95, 50 ms
+maximum and 3 ms p95 overhead. The slightly lower Glass p95 is run noise, not
+evidence that blur improves performance; the overhead calculation deliberately
+saturates at zero.
+
+The paired run's AlbumView glow measured 3.829 ms for the cold downscale,
+0.110 ms for the cold blur, 3.939 ms total and 0.601 microseconds p95 over
+1,000 cached lookups. The decoded texture remained 4 KiB.
+
+These measurements prove the CPU paint-submission budget for the isolated X11
+GL path. They do not measure GPU completion, native-Wayland frame pacing or
+visual blur quality; those remain compositor/manual checks. The retained raw
+artifacts are `baseline.json`, `glass.json`, `album-glow.json` and
+`summary.json` from the same paired run.
