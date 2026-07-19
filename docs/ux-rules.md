@@ -877,6 +877,22 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Auswahl „Top artists only / all artists". Bei ausgeschaltetem Modul gibt es
   weder Fetch noch ✦; Cover-, Portrait- und Lyrics-Module gehören nicht zu
   dieser Regel und werden im Folge-Branch `feat/network-opt-in` geregelt.
+- **NR-8** [geplant] [gtk] — Das Einschalten des Moduls ist die Zustimmung und
+  löst deshalb sofort den ersten Abruf aus: `set_enabled(true)` stößt einen
+  Fetch an. Solange nie erfolgreich abgerufen wurde, bleibt ✦ **sichtbar** und
+  trägt einen Leerzustand („Checking for new releases…" während des Laufs,
+  danach „No upcoming releases from your artists"). Erst nach dem ersten
+  abgeschlossenen Durchlauf greift NR-5 wieder normal.
+  Zwei Kanten: Ein **fehlgeschlagener** erster Abruf (offline) hält ✦ sichtbar
+  mit Retry-Leerzustand, statt den Knopf verschwinden zu lassen — sonst
+  entsteht erneut „eingeschaltet, aber weg". Und der Erst-Leerzustand trägt
+  **keinen** Badge-Punkt: er ist Rückmeldung, keine Bitte (P-1).
+  *Grund:* NR-5 wurde formuliert, als Befüllen garantiert war. Opt-in hat den
+  Dauerzustand „aktiv, nie befüllt" geschaffen, für den es keinen Einstieg gab
+  — ✦ erscheint nur bei Einträgen, „Fetch now" sitzt im Popover hinter ✦, und
+  einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
+  kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
+  ausdrücklicher Aktivierung, nur sofort statt nie.
 
 ## S. Flächen & Geometrie
 
