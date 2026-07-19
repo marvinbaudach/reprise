@@ -163,9 +163,31 @@ fn request_delay(previous: Option<Instant>, now: Instant) -> Duration {
 }
 
 fn respect_rate_limit() {
-    respect_rate_limit_with(&LAST_REQUEST, &mut Instant::now, &mut std::thread::sleep);
+    let _ = wait_for_request_slot(&mut || false);
 }
 
+/// Shares MusicBrainz's process-wide request slot with cancellable jobs.
+/// Returns `false` when cancellation happens before the slot is acquired.
+pub(crate) fn wait_for_request_slot(cancelled: &mut dyn FnMut() -> bool) -> bool {
+    const SLICE: Duration = Duration::from_millis(50);
+    let mut previous = lock_unpoisoned(&LAST_REQUEST);
+    let mut delay = request_delay(*previous, Instant::now());
+    while !delay.is_zero() {
+        if cancelled() {
+            return false;
+        }
+        let slice = delay.min(SLICE);
+        std::thread::sleep(slice);
+        delay = delay.saturating_sub(slice);
+    }
+    if cancelled() {
+        return false;
+    }
+    *previous = Some(Instant::now());
+    true
+}
+
+#[cfg(test)]
 fn respect_rate_limit_with<N, S>(limiter: &Mutex<Option<Instant>>, now: &mut N, sleep: &mut S)
 where
     N: FnMut() -> Instant,

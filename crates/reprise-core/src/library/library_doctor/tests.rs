@@ -4,7 +4,9 @@ use lofty::prelude::*;
 use lofty::tag::ItemKey;
 use rusqlite::Connection;
 
+use super::remote::{RemoteProviderError, RemoteResolution, RemoteResolver, RemoteTrackMetadata};
 use super::*;
+use crate::fingerprint::FingerprintBackend;
 
 fn migrated_connection() -> Connection {
     let conn = crate::db::open(None).unwrap();
@@ -65,6 +67,304 @@ fn scan_selection(conn: &mut Connection, ids: Vec<i64>) -> DoctorScan {
         DoctorScanOutcome::Completed(scan) => scan,
         outcome => panic!("expected a completed scan, got {outcome:?}"),
     }
+}
+
+#[derive(Default)]
+struct CapturingRemoteResolver {
+    metadata: Vec<RemoteTrackMetadata>,
+}
+
+struct CollisionRemoteResolver;
+
+impl RemoteResolver for CollisionRemoteResolver {
+    fn resolve_track(
+        &mut self,
+        metadata: &RemoteTrackMetadata,
+        _: &Path,
+        _: Option<&dyn FingerprintBackend>,
+        control: &mut dyn FnMut() -> ScanControl,
+    ) -> Result<RemoteResolution, RemoteProviderError> {
+        let _ = control();
+        Ok(RemoteResolution {
+            proposals: vec![DoctorProposal {
+                track_id: 0,
+                field: DoctorField::Title,
+                current: DoctorValue::decode(DoctorField::Title, metadata.title.clone()),
+                proposed: DoctorValue::Text("Remote canonical title".into()),
+                source: ProposalSource::MusicBrainz,
+                confidence: 100,
+                preselected: false,
+                problem_class: ProblemClass::CasingWhitespace,
+                evidence: Vec::new(),
+                local_fallback: None,
+            }],
+            groups: Vec::new(),
+        })
+    }
+}
+
+struct YearGroupResolver;
+
+impl RemoteResolver for YearGroupResolver {
+    fn resolve_track(
+        &mut self,
+        _: &RemoteTrackMetadata,
+        _: &Path,
+        _: Option<&dyn FingerprintBackend>,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> Result<RemoteResolution, RemoteProviderError> {
+        let evidence = RemoteEvidence {
+            source: RemoteEvidenceSource::MusicBrainz,
+            confidence: 80,
+            recording_mbid: None,
+            release_mbid: None,
+            release_group_mbid: None,
+            artist_mbid: None,
+            release_artist_mbid: None,
+            title: None,
+            artist: None,
+            album: None,
+            year: Some(2024),
+            duration_ms: None,
+            duration_delta_ms: None,
+        };
+        Ok(RemoteResolution {
+            proposals: Vec::new(),
+            groups: vec![DoctorUnresolvedGroup {
+                field: DoctorField::Year,
+                group_key: "remote:year".into(),
+                candidates: vec![
+                    DoctorCandidate {
+                        value: DoctorValue::Year(2024),
+                        count: 1,
+                        evidence: vec![evidence.clone()],
+                    },
+                    DoctorCandidate {
+                        value: DoctorValue::Year(2023),
+                        count: 1,
+                        evidence: vec![evidence],
+                    },
+                ],
+                members: vec![DoctorGroupMember {
+                    track_id: 0,
+                    current: DoctorValue::Empty,
+                }],
+                local_fallback: None,
+            }],
+        })
+    }
+}
+
+impl RemoteResolver for CapturingRemoteResolver {
+    fn resolve_track(
+        &mut self,
+        metadata: &RemoteTrackMetadata,
+        _: &Path,
+        _: Option<&dyn FingerprintBackend>,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> Result<RemoteResolution, RemoteProviderError> {
+        self.metadata.push(metadata.clone());
+        Ok(RemoteResolution {
+            proposals: vec![DoctorProposal {
+                track_id: 0,
+                field: DoctorField::Year,
+                current: DoctorValue::Empty,
+                proposed: DoctorValue::Year(2024),
+                source: ProposalSource::MusicBrainz,
+                confidence: 88,
+                preselected: false,
+                problem_class: ProblemClass::MissingWrongYear,
+                evidence: vec![RemoteEvidence {
+                    source: RemoteEvidenceSource::MusicBrainz,
+                    confidence: 88,
+                    recording_mbid: None,
+                    release_mbid: None,
+                    release_group_mbid: None,
+                    artist_mbid: None,
+                    release_artist_mbid: None,
+                    title: Some("Actual title".into()),
+                    artist: Some("Actual Artist".into()),
+                    album: Some("Actual Album".into()),
+                    year: Some(2024),
+                    duration_ms: None,
+                    duration_delta_ms: None,
+                }],
+                local_fallback: None,
+            }],
+            groups: Vec::new(),
+        })
+    }
+}
+
+#[test]
+fn remote_scan_uses_actual_allowlisted_tags_and_persists_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture_copy(dir.path(), "database-placeholder.flac");
+    write_tags(
+        &path,
+        "Actual title",
+        "Actual Artist",
+        "Actual Album",
+        "Actual Artist",
+        "Rock",
+    );
+    let mut conn = migrated_connection();
+    insert_track(&conn, 1, &path, "Database placeholder");
+    let mut resolver = CapturingRemoteResolver::default();
+
+    let outcome = LibraryDoctor::new(&mut conn)
+        .scan_with_resolver(
+            &DoctorScanRequest {
+                scope: DoctorScopeRequest::Selection { track_ids: vec![1] },
+                options: DoctorScanOptions {
+                    remote_enabled: true,
+                },
+            },
+            None,
+            &mut resolver,
+            &mut |_| ScanControl::Continue,
+        )
+        .unwrap();
+
+    let DoctorScanOutcome::Completed(scan) = outcome else {
+        panic!("scan must complete")
+    };
+    assert_eq!(resolver.metadata[0].title.as_deref(), Some("Actual title"));
+    assert!(!serde_json::to_string(&resolver.metadata[0])
+        .unwrap()
+        .contains("placeholder"));
+    let restored = LibraryDoctor::new(&mut conn)
+        .last_complete_scan()
+        .unwrap()
+        .unwrap();
+    assert_eq!(restored.proposals, scan.proposals);
+    assert_eq!(restored.proposals.last().unwrap().evidence.len(), 1);
+}
+
+#[test]
+fn remote_merge_keeps_one_active_row_and_preserves_the_local_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture_copy(dir.path(), "collision.flac");
+    write_tags(
+        &path,
+        "  Local title  ",
+        "Artist",
+        "Album",
+        "Artist",
+        "Rock",
+    );
+    let mut conn = migrated_connection();
+    insert_track(&conn, 1, &path, "Artist");
+
+    let outcome = LibraryDoctor::new(&mut conn)
+        .scan_with_resolver(
+            &DoctorScanRequest {
+                scope: DoctorScopeRequest::Selection { track_ids: vec![1] },
+                options: DoctorScanOptions {
+                    remote_enabled: true,
+                },
+            },
+            None,
+            &mut CollisionRemoteResolver,
+            &mut |_| ScanControl::Continue,
+        )
+        .unwrap();
+    let DoctorScanOutcome::Completed(scan) = outcome else {
+        panic!("scan must complete")
+    };
+    let active = scan
+        .proposals
+        .iter()
+        .filter(|proposal| proposal.track_id == 1 && proposal.field == DoctorField::Title)
+        .collect::<Vec<_>>();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].source, ProposalSource::MusicBrainz);
+    assert_eq!(
+        active[0].local_fallback,
+        Some(DoctorLocalFallback::Proposal {
+            proposed: DoctorValue::Text("Local title".into()),
+            confidence: 100,
+            problem_class: ProblemClass::CasingWhitespace,
+        })
+    );
+    assert!(!scan.unresolved_groups.iter().any(|group| {
+        group.field == DoctorField::Title && group.members.iter().any(|member| member.track_id == 1)
+    }));
+    let restored = LibraryDoctor::new(&mut conn)
+        .last_complete_scan()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        restored.proposals[0].local_fallback,
+        active[0].local_fallback
+    );
+}
+
+#[test]
+fn combined_scan_progress_is_monotonic_and_completes_after_remote_resolution() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut conn = migrated_connection();
+    for id in 1..=2 {
+        let path = fixture_copy(dir.path(), &format!("progress-{id}.flac"));
+        write_tags(&path, "Title", "Artist", "Album", "Artist", "Rock");
+        insert_track(&conn, id, &path, "Artist");
+    }
+    let mut progress = Vec::new();
+    let outcome = LibraryDoctor::new(&mut conn)
+        .scan_with_resolver(
+            &DoctorScanRequest {
+                scope: DoctorScopeRequest::Selection {
+                    track_ids: vec![1, 2],
+                },
+                options: DoctorScanOptions {
+                    remote_enabled: true,
+                },
+            },
+            None,
+            &mut CollisionRemoteResolver,
+            &mut |item| {
+                progress.push((item.completed_tracks, item.total_tracks));
+                ScanControl::Continue
+            },
+        )
+        .unwrap();
+    assert!(matches!(outcome, DoctorScanOutcome::Completed(_)));
+    assert!(progress.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+    assert_eq!(progress.last(), Some(&(2, 2)));
+    assert_eq!(progress.iter().filter(|item| **item == (2, 2)).count(), 1);
+}
+
+#[test]
+fn remote_year_manual_candidates_roundtrip_with_typed_values_and_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture_copy(dir.path(), "year-group.flac");
+    write_tags(&path, "Title", "Artist", "Album", "Artist", "Rock");
+    let mut conn = migrated_connection();
+    insert_track(&conn, 1, &path, "Artist");
+    LibraryDoctor::new(&mut conn)
+        .scan_with_resolver(
+            &DoctorScanRequest {
+                scope: DoctorScopeRequest::Selection { track_ids: vec![1] },
+                options: DoctorScanOptions {
+                    remote_enabled: true,
+                },
+            },
+            None,
+            &mut YearGroupResolver,
+            &mut |_| ScanControl::Continue,
+        )
+        .unwrap();
+    let restored = LibraryDoctor::new(&mut conn)
+        .last_complete_scan()
+        .unwrap()
+        .unwrap();
+    let group = restored
+        .unresolved_groups
+        .iter()
+        .find(|group| group.field == DoctorField::Year)
+        .unwrap();
+    assert_eq!(group.candidates[0].value, DoctorValue::Year(2024));
+    assert_eq!(group.candidates[0].evidence[0].year, Some(2024));
 }
 
 #[test]
@@ -169,10 +469,12 @@ fn local_tie_is_visible_without_a_default_proposal() {
             DoctorCandidate {
                 value: DoctorValue::Text("CHVRCHES".into()),
                 count: 1,
+                evidence: Vec::new(),
             },
             DoctorCandidate {
                 value: DoctorValue::Text("chvrches".into()),
                 count: 1,
+                evidence: Vec::new(),
             },
         ]
     );

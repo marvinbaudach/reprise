@@ -77,9 +77,9 @@ pub(super) fn persist_complete_scan(
     {
         let mut statement = transaction.prepare(
             "INSERT INTO library_doctor_proposals \
-             (scan_id, position, track_id, field, current_value, proposed_value, source, \
-              confidence, preselected, problem_class) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         (scan_id, position, track_id, field, current_value, proposed_value, source, \
+              confidence, preselected, problem_class, evidence_json, local_fallback_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         )?;
         for (position, proposal) in proposals.iter().enumerate() {
             statement.execute(rusqlite::params![
@@ -92,31 +92,45 @@ pub(super) fn persist_complete_scan(
                 proposal.source.as_str(),
                 proposal.confidence,
                 proposal.preselected,
-                proposal.problem_class.as_str()
+                proposal.problem_class.as_str(),
+                serde_json::to_string(&proposal.evidence).map_err(|error| {
+                    DoctorError::InvalidStoredData(format!("remote evidence: {error}"))
+                })?,
+                serde_json::to_string(&proposal.local_fallback).map_err(|error| {
+                    DoctorError::InvalidStoredData(format!("local fallback: {error}"))
+                })?
             ])?;
         }
     }
     for (position, group) in unresolved_groups.iter().enumerate() {
         transaction.execute(
-            "INSERT INTO library_doctor_groups (scan_id, position, field, group_key) \
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO library_doctor_groups \
+             (scan_id, position, field, group_key, local_fallback_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![
                 scan_id,
                 i64::try_from(position).unwrap_or(i64::MAX),
                 group.field.as_str(),
-                group.group_key
+                group.group_key,
+                serde_json::to_string(&group.local_fallback).map_err(|error| {
+                    DoctorError::InvalidStoredData(format!("local fallback: {error}"))
+                })?
             ],
         )?;
         let group_id = transaction.last_insert_rowid();
         for (candidate_position, candidate) in group.candidates.iter().enumerate() {
             transaction.execute(
                 "INSERT INTO library_doctor_group_candidates \
-                 (group_id, position, candidate_value, candidate_count) VALUES (?1, ?2, ?3, ?4)",
+                 (group_id, position, candidate_value, candidate_count, evidence_json) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![
                     group_id,
                     i64::try_from(candidate_position).unwrap_or(i64::MAX),
                     candidate.value.encode().unwrap_or_default(),
-                    i64::try_from(candidate.count).unwrap_or(i64::MAX)
+                    i64::try_from(candidate.count).unwrap_or(i64::MAX),
+                    serde_json::to_string(&candidate.evidence).map_err(|error| {
+                        DoctorError::InvalidStoredData(format!("remote evidence: {error}"))
+                    })?
                 ],
             )?;
         }
@@ -276,7 +290,8 @@ fn current_identity(
 fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>, DoctorError> {
     let mut statement = conn.prepare(
         "SELECT track_id, field, current_value, proposed_value, source, confidence, \
-         preselected, problem_class FROM library_doctor_proposals \
+         preselected, problem_class, evidence_json, local_fallback_json \
+         FROM library_doctor_proposals \
          WHERE scan_id=?1 ORDER BY position",
     )?;
     let proposals = statement
@@ -314,6 +329,22 @@ fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>
                 confidence: row.get(5)?,
                 preselected: row.get(6)?,
                 problem_class,
+                evidence: serde_json::from_str(&row.get::<_, String>(8)?).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        8,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?,
+                local_fallback: serde_json::from_str(&row.get::<_, String>(9)?).map_err(
+                    |error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            9,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    },
+                )?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()
@@ -324,7 +355,7 @@ fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>
 fn load_groups(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorUnresolvedGroup>, DoctorError> {
     let groups = conn
         .prepare(
-            "SELECT id, field, group_key FROM library_doctor_groups \
+            "SELECT id, field, group_key, local_fallback_json FROM library_doctor_groups \
              WHERE scan_id=?1 ORDER BY position",
         )?
         .query_map([scan_id], |row| {
@@ -332,30 +363,40 @@ fn load_groups(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorUnresolvedGr
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     groups
         .into_iter()
-        .map(|(group_id, field_text, group_key)| {
+        .map(|(group_id, field_text, group_key, local_fallback_json)| {
             let field = DoctorField::parse(&field_text)
                 .ok_or_else(|| DoctorError::InvalidStoredData(format!("field {field_text}")))?;
             let candidates = conn
                 .prepare(
-                    "SELECT candidate_value, candidate_count \
+                    "SELECT candidate_value, candidate_count, evidence_json \
                      FROM library_doctor_group_candidates WHERE group_id=?1 ORDER BY position",
                 )?
                 .query_map([group_id], |row| {
                     let count = row.get::<_, i64>(1)?;
-                    Ok((DoctorValue::from_text(&row.get::<_, String>(0)?), count))
+                    Ok((
+                        DoctorValue::decode(field, Some(row.get::<_, String>(0)?)),
+                        count,
+                        row.get::<_, String>(2)?,
+                    ))
                 })?
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
-                .map(|(value, count)| DoctorCandidate {
-                    value,
-                    count: usize::try_from(count).unwrap_or_default(),
+                .map(|(value, count, evidence)| {
+                    Ok(DoctorCandidate {
+                        value,
+                        count: usize::try_from(count).unwrap_or_default(),
+                        evidence: serde_json::from_str(&evidence).map_err(|error| {
+                            DoctorError::InvalidStoredData(format!("remote evidence: {error}"))
+                        })?,
+                    })
                 })
-                .collect();
+                .collect::<Result<Vec<_>, DoctorError>>()?;
             let members = conn
                 .prepare(
                     "SELECT track_id, current_value FROM library_doctor_group_members \
@@ -373,6 +414,9 @@ fn load_groups(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorUnresolvedGr
                 group_key,
                 candidates,
                 members,
+                local_fallback: serde_json::from_str(&local_fallback_json).map_err(|error| {
+                    DoctorError::InvalidStoredData(format!("local fallback: {error}"))
+                })?,
             })
         })
         .collect()

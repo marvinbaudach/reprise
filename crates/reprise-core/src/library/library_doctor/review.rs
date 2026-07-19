@@ -49,6 +49,7 @@ pub struct DoctorReviewRow {
     pub proposed: DoctorValue,
     pub source: ProposalSource,
     pub confidence: u8,
+    pub evidence: Vec<super::remote::RemoteEvidence>,
     pub problem_class: ProblemClass,
     pub state: DoctorReviewRowState,
     pub selected: bool,
@@ -208,6 +209,7 @@ impl DoctorReviewSession {
                 proposed: proposal.proposed,
                 source: proposal.source,
                 confidence: proposal.confidence,
+                evidence: proposal.evidence,
                 problem_class: proposal.problem_class,
                 state,
                 selected: state == DoctorReviewRowState::Ready && is_local_safe,
@@ -350,13 +352,23 @@ impl DoctorReviewSession {
             .iter()
             .find(|group| group.id == group_id)
             .ok_or(DoctorReviewError::UnknownGroup)?;
-        if !group
+        let chosen = group
             .candidates
             .iter()
-            .any(|existing| &existing.value == candidate)
-        {
-            return Err(DoctorReviewError::InvalidCandidate);
-        }
+            .find(|existing| &existing.value == candidate)
+            .cloned()
+            .ok_or(DoctorReviewError::InvalidCandidate)?;
+        let confidence = chosen
+            .evidence
+            .iter()
+            .map(|evidence| evidence.confidence)
+            .min()
+            .unwrap_or(100);
+        let source = match chosen.evidence.first().map(|evidence| evidence.source) {
+            Some(super::remote::RemoteEvidenceSource::AcoustId) => ProposalSource::AcoustId,
+            Some(super::remote::RemoteEvidenceSource::MusicBrainz) => ProposalSource::MusicBrainz,
+            None => ProposalSource::Local,
+        };
         let templates = self
             .tie_templates
             .get(&group_id)
@@ -388,8 +400,9 @@ impl DoctorReviewSession {
                 field: template.field,
                 current: template.current,
                 proposed: candidate.clone(),
-                source: ProposalSource::Local,
-                confidence: 100,
+                source,
+                confidence,
+                evidence: chosen.evidence.clone(),
                 problem_class: tie_problem_class(template.field),
                 state,
                 selected,

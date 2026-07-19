@@ -29,6 +29,8 @@ fn proposal(track_id: i64, field: DoctorField, source: ProposalSource) -> Doctor
         },
         preselected: source == ProposalSource::Local,
         problem_class: ProblemClass::CasingWhitespace,
+        evidence: Vec::new(),
+        local_fallback: None,
     }
 }
 
@@ -66,8 +68,10 @@ fn unresolved_group(
             .map(|(value, count)| DoctorCandidate {
                 value: DoctorValue::Text((*value).into()),
                 count: *count,
+                evidence: Vec::new(),
             })
             .collect(),
+        local_fallback: None,
         members: members
             .iter()
             .map(|(track_id, current)| DoctorGroupMember {

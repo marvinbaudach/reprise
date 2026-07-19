@@ -75,6 +75,38 @@ fn continue_job(_: DoctorWriteProgress) -> DoctorWriteControl {
     DoctorWriteControl::Continue
 }
 
+struct PaddedRemoteResolver;
+
+impl super::remote::RemoteResolver for PaddedRemoteResolver {
+    fn resolve_track(
+        &mut self,
+        metadata: &super::remote::RemoteTrackMetadata,
+        _: &Path,
+        _: Option<&dyn crate::fingerprint::FingerprintBackend>,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> Result<super::remote::RemoteResolution, super::remote::RemoteProviderError> {
+        Ok(super::remote::arbitrate(
+            metadata,
+            &[super::remote::RemoteIdentity {
+                source: super::remote::RemoteEvidenceSource::MusicBrainz,
+                confidence: 100,
+                recording_mbid: None,
+                release_mbid: None,
+                release_group_mbid: None,
+                artist_mbid: None,
+                release_artist_mbid: None,
+                title: None,
+                artist: Some("Canonical artist".into()),
+                album: None,
+                album_artist: None,
+                release_year: None,
+                original_release_year: None,
+                duration_ms: None,
+            }],
+        ))
+    }
+}
+
 #[test]
 fn doc_apply_writes_only_checked() {
     let dir = tempfile::tempdir().unwrap();
@@ -94,6 +126,55 @@ fn doc_apply_writes_only_checked() {
     assert_eq!(report.updated_tracks, 1);
     assert_eq!(report.rows.len(), 1);
     assert_eq!(report.rows[0].state, DoctorWriteRowState::Applied);
+}
+
+#[test]
+fn remote_review_preserves_raw_current_tag_for_guarded_apply() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), "padded.flac", " Old artist ", "Album");
+    let mut conn = crate::db::open(None).unwrap();
+    crate::db::migrate(&conn).unwrap();
+    let ids = seed(&mut conn, std::slice::from_ref(&path));
+    let mut resolver = PaddedRemoteResolver;
+    let outcome = LibraryDoctor::new(&mut conn)
+        .scan_with_resolver(
+            &DoctorScanRequest {
+                scope: DoctorScopeRequest::Selection {
+                    track_ids: ids.clone(),
+                },
+                options: DoctorScanOptions {
+                    remote_enabled: true,
+                },
+            },
+            None,
+            &mut resolver,
+            &mut |_| ScanControl::Continue,
+        )
+        .unwrap();
+    let DoctorScanOutcome::Completed(scan) = outcome else {
+        panic!("scan must complete")
+    };
+    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AllChanges);
+    let row = review
+        .rows()
+        .iter()
+        .find(|row| row.field == DoctorField::Artist)
+        .unwrap();
+    assert_eq!(row.source, ProposalSource::MusicBrainz);
+    assert_eq!(row.current, DoctorValue::Text(" Old artist ".into()));
+    let row_id = row.id;
+    review.set_selected(row_id, true).unwrap();
+
+    let report = LibraryDoctor::new(&mut conn)
+        .apply_review_plan(&review.freeze_plan(), continue_job)
+        .unwrap();
+
+    assert_eq!(
+        read_editable_tags(&path).unwrap().artist,
+        "Canonical artist"
+    );
+    assert_eq!(report.updated_tracks, 1);
+    assert_eq!(report.conflict_tracks, 0);
 }
 
 #[test]
@@ -546,6 +627,8 @@ fn doc_5a_recording_mbid_uses_the_guarded_review_write_path() {
         confidence: 100,
         preselected: false,
         problem_class: ProblemClass::MissingRecordingMbid,
+        evidence: Vec::new(),
+        local_fallback: None,
     });
     let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AllChanges);
     let row = review

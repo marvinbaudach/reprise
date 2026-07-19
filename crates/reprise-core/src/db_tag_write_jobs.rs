@@ -145,6 +145,15 @@ mod tests {
     fn migration_v19_creates_constrained_tag_write_journal() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "DROP TRIGGER tag_write_journal_identity_immutable;
+             DROP TABLE tag_write_journal;
+             DROP TABLE tag_write_job_files;
+             DROP TABLE tag_write_jobs;
+             PRAGMA user_version=18;",
+        )
+        .unwrap();
+        super::migrate_v19(&conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))

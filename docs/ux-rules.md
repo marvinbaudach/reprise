@@ -1162,7 +1162,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Gruppierung; geschrieben wird immer ein realer Gewinner. Title Case,
   Genre-Aliaslisten, Fuzzy-Matching und erfundene Ersatzwerte sind verboten.
 
-- **DOC-1b** [geplant] [core] — **Remote bleibt eine getrennte Quelle.**
+- **DOC-1b** [aktiv] [core] — **Remote bleibt eine getrennte Quelle.**
   Bei eingeschalteten MusicBrainz/AcoustID-Vorschlägen gilt die sparsame
   Kaskade: gültige eingebettete MBIDs zuerst, MusicBrainz nur für danach
   ungelöste Metadaten, AcoustID-Fingerprint nur für weiterhin ungelöste
@@ -1263,7 +1263,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   „Apply N tracks"; daneben „X tag changes · M files · undo available
   after".
 
-- **DOC-4a** [geplant] [core] — **Konfidenz wählt nie für den Nutzer.**
+- **DOC-4a** [aktiv] [core] — **Konfidenz wählt nie für den Nutzer.**
   Eindeutige Local-Fixes sind vorausgewählt; Remote-Vorschläge,
   Gleichstände, stale Zeilen und Konflikte nie. Eine gültige direkt
   aufgelöste MBID trägt 100 %, sonst bleibt der native MusicBrainz- bzw.

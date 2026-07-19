@@ -560,6 +560,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     }
     crate::db_library_doctor::migrate_v18(conn)?;
     crate::db_tag_write_jobs::migrate_v19(conn)?;
+    crate::db_library_doctor_remote::migrate_v20(conn)?;
     Ok(())
 }
 
