@@ -370,7 +370,9 @@ run_library_doctor_scenario() {
   cua_activate_main_menu_item \
     "$APP_PID" "$WINDOW_ID" "Preferences" doctor-preferences
   wait_for_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-preferences-open >/dev/null
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-plugins-page
+  cua_focus_label_via_key "$APP_PID" "$WINDOW_ID" "Plugins" down doctor-plugins-focus \
+    >/dev/null
+  cua_press_key_window "$APP_PID" "$WINDOW_ID" enter doctor-plugins-enter
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin-enabled >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-disable
   wait_for_label \
