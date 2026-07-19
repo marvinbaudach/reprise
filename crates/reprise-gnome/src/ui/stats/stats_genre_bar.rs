@@ -8,9 +8,10 @@ use reprise_core::library::stats_snapshot::GenreSection;
 
 type UnifyCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
+#[derive(Clone)]
 pub(in crate::ui) struct StatsGenreBar {
     root: gtk4::Box,
-    segments: gtk4::Box,
+    segments: gtk4::Grid,
     legend: gtk4::Box,
     on_unify: UnifyCallback,
 }
@@ -19,7 +20,10 @@ impl StatsGenreBar {
     pub(in crate::ui) fn new() -> Self {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
         root.add_css_class("stats-genre-spectrum");
-        let segments = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+        let segments = gtk4::Grid::builder()
+            .column_spacing(2)
+            .column_homogeneous(true)
+            .build();
         segments.add_css_class("stats-genre-bar");
         segments.set_height_request(20);
         root.append(&segments);
@@ -39,19 +43,21 @@ impl StatsGenreBar {
     }
 
     pub(in crate::ui) fn set_data(&self, section: &GenreSection) {
-        clear(&self.segments);
+        clear_grid(&self.segments);
         clear(&self.legend);
+        let mut column = 0;
         for (index, segment) in section.segments.iter().enumerate() {
             let bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
             bar.add_css_class("stats-genre-segment");
             bar.add_css_class(&format!("stats-genre-segment-{}", index.min(5)));
             bar.set_hexpand(true);
-            bar.set_width_request(segment.share_percent.max(1) as i32);
             bar.set_tooltip_text(Some(&format!(
                 "{}: {}%",
                 segment.label, segment.share_percent
             )));
-            self.segments.append(&bar);
+            let width = segment.share_percent.max(1) as i32;
+            self.segments.attach(&bar, column, 0, width, 1);
+            column += width;
 
             let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
             let dot = gtk4::Label::new(Some("\u{2022}"));
@@ -93,6 +99,12 @@ impl StatsGenreBar {
 }
 
 fn clear(container: &gtk4::Box) {
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+}
+
+fn clear_grid(container: &gtk4::Grid) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }

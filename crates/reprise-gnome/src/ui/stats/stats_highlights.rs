@@ -8,8 +8,10 @@ use reprise_core::library::stats_snapshot::HighlightsSection;
 
 type VoidCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
+#[derive(Clone)]
 pub(in crate::ui) struct StatsHighlights {
     root: gtk4::Box,
+    #[cfg_attr(not(test), allow(dead_code))]
     grid: gtk4::Grid,
     values: [gtk4::Label; 4],
     on_create_mix: VoidCallback,

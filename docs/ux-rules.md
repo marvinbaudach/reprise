@@ -920,7 +920,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Ereignis einzeln durch sie hindurch, damit Sommer-/Winterzeit-Wechsel keine
   Grenze verschieben. Alles ist lokal: kein Netz, keine Cloud, keine
   Fremdquelle wird eingemischt.
-- **STATS-1** [geplant] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß, eine
+- **STATS-1** [aktiv] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß, eine
   Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
   Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
   Sekundär-Ton. Rechts steht das Zeitraum-Dropdown („<Jahr> so far / <Vorjahr> /
@@ -936,7 +936,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   „Go to artist" (regulärer NAV-Push mit Back-Historie). Hinter dem Cover liegt
   ein dezenter Cover-Akzent-Glow — der Cover-Akzent bleibt Playback-Elementen
   vorbehalten. Darunter nennt eine Ghost-Zeile die Ränge 2–5.
-- **STATS-3** [geplant] [core] — Das Genre-Spektrum ist **eine** horizontale
+- **STATS-3** [aktiv] [core] — Das Genre-Spektrum ist **eine** horizontale
   Segment-Leiste in Teal-Abstufungen mit Legende (Punkt · Name · %), gespeist
   aus den Genre-Tags der Bibliothek. Die fünf stärksten Genres bilden eigene
   Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
@@ -952,16 +952,16 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   echte Smart Playlist anlegt. Tages- und Stundengrenzen folgen der lokalen
   Zeit des Nutzers, nicht UTC. Im schmalen Fenster klappt die Reihe per
   AdwBreakpoint einspaltig, ohne dass sich die Reihenfolge ändert.
-- **STATS-5** [geplant] [core] — Top Tracks steht über die volle Breite:
+- **STATS-5** [aktiv] [core] — Top Tracks steht über die volle Breite:
   nummerierte Liste mit Cover, Titel und Artist, relativem Play-Balken und
   Play-Count, mit Sort-Toggle „by plays / by time". Der Balken ist relativ zum
   Spitzenreiter der Liste, nie zu einem absoluten Maximum.
-- **STATS-6** [geplant] [core] — Leere und dünne Datenlagen werden nie als
+- **STATS-6** [aktiv] [core] — Leere und dünne Datenlagen werden nie als
   leere Diagramme gezeigt. Ohne Hörhistorie im Zeitraum erscheint ein
   freundlicher Leerzustand („Start listening to see your stats") statt Achsen
   mit einem einsamen Balken. Bei dünner Datenlage wird die Granularität feiner
   (Tage bzw. Wochen statt größtenteils leerer Monate).
-- **STATS-7** [geplant] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
+- **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
   kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
   Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
   über Sitzungen erhalten. Mehr enthält das Menü nicht — das Spotlight ist

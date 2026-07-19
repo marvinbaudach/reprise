@@ -29,6 +29,7 @@ struct HourlyData {
     peak_hours: [bool; 24],
 }
 
+#[derive(Clone)]
 pub(in crate::ui) struct HourlyChart {
     root: gtk4::Box,
     area: gtk4::DrawingArea,
