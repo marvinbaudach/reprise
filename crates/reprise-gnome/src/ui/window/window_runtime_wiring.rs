@@ -167,77 +167,79 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             info_panel_for_queue.show_up_next();
         });
 
-        // NAV-9 "Jump to Now Playing": cover/title clicks and Ctrl+L
-        // navigate to the playing track's home (its play origin), then
-        // select + center its row. The sidebar routing pushes the left
-        // place onto the NAV-2 history, so Back returns here.
-        let jump_to_now_playing = {
-            let player = Rc::downgrade(player);
-            let sidebar = sidebar.clone();
-            let track_list = track_list.clone();
-            let nav_history = nav_history.clone();
-            let content_stack = content_stack.clone();
-            let library_stack = library_views.stack.clone();
-            let album_grid = album_view.grid_widget().clone();
-            Rc::new(move || {
-                let Some(player) = player.upgrade() else {
-                    return;
-                };
-                let origin = player
-                    .current_play_origin()
-                    .map_or(ViewSource::Library, |origin| origin.source);
-                // An explicit jump supersedes NAV-5's remembered viewport
-                // for the target — centering must own the scroll position.
-                track_list.forget_view_state(&origin);
-                // Re-baseline the sidebar's dedup: cross-navigation paths
-                // (album/artist cards, smoke hooks) switch the table without
-                // it, and a stale baseline would swallow this selection.
-                crate::ui::sidebar_session::sync_current_source(
-                    &sidebar.shared,
-                    &track_list.current_source(),
-                );
-                // Route via `route_to_place`, not `refresh_and_select`: a
-                // row-less origin (Album/Artist detail) would otherwise be
-                // substituted with Library by the sidebar's fallback. The
-                // explicit `record_route` pushes the left place for such
-                // origins (row-backed ones would record via `on_select`
-                // anyway; the duplicate is suppressed).
-                let place = crate::ui::nav_history::NavPlace::source(
-                    origin.clone(),
-                    Some(super::library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
-                );
-                nav_history.record_route(&place);
-                super::library_shell::route_to_place(
-                    &place,
-                    &sidebar,
-                    &track_list,
-                    &content_stack,
-                    &library_stack,
-                    &album_grid,
-                    "jump to now playing",
-                );
-                // Deferred one main-loop round: the routed reload above has
-                // scheduled idle work of its own; centering runs after the
-                // rebuilt list exists (select_current_track keeps its own
-                // no-geometry fallback).
-                let player = Rc::downgrade(&player);
-                gtk4::glib::idle_add_local_once(move || {
-                    if let Some(player) = player.upgrade() {
-                        player.notify_restored_current_track();
-                    }
-                });
-            })
-        };
+        // NAV-9a remains Ctrl+L only: jump to the loaded track's origin,
+        // select it and center its row.
+        let jump_to_current_track = super::current_track_jump::runtime_coordinator(
+            &super::current_track_jump::JumpContext {
+                player: Rc::downgrade(player),
+                sidebar: sidebar.clone(),
+                track_list: track_list.clone(),
+                nav_history: nav_history.clone(),
+                content_stack: content_stack.clone(),
+                library_stack: library_views.stack.clone(),
+                album_grid: album_view.grid_widget().clone(),
+            },
+        );
+
+        // GRID-5 is a separate player-surface action: route to Albums,
+        // visibly clear search/filter, focus/scroll/pulse the loaded album,
+        // and fall back to NAV-9a only if that album is absent.
+        let reveal_playing_album =
+            super::album_grid_reveal::coordinator(super::album_grid_reveal::RevealSteps {
+                current_album: {
+                    let player = Rc::downgrade(player);
+                    Rc::new(move || {
+                        player
+                            .upgrade()
+                            .and_then(|player| player.current_album_identity())
+                    })
+                },
+                route_to_albums: {
+                    let nav_history = nav_history.clone();
+                    let sidebar = sidebar.clone();
+                    let track_list = track_list.clone();
+                    let content_stack = content_stack.clone();
+                    let library_stack = library_views.stack.clone();
+                    let album_grid = album_view.grid_widget().clone();
+                    Rc::new(move || {
+                        let place = crate::ui::nav_history::NavPlace::source(
+                            ViewSource::Library,
+                            Some(super::library_shell::LIBRARY_VIEW_ALBUMS.to_owned()),
+                        );
+                        super::album_grid_reveal::route_with_history(&nav_history, &place, || {
+                            super::library_shell::route_to_place(
+                                &place,
+                                &sidebar,
+                                &track_list,
+                                &content_stack,
+                                &library_stack,
+                                &album_grid,
+                                "reveal playing album",
+                            );
+                        });
+                    })
+                },
+                clear_search: {
+                    let search_entry = search_entry.clone();
+                    Rc::new(move || search_entry.set_text(""))
+                },
+                reveal_album: album_view.reveal_callback(),
+                fallback_to_track: jump_to_current_track.clone(),
+            });
         {
-            let jump = jump_to_now_playing.clone();
-            player.connect_cover_clicked(move || jump());
+            let reveal = reveal_playing_album.clone();
+            player.connect_cover_clicked(move || reveal());
         }
         {
-            let jump = jump_to_now_playing.clone();
-            player.set_on_title_click(move || jump());
+            let reveal = reveal_playing_album.clone();
+            player.set_on_title_click(move || reveal());
+        }
+        {
+            let reveal = reveal_playing_album.clone();
+            info_panel.set_on_album_reveal(move || reveal());
         }
         let jump_action = gtk4::gio::SimpleAction::new("jump-to-now-playing", None);
-        jump_action.connect_activate(move |_, _| jump_to_now_playing());
+        jump_action.connect_activate(move |_, _| jump_to_current_track());
         window.add_action(&jump_action);
         app.set_accels_for_action("win.jump-to-now-playing", &["<Control>l"]);
 
@@ -251,30 +253,39 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             let content_stack = content_stack.clone();
             let library_stack = library_views.stack.clone();
             let album_grid = album_view.grid_widget().clone();
+            let restore_album_focus = album_view.restore_focus_callback();
             back_action.connect_activate(move |_, _| {
                 let Some(place) = nav_history.go_back() else {
                     tracing::debug!("nav back: history is empty");
                     return;
                 };
-                nav_history.begin_back();
-                crate::ui::sidebar_session::sync_current_source(
-                    &sidebar.shared,
-                    &track_list.current_source(),
-                );
-                // Remember the restored place as current — row-less targets
-                // (Album/Artist) never reach the sidebar choke point that
-                // would otherwise do this. Suppressed by begin_back above.
-                nav_history.record_route(&place);
-                super::library_shell::route_to_place(
+                let current_source = track_list.current_source();
+                super::album_grid_reveal::route_back_restoring_album_focus(
+                    &current_source,
                     &place,
-                    &sidebar,
-                    &track_list,
-                    &content_stack,
-                    &library_stack,
-                    &album_grid,
-                    "nav back",
+                    || {
+                        nav_history.begin_back();
+                        crate::ui::sidebar_session::sync_current_source(
+                            &sidebar.shared,
+                            &track_list.current_source(),
+                        );
+                        // Remember the restored place as current — row-less targets
+                        // (Album/Artist) never reach the sidebar choke point that
+                        // would otherwise do this. Suppressed by begin_back above.
+                        nav_history.record_route(&place);
+                        super::library_shell::route_to_place(
+                            &place,
+                            &sidebar,
+                            &track_list,
+                            &content_stack,
+                            &library_stack,
+                            &album_grid,
+                            "nav back",
+                        );
+                        nav_history.end_back();
+                    },
+                    &restore_album_focus,
                 );
-                nav_history.end_back();
             });
         }
         window.add_action(&back_action);
@@ -342,7 +353,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         window.add_controller(mouse_nav);
 
         // Dev/verification hook (permanent, like `REPRISE_SMOKE_ACTIVATE`):
-        // `REPRISE_SMOKE_JUMP=1` fires the NAV-9 jump action ~2s after
+        // `REPRISE_SMOKE_JUMP=1` fires the NAV-9a jump action ~2s after
         // startup (past the other smoke hooks' idle work) and the NAV-2
         // back action ~2s later — the exact same `gio` actions Ctrl+L and
         // Alt+Left run. Headless E2E asserts the resulting routing +

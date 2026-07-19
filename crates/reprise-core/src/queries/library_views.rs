@@ -204,6 +204,33 @@ pub fn query_album_track_ids(
     rows.collect()
 }
 
+/// Returns every present track in one album's canonical container-play
+/// order. This is intentionally independent of the Album detail view's
+/// current sort and filter: those control presentation, not PLAY-1a's queue
+/// snapshot. Legacy rows without a disc number behave as disc 1; unknown
+/// track numbers sort after numbered tracks, then path/id make ties stable.
+pub fn query_album_canonical_track_ids(
+    conn: &Connection,
+    album: &str,
+    album_artist: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT id FROM tracks WHERE {PRESENT} \
+         AND TRIM(album) = ?1 COLLATE NOCASE \
+         AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE \
+         ORDER BY COALESCE(disc_no, 1) ASC, \
+                  CASE WHEN track_no IS NULL THEN 1 ELSE 0 END ASC, \
+                  track_no ASC, path COLLATE NOCASE ASC, id ASC \
+         LIMIT {QUEUE_LIMIT}"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(
+        rusqlite::params![album.trim(), album_artist.trim()],
+        row_to_id,
+    )?;
+    rows.collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtistAlbum {
     pub album: String,
@@ -416,6 +443,29 @@ mod tests {
         assert_eq!(
             query_track_ids(&conn, &source, "title", "asc", "A", &[]).unwrap(),
             [1]
+        );
+    }
+
+    #[test]
+    fn canonical_album_ids_order_disc_then_track_with_stable_null_fallbacks() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks
+               (id,path,title,artist,album,album_artist,disc_no,track_no,added_at,missing_since) VALUES
+             (10,'/music/z.flac','D2T1','Artist','Album','Artist',2,1,0,NULL),
+             (20,'/music/b.flac','D1T2','Artist','Album','Artist',1,2,0,NULL),
+             (30,'/music/c.flac','Legacy T1','Artist','Album','Artist',NULL,1,0,NULL),
+             (40,'/music/d.flac','D1 unknown','Artist','Album','Artist',1,NULL,0,NULL),
+             (50,'/music/a.flac','Legacy unknown','Artist','Album','Artist',NULL,NULL,0,NULL),
+             (60,'/music/first.flac','D1T1','Artist','Album','Artist',1,1,0,NULL),
+             (70,'/music/missing.flac','Missing','Artist','Album','Artist',1,1,0,99);",
+        )
+        .unwrap();
+
+        assert_eq!(
+            query_album_canonical_track_ids(&conn, "album", "artist").unwrap(),
+            [30, 60, 20, 50, 40, 10]
         );
     }
 

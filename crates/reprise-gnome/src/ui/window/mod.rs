@@ -1,3 +1,5 @@
+pub(in crate::ui) mod album_grid_reveal;
+pub(in crate::ui) mod current_track_jump;
 pub(in crate::ui) mod library_chrome;
 pub(in crate::ui) mod library_shell;
 #[path = "window.rs"]

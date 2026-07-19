@@ -18,6 +18,7 @@ use super::player_controller::PlayerController;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::track_list::TrackList;
+use crate::ui::album_card_state::{primary_album_action, PrimaryAlbumAction};
 use crate::ui::playback::play_origin;
 
 #[derive(Clone, Copy)]
@@ -183,25 +184,51 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     }
     {
         let player = player.clone();
+        album_view.set_on_primary(move |ids, start_index, source, album| match &player {
+            Some(player) => {
+                let is_current_album =
+                    player
+                        .current_album_identity()
+                        .is_some_and(|(title, artist)| {
+                            title.eq_ignore_ascii_case(&album.album)
+                                && artist.eq_ignore_ascii_case(&album.album_artist)
+                        });
+                match primary_album_action(is_current_album, player.playback_state()) {
+                    PrimaryAlbumAction::RebuildQueue => player.play_from_view(
+                        ids,
+                        start_index,
+                        play_origin::from_album_source(source),
+                    ),
+                    PrimaryAlbumAction::Pause | PrimaryAlbumAction::Resume => {
+                        player.toggle_pause();
+                    }
+                }
+            }
+            None => tracing::warn!("player unavailable; ignoring album primary action"),
+        });
+    }
+    {
+        let player = player.clone();
+        album_view.set_on_play_next(move |ids| match &player {
+            Some(player) => player.play_next(&ids),
+            None => tracing::warn!("player unavailable; ignoring album play-next action"),
+        });
+    }
+    {
+        let player = player.clone();
         album_view.set_on_queue(move |ids| match &player {
             Some(player) => player.append_to_queue(&ids),
             None => tracing::warn!("player unavailable; ignoring album queue action"),
         });
     }
     {
-        let player = player.clone();
-        album_view.set_on_shuffle(move |ids, start_index, source| match &player {
-            Some(player) => {
-                player.play_from_view(ids, start_index, play_origin::from_album_source(source));
+        let track_list = Rc::downgrade(track_list);
+        album_view.set_on_edit_tags(move |ids| {
+            if let Some(track_list) = track_list.upgrade() {
+                track_list.edit_tags_for_ids(&ids);
             }
-            None => tracing::warn!("player unavailable; ignoring album shuffle action"),
         });
     }
-    // Wire the album context menu's toast overlay so "Added N tracks to
-    // Playlist" toasts reach the window surface. Same post-construction
-    // injection reason as `player.set_toast_overlay` just above: `toast_
-    // overlay` is built after `album_view`.
-    album_view.set_toast_overlay(toast_overlay);
     // Wire now-playing fan-out to album grid EQ markers.
     if let Some(ref player) = player {
         let album_view_np = album_view.now_playing_callback();

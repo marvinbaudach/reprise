@@ -85,7 +85,7 @@ fn selected_ids_before_swap(shared: &Shared) -> Vec<i64> {
 
 /// Approximates the uniform row height from the adjustment's total content
 /// height over the row count — the same technique `current_track_selection::
-/// centered_scroll_value` uses for the "jump to now playing" center (NAV-9):
+/// centered_scroll_value` uses for the "jump to now playing" center (NAV-9a):
 /// `GtkColumnView` rows are uniform height by design, and there is no
 /// per-row height API to query instead.
 fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {

@@ -36,6 +36,7 @@ thread_local! {
 fn app_css() -> String {
     [
         interactions::css(),
+        super::link_activation::css(),
         menus::css(),
         super::browse_bar::css(),
         super::column_header_dnd::css(),
