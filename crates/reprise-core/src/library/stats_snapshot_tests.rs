@@ -557,6 +557,35 @@ fn dedup_does_not_mutate_tags() {
     }
 }
 
+/// STATS-1: the hero pill of "2026 so far" is fed by Jan–Jul 2025, not by the
+/// equally long stretch that ends where the selection starts. A November 2025
+/// binge lies in that stretch and must not move the percentage.
+#[test]
+fn stats_1_comparison_uses_the_same_span_of_the_previous_year() {
+    let conn = migrated_conn();
+    insert_track(&conn, 1, "Track", "Artist", "", "Rock", 1_000_000, 0, None);
+    insert_event(&conn, 1, timestamp(2026, 3, 1, 12, 0), 200_000);
+    insert_event(&conn, 1, timestamp(2025, 3, 1, 12, 0), 100_000);
+    insert_event(&conn, 1, timestamp(2025, 11, 1, 12, 0), 900_000);
+
+    let snapshot = compute(&conn, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap();
+
+    assert_eq!(snapshot.hero.total_ms, 200_000);
+    assert_eq!(snapshot.hero.comparison_percent, Some(100));
+}
+
+/// A period without a compared span keeps the pill hidden.
+#[test]
+fn stats_1_all_time_reports_no_comparison() {
+    let conn = migrated_conn();
+    insert_track(&conn, 1, "Track", "Artist", "", "Rock", 1_000_000, 0, None);
+    insert_event(&conn, 1, timestamp(2026, 3, 1, 12, 0), 200_000);
+
+    let snapshot = compute(&conn, StatsPeriod::AllTime, NOW_2026_07_19, &Utc).unwrap();
+
+    assert_eq!(snapshot.hero.comparison_percent, None);
+}
+
 fn migrated_conn() -> Connection {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();

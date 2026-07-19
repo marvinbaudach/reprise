@@ -13,7 +13,7 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::settings::{self, StatsLayout};
-use reprise_core::library::stats_period::{PeriodRange, StatsPeriod};
+use reprise_core::library::stats_period::{StatsPeriod, ROLLING_WINDOW_DAYS};
 use reprise_core::library::stats_screen::{group_track_ids, TopTrack};
 use reprise_core::library::stats_snapshot::{self, SortBy, StatsSnapshot};
 use rusqlite::Connection;
@@ -476,14 +476,17 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, period: Stats
     render
         .hero_time
         .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
-    if let Some(percent) = snapshot.hero.comparison_percent {
-        render.comparison_pill.set_label(&strings::comparison_pill(
-            percent,
-            &compared_period_name(period, &snapshot.period),
-        ));
-        render.comparison_pill.set_visible(true);
-    } else {
-        render.comparison_pill.set_visible(false);
+    match (
+        snapshot.hero.comparison_percent,
+        compared_period_name(period),
+    ) {
+        (Some(percent), Some(name)) => {
+            render
+                .comparison_pill
+                .set_label(&strings::comparison_pill(percent, &name));
+            render.comparison_pill.set_visible(true);
+        }
+        _ => render.comparison_pill.set_visible(false),
     }
     render.hero_subline.set_label(&format!(
         "{} plays \u{00b7} \u{00d8} {} min/day \u{00b7} {} artists",
@@ -663,22 +666,25 @@ fn apply_layout_widgets(
     highlights.set_visible(layout.highlights);
 }
 
-/// Names the span the hero pill compares against. The comparison window is
-/// the equally long stretch immediately before the selected one, so only a
-/// full calendar year can be named by its year — for every other period that
-/// stretch is not "last year" and must not claim to be.
-fn compared_period_name(period: StatsPeriod, range: &PeriodRange) -> String {
+/// Names the span the hero pill compares against, mirroring
+/// [`StatsPeriod::previous_range`]: a year to date is measured against the same
+/// calendar stretch of the previous year, a full year against the whole year
+/// before it. Only the rolling window is compared against the stretch
+/// immediately before it — the one case "previous N days" describes truthfully.
+///
+/// All time has no compared span at all, and says so with `None` rather than
+/// naming one the snapshot never measured.
+///
+/// The rolling window is named from [`ROLLING_WINDOW_DAYS`], not from the
+/// selected range: that range ends mid-day, so measuring it in whole days
+/// would render "previous 29 days" for most of every day.
+fn compared_period_name(period: StatsPeriod) -> Option<String> {
     match period {
-        StatsPeriod::Year(year) => year.saturating_sub(1).to_string(),
-        _ => strings::previous_days(span_days(range)),
+        StatsPeriod::YearToDate(year) => Some(strings::same_period_year(year.saturating_sub(1))),
+        StatsPeriod::Year(year) => Some(year.saturating_sub(1).to_string()),
+        StatsPeriod::Last30Days => Some(strings::previous_days(ROLLING_WINDOW_DAYS)),
+        StatsPeriod::AllTime => None,
     }
-}
-
-fn span_days(range: &PeriodRange) -> i64 {
-    const SECONDS_PER_DAY: i64 = 86_400;
-    let span = range.end_unix.saturating_sub(range.start_unix).max(0);
-    span.div_euclid(SECONDS_PER_DAY)
-        .max(i64::from(span % SECONDS_PER_DAY > 0))
 }
 
 /// The strongest real genre of the period. The bundled "Other" segment is not

@@ -930,10 +930,16 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   zeigt Jan–Jul, nie ein rollendes 12-Monats-Fenster. Der laufende Bucket ist
   offen markiert (gestrichelt, hohler Punkt), der Peak gesetzt; Hover nennt den
   exakten Wert. Fehlt eine Vorperiode mit Hörzeit, entfällt die Pill. Die Pill
-  **benennt** die verglichene Spanne, statt „previous period" zu sagen:
-  verglichen wird die gleich lange Spanne unmittelbar davor, also trägt nur ein
-  volles Kalenderjahr den Namen des Vorjahres — jede andere Periode heißt
-  „previous N days", denn die Spanne vor „2026 so far" ist nicht „2025".
+  **benennt** die verglichene Spanne, statt „previous period" zu sagen. Die
+  Vorperiode ist gleich lang **und** saisonal deckungsgleich: „2026 so far"
+  wird gegen Jan–Jul 2025 gerechnet und heißt „vs same period 2025", nie gegen
+  die gleich lange Strecke unmittelbar davor (Jun–Dez 2025) — Hörzeit ist
+  saisonal, sonst stünde Sommer gegen Winter. Ein volles Kalenderjahr wird
+  gegen das ganze Vorjahr gerechnet („vs 2025"), das rollende Fenster gegen die
+  30 Tage direkt davor („vs previous 30 days"), denn dafür gibt es keine
+  wiedererkennbare Kalenderentsprechung ein Jahr zurück. Der 29. Februar klemmt
+  im Vorjahr auf den 28. „All time" hat keine Vorperiode und trägt nie eine
+  Pill.
 - **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
   #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
   Zeile „N plays · N h · N % of your artist listening" — der Anteil bezieht

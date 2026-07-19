@@ -125,10 +125,13 @@ pub fn compute<Tz: TimeZone>(
     let mut range = period.resolve(now_unix, tz, first_event);
     let listen_rows = listen_rows(conn, range.start_unix, range.end_unix)?; // 2
 
-    let window = range.end_unix.saturating_sub(range.start_unix);
-    let previous_end = range.start_unix;
-    let previous_start = previous_end.saturating_sub(window);
-    let previous_ms = total_ms_in_range(conn, previous_start, previous_end)?; // 3
+    // The compared span is seasonally congruent, not merely the equally long
+    // stretch immediately before — see [`StatsPeriod::previous_range`]. A
+    // period without one reads as zero, which hides the pill.
+    let previous_ms = match period.previous_range(now_unix, tz) {
+        Some((start, end)) => total_ms_in_range(conn, start, end)?, // 3
+        None => 0,
+    };
     let artists = artist_rows(conn, range.start_unix, range.end_unix)?; // 4
     let albums = album_rows(conn, range.start_unix, range.end_unix)?; // 5
     let genres = genre_rows(conn, range.start_unix, range.end_unix)?; // 6
