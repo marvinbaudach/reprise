@@ -139,6 +139,24 @@ impl ArtistView {
         self.inner.detail.set_now_playing_track(track_id);
     }
 
+    pub(in crate::ui) fn remember_view_state_callback(&self) -> Rc<dyn Fn()> {
+        let weak = Rc::downgrade(&self.inner);
+        Rc::new(move || {
+            if let Some(inner) = weak.upgrade() {
+                inner.master.remember_view_state();
+            }
+        })
+    }
+
+    pub(in crate::ui) fn restore_view_state_callback(&self) -> Rc<dyn Fn()> {
+        let weak = Rc::downgrade(&self.inner);
+        Rc::new(move || {
+            if let Some(inner) = weak.upgrade() {
+                inner.master.restore_view_state();
+            }
+        })
+    }
+
     // Task 9a: wired to PlayerController.
     pub(in crate::ui) fn set_on_play_all(&self, callback: impl Fn(String) + 'static) {
         self.inner.detail.set_on_play_all(callback);

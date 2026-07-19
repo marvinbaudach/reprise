@@ -297,8 +297,8 @@ pub(in crate::ui) fn wire_source_routing(
             content_stack.set_visible_child_name("stats");
         } else {
             content_stack.set_visible_child_name("library");
-            library_stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
             track_list.set_source(source);
+            library_stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
         }
         title.set_library_navigation_visible(is_library);
         source_title.set_title(&source_name);
@@ -367,10 +367,10 @@ pub(in crate::ui) fn route_to_place(
     match &place.source {
         ViewSource::Album { .. } | ViewSource::Artist(_) => {
             content_stack.set_visible_child_name("library");
+            track_list.set_source(place.source.clone());
             library_stack.set_visible_child_name(
                 place.library_tab.as_deref().unwrap_or(LIBRARY_VIEW_TRACKS),
             );
-            track_list.set_source(place.source.clone());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &place.source);
         }
         _ => {

@@ -110,11 +110,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   sichtbaren Liste (siehe PLAY-2). Einfachklick = selektieren. Enter = wie
   Doppelklick. Ausnahme Queue-View: Doppelklick springt gemäß QUE-3 zum Track
   (Playhead), statt die Queue neu zu bauen.
-- **NAV-5** [geplant] [gtk] — Modus-Gedächtnis (Scroll + Selektion je
+- **NAV-5** [aktiv] [gtk] — Modus-Gedächtnis (Scroll + Selektion je
   Tracks/Albums/Artists) gilt nur innerhalb der Session; auch Sidebar-/
-  Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. START-1
-  restauriert über Neustarts ausschließlich die zuletzt aktive Ansicht samt
-  Scroll-Position; alle anderen Modi starten oben, unselektiert.
+  Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. Der
+  Scroll-Anker besteht aus Track-/Album-ID plus Offset, nie aus einem rohen
+  Pixelwert; Re-Sort und Insert halten dadurch den Inhalt an seiner Position.
+  START-1 restauriert über Neustarts ausschließlich die zuletzt aktive Ansicht
+  samt Scroll-Position; alle anderen Modi starten oben, unselektiert.
 - **NAV-6** [aktiv] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
   live; Esc leert und schließt. Suche navigiert nie selbst.
 - **NAV-7** [geplant] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,

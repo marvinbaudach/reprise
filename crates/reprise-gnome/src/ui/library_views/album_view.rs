@@ -18,6 +18,7 @@ use crate::ui::album_card_state::{AlbumCardIdentityRegistry, RevealBindingRegist
 use crate::ui::album_context_menu::AlbumMenuShared;
 use crate::ui::album_header::{self, AlbumSortKey};
 use crate::ui::album_view_actions::{self, AlbumViewActions};
+use crate::ui::album_view_memory::{self, SavedAlbumViewState};
 use crate::ui::album_view_state::{AlbumViewState, AlbumViewStateParts, NowPlayingAlbumCallback};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
@@ -25,6 +26,9 @@ use crate::ui::strings;
 pub(in crate::ui) struct AlbumView {
     root: gtk4::Box, // vertical: header + stack(grid | empty | search-empty)
     grid_view: gtk4::GridView,
+    selection: gtk4::SingleSelection,
+    filter_model: gtk4::FilterListModel,
+    saved_view_state: Rc<RefCell<Option<SavedAlbumViewState>>>,
     state: AlbumViewState,
     actions: AlbumViewActions,
     on_activate: AlbumActivateSlot,
@@ -46,6 +50,7 @@ impl AlbumView {
         let sort_model = gtk4::SortListModel::new(Some(store.clone()), Some(sorter));
         let filter = gtk4::CustomFilter::new(|_| true);
         let filter_model = gtk4::FilterListModel::new(Some(sort_model.clone()), Some(filter));
+        let saved_view_state = Rc::new(RefCell::new(None));
 
         // ── Shared state for card factory ──────────────────────────────
         let on_activate: AlbumActivateSlot = Rc::new(RefCell::new(None));
@@ -70,8 +75,13 @@ impl AlbumView {
         let factory = album_card::build_factory(&card_shared);
 
         // ── GridView ───────────────────────────────────────────────────
+        let selection = gtk4::SingleSelection::builder()
+            .model(&filter_model)
+            .autoselect(false)
+            .can_unselect(true)
+            .build();
         let grid_view = gtk4::GridView::builder()
-            .model(&gtk4::NoSelection::new(Some(filter_model.clone())))
+            .model(&selection)
             .factory(&factory)
             .min_columns(1)
             .max_columns(200)
@@ -204,10 +214,24 @@ impl AlbumView {
 
         // ── Header ─────────────────────────────────────────────────────
         let sort_model_for_header = sort_model.clone();
+        let grid_for_sort = grid_view.clone();
+        let selection_for_sort = selection.clone();
+        let filter_for_sort = filter_model.clone();
         let (header, count_label, _dropdown) =
             album_header::build_header(conn, move |new_key: AlbumSortKey| {
+                let saved = album_view_memory::capture(
+                    &grid_for_sort,
+                    &selection_for_sort,
+                    &filter_for_sort,
+                );
                 let new_sorter = album_header::build_sorter(new_key);
                 sort_model_for_header.set_sorter(Some(&new_sorter));
+                album_view_memory::restore(
+                    &grid_for_sort,
+                    &selection_for_sort,
+                    &filter_for_sort,
+                    &saved,
+                );
             });
 
         // ── Root layout ────────────────────────────────────────────────
@@ -232,6 +256,9 @@ impl AlbumView {
         let view = Self {
             root,
             grid_view,
+            selection,
+            filter_model,
+            saved_view_state,
             state,
             actions,
             on_activate,
@@ -308,6 +335,31 @@ impl AlbumView {
 
     pub(in crate::ui) fn playback_state_callback(&self) -> Rc<dyn Fn(PlaybackState)> {
         self.state.playback_state_callback()
+    }
+
+    pub(in crate::ui) fn remember_view_state_callback(&self) -> Rc<dyn Fn()> {
+        let grid = self.grid_view.downgrade();
+        let selection = self.selection.clone();
+        let model = self.filter_model.clone();
+        let memory = self.saved_view_state.clone();
+        Rc::new(move || {
+            let Some(grid) = grid.upgrade() else { return };
+            *memory.borrow_mut() = Some(album_view_memory::capture(&grid, &selection, &model));
+        })
+    }
+
+    pub(in crate::ui) fn restore_view_state_callback(&self) -> Rc<dyn Fn()> {
+        let grid = self.grid_view.downgrade();
+        let selection = self.selection.clone();
+        let model = self.filter_model.clone();
+        let memory = self.saved_view_state.clone();
+        Rc::new(move || {
+            let Some(saved) = memory.borrow().clone() else {
+                return;
+            };
+            let Some(grid) = grid.upgrade() else { return };
+            album_view_memory::restore(&grid, &selection, &model, &saved);
+        })
     }
 
     pub(in crate::ui) fn reveal_callback(
@@ -394,6 +446,52 @@ mod tests {
             }
         }
         matches
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_5_remembers_scroll_and_selection_per_view() {
+        gtk4::init().unwrap();
+        let conn = reprise_core::db::open(None).unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        for index in 0..36 {
+            conn.execute(
+                "INSERT INTO tracks (path,title,artist,album,added_at) VALUES (?1,?2,'Artist',?3,0)",
+                rusqlite::params![
+                    format!("/nav5-{index}.flac"),
+                    format!("Track {index}"),
+                    format!("Album {index:02}"),
+                ],
+            )
+            .unwrap();
+        }
+        let conn = Rc::new(RefCell::new(conn));
+        let loader =
+            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let view = AlbumView::new(&conn, loader);
+        let window = gtk4::Window::builder()
+            .default_width(500)
+            .default_height(480)
+            .child(view.widget())
+            .build();
+        window.present();
+        wait_for_layout(100);
+
+        view.selection.set_selected(20);
+        let adjustment = view.grid_widget().vadjustment().unwrap();
+        adjustment.set_value((adjustment.upper() - adjustment.page_size()) * 0.6);
+        let remembered = adjustment.value();
+        view.remember_view_state_callback()();
+        view.selection.unselect_all();
+        adjustment.set_value(0.0);
+        view.restore_view_state_callback()();
+
+        let selection = view.selection.clone();
+        let adjustment_for_wait = adjustment.clone();
+        assert!(wait_until(500, move || {
+            selection.selected() == 20 && (adjustment_for_wait.value() - remembered).abs() < 2.0
+        }));
+        window.close();
     }
 
     #[test]
