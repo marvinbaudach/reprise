@@ -59,12 +59,19 @@ cargo test -p reprise-gnome -- --ignored --list \
 test_runtime=$(mktemp -d)
 test_data=$(mktemp -d)
 test_cache=$(mktemp -d)
-XDG_RUNTIME_DIR="$test_runtime" \
+test_config=$(mktemp -d)
+XDG_RUNTIME_DIR="$test_runtime" XDG_CONFIG_HOME="$test_config" \
 XDG_DATA_HOME="$test_data" XDG_CACHE_HOME="$test_cache" \
 GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
 xvfb-run -a dbus-run-session -- cargo test -p reprise-gnome \
   --quiet -- --ignored --exact "$test_path" --nocapture
 ```
+
+`XDG_CONFIG_HOME` is load-bearing, not decoration. GTK reads the window-button
+layout from the host's `org.gnome.desktop.wm.preferences button-layout`, so a
+maintainer who keeps close/minimize on the left makes the window-decoration
+tests fail against their own desktop rather than against the code. Every
+display rerun must start from an empty config.
 
 Count the rerun only when its output says `1 passed`. Cargo reports
 `test result: ok` for a non-existent `--exact` path with zero tests, which is a
