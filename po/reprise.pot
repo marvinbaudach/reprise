@@ -1756,6 +1756,26 @@ msgstr ""
 msgid "▼ {percent}% vs {period}"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_stats.rs:15
+#, rust-format
+msgid "▲ ×{factor} vs {period}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:16
+#, rust-format
+msgid "▼ ×{factor} vs {period}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:17
+#, rust-format
+msgid "{whole}.{fraction}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:20
+#, rust-format
+msgid "<{factor}"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings_stats.rs:13
 #, rust-format
 msgid "previous {count} days"
@@ -1764,6 +1784,35 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_stats.rs:14
 #, rust-format
 msgid "same period {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:20
+msgid "New this year"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:21
+#, rust-format
+msgid "New in {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:22
+#, rust-format
+msgid "New in the last {count} days"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:23
+#, rust-format
+msgid "Less than one minute in the same period {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:24
+#, rust-format
+msgid "Less than one minute in {year}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:25
+#, rust-format
+msgid "Less than one minute in the previous {count} days"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:15

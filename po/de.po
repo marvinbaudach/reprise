@@ -2174,6 +2174,26 @@ msgstr "▲ {percent}% gegenüber {period}"
 msgid "▼ {percent}% vs {period}"
 msgstr "▼ {percent}% gegenüber {period}"
 
+#: crates/reprise-gnome/src/ui/strings_stats.rs:15
+#, rust-format
+msgid "▲ ×{factor} vs {period}"
+msgstr "▲ ×{factor} gegenüber {period}"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:16
+#, rust-format
+msgid "▼ ×{factor} vs {period}"
+msgstr "▼ ×{factor} gegenüber {period}"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:17
+#, rust-format
+msgid "{whole}.{fraction}"
+msgstr "{whole},{fraction}"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:20
+#, rust-format
+msgid "<{factor}"
+msgstr "<{factor}"
+
 #: crates/reprise-gnome/src/ui/strings_stats.rs:13
 #, rust-format
 msgid "previous {count} days"
@@ -2183,6 +2203,35 @@ msgstr "vorherige {count} Tage"
 #, rust-format
 msgid "same period {year}"
 msgstr "gleicher Zeitraum {year}"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:20
+msgid "New this year"
+msgstr "Neu in diesem Jahr"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:21
+#, rust-format
+msgid "New in {year}"
+msgstr "Neu {year}"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:22
+#, rust-format
+msgid "New in the last {count} days"
+msgstr "Neu in den letzten {count} Tagen"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:23
+#, rust-format
+msgid "Less than one minute in the same period {year}"
+msgstr "Weniger als eine Minute im gleichen Zeitraum {year}"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:24
+#, rust-format
+msgid "Less than one minute in {year}"
+msgstr "Weniger als eine Minute {year}"
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:25
+#, rust-format
+msgid "Less than one minute in the previous {count} days"
+msgstr "Weniger als eine Minute in den vorherigen {count} Tagen"
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:15
 msgid "1 spelling merged — unify it in the tag editor?"
