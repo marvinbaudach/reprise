@@ -83,6 +83,15 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
 }
 
 pub(in crate::ui) fn coordinator(steps: JumpSteps) -> JumpCallback {
+    coordinator_with_defer(
+        steps,
+        Rc::new(|callback| {
+            gtk4::glib::idle_add_local_once(move || callback());
+        }),
+    )
+}
+
+fn coordinator_with_defer(steps: JumpSteps, defer: Rc<dyn Fn(JumpCallback)>) -> JumpCallback {
     Rc::new(move || {
         let Some(origin) = (steps.current_origin)() else {
             return;
@@ -90,9 +99,7 @@ pub(in crate::ui) fn coordinator(steps: JumpSteps) -> JumpCallback {
         (steps.prepare_origin)(&origin);
         (steps.route_origin)(&origin);
         let notify_current_track = steps.notify_current_track.clone();
-        gtk4::glib::idle_add_local_once(move || {
-            notify_current_track();
-        });
+        defer(notify_current_track);
     })
 }
 
@@ -105,41 +112,50 @@ mod tests {
     #[test]
     fn nav_9a_ctrl_l_reveals_current_track_origin() {
         let events = Rc::new(RefCell::new(Vec::new()));
+        let deferred = Rc::new(RefCell::new(Vec::<JumpCallback>::new()));
         let history = Rc::new(NavHistory::default());
         let queue = NavPlace::source(
             ViewSource::Queue,
             Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
         );
         history.record_route(&queue);
-        let jump = coordinator(JumpSteps {
-            current_origin: Rc::new(|| Some(ViewSource::Playlist(7))),
-            prepare_origin: {
-                let events = events.clone();
-                Rc::new(move |source| events.borrow_mut().push(("prepare", source.clone())))
+        let jump = coordinator_with_defer(
+            JumpSteps {
+                current_origin: Rc::new(|| Some(ViewSource::Playlist(7))),
+                prepare_origin: {
+                    let events = events.clone();
+                    Rc::new(move |source| events.borrow_mut().push(("prepare", source.clone())))
+                },
+                route_origin: {
+                    let events = events.clone();
+                    let history = history.clone();
+                    Rc::new(move |source| {
+                        history.record_route(&NavPlace::source(
+                            source.clone(),
+                            Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
+                        ));
+                        events.borrow_mut().push(("route", source.clone()));
+                    })
+                },
+                notify_current_track: {
+                    let events = events.clone();
+                    Rc::new(move || {
+                        events
+                            .borrow_mut()
+                            .push(("select-and-center", ViewSource::Playlist(7)));
+                    })
+                },
             },
-            route_origin: {
-                let events = events.clone();
-                let history = history.clone();
-                Rc::new(move |source| {
-                    history.record_route(&NavPlace::source(
-                        source.clone(),
-                        Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
-                    ));
-                    events.borrow_mut().push(("route", source.clone()));
-                })
+            {
+                let deferred = deferred.clone();
+                Rc::new(move |callback| deferred.borrow_mut().push(callback))
             },
-            notify_current_track: {
-                let events = events.clone();
-                Rc::new(move || {
-                    events
-                        .borrow_mut()
-                        .push(("select-and-center", ViewSource::Playlist(7)));
-                })
-            },
-        });
+        );
 
         jump();
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        assert_eq!(deferred.borrow().len(), 1);
+        let notify = deferred.borrow_mut().pop().unwrap();
+        notify();
 
         assert_eq!(
             &*events.borrow(),

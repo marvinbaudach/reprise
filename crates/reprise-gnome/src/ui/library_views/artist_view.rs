@@ -46,8 +46,14 @@ impl ArtistView {
         conn: Rc<RefCell<Connection>>,
         cover_loader: Rc<CoverLoader>,
         portraits: Rc<ArtistPortraitRuntime>,
+        new_releases_enabled: bool,
     ) -> Self {
-        let master = ArtistMaster::new(conn.clone(), &portraits, &cover_loader);
+        let master = ArtistMaster::new(
+            conn.clone(),
+            &portraits,
+            &cover_loader,
+            new_releases_enabled,
+        );
         let detail = Rc::new(ArtistDetailPane::new(conn, cover_loader, portraits));
 
         // Master selection drives the detail pane. The GTK caller supplies the
@@ -163,6 +169,13 @@ impl ArtistView {
         self.inner.detail.set_on_show_all_tracks(callback);
     }
 
+    pub(in crate::ui) fn set_on_hint_settings(
+        &self,
+        callback: impl Fn(&'static [&'static str]) + 'static,
+    ) {
+        self.inner.master.set_on_hint_settings(callback);
+    }
+
     pub(in crate::ui) fn set_on_album_activate(
         &self,
         callback: impl Fn(ArtistAlbum, String) + 'static,
@@ -227,11 +240,12 @@ mod tests {
         )
         .unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let loader = crate::ui::cover_loader::CoverLoader::new(
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
 
-        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
-        let view = ArtistView::new(conn, loader, portraits);
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup_for_test();
+        let view = ArtistView::new(conn, loader, portraits, true);
         assert_eq!(view.master_count(), 2);
 
         view.select_index_for_test(0);
@@ -253,11 +267,12 @@ mod tests {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let loader = crate::ui::cover_loader::CoverLoader::new(
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
 
-        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
-        let view = Rc::new(ArtistView::new(conn.clone(), loader, portraits));
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup_for_test();
+        let view = Rc::new(ArtistView::new(conn.clone(), loader, portraits, true));
         assert_eq!(view.master_count(), 0);
 
         // Grab the callback, then simulate a post-scan library change.

@@ -4,6 +4,7 @@
 //! button, now-playing EQ bars, tooltips, and artist deep-link.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -19,6 +20,7 @@ use crate::ui::album_card_state::{
     RevealBindingRegistry,
 };
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::discovery_hint::{EvidenceTracker, VisibleEvidence};
 use crate::ui::eq_bars;
 use crate::ui::strings;
 
@@ -38,6 +40,7 @@ pub(in crate::ui) type ArtistActivateSlot = Rc<RefCell<Option<ArtistActivate>>>;
 #[derive(Clone)]
 pub(in crate::ui) struct AlbumCardShared {
     pub cover_loader: Rc<CoverLoader>,
+    pub fallback_evidence: EvidenceTracker,
     pub generation: Rc<Cell<u64>>,
     pub identity_generation: Rc<Cell<u64>>,
     pub identities: Rc<RefCell<AlbumCardIdentityRegistry>>,
@@ -57,10 +60,13 @@ pub(in crate::ui) struct AlbumCardShared {
 
 pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
+    let evidence_items: Rc<RefCell<HashMap<usize, VisibleEvidence>>> =
+        Rc::new(RefCell::new(HashMap::new()));
 
     // ── setup ──────────────────────────────────────────────────────────────
     {
         let shared = shared.clone();
+        let evidence_items = evidence_items.clone();
         factory.connect_setup(move |_factory, list_item| {
             let list_item = list_item
                 .downcast_ref::<gtk4::ListItem>()
@@ -78,6 +84,11 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
                 .halign(gtk4::Align::Fill)
                 .valign(gtk4::Align::Fill)
                 .build();
+            let evidence = shared.fallback_evidence.visible_item();
+            wire_fallback_evidence(&placeholder, &evidence);
+            evidence_items
+                .borrow_mut()
+                .insert(list_item.as_ptr() as usize, evidence);
             let placeholder_initial = gtk4::Label::builder()
                 .css_classes(vec![css::PLACEHOLDER_INITIAL_CLASS.to_owned()])
                 .halign(gtk4::Align::Center)
@@ -262,6 +273,7 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
     // ── bind ───────────────────────────────────────────────────────────────
     {
         let shared = shared.clone();
+        let evidence_items = evidence_items.clone();
         factory.connect_bind(move |_factory, list_item| {
             let list_item = list_item
                 .downcast_ref::<gtk4::ListItem>()
@@ -269,6 +281,13 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             let obj = list_item.item().unwrap();
             let boxed = obj.downcast_ref::<glib::BoxedAnyObject>().unwrap();
             let album: std::cell::Ref<AlbumSummary> = boxed.borrow();
+            let evidence = evidence_items
+                .borrow()
+                .get(&(list_item.as_ptr() as usize))
+                .cloned();
+            if let Some(evidence) = &evidence {
+                evidence.set_fallback(false);
+            }
 
             // Navigate: card > cover_overlay > (aspect+placeholder+hover), title, subtitle
             let card = list_item
@@ -340,15 +359,18 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             // Load cover art; hide placeholder once cover is available.
             let generation = shared.generation.get();
             let placeholder_weak = placeholder.downgrade();
-            shared.cover_loader.load_into_with_path(
+            shared.cover_loader.load_into_with_resolution(
                 &cover,
                 &album.representative_path,
                 ThumbnailSize::Grid,
                 generation,
                 &shared.generation,
-                move |_| {
+                move |resolved| {
                     if let Some(ph) = placeholder_weak.upgrade() {
-                        ph.set_visible(false);
+                        ph.set_visible(resolved.is_none());
+                    }
+                    if let Some(evidence) = &evidence {
+                        evidence.set_fallback(resolved.is_none());
                     }
                 },
             );
@@ -474,10 +496,17 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
     // ── unbind ─────────────────────────────────────────────────────────────
     {
         let shared = shared.clone();
+        let evidence_for_unbind = evidence_items.clone();
         factory.connect_unbind(move |_factory, list_item| {
             let list_item = list_item
                 .downcast_ref::<gtk4::ListItem>()
                 .expect("ListItem");
+            if let Some(evidence) = evidence_for_unbind
+                .borrow()
+                .get(&(list_item.as_ptr() as usize))
+            {
+                evidence.set_fallback(false);
+            }
             let card = list_item
                 .child()
                 .and_downcast::<gtk4::Box>()
@@ -552,7 +581,22 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
         });
     }
 
+    factory.connect_teardown(move |_, list_item| {
+        if let Some(list_item) = list_item.downcast_ref::<gtk4::ListItem>() {
+            evidence_items
+                .borrow_mut()
+                .remove(&(list_item.as_ptr() as usize));
+        }
+    });
+
     factory
+}
+
+fn wire_fallback_evidence(placeholder: &gtk4::Box, evidence: &VisibleEvidence) {
+    let visible = evidence.clone();
+    placeholder.connect_map(move |_| visible.set_mapped(true));
+    let hidden = evidence.clone();
+    placeholder.connect_unmap(move |_| hidden.set_mapped(false));
 }
 
 /// Simple deterministic hasher (multiply-and-xor) for stable color generation.

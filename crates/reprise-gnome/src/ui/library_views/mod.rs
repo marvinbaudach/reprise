@@ -17,6 +17,7 @@ pub(in crate::ui) mod artist_master;
 pub(in crate::ui) mod artist_master_row;
 pub(in crate::ui) mod artist_view;
 pub(in crate::ui) mod artist_view_css;
+pub(in crate::ui) mod discovery_hint;
 pub(in crate::ui) mod library_view_css;
 #[allow(unused_imports)]
 use super::*;

@@ -276,7 +276,7 @@ mod tests {
         gtk4::init().unwrap();
         let (worker, _receiver) = async_channel::unbounded();
         let loader = CoverLoader::new(crate::ui::cover_download_worker::CoverDownloadRuntime {
-            enabled: false,
+            enabled: Rc::new(Cell::new(false)),
             worker,
         });
         let track = ArtistTopTrack {

@@ -52,7 +52,7 @@ mod tests {
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,
-            crate::ui::cover_download_worker::setup(),
+            crate::ui::cover_download_worker::setup_for_test(),
         );
         track_list.set_filter("falling");
         *track_list.shared.browse_filter.borrow_mut() = BrowseFilter {
