@@ -258,6 +258,18 @@ fn confirmed_reanalysis_waits_for_in_flight_decode_then_rebuilds_every_profile()
 }
 
 #[test]
+fn cancellation_signal_blocks_the_next_track_before_state_catches_up() {
+    let shared = SharedState {
+        state: Mutex::new(WorkerState::new(true)),
+        changed: Condvar::new(),
+        decode_cancelled: AtomicBool::new(true),
+        progress_subscribers: Mutex::new(Vec::new()),
+    };
+
+    assert!(!can_continue(&shared, WorkCapability::CharacterAndWaveform));
+}
+
+#[test]
 fn cancellation_and_fingerprint_changes_never_publish_partial_ready_results() {
     let (_directory, cancel_db) = database(1);
     let cancelled_backend = Arc::new(FakeAnalysisBackend::blocking());

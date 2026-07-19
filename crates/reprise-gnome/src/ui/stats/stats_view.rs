@@ -13,9 +13,9 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::settings::{self, StatsLayout};
-use reprise_core::library::stats_period::{StatsPeriod, ROLLING_WINDOW_DAYS};
+use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_screen::{group_track_ids, stored_play_count_total, TopTrack};
-use reprise_core::library::stats_snapshot::{self, SortBy, StatsSnapshot};
+use reprise_core::library::stats_snapshot::{self, ComparisonPresentation, SortBy, StatsSnapshot};
 use rusqlite::Connection;
 
 use super::hourly_chart::HourlyChart;
@@ -484,18 +484,7 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, period: Stats
     render
         .hero_time
         .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
-    match (
-        snapshot.hero.comparison_percent,
-        compared_period_name(period),
-    ) {
-        (Some(percent), Some(name)) => {
-            render
-                .comparison_pill
-                .set_label(&strings::comparison_pill(percent, &name));
-            render.comparison_pill.set_visible(true);
-        }
-        _ => render.comparison_pill.set_visible(false),
-    }
+    render_comparison(render, snapshot.hero.comparison_presentation, period);
     render.hero_subline.set_label(&format!(
         "{} plays \u{00b7} \u{00d8} {} min/day \u{00b7} {} artists",
         format_thousands(snapshot.hero.plays),
@@ -529,6 +518,22 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, period: Stats
         &render.cover_loader,
         &render.top_track_generation,
     );
+}
+
+fn render_comparison(
+    render: &RenderParts,
+    presentation: Option<ComparisonPresentation>,
+    period: StatsPeriod,
+) {
+    let copy = presentation.and_then(|value| strings::comparison_copy(value, period));
+    if let Some(copy) = copy {
+        render.comparison_pill.set_label(&copy.pill);
+        render.comparison_pill.set_tooltip_text(Some(&copy.tooltip));
+        render.comparison_pill.set_visible(true);
+    } else {
+        render.comparison_pill.set_visible(false);
+        render.comparison_pill.set_tooltip_text(None);
+    }
 }
 
 fn build_sort_controls(
@@ -672,27 +677,6 @@ fn apply_layout_widgets(
     clock.set_visible(layout.clock);
     genres.set_visible(layout.genres);
     highlights.set_visible(layout.highlights);
-}
-
-/// Names the span the hero pill compares against, mirroring
-/// [`StatsPeriod::previous_range`]: a year to date is measured against the same
-/// calendar stretch of the previous year, a full year against the whole year
-/// before it. Only the rolling window is compared against the stretch
-/// immediately before it — the one case "previous N days" describes truthfully.
-///
-/// All time has no compared span at all, and says so with `None` rather than
-/// naming one the snapshot never measured.
-///
-/// The rolling window is named from [`ROLLING_WINDOW_DAYS`], not from the
-/// selected range: that range ends mid-day, so measuring it in whole days
-/// would render "previous 29 days" for most of every day.
-fn compared_period_name(period: StatsPeriod) -> Option<String> {
-    match period {
-        StatsPeriod::YearToDate(year) => Some(strings::same_period_year(year.saturating_sub(1))),
-        StatsPeriod::Year(year) => Some(year.saturating_sub(1).to_string()),
-        StatsPeriod::Last30Days => Some(strings::previous_days(ROLLING_WINDOW_DAYS)),
-        StatsPeriod::AllTime => None,
-    }
 }
 
 /// The strongest real genre of the period. The bundled "Other" segment is not

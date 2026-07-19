@@ -1,6 +1,7 @@
 //! Display tests for the My Stats composer.
 
 use super::*;
+use reprise_core::library::stats_snapshot::{ComparisonDirection, ComparisonFactor};
 
 fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
@@ -255,13 +256,26 @@ fn presented(width: i32) -> (StatsView, adw::Window) {
 /// that reaches back into the previous winter.
 #[test]
 fn stats_1_pill_names_the_seasonally_congruent_compared_span() {
-    let name = |period| compared_period_name(period).unwrap();
+    let tooltip = |period| {
+        strings::comparison_copy(ComparisonPresentation::Percentage(12), period)
+            .unwrap()
+            .tooltip
+    };
 
-    assert_eq!(name(StatsPeriod::YearToDate(2026)), "same period 2025");
-    assert_eq!(name(StatsPeriod::Year(2025)), "2024");
-    assert_eq!(name(StatsPeriod::Last30Days), "previous 30 days");
+    assert_eq!(
+        tooltip(StatsPeriod::YearToDate(2026)),
+        "\u{25b2} 12% vs same period 2025"
+    );
+    assert_eq!(tooltip(StatsPeriod::Year(2025)), "\u{25b2} 12% vs 2024");
+    assert_eq!(
+        tooltip(StatsPeriod::Last30Days),
+        "\u{25b2} 12% vs previous 30 days"
+    );
     // All time is compared against nothing, so it names nothing.
-    assert_eq!(compared_period_name(StatsPeriod::AllTime), None);
+    assert_eq!(
+        strings::comparison_copy(ComparisonPresentation::Percentage(12), StatsPeriod::AllTime),
+        None
+    );
 }
 
 /// Between the two numbers lies a band of window widths where the row is
@@ -336,6 +350,57 @@ fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
     assert!(
         !view.render.comparison_pill.layout().is_ellipsized(),
         "comparison reference was ellipsized at {} px",
+        view.render.comparison_pill.width()
+    );
+
+    window.close();
+}
+
+/// STATS-1a: the pill owns compact copy and the tooltip owns the fully named
+/// seasonal reference. At a realistic center-pane width the compact label is
+/// allocated in full; ellipsization is never an accepted fallback.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_1a_comparison_pill_is_not_ellipsized_at_a_realistic_width() {
+    gtk4::init().unwrap();
+    crate::ui::style::install();
+    let (view, conn) = view_and_conn();
+    seed_one_play(&conn.borrow());
+    view.wire_year_selector(&conn);
+    view.render.hero_time.set_label("34 hours");
+    render_comparison(
+        &view.render,
+        Some(ComparisonPresentation::Factor {
+            direction: ComparisonDirection::Up,
+            value: ComparisonFactor::Whole(11),
+        }),
+        StatsPeriod::YearToDate(2026),
+    );
+
+    let window = adw::Window::builder()
+        .default_width(600)
+        .default_height(700)
+        .content(view.widget())
+        .build();
+    window.set_size_request(600, -1);
+    window.present();
+    wait_for_layout();
+
+    assert_eq!(
+        view.render.comparison_pill.label(),
+        "\u{25b2} \u{00d7}11 vs 2025"
+    );
+    assert_eq!(
+        view.render.comparison_pill.tooltip_text().as_deref(),
+        Some("\u{25b2} \u{00d7}11 vs same period 2025")
+    );
+    assert_eq!(
+        view.render.comparison_pill.ellipsize(),
+        gtk4::pango::EllipsizeMode::None
+    );
+    assert!(
+        !view.render.comparison_pill.layout().is_ellipsized(),
+        "comparison pill was ellipsized at {} px",
         view.render.comparison_pill.width()
     );
 
