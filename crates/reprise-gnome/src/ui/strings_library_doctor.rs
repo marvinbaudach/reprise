@@ -44,6 +44,117 @@ pub const DOCTOR_SCOPE_FALLBACK: &str =
 pub const DOCTOR_ACOUSTID_UNAVAILABLE: &str = N_!("AcoustID Unavailable");
 pub const DOCTOR_ACOUSTID_UNAVAILABLE_DESCRIPTION: &str =
     N_!("Local checks and MusicBrainz suggestions remain available.");
+pub const DOCTOR_SOURCE_LOCAL: &str = N_!("Local");
+pub const DOCTOR_SOURCE_MUSICBRAINZ: &str = N_!("MusicBrainz");
+pub const DOCTOR_SOURCE_ACOUSTID: &str = N_!("AcoustID");
+pub const DOCTOR_RECORDING_MBID: &str = N_!("Recording MBID");
+pub const DOCTOR_UNKNOWN_TRACK: &str = N_!("Unknown Track");
+pub const DOCTOR_EMPTY_VALUE: &str = N_!("— empty —");
+pub const DOCTOR_SELECT_CHANGE: &str = N_!("Select tag change");
+pub const DOCTOR_TRACK_AND_FIELD: &str = N_!("Track + Field");
+pub const DOCTOR_CURRENT: &str = N_!("Current");
+pub const DOCTOR_PROPOSED: &str = N_!("Proposed");
+pub const DOCTOR_SOURCE: &str = N_!("Source");
+pub const DOCTOR_LOW_CONFIDENCE: &str = N_!("Low confidence; review before selecting");
+pub const DOCTOR_EDIT_TRACK_TAGS: &str = N_!("Edit track tags…");
+pub const DOCTOR_NO_CHANGES: &str = N_!("No Changes to Review");
+pub const DOCTOR_NO_CHANGES_DESCRIPTION: &str =
+    N_!("Return to the results and choose another review filter.");
+pub const DOCTOR_ALL_SAFE: &str = N_!("All Safe");
+pub const DOCTOR_NONE: &str = N_!("None");
+pub const DOCTOR_REVIEW_TITLE: &str = N_!("Review Tag Changes");
+pub const DOCTOR_PICK_ONE: &str = N_!("Pick one spelling to materialize its track changes.");
+
+pub fn doctor_remote_confidence(source: &str, confidence: u8) -> String {
+    formatted(
+        N_!("{source} · {confidence}%"),
+        &[("source", source), ("confidence", &confidence.to_string())],
+    )
+}
+
+pub fn doctor_low_confidence(source: &str, confidence: u8) -> String {
+    formatted(
+        N_!("{source} · {confidence}% · low confidence"),
+        &[("source", source), ("confidence", &confidence.to_string())],
+    )
+}
+
+pub fn doctor_review_row_description(
+    track: &str,
+    field: &str,
+    current: &str,
+    proposed: &str,
+    source: &str,
+) -> String {
+    formatted(
+        N_!("{track}, {field}. Current: {current}. Proposed: {proposed}. Source: {source}."),
+        &[
+            ("track", track),
+            ("field", field),
+            ("current", current),
+            ("proposed", proposed),
+            ("source", source),
+        ],
+    )
+}
+
+pub fn doctor_apply_tracks(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "Apply {count} track",
+        "Apply {count} tracks",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_apply_summary(changes: usize, files: usize) -> String {
+    formatted(
+        N_!("{changes} tag changes · {files} files · undo available after"),
+        &[
+            ("changes", &changes.to_string()),
+            ("files", &files.to_string()),
+        ],
+    )
+}
+
+pub fn doctor_candidate(value: &str, count: usize) -> String {
+    formatted(
+        N_!("{value} ({count})"),
+        &[("value", value), ("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_unresolved_spellings(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} spelling, no clear winner",
+        "{count} spellings, no clear winner",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_evidence_value(label: &str, value: &str) -> String {
+    formatted(
+        N_!("{label}: {value}"),
+        &[("label", label), ("value", value)],
+    )
+}
+
+pub fn doctor_duration_ms(duration_ms: u64) -> String {
+    formatted(
+        N_!("Duration: {duration} ms"),
+        &[("duration", &duration_ms.to_string())],
+    )
+}
+
+pub fn doctor_duration_delta_ms(delta_ms: u64) -> String {
+    formatted(
+        N_!("Duration difference: {delta} ms"),
+        &[("delta", &delta_ms.to_string())],
+    )
+}
 
 pub fn doctor_change_count(count: usize) -> String {
     let count_text = count.to_string();

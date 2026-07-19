@@ -1448,7 +1448,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   auch während Backoff; lokaler Scan und vollständige Einzelergebnisse bleiben
   dabei gültig.
 
-- **DOC-1d** [geplant] [gtk] — **Lokale Aktivierung ist keine
+- **DOC-1d** [aktiv] [gtk] — **Lokale Aktivierung ist keine
   Netzfreigabe.** Library Doctor ist standardmäßig aus. Sein Hauptschalter
   aktiviert ausschließlich lokale Checks und zeigt keine Netzfrage. Der
   getrennte, standardmäßig ausgeschaltete Schalter „MusicBrainz/AcoustID
@@ -1477,7 +1477,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Revalidierung folgt vor dem Schreiben. Neu hinzugekommene Tracks werden
   nicht nachträglich in den Snapshot aufgenommen.
 
-- **DOC-2b** [geplant] [gtk] — **26a ist Zusammenfassung, nie Schreibfläche.**
+- **DOC-2b** [aktiv] [gtk] — **26a ist Zusammenfassung, nie Schreibfläche.**
   Nach dem Scan zeigt Library Doctor getrennt „N safe · local, preselected"
   und „N suggestions · review" sowie Problemklassen für Casing/Whitespace,
   fehlenden Album Artist, Genre-Varianten, fehlendes/falsches Year und
@@ -1530,7 +1530,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Unter 50 % bleibt ein Vorschlag ausdrücklich low-confidence und ungeprüft.
   Es gibt keinen Fuzzy-Auto-Merge.
 
-- **DOC-4b** [geplant] [gtk] — **Konfidenz ist redundant sichtbar.** Local
+- **DOC-4b** [aktiv] [gtk] — **Konfidenz ist redundant sichtbar.** Local
   erscheint mit Quelle „Local" im App-Akzent. Remote ab 85 % erscheint
   normal mit Quelle und Prozentwert, 50–84 % gelb, unter 50 % rot mit
   Warnsymbol und ungeprüfter Checkbox. Farbe ist nie die einzige Information:
