@@ -17,7 +17,7 @@ use reprise_core::queries::ArtistAlbum;
 
 use crate::ui::artist_detail_pane::{AlbumCallback, TrackCallback};
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::eq_bars::{self, EqVariant};
+use crate::ui::playing_marker;
 use crate::ui::strings;
 
 /// Album cover edge in the albums row.
@@ -30,7 +30,7 @@ const TRACK_COVER_SIZE: i32 = 30;
 /// walking the widget tree.
 pub(in crate::ui) struct TopTrackRow {
     pub(in crate::ui) track_id: i64,
-    /// The shared `eq_bars` motif (CSS-animated); visibility is the only
+    /// The shared playing marker; visibility is the only
     /// per-row control — shown on the now-playing track's row.
     pub(in crate::ui) eq: gtk4::Box,
 }
@@ -155,7 +155,7 @@ pub(in crate::ui) fn build_top_track_row(
     duration.add_css_class("dim-label");
     row.append(&duration);
 
-    let eq = eq_bars::build(EqVariant::Animated);
+    let eq = playing_marker::build();
     eq.set_visible(false);
     row.append(&eq);
 
