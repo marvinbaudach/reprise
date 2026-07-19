@@ -63,6 +63,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mapped_column_title_uses_the_subtle_foreground_alpha() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         fn find_label(widget: &gtk4::Widget, text: &str) -> Option<gtk4::Label> {
             if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
                 if label.label() == text {
