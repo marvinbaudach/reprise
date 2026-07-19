@@ -103,6 +103,18 @@ pub(in crate::ui) fn restore(
     );
 }
 
+pub(in crate::ui) fn reveal(
+    grid: &gtk4::GridView,
+    model: &gtk4::FilterListModel,
+    identity: &AlbumIdentity,
+) -> bool {
+    let Some(position) = identity_position(model, identity) else {
+        return false;
+    };
+    restore_scroll(grid.clone(), model.clone(), position, 0.0, RESTORE_ATTEMPTS);
+    true
+}
+
 fn restore_scroll(
     grid: gtk4::GridView,
     model: gtk4::FilterListModel,

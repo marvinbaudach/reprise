@@ -251,6 +251,16 @@ impl ArtistMaster {
         }
     }
 
+    pub(in crate::ui) fn reveal_playing_context(&self) -> bool {
+        let artist = self.inner.now_playing.borrow().clone();
+        let Some(artist) = artist else { return false };
+        let Some(position) = artist_position_by_name(&self.inner.selection, &artist) else {
+            return false;
+        };
+        reveal_centered(&self.inner.list_view, position);
+        true
+    }
+
     #[cfg(test)]
     pub(in crate::ui) fn select_index_for_test(&self, index: u32) {
         self.inner.selection.set_selected(index);
@@ -376,6 +386,12 @@ fn restore_artist_scroll(list_view: gtk4::ListView, position: u32, offset: f64, 
 /// caller reveal the row (see [`reveal_centered`]); the plain selection restore
 /// after a re-sort ignores it, keeping the viewport put.
 fn select_artist_by_name(selection: &gtk4::SingleSelection, artist: &str) -> Option<u32> {
+    let position = artist_position_by_name(selection, artist)?;
+    selection.set_selected(position);
+    Some(position)
+}
+
+fn artist_position_by_name(selection: &gtk4::SingleSelection, artist: &str) -> Option<u32> {
     let target = artist.to_lowercase();
     let count = selection.n_items();
     for index in 0..count {
@@ -384,7 +400,6 @@ fn select_artist_by_name(selection: &gtk4::SingleSelection, artist: &str) -> Opt
             .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
             .is_some_and(|boxed| boxed.borrow::<ArtistSummary>().artist.to_lowercase() == target);
         if matches {
-            selection.set_selected(index);
             return Some(index);
         }
     }

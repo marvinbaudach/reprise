@@ -134,6 +134,10 @@ impl AlbumViewState {
         })
     }
 
+    pub(in crate::ui) fn now_playing_identity_cell(&self) -> Rc<RefCell<Option<(String, String)>>> {
+        self.card_shared.now_playing_album.clone()
+    }
+
     pub(in crate::ui) fn playback_state_callback(&self) -> Rc<dyn Fn(PlaybackState)> {
         let playback_state = self.card_shared.playback_state.clone();
         let now_playing_album = self.card_shared.now_playing_album.clone();

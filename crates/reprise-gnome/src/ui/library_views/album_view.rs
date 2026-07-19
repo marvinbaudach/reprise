@@ -362,6 +362,25 @@ impl AlbumView {
         })
     }
 
+    pub(in crate::ui) fn reveal_playing_context_callback(&self) -> Rc<dyn Fn() -> bool> {
+        let grid = self.grid_view.downgrade();
+        let model = self.filter_model.clone();
+        let now_playing = self.state.now_playing_identity_cell();
+        Rc::new(move || {
+            let Some((title, artist)) = now_playing.borrow().clone() else {
+                return false;
+            };
+            let Some(grid) = grid.upgrade() else {
+                return false;
+            };
+            album_view_memory::reveal(
+                &grid,
+                &model,
+                &crate::ui::album_view_memory::AlbumIdentity { title, artist },
+            )
+        })
+    }
+
     pub(in crate::ui) fn reveal_callback(
         &self,
     ) -> crate::ui::window::album_grid_reveal::AlbumRevealCallback {

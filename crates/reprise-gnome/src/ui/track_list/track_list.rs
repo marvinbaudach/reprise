@@ -119,17 +119,6 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
-    /// One-shot marker armed by `activate_track` with the id the user just
-    /// started from the table (double-click/Enter/queue activation), telling
-    /// the next now-playing follow (`current_track_selection::
-    /// select_current_track`) to select the row but skip the viewport
-    /// centering — the row is already on screen under the pointer, so a
-    /// center would visibly yank the table. Consumed (`take`) on every
-    /// follow regardless of id so a stale marker from an activation that
-    /// never reached playback can't suppress a later auto-advance scroll.
-    /// A `Cell`: `Copy` payload, single-threaded UI access, same rationale
-    /// as `playing_track_id`.
-    pub(in crate::ui) suppress_follow_scroll: Cell<Option<i64>>,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
     /// eligible drag is in flight; the drop-indicator eligibility check in

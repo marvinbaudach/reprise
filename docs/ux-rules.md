@@ -948,13 +948,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
   Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
   Kleinschrift und benötigt dieselbe Prüfung wie Hint bei Normalgröße.
-- **NAV-10** [geplant] [gtk] — Der laufende Kontext bleibt in allen Ansichten
+- **NAV-10** [aktiv] [gtk] — Der laufende Kontext bleibt in allen Ansichten
   mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim ersten
   Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel stellen
   NAV-5s gemerkten ID-plus-Offset-Anker wieder her. Explizites „Go to
   album/artist" springt immer deterministisch; Selektion folgt der Wiedergabe
-  nie. Umsetzung erst in Batch B nach NAV-5 und der gemeinsamen
-  Playing-Badge-Extraktion; siehe Beschlussdokument.
+  nie.
 - **QUE-7** [aktiv] [gtk] — Up Next besteht aus der manuellen Queue plus
   einem virtuellen, benannten Kontext-Tail mit Count. Der Tail wird nicht als
   Einzelzeilen materialisiert, sondern nur im sichtbaren Fenster gerendert;
