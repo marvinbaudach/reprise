@@ -7,6 +7,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -17,6 +18,7 @@ use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use super::album_view::AlbumView;
+use super::artist_view::ArtistView;
 use super::cover_download_batch::CoverDownloadBatch;
 use super::device_view::DeviceViewPage;
 use super::first_run::FirstRunDecision;
@@ -57,6 +59,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) library_title: &'a Rc<LibraryTitle>,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
     pub(in crate::ui) album_view: &'a AlbumView,
+    pub(in crate::ui) artist_view: &'a Rc<ArtistView>,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
@@ -70,6 +73,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) cover_batch: &'a Rc<CoverDownloadBatch>,
     pub(in crate::ui) first_run_decision: FirstRunDecision,
     pub(in crate::ui) nav_history: &'a Rc<crate::ui::nav_history::NavHistory>,
+    pub(in crate::ui) content_nav: &'a adw::NavigationView,
 }
 
 pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
@@ -94,6 +98,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         library_title,
         window_title,
         album_view,
+        artist_view,
         scan_controls,
         toast_overlay,
         watcher_state,
@@ -107,7 +112,43 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         cover_batch,
         first_run_decision,
         nav_history,
+        content_nav,
     } = args;
+
+    let refresh_doctor_views = {
+        let album = album_view.refresh_callback();
+        let artist = artist_view.refresh_callback();
+        let stats = stats_view.clone();
+        let conn = conn.clone();
+        Rc::new(move || {
+            album();
+            artist();
+            stats.refresh(&conn);
+        }) as Rc<dyn Fn()>
+    };
+    let library_doctor = super::library_doctor::LibraryDoctorCoordinator::new(
+        super::library_doctor::LibraryDoctorContext {
+            conn,
+            db_path,
+            navigation: content_nav,
+            window,
+            track_list,
+            scan_controls,
+            fingerprint: Arc::new(reprise_platform_linux::fingerprint::GstreamerFingerprintBackend),
+            preferences,
+            sidebar,
+            toast_overlay,
+            refresh_views: refresh_doctor_views,
+        },
+    );
+    {
+        let library_doctor = Rc::downgrade(&library_doctor);
+        stats_view.set_on_unify_spellings(move |ids| {
+            if let Some(library_doctor) = library_doctor.upgrade() {
+                library_doctor.open_for_selection(ids);
+            }
+        });
+    }
 
     let active_content_focus = super::library_shell::ActiveContentFocus::new(
         content_stack,
@@ -136,6 +177,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let sync_preferences = preferences.clone();
     let menu_preferences = preferences.clone();
     let cancel_scan_controls = scan_controls.clone();
+    let menu_library_doctor = library_doctor;
     let stop_player = player.as_ref().map(|player| {
         let player = Rc::downgrade(player);
         Rc::new(move || {
@@ -162,6 +204,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 );
             }),
             on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
+            on_library_doctor: Rc::new(move || menu_library_doctor.open()),
             on_sync_device: Rc::new(move || {
                 sync_preferences.present_page("synchronization");
             }),

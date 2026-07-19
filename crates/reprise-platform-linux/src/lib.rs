@@ -10,9 +10,13 @@ pub mod audio_analysis;
 mod crossfade;
 pub mod device_sync;
 pub mod device_transfer;
+pub mod fingerprint;
 mod gapless;
 pub mod mpris;
 pub mod player;
 mod player_effects;
 pub mod trash;
 pub mod waveform;
+
+#[cfg(test)]
+mod fingerprint_tests;

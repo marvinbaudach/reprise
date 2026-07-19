@@ -14,6 +14,7 @@ pub(super) struct SidebarActivitySlot {
     root: gtk4::Box,
     device_section: RefCell<Option<gtk4::Widget>>,
     scan_card: RefCell<Option<gtk4::Widget>>,
+    doctor_card: RefCell<Option<gtk4::Widget>>,
     relink_card: RefCell<Option<gtk4::Widget>>,
 }
 
@@ -23,6 +24,7 @@ impl SidebarActivitySlot {
             root: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
             device_section: RefCell::new(None),
             scan_card: RefCell::new(None),
+            doctor_card: RefCell::new(None),
             relink_card: RefCell::new(None),
         }
     }
@@ -49,6 +51,18 @@ impl SidebarActivitySlot {
         replace_child(&self.root, &self.relink_card, card);
         let card = card.upcast_ref::<gtk4::Widget>();
         let predecessor = self
+            .doctor_card
+            .borrow()
+            .clone()
+            .or_else(|| self.scan_card.borrow().clone())
+            .or_else(|| self.device_section.borrow().clone());
+        self.root.reorder_child_after(card, predecessor.as_ref());
+    }
+
+    pub(super) fn set_doctor_card(&self, card: &impl IsA<gtk4::Widget>) {
+        replace_child(&self.root, &self.doctor_card, card);
+        let card = card.upcast_ref::<gtk4::Widget>();
+        let predecessor = self
             .scan_card
             .borrow()
             .clone()
@@ -67,6 +81,11 @@ impl super::Sidebar {
     /// Places Locate's relink-search card in the same bottom activity slot.
     pub fn append_relink_card(&self, widget: &impl IsA<gtk4::Widget>) {
         self.activity_slot.set_relink_card(widget);
+    }
+
+    /// Places the one Library Doctor job card in the shared activity slot.
+    pub fn append_doctor_card(&self, widget: &impl IsA<gtk4::Widget>) {
+        self.activity_slot.set_doctor_card(widget);
     }
 }
 
@@ -102,10 +121,14 @@ mod tests {
         let relink = gtk4::Revealer::builder()
             .child(&gtk4::Label::new(Some("Relinking")))
             .build();
+        let doctor = gtk4::Revealer::builder()
+            .child(&gtk4::Label::new(Some("Library Doctor")))
+            .build();
 
         // Attach in the reverse of window construction order to prove that
         // callers cannot accidentally move either activity out of place.
         slot.set_relink_card(&relink);
+        slot.set_doctor_card(&doctor);
         slot.set_scan_card(&scan);
         slot.set_device_section(&device);
 
@@ -121,8 +144,10 @@ mod tests {
         device.set_visible(true);
         scan.set_reveal_child(true);
         relink.set_reveal_child(true);
+        doctor.set_reveal_child(true);
         assert!(device.is_visible());
         assert!(scan.reveals_child());
         assert!(relink.reveals_child());
+        assert!(doctor.reveals_child());
     }
 }

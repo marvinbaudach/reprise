@@ -8,7 +8,7 @@
 //! order engine); `format`; and the platform contracts — `playback`
 //! (`PlaybackBackend` trait plus `PlayerEvent`) and `media_integration`
 //! (`MediaIntegrationHandles` plus state/command types), plus `waveform`
-//! (`WaveformBackend`) — whose concrete
+//! (`WaveformBackend`) and `fingerprint` (`FingerprintBackend`) — whose concrete
 //! implementations live in per-OS platform crates (Linux: GStreamer and
 //! MPRIS in `reprise-platform-linux`).
 
@@ -18,9 +18,14 @@ pub mod audio_analysis;
 pub mod cover;
 pub mod cover_download;
 pub mod db;
+mod db_library_doctor;
+mod db_library_doctor_remote;
+mod db_tag_write_jobs;
 pub mod device_sync;
+pub mod fingerprint;
 pub mod format;
 pub mod library;
+pub use library::library_doctor;
 pub mod lyrics;
 pub mod media_integration;
 pub mod models;
@@ -37,5 +42,7 @@ pub mod waveform;
 
 #[cfg(test)]
 mod artist_news_tests;
+#[cfg(test)]
+mod fingerprint_tests;
 #[cfg(test)]
 mod lyrics_tests;

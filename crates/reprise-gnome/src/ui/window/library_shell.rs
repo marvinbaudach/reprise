@@ -92,7 +92,7 @@ impl ActiveContentFocus {
         let focus_tracks = Rc::new(move || {
             track_list
                 .upgrade()
-                .is_some_and(|track_list| track_list.focus_track_list())
+                .is_some_and(|track_list| track_list.focus_visible_content())
         });
         let album_grid = album_grid.downgrade();
         let focus_albums =
@@ -233,7 +233,7 @@ pub(in crate::ui) fn wire_album_view(
         let track_list_focus = Rc::downgrade(&track_list_clone);
         gtk4::glib::idle_add_local_once(move || {
             if let Some(track_list) = track_list_focus.upgrade() {
-                if !track_list.focus_track_list() {
+                if !track_list.focus_visible_content() {
                     tracing::debug!("album activate: track list did not take focus");
                 }
             }

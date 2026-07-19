@@ -12,8 +12,9 @@ use super::{strings, PreferencesContext};
 const TARGET_CLASS: &str = "reprise-plugin-target";
 pub(in crate::ui) const ONLINE_LYRICS_TARGETS: &[&str] = &["online_lyrics"];
 
-pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 4] {
+pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 5] {
     [
+        &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
         &reprise_core::modules::NEW_RELEASES_MODULE,
         &reprise_core::modules::COVER_DOWNLOAD_MODULE,
         &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
@@ -47,6 +48,7 @@ pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
         "listenbrainz" => strings::LISTENBRAINZ,
         "lastfm" => strings::LASTFM,
         "new_releases" => strings::NEW_RELEASES,
+        "library_doctor" => strings::LIBRARY_DOCTOR,
         "cover_download" => strings::COVER_DOWNLOAD,
         "artist_portraits" => strings::ARTIST_PORTRAITS,
         "online_lyrics" => strings::ONLINE_LYRICS,
@@ -60,6 +62,7 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
         "lastfm" => strings::PLUGIN_LASTFM_DESCRIPTION,
         "new_releases" => strings::NEW_RELEASES_DESCRIPTION,
+        "library_doctor" => strings::LIBRARY_DOCTOR_DESCRIPTION,
         "cover_download" => strings::COVER_DOWNLOAD_DESCRIPTION,
         "artist_portraits" => strings::ARTIST_PORTRAITS_DESCRIPTION,
         "online_lyrics" => strings::ONLINE_LYRICS_DESCRIPTION,
@@ -83,6 +86,10 @@ impl PreferencesContext {
             }
             if descriptor.id == "lastfm" {
                 group.add(&self.build_lastfm_row());
+                continue;
+            }
+            if descriptor.id == "library_doctor" {
+                group.add(&super::preference_library_doctor::plugin_row(self));
                 continue;
             }
 
@@ -109,7 +116,7 @@ impl PreferencesContext {
                 .any(|network| network.id == descriptor.id)
             {
                 let row_ref = glib::WeakRef::new();
-                row_ref.set(Some(&row));
+                row_ref.set(Some(row.upcast_ref::<gtk4::Widget>()));
                 self.plugin_rows.borrow_mut().insert(descriptor.id, row_ref);
             }
             let scope_row = (descriptor.id == "new_releases")
@@ -127,9 +134,6 @@ impl PreferencesContext {
                     return;
                 }
                 let active = row.is_active();
-                if let Some(scope) = &scope_notify {
-                    scope.set_sensitive(active);
-                }
                 let result = match descriptor.id {
                     "new_releases" => context
                         .artist_news
@@ -159,6 +163,10 @@ impl PreferencesContext {
                     syncing_notify.set(true);
                     row.set_active(!active);
                     syncing_notify.set(false);
+                    return;
+                }
+                if let Some(scope) = &scope_notify {
+                    scope.set_sensitive(active);
                 }
             });
             if descriptor.id == "new_releases" {
@@ -209,6 +217,9 @@ impl PreferencesContext {
             first.grab_focus();
         }
         for row in rows {
+            if let Ok(expander) = row.clone().downcast::<adw::ExpanderRow>() {
+                expander.set_expanded(true);
+            }
             row.add_css_class(TARGET_CLASS);
             let row = row.downgrade();
             glib::timeout_add_local_once(highlight_duration(), move || {
@@ -217,6 +228,11 @@ impl PreferencesContext {
                 }
             });
         }
+    }
+
+    pub(in crate::ui) fn set_library_doctor_job_running(&self, running: bool) {
+        self.library_doctor_job_running.set(running);
+        self.doctor_controls.set_job_running(running);
     }
 }
 
@@ -251,10 +267,30 @@ mod tests {
     #[test]
     fn all_network_plugin_rows_expose_privacy_copy() {
         let descriptors = network_descriptors();
-        assert_eq!(descriptors.len(), 4);
+        assert_eq!(descriptors.len(), 5);
         for descriptor in descriptors {
             assert!(plugin_applies_live(descriptor));
             assert!(plugin_description(descriptor).contains("contacts"));
         }
+    }
+
+    #[test]
+    fn doc_6b_library_doctor_controls_explain_job_locking() {
+        let idle = super::super::preference_library_doctor::control_state(true, false);
+        assert!(idle.module_sensitive);
+        assert!(idle.remote_sensitive);
+        assert!(!idle.subtitle.contains("running"));
+
+        let running = super::super::preference_library_doctor::control_state(true, true);
+        assert!(!running.module_sensitive);
+        assert!(!running.remote_sensitive);
+        assert!(running.subtitle.contains("running"));
+    }
+
+    #[test]
+    fn doc_6a_revert_stays_available_while_the_module_is_disabled() {
+        let disabled = super::super::preference_library_doctor::control_state(false, false);
+        assert!(!disabled.remote_sensitive);
+        assert!(disabled.revert_sensitive);
     }
 }
