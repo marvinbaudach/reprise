@@ -25,6 +25,9 @@ for required_pattern in \
   'cua_driver scroll' \
   'delivery_mode: "foreground"' \
   'assert_scroll_delivered' \
+  'assert_glass_region_changed' \
+  'glass pixels stayed unchanged' \
+  'glass-rmse.tsv' \
   'cmp -s' \
   'run_position bottom' \
   'run_position top' \
@@ -33,6 +36,7 @@ for required_pattern in \
   '"Albums" "$position-tracks-ready"' \
   'albums-under-header' \
   'down 50 "$position-albums-at-end"' \
+  'verify_glass_regions "$position"' \
   'albums-at-end'; do
   if ! rg --quiet --fixed-strings "$required_pattern" "$runner"; then
     echo "$runner is missing visual-CUA contract: $required_pattern" >&2
