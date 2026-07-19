@@ -80,6 +80,8 @@ fn sidebar_row(id: PageId) -> gtk4::ListBoxRow {
     row_box.append(&icon);
     row_box.append(&label);
     let row = gtk4::ListBoxRow::new();
+    // a11y-semantics: role=list-item name=page-title state=selected action=focus/navigate
+    row.set_focusable(true);
     row.set_child(Some(&row_box));
     row
 }
@@ -98,6 +100,13 @@ pub(in crate::ui) fn page_index_by_name(name: &str) -> Option<i32> {
         .iter()
         .position(|id| id.name() == name)
         .map(|i| i as i32)
+}
+
+pub(in crate::ui) fn selected_sidebar_focus_target(sidebar: &gtk4::ListBox) -> gtk4::Widget {
+    let Some(row) = sidebar.selected_row() else {
+        return sidebar.clone().upcast();
+    };
+    row.upcast()
 }
 
 pub(in crate::ui) fn build(
@@ -240,6 +249,24 @@ mod tests {
     }
 
     #[test]
+    fn acc_3_preferences_focuses_the_selected_navigation_row_not_its_container() {
+        let source = include_str!("preferences.rs");
+        let shell_source = include_str!("preferences_window.rs");
+        let explicit_focusable = ["row.set_", "focusable(true);"].concat();
+        let semantic_focusable = [
+            "// a11y-semantics: role=list-item name=page-title state=selected ",
+            "action=focus/navigate\n    row.set_",
+            "focusable(true);",
+        ]
+        .concat();
+
+        assert!(source.contains("selected_sidebar_focus_target(&shell.sidebar)"));
+        assert!(!source.contains("bind_closable_dialog(&shell.dialog, &shell.sidebar)"));
+        assert_eq!(shell_source.matches(&explicit_focusable).count(), 1);
+        assert!(shell_source.contains(&semantic_focusable));
+    }
+
+    #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn preferences_are_a_dialog_with_a_page_sidebar() {
         gtk4::init().unwrap();
@@ -269,6 +296,14 @@ mod tests {
             .row_at_index(PAGE_ORDER.len() as i32)
             .is_none());
         assert_eq!(shell.stack.pages().n_items(), PAGE_ORDER.len() as u32);
+        assert_eq!(
+            selected_sidebar_focus_target(&shell.sidebar),
+            shell
+                .sidebar
+                .selected_row()
+                .unwrap()
+                .upcast::<gtk4::Widget>()
+        );
         for id in PAGE_ORDER {
             assert!(shell
                 .stack

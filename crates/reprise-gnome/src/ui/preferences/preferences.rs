@@ -271,7 +271,6 @@ impl PreferencesContext {
             Some(foreground_scan_progress.widget().upcast_ref()),
         );
         let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&self.window);
-        focus_guard.bind_closable_dialog(&shell.dialog, &shell.sidebar);
         shell.dialog.connect_closed(move |_| {
             let _keep_progress_alive_until_closed = &foreground_scan_progress;
         });
@@ -308,6 +307,9 @@ impl PreferencesContext {
                 .sidebar
                 .select_row(shell.sidebar.row_at_index(index).as_ref());
         }
+        let initial_focus =
+            super::preferences_window::selected_sidebar_focus_target(&shell.sidebar);
+        focus_guard.bind_closable_dialog(&shell.dialog, &initial_focus);
         if smoke.as_deref() == Some("columns") {
             self.open_column_layout_editor();
         }
