@@ -44,6 +44,7 @@ fn app_css() -> String {
         super::column_header_dnd::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
+        super::playing_marker::css(),
         super::sidebar_device_card::css(),
         super::device_view::css(),
         super::list_density::css(),

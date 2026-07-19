@@ -5,6 +5,7 @@ use gtk4::{pango, prelude::*};
 use super::cover_loader::CoverLoader;
 use super::strings;
 use super::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
+use crate::ui::playing_marker;
 
 pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
 pub(in crate::ui) const VOLUME_MAX: f64 = 1.0;
@@ -70,14 +71,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let artist_label = build_track_label();
     artist_label.add_css_class("player-bar-artist");
 
-    // — Mini-EQ (3 animated bars, toggled via "playing" CSS class) —
-    let mini_eq = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    // — Shared persistent playing marker —
+    let mini_eq = playing_marker::build();
     mini_eq.add_css_class("mini-eq");
-    mini_eq.set_valign(gtk4::Align::Center);
-    for _ in 0..3 {
-        let bar = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        mini_eq.append(&bar);
-    }
 
     // Title row: title label + mini-EQ side by side (spec 1.5: "neben dem Titel").
     let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
@@ -292,20 +288,7 @@ pub(in crate::ui) fn css() -> String {
          .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
            opacity: 0; transition: opacity {TRANSITION}; }}\n\
          .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\
-         .mini-eq {{ margin-left: 4px; }}\n\
-         .mini-eq > box {{ \
-           min-width: 3px; min-height: 4px; \
-           border-radius: 1px; \
-           background-color: @reprise_player_accent; }}\n\
-         .mini-eq.playing > box:nth-child(1) {{ \
-           animation: mini-eq-bar 0.65s ease-in-out infinite alternate; }}\n\
-         .mini-eq.playing > box:nth-child(2) {{ \
-           animation: mini-eq-bar 0.65s ease-in-out 0.22s infinite alternate; }}\n\
-         .mini-eq.playing > box:nth-child(3) {{ \
-           animation: mini-eq-bar 0.65s ease-in-out 0.44s infinite alternate; }}\n\
-         @keyframes mini-eq-bar {{ \
-           from {{ min-height: 4px; }} \
-           to   {{ min-height: 14px; }} }}"
+         .mini-eq {{ margin-left: 4px; }}"
     )
 }
 
