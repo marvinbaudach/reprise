@@ -29,6 +29,15 @@ const CONTENT_MAX_WIDTH: i32 = 1120;
 const TOP_TRACK_LIMIT: usize = 10;
 const SECTION_SPACING: i32 = 28;
 const ASYMMETRIC_BREAKPOINT: f64 = 720.0;
+/// The asymmetric row keeps its 1.35 / 1 ratio, but both minimum widths have
+/// to fit *inside* [`ASYMMETRIC_BREAKPOINT`] together with the spacing —
+/// otherwise the row can never be allocated narrowly enough for the
+/// breakpoint to apply and the single-column layout is unreachable. The
+/// enclosing `ScrolledWindow` never scrolls horizontally, so this minimum is
+/// also the narrowest the whole window can get while the row is side by side.
+const CLOCK_MIN_WIDTH: i32 = 324;
+const HIGHLIGHTS_MIN_WIDTH: i32 = 240;
+const ASYMMETRIC_SPACING: i32 = 20;
 #[cfg(test)]
 const SECTION_ORDER: [&str; 6] = [
     "ribbon",
@@ -120,10 +129,10 @@ impl StatsView {
         let clock_section = section("LISTENING CLOCK", clock.widget());
         let highlights_section = section("HIGHLIGHTS", highlights.widget());
         clock_section.set_hexpand(true);
-        clock_section.set_width_request(405);
+        clock_section.set_width_request(CLOCK_MIN_WIDTH);
         highlights_section.set_hexpand(true);
-        highlights_section.set_width_request(300);
-        let asymmetric_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 20);
+        highlights_section.set_width_request(HIGHLIGHTS_MIN_WIDTH);
+        let asymmetric_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ASYMMETRIC_SPACING);
         asymmetric_row.append(&clock_section);
         asymmetric_row.append(&highlights_section);
         let asymmetric_bin = adw::BreakpointBin::new();
@@ -739,23 +748,103 @@ mod tests {
         assert!(!view.ribbon.widget().is_visible());
     }
 
+    /// The breakpoint only applies once the bin has a real allocation, so the
+    /// test has to let a layout cycle run instead of draining pending sources.
+    fn wait_for_layout() {
+        let main_loop = gtk4::glib::MainLoop::new(None, false);
+        let quit = main_loop.clone();
+        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+            quit.quit();
+        });
+        main_loop.run();
+    }
+
+    /// One track with one play in the current period, so the page stack shows
+    /// the sections instead of the empty state — a hidden stack page is never
+    /// allocated, and an unallocated bin can never hit a breakpoint.
+    fn seed_one_play(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, album, album_artist, genre, duration_ms, \
+              play_count, added_at) \
+             VALUES (1, '/music/1.flac', 'Track', 'Artist', 'Album', '', 'Rock', 300000, 1, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+            rusqlite::params![now_unix()],
+        )
+        .unwrap();
+    }
+
+    fn presented(width: i32) -> (StatsView, adw::Window) {
+        let (view, conn) = view_and_conn();
+        seed_one_play(&conn.borrow());
+        view.wire_year_selector(&conn);
+        assert_eq!(
+            view.page_stack.visible_child_name().as_deref(),
+            Some("sections")
+        );
+        let window = adw::Window::builder()
+            .default_width(width)
+            .default_height(700)
+            .content(view.widget())
+            .build();
+        // A bare Xvfb screen can be smaller than the requested default size,
+        // which would silently turn the wide case into a narrow one.
+        window.set_size_request(width, -1);
+        window.present();
+        wait_for_layout();
+        (view, window)
+    }
+
+    /// Between the two numbers lies a band of window widths where the row is
+    /// still side by side but already narrower than the two sections need —
+    /// GTK then under-allocates them. The band has to stay empty.
+    #[test]
+    fn asymmetric_row_minimums_fit_under_the_breakpoint() {
+        let minimum = CLOCK_MIN_WIDTH + HIGHLIGHTS_MIN_WIDTH + ASYMMETRIC_SPACING;
+        assert!(
+            f64::from(minimum) <= ASYMMETRIC_BREAKPOINT,
+            "side-by-side minimum {minimum} exceeds the breakpoint {ASYMMETRIC_BREAKPOINT}"
+        );
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn stats_view_narrow_width_stacks_the_asymmetric_row() {
         gtk4::init().unwrap();
-        let (view, _) = view_and_conn();
-        let window = adw::Window::builder()
-            .default_width(600)
-            .default_height(700)
-            .content(view.widget())
-            .build();
-        window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
+        let (view, window) = presented(600);
 
+        let width = view.asymmetric_bin.width();
+        assert!(width > 0, "the bin must be allocated, got {width}");
+        assert!(
+            width <= ASYMMETRIC_BREAKPOINT as i32,
+            "the row's minimum width must fit under the breakpoint, got {width}"
+        );
         assert_eq!(
             view.asymmetric_row.orientation(),
             gtk4::Orientation::Vertical
         );
-        assert!(view.asymmetric_bin.width() <= ASYMMETRIC_BREAKPOINT as i32);
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stats_view_wide_width_keeps_the_asymmetric_row_side_by_side() {
+        gtk4::init().unwrap();
+        let (view, window) = presented(1_000);
+
+        let width = view.asymmetric_bin.width();
+        assert!(
+            width > ASYMMETRIC_BREAKPOINT as i32,
+            "a wide window must allocate the bin above the breakpoint, got {width}"
+        );
+        assert_eq!(
+            view.asymmetric_row.orientation(),
+            gtk4::Orientation::Horizontal
+        );
+        window.close();
     }
 }
