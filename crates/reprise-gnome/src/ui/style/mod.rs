@@ -44,6 +44,7 @@ fn app_css() -> String {
         super::column_header_dnd::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
+        super::glass::css(),
         super::playing_marker::css(),
         super::sidebar_device_card::css(),
         super::device_view::css(),
@@ -212,6 +213,7 @@ mod tests {
 
         for marker in [
             ".reprise-equalizer scale > trough > highlight",
+            ".reprise-glass-surface",
             "popover.menu > contents",
             ".toast button.text-button",
             ".player-bar-play",

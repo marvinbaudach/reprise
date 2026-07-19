@@ -1,6 +1,7 @@
 //! Backdrop renderer for one clipped chrome zone.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use gtk4::gdk;
 use gtk4::glib;
@@ -8,6 +9,8 @@ use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
 use gtk4::prelude::*;
 
 use super::material::{current_theme, GlassEnvironment, GlassMode};
+
+type AllocateCallback = Rc<dyn Fn(i32, i32)>;
 
 mod imp {
     use super::*;
@@ -17,6 +20,7 @@ mod imp {
     pub struct GlassBackdrop {
         pub paintable: RefCell<Option<gtk4::WidgetPaintable>>,
         pub source: glib::WeakRef<gtk4::Widget>,
+        pub on_allocate: RefCell<Option<AllocateCallback>>,
     }
 
     #[glib::object_subclass]
@@ -58,6 +62,14 @@ mod imp {
                 ),
                 &gtk4::graphene::Rect::new(0.0, 0.0, width as f32, height as f32),
             );
+        }
+
+        fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
+            self.parent_size_allocate(width, height, baseline);
+            let callback = self.on_allocate.borrow().clone();
+            if let Some(callback) = callback {
+                callback(width, height);
+            }
         }
     }
 
@@ -118,5 +130,9 @@ impl GlassBackdrop {
         backdrop.set_hexpand(true);
         backdrop.set_vexpand(true);
         backdrop
+    }
+
+    pub(crate) fn set_on_allocate(&self, callback: Rc<dyn Fn(i32, i32)>) {
+        *self.imp().on_allocate.borrow_mut() = Some(callback);
     }
 }

@@ -276,8 +276,7 @@ pub(in crate::ui) fn css() -> String {
     let micro_easing = motion::MICRO_CSS_EASING;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
-           background-color: rgb(26, 26, 26); \
-           border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
+           background-color: transparent; border: none; }}\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \
@@ -302,16 +301,16 @@ pub(in crate::ui) fn css() -> String {
          .{COVER_CSS_CLASS}.hovered {{ opacity: 1.0; }}\n\
          .player-bar-title {{ font-weight: bold; font-size: 13.5px; }}\n\
          .player-bar-artist {{ \
-           color: alpha(@window_fg_color, 0.50); font-size: 12px; \
+           color: alpha(@window_fg_color, 0.82); font-size: 12px; \
            transition: color {TRANSITION}; }}\n\
-         .player-bar-artist.artist-hovered {{ color: alpha(white, 0.75); }}\n\
+         .player-bar-artist.artist-hovered {{ color: @window_fg_color; }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}\n\
          .{TRANSPORT_ROW_CSS_CLASS} button.flat {{ \
            border-radius: 50%; \
            transition: background-color {TRANSITION}, color {TRANSITION}; }}\n\
          .{TRANSPORT_ROW_CSS_CLASS} button.flat:hover {{ \
-           background-color: alpha(white, 0.08); color: white; }}\n\
+           background-color: alpha(@window_fg_color, 0.08); color: @window_fg_color; }}\n\
          .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
            opacity: 0; transition: opacity {TRANSITION}; }}\n\
          .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\
