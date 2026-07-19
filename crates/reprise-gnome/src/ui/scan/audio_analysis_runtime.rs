@@ -568,7 +568,8 @@ fn set_processing(shared: &SharedState, processing: bool) {
 }
 
 fn can_continue(shared: &SharedState, capability: WorkCapability) -> bool {
-    lock(&shared.state).next_capability() == Some(capability)
+    !shared.decode_cancelled.load(Ordering::Acquire)
+        && lock(&shared.state).next_capability() == Some(capability)
 }
 
 fn current_versions() -> AnalysisVersions {
