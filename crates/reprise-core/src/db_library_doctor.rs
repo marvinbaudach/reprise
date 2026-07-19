@@ -112,7 +112,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 19);
+        assert_eq!(version, 20);
         assert_eq!(table_count, 7);
     }
 

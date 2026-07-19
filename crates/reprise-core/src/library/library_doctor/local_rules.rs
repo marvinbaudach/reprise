@@ -114,6 +114,7 @@ fn add_grouped_field(
                 .map(|(value, count)| DoctorCandidate {
                     value: DoctorValue::Text(value),
                     count,
+                    evidence: Vec::new(),
                 })
                 .collect::<Vec<_>>();
             candidates.sort_by(|left, right| value_text(&left.value).cmp(value_text(&right.value)));
@@ -128,6 +129,7 @@ fn add_grouped_field(
                         current: DoctorValue::from_text(current),
                     })
                     .collect(),
+                local_fallback: None,
             });
             continue;
         }
@@ -177,6 +179,8 @@ fn local_proposal(
         confidence: 100,
         preselected: true,
         problem_class,
+        evidence: Vec::new(),
+        local_fallback: None,
     }
 }
 

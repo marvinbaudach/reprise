@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::queries::BrowseFilter;
 use crate::view_source::ViewSource;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorViewSnapshot {
@@ -66,7 +67,8 @@ pub enum FrozenScope {
     FallbackRequired,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DoctorField {
     Title,
     Artist,
@@ -104,7 +106,8 @@ impl DoctorField {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum DoctorValue {
     Empty,
     Text(String),
@@ -165,7 +168,8 @@ impl ProposalSource {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ProblemClass {
     CasingWhitespace,
     MissingAlbumArtist,
@@ -207,15 +211,36 @@ pub struct DoctorProposal {
     pub confidence: u8,
     pub preselected: bool,
     pub problem_class: ProblemClass,
+    /// Ordered, source-native evidence. Local rows deliberately keep this empty.
+    pub evidence: Vec<super::remote::RemoteEvidence>,
+    /// A local result displaced by stronger remote evidence, retained so hiding
+    /// remote rows can restore the deterministic local review row.
+    pub local_fallback: Option<DoctorLocalFallback>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DoctorLocalFallback {
+    Proposal {
+        proposed: DoctorValue,
+        confidence: u8,
+        problem_class: ProblemClass,
+    },
+    Manual {
+        group_key: String,
+        candidates: Vec<DoctorCandidate>,
+        members: Vec<DoctorGroupMember>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoctorCandidate {
     pub value: DoctorValue,
     pub count: usize,
+    pub evidence: Vec<super::remote::RemoteEvidence>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoctorGroupMember {
     pub track_id: i64,
     pub current: DoctorValue,
@@ -227,6 +252,7 @@ pub struct DoctorUnresolvedGroup {
     pub group_key: String,
     pub candidates: Vec<DoctorCandidate>,
     pub members: Vec<DoctorGroupMember>,
+    pub local_fallback: Option<DoctorLocalFallback>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,6 +282,12 @@ impl DoctorScan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalScanRequest {
     pub scope: DoctorScopeRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoctorScanRequest {
+    pub scope: DoctorScopeRequest,
+    pub options: DoctorScanOptions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
