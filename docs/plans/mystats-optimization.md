@@ -2,7 +2,7 @@
 slug: mystats-optimization
 worktree: /home/marvin/Projects/reprise/.worktrees/mystats-optimization
 branch: feat/mystats-optimization
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-07-19
 ---
