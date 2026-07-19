@@ -117,9 +117,22 @@ pub(super) fn install(
     {
         let menu_button = menu_button.downgrade();
         open_primary_menu.connect_activate(move |_, _| {
-            if let Some(menu_button) = menu_button.upgrade() {
-                menu_button.popup();
+            let Some(menu_button) = menu_button.upgrade() else {
+                return;
+            };
+            // Upgrading proves the button is alive, not that it is still in a
+            // window. Compact mode detaches the whole Library tree via
+            // `content_host.set_content()` while this struct keeps it alive, so
+            // the weak ref upgrades on a widget with no toplevel. `popup()`
+            // then realizes a popover whose parent surface is NULL, and GTK
+            // dereferences it without checking — a segfault, not a warning.
+            // The F10 accelerator still reaches this action in compact mode,
+            // which is exactly how it was hit.
+            if gtk4::prelude::WidgetExt::root(&menu_button).is_none() {
+                tracing::debug!("primary menu: button is not in a window; ignoring");
+                return;
             }
+            menu_button.popup();
         });
     }
     window.add_action(&open_primary_menu);
@@ -306,6 +319,10 @@ fn arm_smoke_rhythmbox_import(action: &gio::SimpleAction) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Narrow, not a glob: this module already imports `gio::prelude::*`, whose
+    // `Mount::root` and `set_content` shadow the GTK widget methods of the same
+    // name. A second glob would deepen that.
+    use gtk4::prelude::BoxExt;
 
     #[test]
     fn view_section_starts_with_compact_mode() {
@@ -361,6 +378,58 @@ mod tests {
     #[test]
     fn primary_menu_exposes_a_window_action_for_f10() {
         assert_eq!(ACTION_OPEN_PRIMARY_MENU, "open-primary-menu");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn compact_mode_unroots_the_menu_button_so_popup_needs_a_root_guard() {
+        // Reproduces the shape that segfaulted: compact mode swaps the window
+        // content, which detaches the whole Library tree — header bar and menu
+        // button included — while the owning struct keeps it alive. A weak ref
+        // still upgrades, so liveness is not the property to check. Calling
+        // `popup()` here realizes a popover whose parent surface is NULL and
+        // GTK dereferences it unchecked, which is a crash rather than a
+        // warning; the F10 window action reaches it in compact mode.
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let content_host = adw::ToolbarView::new();
+        adw::prelude::AdwApplicationWindowExt::set_content(&window, Some(&content_host));
+
+        let library_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let header = adw::HeaderBar::new();
+        let menu_button = gtk4::MenuButton::builder()
+            .icon_name("open-menu-symbolic")
+            .menu_model(&gio::Menu::new())
+            .build();
+        header.pack_end(&menu_button);
+        library_root.append(&header);
+        adw::ToolbarView::set_content(&content_host, Some(&library_root));
+
+        assert!(
+            gtk4::prelude::WidgetExt::root(&menu_button).is_some(),
+            "sanity: the button is in a window while the Library tree is mounted"
+        );
+
+        // enter_compact()'s `content_host.set_content(compact_root)`.
+        let compact_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        adw::ToolbarView::set_content(&content_host, Some(&compact_root));
+
+        // The struct keeps `full_root` alive across the swap, so a weak ref
+        // still upgrades — which is why liveness was the wrong guard.
+        assert!(
+            gtk4::prelude::WidgetExt::parent(&library_root).is_none(),
+            "the Library tree is detached but still owned by the caller"
+        );
+        assert!(
+            gtk4::prelude::WidgetExt::root(&menu_button).is_none(),
+            "compact mode must leave the menu button unrooted — if this ever \
+             stops holding, the popup guard is testing the wrong property"
+        );
+
+        // Remounting restores it, so the guard must not latch.
+        adw::ToolbarView::set_content(&content_host, Some(&library_root));
+        assert!(gtk4::prelude::WidgetExt::root(&menu_button).is_some());
     }
 
     #[test]
