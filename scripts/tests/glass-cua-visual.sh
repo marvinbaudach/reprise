@@ -26,6 +26,7 @@ for required_pattern in \
   'delivery_mode: "foreground"' \
   'assert_scroll_delivered' \
   'assert_glass_region_changed' \
+  '"$start" "$above_end" 258x8+315+44 "$position header"' \
   '--arg by "$by"' \
   'by: $by' \
   'glass pixels stayed unchanged' \

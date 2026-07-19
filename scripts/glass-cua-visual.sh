@@ -139,11 +139,13 @@ verify_glass_regions() {
   local under_header="$CUA_E2E_OUT_DIR/$position-albums-under-header-after.png"
   local above_end="$CUA_E2E_OUT_DIR/$position-albums-above-end-after.png"
 
-  # These crops deliberately avoid fixed controls. Album scrolling changes the
-  # content beneath each crop, so an unchanged region means that the live
-  # WidgetPaintable source did not reach the Glass snapshot.
+  # These crops deliberately avoid fixed controls. The near-end line step
+  # leaves coloured covers beneath the lower header band on the X11 driver,
+  # while the first downward step supplies the top-player probe. An unchanged
+  # region means that the live WidgetPaintable source did not reach the Glass
+  # snapshot.
   assert_glass_region_changed \
-    "$start" "$under_header" 258x48+315+3 "$position header"
+    "$start" "$above_end" 258x8+315+44 "$position header"
   case "$position" in
     bottom)
       assert_glass_region_changed \
