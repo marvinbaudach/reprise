@@ -110,6 +110,14 @@ fn onboarding_completed_typed_accessors_round_trip() {
 }
 
 #[test]
+fn new_releases_fetch_completed_defaults_false_and_round_trips() {
+    let conn = migrated_conn();
+    assert!(!get_new_releases_fetch_completed(&conn).unwrap());
+    set_new_releases_fetch_completed(&conn, true).unwrap();
+    assert!(get_new_releases_fetch_completed(&conn).unwrap());
+}
+
+#[test]
 fn player_bar_position_defaults_to_bottom() {
     let conn = migrated_conn();
     assert_eq!(get_player_bar_position(&conn), PlayerBarPosition::Bottom);
