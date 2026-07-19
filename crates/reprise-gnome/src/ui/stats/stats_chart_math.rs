@@ -37,6 +37,7 @@ pub(in crate::ui) fn short_month_label(year_month: &str) -> &str {
 }
 
 /// Converts milliseconds into a human-readable hours string (rounded down).
+#[allow(dead_code)] // used by the monthly StatsChart (currently inactive in the redesign)
 pub(in crate::ui) fn ms_to_hours(ms: i64) -> i64 {
     ms / 3_600_000
 }

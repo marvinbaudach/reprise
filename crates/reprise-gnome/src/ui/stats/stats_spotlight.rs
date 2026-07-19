@@ -11,9 +11,11 @@ use crate::ui::cover_loader::CoverLoader;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
+#[derive(Clone)]
 pub(in crate::ui) struct StatsSpotlight {
     root: gtk4::Box,
     cover: gtk4::Image,
+    #[cfg_attr(not(test), allow(dead_code))]
     rank_badge: gtk4::Label,
     name: gtk4::Label,
     summary: gtk4::Label,
