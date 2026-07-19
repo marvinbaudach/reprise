@@ -15,6 +15,10 @@ pub(in crate::ui) const LYRICS_UNAVAILABLE: &str = N_!("Could not load lyrics");
 pub(in crate::ui) const RETRY: &str = N_!("Retry");
 pub(in crate::ui) const SYNCED_LRCLIB: &str = N_!("synced · LRCLIB");
 pub(in crate::ui) const LYRICS_TAGS: &str = N_!("lyrics · tags");
+pub(in crate::ui) const ONLINE_LYRICS_DISABLED: &str = N_!("Online lyrics are disabled");
+pub(in crate::ui) const ENABLE_LYRICS_DESCRIPTION: &str =
+    N_!("Enable them to load missing lyrics automatically");
+pub(in crate::ui) const ENABLE_IN_SETTINGS: &str = N_!("Enable in Settings");
 
 pub(in crate::ui) fn text(message: &str) -> String {
     crate::i18n::gettext(message)

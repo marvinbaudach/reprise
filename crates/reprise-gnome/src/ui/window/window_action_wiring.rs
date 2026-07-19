@@ -33,7 +33,7 @@ pub(in crate::ui) struct ActionWiring<'a> {
     pub(in crate::ui) artist_view: &'a Rc<ArtistView>,
     pub(in crate::ui) player: &'a Option<Rc<PlayerController>>,
     pub(in crate::ui) content_stack: &'a gtk4::Stack,
-    pub(in crate::ui) library_stack: &'a gtk4::Stack,
+    pub(in crate::ui) library_stack: &'a adw::ViewStack,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
 }

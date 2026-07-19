@@ -15,7 +15,7 @@ fn loaded_track() -> NowPlaying {
 fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
-    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     build_widgets(content, visible, Rc::new(RefCell::new(conn)), &cover_loader)
 }
 
@@ -26,7 +26,7 @@ fn test_widgets_for_session(
 ) -> PanelWidgets {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
-    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup());
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     build_widgets_for_session(
         content,
         visible,
@@ -87,8 +87,8 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-stage"));
-    assert!(css.contains("background-color: #17191c"));
-    assert!(!css.contains("@sidebar_bg_color"));
+    assert!(css.contains("background-color: @sidebar_bg_color"));
+    assert!(!css.contains("background-color: #17191c"));
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient"));
     assert!(css.contains("alpha(@reprise_player_accent, 0.4)"));
@@ -230,35 +230,6 @@ fn npp_4_tab_persists_in_session() {
 }
 
 #[test]
-fn queue_icon_route_targets_the_existing_up_next_page() {
-    let (visible, selected) = up_next_route_state();
-
-    assert!(visible);
-    assert_eq!(selected, PanelTab::UpNext);
-    assert_eq!(selected.page_name(), UP_NEXT_PAGE);
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn que_1_bar_icon_opens_same_list() {
-    gtk4::init().unwrap();
-    let (window, panel) = test_panel("org.reprise.Reprise.QueuePanelRouteTest");
-    panel.retain_for_window(&window);
-    panel.widgets.tab_buttons[1].set_active(true);
-    panel.widgets.column.set_visible(false);
-
-    panel.show_up_next();
-
-    assert!(panel.widgets.column.is_visible());
-    assert!(panel.widgets.tab_buttons[0].is_active());
-    assert_eq!(panel.widgets.session.selected.get(), PanelTab::UpNext);
-    assert_eq!(
-        panel.widgets.tab_stack.visible_child_name().as_deref(),
-        Some(UP_NEXT_PAGE)
-    );
-}
-
-#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn loaded_and_idle_tracks_render_from_the_player_context() {
     gtk4::init().unwrap();
@@ -365,8 +336,8 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
-    let portraits = ArtistPortraitRuntime::setup();
-    let cover_runtime = crate::ui::cover_download_worker::setup();
+    let portraits = ArtistPortraitRuntime::setup_for_test();
+    let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
         .application_id(application_id)

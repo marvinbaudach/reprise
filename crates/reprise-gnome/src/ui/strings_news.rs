@@ -36,6 +36,19 @@ pub const NEWS_OPEN_MUSICBRAINZ: &str = N_!("Open in MusicBrainz");
 pub const NEW_RELEASES: &str = N_!("New Releases");
 pub const NEW_RELEASES_DESCRIPTION: &str =
     N_!("Show upcoming and newly released albums · contacts MusicBrainz");
+pub const COVER_DOWNLOAD: &str = N_!("Album Covers");
+pub const COVER_DOWNLOAD_DESCRIPTION: &str =
+    N_!("Download missing album covers · contacts MusicBrainz and coverartarchive.org");
+pub const ARTIST_PORTRAITS: &str = N_!("Artist Portraits");
+pub const ARTIST_PORTRAITS_DESCRIPTION: &str = N_!("Show artist images · contacts Deezer");
+pub const ONLINE_LYRICS: &str = N_!("Online Lyrics");
+pub const ONLINE_LYRICS_DESCRIPTION: &str = N_!("Load missing lyrics · contacts LRCLIB");
+pub const ENABLE_ALBUM_COVERS: &str = N_!("Enable album cover downloads →");
+pub const ENABLE_ARTIST_PORTRAITS: &str = N_!("Enable artist images →");
+pub const ENABLE_NEW_RELEASES: &str = N_!("Enable new releases →");
+pub const ENABLE_ARTIST_NETWORK_FEATURES: &str =
+    N_!("Enable network features for artists (images & new releases) →");
+pub const DISMISS: &str = N_!("Dismiss");
 pub const NEW_RELEASES_ARTISTS: &str = N_!("Artists");
 pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
 pub const ALL_ARTISTS: &str = N_!("All artists");
@@ -66,8 +79,15 @@ pub fn up_next_footer(count: usize, duration: &str) -> String {
     )
 }
 
-pub fn queue_continuing_from(source: &str) -> String {
-    formatted(N_!("Continuing from “{source}”"), &[("source", source)])
+pub fn queue_context_tail(source: &str, count: usize) -> String {
+    let count_text =
+        reprise_core::format::format_thousands(i64::try_from(count).unwrap_or(i64::MAX));
+    plural(
+        "Playing from {source} · {count} track",
+        "Playing from {source} · {count} tracks",
+        count,
+        &[("source", source), ("count", &count_text)],
+    )
 }
 
 pub fn news_release_meta(primary_type: &str, date: &str) -> String {
