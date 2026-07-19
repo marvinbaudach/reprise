@@ -519,6 +519,26 @@ fn json_value_to_sql(v: &serde_json::Value) -> rusqlite::types::Value {
     }
 }
 
+/// Creates a smart playlist and returns its database id.
+pub fn create_smart(
+    conn: &Connection,
+    name: &str,
+    rules_json: &str,
+    sort_field: &str,
+    sort_dir: &str,
+    limit_count: Option<i64>,
+) -> Result<i64, rusqlite::Error> {
+    smart_rules_to_sql(rules_json)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    conn.execute(
+        "INSERT INTO smart_playlists \
+         (name, rules_json, sort_field, sort_dir, limit_count) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![name, rules_json, sort_field, sort_dir, limit_count],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
 /// Lists all smart playlists.
 pub fn list_smart(conn: &Connection) -> Result<Vec<SmartPlaylist>, rusqlite::Error> {
     let mut stmt = conn.prepare(

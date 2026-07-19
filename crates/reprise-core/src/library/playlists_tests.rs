@@ -7,6 +7,8 @@
 
 use super::*;
 
+const GENRE_RULES: &str = r#"[{"field":"genre","op":"=","value":"Ambient"}]"#;
+
 fn seeded_conn() -> Connection {
     let conn = crate::db::open(None).unwrap();
     crate::db::migrate(&conn).unwrap();
@@ -45,6 +47,50 @@ fn create_playlist_returns_new_id() {
         )
         .unwrap();
     assert_eq!(name, "My Playlist");
+}
+
+#[test]
+fn create_smart_inserts_a_playlist_that_list_smart_returns() {
+    let conn = seeded_conn();
+
+    let id = create_smart(
+        &conn,
+        "Night Mix",
+        GENRE_RULES,
+        "play_count",
+        "desc",
+        Some(25),
+    )
+    .unwrap();
+
+    let created = list_smart(&conn)
+        .unwrap()
+        .into_iter()
+        .find(|playlist| playlist.id == id)
+        .expect("created smart playlist is listed");
+    assert_eq!(created.name, "Night Mix");
+    assert_eq!(created.rules_json, GENRE_RULES);
+    assert_eq!(created.sort_field, "play_count");
+    assert_eq!(created.sort_dir, "desc");
+    assert_eq!(created.limit_count, Some(25));
+}
+
+#[test]
+fn create_smart_rejects_invalid_rules_json() {
+    let conn = seeded_conn();
+    let before = list_smart(&conn).unwrap().len();
+
+    let result = create_smart(
+        &conn,
+        "Broken Mix",
+        r#"[{"field":"not-a-field","op":"="}]"#,
+        "title",
+        "asc",
+        None,
+    );
+
+    assert!(result.is_err());
+    assert_eq!(list_smart(&conn).unwrap().len(), before);
 }
 
 #[test]
