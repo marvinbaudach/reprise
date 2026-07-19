@@ -262,6 +262,10 @@ impl AlbumView {
         content.append(&stack);
 
         let ambient = gtk4::Overlay::new();
+        // `content` is an overlay child above the glow, so its descendants do
+        // not make the Overlay request extra height from the surrounding
+        // vertical Box. Keep the full Album layer explicitly expandable.
+        ambient.set_vexpand(true);
         ambient.set_child(Some(glow.picture()));
         ambient.add_overlay(&content);
         ambient.set_measure_overlay(&content, true);
