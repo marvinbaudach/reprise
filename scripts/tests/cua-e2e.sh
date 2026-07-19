@@ -103,6 +103,16 @@ for pattern in \
   fi
 done
 for pattern in \
+  '"$pid" "$window_id" Tracks acc-albums-tabs' \
+  '"$pid" "$window_id" Albums right acc-albums-focus' \
+  '"$pid" "$window_id" Albums acc-artists-tabs' \
+  '"$pid" "$window_id" Artists right acc-artists-focus'; do
+  if ! rg --quiet --fixed-strings "$pattern" "$keyboard_runner"; then
+    echo "$keyboard_runner must navigate the view switcher as one roving tab stop: $pattern" >&2
+    exit 1
+  fi
+done
+for pattern in \
   '"$pid" "$window_id" "Pause (Space)" acc-player-focus' \
   '"$pid" "$window_id" "Play (Space)" acc-player-paused' \
   '"$pid" "$window_id" "Music" acc-issues-main-collection' \
