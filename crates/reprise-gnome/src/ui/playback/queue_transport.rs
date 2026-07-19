@@ -117,6 +117,33 @@ fn move_rows_to_front(
     ids.len()
 }
 
+fn apply_queue_reorder(
+    context: &mut Queue,
+    manual: &mut UpNextQueue,
+    op: crate::ui::track_list::queue_row_mapping::QueueReorderOp,
+) -> bool {
+    use crate::ui::track_list::queue_row_mapping::QueueReorderOp;
+
+    match op {
+        QueueReorderOp::WithinPlayNext { from, to } => manual.move_item(from, to),
+        QueueReorderOp::PromoteUpNext {
+            up_next_offset,
+            insert_at,
+        } => {
+            let Some(base) = context.current_order_position() else {
+                return false;
+            };
+            let position = base + 1 + up_next_offset;
+            let Some(id) = context.id_at_order_position(position) else {
+                return false;
+            };
+            context.remove_order_positions(&[position]);
+            manual.insert(insert_at, id);
+            true
+        }
+    }
+}
+
 impl PlayerController {
     pub(in crate::ui) fn add_on_queue_changed(&self, callback: impl Fn() + 'static) {
         self.queue_changed.borrow_mut().push(Rc::new(callback));
@@ -428,56 +455,17 @@ impl PlayerController {
         removed
     }
 
-    /// QUE-3 drag semantics over the composite view: reorder within Play
-    /// Next, reorder within the Up Next snapshot tail (both positions stay
-    /// strictly after the playhead, so `Queue::move_item` can't move the
-    /// currently playing track), or promote an Up Next snapshot row into
-    /// Play Next (removed from the snapshot so it can't play twice).
+    /// QUE-8 drag semantics: reorder within Play Next or promote one Up Next
+    /// snapshot row into it (removed from the snapshot so it cannot play
+    /// twice). The virtual context is never reordered in place.
     pub(in crate::ui) fn reorder_queue_rows(
         &self,
         op: crate::ui::track_list::queue_row_mapping::QueueReorderOp,
     ) -> bool {
-        use crate::ui::track_list::queue_row_mapping::QueueReorderOp;
-
-        let moved = match op {
-            QueueReorderOp::WithinPlayNext { from, to } => {
-                self.up_next.borrow_mut().move_item(from, to)
-            }
-            QueueReorderOp::PromoteUpNext {
-                up_next_offset,
-                insert_at,
-            } => {
-                let promoted = {
-                    let mut queue = self.queue.borrow_mut();
-                    match queue.current_order_position() {
-                        Some(base) => {
-                            let position = base + 1 + up_next_offset;
-                            let id = queue.id_at_order_position(position);
-                            if let Some(id) = id {
-                                queue.remove_order_positions(&[position]);
-                                Some(id)
-                            } else {
-                                None
-                            }
-                        }
-                        None => None,
-                    }
-                };
-                match promoted {
-                    Some(id) => {
-                        self.up_next.borrow_mut().insert(insert_at, id);
-                        true
-                    }
-                    None => false,
-                }
-            }
-            QueueReorderOp::WithinUpNext { from, to } => {
-                let mut queue = self.queue.borrow_mut();
-                match queue.current_order_position() {
-                    Some(base) => queue.move_item(base + 1 + from, base + 1 + to),
-                    None => false,
-                }
-            }
+        let moved = {
+            let mut context = self.queue.borrow_mut();
+            let mut manual = self.up_next.borrow_mut();
+            apply_queue_reorder(&mut context, &mut manual, op)
         };
         if moved {
             self.notify_queue_changed();

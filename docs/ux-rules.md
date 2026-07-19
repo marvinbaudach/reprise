@@ -958,12 +958,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Einzelzeilen materialisiert, sondern nur im sichtbaren Fenster gerendert;
   die Sidebar-Zeile „Queue" zählt ausschließlich die manuelle Queue und zeigt
   bei null keinen Zähler.
-- **QUE-8** [geplant] [gtk] — Drag-Reorder existiert ausschließlich in „Next
+- **QUE-8** [aktiv] [gtk] — Drag-Reorder existiert ausschließlich in „Next
   in Queue". Die manuelle Sektion ist umsortierbar; ein Drag aus „Continuing"
   nach oben materialisiert genau diesen Eintrag in der manuellen Sektion.
   Multi-Select, Clear, Save-as-Playlist und das vollständige Kontextmenü
-  bleiben in der Queue-ColumnView. Umsetzung in Batch B; siehe
-  Beschlussdokument.
+  bleiben in der Queue-ColumnView.
 - **NPP-11** [geplant] [gtk] — Die Panel-Ansichten verwenden einen
   zentrierten `AdwViewSwitcher` als Title-Widget und degradieren bei schmalem
   Fenster adaptiv zu einer unteren `AdwViewSwitcherBar` oder einem
