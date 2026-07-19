@@ -16,7 +16,7 @@
 use std::rc::Rc;
 
 use crate::ui::player_controller::{PlayerController, StartPlayback};
-use crate::ui::track_list::queue_sections::{compose, QueueViewModel};
+use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContextTail};
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::Queue;
@@ -115,6 +115,33 @@ fn move_rows_to_front(
     context.remove_order_positions(&snapshot_positions);
     pending.prepend(&ids);
     ids.len()
+}
+
+fn apply_queue_reorder(
+    context: &mut Queue,
+    manual: &mut UpNextQueue,
+    op: crate::ui::track_list::queue_row_mapping::QueueReorderOp,
+) -> bool {
+    use crate::ui::track_list::queue_row_mapping::QueueReorderOp;
+
+    match op {
+        QueueReorderOp::WithinPlayNext { from, to } => manual.move_item(from, to),
+        QueueReorderOp::PromoteUpNext {
+            up_next_offset,
+            insert_at,
+        } => {
+            let Some(base) = context.current_order_position() else {
+                return false;
+            };
+            let position = base + 1 + up_next_offset;
+            let Some(id) = context.id_at_order_position(position) else {
+                return false;
+            };
+            context.remove_order_positions(&[position]);
+            manual.insert(insert_at, id);
+            true
+        }
+    }
 }
 
 impl PlayerController {
@@ -278,32 +305,29 @@ impl PlayerController {
     }
 
     /// The Queue view's three parts in display order (QUE-1): the playing
-    /// track, pending manual entries, and the snapshot's play-order tail —
-    /// plus the origin label for the `Up Next · from <label>` title. Each
-    /// list is cloned out in its own statement (borrow discipline).
-    pub(in crate::ui) fn queue_view_model(&self) -> QueueViewModel {
+    /// track, pending manual entries, and virtual metadata for the snapshot's
+    /// play-order tail. The tail provider clones only requested windows.
+    pub(in crate::ui) fn queue_view_model(self: &Rc<Self>) -> QueueViewModel {
         let now_playing = self.now_playing.borrow().as_ref().map(|np| np.id);
         let play_next = self.up_next.borrow().ids().to_vec();
-        let up_next_rest = self.queue.borrow().remaining_after_current();
+        let context_count = self.queue.borrow().remaining_len();
         let origin_label = self
             .play_origin
             .borrow()
             .as_ref()
             .map(|origin| origin.label.clone());
-        compose(
-            now_playing,
-            &play_next,
-            &up_next_rest,
-            origin_label.as_deref(),
-        )
-    }
-
-    /// QUE-5: the sidebar's "Queue · N" — pending manual entries plus the
-    /// snapshot tracks still ahead of the playhead, NOT the total snapshot.
-    pub(in crate::ui) fn queue_pending_len(&self) -> usize {
-        let pending = self.up_next.borrow().len();
-        let remaining = self.queue.borrow().remaining_len();
-        pending + remaining
+        let player = Rc::downgrade(self);
+        let context = (context_count > 0).then(|| {
+            VirtualContextTail::new(
+                context_count,
+                Rc::new(move |offset, limit| {
+                    player.upgrade().map_or_else(Vec::new, |player| {
+                        player.queue.borrow().remaining_window(offset, limit)
+                    })
+                }),
+            )
+        });
+        compose_virtual(now_playing, &play_next, context, origin_label.as_deref())
     }
 
     /// QUE-3's "Play next": the given ids jump the manual line (front of
@@ -431,56 +455,17 @@ impl PlayerController {
         removed
     }
 
-    /// QUE-3 drag semantics over the composite view: reorder within Play
-    /// Next, reorder within the Up Next snapshot tail (both positions stay
-    /// strictly after the playhead, so `Queue::move_item` can't move the
-    /// currently playing track), or promote an Up Next snapshot row into
-    /// Play Next (removed from the snapshot so it can't play twice).
+    /// QUE-8 drag semantics: reorder within Play Next or promote one Up Next
+    /// snapshot row into it (removed from the snapshot so it cannot play
+    /// twice). The virtual context is never reordered in place.
     pub(in crate::ui) fn reorder_queue_rows(
         &self,
         op: crate::ui::track_list::queue_row_mapping::QueueReorderOp,
     ) -> bool {
-        use crate::ui::track_list::queue_row_mapping::QueueReorderOp;
-
-        let moved = match op {
-            QueueReorderOp::WithinPlayNext { from, to } => {
-                self.up_next.borrow_mut().move_item(from, to)
-            }
-            QueueReorderOp::PromoteUpNext {
-                up_next_offset,
-                insert_at,
-            } => {
-                let promoted = {
-                    let mut queue = self.queue.borrow_mut();
-                    match queue.current_order_position() {
-                        Some(base) => {
-                            let position = base + 1 + up_next_offset;
-                            let id = queue.id_at_order_position(position);
-                            if let Some(id) = id {
-                                queue.remove_order_positions(&[position]);
-                                Some(id)
-                            } else {
-                                None
-                            }
-                        }
-                        None => None,
-                    }
-                };
-                match promoted {
-                    Some(id) => {
-                        self.up_next.borrow_mut().insert(insert_at, id);
-                        true
-                    }
-                    None => false,
-                }
-            }
-            QueueReorderOp::WithinUpNext { from, to } => {
-                let mut queue = self.queue.borrow_mut();
-                match queue.current_order_position() {
-                    Some(base) => queue.move_item(base + 1 + from, base + 1 + to),
-                    None => false,
-                }
-            }
+        let moved = {
+            let mut context = self.queue.borrow_mut();
+            let mut manual = self.up_next.borrow_mut();
+            apply_queue_reorder(&mut context, &mut manual, op)
         };
         if moved {
             self.notify_queue_changed();

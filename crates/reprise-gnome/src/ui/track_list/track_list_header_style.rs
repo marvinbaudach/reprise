@@ -18,9 +18,8 @@ const TRACK_LIST_CLASS: &str = "reprise-track-list";
 /// fixed hairlines on the dark surface, not theme-tinted borders, so they
 /// don't route through a palette `@`-color.
 pub(in crate::ui) fn css() -> String {
-    use super::style::tokens::HEADER_TEXT_ALPHA;
     format!(
-        ".{TRACK_LIST_CLASS} > header label {{ color: alpha(currentColor, {HEADER_TEXT_ALPHA}); }}\n\
+        ".{TRACK_LIST_CLASS} > header label {{ color: @reprise_secondary_fg_color; }}\n\
          .{TRACK_LIST_CLASS} > header {{ \
            border-bottom: 1px solid rgba(255, 255, 255, 0.07); }}\n\
          .{TRACK_LIST_CLASS} > listview > row > cell {{ \
@@ -43,7 +42,7 @@ mod tests {
         let css = super::css();
 
         assert!(css.contains(".reprise-track-list > header label"));
-        assert!(css.contains("alpha(currentColor, 0.78)"));
+        assert!(css.contains("@reprise_secondary_fg_color"));
         assert!(!css.contains("reprise-track-cell"));
     }
 
@@ -90,11 +89,14 @@ mod tests {
             Some("Other"),
             None::<gtk4::ListItemFactory>,
         ));
+        let secondary = gtk4::Label::new(Some("Secondary reference"));
+        secondary.add_css_class("reprise-text-secondary");
         crate::ui::style::install();
         super::mark(&view);
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.append(&view);
         root.append(&unrelated);
+        root.append(&secondary);
         let window = gtk4::Window::new();
         window.set_child(Some(&root));
         window.present();
@@ -103,12 +105,8 @@ mod tests {
         let title = find_label(view.upcast_ref(), "Title").expect("mapped column title label");
         let other =
             find_label(unrelated.upcast_ref(), "Other").expect("unrelated column title label");
-        assert!(
-            (title.color().alpha() / other.color().alpha() - 0.78).abs() < 0.01,
-            "resolved marked={} and unrelated={} title colors",
-            title.color(),
-            other.color()
-        );
+        assert_eq!(title.color(), secondary.color());
+        assert_ne!(title.color(), other.color());
 
         window.close();
     }
