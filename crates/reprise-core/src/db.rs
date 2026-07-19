@@ -363,6 +363,13 @@ const SCHEMA_V15: &str = r#"
 ALTER TABLE tracks ADD COLUMN disc_no INTEGER;
 "#;
 
+/// Schema v16: indexes the listen-event join direction used by every My Stats
+/// aggregate while retaining the existing played-at-only index.
+const SCHEMA_V16: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_listen_events_track_played
+  ON listen_events(track_id, played_at);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -511,6 +518,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V15)?;
         tx.pragma_update(None, "user_version", 15)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 16 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V16)?;
+        tx.pragma_update(None, "user_version", 16)?;
         tx.commit()?;
     }
     Ok(())
