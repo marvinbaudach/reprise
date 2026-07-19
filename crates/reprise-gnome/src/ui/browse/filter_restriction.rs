@@ -58,6 +58,11 @@ mod tests {
         assert!(is_track_source(&ViewSource::Missing));
     }
 
+    #[test]
+    fn stats_8_my_stats_source_hides_the_track_filter_row() {
+        assert!(!is_track_source(&ViewSource::MyStats));
+    }
+
     // UX FIL-2: a whitespace-only search does not restrict (mirrors the
     // trim in reload's has_filter).
     #[test]

@@ -15,6 +15,7 @@
 pub(super) mod cover_accent;
 pub(super) mod interactions;
 pub(super) mod menus;
+mod text_levels;
 pub(super) mod theme;
 pub(super) mod tokens;
 
@@ -36,12 +37,14 @@ thread_local! {
 fn app_css() -> String {
     [
         interactions::css(),
+        text_levels::css(),
         super::link_activation::css(),
         menus::css(),
         super::browse_bar::css(),
         super::column_header_dnd::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
+        super::playing_marker::css(),
         super::sidebar_device_card::css(),
         super::device_view::css(),
         super::list_density::css(),
@@ -54,8 +57,10 @@ fn app_css() -> String {
         super::player_bar_layout::css(),
         super::preference_choice_cards::css(),
         super::preference_playback::css(),
+        super::preference_plugins::css(),
         super::preferences_window::css(),
         super::rating::css(),
+        super::track_content::css(),
         super::track_list_header_style::css(),
         super::track_list_row_interaction::css(),
         super::stats_css::css(),
@@ -178,6 +183,30 @@ fn reload_theme_for_appearance() {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn style_2_side_surfaces_follow_the_theme() {
+        let css = super::app_css();
+
+        assert!(css.contains(
+            ".reprise-library-split .reprise-library-sidebar { background-color: @sidebar_bg_color;"
+        ));
+        assert!(css.contains(".reprise-now-playing-stage { background-color: @sidebar_bg_color;"));
+        assert!(css.contains("border-right: 1px solid rgba(255, 255, 255, 0.06)"));
+        assert!(css.contains("border-left: 1px solid rgba(255, 255, 255, 0.06)"));
+
+        for theme in super::theme::Theme::all() {
+            for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
+                assert!(
+                    super::theme::theme_css(theme, is_dark).contains(&format!(
+                        "@define-color sidebar_bg_color {};",
+                        palette.sidebar_bg
+                    )),
+                    "{theme:?} did not project its sidebar surface into both consumers"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn app_css_contains_every_feature_section() {
         let css = super::app_css();
 
@@ -188,6 +217,9 @@ mod tests {
             ".player-bar-play",
             ".reprise-surface",
             ".reprise-hover:hover",
+            ".reprise-text-primary",
+            ".reprise-text-secondary",
+            ".reprise-text-hint",
             ".reprise-filter-chip",
             ".reprise-column-drop-before",
             ".reprise-column-row:hover",
@@ -199,6 +231,7 @@ mod tests {
             ".lyrics-line-active",
             "checkbutton.reprise-choice-card",
             ".reprise-rating-star",
+            ".reprise-list-status-bar",
             ".reprise-track-list > header label",
             ".reprise-reorder-target",
             ".stats-chart",
@@ -255,6 +288,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mot_7_css_honours_enable_animations_setting() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         use gtk4::prelude::*;
 
         gtk4::init().unwrap();

@@ -3,6 +3,8 @@ pub(in crate::ui) mod current_track_jump;
 pub(in crate::ui) mod focus_evidence;
 pub(in crate::ui) mod library_chrome;
 pub(in crate::ui) mod library_shell;
+pub(in crate::ui) mod library_view_memory_wiring;
+pub(in crate::ui) mod navigation_context;
 #[path = "window.rs"]
 mod surface;
 pub(in crate::ui) mod window_action_wiring;

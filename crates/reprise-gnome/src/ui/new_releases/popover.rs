@@ -57,12 +57,35 @@ fn see_all_visible(total: usize, visible: usize, hidden: usize) -> bool {
 struct ModuleEffect {
     button_visible: bool,
     fetch_allowed: bool,
+    empty: EmptyPresentation,
+    badge_allowed: bool,
 }
 
-fn module_effect(enabled: bool, has_releases: bool) -> ModuleEffect {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EmptyPresentation {
+    Hidden,
+    Checking,
+    NoReleases,
+}
+
+fn module_effect(
+    enabled: bool,
+    has_releases: bool,
+    fetch_completed: bool,
+    fetching: bool,
+) -> ModuleEffect {
+    let empty = if !enabled || has_releases {
+        EmptyPresentation::Hidden
+    } else if fetching {
+        EmptyPresentation::Checking
+    } else {
+        EmptyPresentation::NoReleases
+    };
     ModuleEffect {
-        button_visible: enabled && has_releases,
+        button_visible: enabled && (has_releases || !fetch_completed),
         fetch_allowed: enabled,
+        empty,
+        badge_allowed: enabled && has_releases && fetch_completed,
     }
 }
 
@@ -73,6 +96,7 @@ struct NewReleasesPopover {
     badge: gtk4::Label,
     popover: gtk4::Popover,
     rows: gtk4::Box,
+    empty: gtk4::Label,
     see_all: gtk4::Button,
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
@@ -92,6 +116,11 @@ impl NewReleasesPopover {
         let (button, badge) = build_button();
         let popover = gtk4::Popover::new();
         let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        let empty = gtk4::Label::new(None);
+        empty.set_wrap(true);
+        empty.set_justify(gtk4::Justification::Center);
+        empty.set_margin_top(12);
+        empty.set_margin_bottom(12);
         let see_all = gtk4::Button::with_label(&strings::text(strings::SEE_ALL_RELEASES));
         see_all.add_css_class("flat");
         see_all.add_css_class("pill");
@@ -118,6 +147,7 @@ impl NewReleasesPopover {
             badge,
             popover,
             rows,
+            empty,
             see_all,
             fetch_button,
             fetch_stack,
@@ -171,6 +201,7 @@ impl NewReleasesPopover {
         .unwrap_or(false);
         if !enabled {
             self.button.set_visible(false);
+            self.badge.set_visible(false);
             return;
         }
         let today = chrono::Local::now().date_naive();
@@ -189,9 +220,28 @@ impl NewReleasesPopover {
             .cloned()
             .collect::<Vec<_>>();
         let hidden = all_releases.iter().filter(|release| release.hidden).count();
-        let effect = module_effect(enabled, !all_releases.is_empty());
+        let fetch_completed = self.fetch_completed();
+        let effect = module_effect(
+            enabled,
+            !all_releases.is_empty(),
+            fetch_completed,
+            self.fetching.get(),
+        );
         self.button.set_visible(effect.button_visible);
         clear_box(&self.rows);
+        match effect.empty {
+            EmptyPresentation::Hidden => {}
+            EmptyPresentation::Checking => {
+                self.empty
+                    .set_label(&strings::text(strings::NEW_RELEASES_CHECKING));
+                self.rows.append(&self.empty);
+            }
+            EmptyPresentation::NoReleases => {
+                self.empty
+                    .set_label(&strings::text(strings::NEW_RELEASES_NONE));
+                self.rows.append(&self.empty);
+            }
+        }
         let on_hide: Rc<dyn Fn(&str)> = {
             let weak = Rc::downgrade(self);
             Rc::new(move |mbid: &str| {
@@ -228,11 +278,31 @@ impl NewReleasesPopover {
         }
         let unseen = reprise_core::artist_news::unseen_release_count(&self.conn.borrow())
             .unwrap_or_default();
-        self.badge.set_visible(unseen > 0);
+        self.badge.set_visible(effect.badge_allowed && unseen > 0);
         let latest = all_releases.iter().map(|release| release.fetched_at).max();
         let footer = footer_presentation(latest, chrono::Utc::now().timestamp(), failed);
         self.updated.set_label(&footer.updated);
+        self.updated.set_visible(latest.is_some());
         self.failure.set_visible(footer.show_cached_failure);
+    }
+
+    fn fetch_completed(&self) -> bool {
+        let result = {
+            let conn = self.conn.borrow();
+            reprise_core::library::settings::get_new_releases_fetch_completed(&conn)
+        };
+        result.unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read New Releases fetch state");
+            false
+        })
+    }
+
+    fn enabled_changed(self: &Rc<Self>, enabled: bool) {
+        if enabled && !self.fetch_completed() {
+            self.fetch_now();
+        } else {
+            self.render(false, false);
+        }
     }
 
     fn fetch_now(self: &Rc<Self>) {
@@ -241,7 +311,7 @@ impl NewReleasesPopover {
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        if !module_effect(enabled, true).fetch_allowed {
+        if !module_effect(enabled, true, true, false).fetch_allowed {
             return;
         }
         if self.fetching.replace(true) {
@@ -251,6 +321,7 @@ impl NewReleasesPopover {
         self.spinner.start();
         self.fetch_button.set_sensitive(false);
         self.failure.set_visible(false);
+        self.render(false, false);
 
         let database_path = self.database_path.clone();
         let result = one_shot_task::spawn("reprise-new-releases", move || {
@@ -280,12 +351,34 @@ impl NewReleasesPopover {
     }
 
     fn finish_fetch(self: &Rc<Self>, failed: bool) {
+        if !failed {
+            let result = {
+                let conn = self.conn.borrow();
+                reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true)
+            };
+            if let Err(error) = result {
+                tracing::warn!(%error, "could not save New Releases fetch state");
+            }
+        }
         self.fetching.set(false);
         self.spinner.stop();
         self.fetch_stack.set_visible_child_name("icon");
         self.fetch_button.set_sensitive(true);
         self.render(false, failed);
     }
+}
+
+fn bind_runtime(state: &Rc<NewReleasesPopover>, runtime: &Rc<ArtistNewsRuntime>) {
+    let alive = Rc::downgrade(state);
+    let target = Rc::downgrade(state);
+    runtime.subscribe_enabled(
+        move || alive.upgrade().is_some(),
+        move |enabled| {
+            if let Some(state) = target.upgrade() {
+                state.enabled_changed(enabled);
+            }
+        },
+    );
 }
 
 pub(in crate::ui) fn install(
@@ -298,16 +391,7 @@ pub(in crate::ui) fn install(
 ) {
     let state = NewReleasesPopover::new(conn.clone(), database_path.to_path_buf(), on_see_all);
     header.pack_end(&state.button);
-    let alive = Rc::downgrade(&state);
-    let target = Rc::downgrade(&state);
-    runtime.subscribe_enabled(
-        move || alive.upgrade().is_some(),
-        move |_| {
-            if let Some(state) = target.upgrade() {
-                state.render(false, false);
-            }
-        },
-    );
+    bind_runtime(&state, runtime);
     state.retain_for_window(window);
 }
 
@@ -444,162 +528,5 @@ fn clear_box(container: &gtk4::Box) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
-        reprise_core::artist_news::StoredRelease {
-            release_group_mbid: id.into(),
-            artist_name: "Artist".into(),
-            artist_mbid: "artist-id".into(),
-            title: "Release".into(),
-            release_type: "Album".into(),
-            first_release_date: "2026-08-01".into(),
-            fetched_at: 100,
-            seen_at: None,
-            hidden: false,
-            fallback_accent: "#123456".into(),
-        }
-    }
-
-    #[test]
-    fn nr_5_opening_the_popover_never_requests_navigation() {
-        let effect = opening_effect(&[release("one"), release("two")]);
-
-        assert_eq!(effect.seen_ids, ["one", "two"]);
-        assert!(!effect.navigates);
-    }
-
-    #[test]
-    fn nr_6_failure_keeps_updated_age_with_an_inline_cached_hint() {
-        let presentation = footer_presentation(Some(100), 3_700, true);
-
-        assert_eq!(presentation.updated, "Updated 1 h ago");
-        assert!(presentation.show_cached_failure);
-    }
-
-    #[test]
-    fn nr_4_see_all_appears_for_overflow_or_hidden_entries() {
-        assert!(!see_all_visible(5, 5, 0));
-        assert!(see_all_visible(6, 5, 0));
-        assert!(see_all_visible(5, 5, 1));
-    }
-
-    /// UX NR-4: hiding has to be reachable from the popover itself.
-    ///
-    /// The short-list case above (`!see_all_visible(5, 5, 0)`) is exactly the
-    /// state in which the digest view is unreachable — so if "Hide" lived
-    /// only there, a user with few releases could never hide one, and the
-    /// digest's "N hidden · Show" footer could never appear for them. The row
-    /// carries the action, which closes that loop.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_4_popover_rows_offer_hide_without_the_digest_view() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let hidden: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
-        let sink = hidden.clone();
-        let on_hide: Rc<dyn Fn(&str)> = Rc::new(move |mbid: &str| {
-            sink.borrow_mut().push(mbid.to_string());
-        });
-
-        let row = build_release_row(&release("rg-sample"), false, &on_hide);
-
-        let button = last_button(row.upcast_ref::<gtk4::Widget>())
-            .expect("a popover row exposes a Hide button");
-        button.emit_clicked();
-        assert_eq!(hidden.borrow().as_slice(), ["rg-sample"]);
-    }
-
-    fn last_button(widget: &gtk4::Widget) -> Option<gtk4::Button> {
-        let mut found = None;
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            if let Ok(button) = current.clone().downcast::<gtk4::Button>() {
-                found = Some(button);
-            }
-            child = current.next_sibling();
-        }
-        found
-    }
-
-    #[test]
-    fn nr_7_disabled_module_hides_the_button_and_blocks_fetch() {
-        assert_eq!(
-            module_effect(false, true),
-            ModuleEffect {
-                button_visible: false,
-                fetch_allowed: false,
-            }
-        );
-        assert_eq!(
-            module_effect(true, false),
-            ModuleEffect {
-                button_visible: false,
-                fetch_allowed: true,
-            }
-        );
-        assert_eq!(
-            module_effect(true, true),
-            ModuleEffect {
-                button_visible: true,
-                fetch_allowed: true,
-            }
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
-        gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO new_releases (
-               release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent
-             ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
-                       '2026-08-01', 1, '#123456')",
-            [],
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-
-        let state = NewReleasesPopover::new(conn, PathBuf::from("unused.db"), Rc::new(|| {}));
-
-        assert!(!state.button.is_visible());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_3_header_button_is_visible_only_when_releases_exist() {
-        gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        let state =
-            NewReleasesPopover::new(conn.clone(), PathBuf::from("unused.db"), Rc::new(|| {}));
-        assert!(!state.button.is_visible());
-
-        conn.borrow()
-            .execute(
-                "INSERT INTO new_releases (
-                   release_group_mbid, artist_name, artist_mbid, title, release_type,
-                   first_release_date, fetched_at, fallback_accent
-                 ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
-                           '2026-08-01', 1, '#123456')",
-                [],
-            )
-            .unwrap();
-        reprise_core::modules::set_enabled(
-            &conn.borrow(),
-            &reprise_core::modules::NEW_RELEASES_MODULE,
-            true,
-        )
-        .unwrap();
-        state.render(false, false);
-
-        assert!(state.button.is_visible());
-    }
-}
+#[path = "popover_tests.rs"]
+mod tests;

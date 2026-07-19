@@ -42,6 +42,13 @@ impl LyricsState {
         })
     }
 
+    pub(in crate::ui) fn request_missing(&mut self) -> Option<RequestIntent> {
+        if self.body.is_some() {
+            return None;
+        }
+        self.retry()
+    }
+
     pub(in crate::ui) fn accepts(&self, generation: u64) -> bool {
         self.query.is_some() && self.generation == generation
     }

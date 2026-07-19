@@ -83,6 +83,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn track_content_stack_expands_from_initial_layout() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         if gtk4::init().is_err() {
             return;
         }

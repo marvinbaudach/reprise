@@ -7,7 +7,7 @@ use libadwaita as adw;
 use libadwaita::prelude::AnimationExt;
 
 use super::{centered_scroll_value, LyricsView};
-use crate::ui::lyrics::lyrics_scroll::{PauseHandle, USER_PAUSE_MS};
+use crate::ui::lyrics::lyrics_scroll::{content_margins, PauseHandle, USER_PAUSE_MS};
 
 impl LyricsView {
     pub(super) fn wire_scroll_input(self: &Rc<Self>) {
@@ -127,28 +127,9 @@ impl LyricsView {
             if !view.scroll_state.borrow().should_follow_active_line() {
                 return;
             }
-            let edge_labels = {
-                let lines = view.lines.borrow();
-                lines
-                    .first()
-                    .zip(lines.last())
-                    .map(|(first, last)| (first.label.clone(), last.label.clone()))
-            };
-            if let Some((first, last)) = edge_labels {
-                let origin = gtk4::graphene::Point::new(0.0, 0.0);
-                let top_padding = first.compute_point(&view.content, &origin).map(|point| {
-                    (view.scrolled.height() - first.height()) / 2 - point.y().round() as i32
-                });
-                let bottom_padding = last.compute_point(&view.content, &origin).map(|point| {
-                    let bottom_inset =
-                        view.content.height() - point.y().round() as i32 - last.height();
-                    (view.scrolled.height() - last.height()) / 2 - bottom_inset
-                });
-                view.content
-                    .set_margin_top(top_padding.unwrap_or(18).max(18));
-                view.content
-                    .set_margin_bottom(bottom_padding.unwrap_or(18).max(18));
-            }
+            let (top, bottom) = content_margins(view.scrolled.height(), label.height());
+            view.content.set_margin_top(top);
+            view.content.set_margin_bottom(bottom);
             let view = Rc::downgrade(&view);
             gtk4::glib::idle_add_local_once(move || {
                 if let Some(view) = view.upgrade() {

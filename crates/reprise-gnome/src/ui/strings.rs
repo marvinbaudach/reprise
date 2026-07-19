@@ -68,6 +68,10 @@ pub use tag_edit::*;
 mod track_menu;
 pub use track_menu::*;
 
+#[path = "strings_stats.rs"]
+mod stats;
+pub use stats::*;
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
@@ -412,7 +416,6 @@ pub const QUEUE_CLEAR_PLAY_NEXT: &str = N_!("Clear");
 pub const QUEUE_SECTION_PLAY_NEXT: &str = N_!("Play Next");
 /// `{}` is the playback origin's display label (playlist/album/artist name
 /// or the localized "Music").
-pub const QUEUE_SECTION_UP_NEXT_FROM: &str = N_!("Up Next · from {}");
 pub const EMPTY_QUEUE_TITLE: &str = N_!("Nothing queued");
 pub const EMPTY_QUEUE_DESCRIPTION: &str = N_!("Play something");
 pub const SIDEBAR_NEW_PLAYLIST: &str = N_!("New playlist");

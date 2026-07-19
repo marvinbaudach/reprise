@@ -1,5 +1,6 @@
 pub mod artist_detail;
 pub mod audio_effect_settings;
+pub mod group_key;
 pub(crate) mod import_errors;
 pub mod lastfm_stats;
 pub mod listenbrainz;
@@ -15,7 +16,9 @@ pub mod scanner;
 pub mod session;
 pub mod settings;
 pub mod stats;
+pub mod stats_period;
 pub mod stats_screen;
+pub mod stats_snapshot;
 pub mod tag_edit;
 pub mod tag_edit_session;
 mod tag_edit_write;

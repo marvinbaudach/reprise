@@ -390,6 +390,7 @@ fn mot_7_waveform_completes_build_up_when_animations_disabled_mid_build() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_waveform_crossfades_to_the_new_track_instead_of_rebuilding() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
     let previous = settings.is_gtk_enable_animations();

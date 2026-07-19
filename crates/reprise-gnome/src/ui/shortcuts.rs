@@ -1,7 +1,7 @@
 //! Application and window keyboard shortcuts. Space toggles playback only
 //! when the focused widget does not own Space itself. Escape clears search
 //! first, then collapses the search bar and returns focus to the active content
-//! surface.
+//! surface. Ctrl+F toggles the search bar while preserving its query.
 //!
 //! ## Three shortcuts, three different wiring mechanisms — on purpose
 //!
@@ -14,9 +14,8 @@
 //!
 //! - **Ctrl+F** is accelerated the idiomatic way, via `gtk::Application::
 //!   set_accels_for_action`. Nothing else in this app binds Ctrl+F, and
-//!   re-focusing an already-focused search entry is harmless, so there is no
-//!   focus-sensitivity to get right — the whole point of a global
-//!   accelerator.
+//!   opening focuses and selects the existing query, while invoking it again
+//!   closes the bar without clearing that query.
 //!
 //! - **Space** uses a capture-phase `EventControllerKey`, not an application
 //!   accelerator. The controller inspects the actual focused widget before
@@ -61,6 +60,12 @@ const ACTION_FOCUS_SEARCH: &str = "focus-search";
 /// display.
 pub fn space_should_toggle(focus_is_text_entry: bool) -> bool {
     !focus_is_text_entry
+}
+
+/// The shared transition for both search affordances: opening and closing are
+/// symmetric, while query preservation remains the search entry's concern.
+pub(in crate::ui) fn next_search_mode(current: bool) -> bool {
+    !current
 }
 
 /// Whether `focus` (the window's currently focused widget, if any)
@@ -176,10 +181,10 @@ fn wire_toggle_play_pause(
     window.add_controller(key_controller);
 }
 
-/// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — reveals the
-/// search bar, grabs keyboard focus and selects the entry's full text (mirroring how most
-/// desktop apps' "Find" shortcut behaves: a second Ctrl+F with existing text
-/// re-selects it all, ready to be typed over). `search_entry` is captured
+/// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — toggles the
+/// search bar. Opening grabs keyboard focus and selects the entry's full text;
+/// closing preserves the query so the active filter remains visible as a chip.
+/// `search_entry` is captured
 /// weakly for the same reference-cycle reason as `wire_toggle_play_pause`'s
 /// `window` — the action is owned by `window`, which also (indirectly, via
 /// the widget tree) owns `search_entry`.
@@ -201,9 +206,19 @@ fn wire_focus_search(
             tracing::warn!("focus-search: search entry is gone; ignoring");
             return;
         };
-        search_bar.set_search_mode(true);
-        search_entry.grab_focus();
-        search_entry.select_region(0, -1);
+        let search_mode = next_search_mode(search_bar.is_search_mode());
+        search_bar.set_search_mode(search_mode);
+        if search_mode {
+            // The bar reveals through a revealer, so the entry is not mapped in
+            // this turn and grab_focus() would be dropped silently — Ctrl+F
+            // would open the bar without placing the cursor (SEARCH-2). Focus
+            // on the next main-loop turn, once the child exists.
+            let entry = search_entry.clone();
+            gtk4::glib::idle_add_local_once(move || {
+                entry.grab_focus();
+                entry.select_region(0, -1);
+            });
+        }
     });
     window.add_action(&action);
     app.set_accels_for_action(&format!("win.{ACTION_FOCUS_SEARCH}"), &["<Control>f"]);
@@ -281,6 +296,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn search_2_ctrl_f_reveals_and_focuses() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.SearchShortcutTest")
@@ -327,6 +343,12 @@ mod tests {
         apply_search_escape(&search_bar, &entry, &focus_active_content);
         assert!(!search_bar.is_search_mode());
         assert_eq!(focus_calls.get(), 1);
+    }
+
+    #[test]
+    fn search_6_ctrl_f_toggles_open_and_closed() {
+        assert!(next_search_mode(false));
+        assert!(!next_search_mode(true));
     }
 
     #[test]

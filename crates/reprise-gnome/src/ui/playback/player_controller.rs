@@ -258,7 +258,7 @@ pub struct PlayerController {
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<i64>>,
     /// Where the `queue` snapshot was seeded from (`play_from_view`) — the
-    /// Queue view's `Up Next · from <label>` title and NAV-9a's jump target.
+    /// Queue view's named virtual context tail and NAV-9a's jump target.
     /// `None` before the first play and after a stop cleared the context.
     pub(in crate::ui) play_origin: RefCell<Option<super::play_origin::PlayOrigin>>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
@@ -433,6 +433,7 @@ impl PlayerController {
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;
 
+        let lyrics = PlayerLyrics::new(&conn.borrow());
         let controller = Rc::new(Self {
             player,
             active_audio_effects: RefCell::new(initial_effects),
@@ -467,7 +468,7 @@ impl PlayerController {
             cover_loader: CoverLoader::new(cover_download),
             bar_cover_generation: Rc::new(Cell::new(0)),
             compact_cover_generation: Rc::new(Cell::new(0)),
-            lyrics: PlayerLyrics::new(),
+            lyrics,
             waveform_generation: Rc::new(Cell::new(0)),
             waveform_backend: waveform,
             cover_accent_generation: Rc::new(Cell::new(0)),

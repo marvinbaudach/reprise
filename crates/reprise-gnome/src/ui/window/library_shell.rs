@@ -30,6 +30,9 @@ pub(in crate::ui) const SIDEBAR_BREAKPOINT_WIDTH: i32 = 800;
 pub(in crate::ui) const LIBRARY_VIEW_TRACKS: &str = "tracks";
 pub(in crate::ui) const LIBRARY_VIEW_ALBUMS: &str = "albums";
 pub(in crate::ui) const LIBRARY_VIEW_ARTISTS: &str = "artists";
+const LIBRARY_VIEW_TRACKS_ICON: &str = "view-list-symbolic";
+const LIBRARY_VIEW_ALBUMS_ICON: &str = "media-optical-cd-audio-symbolic";
+const LIBRARY_VIEW_ARTISTS_ICON: &str = "avatar-default-symbolic";
 const SMOKE_LIBRARY_VIEW_ENV: &str = "REPRISE_SMOKE_LIBRARY_VIEW";
 
 pub(in crate::ui) struct LibraryShell {
@@ -40,7 +43,7 @@ pub(in crate::ui) struct LibraryShell {
 }
 
 pub(in crate::ui) struct LibraryViews {
-    pub(in crate::ui) stack: gtk4::Stack,
+    pub(in crate::ui) stack: adw::ViewStack,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,7 +75,7 @@ fn active_content_target(
 #[derive(Clone)]
 pub(in crate::ui) struct ActiveContentFocus {
     content_stack: glib::WeakRef<gtk4::Stack>,
-    library_stack: glib::WeakRef<gtk4::Stack>,
+    library_stack: glib::WeakRef<adw::ViewStack>,
     focus_tracks: Rc<dyn Fn() -> bool>,
     focus_albums: Rc<dyn Fn() -> bool>,
 }
@@ -80,7 +83,7 @@ pub(in crate::ui) struct ActiveContentFocus {
 impl ActiveContentFocus {
     pub(in crate::ui) fn new(
         content_stack: &gtk4::Stack,
-        library_stack: &gtk4::Stack,
+        library_stack: &adw::ViewStack,
         track_list: &Rc<TrackList>,
         album_grid: &gtk4::GridView,
     ) -> Self {
@@ -98,7 +101,7 @@ impl ActiveContentFocus {
 
     fn from_focus_actions(
         content_stack: &gtk4::Stack,
-        library_stack: &gtk4::Stack,
+        library_stack: &adw::ViewStack,
         focus_tracks: Rc<dyn Fn() -> bool>,
         focus_albums: Rc<dyn Fn() -> bool>,
     ) -> Self {
@@ -166,25 +169,27 @@ pub(in crate::ui) fn build_views(
     // reserve the (wide) track table's minimum width even while the Artists or
     // Albums page is shown, forcing the whole content — and the full-width
     // player bar below it — past the window edge (QA #3/#4).
-    let stack = gtk4::Stack::builder()
+    let stack = adw::ViewStack::builder()
         .hhomogeneous(false)
-        .transition_type(gtk4::StackTransitionType::Crossfade)
         .transition_duration(crate::ui::motion::STANDARD_MS)
         .build();
-    stack.add_titled(
+    stack.add_titled_with_icon(
         tracks,
         Some(LIBRARY_VIEW_TRACKS),
         &strings::text(strings::LIBRARY_VIEW_TRACKS),
+        LIBRARY_VIEW_TRACKS_ICON,
     );
-    stack.add_titled(
+    stack.add_titled_with_icon(
         albums,
         Some(LIBRARY_VIEW_ALBUMS),
         &strings::text(strings::LIBRARY_VIEW_ALBUMS),
+        LIBRARY_VIEW_ALBUMS_ICON,
     );
-    stack.add_titled(
+    stack.add_titled_with_icon(
         artists,
         Some(LIBRARY_VIEW_ARTISTS),
         &strings::text(strings::LIBRARY_VIEW_ARTISTS),
+        LIBRARY_VIEW_ARTISTS_ICON,
     );
     stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
     LibraryViews { stack }
@@ -414,8 +419,8 @@ pub(in crate::ui) fn wire_source_routing(
             content_stack.set_visible_child_name("stats");
         } else {
             content_stack.set_visible_child_name("library");
-            library_stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
             track_list.set_source(source);
+            library_stack.set_visible_child_name(LIBRARY_VIEW_TRACKS);
         }
         title.set_library_navigation_visible(is_library);
         source_title.set_title(&source_name);
@@ -458,7 +463,7 @@ pub(in crate::ui) fn route_to_place(
     sidebar: &Rc<Sidebar>,
     track_list: &Rc<TrackList>,
     content_stack: &gtk4::Stack,
-    library_stack: &gtk4::Stack,
+    library_stack: &adw::ViewStack,
     active_content_focus: &ActiveContentFocus,
     reason: &str,
 ) {
@@ -485,10 +490,10 @@ pub(in crate::ui) fn route_to_place(
     match &place.source {
         ViewSource::Album { .. } | ViewSource::Artist(_) => {
             content_stack.set_visible_child_name("library");
+            track_list.set_source(place.source.clone());
             library_stack.set_visible_child_name(
                 place.library_tab.as_deref().unwrap_or(LIBRARY_VIEW_TRACKS),
             );
-            track_list.set_source(place.source.clone());
             crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &place.source);
         }
         _ => {
@@ -720,10 +725,6 @@ mod tests {
         assert_eq!(
             views.stack.child_by_name(LIBRARY_VIEW_ARTISTS),
             Some(artists.upcast())
-        );
-        assert_eq!(
-            views.stack.transition_type(),
-            gtk4::StackTransitionType::Crossfade
         );
         assert_eq!(
             views.stack.transition_duration(),

@@ -17,7 +17,6 @@ pub const TOOLTIP_PLAY: &str = N_!("Play (Space)");
 pub const TOOLTIP_PAUSE: &str = N_!("Pause (Space)");
 pub const TOOLTIP_PREVIOUS: &str = N_!("Play previous track");
 pub const TOOLTIP_NEXT: &str = N_!("Play next track");
-pub const TOOLTIP_QUEUE: &str = N_!("Show queue");
 
 /// Mini-player hover-overlay buttons (icon-only, TIP-1a/1b).
 pub const TOOLTIP_RESTORE_FULL_WINDOW: &str = N_!("Restore full window (Ctrl+M)");
