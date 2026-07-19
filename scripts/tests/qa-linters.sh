@@ -43,6 +43,8 @@ require_executable scripts/tests/glass-render-cost.sh
 require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
+require_executable scripts/tests/weekly-portfolio-sync.sh
+require_executable scripts/weekly-portfolio-sync.sh
 require_executable .githooks/pre-push
 
 require_pattern 'merge-base --is-ancestor' scripts/check-merge-readiness.sh
@@ -96,6 +98,7 @@ scripts/tests/glass-render-cost.sh
 scripts/tests/readme-showcase.sh
 scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
+scripts/tests/weekly-portfolio-sync.sh
 scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"
