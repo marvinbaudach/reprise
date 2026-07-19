@@ -230,6 +230,28 @@ pub(in crate::ui) fn arm_smoke_library_view(views: &LibraryViews) {
     });
 }
 
+/// Dev/verification hook for the row-less My Stats content view. The shared
+/// `REPRISE_SMOKE_SOURCE=my_stats` spelling stays consistent with track-list
+/// sources, but this is armed only after source routing exists so it exercises
+/// the same sidebar callback that refreshes and reveals the stats stack page.
+fn arm_smoke_my_stats(sidebar: &Rc<Sidebar>) {
+    let Ok(value) = std::env::var(crate::ui::track_list::track_list_smoke::SMOKE_SOURCE_ENV_VAR)
+    else {
+        return;
+    };
+    if !matches!(
+        crate::ui::track_list::track_list_smoke::parse_smoke_source(&value),
+        Some(ViewSource::MyStats)
+    ) {
+        return;
+    }
+    let sidebar = sidebar.clone();
+    gtk4::glib::idle_add_local_once(move || {
+        tracing::info!("smoke: opening My Stats through sidebar source routing");
+        sidebar.refresh_and_select(ViewSource::MyStats, "smoke My Stats source");
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn wire_source_routing(
     sidebar: &Rc<Sidebar>,
@@ -310,6 +332,7 @@ pub(in crate::ui) fn wire_source_routing(
         show_content_on_select();
     });
     sidebar.set_on_show_content(move || show_content());
+    arm_smoke_my_stats(sidebar);
 }
 
 /// Builds the library split view in its collapsed default. It starts with the
