@@ -35,6 +35,7 @@ pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;
+pub(crate) mod glass;
 mod help;
 pub mod import_errors_view;
 pub(crate) mod info_panel;

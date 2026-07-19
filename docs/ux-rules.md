@@ -1071,6 +1071,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Playback-Akzent (`@reprise_player_accent`) bezeichnet ausschließlich den
   laufenden Track wie Play/Pause, Waveform, Playing-Row, EQ, Glow und
   GRID-1-Innenring. Ein Element mischt die Rollen nie.
+- **STYLE-4** [aktiv] [gtk] — Chrome-Glas ist neutral und theme-abhängig,
+  niemals vom Cover-Akzent eingefärbt. GL/NGL/Vulkan verwenden 24 px
+  Backdrop-Blur über einem neutralen Tint-Floor von mindestens 80 %;
+  Cairo, unbekannte Renderer, High Contrast und deaktivierte Animationen
+  degradieren fail-closed zu einem neutralen, mindestens 94 % opaken Tint.
 - **CONTRAST-1** [aktiv] [gtk] — Es gibt drei zentrale Textstufen: Primär
   ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
   Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
@@ -1084,6 +1089,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
   Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
   Kleinschrift und benötigt dieselbe Prüfung wie Hint bei Normalgröße.
+- **CONTRAST-4** [aktiv] [gtk] — Jeder aktive Text und jedes aktive Icon im
+  Glas erreicht mindestens 4,5:1 gegen den Worst Case seiner Zone: den
+  Tint-Floor komponiert über dem hellsten beziehungsweise dunkelsten
+  durchscheinenden Content. Artist, Zeit, Suchfeld und Header-Aktionen sind
+  aktive Inhalte; nur deaktivierte oder rein dekorative Elemente dürfen
+  darunter liegen.
 - **NAV-10** [aktiv] [gtk] — Der laufende Kontext bleibt in allen Ansichten
   mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim ersten
   Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel stellen
