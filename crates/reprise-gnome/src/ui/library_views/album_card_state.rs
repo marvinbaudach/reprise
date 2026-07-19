@@ -5,6 +5,60 @@ use std::collections::HashMap;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queries::AlbumSummary;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::ui) struct PendingAlbumReveal {
+    pub album: String,
+    pub artist: String,
+    pub generation: u64,
+}
+
+impl PendingAlbumReveal {
+    pub fn matches(&self, album: &AlbumSummary) -> bool {
+        album.album.eq_ignore_ascii_case(&self.album)
+            && album.album_artist.eq_ignore_ascii_case(&self.artist)
+    }
+}
+
+pub(in crate::ui) fn album_index(
+    albums: &[AlbumSummary],
+    title: &str,
+    artist: &str,
+) -> Option<u32> {
+    albums
+        .iter()
+        .position(|album| {
+            album.album.eq_ignore_ascii_case(title)
+                && album.album_artist.eq_ignore_ascii_case(artist)
+        })
+        .and_then(|index| u32::try_from(index).ok())
+}
+
+/// Tracks which reveal generation currently owns a recycled card widget.
+/// A timeout may clear the highlight only while its own generation is still
+/// bound to that widget; a later bind must survive an older timeout.
+#[derive(Default)]
+pub(in crate::ui) struct RevealBindingRegistry {
+    entries: HashMap<usize, u64>,
+}
+
+impl RevealBindingRegistry {
+    pub fn bind(&mut self, card_key: usize, generation: u64) {
+        self.entries.insert(card_key, generation);
+    }
+
+    pub fn take_if_current(&mut self, card_key: usize, generation: u64) -> bool {
+        if self.entries.get(&card_key) != Some(&generation) {
+            return false;
+        }
+        self.entries.remove(&card_key);
+        true
+    }
+
+    pub fn unbind_current(&mut self, card_key: usize) {
+        self.entries.remove(&card_key);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum AlbumCardPlayback {
     Normal,
@@ -173,5 +227,30 @@ mod tests {
             primary_album_action(true, PlaybackState::Paused),
             PrimaryAlbumAction::Resume
         );
+    }
+
+    #[test]
+    fn reveal_target_resolves_the_canonical_case_insensitive_model_index() {
+        let albums = [album("First"), album("Playing"), album("Last")];
+
+        assert_eq!(album_index(&albums, "playing", "artist"), Some(1));
+        assert_eq!(album_index(&albums, "missing", "artist"), None);
+        assert!(PendingAlbumReveal {
+            album: "PLAYING".into(),
+            artist: "ARTIST".into(),
+            generation: 7,
+        }
+        .matches(&albums[1]));
+    }
+
+    #[test]
+    fn reveal_timeout_cannot_clear_a_newer_recycled_card_generation() {
+        let mut registry = RevealBindingRegistry::default();
+        registry.bind(7, 1);
+        registry.bind(7, 2);
+
+        assert!(!registry.take_if_current(7, 1));
+        assert!(registry.take_if_current(7, 2));
+        assert!(!registry.take_if_current(7, 2));
     }
 }

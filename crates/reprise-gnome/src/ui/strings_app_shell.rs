@@ -17,6 +17,7 @@ pub const ALBUM_MENU_PLAY_NEXT: &str = N_!("Play next");
 pub const ALBUM_MENU_ADD_QUEUE: &str = N_!("Add to queue");
 pub const ALBUM_MENU_GO_TO_ARTIST: &str = N_!("Go to artist");
 pub const ALBUM_MENU_EDIT_TAGS: &str = N_!("Edit tags...");
+pub const REVEAL_PLAYING_ALBUM: &str = N_!("Reveal playing album");
 
 /// Formats album duration: "1h 4min" or "42 min".
 pub fn album_duration(total_ms: i64) -> String {
