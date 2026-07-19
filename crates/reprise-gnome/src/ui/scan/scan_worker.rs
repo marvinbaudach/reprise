@@ -12,11 +12,9 @@ use reprise_core::library;
 use reprise_core::library::scanner::{ScanError, ScanOutcome, ScanProgress};
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
-use reprise_core::waveform::WaveformBackend;
 
 use super::scan_controls::ScanControls;
 use super::scan_watcher::start_or_restart_watcher;
-use super::scan_waveform_analysis::analyze_waveforms;
 use super::sidebar::Sidebar;
 use super::strings;
 use super::toasts;
@@ -74,17 +72,11 @@ pub(in crate::ui) fn spawn_scan(
 
     let thread_folder = folder.clone();
     let thread_db_path = db_path.clone();
-    let waveform_backend = controls.waveform_backend();
     let stale_receiver = progress_receiver.clone();
     std::thread::spawn(move || {
-        let result = run_scan(
-            &thread_db_path,
-            &thread_folder,
-            waveform_backend.as_ref(),
-            |progress| {
-                publish_latest_progress(&progress_sender, &stale_receiver, progress);
-            },
-        );
+        let result = run_scan(&thread_db_path, &thread_folder, |progress| {
+            publish_latest_progress(&progress_sender, &stale_receiver, progress);
+        });
         drop(progress_sender);
         drop(stale_receiver);
         if let Err(error) = result_sender.send_blocking(result) {
@@ -171,6 +163,7 @@ fn reconcile_outcome(
                     Rc::downgrade(sidebar),
                 );
             }
+            controls.wake_audio_analysis();
             controls.notify_complete();
         }
         // `scan_folder` ran but had no evidence that the persisted root was
@@ -243,7 +236,6 @@ fn finish_scan_ui(controls: &ScanControls) {
 fn run_scan(
     db_path: &std::path::Path,
     folder: &std::path::Path,
-    waveform_backend: &dyn WaveformBackend,
     on_progress: impl FnMut(ScanProgress),
 ) -> Result<ProcessedScanOutcome, ScanError> {
     let mut worker_conn = reprise_core::db::open_migrated(Some(db_path))?;
@@ -253,7 +245,6 @@ fn run_scan(
         tracing::error!(%error, "failed to persist library root after scan");
     }
     let processed = postprocess_scan_outcome(&mut worker_conn, outcome, now_unix())?;
-    analyze_waveforms(db_path, waveform_backend);
     Ok(processed)
 }
 
@@ -389,24 +380,8 @@ mod task_5_5_tests {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use reprise_core::waveform::{WaveformBackend, WaveformError};
-
     use super::*;
     use crate::ui::scan_progress::ScanProgressView;
-
-    struct FakeWaveformBackend;
-
-    impl WaveformBackend for FakeWaveformBackend {
-        fn extract_peaks(
-            &self,
-            _path: &std::path::Path,
-            buckets: usize,
-        ) -> Result<Vec<u8>, WaveformError> {
-            Ok(vec![0; buckets])
-        }
-    }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
@@ -416,7 +391,7 @@ mod tests {
         }
         let button = gtk4::Button::with_label(&strings::text(strings::SCAN_FOLDER));
         let progress = ScanProgressView::new();
-        let controls = ScanControls::new(&button, &progress, Arc::new(FakeWaveformBackend));
+        let controls = ScanControls::new(&button, &progress);
 
         begin_scan_ui(&controls);
 

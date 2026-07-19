@@ -25,26 +25,32 @@ const UNSYNCED_CLASS: &str = "lyrics-unsynced";
 const CONTENT_PAGE: &str = "content";
 const LOADING_PAGE: &str = "loading";
 const STATUS_PAGE: &str = "status";
+const DISABLED_PAGE: &str = "disabled";
 
 type RetryCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type StatusCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type FooterCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
+type OpenCallback = Rc<RefCell<Option<Rc<dyn Fn(bool)>>>>;
 
 #[derive(Clone)]
 struct LyricsLine {
-    root: gtk4::Box,
+    root: gtk4::ListBoxRow,
     label: gtk4::Label,
     timestamp_ms: Option<i64>,
 }
 
 pub(in crate::ui) struct LyricsView {
     root: gtk4::Stack,
-    content: gtk4::Box,
+    content: gtk4::ListBox,
     scrolled: gtk4::ScrolledWindow,
     loading_track: gtk4::Label,
     status: gtk4::Label,
     retry: gtk4::Button,
+    #[cfg(test)]
+    disabled: adw::StatusPage,
+    #[cfg(test)]
+    settings: gtk4::Button,
     lines: RefCell<Vec<LyricsLine>>,
     active_line: Cell<Option<usize>>,
     active_alpha: Cell<u8>,
@@ -55,6 +61,9 @@ pub(in crate::ui) struct LyricsView {
     on_status_changed: StatusCallback,
     on_footer_changed: FooterCallback,
     on_seek: SeekCallback,
+    on_settings: RetryCallback,
+    on_tab_open_changed: OpenCallback,
+    tab_open: Cell<bool>,
     scroll_state: RefCell<LyricsScrollState>,
     scroll_timer: Rc<dyn ScrollTimer>,
     pause_timer: RefCell<Option<Box<dyn ScrollTimerHandle>>>,
@@ -68,7 +77,10 @@ impl LyricsView {
     }
 
     fn with_timer(scroll_timer: Rc<dyn ScrollTimer>) -> Rc<Self> {
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 13);
+        let content = gtk4::ListBox::new();
+        content.set_selection_mode(gtk4::SelectionMode::Single);
+        content.set_activate_on_single_click(true);
+        content.add_css_class("lyrics-list");
         content.set_margin_top(18);
         content.set_margin_bottom(18);
         content.set_margin_start(18);
@@ -113,6 +125,19 @@ impl LyricsView {
         status_box.append(&status);
         status_box.append(&retry);
 
+        let settings =
+            gtk4::Button::with_label(&lyrics_strings::text(lyrics_strings::ENABLE_IN_SETTINGS));
+        settings.add_css_class("suggested-action");
+        settings.set_halign(gtk4::Align::Center);
+        let disabled = adw::StatusPage::builder()
+            .icon_name("network-offline-symbolic")
+            .title(lyrics_strings::text(lyrics_strings::ONLINE_LYRICS_DISABLED))
+            .description(lyrics_strings::text(
+                lyrics_strings::ENABLE_LYRICS_DESCRIPTION,
+            ))
+            .build();
+        disabled.set_child(Some(&settings));
+
         let root = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
             .transition_duration(crate::ui::motion::STANDARD_MS)
@@ -121,11 +146,20 @@ impl LyricsView {
         root.add_named(&scrolled, Some(CONTENT_PAGE));
         root.add_named(&loading, Some(LOADING_PAGE));
         root.add_named(&status_box, Some(STATUS_PAGE));
+        root.add_named(&disabled, Some(DISABLED_PAGE));
 
         let on_retry: RetryCallback = Rc::new(RefCell::new(None));
         let retry_callback = on_retry.clone();
         retry.connect_clicked(move |_| {
             let callback = retry_callback.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        let on_settings: RetryCallback = Rc::new(RefCell::new(None));
+        let settings_callback = on_settings.clone();
+        settings.connect_clicked(move |_| {
+            let callback = settings_callback.borrow().clone();
             if let Some(callback) = callback {
                 callback();
             }
@@ -138,6 +172,10 @@ impl LyricsView {
             loading_track,
             status,
             retry,
+            #[cfg(test)]
+            disabled,
+            #[cfg(test)]
+            settings,
             lines: RefCell::new(Vec::new()),
             active_line: Cell::new(None),
             active_alpha: Cell::new(100),
@@ -148,6 +186,9 @@ impl LyricsView {
             on_status_changed: Rc::new(RefCell::new(None)),
             on_footer_changed: Rc::new(RefCell::new(None)),
             on_seek: Rc::new(RefCell::new(None)),
+            on_settings,
+            on_tab_open_changed: Rc::new(RefCell::new(None)),
+            tab_open: Cell::new(false),
             scroll_state: RefCell::new(LyricsScrollState::default()),
             scroll_timer,
             pause_timer: RefCell::new(None),
@@ -183,6 +224,13 @@ impl LyricsView {
             .set_text(&format!("{}\n{}", title.trim(), artist.trim()));
         self.root.set_visible_child_name(LOADING_PAGE);
         self.set_feedback(true, false);
+    }
+
+    pub(in crate::ui) fn show_disabled(&self) {
+        self.clear_lines();
+        self.set_footer("");
+        self.root.set_visible_child_name(DISABLED_PAGE);
+        self.set_feedback(false, false);
     }
 
     pub(in crate::ui) fn show_result(self: &Rc<Self>, body: &LyricsBody) {
@@ -290,6 +338,28 @@ impl LyricsView {
         *self.on_seek.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_settings(&self, callback: impl Fn() + 'static) {
+        *self.on_settings.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_tab_open_changed(&self, callback: impl Fn(bool) + 'static) {
+        *self.on_tab_open_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_tab_open(&self, open: bool) {
+        if self.tab_open.replace(open) == open {
+            return;
+        }
+        let callback = self.on_tab_open_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(open);
+        }
+    }
+
+    pub(in crate::ui) fn is_tab_open(&self) -> bool {
+        self.tab_open.get()
+    }
+
     pub(in crate::ui) fn external_seek(self: &Rc<Self>) {
         self.cancel_pause_timer();
         self.cancel_scroll_animation();
@@ -340,28 +410,29 @@ impl LyricsView {
         let underline = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         underline.add_css_class(LINE_UNDERLINE_CLASS);
         underline.set_halign(gtk4::Align::Center);
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        let line_content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        line_content.append(&label);
+        line_content.append(&underline);
+        let root = gtk4::ListBoxRow::new();
         root.add_css_class(LINE_CLASS);
-        root.set_halign(gtk4::Align::Fill);
-        root.append(&label);
-        root.append(&underline);
+        root.set_child(Some(&line_content));
+        root.set_selectable(true);
+        root.set_activatable(timestamp_ms.is_some());
         if timestamp_ms.is_some() {
             root.add_css_class(LINE_DISTANT_CLASS);
+            // input-parity: ACC-8 keyboard=enter-row
             root.set_cursor_from_name(Some("pointer"));
         } else {
             root.add_css_class(UNSYNCED_CLASS);
         }
         let index = self.lines.borrow().len();
         if timestamp_ms.is_some() {
-            let click = gtk4::GestureClick::new();
-            click.set_button(1);
             let view = Rc::downgrade(self);
-            click.connect_released(move |_, _, _, _| {
+            root.connect_activate(move |_| {
                 if let Some(view) = view.upgrade() {
                     view.activate_line(index);
                 }
             });
-            root.add_controller(click);
         }
         self.content.append(&root);
         self.lines.borrow_mut().push(LyricsLine {
@@ -458,6 +529,15 @@ impl LyricsView {
     }
 
     #[cfg(test)]
+    pub(in crate::ui) fn line_rows_for_test(&self) -> Vec<gtk4::ListBoxRow> {
+        self.lines
+            .borrow()
+            .iter()
+            .map(|line| line.root.clone())
+            .collect()
+    }
+
+    #[cfg(test)]
     pub(in crate::ui) fn visible_state_name(&self) -> Option<gtk4::glib::GString> {
         self.root.visible_child_name()
     }
@@ -475,6 +555,23 @@ impl LyricsView {
     #[cfg(test)]
     pub(in crate::ui) fn retry_has_css_class(&self, class: &str) -> bool {
         self.retry.has_css_class(class)
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn disabled_snapshot(&self) -> (Option<String>, String, String, String) {
+        (
+            self.disabled.icon_name().map(|name| name.to_string()),
+            self.disabled.title().to_string(),
+            self.disabled
+                .description()
+                .map_or_else(String::new, |description| description.to_string()),
+            self.settings.label().unwrap_or_default().to_string(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn activate_settings_for_test(&self) {
+        self.settings.emit_clicked();
     }
 
     #[cfg(test)]
@@ -519,13 +616,36 @@ impl LyricsView {
         else {
             return f64::INFINITY;
         };
-        let Some(point) = label.compute_point(&self.content, &gtk4::graphene::Point::new(0.0, 0.0))
+        let Some(point) =
+            label.compute_point(&self.scrolled, &gtk4::graphene::Point::new(0.0, 0.0))
         else {
             return f64::INFINITY;
         };
         f64::from(point.y()) + f64::from(label.height()) / 2.0
-            - self.scrolled.vadjustment().value()
             - self.scrolled.vadjustment().page_size() / 2.0
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn line_viewport_top_offset(&self, index: usize) -> f64 {
+        let Some(label) = self
+            .lines
+            .borrow()
+            .get(index)
+            .map(|line| line.label.clone())
+        else {
+            return f64::INFINITY;
+        };
+        let Some(point) =
+            label.compute_point(&self.scrolled, &gtk4::graphene::Point::new(0.0, 0.0))
+        else {
+            return f64::INFINITY;
+        };
+        f64::from(point.y())
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn content_margin_top(&self) -> i32 {
+        self.content.margin_top()
     }
 
     #[cfg(test)]
@@ -567,6 +687,17 @@ pub(in crate::ui) fn lyrics_footer(body: &LyricsBody) -> &'static str {
 }
 
 /// Active synchronized-line emphasis; installed app-wide by [`super::style`].
+///
+/// The hover rule is deliberately narrow (NPP-8: hover is the affordance for
+/// click-to-seek, so it belongs only where clicking does something). Two bugs
+/// came out of applying it to every line:
+///
+/// * **Unsynced lines** are not clickable, yet they reacted. Worse, `opacity`
+///   makes the whole box translucent rather than recolouring the text — so the
+///   accent glow behind the panel bled through and the text took on the
+///   cover's colour. On a warm cover that reads as muddy brown, not "dimmed".
+/// * The **active line** sits at opacity 1, so hovering *dimmed* the very line
+///   the user is reading — the opposite of what a hover highlight should do.
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{LINE_CLASS} {{ font-size: 13px; color: #ffffff; \
@@ -575,7 +706,8 @@ pub(in crate::ui) fn css() -> String {
          .{LINE_NEAR_CLASS} {{ opacity: 0.32; }}\n\
          .{LINE_NEIGHBOR_CLASS} {{ opacity: 0.45; }}\n\
          .{ACTIVE_LINE_CLASS} {{ opacity: 1; }}\n\
-         .{LINE_CLASS}:hover {{ opacity: 0.65; }}\n\
+         .{LINE_CLASS}:not(.{UNSYNCED_CLASS}):not(.{ACTIVE_LINE_CLASS}):hover \
+           {{ opacity: 0.65; }}\n\
          .{ACTIVE_LINE_CLASS} label {{ font-size: 15px; font-weight: 700; color: #ffffff; }}\n\
          .{LINE_GAP_CLASS} {{ opacity: 0.60; }}\n\
          .{LINE_UNDERLINE_CLASS} {{ min-width: 26px; min-height: 2.5px; \

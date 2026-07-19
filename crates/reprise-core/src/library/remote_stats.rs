@@ -2,6 +2,11 @@
 //! Last.fm listening data in the "My Stats" screen. A remote source
 //! **replaces** the local view entirely — its data is never summed with local
 //! counters.
+//!
+//! These compatibility types are intentionally isolated from the editorial
+//! My Stats screen: STATS-0 requires that screen to use local `listen_events`
+//! only. The remote clients remain available for their existing, unwired
+//! fetch paths and never feed `stats_snapshot::compute`.
 
 use super::stats_screen::{HeadlineTotals, MonthlyListens, TopAlbum, TopArtist};
 

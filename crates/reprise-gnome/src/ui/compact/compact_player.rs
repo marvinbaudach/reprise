@@ -358,6 +358,7 @@ fn wire_chrome_buttons(inner: &Rc<Inner>) {
 /// Double-clicking the cover image or the title label triggers restore.
 fn wire_double_click(inner: &Rc<Inner>) {
     let ag = inner.menu.action_group.clone();
+    // input-parity: ACC-8 keyboard=restore-button
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(gdk::BUTTON_PRIMARY);
     gesture.connect_pressed(move |g, n_press, _, _| {
@@ -374,6 +375,7 @@ fn wire_double_click(inner: &Rc<Inner>) {
 /// the context menu at the pointer position.
 fn wire_right_click(inner: &Rc<Inner>) {
     let popover = inner.menu.popover.clone();
+    // input-parity: ACC-8 keyboard=menu-shift-f10
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(gdk::BUTTON_SECONDARY);
     let anchor = inner.widgets.card.clone();
@@ -507,6 +509,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mot_6_compact_track_change_replaces_the_running_animation_slot() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let settings = gtk4::Settings::default().unwrap();
         let previous = settings.is_gtk_enable_animations();

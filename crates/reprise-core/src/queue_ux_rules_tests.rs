@@ -282,18 +282,3 @@ fn play_5b_unmounted_tracks_stay_skip_heal_and_never_stop_current() {
         Some(2)
     );
 }
-
-// UX QUE-1 [geplant] — demo of the activation workflow. The three-section
-// queue itself shipped on main (c5200e1), but this core stub cannot prove
-// the sections; the flip needs a [gtk] test that can. Whoever writes it
-// removes the #[ignore] and flips QUE-1 to [aktiv] in the same commit.
-#[test]
-#[ignore = "UX QUE-1 [geplant] — needs a [gtk] section test; this core stub cannot prove the three sections"]
-fn que_1_queue_is_never_empty_while_playing() {
-    let mut q = Queue::new();
-    q.set_tracks(vec![7, 8, 9], 0);
-    assert!(
-        !q.is_empty(),
-        "while something is playing the queue is never empty"
-    );
-}

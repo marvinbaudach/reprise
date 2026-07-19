@@ -120,7 +120,49 @@ fn issues_list_is_the_bottom_most_root_child_below_the_activity_slot() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn acc_3_bottom_pinned_issues_collection_is_a_tab_stop() {
+    gtk4::init().unwrap();
+    let issues = gtk4::ListBox::new();
+    configure_issues_listbox(&issues);
+    crate::ui::sidebar_presentation::append_problem_header(&issues);
+    let row = crate::ui::sidebar_presentation::build_issue_nav_row(
+        "Missing files",
+        crate::ui::sidebar_presentation::issue_row_presentation(
+            1,
+            crate::ui::sidebar_presentation::NavIcon::Missing,
+        ),
+        crate::ui::sidebar_presentation::NavIcon::Missing,
+    );
+    issues.append(&row);
+
+    remember_issue_focus_entry(&issues, &row);
+
+    assert!(issues.is_focusable());
+    assert_eq!(issues.focus_child().as_ref(), Some(row.upcast_ref()));
+
+    let before = gtk4::Button::with_label("Before");
+    let after = gtk4::Button::with_label("After");
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.append(&before);
+    root.append(&issues);
+    root.append(&after);
+    let window = gtk4::Window::builder().child(&root).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(before.grab_focus());
+    assert!(window.child_focus(gtk4::DirectionType::TabForward));
+    assert!(
+        row.has_focus() || issues.has_focus(),
+        "Tab must enter the separately pinned issues collection"
+    );
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn focus_driven_selection_browses_without_routing_but_activation_routes() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let shared = test_shared();
     wire_row_selected(&shared);
@@ -167,6 +209,82 @@ fn focus_driven_selection_browses_without_routing_but_activation_routes() {
         vec![ViewSource::Queue.label(), ViewSource::Library.label()]
     );
     window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn acc_3_focus_transfer_between_sidebar_collections_does_not_resync_mid_flight() {
+    gtk4::init().unwrap();
+    let shared = test_shared();
+    wire_row_selected(&shared);
+    wire_focus_leave_resync(&shared);
+    rebuild(&shared, None, "test build");
+    let missing = crate::ui::sidebar_presentation::build_issue_nav_row(
+        "Missing files",
+        crate::ui::sidebar_presentation::issue_row_presentation(
+            1,
+            crate::ui::sidebar_presentation::NavIcon::Missing,
+        ),
+        crate::ui::sidebar_presentation::NavIcon::Missing,
+    );
+    shared.issues_listbox.append(&missing);
+    remember_issue_focus_entry(&shared.issues_listbox, &missing);
+    shared.rows.borrow_mut().push((
+        missing.clone(),
+        ViewSource::Missing,
+        "Missing files".to_string(),
+    ));
+
+    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    root.append(&shared.listbox);
+    root.append(&shared.issues_listbox);
+    let window = gtk4::Window::builder().child(&root).build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    let queue = find_row(&shared, &ViewSource::Queue).unwrap();
+    assert!(queue.grab_focus());
+    shared.listbox.select_row(Some(&queue));
+    assert!(missing.grab_focus());
+    shared.issues_listbox.select_row(Some(&missing));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert!(missing.has_focus());
+    assert_eq!(
+        shared.issues_listbox.selected_row().as_ref(),
+        Some(&missing)
+    );
+    assert!(shared.listbox.selected_row().is_none());
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn acc_3_sidebar_collection_boundaries_link_main_and_issues() {
+    gtk4::init().unwrap();
+    let shared = test_shared();
+    rebuild(&shared, None, "test build");
+    let missing = crate::ui::sidebar_presentation::build_issue_nav_row(
+        "Missing files",
+        crate::ui::sidebar_presentation::issue_row_presentation(
+            1,
+            crate::ui::sidebar_presentation::NavIcon::Missing,
+        ),
+        crate::ui::sidebar_presentation::NavIcon::Missing,
+    );
+    shared.issues_listbox.append(&missing);
+    shared.rows.borrow_mut().push((
+        missing.clone(),
+        ViewSource::Missing,
+        "Missing files".to_string(),
+    ));
+
+    assert_eq!(first_issue_row(&shared).as_ref(), Some(&missing));
+    assert!(last_main_row(&shared).is_some());
+    assert_eq!(
+        last_main_row(&shared).unwrap().parent().as_ref(),
+        Some(shared.listbox.upcast_ref())
+    );
 }
 
 #[test]

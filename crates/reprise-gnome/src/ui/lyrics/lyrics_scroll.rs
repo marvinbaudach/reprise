@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub(in crate::ui) const USER_PAUSE_MS: u64 = 4_000;
+const MIN_CONTENT_MARGIN: i32 = 18;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::ui) enum ScrollMode {
@@ -93,6 +94,13 @@ pub(in crate::ui) fn centered_scroll_value(
     }
     let maximum = (upper - page_size).max(0.0);
     (row_y + row_height / 2.0 - page_size / 2.0).clamp(0.0, maximum)
+}
+
+/// Keeps real leading context honest: the top edge has only its normal inset,
+/// while the trailing inset still lets the final line reach the centre.
+pub(in crate::ui) fn content_margins(viewport_height: i32, row_height: i32) -> (i32, i32) {
+    let trailing = ((viewport_height - row_height) / 2).max(MIN_CONTENT_MARGIN);
+    (MIN_CONTENT_MARGIN, trailing)
 }
 
 pub(in crate::ui) trait ScrollTimerHandle {

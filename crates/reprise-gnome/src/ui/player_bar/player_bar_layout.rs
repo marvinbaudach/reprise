@@ -5,6 +5,8 @@ use gtk4::{pango, prelude::*};
 use super::cover_loader::CoverLoader;
 use super::strings;
 use super::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
+use crate::ui::playing_marker;
+use crate::ui::style::buttons;
 
 pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
 pub(in crate::ui) const VOLUME_MAX: f64 = 1.0;
@@ -33,7 +35,6 @@ const VOLUME_SCALE_CSS_CLASS: &str = "player-bar-volume";
 pub(in crate::ui) const KNOB_VISIBLE_CSS_CLASS: &str = "knob-visible";
 
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
-const ICON_QUEUE: &str = "view-list-symbolic";
 
 pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) root: gtk4::Box,
@@ -42,20 +43,22 @@ pub(in crate::ui) struct PlayerBarWidgets {
     #[allow(dead_code)]
     pub(in crate::ui) info_box: gtk4::Box,
     pub(in crate::ui) cover: gtk4::Image,
+    pub(in crate::ui) cover_button: gtk4::Button,
     pub(in crate::ui) title_label: gtk4::Label,
+    pub(in crate::ui) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
+    pub(in crate::ui) artist_button: gtk4::Button,
     pub(in crate::ui) mini_eq: gtk4::Box,
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     pub(in crate::ui) play_pause_button: gtk4::Button,
     pub(in crate::ui) next_button: gtk4::Button,
-    pub(in crate::ui) repeat_button: gtk4::Button,
+    pub(in crate::ui) repeat_button: gtk4::ToggleButton,
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
-    pub(in crate::ui) queue_button: gtk4::Button,
 }
 
 pub(in crate::ui) fn build() -> PlayerBarWidgets {
@@ -64,6 +67,14 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     cover.set_pixel_size(COVER_PIXEL_SIZE);
     cover.add_css_class(COVER_CSS_CLASS);
     CoverLoader::set_placeholder(&cover);
+    let cover_button = gtk4::Button::builder()
+        .child(&cover)
+        .has_frame(false)
+        .tooltip_text(strings::text(strings::REVEAL_PLAYING_ALBUM))
+        .build();
+    cover_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::REVEAL_PLAYING_ALBUM,
+    ))]);
 
     // — Track labels —
     let title_label = build_track_label();
@@ -72,53 +83,59 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let artist_label = build_track_label();
     artist_label.add_css_class("player-bar-artist");
 
-    // — Mini-EQ (3 animated bars, toggled via "playing" CSS class) —
-    let mini_eq = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    // — Shared persistent playing marker —
+    let mini_eq = playing_marker::build();
     mini_eq.add_css_class("mini-eq");
-    mini_eq.set_valign(gtk4::Align::Center);
-    for _ in 0..3 {
-        let bar = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        mini_eq.append(&bar);
-    }
 
     // Title row: title label + mini-EQ side by side (spec 1.5: "neben dem Titel").
     let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     title_row.append(&title_label);
     title_row.append(&mini_eq);
     title_row.set_valign(gtk4::Align::Center);
+    let title_button = gtk4::Button::builder()
+        .child(&title_row)
+        .has_frame(false)
+        .tooltip_text(strings::text(strings::REVEAL_PLAYING_ALBUM))
+        .build();
+    title_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::REVEAL_PLAYING_ALBUM,
+    ))]);
+    let artist_button = gtk4::Button::builder()
+        .child(&artist_label)
+        .has_frame(false)
+        .build();
 
     let track_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    track_box.append(&title_row);
-    track_box.append(&artist_label);
+    track_box.append(&title_button);
+    track_box.append(&artist_button);
     track_box.set_valign(gtk4::Align::Center);
 
     // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     info_box.set_margin_start(12);
-    info_box.append(&cover);
+    info_box.append(&cover_button);
     info_box.append(&track_box);
     info_box.set_valign(gtk4::Align::Center);
     info_box.set_width_request(START_ZONE_WIDTH);
 
     // — Transport controls —
-    let shuffle_button = gtk4::ToggleButton::builder()
-        .icon_name(ICON_SHUFFLE)
-        .tooltip_text(strings::text(strings::SHUFFLE))
-        .valign(gtk4::Align::Center)
-        .build();
-    shuffle_button.add_css_class("flat");
+    // Shuffle and Repeat are both toggles, so both speak the one `:checked`
+    // state language from `style::buttons` (BTN-2) — Repeat's three modes ride
+    // on top of it via the icon swap in `set_repeat_indicator`.
+    let shuffle_button = transport_toggle(ICON_SHUFFLE, strings::SHUFFLE);
     let prev_button = transport_button(ICON_PREVIOUS, strings::TOOLTIP_PREVIOUS);
-    prev_button.add_css_class("flat");
     prev_button.set_sensitive(false);
-    let play_pause_button = transport_button(ICON_PLAY, strings::TOOLTIP_PLAY);
-    // The play/pause control is the accent-glow focal point of the bar.
+    // The play/pause control is the accent-glow focal point of the bar and the
+    // primary tier of BTN-3: it may react more visibly than its neighbours.
+    let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
+    play_pause_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_PLAY)));
+    play_pause_button.set_valign(gtk4::Align::Center);
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
+    buttons::arm(&play_pause_button, buttons::PRIMARY_CLASS);
     let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
-    next_button.add_css_class("flat");
     next_button.set_sensitive(false);
-    let repeat_button = transport_button(ICON_REPEAT_ALL, strings::REPEAT);
-    repeat_button.add_css_class("flat");
+    let repeat_button = transport_toggle(ICON_REPEAT_ALL, strings::REPEAT);
 
     let transport_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     transport_row.append(&shuffle_button);
@@ -155,7 +172,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     center_zone.set_size_request(CENTER_ZONE_MAX_WIDTH, -1);
     center_zone.set_valign(gtk4::Align::Center);
 
-    // — End zone (volume icon + slider + queue button) —
+    // — End zone (volume icon + slider) —
     let volume_scale = gtk4::Scale::with_range(
         gtk4::Orientation::Horizontal,
         VOLUME_MIN,
@@ -171,6 +188,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     volume_scale.add_css_class(VOLUME_SCALE_CSS_CLASS);
 
     // Scroll ±5 % per tick on the volume slider (spec 1.5).
+    // input-parity: ACC-8 keyboard=native-range
     let volume_scroll =
         gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::VERTICAL);
     volume_scroll.connect_scroll({
@@ -204,15 +222,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     volume_icon.set_valign(gtk4::Align::Center);
     volume_icon.add_css_class("flat");
 
-    let queue_button = gtk4::Button::from_icon_name(ICON_QUEUE);
-    queue_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_QUEUE)));
-    queue_button.set_valign(gtk4::Align::Center);
-    queue_button.add_css_class("flat");
-
     let end_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     end_zone.append(&volume_icon);
     end_zone.append(&volume_scale);
-    end_zone.append(&queue_button);
     end_zone.set_valign(gtk4::Align::Center);
     end_zone.set_halign(gtk4::Align::End);
     end_zone.set_width_request(END_ZONE_WIDTH);
@@ -236,8 +248,11 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         center_box,
         info_box,
         cover,
+        cover_button,
         title_label,
+        title_button,
         artist_label,
+        artist_button,
         mini_eq,
         shuffle_button,
         prev_button,
@@ -249,7 +264,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         waveform,
         volume_icon,
         volume_scale,
-        queue_button,
     }
 }
 
@@ -262,8 +276,7 @@ pub(in crate::ui) fn css() -> String {
     let micro_easing = motion::MICRO_CSS_EASING;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
-           background-color: rgb(26, 26, 26); \
-           border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
+           background-color: transparent; border: none; }}\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \
@@ -274,7 +287,12 @@ pub(in crate::ui) fn css() -> String {
          .{PLAY_CSS_CLASS}:hover {{ \
            box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.75), \
                        0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
-         .{PLAY_CSS_CLASS}:active {{ transform: scale(0.94); }}\n\
+         /* BTN-3: the main action may answer a press more loudly than its \
+            neighbours — a ring pulse in the playback accent on top of the \
+            shared press sink from `style::buttons`. */\n\
+         .{PLAY_CSS_CLASS}:active {{ \
+           box-shadow: 0 0 0 4px alpha(@reprise_player_accent, 0.45), \
+                       0 0 18px alpha(@reprise_player_accent, 0.80); }}\n\
          .{PLAY_CSS_CLASS}.pulsing {{ \
            animation: reprise-play-pulse {micro_ms}ms {micro_easing} 1; }}\n\
          @keyframes reprise-play-pulse {{ \
@@ -288,40 +306,43 @@ pub(in crate::ui) fn css() -> String {
          .{COVER_CSS_CLASS}.hovered {{ opacity: 1.0; }}\n\
          .player-bar-title {{ font-weight: bold; font-size: 13.5px; }}\n\
          .player-bar-artist {{ \
-           color: alpha(@window_fg_color, 0.50); font-size: 12px; \
+           color: alpha(@window_fg_color, 0.82); font-size: 12px; \
            transition: color {TRANSITION}; }}\n\
-         .player-bar-artist.artist-hovered {{ color: alpha(white, 0.75); }}\n\
+         .player-bar-artist.artist-hovered {{ color: @window_fg_color; }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}\n\
-         .{TRANSPORT_ROW_CSS_CLASS} button.flat {{ \
-           border-radius: 50%; \
-           transition: background-color {TRANSITION}, color {TRANSITION}; }}\n\
-         .{TRANSPORT_ROW_CSS_CLASS} button.flat:hover {{ \
-           background-color: alpha(white, 0.08); color: white; }}\n\
+         /* Shape only. Hover, press, focus and the checked state all come from \
+            the one central set in `style::buttons` (BTN-4) — no local tint. */\n\
+         .{TRANSPORT_ROW_CSS_CLASS} button {{ border-radius: 50%; }}\n\
          .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
            opacity: 0; transition: opacity {TRANSITION}; }}\n\
          .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\
-         .mini-eq {{ margin-left: 4px; }}\n\
-         .mini-eq > box {{ \
-           min-width: 3px; min-height: 4px; \
-           border-radius: 1px; \
-           background-color: @reprise_player_accent; }}\n\
-         .mini-eq.playing > box:nth-child(1) {{ \
-           animation: mini-eq-bar 0.65s ease-in-out infinite alternate; }}\n\
-         .mini-eq.playing > box:nth-child(2) {{ \
-           animation: mini-eq-bar 0.65s ease-in-out 0.22s infinite alternate; }}\n\
-         .mini-eq.playing > box:nth-child(3) {{ \
-           animation: mini-eq-bar 0.65s ease-in-out 0.44s infinite alternate; }}\n\
-         @keyframes mini-eq-bar {{ \
-           from {{ min-height: 4px; }} \
-           to   {{ min-height: 14px; }} }}"
+         .mini-eq {{ margin-left: 4px; }}"
     )
 }
 
+/// A standard-tier transport button (BTN-3): flat at rest, carrying the shared
+/// hover/press/focus vocabulary from [`buttons`] rather than a local tint.
 fn transport_button(icon: &str, tooltip: &str) -> gtk4::Button {
     let button = gtk4::Button::from_icon_name(icon);
     button.set_tooltip_text(Some(&strings::text(tooltip)));
     button.set_valign(gtk4::Align::Center);
+    button.add_css_class("flat");
+    buttons::arm(&button, buttons::ICON_CLASS);
+    button
+}
+
+/// The toggle variant of [`transport_button`], adding the persistent
+/// `:checked` state display (BTN-2).
+fn transport_toggle(icon: &str, tooltip: &str) -> gtk4::ToggleButton {
+    let button = gtk4::ToggleButton::builder()
+        .icon_name(icon)
+        .tooltip_text(strings::text(tooltip))
+        .valign(gtk4::Align::Center)
+        .build();
+    button.add_css_class("flat");
+    buttons::arm(&button, buttons::ICON_CLASS);
+    buttons::arm(&button, buttons::TOGGLE_CLASS);
     button
 }
 
@@ -348,9 +369,42 @@ mod tests {
         main_loop.run();
     }
 
+    fn descendant_buttons(root: &gtk4::Widget) -> Vec<gtk4::Button> {
+        let mut buttons = Vec::new();
+        let mut pending = vec![root.clone()];
+        while let Some(widget) = pending.pop() {
+            if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
+                buttons.push(button);
+            }
+            let mut child = widget.first_child();
+            while let Some(current) = child {
+                child = current.next_sibling();
+                pending.push(current);
+            }
+        }
+        buttons
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn que_1_player_bar_has_no_queue_button() {
+        gtk4::init().unwrap();
+        let layout = build();
+        let queue_buttons = descendant_buttons(layout.root.upcast_ref())
+            .into_iter()
+            .filter(|button| button.icon_name().as_deref() == Some("view-list-symbolic"))
+            .count();
+
+        assert_eq!(
+            queue_buttons, 0,
+            "the player bar still renders a queue button"
+        );
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn library_bar_has_three_zones_via_centerbox() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         if gtk4::init().is_err() {
             return;
         }
@@ -382,10 +436,9 @@ mod tests {
         assert!(layout.position_label.is_ancestor(&layout.root));
         assert!(layout.duration_label.is_ancestor(&layout.root));
         assert!(layout.waveform.widget().is_ancestor(&layout.root));
-        // End zone has volume and queue controls.
+        // End zone has volume controls.
         assert!(layout.volume_scale.is_ancestor(&layout.root));
         assert!(layout.volume_icon.is_ancestor(&layout.root));
-        assert!(layout.queue_button.is_ancestor(&layout.root));
         window.close();
     }
 
@@ -423,7 +476,29 @@ mod tests {
         assert!(css.contains(".player-bar-title"));
         assert!(css.contains(".player-bar-artist"));
         assert!(css.contains("border-radius: 8px"));
-        assert!(css.contains("scale(0.94)"));
+    }
+
+    /// The press sink is no longer the player bar's own business: it comes
+    /// from the one central set (BTN-4), and the bar only adds the louder
+    /// accent ring the main action is allowed (BTN-3).
+    #[test]
+    fn btn_3_play_button_takes_the_shared_press_and_adds_its_own_ring() {
+        use crate::ui::style::buttons;
+
+        let css = super::css();
+        assert!(css.contains(&format!(".{}:active", super::PLAY_CSS_CLASS)));
+        assert!(css.contains("box-shadow: 0 0 0 4px alpha(@reprise_player_accent"));
+        // The MOT-5 play/pause pulse keyframes stay; only the *press* scale
+        // moved out, so no local rule may restate it.
+        let press_scale = format!("scale({})", crate::ui::style::tokens::BTN_PRESS_SCALE);
+        assert!(
+            !css.contains(&press_scale),
+            "the press scale belongs to style::buttons, not to a per-button tint"
+        );
+
+        let shared = buttons::css();
+        assert!(shared.contains(&format!(".{}:active", buttons::PRIMARY_CLASS)));
+        assert!(shared.contains(&press_scale));
     }
 
     #[test]

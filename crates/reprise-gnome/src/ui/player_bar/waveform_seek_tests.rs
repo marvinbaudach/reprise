@@ -44,6 +44,22 @@ fn fraction_maps_and_clamps_to_unit_range() {
 }
 
 #[test]
+fn keyboard_seek_supports_arrows_pages_and_boundaries() {
+    use gtk4::gdk::Key;
+
+    assert_eq!(keyboard_seek_target(Key::Right, 0.5, 100_000), Some(0.55));
+    assert_eq!(keyboard_seek_target(Key::Left, 0.02, 100_000), Some(0.0));
+    assert_eq!(keyboard_seek_target(Key::Page_Up, 0.5, 100_000), Some(0.8));
+    assert_eq!(
+        keyboard_seek_target(Key::Page_Down, 0.2, 100_000),
+        Some(0.0)
+    );
+    assert_eq!(keyboard_seek_target(Key::Home, 0.7, 100_000), Some(0.0));
+    assert_eq!(keyboard_seek_target(Key::End, 0.2, 100_000), Some(1.0));
+    assert_eq!(keyboard_seek_target(Key::space, 0.5, 100_000), None);
+}
+
+#[test]
 fn bars_split_played_from_unplayed_at_the_fraction() {
     // 4 bars, centres at 0.125/0.375/0.625/0.875; fraction 0.5 plays first 2.
     assert!(bar_played(0, 4, 0.5));
@@ -374,6 +390,7 @@ fn mot_7_waveform_completes_build_up_when_animations_disabled_mid_build() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_waveform_crossfades_to_the_new_track_instead_of_rebuilding() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
     let previous = settings.is_gtk_enable_animations();

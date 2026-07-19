@@ -15,7 +15,9 @@ use rusqlite::{Connection, OptionalExtension};
 /// risking a typo'd duplicate string.
 pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
+pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
+pub const AUDIO_ANALYSIS_ENABLED_KEY: &str = "audio_analysis.enabled";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
 /// an error — for a key that has never been written, matching every other
@@ -71,6 +73,54 @@ pub fn set_bool(conn: &Connection, key: &str, value: bool) -> Result<(), rusqlit
     set_setting(conn, key, if value { BOOL_TRUE } else { BOOL_FALSE })
 }
 
+/// Whether Reprise may read local audio to build Audio Character profiles.
+/// Fresh installations deliberately default to off; this is explicit opt-in.
+pub fn get_audio_analysis_enabled(conn: &Connection) -> bool {
+    get_bool(conn, AUDIO_ANALYSIS_ENABLED_KEY, false).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read audio-analysis setting; using off");
+        false
+    })
+}
+
+pub fn set_audio_analysis_enabled(conn: &Connection, enabled: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, AUDIO_ANALYSIS_ENABLED_KEY, enabled)
+}
+
+const STATS_CLOCK_KEY: &str = "stats.section.clock";
+const STATS_GENRES_KEY: &str = "stats.section.genres";
+const STATS_HIGHLIGHTS_KEY: &str = "stats.section.highlights";
+
+/// User-selected visibility for the three optional My Stats sections.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatsLayout {
+    pub clock: bool,
+    pub genres: bool,
+    pub highlights: bool,
+}
+
+/// Reads the My Stats layout, defaulting every section to visible.
+pub fn get_stats_layout(conn: &Connection) -> StatsLayout {
+    let read = |key| match get_bool(conn, key, true) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, key, "could not read stats layout; using visible default");
+            true
+        }
+    };
+    StatsLayout {
+        clock: read(STATS_CLOCK_KEY),
+        genres: read(STATS_GENRES_KEY),
+        highlights: read(STATS_HIGHLIGHTS_KEY),
+    }
+}
+
+/// Persists the three optional My Stats section toggles.
+pub fn set_stats_layout(conn: &Connection, layout: StatsLayout) -> Result<(), rusqlite::Error> {
+    set_bool(conn, STATS_CLOCK_KEY, layout.clock)?;
+    set_bool(conn, STATS_GENRES_KEY, layout.genres)?;
+    set_bool(conn, STATS_HIGHLIGHTS_KEY, layout.highlights)
+}
+
 /// Typed accessors for `LIBRARY_ROOT_KEY` — the one string setting with
 /// scattered call sites today (main.rs dev hook, scan flow, watcher
 /// startup). Stored as the same string the scanner writes; kept as String
@@ -99,6 +149,17 @@ pub fn get_onboarding_completed(conn: &Connection) -> Result<bool, rusqlite::Err
 
 pub fn set_onboarding_completed(conn: &Connection, completed: bool) -> Result<(), rusqlite::Error> {
     set_bool(conn, ONBOARDING_COMPLETED_KEY, completed)
+}
+
+pub fn get_new_releases_fetch_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    get_bool(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, false)
+}
+
+pub fn set_new_releases_fetch_completed(
+    conn: &Connection,
+    completed: bool,
+) -> Result<(), rusqlite::Error> {
+    set_bool(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, completed)
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";

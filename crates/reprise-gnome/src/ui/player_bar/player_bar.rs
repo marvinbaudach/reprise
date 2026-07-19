@@ -1,5 +1,5 @@
 //! The full-width Library player bar: track title/artist, transport controls,
-//! a click-to-seek waveform, playback modes, inline volume, and queue button.
+//! a click-to-seek waveform, playback modes, and inline volume.
 //!
 //! `PlayerBar` owns every widget it displays; callers (see
 //! `player_controller.rs`) only interact with it through the `set_*`/
@@ -42,14 +42,7 @@ const ICON_VOLUME_LOW: &str = "audio-volume-low-symbolic";
 const ICON_VOLUME_MEDIUM: &str = "audio-volume-medium-symbolic";
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 
-/// Applied to the repeat button while `Repeat::Off`, so it reads as inactive
-/// without a third icon asset — the same generic "de-emphasize" style class
-/// which GTK's Adwaita theme renders as reduced-opacity text/icon content on
-/// any widget.
-pub(in crate::ui) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
-
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
-const MINI_EQ_PLAYING_CLASS: &str = "playing";
 const PLAY_PULSE_CSS_CLASS: &str = "pulsing";
 /// Keeps a retriggered keyframe class absent across at least one compositor
 /// frame before it is re-added. Frame-clock tick callbacks can run
@@ -76,8 +69,11 @@ pub struct PlayerBar {
     /// struct only owns/exposes the widget, never resolves or decodes covers
     /// itself (see `cover_loader.rs`).
     cover: gtk4::Image,
+    cover_button: gtk4::Button,
     title_label: gtk4::Label,
+    title_button: gtk4::Button,
     artist_label: gtk4::Label,
+    artist_button: gtk4::Button,
     /// Three-bar animated equalizer indicator — `playing` CSS class toggled by
     /// `set_mini_eq_playing`.
     mini_eq: gtk4::Box,
@@ -85,7 +81,7 @@ pub struct PlayerBar {
     prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
     next_button: gtk4::Button,
-    repeat_button: gtk4::Button,
+    repeat_button: gtk4::ToggleButton,
     position_label: gtk4::Label,
     duration_label: gtk4::Label,
     waveform: WaveformSeek,
@@ -93,8 +89,6 @@ pub struct PlayerBar {
     volume_scale: gtk4::Scale,
     /// Volume icon button — click toggles mute.
     volume_icon: gtk4::Button,
-    /// Button that opens the queue panel (Task 7 wires the callback).
-    queue_button: gtk4::Button,
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
     duration_ms: Rc<Cell<i64>>,
@@ -114,10 +108,10 @@ pub struct PlayerBar {
     /// Volume level before muting, so unmuting restores it.
     #[allow(dead_code)]
     pre_mute_volume: Cell<f64>,
-    /// Callback fired when the user activates the title link — wired to
+    /// Callback fired when the user activates the title button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
     on_title_click: crate::ui::link_activation::ActivationSlot,
-    /// Callback fired when the user activates the cover link — wired to
+    /// Callback fired when the user activates the cover button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
     on_cover_click: crate::ui::link_activation::ActivationSlot,
     /// Callback fired when the user clicks the artist label — navigates to
@@ -141,8 +135,11 @@ impl PlayerBar {
             root,
             info_box: _,
             cover,
+            cover_button,
             title_label,
+            title_button,
             artist_label,
+            artist_button,
             mini_eq,
             shuffle_button,
             prev_button,
@@ -154,15 +151,29 @@ impl PlayerBar {
             waveform,
             volume_icon,
             volume_scale,
-            queue_button,
             ..
         } = player_bar_layout::build();
 
-        let on_title_click = Rc::new(RefCell::new(None));
-        crate::ui::link_activation::arm_slot(&title_label, &on_title_click);
+        let on_title_click: crate::ui::link_activation::ActivationSlot =
+            Rc::new(RefCell::new(None));
+        let title_click_cb = on_title_click.clone();
+        title_button.connect_clicked(move |_| {
+            let callback = title_click_cb.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
 
-        let on_cover_click = Rc::new(RefCell::new(None));
-        crate::ui::link_activation::arm_slot(&cover, &on_cover_click);
+        // Cover: click → Now-Playing-Panel toggle (spec 1.5).
+        let on_cover_click: crate::ui::link_activation::ActivationSlot =
+            Rc::new(RefCell::new(None));
+        let cover_click_cb = on_cover_click.clone();
+        cover_button.connect_clicked(move |_| {
+            let cb = cover_click_cb.borrow().clone();
+            if let Some(cb) = cb {
+                cb();
+            }
+        });
 
         // Cover: CSS brightness effect on hover (spec 1.5).
         let cover_motion = gtk4::EventControllerMotion::new();
@@ -179,16 +190,13 @@ impl PlayerBar {
         // Artist label: hover colour + click → artist view (spec 1.5).
         let on_artist_click: crate::ui::link_activation::ActivationSlot =
             Rc::new(RefCell::new(None));
-        let artist_gesture = gtk4::GestureClick::new();
         let artist_click_cb = on_artist_click.clone();
-        artist_gesture.connect_released(move |_, _, _, _| {
+        artist_button.connect_clicked(move |_| {
             let cb = artist_click_cb.borrow().clone();
             if let Some(cb) = cb {
                 cb();
             }
         });
-        artist_label.add_controller(artist_gesture);
-        artist_label.set_cursor_from_name(Some("pointer"));
 
         let artist_motion = gtk4::EventControllerMotion::new();
         artist_motion.connect_enter({
@@ -204,8 +212,11 @@ impl PlayerBar {
         let bar = Self {
             root,
             cover,
+            cover_button,
             title_label,
+            title_button,
             artist_label,
+            artist_button,
             mini_eq,
             shuffle_button,
             prev_button,
@@ -217,7 +228,6 @@ impl PlayerBar {
             waveform,
             volume_scale,
             volume_icon,
-            queue_button,
             duration_ms: Rc::new(Cell::new(0)),
             playback_state: Cell::new(PlaybackState::Stopped),
             queue_has_tracks: Cell::new(false),
@@ -279,6 +289,15 @@ impl PlayerBar {
     /// Cross-fades the labels over 250 ms (125 ms fade-out, 125 ms fade-in)
     /// and follows GTK's system animation setting through [`motion::timed`].
     pub fn set_track(&self, title: &str, artist: &str) {
+        self.title_button
+            .update_property(&[gtk4::accessible::Property::Label(title)]);
+        self.artist_button
+            .update_property(&[gtk4::accessible::Property::Label(artist)]);
+        self.artist_button.set_sensitive(!artist.trim().is_empty());
+        self.cover_button
+            .update_property(&[gtk4::accessible::Property::Label(&strings::text(
+                strings::REVEAL_PLAYING_ALBUM,
+            ))]);
         self.animate_track_change(title, artist);
     }
 
@@ -364,6 +383,7 @@ impl PlayerBar {
         }
         self.title_label.set_text("");
         self.artist_label.set_text("");
+        self.artist_button.set_sensitive(false);
         self.clear_cover();
     }
 
@@ -485,14 +505,8 @@ impl PlayerBar {
             .set_text(&format_remaining(position_ms, duration_ms));
     }
 
-    /// Toggles the mini-EQ animation on/off by adding/removing the `playing`
-    /// CSS class on the `.mini-eq` container.
     pub fn set_mini_eq_playing(&self, playing: bool) {
-        if playing {
-            self.mini_eq.add_css_class(MINI_EQ_PLAYING_CLASS);
-        } else {
-            self.mini_eq.remove_css_class(MINI_EQ_PLAYING_CLASS);
-        }
+        crate::ui::playing_marker::set_playing(&self.mini_eq, playing);
     }
 
     /// Wires the play/pause button; `f` is called on every click with no
@@ -507,6 +521,7 @@ impl PlayerBar {
     /// and calls `f` on each middle-click release. Wired by Task 7 in
     /// `player_controller_wiring.rs`.
     pub fn connect_middle_click_stop<F: Fn() + 'static>(&self, f: F) {
+        // input-parity: ACC-8 keyboard=main-menu-stop
         let gesture = gtk4::GestureClick::new();
         gesture.set_button(2);
         gesture.connect_released(move |_, _, _, _| f());
@@ -560,12 +575,6 @@ impl PlayerBar {
         self.volume_scale.set_value(clamped);
         self.update_volume_icon(clamped);
         self.updating_volume.set(false);
-    }
-
-    /// Wires the queue button; `f` is called on every click — the caller
-    /// decides what "show queue" means (Task 7 wires this).
-    pub fn connect_queue_clicked<F: Fn() + 'static>(&self, f: F) {
-        self.queue_button.connect_clicked(move |_| f());
     }
 
     /// Wires the volume icon as a mute toggle. When muted, the scale is driven
@@ -703,22 +712,22 @@ impl PlayerBar {
             .set_sensitive(state != PlaybackState::Stopped);
     }
 
-    /// Reflects the queue's repeat mode on the repeat button: `All`/`One`
-    /// each get a distinct icon, `Off` reuses the `All` icon dimmed via
-    /// `REPEAT_OFF_CSS_CLASS` (see its doc comment) rather than a third icon
-    /// asset.
+    /// Reflects the queue's repeat mode on the repeat button. Repeat is a
+    /// toggle like Shuffle (BTN-2), so "on" is the widget's own `:checked`
+    /// state — a permanent accent fill plus the state dot, not a dimmed icon
+    /// that only differs from "on" by opacity. `One` additionally swaps to the
+    /// repeat-song icon, which carries the "1" badge in its artwork.
+    ///
+    /// Needs no re-entrancy guard of the `updating_shuffle` kind: nothing is
+    /// connected to the repeat button's `toggled` signal, and the click cycle
+    /// runs off `clicked`, which `set_active` does not emit.
     pub fn set_repeat_indicator(&self, repeat: Repeat) {
-        let (icon, is_off) = match repeat {
-            Repeat::Off => (ICON_REPEAT_ALL, true),
-            Repeat::All => (ICON_REPEAT_ALL, false),
-            Repeat::One => (ICON_REPEAT_ONE, false),
+        let icon = match repeat {
+            Repeat::Off | Repeat::All => ICON_REPEAT_ALL,
+            Repeat::One => ICON_REPEAT_ONE,
         };
         self.repeat_button.set_icon_name(icon);
-        if is_off {
-            self.repeat_button.add_css_class(REPEAT_OFF_CSS_CLASS);
-        } else {
-            self.repeat_button.remove_css_class(REPEAT_OFF_CSS_CLASS);
-        }
+        self.repeat_button.set_active(repeat != Repeat::Off);
     }
 }
 

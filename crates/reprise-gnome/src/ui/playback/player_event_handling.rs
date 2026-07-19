@@ -112,7 +112,7 @@ impl PlayerController {
         *self.play_origin.borrow_mut() = None;
         // `now_playing` must be cleared BEFORE the queue notify below: the
         // notify chain synchronously rebuilds a visible Queue view through
-        // `queue_view_sections`, which reads `now_playing` — clearing after
+        // `queue_view_model`, which reads `now_playing` — clearing after
         // would leave a stale Now Playing section until the next queue
         // event (adversarial review, queue+nav plan, finding 1).
         *self.now_playing.borrow_mut() = None;

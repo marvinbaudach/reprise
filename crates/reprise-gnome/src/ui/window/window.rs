@@ -27,7 +27,6 @@ use reprise_core::playback::{PlaybackError, PlayerEvent};
 use reprise_core::view_source::ViewSource;
 use reprise_core::waveform::WaveformBackend;
 use reprise_platform_linux::player::Player;
-use reprise_platform_linux::waveform::GstreamerWaveformBackend;
 
 use super::cover_download_worker;
 use super::file_open::FileOpenHandler;
@@ -74,8 +73,6 @@ pub fn build(
     db_path: &Path,
 ) -> FileOpenHandler {
     super::style::install();
-    let waveform_backend: Arc<dyn WaveformBackend> = Arc::new(GstreamerWaveformBackend);
-    super::scan_flow::spawn_waveform_backfill(db_path.to_path_buf(), waveform_backend.clone());
     {
         let conn = conn.borrow();
         let stored = reprise_core::library::settings::get_setting(
@@ -107,6 +104,13 @@ pub fn build(
         .width_request(MIN_WIDTH)
         .height_request(MIN_HEIGHT)
         .build();
+    let audio_analysis_enabled = {
+        let conn = conn.borrow();
+        reprise_core::library::settings::get_audio_analysis_enabled(&conn)
+    };
+    let (waveform_backend, audio_analysis) =
+        super::window_audio_analysis::setup(db_path, &window, audio_analysis_enabled);
+    super::focus_evidence::install(&window);
     super::session_restore::apply_initial_geometry(&window, &session_state);
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
     // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and
@@ -133,7 +137,6 @@ pub fn build(
         .build();
 
     let header = adw::HeaderBar::new();
-    super::library_chrome::style_header(&header, &search_entry);
     header.pack_start(&sidebar_toggle);
     header.set_title_widget(Some(&window_title));
     let maintenance_actions = super::library_chrome::build_maintenance_actions();
@@ -146,7 +149,7 @@ pub fn build(
     // first frame. If GStreamer is unavailable the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
-    let cover_download = cover_download_worker::setup();
+    let cover_download = cover_download_worker::setup(&conn.borrow());
     let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
         db_path.to_path_buf(),
         reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
@@ -162,7 +165,8 @@ pub fn build(
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
-    let artist_portrait = super::artist_portrait_worker::ArtistPortraitRuntime::setup();
+    let artist_portrait =
+        super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
@@ -196,6 +200,7 @@ pub fn build(
     if let Some(player) = &player {
         player.purge_queue_ids(&startup_purged);
     }
+    let queue_model = super::window_queue_model::build(&player);
 
     // Built right after `player` (needed for the Queue row's counter) and
     // before `TrackList` and `spawn_scan`/`player.set_track_list_reload`
@@ -205,11 +210,8 @@ pub fn build(
     // this one `Rc` rather than needing a construction-order-driven `Weak`-
     // then-upgrade dance.
     let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
-        let player = player.clone();
-        move || match &player {
-            Some(controller) => controller.queue_pending_len(),
-            None => 0,
-        }
+        let queue_model = queue_model.clone();
+        move || queue_model.borrow().sidebar_count()
     }));
     sidebar.bind_device_sync(&device_sync);
 
@@ -252,19 +254,8 @@ pub fn build(
     // degrades to an always-empty queue view, matching every other
     // player-unavailable degradation in this function.
     let queue_ids_provider = {
-        let player = player.clone();
-        move || match &player {
-            Some(controller) => {
-                let parts = controller.queue_view_sections();
-                crate::ui::track_list::queue_sections::compose(
-                    parts.now_playing,
-                    &parts.play_next,
-                    &parts.up_next_rest,
-                    parts.origin_label.as_deref(),
-                )
-            }
-            None => crate::ui::track_list::queue_sections::QueueViewModel::default(),
-        }
+        let queue_model = queue_model.clone();
+        move || queue_model.borrow().clone()
     };
 
     let track_list = {
@@ -315,8 +306,10 @@ pub fn build(
         });
     }
     let scan_progress = ScanProgressView::new();
-    let scan_controls =
-        super::scan_flow::ScanControls::new(&scan_button, &scan_progress, waveform_backend);
+    let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
+    if let Some(runtime) = &audio_analysis {
+        scan_controls.set_audio_analysis(runtime);
+    }
     scan_controls.set_sidebar_toggle(&sidebar_toggle);
     scan_progress.set_on_cancel({
         let scan_controls = scan_controls.clone();
@@ -336,6 +329,7 @@ pub fn build(
         conn.clone(),
         track_list.shared_cover_loader(),
         artist_portrait.clone(),
+        artist_news.enabled.get(),
     ));
     let library_views = super::library_shell::build_views(
         &track_content,
@@ -369,12 +363,14 @@ pub fn build(
         });
     }
     super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list, &nav_history);
+    super::library_view_memory_wiring::wire(&library_views, &album_view, &artist_view, &track_list);
     // Wire playback → track-table selection and Artists-view now-playing. Done
     // here (not right after `track_list` is built) because the closure captures
     // a strong `Rc<ArtistView>`, which must exist first.
     super::current_track_selection::wire(player.as_ref(), &track_list, &artist_view);
     super::library_shell::arm_smoke_library_view(&library_views);
     let library_title = Rc::new(super::library_chrome::build_library_title(
+        &window,
         &header,
         &window_title,
         &library_views.stack,
@@ -382,6 +378,7 @@ pub fn build(
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());
     stats_view.wire_year_selector(conn);
     let device_view = super::device_view::DeviceViewPage::new(&device_sync);
+    let new_releases_digest = crate::ui::new_releases::digest::NewReleasesDigest::new(conn.clone());
     let content_stack = gtk4::Stack::new();
     // Size to the visible page (see the library stack's `set_hhomogeneous`):
     // Stats/Device pages must not inherit the library's minimum width, nor vice
@@ -392,6 +389,7 @@ pub fn build(
     content_stack.add_named(&library_views.stack, Some("library"));
     content_stack.add_named(stats_view.widget(), Some("stats"));
     content_stack.add_named(device_view.widget(), Some("device"));
+    content_stack.add_named(new_releases_digest.widget(), Some("new-releases"));
     content_stack.set_visible_child_name("library");
     toolbar_view.set_content(Some(&content_stack));
 
@@ -411,6 +409,8 @@ pub fn build(
         album_view: &album_view,
         artist_view: &artist_view,
         player: &player,
+        stats_view: &stats_view,
+        nav_history: &nav_history,
         content_stack: &content_stack,
         library_stack: &library_views.stack,
         scan_controls: &scan_controls,
@@ -426,6 +426,7 @@ pub fn build(
         player.as_ref(),
         &artist_news,
         &artist_portrait,
+        audio_analysis.as_ref(),
     );
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;
@@ -434,50 +435,41 @@ pub fn build(
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
-        let panel = Rc::downgrade(&info_panel);
-        player.set_on_now_playing_panel_track_changed(move |track| {
-            if let Some(panel) = panel.upgrade() {
-                panel.set_loaded_track(track);
-            }
-        });
-        let panel = Rc::downgrade(&info_panel);
-        player.set_on_now_playing_panel_state_changed(move |state| {
-            if let Some(panel) = panel.upgrade() {
-                panel.set_playback_state(state);
-            }
-        });
-
-        let player_weak = Rc::downgrade(player);
-        let panel_weak = Rc::downgrade(&info_panel);
-        let refresh_up_next: Rc<dyn Fn()> = Rc::new(move || {
-            let (Some(player), Some(panel)) = (player_weak.upgrade(), panel_weak.upgrade()) else {
-                return;
-            };
-            let entries = player.now_playing_panel_up_next_entries();
-            panel.set_up_next_entries(&entries);
-        });
-        let refresh_on_queue_change = refresh_up_next.clone();
-        player.add_on_queue_changed(move || refresh_on_queue_change());
-        refresh_up_next();
-
-        let player = Rc::downgrade(player);
-        info_panel.set_on_up_next_jump(move |row| {
-            if let Some(player) = player.upgrade() {
-                player.jump_to_queue_row(row);
-            }
-        });
+        super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
     }
     let player_bar_widget = player
         .as_ref()
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
     header.pack_end(&info_panel.toggle_button());
+    let library_chrome = super::library_chrome::build(&header, &search_entry, &window);
     let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
         &split_view,
+        &library_chrome.root,
         player_bar_widget,
         bar_position,
     );
     toast_overlay.set_child(Some(library_player_bar.widget()));
-    let library_chrome = super::library_chrome::build(&header, &toast_overlay);
+    let open_new_releases = {
+        let digest = new_releases_digest.clone();
+        let nav_history = nav_history.clone();
+        let content_stack = content_stack.clone();
+        Rc::new(move || {
+            let Some(_place) = nav_history.record_new_releases() else {
+                tracing::warn!("cannot open New Releases before navigation is initialized");
+                return;
+            };
+            digest.refresh();
+            content_stack.set_visible_child_name("new-releases");
+        })
+    };
+    crate::ui::new_releases::popover::install(
+        &header,
+        &window,
+        conn,
+        db_path,
+        open_new_releases,
+        &artist_news,
+    );
     let compact_root = player
         .as_ref()
         .map(|player| player.compact_player.handle().upcast_ref());
@@ -487,7 +479,7 @@ pub fn build(
     let minimal_view = super::compact_mode_controls::build_mode(
         &window,
         &content_host,
-        library_chrome.root.upcast_ref(),
+        toast_overlay.upcast_ref(),
         player.as_ref().map(|player| &player.compact_player),
         conn,
         initial_view,
@@ -521,16 +513,43 @@ pub fn build(
         &info_panel,
         &scan_button,
         &scan_controls,
+        audio_analysis.as_ref(),
         player.as_ref(),
         &listenbrainz,
         &lastfm,
         &artist_news,
+        &cover_download,
+        &artist_portrait,
         &decorations,
         &device_sync,
     );
     {
         let preferences = preferences.clone();
         device_view.set_on_settings(move || preferences.present_page("synchronization"));
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        info_panel.lyrics_view().set_on_settings(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(crate::ui::preference_plugins::ONLINE_LYRICS_TARGETS);
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        album_view.set_on_hint_settings(move |targets| {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(targets);
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        artist_view.set_on_hint_settings(move |targets| {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(targets);
+            }
+        });
     }
     super::window_runtime_wiring::wire(super::window_runtime_wiring::RuntimeWiring {
         app,
@@ -539,6 +558,7 @@ pub fn build(
         db_path,
         header: &header,
         search_entry: &search_entry,
+        search_bar: &library_chrome.search_bar,
         sidebar_toggle: &sidebar_toggle,
         sidebar_page: &sidebar_page,
         split_view: &split_view,
@@ -569,5 +589,7 @@ pub fn build(
 
     tracing::info!("main window built");
     window.present();
+    super::runtime_performance::arm(&window, &track_list);
+    super::glass::arm_performance_measurement(&window);
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
 }

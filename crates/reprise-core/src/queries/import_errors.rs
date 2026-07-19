@@ -255,7 +255,7 @@ pub fn dismiss_import_error(
 /// for a future dismiss (single or bulk) once it can be stat-ed again.
 /// Writing `NULL`/sentinel stat values for an unstat-able path was
 /// considered and rejected: `NULL` in both columns is indistinguishable
-/// from "never dismissed" (see [`NOT_DISMISSED`]'s doc comment) — the row
+/// from "never dismissed" (see `NOT_DISMISSED`'s doc comment) — the row
 /// would look untouched to the scanner's dismissed-path skip check, which
 /// is harmless, but ALSO look untouched to this very function on its next
 /// run, so nothing is gained by writing it; a sentinel value in only one
@@ -343,11 +343,11 @@ pub fn count_import_errors_active(conn: &Connection) -> Result<u32, rusqlite::Er
 /// started a new episode (see below) — an error is announced once, not
 /// re-announced on a timer disguised as "activity".
 ///
-/// Excludes hints via [`is_hint_expr`] — see this module's doc comment's
+/// Excludes hints via `is_hint_expr` — see this module's doc comment's
 /// "hint contract" section and this section's own header comment for why a
 /// hint must never count toward this badge even though [`count_import_
 /// errors_active`] counts it. Reuses the exact same `EXISTS` fragment
-/// [`entry_select`] composes into `ImportErrorEntry::is_hint`, rather than
+/// `entry_select` composes into `ImportErrorEntry::is_hint`, rather than
 /// hand-writing the `untagged = 1 AND {PRESENT}` condition a second time —
 /// the "one source of truth" reasoning that function's own doc comment
 /// argues for.

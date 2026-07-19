@@ -89,6 +89,34 @@ fn get_bool_falls_back_to_default_on_unrecognized_value() {
 }
 
 #[test]
+fn stats_layout_defaults_to_all_sections_visible() {
+    let conn = migrated_conn();
+
+    assert_eq!(
+        get_stats_layout(&conn),
+        StatsLayout {
+            clock: true,
+            genres: true,
+            highlights: true,
+        }
+    );
+}
+
+#[test]
+fn stats_layout_roundtrips_through_settings() {
+    let conn = migrated_conn();
+    let hidden_clock = StatsLayout {
+        clock: false,
+        genres: true,
+        highlights: false,
+    };
+
+    set_stats_layout(&conn, hidden_clock).unwrap();
+
+    assert_eq!(get_stats_layout(&conn), hidden_clock);
+}
+
+#[test]
 fn library_root_typed_accessors_round_trip() {
     let conn = migrated_conn();
     assert_eq!(get_library_root(&conn).unwrap(), None);
@@ -107,6 +135,14 @@ fn onboarding_completed_typed_accessors_round_trip() {
     assert!(get_onboarding_completed(&conn).unwrap());
     set_onboarding_completed(&conn, false).unwrap();
     assert!(!get_onboarding_completed(&conn).unwrap());
+}
+
+#[test]
+fn new_releases_fetch_completed_defaults_false_and_round_trips() {
+    let conn = migrated_conn();
+    assert!(!get_new_releases_fetch_completed(&conn).unwrap());
+    set_new_releases_fetch_completed(&conn, true).unwrap();
+    assert!(get_new_releases_fetch_completed(&conn).unwrap());
 }
 
 #[test]

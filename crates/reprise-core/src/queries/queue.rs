@@ -35,6 +35,27 @@ pub(super) fn query_track_window_queue(
     offset: i64,
     limit: i64,
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    query_track_window_queue_with_observer(conn, ids, offset, limit, || {})
+}
+
+#[cfg(test)]
+pub(super) fn query_track_window_queue_counted(
+    conn: &Connection,
+    ids: &[i64],
+    offset: i64,
+    limit: i64,
+    on_query: impl FnOnce(),
+) -> Result<Vec<Track>, rusqlite::Error> {
+    query_track_window_queue_with_observer(conn, ids, offset, limit, on_query)
+}
+
+fn query_track_window_queue_with_observer(
+    conn: &Connection,
+    ids: &[i64],
+    offset: i64,
+    limit: i64,
+    on_query: impl FnOnce(),
+) -> Result<Vec<Track>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     if limit == 0 || offset < 0 {
         return Ok(Vec::new());
@@ -69,6 +90,7 @@ pub(super) fn query_track_window_queue(
          file_mtime, missing_since, missing_reason, untagged, file_size, device, inode \
          FROM tracks WHERE id IN ({placeholders})"
     );
+    on_query();
     let mut stmt = conn.prepare(&sql)?;
     let rows: Vec<Track> = stmt
         .query_map(
@@ -106,6 +128,38 @@ pub(super) fn query_track_window_queue(
         .iter()
         .filter_map(|id| by_id.get(id).cloned())
         .collect())
+}
+
+/// Sums the remaining duration for an explicit queue snapshot in one scalar
+/// metadata query. Duplicate queue entries count independently; stale ids
+/// contribute nothing, matching the window query's behavior.
+pub fn query_queue_duration_ms(
+    conn: &Connection,
+    queue_ids: &[i64],
+) -> Result<i64, rusqlite::Error> {
+    if queue_ids.is_empty() {
+        return Ok(0);
+    }
+    let distinct_ids: Vec<i64> = queue_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let placeholders = (1..=distinct_ids.len())
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!("SELECT id, duration_ms FROM tracks WHERE id IN ({placeholders})");
+    let mut statement = conn.prepare(&sql)?;
+    let durations: HashMap<i64, i64> = statement
+        .query_map(rusqlite::params_from_iter(distinct_ids.iter()), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(queue_ids.iter().fold(0_i64, |total, id| {
+        total.saturating_add(durations.get(id).copied().unwrap_or(0))
+    }))
 }
 
 /// Counts how many of `queue_ids` still resolve to a live `tracks` row —

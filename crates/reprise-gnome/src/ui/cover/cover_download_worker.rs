@@ -2,8 +2,10 @@
 //! `Send` data crosses the thread boundary; GTK objects and textures stay on
 //! the main thread in `cover_loader`.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use reprise_core::cover::{read_cover_tag, resolve_source, CoverTag};
 use reprise_core::cover_download::{album_key, fetch_and_cache};
@@ -23,16 +25,55 @@ pub struct DownloadRequest {
 
 #[derive(Clone)]
 pub struct CoverDownloadRuntime {
-    pub(in crate::ui) enabled: bool,
+    pub(in crate::ui) enabled: Rc<Cell<bool>>,
     pub(in crate::ui) worker: async_channel::Sender<DownloadRequest>,
 }
 
-/// Starts the one shared serial worker. Cover downloads are always enabled and
-/// do not consult legacy `module.cover_download.enabled` rows.
-pub(in crate::ui) fn setup() -> CoverDownloadRuntime {
+/// Starts the one shared serial worker and seeds its live opt-in state.
+pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> CoverDownloadRuntime {
+    let enabled = reprise_core::modules::is_enabled(
+        conn,
+        &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+    )
+    .unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read cover-download module state; defaulting to off");
+        false
+    });
     CoverDownloadRuntime {
-        enabled: true,
+        enabled: Rc::new(Cell::new(enabled)),
         worker: spawn(),
+    }
+}
+
+#[cfg(test)]
+pub(in crate::ui) fn setup_for_test() -> CoverDownloadRuntime {
+    CoverDownloadRuntime {
+        enabled: Rc::new(Cell::new(false)),
+        worker: spawn(),
+    }
+}
+
+impl CoverDownloadRuntime {
+    pub(in crate::ui) fn set_enabled(
+        &self,
+        conn: &rusqlite::Connection,
+        enabled: bool,
+    ) -> Result<(), rusqlite::Error> {
+        reprise_core::modules::set_enabled(
+            conn,
+            &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+            enabled,
+        )?;
+        self.enabled.set(enabled);
+        Ok(())
+    }
+
+    pub(in crate::ui) fn try_request(&self, request: DownloadRequest) -> bool {
+        self.enabled.get() && self.worker.try_send(request).is_ok()
+    }
+
+    pub(in crate::ui) async fn request(&self, request: DownloadRequest) -> bool {
+        self.enabled.get() && self.worker.send(request).await.is_ok()
     }
 }
 
@@ -93,23 +134,57 @@ fn result_for_tag(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
+    use std::rc::Rc;
 
     use reprise_core::cover::CoverTag;
     use reprise_core::cover_download::album_key;
 
-    use super::{result_for_path, result_for_tag, setup, DownloadOutcome};
+    use gtk4::glib;
+
+    use super::{
+        result_for_path, result_for_tag, setup, CoverDownloadRuntime, DownloadOutcome,
+        DownloadRequest,
+    };
 
     #[test]
-    fn runtime_ignores_a_legacy_disabled_setting() {
+    fn net_1_cover_download_respects_the_module() {
+        let (worker, receiver) = async_channel::unbounded();
+        let runtime = CoverDownloadRuntime {
+            enabled: Rc::new(Cell::new(false)),
+            worker,
+        };
+        let request = || {
+            let (response, _result) = async_channel::bounded(1);
+            DownloadRequest {
+                track_path: "/missing.flac".into(),
+                skip_if_covered: false,
+                response,
+            }
+        };
+
+        assert!(!runtime.try_request(request()));
+        assert!(!glib::MainContext::default().block_on(runtime.request(request())));
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn runtime_reads_and_updates_the_live_module_setting() {
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();
-        reprise_core::library::settings::set_bool(&conn, "module.cover_download.enabled", false)
-            .unwrap();
+        let runtime = setup(&conn);
+        assert!(!runtime.enabled.get());
 
-        assert!(setup().enabled);
+        runtime.set_enabled(&conn, true).unwrap();
+        assert!(runtime.enabled.get());
+        assert!(reprise_core::modules::is_enabled(
+            &conn,
+            &reprise_core::modules::COVER_DOWNLOAD_MODULE
+        )
+        .unwrap());
     }
 
     #[test]

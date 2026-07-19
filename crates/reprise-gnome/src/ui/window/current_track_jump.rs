@@ -25,8 +25,8 @@ pub(in crate::ui) struct JumpContext {
     pub track_list: Rc<TrackList>,
     pub nav_history: Rc<NavHistory>,
     pub content_stack: gtk4::Stack,
-    pub library_stack: gtk4::Stack,
-    pub album_grid: gtk4::GridView,
+    pub library_stack: libadwaita::ViewStack,
+    pub active_content_focus: library_shell::ActiveContentFocus,
 }
 
 pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback {
@@ -40,7 +40,7 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
     let nav_history_for_route = context.nav_history.clone();
     let content_stack_for_route = context.content_stack.clone();
     let library_stack_for_route = context.library_stack.clone();
-    let album_grid_for_route = context.album_grid.clone();
+    let active_content_focus_for_route = context.active_content_focus.clone();
 
     coordinator(JumpSteps {
         current_origin: Rc::new(move || {
@@ -59,10 +59,10 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
             );
         }),
         route_origin: Rc::new(move |origin| {
-            let place = NavPlace {
-                source: origin.clone(),
-                library_tab: Some(library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
-            };
+            let place = NavPlace::source(
+                origin.clone(),
+                Some(library_shell::LIBRARY_VIEW_TRACKS.to_owned()),
+            );
             nav_history_for_route.record_route(&place);
             library_shell::route_to_place(
                 &place,
@@ -70,7 +70,7 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
                 &track_list_for_route,
                 &content_stack_for_route,
                 &library_stack_for_route,
-                &album_grid_for_route,
+                &active_content_focus_for_route,
                 "jump to current track origin",
             );
         }),
@@ -103,13 +103,15 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn nav_9a_ctrl_l_reveals_current_track_origin() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         let events = Rc::new(RefCell::new(Vec::new()));
         let history = Rc::new(NavHistory::default());
-        let queue = NavPlace {
-            source: ViewSource::Queue,
-            library_tab: Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
-        };
+        let queue = NavPlace::source(
+            ViewSource::Queue,
+            Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
+        );
         history.record_route(&queue);
         let jump = coordinator(JumpSteps {
             current_origin: Rc::new(|| Some(ViewSource::Playlist(7))),
@@ -121,10 +123,10 @@ mod tests {
                 let events = events.clone();
                 let history = history.clone();
                 Rc::new(move |source| {
-                    history.record_route(&NavPlace {
-                        source: source.clone(),
-                        library_tab: Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
-                    });
+                    history.record_route(&NavPlace::source(
+                        source.clone(),
+                        Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
+                    ));
                     events.borrow_mut().push(("route", source.clone()));
                 })
             },
@@ -133,7 +135,7 @@ mod tests {
                 Rc::new(move || {
                     events
                         .borrow_mut()
-                        .push(("select-and-center", ViewSource::Playlist(7)));
+                        .push(("reveal-without-selection", ViewSource::Playlist(7)));
                 })
             },
         });
@@ -146,7 +148,7 @@ mod tests {
             &[
                 ("prepare", ViewSource::Playlist(7)),
                 ("route", ViewSource::Playlist(7)),
-                ("select-and-center", ViewSource::Playlist(7)),
+                ("reveal-without-selection", ViewSource::Playlist(7)),
             ]
         );
         assert_eq!(history.go_back(), Some(queue));

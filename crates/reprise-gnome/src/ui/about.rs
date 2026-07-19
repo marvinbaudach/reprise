@@ -28,7 +28,11 @@ fn build_dialog() -> adw::AboutDialog {
 }
 
 pub(super) fn present(parent: &adw::ApplicationWindow) {
-    build_dialog().present(Some(parent));
+    let dialog = build_dialog();
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
+    focus_guard.restore_on_dialog_close(dialog.upcast_ref());
+    focus_guard.close_on_control_w(dialog.upcast_ref());
+    dialog.present(Some(parent));
 }
 
 #[cfg(test)]

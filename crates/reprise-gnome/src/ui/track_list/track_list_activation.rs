@@ -62,11 +62,6 @@ pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &
     if explain_missing_track(shared, track) {
         return;
     }
-    // The user is starting playback from the table itself, so the row is
-    // already on screen — arm the one-shot marker that makes the follow-up
-    // now-playing selection skip the viewport centering (see the
-    // `Shared::suppress_follow_scroll` doc comment).
-    shared.suppress_follow_scroll.set(Some(track.id));
     if matches!(*shared.source.borrow(), ViewSource::Queue) {
         let row = {
             let sections = shared.queue_sections.borrow();
@@ -192,5 +187,5 @@ pub(in crate::ui) fn queue_ids_for_activation(
 /// already checks `source` first, so this is only ever invoked when a fresh
 /// snapshot is actually needed.
 pub(in crate::ui) fn current_queue_ids(shared: &Shared) -> Vec<i64> {
-    (shared.queue_ids_provider)().ids
+    (shared.queue_ids_provider)().all_ids()
 }

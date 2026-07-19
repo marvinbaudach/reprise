@@ -183,7 +183,7 @@ pub(in crate::ui) fn css() -> String {
            min-height: 28px; \
            padding: 2px; \
            border-radius: 50%; \
-           transition: background {TRANSITION}; }}\n\
+           transition: background {TRANSITION}, transform {TRANSITION}; }}\n\
          .reprise-tag-stars button:hover {{ \
            background: alpha(@accent_bg_color, 0.15); }}\n\
          .reprise-tag-stars .star-filled {{ \
@@ -198,7 +198,7 @@ pub(in crate::ui) fn css() -> String {
            min-width: 32px; \
            min-height: 32px; \
            border-radius: 50%; \
-           transition: background {TRANSITION}; }}\n\
+           transition: background {TRANSITION}, transform {TRANSITION}; }}\n\
          .reprise-tag-nav button:hover {{ \
            background: alpha(@accent_bg_color, 0.12); }}\n\
          \

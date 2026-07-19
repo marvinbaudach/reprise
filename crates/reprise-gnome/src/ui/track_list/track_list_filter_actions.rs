@@ -38,6 +38,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn clear_all_restrictions_resets_search_and_browse_in_one_pass() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let conn = Connection::open_in_memory().unwrap();
         reprise_core::db::migrate(&conn).unwrap();
@@ -52,7 +53,7 @@ mod tests {
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,
-            crate::ui::cover_download_worker::setup(),
+            crate::ui::cover_download_worker::setup_for_test(),
         );
         track_list.set_filter("falling");
         *track_list.shared.browse_filter.borrow_mut() = BrowseFilter {

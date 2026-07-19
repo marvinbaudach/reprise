@@ -38,6 +38,9 @@ pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &std::rc::Rc<S
         );
         popover.set_pointing_to(Some(&target));
         popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+        let focus_guard =
+            crate::ui::transient_focus::TransientFocusGuard::capture(&column_view_handle);
+        focus_guard.restore_on_popover_close(popover.upcast_ref());
         popover.popup();
         tracing::debug!("track context menu opened from keyboard");
         gtk4::glib::Propagation::Stop

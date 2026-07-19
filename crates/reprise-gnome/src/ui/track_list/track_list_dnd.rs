@@ -20,9 +20,8 @@
 //!    `DropTarget` (this module) that reorders *within* the current list:
 //!    `library::playlists::move_position` for a `Playlist` source; for
 //!    `Queue`, `queue_row_mapping::reorder_op` resolves the composite-view
-//!    drag to one of `WithinPlayNext`/`WithinUpNext`/`PromoteUpNext`
-//!    (including the Now-Playing-row drop target, which promotes/moves to
-//!    the front of Play Next), dispatched through `PlayerController::
+//!    drag to `WithinPlayNext` or `PromoteUpNext`; only Play Next rows are
+//!    valid targets, dispatched through `PlayerController::
 //!    reorder_queue_rows` (injected via `TrackList::set_on_queue_reorder`).
 //!    `wire_drop_target`'s `connect_enter` runs the same `reorder_op` (or
 //!    `playlist_reorder_allowed`) check *before* showing the drop indicator,
@@ -77,7 +76,7 @@
 //!   filter guard is needed (see [`reorder_position_for_drag`]'s `Queue`
 //!   arm); what still needs resolving is *which* composite-view op a given
 //!   `(from, to)` pair means — that's `queue_row_mapping::reorder_op`
-//!   (`WithinPlayNext`, `WithinUpNext`, or `PromoteUpNext`), called by both
+//!   (`WithinPlayNext` or `PromoteUpNext`), called by both
 //!   [`handle_queue_reorder_drop`] and `wire_drop_target`'s `connect_enter`.
 //!
 //! Every reorder path also aborts (does nothing) rather than guess if a
@@ -256,6 +255,7 @@ pub(in crate::ui) fn wire_row_dnd(
 /// Attaches the `gtk::DragSource` half of [`wire_row_dnd`] — see that
 /// function's doc comment.
 fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shared: &Rc<Shared>) {
+    // input-parity: ACC-8 keyboard=context-menu-reorder
     let drag_source = gtk4::DragSource::new();
     drag_source.set_actions(gdk::DragAction::COPY | gdk::DragAction::MOVE);
 
@@ -362,6 +362,7 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
 /// playlist" drop target is separate (different widget, different action);
 /// this one only ever reorders within whatever list is currently showing.
 fn wire_drop_target(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shared: &Rc<Shared>) {
+    // input-parity: ACC-8 keyboard=context-menu-reorder
     let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
 
     {
@@ -531,13 +532,9 @@ pub(in crate::ui) fn handle_queue_reorder_drop(
     let (Ok(from), Ok(to)) = (u32::try_from(reorder.from), u32::try_from(reorder.to)) else {
         return false;
     };
-    // QUE-3: composite-view coordinates → section-local operation (reorder
-    // within Play Next, reorder within the Up Next snapshot tail, or
-    // promote an Up Next row into Play Next — including a drop onto the Now
-    // Playing row, which promotes/moves to the front of Play Next). Drags
-    // the rules still reject (dragging the Now Playing row itself, demoting
-    // a Play Next row into the snapshot) resolve to `None` and report
-    // failure.
+    // QUE-8: composite-view coordinates resolve only to a Play Next reorder
+    // or promotion of one context row into Play Next. Every other target
+    // resolves to `None` and reports failure.
     let op = {
         let sections = shared.queue_sections.borrow();
         crate::ui::track_list::queue_row_mapping::reorder_op(from, to, &sections)

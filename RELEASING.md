@@ -111,6 +111,14 @@ release check.
 Use disposable test music and a disposable XDG data directory where practical.
 Do not point development hooks at the maintainer's real library.
 
+- ACC-7 visible-focus acceptance: complete the whole application with only
+  the keyboard in default and High Contrast themes, then repeat with Large
+  Text. Every focus stop must remain visible and distinct from hover,
+  selection, and now-playing state. Verify names, roles, states, values, and
+  actions with Orca and a switched-off monitor; cover the on-screen keyboard,
+  real GNOME/Wayland dialogs and portals, and reduced animation. Record the
+  result before changing ACC-7 from `[geplant]` to `[aktiv]`.
+
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
   disable switch. A detected Rhythmbox installation must show a clearly
@@ -119,6 +127,20 @@ Do not point development hooks at the maintainer's real library.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
+- My Stats editorial pass (UX STATS-1, STATS-2, STATS-3, STATS-4): open My Stats
+  on a populated library. Hero time and play count must agree with the top-track
+  list; the ribbon axis must match the selected period with the running bucket
+  drawn open and the peak marked; hover must name an exact value. Play the
+  spotlight artist and follow "Go to artist", then use Back. Check that axis
+  labels, eyebrows and sublines stay readable against the view background in all
+  three dark themes, and narrow the window until the clock/highlights row stacks.
+- My Stats grouping (UX STATS-9): on a library with a deliberately mis-tagged
+  artist ("Lorna Shore" / "lorna shore" / "Lorna Shore "), Top Artists must show
+  one entry with the summed plays and hours, labelled in the clean spelling, and
+  the spotlight Play must queue every merged track. Two genuinely different
+  artists must never merge. Follow the "unify spellings" hint into the tag editor
+  and cancel it, then confirm with a tag dump that the files and DB rows are
+  unchanged by merely opening My Stats.
 - Exercise Minimal View through the menu and Ctrl+M, including playback controls,
   repeated Full/Minimal transitions, close/reopen, and restoration of the full
   window geometry. Exercise every Preferences page and restart to verify persisted
@@ -202,6 +224,11 @@ Do not point development hooks at the maintainer's real library.
   views. Individual rows must never stagger, fade in, or move during reloads;
   only the whole surface may crossfade when switching views. Queue drop and
   single-remove motion is an allowed exception, not a release requirement.
+- STYLE-1 "floating" check: reveal every collapsible bar (search bar, banners,
+  the scan card) once. If it lays flat over the content without its own surface
+  and edge, the background is missing — `ToolbarStyle::Flat` swallowed it.
+  Repeat in all three dark themes: the window colour sits differently against
+  each, so a wrong surface is obvious in one and subtle in another.
 
 Record the OS, GNOME version, runtime branches, architecture, codec packages, and
 results for the release notes. Screenshots must be captured manually from a real,

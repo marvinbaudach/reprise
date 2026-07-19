@@ -146,24 +146,18 @@ mod tests {
 
     #[test]
     fn revealing_albums_deduplicates_sidebar_track_routing_from_history() {
-        let albums = NavPlace {
-            source: ViewSource::Library,
-            library_tab: Some("albums".into()),
-        };
-        let queue = NavPlace {
-            source: ViewSource::Queue,
-            library_tab: Some("tracks".into()),
-        };
+        let albums = NavPlace::source(ViewSource::Library, Some("albums".into()));
+        let queue = NavPlace::source(ViewSource::Queue, Some("tracks".into()));
         let history = NavHistory::default();
         history.record_route(&queue);
         route_with_history(&history, &albums, || {
             // `route_to_place` reaches Library through the sidebar, whose
             // canonical route is Tracks before the requested Albums tab is
             // restored. GRID-5 must suppress that internal implementation step.
-            history.record_route(&NavPlace {
-                source: ViewSource::Library,
-                library_tab: Some("tracks".into()),
-            });
+            history.record_route(&NavPlace::source(
+                ViewSource::Library,
+                Some("tracks".into()),
+            ));
             history.note_library_tab("albums");
         });
 
@@ -173,10 +167,10 @@ mod tests {
         let already_albums = NavHistory::default();
         already_albums.record_route(&albums);
         route_with_history(&already_albums, &albums, || {
-            already_albums.record_route(&NavPlace {
-                source: ViewSource::Library,
-                library_tab: Some("tracks".into()),
-            });
+            already_albums.record_route(&NavPlace::source(
+                ViewSource::Library,
+                Some("tracks".into()),
+            ));
             already_albums.note_library_tab("albums");
         });
         assert_eq!(already_albums.go_back(), None);
@@ -192,10 +186,7 @@ mod tests {
                 true
             })
         };
-        let target = NavPlace {
-            source: ViewSource::Library,
-            library_tab: Some("albums".into()),
-        };
+        let target = NavPlace::source(ViewSource::Library, Some("albums".into()));
         route_back_restoring_album_focus(
             &ViewSource::Album {
                 album: "Kid A".into(),

@@ -10,6 +10,7 @@ use reprise_core::queries::AlbumSummary;
 use super::album_card::*;
 use super::album_card_css as css;
 use super::album_card_state::{AlbumCardIdentityRegistry, RevealBindingRegistry};
+use super::discovery_hint::EvidenceTracker;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::eq_bars;
 
@@ -37,13 +38,10 @@ fn descendants_with_class(root: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget>
 }
 
 fn shared(now_playing: Option<(&str, &str)>) -> Rc<AlbumCardShared> {
-    let (worker, _receiver) = async_channel::unbounded();
-    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::CoverDownloadRuntime {
-        enabled: false,
-        worker,
-    });
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     Rc::new(AlbumCardShared {
         cover_loader,
+        fallback_evidence: EvidenceTracker::new(true),
         generation: Rc::new(Cell::new(0)),
         identity_generation: Rc::new(Cell::new(0)),
         identities: Rc::new(RefCell::new(AlbumCardIdentityRegistry::default())),
@@ -132,6 +130,7 @@ fn album_meta_formats_plural_singular_and_missing_duration() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn grid_1_playing_badge_persists_without_hover() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
     let animations_before = settings.is_gtk_enable_animations();
@@ -192,6 +191,7 @@ fn grid_1_playing_badge_persists_without_hover() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn grid_3_focus_ring_and_overlay_on_focus() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let shared = shared(Some(("Album 1", "Artist")));
     let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
@@ -246,6 +246,7 @@ fn grid_3_focus_ring_and_overlay_on_focus() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn grid_4_hover_uses_bottom_gradient_not_tooltip_box() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let shared = shared(None);
     let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
@@ -295,6 +296,7 @@ fn grid_4_hover_uses_bottom_gradient_not_tooltip_box() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn tip_1a_album_card_play_overlay_has_tooltip() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
     }
@@ -320,4 +322,41 @@ fn tip_1a_album_card_play_overlay_has_tooltip() {
         Some("Play album (Ctrl+Enter)")
     );
     window.close();
+}
+
+#[test]
+fn format_tooltip_includes_all_fields() {
+    let album = AlbumSummary {
+        album: "OK Computer".into(),
+        album_artist: "Radiohead".into(),
+        representative_path: "/a.flac".into(),
+        track_count: 12,
+        year: Some(1997),
+        total_duration_ms: 3_180_000,
+        max_added_at: 0,
+        total_play_count: 0,
+    };
+    let tip = format_tooltip(&album);
+    assert!(tip.contains("OK Computer"));
+    assert!(tip.contains("Radiohead"));
+    assert!(tip.contains("1997"));
+    assert!(tip.contains("12 tracks"));
+    assert!(tip.contains("53 min"));
+}
+
+#[test]
+fn format_tooltip_omits_year_when_none() {
+    let album = AlbumSummary {
+        album: "Untitled".into(),
+        album_artist: "".into(),
+        representative_path: "/a.flac".into(),
+        track_count: 1,
+        year: None,
+        total_duration_ms: 60_000,
+        max_added_at: 0,
+        total_play_count: 0,
+    };
+    let tip = format_tooltip(&album);
+    // No empty segment from missing year or artist.
+    assert!(!tip.contains(" ·  · "));
 }

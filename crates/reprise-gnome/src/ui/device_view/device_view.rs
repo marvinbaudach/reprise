@@ -347,13 +347,37 @@ fn install_pin_menu(
     row.insert_action_group("track", Some(&actions));
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
     popover.set_parent(row);
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::for_invoker(row);
+    focus_guard.restore_on_popover_close(popover.upcast_ref());
+    // input-parity: ACC-8 keyboard=menu-shift-f10
     let click = gtk4::GestureClick::new();
     click.set_button(3);
+    let pointer_popover = popover.clone();
     click.connect_pressed(move |_, _, x, y| {
-        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-        popover.popup();
+        popup_pin_menu(&pointer_popover, x, y);
     });
     row.add_controller(click);
+
+    let keys = gtk4::EventControllerKey::new();
+    let row_for_keys = row.clone();
+    keys.connect_key_pressed(move |_, key, _, modifiers| {
+        if !crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut(key, modifiers)
+        {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        popup_pin_menu(
+            &popover,
+            f64::from(row_for_keys.width()) / 2.0,
+            f64::from(row_for_keys.height()) / 2.0,
+        );
+        gtk4::glib::Propagation::Stop
+    });
+    row.add_controller(keys);
+}
+
+fn popup_pin_menu(popover: &gtk4::PopoverMenu, x: f64, y: f64) {
+    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+    popover.popup();
 }
 
 fn is_syncing(phase: &PlannedSyncPhase) -> bool {

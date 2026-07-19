@@ -111,6 +111,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn acc_6_dynamic_updates_preserve_logical_focus() {
+        let surviving = positions_for_ids(&[7, 3, 11], &[11, 7, 19]);
+        assert_eq!(surviving, [0, 1]);
+
+        let anchor = ReloadAnchor {
+            selected_ids: vec![7, 3, 11],
+            anchor: Some((7, 0.5)),
+        };
+        assert!(!is_noop(&anchor));
+    }
+
+    #[test]
     fn tag_1_positions_for_ids_maps_surviving_ids_only() {
         // 11 no longer exists in the current view; 9 and 7 survived (in new
         // positions after a resort).

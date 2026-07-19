@@ -7,10 +7,11 @@ use libadwaita as adw;
 use libadwaita::prelude::AnimationExt;
 
 use super::{centered_scroll_value, LyricsView};
-use crate::ui::lyrics::lyrics_scroll::{PauseHandle, USER_PAUSE_MS};
+use crate::ui::lyrics::lyrics_scroll::{content_margins, PauseHandle, USER_PAUSE_MS};
 
 impl LyricsView {
     pub(super) fn wire_scroll_input(self: &Rc<Self>) {
+        // input-parity: ACC-8 keyboard=native-scroll
         let scroll = gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::VERTICAL);
         scroll.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let view = Rc::downgrade(self);
@@ -22,6 +23,7 @@ impl LyricsView {
         });
         self.scrolled.add_controller(scroll);
 
+        // input-parity: ACC-8 keyboard=native-scroll
         let drag = gtk4::GestureDrag::new();
         drag.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let view = Rc::downgrade(self);
@@ -125,9 +127,10 @@ impl LyricsView {
             if !view.scroll_state.borrow().should_follow_active_line() {
                 return;
             }
-            let padding = ((view.scrolled.height() - label.height()) / 2).max(18);
-            view.content.set_margin_top(padding);
-            view.content.set_margin_bottom(padding);
+            let row_height = label.parent().map_or(label.height(), |row| row.height());
+            let (top, bottom) = content_margins(view.scrolled.height(), row_height);
+            view.content.set_margin_top(top);
+            view.content.set_margin_bottom(bottom);
             let view = Rc::downgrade(&view);
             gtk4::glib::idle_add_local_once(move || {
                 if let Some(view) = view.upgrade() {
@@ -141,18 +144,8 @@ impl LyricsView {
 
     fn begin_center_scroll(self: &Rc<Self>, label: &gtk4::Label, animated: bool) {
         let adjustment = self.scrolled.vadjustment();
-        let target = {
-            let Some(point) =
-                label.compute_point(&self.content, &gtk4::graphene::Point::new(0.0, 0.0))
-            else {
-                return;
-            };
-            centered_scroll_value(
-                f64::from(point.y()),
-                f64::from(label.height()),
-                adjustment.page_size(),
-                adjustment.upper(),
-            )
+        let Some(target) = self.center_scroll_target(label) else {
+            return;
         };
         if !animated || !crate::ui::motion::animations_enabled() {
             self.cancel_scroll_animation();
@@ -180,6 +173,7 @@ impl LyricsView {
             animation_target,
         );
         let view = Rc::downgrade(self);
+        let label = label.clone();
         animation.connect_done(move |_| {
             let Some(view) = view.upgrade() else {
                 return;
@@ -187,11 +181,36 @@ impl LyricsView {
             if view.scroll_animation_generation.get() != generation {
                 return;
             }
+            // Margins can finish allocating while the animation is running.
+            // Recompute once at completion so the last line reaches the final
+            // clamp instead of stopping at an obsolete maximum.
+            if let Some(target) = view.center_scroll_target(&label) {
+                view.scrolled.vadjustment().set_value(target);
+            }
             view.scroll_animation.borrow_mut().take();
             view.scroll_state.borrow_mut().return_finished();
         });
         *self.scroll_animation.borrow_mut() = Some(animation.clone());
         animation.play();
+    }
+
+    fn center_scroll_target(&self, label: &gtk4::Label) -> Option<f64> {
+        let adjustment = self.scrolled.vadjustment();
+        let is_last_line = self
+            .lines
+            .borrow()
+            .last()
+            .is_some_and(|line| line.label == *label);
+        if is_last_line {
+            return Some((adjustment.upper() - adjustment.page_size()).max(0.0));
+        }
+        let point = label.compute_point(&self.scrolled, &gtk4::graphene::Point::new(0.0, 0.0))?;
+        Some(centered_scroll_value(
+            adjustment.value() + f64::from(point.y()),
+            f64::from(label.height()),
+            adjustment.page_size(),
+            adjustment.upper(),
+        ))
     }
 
     pub(super) fn cancel_scroll_animation(&self) {

@@ -16,7 +16,7 @@ pub const ALBUM_MENU_PLAY: &str = N_!("Play");
 pub const ALBUM_MENU_PLAY_NEXT: &str = N_!("Play next");
 pub const ALBUM_MENU_ADD_QUEUE: &str = N_!("Add to queue");
 pub const ALBUM_MENU_GO_TO_ARTIST: &str = N_!("Go to artist");
-pub const ALBUM_MENU_EDIT_TAGS: &str = N_!("Edit tags...");
+pub const ALBUM_MENU_EDIT_TAGS: &str = N_!("Edit tags…");
 pub const REVEAL_PLAYING_ALBUM: &str = N_!("Reveal playing album");
 
 /// Formats album duration: "1h 4min" or "42 min".
@@ -54,15 +54,20 @@ pub const REPRISE_ENGINE_AND_LINUX_PLATFORM: &str = N_!("Reprise Engine and Linu
 pub const HELP: &str = N_!("Help");
 pub const NAVIGATION: &str = N_!("Navigation");
 pub const PLAY_OR_PAUSE: &str = N_!("Play or Pause");
+pub const STOP_PLAYBACK: &str = N_!("Stop Playback");
+pub const INCREASE_VOLUME: &str = N_!("Increase Volume");
+pub const DECREASE_VOLUME: &str = N_!("Decrease Volume");
 pub const SEARCH_LIBRARY: &str = N_!("Search Library");
 pub const TOGGLE_COMPACT_VIEW: &str = N_!("Toggle Compact View");
-pub const CLEAR_SEARCH_OR_RETURN_TO_TRACK_LIST: &str = N_!("Clear Search or Return to Track List");
+pub const CLEAR_SEARCH_OR_RETURN_TO_CONTENT: &str = N_!("Clear Search or Return to Content");
 pub const PLAY_SELECTED_TRACK: &str = N_!("Play Selected Track");
 pub const OPEN_CONTEXT_MENU: &str = N_!("Open Context Menu");
 pub const OPEN_HELP: &str = N_!("Open Help");
+pub const OPEN_MAIN_MENU: &str = N_!("Open Main Menu");
+pub const CLOSE_WINDOW: &str = N_!("Close Window");
+pub const QUIT_REPRISE: &str = N_!("Quit Reprise");
 
 // Primary menu items.
-pub const MY_STATS: &str = N_!("My Stats");
 pub const RESCAN_LIBRARY: &str = N_!("Rescan Library");
 pub const CANCEL_SCAN: &str = N_!("Cancel Scan");
 pub const SYNC_DEVICE: &str = N_!("Sync Device…");

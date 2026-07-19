@@ -227,6 +227,11 @@ fn build_import_dialog() -> ImportDialogWidgets {
     let progress_title = gtk4::Label::new(Some(&strings::text(strings::RHYTHMBOX_IMPORTING)));
     progress_title.add_css_class("title-3");
     let progress_bar = gtk4::ProgressBar::new();
+    // a11y-semantics: role=progressbar name=rhythmbox-import state=value action=observe
+    progress_bar.set_focusable(true);
+    progress_bar.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::RHYTHMBOX_IMPORTING,
+    ))]);
     let progress_label = gtk4::Label::new(None);
     progress_label.add_css_class("dim-label");
 
@@ -515,6 +520,8 @@ impl PreferencesContext {
         let rollback_holder: Rc<RefCell<Option<RhythmboxRollback>>> = Rc::new(RefCell::new(None));
         let rollback_for_import = rollback_holder.clone();
         let rows_for_import = widgets.rows.clone();
+        let selection_focus = widgets.rows.first().cloned();
+        let done_focus = widgets.done_button.clone();
 
         widgets.import_button.connect_clicked(move |button| {
             let Some(context) = weak_import.upgrade() else {
@@ -522,6 +529,7 @@ impl PreferencesContext {
             };
             button.set_sensitive(false);
             stack.set_visible_child_name("progress");
+            progress_bar.grab_focus();
 
             let column_layout = rows_for_import[0].is_active();
             let choices = RhythmboxImportChoices {
@@ -549,6 +557,8 @@ impl PreferencesContext {
             let rollback_c = rollback_for_import.clone();
             let prescan_for_complete = prescan_for_import.clone();
             let context_c = context.clone();
+            let selection_focus_c = selection_focus.clone();
+            let done_focus_c = done_focus.clone();
 
             // Pulse the progress bar while parsing runs off-thread
             progress_bar_c.pulse();
@@ -578,6 +588,9 @@ impl PreferencesContext {
                     _ => {
                         tracing::warn!("Rhythmbox import parse failed");
                         stack_c.set_visible_child_name("selection");
+                        if let Some(row) = &selection_focus_c {
+                            row.grab_focus();
+                        }
                         return;
                     }
                 };
@@ -677,6 +690,7 @@ impl PreferencesContext {
                 );
 
                 stack_c.set_visible_child_name("complete");
+                done_focus_c.grab_focus();
             });
         });
 
@@ -711,6 +725,10 @@ impl PreferencesContext {
 
         // Present
         let parent = self.preferences_parent();
+        let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&parent);
+        if let Some(initial_focus) = widgets.rows.first() {
+            focus_guard.bind_closable_dialog(&widgets.dialog, initial_focus);
+        }
         widgets.dialog.present(Some(&parent));
     }
 

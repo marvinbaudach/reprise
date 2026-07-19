@@ -1,4 +1,5 @@
 use super::*;
+use libadwaita::prelude::AdwApplicationWindowExt;
 
 fn loaded_track() -> NowPlaying {
     NowPlaying {
@@ -10,6 +11,30 @@ fn loaded_track() -> NowPlaying {
         duration_ms: 180_000,
         path: "/tmp/loaded.mp3".into(),
     }
+}
+
+fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
+    let conn = reprise_core::db::open(None).unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    build_widgets(content, visible, Rc::new(RefCell::new(conn)), &cover_loader)
+}
+
+fn test_widgets_for_session(
+    content: &impl IsA<gtk4::Widget>,
+    visible: bool,
+    session: &Rc<TabSession>,
+) -> PanelWidgets {
+    let conn = reprise_core::db::open(None).unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    build_widgets_for_session(
+        content,
+        visible,
+        session,
+        Rc::new(RefCell::new(conn)),
+        &cover_loader,
+    )
 }
 
 #[test]
@@ -34,6 +59,15 @@ fn no_loaded_track_uses_the_idle_presentation() {
 }
 
 #[test]
+fn ac_4_audio_character_is_the_third_persistent_panel_tab() {
+    assert_eq!(PanelTab::AudioCharacter.page_name(), AUDIO_CHARACTER_PAGE);
+    assert_eq!(
+        PANEL_TABS,
+        [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::AudioCharacter]
+    );
+}
+
+#[test]
 fn now_playing_panel_visibility_round_trips_through_settings() {
     let conn = reprise_core::db::open(None).unwrap();
     reprise_core::db::migrate(&conn).unwrap();
@@ -47,6 +81,13 @@ fn now_playing_panel_visibility_round_trips_through_settings() {
 }
 
 #[test]
+fn que_6_closed_panel_does_not_render() {
+    assert!(!should_render_up_next(false, PanelTab::UpNext));
+    assert!(!should_render_up_next(true, PanelTab::Lyrics));
+    assert!(should_render_up_next(true, PanelTab::UpNext));
+}
+
+#[test]
 fn now_playing_panel_has_the_fixed_npp_width() {
     assert_eq!(PANEL_WIDTH, 300);
 }
@@ -56,8 +97,8 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-stage"));
-    assert!(css.contains("background-color: #17191c"));
-    assert!(!css.contains("@sidebar_bg_color"));
+    assert!(css.contains("background-color: @sidebar_bg_color"));
+    assert!(!css.contains("background-color: #17191c"));
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient"));
     assert!(css.contains("alpha(@reprise_player_accent, 0.4)"));
@@ -76,7 +117,7 @@ fn now_playing_css_parses_without_gtk_errors() {
 }
 
 #[test]
-fn now_playing_css_defines_the_two_segment_pill_and_footer() {
+fn now_playing_css_defines_the_adaptive_view_switcher_and_footer() {
     let css = css();
 
     assert!(css.contains(".reprise-now-playing-tabs"));
@@ -93,7 +134,7 @@ fn now_playing_css_defines_the_two_segment_pill_and_footer() {
 fn panel_has_no_local_header_refresh_or_close_buttons() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let widgets = build_widgets(&content, true);
+    let widgets = test_widgets(&content, true);
     let tree = widget_tree(widgets.column.widget().upcast_ref());
 
     assert!(tree.iter().all(|widget| !widget.is::<adw::HeaderBar>()));
@@ -113,7 +154,7 @@ fn panel_has_no_local_header_refresh_or_close_buttons() {
 fn npp_2_no_volume_in_panel() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let widgets = build_widgets(&content, true);
+    let widgets = test_widgets(&content, true);
     let tree = widget_tree(widgets.column.widget().upcast_ref());
 
     assert!(tree.iter().all(|widget| !widget.is::<gtk4::VolumeButton>()));
@@ -125,7 +166,7 @@ fn npp_2_no_volume_in_panel() {
 fn head_and_pill_match_the_21a_structure() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let widgets = build_widgets(&content, true);
+    let widgets = test_widgets(&content, true);
 
     assert_eq!(widgets.cover.pixel_size(), 168);
     assert_eq!(widgets.cover.width_request(), 168);
@@ -134,14 +175,47 @@ fn head_and_pill_match_the_21a_structure() {
     assert!(widgets
         .subtitle
         .has_css_class("reprise-now-playing-subtitle"));
-    assert_eq!(widgets.tab_buttons.len(), 2);
-    assert_eq!(widgets.tab_buttons[0].label().as_deref(), Some("Up Next"));
-    assert_eq!(widgets.tab_buttons[1].label().as_deref(), Some("Lyrics"));
+    assert_eq!(PANEL_TABS.len(), 3);
     assert!(widgets
-        .tab_buttons
-        .iter()
-        .all(|button| button.has_css_class("reprise-now-playing-tab")));
+        .tab_switcher
+        .has_css_class("reprise-now-playing-tabs"));
+    assert_eq!(
+        widgets.tab_switcher.stack().as_ref(),
+        Some(&widgets.tab_stack)
+    );
+    assert!(widgets
+        .tab_stack
+        .child_by_name(AUDIO_CHARACTER_PAGE)
+        .is_some());
+    let audio_character = widgets
+        .tab_stack
+        .child_by_name(AUDIO_CHARACTER_PAGE)
+        .unwrap();
+    let page = widgets.tab_stack.page(&audio_character);
+    assert_eq!(page.title().as_deref(), Some("Audio Character"));
+    assert_eq!(page.icon_name().as_deref(), Some("audio-speakers-symbolic"));
     assert!(widgets.footer.has_css_class("reprise-now-playing-footer"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_4_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
+    gtk4::init().unwrap();
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    let widgets = test_widgets(&content, true);
+    widgets
+        .tab_switcher
+        .set_display_mode(adw::InlineViewSwitcherDisplayMode::Icons);
+
+    let buttons = widget_tree(widgets.tab_switcher.upcast_ref())
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Button>().ok())
+        .collect::<Vec<_>>();
+    assert_eq!(buttons.len(), 3);
+    assert!(buttons.iter().all(gtk4::prelude::WidgetExt::is_focusable));
+    assert!(buttons
+        .iter()
+        .all(|button| gtk4::test_accessible_has_property(button, gtk4::AccessibleProperty::Label)));
 }
 
 #[test]
@@ -178,20 +252,18 @@ fn npp_4_tab_persists_in_session() {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let session = Rc::new(TabSession::default());
 
-    let first = build_widgets_for_session(&content, true, &session);
-    first.tab_buttons[1].set_active(true);
+    let first = test_widgets_for_session(&content, true, &session);
+    first.tab_stack.set_visible_child_name(LYRICS_PAGE);
     assert_eq!(session.selected.get(), PanelTab::Lyrics);
 
-    let rebuilt = build_widgets_for_session(&content, true, &session);
-    assert!(rebuilt.tab_buttons[1].is_active());
+    let rebuilt = test_widgets_for_session(&content, true, &session);
     assert_eq!(
         rebuilt.tab_stack.visible_child_name().as_deref(),
         Some(LYRICS_PAGE)
     );
 
     let restarted_session = Rc::new(TabSession::default());
-    let restarted = build_widgets_for_session(&content, true, &restarted_session);
-    assert!(restarted.tab_buttons[0].is_active());
+    let restarted = test_widgets_for_session(&content, true, &restarted_session);
     assert_eq!(
         restarted.tab_stack.visible_child_name().as_deref(),
         Some(UP_NEXT_PAGE)
@@ -269,7 +341,7 @@ fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
 fn npp_10_track_change_uses_one_shared_crossfade() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let widgets = build_widgets(&content, true);
+    let widgets = test_widgets(&content, true);
     let shared_tree = widget_tree(widgets.track_content.upcast_ref());
     assert!(shared_tree.iter().any(|widget| widget == &widgets.cover));
     assert!(shared_tree.iter().any(|widget| widget == &widgets.title));
@@ -284,6 +356,9 @@ fn npp_10_track_change_uses_one_shared_crossfade() {
 
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingCrossfadeTest");
     panel.retain_for_window(&window);
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(panel.widgets.track_content.is_mapped());
     let settings = gtk4::Settings::default().unwrap();
     let animations_were_enabled = settings.is_gtk_enable_animations();
     settings.set_gtk_enable_animations(true);
@@ -305,8 +380,8 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
     reprise_core::db::migrate(&conn.borrow()).unwrap();
     let runtime = ArtistNewsRuntime::setup(&conn.borrow());
-    let portraits = ArtistPortraitRuntime::setup();
-    let cover_runtime = crate::ui::cover_download_worker::setup();
+    let portraits = ArtistPortraitRuntime::setup_for_test();
+    let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
     let cover_loader = CoverLoader::new(cover_runtime);
     let app = adw::Application::builder()
         .application_id(application_id)
@@ -314,7 +389,16 @@ fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPan
     app.register(None::<&gtk4::gio::Cancellable>).unwrap();
     let window = adw::ApplicationWindow::new(&app);
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let panel = NowPlayingPanel::new(&content, &window, conn, runtime, &portraits, cover_loader);
+    let panel = NowPlayingPanel::new(
+        &content,
+        &window,
+        conn,
+        runtime,
+        &portraits,
+        cover_loader,
+        None,
+    );
+    window.set_content(Some(panel.widget()));
     (window, panel)
 }
 

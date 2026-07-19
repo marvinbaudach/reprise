@@ -175,6 +175,8 @@ pub(super) fn run(
         .content_width(560)
         .content_height(430)
         .build();
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(window);
+    focus_guard.bind_closable_dialog(&dialog, &setup);
 
     let complete: Rc<dyn Fn(CompletionOptions, CompletionResponse, bool)> = {
         let window = window.downgrade();

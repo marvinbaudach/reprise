@@ -170,6 +170,8 @@ pub(in crate::ui) fn show(
     popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
     popover.set_has_arrow(false);
     popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(parent);
+    focus_guard.restore_on_popover_close(popover.upcast_ref());
     popover.popup();
 }
 
@@ -213,7 +215,7 @@ mod tests {
                 "Play next",
                 "Add to queue",
                 "Go to artist",
-                "Edit tags...",
+                "Edit tags…",
             ]
         );
     }

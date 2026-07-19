@@ -74,12 +74,39 @@ if [[ ${#tests[@]} -eq 0 ]]; then
   exit 1
 fi
 
+# Every test runs, whatever the ones before it did. A fail-fast loop reports
+# the first red test and hides how many others are red — which is exactly the
+# information needed to judge whether the suite is trustworthy at all. Failures
+# are collected and reported in one balance sheet at the end instead.
+passed=0
+failed_tests=()
+
 for test in "${tests[@]}"; do
   data_home=$(mktemp -d)
   cache_home=$(mktemp -d)
+  marker_dir=$(mktemp -d)
+  display_test_passed="$marker_dir/passed"
   echo "== display test: $test =="
-  dbus-run-session -- xvfb-run -a env \
+  if dbus-run-session -- xvfb-run -a env \
     XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
     GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
-    cargo test -p reprise-gnome "$test" -- --ignored --exact
+    DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
+    bash -c '
+      cargo test -p reprise-gnome "$DISPLAY_TEST" -- --ignored --exact \
+        && : >"$DISPLAY_TEST_PASSED"
+    ' && [[ -f $display_test_passed ]]; then
+    passed=$((passed + 1))
+  else
+    failed_tests+=("$test")
+  fi
 done
+
+echo
+echo "== display test summary =="
+echo "passed: $passed"
+echo "failed: ${#failed_tests[@]} of ${#tests[@]}"
+
+if (( ${#failed_tests[@]} > 0 )); then
+  printf '  %s\n' "${failed_tests[@]}"
+  exit 1
+fi

@@ -46,6 +46,10 @@ url = "2"
 quick-xml = "0.41"
 # Pure-Rust local date arithmetic for the bounded Artist News window.
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+# Unicode NFKD for the runtime-only stats grouping key (STATS-9): decompose,
+# then drop combining marks so "Bjork" and "Björk" fold together. Pure Rust,
+# one dependency (tinyvec), no platform or GUI deps.
+unicode-normalization = "0.1"
 [dev-dependencies]
 tempfile = "3"
 
