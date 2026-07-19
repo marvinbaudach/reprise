@@ -11,6 +11,7 @@ const HERO_MINUTES: &str = N_!("{count} minutes");
 const COMPARISON_UP: &str = N_!("\u{25b2} {percent}% vs {period}");
 const COMPARISON_DOWN: &str = N_!("\u{25bc} {percent}% vs {period}");
 const PREVIOUS_DAYS: &str = N_!("previous {count} days");
+const SAME_PERIOD_YEAR: &str = N_!("same period {year}");
 const SPELLINGS_MERGED_ONE: &str = N_!("1 spelling merged \u{2014} unify it in the tag editor?");
 const SPELLINGS_MERGED: &str =
     N_!("{count} spellings merged \u{2014} unify them in the tag editor?");
@@ -57,10 +58,17 @@ pub fn comparison_pill(percent: i64, period: &str) -> String {
     )
 }
 
-/// Name for a compared span that is not a calendar year: the equally long
-/// stretch immediately before the selected one.
+/// Name for the compared span of a rolling window: the equally long stretch
+/// immediately before the selected one.
 pub fn previous_days(days: i64) -> String {
     formatted(PREVIOUS_DAYS, &[("count", &days.to_string())])
+}
+
+/// Name for the compared span of a year to date: the same calendar stretch of
+/// the previous year, which is what makes it seasonally comparable. "2026 so
+/// far" reads "vs same period 2025" — Jan–Jul against Jan–Jul.
+pub fn same_period_year(year: i32) -> String {
+    formatted(SAME_PERIOD_YEAR, &[("year", &year.to_string())])
 }
 
 pub fn spellings_merged_hint(count: usize) -> String {
@@ -106,6 +114,10 @@ mod tests {
     #[test]
     fn comparison_pill_names_the_compared_span() {
         assert_eq!(comparison_pill(12, "2025"), "\u{25b2} 12% vs 2025");
+        assert_eq!(
+            comparison_pill(12, &same_period_year(2025)),
+            "\u{25b2} 12% vs same period 2025"
+        );
         assert_eq!(
             comparison_pill(-8, &previous_days(30)),
             "\u{25bc} 8% vs previous 30 days"

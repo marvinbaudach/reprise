@@ -158,6 +158,21 @@ fn presented(width: i32) -> (StatsView, adw::Window) {
     (view, window)
 }
 
+/// STATS-1: the pill names the compared span, and that span is seasonally
+/// congruent. "2026 so far" is measured against Jan–Jul 2025, so the pill has
+/// to say so instead of naming an equally long stretch ("previous 200 days")
+/// that reaches back into the previous winter.
+#[test]
+fn stats_1_pill_names_the_seasonally_congruent_compared_span() {
+    let name = |period| compared_period_name(period).unwrap();
+
+    assert_eq!(name(StatsPeriod::YearToDate(2026)), "same period 2025");
+    assert_eq!(name(StatsPeriod::Year(2025)), "2024");
+    assert_eq!(name(StatsPeriod::Last30Days), "previous 30 days");
+    // All time is compared against nothing, so it names nothing.
+    assert_eq!(compared_period_name(StatsPeriod::AllTime), None);
+}
+
 /// Between the two numbers lies a band of window widths where the row is
 /// still side by side but already narrower than the two sections need —
 /// GTK then under-allocates them. The band has to stay empty.
