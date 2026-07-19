@@ -1076,6 +1076,20 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   wiedererkennbare Kalenderentsprechung ein Jahr zurück. Der 29. Februar klemmt
   im Vorjahr auf den 28. „All time" hat keine Vorperiode und trägt nie eine
   Pill.
+- **STATS-1a** [aktiv] [core] — Die Vergleichs-Pill bleibt bei jedem Verhältnis
+  lesbar: Anstiege unter +1000 % erscheinen weiter als ganze Prozentzahl, ab
+  +1000 % als gerundeter Faktor („▲ ×11 vs 2025"). Eine sinnvolle
+  Nachkommastelle bleibt erhalten („×11,5"), eine bedeutungslose Null entfällt
+  („×11", nie „×11,0"). Starke Rückgänge ab 50 % verwenden dieselbe Form mit
+  Abwärtsmarker („▼ ×0,3"); ein nichtnulliger Faktor unter 0,1 bleibt als
+  „▼ ×<0,1" ehrlich und rundet nie auf „×0". Lag die Vergleichszeit unter einer
+  Minute, ist sie für die sichtbare Minutengranularität effektiv null; statt
+  Prozent oder Faktor steht eine zeitraumgerechte qualitative Aussage wie
+  „New this year".
+  Die Pill nennt nur die kurze Referenz („vs 2025") und ellipsiert nie; der
+  Tooltip trägt die vollständige Semantik („vs same period 2025"). `×` und
+  Dezimaltrenner bleiben übersetzbar. Saisonale Spanne und Vergleichsrechnung
+  aus STATS-1 ändern sich dadurch nicht.
 - **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
   #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
   Zeile „N plays · N h · N % of your artist listening" — der Anteil bezieht

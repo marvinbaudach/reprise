@@ -14,6 +14,12 @@ use super::stats_screen::{
 const SPOTLIGHT_TRACK_LIMIT: usize = 3;
 const SPOTLIGHT_ALSO_LIMIT: usize = 4;
 const GENRE_LIMIT: usize = 5;
+/// The first rounded upward percentage that switches to multiplicative copy.
+pub const COMPARISON_FACTOR_PERCENT_THRESHOLD: i64 = 1_000;
+/// A decline at or beyond this rounded percentage reads more clearly as a factor.
+pub const COMPARISON_FACTOR_DECLINE_PERCENT_THRESHOLD: i64 = -50;
+/// Baselines below the UI's one-minute display granularity are qualitative.
+pub const COMPARISON_EFFECTIVELY_ZERO_MS: i64 = 60_000;
 /// Scattered peak hours are listed rather than spanned; beyond this many the
 /// caption says "+N" instead of growing past the clock's width.
 const PEAK_HOURS_LISTED: usize = 3;
@@ -24,6 +30,29 @@ pub enum SortBy {
     Time,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ComparisonDirection {
+    Up,
+    Down,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ComparisonFactor {
+    Whole(u64),
+    Decimal { whole: u64, tenth: u8 },
+    LessThanOneTenth,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ComparisonPresentation {
+    Percentage(i64),
+    Factor {
+        direction: ComparisonDirection,
+        value: ComparisonFactor,
+    },
+    New,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HeroSection {
     pub total_ms: i64,
@@ -31,6 +60,7 @@ pub struct HeroSection {
     pub average_ms_per_day: i64,
     pub artists: i64,
     pub comparison_percent: Option<i64>,
+    pub comparison_presentation: Option<ComparisonPresentation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -127,10 +157,11 @@ pub fn compute<Tz: TimeZone>(
 
     // The compared span is seasonally congruent, not merely the equally long
     // stretch immediately before — see [`StatsPeriod::previous_range`]. A
-    // period without one reads as zero, which hides the pill.
+    // period without one stays distinct from a real zero baseline: All time
+    // has no comparison, while an empty compared span has qualitative value.
     let previous_ms = match period.previous_range(now_unix, tz) {
-        Some((start, end)) => total_ms_in_range(conn, start, end)?, // 3
-        None => 0,
+        Some((start, end)) => Some(total_ms_in_range(conn, start, end)?), // 3
+        None => None,
     };
     let artists = artist_rows(conn, range.start_unix, range.end_unix)?; // 4
     let albums = album_rows(conn, range.start_unix, range.end_unix)?; // 5
@@ -157,12 +188,17 @@ pub fn compute<Tz: TimeZone>(
         .collect::<Vec<_>>();
     sort_tracks(&mut top_tracks, SortBy::Plays);
 
+    let comparison_percent = previous_ms
+        .filter(|value| *value >= COMPARISON_EFFECTIVELY_ZERO_MS)
+        .and_then(|value| comparison_percent(total_ms, value));
     let hero = HeroSection {
         total_ms,
         plays: listen_rows.len() as i64,
         average_ms_per_day: total_ms / elapsed_days(tz, &range).max(1),
         artists: top_artists.len() as i64,
-        comparison_percent: comparison_percent(total_ms, previous_ms),
+        comparison_percent,
+        comparison_presentation: previous_ms
+            .and_then(|value| comparison_presentation(total_ms, value, comparison_percent)),
     };
     let ribbon = range
         .buckets
@@ -206,6 +242,39 @@ fn comparison_percent(current_ms: i64, previous_ms: i64) -> Option<i64> {
         return None;
     }
     Some((((current_ms - previous_ms) as f64 / previous_ms as f64) * 100.0).round() as i64)
+}
+
+fn comparison_presentation(
+    current_ms: i64,
+    previous_ms: i64,
+    percent: Option<i64>,
+) -> Option<ComparisonPresentation> {
+    if current_ms <= 0 {
+        return None;
+    }
+    if previous_ms < COMPARISON_EFFECTIVELY_ZERO_MS {
+        return Some(ComparisonPresentation::New);
+    }
+    let percent = percent?;
+    let direction = if percent >= COMPARISON_FACTOR_PERCENT_THRESHOLD {
+        ComparisonDirection::Up
+    } else if percent <= COMPARISON_FACTOR_DECLINE_PERCENT_THRESHOLD {
+        ComparisonDirection::Down
+    } else {
+        return Some(ComparisonPresentation::Percentage(percent));
+    };
+    let tenths = ((current_ms as f64 / previous_ms as f64) * 10.0).round() as u64;
+    let value = if tenths == 0 {
+        ComparisonFactor::LessThanOneTenth
+    } else if tenths.is_multiple_of(10) {
+        ComparisonFactor::Whole(tenths / 10)
+    } else {
+        ComparisonFactor::Decimal {
+            whole: tenths / 10,
+            tenth: (tenths % 10) as u8,
+        }
+    };
+    Some(ComparisonPresentation::Factor { direction, value })
 }
 
 /// `keys` must be the resolver built from the very rows `artists` was folded
@@ -433,3 +502,7 @@ fn percent(value: i64, total: i64) -> i64 {
 #[cfg(test)]
 #[path = "stats_snapshot_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "stats_comparison_tests.rs"]
+mod comparison_tests;
