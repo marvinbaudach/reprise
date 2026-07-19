@@ -125,8 +125,8 @@ pub(in crate::ui) struct PreferencesContext {
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
     preferences_navigation: RefCell<glib::WeakRef<adw::NavigationView>>,
     preferences_stack: RefCell<glib::WeakRef<adw::ViewStack>>,
-    pub(in crate::ui) plugin_rows: RefCell<HashMap<&'static str, glib::WeakRef<adw::SwitchRow>>>,
-    pub(in crate::ui) doctor_remote_rows: RefCell<Vec<glib::WeakRef<adw::SwitchRow>>>,
+    pub(in crate::ui) plugin_rows: RefCell<HashMap<&'static str, glib::WeakRef<gtk4::Widget>>>,
+    pub(in crate::ui) doctor_controls: super::preference_library_doctor::DoctorPreferenceControls,
     pub(in crate::ui) library_doctor_job_running: Cell<bool>,
     pub(in crate::ui) pending_plugin_targets: RefCell<Vec<&'static str>>,
 }
@@ -189,7 +189,7 @@ impl PreferencesContext {
             preferences_navigation: RefCell::new(glib::WeakRef::new()),
             preferences_stack: RefCell::new(glib::WeakRef::new()),
             plugin_rows: RefCell::new(HashMap::new()),
-            doctor_remote_rows: RefCell::new(Vec::new()),
+            doctor_controls: super::preference_library_doctor::DoctorPreferenceControls::default(),
             library_doctor_job_running: Cell::new(false),
             pending_plugin_targets: RefCell::new(Vec::new()),
         });
@@ -248,7 +248,7 @@ impl PreferencesContext {
         self.equalizer_surfaces.borrow_mut().clear();
         self.replaygain_mode.borrow_mut().take();
         self.plugin_rows.borrow_mut().clear();
-        self.doctor_remote_rows.borrow_mut().clear();
+        self.doctor_controls.clear_surfaces();
         use super::preferences_window::{PageId, PAGE_ORDER};
         let pages = PAGE_ORDER.map(|id| {
             let page = match id {
@@ -415,6 +415,12 @@ impl PreferencesContext {
     pub(in crate::ui) fn preferences_parent(&self) -> gtk4::Widget {
         self.preferences_dialog()
             .map_or_else(|| self.window.clone().upcast(), gtk4::Widget::from)
+    }
+
+    pub(in crate::ui) fn close_for_main_navigation(&self) {
+        if let Some(dialog) = self.preferences_dialog() {
+            dialog.force_close();
+        }
     }
 
     fn playback_page(self: &Rc<Self>) -> adw::PreferencesPage {
