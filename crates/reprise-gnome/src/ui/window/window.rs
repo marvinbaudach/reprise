@@ -403,6 +403,8 @@ pub fn build(
         album_view: &album_view,
         artist_view: &artist_view,
         player: &player,
+        stats_view: &stats_view,
+        nav_history: &nav_history,
         content_stack: &content_stack,
         library_stack: &library_views.stack,
         scan_controls: &scan_controls,

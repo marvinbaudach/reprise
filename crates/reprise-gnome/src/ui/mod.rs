@@ -150,7 +150,7 @@ use sidebar::{
 #[allow(unused_imports)]
 pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
 #[allow(unused_imports)]
-use stats::{hourly_chart, stats_chart, stats_chart_math};
+use stats::{hourly_chart, hourly_chart_math};
 #[allow(unused_imports)]
 pub(crate) use stats::{stats_css, stats_view};
 #[allow(unused_imports)]

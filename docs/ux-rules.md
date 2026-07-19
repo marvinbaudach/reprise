@@ -977,6 +977,128 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   tatsächlich verdrahtete Aktionen und bleibt mit ihnen im selben Commit
   synchron.
 
+## U. My Stats
+
+- **STATS-0** [aktiv] [core] — Ein „play" ist überall dieselbe Sache:
+  mindestens 50 % des Tracks oder mindestens vier Minuten gehört. Genau diese
+  Ereignisse stehen in `listen_events`, und die My-Stats-Ansicht rechnet
+  ausschließlich aus ihnen — Hero-Zeit, Plays, Top-Listen, Spotlight, Genres,
+  Clock und Highlights sind Projektionen derselben Zeilenmenge. Der laufende
+  Zähler `tracks.play_count` speist die Ansicht nie; Zeit und Anzahl können
+  daher nicht auseinanderlaufen. Tages- und Stundengrenzen entstehen nicht in
+  SQL: die Kernfunktionen nehmen eine Zeitzone als Parameter und bucketen jedes
+  Ereignis einzeln durch sie hindurch, damit Sommer-/Winterzeit-Wechsel keine
+  Grenze verschieben. Alles ist lokal: kein Netz, keine Cloud, keine
+  Fremdquelle wird eingemischt.
+- **STATS-1** [aktiv] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß in vollen
+  Stunden („68 hours"; unter einer Stunde in Minuten, nie „0 hours"), eine
+  Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
+  Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
+  Sekundär-Ton. Rechts steht das Zeitraum-Dropdown („<Jahr> so far / <Vorjahr> /
+  All time / Last 30 days"). Darunter läuft ein schlankes Area-Ribbon der
+  Hörzeit, dessen Achse **exakt dem gewählten Zeitraum** folgt — „2026 so far"
+  zeigt Jan–Jul, nie ein rollendes 12-Monats-Fenster. Der laufende Bucket ist
+  offen markiert (gestrichelt, hohler Punkt), der Peak gesetzt; Hover nennt den
+  exakten Wert. Fehlt eine Vorperiode mit Hörzeit, entfällt die Pill. Die Pill
+  **benennt** die verglichene Spanne, statt „previous period" zu sagen:
+  verglichen wird die gleich lange Spanne unmittelbar davor, also trägt nur ein
+  volles Kalenderjahr den Namen des Vorjahres — jede andere Periode heißt
+  „previous N days", denn die Spanne vor „2026 so far" ist nicht „2025".
+- **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
+  #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
+  Zeile „N plays · N h · N % of your artist listening" — der Anteil bezieht
+  sich auf die Hörzeit mit Artist-Zuordnung, dieselbe Grundgesamtheit, die die
+  Rangliste bildet, nicht auf jeden Play —, drei Top-Track-Chips sowie die
+  Aktionen Play (Container-Play über die Trackliste des Artists) und
+  „Go to artist" (regulärer NAV-Push mit Back-Historie). Hinter dem Cover liegt
+  ein dezenter Cover-Akzent-Glow — der Cover-Akzent bleibt Playback-Elementen
+  vorbehalten. Darunter nennt eine Ghost-Zeile die Ränge 2–5.
+- **STATS-3** [aktiv] [core] — Das Genre-Spektrum ist **eine** horizontale
+  Segment-Leiste in Teal-Abstufungen mit Legende (Punkt · Name · %), gespeist
+  aus den Genre-Tags der Bibliothek. Die fünf stärksten Genres bilden eigene
+  Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
+  als Segment noch als „Other". Die Leiste ist reine Anzeige und keine
+  Navigation: Segmente und Legende sind nicht klickbar.
+- **STATS-4** [aktiv] [core] — Unter dem Spektrum steht eine asymmetrische
+  Reihe (1.35fr / 1fr): links die Listening Clock als 24-Stunden-Histogramm aus
+  den Timestamps mit teal hervorgehobenen Peak-Stunden und Caption
+  („Peak 11 PM–1 AM · night owl"), rechts vier Highlight-Kacheln — Streak
+  (längste Folge aufeinanderfolgender lokaler Tage mit ≥ 1 play), Discovered
+  (im Zeitraum erstmals gespielte Tracks), Busiest day, On repeat (höchste
+  Play-Zahl) — plus der CTA „Mix from <Top-Genre> · Create". Er mischt genau
+  die Trackgruppe des angezeigten Genres, nie die Tracks, die zufällig genau
+  so geschrieben sind (STATS-9). Ist die Gruppe als Regel ausdrückbar — also
+  eine einzige Schreibweise —, entsteht eine echte Smart Playlist; fasst sie
+  mehrere Schreibweisen zusammen, entsteht stattdessen eine gewöhnliche
+  Playlist mit genau den Tracks der Gruppe, denn die Regel-Engine verknüpft
+  ihre Regeln nur per UND und kennt keine Alternative. Gemischt wird immer
+  **ein** Genre; ohne Genre im Zeitraum entfällt der CTA. Tages- und
+  Stundengrenzen folgen der lokalen
+  Zeit des Nutzers, nicht UTC. Im schmalen Fenster klappt die Reihe per
+  AdwBreakpoint einspaltig, ohne dass sich die Reihenfolge ändert. Die Reihe
+  ist so bemessen, dass ihre beiden Mindestbreiten zusammen unter dem
+  Breakpoint bleiben — sonst gäbe es Fensterbreiten, in denen sie noch
+  nebeneinander steht, aber schmaler ist als sie braucht.
+- **STATS-5** [aktiv] [core] — Top Tracks steht über die volle Breite:
+  nummerierte Liste mit Cover, Titel und Artist, relativem Play-Balken und
+  Play-Count, mit Sort-Toggle „by plays / by time". Der Balken ist relativ zum
+  Spitzenreiter der Liste, nie zu einem absoluten Maximum.
+- **STATS-6** [aktiv] [core] — Leere und dünne Datenlagen werden nie als
+  leere Diagramme gezeigt. Ohne Hörhistorie im Zeitraum erscheint ein
+  freundlicher Leerzustand („Start listening to see your stats") statt Achsen
+  mit einem einsamen Balken. Bei dünner Datenlage wird die Granularität feiner
+  (Tage bzw. Wochen statt größtenteils leerer Monate).
+- **STATS-6a** [aktiv] [gtk] — Ein Fehler ist kein Leerzustand: schlägt die
+  Abfrage fehl, erscheint eine eigene Fehlerseite („Your stats could not be
+  read"), nie die Einladung „Start listening to see your stats". Sichtbarkeit
+  entsteht dabei über die Seitenumschaltung, nicht über zusätzliches
+  Ein-/Ausblenden einzelner Sektionen darunter.
+- **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
+  kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
+  Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
+  über Sitzungen erhalten. Mehr enthält das Menü nicht — das Spotlight ist
+  fest das Artist-Spotlight. Die Reihenfolge der Sektionen ist fix, Größen sind
+  nicht manuell veränderbar — Anpassung an die Fensterbreite geschieht
+  ausschließlich per AdwBreakpoint.
+- **STATS-8** [aktiv] [gtk] — In My Stats gibt es keine Filter-Zeile und
+  keine Suche der Trackliste — das ist eine andere Ansicht. Die rechte
+  Now-Playing-Spalte verhält sich wie überall. Das Zeitraum-Dropdown ist der
+  einzige Ansichts-Regler dieser Ansicht.
+- **STATS-9** [aktiv] [core] — **Dedup:** Unsaubere Tags dürfen Zahlen nicht
+  zersplittern. Top Artists, Top Genres, Album-Artist-Aggregate, das Spotlight
+  und jede Trackauswahl, die von einer dieser Zeilen ausgeht, benutzen **eine
+  einzige** Schlüsselauflösung — nie eine zweite Formel pro Aufrufer.
+  **Zuerst der Name:** Trim, Unicode-Kleinschreibung (`str::to_lowercase`, also
+  über ASCII hinaus, aber kein volles Casefold — „Straße" bleibt von „STRASSE"
+  getrennt), Whitespace-Kollaps und Diakritika-Faltung (NFKD ohne Combining
+  Marks). „Lorna Shore", „lorna shore" und „Lorna Shore " sind damit ein
+  Eintrag mit einer Summe. **Danach erst die MBID, und nur innerhalb der
+  Namensgruppe:** sie ist die stabile Identität dieser Gruppe und führt weitere
+  Namensgruppen mit derselben Identität zusammen; sie darf eine Namensgruppe
+  aber **nie spalten**, denn MBIDs sind dünn besetzt und hängen typischerweise
+  an genau einer Schreibweise („Sigur Rós" mit, „Sigur Ros" ohne). Tragen
+  mehrere MBIDs eine Namensgruppe, gewinnt die meistgespielte, bei Gleichstand
+  die alphabetisch erste — der Schlüssel hängt nie an der Zeilenreihenfolge.
+  `tracks.artist_mbid` beschreibt die rohe `artist`-Spalte: nennt der
+  Album-Artist der Zeile einen anderen Act, gilt die MBID dort **nicht**, sonst
+  zöge ein Gastbeitrag zwei fremde Bands in eine Zeile, einen „Play" und eine
+  Tag-Editor-Einladung. Weil Zeitraum und Gesamtkatalog verschiedene
+  Grundgesamtheiten sind, dürfen ihre Auflösungen abweichen: findet eine
+  Trackauswahl zum Schlüssel nichts, fällt sie auf die Namensgruppe zurück, und
+  ein leeres Ergebnis wird protokolliert, nie stillschweigend verschluckt.
+  Der Schlüssel existiert nur zur Laufzeit: keine gespeicherte Spalte, und die
+  Ansicht schreibt **niemals** Tags zurück — Statistik ist lesend.
+  Angezeigt wird stets eine echte Original-Schreibweise
+  der Gruppe (die häufigste; bei Gleichstand die zuletzt gespielte, dann
+  alphabetisch), nie die normalisierte Form. **Geraten wird nie:**
+  zusammengefasst wird ausschließlich, was nach Normalisierung exakt gleich ist
+  — kein Fuzzy-Matching, keine Levenshtein-Distanz, kein Präfix-Merge, also
+  bleibt „Lorna Shore Band" von „Lorna Shore" getrennt. Fasst eine Gruppe
+  mindestens zwei Schreibweisen zusammen, weist ein dezenter Hinweis am
+  Listeneintrag darauf hin und führt in den Mehrfach-Tag-Editor der betroffenen
+  Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
+  Schreibvorgang.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
