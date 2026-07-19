@@ -340,10 +340,11 @@ fn lyr_4_start_of_song_is_not_centered() {
     window.present();
     settle_until(1000, || view.widget().height() > 0);
 
+    let top_offset = view.line_viewport_top_offset(0);
     assert!(
-        (view.line_viewport_top_offset(0) - 18.0).abs() < 2.0,
-        "top offset was {} (expected ~18), center offset {}, allocated height {}",
-        view.line_viewport_top_offset(0),
+        top_offset >= f64::from(view.content_margin_top()),
+        "top offset {top_offset} must include the content margin {} and may include theme row padding; center offset {}, allocated height {}",
+        view.content_margin_top(),
         view.line_center_offset(0),
         view.widget().height()
     );

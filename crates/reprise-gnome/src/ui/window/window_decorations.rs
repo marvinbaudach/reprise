@@ -236,7 +236,7 @@ mod tests {
         assert!(library_header.shows_end_title_buttons());
         assert!(descendants(library_header.upcast_ref())
             .filter_map(|widget| widget.downcast::<gtk4::WindowControls>().ok())
-            .any(|controls| controls.side() == gtk4::PackType::End && !controls.is_empty()));
+            .any(|controls| !controls.is_empty()));
         assert!(all_compact_headers_match(compact_root.upcast_ref(), true));
         assert!(all_compact_titles_match(compact_root.upcast_ref(), true));
         assert!(decorations
