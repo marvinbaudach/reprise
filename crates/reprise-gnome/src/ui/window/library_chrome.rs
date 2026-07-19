@@ -83,6 +83,12 @@ pub(in crate::ui) fn search_toggle_active(search_mode: bool, query: &str) -> boo
     search_mode || !query.trim().is_empty()
 }
 
+fn update_preserved_query(search_mode: bool, query: &str, preserved_query: &mut String) {
+    if search_mode {
+        *preserved_query = query.to_string();
+    }
+}
+
 fn wire_search_toggle(
     toggle: &gtk4::ToggleButton,
     search_bar: &gtk4::SearchBar,
@@ -131,9 +137,7 @@ fn wire_search_toggle(
             return;
         };
         let query = entry.text();
-        if bar.is_search_mode() && !query.is_empty() {
-            *stash.borrow_mut() = query.to_string();
-        }
+        update_preserved_query(bar.is_search_mode(), &query, &mut stash.borrow_mut());
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &query));
     });
 }
@@ -400,11 +404,48 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_4_explicit_clear_stays_empty_when_the_bar_collapses() {
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let entry = gtk4::SearchEntry::new();
+        let chrome = build(&header, &entry, &window);
+        chrome.search_bar.set_search_mode(true);
+        entry.set_text("nomatch");
+
+        entry.set_text("");
+        chrome.search_toggle.emit_clicked();
+
+        assert!(!chrome.search_bar.is_search_mode());
+        assert_eq!(entry.text(), "");
+        assert!(!chrome.search_toggle.is_active());
+    }
+
+    #[test]
     fn search_toggle_projects_open_mode_or_non_empty_query() {
         assert!(!search_toggle_active(false, ""));
         assert!(search_toggle_active(true, ""));
         assert!(search_toggle_active(false, "falling"));
         assert!(!search_toggle_active(false, "   "));
+    }
+
+    #[test]
+    fn search_4_explicit_clear_discards_the_preserved_query() {
+        let mut preserved_query = "nomatch".to_string();
+
+        update_preserved_query(true, "", &mut preserved_query);
+
+        assert_eq!(preserved_query, "");
+    }
+
+    #[test]
+    fn search_6_collapse_clear_keeps_the_preserved_query() {
+        let mut preserved_query = "falling".to_string();
+
+        update_preserved_query(false, "", &mut preserved_query);
+
+        assert_eq!(preserved_query, "falling");
     }
 
     #[test]
