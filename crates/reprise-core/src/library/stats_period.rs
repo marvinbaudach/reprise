@@ -48,10 +48,11 @@ impl StatsPeriod {
         let now_exclusive = now_unix.saturating_add(1);
         let (start_unix, end_unix, force_day, open) = match self {
             Self::YearToDate(year) => {
-                let Some(start) = local_midnight(tz, date(year, 1, 1)) else {
+                let Some(start) = january_first(tz, year) else {
                     return empty_range();
                 };
-                let Some(year_end) = local_midnight(tz, date(year + 1, 1, 1)) else {
+                let Some(year_end) = year.checked_add(1).and_then(|next| january_first(tz, next))
+                else {
                     return empty_range();
                 };
                 if now.year() < year {
@@ -63,10 +64,10 @@ impl StatsPeriod {
                 }
             }
             Self::Year(year) => {
-                let Some(start) = local_midnight(tz, date(year, 1, 1)) else {
+                let Some(start) = january_first(tz, year) else {
                     return empty_range();
                 };
-                let Some(end) = local_midnight(tz, date(year + 1, 1, 1)) else {
+                let Some(end) = year.checked_add(1).and_then(|next| january_first(tz, next)) else {
                     return empty_range();
                 };
                 (start, end, false, false)
@@ -112,16 +113,24 @@ impl StatsPeriod {
     }
 
     /// Dropdown contents in their fixed editorial display order.
+    pub fn available_periods(now_year: i32) -> Vec<StatsPeriod> {
+        vec![
+            Self::YearToDate(now_year),
+            Self::Year(now_year.saturating_sub(1)),
+            Self::AllTime,
+            Self::Last30Days,
+        ]
+    }
+
+    /// TODO(gtk): delete once `ui::stats::stats_view` calls
+    /// [`StatsPeriod::available_periods`]. The list is a fixed constant — it
+    /// reads no connection and cannot fail, so the caller's error branch is
+    /// dead code. Kept only so this crate's change does not break the GUI.
     pub fn available(
         _conn: &Connection,
         now_year: i32,
     ) -> Result<Vec<StatsPeriod>, rusqlite::Error> {
-        Ok(vec![
-            Self::YearToDate(now_year),
-            Self::Year(now_year - 1),
-            Self::AllTime,
-            Self::Last30Days,
-        ])
+        Ok(Self::available_periods(now_year))
     }
 
     pub fn label(self) -> String {
@@ -179,8 +188,11 @@ fn empty_range() -> PeriodRange {
     }
 }
 
-fn date(year: i32, month: u32, day: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(year, month, day).expect("fixed calendar date is valid")
+/// Local midnight of January 1st, or `None` for a year chrono has no calendar
+/// for. `resolve` is public, so the year is untrusted input — this module never
+/// panics on it.
+fn january_first<Tz: TimeZone>(tz: &Tz, year: i32) -> Option<i64> {
+    local_midnight(tz, NaiveDate::from_ymd_opt(year, 1, 1)?)
 }
 
 fn local_midnight<Tz: TimeZone>(tz: &Tz, date: NaiveDate) -> Option<i64> {
@@ -211,7 +223,12 @@ fn build_buckets<Tz: TimeZone>(
         return Vec::new();
     };
     if granularity == Granularity::Month {
-        cursor_date = date(cursor_date.year(), cursor_date.month(), 1);
+        let Some(first_of_month) =
+            NaiveDate::from_ymd_opt(cursor_date.year(), cursor_date.month(), 1)
+        else {
+            return Vec::new();
+        };
+        cursor_date = first_of_month;
     }
 
     let mut buckets = Vec::new();
@@ -228,9 +245,15 @@ fn build_buckets<Tz: TimeZone>(
             ),
             Granularity::Month => {
                 let next = if cursor_date.month() == 12 {
-                    date(cursor_date.year() + 1, 1, 1)
+                    cursor_date
+                        .year()
+                        .checked_add(1)
+                        .and_then(|year| NaiveDate::from_ymd_opt(year, 1, 1))
                 } else {
-                    date(cursor_date.year(), cursor_date.month() + 1, 1)
+                    NaiveDate::from_ymd_opt(cursor_date.year(), cursor_date.month() + 1, 1)
+                };
+                let Some(next) = next else {
+                    break;
                 };
                 (next, cursor_date.format("%b").to_string())
             }
