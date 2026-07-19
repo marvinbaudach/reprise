@@ -37,7 +37,17 @@ for command in cargo dbus-run-session xvfb-run jq mktemp; do
 done
 
 scratch_root=$(mktemp -d /tmp/reprise-glass-cost.XXXXXX)
-trap 'rm -rf "$scratch_root"' EXIT
+cleanup_scratch() {
+  local mount
+  for mount in "$scratch_root"/*/runtime/gvfs "$scratch_root"/*/runtime/doc; do
+    if [[ -d $mount ]] && command -v mountpoint >/dev/null \
+      && command -v fusermount3 >/dev/null && mountpoint -q "$mount"; then
+      fusermount3 -u "$mount" >/dev/null 2>&1 || true
+    fi
+  done
+  rm -rf "$scratch_root" 2>/dev/null || true
+}
+trap cleanup_scratch EXIT
 mkdir -p "$output_dir"
 
 env XDG_DATA_HOME="$scratch_root/glow-data" XDG_CACHE_HOME="$scratch_root/glow-cache" \
@@ -49,16 +59,18 @@ cargo build --quiet --release -p reprise-core --example scalability_baseline
 run_mode() {
   local mode=$1
   local profile="$scratch_root/$mode"
-  mkdir -p "$profile/data/reprise" "$profile/cache"
+  mkdir -p "$profile/data/reprise" "$profile/cache" "$profile/runtime"
+  chmod 700 "$profile/runtime"
   target/release/examples/scalability_baseline \
     --db "$profile/data/reprise/reprise.db" --tracks 10000 --iterations 1 \
     >"$output_dir/$mode-seed.json"
-  dbus-run-session -- xvfb-run -a env \
+  XDG_RUNTIME_DIR="$profile/runtime" dbus-run-session -- xvfb-run -a env \
     XDG_DATA_HOME="$profile/data" XDG_CACHE_HOME="$profile/cache" \
+    GIO_USE_VFS=local GIO_USE_VOLUME_MONITOR=unix GTK_USE_PORTAL=0 \
     GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
     GSK_RENDERER=gl REPRISE_GLASS_PERF_MODE="$mode" \
     REPRISE_GLASS_PERF_REPORT="$output_dir/$mode.json" \
-    REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=5 \
+    REPRISE_SMOKE_QUIT=1 REPRISE_SMOKE_QUIT_DELAY_SECS=15 \
     target/release/reprise >"$output_dir/$mode.log" 2>&1
   if [[ ! -s $output_dir/$mode.json ]]; then
     echo "$mode run did not produce a frame report" >&2

@@ -1,5 +1,7 @@
 //! Backdrop renderer for one clipped chrome zone.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -21,6 +23,8 @@ mod imp {
         pub paintable: RefCell<Option<gtk4::WidgetPaintable>>,
         pub source: glib::WeakRef<gtk4::Widget>,
         pub on_allocate: RefCell<Option<AllocateCallback>>,
+        #[cfg(test)]
+        pub snapshot_count: Cell<u32>,
     }
 
     #[glib::object_subclass]
@@ -42,6 +46,8 @@ mod imp {
         }
 
         fn snapshot(&self, snapshot: &gtk4::Snapshot) {
+            #[cfg(test)]
+            self.snapshot_count.set(self.snapshot_count.get() + 1);
             let widget = self.obj();
             let width = widget.width();
             let height = widget.height();
@@ -126,8 +132,21 @@ impl GlassBackdrop {
     pub(crate) fn new(source: &impl IsA<gtk4::Widget>) -> Self {
         let backdrop: Self = glib::Object::new();
         let source = source.clone().upcast::<gtk4::Widget>();
+        let paintable = gtk4::WidgetPaintable::new(Some(&source));
+        let backdrop_weak = backdrop.downgrade();
+        paintable.connect_invalidate_contents(move |_| {
+            if let Some(backdrop) = backdrop_weak.upgrade() {
+                backdrop.queue_draw();
+            }
+        });
+        let backdrop_weak = backdrop.downgrade();
+        paintable.connect_invalidate_size(move |_| {
+            if let Some(backdrop) = backdrop_weak.upgrade() {
+                backdrop.queue_draw();
+            }
+        });
         backdrop.imp().source.set(Some(&source));
-        *backdrop.imp().paintable.borrow_mut() = Some(gtk4::WidgetPaintable::new(Some(&source)));
+        *backdrop.imp().paintable.borrow_mut() = Some(paintable);
         backdrop.set_can_target(false);
         backdrop.set_hexpand(true);
         backdrop.set_vexpand(true);
@@ -136,5 +155,10 @@ impl GlassBackdrop {
 
     pub(crate) fn set_on_allocate(&self, callback: Rc<dyn Fn(i32, i32)>) {
         *self.imp().on_allocate.borrow_mut() = Some(callback);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn snapshot_count(&self) -> u32 {
+        self.imp().snapshot_count.get()
     }
 }

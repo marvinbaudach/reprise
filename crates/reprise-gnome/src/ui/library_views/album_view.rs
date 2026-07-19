@@ -223,7 +223,11 @@ impl AlbumView {
             .title("")
             .build();
 
-        let stack = gtk4::Stack::new();
+        // Keep the grid page filling the Library viewport even after its
+        // native GridView is wrapped by the Glass scroll-range adapter. The
+        // surrounding Overlay cannot reliably infer expansion through a
+        // hidden Stack page during the Tracks → Albums transition.
+        let stack = gtk4::Stack::builder().vexpand(true).build();
         stack.add_named(&scrolled, Some("grid"));
         stack.add_named(&empty, Some("empty"));
         stack.add_named(&search_empty, Some("search-empty"));
@@ -258,6 +262,10 @@ impl AlbumView {
         content.append(&stack);
 
         let ambient = gtk4::Overlay::new();
+        // `content` is an overlay child above the glow, so its descendants do
+        // not make the Overlay request extra height from the surrounding
+        // vertical Box. Keep the full Album layer explicitly expandable.
+        ambient.set_vexpand(true);
         ambient.set_child(Some(glow.picture()));
         ambient.add_overlay(&content);
         ambient.set_measure_overlay(&content, true);

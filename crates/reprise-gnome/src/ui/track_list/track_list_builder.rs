@@ -45,13 +45,11 @@ pub(in crate::ui) fn build(
         .build();
     super::track_list_header_style::mark(&column_view);
 
-    const PLAYER_BAR_HEIGHT: i32 = 86;
     let scrolled = gtk4::ScrolledWindow::builder()
         .child(&column_view)
         .vexpand(true)
         .hexpand(true)
         .build();
-    scrolled.set_margin_bottom(PLAYER_BAR_HEIGHT);
 
     let empty_page = build_status_page();
     let empty_page_actions = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
@@ -78,6 +76,7 @@ pub(in crate::ui) fn build(
 
     let browse_bar = BrowseBar::new(conn.clone());
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    crate::ui::glass::mark_top_inset_anchor(&root);
     root.append(browse_bar.widget());
     root.append(&stack);
 
@@ -240,5 +239,51 @@ pub(in crate::ui) fn build(
         shared,
         root,
         column_registry,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use rusqlite::Connection;
+
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn track_surface_has_one_measured_glass_reserve_per_edge() {
+        gtk4::init().unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let track_list = TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let inset = track_list
+            .shared
+            .column_view
+            .parent()
+            .and_downcast::<crate::ui::glass::ScrollInset>()
+            .expect("track columns must stay directly virtualized through the glass adapter");
+        let scrolled = inset
+            .parent()
+            .and_downcast::<gtk4::ScrolledWindow>()
+            .expect("the glass adapter must remain the scrolled window's direct child");
+
+        assert!(
+            track_list
+                .widget()
+                .has_css_class("reprise-glass-top-inset-anchor"),
+            "the fixed browse controls must be placed below the measured top glass zone"
+        );
+        assert_eq!(
+            scrolled.margin_bottom(),
+            0,
+            "the global measured inset is the only player-bar reserve"
+        );
     }
 }
