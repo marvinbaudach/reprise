@@ -230,35 +230,6 @@ fn npp_4_tab_persists_in_session() {
 }
 
 #[test]
-fn queue_icon_route_targets_the_existing_up_next_page() {
-    let (visible, selected) = up_next_route_state();
-
-    assert!(visible);
-    assert_eq!(selected, PanelTab::UpNext);
-    assert_eq!(selected.page_name(), UP_NEXT_PAGE);
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn que_1_bar_icon_opens_same_list() {
-    gtk4::init().unwrap();
-    let (window, panel) = test_panel("org.reprise.Reprise.QueuePanelRouteTest");
-    panel.retain_for_window(&window);
-    panel.widgets.tab_buttons[1].set_active(true);
-    panel.widgets.column.set_visible(false);
-
-    panel.show_up_next();
-
-    assert!(panel.widgets.column.is_visible());
-    assert!(panel.widgets.tab_buttons[0].is_active());
-    assert_eq!(panel.widgets.session.selected.get(), PanelTab::UpNext);
-    assert_eq!(
-        panel.widgets.tab_stack.visible_child_name().as_deref(),
-        Some(UP_NEXT_PAGE)
-    );
-}
-
-#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn loaded_and_idle_tracks_render_from_the_player_context() {
     gtk4::init().unwrap();

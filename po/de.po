@@ -1731,10 +1731,6 @@ msgstr "Vorherigen Titel wiedergeben"
 msgid "Play next track"
 msgstr "Nächsten Titel wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:18
-msgid "Show queue"
-msgstr "Warteschlange anzeigen"
-
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:21
 msgid "Restore full window (Ctrl+M)"
 msgstr "Vollständiges Fenster wiederherstellen (Strg+M)"

@@ -1,5 +1,5 @@
 //! The full-width Library player bar: track title/artist, transport controls,
-//! a click-to-seek waveform, playback modes, inline volume, and queue button.
+//! a click-to-seek waveform, playback modes, and inline volume.
 //!
 //! `PlayerBar` owns every widget it displays; callers (see
 //! `player_controller.rs`) only interact with it through the `set_*`/
@@ -93,8 +93,6 @@ pub struct PlayerBar {
     volume_scale: gtk4::Scale,
     /// Volume icon button — click toggles mute.
     volume_icon: gtk4::Button,
-    /// Button that opens the shared queue's Up Next panel view.
-    queue_button: gtk4::Button,
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
     duration_ms: Rc<Cell<i64>>,
@@ -154,7 +152,6 @@ impl PlayerBar {
             waveform,
             volume_icon,
             volume_scale,
-            queue_button,
             ..
         } = player_bar_layout::build();
 
@@ -217,7 +214,6 @@ impl PlayerBar {
             waveform,
             volume_scale,
             volume_icon,
-            queue_button,
             duration_ms: Rc::new(Cell::new(0)),
             playback_state: Cell::new(PlaybackState::Stopped),
             queue_has_tracks: Cell::new(false),
@@ -560,12 +556,6 @@ impl PlayerBar {
         self.volume_scale.set_value(clamped);
         self.update_volume_icon(clamped);
         self.updating_volume.set(false);
-    }
-
-    /// Wires the queue button; `f` is called on every click so the window can
-    /// reveal its shared Up Next panel view.
-    pub fn connect_queue_clicked<F: Fn() + 'static>(&self, f: F) {
-        self.queue_button.connect_clicked(move |_| f());
     }
 
     /// Wires the volume icon as a mute toggle. When muted, the scale is driven

@@ -33,7 +33,6 @@ const VOLUME_SCALE_CSS_CLASS: &str = "player-bar-volume";
 pub(in crate::ui) const KNOB_VISIBLE_CSS_CLASS: &str = "knob-visible";
 
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
-const ICON_QUEUE: &str = "view-list-symbolic";
 
 pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) root: gtk4::Box,
@@ -55,7 +54,6 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
-    pub(in crate::ui) queue_button: gtk4::Button,
 }
 
 pub(in crate::ui) fn build() -> PlayerBarWidgets {
@@ -155,7 +153,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     center_zone.set_size_request(CENTER_ZONE_MAX_WIDTH, -1);
     center_zone.set_valign(gtk4::Align::Center);
 
-    // — End zone (volume icon + slider + queue button) —
+    // — End zone (volume icon + slider) —
     let volume_scale = gtk4::Scale::with_range(
         gtk4::Orientation::Horizontal,
         VOLUME_MIN,
@@ -204,15 +202,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     volume_icon.set_valign(gtk4::Align::Center);
     volume_icon.add_css_class("flat");
 
-    let queue_button = gtk4::Button::from_icon_name(ICON_QUEUE);
-    queue_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_QUEUE)));
-    queue_button.set_valign(gtk4::Align::Center);
-    queue_button.add_css_class("flat");
-
     let end_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     end_zone.append(&volume_icon);
     end_zone.append(&volume_scale);
-    end_zone.append(&queue_button);
     end_zone.set_valign(gtk4::Align::Center);
     end_zone.set_halign(gtk4::Align::End);
     end_zone.set_width_request(END_ZONE_WIDTH);
@@ -249,7 +241,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         waveform,
         volume_icon,
         volume_scale,
-        queue_button,
     }
 }
 
@@ -348,6 +339,38 @@ mod tests {
         main_loop.run();
     }
 
+    fn descendant_buttons(root: &gtk4::Widget) -> Vec<gtk4::Button> {
+        let mut buttons = Vec::new();
+        let mut pending = vec![root.clone()];
+        while let Some(widget) = pending.pop() {
+            if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
+                buttons.push(button);
+            }
+            let mut child = widget.first_child();
+            while let Some(current) = child {
+                child = current.next_sibling();
+                pending.push(current);
+            }
+        }
+        buttons
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn que_1_player_bar_has_no_queue_button() {
+        gtk4::init().unwrap();
+        let layout = build();
+        let queue_buttons = descendant_buttons(layout.root.upcast_ref())
+            .into_iter()
+            .filter(|button| button.icon_name().as_deref() == Some("view-list-symbolic"))
+            .count();
+
+        assert_eq!(
+            queue_buttons, 0,
+            "the player bar still renders a queue button"
+        );
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn library_bar_has_three_zones_via_centerbox() {
@@ -382,10 +405,9 @@ mod tests {
         assert!(layout.position_label.is_ancestor(&layout.root));
         assert!(layout.duration_label.is_ancestor(&layout.root));
         assert!(layout.waveform.widget().is_ancestor(&layout.root));
-        // End zone has volume and queue controls.
+        // End zone has volume controls.
         assert!(layout.volume_scale.is_ancestor(&layout.root));
         assert!(layout.volume_icon.is_ancestor(&layout.root));
-        assert!(layout.queue_button.is_ancestor(&layout.root));
         window.close();
     }
 

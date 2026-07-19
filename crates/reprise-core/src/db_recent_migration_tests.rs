@@ -647,7 +647,7 @@ fn migrate_v14_to_v15_adds_disc_number_without_losing_tracks() {
 /// `no such index: idx_tracks_present_title_nocase`.
 #[test]
 fn migrate_repairs_a_foreign_v13_without_the_title_index() {
-    let mut conn = open_v9_database();
+    let conn = open_v9_database();
     conn.execute_batch(SCHEMA_V10).unwrap();
     conn.pragma_update(None, "user_version", 10).unwrap();
     conn.execute_batch(SCHEMA_V11).unwrap();
