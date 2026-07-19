@@ -6,6 +6,16 @@
 
 pub use crate::sound_profile::{AnalysisVersions, AudioEvidence, SourceFingerprint, TempoEstimate};
 
+#[path = "audio_analysis_accumulator.rs"]
+mod accumulator;
+pub use accumulator::{
+    project_profile, AnalysisOutput, AudioEvidenceAccumulator, AudioExtractionError,
+};
+
 /// Bump only when decoding or evidence extraction changes and cached audio
 /// must be read again.
 pub const CURRENT_EXTRACTOR_VERSION: u32 = 1;
+
+#[cfg(test)]
+#[path = "audio_analysis_tests.rs"]
+mod tests;
