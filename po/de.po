@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-19 09:50+0200\n"
+"POT-Creation-Date: 2026-07-19 10:08+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -880,7 +880,8 @@ msgstr "Keine geeigneten Titel"
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:11
 #, rust-format
 msgid "Analysis is off · {analyzed} of {total} analyzed · {failed} failed"
-msgstr "Analyse ist aus · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
+msgstr ""
+"Analyse ist aus · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:13
 #, rust-format
@@ -890,7 +891,8 @@ msgstr "Bereit · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:15
 #, rust-format
 msgid "Analyzing · {analyzed} of {total} analyzed · {failed} failed"
-msgstr "Analyse läuft · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
+msgstr ""
+"Analyse läuft · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:17
 #, rust-format
@@ -900,17 +902,20 @@ msgstr "Pausiert · {analyzed} von {total} analysiert · {failed} fehlgeschlagen
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:19
 #, rust-format
 msgid "Cancelled · {analyzed} of {total} analyzed · {failed} failed"
-msgstr "Abgebrochen · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
+msgstr ""
+"Abgebrochen · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:21
 #, rust-format
 msgid "Failed · {analyzed} of {total} analyzed · {failed} failed"
-msgstr "Fehlgeschlagen · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
+msgstr ""
+"Fehlgeschlagen · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:23
 #, rust-format
 msgid "Complete · {analyzed} of {total} analyzed · {failed} failed"
-msgstr "Vollständig · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
+msgstr ""
+"Vollständig · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
 
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:24
 msgid "Pause analysis"
@@ -947,6 +952,86 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:33
 msgid "Reanalyze"
 msgstr "Neu analysieren"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:34
+msgid "Play a track to see its Audio Character"
+msgstr "Einen Titel abspielen, um sein Klangprofil zu sehen"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:36
+msgid "The loaded track's local audio profile will appear here."
+msgstr "Hier erscheint das lokale Audioprofil des geladenen Titels."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:37
+msgid "Local audio analysis is disabled"
+msgstr "Die lokale Audioanalyse ist deaktiviert"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:39
+msgid "Enable Analyze audio locally in Library Settings."
+msgstr "„Audio lokal analysieren“ in den Sammlungseinstellungen aktivieren."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:40
+msgid "Audio Character is pending"
+msgstr "Klangprofil steht aus"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:42
+msgid "This track is waiting for local analysis."
+msgstr "Dieser Titel wartet auf die lokale Analyse."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:43
+msgid "Audio Character analysis failed"
+msgstr "Klangprofilanalyse fehlgeschlagen"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:45
+msgid "Retry failed tracks from Library Settings."
+msgstr "Fehlgeschlagene Titel in den Sammlungseinstellungen erneut versuchen."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:46
+msgid "Audio Character is stale"
+msgstr "Klangprofil ist veraltet"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:48
+msgid "The local profile will be updated in the background."
+msgstr "Das lokale Profil wird im Hintergrund aktualisiert."
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:49
+msgid "Intensity"
+msgstr "Intensität"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:50
+msgid "Brightness"
+msgstr "Helligkeit"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:51
+msgid "Dynamicity"
+msgstr "Dynamik"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:52
+msgid "Rhythmicity"
+msgstr "Rhythmik"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:53
+#, rust-format
+msgid "Confidence {confidence}%"
+msgstr "Sicherheit {confidence}%"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:55
+#, rust-format
+msgid "{dimension}, {value}%, confidence {confidence}%"
+msgstr "{dimension}, {value} %, Sicherheit {confidence} %"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:56
+msgid "Tempo"
+msgstr "Tempo"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:57
+#, rust-format
+msgid "{bpm} BPM"
+msgstr "{bpm} BPM"
+
+#: crates/reprise-gnome/src/ui/strings_audio_analysis.rs:59
+#, rust-format
+msgid "Tempo, {bpm} BPM, confidence {confidence}%"
+msgstr "Tempo, {bpm} BPM, Sicherheit {confidence} %"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:7
 msgid "Recently added"

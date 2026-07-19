@@ -425,6 +425,7 @@ pub fn build(
         player.as_ref(),
         &artist_news,
         &artist_portrait,
+        audio_analysis.as_ref(),
     );
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;

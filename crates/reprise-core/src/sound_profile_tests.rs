@@ -30,7 +30,7 @@ fn ready_analysis() -> ReadyAnalysis {
 }
 
 #[test]
-fn normalized_value_rejects_non_finite_and_out_of_range_inputs() {
+fn ac_2_normalized_value_rejects_non_finite_and_out_of_range_inputs() {
     assert_eq!(Normalized::new(0.0).unwrap().get(), 0.0);
     assert_eq!(Normalized::new(1.0).unwrap().get(), 1.0);
     for invalid in [-0.01, 1.01, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
