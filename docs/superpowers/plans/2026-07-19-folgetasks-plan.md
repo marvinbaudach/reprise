@@ -1,9 +1,30 @@
 # Folgeaufgaben — Planung (2026-07-19)
 
-Stand: alles aus der Nacht liegt auf `main` (`3388046d` + NR-8 `63ddb8e6`),
-Arbeitsbaum sauber, nicht gepusht. 105 aktive UX-Regeln.
+> **P0 ist erledigt und dieser Abschnitt überholt (Stand 2026-07-19, 14:50).**
+> Gemessen auf `a296b655`: **210/210 Display-Tests grün.** Von den neun unten
+> genannten waren sieben zwischenzeitlich grün geworden, und die aktuelle
+> Messung fand zehn andere Rote, die hier nicht stehen. Die Liste unten ist in
+> **beide Richtungen** veraltet — nicht danach arbeiten.
+>
+> Belegte Diagnose und Ergebnis:
+> [`2026-07-19-display-tests-diagnose.md`](2026-07-19-display-tests-diagnose.md).
+> Kurz: **ein** echter Produktionsdefekt (Glass-Insets zielten auf den
+> auto-eingefügten `GtkViewport` statt auf den Inhalt — Sidebar beschnitten,
+> „My Stats" bei aufgeklappter Suche unerreichbar), der Rest Testfehler.
+> Dazu drei Folgefixes: Escape kollabierte die Suchleiste nie (Ctrl+F sperrte
+> einen im Suchfeld ein), das Compact-Zeilentoken band nie, und der
+> Insets-Applier verlor seine Polsterung bei einem Kindtausch.
+>
+> **P1 und P2 unten sind weiterhin offen** und wurden nicht angefasst.
+>
+> Die Lehre aus dem Fail-Fast-Runner (letzter Absatz von P0) ist umgesetzt:
+> `RELEASING.md` trägt jetzt eine ausführbare Rerun-Rezeptur, und **beide**
+> Runner sind fail-closed — der Rust-Display-Runner und, seit `ffc48265`, auch
+> der cua-Keyboard-Runner. Letzterer starb bis dahin bei der ersten roten
+> Oberfläche, wodurch acht von zwölf Szenarien nie ein einziges Mal gelaufen
+> waren.
 
-## Der bestimmende Befund
+## Der bestimmende Befund (historisch, überholt)
 
 `4703ee79` („report every display test instead of failing fast") hat sichtbar
 gemacht, was vorher hinter dem Abbruch beim ersten Fehler lag: **157 von 166
@@ -91,10 +112,15 @@ Sicherheit erzeugt.
 
 ## Offene Entscheidungen
 
-- **Push von `main`** — bisher bewusst nicht gepusht.
-- **Vier ungemergte Branches**: `feat/album-view-improvements`,
-  `feat/minor-improvements`, `feat/player-bar-blur`, `feat/tag-rework`. Nicht
-  aus dieser Sitzung; Zustand unklar.
+- ~~**Push von `main`**~~ — erledigt 2026-07-19. `main` steht auf `a296b655`,
+  lokal und `origin` deckungsgleich (gegen `ls-remote` geprüft, nicht nur gegen
+  den Tracking-Ref).
+- **Vier ungemergte Branches**: ~~`feat/album-view-improvements`~~ (erledigt:
+  die Feature-Arbeit lag längst über `9bf482b1` auf `main`, der Worktree war
+  ein veralteter Zwilling; nur Doku und Automation blieben übrig und sind
+  gemergt), `feat/minor-improvements`, `feat/player-bar-blur`,
+  `feat/tag-rework`. Die drei übrigen sind weiter unklar — bei
+  `feat/tag-rework` lief am 19.07. noch ein Codex-Prozess.
 - **Parallele Arbeit an `main`**: Während des letzten Codex-Laufs kamen fremde
   Commits (`fix/grid-5-focus`, MainContext-Serialisierung, Fail-Fast-Fix) auf
   main und haben den Lauf zum Abbruch gebracht. Wenn mehrere Stränge
