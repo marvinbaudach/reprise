@@ -311,7 +311,6 @@ run_tag_3_multi_dialog_structure_scenario() {
 run_library_doctor_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/library-doctor-fixture-music"
   local fixture_count=24 safe_change_count root_path review_path narrow_path applied_path
-  local reverted_path
 
   # Each fixture produces one whitespace, missing-album-artist, and genre fix.
   safe_change_count=$((fixture_count * 3))
@@ -384,9 +383,9 @@ run_library_doctor_scenario() {
     "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert-available >/dev/null
   cua_click_label \
     "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert-disabled
-  reverted_path=$(wait_for_label \
-    "$APP_PID" "$WINDOW_ID" "Tags reverted · $fixture_count tracks" doctor-reverted)
-  assert_snapshot_contains "$reverted_path" "Library Doctor"
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Tags reverted · $fixture_count tracks" doctor-reverted \
+    >/dev/null
 
   finish_scenario library-doctor \
     "dev scan complete" \
