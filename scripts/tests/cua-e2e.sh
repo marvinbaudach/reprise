@@ -40,7 +40,7 @@ for pattern in \
   'run_library_doctor_scenario' \
   'cua_activate_main_menu_item' \
   'Enable Library Doctor' \
-  'Review Safe Fixes' \
+  'safe_change_count' \
   'Revert Last Cleanup'
 do
   if ! rg --quiet "$pattern" "$runner"; then
@@ -66,6 +66,14 @@ if ! rg --quiet 'CUA_E2E_FOCUS_STATE="\$focus_state"' "$runner"; then
 fi
 if rg --quiet 'wait_for_label .*"Library Doctor" .*menu' "$runner"; then
   echo "$runner must not expect detached popup labels in the main-window snapshot" >&2
+  exit 1
+fi
+if ! rg --quiet --fixed-strings 'safe_change_count=$((fixture_count * 3))' "$runner"; then
+  echo "$runner must derive the Library Doctor safe-review label from its fixture" >&2
+  exit 1
+fi
+if rg --quiet --fixed-strings '"Review Safe Fixes"' "$runner"; then
+  echo "$runner must not wait for the obsolete static Library Doctor review label" >&2
   exit 1
 fi
 for scenario_case in \

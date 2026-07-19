@@ -175,6 +175,54 @@ domain model until their contracts are proven. The existing module registry,
 playback/media/waveform traits, and dependency-purity gate provide the seams;
 they do not pretend the roadmap is already implemented.
 
+## Architecture
+
+Reprise keeps its reusable music engine separate from native UI and
+Linux-specific integration. The frontend consumes narrow contracts, the
+platform crate implements them, and an automated architecture gate keeps
+`reprise-core` free of GTK, libadwaita, GStreamer, and zbus dependencies.
+
+![Reprise architecture: the native GNOME frontend and future frontends reuse a portable core, while a separate Linux adapter provides GStreamer, MPRIS, MTP, and host integration.](docs/assets/reprise-architecture.svg)
+
+## Performance
+
+The `feat/performance-optimizations` work uses generated 10,000- and
+100,000-track profiles, release builds, and stable comparison artifacts. Its
+first benchmark-driven database change replaced a full title scan and
+temporary sort with a partial `NOCASE` index. On the same host, the final
+200-row title window at 100,000 tracks fell from 53.605 ms to 1.333 ms.
+
+![Reprise performance at 100,000 tracks: the final title window improved by 97.51 percent, playback-ID projection improved by 96.33 percent, the track-list cache stays bounded to eight SQL windows and 1,600 rows, and the index adds 9.85 percent database storage.](docs/assets/reprise-performance.svg)
+
+Timings are comparison evidence rather than portable thresholds. The hard
+budgets are the bounded cache and memory assertions; all benchmarks use
+synthetic metadata and isolated profiles, never a real music library.
+
+## Engineering highlights
+
+- **Two layers of virtualization** — `GtkColumnView` virtualizes widgets while
+  a custom `GListModel` fetches 200-row SQL windows on demand, retains at most
+  eight windows, and can invalidate one changed row without rebuilding the
+  complete result set.
+- **Portable behavior, native integrations** — queue and playback semantics,
+  media state, and waveform extraction are core contracts. Linux supplies
+  GStreamer, MPRIS/D-Bus, waveform, MTP, and Trash implementations without
+  leaking those dependencies into the engine.
+- **Library identity survives file moves** — the scanner first matches stable
+  device/inode identity, then an unambiguous tag/duration/size fingerprint for
+  copy-and-delete moves. It preserves ratings, play counts, playlists, and
+  history, and refuses to guess when candidates are ambiguous.
+- **Async UI results cannot repaint the wrong row** — recycled album, artist,
+  track, and status widgets use generation tokens so late cover, portrait, or
+  worker results are discarded after their visible identity changes.
+- **Optional network features stay explicit** — artist news, ListenBrainz, and
+  Last.fm are independently module-gated and default off. Scrobbling
+  credentials use the system keyring, and failed submissions remain in
+  service-specific durable queues.
+- **Architecture and UX are executable policy** — repository gates enforce
+  core dependency purity, bounded source files, frontend coupling rules, and
+  a rule-named test for every active UX contract.
+
 ## Privacy and file safety
 
 The library database and settings stay local and Reprise contains no telemetry.

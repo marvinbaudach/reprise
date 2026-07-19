@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title description">
+  <title id="title">Reprise performance improvement at 100,000 tracks</title>
+  <desc id="description">A same-host release benchmark shows the final 200-row title window improving from 53.605 milliseconds to 1.333 milliseconds, a 97.51 percent reduction. Playback ID projection improves by 96.33 percent. The track list retains at most eight SQL windows and 1,600 rows. The partial index costs 9.85 percent more database storage.</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b111b"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="hero-card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17385d"/>
+      <stop offset="1" stop-color="#10233c"/>
+    </linearGradient>
+    <linearGradient id="after-bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#57e0bf"/>
+      <stop offset="1" stop-color="#2ec7a6"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <style>
+      .sans { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+      .eyebrow { font-size: 15px; font-weight: 700; letter-spacing: 2.4px; }
+      .title { font-size: 48px; font-weight: 750; letter-spacing: -1.2px; }
+      .subtitle { font-size: 20px; font-weight: 450; }
+      .hero-number { font-size: 74px; font-weight: 800; letter-spacing: -2px; }
+      .metric { font-size: 34px; font-weight: 750; letter-spacing: -0.6px; }
+      .card-title { font-size: 18px; font-weight: 700; }
+      .body { font-size: 17px; font-weight: 450; }
+      .small { font-size: 14px; font-weight: 600; }
+      .pill { font-size: 13px; font-weight: 700; letter-spacing: 0.8px; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="900" rx="28" fill="url(#background)"/>
+  <rect width="1440" height="900" rx="28" fill="url(#grid)"/>
+  <circle cx="1320" cy="65" r="260" fill="#3584e4" opacity="0.07"/>
+  <circle cx="75" cy="845" r="240" fill="#2ec7a6" opacity="0.055"/>
+
+  <g class="sans">
+    <g transform="translate(76 64)">
+      <rect width="48" height="48" rx="13" fill="#3584e4"/>
+      <circle cx="24" cy="24" r="15" fill="#241f31"/>
+      <circle cx="24" cy="24" r="5" fill="#ff7800"/>
+      <circle cx="24" cy="24" r="1.8" fill="#f6f5f4"/>
+      <path d="M11 20a15 15 0 0 1 23-8l-3 1 1-4 2 2A19 19 0 0 0 9 19z" fill="#f6f5f4"/>
+      <path d="M37 28a15 15 0 0 1-23 8l3-1-1 4-2-2a19 19 0 0 0 25-8z" fill="#f6f5f4"/>
+    </g>
+    <text x="142" y="84" class="eyebrow" fill="#8fbff5">REPRISE</text>
+    <text x="142" y="108" class="small" fill="#94a3b8">PERFORMANCE EVIDENCE</text>
+
+    <text x="76" y="174" class="title" fill="#f8fafc">Performance, measured.</text>
+    <text x="76" y="208" class="subtitle" fill="#aab6c8">Reproducible synthetic metadata · release build · 100,000-track profile</text>
+
+    <!-- Headline benchmark -->
+    <g filter="url(#shadow)">
+      <rect x="76" y="264" width="850" height="330" rx="22" fill="url(#hero-card)" stroke="#62a0ea" stroke-width="2"/>
+    </g>
+    <rect x="108" y="294" width="168" height="28" rx="14" fill="#57e0bf" fill-opacity="0.16" stroke="#57e0bf" stroke-opacity="0.48"/>
+    <text x="192" y="313" class="pill" text-anchor="middle" fill="#74f0d0">SAME-HOST COMPARISON</text>
+    <text x="108" y="391" class="hero-number" fill="#74f0d0">−97.51%</text>
+    <text x="108" y="430" class="card-title" fill="#f8fafc">Final 200-row title window</text>
+    <text x="108" y="459" class="body" fill="#b8c6d8">Deepest measured page in the 100,000-track library</text>
+
+    <text x="108" y="512" class="small" fill="#93a4ba">BEFORE</text>
+    <rect x="190" y="493" width="600" height="24" rx="12" fill="#7d8da3" fill-opacity="0.34"/>
+    <text x="810" y="512" class="card-title" fill="#cbd5e1">53.605 ms</text>
+
+    <text x="108" y="557" class="small" fill="#74f0d0">AFTER</text>
+    <rect x="190" y="538" width="15" height="24" rx="8" fill="url(#after-bar)"/>
+    <circle cx="205" cy="550" r="7" fill="#74f0d0"/>
+    <text x="224" y="557" class="card-title" fill="#74f0d0">1.333 ms</text>
+
+    <!-- Query plan and second benchmark -->
+    <g filter="url(#shadow)">
+      <rect x="958" y="264" width="406" height="330" rx="22" fill="#171e28" stroke="#526176" stroke-width="1.5"/>
+    </g>
+    <text x="990" y="310" class="eyebrow" fill="#8fbff5">WHY IT CHANGED</text>
+    <text x="990" y="354" class="card-title" fill="#e2e8f0">SQLite query plan</text>
+
+    <rect x="990" y="377" width="342" height="65" rx="12" fill="#0d1521"/>
+    <text x="1008" y="403" class="small" fill="#94a3b8">BEFORE</text>
+    <text x="1008" y="427" class="body mono" fill="#cbd5e1">full scan + temp sort</text>
+
+    <path d="M1161 452v27" fill="none" stroke="#57e0bf" stroke-width="2"/>
+    <path d="M1154 473l7 8 7-8" fill="none" stroke="#57e0bf" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="990" y="489" width="342" height="65" rx="12" fill="#57e0bf" fill-opacity="0.11" stroke="#57e0bf" stroke-opacity="0.36"/>
+    <text x="1008" y="515" class="small" fill="#74f0d0">AFTER</text>
+    <text x="1008" y="539" class="body mono" fill="#d2f5eb">partial NOCASE index</text>
+
+    <text x="990" y="580" class="small" fill="#94a3b8">PLAYBACK-ID PROJECTION</text>
+    <text x="1204" y="580" class="card-title" fill="#74f0d0">−96.33%</text>
+
+    <!-- Deterministic bounds and trade-off -->
+    <g filter="url(#shadow)">
+      <rect x="76" y="630" width="408" height="156" rx="20" fill="#151d2a" stroke="#35445a"/>
+      <rect x="516" y="630" width="408" height="156" rx="20" fill="#151d2a" stroke="#35445a"/>
+      <rect x="956" y="630" width="408" height="156" rx="20" fill="#151d2a" stroke="#35445a"/>
+    </g>
+
+    <text x="108" y="675" class="eyebrow" fill="#8fbff5">BOUNDED CACHE</text>
+    <text x="108" y="722" class="metric" fill="#f8fafc">8 windows</text>
+    <text x="108" y="752" class="body" fill="#aebdd0">1,600 rows retained at 10k and 100k</text>
+
+    <text x="548" y="675" class="eyebrow" fill="#8fbff5">QUEUE MEMORY</text>
+    <text x="548" y="722" class="metric" fill="#f8fafc">16.10 B / track</text>
+    <text x="548" y="752" class="body" fill="#aebdd0">100k RSS delta · median of 5 processes</text>
+
+    <text x="988" y="675" class="eyebrow" fill="#d8a35d">INDEX TRADE-OFF</text>
+    <text x="988" y="722" class="metric" fill="#f8fafc">+9.85%</text>
+    <text x="988" y="752" class="body" fill="#aebdd0">database storage for the faster title path</text>
+
+    <!-- Method footer -->
+    <g transform="translate(76 824)">
+      <circle cx="9" cy="8" r="7" fill="#57e0bf" opacity="0.18"/>
+      <path d="M5 8l3 3 6-7" fill="none" stroke="#74f0d0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="28" y="14" class="small" fill="#aebccf">Synthetic metadata only · no real library · timings are comparison evidence, not portable thresholds.</text>
+    </g>
+  </g>
+</svg>
