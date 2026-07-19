@@ -112,6 +112,69 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn glass_backdrop_repaints_when_the_live_source_changes() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().expect("GTK settings after gtk4::init");
+        let animations_before = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(true);
+
+        let blue = Rc::new(Cell::new(false));
+        let source = gtk4::DrawingArea::new();
+        source.set_hexpand(true);
+        source.set_vexpand(true);
+        let blue_for_draw = blue.clone();
+        source.set_draw_func(move |_, context, width, height| {
+            if blue_for_draw.get() {
+                context.set_source_rgb(0.0, 0.2, 1.0);
+            } else {
+                context.set_source_rgb(1.0, 0.1, 0.0);
+            }
+            context.rectangle(0.0, 0.0, f64::from(width), f64::from(height));
+            context.fill().unwrap();
+        });
+
+        let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        controls.set_height_request(80);
+        let surface = GlassSurface::new(&source, &controls, GlassEdge::Top);
+        surface.root().set_halign(gtk4::Align::Fill);
+        surface.root().set_valign(gtk4::Align::Start);
+
+        let root = gtk4::Overlay::new();
+        root.set_child(Some(&source));
+        root.add_overlay(surface.root());
+        let window = gtk4::Window::builder()
+            .default_width(400)
+            .default_height(240)
+            .child(&root)
+            .build();
+        window.present();
+        wait_for_layout_for(Duration::from_millis(100));
+
+        let material = GlassEnvironment::for_widget(surface.backdrop()).material(GlassTheme::Dark);
+        assert_eq!(
+            material.mode,
+            GlassMode::BackdropBlur,
+            "this regression needs the hardware Glass path"
+        );
+        let before = surface.backdrop().snapshot_count();
+        blue.set(true);
+        source.queue_draw();
+        wait_for_layout_for(Duration::from_millis(100));
+        let after = surface.backdrop().snapshot_count();
+
+        settings.set_gtk_enable_animations(animations_before);
+        window.close();
+        assert!(
+            after > before,
+            "live source invalidation did not schedule another Glass snapshot"
+        );
+    }
+
+    #[test]
     fn play_7a_glass_shell_overlays_content_with_exact_safe_insets() {
         let top = InsetMeasurements {
             header: 48,

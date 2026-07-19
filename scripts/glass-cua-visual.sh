@@ -33,6 +33,7 @@ session=reprise-glass-visual
 screen_resolution=1600x900x24
 binary="$repo_root/target/debug/reprise"
 seed_binary="$repo_root/target/debug/examples/scalability_baseline"
+glass_region_min_rmse=0.002
 
 required_command() {
   command -v "$1" >/dev/null || {
@@ -110,6 +111,49 @@ assert_scroll_delivered() {
     echo "CUA scroll was not delivered cleanly: $action_path" >&2
     return 1
   fi
+}
+
+assert_glass_region_changed() {
+  local before_path=$1 after_path=$2 geometry=$3 label=$4
+  local metric normalized
+
+  metric=$(magick compare -metric RMSE \
+    \( "$before_path" -crop "$geometry" +repage \) \
+    \( "$after_path" -crop "$geometry" +repage \) \
+    null: 2>&1 || true)
+  normalized=$(sed -n 's/.*(\([0-9.eE+-]*\)).*/\1/p' <<<"$metric")
+  printf '%s\t%s\n' "$label" "${normalized:-unavailable}" \
+    >>"$CUA_E2E_OUT_DIR/glass-rmse.tsv"
+  if [[ -z $normalized ]] || ! awk \
+    -v value="$normalized" \
+    -v minimum="$glass_region_min_rmse" \
+    'BEGIN { exit !(value >= minimum) }'; then
+    echo "$label glass pixels stayed unchanged: RMSE=$normalized, expected >=$glass_region_min_rmse" >&2
+    return 1
+  fi
+}
+
+verify_glass_regions() {
+  local position=$1
+  local start="$CUA_E2E_OUT_DIR/$position-albums-start.png"
+  local under_header="$CUA_E2E_OUT_DIR/$position-albums-under-header-after.png"
+  local above_end="$CUA_E2E_OUT_DIR/$position-albums-above-end-after.png"
+
+  # These crops deliberately avoid fixed controls. Album scrolling changes the
+  # content beneath each crop, so an unchanged region means that the live
+  # WidgetPaintable source did not reach the Glass snapshot.
+  assert_glass_region_changed \
+    "$start" "$under_header" 258x48+315+3 "$position header"
+  case "$position" in
+    bottom)
+      assert_glass_region_changed \
+        "$start" "$above_end" 258x78+315+714 "bottom player bar"
+      ;;
+    top)
+      assert_glass_region_changed \
+        "$start" "$under_header" 258x82+315+56 "top player bar"
+      ;;
+  esac
 }
 
 scroll_grid() {
@@ -198,6 +242,7 @@ run_position() {
   assert_snapshot_contains "$end_path" "$last_album"
   scroll_grid \
     "$app_pid" "$window_id" up 1 "$position-albums-above-end" >/dev/null
+  verify_glass_regions "$position"
 
   kill -TERM "$app_pid" 2>/dev/null || true
   wait "$app_pid" 2>/dev/null || true
@@ -259,7 +304,7 @@ if [[ ${1:-} == --private ]]; then
   exit 0
 fi
 
-for command in cua-driver Xvfb openbox dbus-run-session jq rg wmctrl; do
+for command in cua-driver Xvfb openbox dbus-run-session jq rg wmctrl magick awk; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher || ! -x /usr/lib/at-spi2-registryd ]]; then
