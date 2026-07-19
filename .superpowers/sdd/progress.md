@@ -656,3 +656,4 @@ Task DOC-2: complete (commit 3e1578c, base 2ea322e, added read-only local scans 
 Task DOC-3: complete (commit 09289bb, base 3e1578c, added stable per-field review sessions, exact safe/none presets, manual tie materialization, conflict-safe immutable apply plans, and DOC-3a coverage).
 Task DOC-4: complete (commit 9fdb18e, base 09289bb, extracted the single strict prepare/commit Lofty mutation primitive with exact affected-field guards, post-write failure truth, and shared Tag Editor routing).
 Task DOC-5: complete (commit 6b89ba9, base 9fdb18e, routed Tag Editor file writes through a durable future-complete journal with exact target guards, crash-safe recovery, immutable identities, and honest post-write outcomes).
+Task DOC-6: complete (commit faa98a6, base 6b89ba9, added mandatory-review Doctor apply, cooperative cancellation, reversible cleanup history, per-field guarded writes, and DB-only crash finalization under active DOC-5a/DOC-5b).
