@@ -103,6 +103,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn nav_9a_ctrl_l_reveals_current_track_origin() {
         let events = Rc::new(RefCell::new(Vec::new()));
         let history = Rc::new(NavHistory::default());

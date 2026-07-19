@@ -213,7 +213,7 @@ mod tests {
                 "Play next",
                 "Add to queue",
                 "Go to artist",
-                "Edit tags...",
+                "Edit tags…",
             ]
         );
     }

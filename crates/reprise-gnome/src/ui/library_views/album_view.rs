@@ -653,11 +653,21 @@ mod tests {
         assert!(view.reveal_callback()("ZZ Playing", "Artist B"));
         let grid_for_wait = view.grid_widget().clone();
         let adjustment_for_wait = adjustment.clone();
+        let scrolled = wait_until(500, {
+            let adjustment = adjustment_for_wait.clone();
+            move || adjustment.value() > 0.0
+        });
+        let focused = wait_until(500, {
+            let grid = grid_for_wait.clone();
+            move || grid.focus_child().is_some()
+        });
         assert!(
-            wait_until(500, move || {
-                adjustment_for_wait.value() > 0.0 && grid_for_wait.focus_child().is_some()
-            }),
-            "reveal scrolls and focuses after GTK processes the queued request"
+            scrolled && focused,
+            "reveal must scroll and focus; scrolled={scrolled} focused={focused} \
+             (adjustment value={} upper={} page={})",
+            adjustment.value(),
+            adjustment.upper(),
+            adjustment.page_size()
         );
         assert_eq!(
             view.state.filtered_count(),
