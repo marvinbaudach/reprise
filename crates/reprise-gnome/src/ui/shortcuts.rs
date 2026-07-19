@@ -240,7 +240,7 @@ fn focus_search_entry(window: &adw::ApplicationWindow, entry: &gtk4::SearchEntry
 #[cfg(test)]
 fn widget_contains_focus(window: &adw::ApplicationWindow, widget: &gtk4::Widget) -> bool {
     gtk4::prelude::GtkWindowExt::focus(window)
-        .is_some_and(|focus| focus == *widget || widget.is_ancestor(&focus))
+        .is_some_and(|focus| focus == *widget || focus.is_ancestor(widget))
 }
 
 fn apply_search_escape(
