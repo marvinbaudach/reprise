@@ -7,7 +7,29 @@ CUA_DRIVER_BIN="${CUA_DRIVER_BIN:-cua-driver}"
 CUA_E2E_OUT_DIR="${CUA_E2E_OUT_DIR:-/tmp/reprise-cua-e2e}"
 CUA_E2E_SESSION="${CUA_E2E_SESSION:-reprise-acceptance}"
 
+# PID of the app under test, set by the runner. Used only to fail fast when the
+# app has died: the driver waits out its full 120s timeout on a dead peer, so a
+# crash mid-run costs two minutes per remaining call instead of stopping at the
+# real failure. That is how one segfault turned into a twelve-minute stall whose
+# logs pointed at the driver rather than at the crash.
+CUA_E2E_APP_PID="${CUA_E2E_APP_PID:-}"
+
+# PID of the private window manager. It is only checked at startup otherwise,
+# and when it dies mid-run nothing says so: keys are accepted by the driver and
+# delivered nowhere, so scenarios log 48 identical no-op snapshots and then fail
+# on their own assertions. One such death cost a full misdiagnosis — a suspected
+# keyboard focus trap that turned out to be an `XIO: fatal IO error` in openbox.
+CUA_E2E_WM_PID="${CUA_E2E_WM_PID:-}"
+
 cua_driver() {
+  if [[ -n "$CUA_E2E_APP_PID" ]] && ! kill -0 "$CUA_E2E_APP_PID" 2>/dev/null; then
+    echo "app under test (pid $CUA_E2E_APP_PID) is gone; not calling the driver" >&2
+    return 1
+  fi
+  if [[ -n "$CUA_E2E_WM_PID" ]] && ! kill -0 "$CUA_E2E_WM_PID" 2>/dev/null; then
+    echo "window manager (pid $CUA_E2E_WM_PID) is gone; keys would go nowhere" >&2
+    return 1
+  fi
   if [[ -n "${CUA_DRIVER_SOCKET:-}" ]]; then
     "$CUA_DRIVER_BIN" "$@" --socket "$CUA_DRIVER_SOCKET"
   else
