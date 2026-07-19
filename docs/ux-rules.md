@@ -1177,6 +1177,73 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
   Schreibvorgang.
 
+## W. Buttons & Interaktionszustände
+
+<!-- Sektionsbuchstabe: V (My Stats) ist die letzte auf main vergebene
+     Sektion; W schließt lückenlos an. Die Buchstabenlage wurde beim Einfügen
+     gegen den main-Stand verifiziert. Achtung beim Merge: feature/tag-rework
+     beansprucht auf einer älteren Basis ebenfalls ein „W" (Library Doctor),
+     dort ist aber die ganze Lage ab T verschoben — der Buchstabe ist bei
+     dessen Rebase neu zu vergeben, nicht hier. -->
+
+Ein Button, der auf Zeigen und Drücken nicht antwortet, ist für den Nutzer
+kaputt, auch wenn er funktioniert. Reprise hatte das Problem nicht, weil
+Adwaita zu wenig liefert, sondern weil eigenes App-CSS auf
+`STYLE_PROVIDER_PRIORITY_APPLICATION` läuft und die Theme-Regeln unabhängig
+von der Spezifität schlägt: ein *zustandsloses* `background-color: transparent`
+auf einem Button-Selektor löscht Adwaitas `:hover` und `:active` gleich mit.
+Deshalb gilt hier nicht „mehr Effekte", sondern: **ein Zustands-Vokabular,
+zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
+
+- **BTN-1** [aktiv] [gtk] — Jeder klickbare Button hat vier unterscheidbare
+  Zustände, und jeder ist sichtbar. **Rest** ruht. **Hover** hebt die Fläche an:
+  Icon-Buttons bekommen einen sichtbaren Background (weiß ~8 %), Cursor
+  `pointer`, Übergang im Micro-Token (150 ms) — nicht nur ein Schatten.
+  **Active/Pressed** sinkt sofort ein: Fläche weiß ~14 % plus `scale(0.94)`,
+  damit der Klick landet. **Focus-visible** ist ein Akzent-Ring für die
+  Tastatur und nie der Hover-Zustand allein. Der Cursor ist dabei
+  Widget-Sache, nicht CSS: GTK4-CSS kennt keine `cursor`-Property, also setzt
+  ihn `style::buttons::arm` — und zwar nur auf app-eigenen Flächen, damit
+  Dialoge und Preferences nativ bleiben.
+  <!-- Bewusste HIG-Abweichung: Adwaita-Buttons ändern den Cursor nicht. -->
+- **BTN-2** [aktiv] [gtk] — Toggle-Buttons zeigen ihren Zustand dauerhaft, nicht
+  nur im Moment des Klicks. Shuffle und Repeat sind beide `GtkToggleButton` und
+  sprechen dasselbe `:checked`: Akzentfläche im App-Akzent (nie im Cover-Akzent)
+  plus ein kleiner Punkt unter dem Icon als zweites, **nicht-farbliches** Signal
+  — Farbe allein trägt bei Farbenfehlsichtigkeit nicht. Der Zustand überlebt
+  Hover und Unhover; Hover moduliert nur die Helligkeit der Fläche und kippt die
+  Zustandsanzeige nie. Repeat-One schaltet zusätzlich auf das Icon mit der „1".
+  <!-- Der Punkt ist eine zweite Background-Ebene (radial-gradient), kein
+       Extra-Widget: er funktioniert so auch auf runden Buttons. „Gefülltes
+       Icon" aus der Vorlage ist nicht umsetzbar — der Adwaita-Symbolic-Satz
+       hat für shuffle/repeat keine gefüllte Variante; das Füllsignal liefert
+       die Akzentfläche. -->
+- **BTN-3** [aktiv] [gtk] — Nicht alle Buttons sind gleich laut, und die
+  Lautstärke ist eine Stufe, keine Einzelfallentscheidung. **Primär** (Play,
+  Create Mix, Apply): Akzentfläche, stärkster Hover und Press. **Standard**
+  (Icon-Transport, Header-Aktionen): flach, Hover-Background, dezenter Press.
+  **Tertiär** (Menüeinträge, Listenzeilen): nur Background-Hover, kein Scale —
+  eine Zeile in einer Liste darf unter dem Cursor nicht springen. Der große
+  Play/Pause-Knopf ist die Hauptaktion und darf beim Press sichtbarer antworten
+  als seine Nachbarn: zusätzlich ein Ring im Playback-Akzent.
+- **BTN-4** [aktiv] [gtk] — Hover, Active und Focus sind **einmal** definiert
+  (`ui/style/buttons.rs`) und werden überall angewandt, per Klasse oder — wo
+  Adwaita die Buttons intern baut — per Selektor aus derselben Liste. Kein
+  Per-Button-Nachtönen. Eine Fläche darf ihre eigene *Ruheoptik* behalten
+  (Füllung, Radius, ein gestalteter Hover wie im Kontextmenü), aber niemals
+  `:active` oder `:focus-visible` lokal definieren. Hover und Press sind Alphas
+  über `currentColor` — nicht über den Akzent, der im Glas der Player-Bar und
+  der Now-Playing-Tableiste versackt, und nicht über ein festes Weiß, das in den
+  hellen Paletten unsichtbar wäre. `currentColor` ist die Vordergrundfarbe der
+  Fläche selbst, also wird immer auf dem Tint gemessen und nie auf
+  Nulluntergrund. Bei `gtk-enable-animations = false` entfallen Scale und
+  Übergang, **der Zustandswechsel bleibt** und schaltet hart — Rückmeldung darf
+  nie ganz verschwinden.
+  <!-- CSS-`transition` und `@keyframes` folgen dem Setting von selbst (MOT-7,
+       Probe `mot_7_css_honours_enable_animations_setting`). Ungegated bliebe
+       nur `transform` in `:active` — ein statischer Zustandsstil, kein
+       Übergang. Den neutralisiert der Provider in `style/reduced_motion.rs`. -->
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
