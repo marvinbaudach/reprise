@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library::settings::StatsLayout;
 
@@ -47,12 +48,19 @@ impl StatsCustomize {
         let updating = Rc::new(Cell::new(false));
         let on_changed: LayoutCallback = Rc::new(RefCell::new(None));
         for check in [&clock, &genres, &highlights] {
-            check.connect_toggled({
-                let clock = clock.clone();
-                let genres = genres.clone();
-                let highlights = highlights.clone();
-                let updating = updating.clone();
-                let on_changed = on_changed.clone();
+            // Every closure reads all three buttons, including the one it is
+            // attached to. Strong clones would make each button own itself.
+            check.connect_toggled(glib::clone!(
+                #[weak]
+                clock,
+                #[weak]
+                genres,
+                #[weak]
+                highlights,
+                #[strong]
+                updating,
+                #[strong]
+                on_changed,
                 move |_| {
                     if updating.get() {
                         return;
@@ -66,7 +74,7 @@ impl StatsCustomize {
                         });
                     }
                 }
-            });
+            ));
         }
 
         let customize = Self {
@@ -99,6 +107,17 @@ impl StatsCustomize {
 
     pub(in crate::ui) fn set_on_changed(&self, callback: impl Fn(StatsLayout) + 'static) {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// The real toggles, so a test can press them instead of calling the
+    /// handler they are wired to (STYLE-1).
+    #[cfg(test)]
+    pub(in crate::ui) fn checks(&self) -> [gtk4::CheckButton; 3] {
+        [
+            self.clock.clone(),
+            self.genres.clone(),
+            self.highlights.clone(),
+        ]
     }
 
     #[cfg(test)]

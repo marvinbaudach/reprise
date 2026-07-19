@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::library::stats_period::PeriodRange;
 
@@ -41,37 +42,45 @@ impl StatsRibbon {
 
         let hovered = Rc::new(Cell::new(None));
         let motion = gtk4::EventControllerMotion::new();
-        motion.connect_motion({
-            let area = area.clone();
-            let data = data.clone();
-            let hovered = hovered.clone();
+        // The area owns the controller, so both closures have to hold the
+        // area weakly — a strong clone would keep the widget alive forever.
+        motion.connect_motion(glib::clone!(
+            #[weak]
+            area,
+            #[strong]
+            data,
+            #[strong]
+            hovered,
             move |_, x, _| {
-                let data = data.borrow();
-                let index = bucket_at_x(x, f64::from(area.width()), data.values.len());
-                if index == hovered.get() {
-                    return;
-                }
-                hovered.set(index);
-                area.set_tooltip_text(
-                    index
-                        .and_then(|index| {
-                            Some(format!(
-                                "{}: {}",
-                                data.labels.get(index)?,
-                                format_duration(*data.values.get(index)?)
-                            ))
-                        })
-                        .as_deref(),
-                );
+                // The borrow ends before the setter: `set_tooltip_text` can
+                // re-enter through a query-tooltip handler, and a live borrow
+                // would turn that into a `BorrowMutError`.
+                let tooltip = {
+                    let data = data.borrow();
+                    let index = bucket_at_x(x, f64::from(area.width()), data.values.len());
+                    if index == hovered.get() {
+                        return;
+                    }
+                    hovered.set(index);
+                    index.and_then(|index| {
+                        Some(format!(
+                            "{}: {}",
+                            data.labels.get(index)?,
+                            format_duration(*data.values.get(index)?)
+                        ))
+                    })
+                };
+                area.set_tooltip_text(tooltip.as_deref());
             }
-        });
-        motion.connect_leave({
-            let area = area.clone();
+        ));
+        motion.connect_leave(glib::clone!(
+            #[weak]
+            area,
             move |_| {
                 hovered.set(None);
                 area.set_tooltip_text(None);
             }
-        });
+        ));
         area.add_controller(motion);
 
         Self { area, data }

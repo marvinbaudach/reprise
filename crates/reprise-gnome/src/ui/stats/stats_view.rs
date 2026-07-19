@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Datelike;
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -38,14 +39,16 @@ const ASYMMETRIC_BREAKPOINT: f64 = 720.0;
 const CLOCK_MIN_WIDTH: i32 = 324;
 const HIGHLIGHTS_MIN_WIDTH: i32 = 240;
 const ASYMMETRIC_SPACING: i32 = 20;
+/// The fixed editorial order of the page's sections (STATS-7). The test reads
+/// the real widget tree and compares against this.
 #[cfg(test)]
 const SECTION_ORDER: [&str; 6] = [
+    "hero",
     "ribbon",
     "spotlight",
     "genres",
     "clock-highlights",
     "top-tracks",
-    "end",
 ];
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
@@ -61,27 +64,16 @@ pub(in crate::ui) struct StatsView {
     periods: Rc<RefCell<Vec<StatsPeriod>>>,
     wired: Cell<bool>,
     connection: Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
-    hero_time: gtk4::Label,
-    comparison_pill: gtk4::Label,
-    hero_subline: gtk4::Label,
-    ribbon: StatsRibbon,
-    spotlight: StatsSpotlight,
-    genres: StatsGenreBar,
-    clock: HourlyChart,
-    highlights: StatsHighlights,
-    genres_section: gtk4::Box,
-    clock_section: gtk4::Box,
-    highlights_section: gtk4::Box,
+    #[cfg_attr(not(test), allow(dead_code))]
+    page: gtk4::Box,
     #[cfg_attr(not(test), allow(dead_code))]
     asymmetric_row: gtk4::Box,
     #[cfg_attr(not(test), allow(dead_code))]
     asymmetric_bin: adw::BreakpointBin,
-    top_tracks_box: gtk4::Box,
     current_snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
-    sort_by: Rc<Cell<SortBy>>,
-    cover_loader: Rc<CoverLoader>,
-    top_track_generation: Rc<Cell<u64>>,
-    customize: StatsCustomize,
+    /// Built once and shared: the period dropdown's handler holds it weakly,
+    /// which is what keeps the handler from owning the page it lives in.
+    render: Rc<RenderParts>,
     on_spotlight_play: PairCallback,
     on_go_to_artist: StringCallback,
     on_create_smart_mix: GenreCallback,
@@ -235,11 +227,18 @@ impl StatsView {
                 }
             }
         });
-        customize.set_on_changed({
-            let connection = connection.clone();
-            let clock_section = clock_section.clone();
-            let genres_section = genres_section.clone();
-            let highlights_section = highlights_section.clone();
+        // The menu lives inside the very page whose sections it shows and
+        // hides, so the sections are held weakly — a strong clone would make
+        // the page tree own itself and nothing would ever be finalized.
+        customize.set_on_changed(glib::clone!(
+            #[strong]
+            connection,
+            #[weak]
+            clock_section,
+            #[weak]
+            genres_section,
+            #[weak]
+            highlights_section,
             move |layout| {
                 apply_layout_widgets(layout, &clock_section, &genres_section, &highlights_section);
                 let conn = connection.borrow().clone();
@@ -249,6 +248,25 @@ impl StatsView {
                     }
                 }
             }
+        ));
+
+        let render = Rc::new(RenderParts {
+            hero_time: hero_time.clone(),
+            comparison_pill: comparison_pill.clone(),
+            hero_subline: hero_subline.clone(),
+            ribbon: ribbon.clone(),
+            spotlight_section: spotlight.clone(),
+            genres_section_data: genres.clone(),
+            clock_section_data: clock.clone(),
+            highlights_section_data: highlights.clone(),
+            top_tracks_box: top_tracks_box.clone(),
+            sort_by: sort_by.clone(),
+            cover_loader,
+            top_track_generation: top_track_generation.clone(),
+            customize: customize.clone(),
+            clock_section: clock_section.clone(),
+            genres_section: genres_section.clone(),
+            highlights_section: highlights_section.clone(),
         });
 
         Self {
@@ -259,25 +277,11 @@ impl StatsView {
             periods: Rc::new(RefCell::new(Vec::new())),
             wired: Cell::new(false),
             connection,
-            hero_time,
-            comparison_pill,
-            hero_subline,
-            ribbon,
-            spotlight,
-            genres,
-            clock,
-            highlights,
-            genres_section,
-            clock_section,
-            highlights_section,
+            page,
             asymmetric_row,
             asymmetric_bin,
-            top_tracks_box,
             current_snapshot,
-            sort_by,
-            cover_loader,
-            top_track_generation,
-            customize,
+            render,
             on_spotlight_play,
             on_go_to_artist,
             on_create_smart_mix,
@@ -306,17 +310,25 @@ impl StatsView {
         if !self.wired.replace(true) {
             let connection = self.connection.clone();
             let periods = self.periods.clone();
-            let page_stack = self.page_stack.clone();
             let current_snapshot = self.current_snapshot.clone();
-            let render = self.render_parts();
-            self.period_dropdown
-                .connect_selected_notify(move |dropdown| {
+            // The dropdown sits inside the page it re-renders. Both the stack
+            // and the render targets are therefore held weakly; otherwise the
+            // handler keeps the entire page widget tree alive forever.
+            let render = Rc::downgrade(&self.render);
+            self.period_dropdown.connect_selected_notify(glib::clone!(
+                #[weak(rename_to = page_stack)]
+                self.page_stack,
+                move |dropdown| {
+                    let Some(render) = render.upgrade() else {
+                        return;
+                    };
                     let period = periods.borrow().get(dropdown.selected() as usize).copied();
                     let conn = connection.borrow().clone();
                     if let (Some(period), Some(conn)) = (period, conn) {
                         refresh_parts(&conn, period, &page_stack, &current_snapshot, &render);
                     }
-                });
+                }
+            ));
         }
         self.refresh(conn);
     }
@@ -329,13 +341,12 @@ impl StatsView {
             .get(self.period_dropdown.selected() as usize)
             .copied()
             .unwrap_or_else(|| StatsPeriod::YearToDate(chrono::Local::now().year()));
-        let render = self.render_parts();
         refresh_parts(
             conn,
             period,
             &self.page_stack,
             &self.current_snapshot,
-            &render,
+            &self.render,
         );
     }
 
@@ -355,37 +366,39 @@ impl StatsView {
         *self.on_unify_spellings.borrow_mut() = Some(Rc::new(callback));
     }
 
-    fn render_parts(&self) -> RenderParts {
-        RenderParts {
-            hero_time: self.hero_time.clone(),
-            comparison_pill: self.comparison_pill.clone(),
-            hero_subline: self.hero_subline.clone(),
-            ribbon: self.ribbon.clone(),
-            spotlight_section: self.spotlight.clone(),
-            genres_section_data: self.genres.clone(),
-            clock_section_data: self.clock.clone(),
-            highlights_section_data: self.highlights.clone(),
-            top_tracks_box: self.top_tracks_box.clone(),
-            sort_by: self.sort_by.clone(),
-            cover_loader: self.cover_loader.clone(),
-            top_track_generation: self.top_track_generation.clone(),
-            customize: self.customize.clone(),
-            clock_section: self.clock_section.clone(),
-            genres_section: self.genres_section.clone(),
-            highlights_section: self.highlights_section.clone(),
+    /// The sections in the order the page actually stacks them, read off the
+    /// live widget tree — not off a constant that nothing binds to it.
+    #[cfg(test)]
+    fn section_order(&self) -> Vec<&'static str> {
+        let mut order = Vec::new();
+        let mut child = self.page.first_child();
+        while let Some(widget) = child {
+            order.push(self.section_name(&widget));
+            child = widget.next_sibling();
         }
+        order
     }
 
     #[cfg(test)]
-    fn apply_layout_and_persist(&self, conn: &Connection, layout: StatsLayout) {
-        apply_layout_widgets(
-            layout,
-            &self.clock_section,
-            &self.genres_section,
-            &self.highlights_section,
-        );
-        self.customize.set_layout(layout);
-        settings::set_stats_layout(conn, layout).unwrap();
+    fn section_name(&self, widget: &gtk4::Widget) -> &'static str {
+        let render = &self.render;
+        if self.period_dropdown.is_ancestor(widget) {
+            "hero"
+        } else if render.ribbon.widget().is_ancestor(widget) {
+            "ribbon"
+        } else if render.spotlight_section.widget().is_ancestor(widget) {
+            "spotlight"
+        } else if render.genres_section_data.widget().is_ancestor(widget) {
+            "genres"
+        } else if render.clock_section_data.widget().is_ancestor(widget)
+            && render.highlights_section_data.widget().is_ancestor(widget)
+        {
+            "clock-highlights"
+        } else if render.top_tracks_box.is_ancestor(widget) {
+            "top-tracks"
+        } else {
+            "unknown"
+        }
     }
 }
 
@@ -711,30 +724,59 @@ mod tests {
         (StatsView::new(loader), conn)
     }
 
+    /// Presses the real CheckButtons of the Customize menu — a test that calls
+    /// the handler behind them proves nothing about the menu (STYLE-1) — and
+    /// reads the section order off the live widget tree.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn stats_7_customize_toggles_sections() {
         gtk4::init().unwrap();
         let (view, conn) = view_and_conn();
         view.wire_year_selector(&conn);
-        assert!(view.clock_section.is_visible());
-        assert!(view.genres_section.is_visible());
-        assert!(view.highlights_section.is_visible());
-        let before = SECTION_ORDER;
+        let [clock_check, genres_check, highlights_check] = view.render.customize.checks();
+        assert_eq!(view.render.customize.check_count(), 3);
+        assert!(clock_check.is_active());
+        assert!(view.render.clock_section.is_visible());
+        assert!(view.render.genres_section.is_visible());
+        assert!(view.render.highlights_section.is_visible());
+        assert_eq!(view.section_order(), SECTION_ORDER);
 
-        let layout = StatsLayout {
-            clock: false,
-            genres: true,
-            highlights: true,
-        };
-        view.apply_layout_and_persist(&conn.borrow(), layout);
+        clock_check.activate();
 
-        assert!(!view.clock_section.is_visible());
-        assert!(view.genres_section.is_visible());
-        assert!(view.highlights_section.is_visible());
-        assert_eq!(SECTION_ORDER, before);
-        assert_eq!(view.customize.check_count(), 3);
-        assert_eq!(settings::get_stats_layout(&conn.borrow()), layout);
+        assert!(!clock_check.is_active());
+        assert!(!view.render.clock_section.is_visible());
+        assert!(view.render.genres_section.is_visible());
+        assert!(view.render.highlights_section.is_visible());
+        // Hiding a section never reorders the page.
+        assert_eq!(view.section_order(), SECTION_ORDER);
+        assert_eq!(
+            settings::get_stats_layout(&conn.borrow()),
+            StatsLayout {
+                clock: false,
+                genres: true,
+                highlights: true,
+            }
+        );
+
+        genres_check.activate();
+        highlights_check.activate();
+
+        assert!(!view.render.genres_section.is_visible());
+        assert!(!view.render.highlights_section.is_visible());
+        assert_eq!(view.section_order(), SECTION_ORDER);
+        assert_eq!(
+            settings::get_stats_layout(&conn.borrow()),
+            StatsLayout {
+                clock: false,
+                genres: false,
+                highlights: false,
+            }
+        );
+
+        clock_check.activate();
+
+        assert!(view.render.clock_section.is_visible());
+        assert_eq!(view.section_order(), SECTION_ORDER);
     }
 
     #[test]
@@ -748,7 +790,7 @@ mod tests {
             view.page_stack.visible_child_name().as_deref(),
             Some("empty")
         );
-        assert!(!view.ribbon.widget().is_visible());
+        assert!(!view.render.ribbon.widget().is_visible());
     }
 
     /// The breakpoint only applies once the bin has a real allocation, so the
