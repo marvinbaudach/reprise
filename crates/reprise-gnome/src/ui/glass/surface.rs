@@ -60,6 +60,7 @@ impl GlassSurface {
         &self.root
     }
 
+    #[cfg(test)]
     pub(crate) fn backdrop(&self) -> &GlassBackdrop {
         &self.backdrop
     }
