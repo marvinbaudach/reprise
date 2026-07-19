@@ -51,6 +51,7 @@ impl RemoteProvider for NoNetworkProvider {
         &mut self,
         _: &RemoteTrackMetadata,
         _: &str,
+        _: &str,
         _: u64,
         _: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult {
@@ -152,7 +153,7 @@ impl NetworkProvider {
                 NetworkSource::AcoustId => self.acoustid_circuit_open = true,
             }
         }
-        if !matches!(result, Err(RemoteProviderError::Cancelled)) {
+        if result.is_ok() {
             self.dedup.insert(key, result.clone());
         }
         result
@@ -223,6 +224,7 @@ impl RemoteProvider for NetworkProvider {
     fn acoustid(
         &mut self,
         _: &RemoteTrackMetadata,
+        _: &str,
         fingerprint: &str,
         duration_seconds: u64,
         control: &mut dyn FnMut() -> ScanControl,

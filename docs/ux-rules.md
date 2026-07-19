@@ -1430,7 +1430,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   „original release"; mehrdeutige Editionen erzeugen keinen Jahresvorschlag.
   Remote-Genre, Track-/Discnummer, Rating, Pfad und Cover bleiben verboten.
 
-- **DOC-1c** [geplant] [core] — **Netzabrufe sind minimal, begrenzt und
+- **DOC-1c** [aktiv] [core] — **Netzabrufe sind minimal, begrenzt und
   abbrechbar.** MusicBrainz erhält nur die zur Auflösung nötigen vorhandenen
   Title-/Artist-/Album-/Album-Artist-Werte, MBIDs und gegebenenfalls Dauer;
   AcoustID ausschließlich Fingerprint und Dauer. Pfad, Dateiname,

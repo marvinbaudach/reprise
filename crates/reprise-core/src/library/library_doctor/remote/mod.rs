@@ -6,10 +6,15 @@
 
 mod acoustid;
 mod arbitration;
+mod cache;
 mod metadata;
 mod network;
 mod orchestrator;
 
+#[cfg(test)]
+mod cache_tests;
+
+pub(crate) use cache::CachedRemoteProvider;
 pub(crate) use metadata::read_remote_metadata;
 pub use metadata::{RemoteDirectLookup, RemoteTrackMetadata};
 pub(crate) use network::{NetworkProvider, NoNetworkProvider};

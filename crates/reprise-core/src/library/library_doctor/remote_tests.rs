@@ -117,6 +117,7 @@ impl RemoteProvider for FakeProvider {
         &mut self,
         _: &RemoteTrackMetadata,
         _: &str,
+        _: &str,
         _: u64,
         _: &mut dyn FnMut() -> ScanControl,
     ) -> RemoteProviderResult {

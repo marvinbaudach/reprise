@@ -46,8 +46,22 @@ impl<'connection> LibraryDoctor<'connection> {
         fingerprint_backend: Option<&dyn FingerprintBackend>,
         mut progress: impl FnMut(DoctorScanProgress) -> ScanControl,
     ) -> Result<DoctorScanOutcome, DoctorError> {
-        let mut resolver = remote::ProviderRemoteResolver::new(remote::NetworkProvider::new());
-        self.scan_with_resolver(request, fingerprint_backend, &mut resolver, &mut progress)
+        let FrozenScope::Tracks(tracks) = self.freeze_scope(&request.scope)? else {
+            return Ok(DoctorScanOutcome::ScopeFallbackRequired);
+        };
+        let provider = remote::CachedRemoteProvider::new(
+            remote::NetworkProvider::new(),
+            self.conn,
+            unix_timestamp(),
+        );
+        let mut resolver = remote::ProviderRemoteResolver::new(provider);
+        self.scan_tracks_with_resolver(
+            request,
+            &tracks,
+            fingerprint_backend,
+            &mut resolver,
+            &mut progress,
+        )
     }
 
     pub(crate) fn scan_with_resolver(
@@ -60,6 +74,17 @@ impl<'connection> LibraryDoctor<'connection> {
         let FrozenScope::Tracks(tracks) = self.freeze_scope(&request.scope)? else {
             return Ok(DoctorScanOutcome::ScopeFallbackRequired);
         };
+        self.scan_tracks_with_resolver(request, &tracks, fingerprint_backend, resolver, progress)
+    }
+
+    fn scan_tracks_with_resolver(
+        &self,
+        request: &DoctorScanRequest,
+        tracks: &[super::DoctorTrackRef],
+        fingerprint_backend: Option<&dyn FingerprintBackend>,
+        resolver: &mut dyn RemoteResolver,
+        progress: &mut dyn FnMut(DoctorScanProgress) -> ScanControl,
+    ) -> Result<DoctorScanOutcome, DoctorError> {
         let previous_scan_id = self.last_complete_scan()?.map(|scan| scan.id);
         let mut read_tracks = Vec::with_capacity(tracks.len());
         let mut snapshot_tracks = Vec::with_capacity(tracks.len());
@@ -150,10 +175,7 @@ impl<'connection> LibraryDoctor<'connection> {
             proposals.extend(resolution.proposals);
             unresolved_groups.extend(resolution.groups);
         }
-        let created_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+        let created_at = unix_timestamp();
         let scan = super::store::persist_complete_scan(&super::store::CompleteScanData {
             conn: self.conn,
             scope_kind: request.scope.kind(),
@@ -171,6 +193,13 @@ impl<'connection> LibraryDoctor<'connection> {
     pub fn last_complete_scan(&self) -> Result<Option<super::DoctorScan>, DoctorError> {
         super::store::last_complete_scan(self.conn)
     }
+}
+
+fn unix_timestamp() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 fn take_local_fallback(
