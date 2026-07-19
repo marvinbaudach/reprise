@@ -35,9 +35,13 @@ mod tests {
     use super::{InsetMeasurements, PlayerBarEdge, SafeInsetApplier, SafeInsets};
 
     fn wait_for_layout() {
+        wait_for_layout_for(Duration::from_millis(50));
+    }
+
+    fn wait_for_layout_for(duration: Duration) {
         let main_loop = gtk4::glib::MainLoop::new(None, false);
         let quit = main_loop.clone();
-        gtk4::glib::timeout_add_local_once(Duration::from_millis(50), move || quit.quit());
+        gtk4::glib::timeout_add_local_once(duration, move || quit.quit());
         main_loop.run();
     }
 
@@ -337,7 +341,10 @@ mod tests {
             .build();
         let tracks = gtk4::Label::new(Some("Tracks"));
         tracks.set_vexpand(true);
-        let stack = libadwaita::ViewStack::builder().hhomogeneous(false).build();
+        let stack = libadwaita::ViewStack::builder()
+            .hhomogeneous(false)
+            .transition_duration(crate::ui::motion::STANDARD_MS)
+            .build();
         stack.add_named(&tracks, Some("tracks"));
         stack.add_named(&albums, Some("albums"));
         stack.set_visible_child_name("tracks");
@@ -361,20 +368,33 @@ mod tests {
         window.present();
         wait_for_layout();
         stack.set_visible_child_name("albums");
-        wait_for_layout();
+        wait_for_layout_for(Duration::from_millis(u64::from(
+            crate::ui::motion::STANDARD_MS + 50,
+        )));
+
+        let geometry = format!(
+            "window={} stack={} scroller={} inset={} grid={} transition_running={}",
+            window.height(),
+            stack.height(),
+            albums.height(),
+            inset.height(),
+            grid.height(),
+            stack.is_transition_running(),
+        );
 
         assert!(
             albums.height() >= 500,
-            "album scroller lost viewport height"
+            "album scroller lost viewport height: {geometry}"
         );
         assert!(
             inset.height() >= 500,
-            "scroll adapter collapsed after hidden-page reveal"
+            "scroll adapter collapsed after hidden-page reveal: {geometry}"
         );
         assert!(
             grid.height() >= 500,
-            "width-dependent grid collapsed after hidden-page reveal"
+            "width-dependent grid collapsed after hidden-page reveal: {geometry}"
         );
+        window.close();
     }
 
     #[test]
