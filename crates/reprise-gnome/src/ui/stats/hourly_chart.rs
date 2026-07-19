@@ -1,8 +1,7 @@
 //! 24-hour listening activity bar chart rendered in a `gtk4::DrawingArea`.
 //!
-//! Structurally identical to `StatsChart` (12-month chart) but draws 24
-//! bars (one per hour of the day) with axis labels at 0, 6, 12, 18, 24
-//! and an optional "peak HH:00" annotation in the top-right corner.
+//! Draws 24 bars (one per hour of the day) with axis labels at 0, 6, 12, 18
+//! and 24; the peak hours of the period are drawn at full accent alpha.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,7 +10,7 @@ use gtk4::prelude::*;
 
 use reprise_core::library::stats_snapshot::ClockSection;
 
-use super::stats_chart_math::{expand_hourly, normalize_bars, BAR_GAP_FRACTION, MIN_BAR_FRACTION};
+use super::hourly_chart_math::{expand_hourly, normalize_bars, BAR_GAP_FRACTION, MIN_BAR_FRACTION};
 
 pub(in crate::ui) const HOURLY_CHART_CSS_CLASS: &str = "stats-chart";
 const CHART_HEIGHT: i32 = 160;
