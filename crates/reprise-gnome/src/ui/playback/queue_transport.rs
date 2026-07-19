@@ -16,7 +16,7 @@
 use std::rc::Rc;
 
 use crate::ui::player_controller::{PlayerController, StartPlayback};
-use crate::ui::track_list::queue_sections::{compose, QueueViewModel};
+use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContextTail};
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::Queue;
@@ -278,32 +278,29 @@ impl PlayerController {
     }
 
     /// The Queue view's three parts in display order (QUE-1): the playing
-    /// track, pending manual entries, and the snapshot's play-order tail —
-    /// plus the origin label for the `Up Next · from <label>` title. Each
-    /// list is cloned out in its own statement (borrow discipline).
-    pub(in crate::ui) fn queue_view_model(&self) -> QueueViewModel {
+    /// track, pending manual entries, and virtual metadata for the snapshot's
+    /// play-order tail. The tail provider clones only requested windows.
+    pub(in crate::ui) fn queue_view_model(self: &Rc<Self>) -> QueueViewModel {
         let now_playing = self.now_playing.borrow().as_ref().map(|np| np.id);
         let play_next = self.up_next.borrow().ids().to_vec();
-        let up_next_rest = self.queue.borrow().remaining_after_current();
+        let context_count = self.queue.borrow().remaining_len();
         let origin_label = self
             .play_origin
             .borrow()
             .as_ref()
             .map(|origin| origin.label.clone());
-        compose(
-            now_playing,
-            &play_next,
-            &up_next_rest,
-            origin_label.as_deref(),
-        )
-    }
-
-    /// QUE-5: the sidebar's "Queue · N" — pending manual entries plus the
-    /// snapshot tracks still ahead of the playhead, NOT the total snapshot.
-    pub(in crate::ui) fn queue_pending_len(&self) -> usize {
-        let pending = self.up_next.borrow().len();
-        let remaining = self.queue.borrow().remaining_len();
-        pending + remaining
+        let player = Rc::downgrade(self);
+        let context = (context_count > 0).then(|| {
+            VirtualContextTail::new(
+                context_count,
+                Rc::new(move |offset, limit| {
+                    player.upgrade().map_or_else(Vec::new, |player| {
+                        player.queue.borrow().remaining_window(offset, limit)
+                    })
+                }),
+            )
+        });
+        compose_virtual(now_playing, &play_next, context, origin_label.as_deref())
     }
 
     /// QUE-3's "Play next": the given ids jump the manual line (front of

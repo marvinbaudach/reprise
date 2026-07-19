@@ -953,11 +953,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   album/artist" springt immer deterministisch; Selektion folgt der Wiedergabe
   nie. Umsetzung erst in Batch B nach NAV-5 und der gemeinsamen
   Playing-Badge-Extraktion; siehe Beschlussdokument.
-- **QUE-7** [geplant] [gtk] — Up Next besteht aus der manuellen Queue plus
+- **QUE-7** [aktiv] [gtk] — Up Next besteht aus der manuellen Queue plus
   einem virtuellen, benannten Kontext-Tail mit Count. Der Tail wird nicht als
   Einzelzeilen materialisiert, sondern nur im sichtbaren Fenster gerendert;
   die Sidebar-Zeile „Queue" zählt ausschließlich die manuelle Queue und zeigt
-  bei null keinen Zähler. Umsetzung in Batch B; siehe Beschlussdokument.
+  bei null keinen Zähler.
 - **QUE-8** [geplant] [gtk] — Drag-Reorder existiert ausschließlich in „Next
   in Queue". Die manuelle Sektion ist umsortierbar; ein Drag aus „Continuing"
   nach oben materialisiert genau diesen Eintrag in der manuellen Sektion.

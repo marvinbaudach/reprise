@@ -71,6 +71,9 @@ mod imp {
         /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
         /// for every other source.
         pub queue_ids: Vec<i64>,
+        /// QUE-7 queue projection whose context tail is fetched by bounded
+        /// windows instead of retained as one id per context row.
+        pub(super) virtual_queue: Option<super::super::queue_sections::QueueViewModel>,
         pub cache: BTreeMap<u32, Vec<Track>>,
         /// QUE-1 section ranges (half-open, model coordinates) for the
         /// Queue source; empty = the whole model is one section. Set via
@@ -199,9 +202,13 @@ impl TrackListModel {
     /// Installs an already-composed queue snapshot without a count query.
     /// The shared queue model is the authoritative row count; metadata stays
     /// lazy and is fetched only when `item()` asks for a visible window.
-    pub(crate) fn set_queue_snapshot(&self, queue_ids: &[i64], sections: Vec<(u32, u32)>) {
+    pub(crate) fn set_queue_snapshot(
+        &self,
+        queue: &super::queue_sections::QueueViewModel,
+        sections: Vec<(u32, u32)>,
+    ) {
         let old_total = self.imp().state.borrow().total;
-        let new_total = u32::try_from(queue_ids.len()).unwrap_or(u32::MAX);
+        let new_total = u32::try_from(queue.total_len()).unwrap_or(u32::MAX);
         {
             let mut state = self.imp().state.borrow_mut();
             state.source = ViewSource::Queue;
@@ -209,7 +216,8 @@ impl TrackListModel {
             state.sort_dir.clear();
             state.filter.clear();
             state.browse = BrowseFilter::default();
-            state.queue_ids = queue_ids.to_vec();
+            state.queue_ids.clear();
+            state.virtual_queue = Some(queue.clone());
             state.sections = sections;
             state.total = new_total;
             state.cache.clear();
@@ -270,6 +278,7 @@ impl TrackListModel {
             state.filter = filter.to_string();
             state.browse = browse.clone();
             state.queue_ids = queue_ids.to_vec();
+            state.virtual_queue = None;
             state.total = new_total;
             state.cache.clear();
         }
@@ -315,7 +324,7 @@ impl TrackListModel {
             return None;
         };
 
-        let (source, sort_field, sort_dir, filter, browse, queue_ids) = {
+        let (source, sort_field, sort_dir, filter, browse, queue_ids, virtual_queue) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
@@ -324,7 +333,21 @@ impl TrackListModel {
                 state.filter.clone(),
                 state.browse.clone(),
                 state.queue_ids.clone(),
+                state.virtual_queue.clone(),
             )
+        };
+
+        let (query_offset, queue_ids) = if source == ViewSource::Queue {
+            if let Some(queue) = virtual_queue {
+                (
+                    0,
+                    queue.ids_window(window_start as usize, WINDOW_SIZE as usize),
+                )
+            } else {
+                (i64::from(window_start), queue_ids)
+            }
+        } else {
+            (i64::from(window_start), queue_ids)
         };
 
         let rows = {
@@ -336,7 +359,7 @@ impl TrackListModel {
                 &sort_dir,
                 &filter,
                 &browse,
-                i64::from(window_start),
+                query_offset,
                 i64::from(WINDOW_SIZE),
                 &queue_ids,
             )
@@ -492,7 +515,8 @@ mod tests {
     fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
         let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
 
-        model.set_queue_snapshot(&[3, 1], vec![(0, 2)]);
+        let queue = super::super::queue_sections::compose(None, &[3, 1], &[], None);
+        model.set_queue_snapshot(&queue, vec![(0, 2)]);
 
         assert_eq!(model.n_items(), 2);
         assert!(model.cached_windows().is_empty());

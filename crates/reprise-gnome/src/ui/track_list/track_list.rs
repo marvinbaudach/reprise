@@ -172,17 +172,11 @@ pub(in crate::ui) struct Shared {
     /// set_source` (and the `REPRISE_SMOKE_SOURCE` hook); read by `reload`
     /// and `queue_ids_for_activation`.
     pub(in crate::ui) source: RefCell<ViewSource>,
-    /// Supplies the current queue's track ids, in play order, when `source`
-    /// is `ViewSource::Queue` — see `queries::query_track_window`'s doc
-    /// comment for why that source needs an explicit id list. Wired once at
-    /// construction (`TrackList::new`'s `queue_ids_provider` parameter) to a
-    /// closure over the `PlayerController`, which already exists by the
-    /// time `TrackList::new` runs (see `window::build`) — unlike `toast_
-    /// overlay`/`on_activate`, no post-construction injection dance is
-    /// needed here. A `Box<dyn Fn() -> Vec<i64>>`, not a `WeakRef`-style
-    /// seam: the closure itself only holds whatever `window::build` gives
-    /// it (typically a clone of `Option<Rc<PlayerController>>`), so there's
-    /// no ownership cycle back to `TrackList` to worry about.
+    /// Supplies the current queue projection when `source` is Queue. The
+    /// projection retains only Now Playing and manual ids; its playback-
+    /// context tail is exposed through bounded id windows (QUE-7). Wired at
+    /// construction to the shared window snapshot, with no ownership cycle
+    /// back to `TrackList`.
     pub(in crate::ui) queue_ids_provider: Box<dyn Fn() -> super::queue_sections::QueueViewModel>,
     /// The Queue source's current section layout (QUE-1) — written by
     /// `reload` from the provider's `QueueViewModel`, read by the header

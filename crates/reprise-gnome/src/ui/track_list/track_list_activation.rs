@@ -192,5 +192,5 @@ pub(in crate::ui) fn queue_ids_for_activation(
 /// already checks `source` first, so this is only ever invoked when a fresh
 /// snapshot is actually needed.
 pub(in crate::ui) fn current_queue_ids(shared: &Shared) -> Vec<i64> {
-    (shared.queue_ids_provider)().ids
+    (shared.queue_ids_provider)().all_ids()
 }

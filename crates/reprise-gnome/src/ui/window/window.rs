@@ -195,6 +195,7 @@ pub fn build(
     if let Some(player) = &player {
         player.purge_queue_ids(&startup_purged);
     }
+    let queue_model = super::window_queue_model::build(&player);
 
     // Built right after `player` (needed for the Queue row's counter) and
     // before `TrackList` and `spawn_scan`/`player.set_track_list_reload`
@@ -204,11 +205,8 @@ pub fn build(
     // this one `Rc` rather than needing a construction-order-driven `Weak`-
     // then-upgrade dance.
     let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
-        let player = player.clone();
-        move || match &player {
-            Some(controller) => controller.queue_pending_len(),
-            None => 0,
-        }
+        let queue_model = queue_model.clone();
+        move || queue_model.borrow().sidebar_count()
     }));
     sidebar.bind_device_sync(&device_sync);
 
@@ -250,7 +248,6 @@ pub fn build(
     // doc comment in `player_controller.rs`). `None` (GStreamer unavailable)
     // degrades to an always-empty queue view, matching every other
     // player-unavailable degradation in this function.
-    let queue_model = super::window_queue_model::build(&player);
     let queue_ids_provider = {
         let queue_model = queue_model.clone();
         move || queue_model.borrow().clone()

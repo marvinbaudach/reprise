@@ -12,11 +12,14 @@ use rusqlite::Connection;
 
 use super::cover_loader::CoverLoader;
 use crate::ui::track_list::queue_row_mapping::{classify, QueueRow};
-use crate::ui::track_list::queue_sections::{section_ranges, QueueSectionKind, QueueViewModel};
+use crate::ui::track_list::queue_sections::{
+    section_ranges, QueueSection, QueueSectionKind, QueueViewModel,
+};
 use crate::ui::track_list::track_list_model::TrackListModel;
 
+#[cfg(test)]
 fn queue_rows(model: &QueueViewModel) -> Vec<QueueRow> {
-    (0..u32::try_from(model.ids.len()).unwrap_or(u32::MAX))
+    (0..u32::try_from(model.total_len()).unwrap_or(u32::MAX))
         .filter_map(|position| classify(position, &model.sections))
         .collect()
 }
@@ -31,7 +34,7 @@ fn panel_section_headers(model: &QueueViewModel) -> Vec<(u32, String)> {
                     super::strings::text(super::strings::QUEUE_NEXT_IN_QUEUE)
                 }
                 QueueSectionKind::UpNext { source_label } => {
-                    super::strings::queue_continuing_from(source_label)
+                    super::strings::queue_context_tail(source_label, section.len as usize)
                 }
                 QueueSectionKind::NowPlaying => return None,
             };
@@ -67,7 +70,7 @@ struct RowWidgets {
 pub(in crate::ui) struct UpNextPanel {
     root: gtk4::Stack,
     model: TrackListModel,
-    queue_rows: Rc<RefCell<Vec<QueueRow>>>,
+    queue_sections: Rc<RefCell<Vec<QueueSection>>>,
     section_headers: Rc<RefCell<Vec<(u32, String)>>>,
     on_jump: Rc<RefCell<Option<OnJump>>>,
     on_remove: Rc<RefCell<Option<OnRemove>>>,
@@ -80,11 +83,11 @@ impl UpNextPanel {
         cover_loader: &Rc<CoverLoader>,
     ) -> Rc<Self> {
         let model = TrackListModel::new(conn.clone());
-        let queue_rows = Rc::new(RefCell::new(Vec::new()));
+        let queue_sections = Rc::new(RefCell::new(Vec::new()));
         let section_headers = Rc::new(RefCell::new(Vec::new()));
         let on_jump = Rc::new(RefCell::new(None));
         let on_remove = Rc::new(RefCell::new(None));
-        let factory = build_factory(cover_loader, &queue_rows, &on_jump, &on_remove);
+        let factory = build_factory(cover_loader, &queue_sections, &on_jump, &on_remove);
         let selection = gtk4::NoSelection::new(Some(model.clone()));
         let rows = gtk4::ListView::new(Some(selection), Some(factory));
         rows.set_header_factory(Some(&build_header_factory(&section_headers)));
@@ -111,7 +114,7 @@ impl UpNextPanel {
         Rc::new(Self {
             root,
             model,
-            queue_rows,
+            queue_sections,
             section_headers,
             on_jump,
             on_remove,
@@ -133,27 +136,33 @@ impl UpNextPanel {
 
     pub(in crate::ui) fn set_queue_model(&self, model: &QueueViewModel) -> String {
         let upcoming = model.upcoming();
-        *self.queue_rows.borrow_mut() = queue_rows(&upcoming);
+        *self.queue_sections.borrow_mut() = upcoming.sections.clone();
         *self.section_headers.borrow_mut() = panel_section_headers(&upcoming);
         self.model
-            .set_queue_snapshot(&upcoming.ids, section_ranges(&upcoming.sections));
+            .set_queue_snapshot(&upcoming, section_ranges(&upcoming.sections));
         self.root
-            .set_visible_child_name(if upcoming.ids.is_empty() {
+            .set_visible_child_name(if upcoming.total_len() == 0 {
                 "empty"
             } else {
                 "tracks"
             });
-        let total_duration_ms = match reprise_core::queries::query_queue_duration_ms(
-            &self.conn.borrow(),
-            &upcoming.ids,
-        ) {
-            Ok(duration) => duration,
-            Err(error) => {
-                tracing::warn!(%error, "could not load up-next panel duration");
-                0
+        let mut total_duration_ms = 0_i64;
+        for offset in (0..upcoming.total_len()).step_by(200) {
+            let ids = upcoming.ids_window(offset, 200);
+            let duration =
+                match reprise_core::queries::query_queue_duration_ms(&self.conn.borrow(), &ids) {
+                    Ok(duration) => duration,
+                    Err(error) => {
+                        tracing::warn!(%error, "could not load up-next panel duration window");
+                        0
+                    }
+                };
+            total_duration_ms = total_duration_ms.saturating_add(duration);
+            if ids.is_empty() {
+                break;
             }
-        };
-        format_up_next_footer_total(upcoming.ids.len(), total_duration_ms)
+        }
+        format_up_next_footer_total(upcoming.total_len(), total_duration_ms)
     }
 }
 
@@ -193,7 +202,7 @@ fn list_item_key(item: &gtk4::ListItem) -> usize {
 
 fn build_factory(
     cover_loader: &Rc<CoverLoader>,
-    queue_rows: &Rc<RefCell<Vec<QueueRow>>>,
+    queue_sections: &Rc<RefCell<Vec<QueueSection>>>,
     on_jump: &Rc<RefCell<Option<OnJump>>>,
     on_remove: &Rc<RefCell<Option<OnRemove>>>,
 ) -> gtk4::SignalListItemFactory {
@@ -233,7 +242,7 @@ fn build_factory(
     }
     {
         let states = states.clone();
-        let queue_rows = queue_rows.clone();
+        let queue_sections = queue_sections.clone();
         let cover_loader = cover_loader.clone();
         factory.connect_bind(move |_, object| {
             let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -253,7 +262,7 @@ fn build_factory(
             widgets.artist.set_label(&track.artist);
             widgets
                 .row
-                .set(queue_rows.borrow().get(item.position() as usize).copied());
+                .set(classify(item.position(), &queue_sections.borrow()));
             let generation = widgets.generation.get().wrapping_add(1);
             widgets.generation.set(generation);
             CoverLoader::set_placeholder(&widgets.cover);
@@ -440,7 +449,7 @@ mod tests {
             panel_section_headers(&both),
             vec![
                 (0, "Next in Queue".to_owned()),
-                (2, "Continuing from “Late Night”".to_owned()),
+                (2, "Playing from Late Night · 1 track".to_owned()),
             ]
         );
 
@@ -449,7 +458,7 @@ mod tests {
                 .upcoming();
         assert_eq!(
             panel_section_headers(&automatic_only),
-            vec![(0, "Continuing from “Album”".to_owned())]
+            vec![(0, "Playing from Album · 1 track".to_owned())]
         );
 
         let manual_only =
