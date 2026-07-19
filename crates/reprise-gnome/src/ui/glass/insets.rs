@@ -12,12 +12,14 @@ pub(crate) struct SafeInsets {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) enum PlayerBarEdge {
     Top,
     Bottom,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) struct InsetMeasurements {
     pub(crate) header: i32,
     pub(crate) search: i32,
@@ -25,6 +27,7 @@ pub(crate) struct InsetMeasurements {
     pub(crate) player_edge: PlayerBarEdge,
 }
 
+#[cfg(test)]
 impl InsetMeasurements {
     pub(crate) fn safe_insets(self) -> SafeInsets {
         let header = self.header.max(0);

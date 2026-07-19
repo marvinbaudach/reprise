@@ -5,7 +5,9 @@ pub(crate) mod material;
 mod performance;
 mod surface;
 
-pub(crate) use insets::{InsetMeasurements, PlayerBarEdge, SafeInsetApplier, SafeInsets};
+#[cfg(test)]
+pub(crate) use insets::{InsetMeasurements, PlayerBarEdge};
+pub(crate) use insets::{SafeInsetApplier, SafeInsets};
 pub(crate) use surface::{GlassEdge, GlassSurface};
 
 pub(in crate::ui) fn css() -> String {
