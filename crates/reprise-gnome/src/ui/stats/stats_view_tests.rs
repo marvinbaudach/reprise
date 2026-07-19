@@ -2,6 +2,7 @@
 
 use super::*;
 use reprise_core::library::stats_snapshot::{ComparisonDirection, ComparisonFactor};
+use std::sync::{Arc, Mutex};
 
 fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
     let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
@@ -187,8 +188,8 @@ fn stats_6a_unreadable_history_shows_the_failure_page() {
     );
 }
 
-/// The breakpoint only applies once the bin has a real allocation, so the
-/// test has to let a layout cycle run instead of draining pending sources.
+/// Responsive wrapping only settles after a real allocation, so the test has
+/// to let a layout cycle run instead of merely draining pending sources.
 fn wait_for_layout() {
     let main_loop = gtk4::glib::MainLoop::new(None, false);
     let quit = main_loop.clone();
@@ -200,7 +201,7 @@ fn wait_for_layout() {
 
 /// One track with one play in the current period, so the page stack shows
 /// the sections instead of the empty state — a hidden stack page is never
-/// allocated, and an unallocated bin can never hit a breakpoint.
+/// allocated, and an unallocated row cannot prove responsive wrapping.
 fn seed_one_play(conn: &Connection) {
     conn.execute(
         "INSERT INTO tracks \
@@ -250,6 +251,85 @@ fn presented(width: i32) -> (StatsView, adw::Window) {
     (view, window)
 }
 
+/// Opening My Stats must expose the headline at the start of the viewport.
+/// The adjustment assertion distinguishes an accidental scroll restore from
+/// a responsive container that collapsed while the viewport stayed at zero.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_view_opens_at_top_with_the_hero_allocated() {
+    gtk4::init().unwrap();
+    let (view, window) = presented(1_000);
+    let adjustment = view.root.vadjustment();
+    let hero_row = view.hero_row.upgrade().unwrap();
+    let hero_time_row = view.hero_time_row.upgrade().unwrap();
+    let hero_owner = hero_row.parent().unwrap();
+
+    assert_eq!(adjustment.value(), adjustment.lower());
+    assert!(hero_time_row.is_mapped());
+    assert!(
+        hero_row.height() > 1,
+        "hero responsive row collapsed to {} px",
+        hero_row.height()
+    );
+    assert!(
+        hero_time_row.height() <= hero_owner.height(),
+        "hero child is {} px high but its responsive owner is only {} px high",
+        hero_time_row.height(),
+        hero_owner.height()
+    );
+
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_view_present_refresh_and_teardown_emit_no_criticals() {
+    gtk4::init().unwrap();
+    let criticals = Arc::new(Mutex::new(Vec::new()));
+    let handlers = ["Gtk", "GLib-GObject"].map(|domain| {
+        let criticals = criticals.clone();
+        glib::log_set_handler(
+            Some(domain),
+            glib::LogLevels::LEVEL_CRITICAL,
+            false,
+            false,
+            move |domain, _, message| {
+                criticals
+                    .lock()
+                    .unwrap()
+                    .push(format!("{}: {message}", domain.unwrap_or("unknown")));
+            },
+        )
+    });
+
+    {
+        let (view, conn) = view_and_conn();
+        seed_one_play(&conn.borrow());
+        view.wire_year_selector(&conn);
+        let callback_copy = view.clone();
+        let window = adw::Window::builder()
+            .default_width(1_000)
+            .default_height(700)
+            .content(view.widget())
+            .build();
+        window.present();
+        wait_for_layout();
+        callback_copy.refresh(&conn);
+        while glib::MainContext::default().iteration(false) {}
+        window.close();
+        drop(window);
+        drop(callback_copy);
+        drop(view);
+        while glib::MainContext::default().iteration(false) {}
+    }
+
+    for (domain, handler) in ["Gtk", "GLib-GObject"].into_iter().zip(handlers) {
+        glib::log_remove_handler(Some(domain), handler);
+    }
+    let criticals = criticals.lock().unwrap();
+    assert!(criticals.is_empty(), "GTK criticals: {criticals:?}");
+}
+
 /// STATS-1: the pill names the compared span, and that span is seasonally
 /// congruent. "2026 so far" is measured against Jan–Jul 2025, so the pill has
 /// to say so instead of naming an equally long stretch ("previous 200 days")
@@ -282,11 +362,12 @@ fn stats_1_pill_names_the_seasonally_congruent_compared_span() {
 /// still side by side but already narrower than the two sections need —
 /// GTK then under-allocates them. The band has to stay empty.
 #[test]
-fn asymmetric_row_minimums_fit_under_the_breakpoint() {
+fn asymmetric_row_minimums_fit_the_natural_line_length() {
     let minimum = CLOCK_MIN_WIDTH + HIGHLIGHTS_MIN_WIDTH + ASYMMETRIC_SPACING;
     assert!(
-        f64::from(minimum) <= ASYMMETRIC_BREAKPOINT,
-        "side-by-side minimum {minimum} exceeds the breakpoint {ASYMMETRIC_BREAKPOINT}"
+        minimum <= ASYMMETRIC_NATURAL_LINE_LENGTH,
+        "side-by-side minimum {minimum} exceeds the natural line length \
+         {ASYMMETRIC_NATURAL_LINE_LENGTH}"
     );
 }
 
@@ -295,16 +376,21 @@ fn asymmetric_row_minimums_fit_under_the_breakpoint() {
 fn stats_view_narrow_width_stacks_the_asymmetric_row() {
     gtk4::init().unwrap();
     let (view, window) = presented(600);
+    let asymmetric_row = view.asymmetric_row.upgrade().unwrap();
 
-    let width = view.asymmetric_bin.width();
-    assert!(width > 0, "the bin must be allocated, got {width}");
-    assert!(
-        width <= ASYMMETRIC_BREAKPOINT as i32,
-        "the row's minimum width must fit under the breakpoint, got {width}"
-    );
-    assert_eq!(
-        view.asymmetric_row.orientation(),
-        gtk4::Orientation::Vertical
+    assert!(asymmetric_row.width() > 0);
+    assert_ne!(
+        view.render
+            .clock_section
+            .compute_bounds(&asymmetric_row)
+            .unwrap()
+            .y(),
+        view.render
+            .highlights_section
+            .compute_bounds(&asymmetric_row)
+            .unwrap()
+            .y(),
+        "narrow sections must wrap onto separate lines"
     );
     window.close();
 }
@@ -335,10 +421,27 @@ fn stats_1_realistic_width_keeps_the_hero_copy_unellipsized() {
     window.present();
     wait_for_layout();
 
-    assert_eq!(view.hero_row.orientation(), gtk4::Orientation::Vertical);
+    let hero_row = view.hero_row.upgrade().unwrap();
+    let hero_time_row = view.hero_time_row.upgrade().unwrap();
+    let first = hero_row.first_child().unwrap();
+    let last = hero_row.last_child().unwrap();
+    assert_ne!(
+        first.compute_bounds(&hero_row).unwrap().y(),
+        last.compute_bounds(&hero_row).unwrap().y(),
+        "hero controls must wrap below the copy at a realistic width"
+    );
     assert_eq!(
-        view.hero_time_row.orientation(),
-        gtk4::Orientation::Horizontal
+        view.render
+            .hero_time
+            .compute_bounds(&hero_time_row)
+            .unwrap()
+            .y(),
+        view.render
+            .comparison_pill
+            .compute_bounds(&hero_time_row)
+            .unwrap()
+            .y(),
+        "the hours and compact pill still fit on one line"
     );
     assert!(view.render.hero_time.is_mapped());
     assert!(view.render.comparison_pill.is_mapped());
@@ -412,15 +515,20 @@ fn stats_1a_comparison_pill_is_not_ellipsized_at_a_realistic_width() {
 fn stats_view_wide_width_keeps_the_asymmetric_row_side_by_side() {
     gtk4::init().unwrap();
     let (view, window) = presented(1_000);
+    let asymmetric_row = view.asymmetric_row.upgrade().unwrap();
 
-    let width = view.asymmetric_bin.width();
-    assert!(
-        width > ASYMMETRIC_BREAKPOINT as i32,
-        "a wide window must allocate the bin above the breakpoint, got {width}"
-    );
     assert_eq!(
-        view.asymmetric_row.orientation(),
-        gtk4::Orientation::Horizontal
+        view.render
+            .clock_section
+            .compute_bounds(&asymmetric_row)
+            .unwrap()
+            .y(),
+        view.render
+            .highlights_section
+            .compute_bounds(&asymmetric_row)
+            .unwrap()
+            .y(),
+        "wide sections must remain side by side"
     );
     window.close();
 }
