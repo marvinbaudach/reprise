@@ -10,6 +10,7 @@
 //! `player_bar::should_apply_position_tick`.
 
 use rusqlite::Connection;
+use std::path::Path;
 
 /// Ratings are stored as a plain `i32` column with no `CHECK` constraint
 /// (see `db.rs`'s schema); clamping here is the single place that keeps
@@ -26,6 +27,21 @@ pub fn set_rating(conn: &Connection, track_id: i64, rating: i32) -> Result<(), r
         rusqlite::params![clamped, track_id],
     )?;
     Ok(())
+}
+
+pub(crate) fn set_rating_for_registered_track(
+    conn: &Connection,
+    track_id: i64,
+    path: &Path,
+    rating: i32,
+) -> Result<bool, rusqlite::Error> {
+    let clamped = rating.clamp(RATING_MIN, RATING_MAX);
+    let changed = conn.execute(
+        "UPDATE tracks SET rating=?1 \
+         WHERE id=?2 AND path=?3 AND removed_at IS NULL",
+        rusqlite::params![clamped, track_id, path.to_string_lossy()],
+    )?;
+    Ok(changed == 1)
 }
 
 /// Increments `track_id`'s play count and sets `last_played_at` to

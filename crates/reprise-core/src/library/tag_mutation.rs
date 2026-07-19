@@ -140,6 +140,17 @@ pub(crate) fn prepare_tag_mutation(
         error,
         file_written: false,
     })?;
+    if requested
+        .year
+        .flatten()
+        .is_some_and(|year| year > u32::from(u16::MAX))
+    {
+        return Err(TagMutationFailure {
+            kind: WriteErrorKind::Io,
+            error: "year is outside the tag format's supported range".into(),
+            file_written: false,
+        });
+    }
     let before = read_editable_tags(path).map_err(|error| TagMutationFailure {
         kind: classify_write_error(&error),
         error: error.to_string(),
