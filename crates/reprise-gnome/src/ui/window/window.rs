@@ -27,7 +27,6 @@ use reprise_core::playback::{PlaybackError, PlayerEvent};
 use reprise_core::view_source::ViewSource;
 use reprise_core::waveform::WaveformBackend;
 use reprise_platform_linux::player::Player;
-use reprise_platform_linux::waveform::GstreamerWaveformBackend;
 
 use super::cover_download_worker;
 use super::file_open::FileOpenHandler;
@@ -74,8 +73,6 @@ pub fn build(
     db_path: &Path,
 ) -> FileOpenHandler {
     super::style::install();
-    let waveform_backend: Arc<dyn WaveformBackend> = Arc::new(GstreamerWaveformBackend);
-    super::scan_flow::spawn_waveform_backfill(db_path.to_path_buf(), waveform_backend.clone());
     {
         let conn = conn.borrow();
         let stored = reprise_core::library::settings::get_setting(
@@ -107,6 +104,12 @@ pub fn build(
         .width_request(MIN_WIDTH)
         .height_request(MIN_HEIGHT)
         .build();
+    let audio_analysis_enabled = {
+        let conn = conn.borrow();
+        reprise_core::library::settings::get_audio_analysis_enabled(&conn)
+    };
+    let (waveform_backend, audio_analysis) =
+        super::window_audio_analysis::setup(db_path, &window, audio_analysis_enabled);
     super::session_restore::apply_initial_geometry(&window, &session_state);
     // Headerbar title follows the currently selected `ViewSource` (Stage 3
     // Task 4); `Library` (`ViewSource::default()`) is both `TrackList`'s and
@@ -302,8 +305,10 @@ pub fn build(
         });
     }
     let scan_progress = ScanProgressView::new();
-    let scan_controls =
-        super::scan_flow::ScanControls::new(&scan_button, &scan_progress, waveform_backend);
+    let scan_controls = super::scan_flow::ScanControls::new(&scan_button, &scan_progress);
+    if let Some(runtime) = &audio_analysis {
+        scan_controls.set_audio_analysis(runtime);
+    }
     scan_controls.set_sidebar_toggle(&sidebar_toggle);
     scan_progress.set_on_cancel({
         let scan_controls = scan_controls.clone();
@@ -420,6 +425,7 @@ pub fn build(
         player.as_ref(),
         &artist_news,
         &artist_portrait,
+        audio_analysis.as_ref(),
     );
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;
@@ -506,6 +512,7 @@ pub fn build(
         &info_panel,
         &scan_button,
         &scan_controls,
+        audio_analysis.as_ref(),
         player.as_ref(),
         &listenbrainz,
         &lastfm,

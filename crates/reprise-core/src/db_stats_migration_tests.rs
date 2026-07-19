@@ -26,7 +26,7 @@ fn migrating_a_v16_database_adds_the_listen_events_track_index() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 17);
+    assert_eq!(version, 18);
     let indexes = conn
         .prepare("PRAGMA index_list(listen_events)")
         .unwrap()
@@ -40,7 +40,7 @@ fn migrating_a_v16_database_adds_the_listen_events_track_index() {
 }
 
 #[test]
-fn temporary_file_databases_migrate_from_fresh_and_v16_to_v17() {
+fn temporary_file_databases_migrate_from_fresh_and_v16_to_v18() {
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
 
@@ -54,7 +54,9 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v17() {
         migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
         if starting_version == 16 {
             conn.execute_batch(
-                "DROP INDEX idx_listen_events_track_played; PRAGMA user_version = 16;",
+                "DROP TABLE track_audio_analysis;
+                 DROP INDEX idx_listen_events_track_played;
+                 PRAGMA user_version = 16;",
             )
             .unwrap();
             migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
@@ -71,7 +73,7 @@ fn temporary_file_databases_migrate_from_fresh_and_v16_to_v17() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 17, "starting version {starting_version}");
+        assert_eq!(version, 18, "starting version {starting_version}");
         assert!(index_exists, "starting version {starting_version}");
     }
 }

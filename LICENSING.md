@@ -31,3 +31,16 @@ MIT notice in the app's acknowledgements/licenses screen.
 Marvin Baudach is the sole copyright holder and may relicense his own code. **Before accepting
 external contributions, add a CLA or DCO** so the relicensing option (and the proprietary ports)
 stay legally clean.
+
+## Audio-analysis dependencies and models
+
+Local audio analysis is part of the MIT engine path. Dependencies, bundled
+models, and generated model artifacts used there must permit redistribution,
+commercial use, and linking from both the GPL Linux client and future
+proprietary frontends. AGPL libraries and assets with Non-Commercial or
+No-Derivatives terms must not be linked into or distributed with
+`reprise-core` or `reprise-platform-linux`.
+
+Every future semantic audio model requires a documented license and provenance
+review before it enters the repository. Research comparisons do not authorize
+shipping the compared library or model.

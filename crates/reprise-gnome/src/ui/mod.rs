@@ -76,6 +76,7 @@ pub(crate) mod tooltip_discipline;
 pub(crate) mod track_list;
 pub mod view_session;
 pub(crate) mod window;
+mod window_audio_analysis;
 
 // Compatibility surface for the existing frontend. The ownership of every
 // implementation module now lives with its feature directory; these explicit
@@ -131,15 +132,16 @@ pub(crate) use playlists::playlist_io;
 use playlists::{playlist_import_navigation, playlist_io_names};
 #[allow(unused_imports)]
 use preferences::{
-    preference_appearance, preference_choice_cards, preference_dependencies, preference_effects,
-    preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
-    preference_playback, preference_plugins, preference_rhythmbox, preference_sync,
-    preference_visual_strings, preference_window_decorations, preferences_window,
+    preference_appearance, preference_audio_analysis, preference_choice_cards,
+    preference_dependencies, preference_effects, preference_lastfm, preference_layout,
+    preference_library, preference_listenbrainz, preference_playback, preference_plugins,
+    preference_rhythmbox, preference_sync, preference_visual_strings,
+    preference_window_decorations, preferences_window,
 };
 #[allow(unused_imports)]
 pub(crate) use scan::{scan_card_css, scan_flow};
 #[allow(unused_imports)]
-use scan::{scan_controls, scan_progress, scan_watcher, scan_waveform_analysis, scan_worker};
+use scan::{scan_controls, scan_progress, scan_watcher, scan_worker};
 #[allow(unused_imports)]
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
 #[allow(unused_imports)]

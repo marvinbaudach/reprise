@@ -1,4 +1,5 @@
 pub(in crate::ui) mod preference_appearance;
+pub(in crate::ui) mod preference_audio_analysis;
 pub(in crate::ui) mod preference_choice_cards;
 pub(in crate::ui) mod preference_dependencies;
 pub(in crate::ui) mod preference_effects;

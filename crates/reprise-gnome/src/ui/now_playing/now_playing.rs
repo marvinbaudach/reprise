@@ -3,12 +3,13 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::AnimationExt;
+use libadwaita::prelude::{AnimationExt, BreakpointBinExt};
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::playback::PlaybackState;
 use rusqlite::Connection;
 
 use super::artist_portrait_worker::ArtistPortraitRuntime;
+use super::audio_character_view::{self, AudioCharacterView};
 use super::cover_loader::CoverLoader;
 use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
@@ -20,6 +21,7 @@ use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::player_controller::NowPlaying;
+use crate::ui::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use crate::ui::style::tokens;
 
 type OnVoid = Rc<dyn Fn()>;
@@ -30,14 +32,15 @@ struct PanelWidgets {
     track_content: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
+    audio_character: AudioCharacterView,
     cover: gtk4::Image,
     title: gtk4::Label,
     subtitle: gtk4::Label,
     // Retained for T9's shared track-content crossfade; the T5 acceptance
     // test also inspects the selected page directly.
-    #[allow(dead_code)]
-    tab_stack: gtk4::Stack,
-    tab_buttons: [gtk4::ToggleButton; 2],
+    tab_stack: adw::ViewStack,
+    #[cfg(test)]
+    tab_switcher: adw::InlineViewSwitcher,
     footer: gtk4::Label,
     footers: Rc<RefCell<TabFooters>>,
     session: Rc<TabSession>,
@@ -103,46 +106,61 @@ fn build_widgets_for_session(
 
     let lyrics = LyricsView::new();
     let up_next = UpNextPanel::new(conn, cover_loader);
-    let tab_stack = gtk4::Stack::builder()
-        .transition_type(gtk4::StackTransitionType::Crossfade)
-        .transition_duration(crate::ui::motion::STANDARD_MS)
-        .vexpand(true)
-        .build();
-    tab_stack.add_named(up_next.widget(), Some(UP_NEXT_PAGE));
-    tab_stack.add_named(lyrics.widget(), Some(LYRICS_PAGE));
+    let audio_character = AudioCharacterView::new();
+    let tab_stack = adw::ViewStack::builder().vexpand(true).build();
+    tab_stack.add_titled_with_icon(
+        up_next.widget(),
+        Some(UP_NEXT_PAGE),
+        &strings::text(strings::UP_NEXT),
+        "view-list-symbolic",
+    );
+    tab_stack.add_titled_with_icon(
+        lyrics.widget(),
+        Some(LYRICS_PAGE),
+        &lyrics_strings::text(lyrics_strings::LYRICS),
+        "document-edit-symbolic",
+    );
+    tab_stack.add_titled_with_icon(
+        audio_character.widget(),
+        Some(AUDIO_CHARACTER_PAGE),
+        &strings::text(strings::AUDIO_CHARACTER),
+        "audio-speakers-symbolic",
+    );
     tab_stack.set_visible_child_name(session.selected.get().page_name());
-
-    let up_next_button = gtk4::ToggleButton::with_label(&strings::text(strings::UP_NEXT));
-    let lyrics_button =
-        gtk4::ToggleButton::with_label(&lyrics_strings::text(lyrics_strings::LYRICS));
-    lyrics_button.set_group(Some(&up_next_button));
-    for button in [&up_next_button, &lyrics_button] {
-        button.add_css_class("reprise-now-playing-tab");
-        // States come from `style::buttons` by selector (the pill's own
-        // `:checked` rule outranks a class), so only the cursor is set here.
-        crate::ui::style::buttons::arm_cursor(button);
-    }
-    match session.selected.get() {
-        PanelTab::UpNext => up_next_button.set_active(true),
-        PanelTab::Lyrics => lyrics_button.set_active(true),
-    }
     lyrics.set_tab_open(session.selected.get() == PanelTab::Lyrics);
-    let tabs = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-    tabs.set_homogeneous(true);
-    tabs.set_halign(gtk4::Align::Center);
-    tabs.add_css_class("reprise-now-playing-tabs");
-    tabs.append(&up_next_button);
-    tabs.append(&lyrics_button);
+    let tab_switcher = adw::InlineViewSwitcher::builder()
+        .stack(&tab_stack)
+        .display_mode(adw::InlineViewSwitcherDisplayMode::Labels)
+        .can_shrink(true)
+        .homogeneous(true)
+        .build();
+    tab_switcher.add_css_class("reprise-now-playing-tabs");
+    let tabs = adw::BreakpointBin::new();
+    tabs.set_child(Some(&tab_switcher));
+    let narrow = adw::BreakpointCondition::new_length(
+        adw::BreakpointConditionLengthType::MaxWidth,
+        320.0,
+        adw::LengthUnit::Px,
+    );
+    let breakpoint = adw::Breakpoint::new(narrow);
+    breakpoint.add_setter(
+        &tab_switcher,
+        "display-mode",
+        Some(&adw::InlineViewSwitcherDisplayMode::Icons.to_value()),
+    );
+    tabs.add_breakpoint(breakpoint);
 
     let footer = gtk4::Label::new(None);
     footer.add_css_class("reprise-now-playing-footer");
     let footers = Rc::new(RefCell::new(TabFooters {
         up_next: super::up_next_panel::format_up_next_footer(&[]),
         lyrics: String::new(),
+        audio_character: String::new(),
     }));
     let initial_footer = match session.selected.get() {
         PanelTab::UpNext => footers.borrow().up_next.clone(),
         PanelTab::Lyrics => footers.borrow().lyrics.clone(),
+        PanelTab::AudioCharacter => footers.borrow().audio_character.clone(),
     };
     footer.set_label(&initial_footer);
 
@@ -164,33 +182,26 @@ fn build_widgets_for_session(
     }
 
     {
-        let stack = tab_stack.clone();
-        let session = session.clone();
-        let footer = footer.clone();
-        let footers = footers.clone();
-        up_next_button.connect_toggled(move |button| {
-            if button.is_active() {
-                session.selected.set(PanelTab::UpNext);
-                stack.set_visible_child_name(UP_NEXT_PAGE);
-                let text = footers.borrow().up_next.clone();
-                footer.set_label(&text);
-            }
-        });
-    }
-    {
-        let stack = tab_stack.clone();
         let session = session.clone();
         let footer = footer.clone();
         let footers = footers.clone();
         let lyrics = lyrics.clone();
-        lyrics_button.connect_toggled(move |button| {
-            lyrics.set_tab_open(button.is_active());
-            if button.is_active() {
-                session.selected.set(PanelTab::Lyrics);
-                stack.set_visible_child_name(LYRICS_PAGE);
-                let text = footers.borrow().lyrics.clone();
-                footer.set_label(&text);
-            }
+        tab_stack.connect_visible_child_name_notify(move |stack| {
+            let Some(name) = stack.visible_child_name() else {
+                return;
+            };
+            let Some(tab) = PanelTab::from_page_name(&name) else {
+                return;
+            };
+            session.selected.set(tab);
+            lyrics.set_tab_open(tab == PanelTab::Lyrics);
+            let footers = footers.borrow();
+            let text = match tab {
+                PanelTab::UpNext => &footers.up_next,
+                PanelTab::Lyrics => &footers.lyrics,
+                PanelTab::AudioCharacter => &footers.audio_character,
+            };
+            footer.set_label(text);
         });
     }
 
@@ -216,11 +227,13 @@ fn build_widgets_for_session(
         track_content,
         lyrics,
         up_next,
+        audio_character,
         cover,
         title,
         subtitle,
         tab_stack,
-        tab_buttons: [up_next_button, lyrics_button],
+        #[cfg(test)]
+        tab_switcher,
         footer,
         footers,
         session: session.clone(),
@@ -239,6 +252,7 @@ pub(in crate::ui) struct NowPlayingPanel {
     on_up_next_refresh: RefCell<Option<OnVoid>>,
     track_animation: RefCell<Option<adw::TimedAnimation>>,
     track_animation_generation: Cell<u64>,
+    audio_character_generation: Cell<u64>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
 }
 
@@ -251,6 +265,7 @@ impl NowPlayingPanel {
         _runtime: Rc<ArtistNewsRuntime>,
         _portraits: &Rc<ArtistPortraitRuntime>,
         cover_loader: Rc<CoverLoader>,
+        audio_analysis: Option<&AudioAnalysisRuntime>,
     ) -> Rc<Self> {
         let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
         let panel = Rc::new(Self {
@@ -270,12 +285,15 @@ impl NowPlayingPanel {
             on_up_next_refresh: RefCell::new(None),
             track_animation: RefCell::new(None),
             track_animation_generation: Cell::new(0),
+            audio_character_generation: Cell::new(0),
             on_album_reveal: Rc::new(RefCell::new(None)),
         });
         crate::ui::link_activation::arm_slot(&panel.widgets.cover, &panel.on_album_reveal);
         crate::ui::link_activation::arm_slot(&panel.widgets.title, &panel.on_album_reveal);
         panel.wire();
         panel.render_track();
+        panel.queue_audio_character_refresh();
+        panel.install_audio_character_updates(audio_analysis);
         panel
     }
 
@@ -292,7 +310,7 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn show_lyrics(&self) {
-        self.widgets.tab_buttons[1].set_active(true);
+        self.widgets.tab_stack.set_visible_child_name(LYRICS_PAGE);
         self.widgets.column.set_visible(true);
     }
 
@@ -314,6 +332,7 @@ impl NowPlayingPanel {
             }
         };
         *self.loaded_track.borrow_mut() = track;
+        self.queue_audio_character_refresh();
         if !changed {
             if self.track_animation.borrow().is_none() {
                 self.render_track();
@@ -402,13 +421,15 @@ impl NowPlayingPanel {
         });
 
         let weak = Rc::downgrade(self);
-        self.widgets.tab_buttons[0].connect_toggled(move |button| {
-            if button.is_active() {
-                if let Some(panel) = weak.upgrade() {
-                    panel.request_up_next_refresh_if_visible();
+        self.widgets
+            .tab_stack
+            .connect_visible_child_name_notify(move |stack| {
+                if stack.visible_child_name().as_deref() == Some(UP_NEXT_PAGE) {
+                    if let Some(panel) = weak.upgrade() {
+                        panel.request_up_next_refresh_if_visible();
+                    }
                 }
-            }
-        });
+            });
 
         let weak = Rc::downgrade(self);
         self.widgets
@@ -443,6 +464,48 @@ impl NowPlayingPanel {
         if let Some(callback) = callback {
             callback();
         }
+    }
+
+    fn install_audio_character_updates(self: &Rc<Self>, runtime: Option<&AudioAnalysisRuntime>) {
+        let Some(runtime) = runtime else {
+            return;
+        };
+        let receiver = runtime.progress_receiver();
+        let panel = Rc::downgrade(self);
+        gtk4::glib::spawn_future_local(async move {
+            while receiver.recv().await.is_ok() {
+                let Some(panel) = panel.upgrade() else {
+                    return;
+                };
+                panel.queue_audio_character_refresh();
+            }
+        });
+    }
+
+    fn queue_audio_character_refresh(self: &Rc<Self>) {
+        let generation = self.audio_character_generation.get().wrapping_add(1);
+        self.audio_character_generation.set(generation);
+        let requested_track = self.loaded_track.borrow().as_ref().map(|track| track.id);
+        let panel = Rc::downgrade(self);
+        gtk4::glib::idle_add_local_once(move || {
+            let Some(panel) = panel.upgrade() else {
+                return;
+            };
+            let current_track = panel.loaded_track.borrow().as_ref().map(|track| track.id);
+            if !audio_character_view::result_is_current(
+                generation,
+                panel.audio_character_generation.get(),
+                requested_track,
+                current_track,
+            ) {
+                return;
+            }
+            let presentation = {
+                let conn = panel.conn.borrow();
+                audio_character_view::load_presentation(&conn, current_track)
+            };
+            panel.widgets.audio_character.render(&presentation);
+        });
     }
 
     fn render_track(&self) {
@@ -573,12 +636,12 @@ pub(in crate::ui) fn css() -> String {
        background-color: alpha(#ffffff, {NOW_PLAYING_PILL_BG_ALPHA}); \
        border-radius: {NOW_PLAYING_PILL_RADIUS}; \
        padding: 2px; margin: 0 18px 12px; }}\n\
-     .reprise-now-playing-tabs > .reprise-now-playing-tab {{ \
+     .reprise-now-playing-tabs button {{ \
        background-color: transparent; background-image: none; \
        border: none; border-radius: {NOW_PLAYING_PILL_RADIUS}; box-shadow: none; \
        color: alpha(#ffffff, {NOW_PLAYING_SUBTITLE_ALPHA}); min-height: 0; \
        padding: 5px 18px; }}\n\
-     .reprise-now-playing-tabs > .reprise-now-playing-tab:checked {{ \
+     .reprise-now-playing-tabs button:checked {{ \
        background-color: alpha(#ffffff, {NOW_PLAYING_PILL_ACTIVE_ALPHA}); \
        color: #ffffff; font-weight: 700; }}\n\
      .reprise-now-playing-footer {{ \
