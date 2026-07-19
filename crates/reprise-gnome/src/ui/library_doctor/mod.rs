@@ -1,3 +1,6 @@
+mod review_model;
+mod review_page;
+mod review_row;
 mod summary_page;
 
 use std::cell::{Cell, RefCell};
@@ -20,6 +23,7 @@ use rusqlite::Connection;
 use super::preferences::PreferencesContext;
 use super::scan_flow::ScanControls;
 use super::track_list::TrackList;
+use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
 
 const PLUGIN_TARGETS: &[&str] = &["library_doctor"];
@@ -28,6 +32,7 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     conn: Rc<RefCell<Connection>>,
     db_path: PathBuf,
     navigation: adw::NavigationView,
+    window: adw::ApplicationWindow,
     page: Rc<LibraryDoctorPage>,
     track_list: Rc<TrackList>,
     scan_controls: ScanControls,
@@ -35,6 +40,7 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     preferences: std::rc::Weak<PreferencesContext>,
     cancellation: RefCell<Option<Arc<AtomicBool>>>,
     running: Cell<bool>,
+    review: RefCell<Option<Rc<LibraryDoctorReviewPage>>>,
 }
 
 pub(in crate::ui) struct LibraryDoctorContext<'a> {
@@ -63,9 +69,12 @@ impl LibraryDoctorCoordinator {
         let coordinator = Rc::new_cyclic(|weak: &std::rc::Weak<Self>| {
             let refresh = {
                 let weak = weak.clone();
-                Rc::new(move |_| {
+                Rc::new(move |visible| {
                     if let Some(coordinator) = weak.upgrade() {
                         coordinator.page.refresh();
+                        if let Some(review) = coordinator.review.borrow().as_ref() {
+                            review.set_remote_active(visible);
+                        }
                     }
                 }) as Rc<dyn Fn(bool)>
             };
@@ -78,6 +87,7 @@ impl LibraryDoctorCoordinator {
                 conn: conn.clone(),
                 db_path: db_path.to_path_buf(),
                 navigation: navigation.clone(),
+                window: window.clone(),
                 page,
                 track_list: track_list.clone(),
                 scan_controls: scan_controls.clone(),
@@ -85,6 +95,7 @@ impl LibraryDoctorCoordinator {
                 preferences: Rc::downgrade(preferences),
                 cancellation: RefCell::new(None),
                 running: Cell::new(false),
+                review: RefCell::new(None),
             }
         });
         coordinator.load_last_scan();
@@ -104,6 +115,26 @@ impl LibraryDoctorCoordinator {
                 }
             });
         }
+        {
+            let weak = Rc::downgrade(&coordinator);
+            coordinator.page.connect_review_all(move || {
+                if let Some(coordinator) = weak.upgrade() {
+                    coordinator
+                        .open_review(reprise_core::library_doctor::DoctorReviewFilter::AllChanges);
+                }
+            });
+        }
+        {
+            let weak = Rc::downgrade(&coordinator);
+            coordinator.page.connect_review_safe(move || {
+                if let Some(coordinator) = weak.upgrade() {
+                    coordinator.open_review(
+                        reprise_core::library_doctor::DoctorReviewFilter::LocalSafeOnly,
+                    );
+                }
+            });
+        }
+        coordinator.install_tag_edit_observer();
         coordinator
     }
 
@@ -203,7 +234,10 @@ impl LibraryDoctorCoordinator {
             };
             coordinator.finish_scan();
             match received {
-                Ok(Ok(DoctorScanOutcome::Completed(scan))) => coordinator.page.set_scan(Some(scan)),
+                Ok(Ok(DoctorScanOutcome::Completed(scan))) => {
+                    coordinator.review.borrow_mut().take();
+                    coordinator.page.set_scan(Some(scan));
+                }
                 Ok(Ok(DoctorScanOutcome::Cancelled { .. })) => {}
                 Ok(Ok(DoctorScanOutcome::ScopeFallbackRequired)) => {
                     coordinator.page.set_selected_scope(0);
@@ -235,6 +269,56 @@ impl LibraryDoctorCoordinator {
         self.running.set(false);
         self.page.set_running(false);
         self.scan_controls.button.set_sensitive(true);
+    }
+
+    fn open_review(self: &Rc<Self>, filter: reprise_core::library_doctor::DoctorReviewFilter) {
+        let Some(scan) = self.page.scan() else {
+            return;
+        };
+        let existing = self.review.borrow().clone();
+        let page = if let Some(existing) = existing.filter(|page| page.filter() == filter) {
+            existing
+        } else {
+            let weak = Rc::downgrade(self);
+            let track_list = self.track_list.clone();
+            let on_edit = Rc::new(move |track_id| track_list.edit_tags_for_ids(&[track_id]))
+                as Rc<dyn Fn(i64)>;
+            let page = LibraryDoctorReviewPage::new(
+                &self.conn,
+                &self.window,
+                scan,
+                filter,
+                Rc::new(move |_| {
+                    if let Some(coordinator) = weak.upgrade() {
+                        let conn = coordinator.conn.borrow();
+                        coordinator.page.sync_remote_preference(&conn);
+                    }
+                }),
+                &on_edit,
+            );
+            self.review.borrow_mut().replace(page.clone());
+            page
+        };
+        if let Some(visible) = self.navigation.find_page("library-doctor-review") {
+            self.navigation.pop_to_page(&visible);
+        } else {
+            self.navigation.push(page.navigation_page());
+        }
+    }
+
+    fn install_tag_edit_observer(self: &Rc<Self>) {
+        let prior = self.track_list.shared.on_tags_mutated.borrow().clone();
+        let weak = Rc::downgrade(self);
+        self.track_list.set_on_tags_mutated(move |paths| {
+            if let Some(prior) = &prior {
+                prior(paths);
+            }
+            if let Some(coordinator) = weak.upgrade() {
+                if let Some(review) = coordinator.review.borrow().as_ref() {
+                    review.mark_paths_stale(paths);
+                }
+            }
+        });
     }
 }
 

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-19 14:12+0200\n"
+"POT-Creation-Date: 2026-07-19 14:36+0200\n"
 "PO-Revision-Date: 2026-07-12 18:10+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -1841,38 +1841,171 @@ msgstr "AcoustID nicht verfügbar"
 msgid "Local checks and MusicBrainz suggestions remain available."
 msgstr "Lokale Prüfungen und MusicBrainz-Vorschläge bleiben verfügbar."
 
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:47
+msgid "Local"
+msgstr "Lokal"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:48
+msgid "MusicBrainz"
+msgstr "MusicBrainz"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:49
+msgid "AcoustID"
+msgstr "AcoustID"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:50
+msgid "Recording MBID"
+msgstr "Recording-MBID"
+
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:51
+msgid "Unknown Track"
+msgstr "Unbekannter Titel"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:52
+msgid "— empty —"
+msgstr "— leer —"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:53
+msgid "Select tag change"
+msgstr "Tag-Änderung auswählen"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:54
+msgid "Track + Field"
+msgstr "Titel + Feld"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:55
+msgid "Current"
+msgstr "Aktuell"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:56
+msgid "Proposed"
+msgstr "Vorgeschlagen"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:57
+msgid "Source"
+msgstr "Quelle"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:58
+msgid "Low confidence; review before selecting"
+msgstr "Niedrige Konfidenz; vor der Auswahl prüfen"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:59
+msgid "Edit track tags…"
+msgstr "Tags des Titels bearbeiten…"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:60
+msgid "No Changes to Review"
+msgstr "Keine Änderungen zu prüfen"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:62
+msgid "Return to the results and choose another review filter."
+msgstr "Zurück zu den Ergebnissen und einen anderen Prüffilter wählen."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:63
+msgid "All Safe"
+msgstr "Alle sicheren"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:64
+msgid "None"
+msgstr "Keine"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:65
+msgid "Review Tag Changes"
+msgstr "Tag-Änderungen prüfen"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:66
+msgid "Pick one spelling to materialize its track changes."
+msgstr "Eine Schreibweise wählen, um ihre Titeländerungen zu erzeugen."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
+#, rust-format
+msgid "{source} · {confidence}%"
+msgstr "{source} · {confidence} %"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
+#, rust-format
+msgid "{source} · {confidence}% · low confidence"
+msgstr "{source} · {confidence} % · niedrige Konfidenz"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:90
+#, rust-format
+msgid ""
+"{track}, {field}. Current: {current}. Proposed: {proposed}. Source: {source}."
+msgstr ""
+"{track}, {field}. Aktuell: {current}. Vorgeschlagen: {proposed}. Quelle: "
+"{source}."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:104
+#, rust-format
+msgid "Apply {count} track"
+msgid_plural "Apply {count} tracks"
+msgstr[0] "{count} Titel anwenden"
+msgstr[1] "{count} Titel anwenden"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:113
+#, rust-format
+msgid "{changes} tag changes · {files} files · undo available after"
+msgstr "{changes} Tag-Änderungen · {files} Dateien · danach rückgängig machbar"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:123
+#, rust-format
+msgid "{value} ({count})"
+msgstr "{value} ({count})"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:131
+#, rust-format
+msgid "{count} spelling, no clear winner"
+msgid_plural "{count} spellings, no clear winner"
+msgstr[0] "{count} Schreibweise, kein eindeutiger Gewinner"
+msgstr[1] "{count} Schreibweisen, kein eindeutiger Gewinner"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:140
+#, rust-format
+msgid "{label}: {value}"
+msgstr "{label}: {value}"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:147
+#, rust-format
+msgid "Duration: {duration} ms"
+msgstr "Dauer: {duration} ms"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:154
+#, rust-format
+msgid "Duration difference: {delta} ms"
+msgstr "Dauerabweichung: {delta} ms"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:162
 #, rust-format
 msgid "{count} change"
 msgid_plural "{count} changes"
 msgstr[0] "{count} Änderung"
 msgstr[1] "{count} Änderungen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:61
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:172
 #, rust-format
 msgid "{count} group"
 msgid_plural "{count} groups"
 msgstr[0] "{count} Gruppe"
 msgstr[1] "{count} Gruppen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:181
 #, rust-format
 msgid "{safe} safe · {review} review"
 msgstr "{safe} sicher · {review} zu prüfen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:188
 #, rust-format
 msgid "{checked} checked · {skipped} skipped"
 msgstr "{checked} geprüft · {skipped} übersprungen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:88
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:199
 #, rust-format
 msgid "Review {count} change"
 msgid_plural "Review {count} changes"
 msgstr[0] "{count} Änderung prüfen"
 msgstr[1] "{count} Änderungen prüfen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:98
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:209
 #, rust-format
 msgid "Review {count} safe fix"
 msgid_plural "Review {count} safe fixes"
@@ -3171,10 +3304,6 @@ msgstr "Separate Titelleiste"
 #~ msgstr "Speichern"
 
 #, rust-format
-#~ msgid "Save {count}"
-#~ msgstr "{count} speichern"
-
-#, rust-format
 #~ msgid "{count} changes pending"
 #~ msgstr "{count} ausstehende Änderungen"
 
@@ -3263,9 +3392,6 @@ msgstr "Separate Titelleiste"
 
 #~ msgid "Album cover"
 #~ msgstr "Albumcover"
-
-#~ msgid "Track title"
-#~ msgstr "Titel"
 
 #~ msgid "Track artist"
 #~ msgstr "Interpret"

@@ -72,6 +72,7 @@ pub(in crate::ui) struct LibraryDoctorPage {
     cancel: gtk4::Button,
     review_all: gtk4::Button,
     review_safe: gtk4::Button,
+    review_actions: gtk4::Box,
     empty: adw::StatusPage,
     results: gtk4::Box,
     safe_row: adw::ActionRow,
@@ -233,6 +234,7 @@ impl LibraryDoctorPage {
             cancel,
             review_all,
             review_safe,
+            review_actions,
             empty,
             results,
             safe_row,
@@ -254,6 +256,18 @@ impl LibraryDoctorPage {
 
     pub(in crate::ui) fn connect_cancel(&self, callback: impl Fn() + 'static) {
         self.cancel.connect_clicked(move |_| callback());
+    }
+
+    pub(in crate::ui) fn connect_review_all(&self, callback: impl Fn() + 'static) {
+        self.review_all.connect_clicked(move |_| callback());
+    }
+
+    pub(in crate::ui) fn connect_review_safe(&self, callback: impl Fn() + 'static) {
+        self.review_safe.connect_clicked(move |_| callback());
+    }
+
+    pub(in crate::ui) fn scan(&self) -> Option<DoctorScan> {
+        self.current_scan.borrow().clone()
     }
 
     pub(in crate::ui) fn selected_scope(&self) -> u32 {
@@ -336,6 +350,7 @@ impl LibraryDoctorPage {
                 .find(|item| item.class == *class)
                 .expect("every fixed problem class must be projected");
             row.set_subtitle(&strings::doctor_problem_counts(counts.safe, counts.review));
+            row.set_visible(problem_class_visible(*class, self.remote.is_active()));
         }
         self.review_all.set_label(&strings::doctor_review_changes(
             model.safe_changes + model.review_changes,
@@ -345,6 +360,8 @@ impl LibraryDoctorPage {
         self.review_all
             .set_sensitive(model.safe_changes + model.review_changes + model.unresolved_groups > 0);
         self.review_safe.set_sensitive(model.safe_changes > 0);
+        self.review_actions
+            .set_visible(model.safe_changes + model.review_changes + model.unresolved_groups > 0);
         self.empty.set_visible(false);
         self.results.set_visible(true);
     }
@@ -369,6 +386,14 @@ const fn problem_title(class: ProblemClass) -> &'static str {
         ProblemClass::MissingWrongYear => strings::DOCTOR_MISSING_WRONG_YEAR,
         ProblemClass::MissingRecordingMbid => strings::DOCTOR_MISSING_RECORDING_MBID,
     }
+}
+
+const fn problem_class_visible(class: ProblemClass, remote_visible: bool) -> bool {
+    remote_visible
+        || !matches!(
+            class,
+            ProblemClass::MissingWrongYear | ProblemClass::MissingRecordingMbid
+        )
 }
 
 #[cfg(test)]
@@ -430,5 +455,25 @@ mod tests {
         assert!(super::show_acoustid_unavailable(true, false));
         assert!(!super::show_acoustid_unavailable(false, false));
         assert!(!super::show_acoustid_unavailable(true, true));
+    }
+
+    #[test]
+    fn doc_2b_remote_only_problem_classes_disappear_with_remote_results() {
+        assert!(super::problem_class_visible(
+            ProblemClass::MissingWrongYear,
+            true
+        ));
+        assert!(!super::problem_class_visible(
+            ProblemClass::MissingWrongYear,
+            false
+        ));
+        assert!(!super::problem_class_visible(
+            ProblemClass::MissingRecordingMbid,
+            false
+        ));
+        assert!(super::problem_class_visible(
+            ProblemClass::GenreVariant,
+            false
+        ));
     }
 }
