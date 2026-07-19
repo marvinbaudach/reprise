@@ -652,3 +652,4 @@ Lock: claimed by Codex in this worktree on 2026-07-19
 Stage: implement the Library Doctor local/remote scan, mandatory per-field review, journaled apply/revert, and GTK navigation from the approved Frames 26a/26b/27 plan.
 
 Task DOC-1: complete (commit 2ea322e, base 5182582, defined the split Library Doctor UX contracts DOC-1a through DOC-6c as planned rules in section W).
+Task DOC-2: complete (commit 3e1578c, base 2ea322e, added read-only local scans with frozen scopes, conservative exact-spelling proposals, durable full-tag snapshots, stale detection, and restart-safe unresolved groups).

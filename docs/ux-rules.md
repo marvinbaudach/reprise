@@ -1235,7 +1235,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   ausgeschaltetem Remote-Schalter verschwinden Remote-Klassen, -Zeilen und
   -Counts vollständig, während das lokale Ergebnis bestehen bleibt.
 
-- **DOC-3a** [geplant] [core] — **Review entscheidet pro Feld.** Jede konkrete
+- **DOC-3a** [aktiv] [core] — **Review entscheidet pro Feld.** Jede konkrete
   Track-Feld-Änderung besitzt eine eigene Auswahl. „All safe" ist ein
   Reset-Preset auf exakt alle aktuell zulässigen eindeutigen Local-Fixes und
   entfernt Remote-, manuelle, stale und unresolved Auswahl; „None" entfernt
