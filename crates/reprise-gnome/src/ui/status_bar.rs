@@ -20,13 +20,13 @@
 //!
 //! ## Empty library
 //!
-//! When the library has zero tracks, the label is hidden outright (`set_
-//! visible(false)`) rather than showing "0 tracks · 0 minutes" — the
+//! When the library has zero tracks, the complete status surface is hidden
+//! rather than showing "0 tracks · 0 minutes" — the
 //! empty-library placeholder in the track list already communicates that
 //! state; a zeroed bar would be redundant clutter, and the player bar is
 //! `set_sensitive(false)`/blank in that state anyway (see `window.rs`).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -42,69 +42,86 @@ use reprise_core::queries::{self, BrowseFilter};
 /// callback can each hold their own copy.
 #[derive(Clone)]
 pub struct StatusBar {
+    surface: gtk4::Box,
     label: gtk4::Label,
-    enabled: Rc<std::cell::Cell<bool>>,
+    visibility: Rc<VisibilityState>,
+}
+
+struct VisibilityState {
+    enabled: Cell<bool>,
+    library_source: Cell<bool>,
+    has_content: Cell<bool>,
 }
 
 impl StatusBar {
     pub fn new() -> Self {
+        let surface = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        surface.add_css_class("reprise-list-status-bar");
+        surface.set_visible(false);
         let label = gtk4::Label::new(None);
         label.set_halign(gtk4::Align::End);
         label.set_xalign(1.0);
+        label.set_hexpand(true);
         label.set_margin_top(4);
         label.set_margin_bottom(4);
         label.set_margin_end(12);
         label.add_css_class("reprise-text-secondary");
         label.add_css_class("caption");
-        // Nothing to summarize until the first `refresh()` call resolves —
-        // avoids a flash of "0 tracks · 0 minutes" before the initial track
-        // list load completes.
-        label.set_visible(false);
+        surface.append(&label);
         Self {
+            surface,
             label,
-            enabled: Rc::new(std::cell::Cell::new(true)),
+            visibility: Rc::new(VisibilityState {
+                enabled: Cell::new(true),
+                library_source: Cell::new(false),
+                has_content: Cell::new(false),
+            }),
         }
     }
 
-    /// The label widget placed in the bottom status bar by `window.rs`.
-    pub fn widget(&self) -> &gtk4::Label {
+    /// The complete bottom status surface placed below the track list.
+    pub fn widget(&self) -> &gtk4::Box {
+        &self.surface
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn label(&self) -> &gtk4::Label {
         &self.label
     }
 
     pub fn set_enabled(&self, enabled: bool) {
-        self.enabled.set(enabled);
-        if !enabled {
-            self.label.set_visible(false);
-        }
+        self.visibility.enabled.set(enabled);
+        self.sync_visibility();
     }
 
-    /// Re-queries `queries::query_library_stats` and updates the label text
-    /// (or hides it, for an empty library — see the module doc comment).
+    /// Re-queries `queries::query_library_stats` and updates the status text
+    /// (or hides the surface, for an empty library — see the module comment).
     /// Query failures are logged and treated the same as an empty library:
     /// hide rather than show stale or partial text.
     pub fn refresh(&self, conn: &Rc<RefCell<Connection>>) {
-        if !self.enabled.get() {
-            return;
-        }
         let stats = {
             let conn = conn.borrow();
             queries::query_library_stats_browsed(&conn, "", &BrowseFilter::default())
         };
+        self.visibility.library_source.set(true);
         match stats {
             Ok(stats) if stats.track_count > 0 => {
                 let text = format_status_text(stats.track_count, stats.total_duration_ms);
                 tracing::debug!(text = %text, "status line updated");
                 self.label.set_text(&text);
-                self.label.set_visible(true);
+                self.visibility.has_content.set(true);
             }
             Ok(_) => {
-                self.label.set_visible(false);
+                self.label.set_text("");
+                self.visibility.has_content.set(false);
             }
             Err(error) => {
                 tracing::error!(%error, "failed to load library stats for status line");
-                self.label.set_visible(false);
+                self.label.set_text("");
+                self.visibility.has_content.set(false);
             }
         }
+        self.sync_visibility();
     }
 
     /// Hides the status line. Called for every non-`Library` source: since
@@ -112,7 +129,16 @@ impl StatusBar {
     /// second "{n} tracks" overlay there was pure duplication — the library
     /// stats this widget exists for have no meaning outside the Library.
     pub fn hide(&self) {
-        self.label.set_visible(false);
+        self.visibility.library_source.set(false);
+        self.sync_visibility();
+    }
+
+    fn sync_visibility(&self) {
+        self.surface.set_visible(status_visibility(
+            self.visibility.enabled.get(),
+            self.visibility.library_source.get(),
+            self.visibility.has_content.get(),
+        ));
     }
 }
 
@@ -141,9 +167,21 @@ fn format_status_text(track_count: i64, total_duration_ms: i64) -> String {
     )
 }
 
+fn status_visibility(enabled: bool, library_source: bool, has_content: bool) -> bool {
+    enabled && library_source && has_content
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_visibility_requires_enabled_library_content() {
+        assert!(status_visibility(true, true, true));
+        assert!(!status_visibility(false, true, true));
+        assert!(!status_visibility(true, false, true));
+        assert!(!status_visibility(true, true, false));
+    }
 
     // UX FIL-2: the status overlay always describes the whole library — the
     // "X of Y" variant is gone; the filter row owns restriction state.
