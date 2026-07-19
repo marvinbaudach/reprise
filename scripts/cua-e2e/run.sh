@@ -215,7 +215,6 @@ run_populated_library_scenario() {
 
   CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-focus-state.txt" \
   CUA_E2E_APP_PID="$APP_PID" \
-  CUA_E2E_WM_PID="$OPENBOX_PID" \
     "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
   restart_private_cua_daemon
 
