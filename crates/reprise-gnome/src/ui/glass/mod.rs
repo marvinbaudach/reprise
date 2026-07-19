@@ -3,6 +3,8 @@ mod backdrop;
 #[allow(dead_code)] // Wired into the library shell in the activation task.
 mod insets;
 pub(crate) mod material;
+#[allow(dead_code)] // Consumed by the paired render-cost runner in the analysis task.
+mod performance;
 #[allow(dead_code)] // Wired into the library shell in the activation task.
 mod surface;
 
@@ -16,6 +18,7 @@ mod tests {
     use gtk4::prelude::*;
 
     use super::material::{GlassEnvironment, GlassMode, GlassTheme, RendererClass};
+    use super::performance::{evaluate_pair, FrameSeries, PerfFailure};
     use super::{GlassEdge, GlassSurface};
     use super::{InsetMeasurements, PlayerBarEdge, SafeInsetApplier, SafeInsets};
 
@@ -127,5 +130,31 @@ mod tests {
         assert_eq!(first_child.margin_bottom(), 100);
         assert_eq!(second_child.margin_top(), 90);
         assert_eq!(second_child.margin_bottom(), 96);
+    }
+
+    #[test]
+    fn glass_performance_gate_is_fail_closed() {
+        let baseline = FrameSeries::new(vec![12_000; 120]);
+        let passing = FrameSeries::new(vec![14_500; 120]);
+        assert!(evaluate_pair(&baseline, &passing).is_ok());
+
+        assert_eq!(
+            evaluate_pair(&FrameSeries::new(vec![12_000; 119]), &passing),
+            Err(PerfFailure::TooFewFrames)
+        );
+        assert_eq!(
+            evaluate_pair(&baseline, &FrameSeries::new(vec![20_500; 120])),
+            Err(PerfFailure::P95Budget)
+        );
+        let mut stalled = vec![14_000; 120];
+        stalled[42] = 50_001;
+        assert_eq!(
+            evaluate_pair(&baseline, &FrameSeries::new(stalled)),
+            Err(PerfFailure::SingleFrameBudget)
+        );
+        assert_eq!(
+            evaluate_pair(&baseline, &FrameSeries::new(vec![15_001; 120])),
+            Err(PerfFailure::OverheadBudget)
+        );
     }
 }
