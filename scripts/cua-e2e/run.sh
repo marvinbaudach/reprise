@@ -375,6 +375,11 @@ run_library_doctor_scenario() {
   cua_press_key_window "$APP_PID" "$WINDOW_ID" enter doctor-plugins-enter
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin-enabled >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-disable
+  cua_hotkey "$APP_PID" "$WINDOW_ID" doctor-disabled-close ctrl w
+  wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "Preferences" doctor-disabled-close-complete >/dev/null
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-disabled-entry
   wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Revert Last Cleanup" doctor-revert-available >/dev/null
   cua_click_label \
