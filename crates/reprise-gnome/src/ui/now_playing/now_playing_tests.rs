@@ -226,6 +226,29 @@ fn loaded_and_idle_tracks_render_from_the_player_context() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn grid_5_now_playing_cover_and_title_are_album_reveal_links() {
+    gtk4::init().unwrap();
+    let (_window, panel) = test_panel("org.reprise.Reprise.NowPlayingRevealLinkTest");
+
+    for surface in [
+        panel.widgets.cover.clone().upcast::<gtk4::Widget>(),
+        panel.widgets.title.clone().upcast::<gtk4::Widget>(),
+    ] {
+        assert!(surface.is_focusable());
+        assert!(gtk4::test_accessible_has_role(
+            &surface,
+            gtk4::AccessibleRole::Link
+        ));
+        assert!(gtk4::test_accessible_has_property(
+            &surface,
+            gtk4::AccessibleProperty::Label
+        ));
+        assert!(surface.has_css_class(crate::ui::link_activation::LINK_CLASS));
+    }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn fixed_panel_owner_survives_and_header_toggle_reopens_it() {
     gtk4::init().unwrap();
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingOwnerTest");

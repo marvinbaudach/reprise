@@ -186,3 +186,31 @@ fn mot_7_player_bar_hard_switches_when_system_animations_are_disabled() {
 
     settings.set_gtk_enable_animations(previous);
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn grid_5_player_bar_cover_and_title_are_album_reveal_links() {
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+
+    for surface in [
+        bar.cover.clone().upcast::<gtk4::Widget>(),
+        bar.title_label.clone().upcast::<gtk4::Widget>(),
+    ] {
+        assert!(surface.is_focusable());
+        assert!(gtk4::test_accessible_has_role(
+            &surface,
+            gtk4::AccessibleRole::Link
+        ));
+        assert!(gtk4::test_accessible_has_property(
+            &surface,
+            gtk4::AccessibleProperty::Label
+        ));
+        assert!(surface.has_css_class(crate::ui::link_activation::LINK_CLASS));
+    }
+
+    assert_eq!(
+        crate::ui::strings::text(crate::ui::strings::REVEAL_PLAYING_ALBUM),
+        "Reveal playing album"
+    );
+}
