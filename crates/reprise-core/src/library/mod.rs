@@ -23,6 +23,9 @@ pub mod stats_snapshot;
 pub mod tag_edit;
 pub mod tag_edit_session;
 mod tag_edit_write;
+#[cfg(test)]
+mod tag_edit_write_adversarial_tests;
 mod tag_mutation;
+pub mod tag_write_job;
 pub mod trash_tracks;
 pub mod watcher;
