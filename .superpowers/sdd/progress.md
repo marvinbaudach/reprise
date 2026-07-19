@@ -634,6 +634,14 @@ Main integration: complete against `b0965905`; preserved the current SearchBar r
 
 Album-Grid current-main integration: complete (merge commit `84ccffb6`, album integration parent `48ebb760`, current-main parent `892437ab`). Der Merge bewahrt die bereits integrierten Performance-Migrationen v13/v14 unverändert und hängt Disc-Persistenz kompatibel als v15 an, sodass auch eine bereits von `main` erzeugte v14-Datenbank sicher nachgerüstet wird. Verifikation: fmt, locked clippy, Rustdoc, Workspace-Tests (780 Core + 700 GNOME + 55 Plattform; 155 GNOME display-gated ignoriert), 86 aktive UX-Regeln, Motion-Lint, Architektur, QA-Linter einschließlich Performance-Verträge, Core-Purity und Audit mit ausschließlich der erlaubten Ausnahme. Das echte `main` bleibt mangels Schreibzugriff auf das gemeinsame `.git` bei `892437ab`; der vollständige geprüfte Stand wird als Bundle gesichert.
 
+## 2026-07-19 — My Stats editorial rebuild (Frame 25a)
+
+Branch: `feat/mystats-optimization` (base `b0965905`). T1: complete (`d7f8a982`, rulebook and release QA). T2: complete (`23e5f303`, schema v16 join index). T3: complete (`25ee61f3`, deterministic Unicode/MBID grouping). T5: complete in its parallel-safe slot (`d8988263`, persistent layout and validated smart-playlist creation). T4: complete (`c297781a`, local timezone-aware period/snapshot model and listen-event-only aggregates). T6: complete (`b31d726c`, Cairo listening-time ribbon). T7: complete (`d5912465`, spotlight, genre, clock, and highlight widgets). T8: complete (`eb7c5697`, 1120 px editorial composer, empty state, fixed customization, top-track sorting, and view-local breakpoint). T9: complete (`f6bac394`, grouped spotlight playback, artist navigation, Smart Mix routing, tag-editor forwarding, and STATS-8 filter exclusion). T10: complete in this ledger commit.
+
+Final gates: fmt, strict all-target workspace clippy, workspace tests (780 Core passed; 710 GNOME passed / 163 display-gated ignored; 55 Linux platform passed), UX traceability (96 active rules), core purity, file-size checks, and audit with only accepted `RUSTSEC-2024-0436`. The display gate was explicitly deferred by the supervising instruction and was not run; the new ignored display tests cover spotlight content, grouping hints, genre presentation/non-interactivity, highlights, customization persistence/order, empty state, and narrow breakpoint reflow. No real database, music files, live desktop, or user profile were touched.
+
+Assumption: the current smart-playlist rule engine combines rules with `AND` and has no `OR`/`IN`, so the singular Smart Mix CTA creates a usable mix from the dominant top genre instead of emitting mutually exclusive rules for all five genres. Coordination: this checkout contains no repository `STATUS.md`/lock board, so there was no separate repository lock to claim or release.
+
 ## 2026-07-19 — Library Doctor / Tag Cleanup
 
 Branch: feat/tag-rework
