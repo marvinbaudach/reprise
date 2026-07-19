@@ -12,6 +12,7 @@ CUA_E2E_PROFILE="${CUA_E2E_PROFILE:-debug}"
 CUA_E2E_OUT_DIR="${CUA_E2E_OUT_DIR:-/tmp/reprise-cua-e2e}"
 CUA_E2E_SCREEN_RES="${CUA_E2E_SCREEN_RES:-1600x900x24}"
 CUA_E2E_QUIT_DELAY_SECS="${CUA_E2E_QUIT_DELAY_SECS:-15}"
+CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="${CUA_E2E_KEYBOARD_QUIT_DELAY_SECS:-180}"
 export CUA_E2E_OUT_DIR CUA_E2E_SESSION="${CUA_E2E_SESSION:-reprise-acceptance}"
 
 required_command() {
@@ -59,7 +60,7 @@ wait_for_window() {
     if ! kill -0 "$pid" 2>/dev/null; then
       return 1
     fi
-    response=$($CUA_DRIVER_BIN list_windows "$(jq -nc --argjson pid "$pid" '{pid: $pid}')")
+    response=$(cua_driver list_windows "$(jq -nc --argjson pid "$pid" '{pid: $pid}')")
     window_id=$(window_id_from_response <<<"$response")
     if [[ -n "$window_id" ]]; then
       printf '%s\n' "$window_id"
@@ -113,7 +114,9 @@ stop_app_on_failure() {
 
 start_scenario_app() {
   local scenario=$1 scan_dir=${2:-} tag_edit_smoke=${3:-}
+  local quit_delay_secs=${4:-$CUA_E2E_QUIT_DELAY_SECS}
   local profile_root="$CUA_E2E_SCRATCH_ROOT/$scenario"
+  local focus_state="$CUA_E2E_OUT_DIR/$scenario-focus-state.txt"
   local -a scenario_env=(-u REPRISE_SCAN_DIR -u REPRISE_SMOKE_TAG_EDIT)
 
   mkdir -p "$profile_root/data" "$profile_root/cache" "$profile_root/config"
@@ -134,7 +137,8 @@ start_scenario_app() {
     NO_AT_BRIDGE=0 \
     REPRISE_AUDIO_SINK=fakesink \
     REPRISE_SMOKE_QUIT=1 \
-    REPRISE_SMOKE_QUIT_DELAY_SECS="$CUA_E2E_QUIT_DELAY_SECS" \
+    REPRISE_SMOKE_QUIT_DELAY_SECS="$quit_delay_secs" \
+    REPRISE_SMOKE_FOCUS_STATE="$focus_state" \
     REPRISE_LOG=debug \
     "$CUA_E2E_BIN_PATH" >"$APP_LOG" 2>&1 &
   APP_PID=$!
@@ -183,17 +187,32 @@ run_fresh_install_scenario() {
 
 run_populated_library_scenario() {
   local fixture_dir="$CUA_E2E_SCRATCH_ROOT/fixture-music"
-  local initial_path results_path
+  local initial_path missing_path results_path
 
   echo "[cua-e2e] populated library: fixture scan -> semantic search"
   mkdir -p "$fixture_dir"
-  cp "$repo_root/crates/reprise-core/tests/fixtures/sine.flac" "$fixture_dir/sine_01.flac"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i sine=frequency=440:duration=120 \
+    -c:a flac "$fixture_dir/sine_01.flac"
   cp "$repo_root/crates/reprise-core/tests/fixtures/sine.flac" "$fixture_dir/sine_02.flac"
-  start_scenario_app populated-library "$fixture_dir"
+  start_scenario_app \
+    populated-library "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
   initial_path=$(wait_for_label \
     "$APP_PID" "$WINDOW_ID" "Search all fields" populated-initial)
   assert_snapshot_contains "$initial_path" "sine_01"
   assert_snapshot_contains "$initial_path" "Tracks"
+
+  # This is an isolated copy below the run's mktemp root, never user music.
+  # Removing it exercises the real watcher and makes the Issues surface part
+  # of the same keyboard-only inventory sweep.
+  rm -- "$fixture_dir/sine_02.flac"
+  missing_path=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Missing files" populated-missing)
+  assert_snapshot_contains "$missing_path" "Missing files"
+
+  CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-focus-state.txt" \
+    "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
+  restart_private_cua_daemon
 
   # UX PLAY-2 [e2e] wiring: double-clicking a row builds the queue from the
   # visible list (log marker from play_from_view) and starts playback.
@@ -272,10 +291,9 @@ run_tag_3_multi_dialog_structure_scenario() {
 private_session_cleanup() {
   local exit_code=$?
   stop_app_on_failure
-  "$CUA_DRIVER_BIN" end_session \
+  cua_driver end_session \
     "$(jq -nc --arg session "$CUA_E2E_SESSION" '{session: $session}')" \
     >/dev/null 2>&1 || true
-  "$CUA_DRIVER_BIN" stop >/dev/null 2>&1 || true
   if [[ -n "${CUA_DAEMON_PID:-}" ]]; then
     kill -TERM "$CUA_DAEMON_PID" 2>/dev/null || true
   fi
@@ -286,6 +304,26 @@ private_session_cleanup() {
     kill -TERM "$ATSPI_PID" 2>/dev/null || true
   fi
   exit "$exit_code"
+}
+
+start_private_cua_daemon() {
+  rm -f -- "$CUA_DRIVER_SOCKET"
+  cua_driver serve --no-overlay \
+    >>"$CUA_E2E_OUT_DIR/cua-driver.log" 2>&1 &
+  CUA_DAEMON_PID=$!
+  for _ in $(seq 1 40); do
+    cua_driver status >/dev/null 2>&1 && break
+    sleep 0.25
+  done
+  cua_driver status >/dev/null
+  cua_driver start_session \
+    "$(jq -nc --arg session "$CUA_E2E_SESSION" '{session: $session}')" >/dev/null
+}
+
+restart_private_cua_daemon() {
+  kill -TERM "$CUA_DAEMON_PID" 2>/dev/null || true
+  wait "$CUA_DAEMON_PID" 2>/dev/null || true
+  start_private_cua_daemon
 }
 
 run_private_session() {
@@ -303,21 +341,32 @@ run_private_session() {
   sleep 0.3
 
   export CUA_DRIVER_SOCKET="$CUA_E2E_SCRATCH_ROOT/cua-driver.sock"
-  "$CUA_DRIVER_BIN" serve --no-overlay \
-    >"$CUA_E2E_OUT_DIR/cua-driver.log" 2>&1 &
-  CUA_DAEMON_PID=$!
-  for _ in $(seq 1 40); do
-    "$CUA_DRIVER_BIN" status >/dev/null 2>&1 && break
-    sleep 0.25
-  done
-  "$CUA_DRIVER_BIN" status >/dev/null
-  "$CUA_DRIVER_BIN" start_session \
-    "$(jq -nc --arg session "$CUA_E2E_SESSION" '{session: $session}')" >/dev/null
+  start_private_cua_daemon
 
-  run_fresh_install_scenario
-  run_populated_library_scenario
-  run_tag_1_no_jump_after_save_scenario
-  run_tag_3_multi_dialog_structure_scenario
+  case "${CUA_E2E_ONLY:-all}" in
+    all)
+      run_fresh_install_scenario
+      run_populated_library_scenario
+      run_tag_1_no_jump_after_save_scenario
+      run_tag_3_multi_dialog_structure_scenario
+      ;;
+    populated-library)
+      run_populated_library_scenario
+      ;;
+    fresh-install)
+      run_fresh_install_scenario
+      ;;
+    tag-1-no-jump-after-save)
+      run_tag_1_no_jump_after_save_scenario
+      ;;
+    tag-3-multi-dialog-structure)
+      run_tag_3_multi_dialog_structure_scenario
+      ;;
+    *)
+      echo "unknown CUA_E2E_ONLY scenario: $CUA_E2E_ONLY" >&2
+      return 2
+      ;;
+  esac
   echo "[cua-e2e] all acceptance scenarios passed"
 }
 
@@ -326,7 +375,7 @@ if [[ "${1:-}" == "--private-session" ]]; then
   exit 0
 fi
 
-for command in "$CUA_DRIVER_BIN" Xvfb openbox dbus-run-session jq rg; do
+for command in "$CUA_DRIVER_BIN" Xvfb openbox dbus-run-session ffmpeg jq rg wmctrl; do
   required_command "$command"
 done
 if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
@@ -414,5 +463,6 @@ dbus-run-session -- env \
   CUA_E2E_BIN_PATH="$CUA_E2E_BIN_PATH" \
   CUA_E2E_SESSION="$CUA_E2E_SESSION" \
   CUA_E2E_QUIT_DELAY_SECS="$CUA_E2E_QUIT_DELAY_SECS" \
+  CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS" \
   CUA_DRIVER_BIN="$CUA_DRIVER_BIN" \
   "$0" --private-session

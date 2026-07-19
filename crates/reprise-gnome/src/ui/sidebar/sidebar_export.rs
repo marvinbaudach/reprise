@@ -64,6 +64,7 @@ pub(in crate::ui) fn wire_playlist_context_menu(
     playlist_id: i64,
     playlist_name: &str,
 ) {
+    // input-parity: ACC-8 keyboard=menu-shift-f10
     let gesture = gtk4::GestureClick::new();
     gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
 
@@ -130,6 +131,8 @@ fn show_context_menu(
     // context_menu`, so repeated right-clicks don't accumulate stale
     // popovers as children of the row.
     popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(row);
+    focus_guard.restore_on_popover_close(popover.upcast_ref());
 
     popover.popup();
 }

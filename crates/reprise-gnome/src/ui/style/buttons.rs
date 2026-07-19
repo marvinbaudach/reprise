@@ -125,9 +125,9 @@ pub(in crate::ui) fn arm(widget: &impl IsA<gtk4::Widget>, class: &str) {
 /// The cursor half of [`arm`], for surfaces whose states are reached by
 /// selector rather than by class.
 pub(in crate::ui) fn arm_cursor(widget: &impl IsA<gtk4::Widget>) {
-    widget
-        .upcast_ref::<gtk4::Widget>()
-        .set_cursor_from_name(Some("pointer"));
+    let widget = widget.upcast_ref::<gtk4::Widget>();
+    // input-parity: ACC-8 keyboard=native-button-activation
+    widget.set_cursor_from_name(Some("pointer"));
 }
 
 pub(in crate::ui) fn css() -> String {

@@ -193,11 +193,17 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   natürlich.
 - **PLAY-6** [geplant] [gtk] — Shuffle/Repeat sind globale Player-Zustände
   (Player-Leiste), keine Ansichts-Zustände. Repeat zyklisch: off → all → one.
-- **PLAY-7** [geplant] [gtk] — Die Player-Leiste ist eine strukturelle
+- **PLAY-7** [ersetzt durch PLAY-7a] — Die Player-Leiste ist eine strukturelle
   Abgrenzung, kein Overlay: Sie beansprucht ihre eigene Höhe im Layout, und
   kein Content-Element (Trackliste, Sidebar, rechte Info-Spalte) läuft je
   unter oder hinter ihr durch. Ihr Hintergrund ist opak.
   <!-- REVIEW: Regelvorschlag -->
+- **PLAY-7a** [aktiv] [gtk] — Header, geöffnete Suche und Player-Leiste
+  liegen als globale Glaszonen über allen Bibliotheksansichten. Der Content
+  läuft sichtbar darunter; sein Scroll-Anfang und -Ende erhalten exakt die
+  tatsächlich allokierte Höhe der überlagernden Top-/Bottom-Zone als
+  Scroll-Inset, sodass keine letzte Zeile verdeckt oder unbedienbar bleibt.
+  Die Player-Leiste funktioniert spiegelbildlich oben und unten.
 
 ## D. Albums- & Artists-Ansicht
 
@@ -245,6 +251,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
   die Album-Übersicht stellt den Tastaturfokus auf genau der zuvor
   aktivierten Albumkachel wieder her und scrollt sie bei Bedarf sichtbar.
+- **GRID-7** [aktiv] [gtk] — Die Album-Übersicht trägt hinter ihren Karten
+  eine dezente Textur des aktuell spielenden Covers. Das Cover wird pro
+  Trackwechsel genau einmal auf 32 px verkleinert und vorgerendert
+  weichgezeichnet; beim Zeichnen wird nur diese gecachte Textur skaliert,
+  niemals ein Live-Blur über der Liste ausgeführt. Ohne Cover, nach Stop und
+  in High Contrast bleibt die Textur unsichtbar. Sie ist nicht interaktiv und
+  verwendet den Coverinhalt, färbt aber keine Chrome-Fläche ein.
 - **ART-1** [aktiv] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.
@@ -838,13 +851,22 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 - **SEARCH-1** [aktiv] [gtk] — Im Ruhezustand belegt die Suche in der
   Headerbar nur eine Lupe. Das Suchfeld lebt in einer zweiten, standardmäßig
   eingeklappten Top-Bar und wird nie als permanentes breites Feld dargestellt.
-- **SEARCH-2** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+- **SEARCH-2** [ersetzt durch SEARCH-2a] — Ein Klick auf die Lupe, Ctrl+F oder direktes
   Tippen öffnet die Suchleiste und fokussiert das Feld. Sie ist ein
   vollbreiter Streifen bündig unter der Headerbar, hat eine eigene Fläche mit
   unterer Trennlinie und schiebt beim Reveal den Inhalt nach unten; das
   Suchfeld ist darin per Clamp auf ungefähr 450 px zentriert. Die Leiste
   slidet mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern
   gilt deren Default, sofern er dem Standard-Token entspricht.
+- **SEARCH-2a** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+  Tippen öffnet die Suchleiste und fokussiert das Feld. Header und Suche sind
+  eine zusammenhängende obere Glaszone mit gemeinsamem neutralem Blur, Tint
+  und genau einer unteren Hairline; Content läuft unter beiden weiter. Der
+  Reveal vergrößert das obere Scroll-Inset um die tatsächlich allokierte
+  Suchleistenhöhe, bei einer oberen Player-Leiste zusätzlich um deren Höhe.
+  Das Suchfeld ist per Clamp auf ungefähr 450 px zentriert. Die Leiste slidet
+  mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern gilt
+  deren Default, sofern er dem Standard-Token entspricht.
 - **SEARCH-3** [aktiv] [gtk] — Die Lupe ist ein ToggleButton und trägt bei
   offener Suchleiste **oder** aktiver nicht-leerer Query den
   `:checked`-Akzentstil. Eine Query bleibt auch bei eingeklappter Suchleiste
@@ -940,6 +962,76 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   getestet; was ausbleiben kann, auf Wirkung (wie TIP-1a/2a und SEARCH-2).
   Ist eine Schnittstelle im Test-Build ausgeblendet (z. B. `SectionModel` per
   `cfg`), zählt nur der E2E-Beleg — „grün" ist dort strukturell bedeutungslos.
+## T. Accessibility & Tastatur
+
+<!-- Sektionsbuchstabe: S ist die letzte auf main vergebene Sektion;
+     T schließt lückenlos an. Die automatisierbaren Regeln
+     sind durch isolierte GTK-/CUA-Läufe aktiviert; ACC-7 benötigt zusätzlich
+     die reale Sichtprüfung. -->
+
+- **ACC-1** [aktiv] [e2e] — Vollständige Eingabeparität: Jede Aktion, die
+  per Maus oder Touch erreichbar ist, ist im selben Kontext auch allein mit
+  der Tastatur ausführbar und endet im selben Action-/Callback-Pfad. Eine
+  Geste auf `Label`, `Image`, `Box`, `DrawingArea` oder einer Drag-Fläche ohne
+  gleichwertigen Tastaturweg ist ein Bug. Ein Kontextmenü oder globaler
+  Shortcut zählt nur, wenn er am fokussierten Ziel verfügbar und über Help,
+  Beschriftung oder zugänglichen Hilfetext auffindbar ist.
+- **ACC-2** [aktiv] [gtk] — Semantik ist Teil der Bedienung: Jedes
+  interaktive Element exponiert einen kurzen übersetzten Namen, die passende
+  Rolle, seinen aktuellen Zustand (`selected`, `checked`, `expanded`,
+  `disabled`, `busy`) und — wo nötig — Beziehungen, Shortcut und Hilfetext.
+  Dekoration trägt `Presentation`. Native GTK/libadwaita-Controls sind der
+  Standard; eine eigene Rolle ist ein Versprechen, die zugehörige native
+  Tastatursemantik vollständig zu liefern.
+- **ACC-3** [aktiv] [e2e] — Fokusordnung folgt der sichtbaren Bedeutung:
+  Tab vorwärts und Shift+Tab rückwärts durchlaufen die Oberfläche logisch,
+  ohne Sprünge in versteckte/inaktive Controls und ohne doppelte Stops für
+  denselben Befehl. Sidebar, Liste und Grid sind je **ein** Tab-Stop; Pfeile
+  bewegen darin den aktiven Eintrag. Reines Fokussieren/Selektieren löst
+  keine Navigation, Wiedergabe oder andere Aktion aus — erst Aktivierung.
+- **ACC-4** [aktiv] [e2e] — Standardtasten gelten überall konsistent:
+  Pfeile navigieren räumlich bzw. zeilenweise, Home/End springen in langen
+  Collections an Anfang/Ende, Page Up/Down bewegen seitenweise, Enter
+  aktiviert den fokussierten Eintrag, Space schaltet den fokussierten
+  Button/Toggle bzw. die Selektion, Menü-Taste/Shift+F10 öffnet dessen
+  Kontextmenü, F10 das Primärmenü und Esc schließt den obersten transienten
+  Container. Ein globaler Shortcut darf nie Texteingabe oder die lokale
+  Semantik des fokussierten Controls stehlen.
+- **ACC-5** [aktiv] [e2e] — Fokus hat einen nachvollziehbaren Lebenszyklus:
+  Start und Navigation setzen ihn in die aktive Zielansicht; Ctrl+F setzt ihn
+  ins Suchfeld, dessen Esc-Kaskade gibt ihn an die **aktuelle** Content-View
+  zurück. Dialoge/Popover starten auf ihrem ersten sinnvollen Control, halten
+  den Fokus innerhalb der obersten Ebene, Esc schließt genau diese Ebene und
+  gibt den Fokus an den Auslöser zurück. Back/Forward restauriert den letzten
+  sinnvollen Fokus der Zielansicht statt Header oder unsichtbare Kinder zu
+  fokussieren.
+- **ACC-6** [aktiv] [gtk] — Dynamische Updates stehlen oder verlieren den
+  Fokus nie: Bleibt das logische Element erhalten, bleibt auch sein Fokus;
+  wird es entfernt, fällt der Fokus auf den nächsten, sonst vorherigen
+  bedienbaren Eintrag und zuletzt auf den stabilen Container. Filter,
+  Re-Sortierung, View-Rebuild, Trackwechsel, Scan/Sync/Mount und asynchrone
+  Karten-Updates setzen den Fokus niemals ungefragt auf ein anderes Ziel.
+- **ACC-7** [geplant] [manuell] — Fokus ist immer sichtbar und eindeutig:
+  jedes per Tastatur erreichbare Element zeigt im Normal- und
+  High-Contrast-Theme einen dauerhaften Fokusindikator, der nicht mit Hover,
+  Selektion oder „spielt gerade" verwechselt werden kann. `outline: none` ist
+  nur mit einem mindestens gleich deutlichen `:focus-visible`-Ersatz erlaubt.
+  Hover-eingeblendete Aktionen erscheinen ebenso bei Tastaturfokus oder sind
+  über das Kontextmenü des fokussierten Containers erreichbar.
+  <!-- REVIEW: Regelvorschlag -->
+- **ACC-8** [aktiv] [e2e] — Direkte Manipulation hat eine Alternative:
+  jedes Drag-and-drop/Reorder-Ziel bietet denselben zulässigen Move auch per
+  Button, Menü oder dokumentierter Tastaturaktion; dieselben Guards und
+  Persistenzpfade gelten. Eigene Werte-Controls (z. B. Waveform-Seek) sind
+  fokussierbare Ranges: Pfeile ändern fein, Page Up/Down grob, Home/End setzen
+  Minimum/Maximum; Name, aktueller Wert und Grenzen sind zugänglich.
+- **ACC-9** [aktiv] [gtk] — Shortcuts und Zugriffstasten folgen GNOME:
+  vorhandene Standardaktionen verwenden die Standardbelegung (u. a. Ctrl+F,
+  Ctrl+W, Ctrl+Q, Ctrl+,, Ctrl+?, F1, F10, Alt+←/→); häufige beschriftete
+  Aktionen und primäre Dialogaktionen erhalten kollisionsfreie Mnemonics,
+  soweit Übersetzungen dies zulassen. Die Shortcuts-Ansicht listet nur
+  tatsächlich verdrahtete Aktionen und bleibt mit ihnen im selben Commit
+  synchron.
 
 ## T. Netz-Features opt-in
 
@@ -1005,6 +1097,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Playback-Akzent (`@reprise_player_accent`) bezeichnet ausschließlich den
   laufenden Track wie Play/Pause, Waveform, Playing-Row, EQ, Glow und
   GRID-1-Innenring. Ein Element mischt die Rollen nie.
+- **STYLE-4** [aktiv] [gtk] — Chrome-Glas ist neutral und theme-abhängig,
+  niemals vom Cover-Akzent eingefärbt. GL/NGL/Vulkan verwenden 24 px
+  Backdrop-Blur über einem neutralen Tint-Floor von mindestens 80 %;
+  Cairo, unbekannte Renderer, High Contrast und deaktivierte Animationen
+  degradieren fail-closed zu einem neutralen, mindestens 94 % opaken Tint.
 - **CONTRAST-1** [aktiv] [gtk] — Es gibt drei zentrale Textstufen: Primär
   ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
   Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
@@ -1018,6 +1115,12 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
   Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
   Kleinschrift und benötigt dieselbe Prüfung wie Hint bei Normalgröße.
+- **CONTRAST-4** [aktiv] [gtk] — Jeder aktive Text und jedes aktive Icon im
+  Glas erreicht mindestens 4,5:1 gegen den Worst Case seiner Zone: den
+  Tint-Floor komponiert über dem hellsten beziehungsweise dunkelsten
+  durchscheinenden Content. Artist, Zeit, Suchfeld und Header-Aktionen sind
+  aktive Inhalte; nur deaktivierte oder rein dekorative Elemente dürfen
+  darunter liegen.
 - **NAV-10** [aktiv] [gtk] — Der laufende Kontext bleibt in allen Ansichten
   mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim ersten
   Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel stellen

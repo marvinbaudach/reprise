@@ -587,6 +587,7 @@ fn handle_cancel(view: &gtk4::ColumnView, state: &Rc<RefCell<Option<DragState>>>
 /// existing `wire_order_persistence` listener on `view.columns()`.
 pub(super) fn wire_header_drag(view: &gtk4::ColumnView) {
     let state: Rc<RefCell<Option<DragState>>> = Rc::new(RefCell::new(None));
+    // input-parity: ACC-8 keyboard=column-editor-alt-arrows
     let gesture = gtk4::GestureDrag::new();
     gesture.set_button(gtk4::gdk::BUTTON_PRIMARY);
     gesture.set_propagation_phase(gtk4::PropagationPhase::Capture);

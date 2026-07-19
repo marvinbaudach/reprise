@@ -30,6 +30,7 @@ struct DeviceCard {
     delta_detail: gtk4::Label,
     progress_detail: gtk4::Label,
     synced_detail: gtk4::Label,
+    open: gtk4::Button,
     percent_revealer: gtk4::Revealer,
     percent: gtk4::Label,
     action: gtk4::Button,
@@ -129,7 +130,6 @@ impl DeviceCard {
         indicator.add_named(&icon, Some("device"));
         indicator.add_named(&spinner, Some("syncing"));
         indicator.set_visible_child_name("device");
-        top.append(&indicator);
 
         let labels = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
         labels.set_hexpand(true);
@@ -151,7 +151,19 @@ impl DeviceCard {
         detail_stack.set_visible_child_name("delta");
         labels.append(&name);
         labels.append(&detail_stack);
-        top.append(&labels);
+        let open_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        open_content.append(&indicator);
+        open_content.append(&labels);
+        let open = gtk4::Button::builder()
+            .child(&open_content)
+            .has_frame(false)
+            .hexpand(true)
+            .build();
+        open.add_css_class("device-card-open");
+        open.update_property(&[gtk4::accessible::Property::Label(
+            &device_sync_strings::open_device_label(&device.name),
+        )]);
+        top.append(&open);
 
         // Fixed-width so the number cannot shove the title around as it grows
         // from "0 %" to "100 %".
@@ -179,6 +191,9 @@ impl DeviceCard {
         // card's own corner radius and reads as half-drawn.
         let progress = gtk4::ProgressBar::new();
         progress.add_css_class("device-card-progress");
+        progress.update_property(&[gtk4::accessible::Property::Label(
+            &device_sync_strings::text(device_sync_strings::SYNC_PROGRESS),
+        )]);
         progress.set_margin_start(12);
         progress.set_margin_end(12);
         progress.set_margin_bottom(8);
@@ -196,24 +211,19 @@ impl DeviceCard {
         });
         root.append(&progress_revealer);
 
-        // The gesture lives as long as the card, so opening the device view
-        // works mid-sync; the name is read fresh on click because it can
+        // The button lives as long as the card, so opening the device view
+        // works mid-sync; the name is read fresh on activation because it can
         // change (GVfs settles a generic "mtp" into the real model name).
         // The action button claims its own clicks, so Cancel never opens the
         // view.
         let open_name = Rc::new(RefCell::new(device.name.clone()));
-        let open = on_open.clone();
+        let open_callback = on_open.clone();
         let id = device.id.clone();
         let click_name = open_name.clone();
-        let click = gtk4::GestureClick::new();
-        click.set_button(gtk4::gdk::BUTTON_PRIMARY);
-        click.set_propagation_phase(gtk4::PropagationPhase::Bubble);
-        click.connect_released(move |_, _, _, _| {
+        open.connect_clicked(move |_| {
             let name = click_name.borrow().clone();
-            open(id.clone(), name);
+            open_callback(id.clone(), name);
         });
-        root.add_controller(click);
-        root.set_cursor_from_name(Some("pointer"));
 
         Self {
             root,
@@ -225,6 +235,7 @@ impl DeviceCard {
             delta_detail,
             progress_detail,
             synced_detail,
+            open,
             percent_revealer,
             percent,
             action,
@@ -237,6 +248,10 @@ impl DeviceCard {
 
     fn update(&self, device: &DeviceView) {
         self.name.set_text(&card_title(device));
+        self.open
+            .update_property(&[gtk4::accessible::Property::Label(
+                &device_sync_strings::open_device_label(&device.name),
+            )]);
         *self.open_name.borrow_mut() = device.name.clone();
 
         let syncing = matches!(
@@ -567,6 +582,24 @@ mod tests {
         assert_eq!(
             card_title(&view(PlannedSyncPhase::Finishing)),
             "Syncing Pixel 8"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn device_card_open_is_a_native_keyboard_action() {
+        gtk4::init().unwrap();
+        let opened = Rc::new(RefCell::new(None));
+        let opened_for_callback = opened.clone();
+        let on_open: OpenCallback = Rc::new(move |id, name| {
+            opened_for_callback.borrow_mut().replace((id, name));
+        });
+        let card = DeviceCard::new(&view(PlannedSyncPhase::Idle), &on_open);
+        assert!(card.open.is_focusable());
+        card.open.emit_clicked();
+        assert_eq!(
+            opened.borrow().as_ref(),
+            Some(&("pixel".to_owned(), "Pixel 8".to_owned()))
         );
     }
 

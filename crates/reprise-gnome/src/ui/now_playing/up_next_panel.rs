@@ -227,6 +227,7 @@ fn build_factory(
     let states: Rc<RefCell<HashMap<usize, Rc<RowWidgets>>>> = Rc::new(RefCell::new(HashMap::new()));
     {
         let states = states.clone();
+        let queue_sections = queue_sections.clone();
         let on_jump = on_jump.clone();
         let on_remove = on_remove.clone();
         let on_reorder = on_reorder.clone();
@@ -254,6 +255,39 @@ fn build_factory(
                     callback(row);
                 }
             });
+            jump_button.update_property(&[gtk4::accessible::Property::KeyShortcuts(
+                "Alt+ArrowUp Alt+ArrowDown",
+            )]);
+            let keys = gtk4::EventControllerKey::new();
+            let widgets_for_keys = widgets.clone();
+            let sections_for_keys = queue_sections.clone();
+            let on_reorder_for_keys = on_reorder.clone();
+            keys.connect_key_pressed(move |_, key, _, modifiers| {
+                let Some(row) = widgets_for_keys.row.get() else {
+                    return gtk4::glib::Propagation::Proceed;
+                };
+                let play_next_len = sections_for_keys
+                    .borrow()
+                    .iter()
+                    .find_map(|section| {
+                        matches!(section.kind, QueueSectionKind::PlayNext)
+                            .then_some(section.len as usize)
+                    })
+                    .unwrap_or_default();
+                let Some((from, to)) = keyboard_reorder_rows(row, play_next_len, key, modifiers)
+                else {
+                    return gtk4::glib::Propagation::Proceed;
+                };
+                let callback = on_reorder_for_keys.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(from, to);
+                    gtk4::glib::Propagation::Stop
+                } else {
+                    gtk4::glib::Propagation::Proceed
+                }
+            });
+            jump_button.add_controller(keys);
+            // input-parity: ACC-8 keyboard=up-next-alt-arrows
             let drag_source = gtk4::DragSource::new();
             drag_source.set_actions(gtk4::gdk::DragAction::MOVE);
             let widgets_for_drag = widgets.clone();
@@ -430,6 +464,7 @@ fn build_row_widgets() -> (gtk4::Box, gtk4::Button, gtk4::Button, RowWidgets) {
             artist,
             generation: Rc::new(Cell::new(0)),
             row: Cell::new(None),
+            // input-parity: ACC-8 keyboard=up-next-alt-arrows
             drop_target: gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::empty()),
         },
     )
@@ -451,6 +486,28 @@ fn decode_drag_row(payload: &str) -> Option<QueueRow> {
         "context" => Some(QueueRow::UpNext(index)),
         _ => None,
     }
+}
+
+fn keyboard_reorder_rows(
+    row: QueueRow,
+    play_next_len: usize,
+    key: gtk4::gdk::Key,
+    modifiers: gtk4::gdk::ModifierType,
+) -> Option<(QueueRow, QueueRow)> {
+    if modifiers != gtk4::gdk::ModifierType::ALT_MASK {
+        return None;
+    }
+    let QueueRow::PlayNext(from) = row else {
+        return None;
+    };
+    let to = match key {
+        gtk4::gdk::Key::Up => from.checked_sub(1)?,
+        gtk4::gdk::Key::Down => from.checked_add(1).filter(|to| *to < play_next_len)?,
+        _ => return None,
+    };
+    let target = QueueRow::PlayNext(to);
+    crate::ui::track_list::queue_row_mapping::reorder_rows(row, target)?;
+    Some((row, target))
 }
 
 fn install_drag_autoscroll(scrolled: &gtk4::ScrolledWindow) {
@@ -521,206 +578,5 @@ pub(in crate::ui) fn css() -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn collect_buttons_with_class(
-        widget: &gtk4::Widget,
-        class: &str,
-        buttons: &mut Vec<gtk4::Button>,
-    ) {
-        if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
-            if button.has_css_class(class) {
-                buttons.push(button);
-            }
-        }
-        let mut child = widget.first_child();
-        while let Some(widget) = child {
-            collect_buttons_with_class(&widget, class, buttons);
-            child = widget.next_sibling();
-        }
-    }
-
-    #[test]
-    fn upcoming_tracks_are_manual_entries_then_the_snapshot_after_current() {
-        let model = crate::ui::track_list::queue_sections::compose(
-            Some(10),
-            &[90, 91],
-            &[30, 40],
-            Some("Music"),
-        )
-        .upcoming();
-        assert_eq!(
-            queue_rows(&model),
-            vec![
-                QueueRow::PlayNext(0),
-                QueueRow::PlayNext(1),
-                QueueRow::UpNext(0),
-                QueueRow::UpNext(1),
-            ]
-        );
-    }
-
-    #[test]
-    fn upcoming_tracks_handle_an_empty_queue_and_current_at_the_end() {
-        let empty = crate::ui::track_list::queue_sections::compose(None, &[], &[], None);
-        assert!(queue_rows(&empty.upcoming()).is_empty());
-        let only_current = crate::ui::track_list::queue_sections::compose(Some(20), &[], &[], None);
-        assert!(queue_rows(&only_current.upcoming()).is_empty());
-        let manual =
-            crate::ui::track_list::queue_sections::compose(Some(20), &[90], &[], None).upcoming();
-        assert_eq!(queue_rows(&manual), vec![QueueRow::PlayNext(0)]);
-    }
-
-    #[test]
-    fn que_2_two_sections_headers_conditional() {
-        let both = crate::ui::track_list::queue_sections::compose(
-            Some(10),
-            &[20, 21],
-            &[30],
-            Some("Late Night"),
-        )
-        .upcoming();
-        assert_eq!(
-            panel_section_headers(&both),
-            vec![
-                (0, "Next in Queue".to_owned()),
-                (2, "Playing from Late Night · 1 track".to_owned()),
-            ]
-        );
-
-        let automatic_only =
-            crate::ui::track_list::queue_sections::compose(Some(10), &[], &[30], Some("Album"))
-                .upcoming();
-        assert_eq!(
-            panel_section_headers(&automatic_only),
-            vec![(0, "Playing from Album · 1 track".to_owned())]
-        );
-
-        let manual_only =
-            crate::ui::track_list::queue_sections::compose(Some(10), &[20], &[], None).upcoming();
-        assert_eq!(
-            panel_section_headers(&manual_only),
-            vec![(0, "Next in Queue".to_owned())]
-        );
-        assert!(panel_section_headers(&QueueViewModel::default()).is_empty());
-    }
-
-    #[test]
-    fn footer_formats_track_count_and_remaining_duration() {
-        assert_eq!(format_up_next_footer(&[]), "0 tracks · 0 minutes");
-        assert_eq!(format_up_next_footer(&[90_000]), "1 track · 1 minute");
-        assert_eq!(
-            format_up_next_footer(&[90_000, 330_000]),
-            "2 tracks · 7 minutes"
-        );
-    }
-
-    #[test]
-    fn panel_drag_payload_and_edge_autoscroll_are_bounded() {
-        assert_eq!(
-            decode_drag_row(&encode_drag_row(QueueRow::PlayNext(3))),
-            Some(QueueRow::PlayNext(3))
-        );
-        assert_eq!(
-            decode_drag_row(&encode_drag_row(QueueRow::UpNext(7))),
-            Some(QueueRow::UpNext(7))
-        );
-        assert_eq!(
-            autoscroll_value(100.0, 0.0, 500.0, 100.0, 300.0, 20.0, 48.0, 24.0),
-            76.0
-        );
-        assert_eq!(
-            autoscroll_value(390.0, 0.0, 500.0, 100.0, 300.0, 290.0, 48.0, 24.0),
-            400.0
-        );
-        assert_eq!(
-            autoscroll_value(100.0, 0.0, 500.0, 100.0, 300.0, 150.0, 48.0, 24.0),
-            100.0
-        );
-    }
-
-    #[test]
-    fn row_css_and_metrics_match_the_compact_21a_spec() {
-        let css = css();
-        assert_eq!(crate::ui::style::tokens::NOW_PLAYING_QUEUE_COVER_SIZE, 32);
-        assert!(css.contains(".reprise-up-next-row"));
-        assert!(css.contains("font-size: 13.5px"));
-        assert!(!css.contains("reorder"));
-        assert!(!css.contains("context-menu"));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn up_next_row_click_jumps_to_the_exact_queue_entry() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
-             (20, '/tmp/20.mp3', 'Track 20', 'Artist', 0),
-             (40, '/tmp/40.mp3', 'Track 40', 'Artist', 0);",
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-        let panel = UpNextPanel::new(conn, &cover_loader);
-        let jumped = Rc::new(RefCell::new(None));
-        let jumped_on_click = jumped.clone();
-        panel.set_on_jump(move |row| *jumped_on_click.borrow_mut() = Some(row));
-        let model =
-            crate::ui::track_list::queue_sections::compose(Some(10), &[20], &[40], Some("Music"));
-        panel.set_queue_model(&model);
-        let window = gtk4::Window::builder().child(panel.widget()).build();
-        window.present();
-        while glib::MainContext::default().iteration(false) {}
-
-        let mut buttons = Vec::new();
-        collect_buttons_with_class(
-            panel.widget().upcast_ref(),
-            "reprise-up-next-row",
-            &mut buttons,
-        );
-        buttons[1].emit_clicked();
-
-        assert_eq!(*jumped.borrow(), Some(QueueRow::UpNext(0)));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn panel_remove_targets_the_exact_queue_entry() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
-             (20, '/tmp/20.mp3', 'Track 20', 'Artist', 0),
-             (40, '/tmp/40.mp3', 'Track 40', 'Artist', 0);",
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-        let panel = UpNextPanel::new(conn, &cover_loader);
-        let removed = Rc::new(RefCell::new(None));
-        let removed_on_click = removed.clone();
-        panel.set_on_remove(move |row| *removed_on_click.borrow_mut() = Some(row));
-        let model =
-            crate::ui::track_list::queue_sections::compose(Some(10), &[20], &[40], Some("Music"));
-        panel.set_queue_model(&model);
-        let window = gtk4::Window::builder().child(panel.widget()).build();
-        window.present();
-        while glib::MainContext::default().iteration(false) {}
-
-        let mut buttons = Vec::new();
-        collect_buttons_with_class(
-            panel.widget().upcast_ref(),
-            "reprise-up-next-remove",
-            &mut buttons,
-        );
-        buttons[1].emit_clicked();
-
-        assert_eq!(*removed.borrow(), Some(QueueRow::UpNext(0)));
-    }
-}
+#[path = "up_next_panel_tests.rs"]
+mod tests;

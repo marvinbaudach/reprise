@@ -260,6 +260,9 @@ impl RatingWidget {
         button.add_css_class(STAR_CSS_CLASS);
         button.set_child(Some(&label));
         button.set_has_frame(false);
+        // The ColumnView row is the collection's sole tab stop. Rating stays
+        // available from that row's keyboard context menu via Edit Tags.
+        button.set_focusable(false);
         button.set_valign(gtk4::Align::Center);
         button.set_tooltip_text(Some(&strings::rate_n_stars(star)));
 
@@ -359,6 +362,16 @@ impl RatingWidget {
     #[cfg(test)]
     pub fn rating_for_test(&self) -> i32 {
         self.imp().rating.get()
+    }
+
+    #[cfg(test)]
+    fn star_buttons_are_focusable_for_test(&self) -> Vec<bool> {
+        self.imp()
+            .stars
+            .borrow()
+            .iter()
+            .map(|(button, _)| button.is_focusable())
+            .collect()
     }
 }
 
@@ -482,5 +495,13 @@ mod tests {
 
         widget.click_star_for_test(3);
         assert_eq!(widget.rating_for_test(), 3);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn rating_cell_does_not_add_nested_tab_stops() {
+        gtk4::init().unwrap();
+        let widget = RatingWidget::new();
+        assert_eq!(widget.star_buttons_are_focusable_for_test(), vec![false; 5]);
     }
 }

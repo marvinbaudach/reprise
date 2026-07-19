@@ -11,6 +11,7 @@ pub fn text(message: &str) -> String {
 }
 
 pub const EJECT_DEVICE: &str = N_!("Eject device");
+pub const OPEN_DEVICE: &str = N_!("Open {name}");
 pub const EJECT_BLOCKED_SYNCING: &str = N_!("Eject device — Sync in progress");
 pub const KEPT_ON_DEVICE: &str = N_!("Kept on device");
 pub const STORAGE_TOTALS_UNKNOWN: &str =
@@ -23,6 +24,10 @@ pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {
         N_!("Syncing {name} · {percent}%"),
         &[("name", name), ("percent", &percent)],
     )
+}
+
+pub fn open_device_label(name: &str) -> String {
+    formatted(OPEN_DEVICE, &[("name", name)])
 }
 
 /// TIP-2a: a disabled eject keeps its tooltip and appends the reason.
@@ -59,6 +64,7 @@ pub const NO_DEVICE_MUSIC: &str = N_!("No music was found in the device Music fo
 pub const NO_PHONE_PLAYLISTS: &str = N_!("Create a phone playlist, then drag tracks onto it.");
 pub const PLAYLIST_DRAFT: &str = N_!("Waiting for tracks");
 pub const NEW_PHONE_PLAYLIST: &str = N_!("New Phone Playlist");
+pub const ADD_SELECTED_TRACKS: &str = N_!("Add Selected Tracks");
 pub const PLAYLIST_NAME: &str = N_!("Playlist name");
 pub const CREATE: &str = N_!("Create");
 pub const REFRESH_DEVICE: &str = N_!("Refresh Device Music");
@@ -278,6 +284,11 @@ mod tests {
     fn tip_2a_eject_tooltip_names_reason_while_syncing() {
         assert_eq!(eject_tooltip(true), "Eject device — Sync in progress");
         assert_eq!(eject_tooltip(false), "Eject device");
+    }
+
+    #[test]
+    fn device_open_action_names_its_target() {
+        assert_eq!(open_device_label("Pixel 8"), "Open Pixel 8");
     }
 
     #[test]

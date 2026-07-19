@@ -165,6 +165,7 @@ pub(in crate::ui) fn install_context_menu(
     let action_group = album_context_menu::wire_actions(menu_shared);
     grid_view.insert_action_group(album_context_menu::ACTION_GROUP_NAME, Some(&action_group));
 
+    // input-parity: ACC-8 keyboard=menu-shift-f10
     let right_click = gtk4::GestureClick::builder().button(3).build();
     {
         let menu_shared = menu_shared.clone();

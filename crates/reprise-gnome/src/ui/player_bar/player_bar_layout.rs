@@ -43,8 +43,11 @@ pub(in crate::ui) struct PlayerBarWidgets {
     #[allow(dead_code)]
     pub(in crate::ui) info_box: gtk4::Box,
     pub(in crate::ui) cover: gtk4::Image,
+    pub(in crate::ui) cover_button: gtk4::Button,
     pub(in crate::ui) title_label: gtk4::Label,
+    pub(in crate::ui) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
+    pub(in crate::ui) artist_button: gtk4::Button,
     pub(in crate::ui) mini_eq: gtk4::Box,
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
@@ -64,6 +67,14 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     cover.set_pixel_size(COVER_PIXEL_SIZE);
     cover.add_css_class(COVER_CSS_CLASS);
     CoverLoader::set_placeholder(&cover);
+    let cover_button = gtk4::Button::builder()
+        .child(&cover)
+        .has_frame(false)
+        .tooltip_text(strings::text(strings::REVEAL_PLAYING_ALBUM))
+        .build();
+    cover_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::REVEAL_PLAYING_ALBUM,
+    ))]);
 
     // — Track labels —
     let title_label = build_track_label();
@@ -81,16 +92,28 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     title_row.append(&title_label);
     title_row.append(&mini_eq);
     title_row.set_valign(gtk4::Align::Center);
+    let title_button = gtk4::Button::builder()
+        .child(&title_row)
+        .has_frame(false)
+        .tooltip_text(strings::text(strings::REVEAL_PLAYING_ALBUM))
+        .build();
+    title_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::REVEAL_PLAYING_ALBUM,
+    ))]);
+    let artist_button = gtk4::Button::builder()
+        .child(&artist_label)
+        .has_frame(false)
+        .build();
 
     let track_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    track_box.append(&title_row);
-    track_box.append(&artist_label);
+    track_box.append(&title_button);
+    track_box.append(&artist_button);
     track_box.set_valign(gtk4::Align::Center);
 
     // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     info_box.set_margin_start(12);
-    info_box.append(&cover);
+    info_box.append(&cover_button);
     info_box.append(&track_box);
     info_box.set_valign(gtk4::Align::Center);
     info_box.set_width_request(START_ZONE_WIDTH);
@@ -165,6 +188,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     volume_scale.add_css_class(VOLUME_SCALE_CSS_CLASS);
 
     // Scroll ±5 % per tick on the volume slider (spec 1.5).
+    // input-parity: ACC-8 keyboard=native-range
     let volume_scroll =
         gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::VERTICAL);
     volume_scroll.connect_scroll({
@@ -224,8 +248,11 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         center_box,
         info_box,
         cover,
+        cover_button,
         title_label,
+        title_button,
         artist_label,
+        artist_button,
         mini_eq,
         shuffle_button,
         prev_button,
@@ -249,8 +276,7 @@ pub(in crate::ui) fn css() -> String {
     let micro_easing = motion::MICRO_CSS_EASING;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
-           background-color: rgb(26, 26, 26); \
-           border-top: 1px solid alpha(@window_fg_color, 0.07); }}\n\
+           background-color: transparent; border: none; }}\n\
          .{PLAY_CSS_CLASS} {{ \
            min-width: {PLAY_BUTTON_SIZE}px; min-height: {PLAY_BUTTON_SIZE}px; \
            background-color: @reprise_player_accent; color: #ffffff; \
@@ -280,9 +306,9 @@ pub(in crate::ui) fn css() -> String {
          .{COVER_CSS_CLASS}.hovered {{ opacity: 1.0; }}\n\
          .player-bar-title {{ font-weight: bold; font-size: 13.5px; }}\n\
          .player-bar-artist {{ \
-           color: alpha(@window_fg_color, 0.50); font-size: 12px; \
+           color: alpha(@window_fg_color, 0.82); font-size: 12px; \
            transition: color {TRANSITION}; }}\n\
-         .player-bar-artist.artist-hovered {{ color: alpha(white, 0.75); }}\n\
+         .player-bar-artist.artist-hovered {{ color: @window_fg_color; }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}\n\
          /* Shape only. Hover, press, focus and the checked state all come from \
