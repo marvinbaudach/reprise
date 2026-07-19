@@ -89,7 +89,12 @@ impl SafeInsetApplier {
 
 fn collect_scrolled_children(widget: &gtk4::Widget, targets: &mut Vec<InsetTarget>) {
     if let Some(scrolled) = widget.downcast_ref::<gtk4::ScrolledWindow>() {
-        if let Some(child) = scrolled.child() {
+        let target = scrolled.child();
+        let target = match target.and_downcast_ref::<gtk4::Viewport>() {
+            Some(viewport) => viewport.child(),
+            None => target,
+        };
+        if let Some(child) = target {
             targets.push(InsetTarget {
                 base_top: child.margin_top(),
                 base_bottom: child.margin_bottom(),
