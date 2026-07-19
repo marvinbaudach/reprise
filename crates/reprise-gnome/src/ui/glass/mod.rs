@@ -1,9 +1,13 @@
 #[allow(dead_code)] // Wired into the library shell in the activation task.
 mod backdrop;
+#[allow(dead_code)] // Wired into the library shell in the activation task.
+mod insets;
 pub(crate) mod material;
 #[allow(dead_code)] // Wired into the library shell in the activation task.
 mod surface;
 
+#[allow(unused_imports)] // Wired into the library shell in the activation task.
+pub(crate) use insets::{InsetMeasurements, PlayerBarEdge, SafeInsetApplier, SafeInsets};
 #[allow(unused_imports)] // Wired into the library shell in the activation task.
 pub(crate) use surface::{GlassEdge, GlassSurface};
 
@@ -13,6 +17,7 @@ mod tests {
 
     use super::material::{GlassEnvironment, GlassMode, GlassTheme, RendererClass};
     use super::{GlassEdge, GlassSurface};
+    use super::{InsetMeasurements, PlayerBarEdge, SafeInsetApplier, SafeInsets};
 
     #[test]
     fn style_4_glass_material_is_neutral_and_falls_back_safely() {
@@ -67,5 +72,60 @@ mod tests {
         assert!(controls.is_ancestor(surface.root()));
         assert!(surface.root().is_measure_overlay(&controls));
         assert!(!surface.backdrop().can_target());
+    }
+
+    #[test]
+    fn play_7a_glass_shell_overlays_content_with_exact_safe_insets() {
+        let top = InsetMeasurements {
+            header: 48,
+            search: 42,
+            player: 96,
+            player_edge: PlayerBarEdge::Top,
+        };
+        assert_eq!(
+            top.safe_insets(),
+            SafeInsets {
+                top: 186,
+                bottom: 0
+            }
+        );
+
+        let bottom = InsetMeasurements {
+            player_edge: PlayerBarEdge::Bottom,
+            ..top
+        };
+        assert_eq!(
+            bottom.safe_insets(),
+            SafeInsets {
+                top: 90,
+                bottom: 96
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn inset_applier_adds_exact_padding_to_every_scrolled_child() {
+        gtk4::init().unwrap();
+        let first_child = gtk4::Label::new(Some("first"));
+        first_child.set_margin_top(3);
+        first_child.set_margin_bottom(4);
+        let second_child = gtk4::Label::new(Some("second"));
+        let first = gtk4::ScrolledWindow::builder().child(&first_child).build();
+        let second = gtk4::ScrolledWindow::builder().child(&second_child).build();
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&first);
+        root.append(&second);
+
+        let mut applier = SafeInsetApplier::discover(&root);
+        assert_eq!(applier.target_count(), 2);
+        applier.apply(SafeInsets {
+            top: 90,
+            bottom: 96,
+        });
+        assert_eq!(first_child.margin_top(), 93);
+        assert_eq!(first_child.margin_bottom(), 100);
+        assert_eq!(second_child.margin_top(), 90);
+        assert_eq!(second_child.margin_bottom(), 96);
     }
 }
