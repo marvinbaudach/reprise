@@ -1656,6 +1656,14 @@ msgstr "Jetzt abrufen"
 msgid "Refresh failed · showing saved releases"
 msgstr "Aktualisierung fehlgeschlagen · zeigt gespeicherte Veröffentlichungen"
 
+#: crates/reprise-gnome/src/ui/strings_news.rs:57
+msgid "Checking for new releases…"
+msgstr "Suche nach neuen Veröffentlichungen…"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:58
+msgid "No upcoming releases from your artists"
+msgstr "Keine bevorstehenden Veröffentlichungen Ihrer Interpreten"
+
 #: crates/reprise-gnome/src/ui/strings_news.rs:51
 msgid "Updated just now"
 msgstr "Gerade aktualisiert"

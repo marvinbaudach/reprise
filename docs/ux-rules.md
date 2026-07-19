@@ -889,7 +889,7 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Auswahl „Top artists only / all artists". Bei ausgeschaltetem Modul gibt es
   weder Fetch noch ✦; Cover-, Portrait- und Lyrics-Module gehören nicht zu
   dieser Regel und werden im Folge-Branch `feat/network-opt-in` geregelt.
-- **NR-8** [geplant] [gtk] — Das Einschalten des Moduls ist die Zustimmung und
+- **NR-8** [aktiv] [gtk] — Das Einschalten des Moduls ist die Zustimmung und
   löst deshalb sofort den ersten Abruf aus: `set_enabled(true)` stößt einen
   Fetch an. Solange nie erfolgreich abgerufen wurde, bleibt ✦ **sichtbar** und
   trägt einen Leerzustand („Checking for new releases…" während des Laufs,
