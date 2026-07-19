@@ -49,7 +49,6 @@ const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 pub(in crate::ui) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
 
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
-const MINI_EQ_PLAYING_CLASS: &str = "playing";
 const PLAY_PULSE_CSS_CLASS: &str = "pulsing";
 /// Keeps a retriggered keyframe class absent across at least one compositor
 /// frame before it is re-added. Frame-clock tick callbacks can run
@@ -481,14 +480,8 @@ impl PlayerBar {
             .set_text(&format_remaining(position_ms, duration_ms));
     }
 
-    /// Toggles the mini-EQ animation on/off by adding/removing the `playing`
-    /// CSS class on the `.mini-eq` container.
     pub fn set_mini_eq_playing(&self, playing: bool) {
-        if playing {
-            self.mini_eq.add_css_class(MINI_EQ_PLAYING_CLASS);
-        } else {
-            self.mini_eq.remove_css_class(MINI_EQ_PLAYING_CLASS);
-        }
+        crate::ui::playing_marker::set_playing(&self.mini_eq, playing);
     }
 
     /// Wires the play/pause button; `f` is called on every click with no

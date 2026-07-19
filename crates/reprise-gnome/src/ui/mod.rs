@@ -50,6 +50,7 @@ pub(crate) mod now_playing;
 mod one_shot_task;
 mod playback;
 pub(crate) mod player_bar;
+pub(crate) mod playing_marker;
 mod playlists;
 mod popover_lifecycle;
 pub(crate) mod preferences;
