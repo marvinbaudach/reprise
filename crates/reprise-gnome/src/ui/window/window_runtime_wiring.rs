@@ -7,6 +7,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -70,6 +71,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) cover_batch: &'a Rc<CoverDownloadBatch>,
     pub(in crate::ui) first_run_decision: FirstRunDecision,
     pub(in crate::ui) nav_history: &'a Rc<crate::ui::nav_history::NavHistory>,
+    pub(in crate::ui) content_nav: &'a adw::NavigationView,
 }
 
 pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
@@ -107,7 +109,21 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         cover_batch,
         first_run_decision,
         nav_history,
+        content_nav,
     } = args;
+
+    let library_doctor = super::library_doctor::LibraryDoctorCoordinator::new(
+        super::library_doctor::LibraryDoctorContext {
+            conn,
+            db_path,
+            navigation: content_nav,
+            window,
+            track_list,
+            scan_controls,
+            fingerprint: Arc::new(reprise_platform_linux::fingerprint::GstreamerFingerprintBackend),
+            preferences,
+        },
+    );
 
     let active_content_focus = super::library_shell::ActiveContentFocus::new(
         content_stack,
@@ -136,6 +152,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     let sync_preferences = preferences.clone();
     let menu_preferences = preferences.clone();
     let cancel_scan_controls = scan_controls.clone();
+    let menu_library_doctor = library_doctor;
     let stop_player = player.as_ref().map(|player| {
         let player = Rc::downgrade(player);
         Rc::new(move || {
@@ -162,6 +179,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 );
             }),
             on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
+            on_library_doctor: Rc::new(move || menu_library_doctor.open()),
             on_sync_device: Rc::new(move || {
                 sync_preferences.present_page("synchronization");
             }),

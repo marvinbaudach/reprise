@@ -76,6 +76,10 @@ pub use track_menu::*;
 mod stats;
 pub use stats::*;
 
+#[path = "strings_library_doctor.rs"]
+mod library_doctor;
+pub use library_doctor::*;
+
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
 pub const ONBOARDING_IMPORT_FROM_RHYTHMBOX: &str = N_!("Import from Rhythmbox");
@@ -117,17 +121,6 @@ pub const DENSITY_STANDARD: &str = N_!("Standard");
 pub const DENSITY_COMPACT: &str = N_!("Compact");
 pub const PREFERENCES_LIBRARY: &str = N_!("Library");
 pub const PREFERENCES_PLUGINS: &str = N_!("Plugins");
-pub const LIBRARY_DOCTOR: &str = N_!("Library Doctor");
-pub const LIBRARY_DOCTOR_DESCRIPTION: &str =
-    N_!("Review local tag cleanup suggestions; optional remote suggestions; contacts MusicBrainz / AcoustID");
-pub const LIBRARY_DOCTOR_REMOTE: &str = N_!("MusicBrainz / AcoustID suggestions");
-pub const LIBRARY_DOCTOR_REMOTE_DESCRIPTION: &str =
-    N_!("Optional network lookup · local fixes are always included · no file paths or private library data");
-pub const LIBRARY_DOCTOR_REMOTE_HEADING: &str = N_!("Enable remote tag suggestions?");
-pub const LIBRARY_DOCTOR_REMOTE_BODY: &str = N_!(
-    "Reprise sends only existing title, artist, album, album artist, MusicBrainz IDs, and duration to MusicBrainz. AcoustID receives only a fingerprint and duration. File paths, filenames, library roots, ratings, listening history, playlists, and device data are never sent."
-);
-pub const LIBRARY_DOCTOR_REMOTE_ENABLE: &str = N_!("Enable Suggestions");
 pub const PREFERENCES_PLAYBACK: &str = N_!("Playback");
 pub const EQUALIZER: &str = N_!("Equalizer");
 pub const ENABLE_EQUALIZER: &str = N_!("Enable Equalizer");

@@ -16,6 +16,7 @@ pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-colum
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
+pub(super) const ACTION_LIBRARY_DOCTOR: &str = "library-doctor";
 pub(super) const ACTION_SYNC_DEVICE: &str = "sync-device";
 pub(super) const ACTION_STOP_PLAYBACK: &str = "stop-playback";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
@@ -30,6 +31,7 @@ pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
     pub(super) on_rescan_library: Rc<dyn Fn()>,
     pub(super) on_cancel_scan: Rc<dyn Fn()>,
+    pub(super) on_library_doctor: Rc<dyn Fn()>,
     pub(super) on_sync_device: Rc<dyn Fn()>,
     pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
     pub(super) on_preferences: Rc<dyn Fn()>,
@@ -59,6 +61,10 @@ pub(super) fn update_library_section(menu: &gio::Menu, is_scanning: bool) {
         strings::text(strings::RESCAN_LIBRARY)
     };
     menu.append(Some(&label), Some("win.rescan-library"));
+    menu.append(
+        Some(&strings::text(strings::LIBRARY_DOCTOR)),
+        Some("win.library-doctor"),
+    );
     menu.append(
         Some(&strings::text(strings::SYNC_DEVICE)),
         Some("win.sync-device"),
@@ -173,6 +179,13 @@ pub(super) fn install(
         });
     }
     window.add_action(&rescan);
+
+    let library_doctor = gio::SimpleAction::new(ACTION_LIBRARY_DOCTOR, None);
+    {
+        let cb = callbacks.on_library_doctor.clone();
+        library_doctor.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&library_doctor);
 
     let sync_device = gio::SimpleAction::new(ACTION_SYNC_DEVICE, None);
     {
@@ -331,7 +344,14 @@ mod tests {
                     .and_then(|v| v.get::<String>())
             })
             .collect();
-        assert_eq!(actions, ["win.rescan-library", "win.sync-device"]);
+        assert_eq!(
+            actions,
+            [
+                "win.rescan-library",
+                "win.library-doctor",
+                "win.sync-device"
+            ]
+        );
     }
 
     #[test]

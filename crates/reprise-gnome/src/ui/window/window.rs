@@ -430,7 +430,7 @@ pub fn build(
     );
     let sidebar_page = library_shell.sidebar_page;
     let split_view = library_shell.split_view;
-    let _content_nav = library_shell.content_nav;
+    let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
@@ -585,6 +585,7 @@ pub fn build(
         cover_batch: &cover_batch,
         first_run_decision,
         nav_history: &nav_history,
+        content_nav: &content_nav,
     });
 
     tracing::info!("main window built");
