@@ -1,4 +1,6 @@
 //! Full-width library chrome from design mockup 7a.
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -100,19 +102,39 @@ fn wire_search_toggle(
 
     let toggle_weak = toggle.downgrade();
     let entry = search_entry.downgrade();
+    // GtkSearchBar clears its connected entry when search mode ends. SEARCH-6
+    // forbids that: hiding the bar must never drop the query — it lives on as
+    // a chip and the lens stays checked. Restore the text the bar just wiped.
+    let preserved_query = Rc::new(RefCell::new(String::new()));
+    let stash = preserved_query.clone();
     search_bar.connect_search_mode_enabled_notify(move |bar| {
         let (Some(toggle), Some(entry)) = (toggle_weak.upgrade(), entry.upgrade()) else {
             return;
         };
+        if bar.is_search_mode() {
+            stash.borrow_mut().clear();
+        } else {
+            let restored = stash.borrow().clone();
+            if !restored.is_empty() && entry.text().is_empty() {
+                entry.set_text(&restored);
+            }
+        }
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
     });
 
     let toggle_weak = toggle.downgrade();
     let bar = search_bar.downgrade();
-    search_entry.connect_search_changed(move |entry| {
+    // `connect_changed`, not `connect_search_changed`: the latter is debounced
+    // so the query can settle before re-running it, but the lens only reflects
+    // "a query exists" (SEARCH-3) and must not lag behind typing by ~150 ms.
+    let stash = preserved_query.clone();
+    search_entry.connect_changed(move |entry| {
         let (Some(toggle), Some(bar)) = (toggle_weak.upgrade(), bar.upgrade()) else {
             return;
         };
+        if bar.is_search_mode() && !entry.text().is_empty() {
+            *stash.borrow_mut() = entry.text().to_string();
+        }
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &entry.text()));
     });
 }
