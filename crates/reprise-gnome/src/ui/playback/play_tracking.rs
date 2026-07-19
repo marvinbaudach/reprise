@@ -83,11 +83,11 @@ impl PlayerController {
     /// runs for *every* completed play that crosses the listen threshold,
     /// independent of whether any scrobble provider is active — local stats
     /// count all qualifying plays. It deliberately reuses the same threshold
-    /// predicate as scrobbling (`scrobbling::should_scrobble`, four minutes or
-    /// half the track) rather than the looser play-count predicate, so an
-    /// event only lands when the play would also have been scrobble-worthy.
+    /// predicate as the stats screen (`stats_screen::counts_as_play`, four
+    /// minutes or half the track) rather than the looser play-count predicate,
+    /// so an event only lands when the play would also have been scrobble-worthy.
     fn record_local_listen_event(&self, track_id: i64, max_position_ms: i64, duration_ms: i64) {
-        if !scrobbling::should_scrobble(max_position_ms, duration_ms) {
+        if !stats_screen::counts_as_play(max_position_ms, duration_ms) {
             return;
         }
         let result = {

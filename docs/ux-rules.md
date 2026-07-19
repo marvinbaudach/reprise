@@ -909,7 +909,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
 
 ## T. My Stats
 
-- **STATS-0** [geplant] [core] — Ein „play" ist überall dieselbe Sache:
+- **STATS-0** [aktiv] [core] — Ein „play" ist überall dieselbe Sache:
   mindestens 50 % des Tracks oder mindestens vier Minuten gehört. Genau diese
   Ereignisse stehen in `listen_events`, und die My-Stats-Ansicht rechnet
   ausschließlich aus ihnen — Hero-Zeit, Plays, Top-Listen, Spotlight, Genres,
@@ -972,7 +972,7 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   keine Suche der Trackliste — das ist eine andere Ansicht. Die rechte
   Now-Playing-Spalte verhält sich wie überall. Das Zeitraum-Dropdown ist der
   einzige Ansichts-Regler dieser Ansicht.
-- **STATS-9** [geplant] [core] — **Dedup:** Unsaubere Tags dürfen Zahlen nicht
+- **STATS-9** [aktiv] [core] — **Dedup:** Unsaubere Tags dürfen Zahlen nicht
   zersplittern. Top Artists, Top Genres, Album-Artist-Aggregate und das
   Spotlight gruppieren über einen zweistufigen Schlüssel: liegt eine MBID vor,
   gilt sie; sonst ein normalisierter Schlüssel aus Trim, Unicode-Casefold
