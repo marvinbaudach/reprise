@@ -131,7 +131,20 @@ fn wire_search_toggle(
             return;
         };
         let query = entry.text();
-        if bar.is_search_mode() && !query.is_empty() {
+        // While the bar is open the stash tracks the entry verbatim, empty
+        // included. Only assigning on non-empty left it stale after an
+        // explicit clear, and the collapse below then resurrected a query the
+        // user had removed — violating SEARCH-5, which preserves the query
+        // only *until* Esc, the chip's X or "Clear all" removes it. All three
+        // funnel through `set_text("")` while the bar is open, so clearing
+        // here covers them in one place.
+        //
+        // `is_search_mode()` is what separates the two kinds of empty entry: a
+        // user-initiated clear arrives while the bar is still open, whereas
+        // GtkSearchBar's own wipe is a consequence of search mode having been
+        // turned off and so cannot reach this branch — which is what makes
+        // SEARCH-6 survive.
+        if bar.is_search_mode() {
             *stash.borrow_mut() = query.to_string();
         }
         toggle.set_active(search_toggle_active(bar.is_search_mode(), &query));
@@ -397,6 +410,76 @@ mod tests {
         assert_eq!(entry.text(), "falling");
         assert!(chrome.search_toggle.is_active());
         assert_eq!(chips, vec!["⌕ “falling” in any field"]);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_5_an_explicitly_cleared_query_does_not_come_back_on_collapse() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let entry = gtk4::SearchEntry::new();
+        let chrome = build(&header, &entry, &window);
+        chrome.search_bar.set_search_mode(true);
+        entry.set_text("nomatch");
+
+        // Esc stage one: clear the text while the bar stays open. The chip's X
+        // and "Clear all" reach this same state, so all three are covered.
+        entry.set_text("");
+        assert!(chrome.search_bar.is_search_mode());
+
+        // Esc stage two: collapse. SEARCH-6 restores a *preserved* query here,
+        // but SEARCH-5 preserves it only until the user explicitly removes it —
+        // which just happened, so nothing may be restored.
+        chrome.search_bar.set_search_mode(false);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert_eq!(
+            entry.text(),
+            "",
+            "an explicitly cleared query must not be resurrected by the collapse"
+        );
+        assert!(!chrome.search_toggle.is_active());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_6_wipe_on_collapse_arrives_after_search_mode_is_already_false() {
+        // The SEARCH-5 fix above rests on this ordering: the stash may treat an
+        // empty entry as an explicit clear *only* because GtkSearchBar's own
+        // wipe cannot arrive while search mode is still true. If GTK ever
+        // reordered that, the clear-on-empty branch would eat the stash and
+        // break SEARCH-6 — so assert the premise rather than trust it.
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let entry = gtk4::SearchEntry::new();
+        let chrome = build(&header, &entry, &window);
+        chrome.search_bar.set_search_mode(true);
+        entry.set_text("falling");
+
+        let mode_when_emptied = Rc::new(RefCell::new(None::<bool>));
+        let observed = mode_when_emptied.clone();
+        let bar = chrome.search_bar.clone();
+        entry.connect_changed(move |entry| {
+            if entry.text().is_empty() && observed.borrow().is_none() {
+                *observed.borrow_mut() = Some(bar.is_search_mode());
+            }
+        });
+
+        chrome.search_bar.set_search_mode(false);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert_eq!(
+            *mode_when_emptied.borrow(),
+            Some(false),
+            "GtkSearchBar wiped the entry while still in search mode; the \
+             stash can no longer infer an explicit clear from an empty entry"
+        );
+        // And SEARCH-6 still holds: the query survives the collapse.
+        assert_eq!(entry.text(), "falling");
     }
 
     #[test]
