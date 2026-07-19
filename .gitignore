@@ -37,3 +37,6 @@ doc/
 # Pipeline scratch files (codex-run.sh writes these per run)
 .pipeline-task.md
 .pipeline-codex.md
+
+# Accidental SQLite scratch created by GNOME tests
+/crates/reprise-gnome/unused.db*
