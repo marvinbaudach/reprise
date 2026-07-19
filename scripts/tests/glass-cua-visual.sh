@@ -23,6 +23,7 @@ for required_pattern in \
   'at-spi2-registryd' \
   'cua_driver get_window_state' \
   'cua_driver scroll' \
+  'delivery_mode: "foreground"' \
   'assert_scroll_delivered' \
   'cmp -s' \
   'run_position bottom' \
@@ -31,12 +32,18 @@ for required_pattern in \
   'Album 00119' \
   '"Albums" "$position-tracks-ready"' \
   'albums-under-header' \
+  'down 50 "$position-albums-at-end"' \
   'albums-at-end'; do
   if ! rg --quiet --fixed-strings "$required_pattern" "$runner"; then
     echo "$runner is missing visual-CUA contract: $required_pattern" >&2
     exit 1
   fi
 done
+
+if rg --quiet --fixed-strings 'down 80 "$position-albums-at-end"' "$runner"; then
+  echo "$runner must keep CUA page-scroll amounts within the driver schema" >&2
+  exit 1
+fi
 
 resize_line=$(rg -n --fixed-strings \
   'cua_resize_window "$app_pid" "$window_id" 1440 800' "$runner" | cut -d: -f1)
