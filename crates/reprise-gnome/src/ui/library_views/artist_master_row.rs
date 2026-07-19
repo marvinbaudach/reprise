@@ -22,7 +22,7 @@ use crate::ui::artist_avatar;
 use crate::ui::artist_portrait_worker::{ArtistPortraitRequest, ArtistPortraitRuntime};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::discovery_hint::{EvidenceTracker, VisibleEvidence};
-use crate::ui::eq_bars::{self, EqVariant};
+use crate::ui::playing_marker;
 use crate::ui::strings;
 use reprise_core::artist_portrait::PortraitOutcome;
 use reprise_core::cover::ThumbnailSize;
@@ -45,7 +45,7 @@ pub(in crate::ui) struct RowHandles {
     initials: gtk4::Label,
     name: gtk4::Label,
     meta: gtk4::Label,
-    /// The shared `eq_bars` motif (CSS-animated); visibility is the only
+    /// The shared playing marker; visibility is the only
     /// per-row control — shown on the now-playing artist's row.
     eq: gtk4::Box,
     /// The artist currently bound to this row — read by [`Self::set_now_playing`]
@@ -213,7 +213,7 @@ fn build_row(fallback_evidence: VisibleEvidence) -> Rc<RowHandles> {
     text_box.append(&meta);
     root.append(&text_box);
 
-    let eq = eq_bars::build(EqVariant::Animated);
+    let eq = playing_marker::build();
     eq.set_visible(false);
     root.append(&eq);
 
@@ -325,4 +325,16 @@ fn set_avatar_gradient(avatar: &gtk4::Box, artist: &str) {
         avatar.remove_css_class(&format!("artist-avatar-gradient-{index}"));
     }
     avatar.add_css_class(&artist_avatar::gradient_class(artist));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_now_playing;
+
+    #[test]
+    fn art_1_playing_marker_tracks_playback_not_selection() {
+        assert!(is_now_playing(Some("Björk"), "BJÖRK"));
+        assert!(!is_now_playing(Some("Björk"), "Selected Artist"));
+        assert!(!is_now_playing(None, "Björk"));
+    }
 }

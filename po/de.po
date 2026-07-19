@@ -620,11 +620,6 @@ msgstr "Leeren"
 msgid "Play Next"
 msgstr "Als Nächstes"
 
-#: crates/reprise-gnome/src/ui/strings.rs:415
-#, rust-format
-msgid "Up Next · from {}"
-msgstr "Als Nächstes · aus {}"
-
 #: crates/reprise-gnome/src/ui/strings.rs:416
 msgid "Nothing queued"
 msgstr "Nichts in der Warteschlange"
@@ -1687,10 +1682,12 @@ msgid_plural "{count} tracks · {duration}"
 msgstr[0] "{count} Titel · {duration}"
 msgstr[1] "{count} Titel · {duration}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:70
+#: crates/reprise-gnome/src/ui/strings_news.rs:72
 #, rust-format
-msgid "Continuing from “{source}”"
-msgstr "Weiter aus „{source}“"
+msgid "Playing from {source} · {count} track"
+msgid_plural "Playing from {source} · {count} tracks"
+msgstr[0] "Wiedergabe aus {source} · {count} Titel"
+msgstr[1] "Wiedergabe aus {source} · {count} Titel"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:75
 #, rust-format
@@ -1771,10 +1768,6 @@ msgstr "Vorherigen Titel wiedergeben"
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:17
 msgid "Play next track"
 msgstr "Nächsten Titel wiedergeben"
-
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:18
-msgid "Show queue"
-msgstr "Warteschlange anzeigen"
 
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:21
 msgid "Restore full window (Ctrl+M)"

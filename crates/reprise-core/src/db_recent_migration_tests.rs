@@ -163,7 +163,7 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
 /// Builds a v9 database (every schema step through `SCHEMA_V9`, `user_version`
 /// pinned at 9) so v10-specific tests seed rows under the *pre-migration*
 /// shape rather than the shape `migrate()` itself would already have applied.
-fn open_v9_database() -> Connection {
+pub(super) fn open_v9_database() -> Connection {
     let conn = open(None).unwrap();
     conn.execute_batch(SCHEMA_V1).unwrap();
     conn.execute_batch(SCHEMA_V2).unwrap();

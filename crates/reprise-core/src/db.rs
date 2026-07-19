@@ -343,6 +343,14 @@ WHERE missing_since IS NULL AND removed_at IS NULL;
 /// otherwise it uses the newest equally eligible partial index for aggregate
 /// scans. Album order scatters table lookups for counts and duration sums,
 /// while title order retains the established, cache-friendly query plan.
+///
+/// The drop is `IF EXISTS` on purpose. A database can legitimately carry
+/// `user_version = 13` without the title index when a parallel branch stamped
+/// its own, different v13 — that happened while the network opt-in work
+/// numbered its grandfathering step 13 against a main that had meanwhile taken
+/// 13 for this index. Such a database must repair itself here instead of
+/// aborting startup with `no such index`; recreating the index right below
+/// leaves both histories in the same state.
 const SCHEMA_V14: &str = r#"
 CREATE INDEX idx_tracks_present_album_order
 ON tracks(album COLLATE NOCASE, track_no)
@@ -645,3 +653,7 @@ mod tests;
 #[cfg(test)]
 #[path = "db_recent_migration_tests.rs"]
 mod recent_migration_tests;
+
+#[cfg(test)]
+#[path = "db_migration_repair_tests.rs"]
+mod migration_repair_tests;

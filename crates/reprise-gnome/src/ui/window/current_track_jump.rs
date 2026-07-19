@@ -25,7 +25,7 @@ pub(in crate::ui) struct JumpContext {
     pub track_list: Rc<TrackList>,
     pub nav_history: Rc<NavHistory>,
     pub content_stack: gtk4::Stack,
-    pub library_stack: gtk4::Stack,
+    pub library_stack: libadwaita::ViewStack,
     pub album_grid: gtk4::GridView,
 }
 
@@ -133,7 +133,7 @@ mod tests {
                 Rc::new(move || {
                     events
                         .borrow_mut()
-                        .push(("select-and-center", ViewSource::Playlist(7)));
+                        .push(("reveal-without-selection", ViewSource::Playlist(7)));
                 })
             },
         });
@@ -146,7 +146,7 @@ mod tests {
             &[
                 ("prepare", ViewSource::Playlist(7)),
                 ("route", ViewSource::Playlist(7)),
-                ("select-and-center", ViewSource::Playlist(7)),
+                ("reveal-without-selection", ViewSource::Playlist(7)),
             ]
         );
         assert_eq!(history.go_back(), Some(queue));
