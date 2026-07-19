@@ -121,6 +121,7 @@ fn issues_list_is_the_bottom_most_root_child_below_the_activity_slot() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn focus_driven_selection_browses_without_routing_but_activation_routes() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let shared = test_shared();
     wire_row_selected(&shared);

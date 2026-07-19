@@ -104,6 +104,7 @@ mod tests {
 
     #[test]
     fn nav_9a_ctrl_l_reveals_current_track_origin() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         let events = Rc::new(RefCell::new(Vec::new()));
         let history = Rc::new(NavHistory::default());
         let queue = NavPlace::source(

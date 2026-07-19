@@ -255,6 +255,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mot_7_css_honours_enable_animations_setting() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         use gtk4::prelude::*;
 
         gtk4::init().unwrap();
