@@ -11,6 +11,13 @@ pub enum GroupKind {
 }
 
 /// Runtime-only grouping key. This value is never written back to a tag.
+///
+/// `to_lowercase` is Unicode lowercasing, deliberately not full case folding:
+/// std has no `to_casefold`, and the only Latin-script difference that would
+/// buy is "Straße" == "STRASSE" — a genuinely different spelling, not a casing
+/// of the same one. STATS-9 states this limit rather than implying a fold the
+/// code does not perform. Note that "STRAẞE" (U+1E9E) *does* fold, because
+/// `to_lowercase` maps capital sharp s to `ß`.
 pub fn normalize_group_key(raw: &str) -> String {
     let lowered = raw.trim().to_lowercase();
     let collapsed = lowered.split_whitespace().collect::<Vec<_>>().join(" ");
