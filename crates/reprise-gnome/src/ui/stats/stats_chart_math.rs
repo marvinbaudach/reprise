@@ -73,21 +73,6 @@ pub(in crate::ui) fn expand_hourly(sparse: &[(u8, i64)]) -> [i64; 24] {
     full
 }
 
-/// Returns the hour (0-23) with the highest listen count in a 24-slot
-/// array. Returns 0 when all values are zero.
-pub(in crate::ui) fn peak_hour(values: &[i64; 24]) -> u8 {
-    values
-        .iter()
-        .enumerate()
-        .max_by_key(|&(_, &v)| v)
-        .map_or(0, |(i, _)| i as u8)
-}
-
-/// Formats an hour (0-23) as `"H:00"` for the peak annotation label.
-pub(in crate::ui) fn format_peak_hour(hour: u8) -> String {
-    format!("{hour}:00")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

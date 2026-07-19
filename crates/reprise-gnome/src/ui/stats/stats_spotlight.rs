@@ -5,9 +5,11 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
+use reprise_core::format::format_thousands;
 use reprise_core::library::stats_snapshot::SpotlightSection;
 
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
@@ -152,9 +154,11 @@ impl StatsSpotlight {
                 &self.cover_generation,
             );
         }
+        // The share divides by the time that carries an artist at all, not by
+        // every play, so it must not claim to be a share of "your listening".
         self.summary.set_label(&format!(
-            "{} plays \u{00b7} {} \u{00b7} {}% of your listening",
-            artist.plays,
+            "{} plays \u{00b7} {} \u{00b7} {}% of your artist listening",
+            format_thousands(artist.plays),
             format_duration(artist.ms),
             section.share_percent
         ));
@@ -175,11 +179,7 @@ impl StatsSpotlight {
         self.unify_hint.set_visible(variants >= 2);
         self.unify_hint.set_tooltip_text(
             (variants >= 2)
-                .then(|| {
-                    format!(
-                "{variants} Schreibweisen zusammengefasst \u{2014} im Tag-Editor vereinheitlichen?"
-            )
-                })
+                .then(|| strings::spellings_merged_hint(variants))
                 .as_deref(),
         );
     }

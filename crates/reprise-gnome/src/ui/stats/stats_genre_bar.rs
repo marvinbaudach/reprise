@@ -6,6 +6,8 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::library::stats_snapshot::GenreSection;
 
+use crate::ui::strings;
+
 type UnifyCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 
 #[derive(Clone)]
@@ -74,10 +76,7 @@ impl StatsGenreBar {
                 let hint = gtk4::Button::with_label("Tag spellings");
                 hint.add_css_class("flat");
                 hint.add_css_class("stats-unify-hint");
-                hint.set_tooltip_text(Some(&format!(
-                    "{} Schreibweisen zusammengefasst \u{2014} im Tag-Editor vereinheitlichen?",
-                    segment.variant_count
-                )));
+                hint.set_tooltip_text(Some(&strings::spellings_merged_hint(segment.variant_count)));
                 hint.connect_clicked({
                     let key = segment.key.clone();
                     let on_unify = self.on_unify.clone();

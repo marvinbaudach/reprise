@@ -11,9 +11,7 @@ use gtk4::prelude::*;
 
 use reprise_core::library::stats_snapshot::ClockSection;
 
-use super::stats_chart_math::{
-    expand_hourly, format_peak_hour, normalize_bars, peak_hour, BAR_GAP_FRACTION, MIN_BAR_FRACTION,
-};
+use super::stats_chart_math::{expand_hourly, normalize_bars, BAR_GAP_FRACTION, MIN_BAR_FRACTION};
 
 pub(in crate::ui) const HOURLY_CHART_CSS_CLASS: &str = "stats-chart";
 const CHART_HEIGHT: i32 = 160;
@@ -91,11 +89,10 @@ impl HourlyChart {
             peak_hours: peak_hour_mask(section),
         };
         self.caption.set_label(&section.caption);
-        self.area.set_tooltip_text(Some(&format!(
-            "{}; peak {}",
-            section.caption,
-            format_peak_hour(peak_hour(&full))
-        )));
+        // The caption already names the peak — and it names *every* peak hour,
+        // which a single "peak H:00" annotation next to it would contradict as
+        // soon as two hours tie.
+        self.area.set_tooltip_text(None);
         self.area.queue_draw();
     }
 }

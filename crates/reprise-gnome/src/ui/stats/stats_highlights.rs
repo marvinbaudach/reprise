@@ -6,6 +6,8 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::library::stats_snapshot::{GenreSegment, HighlightsSection};
 
+use crate::ui::strings;
+
 /// The genre the mix CTA acts on. It carries the group **key**, because the
 /// label is only the most common raw spelling of the group (STATS-9) and a
 /// name equality on it would select a different set of tracks than the screen
@@ -119,8 +121,8 @@ impl StatsHighlights {
 
 fn mix_label(genre: Option<&TopGenre>) -> String {
     match genre {
-        Some(genre) => format!("Mix from {} \u{00b7} Create", genre.label),
-        None => "Mix from your top genre \u{00b7} Create".to_string(),
+        Some(genre) => strings::mix_from_genre(&genre.label),
+        None => strings::mix_from_top_genre(),
     }
 }
 

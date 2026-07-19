@@ -13,7 +13,7 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::settings::{self, StatsLayout};
-use reprise_core::library::stats_period::StatsPeriod;
+use reprise_core::library::stats_period::{PeriodRange, StatsPeriod};
 use reprise_core::library::stats_screen::{group_track_ids, TopTrack};
 use reprise_core::library::stats_snapshot::{self, SortBy, StatsSnapshot};
 use rusqlite::Connection;
@@ -25,6 +25,7 @@ use super::stats_highlights::{StatsHighlights, TopGenre};
 use super::stats_ribbon::StatsRibbon;
 use super::stats_spotlight::StatsSpotlight;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::strings;
 
 const CONTENT_MAX_WIDTH: i32 = 1120;
 const TOP_TRACK_LIMIT: usize = 10;
@@ -176,12 +177,20 @@ impl StatsView {
             .build();
 
         let empty = adw::StatusPage::builder()
-            .title("Start listening to see your stats")
+            .title(strings::stats_empty_title())
             .icon_name("audio-x-generic-symbolic")
+            .build();
+        // A failed query is not an empty history: telling the user to start
+        // listening when the numbers exist but could not be read is a lie.
+        let failed = adw::StatusPage::builder()
+            .title(strings::stats_unavailable_title())
+            .description(strings::stats_unavailable_description())
+            .icon_name("dialog-warning-symbolic")
             .build();
         let page_stack = gtk4::Stack::new();
         page_stack.add_named(&clamp, Some("sections"));
         page_stack.add_named(&empty, Some("empty"));
+        page_stack.add_named(&failed, Some("failed"));
         page_stack.set_visible_child_name("empty");
         let root = gtk4::ScrolledWindow::builder()
             .child(&page_stack)
@@ -445,34 +454,32 @@ fn refresh_parts(
                 &render.highlights_section,
             );
             render.customize.set_layout(layout);
+            // The stack decides what is on screen; hiding sections inside the
+            // page it just switched away from changes nothing.
             if snapshot.is_empty() {
-                render.ribbon.widget().set_visible(false);
                 page_stack.set_visible_child_name("empty");
             } else {
-                render.ribbon.widget().set_visible(true);
-                render_snapshot(render, &snapshot);
+                render_snapshot(render, &snapshot, period);
                 page_stack.set_visible_child_name("sections");
             }
             *current_snapshot.borrow_mut() = Some(snapshot);
         }
         Err(error) => {
             tracing::error!(%error, "failed to compute My Stats snapshot");
-            render.ribbon.widget().set_visible(false);
-            page_stack.set_visible_child_name("empty");
+            page_stack.set_visible_child_name("failed");
             *current_snapshot.borrow_mut() = None;
         }
     }
 }
 
-fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
+fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, period: StatsPeriod) {
     render
         .hero_time
-        .set_label(&format_duration(snapshot.hero.total_ms));
+        .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
     if let Some(percent) = snapshot.hero.comparison_percent {
-        render.comparison_pill.set_label(&format!(
-            "{} {}% vs previous period",
-            if percent >= 0 { "\u{25b2}" } else { "\u{25bc}" },
-            percent.abs()
+        render.comparison_pill.set_label(&strings::comparison_pill(
+            percent,
+            &compared_period_name(period, &snapshot.period),
         ));
         render.comparison_pill.set_visible(true);
     } else {
@@ -598,7 +605,7 @@ fn render_tracks(
         row.append(&label(
             &format!(
                 "{} plays \u{00b7} {}",
-                track.play_count,
+                format_thousands(track.play_count),
                 format_duration(track.total_ms)
             ),
             "stats-play-count",
@@ -654,6 +661,24 @@ fn apply_layout_widgets(
     clock.set_visible(layout.clock);
     genres.set_visible(layout.genres);
     highlights.set_visible(layout.highlights);
+}
+
+/// Names the span the hero pill compares against. The comparison window is
+/// the equally long stretch immediately before the selected one, so only a
+/// full calendar year can be named by its year — for every other period that
+/// stretch is not "last year" and must not claim to be.
+fn compared_period_name(period: StatsPeriod, range: &PeriodRange) -> String {
+    match period {
+        StatsPeriod::Year(year) => year.saturating_sub(1).to_string(),
+        _ => strings::previous_days(span_days(range)),
+    }
+}
+
+fn span_days(range: &PeriodRange) -> i64 {
+    const SECONDS_PER_DAY: i64 = 86_400;
+    let span = range.end_unix.saturating_sub(range.start_unix).max(0);
+    span.div_euclid(SECONDS_PER_DAY)
+        .max(i64::from(span % SECONDS_PER_DAY > 0))
 }
 
 /// The strongest real genre of the period. The bundled "Other" segment is not
@@ -781,7 +806,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_view_empty_history_shows_the_status_page_and_no_ribbon() {
+    fn stats_view_empty_history_shows_the_status_page_instead_of_the_sections() {
         gtk4::init().unwrap();
         let (view, conn) = view_and_conn();
         view.wire_year_selector(&conn);
@@ -790,7 +815,36 @@ mod tests {
             view.page_stack.visible_child_name().as_deref(),
             Some("empty")
         );
-        assert!(!view.render.ribbon.widget().is_visible());
+        // The ribbon is not hidden, it is simply on the page the stack is not
+        // showing — which is what actually keeps it off screen.
+        let sections = view.page_stack.child_by_name("sections").unwrap();
+        assert!(view.render.ribbon.widget().is_ancestor(&sections));
+        assert_ne!(view.page_stack.visible_child(), Some(sections));
+    }
+
+    /// A broken query is not an empty history: the user must not be told to
+    /// start listening when the numbers exist but could not be read.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn stats_6a_unreadable_history_shows_the_failure_page() {
+        gtk4::init().unwrap();
+        let (view, conn) = view_and_conn();
+        seed_one_play(&conn.borrow());
+        view.wire_year_selector(&conn);
+        assert_eq!(
+            view.page_stack.visible_child_name().as_deref(),
+            Some("sections")
+        );
+
+        conn.borrow()
+            .execute("DROP TABLE listen_events", [])
+            .unwrap();
+        view.refresh(&conn);
+
+        assert_eq!(
+            view.page_stack.visible_child_name().as_deref(),
+            Some("failed")
+        );
     }
 
     /// The breakpoint only applies once the bin has a real allocation, so the
