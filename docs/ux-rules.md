@@ -147,6 +147,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   geladenen Tracks, selektiert dessen Zeile und zentriert sie ohne
   scrollIntoView-Kantenkleben. Der Sprung pusht auf den globalen
   History-Stack; Back kehrt zum vorherigen Ort zurück.
+- **NAV-11** [aktiv] [gtk] — Jeder bedienbare Sidebar-Eintrag exponiert
+  gegenüber Assistenztechnik eine eigene Bezeichnung, eine interaktive Rolle
+  und eine auslösbare Aktion. Sektionsüberschriften bleiben nicht bedienbar,
+  werden aber semantisch als Überschriften exponiert.
 
 ## C. Abspielen, Queue, Shuffle, Filter
 
