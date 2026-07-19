@@ -20,7 +20,7 @@ use rusqlite::Connection;
 use super::hourly_chart::HourlyChart;
 use super::stats_customize::StatsCustomize;
 use super::stats_genre_bar::StatsGenreBar;
-use super::stats_highlights::StatsHighlights;
+use super::stats_highlights::{StatsHighlights, TopGenre};
 use super::stats_ribbon::StatsRibbon;
 use super::stats_spotlight::StatsSpotlight;
 use crate::ui::cover_loader::CoverLoader;
@@ -50,7 +50,7 @@ const SECTION_ORDER: [&str; 6] = [
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 type PairCallback = Rc<RefCell<Option<Rc<dyn Fn(String, String)>>>>;
-type StringsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<String>)>>>>;
+type GenreCallback = Rc<RefCell<Option<Rc<dyn Fn(TopGenre)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
 
 pub(in crate::ui) struct StatsView {
@@ -84,7 +84,7 @@ pub(in crate::ui) struct StatsView {
     customize: StatsCustomize,
     on_spotlight_play: PairCallback,
     on_go_to_artist: StringCallback,
-    on_create_smart_mix: StringsCallback,
+    on_create_smart_mix: GenreCallback,
     on_unify_spellings: IdsCallback,
 }
 
@@ -201,7 +201,7 @@ impl StatsView {
         let connection = Rc::new(RefCell::new(None::<Rc<RefCell<Connection>>>));
         let on_spotlight_play: PairCallback = Rc::new(RefCell::new(None));
         let on_go_to_artist: StringCallback = Rc::new(RefCell::new(None));
-        let on_create_smart_mix: StringsCallback = Rc::new(RefCell::new(None));
+        let on_create_smart_mix: GenreCallback = Rc::new(RefCell::new(None));
         let on_unify_spellings: IdsCallback = Rc::new(RefCell::new(None));
 
         spotlight.set_on_play({
@@ -228,20 +228,10 @@ impl StatsView {
         });
         wire_unify(&spotlight, &genres, &connection, &on_unify_spellings);
         highlights.set_on_create_mix({
-            let current_snapshot = current_snapshot.clone();
             let callback = on_create_smart_mix.clone();
-            move || {
-                let genres = current_snapshot.borrow().as_ref().map(|snapshot| {
-                    snapshot
-                        .genres
-                        .segments
-                        .iter()
-                        .filter(|genre| genre.label != "Other")
-                        .map(|genre| genre.label.clone())
-                        .collect::<Vec<_>>()
-                });
-                if let (Some(genres), Some(callback)) = (genres, callback.borrow().clone()) {
-                    callback(genres);
+            move |genre| {
+                if let Some(callback) = callback.borrow().clone() {
+                    callback(genre);
                 }
             }
         });
@@ -357,7 +347,7 @@ impl StatsView {
         *self.on_go_to_artist.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn set_on_create_smart_mix(&self, callback: impl Fn(Vec<String>) + 'static) {
+    pub(in crate::ui) fn set_on_create_smart_mix(&self, callback: impl Fn(TopGenre) + 'static) {
         *self.on_create_smart_mix.borrow_mut() = Some(Rc::new(callback));
     }
 
@@ -494,6 +484,9 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot) {
         render.spotlight_section.widget().set_visible(false);
     }
     render.genres_section_data.set_data(&snapshot.genres);
+    render
+        .highlights_section_data
+        .set_top_genre(top_genre(&snapshot.genres));
     render.clock_section_data.set_data(&snapshot.clock);
     render
         .highlights_section_data
@@ -648,6 +641,16 @@ fn apply_layout_widgets(
     clock.set_visible(layout.clock);
     genres.set_visible(layout.genres);
     highlights.set_visible(layout.highlights);
+}
+
+/// The strongest real genre of the period. The bundled "Other" segment is not
+/// a genre group and has no tracks of its own to mix from.
+fn top_genre(section: &reprise_core::library::stats_snapshot::GenreSection) -> Option<TopGenre> {
+    section
+        .segments
+        .iter()
+        .find(|segment| segment.label != "Other")
+        .map(TopGenre::from_segment)
 }
 
 fn metric(track: &TopTrack, sort_by: SortBy) -> i64 {

@@ -948,10 +948,20 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   („Peak 11 PM–1 AM · night owl"), rechts vier Highlight-Kacheln — Streak
   (längste Folge aufeinanderfolgender lokaler Tage mit ≥ 1 play), Discovered
   (im Zeitraum erstmals gespielte Tracks), Busiest day, On repeat (höchste
-  Play-Zahl) — plus der CTA „Smart Mix aus Top-Genres? · Create", der eine
-  echte Smart Playlist anlegt. Tages- und Stundengrenzen folgen der lokalen
+  Play-Zahl) — plus der CTA „Mix from <Top-Genre> · Create". Er mischt genau
+  die Trackgruppe des angezeigten Genres, nie die Tracks, die zufällig genau
+  so geschrieben sind (STATS-9). Ist die Gruppe als Regel ausdrückbar — also
+  eine einzige Schreibweise —, entsteht eine echte Smart Playlist; fasst sie
+  mehrere Schreibweisen zusammen, entsteht stattdessen eine gewöhnliche
+  Playlist mit genau den Tracks der Gruppe, denn die Regel-Engine verknüpft
+  ihre Regeln nur per UND und kennt keine Alternative. Gemischt wird immer
+  **ein** Genre; ohne Genre im Zeitraum entfällt der CTA. Tages- und
+  Stundengrenzen folgen der lokalen
   Zeit des Nutzers, nicht UTC. Im schmalen Fenster klappt die Reihe per
-  AdwBreakpoint einspaltig, ohne dass sich die Reihenfolge ändert.
+  AdwBreakpoint einspaltig, ohne dass sich die Reihenfolge ändert. Die Reihe
+  ist so bemessen, dass ihre beiden Mindestbreiten zusammen unter dem
+  Breakpoint bleiben — sonst gäbe es Fensterbreiten, in denen sie noch
+  nebeneinander steht, aber schmaler ist als sie braucht.
 - **STATS-5** [aktiv] [core] — Top Tracks steht über die volle Breite:
   nummerierte Liste mit Cover, Titel und Artist, relativem Play-Balken und
   Play-Count, mit Sort-Toggle „by plays / by time". Der Balken ist relativ zum
