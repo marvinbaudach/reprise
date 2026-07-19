@@ -69,6 +69,24 @@ fn prepared_title_job(
     prepare_tag_write_job(conn, TagWriteJobSpec::tag_editor(), &[(0, mutation)]).unwrap()
 }
 
+fn claim_without_write(conn: &Connection, job: &super::types::PreparedTagWriteJob) {
+    conn.execute(
+        "UPDATE tag_write_jobs SET state='running' WHERE id=?1",
+        [job.id],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tag_write_job_files SET state='running' WHERE id=?1",
+        [job.files[0].file_id],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tag_write_journal SET outcome='prepared' WHERE file_id=?1",
+        [job.files[0].file_id],
+    )
+    .unwrap();
+}
+
 #[test]
 fn journal_prepare_is_durable_before_any_file_write() {
     let dir = tempfile::tempdir().unwrap();
@@ -146,7 +164,8 @@ fn crash_recovery_classifies_without_writing_files() {
     assert_eq!(std::fs::read(&applied_path).unwrap(), applied_bytes);
 
     let (mut conflict_conn, conflict_id, conflict_path) = seeded_track(dir.path(), "conflict.flac");
-    prepared_title_job(&mut conflict_conn, conflict_id, &conflict_path);
+    let conflict_job = prepared_title_job(&mut conflict_conn, conflict_id, &conflict_path);
+    claim_without_write(&conflict_conn, &conflict_job);
     apply_tag_patch_to_file(
         &conflict_path,
         &TagPatch {
@@ -159,17 +178,20 @@ fn crash_recovery_classifies_without_writing_files() {
     assert_eq!(conflict_recovery[0].state, RecoveryState::Conflict);
 
     let (mut missing_conn, missing_id, missing_path) = seeded_track(dir.path(), "missing.flac");
-    prepared_title_job(&mut missing_conn, missing_id, &missing_path);
+    let missing_job = prepared_title_job(&mut missing_conn, missing_id, &missing_path);
+    claim_without_write(&missing_conn, &missing_job);
     std::fs::remove_file(&missing_path).unwrap();
     let missing_recovery = recover_incomplete_tag_write_jobs(&missing_conn).unwrap();
     assert_eq!(missing_recovery[0].state, RecoveryState::Unavailable);
 
     let (mut unreadable_conn, unreadable_id, unreadable_path) =
         seeded_track(dir.path(), "unreadable.flac");
-    prepared_title_job(&mut unreadable_conn, unreadable_id, &unreadable_path);
+    let unreadable_job = prepared_title_job(&mut unreadable_conn, unreadable_id, &unreadable_path);
+    claim_without_write(&unreadable_conn, &unreadable_job);
     std::fs::write(&unreadable_path, b"not an audio container").unwrap();
     let unreadable_recovery = recover_incomplete_tag_write_jobs(&unreadable_conn).unwrap();
-    assert_eq!(unreadable_recovery[0].state, RecoveryState::Unavailable);
+    assert_eq!(unreadable_recovery[0].state, RecoveryState::Failed);
+    assert!(unreadable_recovery[0].error.is_some());
 }
 
 #[test]
@@ -290,7 +312,8 @@ fn file_only_after_state_survives_close_and_reopens_read_only() {
             |row| row.get(0),
         )
         .unwrap();
-    prepared_title_job(&mut conn, id, &path);
+    let job = prepared_title_job(&mut conn, id, &path);
+    claim_without_write(&conn, &job);
     apply_tag_patch_to_file(
         &path,
         &TagPatch {
@@ -309,7 +332,7 @@ fn file_only_after_state_survives_close_and_reopens_read_only() {
 }
 
 #[test]
-fn empty_field_set_recovers_as_conflict_not_vacuous_applied() {
+fn empty_field_set_has_no_uncertain_field_to_recover() {
     let dir = tempfile::tempdir().unwrap();
     let (conn, id, path) = seeded_track(dir.path(), "empty-fields.flac");
     conn.execute(
@@ -329,7 +352,7 @@ fn empty_field_set_recovers_as_conflict_not_vacuous_applied() {
     .unwrap();
 
     let recovery = recover_incomplete_tag_write_jobs(&conn).unwrap();
-    assert_eq!(recovery[0].state, RecoveryState::Conflict);
+    assert!(recovery.is_empty());
 }
 
 #[test]
@@ -387,4 +410,76 @@ fn interrupted_recovery_ignores_terminal_siblings_even_if_they_change_later() {
     assert_eq!(recovery.len(), 1);
     assert_eq!(recovery[0].track_id, second_id);
     assert_eq!(recovery[0].state, RecoveryState::NotApplied);
+}
+
+#[test]
+fn unclaimed_pending_file_is_not_applied_even_when_disk_already_matches_after() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut conn, id, path) = seeded_track(dir.path(), "unclaimed.flac");
+    prepared_title_job(&mut conn, id, &path);
+    apply_tag_patch_to_file(
+        &path,
+        &TagPatch {
+            title: Some("After title".into()),
+            ..TagPatch::default()
+        },
+    )
+    .unwrap();
+
+    let recovery = recover_incomplete_tag_write_jobs(&conn).unwrap();
+
+    assert_eq!(recovery[0].state, RecoveryState::NotApplied);
+}
+
+#[test]
+fn recovery_classifies_only_uncertain_fields_not_terminal_siblings() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut conn, id, path) = seeded_track(dir.path(), "mixed-siblings.flac");
+    let mutation = prepare_tag_mutation(
+        &conn,
+        id,
+        &path,
+        &TagPatch {
+            title: Some("After title".into()),
+            year: Some(Some(2007)),
+            ..TagPatch::default()
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let job =
+        prepare_tag_write_job(&mut conn, TagWriteJobSpec::tag_editor(), &[(0, mutation)]).unwrap();
+    conn.execute(
+        "UPDATE tag_write_jobs SET state='running' WHERE id=?1",
+        [job.id],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tag_write_job_files SET state='running' WHERE id=?1",
+        [job.files[0].file_id],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tag_write_journal SET outcome='prepared' WHERE file_id=?1",
+        [job.files[0].file_id],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tag_write_journal SET outcome='conflict' WHERE file_id=?1 AND field='title'",
+        [job.files[0].file_id],
+    )
+    .unwrap();
+    apply_tag_patch_to_file(
+        &path,
+        &TagPatch {
+            title: Some("External terminal sibling".into()),
+            year: Some(Some(2007)),
+            ..TagPatch::default()
+        },
+    )
+    .unwrap();
+
+    let recovery = recover_incomplete_tag_write_jobs(&conn).unwrap();
+
+    assert_eq!(recovery[0].state, RecoveryState::Applied);
 }

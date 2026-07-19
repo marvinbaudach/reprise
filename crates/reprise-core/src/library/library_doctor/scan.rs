@@ -10,7 +10,7 @@ use super::{
 };
 
 pub struct LibraryDoctor<'connection> {
-    conn: &'connection mut Connection,
+    pub(super) conn: &'connection mut Connection,
 }
 
 impl<'connection> LibraryDoctor<'connection> {

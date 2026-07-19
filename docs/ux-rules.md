@@ -1284,7 +1284,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Zustand. Kandidatendetails nennen Quelle, Score, Artist, Title, Album, Year
   und Dauerabweichung, soweit vorhanden.
 
-- **DOC-5a** [geplant] [core] — **Jeder Library-Doctor-Write geht durch
+- **DOC-5a** [aktiv] [core] — **Jeder Library-Doctor-Write geht durch
   Review.** Weder Scan noch 26a noch Plugin-Zeile besitzen einen
   Direkt-Schreibpfad. Ausschließlich Apply in 26b darf den unveränderlichen
   Review-Plan starten, und geschrieben werden nur dessen geprüfte Felder.
@@ -1296,7 +1296,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Library Doctor, Tag Editor und Revert benutzen dieselbe Lofty-
   Schreibprimitive und dieselbe Fehlerklassifikation.
 
-- **DOC-5b** [geplant] [core] — **Apply und Revert sind journalisierte
+- **DOC-5b** [aktiv] [core] — **Apply und Revert sind journalisierte
   Datei-Jobs.** Vor jedem Write speichert ein persistentes Journal pro Feld
   den unmittelbaren Before- und geplanten After-Wert; nur erfolgreich
   geschriebene Felder werden applied. Ein Crash rekonstruiert vorbereitete

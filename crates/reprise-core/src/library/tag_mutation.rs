@@ -19,6 +19,10 @@ use crate::models::ImportErrorKind;
 use super::scanner::ScanOutcome;
 use super::tag_edit::{read_editable_tags, EditableTags, TagEditError, TagPatch};
 
+pub(crate) use super::tag_mutation_guarded::{
+    commit_guarded_tag_changes, read_tag_field_values, GuardedTagChange, GuardedTagField,
+};
+
 /// Duration to suppress watcher events for each written file.
 pub(crate) const IGNORE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -244,7 +248,15 @@ fn apply_tag_patch_to_tagged(
         }
     }
 
-    tag.save_to_path(path, lofty::config::WriteOptions::default())?;
+    save_loaded_tagged(tagged, path)
+}
+
+pub(super) fn save_loaded_tagged(tagged: &TaggedFile, path: &Path) -> Result<(), TagEditError> {
+    tagged
+        .primary_tag()
+        .or_else(|| tagged.first_tag())
+        .ok_or(TagEditError::NoWritableTag)?
+        .save_to_path(path, lofty::config::WriteOptions::default())?;
     Ok(())
 }
 
@@ -307,7 +319,11 @@ pub(crate) fn prepare_reconciliation(
         .ok_or_else(|| "track path changed before tag reconciliation; refusing stale write".into())
 }
 
-fn reconcile_after_write(conn: &mut Connection, id: i64, path: &Path) -> Result<(), String> {
+pub(super) fn reconcile_after_write(
+    conn: &mut Connection,
+    id: i64,
+    path: &Path,
+) -> Result<(), String> {
     prepare_reconciliation(conn, id, path)?;
     match crate::library::scanner::scan_folder(conn, path) {
         Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => Ok(()),
