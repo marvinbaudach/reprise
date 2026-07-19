@@ -197,11 +197,29 @@ run_manifest() {
   echo "[cua-keyboard] acc-4-standard-keys-respect-local-controls"
   echo "[cua-keyboard] acc-5-transients-and-navigation-restore-focus"
   echo "[cua-keyboard] acc-8-direct-manipulation-has-keyboard-equivalence"
+  # Run every surface and report one balance sheet, rather than dying on the
+  # first red one. Stopping early cannot establish how many of the remaining
+  # surfaces pass, and it hid genuine failures for a long time: while the
+  # app-shell Escape defect stood, `sidebar` onwards had never run once, so
+  # "one failure" read as the whole story when it was the first of an unknown
+  # number. Same rule the Rust display runner follows (see RELEASING.md).
+  local -a failed=()
+  local passed=0
   while IFS=$'\t' read -r surface scenario; do
     [[ -z "$surface" || "$surface" == \#* ]] && continue
     echo "[cua-keyboard] $surface"
-    "$scenario" "$pid" "$window_id"
+    if "$scenario" "$pid" "$window_id"; then
+      passed=$((passed + 1))
+    else
+      failed+=("$surface")
+    fi
   done <"$manifest"
+
+  echo "[cua-keyboard] surfaces passed: $passed, failed: ${#failed[@]}"
+  if ((${#failed[@]} > 0)); then
+    printf '[cua-keyboard] FAILED surface: %s\n' "${failed[@]}" >&2
+    return 1
+  fi
 }
 
 case "${1:-}" in
