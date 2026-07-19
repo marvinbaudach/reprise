@@ -254,6 +254,14 @@ impl AlbumViewState {
 }
 
 fn focus_album_at(grid: &gtk4::GridView, index: u32) {
+    // `ListScrollFlags::FOCUS` alone moves focus only WITHIN the grid — it does
+    // not pull the grid into the window's focus chain. Both callers arrive from
+    // elsewhere (the player surfaces for reveal, the navigation stack for Back),
+    // so the grid holds no focus at that moment and the flag silently does
+    // nothing: the grid scrolls, but `focus_child()` stays unset and the
+    // keyboard still drives whatever the user came from. Grabbing focus first
+    // makes the grid the focus widget, then the flag lands it on `index`.
+    grid.grab_focus();
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
     grid.scroll_to(index, gtk4::ListScrollFlags::FOCUS, Some(scroll));
