@@ -232,3 +232,69 @@ fn backend_trait_object_receives_path_and_cancellation() {
         .unwrap();
     assert_eq!(result.waveform_peaks.len(), 1_000);
 }
+
+#[test]
+fn waveform_and_retry_storage_updates_are_identity_safe_and_scoped() {
+    use crate::sound_profile::{
+        AnalysisVersions, FailedAnalysis, FailureKind, ReadyAnalysis, SourceFingerprint,
+    };
+
+    let conn = crate::db::open_migrated(None).unwrap();
+    for id in 1_i64..=2 {
+        conn.execute(
+            "INSERT INTO tracks
+               (id, path, title, artist, added_at, file_mtime, file_size)
+             VALUES (?1, ?2, 'Fixture', 'Artist', 1, 20, 30)",
+            rusqlite::params![id, format!("/fixture-{id}.flac")],
+        )
+        .unwrap();
+    }
+    let pending = pending_waveform_work(&conn).unwrap();
+    assert_eq!(
+        pending
+            .iter()
+            .map(|track| track.track_id)
+            .collect::<Vec<_>>(),
+        [1, 2]
+    );
+
+    conn.execute("UPDATE tracks SET file_mtime = 21 WHERE id = 1", [])
+        .unwrap();
+    assert!(!save_waveform_if_current(&conn, 1, pending[0].source, &[1, 2]).unwrap());
+    assert!(
+        save_waveform_if_current(&conn, 1, SourceFingerprint::new(21, 30).unwrap(), &[1, 2],)
+            .unwrap()
+    );
+
+    let analyzed = analyze(&sine(440.0, 0.1, 0.5));
+    let versions = AnalysisVersions::new(1, 1).unwrap();
+    let ready = ReadyAnalysis::new(
+        SourceFingerprint::new(20, 30).unwrap(),
+        versions,
+        10,
+        analyzed.evidence,
+        analyzed.profile,
+    )
+    .unwrap();
+    crate::sound_profile::save_ready_analysis(&conn, 2, &ready).unwrap();
+    let failed = FailedAnalysis::new(
+        SourceFingerprint::new(21, 30).unwrap(),
+        versions,
+        10,
+        FailureKind::Decode,
+        "fixture",
+        0,
+        None,
+    )
+    .unwrap();
+    crate::sound_profile::save_failed_analysis(&conn, 1, &failed).unwrap();
+
+    assert_eq!(reset_failed_analyses(&conn).unwrap(), 1);
+    assert!(crate::sound_profile::load_analysis(&conn, 1)
+        .unwrap()
+        .is_none());
+    assert!(matches!(
+        crate::sound_profile::load_analysis(&conn, 2).unwrap(),
+        Some(crate::sound_profile::TrackAnalysis::Ready(_))
+    ));
+}

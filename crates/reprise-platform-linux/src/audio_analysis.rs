@@ -36,9 +36,9 @@ impl AudioAnalysisBackend for GstreamerAudioAnalysisBackend {
 pub(crate) fn analyze_for_waveform(
     path: &Path,
     buckets: usize,
+    cancelled: &AtomicBool,
 ) -> Result<Vec<u8>, AudioAnalysisError> {
-    analyze_native(path, &AtomicBool::new(false), buckets, |_, _| {})
-        .map(|output| output.waveform_peaks)
+    analyze_native(path, cancelled, buckets, |_, _| {}).map(|output| output.waveform_peaks)
 }
 
 fn analyze_native(

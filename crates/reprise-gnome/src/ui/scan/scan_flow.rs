@@ -16,7 +16,6 @@ pub(in crate::ui) use super::scan_controls::ScanControls;
 #[cfg(test)]
 pub(in crate::ui) use super::scan_controls::{ScanCancellation, ScanCompletion};
 pub(in crate::ui) use super::scan_watcher::start_or_restart_watcher;
-pub(in crate::ui) use super::scan_waveform_analysis::spawn_waveform_backfill;
 #[cfg(test)]
 pub(in crate::ui) use super::scan_worker::publish_latest_progress;
 use super::scan_worker::spawn_scan;
