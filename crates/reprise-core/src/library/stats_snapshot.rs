@@ -3,16 +3,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{NaiveDate, TimeZone};
 use rusqlite::Connection;
 
+use super::group_key::KeyResolver;
 use super::stats_period::{apply_activity_granularity, local_parts, PeriodRange, StatsPeriod};
 use super::stats_screen::{
     album_rows, artist_rows, discovered_count, first_event_unix, fold_album_rows, genre_rows,
-    key_for, listen_rows, ranked_groups, total_ms_in_range, track_rows, HourlyListens, RankedGroup,
-    TopAlbum, TopTrack, TrackAggregate,
+    key_resolver, listen_rows, ranked_groups, total_ms_in_range, track_rows, HourlyListens,
+    RankedGroup, TopAlbum, TopTrack, TrackAggregate,
 };
 
 const SPOTLIGHT_TRACK_LIMIT: usize = 3;
 const SPOTLIGHT_ALSO_LIMIT: usize = 4;
 const GENRE_LIMIT: usize = 5;
+/// Scattered peak hours are listed rather than spanned; beyond this many the
+/// caption says "+N" instead of growing past the clock's width.
+const PEAK_HOURS_LISTED: usize = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SortBy {
@@ -170,7 +174,7 @@ pub fn compute<Tz: TimeZone>(
             open: bucket.open,
         })
         .collect();
-    let spotlight = spotlight(&top_artists, &track_aggregates, total_ms);
+    let spotlight = spotlight(&top_artists, &key_resolver(&artists), &track_aggregates);
     let genres = genre_section(&genres);
     let (clock, busiest_day, streak_days) = time_sections(&listen_rows, tz);
     let on_repeat = top_tracks.first().cloned();
@@ -201,23 +205,29 @@ fn comparison_percent(current_ms: i64, previous_ms: i64) -> Option<i64> {
     Some((((current_ms - previous_ms) as f64 / previous_ms as f64) * 100.0).round() as i64)
 }
 
+/// `keys` must be the resolver built from the very rows `artists` was folded
+/// from. Keying a track through anything else re-creates the split STATS-9
+/// removes: a track without an MBID would miss its own artist's group.
+///
+/// `share_percent` divides by the artist population, matching
+/// [`genre_section`]: every section states a share of its own categorized
+/// total, never of a wider one that includes rows the section cannot show.
 fn spotlight(
     artists: &[RankedGroup],
+    keys: &KeyResolver,
     tracks: &[TrackAggregate],
-    total_ms: i64,
 ) -> Option<SpotlightSection> {
+    let denominator_ms = artists.iter().map(|artist| artist.group.ms).sum::<i64>();
     let artist = artists.first()?.clone();
     let mut artist_tracks = tracks
         .iter()
-        .filter(|track| {
-            key_for(&track.effective_artist, track.artist_mbid.as_deref()) == artist.group.key
-        })
+        .filter(|track| keys.key_for(&track.effective_artist) == artist.group.key)
         .map(|track| track.track.clone())
         .collect::<Vec<_>>();
     sort_tracks(&mut artist_tracks, SortBy::Plays);
     artist_tracks.truncate(SPOTLIGHT_TRACK_LIMIT);
     Some(SpotlightSection {
-        share_percent: percent(artist.group.ms, total_ms),
+        share_percent: percent(artist.group.ms, denominator_ms),
         artist,
         top_tracks: artist_tracks,
         also: artists
@@ -229,6 +239,10 @@ fn spotlight(
     })
 }
 
+/// Shares divide by the genre population, not by total listening: tracks
+/// without a genre are neither a segment nor "Other" (STATS-3), so counting
+/// them in the denominator would make the bar add up to less than 100 %.
+/// The spotlight follows the same rule against the artist population.
 fn genre_section(rows: &[super::stats_screen::NamedRow]) -> GenreSection {
     let groups = ranked_groups(rows);
     let denominator_ms = groups.iter().map(|row| row.group.ms).sum::<i64>();
@@ -333,25 +347,43 @@ fn longest_streak(days: impl Iterator<Item = NaiveDate>) -> i64 {
     longest
 }
 
+/// Peaks that are not one block of hours must not be captioned as if they
+/// were: a play at 1 AM and one at 11 PM is not a "1 AM–11 PM" peak, and a
+/// single peak hour is not a span at all. Only a contiguous run becomes one.
 fn peak_caption(hours: &[i32]) -> String {
-    let Some(first) = hours.first() else {
+    let Some(first) = hours.first().copied() else {
         return "No peak yet".to_string();
     };
-    let last = hours.last().unwrap_or(first);
-    let trait_name = if *first < 6 {
+    let last = hours.last().copied().unwrap_or(first);
+    let is_contiguous_run = hours.len() as i32 == last - first + 1;
+    let peak = if hours.len() == 1 {
+        format_hour(first)
+    } else if is_contiguous_run {
+        format!("{}\u{2013}{}", format_hour(first), format_hour(last))
+    } else {
+        let listed = hours
+            .iter()
+            .take(PEAK_HOURS_LISTED)
+            .map(|hour| format_hour(*hour))
+            .collect::<Vec<_>>()
+            .join(", ");
+        match hours.len().saturating_sub(PEAK_HOURS_LISTED) {
+            0 => listed,
+            rest => format!("{listed} +{rest}"),
+        }
+    };
+    // Every listed hour carries the same maximum, so no one of them is "the"
+    // peak. The earliest names the trait; that is a display choice, not a rank.
+    let trait_name = if first < 6 {
         "night owl"
-    } else if *first < 12 {
+    } else if first < 12 {
         "morning listener"
-    } else if *first < 18 {
+    } else if first < 18 {
         "afternoon listener"
     } else {
         "night owl"
     };
-    format!(
-        "Peak {}\u{2013}{} \u{00b7} {trait_name}",
-        format_hour(*first),
-        format_hour(*last)
-    )
+    format!("Peak {peak} \u{00b7} {trait_name}")
 }
 
 fn format_hour(hour: i32) -> String {

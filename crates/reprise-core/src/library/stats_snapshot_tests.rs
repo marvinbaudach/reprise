@@ -290,6 +290,243 @@ fn stats_9_group_key_dedups_top_artists_and_genres() {
     );
 }
 
+/// `tracks.artist_mbid` describes the raw `artist` column. A compilation row
+/// whose album artist names a different band must not drag that band into the
+/// MBID group — otherwise two unrelated acts share one row and one "Play".
+#[test]
+fn stats_9_mbid_never_merges_a_foreign_album_artist() {
+    let conn = migrated_conn();
+    insert_track(
+        &conn,
+        1,
+        "Own release",
+        "Caskets",
+        "",
+        "Metalcore",
+        100_000,
+        0,
+        Some("caskets-mbid"),
+    );
+    insert_track(
+        &conn,
+        2,
+        "Guest spot",
+        "Caskets",
+        "Captives",
+        "Metalcore",
+        100_000,
+        0,
+        Some("caskets-mbid"),
+    );
+    insert_event(&conn, 1, timestamp(2026, 6, 1, 12, 0), 100_000);
+    insert_event(&conn, 2, timestamp(2026, 6, 2, 12, 0), 100_000);
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+
+    let mut labels = snapshot
+        .top_artists
+        .iter()
+        .map(|artist| artist.group.label.as_str())
+        .collect::<Vec<_>>();
+    labels.sort_unstable();
+    assert_eq!(labels, ["Captives", "Caskets"]);
+    assert!(snapshot
+        .top_artists
+        .iter()
+        .all(|artist| artist.group.variant_count == 1));
+
+    let captives = snapshot
+        .top_artists
+        .iter()
+        .find(|artist| artist.group.label == "Captives")
+        .unwrap();
+    assert_eq!(
+        group_track_ids(&conn, GroupKind::Artist, &captives.group.key).unwrap(),
+        vec![2]
+    );
+}
+
+/// Mixed MBID coverage inside one spelling: the artist merges, so every one of
+/// its tracks must stay reachable from the spotlight.
+#[test]
+fn stats_9_spotlight_keeps_tracks_without_an_mbid() {
+    let conn = migrated_conn();
+    insert_track(
+        &conn,
+        1,
+        "Tagged",
+        "Alpha",
+        "",
+        "Rock",
+        100_000,
+        0,
+        Some("alpha-mbid"),
+    );
+    insert_track(&conn, 2, "Untagged", "Alpha", "", "Rock", 100_000, 0, None);
+    insert_event(&conn, 1, timestamp(2026, 6, 1, 12, 0), 100_000);
+    insert_event(&conn, 2, timestamp(2026, 6, 2, 12, 0), 100_000);
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+    let spotlight = snapshot.spotlight.as_ref().unwrap();
+
+    assert_eq!(spotlight.artist.group.plays, 2);
+    assert_eq!(spotlight.top_tracks.len(), 2);
+    assert_eq!(
+        group_track_ids(&conn, GroupKind::Artist, &spotlight.artist.group.key).unwrap(),
+        vec![1, 2]
+    );
+}
+
+/// The snapshot resolves the key inside the period, `group_track_ids` over the
+/// whole catalog. When only the catalog knows an MBID the two disagree, and the
+/// lookup must still find the group instead of returning nothing.
+#[test]
+fn stats_9_group_track_ids_survive_a_catalog_only_mbid() {
+    let conn = migrated_conn();
+    insert_track(&conn, 1, "Heard", "Solo", "", "Rock", 100_000, 0, None);
+    insert_track(
+        &conn,
+        2,
+        "Unheard",
+        "Solo",
+        "",
+        "Rock",
+        100_000,
+        0,
+        Some("solo-mbid"),
+    );
+    insert_event(&conn, 1, timestamp(2026, 6, 1, 12, 0), 100_000);
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+
+    assert_eq!(
+        group_track_ids(&conn, GroupKind::Artist, &snapshot.top_artists[0].group.key).unwrap(),
+        vec![1, 2]
+    );
+}
+
+/// Two MBIDs under one spelling: the period picks one, the catalog the other.
+/// The lookup must not fall through the gap.
+#[test]
+fn stats_9_group_track_ids_survive_competing_mbids() {
+    let conn = migrated_conn();
+    insert_track(
+        &conn,
+        1,
+        "Heard",
+        "Duo",
+        "",
+        "Rock",
+        100_000,
+        0,
+        Some("a-mbid"),
+    );
+    insert_track(
+        &conn,
+        2,
+        "Unheard",
+        "Duo",
+        "",
+        "Rock",
+        100_000,
+        0,
+        Some("z-mbid"),
+    );
+    insert_event(&conn, 1, timestamp(2026, 6, 1, 12, 0), 100_000);
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+
+    assert_eq!(
+        group_track_ids(&conn, GroupKind::Artist, &snapshot.top_artists[0].group.key).unwrap(),
+        vec![1, 2]
+    );
+}
+
+/// A track that went missing keeps its listen events, so it stays in the
+/// numbers — but it is not playable. The surviving sibling must still be found,
+/// and a group with nothing left resolves to an empty, logged result.
+#[test]
+fn stats_9_group_track_ids_skip_missing_tracks() {
+    let conn = migrated_conn();
+    insert_track(&conn, 1, "Gone", "Solo", "", "Rock", 100_000, 0, None);
+    insert_track(&conn, 2, "Here", "Solo", "", "Rock", 100_000, 0, None);
+    insert_track(&conn, 3, "Vanished", "Only", "", "Rock", 100_000, 0, None);
+    insert_event(&conn, 1, timestamp(2026, 6, 1, 12, 0), 100_000);
+    insert_event(&conn, 2, timestamp(2026, 6, 2, 12, 0), 100_000);
+    insert_event(&conn, 3, timestamp(2026, 6, 3, 12, 0), 100_000);
+    conn.execute("UPDATE tracks SET missing_since = 1 WHERE id IN (1, 3)", [])
+        .unwrap();
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+    let key_of = |label: &str| {
+        snapshot
+            .top_artists
+            .iter()
+            .find(|artist| artist.group.label == label)
+            .unwrap()
+            .group
+            .key
+            .clone()
+    };
+
+    assert_eq!(
+        group_track_ids(&conn, GroupKind::Artist, &key_of("Solo")).unwrap(),
+        vec![2]
+    );
+    assert!(group_track_ids(&conn, GroupKind::Artist, &key_of("Only"))
+        .unwrap()
+        .is_empty());
+}
+
+/// The artist half of an album row is folded; the title half must be too.
+#[test]
+fn stats_9_album_titles_fold_like_artist_names() {
+    let conn = migrated_conn();
+    insert_album_track(&conn, 1, "One", "Immortal", "Artist", 2);
+    insert_album_track(&conn, 2, "Two", "immortal ", "Artist", 1);
+
+    let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+
+    assert_eq!(snapshot.top_albums.len(), 1);
+    assert_eq!(snapshot.top_albums[0].album, "Immortal");
+    assert_eq!(snapshot.top_albums[0].plays, 3);
+}
+
+/// A single peak hour is not a span, and scattered peaks are not one either.
+#[test]
+fn stats_4_peak_caption_never_invents_a_span() {
+    let single = migrated_conn();
+    insert_track(&single, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None);
+    insert_event(&single, 1, timestamp(2026, 6, 1, 15, 0), 100_000);
+    let snapshot = compute(&single, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+    assert_eq!(
+        snapshot.clock.caption,
+        "Peak 3 PM \u{00b7} afternoon listener"
+    );
+
+    let scattered = migrated_conn();
+    insert_track(
+        &scattered, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None,
+    );
+    insert_event(&scattered, 1, timestamp(2026, 6, 1, 1, 0), 100_000);
+    insert_event(&scattered, 1, timestamp(2026, 6, 1, 23, 0), 100_000);
+    let snapshot = compute(&scattered, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+    assert_eq!(
+        snapshot.clock.caption,
+        "Peak 1 AM, 11 PM \u{00b7} night owl"
+    );
+
+    let run = migrated_conn();
+    insert_track(&run, 1, "Solo", "Artist", "", "Rock", 100_000, 0, None);
+    insert_event(&run, 1, timestamp(2026, 6, 1, 13, 0), 100_000);
+    insert_event(&run, 1, timestamp(2026, 6, 1, 14, 0), 100_000);
+    let snapshot = compute(&run, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
+    assert_eq!(
+        snapshot.clock.caption,
+        "Peak 1 PM\u{2013}2 PM \u{00b7} afternoon listener"
+    );
+}
+
 #[test]
 fn dedup_does_not_mutate_tags() {
     let conn = migrated_conn();
@@ -356,6 +593,33 @@ fn insert_track(
         ],
     )
     .unwrap();
+}
+
+/// One track on a named album, played `plays` times in June 2026.
+fn insert_album_track(
+    conn: &Connection,
+    id: i64,
+    title: &str,
+    album: &str,
+    artist: &str,
+    plays: i64,
+) {
+    conn.execute(
+        "INSERT INTO tracks \
+         (id, path, title, artist, album, album_artist, genre, duration_ms, \
+          play_count, added_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, '', 'Rock', 100000, 0, 0)",
+        params![id, format!("/music/{id}.flac"), title, artist, album],
+    )
+    .unwrap();
+    for play in 0..plays {
+        insert_event(
+            conn,
+            id,
+            timestamp(2026, 6, id as u32, 12, play as u32),
+            100_000,
+        );
+    }
 }
 
 fn insert_event(conn: &Connection, track_id: i64, played_at: i64, ms_played: i64) {
