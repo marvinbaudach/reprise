@@ -10,6 +10,22 @@ use super::lyrics_view::{
     ACTIVE_LINE_CLASS, INLINE_RETRY_CLASS,
 };
 
+/// Pumps the main loop until `predicate` holds or the deadline passes.
+/// A single non-blocking iteration does not let GTK allocate a freshly
+/// presented window, so geometry assertions raced the layout.
+fn settle_until(milliseconds: u64, mut predicate: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(milliseconds);
+    loop {
+        if predicate() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        gtk4::glib::MainContext::default().iteration(false);
+    }
+}
+
 #[test]
 fn npp_5_line_hierarchy_uses_the_decided_alpha_steps() {
     assert_eq!(line_alpha(Some(3), 3), 100);
@@ -291,9 +307,15 @@ fn lyr_4_start_of_song_is_not_centered() {
         .child(view.widget())
         .build();
     window.present();
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    settle_until(1000, || view.widget().allocated_height() > 0);
 
-    assert!((view.line_viewport_top_offset(0) - 18.0).abs() < 2.0);
+    assert!(
+        (view.line_viewport_top_offset(0) - 18.0).abs() < 2.0,
+        "top offset was {} (expected ~18), center offset {}, allocated height {}",
+        view.line_viewport_top_offset(0),
+        view.line_center_offset(0),
+        view.widget().allocated_height()
+    );
     assert!(view.line_center_offset(0) < -20.0);
 
     view.set_active_line(Some(10));
