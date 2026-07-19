@@ -157,7 +157,7 @@ verify_glass_regions() {
 }
 
 scroll_grid() {
-  local pid=$1 window_id=$2 direction=$3 amount=$4 stem=$5
+  local pid=$1 window_id=$2 direction=$3 amount=$4 by=$5 stem=$6
   local action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
   local after_path before_path payload
 
@@ -167,9 +167,10 @@ scroll_grid() {
     --argjson window_id "$window_id" \
     --arg direction "$direction" \
     --argjson amount "$amount" \
+    --arg by "$by" \
     --arg session "$session" \
     '{pid: $pid, window_id: $window_id, x: 780, y: 460,
-      direction: $direction, amount: $amount, by: "page", session: $session,
+      direction: $direction, amount: $amount, by: $by, session: $session,
       delivery_mode: "foreground"}')
   if ! cua_driver scroll "$payload" >"$action_path"; then
     echo "CUA scroll command failed: $stem" >&2
@@ -236,12 +237,12 @@ run_position() {
   capture_state "$app_pid" "$window_id" "$position-albums-start" >/dev/null
 
   scroll_grid \
-    "$app_pid" "$window_id" down 1 "$position-albums-under-header" >/dev/null
+    "$app_pid" "$window_id" down 1 line "$position-albums-under-header" >/dev/null
   end_path=$(scroll_grid \
-    "$app_pid" "$window_id" down 50 "$position-albums-at-end")
+    "$app_pid" "$window_id" down 50 page "$position-albums-at-end")
   assert_snapshot_contains "$end_path" "$last_album"
   scroll_grid \
-    "$app_pid" "$window_id" up 1 "$position-albums-above-end" >/dev/null
+    "$app_pid" "$window_id" up 1 line "$position-albums-above-end" >/dev/null
   verify_glass_regions "$position"
 
   kill -TERM "$app_pid" 2>/dev/null || true
