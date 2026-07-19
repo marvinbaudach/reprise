@@ -90,12 +90,34 @@ capture_state() {
   printf '%s\n' "$json_path"
 }
 
+assert_scroll_delivered() {
+  local action_path=$1
+
+  if ! jq -e '
+    (
+      .effect == "confirmed"
+      or .effect == "unverifiable"
+      or (
+        .effect? == null
+        and (.delivery_mode? == "foreground" or .delivery_mode? == "background")
+        and .verified? == false
+        and .code? == null
+        and .error? == null
+      )
+    )
+    and .escalation.recommended? == null
+  ' "$action_path" >/dev/null 2>&1; then
+    echo "CUA scroll was not delivered cleanly: $action_path" >&2
+    return 1
+  fi
+}
+
 scroll_grid() {
   local pid=$1 window_id=$2 direction=$3 amount=$4 stem=$5
   local action_path="$CUA_E2E_OUT_DIR/$stem-action.json"
-  local after_path payload
+  local after_path before_path payload
 
-  capture_state "$pid" "$window_id" "$stem-before" >/dev/null
+  before_path=$(capture_state "$pid" "$window_id" "$stem-before")
   payload=$(jq -nc \
     --argjson pid "$pid" \
     --argjson window_id "$window_id" \
@@ -104,10 +126,17 @@ scroll_grid() {
     --arg session "$session" \
     '{pid: $pid, window_id: $window_id, x: 780, y: 460,
       direction: $direction, amount: $amount, by: "page", session: $session}')
-  cua_driver scroll "$payload" >"$action_path"
-  assert_action_landed "$action_path"
+  if ! cua_driver scroll "$payload" >"$action_path"; then
+    echo "CUA scroll command failed: $stem" >&2
+    return 1
+  fi
+  assert_scroll_delivered "$action_path"
   sleep 0.4
   after_path=$(capture_state "$pid" "$window_id" "$stem-after")
+  if cmp -s "${before_path%.json}.png" "${after_path%.json}.png"; then
+    echo "CUA scroll left the rendered window unchanged: $stem" >&2
+    return 1
+  fi
   printf '%s\n' "$after_path"
 }
 

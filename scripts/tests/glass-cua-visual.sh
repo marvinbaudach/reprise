@@ -23,6 +23,8 @@ for required_pattern in \
   'at-spi2-registryd' \
   'cua_driver get_window_state' \
   'cua_driver scroll' \
+  'assert_scroll_delivered' \
+  'cmp -s' \
   'run_position bottom' \
   'run_position top' \
   'synthetic albums' \
