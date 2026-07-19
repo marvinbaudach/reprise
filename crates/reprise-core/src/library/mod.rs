@@ -23,5 +23,6 @@ pub mod stats_snapshot;
 pub mod tag_edit;
 pub mod tag_edit_session;
 mod tag_edit_write;
+mod tag_mutation;
 pub mod trash_tracks;
 pub mod watcher;
