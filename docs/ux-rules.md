@@ -385,9 +385,9 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **QUE-1** [aktiv] [gtk] — Ein gemeinsames Queue-Modell speist zwei
   Flächen mit unterschiedlicher Tiefe: Die Sidebar-Zeile „Queue" öffnet die
   ColumnView als Verwaltungsfläche mit Sektionen, DnD-Reorder, Rechtsklick,
-  Clear und StatusPage. Das Playerleisten-Icon öffnet dagegen das Panel auf
-  „Up Next" als Sichtfläche derselben Queue mit Sektionen, Sprung und Remove,
-  aber ohne Reorder oder DnD. Keine Fläche führt eine eigene zweite Liste.
+  Clear und StatusPage. Der Panel-Toggle öffnet „Up Next" als Sichtfläche
+  derselben Queue mit Sektionen, Sprung und Remove. Die Playerleiste hat kein
+  redundantes Queue-Icon. Keine Fläche führt eine eigene zweite Liste.
 - **QUE-2** [aktiv] [gtk] — Das Panel gliedert die Zukunft in genau zwei
   bedingte Sektionen: **Next in Queue** für manuell eingereihte Tracks und
   **Continuing from „<Album/Playlist>"** für den automatischen Kontext aus

@@ -1390,10 +1390,6 @@ msgstr ""
 msgid "Play next track"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:18
-msgid "Show queue"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:21
 msgid "Restore full window (Ctrl+M)"
 msgstr ""
