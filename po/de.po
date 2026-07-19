@@ -2826,3 +2826,23 @@ msgstr "Separate Titelleiste"
 
 #~ msgid "Filters"
 #~ msgstr "Filter"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs
+msgid "Go to artist"
+msgstr "Zum Interpreten"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs
+msgid "Pause album"
+msgstr "Album pausieren"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs
+msgid "Play album (Ctrl+Enter)"
+msgstr "Album abspielen (Strg+Eingabe)"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs
+msgid "Resume album"
+msgstr "Album fortsetzen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs
+msgid "Reveal playing album"
+msgstr "Spielendes Album anzeigen"
