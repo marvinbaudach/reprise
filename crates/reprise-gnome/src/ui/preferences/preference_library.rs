@@ -68,6 +68,7 @@ impl PreferencesContext {
         super::preference_rhythmbox::add_rhythmbox_import_row(self, &group);
 
         page.add(&group);
+        page.add(&self.audio_analysis.build_group(&self.preferences_parent()));
         page
     }
 }

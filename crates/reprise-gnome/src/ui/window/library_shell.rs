@@ -17,6 +17,7 @@ use super::info_panel::InfoPanel;
 use super::library_chrome::LibraryTitle;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
+use super::scan::audio_analysis_runtime::AudioAnalysisRuntime;
 use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::strings;
@@ -456,6 +457,7 @@ pub(in crate::ui) fn build(
     player: Option<&Rc<PlayerController>>,
     runtime: &Rc<ArtistNewsRuntime>,
     portraits: &Rc<ArtistPortraitRuntime>,
+    audio_analysis: Option<&AudioAnalysisRuntime>,
 ) -> LibraryShell {
     let sidebar_page = adw::NavigationPage::builder()
         .title(strings::text(strings::APP_NAME))
@@ -468,6 +470,7 @@ pub(in crate::ui) fn build(
         runtime.clone(),
         portraits,
         track_list.shared_cover_loader(),
+        audio_analysis,
     );
     if let Some(player) = player {
         player.set_lyrics_view(&info_panel.lyrics_view());

@@ -48,9 +48,9 @@ pub(in crate::ui) const TERTIARY_CLASS: &str = "reprise-btn-tertiary";
 const HOSTED_STANDARD_SELECTORS: &[&str] = &[
     // `window::library_chrome` — AdwInlineViewSwitcher's internal buttons.
     ".reprise-view-switcher > button",
-    // `now_playing` — the pill tab strip. Its own `:checked` rule outranks any
-    // class-based `:checked:active`, so the states follow the same selector.
-    ".reprise-now-playing-tabs > .reprise-now-playing-tab",
+    // `now_playing` — AdwInlineViewSwitcher's internal pill-tab buttons. Its
+    // own `:checked` rule outranks a class-based state, so use the host selector.
+    ".reprise-now-playing-tabs > button",
     // `library_views::artist_master` — GtkDropDown's internal button.
     ".artist-master-sort > button",
     // `tag_edit` — star row and pager, built as button loops.
@@ -354,6 +354,15 @@ mod tests {
         assert!(reduced.contains("transform: none"));
         // Only the scale is dropped — colour and surface changes must survive.
         assert!(!reduced.contains("background-color"));
+    }
+
+    #[test]
+    fn btn_4_audio_character_view_switcher_uses_shared_button_states() {
+        let selector = ".reprise-now-playing-tabs > button";
+
+        assert!(super::HOSTED_STANDARD_SELECTORS.contains(&selector));
+        assert!(super::css().contains(&format!("{selector}:hover")));
+        assert!(super::reduced_motion_css().contains(&format!("{selector}:active")));
     }
 
     /// BTN-1 in its literal reading: the four states must be *visibly*

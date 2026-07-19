@@ -378,6 +378,65 @@ CREATE INDEX IF NOT EXISTS idx_listen_events_track_played
   ON listen_events(track_id, played_at);
 "#;
 
+/// Schema v18: one versioned local audio-analysis result per track. Evidence
+/// and its projected profile are separate columns so a profile-only version
+/// change can be recomputed without decoding the source again. Failed rows
+/// retain their source fingerprint and bounded retry state; a track delete
+/// removes either outcome through the foreign key.
+const SCHEMA_V18: &str = r#"
+CREATE TABLE track_audio_analysis (
+  track_id                INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  source_mtime            INTEGER NOT NULL CHECK (source_mtime >= 0),
+  source_size             INTEGER NOT NULL CHECK (source_size >= 0),
+  extractor_version       INTEGER NOT NULL CHECK (extractor_version > 0),
+  profile_version         INTEGER NOT NULL CHECK (profile_version > 0),
+  analyzed_at             INTEGER NOT NULL CHECK (analyzed_at >= 0),
+  status                  TEXT NOT NULL CHECK (status IN ('ready', 'failed')),
+  loudness_rms            REAL,
+  dynamic_range           REAL,
+  spectral_centroid_hz    REAL,
+  spectral_rolloff_hz     REAL,
+  spectral_flux           REAL,
+  onset_rate              REAL,
+  tempo_bpm               REAL,
+  tempo_confidence        REAL,
+  intensity               REAL,
+  intensity_confidence    REAL,
+  brightness              REAL,
+  brightness_confidence   REAL,
+  dynamicity              REAL,
+  dynamicity_confidence   REAL,
+  rhythmicity             REAL,
+  rhythmicity_confidence  REAL,
+  failure_kind            TEXT,
+  failure_detail          TEXT,
+  retry_count             INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+  retry_after             INTEGER CHECK (retry_after IS NULL OR retry_after >= 0),
+  CHECK (intensity IS NULL OR intensity BETWEEN 0.0 AND 1.0),
+  CHECK (intensity_confidence IS NULL OR intensity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (brightness IS NULL OR brightness BETWEEN 0.0 AND 1.0),
+  CHECK (brightness_confidence IS NULL OR brightness_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (dynamicity IS NULL OR dynamicity BETWEEN 0.0 AND 1.0),
+  CHECK (dynamicity_confidence IS NULL OR dynamicity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (rhythmicity IS NULL OR rhythmicity BETWEEN 0.0 AND 1.0),
+  CHECK (rhythmicity_confidence IS NULL OR rhythmicity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (tempo_confidence IS NULL OR tempo_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (status <> 'ready' OR (
+    loudness_rms IS NOT NULL AND dynamic_range IS NOT NULL AND
+    spectral_centroid_hz IS NOT NULL AND spectral_rolloff_hz IS NOT NULL AND
+    spectral_flux IS NOT NULL AND onset_rate IS NOT NULL AND
+    intensity IS NOT NULL AND intensity_confidence IS NOT NULL AND
+    brightness IS NOT NULL AND brightness_confidence IS NOT NULL AND
+    dynamicity IS NOT NULL AND dynamicity_confidence IS NOT NULL AND
+    rhythmicity IS NOT NULL AND rhythmicity_confidence IS NOT NULL AND
+    failure_kind IS NULL
+  )),
+  CHECK (status <> 'failed' OR failure_kind IS NOT NULL)
+);
+CREATE INDEX idx_track_audio_analysis_status_retry
+  ON track_audio_analysis(status, retry_after);
+"#;
+
 /// Applies pending schema migrations in order, tracked via `PRAGMA
 /// user_version`. Design choice: rather than branching "fresh DB gets the
 /// latest schema in one shot, existing DB gets incremental ALTERs", every DB
@@ -565,6 +624,13 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 17)?;
         tx.commit()?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 18 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V18)?;
+        tx.pragma_update(None, "user_version", 18)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -671,6 +737,10 @@ mod recent_migration_tests;
 #[cfg(test)]
 #[path = "db_stats_migration_tests.rs"]
 mod stats_migration_tests;
+
+#[cfg(test)]
+#[path = "db_audio_analysis_migration_tests.rs"]
+mod audio_analysis_migration_tests;
 
 #[cfg(test)]
 #[path = "db_migration_repair_tests.rs"]
