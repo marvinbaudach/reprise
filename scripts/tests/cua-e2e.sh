@@ -38,6 +38,7 @@ for pattern in \
   'run_tag_1_no_jump_after_save_scenario' \
   'run_tag_3_multi_dialog_structure_scenario' \
   'run_library_doctor_scenario' \
+  'cua_open_main_menu' \
   'Enable Library Doctor' \
   'Review Safe Fixes' \
   'Revert Last Cleanup'
@@ -47,6 +48,10 @@ do
     exit 1
   fi
 done
+if rg --quiet 'cua_click_label .*"Main menu"' "$runner"; then
+  echo "$runner must open the main menu through its F10 keyboard contract" >&2
+  exit 1
+fi
 for scenario_case in \
   'fresh-install)' \
   'tag-1-no-jump-after-save)' \
