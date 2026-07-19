@@ -3,9 +3,10 @@ use crate::fingerprint::{
     FingerprintBackend, FingerprintControl, FingerprintOutcome, FingerprintProgress,
 };
 use crate::library::library_doctor::ScanControl;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteIdentity {
     pub source: RemoteEvidenceSource,
     pub confidence: u8,
@@ -49,6 +50,7 @@ pub trait RemoteProvider {
     fn acoustid(
         &mut self,
         metadata: &RemoteTrackMetadata,
+        fingerprint_namespace: &str,
         fingerprint: &str,
         duration_seconds: u64,
         control: &mut dyn FnMut() -> ScanControl,
@@ -134,6 +136,7 @@ impl<P: RemoteProvider> RemoteResolver for ProviderRemoteResolver<P> {
         }
         let acoustid = source_result(self.provider.acoustid(
             metadata,
+            &fingerprint.cache_namespace,
             &fingerprint.encoded,
             fingerprint.duration_seconds,
             control,
@@ -184,7 +187,7 @@ pub(crate) fn resolve_with_provider(
         return arbitration::arbitrate(metadata, &matches);
     };
     let acoustid = provider
-        .acoustid(metadata, fingerprint, duration, &mut control)
+        .acoustid(metadata, "test", fingerprint, duration, &mut control)
         .unwrap_or_default();
     matches.extend(acoustid);
     arbitration::arbitrate(metadata, &matches)

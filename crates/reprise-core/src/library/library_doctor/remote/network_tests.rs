@@ -242,6 +242,27 @@ fn production_memoization_is_exact_and_does_not_cache_cancellation() {
 }
 
 #[test]
+fn doc_1c_production_memoization_does_not_cache_incomplete_responses() {
+    let mut provider = NetworkProvider::new();
+    let mut calls = 0;
+    assert_eq!(
+        provider.memoized(NetworkSource::MusicBrainz, "incomplete".into(), || {
+            calls += 1;
+            Err(RemoteProviderError::InvalidResponse)
+        }),
+        Err(RemoteProviderError::InvalidResponse)
+    );
+    assert_eq!(
+        provider.memoized(NetworkSource::MusicBrainz, "incomplete".into(), || {
+            calls += 1;
+            Ok(Vec::new())
+        }),
+        Ok(Vec::new())
+    );
+    assert_eq!(calls, 2);
+}
+
+#[test]
 fn authentication_circuit_is_per_source() {
     let mut provider = NetworkProvider::new();
     let mut calls = 0;

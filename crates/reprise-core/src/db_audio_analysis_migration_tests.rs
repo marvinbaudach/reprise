@@ -4,7 +4,8 @@ use super::*;
 
 fn reset_fully_migrated_database_to_v17(conn: &Connection) {
     conn.execute_batch(
-        "DROP TRIGGER tag_write_journal_identity_immutable;
+        "DROP TABLE library_doctor_remote_cache;
+         DROP TRIGGER tag_write_journal_identity_immutable;
          DROP TABLE tag_write_journal;
          DROP TABLE tag_write_job_files;
          DROP TABLE tag_write_jobs;
@@ -42,7 +43,7 @@ fn audio_analysis_schema_migrates_v17_and_preserves_library_data() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 21);
+    assert_eq!(version, 22);
     let preserved: (String, Vec<u8>, i64, i64) = conn
         .query_row(
             "SELECT t.title, t.waveform_peaks,

@@ -112,8 +112,8 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 21);
-        assert_eq!(table_count, 7);
+        assert_eq!(version, 22);
+        assert_eq!(table_count, 8);
     }
 
     #[test]
@@ -126,7 +126,8 @@ mod tests {
         )
         .unwrap();
         conn.execute_batch(
-            "DROP TABLE library_doctor_state;
+            "DROP TABLE library_doctor_remote_cache;
+             DROP TABLE library_doctor_state;
              DROP TABLE library_doctor_group_members;
              DROP TABLE library_doctor_group_candidates;
              DROP TABLE library_doctor_groups;
