@@ -76,6 +76,20 @@ if rg --quiet --fixed-strings '"Review Safe Fixes"' "$runner"; then
   echo "$runner must not wait for the obsolete static Library Doctor review label" >&2
   exit 1
 fi
+if rg --quiet --fixed-strings \
+  'cua_click_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-plugins-page' \
+  "$runner"; then
+  echo "$runner must not pixel-click the geometry-less Preferences Plugins label" >&2
+  exit 1
+fi
+for pattern in \
+  'cua_focus_label_via_key "$APP_PID" "$WINDOW_ID" "Plugins" down doctor-plugins-focus' \
+  'cua_press_key_window "$APP_PID" "$WINDOW_ID" enter doctor-plugins-enter'; do
+  if ! rg --quiet --fixed-strings "$pattern" "$runner"; then
+    echo "$runner must activate the Plugins navigation row through GTK focus: $pattern" >&2
+    exit 1
+  fi
+done
 for scenario_case in \
   'fresh-install)' \
   'tag-1-no-jump-after-save)' \
