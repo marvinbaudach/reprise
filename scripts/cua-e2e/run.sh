@@ -101,14 +101,18 @@ wait_for_label_absent() {
   return 1
 }
 
-cua_open_main_menu() {
-  local pid=$1 window_id=$2 stem=$3
+cua_activate_main_menu_item() {
+  local pid=$1 window_id=$2 label=$3 stem=$4
+  local focus_path
 
-  # AT-SPI reports MenuButton activation as "unverifiable" even when GTK did
-  # not toggle it. F10 is the application's standard main-menu contract and
-  # avoids treating that false-positive delivery report as an open popover.
+  # Under X11 the GTK popover is a detached window. The main-window CUA
+  # snapshot therefore cannot expose its item labels even though GTK has
+  # opened the menu. The app's focus probe does observe the popup, so follow
+  # the F10 contract with native Down traversal and activate the focused item.
   cua_hotkey "$pid" "$window_id" "$stem-f10" f10
-  wait_for_label "$pid" "$window_id" "Library Doctor" "$stem-open" >/dev/null
+  focus_path=$(cua_focus_label_via_key "$pid" "$window_id" "$label" down "$stem-focus")
+  assert_focus_evidence_label "$focus_path" "$label"
+  cua_press_key_window "$pid" "$window_id" enter "$stem-enter"
 }
 
 APP_PID=""
@@ -129,6 +133,8 @@ start_scenario_app() {
   local focus_state="$CUA_E2E_OUT_DIR/$scenario-focus-state.txt"
   local -a scenario_env=(-u REPRISE_SCAN_DIR -u REPRISE_SMOKE_TAG_EDIT)
 
+  CUA_E2E_FOCUS_STATE="$focus_state"
+  export CUA_E2E_FOCUS_STATE
   mkdir -p "$profile_root/data" "$profile_root/cache" "$profile_root/config"
   if [[ -n "$scan_dir" ]]; then
     scenario_env+=(REPRISE_SCAN_DIR="$scan_dir")
@@ -320,8 +326,8 @@ run_library_doctor_scenario() {
     library-doctor "$fixture_dir" "" "$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS"
   wait_for_label "$APP_PID" "$WINDOW_ID" "Search all fields" doctor-library >/dev/null
 
-  cua_open_main_menu "$APP_PID" "$WINDOW_ID" doctor-menu
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-entry
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Library Doctor" doctor-entry
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-enable
   wait_for_label "$APP_PID" "$WINDOW_ID" "Run Scan Now" doctor-run-ready >/dev/null
@@ -352,8 +358,8 @@ run_library_doctor_scenario() {
     "$APP_PID" "$WINDOW_ID" "Tags updated · $fixture_count tracks" doctor-applied)
   assert_snapshot_contains "$applied_path" "Revert"
 
-  cua_open_main_menu "$APP_PID" "$WINDOW_ID" doctor-menu-after-apply
-  cua_click_label "$APP_PID" "$WINDOW_ID" "Preferences" doctor-preferences
+  cua_activate_main_menu_item \
+    "$APP_PID" "$WINDOW_ID" "Preferences" doctor-preferences
   wait_for_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-preferences-open >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Plugins" doctor-plugins-page
   wait_for_label "$APP_PID" "$WINDOW_ID" "Enable Library Doctor" doctor-plugin-enabled >/dev/null
