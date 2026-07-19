@@ -589,6 +589,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mot_2_background_surfaces_fade_in_place_without_layout_motion() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let settings = gtk4::Settings::default().unwrap();
         let previous = settings.is_gtk_enable_animations();

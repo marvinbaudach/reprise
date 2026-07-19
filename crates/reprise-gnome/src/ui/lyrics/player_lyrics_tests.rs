@@ -150,6 +150,7 @@ fn failed_backend_start_never_produces_a_lyrics_query() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn runtime_result_tracks_position_and_stop_clears_the_view() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_| {
         Ok(LyricsBody::Synced(vec![

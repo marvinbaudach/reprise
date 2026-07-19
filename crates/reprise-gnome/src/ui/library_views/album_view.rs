@@ -466,6 +466,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn grid_5_reveal_scrolls_to_playing_album() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let settings = gtk4::Settings::default().unwrap();
         let animations_before = settings.is_gtk_enable_animations();
@@ -541,6 +542,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn grid_6_restore_focus_targets_departed_album_without_reveal_pulse() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let conn = reprise_core::db::open(None).unwrap();
         reprise_core::db::migrate(&conn).unwrap();

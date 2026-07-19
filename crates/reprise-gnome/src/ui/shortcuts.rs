@@ -281,6 +281,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn search_2_ctrl_f_reveals_and_focuses() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.SearchShortcutTest")

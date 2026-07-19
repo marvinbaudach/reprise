@@ -258,6 +258,7 @@ fn synced_lyrics_are_roving_rows_and_plain_lyrics_are_not_actions() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn active_lines_center_and_clamp_in_a_mapped_panel() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let view = LyricsView::new();
     let lines = (0..40)
@@ -296,6 +297,7 @@ fn active_lines_center_and_clamp_in_a_mapped_panel() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn npp_10_new_lyrics_start_with_line_zero_centered() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let view = LyricsView::new();
     let lines = (0..20)

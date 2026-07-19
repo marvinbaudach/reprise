@@ -218,6 +218,7 @@ fn the_single_value_search_is_case_insensitive_and_matches_substrings() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn widget_projects_removable_chips_without_a_redundant_reset_button() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
     }
