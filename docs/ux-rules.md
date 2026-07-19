@@ -1504,7 +1504,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Artist, Album, Album Artist, Year, Genre, Recording MBID. Apply erhält
   einen unveränderlichen Plan aus exakt der aktuellen Auswahl.
 
-- **DOC-3b** [geplant] [gtk] — **26b zeigt denselben Diff breit und schmal.**
+- **DOC-3b** [aktiv] [gtk] — **26b zeigt denselben Diff breit und schmal.**
   Breit stehen Checkbox · Track + Field · Current · Proposed · Source in
   einer virtualisierten Tabelle; leer erscheint als „— empty —", ein
   ersetzter Current-Wert durchgestrichen. Im schmalen Breakpoint stapelt
@@ -1566,7 +1566,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Fehler und Konflikte. Ein vollständiger Revert konsumiert den Cleanup;
   Tag-Editor-Jobs ersetzen dessen sichtbaren Pointer nie.
 
-- **DOC-5c** [geplant] [gtk] — **Schreibjobs frieren die UI nicht ein.**
+- **DOC-5c** [aktiv] [gtk] — **Schreibjobs frieren die UI nicht ein.**
   Apply und Revert laufen in der gemeinsamen Fortschrittskarte mit sichtbarem
   Cancel und derselben Geometrie wie Scan/Sync. Button, Fortschritt,
   Abschluss und Fehler zählen primär Tracks: „Apply 128 tracks",
@@ -1577,7 +1577,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   einmal als „N updated, M failed · Details", nie als Datei-Toast. Remote-
   Toggle und Apply-Auswahl sind während des Schreibjobs gesperrt.
 
-- **DOC-5d** [geplant] [gtk] — **Ergebnis und App bleiben nach Writes
+- **DOC-5d** [aktiv] [gtk] — **Ergebnis und App bleiben nach Writes
   ehrlich aktuell.** Nach Apply oder Revert werden Trackliste, Browse Bar,
   Cover/Player-Metadaten, Sidebar, Albums, Artists und Stats über eine
   gemeinsame Tag-Mutation-Invalidierung erneuert; ein Neustart ist nie nötig.

@@ -18,6 +18,7 @@ use reprise_core::view_source::ViewSource;
 use rusqlite::Connection;
 
 use super::album_view::AlbumView;
+use super::artist_view::ArtistView;
 use super::cover_download_batch::CoverDownloadBatch;
 use super::device_view::DeviceViewPage;
 use super::first_run::FirstRunDecision;
@@ -58,6 +59,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) library_title: &'a Rc<LibraryTitle>,
     pub(in crate::ui) window_title: &'a adw::WindowTitle,
     pub(in crate::ui) album_view: &'a AlbumView,
+    pub(in crate::ui) artist_view: &'a Rc<ArtistView>,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
     pub(in crate::ui) watcher_state: &'a Rc<RefCell<Option<WatcherHandle>>>,
@@ -96,6 +98,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         library_title,
         window_title,
         album_view,
+        artist_view,
         scan_controls,
         toast_overlay,
         watcher_state,
@@ -112,6 +115,17 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         content_nav,
     } = args;
 
+    let refresh_doctor_views = {
+        let album = album_view.refresh_callback();
+        let artist = artist_view.refresh_callback();
+        let stats = stats_view.clone();
+        let conn = conn.clone();
+        Rc::new(move || {
+            album();
+            artist();
+            stats.refresh(&conn);
+        }) as Rc<dyn Fn()>
+    };
     let library_doctor = super::library_doctor::LibraryDoctorCoordinator::new(
         super::library_doctor::LibraryDoctorContext {
             conn,
@@ -122,6 +136,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             scan_controls,
             fingerprint: Arc::new(reprise_platform_linux::fingerprint::GstreamerFingerprintBackend),
             preferences,
+            sidebar,
+            toast_overlay,
+            refresh_views: refresh_doctor_views,
         },
     );
 

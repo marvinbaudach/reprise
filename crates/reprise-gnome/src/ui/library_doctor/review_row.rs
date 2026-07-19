@@ -8,7 +8,9 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library_doctor::{DoctorReviewRow, DoctorReviewRowId};
 
-use super::review_model::{row_selectable, ConfidenceTone, ReviewRowModel, WIDE_BREAKPOINT};
+use super::review_model::{
+    outcome_label, row_selectable, ConfidenceTone, ReviewRowModel, WIDE_BREAKPOINT,
+};
 use crate::ui::strings;
 
 type OnSelect = Rc<dyn Fn(DoctorReviewRowId, bool)>;
@@ -206,7 +208,7 @@ fn value_widgets(caption: &'static str, bold: bool) -> ValueWidgets {
 fn bind(widgets: &RowWidgets, model: &ReviewRowModel) {
     widgets.binding.set(true);
     widgets.selected.set_active(model.row.selected);
-    widgets.selected.set_sensitive(row_selectable(&model.row));
+    widgets.selected.set_sensitive(row_selectable(model));
     widgets.binding.set(false);
     widgets
         .track_field
@@ -214,7 +216,21 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel) {
         .set_label(&format!("{} · {}", model.track, model.field));
     set_full_text(&widgets.current.value, &model.current);
     set_full_text(&widgets.proposed.value, &model.proposed);
-    set_full_text(&widgets.source.value, &model.confidence.label);
+    let source = model.outcome.as_ref().map_or_else(
+        || model.confidence.label.clone(),
+        |outcome| {
+            let status = format!(
+                "{} · {}",
+                model.confidence.label,
+                strings::text(outcome_label(outcome.state))
+            );
+            outcome
+                .error
+                .as_ref()
+                .map_or(status.clone(), |error| format!("{status} · {error}"))
+        },
+    );
+    set_full_text(&widgets.source.value, &source);
     let attrs = gtk4::pango::AttrList::new();
     attrs.insert(gtk4::pango::AttrInt::new_strikethrough(true));
     widgets.current.value.set_attributes(Some(&attrs));

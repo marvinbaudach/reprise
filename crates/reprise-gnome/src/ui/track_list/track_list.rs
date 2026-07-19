@@ -286,6 +286,7 @@ pub(in crate::ui) struct Shared {
     /// Kept separate from `on_library_mutated`: editing tags must never purge
     /// otherwise valid tracks from the playback queue.
     pub(in crate::ui) on_tags_mutated: RefCell<Option<OnTagsMutated>>,
+    pub(in crate::ui) tag_write_gate: crate::ui::tag_write_gate::TagWriteGate,
     /// Invoked after the ImportErrors panel's own Retry/Dismiss actions
     /// mutate `import_errors` — injected via `TrackList::set_on_import_
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the
@@ -375,6 +376,10 @@ impl TrackList {
     pub fn reload(&self) {
         self.shared.browse_bar.refresh();
         reload(&self.shared);
+    }
+
+    pub(in crate::ui) fn refresh_after_tag_mutation(&self, ids: &[i64], paths: &[PathBuf]) {
+        super::tag_mutation_refresh::refresh_after_tag_mutation(&self.shared, ids, paths);
     }
 
     pub fn reload_queue_if_visible(&self) {
@@ -527,6 +532,10 @@ impl TrackList {
 
     pub fn set_on_tags_mutated(&self, callback: impl Fn(&[PathBuf]) + 'static) {
         *self.shared.on_tags_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn tag_write_gate(&self) -> crate::ui::tag_write_gate::TagWriteGate {
+        self.shared.tag_write_gate.clone()
     }
 
     /// Injects the callback invoked after the ImportErrors panel's own

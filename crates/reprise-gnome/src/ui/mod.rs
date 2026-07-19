@@ -72,6 +72,7 @@ pub mod status_bar;
 pub mod strings;
 mod style;
 mod tag_edit;
+mod tag_write_gate;
 #[cfg(test)]
 pub(crate) mod test_main_context;
 pub mod toasts;
