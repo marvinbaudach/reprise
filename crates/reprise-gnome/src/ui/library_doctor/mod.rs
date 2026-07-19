@@ -1,9 +1,12 @@
+mod job_page;
 mod jobs;
 mod progress_card;
 mod review_model;
 mod review_page;
 mod review_row;
 mod summary_page;
+#[cfg(test)]
+mod tests;
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -26,6 +29,7 @@ use super::preferences::PreferencesContext;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::track_list::TrackList;
+use job_page::LibraryDoctorJobPage;
 use jobs::{run_apply, run_revert, run_scan};
 use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
@@ -51,6 +55,8 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     toast_overlay: adw::ToastOverlay,
     tag_write_gate: crate::ui::tag_write_gate::TagWriteGate,
     refresh_views: Rc<dyn Fn()>,
+    job_page: LibraryDoctorJobPage,
+    selection_override: RefCell<Option<Vec<i64>>>,
 }
 
 pub(in crate::ui) struct LibraryDoctorContext<'a> {
@@ -100,6 +106,7 @@ impl LibraryDoctorCoordinator {
             );
             let page = LibraryDoctorPage::new(conn, window, fingerprint_available, refresh);
             let progress = DoctorProgressCard::new();
+            let job_page = LibraryDoctorJobPage::new();
             Self {
                 conn: conn.clone(),
                 db_path: db_path.to_path_buf(),
@@ -118,6 +125,8 @@ impl LibraryDoctorCoordinator {
                 toast_overlay: toast_overlay.clone(),
                 tag_write_gate: track_list.tag_write_gate(),
                 refresh_views,
+                job_page,
+                selection_override: RefCell::new(None),
             }
         });
         sidebar.append_doctor_card(coordinator.progress.widget());
@@ -166,6 +175,22 @@ impl LibraryDoctorCoordinator {
             });
         }
         coordinator.install_tag_edit_observer();
+        {
+            let run = Rc::downgrade(&coordinator);
+            let revert = Rc::downgrade(&coordinator);
+            preferences.doctor_controls.set_callbacks(
+                move |scope| {
+                    if let Some(coordinator) = run.upgrade() {
+                        coordinator.run_from_preferences(scope);
+                    }
+                },
+                move || {
+                    if let Some(coordinator) = revert.upgrade() {
+                        coordinator.start_revert();
+                    }
+                },
+            );
+        }
         coordinator
     }
 
@@ -174,17 +199,41 @@ impl LibraryDoctorCoordinator {
             self.open_running_job();
             return;
         }
-        let enabled = {
-            let conn = self.conn.borrow();
-            reprise_core::modules::is_enabled(&conn, &reprise_core::modules::LIBRARY_DOCTOR_MODULE)
-                .unwrap_or(false)
-        };
-        if !enabled {
+        self.selection_override.borrow_mut().take();
+        let view = current_view_snapshot(&self.track_list);
+        self.page.set_selected_scope(suggested_scope(&view));
+        if !self.module_enabled() {
             if let Some(preferences) = self.preferences.upgrade() {
                 preferences.present_plugins(PLUGIN_TARGETS);
             }
             return;
         }
+        self.open_enabled();
+    }
+
+    pub(in crate::ui) fn open_for_selection(&self, ids: Vec<i64>) {
+        if self.running.get() {
+            self.open_running_job();
+            return;
+        }
+        self.selection_override.borrow_mut().replace(ids);
+        self.page.set_selected_scope(2);
+        if !self.module_enabled() {
+            if let Some(preferences) = self.preferences.upgrade() {
+                preferences.present_plugins(PLUGIN_TARGETS);
+            }
+            return;
+        }
+        self.open_enabled();
+    }
+
+    fn module_enabled(&self) -> bool {
+        let conn = self.conn.borrow();
+        reprise_core::modules::is_enabled(&conn, &reprise_core::modules::LIBRARY_DOCTOR_MODULE)
+            .unwrap_or(false)
+    }
+
+    fn open_enabled(&self) {
         {
             let conn = self.conn.borrow();
             self.page.sync_remote_preference(&conn);
@@ -198,6 +247,18 @@ impl LibraryDoctorCoordinator {
         } else {
             self.navigation.push(self.page.navigation_page());
         }
+    }
+
+    fn run_from_preferences(self: &Rc<Self>, scope: u32) {
+        if scope != 2 {
+            self.selection_override.borrow_mut().take();
+        }
+        self.page.set_selected_scope(scope);
+        if !self.module_enabled() {
+            return;
+        }
+        self.open_enabled();
+        self.start_scan();
     }
 
     fn load_last_scan(&self) {
@@ -217,12 +278,20 @@ impl LibraryDoctorCoordinator {
         if self.running.get() || self.scan_controls.is_scanning() {
             return;
         }
+        let scope = self.page.selected_scope();
+        let selection = if scope == 2 {
+            self.selection_override
+                .borrow_mut()
+                .take()
+                .unwrap_or_else(|| {
+                    super::track_list_context_menu::current_selection_ids(&self.track_list.shared)
+                })
+        } else {
+            self.selection_override.borrow_mut().take();
+            Vec::new()
+        };
         let request = DoctorScanRequest {
-            scope: scope_request(
-                self.page.selected_scope(),
-                current_view_snapshot(&self.track_list),
-                super::track_list_context_menu::current_selection_ids(&self.track_list.shared),
-            ),
+            scope: scope_request(scope, current_view_snapshot(&self.track_list), selection),
             options: reprise_core::library_doctor::DoctorScanOptions {
                 remote_enabled: self.page.remote_active(),
             },
@@ -376,7 +445,16 @@ impl LibraryDoctorCoordinator {
     fn open_running_job(&self) {
         match self.job_kind.get() {
             Some(DoctorJobKind::Apply) => self.open_review_page(),
-            Some(DoctorJobKind::Scan | DoctorJobKind::Revert) | None => self.open_root_page(),
+            Some(DoctorJobKind::Revert) => self.open_job_page(),
+            Some(DoctorJobKind::Scan) | None => self.open_root_page(),
+        }
+    }
+
+    fn open_job_page(&self) {
+        if self.navigation.find_page("library-doctor-job").is_some() {
+            self.navigation.pop_to_tag("library-doctor-job");
+        } else {
+            self.navigation.push(self.job_page.navigation_page());
         }
     }
 
@@ -465,6 +543,8 @@ impl LibraryDoctorCoordinator {
             preferences.set_library_doctor_job_running(true);
         }
         self.job_kind.set(Some(DoctorJobKind::Revert));
+        self.job_page.set_running(DoctorJobKind::Revert);
+        self.open_job_page();
         self.page.set_running(true);
         if let Some(review) = self.review.borrow().as_ref() {
             review.set_running(true);
@@ -484,6 +564,7 @@ impl LibraryDoctorCoordinator {
             Err(error) => {
                 self.finish_write_job();
                 tracing::error!(%error, "could not start Library Doctor revert worker");
+                self.job_page.set_error(&error.to_string());
                 return;
             }
         };
@@ -520,10 +601,16 @@ impl LibraryDoctorCoordinator {
                 Ok(Ok(None)) => {}
                 Ok(Err(error)) => {
                     tracing::error!(%error, "Library Doctor write failed");
+                    if kind == DoctorJobKind::Revert {
+                        coordinator.job_page.set_error(&error);
+                    }
                     crate::ui::toasts::show(&coordinator.toast_overlay, &error);
                 }
                 Err(error) => {
                     tracing::error!(%error, "Library Doctor write worker disappeared");
+                    if kind == DoctorJobKind::Revert {
+                        coordinator.job_page.set_error(&error.to_string());
+                    }
                     crate::ui::toasts::show(&coordinator.toast_overlay, &error.to_string());
                 }
             }
@@ -546,6 +633,15 @@ impl LibraryDoctorCoordinator {
     }
 
     fn handle_write_report(self: &Rc<Self>, kind: DoctorJobKind, report: &DoctorWriteReport) {
+        tracing::info!(
+            ?kind,
+            updated = report.updated_tracks,
+            cancelled = report.cancelled_tracks,
+            failed = report.failed_tracks,
+            conflicts = report.conflict_tracks,
+            unavailable = report.unavailable_tracks,
+            "Library Doctor write completed"
+        );
         let paths = report
             .rows
             .iter()
@@ -571,6 +667,14 @@ impl LibraryDoctorCoordinator {
         }
         self.page
             .set_write_report(report, kind == DoctorJobKind::Revert);
+        if kind == DoctorJobKind::Revert {
+            let remaining = report.cancelled_tracks
+                + report.failed_tracks
+                + report.conflict_tracks
+                + report.unavailable_tracks;
+            self.job_page
+                .set_result(report.updated_tracks, remaining, true);
+        }
         self.show_write_toasts(kind, report);
     }
 
@@ -641,6 +745,14 @@ fn current_view_snapshot(track_list: &TrackList) -> DoctorViewSnapshot {
     }
 }
 
+fn suggested_scope(view: &DoctorViewSnapshot) -> u32 {
+    if view.filter.is_empty() && view.browse.is_empty() {
+        0
+    } else {
+        1
+    }
+}
+
 fn scope_request(
     choice: u32,
     current_view: DoctorViewSnapshot,
@@ -652,93 +764,5 @@ fn scope_request(
             track_ids: selection,
         },
         _ => DoctorScopeRequest::WholeLibrary,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-    use std::sync::atomic::AtomicBool;
-
-    use reprise_core::fingerprint::{
-        FingerprintBackend, FingerprintCapability, FingerprintControl, FingerprintError,
-        FingerprintOutcome, FingerprintProgress,
-    };
-    use reprise_core::library_doctor::{DoctorScopeRequest, DoctorViewSnapshot};
-    use reprise_core::queries::BrowseFilter;
-    use reprise_core::view_source::ViewSource;
-
-    struct NeverFingerprint;
-
-    impl FingerprintBackend for NeverFingerprint {
-        fn capability(&self) -> FingerprintCapability {
-            FingerprintCapability::MissingPlugin {
-                elements: vec!["chromaprint".into()],
-            }
-        }
-
-        fn fingerprint(
-            &self,
-            _path: &Path,
-            _progress: &mut dyn FnMut(FingerprintProgress) -> FingerprintControl,
-        ) -> Result<FingerprintOutcome, FingerprintError> {
-            panic!("a local-only empty scan must not fingerprint")
-        }
-    }
-
-    fn snapshot() -> DoctorViewSnapshot {
-        DoctorViewSnapshot {
-            source: ViewSource::Library,
-            sort_field: "artist".into(),
-            sort_dir: "asc".into(),
-            filter: String::new(),
-            browse: BrowseFilter::default(),
-            queue_ids: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn doc_2a_scope_choice_freezes_the_requested_input_shape() {
-        assert!(matches!(
-            super::scope_request(0, snapshot(), vec![7]),
-            DoctorScopeRequest::WholeLibrary
-        ));
-        assert!(matches!(
-            super::scope_request(1, snapshot(), vec![7]),
-            DoctorScopeRequest::CurrentView(_)
-        ));
-        assert_eq!(
-            super::scope_request(2, snapshot(), vec![7, 8]),
-            DoctorScopeRequest::Selection {
-                track_ids: vec![7, 8]
-            }
-        );
-    }
-
-    #[test]
-    fn doctor_worker_uses_only_its_isolated_database_connection() {
-        let directory = tempfile::tempdir().unwrap();
-        let database = directory.path().join("doctor.db");
-        drop(reprise_core::db::open_migrated(Some(&database)).unwrap());
-        let request = reprise_core::library_doctor::DoctorScanRequest {
-            scope: DoctorScopeRequest::WholeLibrary,
-            options: reprise_core::library_doctor::DoctorScanOptions::local_only(),
-        };
-        let mut progress = Vec::new();
-
-        let outcome = super::run_scan(
-            &database,
-            &request,
-            &NeverFingerprint,
-            &AtomicBool::new(false),
-            &mut |item| progress.push(item),
-        )
-        .unwrap();
-
-        let reprise_core::library_doctor::DoctorScanOutcome::Completed(scan) = outcome else {
-            panic!("empty local scan must complete")
-        };
-        assert_eq!(scan.checked_tracks, 0);
-        assert!(progress.is_empty());
     }
 }

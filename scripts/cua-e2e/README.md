@@ -14,12 +14,18 @@ scripts/cua-e2e/run.sh
 
 The runner creates a private D-Bus session, AT-SPI bus, Xvfb display, Openbox
 window manager, CUA daemon, XDG profile, fake audio sink, and copied FLAC
-fixtures. It exercises two public workflows:
+fixtures. It exercises five public workflows:
 
 1. a fresh profile exposes the first-run wizard; activating `Skip for Now`
    reveals the `No music yet` empty-library state;
 2. a populated profile scans two copied fixtures; typing into the accessible
-   `Search all fields` control reveals the `No results` state.
+   `Search all fields` control reveals the `No results` state and runs the
+   keyboard-only surface inventory;
+3. a tag write preserves selection and scroll position;
+4. the multi-track Tag Editor exposes its complete accessible structure;
+5. Library Doctor opts in from Plugins, scans copied fixtures, verifies wide
+   and narrow review layouts, applies the reviewed plan, disables the module,
+   and reverts the cleanup from the still-available action.
 
 Every CUA action is bracketed by a fresh `get_window_state` snapshot. The run
 fails on a degraded accessibility tree, a suspected no-op/escalation request,
@@ -62,8 +68,9 @@ profile in `run.sh` executes the complete manifest and retains before/after
 snapshots for every action.
 
 For an iterative keyboard-only retry, run
-`CUA_E2E_ONLY=populated-library scripts/cua-e2e/run.sh`; the default remains
-the complete fresh-install, populated-library, and tag-editor matrix.
+`CUA_E2E_ONLY=populated-library scripts/cua-e2e/run.sh`; use
+`CUA_E2E_ONLY=library-doctor scripts/cua-e2e/run.sh` for the Doctor workflow.
+The default remains the complete matrix.
 
 This headless X11 run proves accessibility exposure, input delivery, widget
 state transitions, screenshots, and clean logs. Native Wayland rendering,

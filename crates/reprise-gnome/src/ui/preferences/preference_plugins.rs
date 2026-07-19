@@ -71,32 +71,6 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
     strings::text(message)
 }
 
-struct DoctorPluginControlState {
-    module_sensitive: bool,
-    remote_sensitive: bool,
-    subtitle: String,
-}
-
-fn doctor_plugin_control_state(
-    module_enabled: bool,
-    job_running: bool,
-) -> DoctorPluginControlState {
-    let description = plugin_description(&reprise_core::modules::LIBRARY_DOCTOR_MODULE);
-    DoctorPluginControlState {
-        module_sensitive: !job_running,
-        remote_sensitive: module_enabled && !job_running,
-        subtitle: if job_running {
-            format!(
-                "{} · {}",
-                description,
-                strings::text(strings::DOCTOR_CONTROLS_LOCKED)
-            )
-        } else {
-            description
-        },
-    }
-}
-
 impl PreferencesContext {
     pub(in crate::ui) fn plugins_page(self: &Rc<Self>) -> adw::PreferencesPage {
         let page = adw::PreferencesPage::builder()
@@ -114,6 +88,10 @@ impl PreferencesContext {
                 group.add(&self.build_lastfm_row());
                 continue;
             }
+            if descriptor.id == "library_doctor" {
+                group.add(&super::preference_library_doctor::plugin_row(self));
+                continue;
+            }
 
             let description = plugin_description(descriptor);
             let subtitle = if plugin_applies_live(descriptor) {
@@ -127,48 +105,27 @@ impl PreferencesContext {
             };
             let active = reprise_core::modules::is_enabled(&self.conn.borrow(), descriptor)
                 .unwrap_or(descriptor.default_enabled);
-            let doctor_state = (descriptor.id == "library_doctor").then(|| {
-                doctor_plugin_control_state(active, self.library_doctor_job_running.get())
-            });
             let row = adw::SwitchRow::builder()
                 .title(plugin_title(descriptor))
-                .subtitle(
-                    doctor_state
-                        .as_ref()
-                        .map_or(subtitle.as_str(), |state| state.subtitle.as_str()),
-                )
+                .subtitle(subtitle)
                 .use_markup(false)
                 .active(active)
-                .sensitive(
-                    doctor_state
-                        .as_ref()
-                        .is_none_or(|state| state.module_sensitive),
-                )
                 .build();
             if network_descriptors()
                 .iter()
                 .any(|network| network.id == descriptor.id)
             {
                 let row_ref = glib::WeakRef::new();
-                row_ref.set(Some(&row));
+                row_ref.set(Some(row.upcast_ref::<gtk4::Widget>()));
                 self.plugin_rows.borrow_mut().insert(descriptor.id, row_ref);
             }
             let scope_row = (descriptor.id == "new_releases")
                 .then(|| super::preference_new_releases::scope_row(&self.conn, active));
-            let doctor_remote_row = (descriptor.id == "library_doctor")
-                .then(|| super::preference_library_doctor::remote_suggestions_row(self, active));
-            if let (Some(remote), Some(state)) = (&doctor_remote_row, &doctor_state) {
-                remote.set_sensitive(state.remote_sensitive);
-                let target = glib::WeakRef::new();
-                target.set(Some(remote));
-                self.doctor_remote_rows.borrow_mut().push(target);
-            }
             let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
             let syncing_notify = syncing.clone();
             let scope_notify = scope_row.clone();
-            let doctor_remote_notify = doctor_remote_row.clone();
             row.connect_active_notify(move |row| {
                 let Some(context) = weak.upgrade() else {
                     return;
@@ -211,12 +168,6 @@ impl PreferencesContext {
                 if let Some(scope) = &scope_notify {
                     scope.set_sensitive(active);
                 }
-                if let Some(remote) = &doctor_remote_notify {
-                    remote.set_sensitive(active && !context.library_doctor_job_running.get());
-                    if !active {
-                        remote.set_active(false);
-                    }
-                }
             });
             if descriptor.id == "new_releases" {
                 let alive = glib::WeakRef::new();
@@ -246,9 +197,6 @@ impl PreferencesContext {
             if let Some(scope) = scope_row {
                 group.add(&scope);
             }
-            if let Some(remote) = doctor_remote_row {
-                group.add(&remote);
-            }
         }
         page.add(&group);
         page
@@ -269,6 +217,9 @@ impl PreferencesContext {
             first.grab_focus();
         }
         for row in rows {
+            if let Ok(expander) = row.clone().downcast::<adw::ExpanderRow>() {
+                expander.set_expanded(true);
+            }
             row.add_css_class(TARGET_CLASS);
             let row = row.downgrade();
             glib::timeout_add_local_once(highlight_duration(), move || {
@@ -281,26 +232,7 @@ impl PreferencesContext {
 
     pub(in crate::ui) fn set_library_doctor_job_running(&self, running: bool) {
         self.library_doctor_job_running.set(running);
-        let module_row = self
-            .plugin_rows
-            .borrow()
-            .get("library_doctor")
-            .and_then(glib::WeakRef::upgrade);
-        let enabled = module_row.as_ref().is_some_and(adw::SwitchRow::is_active);
-        let state = doctor_plugin_control_state(enabled, running);
-        if let Some(row) = module_row {
-            row.set_sensitive(state.module_sensitive);
-            row.set_subtitle(&state.subtitle);
-        }
-        self.doctor_remote_rows
-            .borrow_mut()
-            .retain(|target| match target.upgrade() {
-                Some(row) => {
-                    row.set_sensitive(state.remote_sensitive);
-                    true
-                }
-                None => false,
-            });
+        self.doctor_controls.set_job_running(running);
     }
 }
 
@@ -344,14 +276,21 @@ mod tests {
 
     #[test]
     fn doc_6b_library_doctor_controls_explain_job_locking() {
-        let idle = doctor_plugin_control_state(true, false);
+        let idle = super::super::preference_library_doctor::control_state(true, false);
         assert!(idle.module_sensitive);
         assert!(idle.remote_sensitive);
         assert!(!idle.subtitle.contains("running"));
 
-        let running = doctor_plugin_control_state(true, true);
+        let running = super::super::preference_library_doctor::control_state(true, true);
         assert!(!running.module_sensitive);
         assert!(!running.remote_sensitive);
         assert!(running.subtitle.contains("running"));
+    }
+
+    #[test]
+    fn doc_6a_revert_stays_available_while_the_module_is_disabled() {
+        let disabled = super::super::preference_library_doctor::control_state(false, false);
+        assert!(!disabled.remote_sensitive);
+        assert!(disabled.revert_sensitive);
     }
 }

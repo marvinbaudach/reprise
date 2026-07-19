@@ -1588,7 +1588,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   können erneut reviewed werden; ein neuer vollständiger Scan ersetzt das
   Scan-Ergebnis unabhängig vom weiterhin gültigen Undo-Journal.
 
-- **DOC-6a** [geplant] [gtk] — **Library Doctor ist eine
+- **DOC-6a** [aktiv] [gtk] — **Library Doctor ist eine
   Hauptfenster-Navigation.** 26a lebt als Root-Page im bestehenden
   `content_nav`, 26b wird darauf gepusht; Back kehrt mit unveränderter
   In-Session-Auswahl zu 26a zurück. Es gibt keinen Doctor-Dialog und keinen
@@ -1605,7 +1605,7 @@ deterministisch und hoch-konfident, nie „ohne Review".
   Plugin über eine minimale Doctor-Jobseite verfügbar und aktiviert weder
   Plugin noch Netzwerk.
 
-- **DOC-6b** [geplant] [gtk] — **Ein laufender Job hat genau einen Ort.**
+- **DOC-6b** [aktiv] [gtk] — **Ein laufender Job hat genau einen Ort.**
   Scan, Apply und Revert überleben das Wegnavigieren; die eine
   Sidebar-Fortschrittskarte führt zur passenden Doctor-Seite zurück.
   Gleichzeitige Doctor-Jobs sind verboten. Library-Scan und Doctor-

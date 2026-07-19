@@ -141,6 +141,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             refresh_views: refresh_doctor_views,
         },
     );
+    {
+        let library_doctor = Rc::downgrade(&library_doctor);
+        stats_view.set_on_unify_spellings(move |ids| {
+            if let Some(library_doctor) = library_doctor.upgrade() {
+                library_doctor.open_for_selection(ids);
+            }
+        });
+    }
 
     let active_content_focus = super::library_shell::ActiveContentFocus::new(
         content_stack,

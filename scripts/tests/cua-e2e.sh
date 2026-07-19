@@ -36,7 +36,11 @@ for pattern in \
   'REPRISE_SMOKE_TAG_EDIT=' \
   'REPRISE_SMOKE_FOCUS_STATE=' \
   'run_tag_1_no_jump_after_save_scenario' \
-  'run_tag_3_multi_dialog_structure_scenario'
+  'run_tag_3_multi_dialog_structure_scenario' \
+  'run_library_doctor_scenario' \
+  'Enable Library Doctor' \
+  'Review Safe Fixes' \
+  'Revert Last Cleanup'
 do
   if ! rg --quiet "$pattern" "$runner"; then
     echo "$runner must contain isolation/coverage pattern: $pattern" >&2
@@ -52,6 +56,10 @@ for scenario_case in \
     exit 1
   fi
 done
+if ! rg --quiet --fixed-strings 'library-doctor)' "$runner"; then
+  echo "$runner must support isolated scenario: library-doctor)" >&2
+  exit 1
+fi
 
 keyboard_runner="$repo_root/scripts/cua-e2e/keyboard.sh"
 keyboard_manifest="$repo_root/scripts/cua-e2e/keyboard-surfaces.tsv"
