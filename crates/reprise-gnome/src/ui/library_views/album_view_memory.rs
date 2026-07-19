@@ -100,6 +100,7 @@ pub(in crate::ui) fn restore(
         position,
         offset,
         RESTORE_ATTEMPTS,
+        false,
     );
 }
 
@@ -111,8 +112,30 @@ pub(in crate::ui) fn reveal(
     let Some(position) = identity_position(model, identity) else {
         return false;
     };
-    restore_scroll(grid.clone(), model.clone(), position, 0.0, RESTORE_ATTEMPTS);
+    restore_scroll(
+        grid.clone(),
+        model.clone(),
+        position,
+        0.0,
+        RESTORE_ATTEMPTS,
+        false,
+    );
     true
+}
+
+pub(in crate::ui) fn reveal_and_focus_position(
+    grid: &gtk4::GridView,
+    model: &gtk4::FilterListModel,
+    position: u32,
+) {
+    restore_scroll(
+        grid.clone(),
+        model.clone(),
+        position,
+        0.0,
+        RESTORE_ATTEMPTS,
+        true,
+    );
 }
 
 fn restore_scroll(
@@ -121,6 +144,7 @@ fn restore_scroll(
     position: u32,
     offset: f64,
     attempts: u8,
+    focus: bool,
 ) {
     gtk4::glib::idle_add_local_once(move || {
         let Some(adjustment) = grid.vadjustment() else {
@@ -129,13 +153,21 @@ fn restore_scroll(
         let count = model.n_items();
         let columns = column_count(grid.width(), count);
         let rows = row_count(count, columns);
-        if rows > 0 && adjustment.upper() > adjustment.page_size() {
-            let row_height = adjustment.upper() / f64::from(rows);
-            let row = position / columns;
-            let max = adjustment.upper() - adjustment.page_size();
-            adjustment.set_value((f64::from(row) * row_height + offset).clamp(0.0, max));
+        if rows > 0 && adjustment.upper() > 0.0 {
+            if adjustment.upper() > adjustment.page_size() {
+                let row_height = adjustment.upper() / f64::from(rows);
+                let row = position / columns;
+                let max = adjustment.upper() - adjustment.page_size();
+                adjustment.set_value((f64::from(row) * row_height + offset).clamp(0.0, max));
+            }
+            if focus {
+                let grid = grid.clone();
+                gtk4::glib::idle_add_local_once(move || {
+                    grid.scroll_to(position, gtk4::ListScrollFlags::FOCUS, None);
+                });
+            }
         } else if attempts > 0 {
-            restore_scroll(grid, model, position, offset, attempts - 1);
+            restore_scroll(grid, model, position, offset, attempts - 1, focus);
         }
     });
 }
