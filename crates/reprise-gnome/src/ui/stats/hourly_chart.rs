@@ -9,6 +9,8 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 
+use reprise_core::library::stats_snapshot::ClockSection;
+
 use super::stats_chart_math::{
     expand_hourly, format_peak_hour, normalize_bars, peak_hour, BAR_GAP_FRACTION, MIN_BAR_FRACTION,
 };
@@ -17,7 +19,6 @@ pub(in crate::ui) const HOURLY_CHART_CSS_CLASS: &str = "stats-chart";
 const CHART_HEIGHT: i32 = 160;
 const LABEL_AREA_HEIGHT: f64 = 20.0;
 const LABEL_FONT_SIZE: f64 = 9.0;
-const ANNOTATION_FONT_SIZE: f64 = 10.0;
 
 /// The hour values that get a label on the x-axis.
 const LABELED_HOURS: [usize; 5] = [0, 6, 12, 18, 23];
@@ -25,12 +26,13 @@ const LABELED_HOURS: [usize; 5] = [0, 6, 12, 18, 23];
 struct HourlyData {
     /// Normalised 0..1 bar heights (always 24 entries).
     bars: Vec<f64>,
-    /// "peak HH:00" annotation text (empty when all bars are zero).
-    peak_annotation: String,
+    peak_hours: [bool; 24],
 }
 
 pub(in crate::ui) struct HourlyChart {
+    root: gtk4::Box,
     area: gtk4::DrawingArea,
+    caption: gtk4::Label,
     data: Rc<RefCell<HourlyData>>,
 }
 
@@ -44,7 +46,7 @@ impl HourlyChart {
 
         let data = Rc::new(RefCell::new(HourlyData {
             bars: Vec::new(),
-            peak_annotation: String::new(),
+            peak_hours: [false; 24],
         }));
 
         area.set_draw_func({
@@ -52,32 +54,59 @@ impl HourlyChart {
             move |area, cr, width, height| draw(area, cr, width, height, &data.borrow())
         });
 
-        Self { area, data }
+        let caption = gtk4::Label::new(None);
+        caption.add_css_class("stats-item-subtitle");
+        caption.set_xalign(0.0);
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        root.append(&area);
+        root.append(&caption);
+
+        Self {
+            root,
+            area,
+            caption,
+            data,
+        }
     }
 
-    pub(in crate::ui) fn widget(&self) -> &gtk4::DrawingArea {
-        &self.area
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
+        &self.root
     }
 
-    /// Updates the chart with sparse hourly data from `listening_by_hour`.
-    /// `sparse` is a list of `(hour, listens)` pairs — only hours with
-    /// events are present; this method expands to a full 24-slot array.
-    pub(in crate::ui) fn set_data(&self, sparse: &[(u8, i64)]) {
-        let full = expand_hourly(sparse);
-        let peak = peak_hour(&full);
-        let has_data = full.iter().any(|&v| v > 0);
-        let peak_annotation = if has_data {
-            format!("peak {}", format_peak_hour(peak))
-        } else {
-            String::new()
-        };
+    pub(in crate::ui) fn set_data(&self, section: &ClockSection) {
+        let sparse = section
+            .hours
+            .iter()
+            .filter_map(|hour| {
+                u8::try_from(hour.hour)
+                    .ok()
+                    .map(|value| (value, hour.total_ms))
+            })
+            .collect::<Vec<_>>();
+        let full = expand_hourly(&sparse);
         let bars = normalize_bars(&full);
         *self.data.borrow_mut() = HourlyData {
             bars,
-            peak_annotation,
+            peak_hours: peak_hour_mask(section),
         };
+        self.caption.set_label(&section.caption);
+        self.area.set_tooltip_text(Some(&format!(
+            "{}; peak {}",
+            section.caption,
+            format_peak_hour(peak_hour(&full))
+        )));
         self.area.queue_draw();
     }
+}
+
+fn peak_hour_mask(section: &ClockSection) -> [bool; 24] {
+    let mut peaks = [false; 24];
+    for hour in &section.peak_hours {
+        if let Some(peak) = peaks.get_mut(*hour as usize) {
+            *peak = true;
+        }
+    }
+    peaks
 }
 
 fn draw(
@@ -108,18 +137,6 @@ fn draw(
     let bar_w = slot * (1.0 - BAR_GAP_FRACTION);
     let radius = (bar_w * 0.3).min(4.0);
 
-    // Draw peak annotation in top-right corner.
-    if !data.peak_annotation.is_empty() {
-        cr.set_source_rgba(r, g, b, base_alpha * 0.6);
-        cr.set_font_size(ANNOTATION_FONT_SIZE);
-        if let Ok(extents) = cr.text_extents(&data.peak_annotation) {
-            let ann_x = w - extents.width() - 4.0;
-            let ann_y = ANNOTATION_FONT_SIZE + 2.0;
-            cr.move_to(ann_x, ann_y);
-            let _ = cr.show_text(&data.peak_annotation);
-        }
-    }
-
     for (i, &magnitude) in data.bars.iter().enumerate() {
         let effective = if magnitude > 0.0 {
             magnitude.max(MIN_BAR_FRACTION)
@@ -130,8 +147,12 @@ fn draw(
         let x = i as f64 * slot + (slot - bar_w) / 2.0;
         let y = bar_area_height - bar_h;
 
-        // Bars use uniform alpha (no "current" highlight for hourly).
-        cr.set_source_rgba(r, g, b, base_alpha * 0.75);
+        let alpha = if data.peak_hours.get(i).copied().unwrap_or(false) {
+            0.95
+        } else {
+            0.38
+        };
+        cr.set_source_rgba(r, g, b, base_alpha * alpha);
 
         if bar_h > 0.0 {
             rounded_rect(cr, x, y, bar_w, bar_h, radius);
@@ -176,4 +197,32 @@ fn rounded_rect(cr: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f6
     );
     cr.line_to(x + w, y + h);
     cr.close_path();
+}
+
+#[cfg(test)]
+mod tests {
+    use reprise_core::library::stats_screen::HourlyListens;
+    use reprise_core::library::stats_snapshot::ClockSection;
+
+    use super::*;
+
+    #[test]
+    fn hourly_chart_highlights_peak_hours() {
+        let section = ClockSection {
+            hours: (0..24)
+                .map(|hour| HourlyListens {
+                    hour,
+                    listens: i64::from(hour == 22 || hour == 23),
+                    total_ms: if hour == 22 || hour == 23 { 500 } else { 0 },
+                })
+                .collect(),
+            peak_hours: vec![22, 23],
+            caption: "Peak 10 PM\u{2013}11 PM \u{00b7} night owl".to_string(),
+        };
+
+        let peaks = peak_hour_mask(&section);
+        assert!(peaks[22]);
+        assert!(peaks[23]);
+        assert_eq!(peaks.iter().filter(|peak| **peak).count(), 2);
+    }
 }
