@@ -5,6 +5,7 @@ pub(in crate::ui) mod album_card_state;
 #[cfg(test)]
 mod album_card_tests;
 pub(in crate::ui) mod album_context_menu;
+pub(in crate::ui) mod album_glow;
 pub(in crate::ui) mod album_header;
 pub(in crate::ui) mod album_view;
 pub(in crate::ui) mod album_view_actions;

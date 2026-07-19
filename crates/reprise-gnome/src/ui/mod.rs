@@ -108,7 +108,7 @@ use device_sync::{
 #[allow(unused_imports)]
 use library_views::{
     album_card, album_card_actions, album_card_css, album_card_state, album_context_menu,
-    album_header, album_view, album_view_actions, album_view_memory, album_view_state,
+    album_glow, album_header, album_view, album_view_actions, album_view_memory, album_view_state,
     artist_avatar, artist_detail_hero, artist_detail_pane, artist_detail_row, artist_master,
     artist_master_row, artist_view, artist_view_css, discovery_hint, library_view_css,
 };
