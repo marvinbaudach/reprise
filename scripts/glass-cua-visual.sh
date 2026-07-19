@@ -99,7 +99,7 @@ assert_scroll_delivered() {
       or .effect == "unverifiable"
       or (
         .effect? == null
-        and (.delivery_mode? == "foreground" or .delivery_mode? == "background")
+        and .delivery_mode? == "foreground"
         and .verified? == false
         and .code? == null
         and .error? == null
@@ -125,7 +125,8 @@ scroll_grid() {
     --argjson amount "$amount" \
     --arg session "$session" \
     '{pid: $pid, window_id: $window_id, x: 780, y: 460,
-      direction: $direction, amount: $amount, by: "page", session: $session}')
+      direction: $direction, amount: $amount, by: "page", session: $session,
+      delivery_mode: "foreground"}')
   if ! cua_driver scroll "$payload" >"$action_path"; then
     echo "CUA scroll command failed: $stem" >&2
     return 1
@@ -193,7 +194,7 @@ run_position() {
   scroll_grid \
     "$app_pid" "$window_id" down 1 "$position-albums-under-header" >/dev/null
   end_path=$(scroll_grid \
-    "$app_pid" "$window_id" down 80 "$position-albums-at-end")
+    "$app_pid" "$window_id" down 50 "$position-albums-at-end")
   assert_snapshot_contains "$end_path" "$last_album"
   scroll_grid \
     "$app_pid" "$window_id" up 1 "$position-albums-above-end" >/dev/null
