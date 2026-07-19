@@ -36,7 +36,7 @@ pub(in crate::ui) fn css() -> String {
          .artist-master-sort > button {{ \
            min-height: 0; padding: 3px 6px; font-size: 12px; \
            background-color: transparent; box-shadow: none; border: none; \
-           transition: background-color {TRANSITION}; }}\n\
+           transition: background-color {TRANSITION}, transform {TRANSITION}; }}\n\
          .artist-master-sort > button:hover {{ \
            background-color: alpha(@window_fg_color, {SUBTLE_FILL_ALPHA}); }}\n\
          .artist-list {{ background-color: transparent; padding: 4px 8px; }}\n\
@@ -80,13 +80,14 @@ pub(in crate::ui) fn css() -> String {
          .artist-hero-shuffle {{ \
            padding: 8px 20px; min-height: 40px; color: @window_fg_color; \
            background-color: alpha(@window_fg_color, {SUBTLE_FILL_ALPHA}); \
-           box-shadow: none; transition: background-color {TRANSITION}; }}\n\
+           box-shadow: none; \
+           transition: background-color {TRANSITION}, transform {TRANSITION}; }}\n\
          .artist-hero-shuffle:hover {{ \
            background-color: alpha(@window_fg_color, {SUBTLE_FILL_HOVER_ALPHA}); }}\n\
          .artist-hero-menu {{ \
            min-width: 36px; min-height: 36px; border-radius: 999px; \
            background-color: alpha(@window_fg_color, {SUBTLE_FILL_ALPHA}); \
-           transition: background-color {TRANSITION}; }}\n\
+           transition: background-color {TRANSITION}, transform {TRANSITION}; }}\n\
          .artist-hero-menu:hover {{ \
            background-color: alpha(@window_fg_color, {SUBTLE_FILL_HOVER_ALPHA}); }}\n\
          .artist-section-title {{ \

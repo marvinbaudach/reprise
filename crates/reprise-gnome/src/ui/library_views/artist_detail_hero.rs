@@ -15,6 +15,7 @@ use gtk4::prelude::*;
 use crate::ui::artist_avatar;
 use crate::ui::artist_detail_pane::{ArtistCallback, HeroCallbacks};
 use crate::ui::strings;
+use crate::ui::style::buttons;
 use crate::ui::style::cover_accent::Rgb;
 use reprise_core::library::artist_detail::ArtistHeader;
 
@@ -179,12 +180,14 @@ fn build_actions(callbacks: &HeroCallbacks) -> gtk4::Box {
     play_all.add_css_class("player-bar-play");
     play_all.add_css_class("artist-hero-play");
     play_all.add_css_class("pill");
+    buttons::arm(&play_all, buttons::PRIMARY_CLASS);
     connect_artist_action(&play_all, &callbacks.on_play_all, callbacks);
     actions.append(&play_all);
 
     let shuffle = gtk4::Button::with_label(&strings::text(strings::SHUFFLE));
     shuffle.add_css_class("artist-hero-shuffle");
     shuffle.add_css_class("pill");
+    buttons::arm(&shuffle, buttons::ICON_CLASS);
     connect_artist_action(&shuffle, &callbacks.on_shuffle, callbacks);
     actions.append(&shuffle);
 
@@ -244,6 +247,7 @@ fn build_menu_button(callbacks: &HeroCallbacks) -> gtk4::MenuButton {
         .build();
     button.add_css_class("artist-hero-menu");
     button.add_css_class("flat");
+    buttons::arm(&button, buttons::ICON_CLASS);
     button.insert_action_group("artist-detail", Some(&group));
     button
 }
