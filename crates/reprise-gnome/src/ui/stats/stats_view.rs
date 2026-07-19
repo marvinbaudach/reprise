@@ -8,19 +8,19 @@ use chrono::Datelike;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::settings::{self, StatsLayout};
-use reprise_core::library::stats_period::{PeriodRange, StatsPeriod};
-use reprise_core::library::stats_screen::{group_track_ids, TopTrack};
-use reprise_core::library::stats_snapshot::{self, SortBy, StatsSnapshot};
+use reprise_core::library::stats_period::StatsPeriod;
+use reprise_core::library::stats_screen::{group_track_ids, stored_play_count_total, TopTrack};
+use reprise_core::library::stats_snapshot::{self, ComparisonPresentation, SortBy, StatsSnapshot};
 use rusqlite::Connection;
 
 use super::hourly_chart::HourlyChart;
 use super::stats_customize::StatsCustomize;
 use super::stats_genre_bar::StatsGenreBar;
+use super::stats_hero::StatsHero;
 use super::stats_highlights::{StatsHighlights, TopGenre};
 use super::stats_ribbon::StatsRibbon;
 use super::stats_spotlight::StatsSpotlight;
@@ -30,13 +30,11 @@ use crate::ui::strings;
 const CONTENT_MAX_WIDTH: i32 = 1120;
 const TOP_TRACK_LIMIT: usize = 10;
 const SECTION_SPACING: i32 = 28;
-const ASYMMETRIC_BREAKPOINT: f64 = 720.0;
+const ASYMMETRIC_NATURAL_LINE_LENGTH: i32 = 720;
 /// The asymmetric row keeps its 1.35 / 1 ratio, but both minimum widths have
-/// to fit *inside* [`ASYMMETRIC_BREAKPOINT`] together with the spacing —
-/// otherwise the row can never be allocated narrowly enough for the
-/// breakpoint to apply and the single-column layout is unreachable. The
-/// enclosing `ScrolledWindow` never scrolls horizontally, so this minimum is
-/// also the narrowest the whole window can get while the row is side by side.
+/// to fit inside [`ASYMMETRIC_NATURAL_LINE_LENGTH`] together with the spacing.
+/// The enclosing `ScrolledWindow` never scrolls horizontally, so this is also
+/// the narrowest the whole window can get while the row is side by side.
 const CLOCK_MIN_WIDTH: i32 = 324;
 const HIGHLIGHTS_MIN_WIDTH: i32 = 240;
 const ASYMMETRIC_SPACING: i32 = 20;
@@ -57,6 +55,7 @@ type PairCallback = Rc<RefCell<Option<Rc<dyn Fn(String, String)>>>>;
 type GenreCallback = Rc<RefCell<Option<Rc<dyn Fn(TopGenre)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
 
+#[derive(Clone)]
 pub(in crate::ui) struct StatsView {
     root: gtk4::ScrolledWindow,
     page_stack: gtk4::Stack,
@@ -66,11 +65,13 @@ pub(in crate::ui) struct StatsView {
     wired: Cell<bool>,
     connection: Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
     #[cfg_attr(not(test), allow(dead_code))]
-    page: gtk4::Box,
+    page: glib::WeakRef<gtk4::Box>,
     #[cfg_attr(not(test), allow(dead_code))]
-    asymmetric_row: gtk4::Box,
+    asymmetric_row: glib::WeakRef<adw::WrapBox>,
     #[cfg_attr(not(test), allow(dead_code))]
-    asymmetric_bin: adw::BreakpointBin,
+    hero_row: glib::WeakRef<adw::WrapBox>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    hero_time_row: glib::WeakRef<adw::WrapBox>,
     current_snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     /// Built once and shared: the period dropdown's handler holds it weakly,
     /// which is what keeps the handler from owning the page it lives in.
@@ -83,33 +84,13 @@ pub(in crate::ui) struct StatsView {
 
 impl StatsView {
     pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
-        let hero_time = label("0 h", "stats-headline-hours");
-        let comparison_pill = label("", "stats-pill");
-        comparison_pill.set_visible(false);
-        let hero_subline = label(
-            "0 plays \u{00b7} \u{00d8} 0 min/day \u{00b7} 0 artists",
-            "stats-headline-subtitle",
-        );
-        let hero_text = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        let time_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        time_row.append(&hero_time);
-        time_row.append(&comparison_pill);
-        hero_text.append(&time_row);
-        hero_text.append(&hero_subline);
-        hero_text.set_hexpand(true);
-
-        let period_model = gtk4::StringList::new(&[]);
-        let period_dropdown = gtk4::DropDown::builder().model(&period_model).build();
-        period_dropdown.add_css_class("stats-period-dropdown");
         let customize = StatsCustomize::new();
-        let controls = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        controls.set_valign(gtk4::Align::Center);
-        controls.append(&period_dropdown);
-        controls.append(customize.widget());
-        let hero = gtk4::Box::new(gtk4::Orientation::Horizontal, 18);
-        hero.set_valign(gtk4::Align::Center);
-        hero.append(&hero_text);
-        hero.append(&controls);
+        let hero = StatsHero::new(&customize);
+        let hero_time = hero.time.clone();
+        let comparison_pill = hero.comparison.clone();
+        let hero_subline = hero.subline.clone();
+        let period_dropdown = hero.period_dropdown.clone();
+        let period_model = hero.period_model.clone();
 
         let ribbon = StatsRibbon::new();
         let spotlight = StatsSpotlight::new();
@@ -125,25 +106,19 @@ impl StatsView {
         clock_section.set_width_request(CLOCK_MIN_WIDTH);
         highlights_section.set_hexpand(true);
         highlights_section.set_width_request(HIGHLIGHTS_MIN_WIDTH);
-        let asymmetric_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ASYMMETRIC_SPACING);
+        // This row needs height-for-width layout just like the hero. Let its
+        // owner measure wrapped lines instead of keeping a separately-owned
+        // breakpoint target behind a one-pixel size request.
+        let asymmetric_row = adw::WrapBox::new();
+        asymmetric_row.set_child_spacing(ASYMMETRIC_SPACING);
+        asymmetric_row.set_line_spacing(ASYMMETRIC_SPACING);
+        asymmetric_row.set_natural_line_length(ASYMMETRIC_NATURAL_LINE_LENGTH);
+        asymmetric_row.set_wrap_policy(adw::WrapPolicy::Natural);
+        asymmetric_row.set_justify(adw::JustifyMode::Fill);
+        asymmetric_row.set_justify_last_line(true);
+        asymmetric_row.set_hexpand(true);
         asymmetric_row.append(&clock_section);
         asymmetric_row.append(&highlights_section);
-        let asymmetric_bin = adw::BreakpointBin::new();
-        asymmetric_bin.set_width_request(1);
-        asymmetric_bin.set_height_request(1);
-        asymmetric_bin.set_child(Some(&asymmetric_row));
-        let condition = adw::BreakpointCondition::new_length(
-            adw::BreakpointConditionLengthType::MaxWidth,
-            ASYMMETRIC_BREAKPOINT,
-            adw::LengthUnit::Px,
-        );
-        let breakpoint = adw::Breakpoint::new(condition);
-        breakpoint.add_setter(
-            &asymmetric_row,
-            "orientation",
-            Some(&gtk4::Orientation::Vertical.to_value()),
-        );
-        asymmetric_bin.add_breakpoint(breakpoint);
 
         let top_tracks_box = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         let current_snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
@@ -165,11 +140,11 @@ impl StatsView {
         page.set_margin_bottom(32);
         page.set_margin_start(24);
         page.set_margin_end(24);
-        page.append(&hero);
+        page.append(&hero.root);
         page.append(&card(ribbon.widget()));
         page.append(&card(spotlight.widget()));
         page.append(&genres_section);
-        page.append(&asymmetric_bin);
+        page.append(&asymmetric_row);
         page.append(&section("TOP TRACKS", &top_tracks_content));
         let clamp = adw::Clamp::builder()
             .maximum_size(CONTENT_MAX_WIDTH)
@@ -179,6 +154,10 @@ impl StatsView {
         let empty = adw::StatusPage::builder()
             .title(strings::stats_empty_title())
             .icon_name("audio-x-generic-symbolic")
+            .build();
+        let imported = adw::StatusPage::builder()
+            .title(strings::stats_imported_title())
+            .icon_name("document-open-recent-symbolic")
             .build();
         // A failed query is not an empty history: telling the user to start
         // listening when the numbers exist but could not be read is a lie.
@@ -190,6 +169,7 @@ impl StatsView {
         let page_stack = gtk4::Stack::new();
         page_stack.add_named(&clamp, Some("sections"));
         page_stack.add_named(&empty, Some("empty"));
+        page_stack.add_named(&imported, Some("imported"));
         page_stack.add_named(&failed, Some("failed"));
         page_stack.set_visible_child_name("empty");
         let root = gtk4::ScrolledWindow::builder()
@@ -276,6 +256,7 @@ impl StatsView {
             clock_section: clock_section.clone(),
             genres_section: genres_section.clone(),
             highlights_section: highlights_section.clone(),
+            imported_page: imported,
         });
 
         Self {
@@ -286,9 +267,10 @@ impl StatsView {
             periods: Rc::new(RefCell::new(Vec::new())),
             wired: Cell::new(false),
             connection,
-            page,
-            asymmetric_row,
-            asymmetric_bin,
+            page: page.downgrade(),
+            asymmetric_row: asymmetric_row.downgrade(),
+            hero_row: hero.row.downgrade(),
+            hero_time_row: hero.time_row.downgrade(),
             current_snapshot,
             render,
             on_spotlight_play,
@@ -380,7 +362,8 @@ impl StatsView {
     #[cfg(test)]
     fn section_order(&self) -> Vec<&'static str> {
         let mut order = Vec::new();
-        let mut child = self.page.first_child();
+        let page = self.page.upgrade().expect("stats page must be alive");
+        let mut child = page.first_child();
         while let Some(widget) = child {
             order.push(self.section_name(&widget));
             child = widget.next_sibling();
@@ -429,6 +412,7 @@ struct RenderParts {
     clock_section: gtk4::Box,
     genres_section: gtk4::Box,
     highlights_section: gtk4::Box,
+    imported_page: adw::StatusPage,
 }
 
 fn refresh_parts(
@@ -442,11 +426,17 @@ fn refresh_parts(
     let result = {
         let conn = conn.borrow();
         let layout = settings::get_stats_layout(&conn);
-        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local)
-            .map(|snapshot| (snapshot, layout))
+        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local).and_then(|snapshot| {
+            let stored_plays = if snapshot.is_empty() {
+                stored_play_count_total(&conn)?
+            } else {
+                0
+            };
+            Ok((snapshot, layout, stored_plays))
+        })
     };
     match result {
-        Ok((snapshot, layout)) => {
+        Ok((snapshot, layout, stored_plays)) => {
             apply_layout_widgets(
                 layout,
                 &render.clock_section,
@@ -457,7 +447,14 @@ fn refresh_parts(
             // The stack decides what is on screen; hiding sections inside the
             // page it just switched away from changes nothing.
             if snapshot.is_empty() {
-                page_stack.set_visible_child_name("empty");
+                if stored_plays > 0 {
+                    render
+                        .imported_page
+                        .set_description(Some(&strings::stats_imported_description(stored_plays)));
+                    page_stack.set_visible_child_name("imported");
+                } else {
+                    page_stack.set_visible_child_name("empty");
+                }
             } else {
                 render_snapshot(render, &snapshot, period);
                 page_stack.set_visible_child_name("sections");
@@ -476,15 +473,7 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, period: Stats
     render
         .hero_time
         .set_label(&strings::hero_listening_time(snapshot.hero.total_ms));
-    if let Some(percent) = snapshot.hero.comparison_percent {
-        render.comparison_pill.set_label(&strings::comparison_pill(
-            percent,
-            &compared_period_name(period, &snapshot.period),
-        ));
-        render.comparison_pill.set_visible(true);
-    } else {
-        render.comparison_pill.set_visible(false);
-    }
+    render_comparison(render, snapshot.hero.comparison_presentation, period);
     render.hero_subline.set_label(&format!(
         "{} plays \u{00b7} \u{00d8} {} min/day \u{00b7} {} artists",
         format_thousands(snapshot.hero.plays),
@@ -518,6 +507,22 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, period: Stats
         &render.cover_loader,
         &render.top_track_generation,
     );
+}
+
+fn render_comparison(
+    render: &RenderParts,
+    presentation: Option<ComparisonPresentation>,
+    period: StatsPeriod,
+) {
+    let copy = presentation.and_then(|value| strings::comparison_copy(value, period));
+    if let Some(copy) = copy {
+        render.comparison_pill.set_label(&copy.pill);
+        render.comparison_pill.set_tooltip_text(Some(&copy.tooltip));
+        render.comparison_pill.set_visible(true);
+    } else {
+        render.comparison_pill.set_visible(false);
+        render.comparison_pill.set_tooltip_text(None);
+    }
 }
 
 fn build_sort_controls(
@@ -661,24 +666,6 @@ fn apply_layout_widgets(
     clock.set_visible(layout.clock);
     genres.set_visible(layout.genres);
     highlights.set_visible(layout.highlights);
-}
-
-/// Names the span the hero pill compares against. The comparison window is
-/// the equally long stretch immediately before the selected one, so only a
-/// full calendar year can be named by its year — for every other period that
-/// stretch is not "last year" and must not claim to be.
-fn compared_period_name(period: StatsPeriod, range: &PeriodRange) -> String {
-    match period {
-        StatsPeriod::Year(year) => year.saturating_sub(1).to_string(),
-        _ => strings::previous_days(span_days(range)),
-    }
-}
-
-fn span_days(range: &PeriodRange) -> i64 {
-    const SECONDS_PER_DAY: i64 = 86_400;
-    let span = range.end_unix.saturating_sub(range.start_unix).max(0);
-    span.div_euclid(SECONDS_PER_DAY)
-        .max(i64::from(span % SECONDS_PER_DAY > 0))
 }
 
 /// The strongest real genre of the period. The bundled "Other" segment is not

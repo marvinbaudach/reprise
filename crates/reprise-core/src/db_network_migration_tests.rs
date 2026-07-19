@@ -18,7 +18,8 @@ fn open_database_at(version: i64) -> Connection {
         (13, SCHEMA_V13),
         (14, SCHEMA_V14),
         (15, SCHEMA_V15),
-        (16, SCHEMA_V16),
+        (17, SCHEMA_V17),
+        (18, SCHEMA_V18),
     ] {
         if schema_version > version {
             break;
@@ -48,7 +49,7 @@ fn net_2_migration_preserves_existing_cover_usage() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 20);
+    assert_eq!(version, 21);
 }
 
 #[test]
@@ -135,8 +136,8 @@ fn net_2_migration_preserves_explicit_opt_outs() {
 }
 
 #[test]
-fn net_2_stats_v16_database_runs_network_grandfathering_at_v17() {
-    let conn = open_database_at(16);
+fn net_2_v15_database_runs_network_grandfathering_at_v16() {
+    let conn = open_database_at(15);
     conn.execute(
         "INSERT INTO settings (key, value) VALUES ('module.cover_download.enabled', '0')",
         [],
@@ -151,7 +152,7 @@ fn net_2_stats_v16_database_runs_network_grandfathering_at_v17() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 20);
+    assert_eq!(version, 21);
     assert!(!crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
     assert!(crate::modules::is_enabled(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
 }

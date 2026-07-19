@@ -46,6 +46,18 @@ ist kein Deaktivierungs-Ignore: solche Tests laufen als Merge-Blocker über
 `scripts/check-display-tests.sh --rule-named` und zählen als Abdeckung auch
 für `[aktiv]`-Regeln.
 
+**Erreichbarkeit.** Für jede Aktion, deren Sichtbarkeit an einen Zustand
+gebunden ist, gilt die Prüffrage: **Wie kommt der Nutzer in den Zustand, der
+sie zeigt?** Ist die Antwort „über genau diese Aktion" oder „gar nicht", ist
+die Regel unvollständig — unabhängig davon, wie korrekt jede Einzelbedingung
+ist. Ein regelbenannter Test muss den Weg **vom Startzustand aus** gehen, nicht
+den Zielzustand herstellen und dann prüfen. Zwei Befunde haben das erzwungen:
+„Hide" war nur im Digest erreichbar, der nur bei Überlauf erschien; und New
+Releases konnte sich nie befüllen, weil ✦ Einträge voraussetzt, „Fetch now"
+hinter ✦ liegt und kein Start-Abruf existierte (NR-8). Beide Male waren alle
+Einzeltests grün — der Fehler saß zwischen den Regeln, weil jeder Test den
+Zielzustand vorab herstellte.
+
 **Sprache.** Dieses Dokument und die Design-Docs sind Deutsch — die
 Arbeitssprache des Projekts. Tests und Skripte sind Code und damit Englisch
 (AGENTS.md); Regel-IDs und Status-Token werden dort wörtlich zitiert.
@@ -110,11 +122,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   sichtbaren Liste (siehe PLAY-2). Einfachklick = selektieren. Enter = wie
   Doppelklick. Ausnahme Queue-View: Doppelklick springt gemäß QUE-3 zum Track
   (Playhead), statt die Queue neu zu bauen.
-- **NAV-5** [geplant] [gtk] — Modus-Gedächtnis (Scroll + Selektion je
+- **NAV-5** [aktiv] [gtk] — Modus-Gedächtnis (Scroll + Selektion je
   Tracks/Albums/Artists) gilt nur innerhalb der Session; auch Sidebar-/
-  Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. START-1
-  restauriert über Neustarts ausschließlich die zuletzt aktive Ansicht samt
-  Scroll-Position; alle anderen Modi starten oben, unselektiert.
+  Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. Der
+  Scroll-Anker besteht aus Track-/Album-ID plus Offset, nie aus einem rohen
+  Pixelwert; Re-Sort und Insert halten dadurch den Inhalt an seiner Position.
+  START-1 restauriert über Neustarts ausschließlich die zuletzt aktive Ansicht
+  samt Scroll-Position; alle anderen Modi starten oben, unselektiert.
 - **NAV-6** [aktiv] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
   live; Esc leert und schließt. Suche navigiert nie selbst.
 - **NAV-7** [geplant] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,
@@ -133,6 +147,10 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   geladenen Tracks, selektiert dessen Zeile und zentriert sie ohne
   scrollIntoView-Kantenkleben. Der Sprung pusht auf den globalen
   History-Stack; Back kehrt zum vorherigen Ort zurück.
+- **NAV-11** [aktiv] [gtk] — Jeder bedienbare Sidebar-Eintrag exponiert
+  gegenüber Assistenztechnik eine eigene Bezeichnung, eine interaktive Rolle
+  und eine auslösbare Aktion. Sektionsüberschriften bleiben nicht bedienbar,
+  werden aber semantisch als Überschriften exponiert.
 
 ## C. Abspielen, Queue, Shuffle, Filter
 
@@ -175,11 +193,17 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   natürlich.
 - **PLAY-6** [geplant] [gtk] — Shuffle/Repeat sind globale Player-Zustände
   (Player-Leiste), keine Ansichts-Zustände. Repeat zyklisch: off → all → one.
-- **PLAY-7** [geplant] [gtk] — Die Player-Leiste ist eine strukturelle
+- **PLAY-7** [ersetzt durch PLAY-7a] — Die Player-Leiste ist eine strukturelle
   Abgrenzung, kein Overlay: Sie beansprucht ihre eigene Höhe im Layout, und
   kein Content-Element (Trackliste, Sidebar, rechte Info-Spalte) läuft je
   unter oder hinter ihr durch. Ihr Hintergrund ist opak.
   <!-- REVIEW: Regelvorschlag -->
+- **PLAY-7a** [aktiv] [gtk] — Header, geöffnete Suche und Player-Leiste
+  liegen als globale Glaszonen über allen Bibliotheksansichten. Der Content
+  läuft sichtbar darunter; sein Scroll-Anfang und -Ende erhalten exakt die
+  tatsächlich allokierte Höhe der überlagernden Top-/Bottom-Zone als
+  Scroll-Inset, sodass keine letzte Zeile verdeckt oder unbedienbar bleibt.
+  Die Player-Leiste funktioniert spiegelbildlich oben und unten.
 
 ## D. Albums- & Artists-Ansicht
 
@@ -227,7 +251,14 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
   die Album-Übersicht stellt den Tastaturfokus auf genau der zuvor
   aktivierten Albumkachel wieder her und scrollt sie bei Bedarf sichtbar.
-- **ART-1** [geplant] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
+- **GRID-7** [aktiv] [gtk] — Die Album-Übersicht trägt hinter ihren Karten
+  eine dezente Textur des aktuell spielenden Covers. Das Cover wird pro
+  Trackwechsel genau einmal auf 32 px verkleinert und vorgerendert
+  weichgezeichnet; beim Zeichnen wird nur diese gecachte Textur skaliert,
+  niemals ein Live-Blur über der Liste ausgeführt. Ohne Cover, nach Stop und
+  in High Contrast bleibt die Textur unsichtbar. Sie ist nicht interaktiv und
+  verwendet den Coverinhalt, färbt aber keine Chrome-Fläche ein.
+- **ART-1** [aktiv] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.
 - **ART-2** [geplant] [gtk] — Artist-Detail: Hero-Glow (vorberechnete
@@ -385,9 +416,9 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **QUE-1** [aktiv] [gtk] — Ein gemeinsames Queue-Modell speist zwei
   Flächen mit unterschiedlicher Tiefe: Die Sidebar-Zeile „Queue" öffnet die
   ColumnView als Verwaltungsfläche mit Sektionen, DnD-Reorder, Rechtsklick,
-  Clear und StatusPage. Das Playerleisten-Icon öffnet dagegen das Panel auf
-  „Up Next" als Sichtfläche derselben Queue mit Sektionen, Sprung und Remove,
-  aber ohne Reorder oder DnD. Keine Fläche führt eine eigene zweite Liste.
+  Clear und StatusPage. Der Panel-Toggle öffnet „Up Next" als Sichtfläche
+  derselben Queue mit Sektionen, Sprung und Remove. Die Playerleiste hat kein
+  redundantes Queue-Icon. Keine Fläche führt eine eigene zweite Liste.
 - **QUE-2** [aktiv] [gtk] — Das Panel gliedert die Zukunft in genau zwei
   bedingte Sektionen: **Next in Queue** für manuell eingereihte Tracks und
   **Continuing from „<Album/Playlist>"** für den automatischen Kontext aus
@@ -812,21 +843,30 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 - **NPP-10** [aktiv] [gtk] — Trackwechsel ist kein Ortswechsel: Cover,
   Titelblock, Glow und Tab-Inhalt crossfaden **gemeinsam** in einem
   Übergang (Standard-Token, MOT-5), niemals als Slide; die Lyrics starten
-  danach auf Zeile 0 zentriert. `gtk-enable-animations=false` schaltet auch
-  hier hart (MOT-7).
+  danach bei Zeile 0 und positionieren sie gemäß LYR-4.
+  `gtk-enable-animations=false` schaltet auch hier hart (MOT-7).
 
 ## Q. Suche
 
 - **SEARCH-1** [aktiv] [gtk] — Im Ruhezustand belegt die Suche in der
   Headerbar nur eine Lupe. Das Suchfeld lebt in einer zweiten, standardmäßig
   eingeklappten Top-Bar und wird nie als permanentes breites Feld dargestellt.
-- **SEARCH-2** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+- **SEARCH-2** [ersetzt durch SEARCH-2a] — Ein Klick auf die Lupe, Ctrl+F oder direktes
   Tippen öffnet die Suchleiste und fokussiert das Feld. Sie ist ein
   vollbreiter Streifen bündig unter der Headerbar, hat eine eigene Fläche mit
   unterer Trennlinie und schiebt beim Reveal den Inhalt nach unten; das
   Suchfeld ist darin per Clamp auf ungefähr 450 px zentriert. Die Leiste
   slidet mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern
   gilt deren Default, sofern er dem Standard-Token entspricht.
+- **SEARCH-2a** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+  Tippen öffnet die Suchleiste und fokussiert das Feld. Header und Suche sind
+  eine zusammenhängende obere Glaszone mit gemeinsamem neutralem Blur, Tint
+  und genau einer unteren Hairline; Content läuft unter beiden weiter. Der
+  Reveal vergrößert das obere Scroll-Inset um die tatsächlich allokierte
+  Suchleistenhöhe, bei einer oberen Player-Leiste zusätzlich um deren Höhe.
+  Das Suchfeld ist per Clamp auf ungefähr 450 px zentriert. Die Leiste slidet
+  mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern gilt
+  deren Default, sofern er dem Standard-Token entspricht.
 - **SEARCH-3** [aktiv] [gtk] — Die Lupe ist ein ToggleButton und trägt bei
   offener Suchleiste **oder** aktiver nicht-leerer Query den
   `:checked`-Akzentstil. Eine Query bleibt auch bei eingeklappter Suchleiste
@@ -875,6 +915,22 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Auswahl „Top artists only / all artists". Bei ausgeschaltetem Modul gibt es
   weder Fetch noch ✦; Cover-, Portrait- und Lyrics-Module gehören nicht zu
   dieser Regel und werden im Folge-Branch `feat/network-opt-in` geregelt.
+- **NR-8** [aktiv] [gtk] — Das Einschalten des Moduls ist die Zustimmung und
+  löst deshalb sofort den ersten Abruf aus: `set_enabled(true)` stößt einen
+  Fetch an. Solange nie erfolgreich abgerufen wurde, bleibt ✦ **sichtbar** und
+  trägt einen Leerzustand („Checking for new releases…" während des Laufs,
+  danach „No upcoming releases from your artists"). Erst nach dem ersten
+  abgeschlossenen Durchlauf greift NR-5 wieder normal.
+  Zwei Kanten: Ein **fehlgeschlagener** erster Abruf (offline) hält ✦ sichtbar
+  mit Retry-Leerzustand, statt den Knopf verschwinden zu lassen — sonst
+  entsteht erneut „eingeschaltet, aber weg". Und der Erst-Leerzustand trägt
+  **keinen** Badge-Punkt: er ist Rückmeldung, keine Bitte (P-1).
+  *Grund:* NR-5 wurde formuliert, als Befüllen garantiert war. Opt-in hat den
+  Dauerzustand „aktiv, nie befüllt" geschaffen, für den es keinen Einstieg gab
+  — ✦ erscheint nur bei Einträgen, „Fetch now" sitzt im Popover hinter ✦, und
+  einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
+  kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
+  ausdrücklicher Aktivierung, nur sofort statt nie.
 
 ## S. Flächen & Geometrie
 
@@ -977,7 +1033,117 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   tatsächlich verdrahtete Aktionen und bleibt mit ihnen im selben Commit
   synchron.
 
-## U. My Stats
+## T. Netz-Features opt-in
+
+- **NET-1** [aktiv] [gtk] — Automatische und massenhafte Netzabrufe sind
+  opt-in. Cover-Downloads, Artist-Portraits und New Releases starten nur bei
+  eingeschaltetem Modul; Online-Lyrics haben ebenfalls einen Schalter, damit
+  vollständig netzfreie Nutzung möglich bleibt. Ein Ausschalten wirkt sofort
+  und versteckt bereits lokal gecachte Bilder nicht.
+- **NET-2** [aktiv] [core] — Updates schützen nachweisbare bisherige Nutzung:
+  vorhandene heruntergeladene Cover bzw. Portraits aktivieren ihr Modul,
+  bestehende Bibliotheksdatenbanken behalten Online-Lyrics, und ein zuvor
+  aktives `artist_news` wird als aktives New-Releases-Modul übernommen.
+  Negative Cache-Marker gelten nicht als Nutzung; frische Installationen
+  starten mit allen vier Netz-Modulen aus.
+- **LYR-1** [geplant] [core] — Lokale eingebettete Songtexte und `.lrc`-
+  Sidecars werden unabhängig vom Online-Lyrics-Modul angezeigt. Reprise liest
+  diese lokalen Formate heute noch nicht; die Regel bleibt bis zu dieser
+  eigenen Formatfunktion geplant.
+- **LYR-2** [aktiv] [gtk] — LRCLIB wird ausschließlich bei offenem Lyrics-
+  Tab, fehlendem lokalen Text und eingeschaltetem Online-Lyrics-Modul
+  kontaktiert. Es gibt weder Prefetch noch Batch-Abruf für kommende Queue-
+  Einträge.
+- **LYR-3** [aktiv] [gtk] — Bei offenem Lyrics-Tab, fehlendem Text und
+  ausgeschaltetem Modul zeigt eine zentrierte StatusPage Icon, Titel
+  „Online lyrics are disabled", Untertitel „Enable them to load missing
+  lyrics automatically" und „Enable in Settings" als Deep-Link zur kurz
+  hervorgehobenen Plugins-Zeile. Solange LYR-1 geplant ist, verspricht dieser
+  Zustand keine lokalen eingebetteten Songtexte. Ein eingeschaltetes Modul
+  ohne Treffer zeigt stattdessen „No lyrics found".
+- **DISCOVER-1** [aktiv] [gtk] — Netz-Features ohne dauerhaft sichtbare
+  eigene Fläche erhalten genau einen dezenten, schließbaren Inline-Hinweis am
+  Ort der sichtbaren Lücke: Cover ab drei gleichzeitig sichtbaren Fallback-
+  Kacheln, Portraits ab drei gleichzeitig sichtbaren Initialen-Avataren und
+  New Releases am Kopf der Artists-Ansicht. Sichtbare Evidenz rastet den
+  Hinweis ein; einmal gezeigt oder geschlossen kehrt er dauerhaft nicht
+  zurück. Der Hinweis ist kein Badge und kein Toast.
+- **DISCOVER-2** [aktiv] [gtk] — Pro Ansicht ist höchstens eine
+  Aktivierungszeile sichtbar. Treffen Portrait- und New-Releases-Hinweis in
+  der Artists-Ansicht zusammen, werden sie zu einer Zeile „Enable network
+  features for artists (images & new releases) →" mit Deep-Link auf die
+  Plugins-Seite kombiniert; zwei gestapelte Aktivierungszeilen sind verboten.
+## U. UI-Politur, Kontrast & ansichtsübergreifender Kontext
+
+<!-- Entscheidungen und die Abgrenzung zu Batch B stehen in
+     docs/superpowers/plans/2026-07-18-ui-polish-beschluesse.md. -->
+
+- **SEARCH-6** [aktiv] [gtk] — Lupe und Ctrl+F toggeln die Suchleiste
+  beidseitig (zeigen ↔ verstecken). Das Verstecken löscht die Query nie: bei
+  nicht leerer Query bleibt ihr Chip sichtbar und die Lupe im
+  `:checked`-Akzentstil (FIL-1, SEARCH-3/5).
+- **LYR-4** [aktiv] [gtk] — Die Zentrierung der aktiven Lyrics-Zeile wird
+  am Songanfang nach oben geklemmt. Solange nicht genug Kontextzeilen über
+  der aktiven Zeile liegen, sitzt der Textblock oben; erst mit genügend
+  Vorlauf wandert die aktive Zeile in die Mitte.
+- **STYLE-2** [aktiv] [gtk] — Content und Tracktabelle verwenden die
+  `.view`-Stufe; linke Sidebar und rechtes Now-Playing-Panel verwenden
+  gemeinsam die eine Stufe höhere `sidebar_bg`-Fläche des aktiven Themes.
+  Beide Flanken tragen an ihrer Innenkante eine 1-px-Hairline. Es gibt keine
+  pane-spezifische Nachtönung und keine hartkodierte Pane-Fläche.
+- **STYLE-3** [geplant] [gtk] — Zwei Akzentrollen bleiben getrennt: der feste
+  App-Akzent (`@accent_color`) bezeichnet dauerhafte UI-Bedeutung wie
+  Selektion, Ratings, aktive Toggles, Links, Chips und Fokus; der dynamische
+  Playback-Akzent (`@reprise_player_accent`) bezeichnet ausschließlich den
+  laufenden Track wie Play/Pause, Waveform, Playing-Row, EQ, Glow und
+  GRID-1-Innenring. Ein Element mischt die Rollen nie.
+- **STYLE-4** [aktiv] [gtk] — Chrome-Glas ist neutral und theme-abhängig,
+  niemals vom Cover-Akzent eingefärbt. GL/NGL/Vulkan verwenden 24 px
+  Backdrop-Blur über einem neutralen Tint-Floor von mindestens 80 %;
+  Cairo, unbekannte Renderer, High Contrast und deaktivierte Animationen
+  degradieren fail-closed zu einem neutralen, mindestens 94 % opaken Tint.
+- **CONTRAST-1** [aktiv] [gtk] — Es gibt drei zentrale Textstufen: Primär
+  ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
+  Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
+  Hinweise und deaktivierte Sekundärtexte. Passende Adwaita-Named-Colors
+  haben Vorrang vor eigenen Alphas; pro Element wird nicht nachgetönt.
+- **CONTRAST-2** [aktiv] [gtk] — Jede „N tracks · Dauer"-Statuszeile ist
+  eine echte untere Leiste mit definierter Fläche und oberer Hairline. Sie
+  reserviert eigenen Platz und überdeckt nie eine Trackzeile; erst gegen
+  diese feste Fläche wird ihr Sekundärtext-Kontrast bestimmt.
+- **CONTRAST-3** [aktiv] [gtk] — Statuszeilen, Spaltenköpfe,
+  Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
+  Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
+  Kleinschrift und benötigt dieselbe Prüfung wie Hint bei Normalgröße.
+- **CONTRAST-4** [aktiv] [gtk] — Jeder aktive Text und jedes aktive Icon im
+  Glas erreicht mindestens 4,5:1 gegen den Worst Case seiner Zone: den
+  Tint-Floor komponiert über dem hellsten beziehungsweise dunkelsten
+  durchscheinenden Content. Artist, Zeit, Suchfeld und Header-Aktionen sind
+  aktive Inhalte; nur deaktivierte oder rein dekorative Elemente dürfen
+  darunter liegen.
+- **NAV-10** [aktiv] [gtk] — Der laufende Kontext bleibt in allen Ansichten
+  mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim ersten
+  Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel stellen
+  NAV-5s gemerkten ID-plus-Offset-Anker wieder her. Explizites „Go to
+  album/artist" springt immer deterministisch; Selektion folgt der Wiedergabe
+  nie.
+- **QUE-7** [aktiv] [gtk] — Up Next besteht aus der manuellen Queue plus
+  einem virtuellen, benannten Kontext-Tail mit Count. Der Tail wird nicht als
+  Einzelzeilen materialisiert, sondern nur im sichtbaren Fenster gerendert;
+  die Sidebar-Zeile „Queue" zählt ausschließlich die manuelle Queue und zeigt
+  bei null keinen Zähler.
+- **QUE-8** [aktiv] [gtk] — Drag-Reorder existiert ausschließlich in „Next
+  in Queue". Die manuelle Sektion ist umsortierbar; ein Drag aus „Continuing"
+  nach oben materialisiert genau diesen Eintrag in der manuellen Sektion.
+  Multi-Select, Clear, Save-as-Playlist und das vollständige Kontextmenü
+  bleiben in der Queue-ColumnView.
+- **NPP-11** [aktiv] [gtk] — Die Panel-Ansichten verwenden einen
+  zentrierten `AdwViewSwitcher` als Title-Widget und degradieren bei schmalem
+  Fenster adaptiv zu einer unteren `AdwViewSwitcherBar` oder einem
+  icons-only `AdwInlineViewSwitcher` per `AdwBreakpoint`. Umsetzung in Batch
+  B; siehe Beschlussdokument.
+
+## V. My Stats
 
 - **STATS-0** [aktiv] [core] — Ein „play" ist überall dieselbe Sache:
   mindestens 50 % des Tracks oder mindestens vier Minuten gehört. Genau diese
@@ -994,16 +1160,39 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Stunden („68 hours"; unter einer Stunde in Minuten, nie „0 hours"), eine
   Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
   Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
-  Sekundär-Ton. Rechts steht das Zeitraum-Dropdown („<Jahr> so far / <Vorjahr> /
-  All time / Last 30 days"). Darunter läuft ein schlankes Area-Ribbon der
+  Sekundär-Ton. Bei ausreichender Breite steht rechts das Zeitraum-Dropdown
+  („<Jahr> so far / <Vorjahr> / All time / Last 30 days"). Bevor Gesamtzeit
+  oder Pill ellipsieren, brechen Dropdown und Customize-Menü unter den Hero
+  um; bei noch engerer Breite steht die Pill unter dem Stundenanker. Darunter
+  läuft ein schlankes Area-Ribbon der
   Hörzeit, dessen Achse **exakt dem gewählten Zeitraum** folgt — „2026 so far"
   zeigt Jan–Jul, nie ein rollendes 12-Monats-Fenster. Der laufende Bucket ist
   offen markiert (gestrichelt, hohler Punkt), der Peak gesetzt; Hover nennt den
   exakten Wert. Fehlt eine Vorperiode mit Hörzeit, entfällt die Pill. Die Pill
-  **benennt** die verglichene Spanne, statt „previous period" zu sagen:
-  verglichen wird die gleich lange Spanne unmittelbar davor, also trägt nur ein
-  volles Kalenderjahr den Namen des Vorjahres — jede andere Periode heißt
-  „previous N days", denn die Spanne vor „2026 so far" ist nicht „2025".
+  **benennt** die verglichene Spanne, statt „previous period" zu sagen. Die
+  Vorperiode ist gleich lang **und** saisonal deckungsgleich: „2026 so far"
+  wird gegen Jan–Jul 2025 gerechnet und heißt „vs same period 2025", nie gegen
+  die gleich lange Strecke unmittelbar davor (Jun–Dez 2025) — Hörzeit ist
+  saisonal, sonst stünde Sommer gegen Winter. Ein volles Kalenderjahr wird
+  gegen das ganze Vorjahr gerechnet („vs 2025"), das rollende Fenster gegen die
+  30 Tage direkt davor („vs previous 30 days"), denn dafür gibt es keine
+  wiedererkennbare Kalenderentsprechung ein Jahr zurück. Der 29. Februar klemmt
+  im Vorjahr auf den 28. „All time" hat keine Vorperiode und trägt nie eine
+  Pill.
+- **STATS-1a** [aktiv] [core] — Die Vergleichs-Pill bleibt bei jedem Verhältnis
+  lesbar: Anstiege unter +1000 % erscheinen weiter als ganze Prozentzahl, ab
+  +1000 % als gerundeter Faktor („▲ ×11 vs 2025"). Eine sinnvolle
+  Nachkommastelle bleibt erhalten („×11,5"), eine bedeutungslose Null entfällt
+  („×11", nie „×11,0"). Starke Rückgänge ab 50 % verwenden dieselbe Form mit
+  Abwärtsmarker („▼ ×0,3"); ein nichtnulliger Faktor unter 0,1 bleibt als
+  „▼ ×<0,1" ehrlich und rundet nie auf „×0". Lag die Vergleichszeit unter einer
+  Minute, ist sie für die sichtbare Minutengranularität effektiv null; statt
+  Prozent oder Faktor steht eine zeitraumgerechte qualitative Aussage wie
+  „New this year".
+  Die Pill nennt nur die kurze Referenz („vs 2025") und ellipsiert nie; der
+  Tooltip trägt die vollständige Semantik („vs same period 2025"). `×` und
+  Dezimaltrenner bleiben übersetzbar. Saisonale Spanne und Vergleichsrechnung
+  aus STATS-1 ändern sich dadurch nicht.
 - **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
   #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
   Zeile „N plays · N h · N % of your artist listening" — der Anteil bezieht
@@ -1053,6 +1242,15 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   read"), nie die Einladung „Start listening to see your stats". Sichtbarkeit
   entsteht dabei über die Seitenumschaltung, nicht über zusätzliches
   Ein-/Ausblenden einzelner Sektionen darunter.
+- **STATS-6b** [aktiv] [gtk] — Importierte Hörhistorie ist kein normaler
+  Leerzustand: enthält der gewählte Zeitraum keine `listen_events`, während
+  `SUM(tracks.play_count) > 0` ist, erscheint eine eigene Statusseite („Your
+  Rhythmbox history was imported"), nennt die Zahl der importierten Plays und
+  erklärt, dass detaillierte Statistiken ab jetzt mit dem Hören in Reprise
+  entstehen. Sobald im Zeitraum echte `listen_events` vorliegen, verschwindet
+  die Seite selbständig. Eine frische Bibliothek ohne Zähler behält den
+  regulären Leerzustand. `tracks.play_count` entscheidet ausschließlich über
+  diese Nachricht und speist gemäß STATS-0 weiterhin keine Statistik.
 - **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
   kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
   Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
@@ -1099,48 +1297,104 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
   Schreibvorgang.
 
-## V. Netz-Features opt-in
+## W. Buttons & Interaktionszustände
 
-- **NET-1** [aktiv] [gtk] — Automatische und massenhafte Netzabrufe sind
-  opt-in. Cover-Downloads, Artist-Portraits und New Releases starten nur bei
-  eingeschaltetem Modul; Online-Lyrics haben ebenfalls einen Schalter, damit
-  vollständig netzfreie Nutzung möglich bleibt. Ein Ausschalten wirkt sofort
-  und versteckt bereits lokal gecachte Bilder nicht.
-- **NET-2** [aktiv] [core] — Updates schützen nachweisbare bisherige Nutzung:
-  vorhandene heruntergeladene Cover bzw. Portraits aktivieren ihr Modul,
-  bestehende Bibliotheksdatenbanken behalten Online-Lyrics, und ein zuvor
-  aktives `artist_news` wird als aktives New-Releases-Modul übernommen.
-  Negative Cache-Marker gelten nicht als Nutzung; frische Installationen
-  starten mit allen vier Netz-Modulen aus.
-- **LYR-1** [geplant] [core] — Lokale eingebettete Songtexte und `.lrc`-
-  Sidecars werden unabhängig vom Online-Lyrics-Modul angezeigt. Reprise liest
-  diese lokalen Formate heute noch nicht; die Regel bleibt bis zu dieser
-  eigenen Formatfunktion geplant.
-- **LYR-2** [aktiv] [gtk] — LRCLIB wird ausschließlich bei offenem Lyrics-
-  Tab, fehlendem lokalen Text und eingeschaltetem Online-Lyrics-Modul
-  kontaktiert. Es gibt weder Prefetch noch Batch-Abruf für kommende Queue-
-  Einträge.
-- **LYR-3** [aktiv] [gtk] — Bei offenem Lyrics-Tab, fehlendem Text und
-  ausgeschaltetem Modul zeigt eine zentrierte StatusPage Icon, Titel
-  „Online lyrics are disabled", Untertitel „Enable them to load missing
-  lyrics automatically" und „Enable in Settings" als Deep-Link zur kurz
-  hervorgehobenen Plugins-Zeile. Solange LYR-1 geplant ist, verspricht dieser
-  Zustand keine lokalen eingebetteten Songtexte. Ein eingeschaltetes Modul
-  ohne Treffer zeigt stattdessen „No lyrics found".
-- **DISCOVER-1** [aktiv] [gtk] — Netz-Features ohne dauerhaft sichtbare
-  eigene Fläche erhalten genau einen dezenten, schließbaren Inline-Hinweis am
-  Ort der sichtbaren Lücke: Cover ab drei gleichzeitig sichtbaren Fallback-
-  Kacheln, Portraits ab drei gleichzeitig sichtbaren Initialen-Avataren und
-  New Releases am Kopf der Artists-Ansicht. Sichtbare Evidenz rastet den
-  Hinweis ein; einmal gezeigt oder geschlossen kehrt er dauerhaft nicht
-  zurück. Der Hinweis ist kein Badge und kein Toast.
-- **DISCOVER-2** [aktiv] [gtk] — Pro Ansicht ist höchstens eine
-  Aktivierungszeile sichtbar. Treffen Portrait- und New-Releases-Hinweis in
-  der Artists-Ansicht zusammen, werden sie zu einer Zeile „Enable network
-  features for artists (images & new releases) →" mit Deep-Link auf die
-  Plugins-Seite kombiniert; zwei gestapelte Aktivierungszeilen sind verboten.
+<!-- Sektionsbuchstabe: V (My Stats) ist die letzte auf main vergebene
+     Sektion; W schließt lückenlos an. Die Buchstabenlage wurde beim Einfügen
+     gegen den main-Stand verifiziert. Achtung beim Merge: feature/tag-rework
+     beansprucht auf einer älteren Basis ebenfalls ein „W" (Library Doctor),
+     dort ist aber die ganze Lage ab T verschoben — der Buchstabe ist bei
+     dessen Rebase neu zu vergeben, nicht hier. -->
 
-## W. Library Doctor / Tag Cleanup
+Ein Button, der auf Zeigen und Drücken nicht antwortet, ist für den Nutzer
+kaputt, auch wenn er funktioniert. Reprise hatte das Problem nicht, weil
+Adwaita zu wenig liefert, sondern weil eigenes App-CSS auf
+`STYLE_PROVIDER_PRIORITY_APPLICATION` läuft und die Theme-Regeln unabhängig
+von der Spezifität schlägt: ein *zustandsloses* `background-color: transparent`
+auf einem Button-Selektor löscht Adwaitas `:hover` und `:active` gleich mit.
+Deshalb gilt hier nicht „mehr Effekte", sondern: **ein Zustands-Vokabular,
+zentral definiert, überall angewandt** (BTN-4, die Button-Lesart von STYLE-1).
+
+- **BTN-1** [aktiv] [gtk] — Jeder klickbare Button hat vier unterscheidbare
+  Zustände, und jeder ist sichtbar. **Rest** ruht. **Hover** hebt die Fläche an:
+  Icon-Buttons bekommen einen sichtbaren Background (weiß ~8 %), Cursor
+  `pointer`, Übergang im Micro-Token (150 ms) — nicht nur ein Schatten.
+  **Active/Pressed** sinkt sofort ein: Fläche weiß ~14 % plus `scale(0.94)`,
+  damit der Klick landet. **Focus-visible** ist ein Akzent-Ring für die
+  Tastatur und nie der Hover-Zustand allein. Der Cursor ist dabei
+  Widget-Sache, nicht CSS: GTK4-CSS kennt keine `cursor`-Property, also setzt
+  ihn `style::buttons::arm` — und zwar nur auf app-eigenen Flächen, damit
+  Dialoge und Preferences nativ bleiben.
+  <!-- Bewusste HIG-Abweichung: Adwaita-Buttons ändern den Cursor nicht. -->
+- **BTN-2** [aktiv] [gtk] — Toggle-Buttons zeigen ihren Zustand dauerhaft, nicht
+  nur im Moment des Klicks. Shuffle und Repeat sind beide `GtkToggleButton` und
+  sprechen dasselbe `:checked`: Akzentfläche im App-Akzent (nie im Cover-Akzent)
+  plus ein kleiner Punkt unter dem Icon als zweites, **nicht-farbliches** Signal
+  — Farbe allein trägt bei Farbenfehlsichtigkeit nicht. Der Zustand überlebt
+  Hover und Unhover; Hover moduliert nur die Helligkeit der Fläche und kippt die
+  Zustandsanzeige nie. Repeat-One schaltet zusätzlich auf das Icon mit der „1".
+  <!-- Der Punkt ist eine zweite Background-Ebene (radial-gradient), kein
+       Extra-Widget: er funktioniert so auch auf runden Buttons. „Gefülltes
+       Icon" aus der Vorlage ist nicht umsetzbar — der Adwaita-Symbolic-Satz
+       hat für shuffle/repeat keine gefüllte Variante; das Füllsignal liefert
+       die Akzentfläche. -->
+- **BTN-3** [aktiv] [gtk] — Nicht alle Buttons sind gleich laut, und die
+  Lautstärke ist eine Stufe, keine Einzelfallentscheidung. **Primär** (Play,
+  Create Mix, Apply): Akzentfläche, stärkster Hover und Press. **Standard**
+  (Icon-Transport, Header-Aktionen): flach, Hover-Background, dezenter Press.
+  **Tertiär** (Menüeinträge, Listenzeilen): nur Background-Hover, kein Scale —
+  eine Zeile in einer Liste darf unter dem Cursor nicht springen. Der große
+  Play/Pause-Knopf ist die Hauptaktion und darf beim Press sichtbarer antworten
+  als seine Nachbarn: zusätzlich ein Ring im Playback-Akzent.
+- **BTN-4** [aktiv] [gtk] — Hover, Active und Focus sind **einmal** definiert
+  (`ui/style/buttons.rs`) und werden überall angewandt, per Klasse oder — wo
+  Adwaita die Buttons intern baut — per Selektor aus derselben Liste. Kein
+  Per-Button-Nachtönen. Eine Fläche darf ihre eigene *Ruheoptik* behalten
+  (Füllung, Radius, ein gestalteter Hover wie im Kontextmenü), aber niemals
+  `:active` oder `:focus-visible` lokal definieren. Hover und Press sind Alphas
+  über `currentColor` — nicht über den Akzent, der im Glas der Player-Bar und
+  der Now-Playing-Tableiste versackt, und nicht über ein festes Weiß, das in den
+  hellen Paletten unsichtbar wäre. `currentColor` ist die Vordergrundfarbe der
+  Fläche selbst, also wird immer auf dem Tint gemessen und nie auf
+  Nulluntergrund. Bei `gtk-enable-animations = false` entfallen Scale und
+  Übergang, **der Zustandswechsel bleibt** und schaltet hart — Rückmeldung darf
+  nie ganz verschwinden.
+  <!-- CSS-`transition` und `@keyframes` folgen dem Setting von selbst (MOT-7,
+       Probe `mot_7_css_honours_enable_animations_setting`). Ungegated bliebe
+       nur `transform` in `:active` — ein statischer Zustandsstil, kein
+       Übergang. Den neutralisiert der Provider in `style/reduced_motion.rs`. -->
+
+## X. Lokales Klangprofil
+
+- **AC-1** [aktiv] [gtk] — Die lokale Audioanalyse ist bei einer neuen
+  Installation ausgeschaltet. Erst „Analyze audio locally" startet Arbeit;
+  die Erklärung nennt ausdrücklich, dass Reprise Musikdateien nur lokal liest,
+  nichts hochlädt und vorhandene Profile beim Ausschalten behält. Die Funktion
+  steht unter Library, nicht auf der Plugins-Seite.
+- **AC-2** [aktiv] [core] — Ein Klangprofil behauptet keine Emotion. Es
+  projiziert versionierte Audio-Evidenz ausschließlich auf Intensity,
+  Brightness, Dynamicity und Rhythmicity im Bereich 0–1; Tempo bleibt optional
+  und trägt eine eigene Konfidenz. Veraltete oder nicht endliche Werte gelten
+  nie als aktuelles Profil.
+- **AC-3** [aktiv] [gtk] — Aktivierte Analyse läuft mit genau einem
+  Hintergrund-Worker und zeigt fertig/gesamt/fehlgeschlagen. Pause, Fortsetzen,
+  Abbrechen und „Retry failed" sind erreichbar; ein Neustart setzt offene
+  Arbeit fort. Ausschalten startet keine neue Profil-Arbeit, verhindert aber
+  niemals den bestehenden Waveform-Backfill.
+- **AC-4** [aktiv] [gtk] — Das rechte Now-Playing-Panel besitzt neben „Up
+  Next" und „Lyrics" den adaptiven Tab „Audio Character" für den geladenen
+  Track. Er unterscheidet Disabled, Pending, Failed, Stale und Ready; ein
+  Trackwechsel darf nie Werte des vorherigen Tracks zeigen.
+- **AC-5** [aktiv] [gtk] — Ready zeigt die vier benannten Dimensionen und
+  optional BPM samt Unsicherheit. Farbe ist nie der einzige Informationsträger;
+  Screenreader erhalten Dimension und Wert. Dateipfade, interne Versionen und
+  objektive Mood-Aussagen erscheinen nicht.
+- **AC-6** [aktiv] [gtk] — Analyseabdeckung nennt immer Zähler und Nenner
+  aktueller, geeigneter Bibliothekstitel. Leere, laufende, pausierte,
+  fehlgeschlagene und vollständige Zustände bleiben unterscheidbar; „Reanalyze
+  library" verlangt wegen der Rechenlast eine Bestätigung.
+
+## Y. Library Doctor / Tag Cleanup
 
 Library Doctor trennt Erkennen, Entscheiden und Schreiben strikt: Ein Scan
 liest und sammelt Vorschläge, die Review-Tabelle entscheidet feldgenau, und

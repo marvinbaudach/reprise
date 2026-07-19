@@ -25,7 +25,7 @@ pub(in crate::ui) struct JumpContext {
     pub track_list: Rc<TrackList>,
     pub nav_history: Rc<NavHistory>,
     pub content_stack: gtk4::Stack,
-    pub library_stack: gtk4::Stack,
+    pub library_stack: libadwaita::ViewStack,
     pub active_content_focus: library_shell::ActiveContentFocus,
 }
 
@@ -83,15 +83,6 @@ pub(in crate::ui) fn runtime_coordinator(context: &JumpContext) -> JumpCallback 
 }
 
 pub(in crate::ui) fn coordinator(steps: JumpSteps) -> JumpCallback {
-    coordinator_with_defer(
-        steps,
-        Rc::new(|callback| {
-            gtk4::glib::idle_add_local_once(move || callback());
-        }),
-    )
-}
-
-fn coordinator_with_defer(steps: JumpSteps, defer: Rc<dyn Fn(JumpCallback)>) -> JumpCallback {
     Rc::new(move || {
         let Some(origin) = (steps.current_origin)() else {
             return;
@@ -99,7 +90,9 @@ fn coordinator_with_defer(steps: JumpSteps, defer: Rc<dyn Fn(JumpCallback)>) -> 
         (steps.prepare_origin)(&origin);
         (steps.route_origin)(&origin);
         let notify_current_track = steps.notify_current_track.clone();
-        defer(notify_current_track);
+        gtk4::glib::idle_add_local_once(move || {
+            notify_current_track();
+        });
     })
 }
 
@@ -110,59 +103,52 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
     fn nav_9a_ctrl_l_reveals_current_track_origin() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         let events = Rc::new(RefCell::new(Vec::new()));
-        let deferred = Rc::new(RefCell::new(Vec::<JumpCallback>::new()));
         let history = Rc::new(NavHistory::default());
         let queue = NavPlace::source(
             ViewSource::Queue,
             Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
         );
         history.record_route(&queue);
-        let jump = coordinator_with_defer(
-            JumpSteps {
-                current_origin: Rc::new(|| Some(ViewSource::Playlist(7))),
-                prepare_origin: {
-                    let events = events.clone();
-                    Rc::new(move |source| events.borrow_mut().push(("prepare", source.clone())))
-                },
-                route_origin: {
-                    let events = events.clone();
-                    let history = history.clone();
-                    Rc::new(move |source| {
-                        history.record_route(&NavPlace::source(
-                            source.clone(),
-                            Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
-                        ));
-                        events.borrow_mut().push(("route", source.clone()));
-                    })
-                },
-                notify_current_track: {
-                    let events = events.clone();
-                    Rc::new(move || {
-                        events
-                            .borrow_mut()
-                            .push(("select-and-center", ViewSource::Playlist(7)));
-                    })
-                },
+        let jump = coordinator(JumpSteps {
+            current_origin: Rc::new(|| Some(ViewSource::Playlist(7))),
+            prepare_origin: {
+                let events = events.clone();
+                Rc::new(move |source| events.borrow_mut().push(("prepare", source.clone())))
             },
-            {
-                let deferred = deferred.clone();
-                Rc::new(move |callback| deferred.borrow_mut().push(callback))
+            route_origin: {
+                let events = events.clone();
+                let history = history.clone();
+                Rc::new(move |source| {
+                    history.record_route(&NavPlace::source(
+                        source.clone(),
+                        Some(library_shell::LIBRARY_VIEW_TRACKS.into()),
+                    ));
+                    events.borrow_mut().push(("route", source.clone()));
+                })
             },
-        );
+            notify_current_track: {
+                let events = events.clone();
+                Rc::new(move || {
+                    events
+                        .borrow_mut()
+                        .push(("reveal-without-selection", ViewSource::Playlist(7)));
+                })
+            },
+        });
 
         jump();
-        assert_eq!(deferred.borrow().len(), 1);
-        let notify = deferred.borrow_mut().pop().unwrap();
-        notify();
+        while gtk4::glib::MainContext::default().iteration(false) {}
 
         assert_eq!(
             &*events.borrow(),
             &[
                 ("prepare", ViewSource::Playlist(7)),
                 ("route", ViewSource::Playlist(7)),
-                ("select-and-center", ViewSource::Playlist(7)),
+                ("reveal-without-selection", ViewSource::Playlist(7)),
             ]
         );
         assert_eq!(history.go_back(), Some(queue));

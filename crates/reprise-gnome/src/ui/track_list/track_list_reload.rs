@@ -254,27 +254,26 @@ fn run_query(shared: &Rc<Shared>) {
     let has_filter = !filter.trim().is_empty() || !browse.is_empty();
 
     let is_queue = matches!(source, ViewSource::Queue);
-    let queue_ids = if is_queue {
+    let queue_model = if is_queue {
         let queue_model = (shared.queue_ids_provider)();
         *shared.queue_sections.borrow_mut() = queue_model.sections.clone();
-        shared
-            .model
-            .set_sections(super::queue_sections::section_ranges(&queue_model.sections));
-        queue_model.ids
+        Some(queue_model)
     } else {
         shared.queue_sections.borrow_mut().clear();
-        shared.model.set_sections(Vec::new());
-        Vec::new()
+        None
     };
 
-    shared.model.set_query_browsed(
-        &source,
-        &sort.field,
-        &sort.dir,
-        &filter,
-        &browse,
-        &queue_ids,
-    );
+    if let Some(queue_model) = &queue_model {
+        shared.model.set_queue_snapshot(
+            queue_model,
+            super::queue_sections::section_ranges(&queue_model.sections),
+        );
+    } else {
+        shared.model.set_sections(Vec::new());
+        shared
+            .model
+            .set_query_browsed(&source, &sort.field, &sort.dir, &filter, &browse, &[]);
+    }
 
     // Strictly AFTER the query swap: installing a header factory flips
     // GTK's has_sections, which runs gtk_list_item_manager_ensure_items
@@ -302,7 +301,7 @@ fn run_query(shared: &Rc<Shared>) {
         count,
         &filter,
         &browse,
-        &queue_ids,
+        &[],
     );
     apply_empty_state(
         shared,

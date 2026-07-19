@@ -21,7 +21,7 @@ use crate::ui::album_card_state::{
 };
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::discovery_hint::{EvidenceTracker, VisibleEvidence};
-use crate::ui::eq_bars;
+use crate::ui::playing_marker;
 use crate::ui::strings;
 
 /// Leading articles stripped before deriving the placeholder initial.
@@ -99,13 +99,11 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             placeholder.append(&placeholder_initial);
 
             // Persistent now-playing layer: independent from hover/focus.
-            let playing_layer = gtk4::Box::builder()
-                .css_classes(vec![css::PLAYING_LAYER_CLASS.to_owned()])
-                .halign(gtk4::Align::Start)
-                .valign(gtk4::Align::Start)
-                .visible(false)
-                .build();
-            playing_layer.append(&eq_bars::build(eq_bars::EqVariant::Animated));
+            let playing_layer = playing_marker::build();
+            playing_layer.add_css_class(css::PLAYING_LAYER_CLASS);
+            playing_layer.set_halign(gtk4::Align::Start);
+            playing_layer.set_valign(gtk4::Align::Start);
+            playing_layer.set_visible(false);
 
             // Bottom interaction gradient: metadata + play button. It stays
             // independent from the persistent EQ/playing layer.
@@ -129,7 +127,10 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             bottom_row.append(&play_spacer);
             let play_button = gtk4::Button::builder()
                 .icon_name("media-playback-start-symbolic")
-                .css_classes(vec![css::PLAY_BUTTON_CLASS.to_owned()])
+                .css_classes(vec![
+                    css::PLAY_BUTTON_CLASS.to_owned(),
+                    crate::ui::style::buttons::PRIMARY_CLASS.to_owned(),
+                ])
                 .halign(gtk4::Align::End)
                 .valign(gtk4::Align::End)
                 .has_frame(false)

@@ -79,6 +79,13 @@ struct Inner {
     registry: Registry,
     now_playing: Rc<RefCell<Option<String>>>,
     on_select: OnSelect,
+    saved_view_state: RefCell<Option<SavedArtistViewState>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct SavedArtistViewState {
+    anchor: Option<(String, f64)>,
+    selected_artist: Option<String>,
 }
 
 pub(in crate::ui) struct ArtistMaster {
@@ -166,6 +173,7 @@ impl ArtistMaster {
             registry,
             now_playing,
             on_select,
+            saved_view_state: RefCell::new(None),
         });
 
         wire_dropdown(&dropdown, &inner);
@@ -253,6 +261,27 @@ impl ArtistMaster {
         self.inner.store.n_items()
     }
 
+    pub(in crate::ui) fn remember_view_state(&self) {
+        *self.inner.saved_view_state.borrow_mut() = Some(capture_view_state(&self.inner));
+    }
+
+    pub(in crate::ui) fn restore_view_state(&self) {
+        let saved = self.inner.saved_view_state.borrow().clone();
+        if let Some(saved) = saved {
+            restore_view_state(&self.inner, &saved);
+        }
+    }
+
+    pub(in crate::ui) fn reveal_playing_context(&self) -> bool {
+        let artist = self.inner.now_playing.borrow().clone();
+        let Some(artist) = artist else { return false };
+        let Some(position) = artist_position_by_name(&self.inner.selection, &artist) else {
+            return false;
+        };
+        reveal_centered(&self.inner.list_view, position);
+        true
+    }
+
     #[cfg(test)]
     pub(in crate::ui) fn select_index_for_test(&self, index: u32) {
         self.inner.selection.set_selected(index);
@@ -316,11 +345,74 @@ fn current_selected_artist_name(selection: &gtk4::SingleSelection) -> Option<Str
         .map(|boxed| boxed.borrow::<ArtistSummary>().artist.clone())
 }
 
+fn artist_at(selection: &gtk4::SingleSelection, position: u32) -> Option<String> {
+    selection
+        .item(position)
+        .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
+        .map(|boxed| boxed.borrow::<ArtistSummary>().artist.clone())
+}
+
+fn capture_view_state(inner: &Inner) -> SavedArtistViewState {
+    let selected_artist = current_selected_artist_name(&inner.selection);
+    let count = inner.selection.n_items();
+    let anchor = inner.list_view.vadjustment().and_then(|adjustment| {
+        let upper = adjustment.upper();
+        if count == 0 || upper <= 0.0 {
+            return None;
+        }
+        let height = upper / f64::from(count);
+        let value = adjustment.value();
+        let position = (value / height).floor().max(0.0) as u32;
+        artist_at(&inner.selection, position)
+            .map(|artist| (artist, value - f64::from(position) * height))
+    });
+    SavedArtistViewState {
+        anchor,
+        selected_artist,
+    }
+}
+
+fn restore_view_state(inner: &Inner, saved: &SavedArtistViewState) {
+    inner.selection.unselect_all();
+    if let Some(artist) = &saved.selected_artist {
+        select_artist_by_name(&inner.selection, artist);
+    }
+    let Some((artist, offset)) = saved.anchor.clone() else {
+        return;
+    };
+    let position = (0..inner.selection.n_items())
+        .find(|position| artist_at(&inner.selection, *position).as_deref() == Some(&artist));
+    let Some(position) = position else { return };
+    restore_artist_scroll(inner.list_view.clone(), position, offset, 8);
+}
+
+fn restore_artist_scroll(list_view: gtk4::ListView, position: u32, offset: f64, attempts: u8) {
+    gtk4::glib::idle_add_local_once(move || {
+        let count = master_row_count(&list_view);
+        let Some(adjustment) = list_view.vadjustment() else {
+            return;
+        };
+        if count > 0 && adjustment.upper() > adjustment.page_size() {
+            let height = adjustment.upper() / f64::from(count);
+            let max = adjustment.upper() - adjustment.page_size();
+            adjustment.set_value((f64::from(position) * height + offset).clamp(0.0, max));
+        } else if attempts > 0 {
+            restore_artist_scroll(list_view, position, offset, attempts - 1);
+        }
+    });
+}
+
 /// Selects the row whose artist matches `artist` (Unicode case-folded) and
 /// returns its position, or `None` if none match. The position lets a deep-link
 /// caller reveal the row (see [`reveal_centered`]); the plain selection restore
 /// after a re-sort ignores it, keeping the viewport put.
 fn select_artist_by_name(selection: &gtk4::SingleSelection, artist: &str) -> Option<u32> {
+    let position = artist_position_by_name(selection, artist)?;
+    selection.set_selected(position);
+    Some(position)
+}
+
+fn artist_position_by_name(selection: &gtk4::SingleSelection, artist: &str) -> Option<u32> {
     let target = artist.to_lowercase();
     let count = selection.n_items();
     for index in 0..count {
@@ -329,7 +421,6 @@ fn select_artist_by_name(selection: &gtk4::SingleSelection, artist: &str) -> Opt
             .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
             .is_some_and(|boxed| boxed.borrow::<ArtistSummary>().artist.to_lowercase() == target);
         if matches {
-            selection.set_selected(index);
             return Some(index);
         }
     }
@@ -477,8 +568,10 @@ fn build_header(count_label: &gtk4::Label) -> (gtk4::Box, gtk4::DropDown) {
 fn wire_dropdown(dropdown: &gtk4::DropDown, inner: &Rc<Inner>) {
     let inner = inner.clone();
     dropdown.connect_selected_notify(move |dropdown| {
+        let saved = capture_view_state(&inner);
         inner.mode.set(SortMode::from_index(dropdown.selected()));
         apply_rows(&inner);
+        restore_view_state(&inner, &saved);
     });
 }
 

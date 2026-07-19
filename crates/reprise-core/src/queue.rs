@@ -588,8 +588,22 @@ impl Queue {
             .collect()
     }
 
-    /// `remaining_after_current().len()` without materializing the ids —
-    /// the Queue sidebar counter's share of the snapshot (QUE-5).
+    /// Returns only the requested window of the play-order tail after the
+    /// current track. Queue UIs use this to keep a large playback context
+    /// virtual instead of cloning one row id per context track.
+    pub fn remaining_window(&self, offset: usize, limit: usize) -> Vec<i64> {
+        let Some(pos) = self.pos else {
+            return Vec::new();
+        };
+        self.order
+            .iter()
+            .skip(pos.saturating_add(1).saturating_add(offset))
+            .take(limit)
+            .filter_map(|&idx| self.ids.get(idx).copied())
+            .collect()
+    }
+
+    /// `remaining_after_current().len()` without materializing the ids.
     pub fn remaining_len(&self) -> usize {
         self.pos
             .map_or(0, |pos| self.order.len().saturating_sub(pos + 1))

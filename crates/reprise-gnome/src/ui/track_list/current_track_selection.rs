@@ -1,6 +1,6 @@
-//! Keeps the track-table selection synchronized with playback changes while
-//! leaving a user's selection untouched when the playing track is not part
-//! of the currently filtered/source-specific view.
+//! Keeps playing markers synchronized with playback while leaving the user's
+//! selection and viewport untouched. NAV-10 reveal paths call the separate
+//! centering helper explicitly.
 
 use std::rc::Rc;
 
@@ -15,17 +15,23 @@ use super::track_list_activation::current_queue_ids;
 use crate::ui::artist_view::ArtistView;
 use crate::ui::scroll_center;
 
-/// `(track_id, queue_position, playback_started)` — `playback_started` is
-/// `true` only when an actual playback start fired the change. Session
-/// restore and player-bar title clicks re-select the row with `false`, so
-/// they never light the now-playing equaliser while nothing is audible.
+/// `(track_id, queue_position, playback_started)` — `playback_started` moves
+/// only the marker; `false` is an explicit/session reveal without selection.
 pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, bool)>;
 /// Callback carrying coarse playback-state changes to the track list, which
 /// uses them to freeze the now-playing equaliser on pause (via the
 /// `.playback-paused` class on the `ColumnView`) and drop the marker on stop.
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
 pub(in crate::ui) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
-pub(in crate::ui) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<(String, String)>)>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::ui) struct NowPlayingAlbum {
+    pub(in crate::ui) album: String,
+    pub(in crate::ui) artist: String,
+    pub(in crate::ui) track_path: String,
+}
+
+pub(in crate::ui) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<NowPlayingAlbum>)>;
 
 fn visible_position_for_track_in_source(
     ids: &[i64],
@@ -42,19 +48,6 @@ fn visible_position_for_track_in_source(
     ids.iter()
         .position(|candidate| *candidate == current_id)
         .and_then(|position| u32::try_from(position).ok())
-}
-
-/// Consumes the one-shot "don't scroll on the next follow" marker
-/// `activate_track` arms when the user starts playback from the table
-/// itself (double-click/Enter/queue activation): the activated row is
-/// already on screen under the pointer, so centering it would visibly
-/// yank the viewport. Returns `true` (suppress centering) only when the
-/// armed id matches the track the follow is about to select. Always
-/// `take`s — a stale id from an activation that never reached playback
-/// (unplayable file, empty queue) is discarded on the next change instead
-/// of suppressing some later, unrelated auto-advance scroll.
-fn take_scroll_suppression(suppressed: &std::cell::Cell<Option<i64>>, track_id: i64) -> bool {
-    suppressed.take() == Some(track_id)
 }
 
 /// Row count of the track table's current model — the divisor for
@@ -84,11 +77,11 @@ pub(in crate::ui) fn wire(
         player.set_on_current_track_changed(move |track_id, queue_position, playback_started| {
             match track_list_for_current.upgrade() {
                 Some(track_list) => {
-                    track_list.select_current_track(track_id, queue_position, playback_started);
+                    track_list.update_current_track(track_id, queue_position, playback_started);
                 }
                 None => tracing::warn!(
                     track_id,
-                    "current-track selection skipped: track list is gone"
+                    "current-track marker update skipped: track list is gone"
                 ),
             }
             // Light the Artists view's mini-EQ — only for an actual playback
@@ -183,9 +176,8 @@ impl PlayerController {
             .get()
             .or_else(|| self.queue.borrow().current());
         if let Some(track_id) = current {
-            // `false`: this is a selection restore, not a playback start —
-            // the row is selected and centered, but the now-playing marker
-            // (equaliser) stays off until real playback fires the callback.
+            // `false`: this is an explicit/session reveal, not a playback
+            // start. It centers without selecting and leaves the marker off.
             self.notify_current_track_changed(track_id, None, false);
         }
     }
@@ -240,25 +232,15 @@ impl TrackList {
         self.shared.current_view_ids()
     }
 
-    fn select_current_track(
+    fn update_current_track(
         &self,
         track_id: i64,
         queue_position: Option<usize>,
         playback_started: bool,
     ) {
-        // Consumed unconditionally, before any early return, so the one-shot
-        // marker never outlives the track change it was armed for.
-        let suppress_scroll =
-            take_scroll_suppression(&self.shared.suppress_follow_scroll, track_id);
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
-        // Move the now-playing marker id first, then invalidate the
-        // previously-marked row so its `.now-playing` class clears. Querying
-        // `ids` fresh on each change (rather than caching a position) keeps
-        // this correct across a reload that shifted every row. Restore/title-
-        // click re-selection (`playback_started == false`) leaves the marker
-        // untouched: nothing is audible, so no row may show the equaliser.
         if playback_started {
             let previous_id = self.shared.playing_track_id.replace(Some(track_id));
             if let Some(previous_id) = previous_id.filter(|id| *id != track_id) {
@@ -282,66 +264,35 @@ impl TrackList {
             return;
         };
 
-        // Rebind the new row so its bind takes the marker class, then follow
-        // it with the selection (auto-follow, kept by design).
-        self.shared.model.invalidate_window_at(position);
-        self.shared.selection.select_item(position, true);
-        // A table-originated activation (double-click/Enter — see
-        // `take_scroll_suppression` above) selects without centering: the
-        // clicked row is already visible, and yanking the viewport to
-        // mid-center it read as a glitch. Every other origin (auto-advance,
-        // transport skips, player-bar title click, session restore) still
-        // centers below.
-        if suppress_scroll {
+        if playback_started {
+            self.shared.model.invalidate_window_at(position);
             tracing::info!(
                 track_id,
                 position,
-                "table selection followed current track (centering skipped: table activation)"
+                "table playing marker updated without selection follow"
             );
-            return;
+        } else {
+            reveal_track_position(&self.shared.column_view, position, 8);
+            tracing::info!(
+                track_id,
+                position,
+                "explicit current-track reveal centered without selection"
+            );
         }
-        // Centering happens DIRECTLY through the vadjustment and — when the
-        // list already has usable geometry (the live path: an auto-advanced
-        // row) — SYNCHRONOUSLY, in the same main-loop iteration as the
-        // invalidate/select above. Both halves matter:
-        //
-        // - Direct adjustment write: `scroll_to` only edge-snaps, so an
-        //   earlier two-phase version (snap, then center) read as two jumps.
-        // - Same frame: the `items_changed` above recreates the focused row
-        //   widget, and GTK's focus restore can scroll on its own; a deferred
-        //   (idle) centering let that intermediate jump render for one frame
-        //   ("scrolls up, then back down"). Centering before the next frame
-        //   leaves the row visible mid-viewport, so the focus restore has
-        //   nothing left to scroll.
-        //
-        // The idle + `scroll_to` fallback only remains for a list with no
-        // geometry yet (session restore during window construction — where a
-        // scroll issued inline used to corrupt the row layout, and nothing is
-        // on screen anyway, so the two-phase motion is invisible).
-        let column_view = self.shared.column_view.clone();
-        let n_rows = track_table_row_count(&column_view);
-        match scroll_center::centered_scroll_target(&column_view, n_rows, position) {
-            Some((adjustment, value)) => adjustment.set_value(value),
-            None => {
-                gtk4::glib::idle_add_local_once(move || {
-                    let n_rows = track_table_row_count(&column_view);
-                    match scroll_center::centered_scroll_target(&column_view, n_rows, position) {
-                        Some((adjustment, value)) => adjustment.set_value(value),
-                        // Still no usable geometry (or the list fits the
-                        // viewport): make the row visible; nothing to center.
-                        None => {
-                            column_view.scroll_to(
-                                position,
-                                None,
-                                gtk4::ListScrollFlags::NONE,
-                                None,
-                            );
-                        }
-                    }
-                });
-            }
-        }
-        tracing::info!(track_id, position, "table selection followed current track");
+    }
+
+    pub(in crate::ui) fn reveal_playing_context(&self) -> bool {
+        let Some(track_id) = self.shared.playing_track_id.get() else {
+            return false;
+        };
+        let ids = self.shared.current_view_ids();
+        let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
+        let Some(position) = visible_position_for_track_in_source(&ids, track_id, None, is_queue)
+        else {
+            return false;
+        };
+        reveal_track_position(&self.shared.column_view, position, 8);
+        true
     }
 
     /// Reacts to a coarse playback-state change: freeze the now-playing
@@ -386,28 +337,93 @@ impl TrackList {
     }
 }
 
+fn reveal_track_position(column_view: &gtk4::ColumnView, position: u32, attempts: u8) {
+    let n_rows = track_table_row_count(column_view);
+    if let Some((adjustment, value)) =
+        scroll_center::centered_scroll_target(column_view, n_rows, position)
+    {
+        adjustment.set_value(value);
+        return;
+    }
+    if attempts == 0 {
+        return;
+    }
+    let column_view = column_view.clone();
+    gtk4::glib::idle_add_local_once(move || {
+        reveal_track_position(&column_view, position, attempts - 1);
+    });
+}
+
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
+    use rusqlite::Connection;
+
     use super::*;
 
     #[test]
-    fn table_activation_suppresses_centering_for_the_activated_track_once() {
-        let armed = std::cell::Cell::new(Some(7));
-        // The follow for the activated track consumes the marker: no scroll.
-        assert!(take_scroll_suppression(&armed, 7));
-        // The next change (auto-advance) centers again — the marker is gone.
-        assert!(!take_scroll_suppression(&armed, 7));
-    }
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nav_10_playback_marker_does_not_move_selection_or_viewport() {
+        gtk4::init().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        reprise_core::db::migrate(&conn).unwrap();
+        let tx = conn.transaction().unwrap();
+        for id in 1..=100 {
+            tx.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) \
+                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+                (
+                    id,
+                    format!("/synthetic/{id:03}.flac"),
+                    format!("Track {id:03}"),
+                ),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+        let track_list = TrackList::new(
+            Rc::new(RefCell::new(conn)),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder()
+            .default_width(900)
+            .default_height(320)
+            .child(track_list.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
 
-    #[test]
-    fn stale_suppression_from_a_dead_activation_never_hits_a_later_track() {
-        let armed = std::cell::Cell::new(Some(7));
-        // A different track change (the activation never reached playback,
-        // e.g. unplayable file → auto-skip elsewhere) still centers …
-        assert!(!take_scroll_suppression(&armed, 9));
-        // … and clears the stale marker, so the armed track centers later too.
-        assert_eq!(armed.get(), None);
-        assert!(!take_scroll_suppression(&armed, 7));
+        let position = 60;
+        let track_id = track_list.shared.model.track_at(position).unwrap().id;
+        track_list
+            .shared
+            .column_view
+            .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
+        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+        // `scroll_to` settles over later main-loop turns, so pumping once is not
+        // enough to establish the precondition. This is test setup, not the
+        // behaviour under test: wait until the viewport actually moved.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1000);
+        while adjustment.value() <= 0.0 && std::time::Instant::now() < deadline {
+            gtk4::glib::MainContext::default().iteration(false);
+        }
+        let before = adjustment.value();
+        assert!(
+            before > 0.0,
+            "precondition: the list must be scrolled away from the top"
+        );
+        track_list.shared.selection.select_item(10, true);
+        track_list.update_current_track(track_id, None, true);
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        assert!((adjustment.value() - before).abs() < 0.5);
+        assert!(track_list.shared.selection.is_selected(10));
+        assert!(!track_list.shared.selection.is_selected(position));
+        window.close();
     }
 
     #[test]

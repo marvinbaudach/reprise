@@ -1,5 +1,5 @@
 //! The full-width Library player bar: track title/artist, transport controls,
-//! a click-to-seek waveform, playback modes, inline volume, and queue button.
+//! a click-to-seek waveform, playback modes, and inline volume.
 //!
 //! `PlayerBar` owns every widget it displays; callers (see
 //! `player_controller.rs`) only interact with it through the `set_*`/
@@ -42,14 +42,7 @@ const ICON_VOLUME_LOW: &str = "audio-volume-low-symbolic";
 const ICON_VOLUME_MEDIUM: &str = "audio-volume-medium-symbolic";
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 
-/// Applied to the repeat button while `Repeat::Off`, so it reads as inactive
-/// without a third icon asset — the same generic "de-emphasize" style class
-/// which GTK's Adwaita theme renders as reduced-opacity text/icon content on
-/// any widget.
-pub(in crate::ui) const REPEAT_OFF_CSS_CLASS: &str = "dim-label";
-
 /// Mini-EQ CSS class applied while `PlaybackState::Playing`.
-const MINI_EQ_PLAYING_CLASS: &str = "playing";
 const PLAY_PULSE_CSS_CLASS: &str = "pulsing";
 /// Keeps a retriggered keyframe class absent across at least one compositor
 /// frame before it is re-added. Frame-clock tick callbacks can run
@@ -88,7 +81,7 @@ pub struct PlayerBar {
     prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
     next_button: gtk4::Button,
-    repeat_button: gtk4::Button,
+    repeat_button: gtk4::ToggleButton,
     position_label: gtk4::Label,
     duration_label: gtk4::Label,
     waveform: WaveformSeek,
@@ -96,8 +89,6 @@ pub struct PlayerBar {
     volume_scale: gtk4::Scale,
     /// Volume icon button — click toggles mute.
     volume_icon: gtk4::Button,
-    /// Button that opens the shared queue's Up Next panel view.
-    queue_button: gtk4::Button,
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
     duration_ms: Rc<Cell<i64>>,
@@ -160,7 +151,6 @@ impl PlayerBar {
             waveform,
             volume_icon,
             volume_scale,
-            queue_button,
             ..
         } = player_bar_layout::build();
 
@@ -238,7 +228,6 @@ impl PlayerBar {
             waveform,
             volume_scale,
             volume_icon,
-            queue_button,
             duration_ms: Rc::new(Cell::new(0)),
             playback_state: Cell::new(PlaybackState::Stopped),
             queue_has_tracks: Cell::new(false),
@@ -516,14 +505,8 @@ impl PlayerBar {
             .set_text(&format_remaining(position_ms, duration_ms));
     }
 
-    /// Toggles the mini-EQ animation on/off by adding/removing the `playing`
-    /// CSS class on the `.mini-eq` container.
     pub fn set_mini_eq_playing(&self, playing: bool) {
-        if playing {
-            self.mini_eq.add_css_class(MINI_EQ_PLAYING_CLASS);
-        } else {
-            self.mini_eq.remove_css_class(MINI_EQ_PLAYING_CLASS);
-        }
+        crate::ui::playing_marker::set_playing(&self.mini_eq, playing);
     }
 
     /// Wires the play/pause button; `f` is called on every click with no
@@ -592,12 +575,6 @@ impl PlayerBar {
         self.volume_scale.set_value(clamped);
         self.update_volume_icon(clamped);
         self.updating_volume.set(false);
-    }
-
-    /// Wires the queue button; `f` is called on every click so the window can
-    /// reveal its shared Up Next panel view.
-    pub fn connect_queue_clicked<F: Fn() + 'static>(&self, f: F) {
-        self.queue_button.connect_clicked(move |_| f());
     }
 
     /// Wires the volume icon as a mute toggle. When muted, the scale is driven
@@ -735,22 +712,22 @@ impl PlayerBar {
             .set_sensitive(state != PlaybackState::Stopped);
     }
 
-    /// Reflects the queue's repeat mode on the repeat button: `All`/`One`
-    /// each get a distinct icon, `Off` reuses the `All` icon dimmed via
-    /// `REPEAT_OFF_CSS_CLASS` (see its doc comment) rather than a third icon
-    /// asset.
+    /// Reflects the queue's repeat mode on the repeat button. Repeat is a
+    /// toggle like Shuffle (BTN-2), so "on" is the widget's own `:checked`
+    /// state — a permanent accent fill plus the state dot, not a dimmed icon
+    /// that only differs from "on" by opacity. `One` additionally swaps to the
+    /// repeat-song icon, which carries the "1" badge in its artwork.
+    ///
+    /// Needs no re-entrancy guard of the `updating_shuffle` kind: nothing is
+    /// connected to the repeat button's `toggled` signal, and the click cycle
+    /// runs off `clicked`, which `set_active` does not emit.
     pub fn set_repeat_indicator(&self, repeat: Repeat) {
-        let (icon, is_off) = match repeat {
-            Repeat::Off => (ICON_REPEAT_ALL, true),
-            Repeat::All => (ICON_REPEAT_ALL, false),
-            Repeat::One => (ICON_REPEAT_ONE, false),
+        let icon = match repeat {
+            Repeat::Off | Repeat::All => ICON_REPEAT_ALL,
+            Repeat::One => ICON_REPEAT_ONE,
         };
         self.repeat_button.set_icon_name(icon);
-        if is_off {
-            self.repeat_button.add_css_class(REPEAT_OFF_CSS_CLASS);
-        } else {
-            self.repeat_button.remove_css_class(REPEAT_OFF_CSS_CLASS);
-        }
+        self.repeat_button.set_active(repeat != Repeat::Off);
     }
 }
 

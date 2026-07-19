@@ -15,7 +15,9 @@ use rusqlite::{Connection, OptionalExtension};
 /// risking a typo'd duplicate string.
 pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
+pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
+pub const AUDIO_ANALYSIS_ENABLED_KEY: &str = "audio_analysis.enabled";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
 /// an error — for a key that has never been written, matching every other
@@ -69,6 +71,19 @@ pub fn get_bool(conn: &Connection, key: &str, default: bool) -> Result<bool, rus
 
 pub fn set_bool(conn: &Connection, key: &str, value: bool) -> Result<(), rusqlite::Error> {
     set_setting(conn, key, if value { BOOL_TRUE } else { BOOL_FALSE })
+}
+
+/// Whether Reprise may read local audio to build Audio Character profiles.
+/// Fresh installations deliberately default to off; this is explicit opt-in.
+pub fn get_audio_analysis_enabled(conn: &Connection) -> bool {
+    get_bool(conn, AUDIO_ANALYSIS_ENABLED_KEY, false).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read audio-analysis setting; using off");
+        false
+    })
+}
+
+pub fn set_audio_analysis_enabled(conn: &Connection, enabled: bool) -> Result<(), rusqlite::Error> {
+    set_bool(conn, AUDIO_ANALYSIS_ENABLED_KEY, enabled)
 }
 
 const STATS_CLOCK_KEY: &str = "stats.section.clock";
@@ -134,6 +149,17 @@ pub fn get_onboarding_completed(conn: &Connection) -> Result<bool, rusqlite::Err
 
 pub fn set_onboarding_completed(conn: &Connection, completed: bool) -> Result<(), rusqlite::Error> {
     set_bool(conn, ONBOARDING_COMPLETED_KEY, completed)
+}
+
+pub fn get_new_releases_fetch_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    get_bool(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, false)
+}
+
+pub fn set_new_releases_fetch_completed(
+    conn: &Connection,
+    completed: bool,
+) -> Result<(), rusqlite::Error> {
+    set_bool(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, completed)
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";

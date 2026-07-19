@@ -432,6 +432,9 @@ impl BrowseBar {
     }
 
     fn rebuild_chips(self: &Rc<Self>, filter: &BrowseFilter) {
+        // FlowBox wraps appended widgets in an implicit FlowBoxChild. Removing
+        // that wrapper does not unparent our persistent MenuButton from it, so
+        // detach the button before clearing the wrappers and appending it again.
         if let Some(wrapper) = self
             .add_filter
             .parent()

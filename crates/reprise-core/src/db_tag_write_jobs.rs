@@ -97,14 +97,14 @@ BEGIN
 END;
 "#;
 
-pub(crate) fn migrate_v19(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v20(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 19 {
+    if version >= 20 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
     transaction.execute_batch(SCHEMA_V19)?;
-    transaction.pragma_update(None, "user_version", 19)?;
+    transaction.pragma_update(None, "user_version", 20)?;
     transaction.commit()
 }
 
@@ -142,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_v19_creates_constrained_tag_write_journal() {
+    fn migration_v20_creates_constrained_tag_write_journal() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate(&conn).unwrap();
         conn.execute_batch(
@@ -150,10 +150,10 @@ mod tests {
              DROP TABLE tag_write_journal;
              DROP TABLE tag_write_job_files;
              DROP TABLE tag_write_jobs;
-             PRAGMA user_version=18;",
+             PRAGMA user_version=19;",
         )
         .unwrap();
-        super::migrate_v19(&conn).unwrap();
+        super::migrate_v20(&conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -168,7 +168,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(version, 19);
+        assert_eq!(version, 20);
         assert_eq!(tables, 3);
         assert!(conn
             .execute(
@@ -237,12 +237,12 @@ mod tests {
              DROP TABLE tag_write_journal;
              DROP TABLE tag_write_job_files;
              DROP TABLE tag_write_jobs;
-             PRAGMA user_version=18;",
+             PRAGMA user_version=19;",
         )
         .unwrap();
 
-        super::migrate_v19(&conn).unwrap();
-        super::migrate_v19(&conn).unwrap();
+        super::migrate_v20(&conn).unwrap();
+        super::migrate_v20(&conn).unwrap();
 
         let preserved: (String, i64) = conn
             .query_row(

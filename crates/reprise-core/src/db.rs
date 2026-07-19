@@ -343,6 +343,14 @@ WHERE missing_since IS NULL AND removed_at IS NULL;
 /// otherwise it uses the newest equally eligible partial index for aggregate
 /// scans. Album order scatters table lookups for counts and duration sums,
 /// while title order retains the established, cache-friendly query plan.
+///
+/// The drop is `IF EXISTS` on purpose. A database can legitimately carry
+/// `user_version = 13` without the title index when a parallel branch stamped
+/// its own, different v13 — that happened while the network opt-in work
+/// numbered its grandfathering step 13 against a main that had meanwhile taken
+/// 13 for this index. Such a database must repair itself here instead of
+/// aborting startup with `no such index`; recreating the index right below
+/// leaves both histories in the same state.
 const SCHEMA_V14: &str = r#"
 CREATE INDEX idx_tracks_present_album_order
 ON tracks(album COLLATE NOCASE, track_no)
@@ -363,11 +371,70 @@ const SCHEMA_V15: &str = r#"
 ALTER TABLE tracks ADD COLUMN disc_no INTEGER;
 "#;
 
-/// Schema v16: indexes the listen-event join direction used by every My Stats
+/// Schema v17: indexes the listen-event join direction used by every My Stats
 /// aggregate while retaining the existing played-at-only index.
-const SCHEMA_V16: &str = r#"
+const SCHEMA_V17: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_listen_events_track_played
   ON listen_events(track_id, played_at);
+"#;
+
+/// Schema v18: one versioned local audio-analysis result per track. Evidence
+/// and its projected profile are separate columns so a profile-only version
+/// change can be recomputed without decoding the source again. Failed rows
+/// retain their source fingerprint and bounded retry state; a track delete
+/// removes either outcome through the foreign key.
+const SCHEMA_V18: &str = r#"
+CREATE TABLE track_audio_analysis (
+  track_id                INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  source_mtime            INTEGER NOT NULL CHECK (source_mtime >= 0),
+  source_size             INTEGER NOT NULL CHECK (source_size >= 0),
+  extractor_version       INTEGER NOT NULL CHECK (extractor_version > 0),
+  profile_version         INTEGER NOT NULL CHECK (profile_version > 0),
+  analyzed_at             INTEGER NOT NULL CHECK (analyzed_at >= 0),
+  status                  TEXT NOT NULL CHECK (status IN ('ready', 'failed')),
+  loudness_rms            REAL,
+  dynamic_range           REAL,
+  spectral_centroid_hz    REAL,
+  spectral_rolloff_hz     REAL,
+  spectral_flux           REAL,
+  onset_rate              REAL,
+  tempo_bpm               REAL,
+  tempo_confidence        REAL,
+  intensity               REAL,
+  intensity_confidence    REAL,
+  brightness              REAL,
+  brightness_confidence   REAL,
+  dynamicity              REAL,
+  dynamicity_confidence   REAL,
+  rhythmicity             REAL,
+  rhythmicity_confidence  REAL,
+  failure_kind            TEXT,
+  failure_detail          TEXT,
+  retry_count             INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+  retry_after             INTEGER CHECK (retry_after IS NULL OR retry_after >= 0),
+  CHECK (intensity IS NULL OR intensity BETWEEN 0.0 AND 1.0),
+  CHECK (intensity_confidence IS NULL OR intensity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (brightness IS NULL OR brightness BETWEEN 0.0 AND 1.0),
+  CHECK (brightness_confidence IS NULL OR brightness_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (dynamicity IS NULL OR dynamicity BETWEEN 0.0 AND 1.0),
+  CHECK (dynamicity_confidence IS NULL OR dynamicity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (rhythmicity IS NULL OR rhythmicity BETWEEN 0.0 AND 1.0),
+  CHECK (rhythmicity_confidence IS NULL OR rhythmicity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (tempo_confidence IS NULL OR tempo_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (status <> 'ready' OR (
+    loudness_rms IS NOT NULL AND dynamic_range IS NOT NULL AND
+    spectral_centroid_hz IS NOT NULL AND spectral_rolloff_hz IS NOT NULL AND
+    spectral_flux IS NOT NULL AND onset_rate IS NOT NULL AND
+    intensity IS NOT NULL AND intensity_confidence IS NOT NULL AND
+    brightness IS NOT NULL AND brightness_confidence IS NOT NULL AND
+    dynamicity IS NOT NULL AND dynamicity_confidence IS NOT NULL AND
+    rhythmicity IS NOT NULL AND rhythmicity_confidence IS NOT NULL AND
+    failure_kind IS NULL
+  )),
+  CHECK (status <> 'failed' OR failure_kind IS NOT NULL)
+);
+CREATE INDEX idx_track_audio_analysis_status_retry
+  ON track_audio_analysis(status, retry_after);
 "#;
 
 /// Applies pending schema migrations in order, tracked via `PRAGMA
@@ -531,36 +598,42 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 15)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if version < 16 {
-        let tx = conn.unchecked_transaction()?;
-        tx.execute_batch(SCHEMA_V16)?;
-        tx.pragma_update(None, "user_version", 16)?;
-        tx.commit()?;
-    }
-    // Schema v17 has no SQL shape change. Its transactional Rust step records
+    // Schema v16 has no SQL shape change. Its transactional Rust step records
     // evidence-backed opt-ins for pre-existing databases: positive image-cache
     // entries preserve cover and portrait downloads, every existing database
     // preserves the previously ungated online lyrics, and the retired Artist
     // News opt-in carries forward to New Releases. Explicit current settings
     // always win because the migration inserts only missing keys.
     //
-    // Numbered 17, not 13: this step originally shipped as v13 on its own
+    // Numbered 16, not 13: this step originally shipped as v13 on its own
     // branch while main independently took 13/14/15 for the performance
-    // indexes and disc number, then My Stats took v16 for its join index.
-    // Databases stamped by that earlier v13 are repaired by v14's
-    // `DROP INDEX IF EXISTS` and reach the grandfathering here, where
-    // `INSERT OR IGNORE` leaves their existing module rows alone.
+    // indexes and disc number. Databases stamped by that earlier v13 are
+    // repaired by v14's `DROP INDEX IF EXISTS` and reach the grandfathering
+    // here, where `INSERT OR IGNORE` leaves their existing module rows alone.
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 16 {
+        let tx = conn.unchecked_transaction()?;
+        grandfather_network_features(&tx, initial_version > 0, cover_cache, portrait_cache)?;
+        tx.pragma_update(None, "user_version", 16)?;
+        tx.commit()?;
+    }
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if version < 17 {
         let tx = conn.unchecked_transaction()?;
-        grandfather_network_features(&tx, initial_version > 0, cover_cache, portrait_cache)?;
+        tx.execute_batch(SCHEMA_V17)?;
         tx.pragma_update(None, "user_version", 17)?;
         tx.commit()?;
     }
-    crate::db_library_doctor::migrate_v18(conn)?;
-    crate::db_tag_write_jobs::migrate_v19(conn)?;
-    crate::db_library_doctor_remote::migrate_v20(conn)?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 18 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V18)?;
+        tx.pragma_update(None, "user_version", 18)?;
+        tx.commit()?;
+    }
+    crate::db_library_doctor::migrate_v19(conn)?;
+    crate::db_tag_write_jobs::migrate_v20(conn)?;
+    crate::db_library_doctor_remote::migrate_v21(conn)?;
     Ok(())
 }
 
@@ -667,3 +740,15 @@ mod recent_migration_tests;
 #[cfg(test)]
 #[path = "db_network_migration_tests.rs"]
 mod network_migration_tests;
+
+#[cfg(test)]
+#[path = "db_stats_migration_tests.rs"]
+mod stats_migration_tests;
+
+#[cfg(test)]
+#[path = "db_audio_analysis_migration_tests.rs"]
+mod audio_analysis_migration_tests;
+
+#[cfg(test)]
+#[path = "db_migration_repair_tests.rs"]
+mod migration_repair_tests;
