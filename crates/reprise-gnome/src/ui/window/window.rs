@@ -362,6 +362,7 @@ pub fn build(
     super::current_track_selection::wire(player.as_ref(), &track_list, &artist_view);
     super::library_shell::arm_smoke_library_view(&library_views);
     let library_title = Rc::new(super::library_chrome::build_library_title(
+        &window,
         &header,
         &window_title,
         &library_views.stack,

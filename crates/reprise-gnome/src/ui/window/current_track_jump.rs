@@ -25,7 +25,7 @@ pub(in crate::ui) struct JumpContext {
     pub track_list: Rc<TrackList>,
     pub nav_history: Rc<NavHistory>,
     pub content_stack: gtk4::Stack,
-    pub library_stack: gtk4::Stack,
+    pub library_stack: libadwaita::ViewStack,
     pub album_grid: gtk4::GridView,
 }
 
