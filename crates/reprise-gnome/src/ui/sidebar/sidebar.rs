@@ -502,6 +502,7 @@ fn build_root(
     issues_listbox: &gtk4::ListBox,
 ) -> gtk4::Box {
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    crate::ui::glass::mark_safe_inset_anchor(&root);
     root.append(scrolled);
     root.append(activity_slot);
     root.append(issues_listbox);

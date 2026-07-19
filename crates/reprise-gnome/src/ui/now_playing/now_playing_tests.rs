@@ -168,6 +168,9 @@ fn head_and_pill_match_the_21a_structure() {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);
 
+    assert!(widgets
+        .stage
+        .has_css_class("reprise-glass-safe-inset-anchor"));
     assert_eq!(widgets.cover.pixel_size(), 168);
     assert_eq!(widgets.cover.width_request(), 168);
     assert_eq!(widgets.cover.height_request(), 168);
