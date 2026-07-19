@@ -1,11 +1,12 @@
 //! Library Doctor plugin controls shared with the main-window result page.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::gio;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use rusqlite::Connection;
 
 use super::{strings, PreferencesContext};
 
@@ -36,12 +37,21 @@ pub(super) fn remote_suggestions_row(
     context: &Rc<PreferencesContext>,
     module_enabled: bool,
 ) -> adw::SwitchRow {
-    let preference =
-        reprise_core::library_doctor::remote_suggestion_preference(&context.conn.borrow())
-            .unwrap_or(reprise_core::library_doctor::RemoteSuggestionPreference {
-                enabled: false,
-                consent_required: true,
-            });
+    let parent = context.preferences_parent();
+    remote_suggestions_row_for(&context.conn, &parent, module_enabled, Rc::new(|_| {}))
+}
+
+pub(in crate::ui) fn remote_suggestions_row_for(
+    conn: &Rc<RefCell<Connection>>,
+    parent: &impl IsA<gtk4::Widget>,
+    module_enabled: bool,
+    on_changed: Rc<dyn Fn(bool)>,
+) -> adw::SwitchRow {
+    let preference = reprise_core::library_doctor::remote_suggestion_preference(&conn.borrow())
+        .unwrap_or(reprise_core::library_doctor::RemoteSuggestionPreference {
+            enabled: false,
+            consent_required: true,
+        });
     let row = adw::SwitchRow::builder()
         .title(strings::text(strings::LIBRARY_DOCTOR_REMOTE))
         .subtitle(strings::text(strings::LIBRARY_DOCTOR_REMOTE_DESCRIPTION))
@@ -50,45 +60,49 @@ pub(super) fn remote_suggestions_row(
         .sensitive(module_enabled)
         .build();
     let syncing = Rc::new(Cell::new(false));
-    let weak = Rc::downgrade(context);
+    let conn = conn.clone();
+    let parent = parent.upcast_ref::<gtk4::Widget>().downgrade();
     let syncing_notify = syncing.clone();
     row.connect_active_notify(move |row| {
         if syncing_notify.get() {
             return;
         }
-        let Some(context) = weak.upgrade() else {
-            return;
-        };
-        let preference =
-            reprise_core::library_doctor::remote_suggestion_preference(&context.conn.borrow())
-                .unwrap_or(reprise_core::library_doctor::RemoteSuggestionPreference {
-                    enabled: false,
-                    consent_required: true,
-                });
+        let preference = reprise_core::library_doctor::remote_suggestion_preference(&conn.borrow())
+            .unwrap_or(reprise_core::library_doctor::RemoteSuggestionPreference {
+                enabled: false,
+                consent_required: true,
+            });
         match remote_toggle_action(row.is_active(), preference) {
             RemoteToggleAction::Disable => {
                 let result = {
-                    let conn = context.conn.borrow();
+                    let conn = conn.borrow();
                     reprise_core::library_doctor::disable_remote_suggestions(&conn)
                 };
                 if let Err(error) = result {
                     tracing::warn!(%error, "could not disable Library Doctor remote suggestions");
                     set_active_without_notify(row, &syncing_notify, true);
+                } else {
+                    on_changed(false);
                 }
             }
             RemoteToggleAction::Enable => {
                 let result = {
-                    let conn = context.conn.borrow();
+                    let conn = conn.borrow();
                     reprise_core::library_doctor::accept_remote_suggestions(&conn)
                 };
                 if let Err(error) = result {
                     tracing::warn!(%error, "could not enable Library Doctor remote suggestions");
                     set_active_without_notify(row, &syncing_notify, false);
+                } else {
+                    on_changed(true);
                 }
             }
             RemoteToggleAction::Confirm => {
                 set_active_without_notify(row, &syncing_notify, false);
-                present_remote_confirmation(&context, row, &syncing_notify);
+                let Some(parent) = parent.upgrade() else {
+                    return;
+                };
+                present_remote_confirmation(&conn, &parent, row, &syncing_notify, &on_changed);
             }
         }
     });
@@ -102,9 +116,11 @@ fn set_active_without_notify(row: &adw::SwitchRow, syncing: &Cell<bool>, active:
 }
 
 fn present_remote_confirmation(
-    context: &Rc<PreferencesContext>,
+    conn: &Rc<RefCell<Connection>>,
+    parent: &gtk4::Widget,
     row: &adw::SwitchRow,
     syncing: &Rc<Cell<bool>>,
+    on_changed: &Rc<dyn Fn(bool)>,
 ) {
     let dialog = adw::AlertDialog::builder()
         .heading(strings::text(strings::LIBRARY_DOCTOR_REMOTE_HEADING))
@@ -118,23 +134,23 @@ fn present_remote_confirmation(
         &strings::text(strings::LIBRARY_DOCTOR_REMOTE_ENABLE),
     );
     dialog.set_response_appearance(RESPONSE_ENABLE, adw::ResponseAppearance::Suggested);
-    let weak = Rc::downgrade(context);
+    let conn = conn.clone();
     let row = row.clone();
     let syncing = syncing.clone();
-    let parent = context.preferences_parent();
-    dialog.choose(Some(&parent), gio::Cancellable::NONE, move |response| {
+    let on_changed = on_changed.clone();
+    dialog.choose(Some(parent), gio::Cancellable::NONE, move |response| {
         if response != RESPONSE_ENABLE {
             return;
         }
-        let Some(context) = weak.upgrade() else {
-            return;
-        };
         let result = {
-            let conn = context.conn.borrow();
+            let conn = conn.borrow();
             reprise_core::library_doctor::accept_remote_suggestions(&conn)
         };
         match result {
-            Ok(()) => set_active_without_notify(&row, &syncing, true),
+            Ok(()) => {
+                set_active_without_notify(&row, &syncing, true);
+                on_changed(true);
+            }
             Err(error) => {
                 tracing::warn!(%error, "could not record Library Doctor remote consent");
             }
