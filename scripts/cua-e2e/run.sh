@@ -107,7 +107,7 @@ cua_open_main_menu() {
   # AT-SPI reports MenuButton activation as "unverifiable" even when GTK did
   # not toggle it. F10 is the application's standard main-menu contract and
   # avoids treating that false-positive delivery report as an open popover.
-  cua_press_key_window "$pid" "$window_id" f10 "$stem-f10"
+  cua_hotkey "$pid" "$window_id" "$stem-f10" f10
   wait_for_label "$pid" "$window_id" "Library Doctor" "$stem-open" >/dev/null
 }
 

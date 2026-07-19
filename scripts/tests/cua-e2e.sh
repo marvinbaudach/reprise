@@ -52,6 +52,10 @@ if rg --quiet 'cua_click_label .*"Main menu"' "$runner"; then
   echo "$runner must open the main menu through its F10 keyboard contract" >&2
   exit 1
 fi
+if ! rg --quiet 'cua_hotkey "\$pid" "\$window_id" "\$stem-f10" f10' "$runner"; then
+  echo "$runner must deliver F10 through the proven hotkey transport" >&2
+  exit 1
+fi
 for scenario_case in \
   'fresh-install)' \
   'tag-1-no-jump-after-save)' \
