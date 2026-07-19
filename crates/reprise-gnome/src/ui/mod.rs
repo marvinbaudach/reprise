@@ -21,6 +21,8 @@
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
 mod about;
+#[cfg(test)]
+mod accessibility_semantics;
 mod artist_news;
 mod browse;
 mod compact;
@@ -33,6 +35,7 @@ pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
 pub(crate) mod file_open;
 pub mod first_run;
+pub(crate) mod glass;
 mod help;
 pub mod import_errors_view;
 pub(crate) mod info_panel;
@@ -44,15 +47,18 @@ pub(crate) mod motion;
 mod mounts;
 pub mod mpris_mirror;
 pub(crate) mod nav_history;
+mod new_releases;
 mod notifications;
 pub(crate) mod now_playing;
 mod one_shot_task;
 mod playback;
 pub(crate) mod player_bar;
+pub(crate) mod playing_marker;
 mod playlists;
 mod popover_lifecycle;
 pub(crate) mod preferences;
 pub mod primary_menu;
+mod runtime_performance;
 mod scan;
 mod scrobbling;
 mod scroll_center;
@@ -65,12 +71,16 @@ pub mod status_bar;
 pub mod strings;
 mod style;
 mod tag_edit;
+#[cfg(test)]
+pub(crate) mod test_main_context;
 pub mod toasts;
 #[cfg(test)]
 pub(crate) mod tooltip_discipline;
 pub(crate) mod track_list;
+mod transient_focus;
 pub mod view_session;
 pub(crate) mod window;
+mod window_audio_analysis;
 
 // Compatibility surface for the existing frontend. The ownership of every
 // implementation module now lives with its feature directory; these explicit
@@ -99,9 +109,9 @@ use device_sync::{
 #[allow(unused_imports)]
 use library_views::{
     album_card, album_card_actions, album_card_css, album_card_state, album_context_menu,
-    album_header, album_view, album_view_actions, album_view_state, artist_avatar,
-    artist_detail_hero, artist_detail_pane, artist_detail_row, artist_master, artist_master_row,
-    artist_view, artist_view_css, library_view_css,
+    album_glow, album_header, album_view, album_view_actions, album_view_memory, album_view_state,
+    artist_avatar, artist_detail_hero, artist_detail_pane, artist_detail_row, artist_master,
+    artist_master_row, artist_view, artist_view_css, discovery_hint, library_view_css,
 };
 #[allow(unused_imports)]
 use lyrics::{
@@ -126,15 +136,16 @@ pub(crate) use playlists::playlist_io;
 use playlists::{playlist_import_navigation, playlist_io_names};
 #[allow(unused_imports)]
 use preferences::{
-    preference_appearance, preference_choice_cards, preference_dependencies, preference_effects,
-    preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
-    preference_playback, preference_plugins, preference_rhythmbox, preference_sync,
-    preference_visual_strings, preference_window_decorations, preferences_window,
+    preference_appearance, preference_audio_analysis, preference_choice_cards,
+    preference_dependencies, preference_effects, preference_lastfm, preference_layout,
+    preference_library, preference_listenbrainz, preference_playback, preference_plugins,
+    preference_rhythmbox, preference_sync, preference_visual_strings,
+    preference_window_decorations, preferences_window,
 };
 #[allow(unused_imports)]
 pub(crate) use scan::{scan_card_css, scan_flow};
 #[allow(unused_imports)]
-use scan::{scan_controls, scan_progress, scan_watcher, scan_waveform_analysis, scan_worker};
+use scan::{scan_controls, scan_progress, scan_watcher, scan_worker};
 #[allow(unused_imports)]
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
 #[allow(unused_imports)]
@@ -145,7 +156,7 @@ use sidebar::{
 #[allow(unused_imports)]
 pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
 #[allow(unused_imports)]
-use stats::{hourly_chart, stats_chart, stats_chart_math};
+use stats::{hourly_chart, hourly_chart_math};
 #[allow(unused_imports)]
 pub(crate) use stats::{stats_css, stats_view};
 #[allow(unused_imports)]
@@ -170,6 +181,7 @@ pub(crate) use track_list::{
 };
 #[allow(unused_imports)]
 use window::{
-    library_chrome, library_shell, window_action_wiring, window_decoration_strings,
-    window_decorations, window_navigation, window_runtime_wiring, window_smoke,
+    library_chrome, library_shell, library_view_memory_wiring, navigation_context,
+    window_action_wiring, window_decoration_strings, window_decorations, window_navigation,
+    window_runtime_wiring, window_smoke,
 };

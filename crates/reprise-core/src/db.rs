@@ -294,11 +294,147 @@ const SCHEMA_V11: &str = r#"
 ALTER TABLE tracks DROP COLUMN missing;
 "#;
 
-/// Schema v12: stores the optional disc number used to build album queues in
-/// canonical multi-disc order. Existing rows stay `NULL`, which album order
-/// deliberately interprets as disc 1 for backwards compatibility.
+/// Schema v12: durable artist identity and the single New Releases store.
+/// `artist_mbid_negative = 1` distinguishes a completed not-found/ambiguous
+/// lookup from a track that has not been resolved yet, so background fetches
+/// do not retry the same artist forever. Release rows carry both lifecycle
+/// clocks: `fetched_at` records cache age while nullable `seen_at` is the
+/// episode-style badge truth. The fallback accent is computed before insert,
+/// keeping rendering free of cover I/O.
 const SCHEMA_V12: &str = r#"
+ALTER TABLE tracks ADD COLUMN artist_mbid TEXT;
+ALTER TABLE tracks ADD COLUMN artist_mbid_negative INTEGER NOT NULL DEFAULT 0
+  CHECK (artist_mbid_negative IN (0, 1));
+CREATE INDEX idx_tracks_artist_mbid ON tracks(artist_mbid);
+CREATE TABLE new_releases (
+  release_group_mbid TEXT PRIMARY KEY,
+  artist_name        TEXT NOT NULL,
+  artist_mbid        TEXT NOT NULL,
+  title              TEXT NOT NULL,
+  release_type       TEXT NOT NULL,
+  first_release_date TEXT NOT NULL,
+  fetched_at         INTEGER NOT NULL,
+  seen_at            INTEGER,
+  hidden             INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
+  fallback_accent    TEXT NOT NULL
+);
+CREATE INDEX idx_new_releases_artist ON new_releases(artist_mbid);
+CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS NULL;
+"#;
+
+/// Schema v13: gives the default title-sorted library window the ordering
+/// SQLite needs to stream rows instead of sorting the whole library into a
+/// temporary B-tree for every 200-row window. The partial predicate exactly
+/// matches the shared `queries::PRESENT` contract, so missing and tombstoned
+/// rows do not enlarge this library-only index. `COLLATE NOCASE` must be part
+/// of the index expression because the visible title order uses that collation
+/// and SQLite cannot satisfy it from a binary-collated title index.
+const SCHEMA_V13: &str = r#"
+CREATE INDEX idx_tracks_present_title_nocase
+ON tracks(title COLLATE NOCASE)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+"#;
+
+/// Schema v14: streams album-sorted visible-library windows from a partial
+/// index instead of re-sorting the full library for every 200-row page. The
+/// expression and collation exactly match the shared album sort contract;
+/// `track_no` preserves the established within-album order. Recreating the
+/// title index last is intentional: before SQLite has collected statistics,
+/// otherwise it uses the newest equally eligible partial index for aggregate
+/// scans. Album order scatters table lookups for counts and duration sums,
+/// while title order retains the established, cache-friendly query plan.
+///
+/// The drop is `IF EXISTS` on purpose. A database can legitimately carry
+/// `user_version = 13` without the title index when a parallel branch stamped
+/// its own, different v13 — that happened while the network opt-in work
+/// numbered its grandfathering step 13 against a main that had meanwhile taken
+/// 13 for this index. Such a database must repair itself here instead of
+/// aborting startup with `no such index`; recreating the index right below
+/// leaves both histories in the same state.
+const SCHEMA_V14: &str = r#"
+CREATE INDEX idx_tracks_present_album_order
+ON tracks(album COLLATE NOCASE, track_no)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+
+DROP INDEX IF EXISTS idx_tracks_present_title_nocase;
+CREATE INDEX idx_tracks_present_title_nocase
+ON tracks(title COLLATE NOCASE)
+WHERE missing_since IS NULL AND removed_at IS NULL;
+"#;
+
+/// Schema v15: stores the optional disc number used to build album queues in
+/// canonical multi-disc order. Existing rows stay `NULL`, which album order
+/// deliberately interprets as disc 1 for backwards compatibility. This stays
+/// after the already-integrated performance migrations so a database created
+/// by schema v14 is upgraded instead of incorrectly skipping the new column.
+const SCHEMA_V15: &str = r#"
 ALTER TABLE tracks ADD COLUMN disc_no INTEGER;
+"#;
+
+/// Schema v17: indexes the listen-event join direction used by every My Stats
+/// aggregate while retaining the existing played-at-only index.
+const SCHEMA_V17: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_listen_events_track_played
+  ON listen_events(track_id, played_at);
+"#;
+
+/// Schema v18: one versioned local audio-analysis result per track. Evidence
+/// and its projected profile are separate columns so a profile-only version
+/// change can be recomputed without decoding the source again. Failed rows
+/// retain their source fingerprint and bounded retry state; a track delete
+/// removes either outcome through the foreign key.
+const SCHEMA_V18: &str = r#"
+CREATE TABLE track_audio_analysis (
+  track_id                INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  source_mtime            INTEGER NOT NULL CHECK (source_mtime >= 0),
+  source_size             INTEGER NOT NULL CHECK (source_size >= 0),
+  extractor_version       INTEGER NOT NULL CHECK (extractor_version > 0),
+  profile_version         INTEGER NOT NULL CHECK (profile_version > 0),
+  analyzed_at             INTEGER NOT NULL CHECK (analyzed_at >= 0),
+  status                  TEXT NOT NULL CHECK (status IN ('ready', 'failed')),
+  loudness_rms            REAL,
+  dynamic_range           REAL,
+  spectral_centroid_hz    REAL,
+  spectral_rolloff_hz     REAL,
+  spectral_flux           REAL,
+  onset_rate              REAL,
+  tempo_bpm               REAL,
+  tempo_confidence        REAL,
+  intensity               REAL,
+  intensity_confidence    REAL,
+  brightness              REAL,
+  brightness_confidence   REAL,
+  dynamicity              REAL,
+  dynamicity_confidence   REAL,
+  rhythmicity             REAL,
+  rhythmicity_confidence  REAL,
+  failure_kind            TEXT,
+  failure_detail          TEXT,
+  retry_count             INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+  retry_after             INTEGER CHECK (retry_after IS NULL OR retry_after >= 0),
+  CHECK (intensity IS NULL OR intensity BETWEEN 0.0 AND 1.0),
+  CHECK (intensity_confidence IS NULL OR intensity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (brightness IS NULL OR brightness BETWEEN 0.0 AND 1.0),
+  CHECK (brightness_confidence IS NULL OR brightness_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (dynamicity IS NULL OR dynamicity BETWEEN 0.0 AND 1.0),
+  CHECK (dynamicity_confidence IS NULL OR dynamicity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (rhythmicity IS NULL OR rhythmicity BETWEEN 0.0 AND 1.0),
+  CHECK (rhythmicity_confidence IS NULL OR rhythmicity_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (tempo_confidence IS NULL OR tempo_confidence BETWEEN 0.0 AND 1.0),
+  CHECK (status <> 'ready' OR (
+    loudness_rms IS NOT NULL AND dynamic_range IS NOT NULL AND
+    spectral_centroid_hz IS NOT NULL AND spectral_rolloff_hz IS NOT NULL AND
+    spectral_flux IS NOT NULL AND onset_rate IS NOT NULL AND
+    intensity IS NOT NULL AND intensity_confidence IS NOT NULL AND
+    brightness IS NOT NULL AND brightness_confidence IS NOT NULL AND
+    dynamicity IS NOT NULL AND dynamicity_confidence IS NOT NULL AND
+    rhythmicity IS NOT NULL AND rhythmicity_confidence IS NOT NULL AND
+    failure_kind IS NULL
+  )),
+  CHECK (status <> 'failed' OR failure_kind IS NOT NULL)
+);
+CREATE INDEX idx_track_audio_analysis_status_retry
+  ON track_audio_analysis(status, retry_after);
 "#;
 
 /// Applies pending schema migrations in order, tracked via `PRAGMA
@@ -329,7 +465,18 @@ ALTER TABLE tracks ADD COLUMN disc_no INTEGER;
 /// call being a no-op) is unaffected — every existing migration test still
 /// passes unmodified.
 pub fn migrate(conn: &Connection) -> Result<(), DbError> {
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let cover_cache = crate::cover_download::downloaded_dir();
+    let portrait_cache = crate::artist_portrait::cache::cache_dir();
+    migrate_with_cache_dirs(conn, &cover_cache, &portrait_cache)
+}
+
+pub(crate) fn migrate_with_cache_dirs(
+    conn: &Connection,
+    cover_cache: &Path,
+    portrait_cache: &Path,
+) -> Result<(), DbError> {
+    let initial_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = initial_version;
     if version < 1 {
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA_V1)?;
@@ -430,7 +577,119 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 12)?;
         tx.commit()?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 13 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V13)?;
+        tx.pragma_update(None, "user_version", 13)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 14 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V14)?;
+        tx.pragma_update(None, "user_version", 14)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 15 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V15)?;
+        tx.pragma_update(None, "user_version", 15)?;
+        tx.commit()?;
+    }
+    // Schema v16 has no SQL shape change. Its transactional Rust step records
+    // evidence-backed opt-ins for pre-existing databases: positive image-cache
+    // entries preserve cover and portrait downloads, every existing database
+    // preserves the previously ungated online lyrics, and the retired Artist
+    // News opt-in carries forward to New Releases. Explicit current settings
+    // always win because the migration inserts only missing keys.
+    //
+    // Numbered 16, not 13: this step originally shipped as v13 on its own
+    // branch while main independently took 13/14/15 for the performance
+    // indexes and disc number. Databases stamped by that earlier v13 are
+    // repaired by v14's `DROP INDEX IF EXISTS` and reach the grandfathering
+    // here, where `INSERT OR IGNORE` leaves their existing module rows alone.
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 16 {
+        let tx = conn.unchecked_transaction()?;
+        grandfather_network_features(&tx, initial_version > 0, cover_cache, portrait_cache)?;
+        tx.pragma_update(None, "user_version", 16)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 17 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V17)?;
+        tx.pragma_update(None, "user_version", 17)?;
+        tx.commit()?;
+    }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 18 {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA_V18)?;
+        tx.pragma_update(None, "user_version", 18)?;
+        tx.commit()?;
+    }
     Ok(())
+}
+
+fn grandfather_network_features(
+    tx: &rusqlite::Transaction<'_>,
+    existing_database: bool,
+    cover_cache: &Path,
+    portrait_cache: &Path,
+) -> Result<(), rusqlite::Error> {
+    if existing_database {
+        enable_module_if_unset(tx, &crate::modules::ONLINE_LYRICS_MODULE)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO settings (key, value) \
+             SELECT ?1, '1' \
+             FROM settings \
+             WHERE key = ?2 AND value = '1'",
+            rusqlite::params![
+                crate::modules::enabled_key(&crate::modules::NEW_RELEASES_MODULE),
+                "module.artist_news.enabled"
+            ],
+        )?;
+    }
+    if existing_database && cache_contains_image(cover_cache, crate::cover_download::IMAGE_EXTS) {
+        enable_module_if_unset(tx, &crate::modules::COVER_DOWNLOAD_MODULE)?;
+    }
+    if existing_database
+        && cache_contains_image(portrait_cache, crate::artist_portrait::cache::IMAGE_EXTS)
+    {
+        enable_module_if_unset(tx, &crate::modules::ARTIST_PORTRAITS_MODULE)?;
+    }
+    Ok(())
+}
+
+fn enable_module_if_unset(
+    tx: &rusqlite::Transaction<'_>,
+    module: &crate::modules::ModuleDescriptor,
+) -> Result<(), rusqlite::Error> {
+    tx.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, '1')",
+        [crate::modules::enabled_key(module)],
+    )?;
+    Ok(())
+}
+
+fn cache_contains_image(directory: &Path, extensions: &[&str]) -> bool {
+    std::fs::read_dir(directory).is_ok_and(|entries| {
+        entries.filter_map(Result::ok).any(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_file())
+                && entry
+                    .path()
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| {
+                        extensions
+                            .iter()
+                            .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+                    })
+        })
+    })
 }
 
 /// Stores pre-computed waveform peaks for a track.
@@ -474,3 +733,15 @@ mod tests;
 #[cfg(test)]
 #[path = "db_recent_migration_tests.rs"]
 mod recent_migration_tests;
+
+#[cfg(test)]
+#[path = "db_stats_migration_tests.rs"]
+mod stats_migration_tests;
+
+#[cfg(test)]
+#[path = "db_audio_analysis_migration_tests.rs"]
+mod audio_analysis_migration_tests;
+
+#[cfg(test)]
+#[path = "db_migration_repair_tests.rs"]
+mod migration_repair_tests;

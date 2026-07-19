@@ -12,9 +12,12 @@
 //! reloading just that one provider — the mechanism behind the live theme
 //! picker.
 
+pub(super) mod buttons;
 pub(super) mod cover_accent;
 pub(super) mod interactions;
 pub(super) mod menus;
+pub(super) mod reduced_motion;
+mod text_levels;
 pub(super) mod theme;
 pub(super) mod tokens;
 
@@ -35,27 +38,34 @@ thread_local! {
 /// Palette colors are NOT here — they live in the separate theme provider.
 fn app_css() -> String {
     [
+        buttons::css(),
         interactions::css(),
+        text_levels::css(),
         super::link_activation::css(),
         menus::css(),
         super::browse_bar::css(),
         super::column_header_dnd::css(),
         super::column_layout_editor::css(),
         super::eq_bars::css(),
+        super::glass::css(),
+        super::playing_marker::css(),
         super::sidebar_device_card::css(),
         super::device_view::css(),
         super::list_density::css(),
         super::library_chrome::css(),
         super::library_view_css::css(),
         super::album_card_css::css(),
+        super::album_glow::css(),
         super::artist_view_css::css(),
         super::now_playing::css(),
         super::lyrics_view::css(),
         super::player_bar_layout::css(),
         super::preference_choice_cards::css(),
         super::preference_playback::css(),
+        super::preference_plugins::css(),
         super::preferences_window::css(),
         super::rating::css(),
+        super::track_content::css(),
         super::track_list_header_style::css(),
         super::track_list_row_interaction::css(),
         super::stats_css::css(),
@@ -133,6 +143,7 @@ pub(super) fn install() {
         THEME_PROVIDER.with(|slot| *slot.borrow_mut() = Some(theme_provider));
 
         cover_accent::install(&display);
+        reduced_motion::install(&display);
 
         adw::StyleManager::default().connect_dark_notify(|_| {
             reload_theme_for_appearance();
@@ -178,27 +189,59 @@ fn reload_theme_for_appearance() {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn style_2_side_surfaces_follow_the_theme() {
+        let css = super::app_css();
+
+        assert!(css.contains(
+            ".reprise-library-split .reprise-library-sidebar { background-color: @sidebar_bg_color;"
+        ));
+        assert!(css.contains(".reprise-now-playing-stage { background-color: @sidebar_bg_color;"));
+        assert!(css.contains("border-right: 1px solid rgba(255, 255, 255, 0.06)"));
+        assert!(css.contains("border-left: 1px solid rgba(255, 255, 255, 0.06)"));
+
+        for theme in super::theme::Theme::all() {
+            for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
+                assert!(
+                    super::theme::theme_css(theme, is_dark).contains(&format!(
+                        "@define-color sidebar_bg_color {};",
+                        palette.sidebar_bg
+                    )),
+                    "{theme:?} did not project its sidebar surface into both consumers"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn app_css_contains_every_feature_section() {
         let css = super::app_css();
 
         for marker in [
             ".reprise-equalizer scale > trough > highlight",
+            ".reprise-glass-surface",
             "popover.menu > contents",
             ".toast button.text-button",
             ".player-bar-play",
             ".reprise-surface",
             ".reprise-hover:hover",
+            ".reprise-btn-icon:hover",
+            ".reprise-btn-toggle:checked",
+            ".reprise-text-primary",
+            ".reprise-text-secondary",
+            ".reprise-text-hint",
             ".reprise-filter-chip",
             ".reprise-column-drop-before",
             ".reprise-column-row:hover",
             ".reprise-track-cell.reprise-density-comfortable",
             ".album-card",
+            ".album-now-playing-glow",
             ".library-album-card",
             ".artist-list-row",
             ".reprise-now-playing-stage",
             ".lyrics-line-active",
             "checkbutton.reprise-choice-card",
             ".reprise-rating-star",
+            ".reprise-list-status-bar",
             ".reprise-track-list > header label",
             ".reprise-reorder-target",
             ".stats-chart",
@@ -255,6 +298,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mot_7_css_honours_enable_animations_setting() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         use gtk4::prelude::*;
 
         gtk4::init().unwrap();

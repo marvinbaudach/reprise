@@ -71,6 +71,7 @@ pub(crate) struct TrackMeta {
     pub(crate) artist: String,
     pub(crate) album: String,
     pub(crate) album_artist: String,
+    pub(crate) artist_mbid: Option<String>,
     pub(crate) year: Option<i32>,
     pub(crate) track_no: Option<i32>,
     pub(crate) disc_no: Option<i32>,
@@ -109,6 +110,12 @@ pub(crate) fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
         album_artist: get(&|t| {
             t.get_string(lofty::tag::ItemKey::AlbumArtist)
                 .map(std::string::ToString::to_string)
+        }),
+        artist_mbid: tag.and_then(|tag| {
+            tag.get_string(lofty::tag::ItemKey::MusicBrainzArtistId)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
         }),
         year: tag
             .and_then(Accessor::date)

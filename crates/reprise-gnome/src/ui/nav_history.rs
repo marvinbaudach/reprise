@@ -26,6 +26,26 @@ const MAX_HISTORY: usize = 50;
 pub(in crate::ui) struct NavPlace {
     pub(in crate::ui) source: ViewSource,
     pub(in crate::ui) library_tab: Option<String>,
+    transient: Option<TransientPlace>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransientPlace {
+    NewReleases,
+}
+
+impl NavPlace {
+    pub(in crate::ui) fn source(source: ViewSource, library_tab: Option<String>) -> Self {
+        Self {
+            source,
+            library_tab,
+            transient: None,
+        }
+    }
+
+    pub(in crate::ui) fn is_new_releases(&self) -> bool {
+        self.transient == Some(TransientPlace::NewReleases)
+    }
 }
 
 #[derive(Default)]
@@ -93,6 +113,16 @@ impl NavHistory {
         }
     }
 
+    /// Records the row-less New Releases digest over the current routed
+    /// source. The retained source/tab is the place Back restores, while the
+    /// transient marker makes Forward return to the digest itself.
+    pub(in crate::ui) fn record_new_releases(&self) -> Option<NavPlace> {
+        let mut place = self.last.borrow().clone()?;
+        place.transient = Some(TransientPlace::NewReleases);
+        self.record_route(&place);
+        Some(place)
+    }
+
     /// Pops the most recent place and remembers the CURRENT place on the
     /// forward stack, so `go_forward` can return here. The caller routes
     /// to the returned place wrapped in `begin_back`/`end_back` (plus a
@@ -136,10 +166,7 @@ mod tests {
     use super::*;
 
     fn place(source: ViewSource) -> NavPlace {
-        NavPlace {
-            source,
-            library_tab: None,
-        }
+        NavPlace::source(source, None)
     }
 
     #[test]
@@ -196,6 +223,7 @@ mod tests {
         nav.record_route(&NavPlace {
             source: ViewSource::Library,
             library_tab: Some("tracks".into()),
+            transient: None,
         });
         // User clicks the Albums tab (mode switch, not a route)…
         nav.note_library_tab("albums");
@@ -206,6 +234,7 @@ mod tests {
                 album_artist: "Radiohead".into(),
             },
             library_tab: Some("tracks".into()),
+            transient: None,
         });
         // Back must return to the Albums GRID, not the Tracks tab.
         assert_eq!(
@@ -213,6 +242,7 @@ mod tests {
             Some(NavPlace {
                 source: ViewSource::Library,
                 library_tab: Some("albums".into()),
+                transient: None,
             })
         );
     }
@@ -223,6 +253,7 @@ mod tests {
         nav.record_route(&NavPlace {
             source: ViewSource::Library,
             library_tab: Some("tracks".into()),
+            transient: None,
         });
         nav.note_library_tab("albums");
         // Album card's artist link: same source, Albums → Artists tab.
@@ -232,6 +263,7 @@ mod tests {
             Some(NavPlace {
                 source: ViewSource::Library,
                 library_tab: Some("albums".into()),
+                transient: None,
             })
         );
         // The deep-link target became current: the next route pushes it.
@@ -241,6 +273,7 @@ mod tests {
             Some(NavPlace {
                 source: ViewSource::Library,
                 library_tab: Some("artists".into()),
+                transient: None,
             })
         );
     }
@@ -304,5 +337,19 @@ mod tests {
         nav.record_route(&place(ViewSource::Library));
         nav.record_route(&place(ViewSource::Queue));
         assert_eq!(nav.go_forward(), None);
+    }
+
+    #[test]
+    fn nr_4_digest_is_a_regular_back_forward_place() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+
+        let digest = nav.record_new_releases().unwrap();
+        assert!(digest.is_new_releases());
+        assert_eq!(
+            simulate(&nav, nav.go_back()),
+            Some(place(ViewSource::Library))
+        );
+        assert_eq!(simulate(&nav, nav.go_forward()), Some(digest));
     }
 }

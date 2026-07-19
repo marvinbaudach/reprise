@@ -34,6 +34,10 @@ pub(super) fn plural(
 mod artist;
 pub use artist::*;
 
+#[path = "strings_audio_analysis.rs"]
+mod audio_analysis;
+pub use audio_analysis::*;
+
 #[path = "strings_issues.rs"]
 mod issues;
 pub use issues::*;
@@ -67,6 +71,10 @@ pub use tag_edit::*;
 #[path = "strings_track_menu.rs"]
 mod track_menu;
 pub use track_menu::*;
+
+#[path = "strings_stats.rs"]
+mod stats;
+pub use stats::*;
 
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
 pub const ONBOARDING_PRIVACY: &str = N_!("Reprise keeps your library local. Missing album covers are retrieved automatically from MusicBrainz and Cover Art Archive. Music files are changed only when you explicitly edit tags or move tracks to Trash.");
@@ -412,7 +420,6 @@ pub const QUEUE_CLEAR_PLAY_NEXT: &str = N_!("Clear");
 pub const QUEUE_SECTION_PLAY_NEXT: &str = N_!("Play Next");
 /// `{}` is the playback origin's display label (playlist/album/artist name
 /// or the localized "Music").
-pub const QUEUE_SECTION_UP_NEXT_FROM: &str = N_!("Up Next · from {}");
 pub const EMPTY_QUEUE_TITLE: &str = N_!("Nothing queued");
 pub const EMPTY_QUEUE_DESCRIPTION: &str = N_!("Play something");
 pub const SIDEBAR_NEW_PLAYLIST: &str = N_!("New playlist");
@@ -510,6 +517,9 @@ pub fn tracks_added_to_queue_toast(count: usize) -> String {
         &[("count", &count_text)],
     )
 }
+
+pub const CONTEXT_MENU_MOVE_UP: &str = N_!("Move up");
+pub const CONTEXT_MENU_MOVE_DOWN: &str = N_!("Move down");
 
 /// Toast for the "Add to playlist" context-menu action — used for both an
 /// existing playlist and one just created via "New playlist…", since the
@@ -699,5 +709,10 @@ mod tests {
             scan_complete_toast(38, 3),
             "Scan complete · 38 new, 3 failed"
         );
+    }
+
+    #[test]
+    fn que_4_footer_uses_the_shared_thousands_format() {
+        assert_eq!(up_next_footer(1_652, "4 days"), "1,652 tracks · 4 days");
     }
 }

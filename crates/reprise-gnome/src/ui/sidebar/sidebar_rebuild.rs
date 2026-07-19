@@ -13,6 +13,7 @@ use super::sidebar_export;
 use super::sidebar_issue_cleanup;
 use super::sidebar_presentation::{self, NavIcon};
 use super::strings;
+use super::surface::remember_issue_focus_entry;
 use super::{find_row, resolve_select_source, select_row_in_its_listbox, RowEntry, Shared};
 
 pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
@@ -257,6 +258,7 @@ fn add_issue_row(
     let row = sidebar_presentation::build_issue_nav_row(title, presentation, icon);
     sidebar_issue_cleanup::wire_issue_context_menu(shared, &row, source.clone());
     shared.issues_listbox.append(&row);
+    remember_issue_focus_entry(&shared.issues_listbox, &row);
     shared
         .rows
         .borrow_mut()

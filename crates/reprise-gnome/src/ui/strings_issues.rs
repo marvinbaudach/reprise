@@ -23,14 +23,14 @@ pub fn issue_show_more(count: u32) -> String {
 
 pub const MISSING_CLEAR_TITLE: &str = N_!("No missing files ✓");
 pub const MISSING_CLEAR_DESCRIPTION: &str = N_!("Your library has no missing file entries.");
-pub const MISSING_UNAVAILABLE_ICON: &str = N_!("⏏");
+pub const MISSING_UNAVAILABLE_ICON: &str = "⏏";
 pub const MISSING_UNAVAILABLE_TITLE: &str = N_!("On unavailable drive");
 pub const MISSING_UNKNOWN_LOCATION: &str = N_!("unknown location");
 pub const MISSING_NOT_MOUNTED: &str = N_!("not mounted");
 pub const MISSING_RETURNS_WHEN_MOUNTED: &str =
     N_!("return automatically when the drive is mounted");
 pub const MISSING_VERIFY_NEXT_SCAN: &str = N_!("will be verified on next scan");
-pub const MISSING_DELETED_ICON: &str = N_!("🗑");
+pub const MISSING_DELETED_ICON: &str = "🗑";
 pub const MISSING_DELETED_TITLE: &str = N_!("Deleted from disk");
 pub const MISSING_DELETED_META: &str = N_!("folder still exists");
 pub const MISSING_REMOVE: &str = N_!("Remove");
@@ -163,20 +163,20 @@ pub fn issue_text(message: &str) -> String {
     text(message)
 }
 
-pub const IMPORT_ISSUE_TAGS_ICON: &str = N_!("✎");
+pub const IMPORT_ISSUE_TAGS_ICON: &str = "✎";
 pub const IMPORT_ISSUE_TAGS_TITLE: &str = N_!("Unreadable tags");
 pub const IMPORT_ISSUE_TAGS_ROW: &str =
     N_!("Tags unreadable — the file itself can usually still be played");
-pub const IMPORT_ISSUE_PERMISSION_ICON: &str = N_!("🔒");
+pub const IMPORT_ISSUE_PERMISSION_ICON: &str = "🔒";
 pub const IMPORT_ISSUE_PERMISSION_TITLE: &str = N_!("Permission denied");
 pub const IMPORT_ISSUE_PERMISSION_ROW: &str = N_!("Reprise cannot read this file");
-pub const IMPORT_ISSUE_FORMAT_ICON: &str = N_!("◇");
+pub const IMPORT_ISSUE_FORMAT_ICON: &str = "◇";
 pub const IMPORT_ISSUE_FORMAT_TITLE: &str = N_!("Unsupported format");
 pub const IMPORT_ISSUE_FORMAT_ROW: &str = N_!("This audio format is not supported");
-pub const IMPORT_ISSUE_IO_ICON: &str = N_!("⚠");
+pub const IMPORT_ISSUE_IO_ICON: &str = "⚠";
 pub const IMPORT_ISSUE_IO_TITLE: &str = N_!("Read error");
 pub const IMPORT_ISSUE_IO_ROW: &str = N_!("The file could not be read");
-pub const IMPORT_ISSUE_UNKNOWN_ICON: &str = N_!("?");
+pub const IMPORT_ISSUE_UNKNOWN_ICON: &str = "?";
 pub const IMPORT_ISSUE_UNKNOWN_TITLE: &str = N_!("Unclassified");
 pub const IMPORT_ISSUE_UNKNOWN_ROW: &str = N_!("The error could not be classified");
 pub const IMPORT_ISSUE_FILE_ONE: &str = N_!("1 file");

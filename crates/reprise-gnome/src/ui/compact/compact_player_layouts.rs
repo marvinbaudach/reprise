@@ -5,6 +5,7 @@ use gtk4::prelude::*;
 
 use super::cover_loader::CoverLoader;
 use super::strings;
+use super::style::buttons;
 use super::style::tokens::TRANSITION;
 use super::waveform_seek::WaveformSeek;
 
@@ -91,6 +92,9 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
     play_pause_button.set_valign(gtk4::Align::Center);
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(CSS_PLAY);
+    // Same primary tier as the full player bar's play button, from the same
+    // central set — the two players must not drift apart (BTN-4).
+    buttons::arm(&play_pause_button, buttons::PRIMARY_CLASS);
 
     // — Card (cover | text | play) —
     let card = gtk4::Box::new(gtk4::Orientation::Horizontal, INNER_SPACING);
@@ -117,6 +121,7 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
     let restore_button = gtk4::Button::from_icon_name("window-restore-symbolic");
     restore_button.add_css_class("circular");
     restore_button.add_css_class(CSS_ICON_BTN);
+    buttons::arm(&restore_button, buttons::ICON_CLASS);
     restore_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_RESTORE_FULL_WINDOW)));
     restore_button.set_width_request(26);
     restore_button.set_height_request(26);
@@ -124,6 +129,7 @@ pub(in crate::ui) fn build_mini() -> MiniWidgets {
     let close_button = gtk4::Button::from_icon_name("window-close-symbolic");
     close_button.add_css_class("circular");
     close_button.add_css_class(CSS_ICON_BTN);
+    buttons::arm(&close_button, buttons::ICON_CLASS);
     close_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_CLOSE_MINI_PLAYER)));
     close_button.set_width_request(26);
     close_button.set_height_request(26);
@@ -188,7 +194,11 @@ pub(in crate::ui) fn mini_css() -> String {
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform {TRANSITION}; }}\n\
          .{CSS_PLAY}:hover {{ box-shadow: 0 0 18px alpha(@reprise_player_accent, 0.60); }}\n\
-         .{CSS_PLAY}:active {{ transform: scale(0.92); }}\n\
+         /* BTN-3: the press sink comes from `style::buttons`; the mini card \
+            only adds the accent ring its main action is allowed. */\n\
+         .{CSS_PLAY}:active {{ \
+           box-shadow: 0 0 0 3px alpha(@reprise_player_accent, 0.45), \
+                       0 0 18px alpha(@reprise_player_accent, 0.70); }}\n\
          .{CSS_TITLE} {{ font-weight: bold; font-size: 13px; }}\n\
          .{CSS_ARTIST} {{ color: alpha(@window_fg_color, 0.55); font-size: 11px; }}\n\
          .{CSS_ICON_BTN} {{ min-width: 26px; min-height: 26px; padding: 3px; \

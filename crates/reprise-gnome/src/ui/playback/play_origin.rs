@@ -1,6 +1,6 @@
 //! Playback origin: which view a `play_from_view` snapshot was started from,
 //! plus a display label resolved at play time. Powers the Queue view's
-//! "Up Next · from <source>" section title (QUE-1) and NAV-9a's jump target.
+//! named virtual context-tail header (QUE-7) and NAV-9a's jump target.
 //! The label is resolved once when playback starts (not on display) so a
 //! playlist renamed mid-playback keeps the name the user pressed play on,
 //! and so a session restore never needs a second lookup.

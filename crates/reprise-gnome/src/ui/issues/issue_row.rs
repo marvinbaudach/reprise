@@ -1,5 +1,6 @@
 //! Shared issue row with hover actions.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -7,6 +8,10 @@ use gtk4::prelude::*;
 const IDLE_CHILD: &str = "idle";
 const ACTIONS_CHILD: &str = "actions";
 const HOVER_CROSSFADE_MS: u32 = 100;
+
+fn actions_visible(pointer_inside: bool, focus_inside: bool) -> bool {
+    pointer_inside || focus_inside
+}
 
 /// One keyboard-accessible action shown on row hover.
 #[derive(Clone)]
@@ -107,12 +112,39 @@ impl IssueRow {
         grid.attach(&right, 4, 0, 1, 1);
 
         if has_actions {
+            let pointer_inside = Rc::new(Cell::new(false));
+            let focus_inside = Rc::new(Cell::new(false));
             let motion = gtk4::EventControllerMotion::new();
             let enter_stack = right.clone();
-            motion.connect_enter(move |_, _, _| enter_stack.set_visible_child_name(ACTIONS_CHILD));
-            let leave_stack = right;
-            motion.connect_leave(move |_| leave_stack.set_visible_child_name(IDLE_CHILD));
+            let enter_pointer = pointer_inside.clone();
+            let enter_focus = focus_inside.clone();
+            motion.connect_enter(move |_, _, _| {
+                enter_pointer.set(true);
+                set_actions_visibility(&enter_stack, true, enter_focus.get());
+            });
+            let leave_stack = right.clone();
+            let leave_pointer = pointer_inside.clone();
+            let leave_focus = focus_inside.clone();
+            motion.connect_leave(move |_| {
+                leave_pointer.set(false);
+                set_actions_visibility(&leave_stack, false, leave_focus.get());
+            });
             root.add_controller(motion);
+
+            let focus = gtk4::EventControllerFocus::new();
+            let focus_stack = right.clone();
+            let focus_pointer = pointer_inside.clone();
+            let focus_inside_enter = focus_inside.clone();
+            focus.connect_enter(move |_| {
+                focus_inside_enter.set(true);
+                set_actions_visibility(&focus_stack, focus_pointer.get(), true);
+            });
+            let blur_stack = right;
+            focus.connect_leave(move |_| {
+                focus_inside.set(false);
+                set_actions_visibility(&blur_stack, pointer_inside.get(), false);
+            });
+            root.add_controller(focus);
         }
 
         root.set_child(Some(&grid));
@@ -124,6 +156,14 @@ impl IssueRow {
     }
 }
 
+fn set_actions_visibility(stack: &gtk4::Stack, pointer_inside: bool, focus_inside: bool) {
+    stack.set_visible_child_name(if actions_visible(pointer_inside, focus_inside) {
+        ACTIONS_CHILD
+    } else {
+        IDLE_CHILD
+    });
+}
+
 fn row_label(text: &str, css_class: &str, expand: bool) -> gtk4::Label {
     let label = gtk4::Label::new(Some(text));
     label.set_xalign(0.0);
@@ -131,4 +171,17 @@ fn row_label(text: &str, css_class: &str, expand: bool) -> gtk4::Label {
     label.set_hexpand(expand);
     label.add_css_class(css_class);
     label
+}
+
+#[cfg(test)]
+mod tests {
+    use super::actions_visible;
+
+    #[test]
+    fn row_actions_remain_visible_for_keyboard_focus() {
+        assert!(actions_visible(false, true));
+        assert!(actions_visible(true, false));
+        assert!(actions_visible(true, true));
+        assert!(!actions_visible(false, false));
+    }
 }

@@ -16,19 +16,30 @@ use rusqlite::Connection;
 use crate::ui::album_card::{self, AlbumActivateSlot, AlbumCardShared, ArtistActivateSlot};
 use crate::ui::album_card_state::{AlbumCardIdentityRegistry, RevealBindingRegistry};
 use crate::ui::album_context_menu::AlbumMenuShared;
+use crate::ui::album_glow::AlbumGlow;
 use crate::ui::album_header::{self, AlbumSortKey};
 use crate::ui::album_view_actions::{self, AlbumViewActions};
-use crate::ui::album_view_state::{AlbumViewState, AlbumViewStateParts, NowPlayingAlbumCallback};
+use crate::ui::album_view_memory::{self, SavedAlbumViewState};
+use crate::ui::album_view_state::{AlbumViewState, AlbumViewStateParts};
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::current_track_selection::NowPlayingAlbum;
+use crate::ui::discovery_hint::AlbumDiscovery;
 use crate::ui::strings;
+
+pub(in crate::ui) type NowPlayingAlbumCallback = Rc<dyn Fn(Option<NowPlayingAlbum>)>;
 
 pub(in crate::ui) struct AlbumView {
     root: gtk4::Box, // vertical: header + stack(grid | empty | search-empty)
     grid_view: gtk4::GridView,
+    selection: gtk4::SingleSelection,
+    filter_model: gtk4::FilterListModel,
+    saved_view_state: Rc<RefCell<Option<SavedAlbumViewState>>>,
     state: AlbumViewState,
     actions: AlbumViewActions,
     on_activate: AlbumActivateSlot,
     on_artist_activate: ArtistActivateSlot,
+    discovery: AlbumDiscovery,
+    glow: AlbumGlow,
 }
 
 impl AlbumView {
@@ -46,13 +57,22 @@ impl AlbumView {
         let sort_model = gtk4::SortListModel::new(Some(store.clone()), Some(sorter));
         let filter = gtk4::CustomFilter::new(|_| true);
         let filter_model = gtk4::FilterListModel::new(Some(sort_model.clone()), Some(filter));
+        let saved_view_state = Rc::new(RefCell::new(None));
 
         // ── Shared state for card factory ──────────────────────────────
         let on_activate: AlbumActivateSlot = Rc::new(RefCell::new(None));
         let on_artist_activate: ArtistActivateSlot = Rc::new(RefCell::new(None));
 
+        let cover_download_enabled = reprise_core::modules::is_enabled(
+            &conn.borrow(),
+            &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+        )
+        .unwrap_or(false);
+        let discovery = AlbumDiscovery::new(conn, cover_download_enabled);
+        let glow = AlbumGlow::new(cover_loader.clone());
         let card_shared = Rc::new(AlbumCardShared {
             cover_loader,
+            fallback_evidence: discovery.evidence(),
             generation: Rc::new(Cell::new(0)),
             identity_generation: Rc::new(Cell::new(0)),
             identities: Rc::new(RefCell::new(AlbumCardIdentityRegistry::default())),
@@ -70,8 +90,13 @@ impl AlbumView {
         let factory = album_card::build_factory(&card_shared);
 
         // ── GridView ───────────────────────────────────────────────────
+        let selection = gtk4::SingleSelection::builder()
+            .model(&filter_model)
+            .autoselect(false)
+            .can_unselect(true)
+            .build();
         let grid_view = gtk4::GridView::builder()
-            .model(&gtk4::NoSelection::new(Some(filter_model.clone())))
+            .model(&selection)
             .factory(&factory)
             .min_columns(1)
             .max_columns(200)
@@ -159,6 +184,7 @@ impl AlbumView {
         // cell, which cancels the card's own click gesture (a real caught
         // regression: cards stopped opening).
         {
+            // input-parity: ACC-8 keyboard=native-grid-focus
             let empty_click = gtk4::GestureClick::new();
             empty_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
             let grid = grid_view.downgrade();
@@ -204,16 +230,39 @@ impl AlbumView {
 
         // ── Header ─────────────────────────────────────────────────────
         let sort_model_for_header = sort_model.clone();
+        let grid_for_sort = grid_view.clone();
+        let selection_for_sort = selection.clone();
+        let filter_for_sort = filter_model.clone();
         let (header, count_label, _dropdown) =
             album_header::build_header(conn, move |new_key: AlbumSortKey| {
+                let saved = album_view_memory::capture(
+                    &grid_for_sort,
+                    &selection_for_sort,
+                    &filter_for_sort,
+                );
                 let new_sorter = album_header::build_sorter(new_key);
                 sort_model_for_header.set_sorter(Some(&new_sorter));
+                album_view_memory::restore(
+                    &grid_for_sort,
+                    &selection_for_sort,
+                    &filter_for_sort,
+                    &saved,
+                );
             });
 
         // ── Root layout ────────────────────────────────────────────────
+        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        content.add_css_class("album-view-content");
+        content.append(&header);
+        content.append(discovery.widget());
+        content.append(&stack);
+
+        let ambient = gtk4::Overlay::new();
+        ambient.set_child(Some(glow.picture()));
+        ambient.add_overlay(&content);
+        ambient.set_measure_overlay(&content, true);
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        root.append(&header);
-        root.append(&stack);
+        root.append(&ambient);
 
         let state = AlbumViewState::new(
             AlbumViewStateParts::new(
@@ -232,10 +281,15 @@ impl AlbumView {
         let view = Self {
             root,
             grid_view,
+            selection,
+            filter_model,
+            saved_view_state,
             state,
             actions,
             on_activate,
             on_artist_activate,
+            discovery,
+            glow,
         };
         view.refresh();
         view
@@ -258,6 +312,13 @@ impl AlbumView {
 
     pub(in crate::ui) fn set_on_artist_activate(&self, callback: impl Fn(String) + 'static) {
         *self.on_artist_activate.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_hint_settings(
+        &self,
+        callback: impl Fn(&'static [&'static str]) + 'static,
+    ) {
+        self.discovery.set_on_open_plugins(callback);
     }
 
     /// Wires the play-album callback (queue replace + play).
@@ -303,11 +364,64 @@ impl AlbumView {
     /// Used by `window.rs` to wire the `PlayerController` callback without
     /// needing an `Rc<AlbumView>`.
     pub(in crate::ui) fn now_playing_callback(&self) -> NowPlayingAlbumCallback {
-        self.state.now_playing_callback()
+        let identity = self.state.now_playing_callback();
+        let glow = self.glow.clone();
+        Rc::new(move |album| {
+            identity(
+                album
+                    .as_ref()
+                    .map(|album| (album.album.clone(), album.artist.clone())),
+            );
+            glow.set_track_path(album.as_ref().map(|album| album.track_path.as_str()));
+        })
     }
 
     pub(in crate::ui) fn playback_state_callback(&self) -> Rc<dyn Fn(PlaybackState)> {
         self.state.playback_state_callback()
+    }
+
+    pub(in crate::ui) fn remember_view_state_callback(&self) -> Rc<dyn Fn()> {
+        let grid = self.grid_view.downgrade();
+        let selection = self.selection.clone();
+        let model = self.filter_model.clone();
+        let memory = self.saved_view_state.clone();
+        Rc::new(move || {
+            let Some(grid) = grid.upgrade() else { return };
+            *memory.borrow_mut() = Some(album_view_memory::capture(&grid, &selection, &model));
+        })
+    }
+
+    pub(in crate::ui) fn restore_view_state_callback(&self) -> Rc<dyn Fn()> {
+        let grid = self.grid_view.downgrade();
+        let selection = self.selection.clone();
+        let model = self.filter_model.clone();
+        let memory = self.saved_view_state.clone();
+        Rc::new(move || {
+            let Some(saved) = memory.borrow().clone() else {
+                return;
+            };
+            let Some(grid) = grid.upgrade() else { return };
+            album_view_memory::restore(&grid, &selection, &model, &saved);
+        })
+    }
+
+    pub(in crate::ui) fn reveal_playing_context_callback(&self) -> Rc<dyn Fn() -> bool> {
+        let grid = self.grid_view.downgrade();
+        let model = self.filter_model.clone();
+        let now_playing = self.state.now_playing_identity_cell();
+        Rc::new(move || {
+            let Some((title, artist)) = now_playing.borrow().clone() else {
+                return false;
+            };
+            let Some(grid) = grid.upgrade() else {
+                return false;
+            };
+            album_view_memory::reveal(
+                &grid,
+                &model,
+                &crate::ui::album_view_memory::AlbumIdentity { title, artist },
+            )
+        })
     }
 
     pub(in crate::ui) fn reveal_callback(
@@ -343,216 +457,5 @@ impl AlbumView {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::*;
-
-    fn wait_for_layout(milliseconds: u64) {
-        let main_loop = gtk4::glib::MainLoop::new(None, false);
-        let quit = main_loop.clone();
-        gtk4::glib::timeout_add_local_once(Duration::from_millis(milliseconds), move || {
-            quit.quit();
-        });
-        main_loop.run();
-    }
-
-    fn descendants_with_class(root: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget> {
-        let mut matches = Vec::new();
-        let mut pending = vec![root.clone()];
-        while let Some(widget) = pending.pop() {
-            if widget.has_css_class(class) {
-                matches.push(widget.clone());
-            }
-            let mut child = widget.first_child();
-            while let Some(current) = child {
-                pending.push(current.clone());
-                child = current.next_sibling();
-            }
-        }
-        matches
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn keyboard_activate_on_grid_opens_album() {
-        gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
-             ('/one.flac','One','Artist A','First',0);",
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
-        let view = AlbumView::new(&conn, loader);
-
-        let activated: Rc<RefCell<Option<AlbumSummary>>> = Rc::new(RefCell::new(None));
-        {
-            let activated = activated.clone();
-            view.set_on_activate(move |album| {
-                *activated.borrow_mut() = Some(album);
-            });
-        }
-
-        // `activate` is the signal GridView's built-in Enter binding emits
-        // for the focused cell — emitting it directly exercises the same
-        // handler the keyboard path runs.
-        view.grid_widget().emit_by_name::<()>("activate", &[&0u32]);
-
-        let opened = activated.borrow();
-        assert_eq!(opened.as_ref().map(|a| a.album.as_str()), Some("First"));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn album_grid_loads_from_query_and_supports_filter() {
-        gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
-             ('/one.flac','One','Artist A','First',0),
-             ('/two.flac','Two','Artist B','Second',0);",
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
-        let view = AlbumView::new(&conn, loader);
-
-        assert_eq!(view.album_count(), 2);
-
-        let filter = view.filter_callback();
-        filter("first");
-        assert_eq!(view.state.filtered_count(), 1);
-
-        filter("");
-        assert_eq!(view.state.filtered_count(), 2);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn grid_5_reveal_scrolls_to_playing_album() {
-        gtk4::init().unwrap();
-        let settings = gtk4::Settings::default().unwrap();
-        let animations_before = settings.is_gtk_enable_animations();
-        settings.set_gtk_enable_animations(false);
-
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
-             ('/one.flac','One','Artist A','First',0),
-             ('/two.flac','Two','Artist B','Playing',0),
-             ('/three.flac','Three','Artist C','Last',0);",
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
-        let view = AlbumView::new(&conn, loader);
-        let window = gtk4::Window::builder()
-            .default_width(500)
-            .default_height(600)
-            .child(view.widget())
-            .build();
-        window.present();
-        wait_for_layout(50);
-
-        view.now_playing_callback()(Some(("Playing".into(), "Artist B".into())));
-        view.filter_callback()("no visible album");
-        assert_eq!(view.state.filtered_count(), 0);
-
-        assert!(view.reveal_callback()("Playing", "Artist B"));
-        wait_for_layout(50);
-        assert_eq!(
-            view.state.filtered_count(),
-            3,
-            "reveal clears the album filter"
-        );
-
-        let focused = view
-            .grid_widget()
-            .focus_child()
-            .expect("GtkGridView focused the revealed item");
-        let title = descendants_with_class(&focused, crate::ui::album_card_css::TITLE_CLASS)
-            .into_iter()
-            .next()
-            .and_downcast::<gtk4::Label>()
-            .expect("revealed title");
-        assert_eq!(title.text(), "Playing");
-
-        let reveal_frame =
-            descendants_with_class(&focused, crate::ui::album_card_css::REVEAL_FRAME_CLASS)
-                .into_iter()
-                .next()
-                .expect("cover-only reveal frame");
-        assert!(reveal_frame.has_css_class(crate::ui::album_card_css::REVEAL_PULSE_STATIC_CLASS));
-        let playing_layer =
-            descendants_with_class(&focused, crate::ui::album_card_css::PLAYING_LAYER_CLASS)
-                .into_iter()
-                .next()
-                .expect("persistent playing layer");
-        assert!(playing_layer.is_visible());
-
-        wait_for_layout(crate::ui::album_card_css::REVEAL_DURATION_MS + 50);
-        assert!(!reveal_frame.has_css_class(crate::ui::album_card_css::REVEAL_PULSE_STATIC_CLASS));
-        assert_eq!(view.grid_widget().focus_child(), Some(focused));
-        assert!(playing_layer.is_visible());
-
-        window.close();
-        settings.set_gtk_enable_animations(animations_before);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn grid_6_restore_focus_targets_departed_album_without_reveal_pulse() {
-        gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES
-             ('/one.flac','One','Artist A','First',0),
-             ('/two.flac','Two','Artist B','Return Here',0),
-             ('/three.flac','Three','Artist C','Last',0);",
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
-        let view = AlbumView::new(&conn, loader);
-        let window = gtk4::Window::builder()
-            .default_width(500)
-            .default_height(600)
-            .child(view.widget())
-            .build();
-        window.present();
-        wait_for_layout(50);
-
-        assert!(view.restore_focus_callback()("Return Here", "Artist B"));
-        wait_for_layout(50);
-
-        let focused = view
-            .grid_widget()
-            .focus_child()
-            .expect("GtkGridView focused the restored album");
-        let title = descendants_with_class(&focused, crate::ui::album_card_css::TITLE_CLASS)
-            .into_iter()
-            .next()
-            .and_downcast::<gtk4::Label>()
-            .expect("restored title");
-        assert_eq!(title.text(), "Return Here");
-        let reveal_frame =
-            descendants_with_class(&focused, crate::ui::album_card_css::REVEAL_FRAME_CLASS)
-                .into_iter()
-                .next()
-                .expect("cover-only reveal frame");
-        assert!(!reveal_frame.has_css_class(crate::ui::album_card_css::REVEAL_PULSE_CLASS));
-        assert!(!reveal_frame.has_css_class(crate::ui::album_card_css::REVEAL_PULSE_STATIC_CLASS));
-
-        window.close();
-    }
-}
+#[path = "album_view_tests.rs"]
+mod tests;

@@ -17,7 +17,7 @@ use reprise_core::queries::ArtistAlbum;
 
 use crate::ui::artist_detail_pane::{AlbumCallback, TrackCallback};
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::eq_bars::{self, EqVariant};
+use crate::ui::playing_marker;
 use crate::ui::strings;
 
 /// Album cover edge in the albums row.
@@ -30,7 +30,7 @@ const TRACK_COVER_SIZE: i32 = 30;
 /// walking the widget tree.
 pub(in crate::ui) struct TopTrackRow {
     pub(in crate::ui) track_id: i64,
-    /// The shared `eq_bars` motif (CSS-animated); visibility is the only
+    /// The shared playing marker; visibility is the only
     /// per-row control — shown on the now-playing track's row.
     pub(in crate::ui) eq: gtk4::Box,
 }
@@ -105,16 +105,15 @@ pub(in crate::ui) fn build_top_track_row(
     track: &ArtistTopTrack,
     on_activate: TrackCallback,
     artist: String,
-) -> (gtk4::Box, TopTrackRow) {
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    row.add_css_class("artist-top-track");
+) -> (gtk4::Button, TopTrackRow) {
+    let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
 
     let rank_label = gtk4::Label::new(Some(&rank.to_string()));
     rank_label.set_xalign(0.5);
     rank_label.add_css_class("artist-top-track-rank");
     rank_label.add_css_class("dim-label");
     rank_label.set_width_request(20);
-    row.append(&rank_label);
+    content.append(&rank_label);
 
     let image = gtk4::Image::builder()
         .pixel_size(TRACK_COVER_SIZE)
@@ -129,7 +128,7 @@ pub(in crate::ui) fn build_top_track_row(
         token,
         generation,
     );
-    row.append(&image);
+    content.append(&image);
 
     let text_box = gtk4::Box::new(gtk4::Orientation::Vertical, 1);
     text_box.set_valign(gtk4::Align::Center);
@@ -139,13 +138,13 @@ pub(in crate::ui) fn build_top_track_row(
     album.add_css_class("dim-label");
     text_box.append(&title);
     text_box.append(&album);
-    row.append(&text_box);
+    content.append(&text_box);
 
     let plays = gtk4::Label::new(Some(&strings::artist_counts_plays(track.play_count)));
     plays.set_xalign(1.0);
     plays.add_css_class("artist-top-track-plays");
     plays.add_css_class("dim-label");
-    row.append(&plays);
+    content.append(&plays);
 
     let duration = gtk4::Label::new(Some(&reprise_core::format::format_duration(
         track.duration_ms,
@@ -153,29 +152,28 @@ pub(in crate::ui) fn build_top_track_row(
     duration.set_xalign(1.0);
     duration.add_css_class("artist-top-track-duration");
     duration.add_css_class("dim-label");
-    row.append(&duration);
+    content.append(&duration);
 
-    let eq = eq_bars::build(EqVariant::Animated);
+    let eq = playing_marker::build();
     eq.set_visible(false);
-    row.append(&eq);
+    content.append(&eq);
 
-    // Double-click plays this track in the artist's context. A plain `Box` in a
-    // vertical list (not a `ColumnView` cell), so the `GestureClick` is
-    // delivered reliably — no row machinery competes for the sequence.
-    let click = gtk4::GestureClick::new();
-    click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+    // A native button gives pointer, Enter and Space one activation path and
+    // exposes the row as a single focus stop instead of a pointer-only Box.
+    let row = gtk4::Button::builder()
+        .child(&content)
+        .has_frame(false)
+        .hexpand(true)
+        .tooltip_text(strings::text(strings::PLAY_SELECTED_TRACK))
+        .build();
+    row.add_css_class("artist-top-track");
     let track_id = track.track_id;
-    click.connect_released(move |gesture, n_press, _x, _y| {
-        if n_press != 2 {
-            return;
-        }
-        gesture.set_state(gtk4::EventSequenceState::Claimed);
+    row.connect_clicked(move |_| {
         let callback = on_activate.borrow().clone();
         if let Some(callback) = callback {
             callback(track_id, artist.clone());
         }
     });
-    row.add_controller(click);
 
     let handle = TopTrackRow {
         track_id: track.track_id,
@@ -265,4 +263,40 @@ fn card_label(text: &str, css_class: &str) -> gtk4::Label {
     label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     label.add_css_class(css_class);
     label
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn top_track_uses_a_native_keyboard_activatable_button() {
+        gtk4::init().unwrap();
+        let (worker, _receiver) = async_channel::unbounded();
+        let loader = CoverLoader::new(crate::ui::cover_download_worker::CoverDownloadRuntime {
+            enabled: Rc::new(Cell::new(false)),
+            worker,
+        });
+        let track = ArtistTopTrack {
+            track_id: 7,
+            title: "Track".into(),
+            album: "Album".into(),
+            track_path: "/missing.flac".into(),
+            play_count: 3,
+            duration_ms: 120_000,
+        };
+        let callback: TrackCallback = Rc::new(RefCell::new(None));
+        let (button, _handle): (gtk4::Button, TopTrackRow) = build_top_track_row(
+            &loader,
+            &Rc::new(Cell::new(0)),
+            0,
+            1,
+            &track,
+            callback,
+            "Artist".into(),
+        );
+        assert!(button.is_focusable());
+    }
 }

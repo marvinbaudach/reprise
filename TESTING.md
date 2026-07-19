@@ -6,17 +6,117 @@ manual GNOME checklist remain in [RELEASING.md](RELEASING.md).
 
 ## Current automated baseline
 
-At refactoring commit `ec95d7e`, the isolated workspace suite contains 1,013
-passing tests: 550 in `reprise-core`, 423 in `reprise-gnome`, and 40 in
-`reprise-platform-linux`. A further 75 GTK tests are intentionally ignored by
-the normal suite because they require a display and process-level GTK
-isolation.
+At performance close-out commit `a41c53f`, the isolated workspace suite
+contains 1,482 passing tests: 758 in `reprise-core`, 669 in `reprise-gnome`,
+and 55 in `reprise-platform-linux`. Another 139 tests are deliberately
+separated from the default run: one ignored core probe and 138 GNOME tests
+whose display or host contracts require controlled execution.
 
 The repository also has focused pointer-driven smoke tests, a synchronized-
 lyrics smoke, release/package validation, an architecture/frontend linter, and
-a merge-readiness linter. Headless success proves behavior and widget state;
+a merge-readiness linter. The QA policy also executes
+`scripts/tests/readme-showcase.sh`, which keeps the English and German showroom
+documents aligned on their date, evidence, architecture, and roadmap status.
+Headless success proves behavior and widget state;
 it does not prove native Wayland rendering, pointer feel, audible output,
 desktop media integration, portals, or real hardware.
+
+### Local audio-analysis evidence
+
+Audio-character tests use only generated signals and small redistributable
+fixtures committed with their origin and license. Automated runs must never
+open the maintainer's music library. Synthetic silence, tones, click tracks,
+dynamics, and noise provide independent expected orderings; real codec
+fixtures prove decoding compatibility without serving as subjective mood
+ground truth.
+
+Before shipping local audio analysis, retain a release-profile report for peak
+RSS or a directly proven PCM-buffer bound, decode time per audio minute,
+database bytes per 10,000 tracks, the pending query at 100,000 tracks, and
+deterministic profile output across chunk boundaries. Elapsed values are
+same-host evidence rather than portable promises. The hard contracts are
+bounded streaming memory, one default analysis worker, versioned results, and
+no network or write access to source audio.
+
+### Generated-metadata scalability baseline
+
+Run the release-profile scalability baseline with an explicit new output
+directory:
+
+```sh
+scripts/performance-baseline.sh /tmp/reprise-performance-results
+```
+
+The normal run generates fresh 10,000- and 100,000-track databases under a
+private temporary directory, measures database open/migration, library count,
+first/middle/final 200-row windows, filtered count, library statistics, and
+playback-id projection. It then measures committed batches of up to 10,000
+inserts, index-relevant metadata updates, present-to-missing transitions, and
+missing-to-present restores before exercising TrackListModel scroll access at
+the same sizes. Every write sample uses a disposable copy of the generated
+database, so iterations start from identical state and never mutate the
+source profile used by the read measurements. The query JSON also records
+SQLite's title-window query-plan details, whether the plan needs a temporary
+ORDER BY sort, and the selected index name. It retains a manifest, stable-schema
+query JSON, and model logs in the requested output directory. `--quick` runs
+only the 10,000-track scenario.
+
+Elapsed times are evidence for comparing two commits on the same host, not a
+portable CI threshold. Deterministic budgets are hard assertions: the model may
+retain at most eight SQL windows and 1,600 track rows regardless of library
+size. The runner requires a clean Git worktree so its manifest identifies the
+compiled sources exactly, refuses an existing output directory, and the core
+probe refuses an existing database, so neither can overwrite a user profile.
+All rows are generated metadata with synthetic paths; no audio file is opened.
+
+Compare two generated-metadata runs after changing query or database code:
+
+```sh
+scripts/performance-query-compare.sh /tmp/before /tmp/after \
+  > /tmp/query-comparison.json
+```
+
+The report includes database size and open-time costs, first/middle/final
+window and playback-id timing deltas, committed insert/metadata-update/hide/
+restore batch deltas, and the before/after SQLite query plans. It rejects
+different write-batch sizes rather than comparing unlike workloads. This makes
+an index tradeoff visible even when private display sockets are not available
+for the installed-runtime benchmark.
+
+For the installed-runtime extension, use a second new output directory:
+
+```sh
+scripts/performance-runtime-baseline.sh /tmp/reprise-runtime-results
+```
+
+This runner builds a release Meson installation in a private `DESTDIR`, seeds
+isolated 10,000- and 100,000-track profiles, and launches that installed binary
+five times per size. It records process-spawn-to-accessible-window timings,
+realized GTK row/cell and provider/model counts, five fresh-process queue RSS
+samples, and CUA page-scroll-to-changed-snapshot timings with before/after
+screenshots. Deterministic limits reject more than eight cached SQL windows,
+1,600 cached tracks, 128 realized rows, 2,048 realized cells, or queue RSS
+growth above the documented fixed-plus-linear budget. `--quick` uses 10,000
+tracks only.
+
+The CUA portion requires a host that permits a private D-Bus, AT-SPI, and Xvfb
+socket. A managed sandbox that rejects those sockets is an environment
+blocker, not a passing or failing app result; the runner fails fast and retains
+bounded diagnostics. It never falls back to the live desktop or normal XDG
+profile.
+
+Compare two complete runs after changing code:
+
+```sh
+scripts/performance-compare.sh /tmp/before /tmp/after > /tmp/comparison.json
+```
+
+The comparison requires identical track-count manifests and reports exact and
+percentage deltas for installed startup, the final sorted SQL window, queue
+RSS, observable scroll response, realized GTK rows/cells, and cached tracks.
+Negative timing and memory deltas are improvements. Compare the same build and
+host conditions; these values are diagnostic evidence, not portable CI timing
+thresholds.
 
 ## Required merge gates
 
@@ -82,12 +182,15 @@ as a release-green signal. Do not weaken `msgcmp` to hide the mismatch.
 - Add database upgrade fixtures for every supported schema version plus a
   failed migration step. Verify rollback, data preservation, indexes, foreign
   keys, and an idempotent second open.
+- Run the installed-runtime scalability benchmark on representative native
+  GNOME/Wayland release hardware in addition to its reproducible private-X11
+  path, and retain paired before/after artifacts for each accepted optimization.
 - Add scalability budgets using generated metadata only: startup/query/scroll
   behavior at 10,000 and 100,000 tracks, bounded row-widget/provider counts,
   and bounded queue/cache memory growth.
-- Add accessibility assertions for names, roles, keyboard reachability, focus
-  order, high-contrast behavior, and reduced-motion behavior on the principal
-  library, player, preferences, and tag-editor flows.
+- Extend the accessibility sweep with real High Contrast, Large Text, Orca,
+  on-screen-keyboard, and reduced-motion evidence; these remain host-manual
+  because a headless semantic tree cannot prove visible focus or speech output.
 
 ### P2 — useful regression depth
 

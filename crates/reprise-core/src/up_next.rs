@@ -48,10 +48,9 @@ impl UpNextQueue {
         self.ids.iter().copied().find(|&id| is_available(id))
     }
 
-    pub fn take_through(&mut self, position: usize) -> Option<i64> {
-        let selected = self.ids.get(position).copied()?;
-        self.ids.drain(..=position);
-        Some(selected)
+    /// Removes and returns exactly the selected pending entry.
+    pub fn take_at(&mut self, position: usize) -> Option<i64> {
+        (position < self.ids.len()).then(|| self.ids.remove(position))
     }
 
     pub fn move_item(&mut self, from: usize, to: usize) -> bool {
@@ -133,14 +132,32 @@ mod tests {
     }
 
     #[test]
-    fn pop_and_take_through_consume_expected_prefixes() {
+    fn pop_and_take_at_consume_only_the_selected_entries() {
         let mut queue = UpNextQueue::default();
         queue.append(&[10, 20, 30, 40]);
         assert_eq!(queue.pop_front(), Some(10));
-        assert_eq!(queue.take_through(1), Some(30));
-        assert_eq!(queue.ids(), &[40]);
-        assert_eq!(queue.take_through(1), None);
-        assert_eq!(queue.ids(), &[40]);
+        assert_eq!(queue.take_at(1), Some(30));
+        assert_eq!(queue.ids(), &[20, 40]);
+        assert_eq!(queue.take_at(2), None);
+        assert_eq!(queue.ids(), &[20, 40]);
+    }
+
+    #[test]
+    fn que_5_jump_keeps_preceding_manual_entries() {
+        let mut queue = UpNextQueue::default();
+        queue.append(&[10, 20, 30, 40]);
+
+        assert_eq!(queue.take_at(3), Some(40));
+        assert_eq!(queue.ids(), &[10, 20, 30]);
+    }
+
+    #[test]
+    fn que_3_played_manual_entries_removed() {
+        let mut queue = UpNextQueue::default();
+        queue.append(&[10, 20, 30]);
+
+        assert_eq!(queue.pop_front(), Some(10));
+        assert_eq!(queue.ids(), &[20, 30]);
     }
 
     #[test]

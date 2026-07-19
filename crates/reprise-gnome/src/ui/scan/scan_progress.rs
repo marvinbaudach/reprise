@@ -111,6 +111,7 @@ struct ScanProgressWidgets {
     percent: gtk4::Label,
     progress: gtk4::ProgressBar,
     detail: gtk4::Label,
+    cancel: gtk4::Button,
     pulse_generation: Rc<Cell<u64>>,
     phase: Rc<Cell<DisplayPhase>>,
     on_cancel: OnCancelSlot,
@@ -150,12 +151,20 @@ impl ScanProgressView {
             .build();
         percent.add_css_class("scan-card-percent");
 
+        let cancel = gtk4::Button::with_label(&strings::text(strings::CANCEL_SCAN));
+        cancel.add_css_class("flat");
+        cancel.set_visible(false);
+
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         header.append(&spinner);
         header.append(&title);
         header.append(&percent);
+        header.append(&cancel);
 
         let progress = gtk4::ProgressBar::builder().hexpand(true).build();
+        progress.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::SCAN_CARD_TITLE,
+        ))]);
         progress.set_pulse_step(PULSE_STEP);
 
         let detail = gtk4::Label::builder()
@@ -181,7 +190,16 @@ impl ScanProgressView {
 
         let on_cancel: OnCancelSlot = Rc::new(RefCell::new(None));
 
+        let on_cancel_button = on_cancel.clone();
+        cancel.connect_clicked(move |_| {
+            let callback = on_cancel_button.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+
         // Right-click (button 3) on the card triggers cancel.
+        // input-parity: ACC-8 keyboard=cancel-button
         let click = gtk4::GestureClick::new();
         click.set_button(3);
         let on_cancel_click = on_cancel.clone();
@@ -194,6 +212,7 @@ impl ScanProgressView {
         container.add_controller(click);
 
         // Long-press on the card triggers cancel (touchscreen support).
+        // input-parity: ACC-8 keyboard=cancel-button
         let long_press = gtk4::GestureLongPress::new();
         let on_cancel_lp = on_cancel.clone();
         long_press.connect_pressed(move |_, _, _| {
@@ -213,6 +232,7 @@ impl ScanProgressView {
                 percent,
                 progress,
                 detail,
+                cancel,
                 pulse_generation: Rc::new(Cell::new(0)),
                 phase: Rc::new(Cell::new(DisplayPhase::Hidden)),
                 on_cancel,
@@ -242,6 +262,7 @@ impl ScanProgressView {
         self.inner.spinner.set_spinning(true);
         self.inner.revealer.set_reveal_child(true);
         self.inner.progress.set_visible(true);
+        self.inner.cancel.set_visible(true);
 
         match state.mode {
             ProgressMode::Indeterminate => {
@@ -296,6 +317,7 @@ impl ScanProgressView {
         self.inner.spinner.set_spinning(true);
         self.inner.revealer.set_reveal_child(true);
         self.inner.progress.set_visible(true);
+        self.inner.cancel.set_visible(true);
         self.inner.progress.set_fraction(fraction.clamp(0.0, 1.0));
         let pct = format!("{}%", (fraction * 100.0).round() as u32);
         self.inner.percent.set_label(&pct);
@@ -319,6 +341,7 @@ impl ScanProgressView {
         self.inner.percent.set_label("");
         self.inner.progress.set_fraction(0.0);
         self.inner.progress.set_visible(false);
+        self.inner.cancel.set_visible(false);
         self.inner.detail.set_label(&state.detail);
         self.inner.detail.set_visible(true);
         self.inner.container.set_tooltip_text(None);
@@ -330,6 +353,7 @@ impl ScanProgressView {
         self.inner.phase.set(DisplayPhase::Hidden);
         self.inner.spinner.set_spinning(false);
         self.inner.revealer.set_reveal_child(false);
+        self.inner.cancel.set_visible(false);
         self.inner.progress.set_fraction(0.0);
     }
 
@@ -534,10 +558,13 @@ mod tests {
         assert!(view.inner.spinner.is_spinning());
         assert_eq!(view.inner.percent.label(), "50%");
         assert_eq!(view.inner.progress.fraction(), 0.5);
+        assert!(view.inner.cancel.is_visible());
+        assert!(view.inner.cancel.is_focusable());
 
         view.finish();
         assert!(!view.inner.revealer.reveals_child());
         assert!(!view.inner.spinner.is_spinning());
+        assert!(!view.inner.cancel.is_visible());
     }
 
     #[test]
@@ -562,6 +589,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mot_2_background_surfaces_fade_in_place_without_layout_motion() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let settings = gtk4::Settings::default().unwrap();
         let previous = settings.is_gtk_enable_animations();

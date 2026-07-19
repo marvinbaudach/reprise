@@ -13,8 +13,11 @@ use super::device_sync_runtime::{
     DeviceSyncRuntime, DeviceSyncState, DeviceView, EnqueueError, Subscription,
 };
 use super::device_sync_strings as copy;
-
-pub(in crate::ui) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::PreferencesPage {
+use super::track_list::TrackList;
+pub(in crate::ui) fn build_page(
+    runtime: &Rc<DeviceSyncRuntime>,
+    track_list: &Rc<TrackList>,
+) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(copy::text(copy::SYNCHRONIZATION))
         .icon_name("phone-symbolic")
@@ -32,15 +35,22 @@ pub(in crate::ui) fn build_page(runtime: &Rc<DeviceSyncRuntime>) -> adw::Prefere
     page.add(&group);
 
     let runtime_for_update = runtime.clone();
+    let selected_ids = Rc::new(
+        crate::ui::track_list::track_list_context_menu::current_selection_ids(&track_list.shared),
+    );
     let update_list = list.clone();
     let subscription = runtime.subscribe(Rc::new(move |state| {
-        render_devices(&update_list, &state, &runtime_for_update);
+        render_devices(&update_list, &state, &runtime_for_update, &selected_ids);
     }));
     retain_subscription(&page, subscription);
     page
 }
-
-fn render_devices(list: &gtk4::ListBox, state: &DeviceSyncState, runtime: &Rc<DeviceSyncRuntime>) {
+fn render_devices(
+    list: &gtk4::ListBox,
+    state: &DeviceSyncState,
+    runtime: &Rc<DeviceSyncRuntime>,
+    selected_ids: &Rc<Vec<i64>>,
+) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
@@ -55,11 +65,15 @@ fn render_devices(list: &gtk4::ListBox, state: &DeviceSyncState, runtime: &Rc<De
         return;
     }
     for device in &state.devices {
-        list.append(&device_row(device, runtime));
+        list.append(&device_row(device, runtime, selected_ids));
     }
 }
 
-pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -> adw::ActionRow {
+pub(super) fn device_row(
+    device: &DeviceView,
+    runtime: &Rc<DeviceSyncRuntime>,
+    selected_ids: &Rc<Vec<i64>>,
+) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
         .title(&device.name)
         .subtitle(copy::device_subtitle(
@@ -81,11 +95,12 @@ pub(super) fn device_row(device: &DeviceView, runtime: &Rc<DeviceSyncRuntime>) -
     }
     let device_id = device.id.clone();
     let runtime = runtime.clone();
+    let selected_ids = selected_ids.clone();
     row.connect_activated(move |row| {
         // The row hands itself over so `present_device` can find the
         // Preferences NavigationView among its ancestors and push the device
         // page inside it.
-        present_device(row, &device_id, &runtime);
+        present_device(row, &device_id, &runtime, &selected_ids);
     });
     row
 }
@@ -97,6 +112,7 @@ pub(super) fn present_device(
     parent: &impl IsA<gtk4::Widget>,
     device_id: &str,
     runtime: &Rc<DeviceSyncRuntime>,
+    selected_ids: &Rc<Vec<i64>>,
 ) {
     let Some(navigation) = parent
         .ancestor(adw::NavigationView::static_type())
@@ -137,6 +153,7 @@ pub(super) fn present_device(
     let update_page = page.clone();
     let update_id = device_id.to_string();
     let update_runtime = runtime.clone();
+    let selected_ids = selected_ids.clone();
     let subscription = runtime.subscribe(Rc::new(move |state| {
         let Some(device) = state.devices.iter().find(|device| device.id == update_id) else {
             update_page.set_title(&copy::text(copy::DISCONNECTED));
@@ -144,7 +161,13 @@ pub(super) fn present_device(
         };
         update_page.set_title(&device.name);
         let parent = update_detail.clone().upcast::<gtk4::Widget>();
-        render_device_detail(&update_detail, device, &parent, &update_runtime);
+        render_device_detail(
+            &update_detail,
+            device,
+            &parent,
+            &update_runtime,
+            &selected_ids,
+        );
     }));
     retain_subscription(&page, subscription);
     navigation.push(&page);
@@ -155,6 +178,7 @@ fn render_device_detail(
     device: &DeviceView,
     prompt_parent: &gtk4::Widget,
     runtime: &Rc<DeviceSyncRuntime>,
+    selected_ids: &Rc<Vec<i64>>,
 ) {
     clear_box(detail);
     if device.scanning {
@@ -179,7 +203,12 @@ fn render_device_detail(
     detail.append(&planned::selection_group(device, runtime));
     detail.append(&planned::delta_group(device));
     detail.append(&planned::settings_group(device, runtime));
-    detail.append(&playlist_group(device, prompt_parent, runtime));
+    detail.append(&playlist_group(
+        device,
+        prompt_parent,
+        runtime,
+        selected_ids,
+    ));
     detail.append(&music_group(device));
 }
 
@@ -187,6 +216,7 @@ fn playlist_group(
     device: &DeviceView,
     prompt_parent: &gtk4::Widget,
     runtime: &Rc<DeviceSyncRuntime>,
+    selected_ids: &[i64],
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
         .title(copy::text(copy::PHONE_PLAYLISTS))
@@ -235,6 +265,27 @@ fn playlist_group(
             .subtitle(subtitle)
             .build();
         row.add_prefix(&gtk4::Image::from_icon_name("view-list-symbolic"));
+        let selected_ids = selected_ids.to_vec();
+        let add_selected = gtk4::Button::builder()
+            .icon_name("list-add-symbolic")
+            .tooltip_text(copy::text(copy::ADD_SELECTED_TRACKS))
+            .valign(gtk4::Align::Center)
+            .sensitive(!selected_ids.is_empty())
+            .build();
+        let add_device_id = device.id.clone();
+        let add_playlist = name.clone();
+        let add_runtime = runtime.clone();
+        let add_row = row.clone();
+        add_selected.connect_clicked(move |_| {
+            enqueue_with_feedback(
+                &add_row,
+                &add_runtime,
+                &add_device_id,
+                &add_playlist,
+                &selected_ids,
+            );
+        });
+        row.add_suffix(&add_selected);
         install_sync_drop(&row, &device.id, &name, runtime);
         group.add(&row);
     }
@@ -316,6 +367,7 @@ fn install_sync_drop(
     playlist: &str,
     runtime: &Rc<DeviceSyncRuntime>,
 ) {
+    // input-parity: ACC-8 keyboard=add-selected-button
     let target = gtk4::DropTarget::new(glib::Type::STRING, gdk::DragAction::COPY);
     let enter_row = row.clone();
     target.connect_enter(move |_, _, _| {
@@ -336,18 +388,37 @@ fn install_sync_drop(
         let Some(ids) = sync_drop_ids(&value) else {
             return false;
         };
-        match runtime.enqueue(&device_id, &playlist, &ids) {
-            Ok(_) => true,
-            Err(error) => {
-                if let Some((heading, body)) = enqueue_warning(&error) {
-                    present_enqueue_warning(&drop_row, &heading, &body);
-                }
-                tracing::warn!(%error, "phone playlist drop was rejected");
-                false
-            }
-        }
+        enqueue_with_feedback(&drop_row, &runtime, &device_id, &playlist, &ids)
     });
     row.add_controller(target);
+}
+
+fn enqueue_tracks(
+    runtime: &Rc<DeviceSyncRuntime>,
+    device_id: &str,
+    playlist: &str,
+    ids: &[i64],
+) -> Result<usize, EnqueueError> {
+    runtime.enqueue(device_id, playlist, ids)
+}
+
+fn enqueue_with_feedback<W: IsA<gtk4::Widget>>(
+    parent: &W,
+    runtime: &Rc<DeviceSyncRuntime>,
+    device_id: &str,
+    playlist: &str,
+    ids: &[i64],
+) -> bool {
+    match enqueue_tracks(runtime, device_id, playlist, ids) {
+        Ok(_) => true,
+        Err(error) => {
+            if let Some((heading, body)) = enqueue_warning(&error) {
+                present_enqueue_warning(parent, &heading, &body);
+            }
+            tracing::warn!(%error, "phone playlist enqueue was rejected");
+            false
+        }
+    }
 }
 
 fn enqueue_warning(error: &EnqueueError) -> Option<(String, String)> {
@@ -612,7 +683,12 @@ mod tests {
         gtk4::init().unwrap();
         let runtime = display_runtime();
         let list = gtk4::ListBox::new();
-        render_devices(&list, &DeviceSyncState::default(), &runtime);
+        render_devices(
+            &list,
+            &DeviceSyncState::default(),
+            &runtime,
+            &Rc::new(Vec::new()),
+        );
         // The list box wraps appended non-row children in a GtkListBoxRow.
         let status = list
             .first_child()
@@ -634,7 +710,7 @@ mod tests {
         gtk4::init().unwrap();
         let runtime = display_runtime();
         let device = view();
-        let row = device_row(&device, &runtime);
+        let row = device_row(&device, &runtime, &Rc::new(Vec::new()));
         assert_eq!(row.title(), "Phone");
         assert_eq!(
             row.subtitle().as_deref(),
@@ -657,6 +733,16 @@ mod tests {
                 .item(index)
                 .is_some_and(|controller| controller.is::<gtk4::DropTarget>())
         }));
+    }
+
+    #[test]
+    fn keyboard_enqueue_uses_the_same_runtime_path_as_drop() {
+        let runtime = display_runtime();
+
+        assert_eq!(
+            enqueue_tracks(&runtime, "phone", "Road", &[1, 2]),
+            runtime.enqueue("phone", "Road", &[1, 2])
+        );
     }
 
     #[test]
@@ -705,7 +791,7 @@ mod nav_push_tests {
         // `present_device` walks up from any widget inside the preferences
         // navigation; an unknown device id still pushes the page (titled
         // Disconnected by the immediate subscription callback).
-        present_device(&content, "unknown-device", &runtime);
+        present_device(&content, "unknown-device", &runtime, &Rc::new(Vec::new()));
 
         let visible = navigation.visible_page().expect("a page is visible");
         assert_eq!(visible.title(), copy::text(copy::DISCONNECTED));

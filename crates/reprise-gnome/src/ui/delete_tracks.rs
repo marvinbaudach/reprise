@@ -111,8 +111,10 @@ fn confirm(shared: &Rc<Shared>, mode: DeleteMode) {
     );
     dialog.add_response(response, label);
     dialog.set_response_appearance(response, adw::ResponseAppearance::Destructive);
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&window);
     let shared = shared.clone();
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |chosen| {
+        focus_guard.restore();
         if chosen.as_str() == response {
             start_worker(&shared, tracks, mode);
         }
@@ -142,8 +144,10 @@ fn choose(shared: &Rc<Shared>) {
     dialog.add_response(RESPONSE_TRASH, &strings::text(strings::DELETE_TRACKS_TRASH));
     dialog.set_response_appearance(RESPONSE_REMOVE, adw::ResponseAppearance::Destructive);
     dialog.set_response_appearance(RESPONSE_TRASH, adw::ResponseAppearance::Destructive);
+    let focus_guard = crate::ui::transient_focus::TransientFocusGuard::capture(&window);
     let shared = shared.clone();
     dialog.choose(Some(&window), gio::Cancellable::NONE, move |response| {
+        focus_guard.restore();
         let mode = match response.as_str() {
             RESPONSE_REMOVE => DeleteMode::Remove,
             RESPONSE_TRASH => DeleteMode::Trash,

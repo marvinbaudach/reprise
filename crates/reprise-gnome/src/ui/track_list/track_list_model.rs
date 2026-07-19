@@ -71,6 +71,9 @@ mod imp {
         /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
         /// for every other source.
         pub queue_ids: Vec<i64>,
+        /// QUE-7 queue projection whose context tail is fetched by bounded
+        /// windows instead of retained as one id per context row.
+        pub(super) virtual_queue: Option<super::super::queue_sections::QueueViewModel>,
         pub cache: BTreeMap<u32, Vec<Track>>,
         /// QUE-1 section ranges (half-open, model coordinates) for the
         /// Queue source; empty = the whole model is one section. Set via
@@ -196,6 +199,32 @@ impl TrackListModel {
         self.imp().state.borrow_mut().sections = sections;
     }
 
+    /// Installs an already-composed queue snapshot without a count query.
+    /// The shared queue model is the authoritative row count; metadata stays
+    /// lazy and is fetched only when `item()` asks for a visible window.
+    pub(crate) fn set_queue_snapshot(
+        &self,
+        queue: &super::queue_sections::QueueViewModel,
+        sections: Vec<(u32, u32)>,
+    ) {
+        let old_total = self.imp().state.borrow().total;
+        let new_total = u32::try_from(queue.total_len()).unwrap_or(u32::MAX);
+        {
+            let mut state = self.imp().state.borrow_mut();
+            state.source = ViewSource::Queue;
+            state.sort_field.clear();
+            state.sort_dir.clear();
+            state.filter.clear();
+            state.browse = BrowseFilter::default();
+            state.queue_ids.clear();
+            state.virtual_queue = Some(queue.clone());
+            state.sections = sections;
+            state.total = new_total;
+            state.cache.clear();
+        }
+        self.items_changed(0, old_total, new_total);
+    }
+
     pub fn set_query(
         &self,
         source: &ViewSource,
@@ -249,6 +278,7 @@ impl TrackListModel {
             state.filter = filter.to_string();
             state.browse = browse.clone();
             state.queue_ids = queue_ids.to_vec();
+            state.virtual_queue = None;
             state.total = new_total;
             state.cache.clear();
         }
@@ -294,7 +324,7 @@ impl TrackListModel {
             return None;
         };
 
-        let (source, sort_field, sort_dir, filter, browse, queue_ids) = {
+        let (source, sort_field, sort_dir, filter, browse, queue_ids, virtual_queue) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
@@ -303,7 +333,21 @@ impl TrackListModel {
                 state.filter.clone(),
                 state.browse.clone(),
                 state.queue_ids.clone(),
+                state.virtual_queue.clone(),
             )
+        };
+
+        let (query_offset, queue_ids) = if source == ViewSource::Queue {
+            if let Some(queue) = virtual_queue {
+                (
+                    0,
+                    queue.ids_window(window_start as usize, WINDOW_SIZE as usize),
+                )
+            } else {
+                (i64::from(window_start), queue_ids)
+            }
+        } else {
+            (i64::from(window_start), queue_ids)
         };
 
         let rows = {
@@ -315,7 +359,7 @@ impl TrackListModel {
                 &sort_dir,
                 &filter,
                 &browse,
-                i64::from(window_start),
+                query_offset,
                 i64::from(WINDOW_SIZE),
                 &queue_ids,
             )
@@ -379,6 +423,15 @@ impl TrackListModel {
     #[cfg(test)]
     fn cached_windows(&self) -> Vec<u32> {
         self.imp().state.borrow().cache.keys().copied().collect()
+    }
+
+    /// Performance diagnostics for the generated-metadata benchmark: number
+    /// of cached SQL windows and total `Track` rows retained by them. Kept
+    /// crate-private so normal UI behavior cannot couple to cache internals.
+    pub(in crate::ui) fn cache_usage(&self) -> (usize, usize) {
+        let state = self.imp().state.borrow();
+        let rows = state.cache.values().map(Vec::len).sum();
+        (state.cache.len(), rows)
     }
 }
 
@@ -456,6 +509,20 @@ mod tests {
         assert_eq!(model.n_items(), 0);
         model.set_query(&ViewSource::Library, "title", "asc", "", &[]);
         assert_eq!(model.n_items(), 3);
+    }
+
+    #[test]
+    fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
+        let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
+
+        let queue = super::super::queue_sections::compose(None, &[3, 1], &[], None);
+        model.set_queue_snapshot(&queue, vec![(0, 2)]);
+
+        assert_eq!(model.n_items(), 2);
+        assert!(model.cached_windows().is_empty());
+        assert_eq!(model.track_at(0).unwrap().id, 3);
+        assert_eq!(model.track_at(1).unwrap().id, 1);
+        assert_eq!(model.cached_windows(), vec![0]);
     }
 
     #[test]
@@ -625,3 +692,7 @@ mod tests {
         assert_eq!(model.track_at(2).unwrap().title, "Alpha");
     }
 }
+
+#[cfg(test)]
+#[path = "track_list_model_scalability_tests.rs"]
+mod scalability_tests;

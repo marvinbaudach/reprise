@@ -17,6 +17,8 @@ pub struct ModuleDescriptor {
     pub description: &'static str,
     /// Flag value when the settings table has no row for this module.
     pub default_enabled: bool,
+    /// Whether changing the setting affects the running application immediately.
+    pub applies_live: bool,
 }
 
 pub const MPRIS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -24,6 +26,7 @@ pub const MPRIS_MODULE: ModuleDescriptor = ModuleDescriptor {
     name: "MPRIS",
     description: "GNOME media controls, media keys, and lock-screen integration (D-Bus)",
     default_enabled: true,
+    applies_live: false,
 };
 
 pub const LISTENBRAINZ_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -31,6 +34,7 @@ pub const LISTENBRAINZ_MODULE: ModuleDescriptor = ModuleDescriptor {
     name: "ListenBrainz",
     description: "Scrobble completed listens to ListenBrainz (network; off by default)",
     default_enabled: false,
+    applies_live: true,
 };
 
 pub const LASTFM_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -38,19 +42,50 @@ pub const LASTFM_MODULE: ModuleDescriptor = ModuleDescriptor {
     name: "Last.fm",
     description: "Scrobble completed listens to Last.fm (network; off by default)",
     default_enabled: false,
+    applies_live: true,
 };
 
-pub const ARTIST_NEWS_MODULE: ModuleDescriptor = ModuleDescriptor {
-    id: "artist_news",
-    name: "Artist & Album News",
-    description:
-        "Show upcoming and newly released albums from MusicBrainz (network; off by default)",
+pub const NEW_RELEASES_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "new_releases",
+    name: "New Releases",
+    description: "Show upcoming and newly released albums; contacts MusicBrainz",
     default_enabled: false,
+    applies_live: true,
+};
+
+pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "cover_download",
+    name: "Cover Download",
+    description: "Download missing album covers from online services",
+    default_enabled: false,
+    applies_live: true,
+};
+
+pub const ARTIST_PORTRAITS_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "artist_portraits",
+    name: "Artist Portraits",
+    description: "Download artist portraits from online services",
+    default_enabled: false,
+    applies_live: true,
+};
+
+pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "online_lyrics",
+    name: "Online Lyrics",
+    description: "Load missing lyrics from an online service",
+    default_enabled: false,
+    applies_live: true,
 };
 
 /// Every optional integration the app currently exposes, in Plugins-page order.
-pub const ALL_MODULES: &[&ModuleDescriptor] =
-    &[&ARTIST_NEWS_MODULE, &LISTENBRAINZ_MODULE, &LASTFM_MODULE];
+pub const ALL_MODULES: &[&ModuleDescriptor] = &[
+    &NEW_RELEASES_MODULE,
+    &COVER_DOWNLOAD_MODULE,
+    &ARTIST_PORTRAITS_MODULE,
+    &ONLINE_LYRICS_MODULE,
+    &LISTENBRAINZ_MODULE,
+    &LASTFM_MODULE,
+];
 
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
@@ -108,8 +143,8 @@ mod tests {
     }
 
     #[test]
-    fn all_modules_excludes_always_on_cover_download() {
-        assert!(!ALL_MODULES
+    fn all_modules_includes_opt_in_cover_download() {
+        assert!(ALL_MODULES
             .iter()
             .any(|module| module.id == "cover_download"));
     }
@@ -145,28 +180,51 @@ mod tests {
     }
 
     #[test]
-    fn artist_news_is_listed_and_defaults_to_disabled() {
+    fn nr_7_new_releases_is_listed_and_defaults_to_disabled() {
         let conn = migrated_conn();
         assert!(ALL_MODULES
             .iter()
-            .any(|module| module.id == ARTIST_NEWS_MODULE.id));
-        assert!(!is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
+            .any(|module| module.id == NEW_RELEASES_MODULE.id));
+        assert_eq!(NEW_RELEASES_MODULE.id, "new_releases");
+        assert_eq!(NEW_RELEASES_MODULE.name, "New Releases");
+        assert!(!is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
     }
 
     #[test]
-    fn artist_news_round_trips() {
+    fn new_releases_round_trips() {
         let conn = migrated_conn();
-        set_enabled(&conn, &ARTIST_NEWS_MODULE, true).unwrap();
-        assert!(is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
-        set_enabled(&conn, &ARTIST_NEWS_MODULE, false).unwrap();
-        assert!(!is_enabled(&conn, &ARTIST_NEWS_MODULE).unwrap());
+        set_enabled(&conn, &NEW_RELEASES_MODULE, true).unwrap();
+        assert!(is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
+        set_enabled(&conn, &NEW_RELEASES_MODULE, false).unwrap();
+        assert!(!is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
     }
 
     #[test]
-    fn all_modules_excludes_always_on_artist_portrait() {
-        assert!(!ALL_MODULES
+    fn all_modules_includes_opt_in_artist_portraits() {
+        assert!(ALL_MODULES
             .iter()
-            .any(|module| module.id == "artist_portrait"));
+            .any(|module| module.id == "artist_portraits"));
+    }
+
+    #[test]
+    fn network_modules_default_off_and_apply_live() {
+        let conn = migrated_conn();
+        for module in [
+            &COVER_DOWNLOAD_MODULE,
+            &ARTIST_PORTRAITS_MODULE,
+            &ONLINE_LYRICS_MODULE,
+        ] {
+            assert!(!module.default_enabled, "{} must be opt-in", module.id);
+            assert!(module.applies_live, "{} must apply live", module.id);
+            assert!(!is_enabled(&conn, module).unwrap());
+            assert_eq!(
+                ALL_MODULES
+                    .iter()
+                    .filter(|registered| registered.id == module.id)
+                    .count(),
+                1
+            );
+        }
     }
 
     #[test]

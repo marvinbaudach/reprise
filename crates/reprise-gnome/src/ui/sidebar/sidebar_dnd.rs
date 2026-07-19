@@ -67,6 +67,7 @@ pub(in crate::ui) fn wire_playlist_drop_target(
     playlist_id: i64,
     playlist_name: &str,
 ) {
+    // input-parity: ACC-8 keyboard=context-menu-add
     let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::COPY);
 
     let shared = shared.clone();
@@ -152,6 +153,7 @@ pub(in crate::ui) fn handle_playlist_drop(
 /// failure contract as the playlist target; everything past parsing is
 /// [`handle_queue_drop`].
 pub(in crate::ui) fn wire_queue_drop_target(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
+    // input-parity: ACC-8 keyboard=context-menu-add
     let drop_target = gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::COPY);
 
     let shared = shared.clone();

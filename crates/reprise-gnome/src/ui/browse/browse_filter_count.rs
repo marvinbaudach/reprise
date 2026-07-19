@@ -47,7 +47,7 @@ fn source_total(
     count: usize,
     queue_ids: &[i64],
 ) -> Result<usize, rusqlite::Error> {
-    if !restricted {
+    if !restricted || matches!(source, ViewSource::Queue) {
         return Ok(count);
     }
     queries::query_track_count_browsed(conn, source, "", &BrowseFilter::default(), queue_ids)
@@ -102,12 +102,13 @@ mod tests {
         );
     }
 
-    // UX FIL-2: the queue total needs the live queue ids.
+    // The virtual QUE-7 context tail already supplies the authoritative
+    // Queue row count; filtering does not materialize it into an id list.
     #[test]
     fn fil_2_queue_total_counts_the_queue_snapshot() {
         let conn = seeded_conn();
         assert_eq!(
-            source_total(&conn, &ViewSource::Queue, true, 1, &[1, 2, 3]).unwrap(),
+            source_total(&conn, &ViewSource::Queue, true, 3, &[]).unwrap(),
             3
         );
     }

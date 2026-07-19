@@ -96,7 +96,8 @@ pub(in crate::ui) fn css() -> String {
            border-radius: 999px; \
            background-color: @reprise_player_accent; \
            color: white; margin: 0; \
-           transition: box-shadow {transition}, background-color {transition}; \
+           transition: box-shadow {transition}, background-color {transition}, \
+                       transform {transition}; \
            box-shadow: 0 0 12px alpha(@reprise_player_accent, 0.40); }}\n\
          .{PLAY_BUTTON_CLASS}:hover {{ \
            background-color: lighter(@reprise_player_accent); \
@@ -110,7 +111,7 @@ pub(in crate::ui) fn css() -> String {
            margin-top: 8px; }}\n\
          .{SUBTITLE_CLASS} {{ \
            font-size: 12px; \
-           color: alpha(@window_fg_color, 0.50); }}\n\
+           color: @reprise_secondary_fg_color; }}\n\
          .{SUBTITLE_CLASS}:hover {{ \
            text-decoration: underline; \
            text-decoration-color: alpha(@window_fg_color, 0.35); }}\n\

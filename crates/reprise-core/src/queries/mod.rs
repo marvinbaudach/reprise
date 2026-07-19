@@ -179,7 +179,7 @@ pub use maintenance::{
 #[cfg(test)]
 pub(crate) use maintenance::{remove_tracks_impl, RemoveGuard};
 pub use playlist::query_playlist_tracks_full;
-pub use queue::{is_queue_capped, QUEUE_LIMIT};
+pub use queue::{is_queue_capped, query_queue_duration_ms, QUEUE_LIMIT};
 
 use clauses::build_track_ids_query_browsed;
 use clauses::{build_track_ids_query_base, like_pattern, row_to_id};
