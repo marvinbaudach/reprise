@@ -293,10 +293,7 @@ impl StatsView {
     pub(in crate::ui) fn wire_year_selector(&self, conn: &Rc<RefCell<Connection>>) {
         *self.connection.borrow_mut() = Some(conn.clone());
         let now_year = chrono::Local::now().year();
-        let periods = StatsPeriod::available(&conn.borrow(), now_year).unwrap_or_else(|error| {
-            tracing::error!(%error, "failed to load stats periods");
-            vec![StatsPeriod::YearToDate(now_year)]
-        });
+        let periods = StatsPeriod::available_periods(now_year);
         let labels = periods
             .iter()
             .map(|period| period.label())

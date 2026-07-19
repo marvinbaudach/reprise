@@ -1,5 +1,4 @@
 use chrono::{Datelike, Duration, NaiveDate, TimeZone, Timelike};
-use rusqlite::Connection;
 
 /// A user-selectable local listening-history period.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -120,17 +119,6 @@ impl StatsPeriod {
             Self::AllTime,
             Self::Last30Days,
         ]
-    }
-
-    /// TODO(gtk): delete once `ui::stats::stats_view` calls
-    /// [`StatsPeriod::available_periods`]. The list is a fixed constant — it
-    /// reads no connection and cannot fail, so the caller's error branch is
-    /// dead code. Kept only so this crate's change does not break the GUI.
-    pub fn available(
-        _conn: &Connection,
-        now_year: i32,
-    ) -> Result<Vec<StatsPeriod>, rusqlite::Error> {
-        Ok(Self::available_periods(now_year))
     }
 
     pub fn label(self) -> String {
