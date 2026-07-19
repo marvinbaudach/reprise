@@ -1,12 +1,18 @@
-#[expect(
-    dead_code,
-    reason = "the renderer material is consumed by the glass compositor in the next task"
-)]
+#[allow(dead_code)] // Wired into the library shell in the activation task.
+mod backdrop;
 pub(crate) mod material;
+#[allow(dead_code)] // Wired into the library shell in the activation task.
+mod surface;
+
+#[allow(unused_imports)] // Wired into the library shell in the activation task.
+pub(crate) use surface::{GlassEdge, GlassSurface};
 
 #[cfg(test)]
 mod tests {
+    use gtk4::prelude::*;
+
     use super::material::{GlassEnvironment, GlassMode, GlassTheme, RendererClass};
+    use super::{GlassEdge, GlassSurface};
 
     #[test]
     fn style_4_glass_material_is_neutral_and_falls_back_safely() {
@@ -38,5 +44,28 @@ mod tests {
                 assert!(material.worst_case_secondary_contrast() >= 4.5);
             }
         }
+    }
+
+    #[test]
+    fn glass_edges_are_explicit_and_symmetric() {
+        assert_eq!(GlassEdge::Top.css_class(), "reprise-glass-edge-top");
+        assert_eq!(GlassEdge::Bottom.css_class(), "reprise-glass-edge-bottom");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn glass_surface_layers_controls_above_the_backdrop() {
+        gtk4::init().unwrap();
+        let source = gtk4::Label::new(Some("scrolling content"));
+        let controls = gtk4::Button::with_label("Play");
+        let surface = GlassSurface::new(&source, &controls, GlassEdge::Top);
+
+        assert_eq!(
+            surface.root().child().as_ref(),
+            Some(surface.backdrop().upcast_ref())
+        );
+        assert!(controls.is_ancestor(surface.root()));
+        assert!(surface.root().is_measure_overlay(&controls));
+        assert!(!surface.backdrop().can_target());
     }
 }

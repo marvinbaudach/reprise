@@ -34,6 +34,7 @@ pub(crate) struct NeutralTint {
 }
 
 impl NeutralTint {
+    #[cfg(test)]
     pub(crate) fn is_neutral(self) -> bool {
         (self.red - self.green).abs() < f32::EPSILON
             && (self.green - self.blue).abs() < f32::EPSILON
@@ -51,14 +52,17 @@ pub(crate) struct GlassMaterial {
 }
 
 impl GlassMaterial {
+    #[cfg(test)]
     pub(crate) fn worst_case_primary_contrast(self) -> f32 {
         self.worst_case_contrast(self.primary_alpha)
     }
 
+    #[cfg(test)]
     pub(crate) fn worst_case_secondary_contrast(self) -> f32 {
         self.worst_case_contrast(self.secondary_alpha)
     }
 
+    #[cfg(test)]
     fn worst_case_contrast(self, foreground_alpha: f32) -> f32 {
         [0.0_f32, 1.0]
             .into_iter()
@@ -157,10 +161,12 @@ fn classify_renderer(type_name: &str) -> RendererClass {
     }
 }
 
+#[cfg(test)]
 fn composite(foreground: f32, alpha: f32, background: f32) -> f32 {
     foreground * alpha + background * (1.0 - alpha)
 }
 
+#[cfg(test)]
 fn contrast_ratio(first: f32, second: f32) -> f32 {
     let first = linear_luminance(first);
     let second = linear_luminance(second);
@@ -169,6 +175,7 @@ fn contrast_ratio(first: f32, second: f32) -> f32 {
     (lighter + 0.05) / (darker + 0.05)
 }
 
+#[cfg(test)]
 fn linear_luminance(channel: f32) -> f32 {
     if channel <= 0.04045 {
         channel / 12.92
