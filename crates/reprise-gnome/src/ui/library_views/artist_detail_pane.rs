@@ -478,13 +478,14 @@ mod tests {
         )
         .unwrap();
         let conn = Rc::new(RefCell::new(conn));
-        let loader =
-            crate::ui::cover_loader::CoverLoader::new(crate::ui::cover_download_worker::setup());
+        let loader = crate::ui::cover_loader::CoverLoader::new(
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
 
         // 2026-07-15T00:00:00Z — a fixed reference "now" so the year window is
         // clock-independent.
         const NOW: i64 = 1_784_073_600;
-        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup();
+        let portraits = crate::ui::artist_portrait_worker::ArtistPortraitRuntime::setup_for_test();
         let pane = ArtistDetailPane::new(conn, loader, portraits);
         pane.show_artist("Solo", NOW);
 

@@ -1099,6 +1099,47 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
   Schreibvorgang.
 
+## V. Netz-Features opt-in
+
+- **NET-1** [aktiv] [gtk] — Automatische und massenhafte Netzabrufe sind
+  opt-in. Cover-Downloads, Artist-Portraits und New Releases starten nur bei
+  eingeschaltetem Modul; Online-Lyrics haben ebenfalls einen Schalter, damit
+  vollständig netzfreie Nutzung möglich bleibt. Ein Ausschalten wirkt sofort
+  und versteckt bereits lokal gecachte Bilder nicht.
+- **NET-2** [aktiv] [core] — Updates schützen nachweisbare bisherige Nutzung:
+  vorhandene heruntergeladene Cover bzw. Portraits aktivieren ihr Modul,
+  bestehende Bibliotheksdatenbanken behalten Online-Lyrics, und ein zuvor
+  aktives `artist_news` wird als aktives New-Releases-Modul übernommen.
+  Negative Cache-Marker gelten nicht als Nutzung; frische Installationen
+  starten mit allen vier Netz-Modulen aus.
+- **LYR-1** [geplant] [core] — Lokale eingebettete Songtexte und `.lrc`-
+  Sidecars werden unabhängig vom Online-Lyrics-Modul angezeigt. Reprise liest
+  diese lokalen Formate heute noch nicht; die Regel bleibt bis zu dieser
+  eigenen Formatfunktion geplant.
+- **LYR-2** [aktiv] [gtk] — LRCLIB wird ausschließlich bei offenem Lyrics-
+  Tab, fehlendem lokalen Text und eingeschaltetem Online-Lyrics-Modul
+  kontaktiert. Es gibt weder Prefetch noch Batch-Abruf für kommende Queue-
+  Einträge.
+- **LYR-3** [aktiv] [gtk] — Bei offenem Lyrics-Tab, fehlendem Text und
+  ausgeschaltetem Modul zeigt eine zentrierte StatusPage Icon, Titel
+  „Online lyrics are disabled", Untertitel „Enable them to load missing
+  lyrics automatically" und „Enable in Settings" als Deep-Link zur kurz
+  hervorgehobenen Plugins-Zeile. Solange LYR-1 geplant ist, verspricht dieser
+  Zustand keine lokalen eingebetteten Songtexte. Ein eingeschaltetes Modul
+  ohne Treffer zeigt stattdessen „No lyrics found".
+- **DISCOVER-1** [aktiv] [gtk] — Netz-Features ohne dauerhaft sichtbare
+  eigene Fläche erhalten genau einen dezenten, schließbaren Inline-Hinweis am
+  Ort der sichtbaren Lücke: Cover ab drei gleichzeitig sichtbaren Fallback-
+  Kacheln, Portraits ab drei gleichzeitig sichtbaren Initialen-Avataren und
+  New Releases am Kopf der Artists-Ansicht. Sichtbare Evidenz rastet den
+  Hinweis ein; einmal gezeigt oder geschlossen kehrt er dauerhaft nicht
+  zurück. Der Hinweis ist kein Badge und kein Toast.
+- **DISCOVER-2** [aktiv] [gtk] — Pro Ansicht ist höchstens eine
+  Aktivierungszeile sichtbar. Treffen Portrait- und New-Releases-Hinweis in
+  der Artists-Ansicht zusammen, werden sie zu einer Zeile „Enable network
+  features for artists (images & new releases) →" mit Deep-Link auf die
+  Plugins-Seite kombiniert; zwei gestapelte Aktivierungszeilen sind verboten.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen

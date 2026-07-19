@@ -146,7 +146,7 @@ pub fn build(
     // first frame. If GStreamer is unavailable the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
-    let cover_download = cover_download_worker::setup();
+    let cover_download = cover_download_worker::setup(&conn.borrow());
     let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
         db_path.to_path_buf(),
         reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
@@ -162,7 +162,8 @@ pub fn build(
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
-    let artist_portrait = super::artist_portrait_worker::ArtistPortraitRuntime::setup();
+    let artist_portrait =
+        super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
@@ -326,6 +327,7 @@ pub fn build(
         conn.clone(),
         track_list.shared_cover_loader(),
         artist_portrait.clone(),
+        artist_news.enabled.get(),
     ));
     let library_views = super::library_shell::build_views(
         &track_content,
@@ -510,12 +512,38 @@ pub fn build(
         &listenbrainz,
         &lastfm,
         &artist_news,
+        &cover_download,
+        &artist_portrait,
         &decorations,
         &device_sync,
     );
     {
         let preferences = preferences.clone();
         device_view.set_on_settings(move || preferences.present_page("synchronization"));
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        info_panel.lyrics_view().set_on_settings(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(crate::ui::preference_plugins::ONLINE_LYRICS_TARGETS);
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        album_view.set_on_hint_settings(move |targets| {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(targets);
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        artist_view.set_on_hint_settings(move |targets| {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(targets);
+            }
+        });
     }
     super::window_runtime_wiring::wire(super::window_runtime_wiring::RuntimeWiring {
         app,

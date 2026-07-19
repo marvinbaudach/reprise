@@ -433,6 +433,7 @@ impl PlayerController {
         let mpris_receiver = handles.commands;
         let mpris_seek_notify = handles.seek_notify;
 
+        let lyrics = PlayerLyrics::new(&conn.borrow());
         let controller = Rc::new(Self {
             player,
             active_audio_effects: RefCell::new(initial_effects),
@@ -467,7 +468,7 @@ impl PlayerController {
             cover_loader: CoverLoader::new(cover_download),
             bar_cover_generation: Rc::new(Cell::new(0)),
             compact_cover_generation: Rc::new(Cell::new(0)),
-            lyrics: PlayerLyrics::new(),
+            lyrics,
             waveform_generation: Rc::new(Cell::new(0)),
             waveform_backend: waveform,
             cover_accent_generation: Rc::new(Cell::new(0)),
