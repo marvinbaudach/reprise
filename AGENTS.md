@@ -123,6 +123,18 @@ Markdown is exempt: docs are split by subject, never by line count.
   for `XDG_DATA_HOME` before running it.
 - Headless CANNOT verify actual rendering, pointer gestures, media keys, or lock-screen —
   leave those for a human manual pass (the plans list them).
+- **Never clone the repo or build under `/tmp`.** `/tmp` is a 16G tmpfs, so a cargo `target/`
+  there lives in RAM — two stray clones filled it to 13G and pushed the machine 13G into swap.
+  Long-lived branch work goes in `.worktrees/<name>` (`git worktree add`, on disk). Throwaway
+  clones for merge checks or visual runs go under `~/.cache/reprise-scratch/`:
+  ```
+  mkdir -p ~/.cache/reprise-scratch
+  scratch=$(mktemp -d ~/.cache/reprise-scratch/<task-name>.XXXXXX)
+  ```
+  Do NOT work around this with a shared `CARGO_TARGET_DIR` — cargo takes an exclusive lock on the
+  build directory, so one shared target dir serialises parallel agents. One worktree per agent
+  means one `target/` per agent, which is what keeps waves parallel. The small `$(mktemp -d)`
+  XDG dirs in the headless recipe above are fine and stay in `/tmp`.
 
 ## Roadmap (stages)
 
