@@ -654,18 +654,21 @@ mod tests {
         assert!(view.reveal_callback()("ZZ Playing", "Artist B"));
         let grid_for_wait = view.grid_widget().clone();
         let adjustment_for_wait = adjustment.clone();
-        let scrolled = wait_until(500, {
+        // Wait for BOTH conditions in one predicate. Sequential waits make the
+        // outcome depend on which half completes first, which silently
+        // inverted this diagnostic once the implementation began focusing
+        // before scrolling. Each condition is reported separately on timeout.
+        let settled = wait_until(1000, {
             let adjustment = adjustment_for_wait.clone();
-            move || adjustment.value() > 0.0
-        });
-        let focused = wait_until(500, {
             let grid = grid_for_wait.clone();
-            move || grid.focus_child().is_some()
+            move || adjustment.value() > 0.0 && grid.focus_child().is_some()
         });
         assert!(
-            scrolled && focused,
-            "reveal must scroll and focus; scrolled={scrolled} focused={focused} \
+            settled,
+            "reveal must scroll and focus; scrolled={} focused={} \
              (adjustment value={} upper={} page={})",
+            adjustment.value() > 0.0,
+            view.grid_widget().focus_child().is_some(),
             adjustment.value(),
             adjustment.upper(),
             adjustment.page_size()
