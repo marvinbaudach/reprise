@@ -158,6 +158,9 @@ start_scenario_app() {
     REPRISE_LOG=debug \
     "$CUA_E2E_BIN_PATH" >"$APP_LOG" 2>&1 &
   APP_PID=$!
+  # Lets cua_driver fail fast instead of waiting out a 120s timeout per call
+  # once the app is gone (see lib.sh).
+  export CUA_E2E_APP_PID="$APP_PID"
   if ! WINDOW_ID=$(wait_for_window "$APP_PID"); then
     echo "$scenario did not expose a Reprise window" >&2
     tail -n 60 "$APP_LOG" >&2 || true
@@ -227,6 +230,8 @@ run_populated_library_scenario() {
   assert_snapshot_contains "$missing_path" "Missing files"
 
   CUA_E2E_FOCUS_STATE="$CUA_E2E_OUT_DIR/populated-library-focus-state.txt" \
+  CUA_E2E_APP_PID="$APP_PID" \
+  CUA_E2E_WM_PID="$OPENBOX_PID" \
     "$repo_root/scripts/cua-e2e/keyboard.sh" --run "$APP_PID" "$WINDOW_ID"
   restart_private_cua_daemon
 
@@ -532,6 +537,9 @@ DISPLAY=":$display_number"
 export DISPLAY
 openbox >"$CUA_E2E_OUT_DIR/openbox.log" 2>&1 &
 OPENBOX_PID=$!
+# Lets cua_driver fail fast if the WM dies mid-run instead of delivering keys
+# into the void (see lib.sh).
+export CUA_E2E_WM_PID="$OPENBOX_PID"
 sleep 0.5
 if ! kill -0 "$OPENBOX_PID" 2>/dev/null; then
   echo "Openbox did not start on the private display" >&2
