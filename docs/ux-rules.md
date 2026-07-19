@@ -46,6 +46,18 @@ ist kein Deaktivierungs-Ignore: solche Tests laufen als Merge-Blocker über
 `scripts/check-display-tests.sh --rule-named` und zählen als Abdeckung auch
 für `[aktiv]`-Regeln.
 
+**Erreichbarkeit.** Für jede Aktion, deren Sichtbarkeit an einen Zustand
+gebunden ist, gilt die Prüffrage: **Wie kommt der Nutzer in den Zustand, der
+sie zeigt?** Ist die Antwort „über genau diese Aktion" oder „gar nicht", ist
+die Regel unvollständig — unabhängig davon, wie korrekt jede Einzelbedingung
+ist. Ein regelbenannter Test muss den Weg **vom Startzustand aus** gehen, nicht
+den Zielzustand herstellen und dann prüfen. Zwei Befunde haben das erzwungen:
+„Hide" war nur im Digest erreichbar, der nur bei Überlauf erschien; und New
+Releases konnte sich nie befüllen, weil ✦ Einträge voraussetzt, „Fetch now"
+hinter ✦ liegt und kein Start-Abruf existierte (NR-8). Beide Male waren alle
+Einzeltests grün — der Fehler saß zwischen den Regeln, weil jeder Test den
+Zielzustand vorab herstellte.
+
 **Sprache.** Dieses Dokument und die Design-Docs sind Deutsch — die
 Arbeitssprache des Projekts. Tests und Skripte sind Code und damit Englisch
 (AGENTS.md); Regel-IDs und Status-Token werden dort wörtlich zitiert.
