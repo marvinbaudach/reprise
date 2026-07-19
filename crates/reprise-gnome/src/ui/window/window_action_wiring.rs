@@ -22,6 +22,7 @@ use super::stats_view::StatsView;
 use super::track_list::TrackList;
 use crate::ui::album_card_state::{primary_album_action, PrimaryAlbumAction};
 use crate::ui::playback::play_origin;
+use crate::ui::stats::stats_highlights::TopGenre;
 use crate::ui::{
     nav_history::{NavHistory, NavPlace},
     window::library_shell::LIBRARY_VIEW_TRACKS,
@@ -173,16 +174,15 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
     {
         let conn = conn.clone();
         let sidebar = Rc::downgrade(sidebar);
-        stats_view.set_on_create_smart_mix(move |genres| {
+        stats_view.set_on_create_smart_mix(move |genre| {
             let created = {
-                let conn = conn.borrow();
-                create_stats_smart_mix(&conn, &genres)
+                let mut conn = conn.borrow_mut();
+                create_stats_smart_mix(&mut conn, &genre)
             };
             match created {
-                Ok(Some(id)) => {
+                Ok(Some(source)) => {
                     if let Some(sidebar) = sidebar.upgrade() {
-                        sidebar
-                            .refresh_and_select(ViewSource::Smart(id), "stats smart mix created");
+                        sidebar.refresh_and_select(source, "stats smart mix created");
                     }
                 }
                 Ok(None) => {}
@@ -196,7 +196,8 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             let Some(track_list) = track_list.upgrade() else {
                 return;
             };
-            forward_unify_spellings(&ids, |ids| track_list.edit_tags_for_ids(ids));
+            // `StatsView` only reports a resolved, non-empty group.
+            track_list.edit_tags_for_ids(&ids);
         });
     }
 
@@ -624,34 +625,62 @@ fn stats_spotlight_track_ids(
     group_track_ids(&conn.borrow(), GroupKind::Artist, key)
 }
 
+/// Builds the mix the My Stats CTA promises, starting from the genre group's
+/// **key** — the displayed label is only the group's most common raw spelling
+/// (STATS-9), and `genre = '<label>'` misses every other spelling because
+/// `tracks.genre` has no `COLLATE NOCASE`.
+///
+/// The smart-rule engine joins its rules with `AND` and knows neither `OR` nor
+/// `IN` (`playlists::smart_rules_to_sql`), so it can only express a genre
+/// group that has exactly one spelling. That is the common case and it becomes
+/// a real, self-updating smart playlist. When the group folds several
+/// spellings, no rule set can express it: the mix is then created as a regular
+/// playlist holding exactly the group's tracks, so the playlist and the number
+/// on screen agree instead of quietly disagreeing.
 fn create_stats_smart_mix(
-    conn: &Connection,
-    genres: &[String],
-) -> Result<Option<i64>, rusqlite::Error> {
-    let Some(genre) = genres.first().filter(|genre| !genre.trim().is_empty()) else {
+    conn: &mut Connection,
+    genre: &TopGenre,
+) -> Result<Option<ViewSource>, rusqlite::Error> {
+    if genre.key.trim().is_empty() {
         return Ok(None);
+    }
+    let ids = group_track_ids(conn, GroupKind::Genre, &genre.key)?;
+    if ids.is_empty() {
+        tracing::warn!(key = %genre.key, "stats smart mix found no tracks for the genre group");
+        return Ok(None);
+    }
+    let name = format!("My Stats \u{2014} {} Mix", genre.label);
+    let spellings = group_genre_spellings(conn, &ids)?;
+    let Some(single) = spellings.first().filter(|_| spellings.len() == 1) else {
+        return playlists::create_with_tracks(conn, &name, &ids)
+            .map(|id| Some(ViewSource::Playlist(id)));
     };
     let rules = serde_json::json!([{
         "field": "genre",
         "op": "=",
-        "value": genre,
+        "value": single,
     }])
     .to_string();
-    playlists::create_smart(
-        conn,
-        &format!("My Stats \u{2014} {genre} Mix"),
-        &rules,
-        "play_count",
-        "desc",
-        Some(50),
-    )
-    .map(Some)
+    playlists::create_smart(conn, &name, &rules, "play_count", "desc", Some(50))
+        .map(|id| Some(ViewSource::Smart(id)))
 }
 
-fn forward_unify_spellings(ids: &[i64], open: impl FnOnce(&[i64])) {
-    if !ids.is_empty() {
-        open(ids);
-    }
+/// The distinct raw `genre` spellings behind a set of tracks — the values a
+/// rule would have to match.
+fn group_genre_spellings(
+    conn: &Connection,
+    track_ids: &[i64],
+) -> Result<Vec<String>, rusqlite::Error> {
+    let placeholders = vec!["?"; track_ids.len()].join(",");
+    let mut statement = conn.prepare(&format!(
+        "SELECT DISTINCT genre FROM tracks \
+         WHERE id IN ({placeholders}) AND TRIM(COALESCE(genre, '')) <> '' \
+         ORDER BY genre"
+    ))?;
+    let spellings = statement
+        .query_map(rusqlite::params_from_iter(track_ids), |row| row.get(0))?
+        .collect::<Result<Vec<String>, _>>()?;
+    Ok(spellings)
 }
 
 /// Fisher–Yates shuffle for the Artists hero "Shuffle" action. `reprise-gnome`

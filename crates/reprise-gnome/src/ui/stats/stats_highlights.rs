@@ -4,9 +4,28 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::library::stats_snapshot::HighlightsSection;
+use reprise_core::library::stats_snapshot::{GenreSegment, HighlightsSection};
 
-type VoidCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+/// The genre the mix CTA acts on. It carries the group **key**, because the
+/// label is only the most common raw spelling of the group (STATS-9) and a
+/// name equality on it would select a different set of tracks than the screen
+/// shows.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::ui) struct TopGenre {
+    pub key: String,
+    pub label: String,
+}
+
+impl TopGenre {
+    pub(in crate::ui) fn from_segment(segment: &GenreSegment) -> Self {
+        Self {
+            key: segment.key.clone(),
+            label: segment.label.clone(),
+        }
+    }
+}
+
+type GenreCallback = Rc<RefCell<Option<Rc<dyn Fn(TopGenre)>>>>;
 
 #[derive(Clone)]
 pub(in crate::ui) struct StatsHighlights {
@@ -14,7 +33,9 @@ pub(in crate::ui) struct StatsHighlights {
     #[cfg_attr(not(test), allow(dead_code))]
     grid: gtk4::Grid,
     values: [gtk4::Label; 4],
-    on_create_mix: VoidCallback,
+    create: gtk4::Button,
+    top_genre: Rc<RefCell<Option<TopGenre>>>,
+    on_create_mix: GenreCallback,
 }
 
 impl StatsHighlights {
@@ -33,15 +54,23 @@ impl StatsHighlights {
             tile(&grid, 1, 1, "ON REPEAT"),
         ];
         root.append(&grid);
-        let create = gtk4::Button::with_label("Smart Mix from top genres? \u{00b7} Create");
+        // One genre, not "top genres": the rule engine behind the mix joins
+        // its rules with AND and knows no alternation, so a mix can only ever
+        // be built from a single genre group.
+        let create = gtk4::Button::with_label(&mix_label(None));
         create.add_css_class("flat");
         create.set_halign(gtk4::Align::Start);
-        let on_create_mix: VoidCallback = Rc::new(RefCell::new(None));
+        create.set_visible(false);
+        let top_genre = Rc::new(RefCell::new(None::<TopGenre>));
+        let on_create_mix: GenreCallback = Rc::new(RefCell::new(None));
         create.connect_clicked({
+            let top_genre = top_genre.clone();
             let on_create_mix = on_create_mix.clone();
             move |_| {
-                if let Some(callback) = on_create_mix.borrow().clone() {
-                    callback();
+                let genre = top_genre.borrow().clone();
+                let callback = on_create_mix.borrow().clone();
+                if let (Some(genre), Some(callback)) = (genre, callback) {
+                    callback(genre);
                 }
             }
         });
@@ -50,6 +79,8 @@ impl StatsHighlights {
             root,
             grid,
             values,
+            create,
+            top_genre,
             on_create_mix,
         }
     }
@@ -73,8 +104,23 @@ impl StatsHighlights {
         );
     }
 
-    pub(in crate::ui) fn set_on_create_mix(&self, callback: impl Fn() + 'static) {
+    /// Names the genre the CTA would mix, or hides it when the period has no
+    /// genre to offer.
+    pub(in crate::ui) fn set_top_genre(&self, genre: Option<TopGenre>) {
+        self.create.set_label(&mix_label(genre.as_ref()));
+        self.create.set_visible(genre.is_some());
+        *self.top_genre.borrow_mut() = genre;
+    }
+
+    pub(in crate::ui) fn set_on_create_mix(&self, callback: impl Fn(TopGenre) + 'static) {
         *self.on_create_mix.borrow_mut() = Some(Rc::new(callback));
+    }
+}
+
+fn mix_label(genre: Option<&TopGenre>) -> String {
+    match genre {
+        Some(genre) => format!("Mix from {} \u{00b7} Create", genre.label),
+        None => "Mix from your top genre \u{00b7} Create".to_string(),
     }
 }
 
