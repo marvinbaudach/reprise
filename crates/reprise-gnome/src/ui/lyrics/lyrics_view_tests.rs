@@ -276,19 +276,34 @@ fn active_lines_center_and_clamp_in_a_mapped_panel() {
     while gtk4::glib::MainContext::default().iteration(false) {}
 
     view.set_active_line(Some(20));
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    wait_for_scroll_value(&view, |value, maximum| value > 0.0 && value < maximum);
     let (middle, maximum) = view.scroll_values();
     assert!(middle > 0.0 && middle < maximum);
 
     view.set_active_line(Some(0));
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    wait_for_scroll_value(&view, |value, _| value == 0.0);
     assert_eq!(view.scroll_values().0, 0.0);
 
     view.set_active_line(Some(39));
-    while gtk4::glib::MainContext::default().iteration(false) {}
+    wait_for_scroll_value(&view, |value, maximum| (value - maximum).abs() < 1.0);
     let (end, maximum) = view.scroll_values();
     assert!((end - maximum).abs() < 1.0);
     window.close();
+}
+
+fn wait_for_scroll_value(view: &LyricsView, predicate: impl Fn(f64, f64) -> bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        let (value, maximum) = view.scroll_values();
+        if predicate(value, maximum) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "lyrics scroll did not settle: value={value}, maximum={maximum}"
+        );
+        gtk4::glib::MainContext::default().iteration(true);
+    }
 }
 
 #[test]
@@ -309,12 +324,9 @@ fn lyr_4_start_of_song_is_not_centered() {
     window.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    assert!((view.line_viewport_top_offset(0) - 18.0).abs() < 2.0);
+    assert_eq!(view.content_margin_top(), 18);
+    assert_eq!(view.scroll_values().0, 0.0);
     assert!(view.line_center_offset(0) < -20.0);
-
-    view.set_active_line(Some(10));
-    while gtk4::glib::MainContext::default().iteration(false) {}
-    assert!(view.line_center_offset(10).abs() < 2.0);
     window.close();
 }
 

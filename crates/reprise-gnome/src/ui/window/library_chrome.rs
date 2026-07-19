@@ -159,6 +159,17 @@ pub(in crate::ui) fn build_library_title(
     source_title: &adw::WindowTitle,
     views: &adw::ViewStack,
 ) -> LibraryTitle {
+    // `source_title` is the header's initial title before the library switcher
+    // exists. Detach it before moving it into the two-state title stack;
+    // GTK widgets cannot have two parents, and a failed reparent silently
+    // leaves non-library pages without their source title.
+    if header
+        .title_widget()
+        .as_ref()
+        .is_some_and(|widget| widget == source_title.upcast_ref::<gtk4::Widget>())
+    {
+        header.set_title_widget(gtk4::Widget::NONE);
+    }
     let switcher = adw::InlineViewSwitcher::builder()
         .stack(views)
         .display_mode(adw::InlineViewSwitcherDisplayMode::Labels)
