@@ -118,6 +118,9 @@ fn build_widgets_for_session(
     lyrics_button.set_group(Some(&up_next_button));
     for button in [&up_next_button, &lyrics_button] {
         button.add_css_class("reprise-now-playing-tab");
+        // States come from `style::buttons` by selector (the pill's own
+        // `:checked` rule outranks a class), so only the cursor is set here.
+        crate::ui::style::buttons::arm_cursor(button);
     }
     match session.selected.get() {
         PanelTab::UpNext => up_next_button.set_active(true),

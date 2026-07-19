@@ -127,7 +127,10 @@ pub(in crate::ui) fn build_factory(shared: &Rc<AlbumCardShared>) -> gtk4::Signal
             bottom_row.append(&play_spacer);
             let play_button = gtk4::Button::builder()
                 .icon_name("media-playback-start-symbolic")
-                .css_classes(vec![css::PLAY_BUTTON_CLASS.to_owned()])
+                .css_classes(vec![
+                    css::PLAY_BUTTON_CLASS.to_owned(),
+                    crate::ui::style::buttons::PRIMARY_CLASS.to_owned(),
+                ])
                 .halign(gtk4::Align::End)
                 .valign(gtk4::Align::End)
                 .has_frame(false)

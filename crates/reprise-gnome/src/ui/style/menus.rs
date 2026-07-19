@@ -7,6 +7,10 @@ pub(super) fn css() -> String {
     format!(
         "popover.menu > contents {{ border-radius: {RADIUS_SURFACE}; padding: 6px; }}\n\
          popover.menu modelbutton {{ border-radius: 8px; padding: 6px 10px; }}\n\
+         /* The accent hover is this family's designed language and stays. \
+            `style::buttons` is composed earlier in `app_css`, so this rule \
+            wins the hover while the central set supplies the press and focus \
+            states menus were missing entirely (BTN-1). */\n\
          popover.menu modelbutton:hover {{ \
            background-color: alpha(@accent_bg_color, 0.18); }}"
     )

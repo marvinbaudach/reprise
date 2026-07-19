@@ -214,13 +214,15 @@ pub(in crate::ui) fn css() -> String {
      .reprise-view-switcher { \
        background-color: alpha(@window_fg_color, 0.06); \
        border: none; border-radius: 8px; padding: 2px; box-shadow: none; }\n\
+     /* Resting look only. Hover, press and the focus ring come from \
+        `style::buttons`, which reaches these Adwaita-internal buttons by \
+        selector (BTN-4). No `outline: none` here — that deleted the keyboard \
+        focus ring along with the frame. */\n\
      .reprise-view-switcher > button { \
-       border: none; border-radius: 6px; box-shadow: none; outline: none; \
+       border: none; border-radius: 6px; box-shadow: none; \
        min-height: 0; margin: 0; padding: 2px 14px; \
        background-color: transparent; background-image: none; \
        color: alpha(@window_fg_color, 0.60); font-weight: 400; }\n\
-     .reprise-view-switcher > button:hover:not(:checked) { \
-       background-color: alpha(@window_fg_color, 0.08); }\n\
      .reprise-view-switcher > button:checked { \
        background-color: alpha(@window_fg_color, 0.14); \
        color: @window_fg_color; font-weight: 700; }"

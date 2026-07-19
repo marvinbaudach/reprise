@@ -409,6 +409,7 @@ fn build_row_widgets() -> (gtk4::Box, gtk4::Button, gtk4::Button, RowWidgets) {
         .css_classes(["flat", "reprise-up-next-row"])
         .hexpand(true)
         .build();
+    crate::ui::style::buttons::arm(&jump_button, crate::ui::style::buttons::TERTIARY_CLASS);
     let remove_button = gtk4::Button::builder()
         .icon_name("list-remove-symbolic")
         .tooltip_text(super::strings::remove_from_queue_label(1))
@@ -507,7 +508,7 @@ pub(in crate::ui) fn css() -> String {
          .reprise-up-next-row {{ \
            background: transparent; border: none; box-shadow: none; \
            padding: 5px 6px; }}\n\
-         .reprise-up-next-row:hover {{ background: alpha(#ffffff, 0.06); }}\n\
+         /* Hover, press and focus come from `style::buttons` (BTN-4). */\n\
          .reprise-up-next-remove {{ color: alpha(#ffffff, {MUTED_TEXT_ALPHA}); }}\n\
          .reprise-up-next-remove:hover {{ color: #ffffff; }}\n\
          .reprise-up-next-cover {{ border-radius: {RADIUS_SURFACE}; }}\n\
