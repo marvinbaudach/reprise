@@ -55,9 +55,12 @@ keyboard_tracks_playlist_queue() {
 }
 
 keyboard_albums() {
-  local pid=$1 window_id=$2 focus_path
-  focus_path=$(cua_focus_label_via_tab \
-    "$pid" "$window_id" Albums acc-albums-focus)
+  local pid=$1 window_id=$2 tab_path focus_path
+  tab_path=$(cua_focus_label_via_tab \
+    "$pid" "$window_id" Tracks acc-albums-tabs)
+  assert_focus_evidence_label "$tab_path" Tracks
+  focus_path=$(cua_focus_label_via_key \
+    "$pid" "$window_id" Albums right acc-albums-focus)
   assert_focus_evidence_label "$focus_path" Albums
   cua_press_key_window "$pid" "$window_id" enter acc-albums-open
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-albums-open-after.json" Albums
@@ -65,9 +68,12 @@ keyboard_albums() {
 }
 
 keyboard_artists() {
-  local pid=$1 window_id=$2 focus_path
-  focus_path=$(cua_focus_label_via_tab \
-    "$pid" "$window_id" Artists acc-artists-focus)
+  local pid=$1 window_id=$2 tab_path focus_path
+  tab_path=$(cua_focus_label_via_tab \
+    "$pid" "$window_id" Albums acc-artists-tabs)
+  assert_focus_evidence_label "$tab_path" Albums
+  focus_path=$(cua_focus_label_via_key \
+    "$pid" "$window_id" Artists right acc-artists-focus)
   assert_focus_evidence_label "$focus_path" Artists
   cua_press_key_window "$pid" "$window_id" enter acc-artists-open
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-artists-open-after.json" Artists
