@@ -23,7 +23,15 @@ pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, boo
 /// `.playback-paused` class on the `ColumnView`) and drop the marker on stop.
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
 pub(in crate::ui) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
-pub(in crate::ui) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<(String, String)>)>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::ui) struct NowPlayingAlbum {
+    pub(in crate::ui) album: String,
+    pub(in crate::ui) artist: String,
+    pub(in crate::ui) track_path: String,
+}
+
+pub(in crate::ui) type OnNowPlayingAlbumChanged = Rc<dyn Fn(Option<NowPlayingAlbum>)>;
 
 fn visible_position_for_track_in_source(
     ids: &[i64],

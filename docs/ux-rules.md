@@ -247,6 +247,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
   die Album-Übersicht stellt den Tastaturfokus auf genau der zuvor
   aktivierten Albumkachel wieder her und scrollt sie bei Bedarf sichtbar.
+- **GRID-7** [aktiv] [gtk] — Die Album-Übersicht trägt hinter ihren Karten
+  eine dezente Textur des aktuell spielenden Covers. Das Cover wird pro
+  Trackwechsel genau einmal auf 32 px verkleinert und vorgerendert
+  weichgezeichnet; beim Zeichnen wird nur diese gecachte Textur skaliert,
+  niemals ein Live-Blur über der Liste ausgeführt. Ohne Cover, nach Stop und
+  in High Contrast bleibt die Textur unsichtbar. Sie ist nicht interaktiv und
+  verwendet den Coverinhalt, färbt aber keine Chrome-Fläche ein.
 - **ART-1** [aktiv] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.
