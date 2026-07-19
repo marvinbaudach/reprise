@@ -82,6 +82,9 @@ require_pattern '^## Priority automation gaps' TESTING.md
 require_pattern '^## Isolated GTK and desktop tests' TESTING.md
 require_pattern '^## Manual release checks' TESTING.md
 require_pattern '^## Known harness constraints' TESTING.md
+require_pattern 'must run the entire discovered list' RELEASING.md
+require_pattern '1 passed' RELEASING.md
+require_pattern 'zero tests' RELEASING.md
 
 scripts/tests/cua-e2e.sh
 scripts/tests/motion-tokens.sh

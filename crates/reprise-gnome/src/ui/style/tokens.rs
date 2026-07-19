@@ -40,7 +40,14 @@ pub(in crate::ui) const ROW_MIN_HEIGHT_COMFORTABLE: i32 = 36;
 pub(in crate::ui) const ROW_MIN_HEIGHT_STANDARD: i32 = 28;
 
 /// Track-row content minimum height for the Compact density.
-pub(in crate::ui) const ROW_MIN_HEIGHT_COMPACT: i32 = 12;
+///
+/// This is the floor the cell content imposes, not a freely chosen one: the
+/// rating stars and cover cannot shrink below it, so a smaller value would be
+/// silently ignored. It sat at 12 for a while and never bound, which made
+/// Compact 8px tighter than Standard while the token promised 16 — the density
+/// test then hardcoded a pixel delta matching neither. Going below this needs
+/// the cell content to shrink first.
+pub(in crate::ui) const ROW_MIN_HEIGHT_COMPACT: i32 = 20;
 
 /// Font size (px) applied to track-row text in the Compact density.
 pub(in crate::ui) const COMPACT_ROW_FONT_SIZE: i32 = 10;

@@ -1,6 +1,6 @@
 //! Exact scroll-end padding derived from allocated glass-zone heights.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -47,9 +47,17 @@ impl InsetMeasurements {
 }
 
 struct InsetTarget {
-    widget: glib::WeakRef<gtk4::Widget>,
-    base_top: i32,
-    base_bottom: i32,
+    /// The scroller, which outlives its content. Holding the *content* here
+    /// would lose the target for good on `set_child()`: GTK keeps the
+    /// auto-inserted `Viewport` across a swap but replaces what sits inside it,
+    /// so a stored content reference would go stale while the scroller stayed
+    /// perfectly alive.
+    scrolled: glib::WeakRef<gtk4::ScrolledWindow>,
+    /// Content the margins in `base` were snapshotted from, re-resolved on
+    /// every apply so a swapped-in child is padded from its own margins rather
+    /// than inheriting its predecessor's.
+    content: RefCell<glib::WeakRef<gtk4::Widget>>,
+    base: Cell<(i32, i32)>,
 }
 
 pub(crate) struct SafeInsetApplier {
@@ -68,16 +76,36 @@ impl SafeInsetApplier {
     }
 
     pub(crate) fn apply(&self, insets: SafeInsets) {
-        if self.current.get() == insets {
-            return;
-        }
+        let unchanged = self.current.get() == insets;
         self.current.set(insets);
         for target in &self.targets {
-            let Some(widget) = target.widget.upgrade() else {
+            let Some(scrolled) = target.scrolled.upgrade() else {
                 continue;
             };
-            widget.set_margin_top(target.base_top.saturating_add(insets.top));
-            widget.set_margin_bottom(target.base_bottom.saturating_add(insets.bottom));
+            let Some(content) = scrolled_content(&scrolled) else {
+                continue;
+            };
+
+            // Re-resolving the content each time is what makes a `set_child()`
+            // swap survivable. A swapped-in child brings its own margins, so
+            // the base must be re-snapshotted before the insets are added —
+            // otherwise it would inherit the previous child's base, or (worse)
+            // its already-inset margins would be treated as base and compound.
+            let swapped = target.content.borrow().upgrade().as_ref() != Some(&content);
+            if swapped {
+                target
+                    .base
+                    .set((content.margin_top(), content.margin_bottom()));
+                target.content.replace(content.downgrade());
+            } else if unchanged {
+                // Same content, same insets: the margins already hold. This is
+                // the per-allocation hot path, so skip the setters entirely.
+                continue;
+            }
+
+            let (base_top, base_bottom) = target.base.get();
+            content.set_margin_top(base_top.saturating_add(insets.top));
+            content.set_margin_bottom(base_bottom.saturating_add(insets.bottom));
         }
     }
 
@@ -87,13 +115,36 @@ impl SafeInsetApplier {
     }
 }
 
+/// The widget that should carry the insets for `scrolled`.
+///
+/// `ScrolledWindow::child()` does not return what was handed to `set_child()`:
+/// GTK wraps anything that is not `GtkScrollable` in an internal `GtkViewport`.
+/// Padding that viewport would shrink the scroll aperture instead of the
+/// content — the inverse of the intent — so exactly one level is unwrapped.
+/// A deliberate, app-authored viewport is treated the same way, since its
+/// child is still the thing to pad.
+fn scrolled_content(scrolled: &gtk4::ScrolledWindow) -> Option<gtk4::Widget> {
+    let child = scrolled.child();
+    match child.and_downcast_ref::<gtk4::Viewport>() {
+        Some(viewport) => viewport.child(),
+        None => child,
+    }
+}
+
+/// Walks `widget` once and records every scroller found.
+///
+/// This is a snapshot: a `ScrolledWindow` added to the tree afterwards (a lazily
+/// built stack page, say) is never discovered and never padded. Every scroller
+/// in the shell is built up front today, so nothing hits this — a caller that
+/// starts adding scrollers late needs to re-run discovery rather than rely on
+/// `apply()` finding them.
 fn collect_scrolled_children(widget: &gtk4::Widget, targets: &mut Vec<InsetTarget>) {
     if let Some(scrolled) = widget.downcast_ref::<gtk4::ScrolledWindow>() {
-        if let Some(child) = scrolled.child() {
+        if let Some(child) = scrolled_content(scrolled) {
             targets.push(InsetTarget {
-                base_top: child.margin_top(),
-                base_bottom: child.margin_bottom(),
-                widget: child.downgrade(),
+                base: Cell::new((child.margin_top(), child.margin_bottom())),
+                content: RefCell::new(child.downgrade()),
+                scrolled: scrolled.downgrade(),
             });
         }
     }

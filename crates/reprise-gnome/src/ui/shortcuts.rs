@@ -25,9 +25,16 @@
 //!   no-op action handler can return it to the focused control.
 //!
 //! - **Escape** is handled by a capture-phase key controller on the search
-//!   bar. This intercepts the entry's built-in `stop-search` default before
-//!   GTK can collapse a non-empty query, while remaining scoped to focus
-//!   inside the bar so dialogs keep their own Escape behavior.
+//!   bar, scoped to focus inside the bar so dialogs keep their own Escape
+//!   behavior. Note this does *not* intercept a `stop-search` default, as this
+//!   doc long claimed: the entry never emits `stop-search` here. What actually
+//!   happens is that `GtkSearchBar`'s own key-capture controller — installed
+//!   on the *window* by `set_key_capture_widget` — forwards the key to the
+//!   entry connected via `connect_entry`, the entry consumes Escape, and the
+//!   bar reads that as typing and re-opens itself after our handler returns.
+//!   `Propagation::Stop` cannot prevent it, because that controller sits at a
+//!   different dispatch step. Stage two therefore collapses on idle; see
+//!   `apply_search_escape`.
 //!
 //! ## What's verified headlessly vs. manually
 //!
@@ -240,39 +247,48 @@ fn focus_search_entry(window: &adw::ApplicationWindow, entry: &gtk4::SearchEntry
 #[cfg(test)]
 fn widget_contains_focus(window: &adw::ApplicationWindow, widget: &gtk4::Widget) -> bool {
     gtk4::prelude::GtkWindowExt::focus(window)
-        .is_some_and(|focus| focus == *widget || widget.is_ancestor(&focus))
+        .is_some_and(|focus| focus == *widget || focus.is_ancestor(widget))
 }
 
-fn apply_search_escape(search_bar: &gtk4::SearchBar, search_entry: &gtk4::SearchEntry) -> bool {
+fn apply_search_escape(
+    search_bar: &gtk4::SearchBar,
+    search_entry: &gtk4::SearchEntry,
+    focus_active_content: &Rc<dyn Fn() -> bool>,
+) {
     match escape_action_for(!search_entry.text().is_empty()) {
         EscapeAction::ClearSearchText => {
             search_entry.set_text("");
             search_bar.set_search_mode(true);
             search_entry.grab_focus();
-            false
         }
         EscapeAction::CollapseSearchBarAndFocusActiveContent => {
-            search_bar.set_search_mode(false);
-            true
+            // Collapsing synchronously here does not stick. `GtkSearchBar` has
+            // its own key-capture controller on the window (installed by
+            // `set_key_capture_widget`), which forwards the key to the entry
+            // connected via `connect_entry`. The entry consumes Escape, the
+            // search bar reads that as typing and re-asserts search mode —
+            // after our handler has returned. Returning `Propagation::Stop`
+            // does not help: that controller sits on the window, a different
+            // dispatch step from ours on the bar.
+            //
+            // Deferring to idle puts the collapse after that re-assertion.
+            // Moving our controller to the window would also work but would
+            // steal Escape from a dialog opened while search mode is on, which
+            // is the scoping this module deliberately keeps (see the module
+            // doc) so ACC-5's "Esc closes exactly this layer" holds.
+            let bar = search_bar.downgrade();
+            let focus_active_content = Rc::clone(focus_active_content);
+            gtk4::glib::idle_add_local_once(move || {
+                let Some(bar) = bar.upgrade() else {
+                    return;
+                };
+                bar.set_search_mode(false);
+                if !focus_active_content() {
+                    tracing::warn!("escape: could not move focus to the active content view");
+                }
+            });
         }
     }
-}
-
-fn schedule_active_content_focus(
-    focus_active_content: Rc<dyn Fn() -> bool>,
-    schedule: impl FnOnce(Box<dyn FnOnce()>),
-) {
-    schedule(Box::new(move || {
-        if !focus_active_content() {
-            tracing::warn!("escape: could not move focus to the active content view");
-        }
-    }));
-}
-
-fn focus_active_content_later(focus_active_content: Rc<dyn Fn() -> bool>) {
-    schedule_active_content_focus(focus_active_content, |focus| {
-        gtk4::glib::idle_add_local_once(focus);
-    });
 }
 
 fn wire_escape(
@@ -291,9 +307,7 @@ fn wire_escape(
         if key != gtk4::gdk::Key::Escape || !bar.is_search_mode() {
             return gtk4::glib::Propagation::Proceed;
         }
-        if apply_search_escape(&bar, &entry) {
-            focus_active_content_later(focus_active_content.clone());
-        }
+        apply_search_escape(&bar, &entry, &focus_active_content);
         gtk4::glib::Propagation::Stop
     });
     search_bar.add_controller(controller);
@@ -380,36 +394,23 @@ mod tests {
         search_bar.set_search_mode(true);
         entry.set_text("falling");
 
-        assert!(!apply_search_escape(&search_bar, &entry));
+        let focus_calls = Rc::new(std::cell::Cell::new(0));
+        let counted = Rc::clone(&focus_calls);
+        let focus_active_content: Rc<dyn Fn() -> bool> = Rc::new(move || {
+            counted.set(counted.get() + 1);
+            true
+        });
+
+        apply_search_escape(&search_bar, &entry, &focus_active_content);
         assert_eq!(entry.text(), "");
         assert!(search_bar.is_search_mode());
 
-        assert!(apply_search_escape(&search_bar, &entry));
+        apply_search_escape(&search_bar, &entry, &focus_active_content);
+        // Stage two is deferred to idle so `GtkSearchBar` cannot re-assert
+        // search mode behind it, so the effect lands only once the loop runs.
+        assert!(search_bar.is_search_mode());
+        while gtk4::glib::MainContext::default().iteration(false) {}
         assert!(!search_bar.is_search_mode());
-    }
-
-    #[test]
-    fn search_4_content_focus_waits_until_after_key_dispatch() {
-        let focus_calls = Rc::new(std::cell::Cell::new(0));
-        let calls = focus_calls.clone();
-        let scheduled = Rc::new(std::cell::RefCell::new(None));
-        let pending = scheduled.clone();
-
-        schedule_active_content_focus(
-            Rc::new(move || {
-                calls.set(calls.get() + 1);
-                true
-            }),
-            move |focus| {
-                pending.replace(Some(focus));
-            },
-        );
-
-        assert_eq!(focus_calls.get(), 0);
-        scheduled
-            .borrow_mut()
-            .take()
-            .expect("content focus should be deferred")();
         assert_eq!(focus_calls.get(), 1);
     }
 

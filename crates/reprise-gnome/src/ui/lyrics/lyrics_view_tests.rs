@@ -10,6 +10,13 @@ use super::lyrics_view::{
     ACTIVE_LINE_CLASS, INLINE_RETRY_CLASS,
 };
 
+/// Slack the first lyrics line may sit below the content margin. `.lyrics-list`
+/// carries no stylesheet of ours, so the offset is the container margin plus
+/// Adwaita's own `ListBoxRow` padding — measured at 2 px on GTK 4.22. The bound
+/// stays generous enough for other themes while still rejecting a centered
+/// line (which lands ~120 px down) and the `f64::INFINITY` failure sentinel.
+const MAX_THEME_ROW_PADDING: f64 = 24.0;
+
 /// Pumps the main loop until `predicate` holds or the deadline passes.
 /// A single non-blocking iteration does not let GTK allocate a freshly
 /// presented window, so geometry assertions raced the layout.
@@ -340,10 +347,17 @@ fn lyr_4_start_of_song_is_not_centered() {
     window.present();
     settle_until(1000, || view.widget().height() > 0);
 
+    // The first line sits at the content margin plus whatever padding the
+    // theme gives a ListBoxRow, so the offset must not be pinned to the
+    // margin exactly. It still needs an upper bound: `line_viewport_top_offset`
+    // returns `f64::INFINITY` when the index is out of range or the widget has
+    // no common ancestor, and an open-ended `>=` would accept that sentinel —
+    // passing precisely when the measurement failed.
+    let top_offset = view.line_viewport_top_offset(0);
+    let margin = f64::from(view.content_margin_top());
     assert!(
-        (view.line_viewport_top_offset(0) - 18.0).abs() < 2.0,
-        "top offset was {} (expected ~18), center offset {}, allocated height {}",
-        view.line_viewport_top_offset(0),
+        top_offset >= margin && top_offset < margin + MAX_THEME_ROW_PADDING,
+        "top offset {top_offset} must sit within {MAX_THEME_ROW_PADDING} px of the content margin {margin}; center offset {}, allocated height {}",
         view.line_center_offset(0),
         view.widget().height()
     );

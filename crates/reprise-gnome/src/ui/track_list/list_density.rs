@@ -198,9 +198,26 @@ mod tests {
         assert!(cell.has_css_class("reprise-density-comfortable"));
         let (_, comfortable, _, _) = view.measure(gtk4::Orientation::Vertical, -1);
 
+        assert!(
+            compact < standard && standard < comfortable,
+            "measured compact={compact}, standard={standard}, comfortable={comfortable}"
+        );
         assert_eq!(
-            (standard - compact, comfortable - standard),
-            (10, 8),
+            comfortable - standard,
+            crate::ui::style::tokens::ROW_MIN_HEIGHT_COMFORTABLE
+                - crate::ui::style::tokens::ROW_MIN_HEIGHT_STANDARD,
+            "measured compact={compact}, standard={standard}, comfortable={comfortable}"
+        );
+        // Compact needs its own bound, or a regression collapsing it to within
+        // a pixel of Standard would still satisfy the ordering above. Both
+        // steps now come from the tokens: ROW_MIN_HEIGHT_COMPACT was raised to
+        // the floor the cell content actually imposes, so it binds and the
+        // measured delta matches what the token promises. If the content ever
+        // shrinks enough for a smaller value to bind, this catches it.
+        assert_eq!(
+            standard - compact,
+            crate::ui::style::tokens::ROW_MIN_HEIGHT_STANDARD
+                - crate::ui::style::tokens::ROW_MIN_HEIGHT_COMPACT,
             "measured compact={compact}, standard={standard}, comfortable={comfortable}"
         );
         window.close();

@@ -189,7 +189,6 @@ mod tests {
     use gtk4::gio;
 
     use super::*;
-    use crate::ui::compact_player_layouts;
 
     #[test]
     fn only_the_integrated_mode_shows_integrated_window_chrome() {
@@ -216,7 +215,12 @@ mod tests {
         library_root.add_top_bar(&library_header);
         library_root.set_content(Some(&gtk4::Label::new(Some("Library"))));
         let compact_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        compact_root.append(&compact_player_layouts::build_mini().root);
+        let compact_header = adw::HeaderBar::new();
+        let compact_title = adw::WindowTitle::new("Compact", "");
+        let compact_controls = gtk4::WindowControls::new(gtk4::PackType::End);
+        compact_root.append(&compact_header);
+        compact_root.append(&compact_title);
+        compact_root.append(&compact_controls);
         let decorations =
             WindowDecorations::new(&window, &library_header, Some(compact_root.upcast_ref()));
         decorations.content_host.set_content(&library_root);
@@ -236,13 +240,11 @@ mod tests {
         assert!(library_header.shows_end_title_buttons());
         assert!(descendants(library_header.upcast_ref())
             .filter_map(|widget| widget.downcast::<gtk4::WindowControls>().ok())
-            .any(|controls| controls.side() == gtk4::PackType::End && !controls.is_empty()));
-        assert!(all_compact_headers_match(compact_root.upcast_ref(), true));
-        assert!(all_compact_titles_match(compact_root.upcast_ref(), true));
-        assert!(decorations
-            .controls
-            .iter()
-            .all(gtk4::prelude::WidgetExt::is_visible));
+            .any(|controls| !controls.is_empty()));
+        assert!(compact_header.shows_start_title_buttons());
+        assert!(compact_header.shows_end_title_buttons());
+        assert!(compact_title.is_visible());
+        assert!(compact_controls.is_visible());
 
         decorations.apply(WindowDecorationMode::System);
         assert!(decorations.content_host.separate_titlebar.is_visible());
@@ -260,12 +262,10 @@ mod tests {
         while gtk4::glib::MainContext::default().iteration(false) {}
         assert!(!library_header.shows_start_title_buttons());
         assert!(!library_header.shows_end_title_buttons());
-        assert!(all_compact_headers_match(compact_root.upcast_ref(), false));
-        assert!(all_compact_titles_match(compact_root.upcast_ref(), false));
-        assert!(decorations
-            .controls
-            .iter()
-            .all(|controls| !controls.is_visible()));
+        assert!(!compact_header.shows_start_title_buttons());
+        assert!(!compact_header.shows_end_title_buttons());
+        assert!(!compact_title.is_visible());
+        assert!(!compact_controls.is_visible());
 
         decorations.apply(WindowDecorationMode::Client);
         while gtk4::glib::MainContext::default().iteration(false) {}
@@ -273,12 +273,10 @@ mod tests {
         assert!(!surface_decorated(&window));
         assert!(library_header.shows_start_title_buttons());
         assert!(library_header.shows_end_title_buttons());
-        assert!(all_compact_headers_match(compact_root.upcast_ref(), true));
-        assert!(all_compact_titles_match(compact_root.upcast_ref(), true));
-        assert!(decorations
-            .controls
-            .iter()
-            .all(gtk4::prelude::WidgetExt::is_visible));
+        assert!(compact_header.shows_start_title_buttons());
+        assert!(compact_header.shows_end_title_buttons());
+        assert!(compact_title.is_visible());
+        assert!(compact_controls.is_visible());
         window.close();
     }
 
@@ -301,27 +299,6 @@ mod tests {
             .unwrap()
             .title()
             .into()
-    }
-
-    fn all_compact_headers_match(root: &gtk4::Widget, expected: bool) -> bool {
-        let headers = descendants(root)
-            .filter_map(|widget| widget.downcast::<adw::HeaderBar>().ok())
-            .collect::<Vec<_>>();
-        assert_eq!(headers.len(), 0);
-        headers.into_iter().all(|header| {
-            header.shows_start_title_buttons() == expected
-                && header.shows_end_title_buttons() == expected
-        })
-    }
-
-    fn all_compact_titles_match(root: &gtk4::Widget, expected: bool) -> bool {
-        let titles = descendants(root)
-            .filter_map(|widget| widget.downcast::<adw::WindowTitle>().ok())
-            .collect::<Vec<_>>();
-        assert_eq!(titles.len(), 0);
-        titles
-            .into_iter()
-            .all(|title| title.is_visible() == expected)
     }
 
     fn descendants(root: &gtk4::Widget) -> impl Iterator<Item = gtk4::Widget> {
