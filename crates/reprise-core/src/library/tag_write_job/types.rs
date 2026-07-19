@@ -17,6 +17,15 @@ impl TagWriteJobKind {
             Self::DoctorRevert => "doctor_revert",
         }
     }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "tag_editor" => Some(Self::TagEditor),
+            "doctor_apply" => Some(Self::DoctorApply),
+            "doctor_revert" => Some(Self::DoctorRevert),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +65,7 @@ pub enum RecoveryState {
     NotApplied,
     Conflict,
     Unavailable,
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,4 +75,6 @@ pub struct TagWriteRecovery {
     pub track_id: i64,
     pub path: PathBuf,
     pub state: RecoveryState,
+    pub error_kind: Option<super::super::tag_mutation::WriteErrorKind>,
+    pub error: Option<String>,
 }

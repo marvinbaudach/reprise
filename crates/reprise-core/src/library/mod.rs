@@ -26,6 +26,9 @@ mod tag_edit_write;
 #[cfg(test)]
 mod tag_edit_write_adversarial_tests;
 mod tag_mutation;
+mod tag_mutation_guarded;
+#[cfg(test)]
+mod tag_mutation_guarded_tests;
 pub mod tag_write_job;
 pub mod trash_tracks;
 pub mod watcher;
