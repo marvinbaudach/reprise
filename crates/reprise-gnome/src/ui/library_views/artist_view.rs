@@ -157,6 +157,14 @@ impl ArtistView {
         })
     }
 
+    pub(in crate::ui) fn reveal_playing_context_callback(&self) -> Rc<dyn Fn() -> bool> {
+        let weak = Rc::downgrade(&self.inner);
+        Rc::new(move || {
+            weak.upgrade()
+                .is_some_and(|inner| inner.master.reveal_playing_context())
+        })
+    }
+
     // Task 9a: wired to PlayerController.
     pub(in crate::ui) fn set_on_play_all(&self, callback: impl Fn(String) + 'static) {
         self.inner.detail.set_on_play_all(callback);

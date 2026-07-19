@@ -133,7 +133,7 @@ mod tests {
                 Rc::new(move || {
                     events
                         .borrow_mut()
-                        .push(("select-and-center", ViewSource::Playlist(7)));
+                        .push(("reveal-without-selection", ViewSource::Playlist(7)));
                 })
             },
         });
@@ -146,7 +146,7 @@ mod tests {
             &[
                 ("prepare", ViewSource::Playlist(7)),
                 ("route", ViewSource::Playlist(7)),
-                ("select-and-center", ViewSource::Playlist(7)),
+                ("reveal-without-selection", ViewSource::Playlist(7)),
             ]
         );
         assert_eq!(history.go_back(), Some(queue));

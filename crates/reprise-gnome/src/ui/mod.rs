@@ -173,7 +173,7 @@ pub(crate) use track_list::{
 };
 #[allow(unused_imports)]
 use window::{
-    library_chrome, library_shell, library_view_memory_wiring, window_action_wiring,
-    window_decoration_strings, window_decorations, window_navigation, window_runtime_wiring,
-    window_smoke,
+    library_chrome, library_shell, library_view_memory_wiring, navigation_context,
+    window_action_wiring, window_decoration_strings, window_decorations, window_navigation,
+    window_runtime_wiring, window_smoke,
 };
