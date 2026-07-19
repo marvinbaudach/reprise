@@ -203,6 +203,13 @@ for pattern in \
   fi
 done
 for pattern in \
+  'cua_press_key_label "$pid" "$window_id" Tracks enter "$stem-reset-tracks"'; do
+  if ! rg --quiet --fixed-strings "$pattern" "$keyboard_runner"; then
+    echo "the keyboard reset must restore the Tracks top-level view: $pattern" >&2
+    exit 1
+  fi
+done
+for pattern in \
   '"$pid" "$window_id" "Pause (Space)" acc-player-focus' \
   '"$pid" "$window_id" "Play (Space)" acc-player-paused' \
   '"$pid" "$window_id" "Music" acc-issues-main-collection' \
@@ -237,6 +244,23 @@ export CUA_E2E_CALL_LOG="$tmp_root/calls.log"
 export CUA_E2E_SNAPSHOT_COUNT="$tmp_root/snapshot-count"
 export CUA_DRIVER_SOCKET="$tmp_root/private-cua-driver.sock"
 mkdir -p "$CUA_E2E_OUT_DIR" "$tmp_root/bin"
+
+# cua-driver indexes actionable nodes but keeps non-actionable semantic groups
+# only in tree_markdown. Visible status text such as GtkColumnView's
+# "No results" group must still participate in presence/absence waits.
+jq -n '{
+  degraded: false,
+  elements: [],
+  tree_markdown: "- group = \"No results\""
+}' >"$tmp_root/tree-only-status.json"
+if ! assert_snapshot_contains "$tmp_root/tree-only-status.json" "No results"; then
+  echo "snapshot assertions must include non-indexed semantic tree nodes" >&2
+  exit 1
+fi
+if assert_snapshot_absent "$tmp_root/tree-only-status.json" "No results" 2>/dev/null; then
+  echo "absence assertions must reject non-indexed semantic tree nodes" >&2
+  exit 1
+fi
 
 cat >"$tmp_root/bin/cua-driver" <<'FAKE'
 #!/usr/bin/env bash

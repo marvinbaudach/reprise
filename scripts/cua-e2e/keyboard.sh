@@ -53,6 +53,12 @@ reset_surface_baseline() {
     cua_hotkey "$pid" "$window_id" "$stem-reset-back-$attempt" alt left || return 1
   done
 
+  # Back restores navigation within a top-level Library mode; it deliberately
+  # does not undo Tracks/Albums/Artists mode switches (NAV-2). Target the
+  # switcher's semantic Tracks tab with Enter so the next scenario always
+  # starts from the table without introducing a pointer dependency.
+  cua_press_key_label "$pid" "$window_id" Tracks enter "$stem-reset-tracks" || return 1
+
   # Verify against something only the Tracks view has. "Tracks" is the switcher
   # button and is present in every view, and `sine_01` shows up in the album
   # cards and the Now Playing panel too — an earlier version of this check used
