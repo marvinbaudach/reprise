@@ -920,7 +920,8 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Ereignis einzeln durch sie hindurch, damit Sommer-/Winterzeit-Wechsel keine
   Grenze verschieben. Alles ist lokal: kein Netz, keine Cloud, keine
   Fremdquelle wird eingemischt.
-- **STATS-1** [aktiv] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß, eine
+- **STATS-1** [aktiv] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß in vollen
+  Stunden („68 hours"; unter einer Stunde in Minuten, nie „0 hours"), eine
   Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
   Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
   Sekundär-Ton. Rechts steht das Zeitraum-Dropdown („<Jahr> so far / <Vorjahr> /
@@ -928,10 +929,16 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Hörzeit, dessen Achse **exakt dem gewählten Zeitraum** folgt — „2026 so far"
   zeigt Jan–Jul, nie ein rollendes 12-Monats-Fenster. Der laufende Bucket ist
   offen markiert (gestrichelt, hohler Punkt), der Peak gesetzt; Hover nennt den
-  exakten Wert. Fehlt eine Vorperiode mit Hörzeit, entfällt die Pill.
+  exakten Wert. Fehlt eine Vorperiode mit Hörzeit, entfällt die Pill. Die Pill
+  **benennt** die verglichene Spanne, statt „previous period" zu sagen:
+  verglichen wird die gleich lange Spanne unmittelbar davor, also trägt nur ein
+  volles Kalenderjahr den Namen des Vorjahres — jede andere Periode heißt
+  „previous N days", denn die Spanne vor „2026 so far" ist nicht „2025".
 - **STATS-2** [aktiv] [core] — Das Artist-Spotlight ist das Herzstück:
   #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
-  Zeile „N plays · N h · N % of your listening", drei Top-Track-Chips sowie die
+  Zeile „N plays · N h · N % of your artist listening" — der Anteil bezieht
+  sich auf die Hörzeit mit Artist-Zuordnung, dieselbe Grundgesamtheit, die die
+  Rangliste bildet, nicht auf jeden Play —, drei Top-Track-Chips sowie die
   Aktionen Play (Container-Play über die Trackliste des Artists) und
   „Go to artist" (regulärer NAV-Push mit Back-Historie). Hinter dem Cover liegt
   ein dezenter Cover-Akzent-Glow — der Cover-Akzent bleibt Playback-Elementen
@@ -971,6 +978,11 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   freundlicher Leerzustand („Start listening to see your stats") statt Achsen
   mit einem einsamen Balken. Bei dünner Datenlage wird die Granularität feiner
   (Tage bzw. Wochen statt größtenteils leerer Monate).
+- **STATS-6a** [aktiv] [gtk] — Ein Fehler ist kein Leerzustand: schlägt die
+  Abfrage fehl, erscheint eine eigene Fehlerseite („Your stats could not be
+  read"), nie die Einladung „Start listening to see your stats". Sichtbarkeit
+  entsteht dabei über die Seitenumschaltung, nicht über zusätzliches
+  Ein-/Ausblenden einzelner Sektionen darunter.
 - **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
   kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
   Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt

@@ -12,7 +12,7 @@ pub(in crate::ui) fn css() -> String {
         ".stats-chart, .stats-ribbon {{ color: @accent_color; }}\n\
          \
          .stats-headline-hours {{ \
-           font-size: 42px; \
+           font-size: 52px; \
            font-weight: 800; \
            letter-spacing: -0.02em; }}\n\
          \

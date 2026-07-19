@@ -10,6 +10,9 @@ use reprise_core::library::stats_period::PeriodRange;
 use super::stats_ribbon_math::{bucket_at_x, ribbon_layout, Point, RibbonLayout};
 
 pub(in crate::ui) const RIBBON_CSS_CLASS: &str = "stats-ribbon";
+/// The secondary caption tone the axis labels borrow (CONTRAST: the accent
+/// role belongs to data, not to axis descriptions).
+const AXIS_LABEL_CSS_CLASS: &str = "stats-item-subtitle";
 const RIBBON_HEIGHT: i32 = 150;
 const LABEL_HEIGHT: f64 = 24.0;
 const MARKER_RADIUS: f64 = 4.0;
@@ -23,7 +26,14 @@ struct RibbonData {
 
 #[derive(Clone)]
 pub(in crate::ui) struct StatsRibbon {
+    root: gtk4::Box,
     area: gtk4::DrawingArea,
+    /// Cairo can only read one colour off a widget, and the area's is the
+    /// accent the data is drawn in. The axis labels are not data, so they take
+    /// the secondary text tone — read off this hidden label, which carries the
+    /// same CSS class as every other secondary caption on the page.
+    #[cfg_attr(not(test), allow(dead_code))]
+    axis_probe: gtk4::Label,
     data: Rc<RefCell<RibbonData>>,
 }
 
@@ -34,10 +44,24 @@ impl StatsRibbon {
         area.set_hexpand(true);
         area.set_content_height(RIBBON_HEIGHT);
 
+        let axis_probe = gtk4::Label::new(None);
+        axis_probe.add_css_class(AXIS_LABEL_CSS_CLASS);
+        axis_probe.set_visible(false);
+
         let data = Rc::new(RefCell::new(RibbonData::default()));
         area.set_draw_func({
             let data = data.clone();
-            move |area, context, width, height| draw(area, context, width, height, &data.borrow())
+            let axis_probe = axis_probe.clone();
+            move |area, context, width, height| {
+                draw(
+                    area,
+                    context,
+                    width,
+                    height,
+                    &data.borrow(),
+                    axis_probe.color(),
+                );
+            }
         });
 
         let hovered = Rc::new(Cell::new(None));
@@ -83,11 +107,20 @@ impl StatsRibbon {
         ));
         area.add_controller(motion);
 
-        Self { area, data }
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&area);
+        root.append(&axis_probe);
+
+        Self {
+            root,
+            area,
+            axis_probe,
+            data,
+        }
     }
 
-    pub(in crate::ui) fn widget(&self) -> &gtk4::DrawingArea {
-        &self.area
+    pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
+        &self.root
     }
 
     pub(in crate::ui) fn set_data(&self, period: &PeriodRange, values: &[i64]) {
@@ -116,6 +149,7 @@ fn draw(
     width: i32,
     height: i32,
     data: &RibbonData,
+    axis_color: gtk4::gdk::RGBA,
 ) {
     if data.values.is_empty() || width <= 0 || height <= 0 {
         return;
@@ -146,16 +180,7 @@ fn draw(
     );
     draw_line(context, &layout, red, green, blue, alpha);
     draw_markers(context, &layout, red, green, blue, alpha);
-    draw_labels(
-        context,
-        data,
-        width,
-        f64::from(height),
-        red,
-        green,
-        blue,
-        alpha,
-    );
+    draw_labels(context, data, width, f64::from(height), axis_color);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -240,20 +265,21 @@ fn draw_markers(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn draw_labels(
     context: &gtk4::cairo::Context,
     data: &RibbonData,
     width: f64,
     height: f64,
-    red: f64,
-    green: f64,
-    blue: f64,
-    alpha: f64,
+    color: gtk4::gdk::RGBA,
 ) {
     let count = data.labels.len();
     let stride = count.div_ceil(8).max(1);
-    context.set_source_rgba(red, green, blue, alpha * 0.58);
+    context.set_source_rgba(
+        f64::from(color.red()),
+        f64::from(color.green()),
+        f64::from(color.blue()),
+        f64::from(color.alpha()),
+    );
     context.set_font_size(9.0);
     for (index, label) in data.labels.iter().enumerate() {
         if index % stride != 0 && index + 1 != count {
@@ -276,4 +302,35 @@ fn marker(layout: &RibbonLayout, index: Option<usize>) -> Option<Point> {
 fn format_duration(milliseconds: i64) -> String {
     let minutes = milliseconds.max(0) / 60_000;
     format!("{} h {} min", minutes / 60, minutes % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use gtk4::prelude::*;
+
+    use super::*;
+
+    /// CONTRAST: the accent belongs to the data. The axis descriptions take the
+    /// same secondary tone as every other caption, not the teal of the ribbon.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn ribbon_axis_labels_do_not_borrow_the_data_accent() {
+        gtk4::init().unwrap();
+        crate::ui::style::install();
+        let ribbon = StatsRibbon::new();
+        let window = gtk4::Window::new();
+        window.set_child(Some(ribbon.widget()));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let data_color = ribbon.area.color();
+        let axis_color = ribbon.axis_probe.color();
+
+        assert_ne!(
+            (data_color.red(), data_color.green(), data_color.blue()),
+            (axis_color.red(), axis_color.green(), axis_color.blue()),
+            "axis labels resolved to the data accent {data_color}"
+        );
+        window.close();
+    }
 }
