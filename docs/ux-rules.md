@@ -1140,6 +1140,238 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   features for artists (images & new releases) →" mit Deep-Link auf die
   Plugins-Seite kombiniert; zwei gestapelte Aktivierungszeilen sind verboten.
 
+## W. Library Doctor / Tag Cleanup
+
+Library Doctor trennt Erkennen, Entscheiden und Schreiben strikt: Ein Scan
+liest und sammelt Vorschläge, die Review-Tabelle entscheidet feldgenau, und
+nur ihr Apply startet einen journalisierten Schreibjob. „Safe" bedeutet
+deterministisch und hoch-konfident, nie „ohne Review".
+
+- **DOC-1a** [geplant] [core] — **Local ist lesend und erfindet nichts.**
+  Der Scan liest die tatsächlichen Tags der eingefrorenen Dateien; die DB
+  liefert dafür nur Scope, Track-ID, Pfad und Dateiidentität. Er schreibt
+  weder Tags noch bestehende Track-Metadaten und startet weder Scanner noch
+  Reconcile. Als lokale Vorschläge sind ausschließlich erlaubt: mechanisches
+  Unicode-Trim an Feldrändern; fehlender Album Artist aus dem nichtleeren
+  Artist derselben Datei; sowie das Vereinheitlichen von Artist, Album, Album
+  Artist und Genre über exakt `normalize_group_key` aus STATS-DEDUP. Ohne
+  Remote-Evidenz gewinnt innerhalb des eingefrorenen Scopes die häufigste
+  tatsächlich vorhandene exakte Schreibweise nach Edge-Trim. Gleichstand
+  erzeugt nur eine manuelle Kandidatengruppe aus real vorhandenen Werten.
+  Title erhält ausschließlich Edge-Trim. Interner Whitespace dient nur der
+  Gruppierung; geschrieben wird immer ein realer Gewinner. Title Case,
+  Genre-Aliaslisten, Fuzzy-Matching und erfundene Ersatzwerte sind verboten.
+
+- **DOC-1b** [geplant] [core] — **Remote bleibt eine getrennte Quelle.**
+  Bei eingeschalteten MusicBrainz/AcoustID-Vorschlägen gilt die sparsame
+  Kaskade: gültige eingebettete MBIDs zuerst, MusicBrainz nur für danach
+  ungelöste Metadaten, AcoustID-Fingerprint nur für weiterhin ungelöste
+  Tracks. Ein per MBID eindeutig kanonischer Name sticht die lokale
+  Häufigkeit, bleibt aber ein Remote-Vorschlag mit Quelle und Konfidenz und
+  wird nie als Local umetikettiert. Pro Track und Feld existiert höchstens ein
+  konkurrierender Vorschlag. Remote darf ausschließlich Title, Artist, Album,
+  Album Artist, Year und MusicBrainz Recording ID vorschlagen; in Version 1
+  wird kein anderer MBID-Typ geschrieben. Year kommt bei eindeutiger Release
+  aus deren Jahr, sonst bei eindeutiger Release Group ausdrücklich aus deren
+  „original release"; mehrdeutige Editionen erzeugen keinen Jahresvorschlag.
+  Remote-Genre, Track-/Discnummer, Rating, Pfad und Cover bleiben verboten.
+
+- **DOC-1c** [geplant] [core] — **Netzabrufe sind minimal, begrenzt und
+  abbrechbar.** MusicBrainz erhält nur die zur Auflösung nötigen vorhandenen
+  Title-/Artist-/Album-/Album-Artist-Werte, MBIDs und gegebenenfalls Dauer;
+  AcoustID ausschließlich Fingerprint und Dauer. Pfad, Dateiname,
+  Library-Root, interne Track-ID, Rating, Hörhistorie, Playlist- und
+  Gerätezustand verlassen die App nie; dateinamenbasierte Platzhalter werden
+  nie gesendet. AcoustID nutzt HTTPS und POST. Positive vollständige
+  Cache-Einträge gelten 30 Tage, negative oder mehrdeutige sieben Tage und
+  sind über MBID bzw. Chromaprint-Version + Fingerprint + Dauer stark
+  identifiziert; ein Cache-Treffer behält seine Remote-Provenienz.
+  Unvollständige Antworten werden nicht gecacht. MusicBrainz läuft gemeinsam
+  begrenzt auf höchstens eine Anfrage pro Sekunde, AcoustID unter seinem
+  öffentlichen Limit. `429` respektiert `Retry-After`, Timeout/5xx erhalten
+  höchstens zwei Backoff-Wiederholungen, Auth-/Key-Fehler öffnen den Circuit
+  für den Rest des Jobs. Cancel verhindert die nächste Anfrage und wirkt
+  auch während Backoff; lokaler Scan und vollständige Einzelergebnisse bleiben
+  dabei gültig.
+
+- **DOC-1d** [geplant] [gtk] — **Lokale Aktivierung ist keine
+  Netzfreigabe.** Library Doctor ist standardmäßig aus. Sein Hauptschalter
+  aktiviert ausschließlich lokale Checks und zeigt keine Netzfrage. Der
+  getrennte, standardmäßig ausgeschaltete Schalter „MusicBrainz/AcoustID
+  suggestions" zeigt beim ersten Einschalten eine kurze, versionierte
+  Bestätigung mit der Daten-Allowlist aus DOC-1c; Abbrechen lässt ihn aus.
+  Plugin-Zeile und Ergebnisansicht binden denselben persistenten Schalter.
+  Ausschalten stoppt künftige Remote-Anfragen, versteckt Remote-Zeilen und
+  entfernt deren Auswahl; erneutes Einschalten zeigt vorhandene oder neu
+  geladene Remote-Vorschläge ungeprüft. Fehlende Fingerprint-Capability wird
+  sichtbar als „AcoustID unavailable" erklärt, während Local und reine
+  MusicBrainz-Auflösung weiter funktionieren.
+
+- **DOC-2a** [geplant] [core] — **Scope und Scan-Ergebnis sind Snapshots.**
+  Whole Library enthält ausschließlich aktuell `PRESENT` vorhandene lokale
+  Tracks; Current View enthält alle Treffer der aktuellen Quelle, Suche,
+  Filterung und Sortierung, nicht nur geladene Rows; Selection enthält exakt
+  die ausgewählten vorhandenen Track-IDs und ist leer nicht startbar. Erst
+  „Run scan now" friert die IDs ein. Spätere View- oder Auswahländerungen
+  verändern den Lauf nicht. Ein ungültiger oder leer gewordener
+  Aufrufkontext fällt sichtbar auf Whole Library zurück. „Tracks checked"
+  zählt nur erfolgreich gelesene Dateien, übersprungene Dateien separat. Das
+  letzte vollständig abgeschlossene Ergebnis überlebt Navigation und
+  Neustart mit Scope, Zeitpunkt, Optionen und Provenienz; ein neuer oder
+  abgebrochener Lauf ersetzt es erst nach vollständigem Abschluss. Günstige
+  Stale-Prüfung markiert veränderte Zeilen beim Wiederöffnen, exakte
+  Revalidierung folgt vor dem Schreiben. Neu hinzugekommene Tracks werden
+  nicht nachträglich in den Snapshot aufgenommen.
+
+- **DOC-2b** [geplant] [gtk] — **26a ist Zusammenfassung, nie Schreibfläche.**
+  Nach dem Scan zeigt Library Doctor getrennt „N safe · local, preselected"
+  und „N suggestions · review" sowie Problemklassen für Casing/Whitespace,
+  fehlenden Album Artist, Genre-Varianten, fehlendes/falsches Year und
+  fehlende Recording MBID; jede Klasse zählt konkrete Track-Feld-Änderungen
+  getrennt nach safe/review. Gleichstände erscheinen zusätzlich als
+  „N unresolved groups", nicht als safe. „Review N changes" öffnet die
+  vollständige Review-Tabelle; „Review N safe fixes" öffnet dieselbe Tabelle
+  lokal gefiltert. Kein Control dieser Seite schreibt Tags. Bei
+  ausgeschaltetem Remote-Schalter verschwinden Remote-Klassen, -Zeilen und
+  -Counts vollständig, während das lokale Ergebnis bestehen bleibt.
+
+- **DOC-3a** [geplant] [core] — **Review entscheidet pro Feld.** Jede konkrete
+  Track-Feld-Änderung besitzt eine eigene Auswahl. „All safe" ist ein
+  Reset-Preset auf exakt alle aktuell zulässigen eindeutigen Local-Fixes und
+  entfernt Remote-, manuelle, stale und unresolved Auswahl; „None" entfernt
+  alles. Ein Gleichstand zeigt „N spellings, no clear winner — pick one" mit
+  ausschließlich realen Kandidaten und ihren Häufigkeiten, ohne Default.
+  Eine Kandidatenwahl materialisiert die betroffenen Track-Feld-Diffs;
+  einzelne Rows bleiben abwählbar. Kandidatenwechsel berechnet sie neu und
+  erhält manuelle Abwahlen, soweit dieselbe Row weiter betroffen ist. Die
+  Review-Reihenfolge bleibt während der Sitzung stabil: ausgewählte Local
+  safe, Tie-Gruppen, Remote ab 85 %, Remote 50–84 %, Remote unter 50 %,
+  stale/conflict; darin Scope-Reihenfolge und die feste Feldfolge Title,
+  Artist, Album, Album Artist, Year, Genre, Recording MBID. Apply erhält
+  einen unveränderlichen Plan aus exakt der aktuellen Auswahl.
+
+- **DOC-3b** [geplant] [gtk] — **26b zeigt denselben Diff breit und schmal.**
+  Breit stehen Checkbox · Track + Field · Current · Proposed · Source in
+  einer virtualisierten Tabelle; leer erscheint als „— empty —", ein
+  ersetzter Current-Wert durchgestrichen. Im schmalen Breakpoint stapelt
+  dieselbe Row Current → Proposed ohne horizontalen Seiten-Scroll. Beide
+  Darstellungen binden dieselbe Auswahl und erhalten Row-Fokus und stabile
+  Reihenfolge beim Umschalten. Ellipsierte Werte besitzen Volltext-Tooltip
+  und zugängliche Beschreibung. „Edit track tags…" öffnet den vorhandenen
+  Tag Editor; dessen Save markiert betroffene Doctor-Zeilen stale und
+  deselectiert sie. Der Footer führt Tracks als Handlungswährung:
+  „Apply N tracks"; daneben „X tag changes · M files · undo available
+  after".
+
+- **DOC-4a** [geplant] [core] — **Konfidenz wählt nie für den Nutzer.**
+  Eindeutige Local-Fixes sind vorausgewählt; Remote-Vorschläge,
+  Gleichstände, stale Zeilen und Konflikte nie. Eine gültige direkt
+  aufgelöste MBID trägt 100 %, sonst bleibt der native MusicBrainz- bzw.
+  AcoustID-Score erhalten. Stimmen mehrere Quellen überein, werden beide
+  gezeigt und der niedrigere Score gilt; Scores werden nie gemittelt.
+  Widersprechende Quellen erzeugen eine manuelle Kandidatengruppe. Bei
+  mehreren Remote-Treffern darf nur dann ein einzelner Vorschlag entstehen,
+  wenn der Spitzenwert mindestens zehn Prozentpunkte vor dem zweiten liegt
+  und weder Dauer noch Entität widersprechen; sonst muss der Nutzer wählen.
+  Unter 50 % bleibt ein Vorschlag ausdrücklich low-confidence und ungeprüft.
+  Es gibt keinen Fuzzy-Auto-Merge.
+
+- **DOC-4b** [geplant] [gtk] — **Konfidenz ist redundant sichtbar.** Local
+  erscheint mit Quelle „Local" im App-Akzent. Remote ab 85 % erscheint
+  normal mit Quelle und Prozentwert, 50–84 % gelb, unter 50 % rot mit
+  Warnsymbol und ungeprüfter Checkbox. Farbe ist nie die einzige Information:
+  Quelle, Prozentwert, Warnsymbol bzw. zugänglicher Hilfetext tragen denselben
+  Zustand. Kandidatendetails nennen Quelle, Score, Artist, Title, Album, Year
+  und Dauerabweichung, soweit vorhanden.
+
+- **DOC-5a** [geplant] [core] — **Jeder Library-Doctor-Write geht durch
+  Review.** Weder Scan noch 26a noch Plugin-Zeile besitzen einen
+  Direkt-Schreibpfad. Ausschließlich Apply in 26b darf den unveränderlichen
+  Review-Plan starten, und geschrieben werden nur dessen geprüfte Felder.
+  Unmittelbar vor jeder Datei werden Track-/Pfadidentität und jeder erwartete
+  Current-Wert aus der Datei erneut gelesen. Ein inzwischen verändertes Feld
+  wird als Konflikt übersprungen, ohne andere weiterhin gültige ausgewählte
+  Felder derselben Datei zu blockieren. Verschwundene oder verschobene Tracks
+  fallen als unavailable/skipped aus dem Lauf, nicht als Write-Fehler.
+  Library Doctor, Tag Editor und Revert benutzen dieselbe Lofty-
+  Schreibprimitive und dieselbe Fehlerklassifikation.
+
+- **DOC-5b** [geplant] [core] — **Apply und Revert sind journalisierte
+  Datei-Jobs.** Vor jedem Write speichert ein persistentes Journal pro Feld
+  den unmittelbaren Before- und geplanten After-Wert; nur erfolgreich
+  geschriebene Felder werden applied. Ein Crash rekonstruiert vorbereitete
+  Einträge durch Dateiread: Current = After bedeutet applied, Current =
+  Before nicht angewendet, jeder andere Wert Konflikt. Bereits erfolgreiche
+  Writes bleiben bei Cancel bestehen; Cancel greift kooperativ zwischen
+  Dateien, lässt den laufenden Container-Write sauber enden und startet keine
+  weitere Datei. Es gibt weder Auto-Rollback noch Auto-Retry. Der letzte
+  vollständig abgeschlossene Doctor-Cleanup bleibt über Neustarts revertierbar
+  und wird erst nach sicherem Abschluss eines neueren ersetzt. Revert schreibt
+  ein Feld nur, wenn Current weiterhin dem journalisierten After entspricht,
+  läuft selbst abbrechbar zwischen Dateien und meldet partielle Erfolge,
+  Fehler und Konflikte. Ein vollständiger Revert konsumiert den Cleanup;
+  Tag-Editor-Jobs ersetzen dessen sichtbaren Pointer nie.
+
+- **DOC-5c** [geplant] [gtk] — **Schreibjobs frieren die UI nicht ein.**
+  Apply und Revert laufen in der gemeinsamen Fortschrittskarte mit sichtbarem
+  Cancel und derselben Geometrie wie Scan/Sync. Button, Fortschritt,
+  Abschluss und Fehler zählen primär Tracks: „Apply 128 tracks",
+  „Updating tags… 42/128 tracks", „Tags updated · 128 tracks" bzw.
+  „42 tracks updated · 86 cancelled". Tag-Änderungen und Dateien stehen nur
+  ergänzend. Ein erfolgreicher oder partieller Doctor-Write zeigt genau einen
+  unverdrängbaren Undo-Klassen-Toast mit „Revert"; gesammelte Fehler erscheinen
+  einmal als „N updated, M failed · Details", nie als Datei-Toast. Remote-
+  Toggle und Apply-Auswahl sind während des Schreibjobs gesperrt.
+
+- **DOC-5d** [geplant] [gtk] — **Ergebnis und App bleiben nach Writes
+  ehrlich aktuell.** Nach Apply oder Revert werden Trackliste, Browse Bar,
+  Cover/Player-Metadaten, Sidebar, Albums, Artists und Stats über eine
+  gemeinsame Tag-Mutation-Invalidierung erneuert; ein Neustart ist nie nötig.
+  Ergebniszeilen bleiben sichtbar als Applied, Remaining, Failed, Stale,
+  Conflict oder Reverted. Cancelled/unstarted und Failed bleiben für einen
+  neuen Review-Lauf rekonstruierbar ausgewählt, stale/conflict ungeprüft.
+  26a fasst partiell als „N applied · M remaining" zusammen. Reverted-Zeilen
+  können erneut reviewed werden; ein neuer vollständiger Scan ersetzt das
+  Scan-Ergebnis unabhängig vom weiterhin gültigen Undo-Journal.
+
+- **DOC-6a** [geplant] [gtk] — **Library Doctor ist eine
+  Hauptfenster-Navigation.** 26a lebt als Root-Page im bestehenden
+  `content_nav`, 26b wird darauf gepusht; Back kehrt mit unveränderter
+  In-Session-Auswahl zu 26a zurück. Es gibt keinen Doctor-Dialog und keinen
+  zusätzlichen Apply-Bestätigungsdialog. Einstiege sind die Plugins-Seite
+  mit Privacy-Untertitel „contacts MusicBrainz / AcoustID", das ⋮-Menü der
+  Library und der STATS-DEDUP-Hinweis. Bei deaktiviertem Modul führt ein
+  Einstieg zur hervorgehobenen Plugin-Zeile, bei aktivem zur Doctor-Seite;
+  Preferences schließt vor der Hauptfenster-Navigation. Der Scope ist kein
+  persistentes Plugin-Setting: Default Whole Library, aus gefilterter View
+  Current View vorgeschlagen, aus Auswahlkontext Selection. Die aufgeklappte
+  Plugin-Zeile zeigt Scope, Remote-Schalter, den Hinweis „local fixes always
+  included · no network", „Run scan now" und „Revert last cleanup", aber
+  keinen „Local fixes only"-Schalter. Revert bleibt auch bei deaktiviertem
+  Plugin über eine minimale Doctor-Jobseite verfügbar und aktiviert weder
+  Plugin noch Netzwerk.
+
+- **DOC-6b** [geplant] [gtk] — **Ein laufender Job hat genau einen Ort.**
+  Scan, Apply und Revert überleben das Wegnavigieren; die eine
+  Sidebar-Fortschrittskarte führt zur passenden Doctor-Seite zurück.
+  Gleichzeitige Doctor-Jobs sind verboten. Library-Scan und Doctor-
+  Scan/Apply/Revert laufen nicht parallel, und alle Tag-Writes sind global
+  serialisiert; Playback, Navigation und lesender Device-Sync bleiben
+  benutzbar. Ein erneuter Doctor-Einstieg während eines laufenden Jobs
+  navigiert zu diesem Job statt einen zweiten zu starten. Haupt- und
+  Remote-Toggle sind während des Jobs gesperrt und erklären den laufenden
+  Job; Cancel lebt ausschließlich an dessen Fortschrittsoberfläche.
+
+- **DOC-6c** [geplant] [manuell] — **Die sichtbare Abnahme entspricht den
+  Frames 26a, 26b und 27.** Auf einem echten GNOME-Display werden breite und
+  schmale Review-Geometrie, Zeilenvirtualisierung beim Scrollen,
+  Durchstreichung und Empty-Darstellung, teal/gelb/rote Quellenzustände,
+  41-%-Warnung, Fokusindikatoren im normalen und High-Contrast-Theme,
+  Plugin-Aufklappen samt einmaliger Netzbestätigung sowie die gemeinsame
+  Scan-/Apply-/Revert-Fortschrittskarte geprüft. Kein Text wird abgeschnitten,
+  keine Spalte erzwingt horizontales Seiten-Scrolling, und die Oberfläche
+  bleibt während echter Datei-Jobs bedienbar.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
