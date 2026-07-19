@@ -163,6 +163,20 @@ mod imp {
     }
 
     impl WidgetImpl for ScrollInset {
+        fn compute_expand(&self, hexpand: &mut bool, vexpand: &mut bool) {
+            self.parent_compute_expand(hexpand, vexpand);
+            if let Some(child) = self.child.upgrade() {
+                *hexpand |= child.compute_expand(gtk4::Orientation::Horizontal);
+                *vexpand |= child.compute_expand(gtk4::Orientation::Vertical);
+            }
+        }
+
+        fn request_mode(&self) -> gtk4::SizeRequestMode {
+            self.child
+                .upgrade()
+                .map_or_else(|| self.parent_request_mode(), |child| child.request_mode())
+        }
+
         fn measure(&self, orientation: gtk4::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
             self.child
                 .upgrade()

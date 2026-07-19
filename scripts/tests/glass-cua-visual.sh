@@ -35,6 +35,15 @@ for required_pattern in \
   fi
 done
 
+for fixture_order in \
+  'first_album="Album 00119"' \
+  'last_album="Album 00000"'; do
+  if ! rg --quiet --fixed-strings "$fixture_order" "$runner"; then
+    echo "$runner has the wrong Recently-added fixture order: $fixture_order" >&2
+    exit 1
+  fi
+done
+
 if rg --quiet --fixed-strings 'DISPLAY=:0' "$runner"; then
   echo "$runner must never fall back to the live desktop" >&2
   exit 1
