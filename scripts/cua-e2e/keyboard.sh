@@ -53,12 +53,18 @@ reset_surface_baseline() {
     cua_hotkey "$pid" "$window_id" "$stem-reset-back-$attempt" alt left || return 1
   done
 
-  state_path=$(cua_wait_for_label "$pid" "$window_id" "sine_01" "$stem-reset-state") || {
+  # Verify against something only the Tracks view has. "Tracks" is the switcher
+  # button and is present in every view, and `sine_01` shows up in the album
+  # cards and the Now Playing panel too — an earlier version of this check used
+  # both and therefore passed while the app sat on Albums, which is precisely
+  # the silent-reset failure this function exists to prevent. Column headers
+  # only exist on the track table: 6 occurrences there, 0 on Albums.
+  state_path=$(cua_wait_for_label "$pid" "$window_id" "Title" "$stem-reset-state") || {
     echo "reset before '$stem' did not restore the Tracks baseline; the previous" >&2
     echo "surface left state behind that this scenario cannot run against" >&2
     return 1
   }
-  assert_snapshot_contains "$state_path" "Tracks" || return 1
+  assert_snapshot_contains "$state_path" "sine_01" || return 1
 }
 
 keyboard_app_shell() {
@@ -103,22 +109,25 @@ keyboard_tracks_playlist_queue() {
   assert_after_has_focus acc-tracks-context-close
 }
 
-# KNOWN GAP — these two tab for "Albums"/"Artists" directly, which cannot land:
-# the view switcher is a toggle group, and GTK exposes a toggle group as a
-# SINGLE tab stop, with arrow keys moving between members. So the traversal
-# walks the whole focus ring, cycles it several times, and ends on whatever it
-# happened to stop at — which in one run was the unlabeled main-menu button, so
-# the following Enter opened a popover and a later scenario toggled Compact
-# Mode from inside it. The per-surface reset now contains that damage.
+# The view switcher is a toggle group, which GTK exposes as a SINGLE tab stop:
+# Tab reaches the group, arrow keys move between members. Tabbing for "Albums"
+# or "Artists" directly therefore never lands — the old version walked the ring
+# repeatedly and pressed Enter on wherever it stopped, once on the unlabeled
+# main-menu button, which opened a popover and left Compact Mode on two
+# scenarios later.
 #
-# The fix is arrow traversal, but the entry point is not established: tabbing to
-# "Tracks" first also fails to land ("Tab traversal never focused 'Tracks'"), so
-# the group is reached under some other name or role. Left as-is deliberately —
-# a guessed traversal that happens to pass is worse than a documented gap.
+# The group is entered by tabbing to the ACTIVE member, which is labelled after
+# the current view — "Tracks" while the track table is showing (measured: it is
+# stop 14 of the ring there). Hence the reset above must genuinely return to
+# Tracks first; when it silently did not, this traversal failed for that reason
+# rather than for anything about the switcher.
 keyboard_albums() {
   local pid=$1 window_id=$2 focus_path
   focus_path=$(cua_focus_label_via_tab \
-    "$pid" "$window_id" Albums acc-albums-focus)
+    "$pid" "$window_id" Tracks acc-albums-group)
+  assert_focus_evidence_label "$focus_path" Tracks
+  focus_path=$(cua_focus_label_via_key \
+    "$pid" "$window_id" Albums right acc-albums-focus)
   assert_focus_evidence_label "$focus_path" Albums
   cua_press_key_window "$pid" "$window_id" enter acc-albums-open
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-albums-open-after.json" Albums
@@ -128,7 +137,10 @@ keyboard_albums() {
 keyboard_artists() {
   local pid=$1 window_id=$2 focus_path
   focus_path=$(cua_focus_label_via_tab \
-    "$pid" "$window_id" Artists acc-artists-focus)
+    "$pid" "$window_id" Tracks acc-artists-group)
+  assert_focus_evidence_label "$focus_path" Tracks
+  focus_path=$(cua_focus_label_via_key \
+    "$pid" "$window_id" Artists right acc-artists-focus)
   assert_focus_evidence_label "$focus_path" Artists
   cua_press_key_window "$pid" "$window_id" enter acc-artists-open
   assert_snapshot_contains "$CUA_E2E_OUT_DIR/acc-artists-open-after.json" Artists
