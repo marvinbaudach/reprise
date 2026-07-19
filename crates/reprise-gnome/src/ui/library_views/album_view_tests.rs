@@ -36,6 +36,123 @@ fn wait_until(milliseconds: u64, mut predicate: impl FnMut() -> bool + 'static) 
     matched.get()
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn album_grid_fills_the_library_page_after_glass_wrap_and_reveal() {
+    gtk4::init().unwrap();
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    reprise_core::db::migrate(&conn).unwrap();
+    for index in 0..12 {
+        conn.execute(
+            "INSERT INTO tracks (path,title,artist,album,added_at) VALUES (?1,?2,'Artist',?3,?4)",
+            rusqlite::params![
+                format!("/glass-album-{index}.flac"),
+                format!("Track {index}"),
+                format!("Album {index:02}"),
+                index,
+            ],
+        )
+        .unwrap();
+    }
+    let conn = Rc::new(RefCell::new(conn));
+    let loader = crate::ui::cover_loader::CoverLoader::new(
+        crate::ui::cover_download_worker::setup_for_test(),
+    );
+    let view = AlbumView::new(&conn, loader);
+    let tracks = gtk4::Label::new(Some("Tracks"));
+    tracks.set_vexpand(true);
+    let library = libadwaita::ViewStack::builder()
+        .hhomogeneous(false)
+        .transition_duration(crate::ui::motion::STANDARD_MS)
+        .build();
+    library.add_named(&tracks, Some("tracks"));
+    library.add_named(view.widget(), Some("albums"));
+    library.set_visible_child_name("tracks");
+
+    let insets = crate::ui::glass::SafeInsetApplier::discover(&library);
+    insets.apply(crate::ui::glass::SafeInsets {
+        top: 51,
+        bottom: 90,
+    });
+    let inset = view
+        .grid_widget()
+        .parent()
+        .and_downcast::<crate::ui::glass::ScrollInset>()
+        .expect("the album grid must retain virtualization through the glass adapter");
+    let scrolled = inset
+        .parent()
+        .and_downcast::<gtk4::ScrolledWindow>()
+        .expect("the glass adapter must stay inside the album scroller");
+    let page_stack = scrolled
+        .parent()
+        .and_downcast::<gtk4::Stack>()
+        .expect("the album scroller must remain on the grid page");
+    let content = page_stack
+        .parent()
+        .and_downcast::<gtk4::Box>()
+        .expect("the Album grid page must remain in its content column");
+    let ambient = content
+        .parent()
+        .and_downcast::<gtk4::Overlay>()
+        .expect("the Album content column must remain above the ambient glow");
+
+    let window = gtk4::Window::builder()
+        .default_width(800)
+        .default_height(600)
+        .child(&library)
+        .build();
+    window.present();
+    wait_for_layout(50);
+    library.set_visible_child_name("albums");
+    wait_for_layout(u64::from(crate::ui::motion::STANDARD_MS + 50));
+
+    let geometry = format!(
+        "library={} album={} ambient={} content={} page_stack={} scroller={} inset={} grid={}",
+        library.height(),
+        view.widget().height(),
+        ambient.height(),
+        content.height(),
+        page_stack.height(),
+        scrolled.height(),
+        inset.height(),
+        view.grid_widget().height(),
+    );
+    assert!(
+        page_stack.vexpands(),
+        "the Album grid page must explicitly request vertical expansion: {geometry}"
+    );
+    assert_eq!(
+        view.widget().height(),
+        library.height(),
+        "the revealed Album root collapsed below the Library viewport: {geometry}"
+    );
+    assert_eq!(
+        ambient.height(),
+        view.widget().height(),
+        "the ambient Album layer collapsed inside its page root: {geometry}"
+    );
+    assert_eq!(
+        content.height(),
+        ambient.height(),
+        "the Album content did not fill its ambient layer: {geometry}"
+    );
+    assert!(
+        page_stack.height() * 2 > library.height(),
+        "the Album grid page remained at header height: {geometry}"
+    );
+    assert_eq!(
+        inset.height(),
+        scrolled.height(),
+        "the Glass adapter lost the Album scroller allocation: {geometry}"
+    );
+    assert_eq!(
+        view.grid_widget().height(),
+        inset.height(),
+        "the Album grid lost the Glass adapter allocation: {geometry}"
+    );
+    window.close();
+}
+
 fn descendants_with_class(root: &gtk4::Widget, class: &str) -> Vec<gtk4::Widget> {
     let mut matches = Vec::new();
     let mut pending = vec![root.clone()];

@@ -220,6 +220,18 @@ Semantic accessibility workflows belong in `scripts/cua-e2e`; its helper
 contract rejects unbracketed actions, degraded AT-SPI trees, and suspected
 no-ops before the workflow can claim success.
 
+The focused Glass layout pass runs from a normal host checkout with:
+
+```sh
+scripts/glass-cua-visual.sh /tmp/reprise-glass-cua-evidence
+```
+
+It seeds 120 synthetic albums in disposable profiles, captures the Album view
+before and after CUA page scrolling, reaches the final row, and repeats the
+flow with the player bar at the bottom and top. The retained PNGs are Xvfb/X11
+evidence for clipping and traversal; they do not replace the manual GNOME
+Wayland review of native blur quality, scale factors, or compositor behavior.
+
 Useful additions to the display suite are recycled Artist/Album rows after
 rapid scrolling, live theme changes while transient dialogs are open, compact
 mode restore across multiple monitors, and scan/cover progress transitions in

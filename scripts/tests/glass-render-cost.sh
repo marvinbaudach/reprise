@@ -22,16 +22,30 @@ for required in "120 frames" "baseline" "glass" "p95" "album glow"; do
 done
 
 for required_pattern in \
+  'XDG_RUNTIME_DIR=' \
   'dbus-run-session -- xvfb-run -a env' \
   'XDG_DATA_HOME=' \
   'XDG_CACHE_HOME=' \
+  'GIO_USE_VFS=local' \
+  'GIO_USE_VOLUME_MONITOR=unix' \
+  'GTK_USE_PORTAL=0' \
   'GDK_BACKEND=x11' \
   'WAYLAND_DISPLAY=' \
   'REPRISE_AUDIO_SINK=fakesink' \
   'REPRISE_GLASS_PERF_MODE=' \
+  'REPRISE_SMOKE_QUIT_DELAY_SECS=15' \
   'scalability_baseline'; do
   if ! rg --quiet --fixed-strings "$required_pattern" scripts/glass-render-cost.sh; then
     echo "glass runner is missing isolation/measurement contract: $required_pattern" >&2
+    exit 1
+  fi
+done
+
+for cleanup_pattern in \
+  'trap cleanup_scratch EXIT' \
+  'fusermount3 -u "$mount"'; do
+  if ! rg --quiet --fixed-strings "$cleanup_pattern" scripts/glass-render-cost.sh; then
+    echo "glass runner is missing private-runtime cleanup: $cleanup_pattern" >&2
     exit 1
   fi
 done
