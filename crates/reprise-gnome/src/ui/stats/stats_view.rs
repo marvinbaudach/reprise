@@ -8,7 +8,6 @@ use chrono::Datelike;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::group_key::GroupKind;
@@ -31,13 +30,11 @@ use crate::ui::strings;
 const CONTENT_MAX_WIDTH: i32 = 1120;
 const TOP_TRACK_LIMIT: usize = 10;
 const SECTION_SPACING: i32 = 28;
-const ASYMMETRIC_BREAKPOINT: f64 = 720.0;
+const ASYMMETRIC_NATURAL_LINE_LENGTH: i32 = 720;
 /// The asymmetric row keeps its 1.35 / 1 ratio, but both minimum widths have
-/// to fit *inside* [`ASYMMETRIC_BREAKPOINT`] together with the spacing —
-/// otherwise the row can never be allocated narrowly enough for the
-/// breakpoint to apply and the single-column layout is unreachable. The
-/// enclosing `ScrolledWindow` never scrolls horizontally, so this minimum is
-/// also the narrowest the whole window can get while the row is side by side.
+/// to fit inside [`ASYMMETRIC_NATURAL_LINE_LENGTH`] together with the spacing.
+/// The enclosing `ScrolledWindow` never scrolls horizontally, so this is also
+/// the narrowest the whole window can get while the row is side by side.
 const CLOCK_MIN_WIDTH: i32 = 324;
 const HIGHLIGHTS_MIN_WIDTH: i32 = 240;
 const ASYMMETRIC_SPACING: i32 = 20;
@@ -68,15 +65,13 @@ pub(in crate::ui) struct StatsView {
     wired: Cell<bool>,
     connection: Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
     #[cfg_attr(not(test), allow(dead_code))]
-    page: gtk4::Box,
+    page: glib::WeakRef<gtk4::Box>,
     #[cfg_attr(not(test), allow(dead_code))]
-    asymmetric_row: gtk4::Box,
+    asymmetric_row: glib::WeakRef<adw::WrapBox>,
     #[cfg_attr(not(test), allow(dead_code))]
-    asymmetric_bin: adw::BreakpointBin,
+    hero_row: glib::WeakRef<adw::WrapBox>,
     #[cfg_attr(not(test), allow(dead_code))]
-    hero_row: gtk4::Box,
-    #[cfg_attr(not(test), allow(dead_code))]
-    hero_time_row: gtk4::Box,
+    hero_time_row: glib::WeakRef<adw::WrapBox>,
     current_snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     /// Built once and shared: the period dropdown's handler holds it weakly,
     /// which is what keeps the handler from owning the page it lives in.
@@ -111,25 +106,19 @@ impl StatsView {
         clock_section.set_width_request(CLOCK_MIN_WIDTH);
         highlights_section.set_hexpand(true);
         highlights_section.set_width_request(HIGHLIGHTS_MIN_WIDTH);
-        let asymmetric_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ASYMMETRIC_SPACING);
+        // This row needs height-for-width layout just like the hero. Let its
+        // owner measure wrapped lines instead of keeping a separately-owned
+        // breakpoint target behind a one-pixel size request.
+        let asymmetric_row = adw::WrapBox::new();
+        asymmetric_row.set_child_spacing(ASYMMETRIC_SPACING);
+        asymmetric_row.set_line_spacing(ASYMMETRIC_SPACING);
+        asymmetric_row.set_natural_line_length(ASYMMETRIC_NATURAL_LINE_LENGTH);
+        asymmetric_row.set_wrap_policy(adw::WrapPolicy::Natural);
+        asymmetric_row.set_justify(adw::JustifyMode::Fill);
+        asymmetric_row.set_justify_last_line(true);
+        asymmetric_row.set_hexpand(true);
         asymmetric_row.append(&clock_section);
         asymmetric_row.append(&highlights_section);
-        let asymmetric_bin = adw::BreakpointBin::new();
-        asymmetric_bin.set_width_request(1);
-        asymmetric_bin.set_height_request(1);
-        asymmetric_bin.set_child(Some(&asymmetric_row));
-        let condition = adw::BreakpointCondition::new_length(
-            adw::BreakpointConditionLengthType::MaxWidth,
-            ASYMMETRIC_BREAKPOINT,
-            adw::LengthUnit::Px,
-        );
-        let breakpoint = adw::Breakpoint::new(condition);
-        breakpoint.add_setter(
-            &asymmetric_row,
-            "orientation",
-            Some(&gtk4::Orientation::Vertical.to_value()),
-        );
-        asymmetric_bin.add_breakpoint(breakpoint);
 
         let top_tracks_box = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         let current_snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
@@ -155,7 +144,7 @@ impl StatsView {
         page.append(&card(ribbon.widget()));
         page.append(&card(spotlight.widget()));
         page.append(&genres_section);
-        page.append(&asymmetric_bin);
+        page.append(&asymmetric_row);
         page.append(&section("TOP TRACKS", &top_tracks_content));
         let clamp = adw::Clamp::builder()
             .maximum_size(CONTENT_MAX_WIDTH)
@@ -278,11 +267,10 @@ impl StatsView {
             periods: Rc::new(RefCell::new(Vec::new())),
             wired: Cell::new(false),
             connection,
-            page,
-            asymmetric_row,
-            asymmetric_bin,
-            hero_row: hero.row,
-            hero_time_row: hero.time_row,
+            page: page.downgrade(),
+            asymmetric_row: asymmetric_row.downgrade(),
+            hero_row: hero.row.downgrade(),
+            hero_time_row: hero.time_row.downgrade(),
             current_snapshot,
             render,
             on_spotlight_play,
@@ -374,7 +362,8 @@ impl StatsView {
     #[cfg(test)]
     fn section_order(&self) -> Vec<&'static str> {
         let mut order = Vec::new();
-        let mut child = self.page.first_child();
+        let page = self.page.upgrade().expect("stats page must be alive");
+        let mut child = page.first_child();
         while let Some(widget) = child {
             order.push(self.section_name(&widget));
             child = widget.next_sibling();
