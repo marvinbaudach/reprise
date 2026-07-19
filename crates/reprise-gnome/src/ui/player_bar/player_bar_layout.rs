@@ -6,6 +6,7 @@ use super::cover_loader::CoverLoader;
 use super::strings;
 use super::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
 use crate::ui::playing_marker;
+use crate::ui::style::buttons;
 
 pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
 pub(in crate::ui) const VOLUME_MAX: f64 = 1.0;
@@ -49,7 +50,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) prev_button: gtk4::Button,
     pub(in crate::ui) play_pause_button: gtk4::Button,
     pub(in crate::ui) next_button: gtk4::Button,
-    pub(in crate::ui) repeat_button: gtk4::Button,
+    pub(in crate::ui) repeat_button: gtk4::ToggleButton,
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
@@ -95,24 +96,23 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     info_box.set_width_request(START_ZONE_WIDTH);
 
     // — Transport controls —
-    let shuffle_button = gtk4::ToggleButton::builder()
-        .icon_name(ICON_SHUFFLE)
-        .tooltip_text(strings::text(strings::SHUFFLE))
-        .valign(gtk4::Align::Center)
-        .build();
-    shuffle_button.add_css_class("flat");
+    // Shuffle and Repeat are both toggles, so both speak the one `:checked`
+    // state language from `style::buttons` (BTN-2) — Repeat's three modes ride
+    // on top of it via the icon swap in `set_repeat_indicator`.
+    let shuffle_button = transport_toggle(ICON_SHUFFLE, strings::SHUFFLE);
     let prev_button = transport_button(ICON_PREVIOUS, strings::TOOLTIP_PREVIOUS);
-    prev_button.add_css_class("flat");
     prev_button.set_sensitive(false);
-    let play_pause_button = transport_button(ICON_PLAY, strings::TOOLTIP_PLAY);
-    // The play/pause control is the accent-glow focal point of the bar.
+    // The play/pause control is the accent-glow focal point of the bar and the
+    // primary tier of BTN-3: it may react more visibly than its neighbours.
+    let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
+    play_pause_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_PLAY)));
+    play_pause_button.set_valign(gtk4::Align::Center);
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
+    buttons::arm(&play_pause_button, buttons::PRIMARY_CLASS);
     let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
-    next_button.add_css_class("flat");
     next_button.set_sensitive(false);
-    let repeat_button = transport_button(ICON_REPEAT_ALL, strings::REPEAT);
-    repeat_button.add_css_class("flat");
+    let repeat_button = transport_toggle(ICON_REPEAT_ALL, strings::REPEAT);
 
     let transport_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     transport_row.append(&shuffle_button);
@@ -261,7 +261,12 @@ pub(in crate::ui) fn css() -> String {
          .{PLAY_CSS_CLASS}:hover {{ \
            box-shadow: 0 0 16px alpha(@reprise_player_accent, 0.75), \
                        0 0 34px 8px alpha(@reprise_player_accent, 0.48); }}\n\
-         .{PLAY_CSS_CLASS}:active {{ transform: scale(0.94); }}\n\
+         /* BTN-3: the main action may answer a press more loudly than its \
+            neighbours — a ring pulse in the playback accent on top of the \
+            shared press sink from `style::buttons`. */\n\
+         .{PLAY_CSS_CLASS}:active {{ \
+           box-shadow: 0 0 0 4px alpha(@reprise_player_accent, 0.45), \
+                       0 0 18px alpha(@reprise_player_accent, 0.80); }}\n\
          .{PLAY_CSS_CLASS}.pulsing {{ \
            animation: reprise-play-pulse {micro_ms}ms {micro_easing} 1; }}\n\
          @keyframes reprise-play-pulse {{ \
@@ -280,11 +285,9 @@ pub(in crate::ui) fn css() -> String {
          .player-bar-artist.artist-hovered {{ color: alpha(white, 0.75); }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}\n\
-         .{TRANSPORT_ROW_CSS_CLASS} button.flat {{ \
-           border-radius: 50%; \
-           transition: background-color {TRANSITION}, color {TRANSITION}; }}\n\
-         .{TRANSPORT_ROW_CSS_CLASS} button.flat:hover {{ \
-           background-color: alpha(white, 0.08); color: white; }}\n\
+         /* Shape only. Hover, press, focus and the checked state all come from \
+            the one central set in `style::buttons` (BTN-4) — no local tint. */\n\
+         .{TRANSPORT_ROW_CSS_CLASS} button {{ border-radius: 50%; }}\n\
          .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
            opacity: 0; transition: opacity {TRANSITION}; }}\n\
          .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\
@@ -292,10 +295,28 @@ pub(in crate::ui) fn css() -> String {
     )
 }
 
+/// A standard-tier transport button (BTN-3): flat at rest, carrying the shared
+/// hover/press/focus vocabulary from [`buttons`] rather than a local tint.
 fn transport_button(icon: &str, tooltip: &str) -> gtk4::Button {
     let button = gtk4::Button::from_icon_name(icon);
     button.set_tooltip_text(Some(&strings::text(tooltip)));
     button.set_valign(gtk4::Align::Center);
+    button.add_css_class("flat");
+    buttons::arm(&button, buttons::ICON_CLASS);
+    button
+}
+
+/// The toggle variant of [`transport_button`], adding the persistent
+/// `:checked` state display (BTN-2).
+fn transport_toggle(icon: &str, tooltip: &str) -> gtk4::ToggleButton {
+    let button = gtk4::ToggleButton::builder()
+        .icon_name(icon)
+        .tooltip_text(strings::text(tooltip))
+        .valign(gtk4::Align::Center)
+        .build();
+    button.add_css_class("flat");
+    buttons::arm(&button, buttons::ICON_CLASS);
+    buttons::arm(&button, buttons::TOGGLE_CLASS);
     button
 }
 
@@ -429,7 +450,29 @@ mod tests {
         assert!(css.contains(".player-bar-title"));
         assert!(css.contains(".player-bar-artist"));
         assert!(css.contains("border-radius: 8px"));
-        assert!(css.contains("scale(0.94)"));
+    }
+
+    /// The press sink is no longer the player bar's own business: it comes
+    /// from the one central set (BTN-4), and the bar only adds the louder
+    /// accent ring the main action is allowed (BTN-3).
+    #[test]
+    fn btn_3_play_button_takes_the_shared_press_and_adds_its_own_ring() {
+        use crate::ui::style::buttons;
+
+        let css = super::css();
+        assert!(css.contains(&format!(".{}:active", super::PLAY_CSS_CLASS)));
+        assert!(css.contains("box-shadow: 0 0 0 4px alpha(@reprise_player_accent"));
+        // The MOT-5 play/pause pulse keyframes stay; only the *press* scale
+        // moved out, so no local rule may restate it.
+        let press_scale = format!("scale({})", crate::ui::style::tokens::BTN_PRESS_SCALE);
+        assert!(
+            !css.contains(&press_scale),
+            "the press scale belongs to style::buttons, not to a per-button tint"
+        );
+
+        let shared = buttons::css();
+        assert!(shared.contains(&format!(".{}:active", buttons::PRIMARY_CLASS)));
+        assert!(shared.contains(&press_scale));
     }
 
     #[test]
