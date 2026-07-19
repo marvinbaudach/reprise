@@ -42,6 +42,7 @@ fn player_metadata_uses_native_keyboard_activation() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_play_pause_pulses_on_state_change() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
     let previous = settings.is_gtk_enable_animations();
@@ -131,6 +132,7 @@ fn mot_5_player_bar_state_propagates_pause_to_waveform() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn mot_6_second_track_and_state_changes_finish_the_previous_visual_state() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
     let previous = settings.is_gtk_enable_animations();

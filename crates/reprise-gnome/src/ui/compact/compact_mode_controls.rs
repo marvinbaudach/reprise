@@ -204,6 +204,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn library_entry_wiring_adds_no_header_button_and_restore_reuses_the_window() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         if gtk4::init().is_err() {
             return;
         }

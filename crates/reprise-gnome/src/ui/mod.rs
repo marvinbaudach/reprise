@@ -69,6 +69,8 @@ pub mod status_bar;
 pub mod strings;
 mod style;
 mod tag_edit;
+#[cfg(test)]
+pub(crate) mod test_main_context;
 pub mod toasts;
 #[cfg(test)]
 pub(crate) mod tooltip_discipline;

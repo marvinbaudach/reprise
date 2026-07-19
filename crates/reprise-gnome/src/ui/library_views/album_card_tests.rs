@@ -130,6 +130,7 @@ fn album_meta_formats_plural_singular_and_missing_duration() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn grid_1_playing_badge_persists_without_hover() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();
     let animations_before = settings.is_gtk_enable_animations();
@@ -190,6 +191,7 @@ fn grid_1_playing_badge_persists_without_hover() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn grid_3_focus_ring_and_overlay_on_focus() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let shared = shared(Some(("Album 1", "Artist")));
     let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
@@ -244,6 +246,7 @@ fn grid_3_focus_ring_and_overlay_on_focus() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn grid_4_hover_uses_bottom_gradient_not_tooltip_box() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let shared = shared(None);
     let store = gtk4::gio::ListStore::new::<glib::BoxedAnyObject>();
@@ -293,6 +296,7 @@ fn grid_4_hover_uses_bottom_gradient_not_tooltip_box() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn tip_1a_album_card_play_overlay_has_tooltip() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
     }

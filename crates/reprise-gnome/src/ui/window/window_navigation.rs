@@ -178,6 +178,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn mot_3_left_sidebar_matches_the_info_panel_and_roundtrips_at_the_breakpoint() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let sidebar = adw::NavigationPage::builder()
             .title("Sidebar")
@@ -248,6 +249,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn wide_window_toggle_collapses_and_restores_the_sidebar_column() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let sidebar = adw::NavigationPage::builder()
             .title("Sidebar")
@@ -298,6 +300,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn sidebar_visibility_removes_and_restores_the_complete_split_view_slot() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let list = gtk4::ListBox::new();
         list.append(&gtk4::Label::new(Some("Music")));
