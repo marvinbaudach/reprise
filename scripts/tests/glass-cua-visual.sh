@@ -29,6 +29,7 @@ for required_pattern in \
   'run_position top' \
   'synthetic albums' \
   'Album 00119' \
+  '"Albums" "$position-tracks-ready"' \
   'albums-under-header' \
   'albums-at-end'; do
   if ! rg --quiet --fixed-strings "$required_pattern" "$runner"; then
@@ -36,6 +37,22 @@ for required_pattern in \
     exit 1
   fi
 done
+
+resize_line=$(rg -n --fixed-strings \
+  'cua_resize_window "$app_pid" "$window_id" 1440 800' "$runner" | cut -d: -f1)
+ready_line=$(rg -n --fixed-strings \
+  '"Albums" "$position-tracks-ready"' "$runner" | cut -d: -f1)
+snapshot_line=$(rg -n --fixed-strings \
+  'start_path=$(capture_state "$app_pid" "$window_id" "$position-tracks-start")' \
+  "$runner" | cut -d: -f1)
+click_line=$(rg -n --fixed-strings \
+  'cua_click_label "$app_pid" "$window_id" "Albums"' "$runner" | cut -d: -f1)
+if ! (( resize_line < ready_line \
+  && ready_line < snapshot_line \
+  && snapshot_line < click_line )); then
+  echo "$runner must wait for the Albums accessibility tree before evidence and input" >&2
+  exit 1
+fi
 
 for fixture_order in \
   'first_album="Album 00119"' \

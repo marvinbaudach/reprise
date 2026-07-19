@@ -180,6 +180,8 @@ run_position() {
   fi
 
   cua_resize_window "$app_pid" "$window_id" 1440 800 "$position-window"
+  cua_wait_for_label \
+    "$app_pid" "$window_id" "Albums" "$position-tracks-ready" >/dev/null
   start_path=$(capture_state "$app_pid" "$window_id" "$position-tracks-start")
   assert_snapshot_contains "$start_path" "Albums"
   cua_click_label "$app_pid" "$window_id" "Albums" "$position-open-albums"
