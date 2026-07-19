@@ -14,6 +14,7 @@
 
 pub mod artist_news;
 pub mod artist_portrait;
+pub mod audio_analysis;
 pub mod cover;
 pub mod cover_download;
 pub mod db;
@@ -29,6 +30,7 @@ pub mod playback;
 pub mod queries;
 pub mod queue;
 pub mod scrobbling;
+pub mod sound_profile;
 pub mod up_next;
 pub mod view_source;
 pub mod waveform;
