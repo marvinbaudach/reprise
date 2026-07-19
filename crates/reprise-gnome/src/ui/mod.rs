@@ -76,6 +76,7 @@ pub(crate) mod tooltip_discipline;
 pub(crate) mod track_list;
 pub mod view_session;
 pub(crate) mod window;
+mod window_audio_analysis;
 
 // Compatibility surface for the existing frontend. The ownership of every
 // implementation module now lives with its feature directory; these explicit
@@ -139,7 +140,7 @@ use preferences::{
 #[allow(unused_imports)]
 pub(crate) use scan::{scan_card_css, scan_flow};
 #[allow(unused_imports)]
-use scan::{scan_controls, scan_progress, scan_watcher, scan_waveform_analysis, scan_worker};
+use scan::{scan_controls, scan_progress, scan_watcher, scan_worker};
 #[allow(unused_imports)]
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
 #[allow(unused_imports)]

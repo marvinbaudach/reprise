@@ -16,6 +16,12 @@ pub use accumulator::{
 mod backend;
 pub use backend::{AudioAnalysisBackend, AudioAnalysisError};
 
+#[path = "audio_analysis_storage.rs"]
+mod storage;
+pub use storage::{
+    pending_waveform_work, reset_failed_analyses, save_waveform_if_current, PendingWaveform,
+};
+
 /// Bump only when decoding or evidence extraction changes and cached audio
 /// must be read again.
 pub const CURRENT_EXTRACTOR_VERSION: u32 = 1;

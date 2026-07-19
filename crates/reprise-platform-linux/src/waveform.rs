@@ -1,6 +1,7 @@
 //! GStreamer-backed waveform extraction for Linux frontends.
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use reprise_core::audio_analysis::AudioAnalysisError;
 use reprise_core::waveform::{WaveformBackend, WaveformError};
@@ -13,7 +14,20 @@ impl WaveformBackend for GstreamerWaveformBackend {
         if buckets == 0 {
             return Ok(Vec::new());
         }
-        super::audio_analysis::analyze_for_waveform(path, buckets).map_err(map_error)
+        super::audio_analysis::analyze_for_waveform(path, buckets, &AtomicBool::new(false))
+            .map_err(map_error)
+    }
+
+    fn extract_peaks_cancellable(
+        &self,
+        path: &Path,
+        buckets: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<u8>, WaveformError> {
+        if buckets == 0 {
+            return Ok(Vec::new());
+        }
+        super::audio_analysis::analyze_for_waveform(path, buckets, cancelled).map_err(map_error)
     }
 }
 
@@ -21,6 +35,7 @@ fn map_error(error: AudioAnalysisError) -> WaveformError {
     match error {
         AudioAnalysisError::FileNotFound(path) => WaveformError::FileNotFound(path),
         AudioAnalysisError::EmptyStream => WaveformError::EmptyStream,
+        AudioAnalysisError::Cancelled => WaveformError::Cancelled,
         other => WaveformError::DecodeFailed(other.to_string()),
     }
 }

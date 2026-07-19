@@ -1,25 +1,11 @@
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use reprise_core::library::scanner::ScanProgress;
-use reprise_core::waveform::{WaveformBackend, WaveformError};
 
 use super::{publish_latest_progress, ScanCompletion, ScanControls};
 use crate::ui::scan_progress::ScanProgressView;
-
-struct FakeWaveformBackend;
-
-impl WaveformBackend for FakeWaveformBackend {
-    fn extract_peaks(
-        &self,
-        _path: &std::path::Path,
-        buckets: usize,
-    ) -> Result<Vec<u8>, WaveformError> {
-        Ok(vec![0; buckets])
-    }
-}
 
 #[test]
 fn cancellation_is_shared_across_clones_and_reset_between_scans() {
@@ -86,7 +72,7 @@ fn foreground_progress_view_replays_and_tracks_the_active_scan() {
     }
     let button = gtk4::Button::new();
     let main = ScanProgressView::new();
-    let controls = ScanControls::new(&button, &main, Arc::new(FakeWaveformBackend));
+    let controls = ScanControls::new(&button, &main);
     controls.show_progress(&ScanProgress::Scanning {
         processed: 2,
         total: 5,
