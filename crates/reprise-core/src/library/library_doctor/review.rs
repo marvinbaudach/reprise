@@ -135,6 +135,9 @@ struct RowSortKey {
 
 pub struct DoctorReviewSession {
     scan_id: i64,
+    source_scan: DoctorScan,
+    filter: DoctorReviewFilter,
+    remote_visible: bool,
     tracks: HashMap<i64, DoctorTrackRef>,
     rows: Vec<DoctorReviewRow>,
     groups: Vec<DoctorReviewGroup>,
@@ -155,6 +158,17 @@ struct TieRowTemplate {
 
 impl DoctorReviewSession {
     pub fn from_scan(scan: DoctorScan, filter: DoctorReviewFilter) -> Self {
+        let remote_visible = scan.options.remote_enabled;
+        let source_scan = scan.clone();
+        Self::build(scan, filter, source_scan, remote_visible)
+    }
+
+    fn build(
+        scan: DoctorScan,
+        filter: DoctorReviewFilter,
+        source_scan: DoctorScan,
+        remote_visible: bool,
+    ) -> Self {
         let scope_positions = scan
             .track_ids
             .iter()
@@ -281,6 +295,9 @@ impl DoctorReviewSession {
         rows.sort_by_key(|row| sort_keys[&row.id]);
         Self {
             scan_id: scan.id,
+            source_scan,
+            filter,
+            remote_visible,
             tracks,
             rows,
             groups,
@@ -297,6 +314,64 @@ impl DoctorReviewSession {
 
     pub fn groups(&self) -> &[DoctorReviewGroup] {
         &self.groups
+    }
+
+    pub const fn remote_visible(&self) -> bool {
+        self.remote_visible
+    }
+
+    pub fn set_remote_visible(&mut self, visible: bool) {
+        if self.remote_visible == visible {
+            return;
+        }
+        let prior_rows = self
+            .rows
+            .iter()
+            .map(|row| {
+                (
+                    row.track_id,
+                    row.field,
+                    row.current.clone(),
+                    row.proposed.clone(),
+                    row.source,
+                    row.selected,
+                )
+            })
+            .collect::<Vec<_>>();
+        let prior_groups = self
+            .groups
+            .iter()
+            .filter_map(|group| {
+                group
+                    .chosen
+                    .clone()
+                    .map(|chosen| (group.field, group.group_key.clone(), chosen))
+            })
+            .collect::<Vec<_>>();
+        let projected = super::project_scan(&self.source_scan, visible);
+        let mut rebuilt = Self::build(projected, self.filter, self.source_scan.clone(), visible);
+        for (field, group_key, chosen) in prior_groups {
+            let group_id = rebuilt
+                .groups
+                .iter()
+                .find(|group| group.field == field && group.group_key == group_key)
+                .map(|group| group.id);
+            if let Some(group_id) = group_id {
+                let _ = rebuilt.choose_candidate(group_id, &chosen);
+            }
+        }
+        for row in &mut rebuilt.rows {
+            if let Some((.., selected)) = prior_rows.iter().find(|prior| {
+                prior.0 == row.track_id
+                    && prior.1 == row.field
+                    && prior.2 == row.current
+                    && prior.3 == row.proposed
+                    && prior.4 == row.source
+            }) {
+                row.selected = *selected && row.state == DoctorReviewRowState::Ready;
+            }
+        }
+        *self = rebuilt;
     }
 
     pub fn set_selected(
