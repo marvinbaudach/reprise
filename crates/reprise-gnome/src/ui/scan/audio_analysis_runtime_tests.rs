@@ -172,7 +172,7 @@ fn enabled_runtime_uses_one_coordinated_decode_and_one_worker() {
 }
 
 #[test]
-fn pause_stops_before_the_next_track_and_resume_continues() {
+fn pause_cancels_the_current_decode_and_resume_continues() {
     let (_directory, db_path) = database(2);
     let analysis = Arc::new(FakeAnalysisBackend::blocking());
     let runtime = AudioAnalysisRuntime::new(
@@ -185,13 +185,75 @@ fn pause_stops_before_the_next_track_and_resume_continues() {
     wait_until(|| analysis.calls.load(Ordering::Acquire) == 1);
 
     runtime.pause();
-    analysis.release.store(true, Ordering::Release);
-    wait_until(|| analysis_count(&db_path) == 1);
+    wait_until(|| analysis.active.load(Ordering::Acquire) == 0);
     std::thread::sleep(Duration::from_millis(30));
     assert_eq!(analysis.calls.load(Ordering::Acquire), 1);
+    assert_eq!(analysis_count(&db_path), 0);
 
+    analysis.release.store(true, Ordering::Release);
     runtime.resume();
     wait_until(|| analysis_count(&db_path) == 2);
+    assert_eq!(analysis.calls.load(Ordering::Acquire), 3);
+    runtime.shutdown();
+}
+
+#[test]
+fn deactivation_cancels_new_work_and_retains_finished_profiles() {
+    let (_directory, db_path) = database(1);
+    let analysis = Arc::new(FakeAnalysisBackend::ready());
+    let runtime = AudioAnalysisRuntime::new(
+        db_path.clone(),
+        analysis.clone(),
+        Arc::new(FakeWaveformBackend::default()),
+        true,
+    )
+    .unwrap();
+    wait_until(|| analysis_count(&db_path) == 1);
+
+    let conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
+    conn.execute(
+        "INSERT INTO tracks
+           (id, path, title, artist, added_at, file_mtime, file_size)
+         VALUES (2, '/new.flac', 'New', 'Artist', 1, 20, 30)",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    analysis.block_next.store(true, Ordering::Release);
+    runtime.wake();
+    wait_until(|| analysis.calls.load(Ordering::Acquire) == 2);
+
+    runtime.set_enabled(false);
+    wait_until(|| analysis.active.load(Ordering::Acquire) == 0);
+    std::thread::sleep(Duration::from_millis(30));
+
+    assert_eq!(analysis_count(&db_path), 1);
+    let conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
+    assert!(matches!(
+        sound_profile::load_analysis(&conn, 1).unwrap(),
+        Some(TrackAnalysis::Ready(_))
+    ));
+    assert!(sound_profile::load_analysis(&conn, 2).unwrap().is_none());
+    runtime.shutdown();
+}
+
+#[test]
+fn confirmed_reanalysis_waits_for_in_flight_decode_then_rebuilds_every_profile() {
+    let (_directory, db_path) = database(2);
+    let analysis = Arc::new(FakeAnalysisBackend::blocking());
+    let runtime = AudioAnalysisRuntime::new(
+        db_path.clone(),
+        analysis.clone(),
+        Arc::new(FakeWaveformBackend::default()),
+        true,
+    )
+    .unwrap();
+    wait_until(|| analysis.calls.load(Ordering::Acquire) == 1);
+
+    assert_eq!(runtime.reanalyze().unwrap(), 0);
+    wait_until(|| analysis_count(&db_path) == 2);
+
+    assert_eq!(analysis.calls.load(Ordering::Acquire), 3);
     runtime.shutdown();
 }
 

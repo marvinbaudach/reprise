@@ -7,8 +7,8 @@ use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use reprise_core::audio_analysis::{
-    pending_waveform_work, project_profile, reset_failed_analyses, save_waveform_if_current,
-    AnalysisOutput, AudioAnalysisBackend, AudioAnalysisError,
+    pending_waveform_work, project_profile, reset_all_analyses, reset_failed_analyses,
+    save_waveform_if_current, AnalysisOutput, AudioAnalysisBackend, AudioAnalysisError,
 };
 use reprise_core::sound_profile::{
     self, AnalysisVersions, FailedAnalysis, FailureKind, PendingTrack, PendingWork, ReadyAnalysis,
@@ -48,6 +48,7 @@ struct WorkerState {
     enabled: bool,
     paused: bool,
     cancelled: bool,
+    processing: bool,
     shutdown: bool,
     revision: u64,
     progress: AnalysisProgress,
@@ -59,6 +60,7 @@ impl WorkerState {
             enabled,
             paused: false,
             cancelled: false,
+            processing: false,
             shutdown: false,
             revision: 1,
             progress: AnalysisProgress {
@@ -156,8 +158,11 @@ impl AudioAnalysisRuntime {
         Ok(true)
     }
 
-    #[allow(dead_code)] // Wired by the next Stage 1A settings task.
     pub(in crate::ui) fn set_enabled(&self, enabled: bool) {
+        self.inner
+            .shared
+            .decode_cancelled
+            .store(!enabled, Ordering::Release);
         self.update_state(|state| {
             state.enabled = enabled;
             state.cancelled = false;
@@ -169,15 +174,17 @@ impl AudioAnalysisRuntime {
         });
     }
 
-    #[allow(dead_code)] // Wired by the next Stage 1A settings task.
     pub(in crate::ui) fn pause(&self) {
+        self.inner
+            .shared
+            .decode_cancelled
+            .store(true, Ordering::Release);
         self.update_state(|state| {
             state.paused = true;
             state.progress.activity = AnalysisActivity::Paused;
         });
     }
 
-    #[allow(dead_code)] // Wired by the next Stage 1A settings task.
     pub(in crate::ui) fn resume(&self) {
         self.inner
             .shared
@@ -194,7 +201,6 @@ impl AudioAnalysisRuntime {
         });
     }
 
-    #[allow(dead_code)] // Wired by the next Stage 1A settings task.
     pub(in crate::ui) fn cancel(&self) {
         self.inner
             .shared
@@ -210,7 +216,6 @@ impl AudioAnalysisRuntime {
         self.update_state(|_| {});
     }
 
-    #[allow(dead_code)] // Wired by the next Stage 1A settings task.
     pub(in crate::ui) fn retry_failed(&self) -> Result<u64, String> {
         let conn = reprise_core::db::open_migrated(Some(&self.inner.db_path))
             .map_err(|error| error.to_string())?;
@@ -219,7 +224,26 @@ impl AudioAnalysisRuntime {
         Ok(reset)
     }
 
-    #[allow(dead_code)] // Wired by the next Stage 1A settings task.
+    pub(in crate::ui) fn reanalyze(&self) -> Result<u64, String> {
+        self.cancel();
+        {
+            let mut state = lock(&self.inner.shared.state);
+            while state.processing {
+                state = self
+                    .inner
+                    .shared
+                    .changed
+                    .wait(state)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+        }
+        let result = reprise_core::db::open_migrated(Some(&self.inner.db_path))
+            .map_err(|error| error.to_string())
+            .and_then(|conn| reset_all_analyses(&conn).map_err(|error| error.to_string()));
+        self.resume();
+        result
+    }
+
     pub(in crate::ui) fn progress(&self) -> AnalysisProgress {
         lock(&self.inner.shared.state).progress
     }
@@ -281,6 +305,7 @@ fn worker_loop(
         let Some((capability, revision)) = wait_for_work(shared, handled_revision) else {
             return;
         };
+        set_processing(shared, true);
         handled_revision = revision;
         let result = match capability {
             WorkCapability::WaveformOnly => {
@@ -298,6 +323,7 @@ fn worker_loop(
             tracing::error!(%error, "audio analysis worker pass failed");
         }
         finish_pass(db_path, shared);
+        set_processing(shared, false);
     }
 }
 
@@ -483,6 +509,8 @@ fn finish_pass(db_path: &std::path::Path, shared: &SharedState) {
             AnalysisActivity::Disabled
         } else if failed > 0 {
             AnalysisActivity::Failed
+        } else if coverage.total == 0 {
+            AnalysisActivity::Idle
         } else if coverage.analyzed == coverage.total {
             AnalysisActivity::Complete
         } else {
@@ -519,6 +547,12 @@ fn publish_progress(shared: &SharedState, progress: AnalysisProgress) {
         }
         Err(async_channel::TrySendError::Closed(_)) => {}
     }
+}
+
+fn set_processing(shared: &SharedState, processing: bool) {
+    let mut state = lock(&shared.state);
+    state.processing = processing;
+    shared.changed.notify_all();
 }
 
 fn can_continue(shared: &SharedState, capability: WorkCapability) -> bool {

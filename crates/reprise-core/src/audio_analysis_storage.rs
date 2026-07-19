@@ -61,3 +61,10 @@ pub fn reset_failed_analyses(conn: &Connection) -> Result<u64, DbError> {
     )?;
     Ok(changed as u64)
 }
+
+/// Removes derived Audio Character rows so every present track becomes
+/// eligible for analysis again. Track metadata and audio files are untouched.
+pub fn reset_all_analyses(conn: &Connection) -> Result<u64, DbError> {
+    let changed = conn.execute("DELETE FROM track_audio_analysis", [])?;
+    Ok(changed as u64)
+}
