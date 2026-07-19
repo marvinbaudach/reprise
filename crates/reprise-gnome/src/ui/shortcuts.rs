@@ -1,6 +1,7 @@
-//! Keyboard shortcuts (Stage 3 Task 9): Space (play/pause), Ctrl+F (reveal +
-//! focus + select the search entry), and Escape (two-stage: clear the search
-//! text first, then collapse the search bar). Enter/double-click row
+//! Keyboard shortcuts (Stage 3 Task 9): Space (play/pause), Ctrl+F (toggle the
+//! search bar, focusing and selecting the entry when opening), and Escape
+//! (two-stage: clear the search text first, then collapse the search bar).
+//! Enter/double-click row
 //! activation already works natively (`ui::track_list`'s `wire_activate`) —
 //! nothing to add here for that.
 //!
@@ -15,9 +16,8 @@
 //!
 //! - **Ctrl+F** is accelerated the idiomatic way, via `gtk::Application::
 //!   set_accels_for_action`. Nothing else in this app binds Ctrl+F, and
-//!   re-focusing an already-focused search entry is harmless, so there is no
-//!   focus-sensitivity to get right — the whole point of a global
-//!   accelerator.
+//!   opening focuses and selects the existing query, while invoking it again
+//!   closes the bar without clearing that query.
 //!
 //! - **Space** is the one case the brief calls out by name as needing care
 //!   ("Key-Handling-Priorität beachten"), and the skill's input-delivery
@@ -78,6 +78,12 @@ const ACTION_FOCUS_SEARCH: &str = "focus-search";
 /// display.
 pub fn space_should_toggle(focus_is_text_entry: bool) -> bool {
     !focus_is_text_entry
+}
+
+/// The shared transition for both search affordances: opening and closing are
+/// symmetric, while query preservation remains the search entry's concern.
+pub(in crate::ui) fn next_search_mode(current: bool) -> bool {
+    !current
 }
 
 /// Whether `focus` (the window's currently focused widget, if any)
@@ -164,10 +170,10 @@ fn wire_toggle_play_pause(
     app.set_accels_for_action(&format!("win.{ACTION_TOGGLE_PLAY_PAUSE}"), &["space"]);
 }
 
-/// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — reveals the
-/// search bar, grabs keyboard focus and selects the entry's full text (mirroring how most
-/// desktop apps' "Find" shortcut behaves: a second Ctrl+F with existing text
-/// re-selects it all, ready to be typed over). `search_entry` is captured
+/// Ctrl+F: `win.focus-search`, accelerated to `"<Control>f"` — toggles the
+/// search bar. Opening grabs keyboard focus and selects the entry's full text;
+/// closing preserves the query so the active filter remains visible as a chip.
+/// `search_entry` is captured
 /// weakly for the same reference-cycle reason as `wire_toggle_play_pause`'s
 /// `window` — the action is owned by `window`, which also (indirectly, via
 /// the widget tree) owns `search_entry`.
@@ -189,9 +195,12 @@ fn wire_focus_search(
             tracing::warn!("focus-search: search entry is gone; ignoring");
             return;
         };
-        search_bar.set_search_mode(true);
-        search_entry.grab_focus();
-        search_entry.select_region(0, -1);
+        let search_mode = next_search_mode(search_bar.is_search_mode());
+        search_bar.set_search_mode(search_mode);
+        if search_mode {
+            search_entry.grab_focus();
+            search_entry.select_region(0, -1);
+        }
     });
     window.add_action(&action);
     app.set_accels_for_action(&format!("win.{ACTION_FOCUS_SEARCH}"), &["<Control>f"]);
@@ -273,6 +282,12 @@ mod tests {
 
         apply_search_escape(&search_bar, &entry);
         assert!(!search_bar.is_search_mode());
+    }
+
+    #[test]
+    fn search_6_ctrl_f_toggles_open_and_closed() {
+        assert!(next_search_mode(false));
+        assert!(!next_search_mode(true));
     }
 
     #[test]

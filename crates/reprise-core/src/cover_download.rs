@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use crate::{cover, musicbrainz};
 
-const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
+pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;

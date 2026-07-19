@@ -55,4 +55,14 @@ pub(in crate::ui) fn install(
             player.remove_queue_rows(&[row]);
         }
     });
+    let player_for_reorder = Rc::downgrade(player);
+    panel.set_on_up_next_reorder(move |from, to| {
+        let Some(player) = player_for_reorder.upgrade() else {
+            return;
+        };
+        let Some(op) = crate::ui::track_list::queue_row_mapping::reorder_rows(from, to) else {
+            return;
+        };
+        player.reorder_queue_rows(op);
+    });
 }

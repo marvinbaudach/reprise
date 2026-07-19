@@ -4,7 +4,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::lyrics::{LyricsBody, LyricsError, TimedLine};
 
-use super::lyrics_scroll::{ManualScrollTimer, ScrollMode};
+use super::lyrics_scroll::{content_margins, ManualScrollTimer, ScrollMode};
 use super::lyrics_view::{
     active_line_alpha, centered_scroll_value, css, line_alpha, lyrics_footer, LyricsView,
     ACTIVE_LINE_CLASS, INLINE_RETRY_CLASS,
@@ -52,6 +52,31 @@ fn npp_6_line_changes_use_the_micro_fade_token() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn lyr_3_disabled_state_offers_activation() {
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+    let activated = Rc::new(Cell::new(false));
+    let activated_for_callback = activated.clone();
+    view.set_on_settings(move || activated_for_callback.set(true));
+
+    view.show_disabled();
+
+    assert_eq!(view.visible_state_name().as_deref(), Some("disabled"));
+    assert_eq!(
+        view.disabled_snapshot(),
+        (
+            Some("network-offline-symbolic".into()),
+            "Online lyrics are disabled".into(),
+            "Enable them to load missing lyrics automatically".into(),
+            "Enable in Settings".into(),
+        )
+    );
+    view.activate_settings_for_test();
+    assert!(activated.get());
+}
+
+#[test]
 fn npp_9_fallbacks_keep_source_and_instrumental_gap_semantics() {
     let synced = LyricsBody::Synced(vec![TimedLine::new(1_000, "synthetic line")]);
     let plain = LyricsBody::Plain("synthetic plain text".into());
@@ -70,6 +95,11 @@ fn centered_scroll_clamps_at_start_middle_and_end() {
     assert_eq!(centered_scroll_value(450.0, 50.0, 200.0, 1_000.0), 375.0);
     assert_eq!(centered_scroll_value(950.0, 50.0, 200.0, 1_000.0), 800.0);
     assert_eq!(centered_scroll_value(50.0, 20.0, 400.0, 200.0), 0.0);
+}
+
+#[test]
+fn lyrics_padding_only_synthesizes_trailing_context() {
+    assert_eq!(content_margins(240, 40), (18, 100));
 }
 
 #[test]
@@ -247,7 +277,7 @@ fn active_lines_center_and_clamp_in_a_mapped_panel() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn npp_10_new_lyrics_start_with_line_zero_centered() {
+fn lyr_4_start_of_song_is_not_centered() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let view = LyricsView::new();
@@ -263,6 +293,32 @@ fn npp_10_new_lyrics_start_with_line_zero_centered() {
     window.present();
     while gtk4::glib::MainContext::default().iteration(false) {}
 
-    assert!(view.line_center_offset(0).abs() < 2.0);
+    assert!((view.line_viewport_top_offset(0) - 18.0).abs() < 2.0);
+    assert!(view.line_center_offset(0) < -20.0);
+
+    view.set_active_line(Some(10));
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(view.line_center_offset(10).abs() < 2.0);
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn npp_10_new_lyrics_begin_at_line_zero() {
+    gtk4::init().unwrap();
+    let view = LyricsView::new();
+    let lines = (0..20)
+        .map(|index| TimedLine::new(i64::from(index) * 1_000, format!("line {index}")))
+        .collect();
+    view.show_result(&LyricsBody::Synced(lines));
+    let window = gtk4::Window::builder()
+        .default_width(300)
+        .default_height(240)
+        .child(view.widget())
+        .build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+
+    assert_eq!(view.scroll_values().0, 0.0);
     window.close();
 }

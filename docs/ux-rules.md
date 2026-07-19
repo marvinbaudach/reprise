@@ -46,6 +46,18 @@ ist kein Deaktivierungs-Ignore: solche Tests laufen als Merge-Blocker über
 `scripts/check-display-tests.sh --rule-named` und zählen als Abdeckung auch
 für `[aktiv]`-Regeln.
 
+**Erreichbarkeit.** Für jede Aktion, deren Sichtbarkeit an einen Zustand
+gebunden ist, gilt die Prüffrage: **Wie kommt der Nutzer in den Zustand, der
+sie zeigt?** Ist die Antwort „über genau diese Aktion" oder „gar nicht", ist
+die Regel unvollständig — unabhängig davon, wie korrekt jede Einzelbedingung
+ist. Ein regelbenannter Test muss den Weg **vom Startzustand aus** gehen, nicht
+den Zielzustand herstellen und dann prüfen. Zwei Befunde haben das erzwungen:
+„Hide" war nur im Digest erreichbar, der nur bei Überlauf erschien; und New
+Releases konnte sich nie befüllen, weil ✦ Einträge voraussetzt, „Fetch now"
+hinter ✦ liegt und kein Start-Abruf existierte (NR-8). Beide Male waren alle
+Einzeltests grün — der Fehler saß zwischen den Regeln, weil jeder Test den
+Zielzustand vorab herstellte.
+
 **Sprache.** Dieses Dokument und die Design-Docs sind Deutsch — die
 Arbeitssprache des Projekts. Tests und Skripte sind Code und damit Englisch
 (AGENTS.md); Regel-IDs und Status-Token werden dort wörtlich zitiert.
@@ -110,11 +122,13 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   sichtbaren Liste (siehe PLAY-2). Einfachklick = selektieren. Enter = wie
   Doppelklick. Ausnahme Queue-View: Doppelklick springt gemäß QUE-3 zum Track
   (Playhead), statt die Queue neu zu bauen.
-- **NAV-5** [geplant] [gtk] — Modus-Gedächtnis (Scroll + Selektion je
+- **NAV-5** [aktiv] [gtk] — Modus-Gedächtnis (Scroll + Selektion je
   Tracks/Albums/Artists) gilt nur innerhalb der Session; auch Sidebar-/
-  Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. START-1
-  restauriert über Neustarts ausschließlich die zuletzt aktive Ansicht samt
-  Scroll-Position; alle anderen Modi starten oben, unselektiert.
+  Ortswechsel erhalten Scroll + Selektion des verlassenen Modus. Der
+  Scroll-Anker besteht aus Track-/Album-ID plus Offset, nie aus einem rohen
+  Pixelwert; Re-Sort und Insert halten dadurch den Inhalt an seiner Position.
+  START-1 restauriert über Neustarts ausschließlich die zuletzt aktive Ansicht
+  samt Scroll-Position; alle anderen Modi starten oben, unselektiert.
 - **NAV-6** [aktiv] [e2e] — Suche (Ctrl+F) filtert die aktuelle Ansicht
   live; Esc leert und schließt. Suche navigiert nie selbst.
 - **NAV-7** [geplant] [e2e] — Hamburger-Menü: „Scan Library" → startet Scan,
@@ -227,7 +241,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **GRID-6** [aktiv] [gtk] — Rückkehrfokus: Back aus einem Album-Detail in
   die Album-Übersicht stellt den Tastaturfokus auf genau der zuvor
   aktivierten Albumkachel wieder her und scrollt sie bei Bedarf sichtbar.
-- **ART-1** [geplant] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
+- **ART-1** [aktiv] [gtk] — Artist-Liste: Klick selektiert und zeigt Detail
   rechts; Selection folgt NIE der Wiedergabe, spielender Artist zeigt nur
   Mini-EQ.
 - **ART-2** [geplant] [gtk] — Artist-Detail: Hero-Glow (vorberechnete
@@ -385,9 +399,9 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
 - **QUE-1** [aktiv] [gtk] — Ein gemeinsames Queue-Modell speist zwei
   Flächen mit unterschiedlicher Tiefe: Die Sidebar-Zeile „Queue" öffnet die
   ColumnView als Verwaltungsfläche mit Sektionen, DnD-Reorder, Rechtsklick,
-  Clear und StatusPage. Das Playerleisten-Icon öffnet dagegen das Panel auf
-  „Up Next" als Sichtfläche derselben Queue mit Sektionen, Sprung und Remove,
-  aber ohne Reorder oder DnD. Keine Fläche führt eine eigene zweite Liste.
+  Clear und StatusPage. Der Panel-Toggle öffnet „Up Next" als Sichtfläche
+  derselben Queue mit Sektionen, Sprung und Remove. Die Playerleiste hat kein
+  redundantes Queue-Icon. Keine Fläche führt eine eigene zweite Liste.
 - **QUE-2** [aktiv] [gtk] — Das Panel gliedert die Zukunft in genau zwei
   bedingte Sektionen: **Next in Queue** für manuell eingereihte Tracks und
   **Continuing from „<Album/Playlist>"** für den automatischen Kontext aus
@@ -812,8 +826,8 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 - **NPP-10** [aktiv] [gtk] — Trackwechsel ist kein Ortswechsel: Cover,
   Titelblock, Glow und Tab-Inhalt crossfaden **gemeinsam** in einem
   Übergang (Standard-Token, MOT-5), niemals als Slide; die Lyrics starten
-  danach auf Zeile 0 zentriert. `gtk-enable-animations=false` schaltet auch
-  hier hart (MOT-7).
+  danach bei Zeile 0 und positionieren sie gemäß LYR-4.
+  `gtk-enable-animations=false` schaltet auch hier hart (MOT-7).
 
 ## Q. Suche
 
@@ -875,6 +889,22 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
   Auswahl „Top artists only / all artists". Bei ausgeschaltetem Modul gibt es
   weder Fetch noch ✦; Cover-, Portrait- und Lyrics-Module gehören nicht zu
   dieser Regel und werden im Folge-Branch `feat/network-opt-in` geregelt.
+- **NR-8** [geplant] [gtk] — Das Einschalten des Moduls ist die Zustimmung und
+  löst deshalb sofort den ersten Abruf aus: `set_enabled(true)` stößt einen
+  Fetch an. Solange nie erfolgreich abgerufen wurde, bleibt ✦ **sichtbar** und
+  trägt einen Leerzustand („Checking for new releases…" während des Laufs,
+  danach „No upcoming releases from your artists"). Erst nach dem ersten
+  abgeschlossenen Durchlauf greift NR-5 wieder normal.
+  Zwei Kanten: Ein **fehlgeschlagener** erster Abruf (offline) hält ✦ sichtbar
+  mit Retry-Leerzustand, statt den Knopf verschwinden zu lassen — sonst
+  entsteht erneut „eingeschaltet, aber weg". Und der Erst-Leerzustand trägt
+  **keinen** Badge-Punkt: er ist Rückmeldung, keine Bitte (P-1).
+  *Grund:* NR-5 wurde formuliert, als Befüllen garantiert war. Opt-in hat den
+  Dauerzustand „aktiv, nie befüllt" geschaffen, für den es keinen Einstieg gab
+  — ✦ erscheint nur bei Einträgen, „Fetch now" sitzt im Popover hinter ✦, und
+  einen Start-Abruf gibt es nicht. NR-8 schließt diese Schleife, ohne NR-5 zu
+  kippen. Datenschutzlich unverändert: Netzverkehr entsteht ausschließlich nach
+  ausdrücklicher Aktivierung, nur sofort statt nie.
 
 ## S. Flächen & Geometrie
 
@@ -906,6 +936,105 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   getestet; was ausbleiben kann, auf Wirkung (wie TIP-1a/2a und SEARCH-2).
   Ist eine Schnittstelle im Test-Build ausgeblendet (z. B. `SectionModel` per
   `cfg`), zählt nur der E2E-Beleg — „grün" ist dort strukturell bedeutungslos.
+
+## T. Netz-Features opt-in
+
+- **NET-1** [aktiv] [gtk] — Automatische und massenhafte Netzabrufe sind
+  opt-in. Cover-Downloads, Artist-Portraits und New Releases starten nur bei
+  eingeschaltetem Modul; Online-Lyrics haben ebenfalls einen Schalter, damit
+  vollständig netzfreie Nutzung möglich bleibt. Ein Ausschalten wirkt sofort
+  und versteckt bereits lokal gecachte Bilder nicht.
+- **NET-2** [aktiv] [core] — Updates schützen nachweisbare bisherige Nutzung:
+  vorhandene heruntergeladene Cover bzw. Portraits aktivieren ihr Modul,
+  bestehende Bibliotheksdatenbanken behalten Online-Lyrics, und ein zuvor
+  aktives `artist_news` wird als aktives New-Releases-Modul übernommen.
+  Negative Cache-Marker gelten nicht als Nutzung; frische Installationen
+  starten mit allen vier Netz-Modulen aus.
+- **LYR-1** [geplant] [core] — Lokale eingebettete Songtexte und `.lrc`-
+  Sidecars werden unabhängig vom Online-Lyrics-Modul angezeigt. Reprise liest
+  diese lokalen Formate heute noch nicht; die Regel bleibt bis zu dieser
+  eigenen Formatfunktion geplant.
+- **LYR-2** [aktiv] [gtk] — LRCLIB wird ausschließlich bei offenem Lyrics-
+  Tab, fehlendem lokalen Text und eingeschaltetem Online-Lyrics-Modul
+  kontaktiert. Es gibt weder Prefetch noch Batch-Abruf für kommende Queue-
+  Einträge.
+- **LYR-3** [aktiv] [gtk] — Bei offenem Lyrics-Tab, fehlendem Text und
+  ausgeschaltetem Modul zeigt eine zentrierte StatusPage Icon, Titel
+  „Online lyrics are disabled", Untertitel „Enable them to load missing
+  lyrics automatically" und „Enable in Settings" als Deep-Link zur kurz
+  hervorgehobenen Plugins-Zeile. Solange LYR-1 geplant ist, verspricht dieser
+  Zustand keine lokalen eingebetteten Songtexte. Ein eingeschaltetes Modul
+  ohne Treffer zeigt stattdessen „No lyrics found".
+- **DISCOVER-1** [aktiv] [gtk] — Netz-Features ohne dauerhaft sichtbare
+  eigene Fläche erhalten genau einen dezenten, schließbaren Inline-Hinweis am
+  Ort der sichtbaren Lücke: Cover ab drei gleichzeitig sichtbaren Fallback-
+  Kacheln, Portraits ab drei gleichzeitig sichtbaren Initialen-Avataren und
+  New Releases am Kopf der Artists-Ansicht. Sichtbare Evidenz rastet den
+  Hinweis ein; einmal gezeigt oder geschlossen kehrt er dauerhaft nicht
+  zurück. Der Hinweis ist kein Badge und kein Toast.
+- **DISCOVER-2** [aktiv] [gtk] — Pro Ansicht ist höchstens eine
+  Aktivierungszeile sichtbar. Treffen Portrait- und New-Releases-Hinweis in
+  der Artists-Ansicht zusammen, werden sie zu einer Zeile „Enable network
+  features for artists (images & new releases) →" mit Deep-Link auf die
+  Plugins-Seite kombiniert; zwei gestapelte Aktivierungszeilen sind verboten.
+## U. UI-Politur, Kontrast & ansichtsübergreifender Kontext
+
+<!-- Entscheidungen und die Abgrenzung zu Batch B stehen in
+     docs/superpowers/plans/2026-07-18-ui-polish-beschluesse.md. -->
+
+- **SEARCH-6** [aktiv] [gtk] — Lupe und Ctrl+F toggeln die Suchleiste
+  beidseitig (zeigen ↔ verstecken). Das Verstecken löscht die Query nie: bei
+  nicht leerer Query bleibt ihr Chip sichtbar und die Lupe im
+  `:checked`-Akzentstil (FIL-1, SEARCH-3/5).
+- **LYR-4** [aktiv] [gtk] — Die Zentrierung der aktiven Lyrics-Zeile wird
+  am Songanfang nach oben geklemmt. Solange nicht genug Kontextzeilen über
+  der aktiven Zeile liegen, sitzt der Textblock oben; erst mit genügend
+  Vorlauf wandert die aktive Zeile in die Mitte.
+- **STYLE-2** [aktiv] [gtk] — Content und Tracktabelle verwenden die
+  `.view`-Stufe; linke Sidebar und rechtes Now-Playing-Panel verwenden
+  gemeinsam die eine Stufe höhere `sidebar_bg`-Fläche des aktiven Themes.
+  Beide Flanken tragen an ihrer Innenkante eine 1-px-Hairline. Es gibt keine
+  pane-spezifische Nachtönung und keine hartkodierte Pane-Fläche.
+- **STYLE-3** [geplant] [gtk] — Zwei Akzentrollen bleiben getrennt: der feste
+  App-Akzent (`@accent_color`) bezeichnet dauerhafte UI-Bedeutung wie
+  Selektion, Ratings, aktive Toggles, Links, Chips und Fokus; der dynamische
+  Playback-Akzent (`@reprise_player_accent`) bezeichnet ausschließlich den
+  laufenden Track wie Play/Pause, Waveform, Playing-Row, EQ, Glow und
+  GRID-1-Innenring. Ein Element mischt die Rollen nie.
+- **CONTRAST-1** [aktiv] [gtk] — Es gibt drei zentrale Textstufen: Primär
+  ungefähr 0,95 für Titel und Werte, Sekundär ungefähr 0,7 für Artist,
+  Status, Metadaten und Spaltenköpfe, Hint ungefähr 0,5 für Platzhalter,
+  Hinweise und deaktivierte Sekundärtexte. Passende Adwaita-Named-Colors
+  haben Vorrang vor eigenen Alphas; pro Element wird nicht nachgetönt.
+- **CONTRAST-2** [aktiv] [gtk] — Jede „N tracks · Dauer"-Statuszeile ist
+  eine echte untere Leiste mit definierter Fläche und oberer Hairline. Sie
+  reserviert eigenen Platz und überdeckt nie eine Trackzeile; erst gegen
+  diese feste Fläche wird ihr Sekundärtext-Kontrast bestimmt.
+- **CONTRAST-3** [aktiv] [gtk] — Statuszeilen, Spaltenköpfe,
+  Sidebar-Sektionslabels und Kartenmetazeilen erreichen gegen ihre jeweilige
+  Fläche mindestens 4,5:1. `.caption` plus Sekundärstufe gilt dabei als
+  Kleinschrift und benötigt dieselbe Prüfung wie Hint bei Normalgröße.
+- **NAV-10** [aktiv] [gtk] — Der laufende Kontext bleibt in allen Ansichten
+  mit einer gemeinsamen Playback-Akzent-Markierung sichtbar; beim ersten
+  Eintritt einer Ansicht wird er einmalig aufgedeckt, spätere Wechsel stellen
+  NAV-5s gemerkten ID-plus-Offset-Anker wieder her. Explizites „Go to
+  album/artist" springt immer deterministisch; Selektion folgt der Wiedergabe
+  nie.
+- **QUE-7** [aktiv] [gtk] — Up Next besteht aus der manuellen Queue plus
+  einem virtuellen, benannten Kontext-Tail mit Count. Der Tail wird nicht als
+  Einzelzeilen materialisiert, sondern nur im sichtbaren Fenster gerendert;
+  die Sidebar-Zeile „Queue" zählt ausschließlich die manuelle Queue und zeigt
+  bei null keinen Zähler.
+- **QUE-8** [aktiv] [gtk] — Drag-Reorder existiert ausschließlich in „Next
+  in Queue". Die manuelle Sektion ist umsortierbar; ein Drag aus „Continuing"
+  nach oben materialisiert genau diesen Eintrag in der manuellen Sektion.
+  Multi-Select, Clear, Save-as-Playlist und das vollständige Kontextmenü
+  bleiben in der Queue-ColumnView.
+- **NPP-11** [aktiv] [gtk] — Die Panel-Ansichten verwenden einen
+  zentrierten `AdwViewSwitcher` als Title-Widget und degradieren bei schmalem
+  Fenster adaptiv zu einer unteren `AdwViewSwitcherBar` oder einem
+  icons-only `AdwInlineViewSwitcher` per `AdwBreakpoint`. Umsetzung in Batch
+  B; siehe Beschlussdokument.
 
 ---
 

@@ -620,11 +620,6 @@ msgstr "Leeren"
 msgid "Play Next"
 msgstr "Als Nächstes"
 
-#: crates/reprise-gnome/src/ui/strings.rs:415
-#, rust-format
-msgid "Up Next · from {}"
-msgstr "Als Nächstes · aus {}"
-
 #: crates/reprise-gnome/src/ui/strings.rs:416
 msgid "Nothing queued"
 msgstr "Nichts in der Warteschlange"
@@ -1601,34 +1596,75 @@ msgstr "Neue Veröffentlichungen"
 #: crates/reprise-gnome/src/ui/strings_news.rs:38
 msgid "Show upcoming and newly released albums · contacts MusicBrainz"
 msgstr "Kommende und neu erschienene Alben anzeigen · kontaktiert MusicBrainz"
-"Kommende und neu veröffentlichte Alben von MusicBrainz anzeigen (Netzwerk; "
-"standardmäßig aus)"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:40
+#: crates/reprise-gnome/src/ui/strings_news.rs:39
+msgid "Album Covers"
+msgstr "Albumcover"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:41
+msgid ""
+"Download missing album covers · contacts MusicBrainz and coverartarchive.org"
+msgstr ""
+"Fehlende Albumcover herunterladen · kontaktiert MusicBrainz und "
+"coverartarchive.org"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:42
+msgid "Artist Portraits"
+msgstr "Interpretenporträts"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:43
+msgid "Show artist images · contacts Deezer"
+msgstr "Interpretenbilder anzeigen · kontaktiert Deezer"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:44
+msgid "Online Lyrics"
+msgstr "Online-Songtexte"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:45
+msgid "Load missing lyrics · contacts LRCLIB"
+msgstr "Fehlende Songtexte laden · kontaktiert LRCLIB"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs
+msgid "Enable album cover downloads →"
+msgstr "Albumcover-Downloads aktivieren →"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs
+msgid "Enable artist images →"
+msgstr "Interpretenbilder aktivieren →"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs
+msgid "Enable new releases →"
+msgstr "Neue Veröffentlichungen aktivieren →"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs
+msgid "Enable network features for artists (images & new releases) →"
+msgstr "Netz-Features für Interpreten aktivieren (Bilder & neue Veröffentlichungen) →"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:47
 msgid "Top artists only"
 msgstr "Nur meistgehörte Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:41
+#: crates/reprise-gnome/src/ui/strings_news.rs:48
 msgid "All artists"
 msgstr "Alle Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:42
+#: crates/reprise-gnome/src/ui/strings_news.rs:49
 msgid "Fetch now"
 msgstr "Jetzt abrufen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:43
+#: crates/reprise-gnome/src/ui/strings_news.rs:50
 msgid "Refresh failed · showing saved releases"
 msgstr "Aktualisierung fehlgeschlagen · zeigt gespeicherte Veröffentlichungen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:44
+#: crates/reprise-gnome/src/ui/strings_news.rs:51
 msgid "Updated just now"
 msgstr "Gerade aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:45
+#: crates/reprise-gnome/src/ui/strings_news.rs:52
 msgid "See all"
 msgstr "Alle anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:46
+#: crates/reprise-gnome/src/ui/strings_news.rs:53
 msgid "Hide"
 msgstr "Ausblenden"
 
@@ -1646,10 +1682,12 @@ msgid_plural "{count} tracks · {duration}"
 msgstr[0] "{count} Titel · {duration}"
 msgstr[1] "{count} Titel · {duration}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:70
+#: crates/reprise-gnome/src/ui/strings_news.rs:72
 #, rust-format
-msgid "Continuing from “{source}”"
-msgstr "Weiter aus „{source}“"
+msgid "Playing from {source} · {count} track"
+msgid_plural "Playing from {source} · {count} tracks"
+msgstr[0] "Wiedergabe aus {source} · {count} Titel"
+msgstr[1] "Wiedergabe aus {source} · {count} Titel"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:75
 #, rust-format
@@ -1730,10 +1768,6 @@ msgstr "Vorherigen Titel wiedergeben"
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:17
 msgid "Play next track"
 msgstr "Nächsten Titel wiedergeben"
-
-#: crates/reprise-gnome/src/ui/strings_tooltips.rs:18
-msgid "Show queue"
-msgstr "Warteschlange anzeigen"
 
 #: crates/reprise-gnome/src/ui/strings_tooltips.rs:21
 msgid "Restore full window (Ctrl+M)"
@@ -2466,6 +2500,18 @@ msgstr "Spiele einen Titel ab, um seinen Songtext zu sehen"
 msgid "Loading lyrics…"
 msgstr "Songtext wird geladen…"
 
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs
+msgid "Online lyrics are disabled"
+msgstr "Online-Songtexte sind deaktiviert"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs
+msgid "Enable them to load missing lyrics automatically"
+msgstr "Aktiviere sie, um fehlende Songtexte automatisch zu laden"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs
+msgid "Enable in Settings"
+msgstr "In den Einstellungen aktivieren"
+
 #: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:12
 msgid "Instrumental"
 msgstr "Instrumental"
@@ -2780,3 +2826,23 @@ msgstr "Separate Titelleiste"
 
 #~ msgid "Filters"
 #~ msgstr "Filter"
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs
+msgid "Go to artist"
+msgstr "Zum Interpreten"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs
+msgid "Pause album"
+msgstr "Album pausieren"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs
+msgid "Play album (Ctrl+Enter)"
+msgstr "Album abspielen (Strg+Eingabe)"
+
+#: crates/reprise-gnome/src/ui/strings_tooltips.rs
+msgid "Resume album"
+msgstr "Album fortsetzen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs
+msgid "Reveal playing album"
+msgstr "Spielendes Album anzeigen"

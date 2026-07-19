@@ -18,6 +18,25 @@ fn pending(ids: &[i64]) -> UpNextQueue {
 }
 
 #[test]
+fn que_8_drag_from_continuing_materialises_one_entry() {
+    let mut context = context(&[1, 2, 3, 4], 0);
+    let mut manual = pending(&[10, 11]);
+
+    let moved = apply_queue_reorder(
+        &mut context,
+        &mut manual,
+        crate::ui::track_list::queue_row_mapping::QueueReorderOp::PromoteUpNext {
+            up_next_offset: 1,
+            insert_at: 0,
+        },
+    );
+
+    assert!(moved);
+    assert_eq!(manual.ids(), &[3, 10, 11]);
+    assert_eq!(context.remaining_after_current(), [2, 4]);
+}
+
+#[test]
 fn purging_the_playing_context_track_plays_the_next_surviving_one() {
     let mut queue = context(&[10, 20, 30], 0);
     let mut up_next = pending(&[]);
