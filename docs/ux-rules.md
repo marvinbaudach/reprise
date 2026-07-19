@@ -973,14 +973,30 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Now-Playing-Spalte verhält sich wie überall. Das Zeitraum-Dropdown ist der
   einzige Ansichts-Regler dieser Ansicht.
 - **STATS-9** [aktiv] [core] — **Dedup:** Unsaubere Tags dürfen Zahlen nicht
-  zersplittern. Top Artists, Top Genres, Album-Artist-Aggregate und das
-  Spotlight gruppieren über einen zweistufigen Schlüssel: liegt eine MBID vor,
-  gilt sie; sonst ein normalisierter Schlüssel aus Trim, Unicode-Casefold
-  (nicht nur ASCII), Whitespace-Kollaps und Diakritika-Faltung (NFKD ohne
-  Combining Marks). „Lorna Shore", „lorna shore" und „Lorna Shore " sind damit
-  ein Eintrag mit einer Summe. Der Schlüssel existiert nur zur Laufzeit: keine
-  gespeicherte Spalte, und die Ansicht schreibt **niemals** Tags zurück —
-  Statistik ist lesend. Angezeigt wird stets eine echte Original-Schreibweise
+  zersplittern. Top Artists, Top Genres, Album-Artist-Aggregate, das Spotlight
+  und jede Trackauswahl, die von einer dieser Zeilen ausgeht, benutzen **eine
+  einzige** Schlüsselauflösung — nie eine zweite Formel pro Aufrufer.
+  **Zuerst der Name:** Trim, Unicode-Kleinschreibung (`str::to_lowercase`, also
+  über ASCII hinaus, aber kein volles Casefold — „Straße" bleibt von „STRASSE"
+  getrennt), Whitespace-Kollaps und Diakritika-Faltung (NFKD ohne Combining
+  Marks). „Lorna Shore", „lorna shore" und „Lorna Shore " sind damit ein
+  Eintrag mit einer Summe. **Danach erst die MBID, und nur innerhalb der
+  Namensgruppe:** sie ist die stabile Identität dieser Gruppe und führt weitere
+  Namensgruppen mit derselben Identität zusammen; sie darf eine Namensgruppe
+  aber **nie spalten**, denn MBIDs sind dünn besetzt und hängen typischerweise
+  an genau einer Schreibweise („Sigur Rós" mit, „Sigur Ros" ohne). Tragen
+  mehrere MBIDs eine Namensgruppe, gewinnt die meistgespielte, bei Gleichstand
+  die alphabetisch erste — der Schlüssel hängt nie an der Zeilenreihenfolge.
+  `tracks.artist_mbid` beschreibt die rohe `artist`-Spalte: nennt der
+  Album-Artist der Zeile einen anderen Act, gilt die MBID dort **nicht**, sonst
+  zöge ein Gastbeitrag zwei fremde Bands in eine Zeile, einen „Play" und eine
+  Tag-Editor-Einladung. Weil Zeitraum und Gesamtkatalog verschiedene
+  Grundgesamtheiten sind, dürfen ihre Auflösungen abweichen: findet eine
+  Trackauswahl zum Schlüssel nichts, fällt sie auf die Namensgruppe zurück, und
+  ein leeres Ergebnis wird protokolliert, nie stillschweigend verschluckt.
+  Der Schlüssel existiert nur zur Laufzeit: keine gespeicherte Spalte, und die
+  Ansicht schreibt **niemals** Tags zurück — Statistik ist lesend.
+  Angezeigt wird stets eine echte Original-Schreibweise
   der Gruppe (die häufigste; bei Gleichstand die zuletzt gespielte, dann
   alphabetisch), nie die normalisierte Form. **Geraten wird nie:**
   zusammengefasst wird ausschließlich, was nach Normalisierung exakt gleich ist
