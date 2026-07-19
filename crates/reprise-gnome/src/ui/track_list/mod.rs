@@ -12,6 +12,7 @@ pub(crate) mod rating;
 pub(in crate::ui) mod reload_restore;
 #[path = "track_list.rs"]
 mod surface;
+pub(in crate::ui) mod tag_mutation_refresh;
 pub(crate) mod track_actions;
 pub(in crate::ui) mod track_content;
 pub(in crate::ui) mod track_cover;
@@ -25,6 +26,7 @@ pub(crate) mod track_list_dnd;
 pub(crate) mod track_list_dnd_smoke;
 pub(crate) mod track_list_empty_state;
 mod track_list_filter_actions;
+mod track_list_focus;
 pub(in crate::ui) mod track_list_header_style;
 pub(in crate::ui) mod track_list_keyboard_reorder;
 pub(in crate::ui) mod track_list_layout;
@@ -49,6 +51,7 @@ pub(in crate::ui) use surface::{
     notify_import_errors_mutated_and_reload, playlist_reorder_allowed, reload,
     set_filter_and_reload, set_source_and_reload, show_toast, OnActivate, Shared, TrackList,
 };
+pub(in crate::ui) use tag_mutation_refresh::refresh_after_tag_mutation;
 pub(in crate::ui) use track_list_layout::{
     STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,
 };

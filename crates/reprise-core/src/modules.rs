@@ -53,6 +53,14 @@ pub const NEW_RELEASES_MODULE: ModuleDescriptor = ModuleDescriptor {
     applies_live: true,
 };
 
+pub const LIBRARY_DOCTOR_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "library_doctor",
+    name: "Library Doctor",
+    description: "Review local tag cleanup suggestions; optional remote suggestions; contacts MusicBrainz / AcoustID",
+    default_enabled: false,
+    applies_live: true,
+};
+
 pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "cover_download",
     name: "Cover Download",
@@ -79,6 +87,7 @@ pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
 
 /// Every optional integration the app currently exposes, in Plugins-page order.
 pub const ALL_MODULES: &[&ModuleDescriptor] = &[
+    &LIBRARY_DOCTOR_MODULE,
     &NEW_RELEASES_MODULE,
     &COVER_DOWNLOAD_MODULE,
     &ARTIST_PORTRAITS_MODULE,
@@ -188,6 +197,26 @@ mod tests {
         assert_eq!(NEW_RELEASES_MODULE.id, "new_releases");
         assert_eq!(NEW_RELEASES_MODULE.name, "New Releases");
         assert!(!is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
+    }
+
+    #[test]
+    fn doc_1d_library_doctor_is_live_local_only_and_default_off() {
+        let conn = migrated_conn();
+        let descriptor = ALL_MODULES
+            .iter()
+            .copied()
+            .find(|module| module.id == "library_doctor")
+            .expect("Library Doctor must be exposed on the Plugins page");
+
+        assert_eq!(descriptor.name, "Library Doctor");
+        assert!(descriptor.applies_live);
+        assert!(!descriptor.default_enabled);
+        assert!(!is_enabled(&conn, descriptor).unwrap());
+        assert!(!settings::get_bool(&conn, "library_doctor.remote.enabled", false).unwrap());
+
+        set_enabled(&conn, descriptor, true).unwrap();
+        assert!(is_enabled(&conn, descriptor).unwrap());
+        assert!(!settings::get_bool(&conn, "library_doctor.remote.enabled", false).unwrap());
     }
 
     #[test]

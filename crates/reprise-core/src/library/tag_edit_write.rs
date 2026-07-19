@@ -15,16 +15,17 @@
 //! per-file window, and is idempotent against the watcher's own echo of the
 //! write regardless (see `watcher::event_is_relevant`'s `Access` handling).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use rusqlite::Connection;
 
-use crate::models::ImportErrorKind;
-
-use super::scanner::ScanOutcome;
-use super::tag_edit::{
-    apply_patch_to_file, read_editable_tags, validate_registered_track, EditableTags,
-    TagBatchReport, TagEditError, TagPatch, TagWriteFailure, TrackEditPatch, IGNORE_DURATION,
+use super::tag_edit::{TagBatchReport, TagWriteFailure, TrackEditPatch};
+use super::tag_mutation::{
+    prepare_tag_mutation, validate_registered_track, PreparedTagMutation, WriteErrorKind,
+};
+use super::tag_write_job::{
+    execute_tag_write_file, finish_tag_write_job, prepare_tag_write_job, TagWriteJobSpec,
 };
 
 /// One track's write request: the effective patch to apply plus enough
@@ -34,131 +35,6 @@ pub struct TrackWrite {
     pub id: i64,
     pub path: PathBuf,
     pub patch: TrackEditPatch,
-}
-
-/// Classified reason a single track's write failed, replacing raw Lofty
-/// error text in user-facing surfaces (FB-3: "klassifizierter Grund", not
-/// Lofty prose).
-///
-/// ## Why this is not [`ImportErrorKind`]
-///
-/// The two vocabularies deliberately stay separate types even though they
-/// overlap: `ImportErrorKind` is a *storage* format — its `as_str`/`parse`
-/// pair is the on-disk vocabulary of `import_errors.reason_kind` — whereas a
-/// write failure is transient and never persisted. Folding writes into it
-/// would mean teaching a stored vocabulary a `NotFound` reason the import
-/// path can never produce.
-///
-/// What the two must NOT do is disagree about what a given Lofty error
-/// *means*, so the Lofty half of the classification is not duplicated here:
-/// [`classify_write_error`] delegates it to `import_errors::classify_lofty`,
-/// the single place that enumerates Lofty's error kinds, and maps its result
-/// into this write-facing view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WriteErrorKind {
-    PermissionDenied,
-    /// The file vanished between the edit and the write (deleted, unmounted,
-    /// or moved). Has no `ImportErrorKind` counterpart: a scan simply never
-    /// imports a file that isn't there, while a write races the deletion.
-    NotFound,
-    UnsupportedFormat,
-    /// The file's container/tag data could not be parsed, so there is nothing
-    /// to write into — mirrors `ImportErrorKind::UnreadableTags`.
-    UnreadableTags,
-    /// Catch-all: DB reconciliation failures, stale-row validation, and any
-    /// Lofty error kind without a more specific bucket above.
-    Io,
-}
-
-impl WriteErrorKind {
-    /// Short user-facing reason, e.g. for the FB-3 failure-details dialog.
-    pub fn user_message(self) -> &'static str {
-        match self {
-            Self::PermissionDenied => "No write permission",
-            Self::NotFound => "File not found",
-            Self::UnsupportedFormat => "Unsupported audio format",
-            Self::UnreadableTags => "File's tags could not be read",
-            Self::Io => "Could not write tags",
-        }
-    }
-
-    /// Projects the shared import vocabulary onto the write-facing one. The
-    /// import side's `Unknown` (a Lofty kind its classifier has no bucket
-    /// for) collapses into `Io` here: for the failure-details dialog, "could
-    /// not write tags" is the honest thing to say about an unclassified
-    /// failure — there is no separate remediation story to offer.
-    fn from_import_kind(kind: ImportErrorKind) -> Self {
-        match kind {
-            ImportErrorKind::PermissionDenied => Self::PermissionDenied,
-            ImportErrorKind::UnsupportedFormat => Self::UnsupportedFormat,
-            ImportErrorKind::UnreadableTags => Self::UnreadableTags,
-            ImportErrorKind::Io | ImportErrorKind::Unknown => Self::Io,
-        }
-    }
-}
-
-/// Classifies a [`TagEditError`] from a failed tag write into a
-/// [`WriteErrorKind`].
-///
-/// The long tail of Lofty's parse failures is delegated to
-/// `import_errors::classify_lofty` — the single place that enumerates Lofty's
-/// error kinds — so the scanner and the tag editor cannot drift on what a
-/// malformed container means (see [`WriteErrorKind`]'s doc comment).
-///
-/// Three kinds are decided here instead, because that classifier reads Lofty
-/// errors as a *reader* would, and their meaning genuinely differs when
-/// writing:
-///
-/// * `NoWritableTag` — tag-edit-only, never seen by a scan.
-/// * `Io(NotFound)` — folded into the generic `Io` bucket over there, which
-///   is right for a scan (a file that isn't there was never imported) and
-///   wrong here, where it is the common "deleted while the dialog was open"
-///   race and earns its own message.
-/// * `UnsupportedTag` / `TooMuchData` — read as container-parse damage over
-///   there (`UnreadableTags`). Writing, they mean the target format cannot
-///   hold this tag type, and that a value exceeds what the format allows:
-///   "the file's tags could not be read" would be an outright false
-///   statement about a file whose tags read back fine.
-pub fn classify_write_error(error: &TagEditError) -> WriteErrorKind {
-    use lofty::error::ErrorKind as LK;
-    // Matched exhaustively rather than with a catch-all: a future
-    // `TagEditError` variant must fail to compile here and be classified
-    // deliberately, not silently inherit some neighbour's bucket.
-    match error {
-        TagEditError::NoWritableTag => WriteErrorKind::UnsupportedFormat,
-        TagEditError::Lofty(lofty_error) => match lofty_error.kind() {
-            LK::Io(io_error) if io_error.kind() == std::io::ErrorKind::NotFound => {
-                WriteErrorKind::NotFound
-            }
-            LK::UnsupportedTag => WriteErrorKind::UnsupportedFormat,
-            LK::TooMuchData => WriteErrorKind::Io,
-            _ => {
-                let (kind, _detail) = crate::library::import_errors::classify_lofty(lofty_error);
-                WriteErrorKind::from_import_kind(kind)
-            }
-        },
-    }
-}
-
-/// Narrows `patch` to only the fields whose target value truly differs from
-/// `current` — an exact comparison, no trim/case-folding (TAG-5). The
-/// result is the *effective* patch actually worth writing to the file.
-fn effective_tag_patch(current: &EditableTags, patch: &TagPatch) -> TagPatch {
-    TagPatch {
-        title: patch.title.clone().filter(|value| *value != current.title),
-        artist: patch
-            .artist
-            .clone()
-            .filter(|value| *value != current.artist),
-        album: patch.album.clone().filter(|value| *value != current.album),
-        album_artist: patch
-            .album_artist
-            .clone()
-            .filter(|value| *value != current.album_artist),
-        year: patch.year.filter(|value| *value != current.year),
-        track_no: patch.track_no.filter(|value| *value != current.track_no),
-        genre: patch.genre.clone().filter(|value| *value != current.genre),
-    }
 }
 
 fn push_failure(
@@ -176,98 +52,31 @@ fn push_failure(
     });
 }
 
-/// Re-reads the just-written file's mtime as -1 and runs a targeted
-/// `scan_folder` on it — identical to the legacy `apply_patch_batch` path
-/// (see that function's comment for why whole-second mtime precision needs
-/// the explicit invalidation).
-fn reconcile_after_write(
-    conn: &mut Connection,
-    id: i64,
-    path: &std::path::Path,
-) -> Result<(), String> {
-    match conn.execute("UPDATE tracks SET file_mtime=-1 WHERE id=?1", [id]) {
-        Ok(1) => {}
-        Ok(_) => return Err("track row disappeared before tag reconciliation".into()),
-        Err(error) => return Err(format!("could not prepare tag reconciliation: {error}")),
-    }
-    match crate::library::scanner::scan_folder(conn, path) {
-        Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => Ok(()),
-        Ok(ScanOutcome::Completed(scan)) => Err(format!(
-            "tag reconciliation reported {} error(s)",
-            scan.errors
-        )),
-        // The scan "root" here is always a single already-registered file,
-        // never a directory, so `RootUnavailable` means it vanished between
-        // this write and its reconciliation (e.g. its mount was pulled
-        // mid-batch) — nothing left to reconcile against, so it fails like
-        // the `Err` arm below.
-        Ok(ScanOutcome::RootUnavailable { root }) => Err(format!(
-            "tag reconciliation failed: library folder unavailable: {}",
-            root.display()
-        )),
-        Err(error) => Err(format!("tag reconciliation failed: {error}")),
-    }
-}
-
-/// Writes exactly one track's pending patch, dispatching into `report`.
-/// No-op tracks (nothing effectively changes) are silently skipped: neither
-/// `updated_ids` nor `failures` gains an entry, and the file is never
-/// touched (TAG-5's mtime guarantee).
-fn write_one_track(conn: &mut Connection, write: &TrackWrite, report: &mut TagBatchReport) {
-    if let Err(error) = validate_registered_track(conn, write.id, &write.path) {
-        push_failure(report, write.id, &write.path, WriteErrorKind::Io, error);
+fn apply_rating_only(conn: &mut Connection, write: &TrackWrite, report: &mut TagBatchReport) {
+    let Some(rating) = write.patch.rating else {
         return;
-    }
-
-    let tag_written = if write.patch.tags.is_empty() {
-        false
-    } else {
-        match read_editable_tags(&write.path) {
-            Ok(current) => {
-                let effective = effective_tag_patch(&current, &write.patch.tags);
-                if effective.is_empty() {
-                    false
-                } else {
-                    crate::library::watcher::ignore_path(&write.path, IGNORE_DURATION);
-                    if let Err(error) = apply_patch_to_file(&write.path, &effective) {
-                        let kind = classify_write_error(&error);
-                        push_failure(report, write.id, &write.path, kind, error.to_string());
-                        return;
-                    }
-                    if let Err(error) = reconcile_after_write(conn, write.id, &write.path) {
-                        push_failure(report, write.id, &write.path, WriteErrorKind::Io, error);
-                        return;
-                    }
-                    true
-                }
-            }
-            Err(error) => {
-                let kind = classify_write_error(&error);
-                push_failure(report, write.id, &write.path, kind, error.to_string());
-                return;
-            }
-        }
     };
-
-    let rating_written = match write.patch.rating {
-        Some(rating) => match crate::library::stats::set_rating(conn, write.id, rating) {
-            Ok(()) => true,
-            Err(error) => {
-                push_failure(
-                    report,
-                    write.id,
-                    &write.path,
-                    WriteErrorKind::Io,
-                    format!("could not save rating: {error}"),
-                );
-                return;
-            }
-        },
-        None => false,
-    };
-
-    if tag_written || rating_written {
-        report.updated_ids.push(write.id);
+    match crate::library::stats::set_rating_for_registered_track(
+        conn,
+        write.id,
+        &write.path,
+        rating,
+    ) {
+        Ok(true) => report.updated_ids.push(write.id),
+        Ok(false) => push_failure(
+            report,
+            write.id,
+            &write.path,
+            WriteErrorKind::Io,
+            "track path changed before rating; refusing stale request".into(),
+        ),
+        Err(error) => push_failure(
+            report,
+            write.id,
+            &write.path,
+            WriteErrorKind::Io,
+            format!("could not save rating: {error}"),
+        ),
     }
 }
 
@@ -279,11 +88,108 @@ pub fn apply_track_writes(
     writes: &[TrackWrite],
     progress: &mut dyn FnMut(usize, usize),
 ) -> TagBatchReport {
+    apply_track_writes_inner(conn, writes, progress, &mut |_, _, _| {})
+}
+
+fn apply_track_writes_inner(
+    conn: &mut Connection,
+    writes: &[TrackWrite],
+    progress: &mut dyn FnMut(usize, usize),
+    before_save: &mut dyn FnMut(&Connection, i64, i64),
+) -> TagBatchReport {
     let mut report = TagBatchReport::default();
     let total = writes.len();
+    let mut prepared = Vec::<(usize, PreparedTagMutation)>::new();
+    let mut preparation_failures = (0..total).map(|_| None).collect::<Vec<_>>();
+    let mut id_counts = HashMap::<i64, usize>::new();
+    for write in writes {
+        *id_counts.entry(write.id).or_default() += 1;
+    }
+    for (position, write) in writes.iter().enumerate() {
+        if id_counts.get(&write.id).copied().unwrap_or_default() > 1 {
+            preparation_failures[position] = Some((
+                WriteErrorKind::Io,
+                "duplicate track request in one tag-write job".into(),
+            ));
+            continue;
+        }
+        if write.patch.tags.is_empty() {
+            if let Err(error) = validate_registered_track(conn, write.id, &write.path) {
+                preparation_failures[position] = Some((WriteErrorKind::Io, error));
+            }
+            continue;
+        }
+        match prepare_tag_mutation(conn, write.id, &write.path, &write.patch.tags) {
+            Ok(Some(mutation)) => prepared.push((position, mutation)),
+            Ok(None) => {}
+            Err(failure) => {
+                let (kind, error, _) = failure.into_parts();
+                preparation_failures[position] = Some((kind, error));
+            }
+        }
+    }
+
+    let job = if prepared.is_empty() {
+        None
+    } else {
+        match prepare_tag_write_job(conn, TagWriteJobSpec::tag_editor(), &prepared) {
+            Ok(job) => Some(job),
+            Err(error) => {
+                for (position, _) in &prepared {
+                    preparation_failures[*position] = Some((
+                        WriteErrorKind::Io,
+                        format!("could not prepare tag-write journal: {error}"),
+                    ));
+                }
+                None
+            }
+        }
+    };
+
     for (index, write) in writes.iter().enumerate() {
-        write_one_track(conn, write, &mut report);
+        if let Some((kind, error)) = preparation_failures[index].take() {
+            push_failure(&mut report, write.id, &write.path, kind, error);
+            progress(index + 1, total);
+            continue;
+        }
+        let journaled = job
+            .as_ref()
+            .and_then(|job| job.files.iter().find(|file| file.position == index));
+        if let Some(file) = journaled {
+            if let Err(failure) =
+                execute_tag_write_file(conn, job.as_ref().unwrap().id, file, true, before_save)
+            {
+                let (kind, error, _) = failure.into_parts();
+                push_failure(&mut report, write.id, &write.path, kind, error);
+                progress(index + 1, total);
+                continue;
+            }
+            if write.patch.rating.is_some() {
+                apply_rating_only(conn, write, &mut report);
+            } else {
+                report.updated_ids.push(write.id);
+            }
+        } else {
+            apply_rating_only(conn, write, &mut report);
+        }
         progress(index + 1, total);
+    }
+    if let Some(job) = job {
+        if let Err(error) = finish_tag_write_job(conn, job.id) {
+            for file in job.files {
+                let write = &writes[file.position];
+                if !report.failures.iter().any(|failure| failure.id == write.id) {
+                    report.updated_ids.retain(|id| *id != write.id);
+                    push_failure(
+                        &mut report,
+                        write.id,
+                        &write.path,
+                        WriteErrorKind::Io,
+                        format!("could not complete tag-write journal: {error}"),
+                    );
+                }
+            }
+        }
     }
     report
 }
@@ -291,7 +197,9 @@ pub fn apply_track_writes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::tag_edit::TagPatch;
+    use crate::library::tag_edit::{
+        classify_write_error, read_editable_tags, TagEditError, TagPatch,
+    };
     use std::path::Path;
 
     const TINY_PNG: &[u8] = &[
@@ -463,6 +371,17 @@ mod tests {
 
         assert_eq!(report.updated_ids.len(), 2);
         assert_eq!(progress_calls, vec![(1, 2), (2, 2)]);
+        let journal_order = conn
+            .prepare(
+                "SELECT track_id FROM tag_write_job_files \
+                 WHERE job_id=(SELECT MAX(id) FROM tag_write_jobs) ORDER BY position",
+            )
+            .unwrap()
+            .query_map([], |row| row.get::<_, i64>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(journal_order, vec![id_a, id_b]);
     }
 
     #[test]
@@ -582,5 +501,174 @@ mod tests {
             )
             .unwrap();
         assert_eq!(row, ("New combined title".into(), 3));
+    }
+
+    #[test]
+    fn tag_editor_adapter_completes_journal_without_moving_doctor_pointer() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut conn, id, path) = seeded_track(dir.path(), "journaled.flac");
+        conn.execute(
+            "INSERT INTO library_doctor_scans \
+             (scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks) \
+             VALUES ('selection', 0, 0, 1, 0)",
+            [],
+        )
+        .unwrap();
+        let scan_id = conn.last_insert_rowid();
+        conn.execute(
+            "UPDATE library_doctor_state SET last_complete_scan_id=?1 WHERE singleton=1",
+            [scan_id],
+        )
+        .unwrap();
+
+        let report = apply_track_writes(
+            &mut conn,
+            &[TrackWrite {
+                id,
+                path,
+                patch: TrackEditPatch {
+                    tags: TagPatch {
+                        title: Some("Journaled title".into()),
+                        ..TagPatch::default()
+                    },
+                    rating: None,
+                },
+            }],
+            &mut |_, _| {},
+        );
+
+        assert_eq!(report.updated_ids, vec![id]);
+        assert!(report.failures.is_empty());
+        let journal: (String, String, String, i64, String, String) = conn
+            .query_row(
+                "SELECT j.kind, j.state, f.state, f.file_written, \
+                        v.before_value, v.after_value \
+                 FROM tag_write_jobs j \
+                 JOIN tag_write_job_files f ON f.job_id=j.id \
+                 JOIN tag_write_journal v ON v.file_id=f.id \
+                 WHERE v.field='title'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            journal,
+            (
+                "tag_editor".into(),
+                "completed".into(),
+                "complete".into(),
+                1,
+                "Old title".into(),
+                "Journaled title".into(),
+            )
+        );
+        let pointer: Option<i64> = conn
+            .query_row(
+                "SELECT last_complete_scan_id FROM library_doctor_state WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pointer, Some(scan_id));
+    }
+
+    #[test]
+    fn journal_records_when_file_write_precedes_reconciliation_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut conn, id, path) = seeded_track(dir.path(), "journal-error.flac");
+        conn.execute_batch(
+            "CREATE TRIGGER reject_journal_reconcile
+             BEFORE UPDATE OF file_mtime ON tracks
+             WHEN NEW.file_mtime = -1
+             BEGIN
+               SELECT RAISE(FAIL, 'injected reconcile failure');
+             END;",
+        )
+        .unwrap();
+
+        let report = apply_track_writes(
+            &mut conn,
+            &[TrackWrite {
+                id,
+                path: path.clone(),
+                patch: TrackEditPatch {
+                    tags: TagPatch {
+                        title: Some("Written before failure".into()),
+                        ..TagPatch::default()
+                    },
+                    rating: None,
+                },
+            }],
+            &mut |_, _| {},
+        );
+
+        assert!(report.updated_ids.is_empty());
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(
+            read_editable_tags(&path).unwrap().title,
+            "Written before failure"
+        );
+        let file: (String, String, i64) = conn
+            .query_row(
+                "SELECT state, error_kind, file_written FROM tag_write_job_files",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(file, ("failed".into(), "io".into(), 1));
+    }
+
+    #[test]
+    fn adapter_commits_and_claims_journal_before_first_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut conn, id, path) = seeded_track(dir.path(), "pre-save-hook.flac");
+        let mut hook_called = false;
+        let report = apply_track_writes_inner(
+            &mut conn,
+            &[TrackWrite {
+                id,
+                path: path.clone(),
+                patch: TrackEditPatch {
+                    tags: TagPatch {
+                        title: Some("After hook".into()),
+                        ..TagPatch::default()
+                    },
+                    rating: None,
+                },
+            }],
+            &mut |_, _| {},
+            &mut |conn, job_id, file_id| {
+                hook_called = true;
+                let states: (String, String, String) = conn
+                    .query_row(
+                        "SELECT j.state, f.state, v.outcome \
+                         FROM tag_write_jobs j \
+                         JOIN tag_write_job_files f ON f.job_id=j.id \
+                         JOIN tag_write_journal v ON v.file_id=f.id \
+                         WHERE j.id=?1 AND f.id=?2",
+                        rusqlite::params![job_id, file_id],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    states,
+                    ("running".into(), "running".into(), "prepared".into())
+                );
+                assert_eq!(read_editable_tags(&path).unwrap().title, "Old title");
+            },
+        );
+
+        assert!(hook_called);
+        assert_eq!(report.updated_ids, vec![id]);
+        assert_eq!(read_editable_tags(&path).unwrap().title, "After hook");
     }
 }

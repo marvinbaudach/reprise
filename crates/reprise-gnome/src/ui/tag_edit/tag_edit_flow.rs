@@ -42,7 +42,9 @@ use crate::ui::strings;
 use crate::ui::tag_editor;
 use crate::ui::tag_editor_failures;
 use crate::ui::track_list::track_list_activation::current_queue_ids;
-use crate::ui::track_list::{reload, reload_restore, show_toast, Shared, TrackList};
+use crate::ui::track_list::{
+    refresh_after_tag_mutation, reload, reload_restore, show_toast, Shared, TrackList,
+};
 use crate::ui::track_list_context_menu::current_selection_positions;
 
 pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
@@ -301,6 +303,7 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
         tracks,
         bitrates,
         browse,
+        shared.tag_write_gate.clone(),
         move |writes, report| {
             finish_apply(&shared_for_saved, &writes, &report, ApplyOrigin::TrackList);
         },
@@ -372,6 +375,7 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
         vec![session_track],
         &[bitrate],
         None,
+        shared.tag_write_gate.clone(),
         move |writes, report| {
             finish_apply(&shared_for_saved, &writes, &report, ApplyOrigin::ImportHint);
         },
@@ -402,6 +406,7 @@ pub(in crate::ui) fn spawn_save(
     conn: &Rc<RefCell<Connection>>,
     widgets: SaveProgressWidgets,
     writes: Vec<TrackWrite>,
+    tag_write_gate: &crate::ui::tag_write_gate::TagWriteGate,
     on_finished: impl Fn(Vec<TrackWrite>, TagBatchReport) + 'static,
 ) {
     let SaveProgressWidgets {
@@ -412,6 +417,11 @@ pub(in crate::ui) fn spawn_save(
         error_label,
     } = widgets;
 
+    let Some(tag_write_lease) = tag_write_gate.try_acquire() else {
+        error_label.set_label(&strings::text(strings::TAG_WRITE_BUSY));
+        error_label.set_visible(true);
+        return;
+    };
     let total = writes.len();
     save_button.set_sensitive(false);
     cancel_button.set_sensitive(false);
@@ -431,6 +441,7 @@ pub(in crate::ui) fn spawn_save(
 
     let writes_for_result = writes.clone();
     let spawned = one_shot_task::spawn_with_progress("reprise-tag-save", move |publish| {
+        let _tag_write_lease = tag_write_lease;
         reprise_core::db::open_migrated(Some(&db_path)).map(|mut worker_conn| {
             apply_track_writes(&mut worker_conn, &writes, &mut |done, done_total| {
                 publish((done, done_total));
@@ -516,12 +527,7 @@ fn finish_apply(
             .filter(|write| !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id))
             .map(|write| write.path.clone())
             .collect();
-        if !tag_changed_paths.is_empty() {
-            shared.cover_loader.invalidate_paths(&tag_changed_paths);
-            shared.browse_bar.refresh();
-        }
         select_written_tracks(shared, &report.updated_ids);
-        reload(shared);
         if !tag_changed_paths.is_empty() {
             let tag_changed_ids: Vec<i64> = writes
                 .iter()
@@ -530,13 +536,9 @@ fn finish_apply(
                 })
                 .map(|write| write.id)
                 .collect();
-            if let Some(player) = shared.player.borrow().upgrade() {
-                player.refresh_edited_metadata(&tag_changed_ids);
-            }
-            let on_tags_mutated = shared.on_tags_mutated.borrow().clone();
-            if let Some(on_tags_mutated) = on_tags_mutated {
-                on_tags_mutated(&tag_changed_paths);
-            }
+            refresh_after_tag_mutation(shared, &tag_changed_ids, &tag_changed_paths);
+        } else {
+            reload(shared);
         }
     }
     tracing::info!(updated, failed, "tag-edit batch completed");

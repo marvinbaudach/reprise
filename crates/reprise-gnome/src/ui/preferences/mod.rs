@@ -6,6 +6,7 @@ pub(in crate::ui) mod preference_effects;
 pub(in crate::ui) mod preference_lastfm;
 pub(in crate::ui) mod preference_layout;
 pub(in crate::ui) mod preference_library;
+pub(in crate::ui) mod preference_library_doctor;
 pub(in crate::ui) mod preference_listenbrainz;
 pub(in crate::ui) mod preference_new_releases;
 pub(in crate::ui) mod preference_playback;

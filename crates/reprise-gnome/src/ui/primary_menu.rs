@@ -16,6 +16,7 @@ pub(super) const ACTION_IMPORT_RHYTHMBOX_COLUMNS: &str = "import-rhythmbox-colum
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
+pub(super) const ACTION_LIBRARY_DOCTOR: &str = "library-doctor";
 pub(super) const ACTION_SYNC_DEVICE: &str = "sync-device";
 pub(super) const ACTION_STOP_PLAYBACK: &str = "stop-playback";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
@@ -30,6 +31,7 @@ pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
     pub(super) on_rescan_library: Rc<dyn Fn()>,
     pub(super) on_cancel_scan: Rc<dyn Fn()>,
+    pub(super) on_library_doctor: Rc<dyn Fn()>,
     pub(super) on_sync_device: Rc<dyn Fn()>,
     pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
     pub(super) on_preferences: Rc<dyn Fn()>,
@@ -59,6 +61,10 @@ pub(super) fn update_library_section(menu: &gio::Menu, is_scanning: bool) {
         strings::text(strings::RESCAN_LIBRARY)
     };
     menu.append(Some(&label), Some("win.rescan-library"));
+    menu.append(
+        Some(&strings::text(strings::LIBRARY_DOCTOR)),
+        Some("win.library-doctor"),
+    );
     menu.append(
         Some(&strings::text(strings::SYNC_DEVICE)),
         Some("win.sync-device"),
@@ -117,9 +123,22 @@ pub(super) fn install(
     {
         let menu_button = menu_button.downgrade();
         open_primary_menu.connect_activate(move |_, _| {
-            if let Some(menu_button) = menu_button.upgrade() {
-                menu_button.popup();
+            let Some(menu_button) = menu_button.upgrade() else {
+                return;
+            };
+            // Upgrading proves the button is alive, not that it is still in a
+            // window. Compact mode detaches the whole Library tree via
+            // `content_host.set_content()` while this struct keeps it alive, so
+            // the weak ref upgrades on a widget with no toplevel. `popup()`
+            // then realizes a popover whose parent surface is NULL, and GTK
+            // dereferences it without checking — a segfault, not a warning.
+            // The F10 accelerator still reaches this action in compact mode,
+            // which is exactly how it was hit.
+            if gtk4::prelude::WidgetExt::root(&menu_button).is_none() {
+                tracing::debug!("primary menu: button is not in a window; ignoring");
+                return;
             }
+            menu_button.popup();
         });
     }
     window.add_action(&open_primary_menu);
@@ -173,6 +192,13 @@ pub(super) fn install(
         });
     }
     window.add_action(&rescan);
+
+    let library_doctor = gio::SimpleAction::new(ACTION_LIBRARY_DOCTOR, None);
+    {
+        let cb = callbacks.on_library_doctor.clone();
+        library_doctor.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&library_doctor);
 
     let sync_device = gio::SimpleAction::new(ACTION_SYNC_DEVICE, None);
     {
@@ -306,6 +332,10 @@ fn arm_smoke_rhythmbox_import(action: &gio::SimpleAction) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Narrow, not a glob: this module already imports `gio::prelude::*`, whose
+    // `Mount::root` and `set_content` shadow the GTK widget methods of the same
+    // name. A second glob would deepen that.
+    use gtk4::prelude::BoxExt;
 
     #[test]
     fn view_section_starts_with_compact_mode() {
@@ -331,7 +361,14 @@ mod tests {
                     .and_then(|v| v.get::<String>())
             })
             .collect();
-        assert_eq!(actions, ["win.rescan-library", "win.sync-device"]);
+        assert_eq!(
+            actions,
+            [
+                "win.rescan-library",
+                "win.library-doctor",
+                "win.sync-device"
+            ]
+        );
     }
 
     #[test]
@@ -361,6 +398,58 @@ mod tests {
     #[test]
     fn primary_menu_exposes_a_window_action_for_f10() {
         assert_eq!(ACTION_OPEN_PRIMARY_MENU, "open-primary-menu");
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn compact_mode_unroots_the_menu_button_so_popup_needs_a_root_guard() {
+        // Reproduces the shape that segfaulted: compact mode swaps the window
+        // content, which detaches the whole Library tree — header bar and menu
+        // button included — while the owning struct keeps it alive. A weak ref
+        // still upgrades, so liveness is not the property to check. Calling
+        // `popup()` here realizes a popover whose parent surface is NULL and
+        // GTK dereferences it unchecked, which is a crash rather than a
+        // warning; the F10 window action reaches it in compact mode.
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let content_host = adw::ToolbarView::new();
+        adw::prelude::AdwApplicationWindowExt::set_content(&window, Some(&content_host));
+
+        let library_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        let header = adw::HeaderBar::new();
+        let menu_button = gtk4::MenuButton::builder()
+            .icon_name("open-menu-symbolic")
+            .menu_model(&gio::Menu::new())
+            .build();
+        header.pack_end(&menu_button);
+        library_root.append(&header);
+        adw::ToolbarView::set_content(&content_host, Some(&library_root));
+
+        assert!(
+            gtk4::prelude::WidgetExt::root(&menu_button).is_some(),
+            "sanity: the button is in a window while the Library tree is mounted"
+        );
+
+        // enter_compact()'s `content_host.set_content(compact_root)`.
+        let compact_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        adw::ToolbarView::set_content(&content_host, Some(&compact_root));
+
+        // The struct keeps `full_root` alive across the swap, so a weak ref
+        // still upgrades — which is why liveness was the wrong guard.
+        assert!(
+            gtk4::prelude::WidgetExt::parent(&library_root).is_none(),
+            "the Library tree is detached but still owned by the caller"
+        );
+        assert!(
+            gtk4::prelude::WidgetExt::root(&menu_button).is_none(),
+            "compact mode must leave the menu button unrooted — if this ever \
+             stops holding, the popup guard is testing the wrong property"
+        );
+
+        // Remounting restores it, so the guard must not latch.
+        adw::ToolbarView::set_content(&content_host, Some(&library_root));
+        assert!(gtk4::prelude::WidgetExt::root(&menu_button).is_some());
     }
 
     #[test]

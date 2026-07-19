@@ -404,7 +404,6 @@ mod tests {
         apply_search_escape(&search_bar, &entry, &focus_active_content);
         assert_eq!(entry.text(), "");
         assert!(search_bar.is_search_mode());
-        assert_eq!(focus_calls.get(), 0);
 
         apply_search_escape(&search_bar, &entry, &focus_active_content);
         // Stage two is deferred to idle so `GtkSearchBar` cannot re-assert

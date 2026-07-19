@@ -5,13 +5,11 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use lofty::prelude::*;
-use lofty::tag::items::Timestamp;
-use lofty::tag::{ItemKey, Tag};
-use rusqlite::{Connection, OptionalExtension};
+use lofty::tag::ItemKey;
+use rusqlite::Connection;
 
-pub use super::tag_edit_write::{
-    apply_track_writes, classify_write_error, TrackWrite, WriteErrorKind,
-};
+pub use super::tag_edit_write::{apply_track_writes, TrackWrite};
+pub use super::tag_mutation::{classify_write_error, WriteErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MixedValue<T> {
@@ -150,74 +148,7 @@ pub fn read_editable_tags(path: &Path) -> Result<EditableTags, TagEditError> {
 }
 
 pub fn apply_patch_to_file(path: &Path, patch: &TagPatch) -> Result<(), TagEditError> {
-    if patch.is_empty() {
-        return Ok(());
-    }
-
-    let mut tagged = lofty::read_from_path(path)?;
-    if tagged.primary_tag().is_none() && tagged.first_tag().is_none() {
-        tagged.insert_tag(Tag::new(tagged.primary_tag_type()));
-    }
-    let tag = if tagged.primary_tag().is_some() {
-        tagged.primary_tag_mut()
-    } else {
-        tagged.first_tag_mut()
-    }
-    .ok_or(TagEditError::NoWritableTag)?;
-
-    if let Some(value) = &patch.title {
-        if value.is_empty() {
-            tag.remove_title();
-        } else {
-            tag.set_title(value.clone());
-        }
-    }
-    if let Some(value) = &patch.artist {
-        if value.is_empty() {
-            tag.remove_artist();
-        } else {
-            tag.set_artist(value.clone());
-        }
-    }
-    if let Some(value) = &patch.album {
-        if value.is_empty() {
-            tag.remove_album();
-        } else {
-            tag.set_album(value.clone());
-        }
-    }
-    if let Some(value) = &patch.album_artist {
-        if value.is_empty() {
-            tag.remove_key(ItemKey::AlbumArtist);
-        } else {
-            tag.insert_text(ItemKey::AlbumArtist, value.clone());
-        }
-    }
-    if let Some(value) = patch.year {
-        match value {
-            Some(year) => tag.set_date(Timestamp {
-                year: u16::try_from(year).unwrap_or(u16::MAX),
-                ..Timestamp::default()
-            }),
-            None => tag.remove_date(),
-        }
-    }
-    if let Some(value) = patch.track_no {
-        match value {
-            Some(track_no) => tag.set_track(track_no),
-            None => tag.remove_track(),
-        }
-    }
-    if let Some(value) = &patch.genre {
-        if value.is_empty() {
-            tag.remove_genre();
-        } else {
-            tag.set_genre(value.clone());
-        }
-    }
-
-    tag.save_to_path(path, lofty::config::WriteOptions::default())?;
-    Ok(())
+    super::tag_mutation::apply_tag_patch_to_file(path, patch)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -240,35 +171,13 @@ pub(crate) fn validate_registered_track(
     id: i64,
     path: &Path,
 ) -> Result<(), String> {
-    let registered_path = conn
-        .query_row(
-            "SELECT path FROM tracks WHERE id=?1 AND removed_at IS NULL",
-            [id],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| format!("could not validate track path before edit: {error}"))?;
-    match registered_path {
-        Some(registered) if registered == path.to_string_lossy() => Ok(()),
-        _ => Err("track path changed before edit; refusing stale request".into()),
-    }
+    super::tag_mutation::validate_registered_track(conn, id, path)
 }
 
+#[cfg(test)]
 fn prepare_tag_reconciliation(conn: &Connection, id: i64, path: &Path) -> Result<(), String> {
-    let changed = conn
-        .execute(
-            "UPDATE tracks SET file_mtime=-1 \
-             WHERE id=?1 AND path=?2 AND removed_at IS NULL",
-            rusqlite::params![id, path.to_string_lossy()],
-        )
-        .map_err(|error| format!("could not prepare tag reconciliation: {error}"))?;
-    (changed == 1)
-        .then_some(())
-        .ok_or_else(|| "track path changed before tag reconciliation; refusing stale write".into())
+    super::tag_mutation::prepare_reconciliation(conn, id, path)
 }
-
-/// Duration to suppress watcher events for each written file.
-pub(crate) const IGNORE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Like `apply_patch_batch`, but calls `watcher::ignore_path` on each file
 /// immediately before *that file's own* write — not upfront for the whole
@@ -312,80 +221,31 @@ fn apply_patch_batch_inner(
     }
 
     for (id, path) in tracks {
-        if let Err(error) = validate_registered_track(conn, *id, path) {
-            report.failures.push(TagWriteFailure {
-                id: *id,
-                path: path.clone(),
-                kind: WriteErrorKind::Io,
-                error,
-            });
-            continue;
-        }
-
-        if ignore_watcher {
-            crate::library::watcher::ignore_path(path, IGNORE_DURATION);
-        }
-
-        if let Err(error) = apply_patch_to_file(path, patch) {
-            report.failures.push(TagWriteFailure {
-                id: *id,
-                path: path.clone(),
-                kind: classify_write_error(&error),
-                error: error.to_string(),
-            });
-            continue;
-        }
-
-        // Scanner mtimes are stored at whole-second precision. A tag write
-        // followed immediately by a targeted scan can therefore look
-        // unchanged; invalidate only this row first so reconciliation is
-        // guaranteed. If scanning fails, -1 intentionally causes the next
-        // watcher/manual scan to retry instead of preserving stale DB tags.
-        if let Err(error) = prepare_tag_reconciliation(conn, *id, path) {
-            report.failures.push(TagWriteFailure {
-                id: *id,
-                path: path.clone(),
-                kind: WriteErrorKind::Io,
-                error,
-            });
-            continue;
-        }
-
-        match crate::library::scanner::scan_folder(conn, path) {
-            Ok(crate::library::scanner::ScanOutcome::Completed(scan)) if scan.errors == 0 => {
-                report.updated_ids.push(*id);
-            }
-            Ok(crate::library::scanner::ScanOutcome::Completed(scan)) => {
+        let prepared = match super::tag_mutation::prepare_tag_mutation(conn, *id, path, patch) {
+            Ok(Some(prepared)) => prepared,
+            Ok(None) => continue,
+            Err(failure) => {
+                let (kind, error, _) = failure.into_parts();
                 report.failures.push(TagWriteFailure {
                     id: *id,
                     path: path.clone(),
-                    kind: WriteErrorKind::Io,
-                    error: format!("tag reconciliation reported {} error(s)", scan.errors),
+                    kind,
+                    error,
                 });
+                continue;
             }
-            // The "root" here is always a single already-registered file
-            // (never a directory), so `RootUnavailable` means it vanished
-            // out from under the tag write between the write above and this
-            // reconciliation scan (e.g. its mount was pulled mid-batch) —
-            // treated as a reconciliation failure like the `Err` arm below,
-            // since there is nothing left to reconcile against.
-            Ok(crate::library::scanner::ScanOutcome::RootUnavailable { root }) => {
+        };
+        match super::tag_mutation::commit_tag_mutation(conn, &prepared, ignore_watcher) {
+            Ok(()) => report.updated_ids.push(*id),
+            Err(failure) => {
+                let (kind, error, _) = failure.into_parts();
                 report.failures.push(TagWriteFailure {
                     id: *id,
                     path: path.clone(),
-                    kind: WriteErrorKind::Io,
-                    error: format!(
-                        "tag reconciliation failed: library folder unavailable: {}",
-                        root.display()
-                    ),
+                    kind,
+                    error,
                 });
             }
-            Err(error) => report.failures.push(TagWriteFailure {
-                id: *id,
-                path: path.clone(),
-                kind: WriteErrorKind::Io,
-                error: format!("tag reconciliation failed: {error}"),
-            }),
         }
     }
     report
@@ -431,21 +291,32 @@ fn apply_track_edit_batch_inner(
     let Some(rating) = patch.rating else {
         return report;
     };
-    let eligible_ids = report.updated_ids.clone();
+    let eligible_ids = tracks
+        .iter()
+        .map(|(id, _)| *id)
+        .filter(|id| !report.failures.iter().any(|failure| failure.id == *id))
+        .collect::<Vec<_>>();
     for id in eligible_ids {
-        if let Err(error) = crate::library::stats::set_rating(conn, id, rating) {
-            report.updated_ids.retain(|updated| *updated != id);
-            let path = tracks
-                .iter()
-                .find(|(track_id, _)| *track_id == id)
-                .map(|(_, path)| path.clone())
-                .unwrap_or_default();
-            report.failures.push(TagWriteFailure {
-                id,
-                path,
-                kind: WriteErrorKind::Io,
-                error: format!("could not save rating: {error}"),
-            });
+        match crate::library::stats::set_rating(conn, id, rating) {
+            Ok(()) => {
+                if !report.updated_ids.contains(&id) {
+                    report.updated_ids.push(id);
+                }
+            }
+            Err(error) => {
+                report.updated_ids.retain(|updated| *updated != id);
+                let path = tracks
+                    .iter()
+                    .find(|(track_id, _)| *track_id == id)
+                    .map(|(_, path)| path.clone())
+                    .unwrap_or_default();
+                report.failures.push(TagWriteFailure {
+                    id,
+                    path,
+                    kind: WriteErrorKind::Io,
+                    error: format!("could not save rating: {error}"),
+                });
+            }
         }
     }
     report
@@ -748,6 +619,45 @@ mod tests {
             read_editable_tags(&path).unwrap().title,
             "New title and rating"
         );
+    }
+
+    #[test]
+    fn combined_edit_applies_rating_when_requested_tag_is_an_exact_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = fixture_copy(dir.path(), "noop-tag-and-rating.flac");
+        seed_full_tag(&path);
+        let before = std::fs::read(&path).unwrap();
+        let mut conn = crate::db::open(None).unwrap();
+        crate::db::migrate(&conn).unwrap();
+        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let path_text = path.to_string_lossy().to_string();
+        let id = conn
+            .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        let report = apply_track_edit_batch(
+            &mut conn,
+            &[(id, path.clone())],
+            &TrackEditPatch {
+                tags: TagPatch {
+                    title: Some("Old title".into()),
+                    ..TagPatch::default()
+                },
+                rating: Some(2),
+            },
+        );
+
+        assert_eq!(report.updated_ids, vec![id]);
+        assert!(report.failures.is_empty());
+        assert_eq!(std::fs::read(path).unwrap(), before);
+        let rating: i32 = conn
+            .query_row("SELECT rating FROM tracks WHERE id=?1", [id], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rating, 2);
     }
 
     #[test]

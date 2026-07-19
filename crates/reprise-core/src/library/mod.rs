@@ -3,6 +3,7 @@ pub mod audio_effect_settings;
 pub mod group_key;
 pub(crate) mod import_errors;
 pub mod lastfm_stats;
+pub mod library_doctor;
 pub mod listenbrainz;
 pub mod m3u;
 pub(crate) mod mounts;
@@ -22,5 +23,12 @@ pub mod stats_snapshot;
 pub mod tag_edit;
 pub mod tag_edit_session;
 mod tag_edit_write;
+#[cfg(test)]
+mod tag_edit_write_adversarial_tests;
+mod tag_mutation;
+mod tag_mutation_guarded;
+#[cfg(test)]
+mod tag_mutation_guarded_tests;
+pub mod tag_write_job;
 pub mod trash_tracks;
 pub mod watcher;

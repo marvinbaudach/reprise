@@ -631,6 +631,10 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 18)?;
         tx.commit()?;
     }
+    crate::db_library_doctor::migrate_v19(conn)?;
+    crate::db_tag_write_jobs::migrate_v20(conn)?;
+    crate::db_library_doctor_remote::migrate_v21(conn)?;
+    crate::db_library_doctor_remote::migrate_v22(conn)?;
     Ok(())
 }
 
@@ -733,6 +737,10 @@ mod tests;
 #[cfg(test)]
 #[path = "db_recent_migration_tests.rs"]
 mod recent_migration_tests;
+
+#[cfg(test)]
+#[path = "db_network_migration_tests.rs"]
+mod network_migration_tests;
 
 #[cfg(test)]
 #[path = "db_stats_migration_tests.rs"]

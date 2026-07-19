@@ -137,13 +137,13 @@ mod tests {
     use std::cell::Cell;
     use std::collections::HashMap;
     use std::fs;
+    use std::future::Future;
     use std::path::PathBuf;
     use std::rc::Rc;
+    use std::task::{Context, Poll, Waker};
 
     use reprise_core::cover::CoverTag;
     use reprise_core::cover_download::album_key;
-
-    use gtk4::glib;
 
     use super::{
         result_for_path, result_for_tag, setup, CoverDownloadRuntime, DownloadOutcome,
@@ -167,7 +167,9 @@ mod tests {
         };
 
         assert!(!runtime.try_request(request()));
-        assert!(!glib::MainContext::default().block_on(runtime.request(request())));
+        let mut future = std::pin::pin!(runtime.request(request()));
+        let mut context = Context::from_waker(Waker::noop());
+        assert_eq!(future.as_mut().poll(&mut context), Poll::Ready(false));
         assert!(receiver.try_recv().is_err());
     }
 

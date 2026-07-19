@@ -201,17 +201,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             }
         });
     }
-    {
-        let track_list = Rc::downgrade(track_list);
-        stats_view.set_on_unify_spellings(move |ids| {
-            let Some(track_list) = track_list.upgrade() else {
-                return;
-            };
-            // `StatsView` only reports a resolved, non-empty group.
-            track_list.edit_tags_for_ids(&ids);
-        });
-    }
-
     // Stage 3 Task 5: context menu action wiring. `track_list` stays
     // decoupled from `PlayerController`/`Sidebar` themselves (same
     // decoupling-via-closure seam as `on_activate`/`queue_ids_provider`

@@ -60,7 +60,6 @@ use std::rc::Rc;
 
 use gtk4::gio;
 use gtk4::glib;
-use gtk4::prelude::*;
 use libadwaita as adw;
 use rusqlite::Connection;
 
@@ -104,7 +103,7 @@ pub(in crate::ui) struct Shared {
     /// `gtk::MultiSelection` directly.
     pub(in crate::ui) selection: gtk4::MultiSelection,
     /// The `ColumnView` widget itself (Stage 3 Task 9): kept so `TrackList::
-    /// focus_track_list` can move keyboard focus onto it directly, rather
+    /// focus_visible_content` can move keyboard focus onto it directly, rather
     /// than relying on `widget()`'s outer `gtk::Stack` to delegate focus to
     /// the right descendant on its own — see that method's doc comment for
     /// why the Escape shortcut (`ui::shortcuts`) needs a precise handle
@@ -287,6 +286,7 @@ pub(in crate::ui) struct Shared {
     /// Kept separate from `on_library_mutated`: editing tags must never purge
     /// otherwise valid tracks from the playback queue.
     pub(in crate::ui) on_tags_mutated: RefCell<Option<OnTagsMutated>>,
+    pub(in crate::ui) tag_write_gate: crate::ui::tag_write_gate::TagWriteGate,
     /// Invoked after the ImportErrors panel's own Retry/Dismiss actions
     /// mutate `import_errors` — injected via `TrackList::set_on_import_
     /// errors_mutated`, wired by `window.rs` to `Sidebar::refresh` (the
@@ -342,16 +342,17 @@ impl TrackList {
         self.shared.cover_loader.clone()
     }
 
-    /// Moves keyboard focus onto the track list's `ColumnView` (Stage 3 Task
-    /// 9): the second stage of the Escape shortcut (`ui::shortcuts`) hands
-    /// focus back here once the search entry's text is already clear.
-    /// Returns whether GTK actually granted focus (`gtk::Widget::grab_
-    /// focus`'s own return value, e.g. `false` if the column view isn't
-    /// currently mapped/visible) — the caller logs a `false` rather than
-    /// treating it as fatal, matching every other best-effort focus move in
-    /// this codebase.
-    pub fn focus_track_list(&self) -> bool {
-        self.shared.column_view.grab_focus()
+    /// Moves keyboard focus onto the visible track-content surface: the
+    /// `ColumnView` for regular sources, or the first meaningful control in
+    /// a dedicated Missing/Import-errors/empty page. The second stage of the
+    /// Escape shortcut (`ui::shortcuts`) and source routing both use this
+    /// seam after the search entry or previous source has become hidden.
+    /// Returns whether GTK actually granted focus (`false` when the visible
+    /// page has no focusable content or has not been mapped yet). The caller
+    /// logs a `false` rather than treating it as fatal, matching every other
+    /// best-effort focus move in this codebase.
+    pub fn focus_visible_content(&self) -> bool {
+        super::track_list_focus::focus_visible_content(&self.shared.stack, &self.shared.column_view)
     }
 
     /// Sets the live-search filter and reloads. Called from `window.rs`
@@ -375,6 +376,10 @@ impl TrackList {
     pub fn reload(&self) {
         self.shared.browse_bar.refresh();
         reload(&self.shared);
+    }
+
+    pub(in crate::ui) fn refresh_after_tag_mutation(&self, ids: &[i64], paths: &[PathBuf]) {
+        super::tag_mutation_refresh::refresh_after_tag_mutation(&self.shared, ids, paths);
     }
 
     pub fn reload_queue_if_visible(&self) {
@@ -527,6 +532,10 @@ impl TrackList {
 
     pub fn set_on_tags_mutated(&self, callback: impl Fn(&[PathBuf]) + 'static) {
         *self.shared.on_tags_mutated.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn tag_write_gate(&self) -> crate::ui::tag_write_gate::TagWriteGate {
+        self.shared.tag_write_gate.clone()
     }
 
     /// Injects the callback invoked after the ImportErrors panel's own
