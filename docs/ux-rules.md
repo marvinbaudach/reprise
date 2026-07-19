@@ -194,7 +194,7 @@ fällt beim Menschen. Begründungen für Änderungen leben in der Git-Historie.
   kein Content-Element (Trackliste, Sidebar, rechte Info-Spalte) läuft je
   unter oder hinter ihr durch. Ihr Hintergrund ist opak.
   <!-- REVIEW: Regelvorschlag -->
-- **PLAY-7a** [geplant] [gtk] — Header, geöffnete Suche und Player-Leiste
+- **PLAY-7a** [aktiv] [gtk] — Header, geöffnete Suche und Player-Leiste
   liegen als globale Glaszonen über allen Bibliotheksansichten. Der Content
   läuft sichtbar darunter; sein Scroll-Anfang und -Ende erhalten exakt die
   tatsächlich allokierte Höhe der überlagernden Top-/Bottom-Zone als
@@ -840,13 +840,22 @@ die Lautstärke gilt weiter: im Panel lebt kein Volume-Regler).
 - **SEARCH-1** [aktiv] [gtk] — Im Ruhezustand belegt die Suche in der
   Headerbar nur eine Lupe. Das Suchfeld lebt in einer zweiten, standardmäßig
   eingeklappten Top-Bar und wird nie als permanentes breites Feld dargestellt.
-- **SEARCH-2** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+- **SEARCH-2** [ersetzt durch SEARCH-2a] — Ein Klick auf die Lupe, Ctrl+F oder direktes
   Tippen öffnet die Suchleiste und fokussiert das Feld. Sie ist ein
   vollbreiter Streifen bündig unter der Headerbar, hat eine eigene Fläche mit
   unterer Trennlinie und schiebt beim Reveal den Inhalt nach unten; das
   Suchfeld ist darin per Clamp auf ungefähr 450 px zentriert. Die Leiste
   slidet mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern
   gilt deren Default, sofern er dem Standard-Token entspricht.
+- **SEARCH-2a** [aktiv] [gtk] — Ein Klick auf die Lupe, Ctrl+F oder direktes
+  Tippen öffnet die Suchleiste und fokussiert das Feld. Header und Suche sind
+  eine zusammenhängende obere Glaszone mit gemeinsamem neutralem Blur, Tint
+  und genau einer unteren Hairline; Content läuft unter beiden weiter. Der
+  Reveal vergrößert das obere Scroll-Inset um die tatsächlich allokierte
+  Suchleistenhöhe, bei einer oberen Player-Leiste zusätzlich um deren Höhe.
+  Das Suchfeld ist per Clamp auf ungefähr 450 px zentriert. Die Leiste slidet
+  mit der zentralen Standarddauer (MOT-1/3); bei GTK-eigenen Revealern gilt
+  deren Default, sofern er dem Standard-Token entspricht.
 - **SEARCH-3** [aktiv] [gtk] — Die Lupe ist ein ToggleButton und trägt bei
   offener Suchleiste **oder** aktiver nicht-leerer Query den
   `:checked`-Akzentstil. Eine Query bleibt auch bei eingeklappter Suchleiste

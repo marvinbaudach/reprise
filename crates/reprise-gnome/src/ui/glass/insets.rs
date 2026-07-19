@@ -1,5 +1,7 @@
 //! Exact scroll-end padding derived from allocated glass-zone heights.
 
+use std::cell::Cell;
+
 use gtk4::glib;
 use gtk4::prelude::*;
 
@@ -49,7 +51,7 @@ struct InsetTarget {
 
 pub(crate) struct SafeInsetApplier {
     targets: Vec<InsetTarget>,
-    current: SafeInsets,
+    current: Cell<SafeInsets>,
 }
 
 impl SafeInsetApplier {
@@ -58,23 +60,22 @@ impl SafeInsetApplier {
         collect_scrolled_children(root.as_ref(), &mut targets);
         Self {
             targets,
-            current: SafeInsets::default(),
+            current: Cell::new(SafeInsets::default()),
         }
     }
 
-    pub(crate) fn apply(&mut self, insets: SafeInsets) {
-        if self.current == insets {
+    pub(crate) fn apply(&self, insets: SafeInsets) {
+        if self.current.get() == insets {
             return;
         }
-        self.current = insets;
-        self.targets.retain(|target| {
+        self.current.set(insets);
+        for target in &self.targets {
             let Some(widget) = target.widget.upgrade() else {
-                return false;
+                continue;
             };
             widget.set_margin_top(target.base_top.saturating_add(insets.top));
             widget.set_margin_bottom(target.base_bottom.saturating_add(insets.bottom));
-            true
-        });
+        }
     }
 
     #[cfg(test)]

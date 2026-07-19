@@ -1,17 +1,22 @@
-#[allow(dead_code)] // Wired into the library shell in the activation task.
 mod backdrop;
-#[allow(dead_code)] // Wired into the library shell in the activation task.
 mod insets;
 pub(crate) mod material;
 #[allow(dead_code)] // Consumed by the paired render-cost runner in the analysis task.
 mod performance;
-#[allow(dead_code)] // Wired into the library shell in the activation task.
 mod surface;
 
-#[allow(unused_imports)] // Wired into the library shell in the activation task.
 pub(crate) use insets::{InsetMeasurements, PlayerBarEdge, SafeInsetApplier, SafeInsets};
-#[allow(unused_imports)] // Wired into the library shell in the activation task.
 pub(crate) use surface::{GlassEdge, GlassSurface};
+
+pub(in crate::ui) fn css() -> String {
+    ".reprise-glass-surface { background-color: @headerbar_bg_color; }\n\
+     .reprise-glass-controls { background-color: transparent; }\n\
+     .reprise-glass-controls .subtitle { \
+       color: alpha(@window_fg_color, 0.82); }\n\
+     .reprise-glass-hairline { min-height: 1px; min-width: 1px; \
+       background-color: alpha(@window_fg_color, 0.10); }"
+        .to_string()
+}
 
 #[cfg(test)]
 mod tests {
@@ -58,6 +63,17 @@ mod tests {
     fn glass_edges_are_explicit_and_symmetric() {
         assert_eq!(GlassEdge::Top.css_class(), "reprise-glass-edge-top");
         assert_eq!(GlassEdge::Bottom.css_class(), "reprise-glass-edge-bottom");
+    }
+
+    #[test]
+    fn glass_css_keeps_a_neutral_fallback_floor_and_one_shared_hairline() {
+        let css = super::css();
+
+        assert!(css.contains("background-color: @headerbar_bg_color"));
+        assert!(css.contains(".reprise-glass-controls { background-color: transparent;"));
+        assert!(css.contains(".reprise-glass-hairline"));
+        assert!(css.contains("background-color: alpha(@window_fg_color, 0.10)"));
+        assert!(!css.contains("@reprise_player_accent"));
     }
 
     #[test]
@@ -120,7 +136,7 @@ mod tests {
         root.append(&first);
         root.append(&second);
 
-        let mut applier = SafeInsetApplier::discover(&root);
+        let applier = SafeInsetApplier::discover(&root);
         assert_eq!(applier.target_count(), 2);
         applier.apply(SafeInsets {
             top: 90,

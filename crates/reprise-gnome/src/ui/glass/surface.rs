@@ -1,6 +1,7 @@
 //! Reusable chrome surface with backdrop, hairline, and controls.
 
 use gtk4::prelude::*;
+use std::rc::Rc;
 
 use super::backdrop::GlassBackdrop;
 
@@ -61,5 +62,9 @@ impl GlassSurface {
 
     pub(crate) fn backdrop(&self) -> &GlassBackdrop {
         &self.backdrop
+    }
+
+    pub(crate) fn set_on_allocate(&self, callback: Rc<dyn Fn(i32, i32)>) {
+        self.backdrop.set_on_allocate(callback);
     }
 }
