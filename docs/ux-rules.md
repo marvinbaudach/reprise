@@ -1164,6 +1164,36 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
   Schreibvorgang.
 
+## W. Lokales Klangprofil
+
+- **AC-1** [geplant] [gtk] — Die lokale Audioanalyse ist bei einer neuen
+  Installation ausgeschaltet. Erst „Analyze audio locally" startet Arbeit;
+  die Erklärung nennt ausdrücklich, dass Reprise Musikdateien nur lokal liest,
+  nichts hochlädt und vorhandene Profile beim Ausschalten behält. Die Funktion
+  steht unter Library, nicht auf der Plugins-Seite.
+- **AC-2** [geplant] [core] — Ein Klangprofil behauptet keine Emotion. Es
+  projiziert versionierte Audio-Evidenz ausschließlich auf Intensity,
+  Brightness, Dynamicity und Rhythmicity im Bereich 0–1; Tempo bleibt optional
+  und trägt eine eigene Konfidenz. Veraltete oder nicht endliche Werte gelten
+  nie als aktuelles Profil.
+- **AC-3** [geplant] [gtk] — Aktivierte Analyse läuft mit genau einem
+  Hintergrund-Worker und zeigt fertig/gesamt/fehlgeschlagen. Pause, Fortsetzen,
+  Abbrechen und „Retry failed" sind erreichbar; ein Neustart setzt offene
+  Arbeit fort. Ausschalten startet keine neue Profil-Arbeit, verhindert aber
+  niemals den bestehenden Waveform-Backfill.
+- **AC-4** [geplant] [gtk] — Das rechte Now-Playing-Panel besitzt neben „Up
+  Next" und „Lyrics" den adaptiven Tab „Audio Character" für den geladenen
+  Track. Er unterscheidet Disabled, Pending, Failed, Stale und Ready; ein
+  Trackwechsel darf nie Werte des vorherigen Tracks zeigen.
+- **AC-5** [geplant] [gtk] — Ready zeigt die vier benannten Dimensionen und
+  optional BPM samt Unsicherheit. Farbe ist nie der einzige Informationsträger;
+  Screenreader erhalten Dimension und Wert. Dateipfade, interne Versionen und
+  objektive Mood-Aussagen erscheinen nicht.
+- **AC-6** [geplant] [gtk] — Analyseabdeckung nennt immer Zähler und Nenner
+  aktueller, geeigneter Bibliothekstitel. Leere, laufende, pausierte,
+  fehlgeschlagene und vollständige Zustände bleiben unterscheidbar; „Reanalyze
+  library" verlangt wegen der Rechenlast eine Bestätigung.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
