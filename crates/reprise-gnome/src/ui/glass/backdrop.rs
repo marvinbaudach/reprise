@@ -50,7 +50,9 @@ mod imp {
             }
 
             let material = GlassEnvironment::for_widget(widget.as_ref()).material(current_theme());
-            if material.mode == GlassMode::BackdropBlur {
+            if material.mode == GlassMode::BackdropBlur
+                && !crate::ui::glass::performance::suppress_backdrop_for_baseline()
+            {
                 self.snapshot_source(snapshot, width, height, material.blur_radius);
             }
             snapshot.append_color(

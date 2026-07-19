@@ -1,13 +1,13 @@
 mod backdrop;
 mod insets;
 pub(crate) mod material;
-#[allow(dead_code)] // Consumed by the paired render-cost runner in the analysis task.
 mod performance;
 mod surface;
 
 #[cfg(test)]
 pub(crate) use insets::{InsetMeasurements, PlayerBarEdge};
 pub(crate) use insets::{SafeInsetApplier, SafeInsets};
+pub(in crate::ui) use performance::arm as arm_performance_measurement;
 pub(crate) use surface::{GlassEdge, GlassSurface};
 
 pub(in crate::ui) fn css() -> String {

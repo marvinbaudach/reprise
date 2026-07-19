@@ -31,6 +31,7 @@ require_executable scripts/performance-baseline.sh
 require_executable scripts/performance-compare.sh
 require_executable scripts/performance-query-compare.sh
 require_executable scripts/performance-runtime-baseline.sh
+require_executable scripts/glass-render-cost.sh
 require_executable scripts/cua-e2e/run.sh
 require_executable scripts/tests/cua-e2e.sh
 require_executable scripts/tests/motion-tokens.sh
@@ -38,6 +39,7 @@ require_executable scripts/tests/performance-baseline.sh
 require_executable scripts/tests/performance-compare.sh
 require_executable scripts/tests/performance-query-compare.sh
 require_executable scripts/tests/performance-runtime-baseline.sh
+require_executable scripts/tests/glass-render-cost.sh
 require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
@@ -87,6 +89,7 @@ scripts/tests/performance-baseline.sh
 scripts/tests/performance-compare.sh
 scripts/tests/performance-query-compare.sh
 scripts/tests/performance-runtime-baseline.sh
+scripts/tests/glass-render-cost.sh
 scripts/tests/readme-showcase.sh
 scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
