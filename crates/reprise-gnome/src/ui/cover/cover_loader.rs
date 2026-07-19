@@ -35,8 +35,7 @@ struct CachedCover {
 pub struct CoverLoader {
     cache: RefCell<HashMap<String, CachedCover>>,
     order: RefCell<std::collections::VecDeque<String>>,
-    download_enabled: bool,
-    download_worker: Option<async_channel::Sender<DownloadRequest>>,
+    download: CoverDownloadRuntime,
 }
 
 trait CoverTarget: Clone + 'static {
@@ -81,8 +80,7 @@ impl CoverLoader {
         Rc::new(Self {
             cache: RefCell::new(HashMap::new()),
             order: RefCell::new(std::collections::VecDeque::new()),
-            download_enabled: runtime.enabled,
-            download_worker: Some(runtime.worker),
+            download: runtime,
         })
     }
 
@@ -157,7 +155,23 @@ impl CoverLoader {
         current: &Rc<Cell<u64>>,
         on_loaded: impl Fn(PathBuf) + 'static,
     ) {
-        self.load_target(image, track_path, size, token, current, on_loaded);
+        self.load_target(image, track_path, size, token, current, move |path| {
+            if let Some(path) = path {
+                on_loaded(path);
+            }
+        });
+    }
+
+    pub(in crate::ui) fn load_into_with_resolution(
+        self: &Rc<Self>,
+        image: &gtk4::Image,
+        track_path: &str,
+        size: ThumbnailSize,
+        token: u64,
+        current: &Rc<Cell<u64>>,
+        on_resolved: impl Fn(Option<PathBuf>) + 'static,
+    ) {
+        self.load_target(image, track_path, size, token, current, on_resolved);
     }
 
     /// Loads an arbitrary image file into a `Picture` at a cached thumbnail
@@ -217,12 +231,12 @@ impl CoverLoader {
         size: ThumbnailSize,
         token: u64,
         current: &Rc<Cell<u64>>,
-        on_loaded: impl Fn(PathBuf) + 'static,
+        on_resolved: impl Fn(Option<PathBuf>) + 'static,
     ) {
         let key = format!("{track_path}|{}", size.pixels());
         if let Some(cached) = self.cache_get(&key) {
             target.show_texture(&cached.texture);
-            on_loaded(cached.path);
+            on_resolved(Some(cached.path));
             return;
         }
         target.show_placeholder();
@@ -246,22 +260,18 @@ impl CoverLoader {
             if current.get() != token {
                 return;
             }
-            if cache_path.is_none() && this.download_enabled {
-                let Some(worker) = this.download_worker.clone() else {
-                    return;
-                };
+            if cache_path.is_none() {
                 let (response, result) = async_channel::bounded(1);
-                if worker
-                    .try_send(DownloadRequest {
-                        track_path: path_owned.clone(),
-                        skip_if_covered: false,
-                        response,
-                    })
-                    .is_err()
-                {
+                if !this.download.try_request(DownloadRequest {
+                    track_path: path_owned.clone(),
+                    skip_if_covered: false,
+                    response,
+                }) {
+                    on_resolved(None);
                     return;
                 }
                 let Ok(DownloadOutcome::Downloaded(downloaded_path)) = result.recv().await else {
+                    on_resolved(None);
                     return;
                 };
                 if current.get() != token {
@@ -284,6 +294,7 @@ impl CoverLoader {
                 return;
             }
             let Some(cache_path) = cache_path else {
+                on_resolved(None);
                 return;
             };
             match gdk::Texture::from_filename(&cache_path) {
@@ -296,10 +307,11 @@ impl CoverLoader {
                         },
                     );
                     target.show_texture(&texture);
-                    on_loaded(cache_path);
+                    on_resolved(Some(cache_path));
                 }
                 Err(error) => {
                     tracing::debug!(%error, path = %path_owned, "cover texture load failed");
+                    on_resolved(None);
                 }
             }
         });

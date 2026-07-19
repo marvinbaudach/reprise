@@ -179,11 +179,6 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     });
 
     if let Some(player) = player {
-        let info_panel_for_queue = info_panel.clone();
-        player.bar.connect_queue_clicked(move || {
-            info_panel_for_queue.show_up_next();
-        });
-
         // NAV-9a remains Ctrl+L only: jump to the loaded track's origin,
         // select it and center its row.
         let jump_to_current_track = super::current_track_jump::runtime_coordinator(
@@ -377,9 +372,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         // Alt+Left run. Headless E2E asserts the resulting routing +
         // selection log lines.
         if std::env::var("REPRISE_SMOKE_JUMP").is_ok() {
-            // Mirrors the acceptance repro: open the Queue THROUGH the
-            // sidebar (like the player bar's queue button), then jump, then
-            // back — each step two seconds apart, past startup idle work.
+            // Mirrors the acceptance repro: open Queue through the sidebar,
+            // then jump, then back — each step two seconds apart, past
+            // startup idle work.
             let sidebar_for_smoke = sidebar.clone();
             gtk4::glib::timeout_add_seconds_local_once(2, move || {
                 tracing::info!("smoke: selecting queue via sidebar");

@@ -104,3 +104,59 @@ wegzunehmen, und löst die Entdeckbarkeit, die dadurch verloren geht.
   Aufbau ohnehin. Nicht bei jedem Redraw neu rechnen.
 - Die Hervorhebung der Zielzeile auf der Plugins-Seite braucht einen
   kurzlebigen CSS-Zustand; MOT-Token beachten, kein Dauerblinken.
+
+---
+
+## Korrekturen nach dem Code-Audit (2026-07-18, abends)
+
+Der Audit hat drei Annahmen dieses Dokuments widerlegt und einen Regressionsfund
+beigesteuert. Die folgenden Fassungen gehen vor.
+
+1. **LYR-1 wird vertagt.** Reprise liest heute **keine** lokalen Songtexte —
+   weder eingebettete Tags (USLT/Vorbis) noch `.lrc`-Sidecars; alles kommt von
+   LRCLIB. LYR-1 ist damit kein Schutz für Vorhandenes, sondern neue
+   Dateiformat-Arbeit. Sie gehört nicht in einen Opt-in-Umbau: LYR-1 bleibt
+   `[geplant]`, dieser Branch baut nur Gating und Leerzustand.
+   **Folge für LYR-3:** Die Fußnote „Eingebettete Songtexte werden immer
+   angezeigt" darf **erst** erscheinen, wenn LYR-1 gebaut ist — sonst
+   verspricht der Leerzustand etwas, das es nicht gibt.
+2. **LYR-2 ist heute nicht erfüllt.** `sync_lyrics_track` läuft bei jedem
+   Trackwechsel, unabhängig davon, ob der Lyrics-Tab sichtbar ist. „Nur bei
+   offenem Tab" ist also eine eigene Änderung, nicht bloß eine Formulierung.
+3. **DISCOVER-1 triggert am Sichtfenster, nicht bibliotheksweit.** Die Annahme
+   „die Album-Ansicht kennt die Quote beim Aufbau" ist falsch — die
+   Kachel-Entscheidung fällt pro sichtbarer Karte, off-thread. Neue Fassung:
+   Der Hinweis erscheint, sobald **≥ 3 Fallback-Kacheln gleichzeitig sichtbar**
+   sind; er **rastet ein** (Latch) und verschwindet nicht wieder beim Scrollen
+   in cover-reiche Bereiche. Dismiss ist dauerhaft (Flag). Symmetrisch für den
+   Portrait-Hinweis (sichtbare Initialen-Avatare). Keine teure Vorberechnung
+   für einen Hinweis.
+4. **Regression aus dem heutigen NR-Umbau:** `artist_news` wurde zu
+   `new_releases` umgewidmet, aber `module.artist_news.enabled` ist verwaist —
+   niemand liest es, keine Migration überträgt es. Wer das Feature früher
+   eingeschaltet hatte, hat es nach dem Update stillschweigend aus. Die
+   Migration dieses Branches trägt den Wert nach (das ist zugleich NET-2s
+   Evidenz für New Releases).
+
+### Selbstentscheidungen (Implementierungsebene)
+
+- **Gecachte Portraits bleiben sichtbar.** Ein Gate an
+  `ArtistPortraitRuntime::request` würde auch Cache-Treffer unterdrücken —
+  gegen NET-2s Grundsatz „nichts verschwindet". `reprise-core` bekommt einen
+  reinen Cache-Pfad; das Gate wählt, **welche** Core-Funktion der Worker ruft,
+  statt den Versand zu unterdrücken. Cover haben diese Eigenschaft schon
+  (`resolve_source` prüft den Download-Cache lokal).
+- **Alle drei Module wirken live**, per gemeinsamem `Rc<Cell<bool>>` wie
+  `ArtistNewsRuntime` — `CoverLoader` kopiert seinen Schalter heute einmalig
+  bei der Konstruktion, deshalb würde eine Einstellungsänderung sonst nicht
+  ankommen. Kein `Restart required` in den Untertiteln.
+- **`ModuleDescriptor` bekommt ein `applies_live`-Feld**, statt die dritte
+  String-ID-Sonderlocke in `plugin_applies_live` zu ergänzen.
+- **Bestandsschutz als v13-Schritt mit Rust-Funktion** in derselben
+  Transaktion (die bisherige reine `execute_batch`-Form kann kein Dateisystem
+  prüfen). Die beiden Cache-Verzeichnisse werden als Parameter injiziert, damit
+  Tests nicht vom echten `~/.cache` des Entwicklers abhängen; `.notfound`-
+  Marker zählen **nicht** als Nutzungsnachweis.
+- **Das Cover der New-Releases-Karten gehört zum `new_releases`-Modul**, nicht
+  zu `cover_download` — es rendert ausschließlich im NR-Popover.
+- **Sektionsbuchstabe ist T**, nicht S: S ist seit heute von STYLE-1 belegt.

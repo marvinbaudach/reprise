@@ -192,12 +192,14 @@ mod tests {
         let sections =
             super::super::queue_sections::compose(Some(1), &[2, 3], &[4, 5, 6], Some("Music"))
                 .sections;
-        let keyboard = keyboard_queue_op(4, 6, ReorderDirection::Up, &sections);
-        let dropped = super::super::queue_row_mapping::reorder_op(4, 3, &sections);
+        let keyboard = keyboard_queue_op(2, 6, ReorderDirection::Up, &sections);
+        let dropped = super::super::queue_row_mapping::reorder_op(2, 1, &sections);
         assert_eq!(keyboard, dropped);
         assert_eq!(
             keyboard,
-            Some(super::super::queue_row_mapping::QueueReorderOp::WithinUpNext { from: 1, to: 0 })
+            Some(
+                super::super::queue_row_mapping::QueueReorderOp::WithinPlayNext { from: 1, to: 0 }
+            )
         );
     }
 }

@@ -15,8 +15,8 @@ use gtk4::glib;
 use gtk4::prelude::*;
 
 use crate::ui::cover_loader::CoverLoader;
-use crate::ui::eq_bars::{self, EqVariant};
 use crate::ui::list_density;
+use crate::ui::playing_marker;
 use crate::ui::rating::RatingWidget;
 use crate::ui::strings;
 use crate::ui::track_cover::TrackCover;
@@ -259,7 +259,7 @@ pub(in crate::ui) fn append_title_column(
         };
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         track_list_row_interaction::expand_to_cell(&row);
-        let eq = eq_bars::build(EqVariant::Animated);
+        let eq = playing_marker::build();
         eq.set_visible(false);
         let label = gtk4::Label::new(None);
         label.set_xalign(0.0);

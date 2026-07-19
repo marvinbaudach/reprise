@@ -34,6 +34,19 @@ pub fn load_or_fetch(name: &str) -> Result<PortraitOutcome, PortraitError> {
     )
 }
 
+/// Resolves only an already-downloaded portrait and never contacts Deezer.
+pub fn load_cached(name: &str) -> PortraitOutcome {
+    load_cached_from(name, &cache::cache_dir())
+}
+
+pub(crate) fn load_cached_from(name: &str, dir: &Path) -> PortraitOutcome {
+    let name = name.trim();
+    if name.is_empty() {
+        return PortraitOutcome::NotFound;
+    }
+    cache::portrait_path_in(dir, name).map_or(PortraitOutcome::NotFound, PortraitOutcome::Found)
+}
+
 pub(crate) fn load_or_fetch_with<S, D>(
     name: &str,
     now: i64,
@@ -157,6 +170,20 @@ mod tests {
         let mut download = |_: &str| -> Result<Vec<u8>, FetchError> { panic!("must not download") };
         let outcome = load_or_fetch_with("Band", now, &dir, &mut search, &mut download).unwrap();
         assert!(matches!(outcome, PortraitOutcome::Found(_)));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn net_1_portraits_keep_cached_images_when_disabled() {
+        let dir = tmp();
+        let cached = cache::store_image(&dir, "Band", b"img", "jpg").unwrap();
+
+        let outcome = load_cached_from("Band", &dir);
+
+        match outcome {
+            PortraitOutcome::Found(path) => assert_eq!(path, cached),
+            PortraitOutcome::NotFound => panic!("expected cached portrait"),
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 

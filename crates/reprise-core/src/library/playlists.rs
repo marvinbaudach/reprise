@@ -5,7 +5,7 @@
 //! sort and limit options. Both types maintain gapless 0-indexed positions
 //! across all operations (create, add, remove, move).
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 pub use super::playlist_delete::delete;
@@ -517,6 +517,45 @@ fn json_value_to_sql(v: &serde_json::Value) -> rusqlite::types::Value {
         serde_json::Value::String(s) => rusqlite::types::Value::Text(s.clone()),
         _ => rusqlite::types::Value::Text(v.to_string()),
     }
+}
+
+/// Creates a smart playlist and returns its database id.
+///
+/// An identical playlist — same name, rules, sort and limit — is returned as
+/// it stands instead of inserted twice. `smart_playlists.name` carries no
+/// UNIQUE constraint, and a one-click entry point like the My Stats "Smart
+/// Mix" CTA would otherwise pile up duplicates the user has to delete by hand.
+/// Same name with different rules stays a distinct playlist.
+pub fn create_smart(
+    conn: &Connection,
+    name: &str,
+    rules_json: &str,
+    sort_field: &str,
+    sort_dir: &str,
+    limit_count: Option<i64>,
+) -> Result<i64, rusqlite::Error> {
+    smart_rules_to_sql(rules_json)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let existing = conn
+        .query_row(
+            "SELECT id FROM smart_playlists \
+             WHERE name = ?1 AND rules_json = ?2 AND sort_field = ?3 \
+               AND sort_dir = ?4 AND limit_count IS ?5 \
+             ORDER BY id LIMIT 1",
+            params![name, rules_json, sort_field, sort_dir, limit_count],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    if let Some(id) = existing {
+        return Ok(id);
+    }
+    conn.execute(
+        "INSERT INTO smart_playlists \
+         (name, rules_json, sort_field, sort_dir, limit_count) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![name, rules_json, sort_field, sort_dir, limit_count],
+    )?;
+    Ok(conn.last_insert_rowid())
 }
 
 /// Lists all smart playlists.

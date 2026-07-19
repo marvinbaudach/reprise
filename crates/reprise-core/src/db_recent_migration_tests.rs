@@ -46,7 +46,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
     let lastfm_exists: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastfm_queue')",
@@ -70,7 +70,7 @@ fn migrate_v7_to_v8_adds_waveform_peaks_column() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/test.flac', 'T', 'A', 0)",
         [],
@@ -124,7 +124,7 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
 
     conn.execute(
         "INSERT INTO device_settings (device_serial, device_name) VALUES ('serial-1', 'Pixel')",
@@ -163,7 +163,7 @@ fn migrate_v8_to_v9_creates_device_sync_tables_and_cascades_tracks() {
 /// Builds a v9 database (every schema step through `SCHEMA_V9`, `user_version`
 /// pinned at 9) so v10-specific tests seed rows under the *pre-migration*
 /// shape rather than the shape `migrate()` itself would already have applied.
-fn open_v9_database() -> Connection {
+pub(super) fn open_v9_database() -> Connection {
     let conn = open(None).unwrap();
     conn.execute_batch(SCHEMA_V1).unwrap();
     conn.execute_batch(SCHEMA_V2).unwrap();
@@ -207,7 +207,7 @@ fn migrate_v9_to_v10_backfills_missing_since_for_missing_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
 
     let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
         .query_row(
@@ -257,7 +257,7 @@ fn migrate_v9_to_v10_rebuilds_import_errors_table() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
 
     let remaining: i64 = conn
         .query_row("SELECT COUNT(*) FROM import_errors", [], |row| row.get(0))
@@ -312,7 +312,7 @@ fn migrate_v10_to_v11_drops_missing_column_and_preserves_data() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
 
     // Verify data is intact after column drop
     let (path, title, artist): (String, String, String) = conn
@@ -348,7 +348,7 @@ fn migrate_v10_to_v11_drops_missing_column_and_preserves_data() {
     // The real error is a generic rusqlite::Error with "no such column" in its message
 }
 
-fn open_v11_database() -> Connection {
+pub(super) fn open_v11_database() -> Connection {
     let conn = open_v9_database();
     conn.execute_batch(SCHEMA_V10).unwrap();
     conn.execute_batch(SCHEMA_V11).unwrap();
@@ -356,11 +356,121 @@ fn open_v11_database() -> Connection {
     conn
 }
 
+fn open_v12_database() -> Connection {
+    let conn = open_v11_database();
+    conn.execute_batch(SCHEMA_V12).unwrap();
+    conn.pragma_update(None, "user_version", 12).unwrap();
+    conn
+}
+
+#[test]
+fn net_2_migration_preserves_existing_cover_usage() {
+    let conn = open_v12_database();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+    std::fs::write(cover_cache.path().join("used.jpg"), b"cached").unwrap();
+
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
+
+    assert!(crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 17);
+}
+
+#[test]
+fn net_2_migration_preserves_existing_portrait_usage() {
+    let conn = open_v12_database();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+    std::fs::write(portrait_cache.path().join("used.png"), b"cached").unwrap();
+
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
+
+    assert!(crate::modules::is_enabled(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap());
+}
+
+#[test]
+fn net_2_migration_preserves_online_lyrics_for_existing_databases() {
+    let conn = open_v12_database();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
+
+    assert!(crate::modules::is_enabled(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
+}
+
+#[test]
+fn net_2_migration_carries_artist_news_opt_in_to_new_releases() {
+    let conn = open_v12_database();
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('module.artist_news.enabled', '1')",
+        [],
+    )
+    .unwrap();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
+
+    assert!(crate::modules::is_enabled(&conn, &crate::modules::NEW_RELEASES_MODULE).unwrap());
+}
+
+#[test]
+fn net_2_migration_ignores_negative_cache_markers() {
+    let conn = open_v12_database();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+    std::fs::write(cover_cache.path().join("miss.notfound"), b"").unwrap();
+    std::fs::write(portrait_cache.path().join("miss.notfound"), b"").unwrap();
+
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
+
+    assert!(!crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(!crate::modules::is_enabled(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap());
+}
+
+#[test]
+fn net_2_migration_preserves_explicit_opt_outs() {
+    let conn = open_v12_database();
+    for key in [
+        "module.cover_download.enabled",
+        "module.artist_portraits.enabled",
+        "module.online_lyrics.enabled",
+        "module.new_releases.enabled",
+    ] {
+        conn.execute("INSERT INTO settings (key, value) VALUES (?1, '0')", [key])
+            .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('module.artist_news.enabled', '1')",
+        [],
+    )
+    .unwrap();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+    std::fs::write(cover_cache.path().join("used.jpg"), b"cached").unwrap();
+    std::fs::write(portrait_cache.path().join("used.png"), b"cached").unwrap();
+
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
+
+    for module in [
+        &crate::modules::COVER_DOWNLOAD_MODULE,
+        &crate::modules::ARTIST_PORTRAITS_MODULE,
+        &crate::modules::ONLINE_LYRICS_MODULE,
+        &crate::modules::NEW_RELEASES_MODULE,
+    ] {
+        assert!(!crate::modules::is_enabled(&conn, module).unwrap());
+    }
+}
+
 fn assert_new_releases_schema(conn: &Connection) {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
 
     let track_columns = conn
         .prepare("PRAGMA table_info(tracks)")
@@ -402,9 +512,21 @@ fn assert_new_releases_schema(conn: &Connection) {
 #[test]
 fn fresh_database_runs_the_new_releases_migration_sequence() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+    std::fs::write(cover_cache.path().join("old.jpg"), b"cached").unwrap();
+    std::fs::write(portrait_cache.path().join("old.png"), b"cached").unwrap();
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
     assert_new_releases_schema(&conn);
+    for module in [
+        &crate::modules::COVER_DOWNLOAD_MODULE,
+        &crate::modules::ARTIST_PORTRAITS_MODULE,
+        &crate::modules::ONLINE_LYRICS_MODULE,
+        &crate::modules::NEW_RELEASES_MODULE,
+    ] {
+        assert!(!crate::modules::is_enabled(&conn, module).unwrap());
+    }
 }
 
 #[test]
@@ -417,7 +539,9 @@ fn v11_database_runs_the_same_new_releases_migration_sequence() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
     assert_new_releases_schema(&conn);
     let preserved: (String, Option<String>, i64) = conn
@@ -435,7 +559,8 @@ fn v11_database_runs_the_same_new_releases_migration_sequence() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(network_settings, 0);
+    assert_eq!(network_settings, 1);
+    assert!(crate::modules::is_enabled(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
 }
 
 #[test]
@@ -461,7 +586,7 @@ fn migrate_v12_to_v13_indexes_present_title_order_without_changing_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
     let index_sql: String = conn
         .query_row(
             "SELECT sql FROM sqlite_master \
@@ -536,7 +661,7 @@ fn migrate_v13_to_v14_indexes_present_album_order_without_changing_rows() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
     let index_sql: String = conn
         .query_row(
             "SELECT sql FROM sqlite_master \
@@ -627,7 +752,7 @@ fn migrate_v14_to_v15_adds_disc_number_without_losing_tracks() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 17);
     let preserved: (String, String, Option<i32>) = conn
         .query_row(
             "SELECT path, title, disc_no FROM tracks WHERE id = 7",

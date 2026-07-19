@@ -146,7 +146,7 @@ pub fn build(
     // first frame. If GStreamer is unavailable the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
-    let cover_download = cover_download_worker::setup();
+    let cover_download = cover_download_worker::setup(&conn.borrow());
     let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
         db_path.to_path_buf(),
         reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
@@ -162,7 +162,8 @@ pub fn build(
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
-    let artist_portrait = super::artist_portrait_worker::ArtistPortraitRuntime::setup();
+    let artist_portrait =
+        super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
     let device_sync = super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
         super::device_sync_runtime::DeviceSyncRuntime::new(
             conn,
@@ -196,6 +197,7 @@ pub fn build(
     if let Some(player) = &player {
         player.purge_queue_ids(&startup_purged);
     }
+    let queue_model = super::window_queue_model::build(&player);
 
     // Built right after `player` (needed for the Queue row's counter) and
     // before `TrackList` and `spawn_scan`/`player.set_track_list_reload`
@@ -205,11 +207,8 @@ pub fn build(
     // this one `Rc` rather than needing a construction-order-driven `Weak`-
     // then-upgrade dance.
     let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, {
-        let player = player.clone();
-        move || match &player {
-            Some(controller) => controller.queue_pending_len(),
-            None => 0,
-        }
+        let queue_model = queue_model.clone();
+        move || queue_model.borrow().sidebar_count()
     }));
     sidebar.bind_device_sync(&device_sync);
 
@@ -251,7 +250,6 @@ pub fn build(
     // doc comment in `player_controller.rs`). `None` (GStreamer unavailable)
     // degrades to an always-empty queue view, matching every other
     // player-unavailable degradation in this function.
-    let queue_model = super::window_queue_model::build(&player);
     let queue_ids_provider = {
         let queue_model = queue_model.clone();
         move || queue_model.borrow().clone()
@@ -326,6 +324,7 @@ pub fn build(
         conn.clone(),
         track_list.shared_cover_loader(),
         artist_portrait.clone(),
+        artist_news.enabled.get(),
     ));
     let library_views = super::library_shell::build_views(
         &track_content,
@@ -359,12 +358,14 @@ pub fn build(
         });
     }
     super::library_shell::wire_artist_view(&library_views, &artist_view, &track_list, &nav_history);
+    super::library_view_memory_wiring::wire(&library_views, &album_view, &artist_view, &track_list);
     // Wire playback → track-table selection and Artists-view now-playing. Done
     // here (not right after `track_list` is built) because the closure captures
     // a strong `Rc<ArtistView>`, which must exist first.
     super::current_track_selection::wire(player.as_ref(), &track_list, &artist_view);
     super::library_shell::arm_smoke_library_view(&library_views);
     let library_title = Rc::new(super::library_chrome::build_library_title(
+        &window,
         &header,
         &window_title,
         &library_views.stack,
@@ -403,6 +404,8 @@ pub fn build(
         album_view: &album_view,
         artist_view: &artist_view,
         player: &player,
+        stats_view: &stats_view,
+        nav_history: &nav_history,
         content_stack: &content_stack,
         library_stack: &library_views.stack,
         scan_controls: &scan_controls,
@@ -508,12 +511,38 @@ pub fn build(
         &listenbrainz,
         &lastfm,
         &artist_news,
+        &cover_download,
+        &artist_portrait,
         &decorations,
         &device_sync,
     );
     {
         let preferences = preferences.clone();
         device_view.set_on_settings(move || preferences.present_page("synchronization"));
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        info_panel.lyrics_view().set_on_settings(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(crate::ui::preference_plugins::ONLINE_LYRICS_TARGETS);
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        album_view.set_on_hint_settings(move |targets| {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(targets);
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
+        artist_view.set_on_hint_settings(move |targets| {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(targets);
+            }
+        });
     }
     super::window_runtime_wiring::wire(super::window_runtime_wiring::RuntimeWiring {
         app,
