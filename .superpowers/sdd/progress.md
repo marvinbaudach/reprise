@@ -653,3 +653,4 @@ Stage: implement the Library Doctor local/remote scan, mandatory per-field revie
 
 Task DOC-1: complete (commit 2ea322e, base 5182582, defined the split Library Doctor UX contracts DOC-1a through DOC-6c as planned rules in section W).
 Task DOC-2: complete (commit 3e1578c, base 2ea322e, added read-only local scans with frozen scopes, conservative exact-spelling proposals, durable full-tag snapshots, stale detection, and restart-safe unresolved groups).
+Task DOC-3: complete (commit 09289bb, base 3e1578c, added stable per-field review sessions, exact safe/none presets, manual tie materialization, conflict-safe immutable apply plans, and DOC-3a coverage).
