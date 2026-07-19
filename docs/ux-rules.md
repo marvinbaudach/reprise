@@ -907,6 +907,90 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   Ist eine Schnittstelle im Test-Build ausgeblendet (z. B. `SectionModel` per
   `cfg`), zählt nur der E2E-Beleg — „grün" ist dort strukturell bedeutungslos.
 
+## T. My Stats
+
+- **STATS-0** [geplant] [core] — Ein „play" ist überall dieselbe Sache:
+  mindestens 50 % des Tracks oder mindestens vier Minuten gehört. Genau diese
+  Ereignisse stehen in `listen_events`, und die My-Stats-Ansicht rechnet
+  ausschließlich aus ihnen — Hero-Zeit, Plays, Top-Listen, Spotlight, Genres,
+  Clock und Highlights sind Projektionen derselben Zeilenmenge. Der laufende
+  Zähler `tracks.play_count` speist die Ansicht nie; Zeit und Anzahl können
+  daher nicht auseinanderlaufen. Tages- und Stundengrenzen entstehen nicht in
+  SQL: die Kernfunktionen nehmen eine Zeitzone als Parameter und bucketen jedes
+  Ereignis einzeln durch sie hindurch, damit Sommer-/Winterzeit-Wechsel keine
+  Grenze verschieben. Alles ist lokal: kein Netz, keine Cloud, keine
+  Fremdquelle wird eingemischt.
+- **STATS-1** [geplant] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß, eine
+  Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
+  Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
+  Sekundär-Ton. Rechts steht das Zeitraum-Dropdown („<Jahr> so far / <Vorjahr> /
+  All time / Last 30 days"). Darunter läuft ein schlankes Area-Ribbon der
+  Hörzeit, dessen Achse **exakt dem gewählten Zeitraum** folgt — „2026 so far"
+  zeigt Jan–Jul, nie ein rollendes 12-Monats-Fenster. Der laufende Bucket ist
+  offen markiert (gestrichelt, hohler Punkt), der Peak gesetzt; Hover nennt den
+  exakten Wert. Fehlt eine Vorperiode mit Hörzeit, entfällt die Pill.
+- **STATS-2** [geplant] [core] — Das Artist-Spotlight ist das Herzstück:
+  #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
+  Zeile „N plays · N h · N % of your listening", drei Top-Track-Chips sowie die
+  Aktionen Play (Container-Play über die Trackliste des Artists) und
+  „Go to artist" (regulärer NAV-Push mit Back-Historie). Hinter dem Cover liegt
+  ein dezenter Cover-Akzent-Glow — der Cover-Akzent bleibt Playback-Elementen
+  vorbehalten. Darunter nennt eine Ghost-Zeile die Ränge 2–5.
+- **STATS-3** [geplant] [core] — Das Genre-Spektrum ist **eine** horizontale
+  Segment-Leiste in Teal-Abstufungen mit Legende (Punkt · Name · %), gespeist
+  aus den Genre-Tags der Bibliothek. Die fünf stärksten Genres bilden eigene
+  Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
+  als Segment noch als „Other". Die Leiste ist reine Anzeige und keine
+  Navigation: Segmente und Legende sind nicht klickbar.
+- **STATS-4** [geplant] [core] — Unter dem Spektrum steht eine asymmetrische
+  Reihe (1.35fr / 1fr): links die Listening Clock als 24-Stunden-Histogramm aus
+  den Timestamps mit teal hervorgehobenen Peak-Stunden und Caption
+  („Peak 11 PM–1 AM · night owl"), rechts vier Highlight-Kacheln — Streak
+  (längste Folge aufeinanderfolgender lokaler Tage mit ≥ 1 play), Discovered
+  (im Zeitraum erstmals gespielte Tracks), Busiest day, On repeat (höchste
+  Play-Zahl) — plus der CTA „Smart Mix aus Top-Genres? · Create", der eine
+  echte Smart Playlist anlegt. Tages- und Stundengrenzen folgen der lokalen
+  Zeit des Nutzers, nicht UTC. Im schmalen Fenster klappt die Reihe per
+  AdwBreakpoint einspaltig, ohne dass sich die Reihenfolge ändert.
+- **STATS-5** [geplant] [core] — Top Tracks steht über die volle Breite:
+  nummerierte Liste mit Cover, Titel und Artist, relativem Play-Balken und
+  Play-Count, mit Sort-Toggle „by plays / by time". Der Balken ist relativ zum
+  Spitzenreiter der Liste, nie zu einem absoluten Maximum.
+- **STATS-6** [geplant] [core] — Leere und dünne Datenlagen werden nie als
+  leere Diagramme gezeigt. Ohne Hörhistorie im Zeitraum erscheint ein
+  freundlicher Leerzustand („Start listening to see your stats") statt Achsen
+  mit einem einsamen Balken. Bei dünner Datenlage wird die Granularität feiner
+  (Tage bzw. Wochen statt größtenteils leerer Monate).
+- **STATS-7** [geplant] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
+  kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
+  Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
+  über Sitzungen erhalten. Mehr enthält das Menü nicht — das Spotlight ist
+  fest das Artist-Spotlight. Die Reihenfolge der Sektionen ist fix, Größen sind
+  nicht manuell veränderbar — Anpassung an die Fensterbreite geschieht
+  ausschließlich per AdwBreakpoint.
+- **STATS-8** [geplant] [gtk] — In My Stats gibt es keine Filter-Zeile und
+  keine Suche der Trackliste — das ist eine andere Ansicht. Die rechte
+  Now-Playing-Spalte verhält sich wie überall. Das Zeitraum-Dropdown ist der
+  einzige Ansichts-Regler dieser Ansicht.
+- **STATS-9** [geplant] [core] — **Dedup:** Unsaubere Tags dürfen Zahlen nicht
+  zersplittern. Top Artists, Top Genres, Album-Artist-Aggregate und das
+  Spotlight gruppieren über einen zweistufigen Schlüssel: liegt eine MBID vor,
+  gilt sie; sonst ein normalisierter Schlüssel aus Trim, Unicode-Casefold
+  (nicht nur ASCII), Whitespace-Kollaps und Diakritika-Faltung (NFKD ohne
+  Combining Marks). „Lorna Shore", „lorna shore" und „Lorna Shore " sind damit
+  ein Eintrag mit einer Summe. Der Schlüssel existiert nur zur Laufzeit: keine
+  gespeicherte Spalte, und die Ansicht schreibt **niemals** Tags zurück —
+  Statistik ist lesend. Angezeigt wird stets eine echte Original-Schreibweise
+  der Gruppe (die häufigste; bei Gleichstand die zuletzt gespielte, dann
+  alphabetisch), nie die normalisierte Form. **Geraten wird nie:**
+  zusammengefasst wird ausschließlich, was nach Normalisierung exakt gleich ist
+  — kein Fuzzy-Matching, keine Levenshtein-Distanz, kein Präfix-Merge, also
+  bleibt „Lorna Shore Band" von „Lorna Shore" getrennt. Fasst eine Gruppe
+  mindestens zwei Schreibweisen zusammen, weist ein dezenter Hinweis am
+  Listeneintrag darauf hin und führt in den Mehrfach-Tag-Editor der betroffenen
+  Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
+  Schreibvorgang.
+
 ---
 
 Wenn beim Testen ein Fall auftaucht, den keine Regel deckt: Regel ergänzen
