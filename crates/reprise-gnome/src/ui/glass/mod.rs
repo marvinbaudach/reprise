@@ -151,6 +151,44 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn inset_applier_follows_a_swapped_scrolled_child() {
+        gtk4::init().unwrap();
+        let original = gtk4::Label::new(Some("original"));
+        let scrolled = gtk4::ScrolledWindow::builder().child(&original).build();
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        root.append(&scrolled);
+
+        let applier = SafeInsetApplier::discover(&root);
+        let insets = SafeInsets {
+            top: 90,
+            bottom: 96,
+        };
+        applier.apply(insets);
+        assert_eq!(original.margin_top(), 90);
+
+        // Swapping the child keeps the auto-viewport but replaces what is
+        // inside it. Targeting the content directly means the applier must
+        // re-resolve it, or the new child silently never gets padded.
+        let replacement = gtk4::Label::new(Some("replacement"));
+        replacement.set_margin_top(3);
+        replacement.set_margin_bottom(4);
+        scrolled.set_child(Some(&replacement));
+
+        // Same insets as before: the early-return hot path must not swallow a
+        // content swap, which is exactly how this used to fail permanently.
+        applier.apply(insets);
+        assert_eq!(replacement.margin_top(), 93);
+        assert_eq!(replacement.margin_bottom(), 100);
+
+        // The replacement's own margins were taken as the base exactly once —
+        // re-applying must not compound them.
+        applier.apply(insets);
+        assert_eq!(replacement.margin_top(), 93);
+        assert_eq!(replacement.margin_bottom(), 100);
+    }
+
+    #[test]
     fn glass_performance_gate_is_fail_closed() {
         let baseline = FrameSeries::new(vec![12_000; 120]);
         let passing = FrameSeries::new(vec![14_500; 120]);
