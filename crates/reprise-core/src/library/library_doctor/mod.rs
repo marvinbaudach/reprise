@@ -1,4 +1,5 @@
 mod local_rules;
+mod preferences;
 mod remote;
 mod review;
 mod scan;
@@ -9,6 +10,7 @@ mod write;
 mod write_recovery;
 mod write_types;
 
+pub use preferences::*;
 pub use remote::{RemoteEvidence, RemoteEvidenceSource, RemoteTrackMetadata};
 pub use review::*;
 pub use scan::LibraryDoctor;

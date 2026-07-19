@@ -12,8 +12,9 @@ use super::{strings, PreferencesContext};
 const TARGET_CLASS: &str = "reprise-plugin-target";
 pub(in crate::ui) const ONLINE_LYRICS_TARGETS: &[&str] = &["online_lyrics"];
 
-pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 4] {
+pub(in crate::ui) fn network_descriptors() -> [&'static ModuleDescriptor; 5] {
     [
+        &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
         &reprise_core::modules::NEW_RELEASES_MODULE,
         &reprise_core::modules::COVER_DOWNLOAD_MODULE,
         &reprise_core::modules::ARTIST_PORTRAITS_MODULE,
@@ -47,6 +48,7 @@ pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
         "listenbrainz" => strings::LISTENBRAINZ,
         "lastfm" => strings::LASTFM,
         "new_releases" => strings::NEW_RELEASES,
+        "library_doctor" => strings::LIBRARY_DOCTOR,
         "cover_download" => strings::COVER_DOWNLOAD,
         "artist_portraits" => strings::ARTIST_PORTRAITS,
         "online_lyrics" => strings::ONLINE_LYRICS,
@@ -60,6 +62,7 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "listenbrainz" => strings::PLUGIN_LISTENBRAINZ_DESCRIPTION,
         "lastfm" => strings::PLUGIN_LASTFM_DESCRIPTION,
         "new_releases" => strings::NEW_RELEASES_DESCRIPTION,
+        "library_doctor" => strings::LIBRARY_DOCTOR_DESCRIPTION,
         "cover_download" => strings::COVER_DOWNLOAD_DESCRIPTION,
         "artist_portraits" => strings::ARTIST_PORTRAITS_DESCRIPTION,
         "online_lyrics" => strings::ONLINE_LYRICS_DESCRIPTION,
@@ -114,11 +117,14 @@ impl PreferencesContext {
             }
             let scope_row = (descriptor.id == "new_releases")
                 .then(|| super::preference_new_releases::scope_row(&self.conn, active));
+            let doctor_remote_row = (descriptor.id == "library_doctor")
+                .then(|| super::preference_library_doctor::remote_suggestions_row(self, active));
             let syncing = Rc::new(Cell::new(false));
             let weak = Rc::downgrade(self);
             let descriptor = *descriptor;
             let syncing_notify = syncing.clone();
             let scope_notify = scope_row.clone();
+            let doctor_remote_notify = doctor_remote_row.clone();
             row.connect_active_notify(move |row| {
                 let Some(context) = weak.upgrade() else {
                     return;
@@ -127,9 +133,6 @@ impl PreferencesContext {
                     return;
                 }
                 let active = row.is_active();
-                if let Some(scope) = &scope_notify {
-                    scope.set_sensitive(active);
-                }
                 let result = match descriptor.id {
                     "new_releases" => context
                         .artist_news
@@ -159,6 +162,16 @@ impl PreferencesContext {
                     syncing_notify.set(true);
                     row.set_active(!active);
                     syncing_notify.set(false);
+                    return;
+                }
+                if let Some(scope) = &scope_notify {
+                    scope.set_sensitive(active);
+                }
+                if let Some(remote) = &doctor_remote_notify {
+                    remote.set_sensitive(active);
+                    if !active {
+                        remote.set_active(false);
+                    }
                 }
             });
             if descriptor.id == "new_releases" {
@@ -188,6 +201,9 @@ impl PreferencesContext {
             group.add(&row);
             if let Some(scope) = scope_row {
                 group.add(&scope);
+            }
+            if let Some(remote) = doctor_remote_row {
+                group.add(&remote);
             }
         }
         page.add(&group);
@@ -251,7 +267,7 @@ mod tests {
     #[test]
     fn all_network_plugin_rows_expose_privacy_copy() {
         let descriptors = network_descriptors();
-        assert_eq!(descriptors.len(), 4);
+        assert_eq!(descriptors.len(), 5);
         for descriptor in descriptors {
             assert!(plugin_applies_live(descriptor));
             assert!(plugin_description(descriptor).contains("contacts"));
