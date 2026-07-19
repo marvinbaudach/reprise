@@ -1,0 +1,270 @@
+//! Editorial listening-time area ribbon rendered with Cairo.
+
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use gtk4::prelude::*;
+use reprise_core::library::stats_period::PeriodRange;
+
+use super::stats_ribbon_math::{bucket_at_x, ribbon_layout, Point, RibbonLayout};
+
+pub(in crate::ui) const RIBBON_CSS_CLASS: &str = "stats-ribbon";
+const RIBBON_HEIGHT: i32 = 150;
+const LABEL_HEIGHT: f64 = 24.0;
+const MARKER_RADIUS: f64 = 4.0;
+
+#[derive(Default)]
+struct RibbonData {
+    labels: Vec<String>,
+    values: Vec<i64>,
+    open_index: Option<usize>,
+}
+
+#[derive(Clone)]
+pub(in crate::ui) struct StatsRibbon {
+    area: gtk4::DrawingArea,
+    data: Rc<RefCell<RibbonData>>,
+}
+
+impl StatsRibbon {
+    pub(in crate::ui) fn new() -> Self {
+        let area = gtk4::DrawingArea::new();
+        area.add_css_class(RIBBON_CSS_CLASS);
+        area.set_hexpand(true);
+        area.set_content_height(RIBBON_HEIGHT);
+
+        let data = Rc::new(RefCell::new(RibbonData::default()));
+        area.set_draw_func({
+            let data = data.clone();
+            move |area, context, width, height| draw(area, context, width, height, &data.borrow())
+        });
+
+        let hovered = Rc::new(Cell::new(None));
+        let motion = gtk4::EventControllerMotion::new();
+        motion.connect_motion({
+            let area = area.clone();
+            let data = data.clone();
+            let hovered = hovered.clone();
+            move |_, x, _| {
+                let data = data.borrow();
+                let index = bucket_at_x(x, f64::from(area.width()), data.values.len());
+                if index == hovered.get() {
+                    return;
+                }
+                hovered.set(index);
+                area.set_tooltip_text(
+                    index
+                        .and_then(|index| {
+                            Some(format!(
+                                "{}: {}",
+                                data.labels.get(index)?,
+                                format_duration(*data.values.get(index)?)
+                            ))
+                        })
+                        .as_deref(),
+                );
+            }
+        });
+        motion.connect_leave({
+            let area = area.clone();
+            move |_| {
+                hovered.set(None);
+                area.set_tooltip_text(None);
+            }
+        });
+        area.add_controller(motion);
+
+        Self { area, data }
+    }
+
+    pub(in crate::ui) fn widget(&self) -> &gtk4::DrawingArea {
+        &self.area
+    }
+
+    pub(in crate::ui) fn set_data(&self, period: &PeriodRange, values: &[i64]) {
+        let values = period
+            .buckets
+            .iter()
+            .enumerate()
+            .map(|(index, _)| values.get(index).copied().unwrap_or(0))
+            .collect::<Vec<_>>();
+        *self.data.borrow_mut() = RibbonData {
+            labels: period
+                .buckets
+                .iter()
+                .map(|bucket| bucket.label.clone())
+                .collect(),
+            values,
+            open_index: period.buckets.iter().position(|bucket| bucket.open),
+        };
+        self.area.queue_draw();
+    }
+}
+
+fn draw(
+    area: &gtk4::DrawingArea,
+    context: &gtk4::cairo::Context,
+    width: i32,
+    height: i32,
+    data: &RibbonData,
+) {
+    if data.values.is_empty() || width <= 0 || height <= 0 {
+        return;
+    }
+    let plot_height = f64::from(height) - LABEL_HEIGHT;
+    if plot_height <= 0.0 {
+        return;
+    }
+    let width = f64::from(width);
+    let layout = ribbon_layout(&data.values, width, plot_height, data.open_index);
+    let color = area.color();
+    let (red, green, blue, alpha) = (
+        f64::from(color.red()),
+        f64::from(color.green()),
+        f64::from(color.blue()),
+        f64::from(color.alpha()),
+    );
+
+    draw_fill(
+        context,
+        &layout,
+        width,
+        plot_height,
+        red,
+        green,
+        blue,
+        alpha,
+    );
+    draw_line(context, &layout, red, green, blue, alpha);
+    draw_markers(context, &layout, red, green, blue, alpha);
+    draw_labels(
+        context,
+        data,
+        width,
+        f64::from(height),
+        red,
+        green,
+        blue,
+        alpha,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_fill(
+    context: &gtk4::cairo::Context,
+    layout: &RibbonLayout,
+    width: f64,
+    baseline: f64,
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) {
+    let Some(first) = layout.points.first() else {
+        return;
+    };
+    context.move_to(first.x, baseline);
+    for point in &layout.points {
+        context.line_to(point.x, point.y);
+    }
+    context.line_to(width, baseline);
+    context.close_path();
+    let gradient = gtk4::cairo::LinearGradient::new(0.0, 0.0, 0.0, baseline);
+    gradient.add_color_stop_rgba(0.0, red, green, blue, alpha * 0.48);
+    gradient.add_color_stop_rgba(1.0, red, green, blue, alpha * 0.04);
+    let _ = context.set_source(&gradient);
+    let _ = context.fill();
+}
+
+fn draw_line(
+    context: &gtk4::cairo::Context,
+    layout: &RibbonLayout,
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) {
+    let Some(first) = layout.points.first() else {
+        return;
+    };
+    context.set_source_rgba(red, green, blue, alpha);
+    context.set_line_width(2.0);
+    context.move_to(first.x, first.y);
+    let solid_end = layout
+        .open_index
+        .filter(|index| *index > 0)
+        .map_or(layout.points.len() - 1, |index| index - 1);
+    for point in layout.points.iter().take(solid_end + 1).skip(1) {
+        context.line_to(point.x, point.y);
+    }
+    let _ = context.stroke();
+
+    if let Some(open_index) = layout.open_index.filter(|index| *index > 0) {
+        let start = layout.points[open_index - 1];
+        let end = layout.points[open_index];
+        context.set_dash(&[5.0, 4.0], 0.0);
+        context.move_to(start.x, start.y);
+        context.line_to(end.x, end.y);
+        let _ = context.stroke();
+        context.set_dash(&[], 0.0);
+    }
+}
+
+fn draw_markers(
+    context: &gtk4::cairo::Context,
+    layout: &RibbonLayout,
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) {
+    if let Some(point) = marker(layout, layout.peak_index) {
+        context.set_source_rgba(red, green, blue, alpha);
+        context.arc(point.x, point.y, MARKER_RADIUS, 0.0, std::f64::consts::TAU);
+        let _ = context.fill();
+    }
+    if let Some(point) = marker(layout, layout.open_index) {
+        context.set_source_rgba(red, green, blue, alpha);
+        context.set_line_width(2.0);
+        context.arc(point.x, point.y, MARKER_RADIUS, 0.0, std::f64::consts::TAU);
+        let _ = context.stroke();
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_labels(
+    context: &gtk4::cairo::Context,
+    data: &RibbonData,
+    width: f64,
+    height: f64,
+    red: f64,
+    green: f64,
+    blue: f64,
+    alpha: f64,
+) {
+    let count = data.labels.len();
+    let stride = count.div_ceil(8).max(1);
+    context.set_source_rgba(red, green, blue, alpha * 0.58);
+    context.set_font_size(9.0);
+    for (index, label) in data.labels.iter().enumerate() {
+        if index % stride != 0 && index + 1 != count {
+            continue;
+        }
+        let x = if count <= 1 {
+            0.0
+        } else {
+            index as f64 * width / (count - 1) as f64
+        };
+        context.move_to(x.min(width - 24.0).max(0.0), height - 5.0);
+        let _ = context.show_text(label);
+    }
+}
+
+fn marker(layout: &RibbonLayout, index: Option<usize>) -> Option<Point> {
+    layout.points.get(index?).copied()
+}
+
+fn format_duration(milliseconds: i64) -> String {
+    let minutes = milliseconds.max(0) / 60_000;
+    format!("{} h {} min", minutes / 60, minutes % 60)
+}
