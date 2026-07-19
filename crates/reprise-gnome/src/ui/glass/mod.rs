@@ -383,15 +383,22 @@ mod tests {
         );
 
         assert!(
-            albums.height() >= 500,
+            stack.height() > 0,
+            "album page received no viewport height: {geometry}"
+        );
+        assert_eq!(
+            albums.height(),
+            stack.height(),
             "album scroller lost viewport height: {geometry}"
         );
-        assert!(
-            inset.height() >= 500,
+        assert_eq!(
+            inset.height(),
+            albums.height(),
             "scroll adapter collapsed after hidden-page reveal: {geometry}"
         );
-        assert!(
-            grid.height() >= 500,
+        assert_eq!(
+            grid.height(),
+            inset.height(),
             "width-dependent grid collapsed after hidden-page reveal: {geometry}"
         );
         window.close();
