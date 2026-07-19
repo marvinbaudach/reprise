@@ -1118,6 +1118,15 @@ warum eine Property gesetzt ist und trotzdem nichts passiert.
   read"), nie die Einladung „Start listening to see your stats". Sichtbarkeit
   entsteht dabei über die Seitenumschaltung, nicht über zusätzliches
   Ein-/Ausblenden einzelner Sektionen darunter.
+- **STATS-6b** [aktiv] [gtk] — Importierte Hörhistorie ist kein normaler
+  Leerzustand: enthält der gewählte Zeitraum keine `listen_events`, während
+  `SUM(tracks.play_count) > 0` ist, erscheint eine eigene Statusseite („Your
+  Rhythmbox history was imported"), nennt die Zahl der importierten Plays und
+  erklärt, dass detaillierte Statistiken ab jetzt mit dem Hören in Reprise
+  entstehen. Sobald im Zeitraum echte `listen_events` vorliegen, verschwindet
+  die Seite selbständig. Eine frische Bibliothek ohne Zähler behält den
+  regulären Leerzustand. `tracks.play_count` entscheidet ausschließlich über
+  diese Nachricht und speist gemäß STATS-0 weiterhin keine Statistik.
 - **STATS-7** [aktiv] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
   kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
   Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
